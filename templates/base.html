@@ -20,7 +20,7 @@
     <div class="nav-dropdown">
         <a href="{{ url_for('riders.season_riders', season_name=s.name) }}" {% if is_active %}class="active"{% endif %}>{{ s.name[:4] }}/{{ s.name[5:] }}</a>
         <div class="dropdown-content">
-            <a href="{{ url_for('riders.season_riders', season_name=s.name) }}">Completed Rides</a>
+            <a href="{{ url_for('riders.season_riders', season_name=s.name) }}">Completed Brevets</a>
             <a href="{{ url_for('riders.upcoming_brevets', season_name=s.name) }}">Upcoming Brevets</a>
         </div>
     </div>

@@ -22,7 +22,7 @@
 {% block content %}
 <div class="hero" style="padding:40px 20px;">
 <h1>{{ season_label }}</h1>
-<p>{% if is_current %}Completed brevets this season{% else %}Season brevet participation{% endif %}</p>
+<p>{% if is_current %}Completed Brevets this season{% else %}Season brevet participation{% endif %}</p>
 </div>
 
 <div class="stats-row">
@@ -31,6 +31,11 @@
 <div class="stat-card"><div class="number">{{ stats.total_kms|commafy }}</div><div class="label">Total Kilometers</div></div>
 {% if stats.sr_rider_count > 0 %}
 <div class="stat-card"><div class="number">{{ stats.sr_rider_count }}</div><div class="label">Super Randonneurs</div></div>
+{% endif %}
+{% if is_current and upcoming_count > 0 %}
+<a href="{{ url_for('riders.upcoming_brevets', season_name=season.name) }}" class="stat-card" style="text-decoration:none;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;">
+<div class="number">{{ upcoming_count }}</div><div class="label">Upcoming Brevets &rarr;</div>
+</a>
 {% endif %}
 </div>
 
@@ -74,6 +79,6 @@
 </div>
 </div>
 
-<p style="margin-top:15px;color:var(--text-light);font-size:0.85rem;">Click on a rider's name to see their full history across all seasons.{% if is_current %} View the <a href="{{ url_for('riders.upcoming_brevets', season_name=season.name) }}" style="color:var(--accent);font-weight:600;">upcoming brevets calendar</a>.{% endif %}</p>
+<p style="margin-top:15px;color:var(--text-light);font-size:0.85rem;">Click on a rider's name to see their full history across all seasons.</p>
 </div>
 {% endblock %}

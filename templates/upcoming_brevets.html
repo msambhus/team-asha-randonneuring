@@ -7,11 +7,6 @@
 <p>{{ season_label }} &mdash; RUSA events in the Bay Area</p>
 </div>
 
-<div class="stats-row">
-<div class="stat-card"><div class="number">{{ rusa_events|length }}</div><div class="label">Upcoming Events</div></div>
-<div class="stat-card"><div class="number">{{ future_rides|length }}</div><div class="label">Team Rides Planned</div></div>
-</div>
-
 <div class="container section">
 <h2>Ride Calendar</h2>
 
@@ -48,6 +43,6 @@
 {% endif %}
 </div>
 
-<p style="margin-top:15px;color:var(--text-light);font-size:0.85rem;">View <a href="{{ url_for('riders.season_riders', season_name=season.name) }}" style="color:var(--accent);font-weight:600;">completed rides</a> for this season.</p>
+<p style="margin-top:15px;color:var(--text-light);font-size:0.85rem;">View <a href="{{ url_for('riders.season_riders', season_name=season.name) }}" style="color:var(--accent);font-weight:600;">completed brevets</a> for this season.</p>
 </div>
 {% endblock %}
