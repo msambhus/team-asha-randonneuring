@@ -74,13 +74,20 @@ def season_riders(season_name):
 
     label = SEASON_LABELS.get(season_name, f'{season_name} Season')
 
+    # Get upcoming event count for the summary box
+    upcoming_count = 0
+    if is_current:
+        rusa_events = get_upcoming_rusa_events()
+        upcoming_count = len(rusa_events)
+
     return render_template('riders.html',
                            season=season,
                            season_label=label,
                            riders=rider_data,
                            past_rides=past_rides,
                            stats=stats,
-                           is_current=is_current)
+                           is_current=is_current,
+                           upcoming_count=upcoming_count)
 
 
 @riders_bp.route('/riders/<season_name>/upcoming')
