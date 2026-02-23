@@ -34,15 +34,45 @@
 <p style="font-size:0.85rem;color:var(--text-light);margin-bottom:15px;">Upcoming brevets from San Francisco, Davis, and Santa Cruz regions.</p>
 <div class="table-wrap">
 <table>
-<thead><tr><th>Date</th><th>Region</th><th>Distance</th><th>Route</th><th>Climbing</th></tr></thead>
+<thead><tr><th>Date</th><th>Region</th><th>Route</th><th>Start</th><th>Time Limit</th><th>Distance</th><th>Elevation</th><th>Link</th></tr></thead>
 <tbody>
 {% for e in rusa_events %}
 <tr>
 <td>{{ e.date }}</td>
 <td>{{ e.region }}</td>
-<td>{{ e.distance_km }} km</td>
-<td>{{ e.route_name }}</td>
-<td>{{ e.climbing or '' }}</td>
+<td>
+  <div>{% if 'DART' in e.route_name or 'Dart' in e.route_name or 'Fleche' in e.route_name or (e.rwgps_url and ('dart' in e.rwgps_url.lower() or 'fleche' in e.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in e.rwgps_url.lower())) %}[DART] {% endif %}{{ e.route_name }}</div>
+  {% if e.start_location %}
+  <div style="font-size:0.75rem;color:var(--text-light);margin-top:2px;">{{ e.start_location }}</div>
+  {% endif %}
+</td>
+<td>{{ e.start_time or '' }}</td>
+<td>{{ e.time_limit_hours|string + 'h' if e.time_limit_hours else '' }}</td>
+<td>
+  {% if e.distance_miles %}
+    {{ "%.1f"|format(e.distance_miles) }} mi
+  {% else %}
+    {{ e.distance_km }} km
+  {% endif %}
+</td>
+<td>
+  {% if e.elevation_ft %}
+    {{ "{:,}".format(e.elevation_ft) }} ft
+  {% else %}
+    {{ e.climbing or '' }}
+  {% endif %}
+</td>
+<td>
+  {% if e.rwgps_url %}
+    <a href="{{ e.rwgps_url }}" target="_blank" class="rider-link">
+      {% if 'Fleche' in e.route_name or (e.rwgps_url and ('fleche' in e.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in e.rwgps_url.lower())) %}
+        Event &rarr;
+      {% else %}
+        Route &rarr;
+      {% endif %}
+    </a>
+  {% endif %}
+</td>
 </tr>
 {% endfor %}
 </tbody>

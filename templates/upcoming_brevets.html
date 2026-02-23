@@ -1,6 +1,29 @@
 {% extends "base.html" %}
 {% block title %}Upcoming Brevets - {{ season_label }} - Team Asha Randonneuring{% endblock %}
 
+{% block extra_head %}
+<style>
+.region-filter {
+    cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 20px;
+    transition: all 0.2s;
+    border: 2px solid transparent;
+}
+.region-filter:hover {
+    background: rgba(0,0,0,0.05);
+}
+.region-filter.active {
+    border-color: var(--primary);
+    background: rgba(26, 54, 93, 0.1);
+    font-weight: 700;
+}
+.event-item.hidden {
+    display: none !important;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="hero" style="padding:40px 20px;">
 <h1>Upcoming Brevets</h1>
@@ -11,9 +34,14 @@
 <h2>Ride Calendar</h2>
 
 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:15px;">
-<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:0.75rem;">
+<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:0.85rem;">
+    <span class="region-filter active" data-region="all" onclick="filterByRegion('all')" style="display:inline-flex;align-items:center;gap:4px;">
+        <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#666;"></span>All Clubs
+    </span>
     {% for region, color in region_colors.items() %}
-    <span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{{ color }};"></span>{{ region }}</span>
+    <span class="region-filter" data-region="{{ region }}" onclick="filterByRegion('{{ region }}')" style="display:inline-flex;align-items:center;gap:4px;">
+        <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{{ color }};"></span>{{ region }}
+    </span>
     {% endfor %}
 </div>
 </div>
@@ -21,7 +49,7 @@
 
 <div class="card">
 {% for event in rusa_events %}
-<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;{% if not loop.last %}border-bottom:1px solid var(--border);{% endif %}">
+<div class="event-item" data-region="{{ event.region }}" style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;{% if not loop.last %}border-bottom:1px solid var(--border);{% endif %}">
 <div style="min-width:48px;text-align:center;">
     <div style="font-size:0.75rem;color:var(--text-light);text-transform:uppercase;">{{ event.date[5:7] }}/{{ event.date[8:10] }}</div>
     <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">{{ event.date[8:10] }}</div>
@@ -29,12 +57,43 @@
 <div style="flex:1;min-width:0;">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:{{ region_colors.get(event.region, '#999') }};">{{ event.region }}</span>
-        <span style="font-weight:700;color:var(--accent);">{{ event.distance_km }} km</span>
+        <span style="font-weight:700;color:var(--accent);">
+          {% if event.distance_miles %}
+            {{ "%.1f"|format(event.distance_miles) }} mi
+          {% else %}
+            {{ event.distance_km }} km
+          {% endif %}
+        </span>
+        {% if event.elevation_ft %}
+        <span style="font-size:0.8rem;color:var(--text-light);">{{ "{:,}".format(event.elevation_ft) }} ft</span>
+        {% endif %}
         <span style="font-size:0.8rem;color:var(--text-light);">{{ event.ride_type }}</span>
     </div>
-    <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">{{ event.route_name }}
-    {% if event.climbing %}<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">{{ event.climbing }}</span>{% endif %}
+    <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">{% if 'DART' in event.route_name or 'Dart' in event.route_name or 'Fleche' in event.route_name or (event.rwgps_url and ('dart' in event.rwgps_url.lower() or 'fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}[DART] {% endif %}{{ event.route_name }}
+    {% if event.climbing and not event.elevation_ft %}<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">{{ event.climbing }}</span>{% endif %}
+    {% if event.rwgps_url %}
+    <a href="{{ event.rwgps_url }}" target="_blank" style="margin-left:8px;color:var(--accent);font-size:0.75rem;text-decoration:none;">
+      {% if 'Fleche' in event.route_name or (event.rwgps_url and ('fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}
+        View Event &rarr;
+      {% else %}
+        View Route &rarr;
+      {% endif %}
+    </a>
+    {% endif %}
     </div>
+    {% if event.start_time or event.time_limit_hours or event.start_location %}
+    <div style="font-size:0.75rem;margin-top:6px;color:var(--text-light);display:flex;flex-wrap:wrap;gap:12px;">
+      {% if event.start_time %}
+      <span><strong>Start:</strong> {{ event.start_time }}</span>
+      {% endif %}
+      {% if event.time_limit_hours %}
+      <span><strong>Time Limit:</strong> {{ event.time_limit_hours }}h</span>
+      {% endif %}
+      {% if event.start_location %}
+      <span style="flex:1 1 100%;"><strong>Location:</strong> {{ event.start_location }}</span>
+      {% endif %}
+    </div>
+    {% endif %}
 </div>
 </div>
 {% endfor %}
@@ -45,4 +104,29 @@
 
 <p style="margin-top:15px;color:var(--text-light);font-size:0.85rem;">View <a href="{{ url_for('riders.season_riders', season_name=season.name) }}" style="color:var(--accent);font-weight:600;">completed brevets</a> for this season.</p>
 </div>
+
+{% block extra_js %}
+<script>
+function filterByRegion(region) {
+    // Update active state on filters
+    document.querySelectorAll('.region-filter').forEach(filter => {
+        filter.classList.remove('active');
+    });
+    document.querySelector(`[data-region="${region}"]`).classList.add('active');
+    
+    // Show/hide events
+    document.querySelectorAll('.event-item').forEach(event => {
+        if (region === 'all') {
+            event.classList.remove('hidden');
+        } else {
+            if (event.dataset.region === region) {
+                event.classList.remove('hidden');
+            } else {
+                event.classList.add('hidden');
+            }
+        }
+    });
+}
+</script>
+{% endblock %}
 {% endblock %}
