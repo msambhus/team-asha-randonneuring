@@ -87,17 +87,7 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
 </style>
 </head>
 <body>
-<header>
-<div class="header-inner">
-<div class="logo"><a href="../index.html" style="color:inherit;text-decoration:none;">Team <span>Asha</span> Randonneuring</a></div>
-<nav><a href="../index.html">Home</a>
-<a href="../about.html">About</a>
-<a href="../riders-2526.html">2025/26</a>
-<a href="../seasons/2023.html">2023</a>
-<a href="../seasons/2022.html">2022</a>
-<a href="../resources.html">Resources</a></nav>
-</div>
-</header>
+<div id="site-header" data-prefix="../"></div>
 
     <div class="hero" style="padding:30px 20px;">
     <img src="../static/Vijayshree.jpg" alt="Vijayshree Sundaram" style="width:150px;height:150px;border-radius:50%;object-fit:cover;border:4px solid white;margin-bottom:15px;">
@@ -137,50 +127,32 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
     
     </div>
     
-<footer>
-<div class="container">
-<div style="margin-bottom:12px;">
-<button onclick="document.getElementById('feedback-modal').style.display='flex'" style="display:inline-block;padding:8px 20px;background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.85);border:1px solid rgba(255,255,255,0.3);border-radius:20px;font-size:0.85rem;font-weight:500;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.25)';this.style.color='white'" onmouseout="this.style.background='rgba(255,255,255,0.15)';this.style.color='rgba(255,255,255,0.85)'">&#x2709; Send Feedback</button>
-</div>
-Team Asha Randonneuring &copy; 2025-2026 &bull; Raising funds for education of underprivileged children in India
-</div>
-</footer>
-<!-- Feedback Modal -->
-<div id="feedback-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
-<div style="background:white;border-radius:12px;padding:30px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-<h3 style="margin:0;color:var(--primary);font-size:1.2rem;">Send Feedback</h3>
-<button onclick="document.getElementById('feedback-modal').style.display='none'" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);padding:0;line-height:1;">&times;</button>
-</div>
-<form id="feedback-form" onsubmit="submitFeedback(event)">
-<div style="margin-bottom:15px;">
-<label style="display:block;font-size:0.85rem;font-weight:600;color:var(--text);margin-bottom:4px;">Your Name</label>
-<input type="text" id="fb-name" required style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;box-sizing:border-box;" placeholder="e.g. Mihir Sambhus">
-</div>
-<div style="margin-bottom:15px;">
-<label style="display:block;font-size:0.85rem;font-weight:600;color:var(--text);margin-bottom:4px;">Your Email</label>
-<input type="email" id="fb-email" required style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;box-sizing:border-box;" placeholder="you@email.com">
-</div>
-<div style="margin-bottom:20px;">
-<label style="display:block;font-size:0.85rem;font-weight:600;color:var(--text);margin-bottom:4px;">Feedback</label>
-<textarea id="fb-text" required rows="4" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;box-sizing:border-box;resize:vertical;" placeholder="What would you like to share?"></textarea>
-</div>
-<button type="submit" style="width:100%;padding:12px;background:var(--primary);color:white;border:none;border-radius:8px;font-size:0.95rem;font-weight:600;cursor:pointer;transition:opacity 0.2s;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">Send Feedback</button>
-</form>
-</div>
-</div>
+<div id="site-footer" data-prefix="../"></div>
 <script>
-function submitFeedback(e) {
-    e.preventDefault();
-    var name = document.getElementById('fb-name').value;
-    var email = document.getElementById('fb-email').value;
-    var text = document.getElementById('fb-text').value;
-    var subject = encodeURIComponent('Team Asha Randonneuring - Feedback from ' + name);
-    var body = encodeURIComponent('From: ' + name + ' (' + email + ')\n\n' + text);
-    window.location.href = 'mailto:mihir.sambhus@gmail.com?subject=' + subject + '&body=' + body;
-    document.getElementById('feedback-modal').style.display = 'none';
-    document.getElementById('feedback-form').reset();
-}
+(function() {
+    var prefix = document.getElementById('site-header').getAttribute('data-prefix');
+    var base = prefix + '_includes/';
+    fetch(base + 'header.html').then(function(r) { return r.text(); }).then(function(html) {
+        document.getElementById('site-header').innerHTML = html;
+        // Prefix all nav links and logo for subfolder pages
+        var logoLink = document.querySelector('#site-header .logo a');
+        if (logoLink && prefix) logoLink.setAttribute('href', prefix + logoLink.getAttribute('href'));
+        var links = document.querySelectorAll('#site-header nav a');
+        var path = window.location.pathname;
+        links.forEach(function(a) {
+            var href = a.getAttribute('href');
+            if (prefix) a.setAttribute('href', prefix + href);
+            // Set active nav link based on current page
+            var fullHref = a.getAttribute('href');
+            if (path.endsWith(href) || path.endsWith(fullHref)) {
+                a.classList.add('active');
+            }
+        });
+    });
+    fetch(base + 'footer.html').then(function(r) { return r.text(); }).then(function(html) {
+        document.getElementById('site-footer').innerHTML = html;
+    });
+})();
 </script>
 </body>
 </html>
