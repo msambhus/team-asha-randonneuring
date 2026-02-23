@@ -115,7 +115,7 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
 <div class="tab-container" style="margin-top:15px;">
 <div class="tab-buttons" style="display:flex;gap:0;margin-bottom:0;">
 <button class="tab-btn active" onclick="switchTab('completed')" id="tab-completed" style="flex:1;padding:12px 20px;font-size:0.95rem;font-weight:600;border:2px solid var(--primary);border-bottom:none;border-radius:8px 8px 0 0;cursor:pointer;background:var(--primary);color:white;transition:all 0.2s;">Completed Rides (5 events)</button>
-<button class="tab-btn" onclick="switchTab('upcoming')" id="tab-upcoming" style="flex:1;padding:12px 20px;font-size:0.95rem;font-weight:600;border:2px solid var(--border);border-bottom:none;border-radius:8px 8px 0 0;cursor:pointer;background:var(--card-bg);color:var(--text-light);transition:all 0.2s;">Upcoming Rides (12 events)</button>
+<button class="tab-btn" onclick="switchTab('upcoming')" id="tab-upcoming" style="flex:1;padding:12px 20px;font-size:0.95rem;font-weight:600;border:2px solid var(--border);border-bottom:none;border-radius:8px 8px 0 0;cursor:pointer;background:var(--card-bg);color:var(--text-light);transition:all 0.2s;">Upcoming Rides (49 events)</button>
 </div>
 
 <div id="panel-completed" class="tab-panel" style="border:2px solid var(--primary);border-radius:0 0 8px 8px;">
@@ -158,143 +158,827 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
 </div>
 
 <div id="panel-upcoming" class="tab-panel" style="display:none;border:2px solid var(--primary);border-radius:0 0 8px 8px;padding:20px;">
-<h3 style="color:var(--primary);margin-bottom:15px;">Upcoming Events</h3>
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:15px;">
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:15px;">
+<h3 style="color:var(--primary);margin:0;">Ride Calendar</h3>
+<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:0.75rem;">
+    <span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#ff6b00;"></span>Team Asha</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#e74c3c;"></span>San Francisco</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#2ecc71;"></span>Davis</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#3498db;"></span>Santa Cruz</span>
+</div>
+</div>
+<p style="font-size:0.8rem;color:var(--text-light);margin-bottom:15px;">Events sourced from <a href="https://rusa.org/cgi-bin/eventsearch_GF.pl" target="_blank" style="color:var(--accent);">RUSA</a> for Davis, San Francisco &amp; Santa Cruz regions. <span style="background:var(--accent);color:white;font-size:0.65rem;padding:1px 6px;border-radius:4px;">TEAM</span> = events from Team Asha calendar.</p>
+<div style="max-height:600px;overflow-y:auto;padding-right:8px;">
 
-    <div style="background:var(--card-bg);border-radius:10px;padding:20px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,0.05);">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <div>
-    <div style="font-size:1.1rem;font-weight:700;color:var(--primary);">SFR 300k</div>
-    <div style="font-size:0.9rem;color:var(--text-light);margin-top:4px;">Feb 28, 2026</div>
+    <div style="margin-bottom:25px;">
+    <div style="position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:2;">
+        <h3 style="color:var(--primary);font-size:1.1rem;border-bottom:2px solid var(--accent);padding-bottom:6px;display:inline-block;">February 2026 <span style="font-size:0.8rem;font-weight:400;color:var(--text-light);">(2 rides)</span></h3>
     </div>
-    <div style="font-size:1.3rem;font-weight:800;color:var(--accent);">300 km</div>
-    </div>
-    <div style="margin-top:8px;font-size:0.85rem;color:var(--text);"><span style="margin-left:12px;">7,840 ft</span><span style="margin-left:8px;color:var(--text-light);">(41.8 ft/mi)</span></div>
-    <a href="https://ridewithgps.com/routes/49749661" target="_blank" style="display:inline-block;margin-top:8px;padding:4px 12px;background:var(--accent);color:white;border-radius:6px;font-size:0.8rem;text-decoration:none;">View Route &#x1F5FA;</a>
-    </div>
-    <div style="background:var(--card-bg);border-radius:10px;padding:20px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,0.05);">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <div>
-    <div style="font-size:1.1rem;font-weight:700;color:var(--primary);">SFR 200K</div>
-    <div style="font-size:0.9rem;color:var(--text-light);margin-top:4px;">Feb 28, 2026</div>
-    </div>
-    <div style="font-size:1.3rem;font-weight:800;color:var(--accent);">200 km</div>
-    </div>
-    <div style="margin-top:8px;font-size:0.85rem;color:var(--text);"><span style="margin-left:12px;">6,440 ft</span><span style="margin-left:8px;color:var(--text-light);">(51.5 ft/mi)</span></div>
-    <a href="https://ridewithgps.com/routes/1797453" target="_blank" style="display:inline-block;margin-top:8px;padding:4px 12px;background:var(--accent);color:white;border-radius:6px;font-size:0.8rem;text-decoration:none;">View Route &#x1F5FA;</a>
-    </div>
-    <div style="background:var(--card-bg);border-radius:10px;padding:20px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,0.05);">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <div>
-    <div style="font-size:1.1rem;font-weight:700;color:var(--primary);">DBC 200K</div>
-    <div style="font-size:0.9rem;color:var(--text-light);margin-top:4px;">Mar 07, 2026</div>
-    </div>
-    <div style="font-size:1.3rem;font-weight:800;color:var(--accent);">200 km</div>
-    </div>
-    <div style="margin-top:8px;font-size:0.85rem;color:var(--text);"><span style="margin-left:12px;">5,935 ft</span><span style="margin-left:8px;color:var(--text-light);">(47.5 ft/mi)</span></div>
     
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">28</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#ff6b00;">Team Asha</span>
+                <span style="font-weight:700;color:var(--accent);">300 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">SFR 300k</span>
+                 <span style="background:var(--accent);color:white;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">TEAM</span>
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);"><a href="https://ridewithgps.com/routes/49749661" target="_blank" style="color:var(--text);text-decoration:underline;">Healdsburg 300</a><span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">7,840'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">28</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#ff6b00;">Team Asha</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">SFR 200K</span>
+                 <span style="background:var(--accent);color:white;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">TEAM</span>
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);"><a href="https://ridewithgps.com/routes/1797453" target="_blank" style="color:var(--text);text-decoration:underline;">Two Rock-Valley Ford</a><span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">6,440'</span></div>
+        </div>
+        </div>
     </div>
-    <div style="background:var(--card-bg);border-radius:10px;padding:20px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,0.05);">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <div>
-    <div style="font-size:1.1rem;font-weight:700;color:var(--primary);">SCR 300K</div>
-    <div style="font-size:0.9rem;color:var(--text-light);margin-top:4px;">Mar 21, 2026</div>
+    <div style="margin-bottom:25px;">
+    <div style="position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:2;">
+        <h3 style="color:var(--primary);font-size:1.1rem;border-bottom:2px solid var(--accent);padding-bottom:6px;display:inline-block;">March 2026 <span style="font-size:0.8rem;font-weight:400;color:var(--text-light);">(6 rides)</span></h3>
     </div>
-    <div style="font-size:1.3rem;font-weight:800;color:var(--accent);">300 km</div>
-    </div>
-    <div style="margin-top:8px;font-size:0.85rem;color:var(--text);"><span style="margin-left:12px;">9,208 ft</span><span style="margin-left:8px;color:var(--text-light);">(49.1 ft/mi)</span></div>
-    <a href="https://ridewithgps.com/routes/38845484" target="_blank" style="display:inline-block;margin-top:8px;padding:4px 12px;background:var(--accent);color:white;border-radius:6px;font-size:0.8rem;text-decoration:none;">View Route &#x1F5FA;</a>
-    </div>
-    <div style="background:var(--card-bg);border-radius:10px;padding:20px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,0.05);">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <div>
-    <div style="font-size:1.1rem;font-weight:700;color:var(--primary);">DBC 300K</div>
-    <div style="font-size:0.9rem;color:var(--text-light);margin-top:4px;">Mar 21, 2026</div>
-    </div>
-    <div style="font-size:1.3rem;font-weight:800;color:var(--accent);">300 km</div>
-    </div>
-    <div style="margin-top:8px;font-size:0.85rem;color:var(--text);"><span style="margin-left:12px;">5,869 ft</span><span style="margin-left:8px;color:var(--text-light);">(31.3 ft/mi)</span></div>
-    <a href="https://ridewithgps.com/routes/23381933" target="_blank" style="display:inline-block;margin-top:8px;padding:4px 12px;background:var(--accent);color:white;border-radius:6px;font-size:0.8rem;text-decoration:none;">View Route &#x1F5FA;</a>
-    </div>
-    <div style="background:var(--card-bg);border-radius:10px;padding:20px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,0.05);">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <div>
-    <div style="font-size:1.1rem;font-weight:700;color:var(--primary);">SCR 300K</div>
-    <div style="font-size:0.9rem;color:var(--text-light);margin-top:4px;">Apr 04, 2026</div>
-    </div>
-    <div style="font-size:1.3rem;font-weight:800;color:var(--accent);">300 km</div>
-    </div>
-    <div style="margin-top:8px;font-size:0.85rem;color:var(--text);"><span style="margin-left:12px;">12,632 ft</span><span style="margin-left:8px;color:var(--text-light);">(67.4 ft/mi)</span></div>
-    <a href="https://ridewithgps.com/routes/49411277" target="_blank" style="display:inline-block;margin-top:8px;padding:4px 12px;background:var(--accent);color:white;border-radius:6px;font-size:0.8rem;text-decoration:none;">View Route &#x1F5FA;</a>
-    </div>
-    <div style="background:var(--card-bg);border-radius:10px;padding:20px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,0.05);">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <div>
-    <div style="font-size:1.1rem;font-weight:700;color:var(--primary);">SFR 400K</div>
-    <div style="font-size:0.9rem;color:var(--text-light);margin-top:4px;">Apr 11, 2026</div>
-    </div>
-    <div style="font-size:1.3rem;font-weight:800;color:var(--accent);">400 km</div>
-    </div>
-    <div style="margin-top:8px;font-size:0.85rem;color:var(--text);"><span style="margin-left:12px;">12,175 ft</span><span style="margin-left:8px;color:var(--text-light);">(48.7 ft/mi)</span></div>
-    <a href="https://ridewithgps.com/routes/50015646" target="_blank" style="display:inline-block;margin-top:8px;padding:4px 12px;background:var(--accent);color:white;border-radius:6px;font-size:0.8rem;text-decoration:none;">View Route &#x1F5FA;</a>
-    </div>
-    <div style="background:var(--card-bg);border-radius:10px;padding:20px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,0.05);">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <div>
-    <div style="font-size:1.1rem;font-weight:700;color:var(--primary);">DBC 400K</div>
-    <div style="font-size:0.9rem;color:var(--text-light);margin-top:4px;">Apr 18, 2026</div>
-    </div>
-    <div style="font-size:1.3rem;font-weight:800;color:var(--accent);">400 km</div>
-    </div>
-    <div style="margin-top:8px;font-size:0.85rem;color:var(--text);"><span style="margin-left:12px;">9,621 ft</span><span style="margin-left:8px;color:var(--text-light);">(38.5 ft/mi)</span></div>
-    <a href="https://ridewithgps.com/routes/29942297" target="_blank" style="display:inline-block;margin-top:8px;padding:4px 12px;background:var(--accent);color:white;border-radius:6px;font-size:0.8rem;text-decoration:none;">View Route &#x1F5FA;</a>
-    </div>
-    <div style="background:var(--card-bg);border-radius:10px;padding:20px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,0.05);">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <div>
-    <div style="font-size:1.1rem;font-weight:700;color:var(--primary);">SCR 400K</div>
-    <div style="font-size:0.9rem;color:var(--text-light);margin-top:4px;">Apr 25, 2026</div>
-    </div>
-    <div style="font-size:1.3rem;font-weight:800;color:var(--accent);">400 km</div>
-    </div>
-    <div style="margin-top:8px;font-size:0.85rem;color:var(--text);"><span style="margin-left:12px;">10,086 ft</span><span style="margin-left:8px;color:var(--text-light);">(40.3 ft/mi)</span></div>
-    <a href="https://ridewithgps.com/routes/41681149" target="_blank" style="display:inline-block;margin-top:8px;padding:4px 12px;background:var(--accent);color:white;border-radius:6px;font-size:0.8rem;text-decoration:none;">View Route &#x1F5FA;</a>
-    </div>
-    <div style="background:var(--card-bg);border-radius:10px;padding:20px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,0.05);">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <div>
-    <div style="font-size:1.1rem;font-weight:700;color:var(--primary);">SFR 600K</div>
-    <div style="font-size:0.9rem;color:var(--text-light);margin-top:4px;">May 02, 2026</div>
-    </div>
-    <div style="font-size:1.3rem;font-weight:800;color:var(--accent);">600 km</div>
-    </div>
-    <div style="margin-top:8px;font-size:0.85rem;color:var(--text);"><span style="margin-left:12px;">18,133 ft</span><span style="margin-left:8px;color:var(--text-light);">(48.4 ft/mi)</span></div>
-    <a href="https://ridewithgps.com/routes/50024173" target="_blank" style="display:inline-block;margin-top:8px;padding:4px 12px;background:var(--accent);color:white;border-radius:6px;font-size:0.8rem;text-decoration:none;">View Route &#x1F5FA;</a>
-    </div>
-    <div style="background:var(--card-bg);border-radius:10px;padding:20px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,0.05);">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <div>
-    <div style="font-size:1.1rem;font-weight:700;color:var(--primary);">DBC 600K</div>
-    <div style="font-size:0.9rem;color:var(--text-light);margin-top:4px;">May 09, 2026</div>
-    </div>
-    <div style="font-size:1.3rem;font-weight:800;color:var(--accent);">600 km</div>
-    </div>
-    <div style="margin-top:8px;font-size:0.85rem;color:var(--text);"><span style="margin-left:12px;">12,324 ft</span><span style="margin-left:8px;color:var(--text-light);">(32.9 ft/mi)</span></div>
-    <a href="https://ridewithgps.com/routes/40631525" target="_blank" style="display:inline-block;margin-top:8px;padding:4px 12px;background:var(--accent);color:white;border-radius:6px;font-size:0.8rem;text-decoration:none;">View Route &#x1F5FA;</a>
-    </div>
-    <div style="background:var(--card-bg);border-radius:10px;padding:20px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,0.05);">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <div>
-    <div style="font-size:1.1rem;font-weight:700;color:var(--primary);">SCR 600k</div>
-    <div style="font-size:0.9rem;color:var(--text-light);margin-top:4px;">Jun 27, 2026</div>
-    </div>
-    <div style="font-size:1.3rem;font-weight:800;color:var(--accent);">600 km</div>
-    </div>
-    <div style="margin-top:8px;font-size:0.85rem;color:var(--text);"><span style="margin-left:12px;">14,337 ft</span><span style="margin-left:8px;color:var(--text-light);">(38.0 ft/mi)</span></div>
     
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">01</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sun</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#3498db;">Santa Cruz</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">SCR Lobitos Creek 200k Brevet<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">7,490'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">07</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#ff6b00;">Team Asha</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">DBC 200K</span>
+                 <span style="background:var(--accent);color:white;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">TEAM</span>
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Meadow vista 200k<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">5,935'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">07</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#3498db;">Santa Cruz</span>
+                <span style="font-weight:700;color:var(--accent);">300 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Gravel 300k</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">08</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sun</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">100 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">RUSA populaire</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Sleepy Hollow Populaire<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">2,752'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">21</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#ff6b00;">Team Asha</span>
+                <span style="font-weight:700;color:var(--accent);">300 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">SCR 300K</span>
+                 <span style="background:var(--accent);color:white;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">TEAM</span>
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);"><a href="https://ridewithgps.com/routes/38845484" target="_blank" style="color:var(--text);text-decoration:underline;">SCR HMB Marina 300</a><span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">9,208'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">21</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#ff6b00;">Team Asha</span>
+                <span style="font-weight:700;color:var(--accent);">300 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">DBC 300K</span>
+                 <span style="background:var(--accent);color:white;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">TEAM</span>
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);"><a href="https://ridewithgps.com/routes/23381933" target="_blank" style="color:var(--text);text-decoration:underline;">Davis Dunnigan Delta 300</a><span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">5,869'</span></div>
+        </div>
+        </div>
+    </div>
+    <div style="margin-bottom:25px;">
+    <div style="position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:2;">
+        <h3 style="color:var(--primary);font-size:1.1rem;border-bottom:2px solid var(--accent);padding-bottom:6px;display:inline-block;">April 2026 <span style="font-size:0.8rem;font-weight:400;color:var(--text-light);">(7 rides)</span></h3>
+    </div>
+    
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">03</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Fri</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">360 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP flèche</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Bruce Berg Fleche NorCal</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">04</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#ff6b00;">Team Asha</span>
+                <span style="font-weight:700;color:var(--accent);">300 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">SCR 300K</span>
+                 <span style="background:var(--accent);color:white;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">TEAM</span>
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);"><a href="https://ridewithgps.com/routes/49411277" target="_blank" style="color:var(--text);text-decoration:underline;">SCR Voie Berg - Big Sur 300K</a><span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">12,632'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">11</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#ff6b00;">Team Asha</span>
+                <span style="font-weight:700;color:var(--accent);">400 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">SFR 400K</span>
+                 <span style="background:var(--accent);color:white;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">TEAM</span>
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);"><a href="https://ridewithgps.com/routes/50015646" target="_blank" style="color:var(--text);text-decoration:underline;">Hopland 400</a><span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">12,175'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">11</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Fault Line<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">8,456'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">18</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#ff6b00;">Team Asha</span>
+                <span style="font-weight:700;color:var(--accent);">400 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">DBC 400K</span>
+                 <span style="background:var(--accent);color:white;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">TEAM</span>
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);"><a href="https://ridewithgps.com/routes/29942297" target="_blank" style="color:var(--text);text-decoration:underline;">Lake Sonoma 400</a><span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">9,621'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">19</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sun</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Marin Mountains 200K (Gravel)<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">11,760'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">25</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#ff6b00;">Team Asha</span>
+                <span style="font-weight:700;color:var(--accent);">400 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">SCR 400K</span>
+                 <span style="background:var(--accent);color:white;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">TEAM</span>
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);"><a href="https://ridewithgps.com/routes/41681149" target="_blank" style="color:var(--text);text-decoration:underline;">San Gregoria Greenfield 400K</a><span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">10,086'</span></div>
+        </div>
+        </div>
+    </div>
+    <div style="margin-bottom:25px;">
+    <div style="position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:2;">
+        <h3 style="color:var(--primary);font-size:1.1rem;border-bottom:2px solid var(--accent);padding-bottom:6px;display:inline-block;">May 2026 <span style="font-size:0.8rem;font-weight:400;color:var(--text-light);">(7 rides)</span></h3>
+    </div>
+    
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">02</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#ff6b00;">Team Asha</span>
+                <span style="font-weight:700;color:var(--accent);">600 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">SFR 600K</span>
+                 <span style="background:var(--accent);color:white;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">TEAM</span>
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);"><a href="https://ridewithgps.com/routes/50024173" target="_blank" style="color:var(--text);text-decoration:underline;">Mendocino coast 600</a><span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">18,133'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">03</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sun</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Laguna Lake</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">03</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sun</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">130 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">RUSA populaire</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Big Rock-Tocaloma Populaire<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">3,881'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">09</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#ff6b00;">Team Asha</span>
+                <span style="font-weight:700;color:var(--accent);">600 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">DBC 600K</span>
+                 <span style="background:var(--accent);color:white;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">TEAM</span>
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);"><a href="https://ridewithgps.com/routes/40631525" target="_blank" style="color:var(--text);text-decoration:underline;">GrassVista 600</a><span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">12,324'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">16</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Freestone Bread Run 200k</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">16</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">300 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Old Cazadero 300 (Gravel)<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">15,604'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">30</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#3498db;">Santa Cruz</span>
+                <span style="font-weight:700;color:var(--accent);">1000 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">California Central Coast Randonnee</div>
+        </div>
+        </div>
+    </div>
+    <div style="margin-bottom:25px;">
+    <div style="position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:2;">
+        <h3 style="color:var(--primary);font-size:1.1rem;border-bottom:2px solid var(--accent);padding-bottom:6px;display:inline-block;">June 2026 <span style="font-size:0.8rem;font-weight:400;color:var(--text-light);">(5 rides)</span></h3>
+    </div>
+    
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">06</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">400 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">King Ridge 400K (Gravel)<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">23,041'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">13</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Mt Hamilton 200k</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">27</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#ff6b00;">Team Asha</span>
+                <span style="font-weight:700;color:var(--accent);">600 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">SCR 600k</span>
+                 <span style="background:var(--accent);color:white;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">TEAM</span>
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Surf city 600k<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">14,337'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">28</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sun</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Laguna Lake</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">28</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sun</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">111 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">RUSA populaire</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Lucas Valley Populaire<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">3,545'</span></div>
+        </div>
+        </div>
+    </div>
+    <div style="margin-bottom:25px;">
+    <div style="position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:2;">
+        <h3 style="color:var(--primary);font-size:1.1rem;border-bottom:2px solid var(--accent);padding-bottom:6px;display:inline-block;">July 2026 <span style="font-size:0.8rem;font-weight:400;color:var(--text-light);">(3 rides)</span></h3>
+    </div>
+    
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">11</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">SF to Cloverdale 200</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">11</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">300 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Boonville Lollipop</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">12</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sun</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Cloverdale to SF 200</div>
+        </div>
+        </div>
+    </div>
+    <div style="margin-bottom:25px;">
+    <div style="position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:2;">
+        <h3 style="color:var(--primary);font-size:1.1rem;border-bottom:2px solid var(--accent);padding-bottom:6px;display:inline-block;">August 2026 <span style="font-size:0.8rem;font-weight:400;color:var(--text-light);">(1 rides)</span></h3>
+    </div>
+    
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">29</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Laguna Lake</div>
+        </div>
+        </div>
+    </div>
+    <div style="margin-bottom:25px;">
+    <div style="position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:2;">
+        <h3 style="color:var(--primary);font-size:1.1rem;border-bottom:2px solid var(--accent);padding-bottom:6px;display:inline-block;">September 2026 <span style="font-size:0.8rem;font-weight:400;color:var(--text-light);">(5 rides)</span></h3>
+    </div>
+    
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">06</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sun</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Coleman Valley 200K<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">9,070'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">19</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#2ecc71;">Davis</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">RUSA brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">W. Sac to Nevada City<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">7,436'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">19</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#2ecc71;">Davis</span>
+                <span style="font-weight:700;color:var(--accent);">125 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">RUSA populaire</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Relief & Lowell Hills (Gravel)<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">9,614'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">20</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sun</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#2ecc71;">Davis</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">RUSA brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Nevada City to W. Sac<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">7,590'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">20</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sun</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#2ecc71;">Davis</span>
+                <span style="font-weight:700;color:var(--accent);">150 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">RUSA populaire</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Sugar Pine (Gravel)<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">10,455'</span></div>
+        </div>
+        </div>
+    </div>
+    <div style="margin-bottom:25px;">
+    <div style="position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:2;">
+        <h3 style="color:var(--primary);font-size:1.1rem;border-bottom:2px solid var(--accent);padding-bottom:6px;display:inline-block;">October 2026 <span style="font-size:0.8rem;font-weight:400;color:var(--text-light);">(5 rides)</span></h3>
+    </div>
+    
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">03</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">120 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">RUSA dart</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">SFR FALL DART Populaire</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">03</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">RUSA dart</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">SFR Fall DART</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">04</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sun</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#2ecc71;">Davis</span>
+                <span style="font-weight:700;color:var(--accent);">130 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">RUSA populaire</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">RTM/Cantelow Mix</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">17</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Winters 200</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">24</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#3498db;">Santa Cruz</span>
+                <span style="font-weight:700;color:var(--accent);">600 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">SCR Surf City VI 600k<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">14,337'</span></div>
+        </div>
+        </div>
+    </div>
+    <div style="margin-bottom:25px;">
+    <div style="position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:2;">
+        <h3 style="color:var(--primary);font-size:1.1rem;border-bottom:2px solid var(--accent);padding-bottom:6px;display:inline-block;">November 2026 <span style="font-size:0.8rem;font-weight:400;color:var(--text-light);">(4 rides)</span></h3>
+    </div>
+    
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">07</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Del Puerto Canyon 200km</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">14</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#2ecc71;">Davis</span>
+                <span style="font-weight:700;color:var(--accent);">108 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">RUSA populaire</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Elmira Ramble</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">14</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">120 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">RUSA dart</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">SFR November DART Populaire</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">27</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Fri</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">100 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">RUSA populaire</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Page Mill - Tunitas Creek Populaire<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">7,242'</span></div>
+        </div>
+        </div>
+    </div>
+    <div style="margin-bottom:25px;">
+    <div style="position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:2;">
+        <h3 style="color:var(--primary);font-size:1.1rem;border-bottom:2px solid var(--accent);padding-bottom:6px;display:inline-block;">December 2026 <span style="font-size:0.8rem;font-weight:400;color:var(--text-light);">(2 rides)</span></h3>
+    </div>
+    
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">05</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Sat</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#e74c3c;">San Francisco</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Estero Americano<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">6,480'</span></div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">31</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Thu</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#2ecc71;">Davis</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Davis - Pope Valley - Davis</div>
+        </div>
+        </div>
+    </div>
+    <div style="margin-bottom:25px;">
+    <div style="position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:2;">
+        <h3 style="color:var(--primary);font-size:1.1rem;border-bottom:2px solid var(--accent);padding-bottom:6px;display:inline-block;">January 2027 <span style="font-size:0.8rem;font-weight:400;color:var(--text-light);">(2 rides)</span></h3>
+    </div>
+    
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">01</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Fri</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#2ecc71;">Davis</span>
+                <span style="font-weight:700;color:var(--accent);">200 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">ACP brevet</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Davis-Auburn-Davis 200Km</div>
+        </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="min-width:48px;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">01</div>
+            <div style="font-size:0.7rem;color:var(--text-light);text-transform:uppercase;">Fri</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:#2ecc71;">Davis</span>
+                <span style="font-weight:700;color:var(--accent);">100 km</span>
+                <span style="font-size:0.8rem;color:var(--text-light);">RUSA populaire</span>
+                
+            </div>
+            <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">Bella Bru 102k</div>
+        </div>
+        </div>
     </div>
 </div>
-<div style="margin-top:30px;padding-top:20px;border-top:2px solid var(--border);">
+<div style="margin-top:20px;padding-top:20px;border-top:2px solid var(--border);">
 <h3 style="color:var(--primary);margin-bottom:10px;">Team Roster</h3>
 <p style="font-size:0.85rem;color:var(--text-light);margin-bottom:12px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success);margin-right:4px;"></span> Active this season &nbsp; <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--border);margin-right:4px;"></span> No rides yet</p>
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;">
