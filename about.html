@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>About Randonneuring - Team Asha Randonneuring</title>
+<style>
+:root {
+    --primary: #1a365d;
+    --accent: #e53e3e;
+    --accent-light: #fc8181;
+    --bg: #f7fafc;
+    --card-bg: #ffffff;
+    --text: #2d3748;
+    --text-light: #718096;
+    --border: #e2e8f0;
+    --success: #38a169;
+    --warning: #d69e2e;
+    --danger: #e53e3e;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+.container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+header { background: linear-gradient(135deg, var(--primary) 0%, #2a4a7f 100%); color: white; padding: 0; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.15); }
+.header-inner { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; max-width: 1200px; margin: 0 auto; }
+.logo { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.5px; }
+.logo span { color: var(--accent-light); }
+nav { display: flex; gap: 4px; flex-wrap: wrap; }
+nav a { color: rgba(255,255,255,0.85); text-decoration: none; padding: 8px 14px; border-radius: 6px; font-size: 0.9rem; font-weight: 500; transition: all 0.2s; }
+nav a:hover, nav a.active { background: rgba(255,255,255,0.15); color: white; }
+.hero { background: linear-gradient(135deg, var(--primary) 0%, #2a4a7f 50%, #1a365d 100%); color: white; padding: 60px 20px; text-align: center; }
+.hero h1 { font-size: 2.5rem; margin-bottom: 10px; font-weight: 800; }
+.hero p { font-size: 1.15rem; opacity: 0.9; max-width: 700px; margin: 0 auto; }
+.hero-img { max-width: 100%; border-radius: 12px; margin-top: 20px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); max-height: 400px; object-fit: cover; }
+.stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 20px; margin: -40px auto 30px; padding: 0 20px; max-width: 1200px; position: relative; z-index: 10; }
+.stat-card { background: var(--card-bg); border-radius: 12px; padding: 24px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.08); border: 1px solid var(--border); }
+.stat-card .number { font-size: 2.2rem; font-weight: 800; color: var(--primary); }
+.stat-card .label { font-size: 0.85rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+.section { padding: 40px 0; }
+.section h2 { font-size: 1.6rem; margin-bottom: 20px; color: var(--primary); padding-bottom: 10px; border-bottom: 3px solid var(--accent); display: inline-block; }
+.card { background: var(--card-bg); border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid var(--border); margin-bottom: 20px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th { background: var(--primary); color: white; padding: 10px 12px; text-align: left; font-weight: 600; white-space: nowrap; position: sticky; top: 0; }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+tr:hover { background: #edf2f7; }
+.badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: 600; }
+.badge-yes { background: #c6f6d5; color: #22543d; }
+.badge-no { background: #fed7d7; color: #9b2c2c; }
+.badge-dnf { background: #fefcbf; color: #744210; }
+.badge-maybe { background: #e9d8fd; color: #553c9a; }
+.badge-dns { background: #feebc8; color: #7b341e; }
+.rider-link { color: var(--primary); text-decoration: none; font-weight: 600; }
+.rider-link:hover { color: var(--accent); text-decoration: underline; }
+.table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+.table-wrap table { margin: 0; }
+.sr-badge { background: linear-gradient(135deg, #d69e2e, #f6ad55); color: white; padding: 3px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: 700; }
+.pbp-badge { background: linear-gradient(135deg, #805ad5, #b794f4); color: white; padding: 3px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: 700; }
+footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: center; padding: 20px; margin-top: 40px; font-size: 0.85rem; }
+.about-content { max-width: 800px; line-height: 1.8; font-size: 1.05rem; }
+.about-content h3 { color: var(--primary); margin: 25px 0 10px; font-size: 1.3rem; }
+.about-content p { margin-bottom: 15px; }
+.about-content ul { margin: 10px 0 15px 25px; }
+.about-content li { margin-bottom: 6px; }
+.highlight-box { background: linear-gradient(135deg, #ebf8ff, #e9d8fd); border-left: 4px solid var(--primary); padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 20px 0; }
+.rider-header { display: flex; align-items: center; gap: 20px; margin-bottom: 20px; }
+.rider-header .rusa { font-size: 0.9rem; color: var(--text-light); }
+.back-link { display: inline-block; margin-bottom: 15px; color: var(--primary); text-decoration: none; font-weight: 500; }
+.back-link:hover { text-decoration: underline; }
+.season-block { margin-bottom: 30px; }
+.season-block h3 { color: var(--primary); margin-bottom: 10px; }
+.resource-section { margin-bottom: 30px; }
+.resource-section h3 { color: var(--primary); margin-bottom: 12px; font-size: 1.2rem; border-left: 4px solid var(--accent); padding-left: 12px; }
+.resource-list { list-style: none; padding: 0; }
+.resource-list li { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.resource-list li:last-child { border-bottom: none; }
+.resource-list a { color: var(--primary); text-decoration: none; font-weight: 500; }
+.resource-list a:hover { color: var(--accent); text-decoration: underline; }
+.resource-list .note { color: var(--text-light); font-size: 0.85rem; margin-left: 8px; }
+.coach-box { background: linear-gradient(135deg, #faf5ff, #ebf8ff); border: 2px solid #805ad5; border-radius: 12px; padding: 24px; margin: 20px 0; }
+.coach-box h3 { color: #553c9a; margin-bottom: 10px; }
+@media (max-width: 768px) {
+    .header-inner { flex-direction: column; gap: 10px; }
+    nav { flex-wrap: wrap; justify-content: center; }
+    .hero h1 { font-size: 1.8rem; }
+    .stats-row { grid-template-columns: repeat(2, 1fr); margin-top: -30px; }
+}
+</style>
+</head>
+<body>
+<header>
+<div class="header-inner">
+<div class="logo">Team <span>Asha</span> Randonneuring</div>
+<nav><a href="index.html">Home</a>
+<a href="about.html" class="active">About</a>
+<a href="riders-2526.html">2025/26</a>
+<a href="season-2023.html">2023</a>
+<a href="season-2022.html">2022</a>
+<a href="resources.html">Resources</a></nav>
+</div>
+</header>
+
+<div class="hero" style="padding:40px 20px;">
+<h1>About Randonneuring</h1>
+<p>The art of ultra-distance cycling</p>
+</div>
+<div class="container section">
+<div class="about-content">
+
+<div class="highlight-box">
+<strong>Randonneuring</strong> (French pronunciation: [&#x281;&#xe3;d&#x254;n&#x153;&#x281;]) is long-distance unsupported endurance cycling. Organized globally by <strong>Audax Club Parisien (ACP)</strong> and in the US by <strong>Randonneurs USA (RUSA)</strong>, it tests a cyclist's ability to ride long distances within time limits, navigating through checkpoints called controls.
+</div>
+
+<h3>Brevets de Randonneurs Mondiaux (BRM)</h3>
+<p>BRMs are the core events of randonneuring. They are organized at standard distances with strict time limits based on a minimum average speed of 15 km/h:</p>
+<ul>
+<li><strong>200 km</strong> &mdash; Time limit: 13.5 hours</li>
+<li><strong>300 km</strong> &mdash; Time limit: 20 hours</li>
+<li><strong>400 km</strong> &mdash; Time limit: 27 hours</li>
+<li><strong>600 km</strong> &mdash; Time limit: 40 hours</li>
+<li><strong>1000 km</strong> &mdash; Time limit: 75 hours</li>
+<li><strong>1200 km</strong> &mdash; Time limit: 90 hours</li>
+</ul>
+<p>Riders must pass through designated control points (checkpoints) within specified opening and closing times. The controls ensure riders maintain adequate pace &mdash; not too slow, and importantly, not too fast either (controls have opening times to prevent riders from racing ahead unsafely).</p>
+
+<h3>Super Randonneur (SR)</h3>
+<p>The prestigious <strong>Super Randonneur</strong> title is earned by completing a full series of BRMs &mdash; 200km, 300km, 400km, and 600km &mdash; all within a single ACP calendar year (November to October). This requires not just physical fitness but also consistent commitment across months of training and riding.</p>
+
+<h3>Paris-Brest-Paris (PBP)</h3>
+<p><strong>Paris-Brest-Paris</strong> is the oldest and most prestigious cycling event still in existence, dating back to 1891. This 1,200km ride from Paris to Brest and back must be completed within 90 hours. Held every four years, PBP is the ultimate goal for many randonneurs worldwide. To qualify, riders must complete a full Super Randonneur series (200, 300, 400, and 600km BRMs) in the qualifying year.</p>
+<p>In 2023, <strong>11 Team Asha riders</strong> completed PBP, an extraordinary achievement representing months of dedicated training and thousands of kilometers of qualifying rides.</p>
+
+<h3>The Spirit of Randonneuring</h3>
+<p>Unlike competitive racing, randonneuring emphasizes <strong>self-sufficiency and camaraderie</strong>. Riders carry their own supplies, navigate independently, and support fellow riders along the way. There are no winners or losers &mdash; only those who finish within the time limit and earn their brevet card (or "carnet") stamped at each control point.</p>
+<p>The rides traverse beautiful countryside routes, often through the night, testing not just physical endurance but mental resilience. Riders must manage nutrition, hydration, sleep deprivation (on longer rides), equipment issues, and weather &mdash; all while maintaining pace.</p>
+
+<div class="coach-box" style="display:flex;gap:20px;align-items:flex-start;">
+<img src="https://ta.ashanet.org/siliconvalley/marathon/images/coach_mani.jpg" alt="Coach Mani" style="width:140px;height:140px;object-fit:cover;border-radius:10px;flex-shrink:0;">
+<div>
+<h3>Coach Mani &mdash; The OG of Randonneuring</h3>
+<p style="margin-top:10px;">Long before the current generation of Team Asha riders took up randonneuring, <strong>Coach Mani</strong> blazed the trail by completing <strong>Paris-Brest-Paris in 2007</strong>. As a pioneering figure in Team Asha's endurance cycling culture, Mani laid the groundwork for everything that followed. His experience and mentorship inspired the next wave of riders who would go on to build one of the most active randonneuring teams in the Bay Area.</p>
+<p style="margin-top:10px;">
+<a href="https://drive.google.com/drive/folders/1H16EtK2AQqXKS1K2lSUDiLBkk3FojjGd" class="rider-link" target="_blank">Mani's Randonneuring Talk &rarr;</a>
+</p>
+</div>
+</div>
+
+<h3>Team Asha's Randonneuring Journey</h3>
+<p>Team Asha's randonneuring group is based in the San Francisco Bay Area, riding events organized by local clubs including <strong><a href="https://sfrandonneurs.org/" target="_blank" style="color:var(--primary);">San Francisco Randonneurs (SFR)</a></strong>, <strong><a href="https://www.davisbikeclub.org/ultracycling" target="_blank" style="color:var(--primary);">Davis Bike Club (DBC)</a></strong>, and <strong><a href="https://www.santacruzrandonneurs.org/" target="_blank" style="color:var(--primary);">Santa Cruz Randonneurs (SCR)</a></strong>. Our riders tackle routes through some of California's most beautiful and challenging terrain &mdash; from the rolling hills of Sonoma and Napa to the coastal climbs of Big Sur and Mendocino.</p>
+<p>Beyond the physical challenge, our riders raise funds for <strong>Asha for Education</strong>, supporting the education of underprivileged children in India. Every kilometer ridden carries purpose beyond the brevet card.</p>
+
+</div>
+</div>
+
+<footer><div class="container">Team Asha Randonneuring &copy; 2025-2026 &bull; Raising funds for education of underprivileged children in India</div></footer>
+</body>
+</html>
