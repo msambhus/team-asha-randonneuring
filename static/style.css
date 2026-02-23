@@ -48,6 +48,16 @@ tr:hover { background: #edf2f7; }
 .rider-link:hover { color: var(--accent); text-decoration: underline; }
 .table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
 .table-wrap table { margin: 0; }
+
+/* Frozen columns */
+.frozen-table .frozen-col { position: sticky; z-index: 2; }
+.frozen-table thead .frozen-col { z-index: 3; }
+.frozen-table .frozen-col-1 { left: 0; min-width: 180px; }
+.frozen-table .frozen-col-2 { left: 180px; min-width: 90px; }
+.frozen-table .frozen-col-3 { left: 270px; min-width: 70px; }
+.frozen-table .frozen-col-4 { left: 340px; min-width: 70px; box-shadow: 2px 0 5px rgba(0,0,0,0.1); }
+.frozen-table tbody .frozen-col { background: var(--card-bg); }
+.frozen-table thead .frozen-col { background: var(--primary); }
 .sr-badge { background: linear-gradient(135deg, #d69e2e, #f6ad55); color: white; padding: 3px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: 700; }
 .pbp-badge { background: linear-gradient(135deg, #805ad5, #b794f4); color: white; padding: 3px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: 700; }
 footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: center; padding: 20px; margin-top: 40px; font-size: 0.85rem; }
