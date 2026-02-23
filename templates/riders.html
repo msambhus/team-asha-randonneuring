@@ -22,16 +22,13 @@
 {% block content %}
 <div class="hero" style="padding:40px 20px;">
 <h1>{{ season_label }}</h1>
-<p>{% if is_current %}Current season brevet participation{% else %}Season brevet participation{% endif %}</p>
+<p>{% if is_current %}Completed brevets this season{% else %}Season brevet participation{% endif %}</p>
 </div>
 
 <div class="stats-row">
 <div class="stat-card"><div class="number">{{ stats.active_riders }}</div><div class="label">Active Riders</div></div>
 <div class="stat-card"><div class="number">{{ stats.total_rides }}</div><div class="label">Brevets Completed</div></div>
 <div class="stat-card"><div class="number">{{ stats.total_kms|commafy }}</div><div class="label">Total Kilometers</div></div>
-{% if is_current %}
-<div class="stat-card"><div class="number">{{ rusa_events|length }}</div><div class="label">Upcoming Rides</div></div>
-{% endif %}
 {% if stats.sr_rider_count > 0 %}
 <div class="stat-card"><div class="number">{{ stats.sr_rider_count }}</div><div class="label">Super Randonneurs</div></div>
 {% endif %}
@@ -41,15 +38,7 @@
 <h2>Rider Participation</h2>
 
 <div style="margin-top:15px;">
-<div style="display:flex;gap:0;margin-bottom:0;">
-<button class="tab-btn active" onclick="switchTab('completed')" id="tab-completed">Completed Rides ({{ past_rides|length }} events)</button>
-{% if is_current and rusa_events %}
-<button class="tab-btn" onclick="switchTab('upcoming')" id="tab-upcoming">Upcoming Rides ({{ rusa_events|length }} events)</button>
-{% endif %}
-</div>
-
-<div id="panel-completed" class="tab-panel">
-<div class="table-wrap" style="border:none;">
+<div class="table-wrap">
 <table>
 <thead>
 <tr>
@@ -57,10 +46,10 @@
 {% for ride in past_rides %}
 <th style="min-width:70px;padding:6px 4px;line-height:1.3;">
     <div style="font-weight:700;font-size:0.75rem;">{{ ride.name }}</div>
-    <div style="font-size:0.7rem;color:var(--text-light);">{{ ride.date }}</div>
-    {% if ride.elevation_ft %}<div style="font-size:0.65rem;color:var(--primary);margin-top:2px;">{{ "{:,}".format(ride.elevation_ft) }}ft</div>{% endif %}
-    {% if ride.ft_per_mile %}<div style="font-size:0.65rem;color:var(--text-light);">{{ ride.ft_per_mile }}ft/mi</div>{% endif %}
-    {% if ride.rwgps_url %}<div style="min-height:18px;margin-top:2px;"><a href="{{ ride.rwgps_url }}" target="_blank" title="View route" style="color:var(--accent);text-decoration:none;">&#x1F5FA;</a></div>{% endif %}
+    <div style="font-size:0.7rem;color:rgba(255,255,255,0.7);">{{ ride.date }}</div>
+    {% if ride.elevation_ft %}<div style="font-size:0.65rem;color:var(--accent-light);margin-top:2px;">{{ "{:,}".format(ride.elevation_ft) }}ft</div>{% endif %}
+    {% if ride.ft_per_mile %}<div style="font-size:0.65rem;color:rgba(255,255,255,0.7);">{{ ride.ft_per_mile }}ft/mi</div>{% endif %}
+    {% if ride.rwgps_url %}<div style="min-height:18px;margin-top:2px;"><a href="{{ ride.rwgps_url }}" target="_blank" title="View route" style="color:var(--accent-light);text-decoration:none;">&#x1F5FA;</a></div>{% endif %}
 </th>
 {% endfor %}
 </tr>
@@ -85,53 +74,6 @@
 </div>
 </div>
 
-{% if is_current and rusa_events %}
-<div id="panel-upcoming" class="tab-panel" style="display:none;padding:20px;">
-<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:15px;">
-<h3 style="color:var(--primary);margin:0;">Ride Calendar</h3>
-<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:0.75rem;">
-    {% for region, color in region_colors.items() %}
-    <span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{{ color }};"></span>{{ region }}</span>
-    {% endfor %}
+<p style="margin-top:15px;color:var(--text-light);font-size:0.85rem;">Click on a rider's name to see their full history across all seasons.{% if is_current %} View the <a href="{{ url_for('riders.upcoming_brevets', season_name=season.name) }}" style="color:var(--accent);font-weight:600;">upcoming brevets calendar</a>.{% endif %}</p>
 </div>
-</div>
-<p style="font-size:0.8rem;color:var(--text-light);margin-bottom:15px;">Events sourced from <a href="https://rusa.org/cgi-bin/eventsearch_GF.pl" target="_blank" style="color:var(--accent);">RUSA</a> for Davis, San Francisco &amp; Santa Cruz regions.</p>
-<div style="max-height:700px;overflow-y:auto;padding-right:8px;">
-{% for event in rusa_events %}
-<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
-<div style="min-width:48px;text-align:center;">
-    <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">{{ event.date[8:10] }}</div>
-</div>
-<div style="flex:1;min-width:0;">
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:{{ region_colors.get(event.region, '#999') }};">{{ event.region }}</span>
-        <span style="font-weight:700;color:var(--accent);">{{ event.distance_km }} km</span>
-        <span style="font-size:0.8rem;color:var(--text-light);">{{ event.ride_type }}</span>
-    </div>
-    <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">{{ event.route_name }}
-    {% if event.climbing %}<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">{{ event.climbing }}</span>{% endif %}
-    </div>
-</div>
-</div>
-{% endfor %}
-</div>
-</div>
-{% endif %}
-</div>
-
-<p style="margin-top:15px;color:var(--text-light);font-size:0.85rem;">Click on a rider's name to see their full history across all seasons.</p>
-</div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-function switchTab(tab) {
-    document.getElementById("panel-completed").style.display = tab === "completed" ? "block" : "none";
-    var upcoming = document.getElementById("panel-upcoming");
-    if (upcoming) upcoming.style.display = tab === "upcoming" ? "block" : "none";
-    document.getElementById("tab-completed").classList.toggle("active", tab === "completed");
-    var uBtn = document.getElementById("tab-upcoming");
-    if (uBtn) uBtn.classList.toggle("active", tab === "upcoming");
-}
-</script>
 {% endblock %}

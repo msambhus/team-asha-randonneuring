@@ -43,6 +43,19 @@ def get_riders_for_season(season_id):
         ORDER BY r.first_name
     """, (season_id,)).fetchall()
 
+def get_active_riders_for_season(season_id):
+    """Get riders who have completed at least 1 ride (status=yes) in this season, only counting past rides."""
+    today = date.today().isoformat()
+    return get_db().execute("""
+        SELECT DISTINCT r.*, rp.photo_filename
+        FROM rider r
+        LEFT JOIN rider_profile rp ON r.id = rp.rider_id
+        JOIN rider_ride rr ON r.id = rr.rider_id
+        JOIN ride ri ON rr.ride_id = ri.id
+        WHERE ri.season_id = ? AND LOWER(rr.status) = 'yes' AND ri.date <= ?
+        ORDER BY r.first_name
+    """, (season_id, today)).fetchall()
+
 
 # ========== RIDES ==========
 
@@ -234,31 +247,39 @@ def get_all_time_stats():
 
 # ========== SEASON STATS ==========
 
-def get_season_stats(season_id):
+def get_season_stats(season_id, past_only=False):
+    """Get season stats. If past_only=True, only count rides before today."""
     db = get_db()
     current = get_current_season()
     is_current = current and current['id'] == season_id
 
     riders = get_riders_for_season(season_id)
 
+    date_clause = ""
+    params = [season_id]
+    if past_only:
+        today = date.today().isoformat()
+        date_clause = " AND ri.date <= ?"
+        params.append(today)
+
     # Active riders (at least 1 completed ride)
-    active = db.execute("""
+    active = db.execute(f"""
         SELECT COUNT(DISTINCT rr.rider_id) FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
-        WHERE ri.season_id = ? AND LOWER(rr.status) = 'yes'
-    """, (season_id,)).fetchone()[0]
+        WHERE ri.season_id = ? AND LOWER(rr.status) = 'yes'{date_clause}
+    """, params).fetchone()[0]
 
-    total_rides = db.execute("""
+    total_rides = db.execute(f"""
         SELECT COUNT(*) FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
-        WHERE ri.season_id = ? AND LOWER(rr.status) = 'yes'
-    """, (season_id,)).fetchone()[0]
+        WHERE ri.season_id = ? AND LOWER(rr.status) = 'yes'{date_clause}
+    """, params).fetchone()[0]
 
-    total_kms = db.execute("""
+    total_kms = db.execute(f"""
         SELECT COALESCE(SUM(ri.distance_km), 0) FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
-        WHERE ri.season_id = ? AND LOWER(rr.status) = 'yes'
-    """, (season_id,)).fetchone()[0]
+        WHERE ri.season_id = ? AND LOWER(rr.status) = 'yes'{date_clause}
+    """, params).fetchone()[0]
 
     # SR counts
     sr_count = 0

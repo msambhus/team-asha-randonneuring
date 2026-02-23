@@ -1,10 +1,11 @@
-"""Rider routes: season view, individual profiles, profile edit."""
+"""Rider routes: season view, individual profiles, profile edit, upcoming brevets."""
 from flask import Blueprint, render_template, abort, request, redirect, url_for
-from models import (get_season_by_name, get_riders_for_season, get_rides_for_season,
-                    get_participation_matrix, get_season_stats, get_rider_by_rusa,
-                    get_rider_participation, get_rider_career_stats, get_rider_season_stats,
-                    get_all_seasons, get_current_season, detect_sr_for_rider_season,
-                    get_rider_total_srs, get_upcoming_rusa_events, update_rider_profile)
+from models import (get_season_by_name, get_riders_for_season, get_active_riders_for_season,
+                    get_rides_for_season, get_participation_matrix, get_season_stats,
+                    get_rider_by_rusa, get_rider_participation, get_rider_career_stats,
+                    get_rider_season_stats, get_all_seasons, get_current_season,
+                    detect_sr_for_rider_season, get_rider_total_srs,
+                    get_upcoming_rusa_events, update_rider_profile)
 from auth import login_required
 from datetime import date
 
@@ -24,32 +25,80 @@ def season_riders(season_name):
     if not season:
         abort(404)
 
-    riders = get_riders_for_season(season['id'])
+    riders_all = get_riders_for_season(season['id'])
     rides = get_rides_for_season(season['id'])
     matrix = get_participation_matrix(season['id'])
-    stats = get_season_stats(season['id'])
     current = get_current_season()
     is_current = current and current['id'] == season['id']
 
+    # For current season, only count past rides in stats
+    stats = get_season_stats(season['id'], past_only=is_current)
+
     today = date.today().isoformat()
-    past_rides = [r for r in rides if r['date'] < today]
-    future_rides = [r for r in rides if r['date'] >= today]
+    past_rides = [r for r in rides if r['date'] <= today]
+
+    # Only show riders who have completed at least 1 brevet (past rides only)
+    if is_current:
+        riders = get_active_riders_for_season(season['id'])
+    else:
+        riders = riders_all
 
     # Compute per-rider stats for display
     rider_data = []
     for r in riders:
         s = get_rider_season_stats(r['id'], season['id'])
         sr_n = detect_sr_for_rider_season(r['id'], season['id'], date_filter=is_current)
-        rider_data.append({
-            'rider': r,
-            'rides': s['rides'],
-            'kms': s['kms'],
-            'sr_count': sr_n,
-            'participation': matrix.get(r['id'], {}),
-        })
+        rides_count = s['rides']
+        kms_count = s['kms']
 
-    # RUSA events for upcoming calendar
-    rusa_events = get_upcoming_rusa_events() if is_current else []
+        # For current season, only count past ride completions
+        if is_current:
+            past_ride_ids = {pr['id'] for pr in past_rides}
+            part = matrix.get(r['id'], {})
+            rides_count = sum(1 for rid, p in part.items()
+                             if rid in past_ride_ids and p['status'].lower() == 'yes')
+            kms_count = sum(ri['distance_km'] for ri in past_rides
+                           if ri['id'] in part and part[ri['id']]['status'].lower() == 'yes')
+
+        if rides_count > 0 or not is_current:
+            rider_data.append({
+                'rider': r,
+                'rides': rides_count,
+                'kms': kms_count,
+                'sr_count': sr_n,
+                'participation': matrix.get(r['id'], {}),
+            })
+
+    # Sort by rides completed descending, then name
+    rider_data.sort(key=lambda x: (-x['rides'], x['rider']['first_name']))
+
+    label = SEASON_LABELS.get(season_name, f'{season_name} Season')
+
+    return render_template('riders.html',
+                           season=season,
+                           season_label=label,
+                           riders=rider_data,
+                           past_rides=past_rides,
+                           stats=stats,
+                           is_current=is_current)
+
+
+@riders_bp.route('/riders/<season_name>/upcoming')
+def upcoming_brevets(season_name):
+    season = get_season_by_name(season_name)
+    if not season:
+        abort(404)
+
+    current = get_current_season()
+    is_current = current and current['id'] == season['id']
+    if not is_current:
+        return redirect(url_for('riders.season_riders', season_name=season_name))
+
+    rusa_events = get_upcoming_rusa_events()
+
+    rides = get_rides_for_season(season['id'])
+    today = date.today().isoformat()
+    future_rides = [r for r in rides if r['date'] > today]
 
     # Region color map
     region_colors = {
@@ -61,15 +110,12 @@ def season_riders(season_name):
 
     label = SEASON_LABELS.get(season_name, f'{season_name} Season')
 
-    return render_template('riders.html',
+    return render_template('upcoming_brevets.html',
                            season=season,
                            season_label=label,
-                           riders=rider_data,
-                           past_rides=past_rides,
-                           future_rides=future_rides,
-                           stats=stats,
-                           is_current=is_current,
                            rusa_events=rusa_events,
+                           future_rides=future_rides,
+                           is_current=is_current,
                            region_colors=region_colors)
 
 

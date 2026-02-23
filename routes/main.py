@@ -11,7 +11,7 @@ def index():
     stats = get_all_time_stats()
     seasons = get_all_seasons()
     current = get_current_season()
-    current_stats = get_season_stats(current['id']) if current else {}
+    current_stats = get_season_stats(current['id'], past_only=True) if current else {}
 
     # Season summaries for cards
     season_summaries = []

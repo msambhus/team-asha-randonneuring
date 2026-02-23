@@ -73,6 +73,15 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
 .coach-box { background: linear-gradient(135deg, #faf5ff, #ebf8ff); border: 2px solid #805ad5; border-radius: 12px; padding: 24px; margin: 20px 0; }
 .coach-box h3 { color: #553c9a; margin-bottom: 10px; }
 
+/* Nav dropdown */
+.nav-dropdown { position: relative; display: inline-block; }
+.nav-dropdown > a { color: rgba(255,255,255,0.85); text-decoration: none; padding: 8px 14px; border-radius: 6px; font-size: 0.9rem; font-weight: 500; transition: all 0.2s; display: inline-block; }
+.nav-dropdown > a:hover, .nav-dropdown > a.active { background: rgba(255,255,255,0.15); color: white; }
+.dropdown-content { display: none; position: absolute; top: 100%; left: 0; background: white; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); min-width: 180px; z-index: 200; overflow: hidden; margin-top: 4px; }
+.dropdown-content a { display: block; padding: 10px 16px; color: var(--text); text-decoration: none; font-size: 0.85rem; font-weight: 500; transition: background 0.15s; }
+.dropdown-content a:hover { background: #edf2f7; color: var(--primary); }
+.nav-dropdown:hover .dropdown-content { display: block; }
+
 /* Tab styling */
 .tab-btn { flex: 1; padding: 12px 20px; font-size: 0.95rem; font-weight: 600; border: 2px solid var(--border); border-bottom: none; border-radius: 8px 8px 0 0; cursor: pointer; background: var(--card-bg); color: var(--text-light); transition: all 0.2s; }
 .tab-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
