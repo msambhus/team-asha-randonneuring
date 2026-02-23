@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{{ rider.first_name }} {{ rider.last_name }} - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:30px 20px;">
+{% if rider.photo_filename %}
+<img src="{{ url_for('static', filename='riders/' + rider.photo_filename) }}" alt="{{ rider.first_name }} {{ rider.last_name }}" style="width:150px;height:150px;border-radius:50%;object-fit:cover;border:4px solid white;margin-bottom:15px;">
+{% endif %}
+<h1>{{ rider.first_name }} {{ rider.last_name }}</h1>
+<p>RUSA# {{ rider.rusa_id }}</p>
+</div>
+
+<div class="stats-row">
+<div class="stat-card"><div class="number">{{ career_rides }}</div><div class="label">Career Rides</div></div>
+<div class="stat-card"><div class="number">{{ career_kms|commafy }}</div><div class="label">Career KMs</div></div>
+{% if total_srs > 0 %}
+<div class="stat-card"><div class="number" style="color:var(--accent);">{% if total_srs > 1 %}SR*{{ total_srs }}{% else %}SR{% endif %}</div><div class="label">Super Randonneur</div></div>
+{% endif %}
+{% if rider.pbp_2023_status == 'Yes' %}
+<div class="stat-card"><div class="number" style="font-size:1.4rem;"><span class="pbp-badge" style="font-size:1rem;">PBP 2023</span></div><div class="label">Paris-Brest-Paris</div></div>
+{% endif %}
+</div>
+
+<div class="container section">
+<a href="javascript:history.back()" class="back-link">&larr; Back</a>
+
+{% if rider.bio %}
+<div class="card">
+<p>{{ rider.bio }}</p>
+</div>
+{% endif %}
+
+{% for sd in season_data %}
+<div class="season-block">
+<h3>{{ sd.season.name }} Season
+{% if sd.sr_count > 0 %} &bull; <span class="sr-badge">{% if sd.sr_count > 1 %}SR*{{ sd.sr_count }}{% else %}SR{% endif %}</span>{% endif %}
+{% if sd.season.name == '2022-2023' and rider.pbp_2023_status == 'Yes' %} &bull; <span class="pbp-badge">PBP Finisher</span>{% endif %}
+{% if sd.season.name == '2022-2023' and rider.pbp_2023_status == 'DNF' %} &bull; <span class="badge badge-dnf">PBP DNF</span>{% endif %}
+</h3>
+<p>Rides: <strong>{{ sd.rides }}</strong> &bull; Distance: <strong>{{ sd.kms|commafy }} km</strong></p>
+<div class="table-wrap" style="margin-top:10px;">
+<table>
+<thead><tr><th>Date</th><th>Event</th><th>Distance</th><th>Elevation</th><th>Time</th></tr></thead>
+<tbody>
+{% for p in sd.participation %}
+{% if p.status|lower == 'yes' or p.status|lower == 'dnf' %}
+<tr>
+<td>{{ p.date }}</td>
+<td>{{ p.ride_name }}
+{% if p.rwgps_url %} <a href="{{ p.rwgps_url }}" target="_blank" style="font-size:0.8rem;">view route</a>{% endif %}
+{% if p.status|lower == 'dnf' %} <span class="badge badge-dnf">DNF</span>{% endif %}
+</td>
+<td>{{ p.distance_km }} km</td>
+<td>{% if p.elevation_ft %}{{ "{:,}".format(p.elevation_ft) }} ft{% endif %}</td>
+<td style="text-align:center;color:#666;">{{ p.finish_time or '' }}</td>
+</tr>
+{% endif %}
+{% endfor %}
+</tbody>
+</table>
+</div>
+</div>
+{% endfor %}
+
+{% if rider.rusa_id == 14680 %}
+<div class="season-block">
+<h3>2014-2015 Season <span class="sr-badge">SR</span></h3>
+<p>Super Randonneur series completed in India with <strong>Audax India Randonneurs</strong>.</p>
+<p style="margin-top:8px;">Mihir earned his first Super Randonneur title riding through the Western Ghats of India, culminating in the <strong>Sahyadri Special 600km BRM</strong>.</p>
+<p style="margin-top:8px;"><a href="https://unexpectedathlete.wordpress.com/2015/01/26/the-ultimate-quest-super-randonneur-title-with-a-600-km-brm-sahyadri-special/" class="rider-link" target="_blank">Read the ride report &rarr;</a></p>
+</div>
+{% endif %}
+
+{% if session.get('logged_in') %}
+<p style="margin-top:20px;"><a href="{{ url_for('riders.rider_edit', rusa_id=rider.rusa_id) }}" class="btn btn-primary btn-sm">Edit Profile</a></p>
+{% endif %}
+
+</div>
+{% endblock %}

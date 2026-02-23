@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Admin Login - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Admin Login</h1>
+</div>
+<div class="container section" style="max-width:400px;">
+
+{% if error %}
+<div class="flash error">{{ error }}</div>
+{% endif %}
+
+<form method="post" style="margin-top:20px;">
+<div class="form-group">
+<label for="password">Team Password</label>
+<input type="password" id="password" name="password" required autofocus
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+<button type="submit" class="btn btn-primary" style="width:100%;margin-top:10px;">Log In</button>
+</form>
+
+<p style="margin-top:20px;font-size:0.85rem;color:var(--text-light);text-align:center;">
+Use the shared team password to access admin features.
+</p>
+</div>
+{% endblock %}

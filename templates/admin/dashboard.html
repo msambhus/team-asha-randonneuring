@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Admin Dashboard</h1>
+<p>{{ season.name if season else 'No active season' }}</p>
+</div>
+<div class="container section">
+
+<div style="display:flex;gap:15px;margin-bottom:30px;flex-wrap:wrap;">
+<a href="{{ url_for('admin.add_ride') }}" class="btn btn-primary">+ Add New Ride</a>
+<a href="{{ url_for('admin.logout') }}" class="btn" style="background:var(--text-light);color:#fff;">Logout</a>
+</div>
+
+{% if rides %}
+<h2>Rides This Season</h2>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Date</th>
+<th>Name</th>
+<th>Distance</th>
+<th>Type</th>
+<th>Club</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+{% for r in rides %}
+<tr>
+<td>{{ r.date }}</td>
+<td>{{ r.name }}</td>
+<td>{{ r.distance_km }} km</td>
+<td>{{ r.ride_type or '' }}</td>
+<td>{{ r.club_code or '' }}</td>
+<td>
+<a href="{{ url_for('admin.mark_status', ride_id=r.id) }}" class="rider-link">Mark Status &rarr;</a>
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% else %}
+<p style="color:var(--text-light);">No rides yet this season. Add one above!</p>
+{% endif %}
+
+</div>
+{% endblock %}

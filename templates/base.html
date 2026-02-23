@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Team Asha Randonneuring{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% block extra_head %}{% endblock %}
+</head>
+<body>
+<header>
+<div class="header-inner">
+<div class="logo"><a href="{{ url_for('main.index') }}">Team <span>Asha</span> Randonneuring</a></div>
+<nav>
+    <a href="{{ url_for('main.index') }}" {% if request.endpoint == 'main.index' %}class="active"{% endif %}>Home</a>
+    <a href="{{ url_for('main.about') }}" {% if request.endpoint == 'main.about' %}class="active"{% endif %}>About</a>
+    {% for s in seasons %}
+    <a href="{{ url_for('riders.season_riders', season_name=s.name) }}"
+       {% if request.endpoint == 'riders.season_riders' and request.view_args.get('season_name') == s.name %}class="active"{% endif %}>
+       {{ s.name[:4] }}/{{ s.name[5:7] }}
+    </a>
+    {% endfor %}
+    <a href="{{ url_for('main.resources') }}" {% if request.endpoint == 'main.resources' %}class="active"{% endif %}>Resources</a>
+</nav>
+</div>
+</header>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% for category, message in messages %}
+<div class="flash flash-{{ category }}">{{ message }}</div>
+{% endfor %}
+{% endif %}
+{% endwith %}
+
+{% block content %}{% endblock %}
+
+<footer>
+<div class="container">
+<div style="margin-bottom:12px;">
+<button class="feedback-btn" onclick="document.getElementById('feedback-modal').style.display='flex'">&#x2709; Send Feedback</button>
+</div>
+Team Asha Randonneuring &copy; 2025-2026 &bull; Raising funds for education of underprivileged children in India
+</div>
+</footer>
+
+<!-- Feedback Modal -->
+<div id="feedback-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
+<div style="background:white;border-radius:12px;padding:30px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+<h3 style="margin:0;color:var(--primary);font-size:1.2rem;">Send Feedback</h3>
+<button onclick="document.getElementById('feedback-modal').style.display='none'" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);padding:0;line-height:1;">&times;</button>
+</div>
+<form id="feedback-form" onsubmit="submitFeedback(event)">
+<div style="margin-bottom:15px;">
+<label style="display:block;font-size:0.85rem;font-weight:600;color:var(--text);margin-bottom:4px;">Your Name</label>
+<input type="text" id="fb-name" required style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;box-sizing:border-box;" placeholder="e.g. Mihir Sambhus">
+</div>
+<div style="margin-bottom:15px;">
+<label style="display:block;font-size:0.85rem;font-weight:600;color:var(--text);margin-bottom:4px;">Your Email</label>
+<input type="email" id="fb-email" required style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;box-sizing:border-box;" placeholder="you@email.com">
+</div>
+<div style="margin-bottom:20px;">
+<label style="display:block;font-size:0.85rem;font-weight:600;color:var(--text);margin-bottom:4px;">Feedback</label>
+<textarea id="fb-text" required rows="4" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;box-sizing:border-box;resize:vertical;" placeholder="What would you like to share?"></textarea>
+</div>
+<button type="submit" class="btn btn-primary" style="width:100%;">Send Feedback</button>
+</form>
+</div>
+</div>
+<script>
+function submitFeedback(e) {
+    e.preventDefault();
+    var name = document.getElementById('fb-name').value;
+    var email = document.getElementById('fb-email').value;
+    var text = document.getElementById('fb-text').value;
+    var subject = encodeURIComponent('Team Asha Randonneuring - Feedback from ' + name);
+    var body = encodeURIComponent('From: ' + name + ' (' + email + ')\n\n' + text);
+    window.location.href = 'mailto:mihir.sambhus@gmail.com?subject=' + subject + '&body=' + body;
+    document.getElementById('feedback-modal').style.display = 'none';
+    document.getElementById('feedback-form').reset();
+}
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

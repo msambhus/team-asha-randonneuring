@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Mark Status: {{ ride.name }} - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Mark Rider Status</h1>
+<p>{{ ride.name }} &mdash; {{ ride.date }} &mdash; {{ ride.distance_km }} km</p>
+</div>
+<div class="container section">
+
+<form method="post">
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Rider</th>
+<th>RUSA #</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+{% for r in riders %}
+<tr>
+<td>{{ r.first_name }} {{ r.last_name }}</td>
+<td>{{ r.rusa_id }}</td>
+<td>
+<select name="status_{{ r.id }}" class="status-select">
+<option value="">--</option>
+<option value="Yes" {{ 'selected' if ride_statuses.get(r.id) == 'Yes' }}>Yes (Finished)</option>
+<option value="No" {{ 'selected' if ride_statuses.get(r.id) == 'No' }}>No (Did not ride)</option>
+<option value="DNF" {{ 'selected' if ride_statuses.get(r.id) == 'DNF' }}>DNF</option>
+<option value="DNS" {{ 'selected' if ride_statuses.get(r.id) == 'DNS' }}>DNS</option>
+<option value="OTL" {{ 'selected' if ride_statuses.get(r.id) == 'OTL' }}>OTL (Over Time Limit)</option>
+</select>
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+
+<div style="display:flex;gap:15px;margin-top:20px;">
+<button type="submit" class="btn btn-primary">Save Statuses</button>
+<a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:var(--text-light);color:#fff;">Cancel</a>
+</div>
+</form>
+
+</div>
+{% endblock %}

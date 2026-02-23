@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Upcoming Rides - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Upcoming Rides</h1>
+<p>Team rides and RUSA events in the Bay Area</p>
+</div>
+<div class="container section">
+
+{% if rides %}
+<h2>Team Rides</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Date</th><th>Name</th><th>Distance</th><th>Club</th><th>Signups</th><th></th></tr></thead>
+<tbody>
+{% for r in rides %}
+<tr>
+<td>{{ r.date }}</td>
+<td>{{ r.name }}</td>
+<td>{{ r.distance_km }} km</td>
+<td>{{ r.club_code or '' }}</td>
+<td style="text-align:center;">{{ r.signup_count }}</td>
+<td><a href="{{ url_for('signup.ride_signup', ride_id=r.id) }}" class="rider-link">Sign Up &rarr;</a></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+
+{% if rusa_events %}
+<h2 style="margin-top:30px;">RUSA Calendar Events</h2>
+<p style="font-size:0.85rem;color:var(--text-light);margin-bottom:15px;">Upcoming brevets from San Francisco, Davis, and Santa Cruz regions.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Date</th><th>Region</th><th>Distance</th><th>Route</th><th>Climbing</th></tr></thead>
+<tbody>
+{% for e in rusa_events %}
+<tr>
+<td>{{ e.date }}</td>
+<td>{{ e.region }}</td>
+<td>{{ e.distance_km }} km</td>
+<td>{{ e.route_name }}</td>
+<td>{{ e.climbing or '' }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+
+</div>
+{% endblock %}

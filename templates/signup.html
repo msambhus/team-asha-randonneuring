@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Sign Up - {{ ride.name }} - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:30px 20px;">
+<h1>Ride Signup</h1>
+<p>{{ ride.name }} &mdash; {{ ride.date }} &mdash; {{ ride.distance_km }} km</p>
+</div>
+<div class="container section">
+<a href="{{ url_for('main.upcoming') }}" class="back-link">&larr; Back to upcoming rides</a>
+
+<div class="card">
+<h3 style="color:var(--primary);margin-bottom:15px;">{{ signups|length }} rider{{ 's' if signups|length != 1 }} signed up</h3>
+{% if signups %}
+<div class="table-wrap">
+<table>
+<thead><tr><th>Rider</th><th>Action</th></tr></thead>
+<tbody>
+{% for r in signups %}
+<tr>
+<td><a href="{{ url_for('riders.rider_profile', rusa_id=r.rusa_id) }}" class="rider-link">{{ r.first_name }} {{ r.last_name }}</a></td>
+<td>
+<form method="POST" style="display:inline;">
+<input type="hidden" name="rider_id" value="{{ r.id }}">
+<input type="hidden" name="action" value="remove">
+<button type="submit" class="btn btn-sm" style="background:var(--danger);color:white;">Remove</button>
+</form>
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% else %}
+<p style="color:var(--text-light);">No riders signed up yet. Be the first!</p>
+{% endif %}
+</div>
+
+<div class="card">
+<h3 style="color:var(--primary);margin-bottom:15px;">Add Signup</h3>
+<form method="POST">
+<div class="form-group">
+<label>Select Rider</label>
+<select name="rider_id" required>
+<option value="">-- Choose a rider --</option>
+{% for r in all_riders %}
+{% if r.id not in signup_ids %}
+<option value="{{ r.id }}">{{ r.first_name }} {{ r.last_name }}</option>
+{% endif %}
+{% endfor %}
+</select>
+</div>
+<input type="hidden" name="action" value="signup">
+<button type="submit" class="btn btn-primary">Sign Up</button>
+</form>
+</div>
+</div>
+{% endblock %}

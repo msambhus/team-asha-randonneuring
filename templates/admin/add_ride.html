@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Add Ride - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Add New Ride</h1>
+<p>Season: {{ season.name }}</p>
+</div>
+<div class="container section" style="max-width:600px;">
+
+<form method="post">
+<div class="form-group">
+<label for="name">Ride Name *</label>
+<input type="text" id="name" name="name" required placeholder="e.g. SFR 200k Healdsburg"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+<div class="form-group">
+<label for="date">Date *</label>
+<input type="date" id="date" name="date" required
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+<div class="form-group">
+<label for="distance_km">Distance (km) *</label>
+<input type="number" id="distance_km" name="distance_km" required placeholder="200"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+<div class="form-group">
+<label for="ride_type">Type</label>
+<select id="ride_type" name="ride_type"
+        style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+<option value="BRM">BRM (Brevet)</option>
+<option value="Permanent">Permanent</option>
+<option value="Populaire">Populaire</option>
+<option value="Fleche">Fleche</option>
+<option value="Other">Other</option>
+</select>
+</div>
+<div class="form-group">
+<label for="club_id">Club</label>
+<select id="club_id" name="club_id"
+        style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+<option value="">-- Select --</option>
+{% for c in clubs %}
+<option value="{{ c.id }}">{{ c.code }} - {{ c.name }}</option>
+{% endfor %}
+</select>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px;">
+<div class="form-group">
+<label for="elevation_ft">Elevation (ft)</label>
+<input type="number" id="elevation_ft" name="elevation_ft" placeholder="10000"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+<div class="form-group">
+<label for="distance_miles">Distance (mi)</label>
+<input type="number" id="distance_miles" name="distance_miles" step="0.1" placeholder="124"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+<div class="form-group">
+<label for="ft_per_mile">Ft/Mile</label>
+<input type="number" id="ft_per_mile" name="ft_per_mile" step="0.1" placeholder="80"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+</div>
+
+<div class="form-group">
+<label for="rwgps_url">RideWithGPS URL</label>
+<input type="url" id="rwgps_url" name="rwgps_url" placeholder="https://ridewithgps.com/routes/..."
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+
+<div style="display:flex;gap:15px;margin-top:20px;">
+<button type="submit" class="btn btn-primary">Create Ride</button>
+<a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:var(--text-light);color:#fff;">Cancel</a>
+</div>
+</form>
+
+</div>
+{% endblock %}
