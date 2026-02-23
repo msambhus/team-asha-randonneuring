@@ -301,13 +301,38 @@ def get_season_stats(season_id, past_only=False):
 
 # ========== UPCOMING RUSA EVENTS ==========
 
+def get_default_time_limit(distance_km):
+    """Return standard RUSA/ACP time limit in hours based on distance."""
+    if distance_km <= 0:
+        return None
+    elif distance_km <= 200:
+        return 13.5
+    elif distance_km <= 300:
+        return 20
+    elif distance_km <= 400:
+        return 27
+    elif distance_km <= 600:
+        return 40
+    else:
+        return None
+
 def get_upcoming_rusa_events():
     today = date.today().isoformat()
-    return get_db().execute("""
+    events = get_db().execute("""
         SELECT * FROM upcoming_rusa_event
         WHERE date >= ?
         ORDER BY date
     """, (today,)).fetchall()
+    
+    # Add default time limits for events that don't have them
+    events_with_defaults = []
+    for event in events:
+        event_dict = dict(event)
+        if not event_dict.get('time_limit_hours') and event_dict.get('distance_km'):
+            event_dict['time_limit_hours'] = get_default_time_limit(event_dict['distance_km'])
+        events_with_defaults.append(event_dict)
+    
+    return events_with_defaults
 
 
 # ========== SIGNUPS ==========
