@@ -403,8 +403,212 @@
     background: white;
 }
 
+/* ===== STICKY RIDE HEADER ===== */
+.sticky-ride-header {
+    position: sticky;
+    top: 60px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    padding: 12px 20px;
+    z-index: 40;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    transform: translateY(-100%);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sticky-ride-header.visible {
+    transform: translateY(0);
+    opacity: 1;
+}
+.sticky-ride-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin: 0;
+}
+.sticky-ride-stats {
+    font-size: 0.7rem;
+    opacity: 0.9;
+    margin-top: 2px;
+}
+
+/* ===== ELEVATION CHART ===== */
+.elevation-chart-container {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    border: 1px solid var(--border);
+}
+.elevation-chart {
+    height: 180px;
+    position: relative;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.elevation-profile {
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    min-width: 100%;
+}
+.elevation-bar {
+    flex: 1;
+    min-width: 8px;
+    background: linear-gradient(to top, #3b82f6, #60a5fa);
+    border-radius: 2px 2px 0 0;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+.elevation-bar:hover {
+    filter: brightness(1.2);
+    transform: translateY(-4px);
+}
+.elevation-bar.control {
+    background: linear-gradient(to top, #dc2626, #ef4444);
+}
+.elevation-tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-8px);
+    background: rgba(0,0,0,0.9);
+    color: white;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 10;
+}
+.elevation-bar:hover .elevation-tooltip {
+    opacity: 1;
+}
+
+/* ===== COLLAPSIBLE SECTIONS ===== */
+.collapsible-section {
+    margin-bottom: 20px;
+}
+.collapsible-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid var(--border);
+    user-select: none;
+}
+.collapsible-header:hover {
+    background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+}
+.collapsible-title {
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.collapsible-icon {
+    font-size: 1.2rem;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.collapsible-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.collapsible-section.expanded .collapsible-icon {
+    transform: rotate(180deg);
+}
+.collapsible-section.expanded .collapsible-content {
+    max-height: 10000px;
+}
+
+/* ===== QUICK ACTION BUTTONS ===== */
+.quick-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+.quick-action-btn {
+    flex: 1;
+    min-width: 140px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, white, #f9fafb);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--primary);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
+}
+.quick-action-btn:hover {
+    border-color: var(--primary);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+
+/* ===== ENHANCED CARD ANIMATIONS ===== */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+.segment-card {
+    animation: fadeInUp 0.5s ease forwards;
+    opacity: 0;
+}
+.segment-card:nth-child(1) { animation-delay: 0.05s; }
+.segment-card:nth-child(2) { animation-delay: 0.1s; }
+.segment-card:nth-child(3) { animation-delay: 0.15s; }
+.segment-card:nth-child(4) { animation-delay: 0.2s; }
+.segment-card:nth-child(5) { animation-delay: 0.25s; }
+.segment-card:nth-child(n+6) { animation-delay: 0.3s; }
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
+    .sticky-ride-header {
+        top: 0;
+        padding: 10px 16px;
+    }
+    .elevation-chart {
+        height: 140px;
+    }
+    .elevation-chart-container {
+        padding: 16px;
+        margin-bottom: 20px;
+    }
+    .quick-action-btn {
+        min-width: 120px;
+        font-size: 0.8rem;
+        padding: 10px 14px;
+    }
+    .collapsible-header {
+        padding: 12px 14px;
+    }
+    .segment-card {
+        padding: 14px 16px;
+        border-radius: 10px;
+    }
     .plan-table { font-size: 0.75rem; }
     .plan-table thead th, .plan-table tbody td { padding: 7px 6px; }
     .segment-metrics { gap: 10px; }
@@ -413,12 +617,27 @@
     .tod-grid { grid-template-columns: minmax(100px, 2fr) 60px 50px 55px 1fr; font-size: 0.75rem; gap: 2px 6px; }
     .journey-node { min-width: 60px; }
 }
+@media (max-width: 480px) {
+    .elevation-chart {
+        height: 120px;
+    }
+}
 </style>
 {% endblock %}
 
 {% block content %}
+{# ===== STICKY RIDE HEADER (Shows on scroll) ===== #}
+<div class="sticky-ride-header" id="sticky-header">
+    <div class="sticky-ride-title">
+        📍 {{ plan.name }}
+    </div>
+    <div class="sticky-ride-stats">
+        {{ "%.1f"|format(plan.total_distance_miles) }} mi &middot; {{ "{:,}".format(plan.total_elevation_ft) }} ft
+    </div>
+</div>
+
 {# ===== A. ENHANCED HERO ===== #}
-<div class="hero" style="padding:50px 20px 60px;">
+<div class="hero" style="padding:50px 20px 60px;" id="hero-section">
     <div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:10px;">
         <svg viewBox="0 0 20 20" width="24" height="24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M10 1C7.2 1 5 3.2 5 6c0 3.5 5 8 5 8s5-4.5 5-8c0-2.8-2.2-5-5-5z"/>
@@ -482,6 +701,65 @@
 </div>
 
 <div class="container section">
+
+{# ===== QUICK ACTION BUTTONS ===== #}
+<div class="quick-actions">
+    {% if rwgps_url_display %}
+    <a href="{{ rwgps_url_display }}" target="_blank" class="quick-action-btn">
+        <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:20px;height:20px;">
+        <span>View Route</span>
+    </a>
+    {% endif %}
+    {% if upcoming_event and weather_route_id %}
+    <a href="#" id="auto-weather-link" target="_blank" class="quick-action-btn" style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-color:#fbbf24;color:#92400e;">
+        <span>🌤️</span>
+        <span>Weather</span>
+    </a>
+    {% endif %}
+    <a href="#time-bank-section" class="quick-action-btn" onclick="document.getElementById('time-bank-section').classList.add('expanded'); return true;">
+        <span>⏱️</span>
+        <span>Time Bank</span>
+    </a>
+    <a href="#journey-view" class="quick-action-btn">
+        <span>🗺️</span>
+        <span>Journey</span>
+    </a>
+</div>
+
+{# ===== VISUAL ELEVATION CHART ===== #}
+<div class="elevation-chart-container">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div class="section-label" style="margin:0;">Elevation Profile</div>
+        <div style="font-size:0.75rem;color:var(--text-light);">{{ "{:,}".format(plan.total_elevation_ft) }} ft total</div>
+    </div>
+    <div class="elevation-chart">
+        <div class="elevation-profile">
+            {% for s in stops %}
+            {% if s.elevation_gain and s.elevation_gain > 0 %}
+            {% set max_elev = 2000 %}
+            {% set bar_height = (s.elevation_gain / max_elev * 100)|min(100) %}
+            <div class="elevation-bar {{ s.stop_type }}" style="height:{{ bar_height }}%;">
+                <div class="elevation-tooltip">
+                    <div style="font-weight:700;">{{ s.location[:20] }}{% if s.location|length > 20 %}...{% endif %}</div>
+                    <div>{{ s.elevation_gain }}ft gain</div>
+                    <div>{{ "%.1f"|format(s.distance_miles) }} mi</div>
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px;font-size:0.7rem;color:var(--text-light);justify-content:center;">
+        <span style="display:flex;align-items:center;gap:4px;">
+            <span style="width:12px;height:12px;background:linear-gradient(to top, #3b82f6, #60a5fa);border-radius:2px;"></span>
+            Waypoint
+        </span>
+        <span style="display:flex;align-items:center;gap:4px;">
+            <span style="width:12px;height:12px;background:linear-gradient(to top, #dc2626, #ef4444);border-radius:2px;"></span>
+            Control
+        </span>
+    </div>
+</div>
 
 {# ===== C. RWGPS LINK (single, team preferred) & WEATHER ===== #}
 {% if rwgps_url_display %}
@@ -549,9 +827,18 @@
 {% endfor %}
 </div>
 
-{# ===== H. TIME-OF-DAY & TIME BANK CHART (grid + start time + distance) ===== #}
+{# ===== H. TIME-OF-DAY & TIME BANK CHART (Collapsible) ===== #}
 {% if plan.cutoff_hours %}
-<div class="card" style="margin-bottom:24px;padding:16px 20px;">
+<div class="collapsible-section expanded" id="time-bank-section" style="margin-bottom:24px;">
+    <div class="collapsible-header" onclick="toggleSection('time-bank-section')">
+        <div class="collapsible-title">
+            <span>⏱️</span>
+            <span>Time Bank & Arrival Times</span>
+        </div>
+        <span class="collapsible-icon">▼</span>
+    </div>
+    <div class="collapsible-content">
+        <div class="card" style="margin-top:12px;padding:16px 20px;border-radius:10px;">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
         <div class="section-label" style="margin-bottom:0;">Estimated Arrival Times & Time Bank</div>
         <div style="display:flex;align-items:center;gap:6px;">
@@ -589,6 +876,8 @@
     </div>
     {% endif %}
     {% endfor %}
+        </div>
+    </div>
 </div>
 {% endif %}
 
@@ -831,14 +1120,15 @@ recalcArrivalTimes('{{ plan.start_time }}');
     }
 
     // Auto weather link for upcoming events (using Team Asha route)
-    {% if upcoming_event %}
+    // SAFETY: Only run if upcoming_event exists AND has a date attribute
+    {% if upcoming_event and upcoming_event.date is defined %}
     var autoWeatherLink = document.getElementById('auto-weather-link');
     if (autoWeatherLink) {
         var routeId = '{{ weather_route_id or "" }}';
         var planName = '{{ plan.name|replace("'", "\\'") }}';
-        var eventDate = '{{ upcoming_event.date }}';
-        var eventTime = '{{ upcoming_event.start_time or "07:00" }}';
-        
+        var eventDate = '{{ upcoming_event.date if upcoming_event.date is defined else "" }}';
+        var eventTime = '{{ upcoming_event.start_time if upcoming_event.start_time is defined else "07:00" }}';
+
         if (routeId && eventDate) {
             var parts = eventTime.split(':');
             var startHour = parseInt(parts[0]) || 7;
@@ -855,6 +1145,30 @@ recalcArrivalTimes('{{ plan.start_time }}');
         }
     }
     {% endif %}
+})();
+
+// Toggle collapsible sections
+function toggleSection(sectionId) {
+    var section = document.getElementById(sectionId);
+    if (section) {
+        section.classList.toggle('expanded');
+    }
+}
+
+// Sticky header on scroll
+(function() {
+    var stickyHeader = document.getElementById('sticky-header');
+    var heroSection = document.getElementById('hero-section');
+    if (!stickyHeader || !heroSection) return;
+
+    window.addEventListener('scroll', function() {
+        var heroBottom = heroSection.getBoundingClientRect().bottom;
+        if (heroBottom < 60) {
+            stickyHeader.classList.add('visible');
+        } else {
+            stickyHeader.classList.remove('visible');
+        }
+    });
 })();
 </script>
 {% endblock %}
