@@ -1,5 +1,6 @@
-"""Main routes: home, about, resources."""
-from flask import Blueprint, render_template
+"""Main routes: home, about, resources, feedback."""
+import requests as http_requests
+from flask import Blueprint, render_template, request, jsonify, current_app
 from models import (get_all_time_stats, get_all_seasons, get_current_season,
                     get_season_stats, get_upcoming_rusa_events, get_upcoming_rides)
 
@@ -99,3 +100,71 @@ def upcoming():
     rides = get_upcoming_rides()
     rusa_events = get_upcoming_rusa_events()
     return render_template('upcoming.html', rides=rides, rusa_events=rusa_events)
+
+
+@main_bp.route('/api/feedback', methods=['POST'])
+def submit_feedback():
+    """Create a Linear ticket from website feedback form."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid request'}), 400
+
+    name = (data.get('name') or '').strip()
+    email = (data.get('email') or '').strip()
+    text = (data.get('feedback') or '').strip()
+
+    if not name or not email or not text:
+        return jsonify({'error': 'All fields are required'}), 400
+
+    api_key = current_app.config.get('LINEAR_API_KEY')
+    team_id = current_app.config.get('LINEAR_TEAM_ID')
+    if not api_key or not team_id:
+        return jsonify({'error': 'Feedback service is temporarily unavailable'}), 503
+
+    # Build title from first 60 chars of feedback
+    short_text = text[:60] + ('...' if len(text) > 60 else '')
+    title = f"Website Feedback: {short_text}"
+
+    description = f"**From:** {name} ({email})\n\n{text}"
+
+    mutation = """
+    mutation($title: String!, $description: String!, $teamId: String!) {
+      issueCreate(input: {
+        teamId: $teamId
+        title: $title
+        description: $description
+      }) {
+        success
+        issue { id identifier url }
+      }
+    }
+    """
+
+    try:
+        resp = http_requests.post(
+            'https://api.linear.app/graphql',
+            json={
+                'query': mutation,
+                'variables': {
+                    'title': title,
+                    'description': description,
+                    'teamId': team_id,
+                }
+            },
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': api_key,
+            },
+            timeout=10,
+        )
+        result = resp.json()
+        if result.get('data', {}).get('issueCreate', {}).get('success'):
+            issue = result['data']['issueCreate']['issue']
+            print(f"Feedback ticket created: {issue['identifier']} — {title}")
+            return jsonify({'success': True, 'ticket': issue['identifier']})
+        else:
+            print(f"Linear API error: {result}")
+            return jsonify({'error': 'Failed to create ticket'}), 500
+    except Exception as e:
+        print(f"Feedback submission error: {e}")
+        return jsonify({'error': 'Failed to create ticket'}), 500
