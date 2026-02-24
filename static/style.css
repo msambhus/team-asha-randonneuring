@@ -90,64 +90,47 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
 .coach-box { background: linear-gradient(135deg, #faf5ff, #ebf8ff); border: 2px solid #805ad5; border-radius: 12px; padding: 24px; margin: 20px 0; }
 .coach-box h3 { color: #553c9a; margin-bottom: 10px; }
 
-/* Section Navigation Sidebar */
-.resources-layout {
-    display: flex;
-    max-width: 1400px;
-    margin: 0 auto;
-    gap: 30px;
-    padding: 20px;
-}
-.section-nav-sidebar {
-    width: 220px;
-    flex-shrink: 0;
-    position: sticky;
-    top: 80px;
-    align-self: flex-start;
+/* Section Navigation Bar */
+.section-nav-bar {
     background: var(--card-bg);
-    border: 2px solid var(--border);
-    border-radius: 12px;
-    padding: 20px;
-    max-height: calc(100vh - 100px);
-    overflow-y: auto;
+    border-bottom: 3px solid var(--primary);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow-x: auto;
 }
-.section-nav-title {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: var(--primary);
-    margin-bottom: 15px;
-    padding-bottom: 10px;
-    border-bottom: 2px solid var(--accent);
+.section-nav-links {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
 }
 .section-nav-item {
-    display: block;
-    padding: 10px 12px;
-    border-radius: 8px;
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 20px;
     background: transparent;
-    border: 1px solid transparent;
+    border: 1px solid var(--border);
     color: var(--text);
     text-decoration: none;
     font-weight: 500;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     transition: all 0.2s ease;
-    margin-bottom: 6px;
+    white-space: nowrap;
 }
 .section-nav-item:hover {
     background: var(--primary);
     color: white;
     border-color: var(--primary);
-    transform: translateX(4px);
-}
-.resources-content {
-    flex: 1;
-    min-width: 0;
+    transform: translateY(-2px);
 }
 
 /* Back to Menu Button */
 .back-to-menu-btn {
     position: fixed;
-    bottom: 30px;
-    right: 30px;
+    top: 100px;
+    left: 30px;
     background: linear-gradient(135deg, var(--primary), var(--accent));
     color: white;
     width: 60px;
@@ -163,15 +146,15 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
     z-index: 100;
     opacity: 0;
     visibility: hidden;
-    transform: translateY(100px);
+    transform: translateX(-100px);
 }
 .back-to-menu-btn.visible {
     opacity: 1;
     visibility: visible;
-    transform: translateY(0);
+    transform: translateX(0);
 }
 .back-to-menu-btn:hover {
-    transform: translateY(-4px);
+    transform: translateX(4px);
     box-shadow: 0 8px 20px rgba(0,0,0,0.3);
 }
 .back-to-menu-icon {
@@ -195,9 +178,10 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
     background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
     border-radius: 12px;
     border-bottom: 3px solid var(--primary);
+    scroll-margin-top: 80px;
 }
 .section-title {
-    font-size: 1.4rem;
+    font-size: 1.6rem;
     font-weight: 700;
     color: var(--primary);
     margin-bottom: 5px;
@@ -613,18 +597,17 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
 }
 
 /* Mobile adjustments for Resources page */
-@media (max-width: 1024px) {
-    .resources-layout {
-        flex-direction: column;
+@media (max-width: 768px) {
+    .section-nav-bar {
+        padding: 10px 15px;
     }
-    .section-nav-sidebar {
-        width: 100%;
-        position: static;
-        max-height: none;
+    .section-nav-links {
+        gap: 6px;
+        justify-content: flex-start;
     }
     .section-nav-item {
-        display: inline-block;
-        margin-right: 8px;
+        padding: 6px 12px;
+        font-size: 0.8rem;
     }
 }
 

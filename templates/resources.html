@@ -46,13 +46,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
 {% block content %}
 <div class="bg-gradient-to-br from-primary via-primary-dark to-primary text-white py-10 px-5 text-center">
-<h1 class="text-[1.8rem] mb-0 font-bold">Resources</h1>
+<h1 class="text-[2.5rem] mb-0 font-bold">Resources</h1>
 </div>
 
-<div class="resources-layout">
-<!-- Sticky Section Navigation Sidebar -->
-<div class="section-nav-sidebar">
-<div class="section-nav-title">Quick Links</div>
+<!-- Quick Links Navigation -->
+<div class="section-nav-bar">
+<div class="section-nav-links">
 <a href="#pbp-prep" class="section-nav-item">🏆 PBP Prep</a>
 <a href="#pbp-experiences" class="section-nav-item">📝 PBP Stories</a>
 <a href="#training" class="section-nav-item">💪 Training</a>
@@ -63,8 +62,9 @@ document.addEventListener('DOMContentLoaded', function() {
 <a href="#diy" class="section-nav-item">🔧 DIY</a>
 <a href="#clubs" class="section-nav-item">🚴 Clubs</a>
 </div>
+</div>
 
-<div class="resources-content">
+<div class="container">
 
 <div class="coach-box bg-gradient-to-br from-[#faf5ff] to-[#ebf8ff] border-2 border-[#805ad5] rounded-xl p-6 my-5 flex gap-5 items-start mb-8" id="coach-mani">
 <img src="https://ta.ashanet.org/siliconvalley/marathon/images/coach_mani.jpg" alt="Coach Mani" class="w-[120px] h-[120px] object-cover rounded-[10px] flex-shrink-0">
@@ -373,6 +373,5 @@ document.addEventListener('DOMContentLoaded', function() {
 <span class="back-to-menu-text">Menu</span>
 </a>
 
-</div>
 </div>
 {% endblock %}
