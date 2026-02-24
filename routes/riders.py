@@ -5,6 +5,7 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_rider_by_rusa, get_rider_participation, get_rider_career_stats,
                     get_rider_season_stats, get_all_seasons, get_current_season,
                     detect_sr_for_rider_season, get_rider_total_srs,
+                    get_all_rider_season_stats, detect_sr_for_all_riders_in_season,
                     get_upcoming_rusa_events, update_rider_profile,
                     get_pbp_finishers)
 from auth import login_required
@@ -44,11 +45,15 @@ def season_riders(season_name):
     else:
         riders = riders_all
 
+    # Batch-fetch per-rider stats (2 queries instead of 34)
+    all_stats = get_all_rider_season_stats(season['id'])
+    all_srs = detect_sr_for_all_riders_in_season(season['id'], date_filter=is_current)
+
     # Compute per-rider stats for display
     rider_data = []
     for r in riders:
-        s = get_rider_season_stats(r['id'], season['id'])
-        sr_n = detect_sr_for_rider_season(r['id'], season['id'], date_filter=is_current)
+        s = all_stats.get(r['id'], {'rides': 0, 'kms': 0})
+        sr_n = all_srs.get(r['id'], 0)
         rides_count = s['rides']
         kms_count = s['kms']
 
