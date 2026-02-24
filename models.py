@@ -252,10 +252,6 @@ def get_rider_total_srs(rider_id):
     for s in seasons:
         df = s['id'] == current['id'] if current else False
         total += detect_sr_for_rider_season(rider_id, s['id'], date_filter=df)
-    # Mihir's 2014/15 SR in India
-    rider = _execute("SELECT rusa_id FROM rider WHERE id = %s", (rider_id,)).fetchone()
-    if rider and rider['rusa_id'] == 14680:
-        total += 1
     return total
 
 
