@@ -7,7 +7,8 @@ Usage:
     python scripts/update_rusa_events.py
 """
 
-import sqlite3
+import os
+import psycopg2
 import sys
 import csv
 import re
@@ -19,7 +20,10 @@ from html.parser import HTMLParser
 # Add parent directory to path to import from project
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-DB_PATH = Path(__file__).parent.parent / 'data' / 'team_asha.db'
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if not DATABASE_URL:
+    print("❌ DATABASE_URL environment variable not set")
+    sys.exit(1)
 
 # Google Sheets URL - convert to CSV export URL
 SFR_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1LO6FfMJeMP_cvnEUtCfBvpmVudLNzWH-dRVv_PWqLqQ/export?format=csv&gid=0'
@@ -486,7 +490,7 @@ def upsert_event(cursor, region, event):
     # Check if event exists
     cursor.execute("""
         SELECT id, event_status FROM upcoming_rusa_event 
-        WHERE date = ? AND route_name = ?
+        WHERE date = %s AND route_name = %s
     """, (event['date'], event['name']))
     
     existing = cursor.fetchone()
@@ -502,16 +506,16 @@ def upsert_event(cursor, region, event):
         # Update existing event (don't modify event_status)
         cursor.execute("""
             UPDATE upcoming_rusa_event 
-            SET region = ?,
-                ride_type = ?,
-                distance_km = ?,
-                distance_miles = ?,
-                elevation_ft = ?,
-                rwgps_url = ?,
-                start_time = ?,
-                time_limit_hours = ?,
-                start_location = ?
-            WHERE id = ?
+            SET region = %s,
+                ride_type = %s,
+                distance_km = %s,
+                distance_miles = %s,
+                elevation_ft = %s,
+                rwgps_url = %s,
+                start_time = %s,
+                time_limit_hours = %s,
+                start_location = %s
+            WHERE id = %s
         """, (
             region,
             ride_type,
@@ -532,7 +536,7 @@ def upsert_event(cursor, region, event):
             (region, ride_type, date, distance_km, route_name, 
              distance_miles, elevation_ft, rwgps_url, start_time, 
              time_limit_hours, start_location, event_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             region,
             ride_type,
@@ -556,7 +560,7 @@ def main():
     print("Updating RUSA Calendar Events")
     print("=" * 60)
     
-    conn = sqlite3.connect(DB_PATH)
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
     
     stats = {'inserted': 0, 'updated': 0, 'skipped': 0, 'filtered': 0}

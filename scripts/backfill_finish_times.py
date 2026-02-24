@@ -3,10 +3,16 @@
 For each rider_ride record with status='Yes' and no finish_time,
 match against RUSA data by (rusa_id, date +-3 days, distance_km).
 """
-import sqlite3
+import os
+import sys
+import psycopg2
+import psycopg2.extras
 from datetime import datetime, timedelta
 
-DB_PATH = 'data/team_asha.db'
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if not DATABASE_URL:
+    print("❌ DATABASE_URL environment variable not set")
+    sys.exit(1)
 
 # Scraped RUSA results: {rusa_id: [(date_str, distance_km, finish_time), ...]}
 # date_str format: 'YYYY/MM/DD' as returned by RUSA
@@ -386,17 +392,18 @@ def parse_rusa_date(d):
 
 
 def parse_db_date(d):
-    """Convert DB date string to datetime.date. Handles various formats."""
+    """Convert DB date to datetime.date. PostgreSQL returns date objects directly."""
     if not d:
         return None
-    # Standard ISO format
+    # PostgreSQL returns datetime.date objects directly
+    if hasattr(d, 'year'):
+        return d
+    # Fallback for string formats
     for fmt in ('%Y-%m-%d', '%m/%d/%Y'):
         try:
             return datetime.strptime(d, fmt).date()
-        except ValueError:
+        except (ValueError, TypeError):
             continue
-    # Handle things like '6/1-6/3/2022' or '9/16 - 9/17'
-    # Extract the first date-like portion
     return None
 
 
@@ -429,12 +436,11 @@ def find_rusa_finish_time(rusa_id, ride_date, distance_km):
 
 
 def main():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     # Get all records needing finish times
-    rows = cur.execute("""
+    cur.execute("""
         SELECT rr.id, rr.rider_id, rr.ride_id, rr.status, rr.finish_time,
                r.rusa_id, ri.date, ri.distance_km, ri.name as ride_name,
                r.first_name, r.last_name
@@ -443,7 +449,8 @@ def main():
         JOIN ride ri ON rr.ride_id = ri.id
         WHERE LOWER(rr.status) = 'yes' AND (rr.finish_time IS NULL OR rr.finish_time = '')
         ORDER BY ri.date, r.first_name
-    """).fetchall()
+    """)
+    rows = cur.fetchall()
 
     updated = 0
     not_found = 0
@@ -456,7 +463,7 @@ def main():
         finish_time = find_rusa_finish_time(rusa_id, ride_date, distance_km)
 
         if finish_time:
-            cur.execute("UPDATE rider_ride SET finish_time = ? WHERE id = ?",
+            cur.execute("UPDATE rider_ride SET finish_time = %s WHERE id = %s",
                         (finish_time, row['id']))
             print(f"  UPDATED: {row['first_name']} {row['last_name']} | "
                   f"{row['date']} {row['ride_name']} ({distance_km}km) -> {finish_time}")
