@@ -9,11 +9,12 @@ module.exports = {
       colors: {
         primary: {
           DEFAULT: '#1a365d',
-          dark: '#2a4a7f',
+          dark: '#0f2744',
         },
         accent: {
-          DEFAULT: '#e53e3e',
-          light: '#fc8181',
+          DEFAULT: '#ff6b00',
+          light: '#ff8c42',
+          red: '#e53e3e',
         },
         bg: '#f7fafc',
         'card-bg': '#ffffff',
