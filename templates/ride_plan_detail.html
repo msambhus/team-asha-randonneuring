@@ -737,7 +737,7 @@
             {% for s in stops %}
             {% if s.elevation_gain and s.elevation_gain > 0 %}
             {% set max_elev = 2000 %}
-            {% set bar_height = (s.elevation_gain / max_elev * 100)|min(100) %}
+            {% set bar_height = [(s.elevation_gain / max_elev * 100), 100]|min %}
             <div class="elevation-bar {{ s.stop_type }}" style="height:{{ bar_height }}%;">
                 <div class="elevation-tooltip">
                     <div style="font-weight:700;">{{ s.location[:20] }}{% if s.location|length > 20 %}...{% endif %}</div>
