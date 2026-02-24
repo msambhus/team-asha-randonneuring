@@ -1147,14 +1147,14 @@ recalcArrivalTimes('{{ plan.start_time }}');
     }
 
     // Auto weather link for upcoming events (using Team Asha route)
-    {% if upcoming_event and upcoming_event.date %}
+    {% if upcoming_event %}
     var autoWeatherLink = document.getElementById('auto-weather-link');
     if (autoWeatherLink) {
         var routeId = '{{ weather_route_id or "" }}';
         var planName = '{{ plan.name|replace("'", "\\'") }}';
-        var eventDate = '{{ upcoming_event.date if upcoming_event.date else "" }}';
-        var eventTime = '{{ upcoming_event.start_time if upcoming_event.start_time else "07:00" }}';
-
+        var eventDate = '{{ upcoming_event.date }}';
+        var eventTime = '{{ upcoming_event.start_time or "07:00" }}';
+        
         if (routeId && eventDate) {
             var parts = eventTime.split(':');
             var startHour = parseInt(parts[0]) || 7;
