@@ -36,7 +36,7 @@ def season_riders(season_name):
     stats = get_season_stats(season['id'], past_only=is_current)
 
     today = date.today().isoformat()
-    past_rides = [r for r in rides if r['date'] <= today]
+    past_rides = [r for r in rides if r['date'] and r['date'] <= today]
 
     # Only show riders who have completed at least 1 brevet (past rides only)
     if is_current:
@@ -110,7 +110,7 @@ def upcoming_brevets(season_name):
 
     rides = get_rides_for_season(season['id'])
     today = date.today().isoformat()
-    future_rides = [r for r in rides if r['date'] > today]
+    future_rides = [r for r in rides if r['date'] and r['date'] > today]
 
     # Region color map
     region_colors = {

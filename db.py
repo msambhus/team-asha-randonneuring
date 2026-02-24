@@ -1,19 +1,20 @@
-import sqlite3
+import psycopg2
+import psycopg2.extras
 from flask import g, current_app
 
 
 def get_db():
     if 'db' not in g:
-        g.db = sqlite3.connect(current_app.config['DB_PATH'])
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
+        g.db = psycopg2.connect(current_app.config['DATABASE_URL'])
+        g.db.autocommit = False
     return g.db
 
 
 def close_db(e=None):
     db = g.pop('db', None)
     if db is not None:
-        db.close()
+        if not db.closed:
+            db.close()
 
 
 def init_app(app):

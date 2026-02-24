@@ -51,8 +51,8 @@
 {% for event in rusa_events %}
 <div class="event-item" data-region="{{ event.region }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;{% if not loop.last %}border-bottom:1px solid var(--border);{% endif %}">
 <div style="min-width:48px;text-align:center;">
-    <div style="font-size:0.75rem;color:var(--text-light);text-transform:uppercase;">{{ event.date[5:7] }}/{{ event.date[8:10] }}</div>
-    <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">{{ event.date[8:10] }}</div>
+    <div style="font-size:0.75rem;color:var(--text-light);text-transform:uppercase;">{{ event.date_str[5:7] }}/{{ event.date_str[8:10] }}</div>
+    <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">{{ event.date_str[8:10] }}</div>
 </div>
 <div style="flex:1;min-width:0;">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
