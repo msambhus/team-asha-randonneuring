@@ -481,7 +481,7 @@ def upsert_event(cursor, region, event):
     """Insert or update a RUSA event."""
     # Check if event exists
     cursor.execute("""
-        SELECT id FROM upcoming_rusa_event 
+        SELECT id, event_status FROM upcoming_rusa_event 
         WHERE date = ? AND route_name = ?
     """, (event['date'], event['name']))
     
@@ -491,7 +491,11 @@ def upsert_event(cursor, region, event):
     ride_type = event.get('ride_type', 'ACP brevet')
     
     if existing:
-        # Update existing event
+        # Skip updating if event status is DONE
+        if existing[1] == 'DONE':
+            return 'skipped'
+        
+        # Update existing event (don't modify event_status)
         cursor.execute("""
             UPDATE upcoming_rusa_event 
             SET region = ?,
@@ -518,13 +522,13 @@ def upsert_event(cursor, region, event):
         ))
         return 'updated'
     else:
-        # Insert new event
+        # Insert new event with ACTIVE status
         cursor.execute("""
             INSERT INTO upcoming_rusa_event 
             (region, ride_type, date, distance_km, route_name, 
              distance_miles, elevation_ft, rwgps_url, start_time, 
-             time_limit_hours, start_location)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             time_limit_hours, start_location, event_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             region,
             ride_type,
@@ -536,7 +540,8 @@ def upsert_event(cursor, region, event):
             event['rwgps_url'],
             event['start_time'],
             event['time_limit_hours'],
-            event['start_location']
+            event['start_location'],
+            'ACTIVE'
         ))
         return 'inserted'
 
@@ -550,7 +555,7 @@ def main():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    stats = {'inserted': 0, 'updated': 0}
+    stats = {'inserted': 0, 'updated': 0, 'skipped': 0}
     
     # Download and process SFR events
     print("\n📍 San Francisco Randonneurs")
@@ -558,7 +563,10 @@ def main():
     for event in sfr_events:
         action = upsert_event(cursor, 'San Francisco', event)
         stats[action] += 1
-        print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']})")
+        if action == 'skipped':
+            print(f"  ⊘ {event['name']} ({event['date']}) [DONE - skipped]")
+        else:
+            print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']})")
     
     # Process Davis events
     print("\n📍 Davis Bike Club")
@@ -566,7 +574,10 @@ def main():
     for event in davis_events:
         action = upsert_event(cursor, 'Davis', event)
         stats[action] += 1
-        print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']})")
+        if action == 'skipped':
+            print(f"  ⊘ {event['name']} ({event['date']}) [DONE - skipped]")
+        else:
+            print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']})")
     
     # Process SCR events (when available)
     scr_events = get_scr_events()
@@ -575,13 +586,16 @@ def main():
         for event in scr_events:
             action = upsert_event(cursor, 'Santa Cruz', event)
             stats[action] += 1
-            print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']})")
+            if action == 'skipped':
+                print(f"  ⊘ {event['name']} ({event['date']}) [DONE - skipped]")
+            else:
+                print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']})")
     
     conn.commit()
     conn.close()
     
     print("\n" + "=" * 60)
-    print(f"✅ Done! {stats['inserted']} inserted, {stats['updated']} updated")
+    print(f"✅ Done! {stats['inserted']} inserted, {stats['updated']} updated, {stats['skipped']} skipped (DONE)")
     print("=" * 60)
 
 
