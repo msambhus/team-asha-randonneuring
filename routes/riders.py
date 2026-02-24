@@ -198,6 +198,37 @@ _DIFFICULTY_COLORS = {
 }
 
 
+def _difficulty_color(ft_per_mi):
+    """Return a hex color from a continuous gradient based on ft/mile.
+    Anchor points: 0=#94a3b8 (slate), 25=#22c55e (green), 50=#f59e0b (amber),
+    75=#ef4444 (red), 100=#991b1b (dark red). Centered on 50 ft/mi = moderate."""
+    if not ft_per_mi or ft_per_mi <= 0:
+        return '#94a3b8'
+
+    anchors = [
+        (0,   (0x94, 0xa3, 0xb8)),   # slate gray
+        (25,  (0x22, 0xc5, 0x5e)),   # green
+        (50,  (0xf5, 0x9e, 0x0b)),   # amber
+        (75,  (0xef, 0x44, 0x44)),   # red
+        (100, (0x99, 0x1b, 0x1b)),   # dark red
+    ]
+
+    if ft_per_mi >= 100:
+        return '#991b1b'
+
+    for i in range(len(anchors) - 1):
+        lo_val, lo_rgb = anchors[i]
+        hi_val, hi_rgb = anchors[i + 1]
+        if lo_val <= ft_per_mi <= hi_val:
+            t = (ft_per_mi - lo_val) / (hi_val - lo_val)
+            r = int(lo_rgb[0] + t * (hi_rgb[0] - lo_rgb[0]))
+            g = int(lo_rgb[1] + t * (hi_rgb[1] - lo_rgb[1]))
+            b = int(lo_rgb[2] + t * (hi_rgb[2] - lo_rgb[2]))
+            return '#{:02x}{:02x}{:02x}'.format(r, g, b)
+
+    return '#94a3b8'
+
+
 def _extract_rwgps_route_id(url):
     """Extract numeric route ID from a RWGPS URL."""
     if not url:
@@ -207,13 +238,16 @@ def _extract_rwgps_route_id(url):
 
 
 def _build_journey_nodes(stops):
-    """Collapse stops at same distance into single nodes for the journey strip."""
+    """Collapse stops at same distance into single nodes for the journey strip.
+    When a rest stop shares the same distance as the previous waypoint,
+    label becomes 'Rest activity @ Previous location' (e.g. 'Water refill @ Fire station')."""
     nodes = []
     for s in stops:
         if nodes and nodes[-1]['distance_miles'] == (s.get('distance_miles') or 0):
             existing = nodes[-1]
             if s['stop_type'] in ('rest', 'control'):
-                existing['label'] = "{} @ {}".format(s['stop_type'].title(), s['location'][:18])
+                # "Water refill @ Fire station" — rest location @ previous node's label
+                existing['label'] = "{} @ {}".format(s['location'][:18], existing['label'][:18])
                 if s['stop_type'] == 'control':
                     existing['node_type'] = 'control'
                 elif existing['node_type'] == 'waypoint':
@@ -222,6 +256,10 @@ def _build_journey_nodes(stops):
             if s.get('difficulty_score', 0) > existing.get('difficulty_score', 0):
                 existing['difficulty_score'] = s['difficulty_score']
                 existing['difficulty_label'] = s.get('difficulty_label', 'flat')
+                existing['difficulty_color'] = s.get('difficulty_color', '#94a3b8')
+            # Merge cum_time: take the max (rest adds break time)
+            if s.get('cum_time_min', 0) > existing.get('cum_time_min', 0):
+                existing['cum_time_min'] = s['cum_time_min']
         else:
             label = s['location'][:22]
             if s['stop_type'] == 'rest':
@@ -232,17 +270,20 @@ def _build_journey_nodes(stops):
                 'node_type': s['stop_type'],
                 'difficulty_score': s.get('difficulty_score', 0),
                 'difficulty_label': s.get('difficulty_label', 'flat'),
+                'difficulty_color': s.get('difficulty_color', '#94a3b8'),
+                'cum_time_min': s.get('cum_time_min', 0),
             })
     return nodes
 
 
 def _match_plans_to_events(events, plans):
-    """Attach plan_slug to RUSA events by matching route names.
+    """Attach plan_slug and Team Asha route URLs to RUSA events by matching route names.
     Requires at least 2 meaningful keyword matches to avoid false positives,
     unless there's a distinctive word match (e.g. 'healdsburg', 'hopland')."""
     for event in events:
         e_words = _normalize_route(event.get('route_name', ''))
         best_slug = None
+        best_plan = None
         best_score = 0
         for plan in plans:
             p_words = _normalize_route(plan['name'])
@@ -254,7 +295,11 @@ def _match_plans_to_events(events, plans):
                 if score > best_score:
                     best_score = score
                     best_slug = plan['slug']
+                    best_plan = plan
         event['plan_slug'] = best_slug
+        if best_plan:
+            event['plan_rwgps_url'] = best_plan.get('rwgps_url')
+            event['plan_rwgps_url_team'] = best_plan.get('rwgps_url_team')
 
 
 @riders_bp.route('/riders/<season_name>/upcoming')
@@ -388,12 +433,15 @@ def ride_plan_detail(slug):
     cutoff_hours = _get_cutoff_hours(distance_km)
     plan['distance_km'] = distance_km
     plan['cutoff_hours'] = cutoff_hours
-    plan['start_time'] = plan.get('start_time') or '07:00'
+    plan['start_time'] = plan.get('start_time') or '06:00'
 
     # Determine which RWGPS link to show (team preferred, else official)
     rwgps_url_display = plan.get('rwgps_url_team') or plan.get('rwgps_url')
     rwgps_url_label = 'Team Asha Route' if plan.get('rwgps_url_team') else 'Official Route'
     rwgps_route_id = _extract_rwgps_route_id(rwgps_url_display)
+    
+    # For weather forecast, always prefer Team Asha route if available
+    weather_route_id = _extract_rwgps_route_id(plan.get('rwgps_url_team')) if plan.get('rwgps_url_team') else rwgps_route_id
 
     stops = []
     cum_time_min = 0
@@ -439,6 +487,7 @@ def ride_plan_detail(slug):
         # Difficulty scoring
         d['difficulty_score'] = _compute_difficulty_score(d['ft_per_mi'], d.get('notes'))
         d['difficulty_label'] = _difficulty_label(d['difficulty_score'])
+        d['difficulty_color'] = _difficulty_color(d['ft_per_mi'])
 
         # Terrain difficulty label (kept for compatibility)
         if d['ft_per_mi']:
@@ -466,6 +515,30 @@ def ride_plan_detail(slug):
     # Build collapsed journey nodes
     journey_nodes = _build_journey_nodes(stops)
 
+    # Check if there's an upcoming RUSA event that matches this ride plan
+    upcoming_event = None
+    from datetime import datetime, timedelta, date as date_type
+    from models import get_upcoming_rusa_events
+    rusa_events = get_upcoming_rusa_events()
+    today = date_type.today()
+    thirty_days_later = today + timedelta(days=30)
+    
+    for event in rusa_events:
+        e_words = _normalize_route(event.get('route_name', ''))
+        p_words = _normalize_route(plan['name'])
+        common = e_words & p_words
+        distinctive = common - _GENERIC_WORDS
+        if len(distinctive) >= 1 and len(common) >= 2:
+            # Check if event is within 30 days
+            event_date = event['date']
+            # Convert to date object if it's a string
+            if isinstance(event_date, str):
+                event_date = datetime.strptime(event_date, '%Y-%m-%d').date()
+            
+            if event_date >= today and event_date <= thirty_days_later:
+                upcoming_event = event
+                break
+
     return render_template('ride_plan_detail.html',
                            plan=plan,
                            stops=stops,
@@ -479,4 +552,6 @@ def ride_plan_detail(slug):
                            rwgps_url_display=rwgps_url_display,
                            rwgps_url_label=rwgps_url_label,
                            rwgps_route_id=rwgps_route_id,
-                           difficulty_colors=_DIFFICULTY_COLORS)
+                           weather_route_id=weather_route_id,
+                           difficulty_colors=_DIFFICULTY_COLORS,
+                           upcoming_event=upcoming_event)

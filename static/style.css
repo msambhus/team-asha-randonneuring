@@ -221,7 +221,7 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
 .resource-list a { color: var(--primary); text-decoration: none; font-weight: 500; }
 .resource-list a:hover { color: var(--accent); text-decoration: underline; }
 .resource-list .note { color: var(--text-light); font-size: 0.85rem; margin-left: 8px; }
-.coach-box { background: linear-gradient(135deg, #faf5ff, #ebf8ff); border: 2px solid #805ad5; border-radius: 12px; padding: 24px; margin: 20px 0; scroll-margin-top: 140px; }
+.coach-box { background: linear-gradient(135deg, #faf5ff, #ebf8ff); border: 2px solid #805ad5; border-radius: 12px; padding: 24px; margin: 20px 0; scroll-margin-top: 240px; }
 .coach-box h3 { color: #553c9a; margin-bottom: 10px; }
 
 /* Resource Grid */
@@ -483,13 +483,10 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
 }
 
 /* Section Navigation Bar (Resources page) */
-.section-nav-bar {
+.section-nav-bar-inner {
     background: var(--card-bg);
     border-bottom: 2px solid var(--border);
     padding: 15px 20px;
-    position: sticky;
-    top: 60px;
-    z-index: 50;
     box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
 .section-nav-links {
@@ -525,7 +522,7 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
     padding: 30px 20px;
     background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
     border-radius: 12px;
-    scroll-margin-top: 140px;
+    scroll-margin-top: 240px;
 }
 .section-title {
     color: var(--primary);

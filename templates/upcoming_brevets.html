@@ -3,70 +3,236 @@
 
 {% block extra_head %}
 <style>
+.filter-section {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid var(--border);
+}
+.filter-label {
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 12px;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.filter-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
 .region-filter {
     cursor: pointer;
-    padding: 6px 12px;
-    border-radius: 20px;
-    transition: all 0.2s;
-    border: 2px solid transparent;
+    padding: 10px 18px;
+    border-radius: 8px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 2px solid var(--border);
+    background: white;
+    font-weight: 600;
+    font-size: 0.9rem;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
 }
 .region-filter:hover {
-    background: rgba(0,0,0,0.05);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    border-color: var(--primary);
 }
 .region-filter.active {
     border-color: var(--primary);
-    background: rgba(26, 54, 93, 0.1);
-    font-weight: 700;
+    background: var(--primary);
+    color: white;
+    box-shadow: 0 4px 12px rgba(26, 54, 93, 0.3);
 }
-.event-item.hidden {
+.region-filter.active .region-dot {
+    background: white !important;
+}
+.region-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.month-section {
+    margin-bottom: 40px;
+}
+.month-header {
+    background: linear-gradient(135deg, #0891b2, #0e7490);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 1.3rem;
+    font-weight: 800;
+    margin-bottom: 20px;
+    display: inline-block;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.events-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 20px;
+}
+.event-card {
+    background: white;
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+.event-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 5px;
+    height: 100%;
+    transition: transform 0.3s ease;
+}
+.event-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    border-color: var(--primary);
+}
+.event-card.hidden {
     display: none !important;
+}
+.event-date {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    text-align: center;
+    background: linear-gradient(135deg, #1e40af, #1e3a8a);
+    color: white;
+    border-radius: 8px;
+    padding: 8px 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.event-day {
+    font-size: 1.8rem;
+    font-weight: 800;
+    line-height: 1;
+    color: white;
+}
+.event-month {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-top: 2px;
+    color: #fb923c;
+}
+.event-region-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: white;
+    margin-bottom: 12px;
+}
+.event-distance {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--accent);
+    margin-bottom: 8px;
+}
+.event-elevation {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    font-weight: 500;
+}
+.event-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin: 12px 0 8px 0;
+    line-height: 1.4;
+    padding-right: 80px;
+}
+.event-links {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+}
+.event-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+    border: 1px solid var(--border);
+}
+.event-link-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.event-details-info {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--text-light);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 /* Mobile-specific styles */
 @media (max-width: 768px) {
-    .filter-container {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        padding-bottom: 5px;
+    .events-grid {
+        grid-template-columns: 1fr;
     }
-    .filter-container > div {
-        overflow-x: auto;
-        white-space: nowrap;
+    .filter-section {
+        padding: 15px;
+    }
+    .filter-buttons {
+        gap: 8px;
     }
     .region-filter {
-        padding: 8px 12px; /* Larger touch targets */
+        padding: 8px 14px;
         font-size: 0.85rem;
     }
-    .event-item {
-        flex-direction: column !important;
-        gap: 10px !important;
-        padding: 16px 0 !important;
+    .event-card {
+        padding: 16px;
     }
-    .event-date-box {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        width: 100%;
+    .event-title {
+        font-size: 0.95rem;
+        padding-right: 70px;
     }
-    .event-content {
-        width: 100%;
+    .event-date {
+        top: 16px;
+        right: 16px;
+        padding: 6px 10px;
     }
-    .event-meta {
-        flex-direction: column !important;
-        align-items: flex-start !important;
-        gap: 8px !important;
+    .event-day {
+        font-size: 1.5rem;
     }
-    .event-details {
-        flex-direction: column !important;
-        gap: 8px !important;
+    .month-header {
+        font-size: 1.1rem;
+        padding: 10px 16px;
     }
 }
 
 @media (max-width: 480px) {
     .region-filter {
         font-size: 0.8rem;
-        padding: 6px 10px;
+        padding: 7px 12px;
+    }
+    .event-distance {
+        font-size: 1.3rem;
     }
 }
 </style>
@@ -79,95 +245,116 @@
 </div>
 
 <div class="container section">
-<h2>Ride Calendar</h2>
+<h2 style="margin-bottom:25px;">Ride Calendar</h2>
 
-<div class="filter-container" style="margin-bottom:10px;">
-<div style="display:flex;gap:8px;flex-wrap:nowrap;font-size:0.85rem;min-height:44px;align-items:center;">
-    <span class="region-filter active" data-region="all" onclick="filterByRegion('all')" style="display:inline-flex;align-items:center;gap:4px;min-height:44px;">
-        <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#666;flex-shrink:0;"></span>All Clubs
-    </span>
-    {% for region, color in region_colors.items() %}
-    <span class="region-filter" data-region="{{ region }}" onclick="filterByRegion('{{ region }}')" style="display:inline-flex;align-items:center;gap:4px;min-height:44px;">
-        <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{{ color }};flex-shrink:0;"></span>{{ region }}
-    </span>
-    {% endfor %}
-</div>
-</div>
-{% if distances %}
-<div class="filter-container" style="margin-bottom:15px;">
-<div style="display:flex;gap:8px;flex-wrap:nowrap;font-size:0.85rem;min-height:44px;align-items:center;">
-    <span class="region-filter active" data-distance="all" onclick="filterByDistance('all')" style="min-height:44px;display:inline-flex;align-items:center;">All Distances</span>
-    {% for d in distances %}
-    <span class="region-filter" data-distance="{{ d }}" onclick="filterByDistance('{{ d }}')" style="min-height:44px;display:inline-flex;align-items:center;">{{ d }}k</span>
-    {% endfor %}
-</div>
-</div>
-{% endif %}
-<p style="font-size:0.8rem;color:var(--text-light);margin-bottom:15px;">Events sourced from <a href="https://rusa.org/cgi-bin/eventsearch_GF.pl" target="_blank" style="color:var(--accent);">RUSA</a> for Davis, San Francisco &amp; Santa Cruz regions.</p>
-
-<div class="card">
-{% for event in rusa_events %}
-<div class="event-item" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;{% if not loop.last %}border-bottom:1px solid var(--border);{% endif %}">
-<div class="event-date-box" style="min-width:48px;text-align:center;">
-    <div style="font-size:0.75rem;color:var(--text-light);text-transform:uppercase;">{{ event.date_str[5:7] }}/{{ event.date_str[8:10] }}</div>
-    <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">{{ event.date_str[8:10] }}</div>
-</div>
-<div class="event-content" style="flex:1;min-width:0;">
-    <div class="event-meta" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span style="display:inline-block;padding:4px 10px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:{{ region_colors.get(event.region, '#999') }};">{{ event.region }}</span>
-        <span style="font-weight:700;color:var(--accent);">
-          {% if event.distance_miles %}
-            {{ "%.1f"|format(event.distance_miles) }} mi
-          {% else %}
-            {{ event.distance_km }} km
-          {% endif %}
-          {% if event.elevation_ft %}
-            {% set miles = event.distance_miles if event.distance_miles else (event.distance_km * 0.621371) %}
-            <span style="font-weight:400;font-size:0.8rem;color:var(--text-light);margin-left:4px;">
-              {{ "{:,}".format(event.elevation_ft) }} ft{% if miles > 0 %} ({{ "%.0f"|format(event.elevation_ft / miles) }} ft/mi){% endif %}
-            </span>
-          {% endif %}
+<div class="filter-section">
+    <div class="filter-label">Filter by Club</div>
+    <div class="filter-buttons">
+        <span class="region-filter active" data-region="all" onclick="filterByRegion('all')">
+            <span class="region-dot" style="background:#666;"></span>All Clubs
         </span>
+        {% for region, color in region_colors.items() %}
+        <span class="region-filter" data-region="{{ region }}" onclick="filterByRegion('{{ region }}')">
+            <span class="region-dot" style="background:{{ color }};"></span>{{ region }}
+        </span>
+        {% endfor %}
     </div>
-    <div style="font-size:0.9rem;margin-top:6px;color:var(--text);line-height:1.5;">{% if 'DART' in event.route_name or 'Dart' in event.route_name or 'Fleche' in event.route_name or (event.rwgps_url and ('dart' in event.rwgps_url.lower() or 'fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}[DART] {% endif %}{{ event.route_name }}{% if event.ride_type %} <span style="color:var(--text-light);font-size:0.75rem;">[{{ event.ride_type }}]</span>{% endif %}
-    {% if event.climbing and not event.elevation_ft %}<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">{{ event.climbing }}</span>{% endif %}
-    {% if event.rwgps_url %}
-    <a href="{{ event.rwgps_url }}" target="_blank" title="{% if 'Fleche' in event.route_name or (event.rwgps_url and ('fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}View Event on RideWithGPS{% else %}View Route on RideWithGPS{% endif %}" style="margin-left:8px;text-decoration:none;display:inline-flex;align-items:center;vertical-align:middle;min-width:44px;min-height:44px;justify-content:center;">
-      <img src="https://ridewithgps.com/favicon.ico" alt="RideWithGPS" style="width:24px;height:24px;vertical-align:middle;">
-    </a>
-    {% endif %}
-    <span class="weather-forecast-link" style="margin-left:4px;display:none;">
-      <a href="#" target="_blank" title="Weather Forecast" style="font-size:1.25rem;text-decoration:none;display:inline-flex;align-items:center;vertical-align:middle;line-height:1;min-width:44px;min-height:44px;justify-content:center;">
-        🌤️
-      </a>
-    </span>
-    {% if event.plan_slug %}
-    <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug) }}" title="View Team Asha ride plan" style="margin-left:4px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;padding:2px 10px;background:linear-gradient(135deg,#f0f4ff,#e8f0fe);border:1px solid #c7d2fe;border-radius:6px;font-size:0.75rem;font-weight:600;color:#4338ca;min-height:30px;">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1C7.2 1 5 3.2 5 6c0 3.5 5 8 5 8s5-4.5 5-8c0-2.8-2.2-5-5-5z"/><circle cx="10" cy="6" r="1.5" fill="currentColor"/><path d="M6 16h8" stroke-dasharray="2 2"/><circle cx="6" cy="16" r="1" fill="currentColor"/><circle cx="14" cy="16" r="1" fill="currentColor"/></svg>
-      Ride Plan
-    </a>
-    {% endif %}
-    </div>
-    {% if event.start_time or event.time_limit_hours or event.start_location %}
-    <div class="event-details" style="font-size:0.8rem;margin-top:8px;color:var(--text-light);display:flex;flex-wrap:wrap;gap:12px;">
-      {% if event.start_time %}
-      <span><strong>Start:</strong> {{ event.start_time }}</span>
-      {% endif %}
-      {% if event.time_limit_hours %}
-      <span><strong>Time Limit:</strong> {{ event.time_limit_hours }}h</span>
-      {% endif %}
-      {% if event.start_location %}
-      <span style="flex:1 1 100%;"><strong>Location:</strong> {{ event.start_location }}</span>
-      {% endif %}
+
+    {% if distances %}
+    <div class="filter-label" style="margin-top:20px;">Filter by Distance</div>
+    <div class="filter-buttons">
+        <span class="region-filter active" data-distance="all" onclick="filterByDistance('all')">All Distances</span>
+        {% for d in distances %}
+        <span class="region-filter" data-distance="{{ d }}" onclick="filterByDistance('{{ d }}')">{{ d }}k</span>
+        {% endfor %}
     </div>
     {% endif %}
 </div>
+
+<p style="font-size:0.85rem;color:var(--text-light);margin-bottom:30px;">Events sourced from <a href="https://rusa.org/cgi-bin/eventsearch_GF.pl" target="_blank" style="color:var(--accent);font-weight:600;">RUSA</a> for Davis, San Francisco &amp; Santa Cruz regions.</p>
+
+<div id="events-container">
+{% for event in rusa_events %}
+<div class="event-card" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
+
+    <div class="event-date">
+        <div class="event-day">{{ event.date_str[8:10] }}</div>
+        <div class="event-month">{{ ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][event.date_str[5:7]|int] }}</div>
+    </div>
+
+    <div class="event-region-badge" style="background:{{ region_colors.get(event.region, '#999') }};">
+        <span class="region-dot" style="background:white;"></span>{{ event.region }}
+    </div>
+
+    <div class="event-distance">
+        {% if event.distance_miles %}
+        {{ "%.1f"|format(event.distance_miles) }} mi
+        {% else %}
+        {{ event.distance_km }} km
+        {% endif %}
+        {% if event.elevation_ft %}
+        {% set miles = event.distance_miles if event.distance_miles else (event.distance_km * 0.621371) %}
+        <div class="event-elevation">
+            {{ "{:,}".format(event.elevation_ft) }} ft{% if miles > 0 %} ({{ "%.0f"|format(event.elevation_ft / miles) }} ft/mi){% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="event-title" style="overflow-wrap:break-word;word-break:break-word;">
+        {% if 'DART' in event.route_name or 'Dart' in event.route_name or 'Fleche' in event.route_name or (event.rwgps_url and ('dart' in event.rwgps_url.lower() or 'fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}
+        <span style="color:var(--accent);font-weight:800;">[DART]</span>
+        {% endif %}
+        {{ event.route_name }}{% if event.ride_type %} <span style="color:var(--text-light);font-size:0.75rem;font-weight:600;white-space:nowrap;">[{{ event.ride_type }}]</span>{% endif %}
+    </div>
+
+    <div class="event-links">
+        {% if event.rwgps_url %}
+        <a href="{{ event.rwgps_url }}" target="_blank" class="event-link-btn" style="background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border-color:#7dd3fc;color:#0369a1;">
+            <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:16px;height:16px;">
+            Route
+        </a>
+        {% endif %}
+
+        <span class="weather-forecast-link" style="display:none;">
+            <a href="#" target="_blank" class="event-link-btn" style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-color:#fbbf24;color:#92400e;">
+                🌤️ Weather
+            </a>
+        </span>
+
+        {% if event.plan_rwgps_url_team %}
+        <a href="{{ event.plan_rwgps_url_team }}" target="_blank" class="event-link-btn" style="background:linear-gradient(135deg,#fff7ed,#ffedd5);border-color:#ff6b00;color:#c2410c;">
+            <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:16px;height:16px;">
+            Team Asha Route
+        </a>
+        {% endif %}
+
+        {% if event.plan_slug %}
+        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug) }}" class="event-link-btn" style="background:linear-gradient(135deg,#f0f4ff,#e8f0fe);border-color:#c7d2fe;color:#4338ca;">
+            📍 Ride Plan
+        </a>
+        {% endif %}
+    </div>
+
+    {% if event.start_time or event.time_limit_hours or event.start_location %}
+    <div class="event-details-info">
+        {% if event.start_time %}
+        <div><strong>Start:</strong> {{ event.start_time }}</div>
+        {% endif %}
+        {% if event.time_limit_hours %}
+        <div><strong>Time Limit:</strong> {{ event.time_limit_hours }}h</div>
+        {% endif %}
+        {% if event.start_location %}
+        <div><strong>Location:</strong> {{ event.start_location }}</div>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 {% endfor %}
-{% if not rusa_events %}
-<p style="padding:20px;color:var(--text-light);text-align:center;">No upcoming RUSA events found.</p>
-{% endif %}
 </div>
+
+{% if not rusa_events %}
+<p style="padding:40px;color:var(--text-light);text-align:center;font-size:1.1rem;">No upcoming RUSA events found.</p>
+{% endif %}
 
 <p style="margin-top:15px;color:var(--text-light);font-size:0.85rem;">View <a href="{{ url_for('riders.season_riders', season_name=season.name) }}" style="color:var(--accent);font-weight:600;">completed brevets</a> for this season.</p>
 </div>
@@ -177,14 +364,73 @@
 var activeRegion = 'all';
 var activeDistance = 'all';
 
+// Group events by month
+function groupEventsByMonth() {
+    const container = document.getElementById('events-container');
+    const events = Array.from(container.querySelectorAll('.event-card'));
+
+    // Group events by month
+    const eventsByMonth = {};
+    events.forEach(event => {
+        const month = event.dataset.month; // Format: YYYY-MM
+        if (!eventsByMonth[month]) {
+            eventsByMonth[month] = [];
+        }
+        eventsByMonth[month].push(event);
+    });
+
+    // Clear container
+    container.innerHTML = '';
+
+    // Create month sections
+    const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+
+    Object.keys(eventsByMonth).sort().forEach(monthKey => {
+        const [year, month] = monthKey.split('-');
+        const monthName = months[parseInt(month) - 1];
+
+        // Create month section
+        const monthSection = document.createElement('div');
+        monthSection.className = 'month-section';
+        monthSection.dataset.month = monthKey;
+
+        // Create month header
+        const monthHeader = document.createElement('div');
+        monthHeader.className = 'month-header';
+        monthHeader.textContent = monthName + ' ' + year;
+        monthSection.appendChild(monthHeader);
+
+        // Create events grid
+        const eventsGrid = document.createElement('div');
+        eventsGrid.className = 'events-grid';
+        eventsByMonth[monthKey].forEach(event => {
+            eventsGrid.appendChild(event);
+        });
+        monthSection.appendChild(eventsGrid);
+
+        container.appendChild(monthSection);
+    });
+}
+
 function applyFilters() {
-    document.querySelectorAll('.event-item').forEach(function(event) {
+    document.querySelectorAll('.event-card').forEach(function(event) {
         var regionMatch = activeRegion === 'all' || event.dataset.region === activeRegion;
         var distanceMatch = activeDistance === 'all' || event.dataset.distance === activeDistance;
         if (regionMatch && distanceMatch) {
             event.classList.remove('hidden');
         } else {
             event.classList.add('hidden');
+        }
+    });
+
+    // Hide empty month sections
+    document.querySelectorAll('.month-section').forEach(function(section) {
+        const visibleEvents = section.querySelectorAll('.event-card:not(.hidden)');
+        if (visibleEvents.length === 0) {
+            section.style.display = 'none';
+        } else {
+            section.style.display = 'block';
         }
     });
 }
@@ -203,28 +449,43 @@ function filterByDistance(distance) {
     applyFilters();
 }
 
-// Add weather forecast links for events within 10 days
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    groupEventsByMonth();
+});
+
+// Highlight events within 4 days and add weather forecast links for events within 10 days
 (function() {
     const now = new Date();
+    const fourDaysFromNow = new Date(now.getTime() + (5 * 24 * 60 * 60 * 1000));
     const tenDaysFromNow = new Date(now.getTime() + (10 * 24 * 60 * 60 * 1000));
     
-    document.querySelectorAll('.event-item').forEach(eventItem => {
+    document.querySelectorAll('.event-card').forEach(eventItem => {
         const eventDate = eventItem.dataset.eventDate; // format: YYYY-MM-DD
         const eventTime = eventItem.dataset.eventTime || '07:00'; // format: HH:MM
         const rwgpsUrl = eventItem.dataset.rwgpsUrl;
+        const weatherRwgpsUrl = eventItem.dataset.weatherRwgpsUrl; // Team Asha route preferred
         const routeName = eventItem.dataset.routeName;
         
-        if (!eventDate || !rwgpsUrl) return;
+        if (!eventDate) return;
         
         // Parse event date and time
         const [year, month, day] = eventDate.split('-').map(Number);
         const [hours, minutes] = eventTime.split(':').map(Number);
         const eventDateTime = new Date(year, month - 1, day, hours, minutes);
         
-        // Check if event is within 10 days
-        if (eventDateTime <= tenDaysFromNow && eventDateTime >= now) {
-            // Extract route ID from rwgps URL
-            const routeIdMatch = rwgpsUrl.match(/\/routes\/(\d+)/);
+        // Highlight events within 4 days with light green color
+        if (eventDateTime <= fourDaysFromNow && eventDateTime >= now) {
+            const eventDateElement = eventItem.querySelector('.event-date');
+            if (eventDateElement) {
+                eventDateElement.style.background = 'linear-gradient(135deg, #86efac, #4ade80)';
+            }
+        }
+        
+        // Add weather forecast link for events within 10 days (use Team Asha route if available)
+        if (weatherRwgpsUrl && eventDateTime <= tenDaysFromNow && eventDateTime >= now) {
+            // Extract route ID from rwgps URL (prefer Team Asha route)
+            const routeIdMatch = weatherRwgpsUrl.match(/\/routes\/(\d+)/);
             if (!routeIdMatch) return;
             
             const routeId = routeIdMatch[1];
@@ -239,7 +500,7 @@ function filterByDistance(distance) {
             if (weatherLinkContainer) {
                 const weatherLink = weatherLinkContainer.querySelector('a');
                 weatherLink.href = weatherUrl;
-                weatherLinkContainer.style.display = 'inline';
+                weatherLinkContainer.style.display = 'inline-block';
             }
         }
     });
