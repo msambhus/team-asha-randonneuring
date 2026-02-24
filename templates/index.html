@@ -66,7 +66,7 @@
 </div>
 
 <div class="max-w-[1200px] mx-auto px-5 py-10">
-<div class="bg-card-bg rounded-xl p-6 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-border mb-5">
+<div class="bg-card-bg rounded-xl p-6 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-border mb-5 fade-in-up">
 <h2 class="text-[1.6rem] mb-5 text-primary pb-2.5 border-b-[3px] border-accent inline-block">What is Randonneuring?</h2>
 <p class="mt-4">Randonneuring is a long-distance cycling sport where riders complete timed courses called <strong>brevets</strong>. Starting at 200km and progressing through 300km, 400km, 600km, and beyond, riders must finish within strict time limits while navigating through checkpoints called controls. It's not a race &mdash; it's a test of endurance, self-reliance, and determination.</p>
 <p class="mt-2.5"><a href="{{ url_for('main.about') }}" class="text-primary no-underline font-semibold hover:text-accent hover:underline">Learn more about randonneuring &rarr;</a></p>
@@ -74,7 +74,7 @@
 
 <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-5">
 {% for ss in season_summaries %}
-<div class="bg-card-bg rounded-xl p-6 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-border">
+<div class="bg-card-bg rounded-xl p-6 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-border stagger-item">
 <h3 class="text-primary mb-2.5">{{ ss.name }} Season</h3>
 {% if ss.is_current %}
 <p>Our current season is underway &mdash; riders are building fitness and qualifying for <strong>Paris-Brest-Paris 2027</strong>.</p>
