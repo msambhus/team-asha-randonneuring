@@ -1,4 +1,4 @@
-"""Rider routes: season view, individual profiles, profile edit, upcoming brevets."""
+"""Rider routes: season view, individual profiles, profile edit, upcoming brevets, ride plans."""
 from flask import Blueprint, render_template, abort, request, redirect, url_for
 from models import (get_season_by_name, get_riders_for_season, get_active_riders_for_season,
                     get_rides_for_season, get_participation_matrix, get_season_stats,
@@ -7,9 +7,11 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     detect_sr_for_rider_season, get_rider_total_srs,
                     get_all_rider_season_stats, detect_sr_for_all_riders_in_season,
                     get_upcoming_rusa_events, update_rider_profile,
-                    get_pbp_finishers)
+                    get_pbp_finishers,
+                    get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops)
 from auth import login_required
 from datetime import date
+import re
 
 riders_bp = Blueprint('riders', __name__)
 
@@ -100,6 +102,46 @@ def season_riders(season_name):
                            pbp_finishers=pbp_finishers)
 
 
+def _normalize_route(name):
+    """Normalize a route name for matching: lowercase, strip common suffixes."""
+    s = name.lower()
+    s = re.sub(r'&nbsp;', ' ', s)
+    s = re.sub(r'[^a-z0-9 ]', ' ', s)
+    s = re.sub(r'\b(plan|route|brevet|k|km|mi)\b', '', s)
+    s = re.sub(r'\b(20\d{2})\b', '', s)  # remove years
+    s = re.sub(r'#\d+', '', s)  # remove brevet numbers
+    return set(s.split()) - {'', 'the', 'a', 'and', 'of', 'in', 'to', 'scr', 'sfr', 'dbc', 'sr', 'ta'}
+
+
+# Words too generic for single-word matching
+_GENERIC_WORDS = {'200', '300', '302', '400', '600', '1000', '1200',
+                  '200k', '300k', '400k', '600k', '1000k', '1200k',
+                  'city', 'lake', 'valley', 'creek', 'mountain', 'mountains',
+                  'coast', 'bay', 'point', 'beach', 'night', 'gold', 'river',
+                  'davis', 'del', 'san'}
+
+
+def _match_plans_to_events(events, plans):
+    """Attach plan_slug to RUSA events by matching route names.
+    Requires at least 2 meaningful keyword matches to avoid false positives,
+    unless there's a distinctive word match (e.g. 'healdsburg', 'hopland')."""
+    for event in events:
+        e_words = _normalize_route(event.get('route_name', ''))
+        best_slug = None
+        best_score = 0
+        for plan in plans:
+            p_words = _normalize_route(plan['name'])
+            common = e_words & p_words
+            distinctive = common - _GENERIC_WORDS
+            # Need at least 1 distinctive word, or 2+ common words with at least one non-generic
+            if len(distinctive) >= 1 and len(common) >= 2:
+                score = len(common) + len(distinctive)
+                if score > best_score:
+                    best_score = score
+                    best_slug = plan['slug']
+        event['plan_slug'] = best_slug
+
+
 @riders_bp.route('/riders/<season_name>/upcoming')
 def upcoming_brevets(season_name):
     season = get_season_by_name(season_name)
@@ -117,13 +159,19 @@ def upcoming_brevets(season_name):
     today = date.today().isoformat()
     future_rides = [r for r in rides if r['date'] and r['date'] > today]
 
+    # Build ride plan lookup for RUSA events
+    plans = get_all_ride_plans()
+    _match_plans_to_events(rusa_events, plans)
+
     # Region color map
     region_colors = {
         'San Francisco': '#e74c3c',
         'Davis': '#2ecc71',
         'Santa Cruz': '#3498db',
-        'Team Asha': '#ff6b00',
     }
+
+    # Build distance filter from actual event data
+    distances = sorted(set(e['distance_km'] for e in rusa_events if e.get('distance_km')))
 
     label = SEASON_LABELS.get(season_name, f'{season_name} Season')
 
@@ -133,7 +181,8 @@ def upcoming_brevets(season_name):
                            rusa_events=rusa_events,
                            future_rides=future_rides,
                            is_current=is_current,
-                           region_colors=region_colors)
+                           region_colors=region_colors,
+                           distances=distances)
 
 
 @riders_bp.route('/rider/<int:rusa_id>')
@@ -199,3 +248,29 @@ def rider_edit(rusa_id):
         return redirect(url_for('riders.rider_profile', rusa_id=rusa_id))
 
     return render_template('rider_edit.html', rider=rider)
+
+
+@riders_bp.route('/ride-plans')
+def ride_plans_index():
+    plans = get_all_ride_plans()
+    return render_template('ride_plans.html', plans=plans)
+
+
+@riders_bp.route('/ride-plan/<slug>')
+def ride_plan_detail(slug):
+    plan = get_ride_plan_by_slug(slug)
+    if not plan:
+        abort(404)
+    raw_stops = get_ride_plan_stops(plan['id'])
+    # Convert Decimal types to float for Jinja2 arithmetic
+    plan = dict(plan)
+    plan['total_distance_miles'] = float(plan.get('total_distance_miles') or 0)
+    plan['total_elevation_ft'] = int(plan.get('total_elevation_ft') or 0)
+    stops = []
+    for s in raw_stops:
+        d = dict(s)
+        d['distance_miles'] = float(d['distance_miles']) if d.get('distance_miles') is not None else None
+        d['elevation_gain'] = int(d['elevation_gain']) if d.get('elevation_gain') is not None else None
+        d['segment_time_min'] = int(d['segment_time_min']) if d.get('segment_time_min') is not None else None
+        stops.append(d)
+    return render_template('ride_plan_detail.html', plan=plan, stops=stops)
