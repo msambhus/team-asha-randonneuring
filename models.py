@@ -159,6 +159,17 @@ def get_rider_season_stats(rider_id, season_id):
     """, (rider_id, season_id)).fetchone()
     return dict(row) if row else {'rides': 0, 'kms': 0}
 
+def get_all_rider_season_stats(season_id):
+    """Batch: rides and KMs for ALL riders in a season. Returns dict keyed by rider_id."""
+    rows = _execute("""
+        SELECT rr.rider_id, COUNT(*) as rides, COALESCE(SUM(ri.distance_km), 0) as kms
+        FROM rider_ride rr
+        JOIN ride ri ON rr.ride_id = ri.id
+        WHERE ri.season_id = %s AND LOWER(rr.status) = 'yes'
+        GROUP BY rr.rider_id
+    """, (season_id,)).fetchall()
+    return {r['rider_id']: {'rides': r['rides'], 'kms': r['kms']} for r in rows}
+
 
 # ========== SR DETECTION ==========
 
@@ -193,6 +204,43 @@ def detect_sr_for_rider_season(rider_id, season_id, date_filter=False):
             buckets[600] += 1
     return min(buckets.values())
 
+def detect_sr_for_all_riders_in_season(season_id, date_filter=False):
+    """Batch: SR count for ALL riders in a season. Returns dict keyed by rider_id."""
+    today = date.today().isoformat()
+    if date_filter:
+        rows = _execute("""
+            SELECT rr.rider_id, ri.distance_km FROM rider_ride rr
+            JOIN ride ri ON rr.ride_id = ri.id
+            WHERE ri.season_id = %s AND LOWER(rr.status) = 'yes' AND ri.date <= %s
+        """, (season_id, today)).fetchall()
+    else:
+        rows = _execute("""
+            SELECT rr.rider_id, ri.distance_km FROM rider_ride rr
+            JOIN ride ri ON rr.ride_id = ri.id
+            WHERE ri.season_id = %s AND LOWER(rr.status) = 'yes'
+        """, (season_id,)).fetchall()
+
+    # Group by rider, then compute SR per rider
+    from collections import defaultdict
+    rider_distances = defaultdict(list)
+    for row in rows:
+        rider_distances[row['rider_id']].append(row['distance_km'])
+
+    result = {}
+    for rider_id, distances in rider_distances.items():
+        buckets = {200: 0, 300: 0, 400: 0, 600: 0}
+        for d in distances:
+            if 200 <= d < 300:
+                buckets[200] += 1
+            elif 300 <= d < 400:
+                buckets[300] += 1
+            elif 400 <= d < 600:
+                buckets[400] += 1
+            elif d >= 600:
+                buckets[600] += 1
+        result[rider_id] = min(buckets.values())
+    return result
+
 def get_rider_total_srs(rider_id):
     """Total SRs across all seasons."""
     seasons = get_all_seasons()
@@ -211,35 +259,29 @@ def get_rider_total_srs(rider_id):
 # ========== ALL-TIME STATS ==========
 
 def get_all_time_stats():
-    # Unique riders who completed at least 1 ride
-    riders = _execute("""
-        SELECT COUNT(DISTINCT r.id) as cnt FROM rider r
-        JOIN rider_ride rr ON r.id = rr.rider_id
-        WHERE LOWER(rr.status) = 'yes'
-    """).fetchone()['cnt']
-
-    # Total completed rides
-    rides = _execute("""
-        SELECT COUNT(*) as cnt FROM rider_ride WHERE LOWER(status) = 'yes'
-    """).fetchone()['cnt']
-
-    # Total KMs
-    kms = _execute("""
-        SELECT COALESCE(SUM(ri.distance_km), 0) as total FROM rider_ride rr
+    # Single query for riders, rides, kms
+    row = _execute("""
+        SELECT COUNT(DISTINCT rr.rider_id) as riders,
+               COUNT(*) as rides,
+               COALESCE(SUM(ri.distance_km), 0) as kms
+        FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
         WHERE LOWER(rr.status) = 'yes'
-    """).fetchone()['total']
+    """).fetchone()
+    riders = row['riders']
+    rides = row['rides']
+    kms = row['kms']
 
-    # Unique SR earners
-    all_riders = _execute("SELECT id FROM rider").fetchall()
+    # Unique SR earners (batch — 1 query per season instead of riders×seasons)
     seasons = get_all_seasons()
     current = get_current_season()
     sr_riders = set()
-    for r in all_riders:
-        for s in seasons:
-            df = s['id'] == current['id'] if current else False
-            if detect_sr_for_rider_season(r['id'], s['id'], date_filter=df) > 0:
-                sr_riders.add(r['id'])
+    for s in seasons:
+        df = s['id'] == current['id'] if current else False
+        all_srs = detect_sr_for_all_riders_in_season(s['id'], date_filter=df)
+        for rider_id, n in all_srs.items():
+            if n > 0:
+                sr_riders.add(rider_id)
     # Mihir's India SR
     mihir = _execute("SELECT id FROM rider WHERE rusa_id = 14680").fetchone()
     if mihir:
@@ -260,8 +302,6 @@ def get_season_stats(season_id, past_only=False):
     current = get_current_season()
     is_current = current and current['id'] == season_id
 
-    riders = get_riders_for_season(season_id)
-
     date_clause = ""
     params = [season_id]
     if past_only:
@@ -269,33 +309,23 @@ def get_season_stats(season_id, past_only=False):
         date_clause = " AND ri.date <= %s"
         params.append(today)
 
-    # Active riders (at least 1 completed ride)
-    active = _execute(f"""
-        SELECT COUNT(DISTINCT rr.rider_id) as cnt FROM rider_ride rr
+    # Single query for active riders, total rides, total kms
+    row = _execute(f"""
+        SELECT COUNT(DISTINCT rr.rider_id) as active,
+               COUNT(*) as rides,
+               COALESCE(SUM(ri.distance_km), 0) as kms
+        FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
         WHERE ri.season_id = %s AND LOWER(rr.status) = 'yes'{date_clause}
-    """, params).fetchone()['cnt']
+    """, params).fetchone()
+    active = row['active']
+    total_rides = row['rides']
+    total_kms = row['kms']
 
-    total_rides = _execute(f"""
-        SELECT COUNT(*) as cnt FROM rider_ride rr
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE ri.season_id = %s AND LOWER(rr.status) = 'yes'{date_clause}
-    """, params).fetchone()['cnt']
-
-    total_kms = _execute(f"""
-        SELECT COALESCE(SUM(ri.distance_km), 0) as total FROM rider_ride rr
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE ri.season_id = %s AND LOWER(rr.status) = 'yes'{date_clause}
-    """, params).fetchone()['total']
-
-    # SR counts
-    sr_count = 0
-    sr_rider_count = 0
-    for r in riders:
-        n = detect_sr_for_rider_season(r['id'], season_id, date_filter=is_current)
-        sr_count += n
-        if n > 0:
-            sr_rider_count += 1
+    # SR counts (batch — 1 query instead of N)
+    all_srs = detect_sr_for_all_riders_in_season(season_id, date_filter=is_current)
+    sr_count = sum(all_srs.values())
+    sr_rider_count = sum(1 for n in all_srs.values() if n > 0)
 
     return {
         'active_riders': active,
