@@ -63,13 +63,15 @@
           {% else %}
             {{ event.distance_km }} km
           {% endif %}
+          {% if event.elevation_ft %}
+            {% set miles = event.distance_miles if event.distance_miles else (event.distance_km * 0.621371) %}
+            <span style="font-weight:400;font-size:0.8rem;color:var(--text-light);margin-left:4px;">
+              {{ "{:,}".format(event.elevation_ft) }} ft{% if miles > 0 %} ({{ "%.0f"|format(event.elevation_ft / miles) }} ft/mi){% endif %}
+            </span>
+          {% endif %}
         </span>
-        {% if event.elevation_ft %}
-        <span style="font-size:0.8rem;color:var(--text-light);">{{ "{:,}".format(event.elevation_ft) }} ft</span>
-        {% endif %}
-        <span style="font-size:0.8rem;color:var(--text-light);">{{ event.ride_type }}</span>
     </div>
-    <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">{% if 'DART' in event.route_name or 'Dart' in event.route_name or 'Fleche' in event.route_name or (event.rwgps_url and ('dart' in event.rwgps_url.lower() or 'fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}[DART] {% endif %}{{ event.route_name }}
+    <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">{% if 'DART' in event.route_name or 'Dart' in event.route_name or 'Fleche' in event.route_name or (event.rwgps_url and ('dart' in event.rwgps_url.lower() or 'fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}[DART] {% endif %}{{ event.route_name }}{% if event.ride_type %} <span style="color:var(--text-light);font-size:0.75rem;">[{{ event.ride_type }}]</span>{% endif %}
     {% if event.climbing and not event.elevation_ft %}<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">{{ event.climbing }}</span>{% endif %}
     {% if event.rwgps_url %}
     <a href="{{ event.rwgps_url }}" target="_blank" title="{% if 'Fleche' in event.route_name or (event.rwgps_url and ('fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}View Event on RideWithGPS{% else %}View Route on RideWithGPS{% endif %}" style="margin-left:8px;text-decoration:none;display:inline-flex;align-items:center;vertical-align:middle;">
