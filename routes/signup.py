@@ -1,6 +1,7 @@
 """Rider signup routes for upcoming rides."""
-from flask import Blueprint, render_template, request, redirect, url_for, flash, abort
-from models import get_ride_by_id, get_signups_for_ride, get_all_riders, signup_rider, remove_signup
+from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, jsonify, session
+from models import (get_ride_by_id, get_signups_for_ride, get_all_riders, signup_rider, 
+                    remove_signup, get_rider_signup_status, get_user_by_id)
 from auth import login_required
 
 signup_bp = Blueprint('signup', __name__)
@@ -32,3 +33,76 @@ def ride_signup(ride_id):
                            signups=signups,
                            signup_ids=signup_ids,
                            all_riders=all_riders)
+
+
+@signup_bp.route('/api/<int:ride_id>/signup', methods=['POST'])
+def api_signup(ride_id):
+    """API endpoint to sign up current user for a ride."""
+    user_id = session.get('user_id')
+    if not user_id:
+        # Store current page for redirect after login
+        referer = request.headers.get('Referer', url_for('riders.upcoming_brevets', _external=False))
+        login_url = url_for('auth.login', next=referer, _external=False)
+        return jsonify({'success': False, 'error': 'Not logged in', 'redirect': login_url}), 401
+    
+    # Get user's rider_id
+    user = get_user_by_id(user_id)
+    if not user or not user.get('rider_id'):
+        # Store current page for redirect after profile setup
+        referer = request.headers.get('Referer', url_for('riders.upcoming_brevets', _external=False))
+        session['next_url'] = referer
+        return jsonify({'success': False, 'error': 'Profile not completed', 'redirect': url_for('auth.setup_profile', _external=False)}), 400
+    
+    rider_id = user['rider_id']
+    
+    # Check if already signed up
+    existing = get_rider_signup_status(rider_id, ride_id)
+    if existing:
+        return jsonify({'success': False, 'error': 'Already signed up', 'status': existing['status']}), 400
+    
+    # Sign up the rider
+    success = signup_rider(rider_id, ride_id)
+    if success:
+        return jsonify({'success': True, 'status': 'SIGNED_UP'})
+    else:
+        return jsonify({'success': False, 'error': 'Failed to sign up'}), 500
+
+
+@signup_bp.route('/api/<int:ride_id>/unsignup', methods=['POST'])
+def api_unsignup(ride_id):
+    """API endpoint to remove current user's signup for a ride."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'success': False, 'error': 'Not logged in', 'redirect': '/auth/login'}), 401
+    
+    # Get user's rider_id
+    user = get_user_by_id(user_id)
+    if not user or not user.get('rider_id'):
+        return jsonify({'success': False, 'error': 'Profile not completed', 'redirect': '/auth/setup-profile'}), 400
+    
+    rider_id = user['rider_id']
+    
+    # Remove signup (only works if status is SIGNED_UP)
+    success = remove_signup(rider_id, ride_id)
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'success': False, 'error': 'Cannot remove signup (may have already started/finished)'}), 400
+
+
+@signup_bp.route('/api/<int:ride_id>/signups', methods=['GET'])
+def api_get_signups(ride_id):
+    """API endpoint to get all signups for a ride (public)."""
+    signups = get_signups_for_ride(ride_id)
+    return jsonify({
+        'success': True,
+        'count': len(signups),
+        'riders': [{
+            'id': s['id'],
+            'rusa_id': s['rusa_id'],
+            'first_name': s['first_name'],
+            'last_name': s['last_name'],
+            'status': s['status'],
+            'signed_up_at': s['signed_up_at'].isoformat() if s.get('signed_up_at') else None
+        } for s in signups]
+    })

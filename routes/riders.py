@@ -8,7 +8,8 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_all_rider_season_stats, detect_sr_for_all_riders_in_season,
                     get_upcoming_rusa_events, update_rider_profile,
                     get_pbp_finishers,
-                    get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops)
+                    get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops,
+                    get_signup_count, get_rider_signup_status)
 from auth import login_required
 from datetime import date
 import re
@@ -39,7 +40,7 @@ def season_riders(season_name):
         # For current season, only count past rides in stats
         stats = get_season_stats(season['id'], past_only=is_current)
 
-        today = date.today().isoformat()
+        today = date.today()
         past_rides = [r for r in rides if r['date'] and r['date'] <= today]
 
         # Only show riders who have completed at least 1 brevet (past rides only)
@@ -65,9 +66,9 @@ def season_riders(season_name):
                 past_ride_ids = {pr['id'] for pr in past_rides}
                 part = matrix.get(r['id'], {})
                 rides_count = sum(1 for rid, p in part.items()
-                                 if rid in past_ride_ids and p['status'].lower() == 'yes')
+                                 if rid in past_ride_ids and p['status'] == 'FINISHED')
                 kms_count = sum(ri['distance_km'] for ri in past_rides
-                               if ri['id'] in part and part[ri['id']]['status'].lower() == 'yes')
+                               if ri['id'] in part and part[ri['id']]['status'] == 'FINISHED')
 
             if rides_count > 0 or not is_current:
                 rider_data.append({
@@ -304,6 +305,9 @@ def _match_plans_to_events(events, plans):
 
 @riders_bp.route('/riders/<season_name>/upcoming')
 def upcoming_brevets(season_name):
+    from flask import session
+    from models import get_user_by_id
+    
     season = get_season_by_name(season_name)
     if not season:
         abort(404)
@@ -316,12 +320,30 @@ def upcoming_brevets(season_name):
     rusa_events = get_upcoming_rusa_events()
 
     rides = get_rides_for_season(season['id'])
-    today = date.today().isoformat()
+    today = date.today()
     future_rides = [r for r in rides if r['date'] and r['date'] > today]
 
     # Build ride plan lookup for RUSA events
     plans = get_all_ride_plans()
     _match_plans_to_events(rusa_events, plans)
+
+    # Get current user's rider_id and signup statuses
+    rider_id = None
+    user_signups = {}
+    user_id = session.get('user_id')
+    if user_id:
+        user = get_user_by_id(user_id)
+        if user and user.get('rider_id'):
+            rider_id = user['rider_id']
+            # Get signup status for each event
+            for event in rusa_events:
+                status = get_rider_signup_status(rider_id, event['id'])
+                if status:
+                    user_signups[event['id']] = status['status']
+
+    # Add signup counts to events
+    for event in rusa_events:
+        event['signup_count'] = get_signup_count(event['id'])
 
     # Region color map
     region_colors = {
@@ -342,7 +364,9 @@ def upcoming_brevets(season_name):
                            future_rides=future_rides,
                            is_current=is_current,
                            region_colors=region_colors,
-                           distances=distances)
+                           distances=distances,
+                           current_rider_id=rider_id,
+                           user_signups=user_signups)
 
 
 @riders_bp.route('/rider/<int:rusa_id>')
@@ -517,8 +541,12 @@ def ride_plan_detail(slug):
 
     # Check if there's an upcoming RUSA event that matches this ride plan
     upcoming_event = None
+    signup_count = 0
+    user_signup_status = None
     from datetime import datetime, timedelta, date as date_type
-    from models import get_upcoming_rusa_events
+    from models import get_upcoming_rusa_events, get_user_by_id
+    from flask import session
+    
     rusa_events = get_upcoming_rusa_events()
     today = date_type.today()
     thirty_days_later = today + timedelta(days=30)
@@ -537,6 +565,16 @@ def ride_plan_detail(slug):
             
             if event_date >= today and event_date <= thirty_days_later:
                 upcoming_event = event
+                signup_count = get_signup_count(event['id'])
+                
+                # Check current user's signup status
+                user_id = session.get('user_id')
+                if user_id:
+                    user = get_user_by_id(user_id)
+                    if user and user.get('rider_id'):
+                        status = get_rider_signup_status(user['rider_id'], event['id'])
+                        if status:
+                            user_signup_status = status['status']
                 break
 
     return render_template('ride_plan_detail.html',
@@ -554,4 +592,6 @@ def ride_plan_detail(slug):
                            rwgps_route_id=rwgps_route_id,
                            weather_route_id=weather_route_id,
                            difficulty_colors=_DIFFICULTY_COLORS,
-                           upcoming_event=upcoming_event)
+                           upcoming_event=upcoming_event,
+                           signup_count=signup_count,
+                           user_signup_status=user_signup_status)

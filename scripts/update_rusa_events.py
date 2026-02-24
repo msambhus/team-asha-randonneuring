@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to update upcoming_rusa_event table with data from SFR Google Spreadsheet.
+Script to update ride table with external RUSA event data from various sources.
 Run this script to refresh the RUSA calendar events.
 
 Usage:
@@ -482,15 +482,37 @@ def get_scr_events():
 
 
 def upsert_event(cursor, region, event):
-    """Insert or update a RUSA event. Only processes rides with valid ACP time limits."""
+    """Insert or update a RUSA event in the ride table. Only processes rides with valid ACP time limits."""
     # Filter: only process rides that have standard ACP time limits
     if get_time_limit_hours(event['distance_km']) is None:
         return 'filtered'
     
-    # Check if event exists
+    # Get club_id for this region
     cursor.execute("""
-        SELECT id, event_status FROM upcoming_rusa_event 
-        WHERE date = %s AND route_name = %s
+        SELECT id FROM club WHERE region = %s LIMIT 1
+    """, (region,))
+    club_result = cursor.fetchone()
+    if not club_result:
+        print(f"❌ No club found for region {region}")
+        return 'error'
+    club_id = club_result[0]
+    
+    # Get current season
+    cursor.execute("""
+        SELECT id FROM season WHERE is_current = TRUE LIMIT 1
+    """)
+    season_result = cursor.fetchone()
+    if not season_result:
+        print(f"❌ No current season found")
+        return 'error'
+    season_id = season_result[0]
+    
+    # Check if event exists (external events only)
+    cursor.execute("""
+        SELECT ri.id, ri.event_status 
+        FROM ride ri
+        INNER JOIN club c ON ri.club_id = c.id
+        WHERE ri.date = %s AND ri.name = %s AND c.code != 'TA'
     """, (event['date'], event['name']))
     
     existing = cursor.fetchone()
@@ -498,30 +520,37 @@ def upsert_event(cursor, region, event):
     # Default to ACP brevet if not specified
     ride_type = event.get('ride_type', 'ACP brevet')
     
+    # Calculate ft_per_mile
+    ft_per_mile = None
+    if event.get('elevation_ft') and event.get('distance_miles') and event['distance_miles'] > 0:
+        ft_per_mile = event['elevation_ft'] / event['distance_miles']
+    
     if existing:
-        # Skip updating if event status is DONE
-        if existing[1] == 'DONE':
+        # Skip updating if event status is COMPLETED
+        if existing[1] == 'COMPLETED':
             return 'skipped'
         
         # Update existing event (don't modify event_status)
         cursor.execute("""
-            UPDATE upcoming_rusa_event 
-            SET region = %s,
+            UPDATE ride 
+            SET club_id = %s,
                 ride_type = %s,
                 distance_km = %s,
                 distance_miles = %s,
                 elevation_ft = %s,
+                ft_per_mile = %s,
                 rwgps_url = %s,
                 start_time = %s,
                 time_limit_hours = %s,
                 start_location = %s
             WHERE id = %s
         """, (
-            region,
+            club_id,
             ride_type,
             event['distance_km'],
             event['distance_miles'],
             event['elevation_ft'],
+            ft_per_mile,
             event['rwgps_url'],
             event['start_time'],
             event['time_limit_hours'],
@@ -530,26 +559,29 @@ def upsert_event(cursor, region, event):
         ))
         return 'updated'
     else:
-        # Insert new event with ACTIVE status
+        # Insert new event with UPCOMING status
         cursor.execute("""
-            INSERT INTO upcoming_rusa_event 
-            (region, ride_type, date, distance_km, route_name, 
-             distance_miles, elevation_ft, rwgps_url, start_time, 
-             time_limit_hours, start_location, event_status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO ride 
+            (name, ride_type, date, distance_km, distance_miles, 
+             elevation_ft, ft_per_mile, rwgps_url, start_time, 
+             time_limit_hours, start_location, event_status,
+             club_id, season_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
-            region,
+            event['name'],
             ride_type,
             event['date'],
             event['distance_km'],
-            event['name'],
             event['distance_miles'],
             event['elevation_ft'],
+            ft_per_mile,
             event['rwgps_url'],
             event['start_time'],
             event['time_limit_hours'],
             event['start_location'],
-            'ACTIVE'
+            'UPCOMING',
+            club_id,
+            season_id
         ))
         return 'inserted'
 

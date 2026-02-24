@@ -42,6 +42,13 @@ scripts/
   backfill_finish_times.py # Populate finish times from RUSA results
   migrate_to_supabase.py   # One-time SQLite to PostgreSQL migration
 
+
+schema/
+  schema.sql         # Complete database schema (v3.1)
+  DATABASE_SCHEMA.md # Schema documentation
+  DATABASE_SCHEMA_VISUAL.txt  # Visual ERD diagram
+
+
 api/index.py         # Vercel serverless entrypoint
 vercel.json          # Vercel build & routing config
 ```
@@ -128,11 +135,13 @@ DATABASE_URL='postgresql://...' python scripts/update_rusa_events.py
 DATABASE_URL='postgresql://...' python scripts/backfill_finish_times.py
 ```
 
-- **`update_rusa_events.py`** — Scrapes upcoming brevet events from SF Randonneurs (Google Sheet), Davis (Gold Country Randonneurs), and Santa Cruz Randonneurs. Upserts into the `upcoming_rusa_event` table.
+## Database Schema
 
-- **`backfill_finish_times.py`** — Populates rider finish times from RUSA race result data. Matches by rider RUSA ID, date, and distance.
+Complete database schema available in:
+- **`schema/schema.sql`** - Full PostgreSQL schema (10 tables, 2 views)
+- **`schema/DATABASE_SCHEMA.md`** - Detailed table documentation
+- **`schema/DATABASE_SCHEMA_VISUAL.txt`** - Visual ERD diagram
 
-- **`migrate_to_supabase.py`** — One-time migration from the legacy SQLite database to Supabase PostgreSQL. Already run; kept for reference.
 
 ## License
 

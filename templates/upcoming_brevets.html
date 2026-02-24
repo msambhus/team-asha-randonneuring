@@ -85,6 +85,9 @@
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 300px;
 }
 .event-card::before {
     content: '';
@@ -144,6 +147,31 @@
     color: var(--accent);
     margin-bottom: 8px;
 }
+.event-distance-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.popular-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    border: 1.5px solid #fbbf24;
+    color: #92400e;
+    animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
 .event-elevation {
     font-size: 0.8rem;
     color: var(--text-light);
@@ -188,6 +216,220 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+}
+.signup-section {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+.signup-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+    border: 1px solid #7dd3fc;
+    color: #0369a1;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.signup-count:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    border-color: #0284c7;
+}
+.signup-count.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+.signup-btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: 2px solid var(--primary);
+    background: white;
+    color: var(--primary);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.signup-btn:hover {
+    background: var(--primary);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(26, 54, 93, 0.2);
+}
+.signup-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.signup-status {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.signup-status.signed-up {
+    background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+    color: #166534;
+    border: 1px solid #86efac;
+    transition: all 0.2s;
+}
+.signup-status.signed-up:hover {
+    background: linear-gradient(135deg, #bbf7d0, #86efac);
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(22, 101, 52, 0.2);
+}
+.signup-status.finished {
+    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+    color: #1e40af;
+    border: 1px solid #93c5fd;
+}
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    animation: fadeIn 0.2s;
+}
+.modal-content {
+    background: white;
+    margin: 5% auto;
+    padding: 0;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 80vh;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    animation: slideIn 0.3s;
+}
+.modal-header {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    padding: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.modal-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin: 0;
+}
+.modal-close {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #000;
+    cursor: pointer;
+    border: 2px solid #000;
+    background: #fff;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+.modal-close:hover {
+    background: #f3f4f6;
+    border-color: #000;
+    transform: rotate(90deg) scale(1.1);
+}
+.modal-body {
+    padding: 20px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+.rider-list-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+}
+.rider-list-item:last-child {
+    border-bottom: none;
+}
+.rider-list-item:hover {
+    background: #f8fafc;
+}
+.rider-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+.rider-info {
+    flex: 1;
+}
+.rider-name {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 0.95rem;
+}
+.rider-rusa {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    margin-top: 2px;
+}
+.rider-status-badge {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.rider-status-badge.signed-up {
+    background: #dcfce7;
+    color: #166534;
+}
+.rider-status-badge.finished {
+    background: #dbeafe;
+    color: #1e40af;
+}
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes slideIn {
+    from { transform: translateY(-50px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
 }
 
 /* Mobile-specific styles */
@@ -275,7 +517,7 @@
 
 <div id="events-container">
 {% for event in rusa_events %}
-<div class="event-card" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
+<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
 
     <div class="event-date">
         <div class="event-day">{{ event.date_str[8:10] }}</div>
@@ -287,11 +529,20 @@
     </div>
 
     <div class="event-distance">
-        {% if event.distance_miles %}
-        {{ "%.1f"|format(event.distance_miles) }} mi
-        {% else %}
-        {{ event.distance_km }} km
-        {% endif %}
+        <div class="event-distance-row">
+            <span>
+                {% if event.distance_miles %}
+                {{ "%.1f"|format(event.distance_miles) }} mi
+                {% else %}
+                {{ event.distance_km }} km
+                {% endif %}
+            </span>
+            {% if event.signup_count and event.signup_count >= 5 %}
+            <span class="popular-badge">
+                🔥🔥
+            </span>
+            {% endif %}
+        </div>
         {% if event.elevation_ft %}
         {% set miles = event.distance_miles if event.distance_miles else (event.distance_km * 0.621371) %}
         <div class="event-elevation">
@@ -348,6 +599,32 @@
         {% endif %}
     </div>
     {% endif %}
+
+    <div class="signup-section">
+        <div class="signup-count {% if not event.signup_count or event.signup_count == 0 %}disabled{% endif %}" {% if event.signup_count and event.signup_count > 0 %}onclick="showSignups({{ event.id }}, '{{ event.route_name|replace("'", "\\'") }}')"{% endif %}>
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
+                <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+            </svg>
+            <span id="signup-count-{{ event.id }}">{{ event.signup_count or 0 }}</span> signed up
+        </div>
+
+        {% if current_rider_id %}
+            {% set user_status = user_signups.get(event.id) %}
+            {% if user_status == 'SIGNED_UP' %}
+                <button class="signup-status signed-up" onclick="unsignupFromEvent({{ event.id }}, this)" data-ride-id="{{ event.id }}" style="cursor:pointer;">✓ Signed Up</button>
+            {% elif user_status in ['FINISHED', 'DNF', 'DNS'] %}
+                <span class="signup-status finished">{{ user_status }}</span>
+            {% else %}
+                <button class="signup-btn" onclick="signupForEvent({{ event.id }}, this)" data-ride-id="{{ event.id }}">
+                    Sign Up
+                </button>
+            {% endif %}
+        {% else %}
+            <a href="{{ url_for('auth.login', next=request.path) }}" class="signup-btn" style="text-decoration:none;">
+                Sign Up
+            </a>
+        {% endif %}
+    </div>
 </div>
 {% endfor %}
 </div>
@@ -357,6 +634,19 @@
 {% endif %}
 
 <p style="margin-top:15px;color:var(--text-light);font-size:0.85rem;">View <a href="{{ url_for('riders.season_riders', season_name=season.name) }}" style="color:var(--accent);font-weight:600;">completed brevets</a> for this season.</p>
+</div>
+
+<!-- Signups Modal -->
+<div id="signups-modal" class="modal" onclick="closeModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2 class="modal-title" id="modal-title">Riders List</h2>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="modal-body">
+            <p style="text-align:center;color:var(--text-light);padding:20px;">Loading...</p>
+        </div>
+    </div>
 </div>
 
 {% block extra_js %}
@@ -452,6 +742,226 @@ function filterByDistance(distance) {
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     groupEventsByMonth();
+});
+
+// Signup functions
+function updatePopularBadge(rideId, count) {
+    const eventCard = document.querySelector('[data-event-card-id="' + rideId + '"]');
+    if (!eventCard) return;
+    
+    const distanceRow = eventCard.querySelector('.event-distance-row');
+    if (!distanceRow) return;
+    
+    let popularBadge = distanceRow.querySelector('.popular-badge');
+    
+    if (count >= 5) {
+        // Show popular badge
+        if (!popularBadge) {
+            popularBadge = document.createElement('span');
+            popularBadge.className = 'popular-badge';
+            popularBadge.innerHTML = '🔥🔥';
+            distanceRow.appendChild(popularBadge);
+        }
+    } else {
+        // Remove popular badge
+        if (popularBadge) {
+            popularBadge.remove();
+        }
+    }
+}
+
+function signupForEvent(rideId, buttonElement) {
+    if (buttonElement.disabled) return;
+    buttonElement.disabled = true;
+    buttonElement.textContent = 'Signing up...';
+    
+    fetch('/signup/api/' + rideId + '/signup', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        credentials: 'same-origin'
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.error || 'Failed to sign up');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            // Update UI to show signed up status
+            const countEl = document.getElementById('signup-count-' + rideId);
+            if (countEl) {
+                const newCount = parseInt(countEl.textContent) + 1;
+                countEl.textContent = newCount;
+                // Enable the count badge if it was disabled
+                const countBadge = countEl.closest('.signup-count');
+                if (countBadge && countBadge.classList.contains('disabled')) {
+                    countBadge.classList.remove('disabled');
+                    const eventCard = buttonElement.closest('.event-card');
+                    const routeName = eventCard ? eventCard.getAttribute('data-route-name') : '';
+                    countBadge.onclick = function() { showSignups(rideId, routeName); };
+                }
+                // Update popular badge
+                updatePopularBadge(rideId, newCount);
+            }
+            buttonElement.replaceWith(createSignedUpBadge(rideId));
+        } else {
+            // If redirect URL provided, navigate to it
+            if (data.redirect) {
+                alert('Please log in to sign up for events');
+                window.location.href = data.redirect;
+            } else {
+                alert(data.error || 'Failed to sign up');
+                buttonElement.disabled = false;
+                buttonElement.textContent = 'Sign Up';
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert(error.message || 'Failed to sign up. Please try again.');
+        buttonElement.disabled = false;
+        buttonElement.textContent = 'Sign Up';
+    });
+}
+
+function createSignedUpBadge(rideId) {
+    const badge = document.createElement('button');
+    badge.className = 'signup-status signed-up';
+    badge.textContent = '✓ Signed Up';
+    badge.setAttribute('data-ride-id', rideId);
+    badge.style.cursor = 'pointer';
+    badge.onclick = function() { unsignupFromEvent(rideId, this); };
+    return badge;
+}
+
+function createSignUpButton(rideId) {
+    const button = document.createElement('button');
+    button.className = 'signup-btn';
+    button.textContent = 'Sign Up';
+    button.setAttribute('data-ride-id', rideId);
+    button.onclick = function() { signupForEvent(rideId, this); };
+    return button;
+}
+
+function unsignupFromEvent(rideId, badgeElement) {
+    if (!confirm('Are you sure you want to remove your signup?')) {
+        return;
+    }
+    
+    badgeElement.disabled = true;
+    badgeElement.textContent = 'Removing...';
+    
+    fetch('/signup/api/' + rideId + '/unsignup', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        credentials: 'same-origin'
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.error || 'Failed to unsign');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            // Update UI to show sign up button
+            const countEl = document.getElementById('signup-count-' + rideId);
+            if (countEl) {
+                const newCount = Math.max(0, parseInt(countEl.textContent) - 1);
+                countEl.textContent = newCount;
+                // Disable the count badge if count becomes 0
+                const countBadge = countEl.closest('.signup-count');
+                if (countBadge && newCount === 0) {
+                    countBadge.classList.add('disabled');
+                    countBadge.onclick = null;
+                }
+                // Update popular badge
+                updatePopularBadge(rideId, newCount);
+            }
+            badgeElement.replaceWith(createSignUpButton(rideId));
+        } else {
+            alert(data.error || 'Failed to remove signup');
+            badgeElement.disabled = false;
+            badgeElement.textContent = '✓ Signed Up';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert(error.message || 'Failed to remove signup. Please try again.');
+        badgeElement.disabled = false;
+        badgeElement.textContent = '✓ Signed Up';
+    });
+}
+
+function showSignups(rideId, rideName) {
+    const countElement = document.getElementById('signup-count-' + rideId);
+    const count = parseInt(countElement.textContent);
+    if (count === 0) return;
+    
+    const modal = document.getElementById('signups-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalBody = document.getElementById('modal-body');
+    
+    modalTitle.textContent = 'Riders List';
+    modalBody.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">Loading...</p>';
+    modal.style.display = 'block';
+    
+    fetch('/signup/api/' + rideId + '/signups')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (data.count === 0) {
+                    modalBody.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">No riders signed up yet.</p>';
+                } else {
+                    let html = '';
+                    data.riders.forEach(rider => {
+                        const initials = rider.first_name.charAt(0) + rider.last_name.charAt(0);
+                        
+                        html += `
+                            <div class="rider-list-item">
+                                <div class="rider-avatar">${initials}</div>
+                                <div class="rider-info">
+                                    <div class="rider-name">${rider.first_name} ${rider.last_name} <span style="color:var(--text-light);font-weight:500;font-size:0.85rem;">(RUSA #${rider.rusa_id})</span></div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    modalBody.innerHTML = html;
+                }
+            } else {
+                modalBody.innerHTML = '<p style="text-align:center;color:#dc2626;padding:20px;">Failed to load signups.</p>';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            modalBody.innerHTML = '<p style="text-align:center;color:#dc2626;padding:20px;">Failed to load signups.</p>';
+        });
+}
+
+function closeModal(event) {
+    const modal = document.getElementById('signups-modal');
+    if (!event || event.target === modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// Close modal on ESC key
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape' || event.key === 'Esc') {
+        const modal = document.getElementById('signups-modal');
+        if (modal && modal.style.display === 'block') {
+            modal.style.display = 'none';
+        }
+    }
 });
 
 // Highlight events within 4 days and add weather forecast links for events within 10 days
