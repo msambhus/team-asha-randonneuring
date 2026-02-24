@@ -15,13 +15,11 @@
     .coach-box h3 {
         font-size: 1.1rem !important;
     }
-    .resource-list {
-        font-size: 0.9rem;
+    .resource-grid {
+        grid-template-columns: 1fr !important;
     }
-    .resource-list .note {
-        display: block;
-        margin-left: 0 !important;
-        margin-top: 4px;
+    .resource-card {
+        font-size: 0.9rem;
     }
 }
 </style>
@@ -30,116 +28,309 @@
 {% block content %}
 <div class="bg-gradient-to-br from-primary via-primary-dark to-primary text-white py-10 px-5 text-center">
 <h1 class="text-[2.5rem] mb-2.5 font-extrabold">Resources</h1>
-<p class="text-lg opacity-90">Guides, gear recommendations, and useful links for randonneurs</p>
+<p class="text-lg opacity-90">Curated guides, gear recommendations, and essential knowledge for randonneurs</p>
 </div>
 <div class="max-w-[1200px] mx-auto px-5 py-10">
 
 <div class="coach-box bg-gradient-to-br from-[#faf5ff] to-[#ebf8ff] border-2 border-[#805ad5] rounded-xl p-6 my-5 flex gap-5 items-start mb-8">
 <img src="https://ta.ashanet.org/siliconvalley/marathon/images/coach_mani.jpg" alt="Coach Mani" class="w-[120px] h-[120px] object-cover rounded-[10px] flex-shrink-0">
 <div>
-<h3 class="text-[#553c9a] mb-2.5">Coach Mani &mdash; The OG of Randonneuring</h3>
+<h3 class="text-[#553c9a] mb-2.5 text-xl font-bold">Coach Mani &mdash; The OG of Randonneuring</h3>
 <p class="mt-2.5">Coach Mani completed <strong>Paris-Brest-Paris in 2007</strong>, long before the current wave of Team Asha randonneurs. His experience and mentorship inspired the team we have today.</p>
 <p class="mt-2.5">
-<a href="https://drive.google.com/drive/folders/1H16EtK2AQqXKS1K2lSUDiLBkk3FojjGd" class="text-primary no-underline font-medium hover:text-accent hover:underline" target="_blank">Mani's Randonneuring Talk &rarr;</a>
+<a href="https://drive.google.com/drive/folders/1H16EtK2AQqXKS1K2lSUDiLBkk3FojjGd" class="text-primary no-underline font-semibold hover:text-accent hover:underline inline-flex items-center gap-1" target="_blank">
+<span>📹 Watch Mani's Randonneuring Talk</span>
+<span>&rarr;</span>
+</a>
 </p>
 </div>
 </div>
 
-<div class="mb-8">
-<h3 class="text-primary mb-3 text-xl border-l-4 border-accent pl-3">PBP Preparation &amp; Resources</h3>
-<ul class="list-none p-0">
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.youtube.com/watch?v=8mOpy6A215A&list=PL5pu2JvWBw30LGzNCuJeXlfSuEzZWGa-d&index=1" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">PBP Webinar #1</a></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.youtube.com/playlist?list=PL9F4jNLzee1GgyYKHKaAmlJGBHeH3n3Kb" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">SFR PBP Tips 2019</a> <span class="text-text-light text-[0.85rem] ml-2">Playlist of tips from San Francisco Randonneurs</span></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.youtube.com/playlist?list=PLbGA1NzqmZqiY20tm0j30Ipc9Vn6jIZdp" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">RUSA PBP Seminar Playlist</a></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://rusa.org/pages/pbp-faq" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">RUSA PBP FAQ</a></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.apidura.com/journal/paris-brest-paris-everything-you-need-to-know/" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">PBP: Everything You Need to Know</a> <span class="text-text-light text-[0.85rem] ml-2">Apidura Journal</span></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.paris-brest-paris.org/fr/download/PBP-BROCHURE-PRESENTATION-EN.pdf" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">PBP Brochure (PDF)</a></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.audaxindia.in/docs/PBP_2023_Preparation.pdf" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Road to PBP 2023</a> <span class="text-text-light text-[0.85rem] ml-2">Audax India Resources</span></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.gicentre.org/pbp2015/?chartTypeRB=tihRB" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">PBP Bulge Visualization</a> <span class="text-text-light text-[0.85rem] ml-2">Interactive visualization of PBP rider progress</span></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://docs.google.com/spreadsheets/d/1HZ4x_pes-LeCe_1gYYw0MhX6XOosAdWz/edit#gid=724938957" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">PBP Planner Spreadsheet</a></li>
-</ul>
+<div class="section-header">
+<h2 class="section-title">🏆 PBP Preparation & Resources</h2>
+<p class="section-subtitle">Everything you need to prepare for Paris-Brest-Paris</p>
 </div>
-
-<div class="mb-8">
-<h3 class="text-primary mb-3 text-xl border-l-4 border-accent pl-3">PBP 2023 Experiences</h3>
-<ul class="list-none p-0">
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://unexpectedathlete.wordpress.com/2023/09/06/a-bucket-list-item-checked-off-pbp2023-done-and-dusted/" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Mihir's PBP 2023 Writeup</a> <span class="text-text-light text-[0.85rem] ml-2">"A bucket list item checked off"</span></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://drive.google.com/file/d/1uABXlTmdgeSuPjBA2MXQ7LvMy9zwk-gn/view?usp=drivesdk" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Venki's PBP 2023 Experience</a></li>
-</ul>
+<div class="resource-grid">
+<div class="resource-card featured">
+<div class="resource-badge video">VIDEO</div>
+<a href="https://www.youtube.com/watch?v=8mOpy6A215A&list=PL5pu2JvWBw30LGzNCuJeXlfSuEzZWGa-d&index=1" target="_blank" class="resource-link">PBP Webinar #1</a>
+<p class="resource-desc">Essential webinar series for PBP preparation</p>
 </div>
-
-<div class="mb-8">
-<h3 class="text-primary mb-3 text-xl border-l-4 border-accent pl-3">Training &amp; Preparation</h3>
-<ul class="list-none p-0">
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://thinks.jamesbradbury.co.uk/paris-brest-paris-training-plan.html" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Brevet Training Plan</a></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://ridefar.info/rider/safety/sleep-deprivation/" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Sleep Deprivation Guide</a> <span class="text-text-light text-[0.85rem] ml-2">Essential reading for 600km+ rides</span></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.youtube.com/watch?v=VWgZ1Ddlk3g" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">GCN Strength Training for Cyclists</a> <span class="text-text-light text-[0.85rem] ml-2">15 minute upper body workout</span></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://docs.google.com/document/d/12ucD6mhdwDK8ASLXVmm5RNVcvPMDtxRg7LrH2G4IvGE/edit" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Trainers and Indoor Training Guide</a></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://docs.google.com/spreadsheets/d/15B9AnUdsvCciiAMczQ0mfPVd5TNDZpUH8T0FxRc7-mc/edit?usp=sharing" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Venki's Brevet Checklist</a></li>
-</ul>
+<div class="resource-card">
+<div class="resource-badge video">VIDEO</div>
+<a href="https://www.youtube.com/playlist?list=PL9F4jNLzee1GgyYKHKaAmlJGBHeH3n3Kb" target="_blank" class="resource-link">SFR PBP Tips 2019</a>
+<p class="resource-desc">Playlist of tips from San Francisco Randonneurs</p>
 </div>
-
-<div class="mb-8">
-<h3 class="text-primary mb-3 text-xl border-l-4 border-accent pl-3">Blogs &amp; Journals</h3>
-<ul class="list-none p-0">
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://unexpectedathlete.wordpress.com/" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Mihir's Blog &mdash; The Unexpected Athlete</a></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="http://susanotcenas.blogspot.com/2014/11/pbp-tips-for-first-timer.html" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Susan's PBP Tips for First Timers</a></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://blayleys.blogspot.com/p/dressing-for-winter-cycling.html?m=1" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">John and Pamela's Blog &mdash; Winter Cycling Gear</a></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.apidura.com/journal/its-not-about-being-fast-its-about-not-being-slow/" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Apidura: It's Not About Being Fast</a></li>
-</ul>
+<div class="resource-card">
+<div class="resource-badge video">VIDEO</div>
+<a href="https://www.youtube.com/playlist?list=PLbGA1NzqmZqiY20tm0j30Ipc9Vn6jIZdp" target="_blank" class="resource-link">RUSA PBP Seminar Playlist</a>
+<p class="resource-desc">Comprehensive seminar series from RUSA</p>
 </div>
-
-<div class="mb-8">
-<h3 class="text-primary mb-3 text-xl border-l-4 border-accent pl-3">Lights &amp; Visibility</h3>
-<ul class="list-none p-0">
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://magicshine.com/collections/bike-front-light/products/magicshine-rn-3000" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Magicshine RN3000</a> <span class="text-text-light text-[0.85rem] ml-2">Popular choice among the team</span></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.bumm.de/en/products/akku-scheinwerfer/parent/1922/produkt/1922qmla.html" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Busch &amp; M&uuml;ller IXON Space</a> <span class="text-text-light text-[0.85rem] ml-2">Excellent beam shape, no glare</span></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.fenixlighting.com/product/fenix-bc30-v2-bike-light/" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Fenix BC30 V2.0</a> <span class="text-text-light text-[0.85rem] ml-2">Popular with endurance riders</span></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.sinewavecycles.com/collections/lighting/products/sinewave-cycles-beacon" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Sinewave Beacon</a> <span class="text-text-light text-[0.85rem] ml-2">Dynamo-powered option</span></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://docs.google.com/document/d/1JzA0_gh4njm3rA7Zn8wZyRJqOoc21_G7vjFh2OPpG-U/edit?usp=sharing" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Guide: On the Subject of Lights</a></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.cyclingabout.com/dynamo-hub-power-drag-testing-schmidt-son-shutter-precision-shimano/" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Dynamo Hub &amp; Lights Testing</a></li>
-</ul>
+<div class="resource-card">
+<div class="resource-badge guide">GUIDE</div>
+<a href="https://rusa.org/pages/pbp-faq" target="_blank" class="resource-link">RUSA PBP FAQ</a>
+<p class="resource-desc">Frequently asked questions answered</p>
 </div>
-
-<div class="mb-8">
-<h3 class="text-primary mb-3 text-xl border-l-4 border-accent pl-3">Gear &amp; Equipment</h3>
-<ul class="list-none p-0">
-<li class="py-2 border-b border-border last:border-b-0"><strong>Frame Bags:</strong> <a href="https://www.apidura.com/shop/expedition-frame-pack/" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Apidura Expedition</a>, <a href="https://www.revelatedesigns.com/index.cfm/store.catalog/frame-bags/TangleFrameBag" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Revelate Tangle</a></li>
-<li class="py-2 border-b border-border last:border-b-0"><strong>Reflective Tape:</strong> <a href="https://www.amazon.com/gp/product/B00URO2XY0/" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Gear Aid Tenacious Tape</a>, <a href="https://solastapes.com/1-2-4-inch-wide-rolls-oralite-reflexite-solas-adhesive-tape-m82-fd1404-stretchable-version/" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Solas Tape</a></li>
-<li class="py-2 border-b border-border last:border-b-0"><strong>Reflective Wear:</strong> Decathlon Van Rysel Wind Jacket (EN1150 standard)</li>
-<li class="py-2 border-b border-border last:border-b-0"><strong>Eyewear:</strong> Oakley/Tifosi with Photochromic lenses for day-to-night transitions</li>
-<li class="py-2 border-b border-border last:border-b-0"><strong>Gloves:</strong> Castelli Perfetto RoS, GoreTex Infinium (size up 2 sizes)</li>
-<li class="py-2 border-b border-border last:border-b-0"><strong>Bibs:</strong> <a href="https://us.lapassione.cc/products/cargo-bib-shorts" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">La Passione Cargo</a>, <a href="https://www.rapha.cc/us/en_US/shop/mens-cargo-bib-shorts/product/CBS01RG" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Rapha Classic Cargo</a>, <a href="https://www.redwhite.cc/products/cargo-bibshort-men" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">RedWhite Cargo</a></li>
-</ul>
+<div class="resource-card">
+<div class="resource-badge blog">BLOG</div>
+<a href="https://www.apidura.com/journal/paris-brest-paris-everything-you-need-to-know/" target="_blank" class="resource-link">PBP: Everything You Need to Know</a>
+<p class="resource-desc">Comprehensive guide from Apidura Journal</p>
 </div>
-
-<div class="mb-8">
-<h3 class="text-primary mb-3 text-xl border-l-4 border-accent pl-3">Brevet Day Checklist</h3>
-<div class="bg-card-bg rounded-xl p-6 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-border">
-<p><strong>Must-Have on the Bike:</strong> Front light (1000+ lumens), tail light, reflective vest, navigation device, portable charger, saddle/TT/frame bag</p>
-<p class="mt-2.5"><strong>Tire Kit (Tubed):</strong> Extra tubes (2), CO2 cartridges (2), mini pump, patch kit, tire levers, tire boot</p>
-<p class="mt-2.5"><strong>Tire Kit (Tubeless):</strong> All of the above plus dynaplug kit, valve core removal tool, spare sealant</p>
-<p class="mt-2.5"><strong>Tools:</strong> Multi-tool with chain breaker, spare master links (2 pairs), chain lube, spare AXS battery (if applicable)</p>
-<p class="mt-2.5"><strong>Nutrition:</strong> Gels, bars, salt tabs &mdash; plan for self-sufficiency between controls</p>
-<p class="mt-2.5"><strong>Post-Ride:</strong> Protein shake, towel, change of clothes, extra water, comfort food</p>
+<div class="resource-card">
+<div class="resource-badge pdf">PDF</div>
+<a href="https://www.paris-brest-paris.org/fr/download/PBP-BROCHURE-PRESENTATION-EN.pdf" target="_blank" class="resource-link">PBP Brochure</a>
+<p class="resource-desc">Official presentation brochure</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge pdf">PDF</div>
+<a href="https://www.audaxindia.in/docs/PBP_2023_Preparation.pdf" target="_blank" class="resource-link">Road to PBP 2023</a>
+<p class="resource-desc">Preparation guide from Audax India</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge tool">TOOL</div>
+<a href="https://www.gicentre.org/pbp2015/?chartTypeRB=tihRB" target="_blank" class="resource-link">PBP Bulge Visualization</a>
+<p class="resource-desc">Interactive visualization of rider progress</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge tool">TOOL</div>
+<a href="https://docs.google.com/spreadsheets/d/1HZ4x_pes-LeCe_1gYYw0MhX6XOosAdWz/edit#gid=724938957" target="_blank" class="resource-link">PBP Planner Spreadsheet</a>
+<p class="resource-desc">Plan your ride strategy and timing</p>
 </div>
 </div>
 
-<div class="mb-8">
-<h3 class="text-primary mb-3 text-xl border-l-4 border-accent pl-3">DIY Fixes</h3>
-<ul class="list-none p-0">
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://youtu.be/Y-HJIMVIvGc?si=GwhZS9VMYjH2R28g" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">How to Ride Without a Derailleur</a> <span class="text-text-light text-[0.85rem] ml-2">Emergency roadside fix</span></li>
-</ul>
+<div class="section-header">
+<h2 class="section-title">📝 PBP 2023 Experiences</h2>
+<p class="section-subtitle">Real stories from Team Asha riders</p>
+</div>
+<div class="resource-grid">
+<div class="resource-card featured">
+<div class="resource-badge blog">BLOG</div>
+<div class="team-badge">⭐ TEAM FAVORITE</div>
+<a href="https://unexpectedathlete.wordpress.com/2023/09/06/a-bucket-list-item-checked-off-pbp2023-done-and-dusted/" target="_blank" class="resource-link">Mihir's PBP 2023 Writeup</a>
+<p class="resource-desc">"A bucket list item checked off" - inspiring journey</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge pdf">PDF</div>
+<a href="https://drive.google.com/file/d/1uABXlTmdgeSuPjBA2MXQ7LvMy9zwk-gn/view?usp=drivesdk" target="_blank" class="resource-link">Venki's PBP 2023 Experience</a>
+<p class="resource-desc">Detailed account and lessons learned</p>
+</div>
 </div>
 
-<div class="mb-8">
-<h3 class="text-primary mb-3 text-xl border-l-4 border-accent pl-3">Local Randonneuring Clubs</h3>
-<ul class="list-none p-0">
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://sfrandonneurs.org/" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">San Francisco Randonneurs (SFR)</a> <span class="text-text-light text-[0.85rem] ml-2">Primary organizer for Bay Area brevets</span></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.davisbikeclub.org/ultracycling" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Davis Bike Club (DBC)</a> <span class="text-text-light text-[0.85rem] ml-2">Sacramento Valley area rides</span></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://www.santacruzrandonneurs.org/" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Santa Cruz Randonneurs (SCR)</a> <span class="text-text-light text-[0.85rem] ml-2">Central Coast rides including Big Sur</span></li>
-<li class="py-2 border-b border-border last:border-b-0"><a href="https://rusa.org/" target="_blank" class="text-primary no-underline font-medium hover:text-accent hover:underline">Randonneurs USA (RUSA)</a> <span class="text-text-light text-[0.85rem] ml-2">National governing body</span></li>
-</ul>
+<div class="section-header">
+<h2 class="section-title">💪 Training & Preparation</h2>
+<p class="section-subtitle">Build your endurance and prepare for long brevets</p>
+</div>
+<div class="resource-grid">
+<div class="resource-card featured">
+<div class="resource-badge guide">GUIDE</div>
+<a href="https://thinks.jamesbradbury.co.uk/paris-brest-paris-training-plan.html" target="_blank" class="resource-link">Brevet Training Plan</a>
+<p class="resource-desc">Structured training approach for long rides</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge guide">GUIDE</div>
+<div class="team-badge">⭐ ESSENTIAL</div>
+<a href="https://ridefar.info/rider/safety/sleep-deprivation/" target="_blank" class="resource-link">Sleep Deprivation Guide</a>
+<p class="resource-desc">Critical for 600km+ rides</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge video">VIDEO</div>
+<a href="https://www.youtube.com/watch?v=VWgZ1Ddlk3g" target="_blank" class="resource-link">GCN Strength Training</a>
+<p class="resource-desc">15 minute upper body workout for cyclists</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge guide">GUIDE</div>
+<a href="https://docs.google.com/document/d/12ucD6mhdwDK8ASLXVmm5RNVcvPMDtxRg7LrH2G4IvGE/edit" target="_blank" class="resource-link">Indoor Training Guide</a>
+<p class="resource-desc">Trainers and indoor training setup</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge tool">TOOL</div>
+<a href="https://docs.google.com/spreadsheets/d/15B9AnUdsvCciiAMczQ0mfPVd5TNDZpUH8T0FxRc7-mc/edit?usp=sharing" target="_blank" class="resource-link">Venki's Brevet Checklist</a>
+<p class="resource-desc">Complete packing and prep checklist</p>
+</div>
+</div>
+
+<div class="section-header">
+<h2 class="section-title">📖 Blogs & Journals</h2>
+<p class="section-subtitle">Inspiring stories and practical wisdom</p>
+</div>
+<div class="resource-grid">
+<div class="resource-card featured">
+<div class="resource-badge blog">BLOG</div>
+<div class="team-badge">⭐ TEAM</div>
+<a href="https://unexpectedathlete.wordpress.com/" target="_blank" class="resource-link">The Unexpected Athlete</a>
+<p class="resource-desc">Mihir's blog on randonneuring adventures</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge blog">BLOG</div>
+<a href="http://susanotcenas.blogspot.com/2014/11/pbp-tips-for-first-timer.html" target="_blank" class="resource-link">Susan's PBP Tips</a>
+<p class="resource-desc">First-timer advice from an experienced rider</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge blog">BLOG</div>
+<a href="https://blayleys.blogspot.com/p/dressing-for-winter-cycling.html?m=1" target="_blank" class="resource-link">Winter Cycling Gear Guide</a>
+<p class="resource-desc">John and Pamela's comprehensive winter guide</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge blog">BLOG</div>
+<a href="https://www.apidura.com/journal/its-not-about-being-fast-its-about-not-being-slow/" target="_blank" class="resource-link">It's Not About Being Fast</a>
+<p class="resource-desc">The randonneuring mindset explained</p>
+</div>
+</div>
+
+<div class="section-header">
+<h2 class="section-title">💡 Lights & Visibility</h2>
+<p class="section-subtitle">Stay safe and seen during night riding</p>
+</div>
+<div class="resource-grid">
+<div class="resource-card featured">
+<div class="resource-badge product">PRODUCT</div>
+<div class="team-badge">⭐ POPULAR</div>
+<a href="https://magicshine.com/collections/bike-front-light/products/magicshine-rn-3000" target="_blank" class="resource-link">Magicshine RN3000</a>
+<p class="resource-desc">Popular choice among Team Asha riders</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge product">PRODUCT</div>
+<a href="https://www.bumm.de/en/products/akku-scheinwerfer/parent/1922/produkt/1922qmla.html" target="_blank" class="resource-link">Busch & Müller IXON Space</a>
+<p class="resource-desc">Excellent beam shape, no glare</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge product">PRODUCT</div>
+<a href="https://www.fenixlighting.com/product/fenix-bc30-v2-bike-light/" target="_blank" class="resource-link">Fenix BC30 V2.0</a>
+<p class="resource-desc">Trusted by endurance riders</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge product">PRODUCT</div>
+<a href="https://www.sinewavecycles.com/collections/lighting/products/sinewave-cycles-beacon" target="_blank" class="resource-link">Sinewave Beacon</a>
+<p class="resource-desc">Dynamo-powered lighting solution</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge guide">GUIDE</div>
+<a href="https://docs.google.com/document/d/1JzA0_gh4njm3rA7Zn8wZyRJqOoc21_G7vjFh2OPpG-U/edit?usp=sharing" target="_blank" class="resource-link">On the Subject of Lights</a>
+<p class="resource-desc">Comprehensive lighting guide</p>
+</div>
+<div class="resource-card">
+<div class="resource-badge blog">BLOG</div>
+<a href="https://www.cyclingabout.com/dynamo-hub-power-drag-testing-schmidt-son-shutter-precision-shimano/" target="_blank" class="resource-link">Dynamo Hub Testing</a>
+<p class="resource-desc">In-depth hub and lights comparison</p>
+</div>
+</div>
+
+<div class="section-header">
+<h2 class="section-title">🎒 Gear & Equipment</h2>
+<p class="section-subtitle">Team-tested recommendations for your setup</p>
+</div>
+<div class="gear-section">
+<div class="gear-category">
+<h4 class="gear-category-title">Frame Bags</h4>
+<div class="gear-items">
+<a href="https://www.apidura.com/shop/expedition-frame-pack/" target="_blank" class="gear-item">Apidura Expedition</a>
+<a href="https://www.revelatedesigns.com/index.cfm/store.catalog/frame-bags/TangleFrameBag" target="_blank" class="gear-item">Revelate Tangle</a>
+</div>
+</div>
+<div class="gear-category">
+<h4 class="gear-category-title">Reflective Tape</h4>
+<div class="gear-items">
+<a href="https://www.amazon.com/gp/product/B00URO2XY0/" target="_blank" class="gear-item">Gear Aid Tenacious Tape</a>
+<a href="https://solastapes.com/1-2-4-inch-wide-rolls-oralite-reflexite-solas-adhesive-tape-m82-fd1404-stretchable-version/" target="_blank" class="gear-item">Solas Tape</a>
+</div>
+</div>
+<div class="gear-category">
+<h4 class="gear-category-title">Reflective Wear</h4>
+<div class="gear-items">
+<span class="gear-item-text">Decathlon Van Rysel Wind Jacket (EN1150 standard)</span>
+</div>
+</div>
+<div class="gear-category">
+<h4 class="gear-category-title">Eyewear</h4>
+<div class="gear-items">
+<span class="gear-item-text">Oakley/Tifosi with Photochromic lenses for day-to-night transitions</span>
+</div>
+</div>
+<div class="gear-category">
+<h4 class="gear-category-title">Gloves</h4>
+<div class="gear-items">
+<span class="gear-item-text">Castelli Perfetto RoS, GoreTex Infinium (size up 2 sizes)</span>
+</div>
+</div>
+<div class="gear-category">
+<h4 class="gear-category-title">Cargo Bibs</h4>
+<div class="gear-items">
+<a href="https://us.lapassione.cc/products/cargo-bib-shorts" target="_blank" class="gear-item">La Passione Cargo</a>
+<a href="https://www.rapha.cc/us/en_US/shop/mens-cargo-bib-shorts/product/CBS01RG" target="_blank" class="gear-item">Rapha Classic Cargo</a>
+<a href="https://www.redwhite.cc/products/cargo-bibshort-men" target="_blank" class="gear-item">RedWhite Cargo</a>
+</div>
+</div>
+</div>
+
+<div class="section-header">
+<h2 class="section-title">✅ Brevet Day Checklist</h2>
+<p class="section-subtitle">Don't forget these essentials</p>
+</div>
+<div class="checklist-grid">
+<div class="checklist-card">
+<h4 class="checklist-title">🚴 Must-Have on the Bike</h4>
+<p>Front light (1000+ lumens), tail light, reflective vest, navigation device, portable charger, saddle/TT/frame bag</p>
+</div>
+<div class="checklist-card">
+<h4 class="checklist-title">🛞 Tire Kit (Tubed)</h4>
+<p>Extra tubes (2), CO2 cartridges (2), mini pump, patch kit, tire levers, tire boot</p>
+</div>
+<div class="checklist-card">
+<h4 class="checklist-title">🔧 Tire Kit (Tubeless)</h4>
+<p>All of the above plus dynaplug kit, valve core removal tool, spare sealant</p>
+</div>
+<div class="checklist-card">
+<h4 class="checklist-title">🔨 Tools</h4>
+<p>Multi-tool with chain breaker, spare master links (2 pairs), chain lube, spare AXS battery (if applicable)</p>
+</div>
+<div class="checklist-card">
+<h4 class="checklist-title">🍫 Nutrition</h4>
+<p>Gels, bars, salt tabs — plan for self-sufficiency between controls</p>
+</div>
+<div class="checklist-card">
+<h4 class="checklist-title">🧘 Post-Ride</h4>
+<p>Protein shake, towel, change of clothes, extra water, comfort food</p>
+</div>
+</div>
+
+<div class="section-header">
+<h2 class="section-title">🔧 DIY Fixes</h2>
+<p class="section-subtitle">Emergency roadside repairs</p>
+</div>
+<div class="resource-grid">
+<div class="resource-card featured">
+<div class="resource-badge video">VIDEO</div>
+<div class="team-badge">⚡ ESSENTIAL</div>
+<a href="https://youtu.be/Y-HJIMVIvGc?si=GwhZS9VMYjH2R28g" target="_blank" class="resource-link">How to Ride Without a Derailleur</a>
+<p class="resource-desc">Critical emergency roadside fix technique</p>
+</div>
+</div>
+
+<div class="section-header">
+<h2 class="section-title">🚴 Local Randonneuring Clubs</h2>
+<p class="section-subtitle">Connect with the Bay Area randonneuring community</p>
+</div>
+<div class="clubs-grid">
+<div class="club-card sfr">
+<h4 class="club-name">San Francisco Randonneurs</h4>
+<p class="club-desc">Primary organizer for Bay Area brevets</p>
+<a href="https://sfrandonneurs.org/" target="_blank" class="club-link">Visit Website →</a>
+</div>
+<div class="club-card dbc">
+<h4 class="club-name">Davis Bike Club</h4>
+<p class="club-desc">Sacramento Valley area rides</p>
+<a href="https://www.davisbikeclub.org/ultracycling" target="_blank" class="club-link">Visit Website →</a>
+</div>
+<div class="club-card scr">
+<h4 class="club-name">Santa Cruz Randonneurs</h4>
+<p class="club-desc">Central Coast rides including Big Sur</p>
+<a href="https://www.santacruzrandonneurs.org/" target="_blank" class="club-link">Visit Website →</a>
+</div>
+<div class="club-card rusa">
+<h4 class="club-name">Randonneurs USA (RUSA)</h4>
+<p class="club-desc">National governing body</p>
+<a href="https://rusa.org/" target="_blank" class="club-link">Visit Website →</a>
+</div>
 </div>
 
 </div>
