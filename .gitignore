@@ -1,6 +1,13 @@
 __pycache__/
-*.pyc
-.env
-*.db-journal
+*.py[cod]
+*$py.class
+*.so
+.Python
 venv/
-.vercel/
+.venv
+env/
+ENV/
+.vercel
+.DS_Store
+node_modules/
+package-lock.json

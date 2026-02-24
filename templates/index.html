@@ -2,47 +2,58 @@
 {% block title %}Home - Team Asha Randonneuring{% endblock %}
 
 {% block content %}
-<div class="hero" style="padding:30px 20px;">
-<div style="display:flex;align-items:center;justify-content:center;gap:30px;flex-wrap:wrap;max-width:1100px;margin:0 auto;">
-    <img src="{{ url_for('static', filename='team_photo.jpg') }}" alt="Team Asha riders" style="width:360px;height:250px;object-fit:cover;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
-    <div style="text-align:left;max-width:500px;">
-        <h1 style="font-size:2rem;margin-bottom:8px;">Team Asha Randonneuring</h1>
-        <p style="font-size:0.95rem;opacity:0.9;margin-bottom:10px;">Bay Area cyclists pushing boundaries through ultra-distance randonneuring &mdash; raising funds for education of underprivileged children in India through Team Asha.</p>
-        <p style="font-size:0.9rem;opacity:0.85;"><strong>Building toward <a href="https://www.paris-brest-paris.org/en/" target="_blank" style="color:var(--accent-light);">Paris-Brest-Paris 2027</a></strong></p>
+<div class="bg-gradient-to-br from-primary via-primary-dark to-primary text-white py-8 px-5 text-center">
+<div class="flex items-center justify-center gap-8 flex-wrap max-w-[1100px] mx-auto">
+    <img src="{{ url_for('static', filename='team_photo.jpg') }}" alt="Team Asha riders" class="w-[360px] h-[250px] object-cover rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+    <div class="text-left max-w-[500px]">
+        <h1 class="text-[2rem] mb-2 font-extrabold">Team Asha Randonneuring</h1>
+        <p class="text-[0.95rem] opacity-90 mb-2.5">Bay Area cyclists pushing boundaries through ultra-distance randonneuring &mdash; raising funds for education of underprivileged children in India through Team Asha.</p>
+        <p class="text-[0.9rem] opacity-85"><strong>Building toward <a href="https://www.paris-brest-paris.org/en/" target="_blank" class="text-accent-light">Paris-Brest-Paris 2027</a></strong></p>
     </div>
 </div>
 </div>
 
-<div class="stats-row" style="margin-top:-25px;">
-<div class="stat-card"><div class="number">{{ stats.riders }}</div><div class="label">All-Time Riders</div></div>
-<div class="stat-card"><div class="number">{{ stats.rides }}</div><div class="label">All-Time Brevet Rides</div></div>
-<div class="stat-card"><div class="number">{{ stats.kms|commafy }}</div><div class="label">All-Time Brevet KMs</div></div>
-<div class="stat-card"><div class="number">{{ stats.srs }}</div><div class="label">All-Time Super Randonneurs</div></div>
-<div class="stat-card">
-    <div class="number" style="font-size:1.6rem;"><a href="https://www.paris-brest-paris.org/en/" target="_blank" style="color:inherit;text-decoration:none;">PBP 2027</a></div>
-    <div class="label">Next Goal</div>
-    <div style="font-size:0.7rem;color:var(--text-light);margin-top:2px;">Aug 17&ndash;21, 2027</div>
+<div class="grid grid-cols-2 md:grid-cols-5 gap-5 -mt-10 mx-auto px-5 max-w-[1200px] relative z-10">
+<div class="bg-card-bg rounded-xl p-6 text-center shadow-[0_4px_15px_rgba(0,0,0,0.08)] border border-border">
+    <div class="text-[2.2rem] font-extrabold text-primary">{{ stats.riders }}</div>
+    <div class="text-[0.85rem] text-text-light uppercase tracking-wider mt-1">All-Time Riders</div>
+</div>
+<div class="bg-card-bg rounded-xl p-6 text-center shadow-[0_4px_15px_rgba(0,0,0,0.08)] border border-border">
+    <div class="text-[2.2rem] font-extrabold text-primary">{{ stats.rides }}</div>
+    <div class="text-[0.85rem] text-text-light uppercase tracking-wider mt-1">All-Time Brevet Rides</div>
+</div>
+<div class="bg-card-bg rounded-xl p-6 text-center shadow-[0_4px_15px_rgba(0,0,0,0.08)] border border-border">
+    <div class="text-[2.2rem] font-extrabold text-primary">{{ stats.kms|commafy }}</div>
+    <div class="text-[0.85rem] text-text-light uppercase tracking-wider mt-1">All-Time Brevet KMs</div>
+</div>
+<div class="bg-card-bg rounded-xl p-6 text-center shadow-[0_4px_15px_rgba(0,0,0,0.08)] border border-border">
+    <div class="text-[2.2rem] font-extrabold text-primary">{{ stats.srs }}</div>
+    <div class="text-[0.85rem] text-text-light uppercase tracking-wider mt-1">All-Time Super Randonneurs</div>
+</div>
+<div class="bg-card-bg rounded-xl p-6 text-center shadow-[0_4px_15px_rgba(0,0,0,0.08)] border border-border hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] transition-all">
+    <div class="text-[1.6rem] font-extrabold text-primary"><a href="https://www.paris-brest-paris.org/en/" target="_blank" class="text-inherit no-underline">PBP 2027</a></div>
+    <div class="text-[0.85rem] text-text-light uppercase tracking-wider mt-1">Next Goal</div>
+    <div class="text-[0.7rem] text-text-light mt-0.5">Aug 17&ndash;21, 2027</div>
 </div>
 </div>
 
-<div class="container section">
-<div class="card">
-<h2>What is Randonneuring?</h2>
-<p style="margin-top:15px;">Randonneuring is a long-distance cycling sport where riders complete timed courses called <strong>brevets</strong>. Starting at 200km and progressing through 300km, 400km, 600km, and beyond, riders must finish within strict time limits while navigating through checkpoints called controls. It's not a race &mdash; it's a test of endurance, self-reliance, and determination.</p>
-<p style="margin-top:10px;"><a href="{{ url_for('main.about') }}" class="rider-link">Learn more about randonneuring &rarr;</a></p>
+<div class="max-w-[1200px] mx-auto px-5 py-10">
+<div class="bg-card-bg rounded-xl p-6 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-border mb-5">
+<h2 class="text-[1.6rem] mb-5 text-primary pb-2.5 border-b-[3px] border-accent inline-block">What is Randonneuring?</h2>
+<p class="mt-4">Randonneuring is a long-distance cycling sport where riders complete timed courses called <strong>brevets</strong>. Starting at 200km and progressing through 300km, 400km, 600km, and beyond, riders must finish within strict time limits while navigating through checkpoints called controls. It's not a race &mdash; it's a test of endurance, self-reliance, and determination.</p>
+<p class="mt-2.5"><a href="{{ url_for('main.about') }}" class="text-primary no-underline font-semibold hover:text-accent hover:underline">Learn more about randonneuring &rarr;</a></p>
 </div>
 
-<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:20px;">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-5">
 {% for ss in season_summaries %}
-<div class="card">
-<h3 style="color:var(--primary);margin-bottom:10px;">{{ ss.name }} Season</h3>
+<div class="bg-card-bg rounded-xl p-6 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-border">
+<h3 class="text-primary mb-2.5">{{ ss.name }} Season</h3>
 {% if ss.is_current %}
 <p>Our current season is underway &mdash; riders are building fitness and qualifying for <strong>Paris-Brest-Paris 2027</strong>.</p>
 {% else %}
-<p>{{ ss.active_riders }} riders completed {{ ss.total_rides }} brevets covering {{ ss.total_kms|commafy }} km.
-{% if ss.sr_rider_count > 0 %} {{ ss.sr_rider_count }} Super Randonneurs.{% endif %}</p>
+<p>{{ ss.active_riders }} riders completed {{ ss.total_rides }} brevets covering {{ ss.total_kms|commafy }} km.{% if ss.sr_rider_count > 0 %} {{ ss.sr_rider_count }} Super Randonneurs.{% endif %}</p>
 {% endif %}
-<p style="margin-top:10px;"><a href="{{ url_for('riders.season_riders', season_name=ss.name) }}" class="rider-link">View {{ ss.name[:4] }}/{{ ss.name[5:7] }} season &rarr;</a></p>
+<p class="mt-2.5"><a href="{{ url_for('riders.season_riders', season_name=ss.name) }}" class="text-primary no-underline font-semibold hover:text-accent hover:underline">View {{ ss.name[:4] }}/{{ ss.name[5:7] }} season &rarr;</a></p>
 </div>
 {% endfor %}
 </div>

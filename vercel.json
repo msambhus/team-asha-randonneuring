@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "buildCommand": "npm install && npm run build:css",
   "builds": [
     {
       "src": "api/index.py",
