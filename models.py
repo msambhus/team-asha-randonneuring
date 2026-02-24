@@ -139,12 +139,13 @@ def get_clubs():
 # ========== PARTICIPATION ==========
 
 def get_participation_matrix(season_id):
-    """Return {rider_id: {ride_id: {status, finish_time}}} for a season."""
+    """Return {rider_id: {ride_id: {status, finish_time, signed_up_at}}} for a season."""
     rows = _execute("""
-        SELECT rr.rider_id, rr.ride_id, rr.status, rr.finish_time
+        SELECT rr.rider_id, rr.ride_id, rr.status, rr.finish_time, rr.signed_up_at
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
         WHERE ri.season_id = %s
+          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
     """, (season_id,)).fetchall()
     matrix = {}
     for row in rows:
@@ -153,7 +154,8 @@ def get_participation_matrix(season_id):
             matrix[rid] = {}
         matrix[rid][row['ride_id']] = {
             'status': row['status'],
-            'finish_time': row['finish_time']
+            'finish_time': row['finish_time'],
+            'signed_up_at': row['signed_up_at']
         }
     return matrix
 
@@ -165,6 +167,7 @@ def get_rider_participation(rider_id, season_id):
         JOIN ride ri ON rr.ride_id = ri.id
         LEFT JOIN club c ON ri.club_id = c.id
         WHERE rr.rider_id = %s AND ri.season_id = %s
+          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
         ORDER BY ri.date
     """, (rider_id, season_id)).fetchall()
 
@@ -176,6 +179,7 @@ def get_rider_career_stats(rider_id):
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
         WHERE rr.rider_id = %s AND rr.status = 'FINISHED'
+          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
     """, (rider_id,)).fetchone()
     return dict(row) if row else {'total_rides': 0, 'total_kms': 0}
 
@@ -186,6 +190,7 @@ def get_rider_season_stats(rider_id, season_id):
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
         WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = 'FINISHED'
+          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
     """, (rider_id, season_id)).fetchone()
     return dict(row) if row else {'rides': 0, 'kms': 0}
 
@@ -212,13 +217,15 @@ def detect_sr_for_rider_season(rider_id, season_id, date_filter=False):
             SELECT ri.distance_km FROM rider_ride rr
             JOIN ride ri ON rr.ride_id = ri.id
             WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = 'FINISHED'
-            AND ri.date <= %s
+              AND ri.date <= %s
+              AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
         """, (rider_id, season_id, today)).fetchall()
     else:
         rows = _execute("""
             SELECT ri.distance_km FROM rider_ride rr
             JOIN ride ri ON rr.ride_id = ri.id
             WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = 'FINISHED'
+              AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
         """, (rider_id, season_id)).fetchall()
 
     buckets = {200: 0, 300: 0, 400: 0, 600: 0}
@@ -293,6 +300,7 @@ def get_all_time_stats():
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
         WHERE rr.status = 'FINISHED'
+          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
     """).fetchone()
     riders = row['riders']
     rides = row['rides']
@@ -530,6 +538,43 @@ def update_rider_ride_status(ride_id, statuses):
                       ON CONFLICT(rider_id, ride_id) DO UPDATE SET status = EXCLUDED.status""",
                    (rider_id, ride_id, status))
     conn.commit()
+
+def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None, start_time=None, 
+                       start_location=None, time_limit_hours=None):
+    """Update ride details (route, team route, start time, location, time limit)."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    updates = []
+    params = []
+    
+    if rwgps_url is not None:
+        updates.append("rwgps_url = %s")
+        params.append(rwgps_url if rwgps_url.strip() else None)
+    
+    if ride_plan_id is not None:
+        updates.append("ride_plan_id = %s")
+        params.append(ride_plan_id if ride_plan_id else None)
+    
+    if start_time is not None:
+        updates.append("start_time = %s")
+        params.append(start_time if start_time.strip() else None)
+    
+    if start_location is not None:
+        updates.append("start_location = %s")
+        params.append(start_location if start_location.strip() else None)
+    
+    if time_limit_hours is not None:
+        updates.append("time_limit_hours = %s")
+        params.append(time_limit_hours if time_limit_hours else None)
+    
+    if updates:
+        params.append(ride_id)
+        sql = f"UPDATE ride SET {', '.join(updates)} WHERE id = %s"
+        cur.execute(sql, params)
+        conn.commit()
+        return True
+    return False
 
 # ========== RIDE PLANS ==========
 

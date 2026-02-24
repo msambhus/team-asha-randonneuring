@@ -849,18 +849,30 @@
 
 {# ===== QUICK ACTION BUTTONS ===== #}
 <div class="quick-actions">
-    {% if rwgps_url_display %}
-    <a href="{{ rwgps_url_display }}" target="_blank" class="quick-action-btn">
+    {# Team Asha Route (if available) - shown first #}
+    {% if plan.rwgps_url_team %}
+    <a href="{{ plan.rwgps_url_team }}" target="_blank" class="quick-action-btn">
         <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:20px;height:20px;">
-        <span>View Route</span>
+        <span>Team Asha Route</span>
     </a>
     {% endif %}
+    
+    {# Weather using Team Asha route #}
     {% if upcoming_event and weather_route_id %}
     <a href="#" id="auto-weather-link" target="_blank" class="quick-action-btn" style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-color:#fbbf24;color:#92400e;">
         <span>🌤️</span>
         <span>Weather</span>
     </a>
     {% endif %}
+    
+    {# Official Route (if different from team route) - shown last and grayed if team route exists #}
+    {% if plan.rwgps_url and plan.rwgps_url != plan.rwgps_url_team %}
+    <a href="{{ plan.rwgps_url }}" target="_blank" class="quick-action-btn" style="{% if plan.rwgps_url_team %}background:#f1f5f9;border-color:#cbd5e1;color:#94a3b8;{% endif %}">
+        <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:20px;height:20px;{% if plan.rwgps_url_team %}opacity:0.6;{% endif %}">
+        <span>Official Route</span>
+    </a>
+    {% endif %}
+    
     <a href="#time-bank-section" class="quick-action-btn" onclick="document.getElementById('time-bank-section').classList.add('expanded'); return true;">
         <span>⏱️</span>
         <span>Time Bank</span>
@@ -906,21 +918,6 @@
     </div>
 </div>
 
-{# ===== C. RWGPS LINK (single, team preferred) & WEATHER ===== #}
-{% if rwgps_url_display %}
-<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
-<a href="{{ rwgps_url_display }}" target="_blank" class="route-link" style="color:var(--primary);">
-    <img src="https://ridewithgps.com/favicon.ico" alt="">
-    {{ rwgps_url_label }}
-</a>
-
-{% if upcoming_event and weather_route_id %}
-<a href="#" id="auto-weather-link" target="_blank" class="route-link" style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-color:#fbbf24;color:#92400e;">
-    🌤️ Weather
-</a>
-{% endif %}
-</div>
-{% endif %}
 
 {# ===== E. LEGEND ===== #}
 <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:20px;">

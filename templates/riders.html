@@ -41,15 +41,16 @@
 </style>
 {% endblock %}
 
-{% macro badge(status, finish_time='') %}
+{% macro badge(status, finish_time='', signed_up_at=None) %}
 {% set v = status|string|lower|trim %}
-{% if v in ('yes', '1') %}
+{% if v in ('yes', '1', 'finished') %}
 <span class="badge badge-yes">&#x2713;</span>
 {% if finish_time %}<br><span style="font-size:0.7rem;color:#666;">{{ finish_time }}</span>{% endif %}
 {% elif v == 'dnf' %}
 {# empty #}
 {% elif v == 'dns' %}
-<span class="badge badge-dns">DNS</span>
+{# Only show DNS if they actually signed up (signed_up_at exists), otherwise treat as didn't participate #}
+{% if signed_up_at %}<span class="badge badge-dns">DNS</span>{% endif %}
 {% elif v == 'maybe' %}
 <span class="badge badge-maybe">Maybe</span>
 {% elif v == 'otl' %}
@@ -189,7 +190,7 @@
 <td class="frozen-col frozen-col-4" data-sort-value="{{ rd.kms }}" style="text-align:center;font-weight:700;">{{ rd.kms|commafy }}</td>
 {% for ride in past_rides %}
 {% set p = rd.participation.get(ride.id, {}) %}
-<td style="text-align:center;">{{ badge(p.get('status', ''), p.get('finish_time', '')) }}</td>
+<td style="text-align:center;">{{ badge(p.get('status', ''), p.get('finish_time', ''), p.get('signed_up_at')) }}</td>
 {% endfor %}
 </tr>
 {% endfor %}
