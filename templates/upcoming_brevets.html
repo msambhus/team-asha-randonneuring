@@ -147,6 +147,31 @@
     color: var(--accent);
     margin-bottom: 8px;
 }
+.event-distance-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.popular-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    border: 1.5px solid #fbbf24;
+    color: #92400e;
+    animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
 .event-elevation {
     font-size: 0.8rem;
     color: var(--text-light);
@@ -492,7 +517,7 @@
 
 <div id="events-container">
 {% for event in rusa_events %}
-<div class="event-card" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
+<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
 
     <div class="event-date">
         <div class="event-day">{{ event.date_str[8:10] }}</div>
@@ -504,11 +529,20 @@
     </div>
 
     <div class="event-distance">
-        {% if event.distance_miles %}
-        {{ "%.1f"|format(event.distance_miles) }} mi
-        {% else %}
-        {{ event.distance_km }} km
-        {% endif %}
+        <div class="event-distance-row">
+            <span>
+                {% if event.distance_miles %}
+                {{ "%.1f"|format(event.distance_miles) }} mi
+                {% else %}
+                {{ event.distance_km }} km
+                {% endif %}
+            </span>
+            {% if event.signup_count and event.signup_count >= 5 %}
+            <span class="popular-badge">
+                🔥🔥
+            </span>
+            {% endif %}
+        </div>
         {% if event.elevation_ft %}
         {% set miles = event.distance_miles if event.distance_miles else (event.distance_km * 0.621371) %}
         <div class="event-elevation">
@@ -711,6 +745,31 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Signup functions
+function updatePopularBadge(rideId, count) {
+    const eventCard = document.querySelector('[data-event-card-id="' + rideId + '"]');
+    if (!eventCard) return;
+    
+    const distanceRow = eventCard.querySelector('.event-distance-row');
+    if (!distanceRow) return;
+    
+    let popularBadge = distanceRow.querySelector('.popular-badge');
+    
+    if (count >= 5) {
+        // Show popular badge
+        if (!popularBadge) {
+            popularBadge = document.createElement('span');
+            popularBadge.className = 'popular-badge';
+            popularBadge.innerHTML = '🔥🔥';
+            distanceRow.appendChild(popularBadge);
+        }
+    } else {
+        // Remove popular badge
+        if (popularBadge) {
+            popularBadge.remove();
+        }
+    }
+}
+
 function signupForEvent(rideId, buttonElement) {
     if (buttonElement.disabled) return;
     buttonElement.disabled = true;
@@ -746,6 +805,8 @@ function signupForEvent(rideId, buttonElement) {
                     const routeName = eventCard ? eventCard.getAttribute('data-route-name') : '';
                     countBadge.onclick = function() { showSignups(rideId, routeName); };
                 }
+                // Update popular badge
+                updatePopularBadge(rideId, newCount);
             }
             buttonElement.replaceWith(createSignedUpBadge(rideId));
         } else {
@@ -823,6 +884,8 @@ function unsignupFromEvent(rideId, badgeElement) {
                     countBadge.classList.add('disabled');
                     countBadge.onclick = null;
                 }
+                // Update popular badge
+                updatePopularBadge(rideId, newCount);
             }
             badgeElement.replaceWith(createSignUpButton(rideId));
         } else {
