@@ -320,7 +320,7 @@ def get_upcoming_rusa_events():
     today = date.today().isoformat()
     events = get_db().execute("""
         SELECT * FROM upcoming_rusa_event
-        WHERE date >= ?
+        WHERE date >= ? AND event_status IN ('ACTIVE', 'INPROGRESS')
         ORDER BY date
     """, (today,)).fetchall()
     
