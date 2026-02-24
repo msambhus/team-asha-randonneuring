@@ -141,6 +141,101 @@ _GENERIC_WORDS = {'200', '300', '302', '400', '600', '1000', '1200',
                   'davis', 'del', 'san'}
 
 
+def _extract_distance_km(name):
+    """Extract brevet distance class in km from plan name.
+    E.g., 'SFR 300k Healdsburg' -> 300, 'Davis 200K' -> 200."""
+    match = re.search(r'(\d{3,4})\s*[kK]', name)
+    return int(match.group(1)) if match else None
+
+
+_CUTOFF_HOURS = {200: 13.5, 300: 20, 400: 27, 600: 40, 1000: 75, 1200: 90}
+
+
+def _get_cutoff_hours(km):
+    """Standard ACP/RUSA time limits by distance class."""
+    if not km:
+        return None
+    for limit in sorted(_CUTOFF_HOURS):
+        if km <= limit:
+            return _CUTOFF_HOURS[limit]
+    return None
+
+
+def _compute_difficulty_score(ft_per_mi, notes):
+    """Difficulty score 0-10. Base from ft/mile, modifiers from notes keywords."""
+    if not ft_per_mi:
+        return 0.0
+    base = min(ft_per_mi / 10.0, 7.0)
+    if notes:
+        n = notes.lower()
+        if 'headwind' in n:
+            base += 1.5
+        if 'steep' in n or 'steep climb' in n:
+            base += 1.0
+        if 'exposed' in n or 'gravel' in n:
+            base += 0.5
+        if 'tailwind' in n:
+            base -= 0.5
+    return round(min(max(base, 0), 10), 1)
+
+
+def _difficulty_label(score):
+    """Convert numeric difficulty score to label."""
+    if score >= 7:
+        return 'hard'
+    if score >= 4:
+        return 'moderate'
+    if score >= 1.5:
+        return 'easy'
+    return 'flat'
+
+
+_DIFFICULTY_COLORS = {
+    'hard': '#ef4444',
+    'moderate': '#f59e0b',
+    'easy': '#22c55e',
+    'flat': '#94a3b8',
+}
+
+
+def _extract_rwgps_route_id(url):
+    """Extract numeric route ID from a RWGPS URL."""
+    if not url:
+        return None
+    m = re.search(r'/routes/(\d+)', url)
+    return m.group(1) if m else None
+
+
+def _build_journey_nodes(stops):
+    """Collapse stops at same distance into single nodes for the journey strip."""
+    nodes = []
+    for s in stops:
+        if nodes and nodes[-1]['distance_miles'] == (s.get('distance_miles') or 0):
+            existing = nodes[-1]
+            if s['stop_type'] in ('rest', 'control'):
+                existing['label'] = "{} @ {}".format(s['stop_type'].title(), s['location'][:18])
+                if s['stop_type'] == 'control':
+                    existing['node_type'] = 'control'
+                elif existing['node_type'] == 'waypoint':
+                    existing['node_type'] = s['stop_type']
+            # Merge difficulty: take the harder one
+            if s.get('difficulty_score', 0) > existing.get('difficulty_score', 0):
+                existing['difficulty_score'] = s['difficulty_score']
+                existing['difficulty_label'] = s.get('difficulty_label', 'flat')
+        else:
+            label = s['location'][:22]
+            if s['stop_type'] == 'rest':
+                label = "Rest @ {}".format(s['location'][:18])
+            nodes.append({
+                'label': label,
+                'distance_miles': s.get('distance_miles') or 0,
+                'node_type': s['stop_type'],
+                'difficulty_score': s.get('difficulty_score', 0),
+                'difficulty_label': s.get('difficulty_label', 'flat'),
+            })
+    return nodes
+
+
 def _match_plans_to_events(events, plans):
     """Attach plan_slug to RUSA events by matching route names.
     Requires at least 2 meaningful keyword matches to avoid false positives,
@@ -282,15 +377,106 @@ def ride_plan_detail(slug):
     if not plan:
         abort(404)
     raw_stops = get_ride_plan_stops(plan['id'])
+
     # Convert Decimal types to float for Jinja2 arithmetic
     plan = dict(plan)
     plan['total_distance_miles'] = float(plan.get('total_distance_miles') or 0)
     plan['total_elevation_ft'] = int(plan.get('total_elevation_ft') or 0)
+
+    # Extract distance class for bookend time calculation
+    distance_km = _extract_distance_km(plan['name'])
+    cutoff_hours = _get_cutoff_hours(distance_km)
+    plan['distance_km'] = distance_km
+    plan['cutoff_hours'] = cutoff_hours
+    plan['start_time'] = plan.get('start_time') or '07:00'
+
+    # Determine which RWGPS link to show (team preferred, else official)
+    rwgps_url_display = plan.get('rwgps_url_team') or plan.get('rwgps_url')
+    rwgps_url_label = 'Team Asha Route' if plan.get('rwgps_url_team') else 'Official Route'
+    rwgps_route_id = _extract_rwgps_route_id(rwgps_url_display)
+
     stops = []
+    cum_time_min = 0
+    prev_dist = 0.0
+    total_moving_time = 0
+    total_break_time = 0
+
     for s in raw_stops:
         d = dict(s)
         d['distance_miles'] = float(d['distance_miles']) if d.get('distance_miles') is not None else None
         d['elevation_gain'] = int(d['elevation_gain']) if d.get('elevation_gain') is not None else None
         d['segment_time_min'] = int(d['segment_time_min']) if d.get('segment_time_min') is not None else None
+
+        cur_dist = d['distance_miles'] or 0.0
+        seg_dist = round(cur_dist - prev_dist, 1)
+        d['seg_dist'] = seg_dist
+
+        # Ft/mile for this segment
+        d['ft_per_mi'] = int(round(d['elevation_gain'] / seg_dist)) if d.get('elevation_gain') and seg_dist > 0 else None
+
+        # Average speed for this segment
+        d['avg_speed'] = round(seg_dist / (d['segment_time_min'] / 60.0), 1) if d.get('segment_time_min') and d['segment_time_min'] > 0 and seg_dist > 0 else None
+
+        # Cumulative time
+        if d['segment_time_min']:
+            cum_time_min += d['segment_time_min']
+            # Moving vs break: seg_dist > 0 = riding, seg_dist == 0 = break
+            if seg_dist > 0:
+                total_moving_time += d['segment_time_min']
+            else:
+                total_break_time += d['segment_time_min']
+        d['cum_time_min'] = cum_time_min
+
+        # Bookend time: max allowed time to reach this point
+        if cutoff_hours and plan['total_distance_miles'] > 0 and d['distance_miles']:
+            fraction = d['distance_miles'] / plan['total_distance_miles']
+            d['bookend_time_min'] = round(fraction * cutoff_hours * 60)
+            d['time_bank_min'] = d['bookend_time_min'] - cum_time_min
+        else:
+            d['bookend_time_min'] = None
+            d['time_bank_min'] = None
+
+        # Difficulty scoring
+        d['difficulty_score'] = _compute_difficulty_score(d['ft_per_mi'], d.get('notes'))
+        d['difficulty_label'] = _difficulty_label(d['difficulty_score'])
+
+        # Terrain difficulty label (kept for compatibility)
+        if d['ft_per_mi']:
+            if d['ft_per_mi'] >= 80:
+                d['terrain_label'] = 'steep'
+            elif d['ft_per_mi'] >= 50:
+                d['terrain_label'] = 'rolling'
+            elif d['ft_per_mi'] >= 25:
+                d['terrain_label'] = 'moderate'
+            else:
+                d['terrain_label'] = 'flat'
+        else:
+            d['terrain_label'] = None
+
+        prev_dist = cur_dist
         stops.append(d)
-    return render_template('ride_plan_detail.html', plan=plan, stops=stops)
+
+    total_time = cum_time_min
+
+    # Plan-level aggregates
+    avg_moving_speed = round(plan['total_distance_miles'] / (total_moving_time / 60.0), 1) if total_moving_time > 0 else None
+    avg_elapsed_speed = round(plan['total_distance_miles'] / (total_time / 60.0), 1) if total_time > 0 else None
+    overall_ft_per_mile = round(plan['total_elevation_ft'] / plan['total_distance_miles'], 0) if plan['total_distance_miles'] > 0 else 0
+
+    # Build collapsed journey nodes
+    journey_nodes = _build_journey_nodes(stops)
+
+    return render_template('ride_plan_detail.html',
+                           plan=plan,
+                           stops=stops,
+                           total_time=total_time,
+                           total_moving_time=total_moving_time,
+                           total_break_time=total_break_time,
+                           avg_moving_speed=avg_moving_speed,
+                           avg_elapsed_speed=avg_elapsed_speed,
+                           overall_ft_per_mile=overall_ft_per_mile,
+                           journey_nodes=journey_nodes,
+                           rwgps_url_display=rwgps_url_display,
+                           rwgps_url_label=rwgps_url_label,
+                           rwgps_route_id=rwgps_route_id,
+                           difficulty_colors=_DIFFICULTY_COLORS)
