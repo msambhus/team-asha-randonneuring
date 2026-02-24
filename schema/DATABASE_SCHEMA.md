@@ -7,7 +7,6 @@ erDiagram
     app_user ||--o| rider : "links to"
     rider ||--o| rider_profile : "has"
     rider ||--o{ rider_ride : "participates"
-    rider ||--o{ rider_ride_signup : "signs up"
     
     season ||--o{ ride : "contains"
     club ||--o{ ride : "organizes"
@@ -15,7 +14,6 @@ erDiagram
     ride_plan ||--o{ ride_plan_stop : "has stops"
     
     ride ||--o{ rider_ride : "includes"
-    ride ||--o{ rider_ride_signup : "accepts"
     
     app_user {
         int id PK
@@ -123,12 +121,6 @@ erDiagram
         int ride_id FK
         text status
         text finish_time
-    }
-    
-    rider_ride_signup {
-        int id PK
-        int rider_id FK
-        int ride_id FK
         timestamp signed_up_at
     }
 ```
@@ -290,33 +282,26 @@ All ride events (Team Asha and external RUSA events).
 ### Ride Participation
 
 #### `rider_ride`
-Tracks rider participation and completion status.
+Tracks rider signups, participation and completion status (consolidated lifecycle).
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | integer | PK, AUTO | Primary key |
 | rider_id | integer | NOT NULL, FK → rider(id) | Participating rider |
 | ride_id | integer | NOT NULL, FK → ride(id) | The ride |
-| status | text | NOT NULL | Status: DNF/DNS/Finished |
-| finish_time | text | NULL | Completion time |
+| status | text | NOT NULL | Status: SIGNED_UP/FINISHED/DNF/DNS |
+| finish_time | text | NULL | Completion time (set when FINISHED) |
+| signed_up_at | timestamp | NULL | Signup timestamp (NULL for historical rides) |
 
 **Foreign Keys:**
 - `rider_id` → `rider(id)` (CASCADE on delete)
 - `ride_id` → `ride(id)` (CASCADE on delete)
 
-#### `rider_ride_signup`
-Tracks ride registrations/signups.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| id | integer | PK, AUTO | Primary key |
-| rider_id | integer | NOT NULL, FK → rider(id) | Rider signing up |
-| ride_id | integer | NOT NULL, FK → ride(id) | The ride |
-| signed_up_at | timestamp | DEFAULT CURRENT_TIMESTAMP | Signup timestamp |
-
-**Foreign Keys:**
-- `rider_id` → `rider(id)` (CASCADE on delete)
-- `ride_id` → `ride(id)` (CASCADE on delete)
+**Lifecycle States:**
+- `SIGNED_UP`: Rider registered, ride hasn't occurred yet
+- `FINISHED`: Rider completed the ride successfully
+- `DNF`: Did Not Finish
+- `DNS`: Did Not Start
 
 ---
 
@@ -343,11 +328,10 @@ season → ride ← club
 
 ### Ride Participation
 ```
-rider → rider_ride_signup → ride
 rider → rider_ride → ride
 ```
-- Riders sign up for rides (`rider_ride_signup`)
-- Actual participation tracked in `rider_ride` with completion status
+- Complete lifecycle in `rider_ride`: signup → participation → result
+- Status progression: SIGNED_UP → FINISHED/DNF/DNS
 
 ---
 
@@ -367,14 +351,14 @@ All foreign keys have proper CASCADE constraints on delete to maintain data inte
 
 ## Database Statistics
 
-**Total Tables:** 10
-**Total Foreign Key Relationships:** 10
+**Total Tables:** 9
+**Total Foreign Key Relationships:** 9
 **Authentication Tables:** 1
 **Core Tables:** 5
-**Junction Tables:** 2
+**Junction Tables:** 1
 **Reference Tables:** 2
 
 ---
 
 *Generated on: 2026-02-24*  
-*Last updated: 2026-02-24 - Consolidated upcoming_rusa_event into ride table; removed is_team_ride column; converted date from TEXT to DATE type*
+*Last updated: 2026-02-24 - Consolidated rider_ride_signup into rider_ride; updated status values (yes→FINISHED, added SIGNED_UP); added signed_up_at timestamp*
