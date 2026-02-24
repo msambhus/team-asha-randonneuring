@@ -172,7 +172,7 @@
     {% if ride.ft_per_mile %}<div style="font-size:0.65rem;color:rgba(255,255,255,0.7);">{{ ride.ft_per_mile }}ft/mi</div>{% endif %}
     <div style="min-height:18px;margin-top:2px;display:flex;gap:6px;justify-content:center;align-items:center;">
     {% if ride.rwgps_url %}<a href="{{ ride.rwgps_url }}" target="_blank" title="View route on RideWithGPS" style="text-decoration:none;display:inline-flex;align-items:center;"><img src="https://ridewithgps.com/favicon.ico" alt="RideWithGPS" style="width:16px;height:16px;"></a>{% endif %}
-    {% if ride.plan_slug %}<a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}" title="View ride plan" style="color:var(--accent-light);text-decoration:none;">&#x1F4CB;</a>{% endif %}
+    {% if ride.plan_slug %}<a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}" title="View ride plan" style="text-decoration:none;display:inline-flex;align-items:center;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="var(--accent-light)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1C7.2 1 5 3.2 5 6c0 3.5 5 8 5 8s5-4.5 5-8c0-2.8-2.2-5-5-5z"/><circle cx="10" cy="6" r="1.5" fill="var(--accent-light)"/><path d="M6 16h8" stroke-dasharray="2 2"/><circle cx="6" cy="16" r="1" fill="var(--accent-light)"/><circle cx="14" cy="16" r="1" fill="var(--accent-light)"/></svg></a>{% endif %}
     </div>
 </th>
 {% endfor %}
