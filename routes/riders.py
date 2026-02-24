@@ -9,8 +9,9 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_upcoming_rusa_events, update_rider_profile,
                     get_pbp_finishers,
                     get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops,
-                    get_signup_count, get_rider_signup_status)
-from auth import login_required
+                    get_signup_count, get_rider_signup_status, get_ride_by_id, update_ride_details,
+                    get_user_by_id, _execute)
+from auth import login_required, user_login_required
 from datetime import date
 import re
 
@@ -329,12 +330,22 @@ def upcoming_brevets(season_name):
 
     # Get current user's rider_id and signup statuses
     rider_id = None
+    current_rider = None
     user_signups = {}
+    can_edit_rides = False
     user_id = session.get('user_id')
     if user_id:
         user = get_user_by_id(user_id)
         if user and user.get('rider_id'):
             rider_id = user['rider_id']
+            # Fetch rider details using rider_id
+            current_rider = _execute("SELECT * FROM rider WHERE id = %s", (rider_id,)).fetchone()
+            
+            # Check if user can edit rides (only Sriharsha, Venkatesh, Mihir)
+            if current_rider:
+                allowed_names = ['sriharsha', 'venkatesh', 'mihir']
+                can_edit_rides = current_rider.get('first_name', '').lower() in allowed_names
+            
             # Get signup status for each event
             for event in rusa_events:
                 status = get_rider_signup_status(rider_id, event['id'])
@@ -357,6 +368,9 @@ def upcoming_brevets(season_name):
 
     label = SEASON_LABELS.get(season_name, f'{season_name} Season')
 
+    # Get all ride plans for the edit modal
+    all_ride_plans = get_all_ride_plans()
+    
     return render_template('upcoming_brevets.html',
                            season=season,
                            season_label=label,
@@ -366,7 +380,73 @@ def upcoming_brevets(season_name):
                            region_colors=region_colors,
                            distances=distances,
                            current_rider_id=rider_id,
-                           user_signups=user_signups)
+                           user_signups=user_signups,
+                           all_ride_plans=all_ride_plans,
+                           can_edit_rides=can_edit_rides)
+
+
+@riders_bp.route('/ride/<int:ride_id>/edit', methods=['GET', 'POST'])
+@user_login_required
+def edit_ride(ride_id):
+    """Edit ride details (route, team route, start time, location, time limit)."""
+    from flask import jsonify, session
+    
+    # Check permissions - only Sriharsha, Venkatesh, Mihir can edit
+    user_id = session.get('user_id')
+    if user_id:
+        user = get_user_by_id(user_id)
+        if user and user.get('rider_id'):
+            current_rider = _execute("SELECT * FROM rider WHERE id = %s", (user['rider_id'],)).fetchone()
+            if current_rider:
+                allowed_names = ['sriharsha', 'venkatesh', 'mihir']
+                if current_rider.get('first_name', '').lower() not in allowed_names:
+                    abort(403)
+            else:
+                abort(403)
+        else:
+            abort(403)
+    else:
+        abort(403)
+    
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        abort(404)
+    
+    if request.method == 'POST':
+        # Get form data
+        rwgps_url = request.form.get('rwgps_url', '').strip()
+        ride_plan_id = request.form.get('ride_plan_id')
+        start_time = request.form.get('start_time', '').strip()
+        start_location = request.form.get('start_location', '').strip()
+        time_limit_hours = request.form.get('time_limit_hours')
+        
+        # Convert empty strings to None
+        ride_plan_id = int(ride_plan_id) if ride_plan_id and ride_plan_id != '' else None
+        time_limit_hours = float(time_limit_hours) if time_limit_hours and time_limit_hours != '' else None
+        
+        # Update the ride
+        update_ride_details(
+            ride_id=ride_id,
+            rwgps_url=rwgps_url if rwgps_url else None,
+            ride_plan_id=ride_plan_id,
+            start_time=start_time if start_time else None,
+            start_location=start_location if start_location else None,
+            time_limit_hours=time_limit_hours
+        )
+        
+        # Return JSON for AJAX requests
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True})
+        
+        # Redirect back to upcoming brevets for regular form submission
+        current_season = get_current_season()
+        if current_season:
+            return redirect(url_for('riders.upcoming_brevets', season_name=current_season['name']))
+        return redirect(url_for('main.index'))
+    
+    # GET request - show edit form
+    ride_plans = get_all_ride_plans()
+    return render_template('edit_ride.html', ride=ride, ride_plans=ride_plans)
 
 
 @riders_bp.route('/rider/<int:rusa_id>')

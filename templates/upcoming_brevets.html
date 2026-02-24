@@ -551,11 +551,22 @@
         {% endif %}
     </div>
 
-    <div class="event-title" style="overflow-wrap:break-word;word-break:break-word;">
-        {% if 'DART' in event.route_name or 'Dart' in event.route_name or 'Fleche' in event.route_name or (event.rwgps_url and ('dart' in event.rwgps_url.lower() or 'fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}
-        <span style="color:var(--accent);font-weight:800;">[DART]</span>
+    <div class="event-title" style="overflow-wrap:break-word;word-break:break-word;display:flex;align-items:center;gap:10px;">
+        <span style="flex:1;">
+            {% if 'DART' in event.route_name or 'Dart' in event.route_name or 'Fleche' in event.route_name or (event.rwgps_url and ('dart' in event.rwgps_url.lower() or 'fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}
+            <span style="color:var(--accent);font-weight:800;">[DART]</span>
+            {% endif %}
+            {{ event.route_name }}{% if event.ride_type %} <span style="color:var(--text-light);font-size:0.75rem;font-weight:600;white-space:nowrap;">[{{ event.ride_type }}]</span>{% endif %}
+        </span>
+        {% if can_edit_rides %}
+        <button onclick="openEditModal({{ event.id }}, '{{ event.route_name|replace("'", "\\'") }}', '{{ event.rwgps_url|replace("'", "\\'")|default('', true) }}', {{ event.ride_plan_id|default('null', true) }}, '{{ event.start_time|replace("'", "\\'")|default('', true) }}', '{{ event.start_location|replace("'", "\\'")|default('', true) }}', {{ event.time_limit_hours|default('null', true) }})" 
+                style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;color:#6d28d9;font-size:0.85rem;transition:transform 0.2s,color 0.2s;"
+                onmouseover="this.style.transform='scale(1.15)';this.style.color='#5b21b6';"
+                onmouseout="this.style.transform='scale(1)';this.style.color='#6d28d9';"
+                title="Edit ride details">
+            ✏️
+        </button>
         {% endif %}
-        {{ event.route_name }}{% if event.ride_type %} <span style="color:var(--text-light);font-size:0.75rem;font-weight:600;white-space:nowrap;">[{{ event.ride_type }}]</span>{% endif %}
     </div>
 
     <div class="event-links">
@@ -611,11 +622,11 @@
         {% if current_rider_id %}
             {% set user_status = user_signups.get(event.id) %}
             {% if user_status == 'SIGNED_UP' %}
-                <button class="signup-status signed-up" onclick="unsignupFromEvent({{ event.id }}, this)" data-ride-id="{{ event.id }}" style="cursor:pointer;">✓ Signed Up</button>
+                <button class="signup-status signed-up" onclick="unsignupFromEvent({{ event.id }}, this)" data-ride-id="{{ event.id }}" data-club-code="{{ event.club_code }}" style="cursor:pointer;">✓ Signed Up</button>
             {% elif user_status in ['FINISHED', 'DNF', 'DNS'] %}
                 <span class="signup-status finished">{{ user_status }}</span>
             {% else %}
-                <button class="signup-btn" onclick="signupForEvent({{ event.id }}, this)" data-ride-id="{{ event.id }}">
+                <button class="signup-btn" onclick="signupForEvent({{ event.id }}, '{{ event.club_code }}', this)" data-ride-id="{{ event.id }}" data-club-code="{{ event.club_code }}">
                     Sign Up
                 </button>
             {% endif %}
@@ -649,10 +660,179 @@
     </div>
 </div>
 
+<!-- External Club Registration Reminder Modal -->
+<div id="external-club-modal" class="modal" onclick="closeExternalClubModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()" style="max-width:500px;">
+        <div class="modal-header">
+            <h2 class="modal-title">⚠️ External Club Registration Required</h2>
+            <button class="modal-close" onclick="closeExternalClubModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:16px;color:var(--text);line-height:1.6;">
+                This is an external club event. You must register on their official website:
+            </p>
+            <div id="club-registration-info" style="background:#f8fafc;border:2px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;">
+                <!-- Club-specific info will be inserted here -->
+            </div>
+            <p style="font-size:0.9rem;color:var(--text-light);margin-bottom:20px;">
+                You can still sign up on Team Asha to show your interest and connect with other riders.
+            </p>
+            <div style="display:flex;gap:12px;">
+                <button onclick="proceedWithSignup()" class="btn btn-primary" style="flex:1;">
+                    Continue to Team Asha Sign Up
+                </button>
+                <button onclick="closeExternalClubModal()" class="btn" style="flex:1;background:var(--text-light);color:white;">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Ride Modal -->
+<div id="edit-modal" class="modal" onclick="closeEditModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()" style="max-width:600px;">
+        <div class="modal-header">
+            <h2 class="modal-title" id="edit-modal-title">Edit Brevet</h2>
+            <button class="modal-close" onclick="closeEditModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="edit-ride-form" onsubmit="submitEditForm(event)">
+                <input type="hidden" id="edit-ride-id" name="ride_id">
+                
+                <div style="margin-bottom:20px;">
+                    <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Route URL (RideWithGPS)</label>
+                    <input type="url" id="edit-rwgps-url" name="rwgps_url" 
+                           style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;"
+                           placeholder="https://ridewithgps.com/routes/...">
+                    <small style="color:var(--text-light);font-size:0.8rem;">Leave empty to remove</small>
+                </div>
+                
+                <div style="margin-bottom:20px;">
+                    <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Team Asha Route (Ride Plan)</label>
+                    <select id="edit-ride-plan" name="ride_plan_id" 
+                            style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;">
+                        <option value="">-- None --</option>
+                        {% for plan in all_ride_plans %}
+                        <option value="{{ plan.id }}">
+                            {{ plan.name }} ({{ plan.distance_km }}km)
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <small style="color:var(--text-light);font-size:0.8rem;">Select from available ride plans</small>
+                </div>
+                
+                <div style="margin-bottom:20px;">
+                    <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Start Time</label>
+                    <input type="time" id="edit-start-time" name="start_time" 
+                           style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;">
+                    <small style="color:var(--text-light);font-size:0.8rem;">24-hour format (e.g., 07:00)</small>
+                </div>
+                
+                <div style="margin-bottom:20px;">
+                    <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Start Location</label>
+                    <input type="text" id="edit-start-location" name="start_location" 
+                           style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;"
+                           placeholder="e.g., Golden Gate Park">
+                </div>
+                
+                <div style="margin-bottom:20px;">
+                    <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Time Limit (hours)</label>
+                    <input type="number" id="edit-time-limit" name="time_limit_hours" step="0.5" min="0"
+                           style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;"
+                           placeholder="e.g., 13.5">
+                </div>
+                
+                <div style="display:flex;gap:12px;margin-top:24px;">
+                    <button type="submit" class="btn btn-primary" style="flex:1;">
+                        Save Changes
+                    </button>
+                    <button type="button" onclick="closeEditModal()" class="btn" style="flex:1;background:var(--text-light);color:white;">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 {% block extra_js %}
 <script>
 var activeRegion = 'all';
 var activeDistance = 'all';
+
+// Edit Modal Functions
+function openEditModal(rideId, rideName, rwgpsUrl, ridePlanId, startTime, startLocation, timeLimit) {
+    document.getElementById('edit-modal-title').textContent = 'Edit: ' + rideName;
+    document.getElementById('edit-ride-id').value = rideId;
+    
+    // Set all current values with proper null handling
+    document.getElementById('edit-rwgps-url').value = rwgpsUrl && rwgpsUrl !== 'null' ? rwgpsUrl : '';
+    document.getElementById('edit-ride-plan').value = ridePlanId && ridePlanId !== 'null' && ridePlanId !== null ? ridePlanId : '';
+    
+    // Format start time to HH:MM format (HTML5 time input requires leading zeros)
+    let formattedTime = '';
+    if (startTime && startTime !== 'null' && startTime.trim() !== '') {
+        // If time is like "8:00", convert to "08:00"
+        let timeParts = startTime.trim().split(':');
+        if (timeParts.length === 2) {
+            formattedTime = timeParts[0].padStart(2, '0') + ':' + timeParts[1].padStart(2, '0');
+        } else {
+            formattedTime = startTime;
+        }
+    }
+    document.getElementById('edit-start-time').value = formattedTime;
+    
+    document.getElementById('edit-start-location').value = startLocation && startLocation !== 'null' ? startLocation : '';
+    document.getElementById('edit-time-limit').value = timeLimit && timeLimit !== 'null' && timeLimit !== null ? timeLimit : '';
+    
+    document.getElementById('edit-modal').style.display = 'flex';
+}
+
+function closeEditModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('edit-modal').style.display = 'none';
+}
+
+function submitEditForm(event) {
+    event.preventDefault();
+    
+    const form = document.getElementById('edit-ride-form');
+    const formData = new FormData(form);
+    const rideId = document.getElementById('edit-ride-id').value;
+    
+    // Show loading state
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = 'Saving...';
+    submitBtn.disabled = true;
+    
+    fetch('/ride/' + rideId + '/edit', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            closeEditModal();
+            // Reload the page to show updated data
+            window.location.reload();
+        } else {
+            alert('Error updating ride: ' + (data.error || 'Unknown error'));
+            submitBtn.textContent = originalText;
+            submitBtn.disabled = false;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error updating ride. Please try again.');
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
+    });
+}
 
 // Group events by month
 function groupEventsByMonth() {
@@ -770,7 +950,76 @@ function updatePopularBadge(rideId, count) {
     }
 }
 
-function signupForEvent(rideId, buttonElement) {
+// Store ride info for signup after confirmation
+let pendingSignup = null;
+
+function signupForEvent(rideId, clubCode, buttonElement) {
+    // Check if this is an external club event (not Team Asha)
+    if (clubCode && clubCode !== 'TA') {
+        // Show external club registration reminder
+        showExternalClubReminder(clubCode, rideId, buttonElement);
+        return;
+    }
+    
+    // Proceed with direct signup for Team Asha events
+    performSignup(rideId, buttonElement);
+}
+
+function showExternalClubReminder(clubCode, rideId, buttonElement) {
+    const modal = document.getElementById('external-club-modal');
+    const infoDiv = document.getElementById('club-registration-info');
+    
+    // Store for later
+    pendingSignup = { rideId, buttonElement };
+    
+    // Set club-specific information
+    let clubInfo = '';
+    switch(clubCode) {
+        case 'SFR':
+            clubInfo = '<strong>San Francisco Randonneurs</strong><br><a href="https://sfrandonneurs.org/registration.htm" target="_blank" style="color:var(--primary);font-weight:600;">https://sfrandonneurs.org/registration.htm</a>';
+            break;
+        case 'SCR':
+            clubInfo = '<strong>Santa Cruz Randonneurs</strong><br><a href="https://santacruzrandonneurs.org/pages/registration" target="_blank" style="color:var(--primary);font-weight:600;">https://santacruzrandonneurs.org/pages/registration</a>';
+            break;
+        case 'SRR':
+            clubInfo = '<strong>Santa Rosa Randonneurs</strong><br><a href="https://www.santarosarandos.org/start-control-registration" target="_blank" style="color:var(--primary);font-weight:600;">https://www.santarosarandos.org/start-control-registration</a>';
+            break;
+        case 'DBC':
+            clubInfo = '<strong>Davis Bike Club</strong><br><span style="color:var(--text);">Please sign up on the Davis Bike Club website.</span>';
+            break;
+        default:
+            clubInfo = '<strong>External Club</strong><br><span style="color:var(--text);">Please register on the club\'s official website.</span>';
+    }
+    
+    infoDiv.innerHTML = clubInfo;
+    modal.style.display = 'flex';
+}
+
+function closeExternalClubModal(event) {
+    const modal = document.getElementById('external-club-modal');
+    if (!event || event.target === modal || event.target.classList.contains('modal-close')) {
+        modal.style.display = 'none';
+        pendingSignup = null;
+    }
+}
+
+function proceedWithSignup() {
+    if (pendingSignup) {
+        // Store values before closing modal (which sets pendingSignup to null)
+        const rideId = pendingSignup.rideId;
+        const buttonElement = pendingSignup.buttonElement;
+        
+        // Close modal
+        const modal = document.getElementById('external-club-modal');
+        modal.style.display = 'none';
+        pendingSignup = null;
+        
+        // Now proceed with signup
+        performSignup(rideId, buttonElement);
+    }
+}
+
+function performSignup(rideId, buttonElement) {
     if (buttonElement.disabled) return;
     buttonElement.disabled = true;
     buttonElement.textContent = 'Signing up...';
@@ -808,7 +1057,8 @@ function signupForEvent(rideId, buttonElement) {
                 // Update popular badge
                 updatePopularBadge(rideId, newCount);
             }
-            buttonElement.replaceWith(createSignedUpBadge(rideId));
+            const clubCode = buttonElement.getAttribute('data-club-code');
+            buttonElement.replaceWith(createSignedUpBadge(rideId, clubCode));
         } else {
             // If redirect URL provided, navigate to it
             if (data.redirect) {
@@ -829,22 +1079,24 @@ function signupForEvent(rideId, buttonElement) {
     });
 }
 
-function createSignedUpBadge(rideId) {
+function createSignedUpBadge(rideId, clubCode) {
     const badge = document.createElement('button');
     badge.className = 'signup-status signed-up';
     badge.textContent = '✓ Signed Up';
     badge.setAttribute('data-ride-id', rideId);
+    badge.setAttribute('data-club-code', clubCode || '');
     badge.style.cursor = 'pointer';
     badge.onclick = function() { unsignupFromEvent(rideId, this); };
     return badge;
 }
 
-function createSignUpButton(rideId) {
+function createSignUpButton(rideId, clubCode) {
     const button = document.createElement('button');
     button.className = 'signup-btn';
     button.textContent = 'Sign Up';
     button.setAttribute('data-ride-id', rideId);
-    button.onclick = function() { signupForEvent(rideId, this); };
+    button.setAttribute('data-club-code', clubCode || '');
+    button.onclick = function() { signupForEvent(rideId, clubCode, this); };
     return button;
 }
 
@@ -887,7 +1139,8 @@ function unsignupFromEvent(rideId, badgeElement) {
                 // Update popular badge
                 updatePopularBadge(rideId, newCount);
             }
-            badgeElement.replaceWith(createSignUpButton(rideId));
+            const clubCode = badgeElement.getAttribute('data-club-code');
+            badgeElement.replaceWith(createSignUpButton(rideId, clubCode));
         } else {
             alert(data.error || 'Failed to remove signup');
             badgeElement.disabled = false;
@@ -954,12 +1207,20 @@ function closeModal(event) {
     }
 }
 
-// Close modal on ESC key
+// Close modals on ESC key
 document.addEventListener('keydown', function(event) {
     if (event.key === 'Escape' || event.key === 'Esc') {
-        const modal = document.getElementById('signups-modal');
-        if (modal && modal.style.display === 'block') {
-            modal.style.display = 'none';
+        const signupsModal = document.getElementById('signups-modal');
+        if (signupsModal && signupsModal.style.display === 'flex') {
+            signupsModal.style.display = 'none';
+        }
+        const editModal = document.getElementById('edit-modal');
+        if (editModal && editModal.style.display === 'flex') {
+            editModal.style.display = 'none';
+        }
+        const externalClubModal = document.getElementById('external-club-modal');
+        if (externalClubModal && externalClubModal.style.display === 'flex') {
+            closeExternalClubModal();
         }
     }
 });
