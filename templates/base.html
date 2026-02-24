@@ -35,6 +35,16 @@
         </div>
     </div>
     <a href="{{ url_for('main.resources') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'main.resources' %}bg-white/15 text-white{% endif %}">Resources</a>
+    {% if user_logged_in %}
+    <div class="relative inline-block group">
+        <a class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs">{{ rider_name or user_email }}</a>
+        <div class="hidden group-hover:block absolute top-full right-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[180px] z-[200] overflow-hidden pt-0">
+            <a href="{{ url_for('auth.logout') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Logout</a>
+        </div>
+    </div>
+    {% else %}
+    <a href="{{ url_for('auth.login') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white bg-white/10">Login</a>
+    {% endif %}
 </nav>
 </div>
 </header>
@@ -42,7 +52,7 @@
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
 {% for category, message in messages %}
-<div class="py-3 px-5 rounded-lg mx-5 my-2.5 text-sm {% if category == 'success' %}bg-[#c6f6d5] text-[#22543d]{% else %}bg-[#fed7d7] text-[#9b2c2c]{% endif %}">{{ message }}</div>
+<div class="py-3 px-5 rounded-lg mx-5 my-2.5 text-sm {% if category == 'success' %}bg-[#c6f6d5] text-[#22543d]{% elif category == 'warning' %}bg-[#fef3c7] text-[#78350f]{% elif category == 'info' %}bg-[#dbeafe] text-[#1e40af]{% else %}bg-[#fed7d7] text-[#9b2c2c]{% endif %}">{{ message }}</div>
 {% endfor %}
 {% endif %}
 {% endwith %}
