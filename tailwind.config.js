@@ -8,23 +8,24 @@ module.exports = {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#1a365d',
-          dark: '#2a4a7f',
+          DEFAULT: '#ff6b00',
+          dark: '#d45500',
         },
         accent: {
-          DEFAULT: '#e53e3e',
-          light: '#fc8181',
+          DEFAULT: '#1e40af',
+          light: '#3b82f6',
+          red: '#dc2626',
         },
-        bg: '#f7fafc',
+        bg: '#fefbf6',
         'card-bg': '#ffffff',
         text: {
           DEFAULT: '#2d3748',
           light: '#718096',
         },
-        border: '#e2e8f0',
-        success: '#38a169',
+        border: '#fed7aa',
+        success: '#16a34a',
         warning: '#d69e2e',
-        danger: '#e53e3e',
+        danger: '#dc2626',
       },
     },
   },
