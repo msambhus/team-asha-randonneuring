@@ -23,6 +23,25 @@
     }
 }
 </style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const backBtn = document.getElementById('back-to-menu');
+    if (!backBtn) return;
+
+    window.addEventListener('scroll', function() {
+        if (window.scrollY > 400) {
+            backBtn.classList.add('visible');
+        } else {
+            backBtn.classList.remove('visible');
+        }
+    });
+
+    backBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+});
+</script>
 {% endblock %}
 
 {% block content %}
@@ -348,6 +367,12 @@
 <a href="https://rusa.org/" target="_blank" class="club-link">Visit Website →</a>
 </div>
 </div>
+
+<!-- Back to Menu Button -->
+<a href="#" id="back-to-menu" class="back-to-menu-btn">
+<span class="back-to-menu-icon">↑</span>
+<span class="back-to-menu-text">Menu</span>
+</a>
 
 </div>
 {% endblock %}

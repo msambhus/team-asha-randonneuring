@@ -135,6 +135,50 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
     transform: translateY(-2px);
 }
 
+/* Back to Menu Button */
+.back-to-menu-btn {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: white;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 100;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(100px);
+}
+.back-to-menu-btn.visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+.back-to-menu-btn:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+}
+.back-to-menu-icon {
+    font-size: 1.5rem;
+    font-weight: bold;
+    line-height: 1;
+}
+.back-to-menu-text {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+}
+
 /* Resources Page Redesign */
 .section-header {
     margin: 50px 0 25px;
