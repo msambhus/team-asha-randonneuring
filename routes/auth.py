@@ -31,6 +31,12 @@ def login():
     # If already logged in, redirect to home
     if session.get('user_id'):
         return redirect(url_for('main.index'))
+    
+    # Store the next URL if provided
+    next_url = request.args.get('next')
+    if next_url:
+        session['next_url'] = next_url
+    
     return render_template('login.html')
 
 
@@ -92,6 +98,11 @@ def google_callback():
             session['rider_name'] = f"{rider['first_name']} {rider['last_name']}"
         
         flash('Successfully logged in!', 'success')
+        
+        # Redirect to stored next URL or home
+        next_url = session.pop('next_url', None)
+        if next_url:
+            return redirect(next_url)
         return redirect(url_for('main.index'))
         
     except Exception as e:
@@ -209,6 +220,11 @@ def setup_profile():
         session['rider_name'] = f"{rider['first_name']} {rider['last_name']}"
         
         flash(f'Welcome, {rider["first_name"]}! Your profile has been set up successfully.', 'success')
+        
+        # Redirect to stored next URL or home
+        next_url = session.pop('next_url', None)
+        if next_url:
+            return redirect(next_url)
         return redirect(url_for('main.index'))
     
     return render_template('setup_profile.html')

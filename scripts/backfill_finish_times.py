@@ -447,7 +447,7 @@ def main():
         FROM rider_ride rr
         JOIN rider r ON rr.rider_id = r.id
         JOIN ride ri ON rr.ride_id = ri.id
-        WHERE LOWER(rr.status) = 'yes' AND (rr.finish_time IS NULL OR rr.finish_time = '')
+        WHERE rr.status = 'FINISHED' AND (rr.finish_time IS NULL OR rr.finish_time = '')
         ORDER BY ri.date, r.first_name
     """)
     rows = cur.fetchall()

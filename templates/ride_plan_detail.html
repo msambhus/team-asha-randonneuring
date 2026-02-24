@@ -584,6 +584,136 @@
 .segment-card:nth-child(5) { animation-delay: 0.25s; }
 .segment-card:nth-child(n+6) { animation-delay: 0.3s; }
 
+/* ===== SIGNUP MODAL ===== */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    animation: fadeIn 0.2s;
+}
+.modal-content {
+    background: white;
+    margin: 5% auto;
+    padding: 0;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 80vh;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    animation: slideIn 0.3s;
+}
+.modal-header {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    padding: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.modal-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin: 0;
+}
+.modal-close {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #000;
+    cursor: pointer;
+    border: 2px solid #000;
+    background: #fff;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+.modal-close:hover {
+    background: #f3f4f6;
+    border-color: #000;
+    transform: rotate(90deg) scale(1.1);
+}
+.modal-body {
+    padding: 20px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+.rider-list-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+}
+.rider-list-item:last-child {
+    border-bottom: none;
+}
+.rider-list-item:hover {
+    background: #f8fafc;
+}
+.rider-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+.rider-info {
+    flex: 1;
+}
+.rider-name {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 0.95rem;
+}
+.rider-rusa {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    margin-top: 2px;
+}
+.rider-status-badge {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.rider-status-badge.signed-up {
+    background: #dcfce7;
+    color: #166534;
+}
+.rider-status-badge.finished {
+    background: #dbeafe;
+    color: #1e40af;
+}
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes slideIn {
+    from { transform: translateY(-50px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
     .sticky-ride-header {
@@ -616,6 +746,10 @@
     .metric-value { font-size: 0.85rem; }
     .tod-grid { grid-template-columns: minmax(100px, 2fr) 60px 50px 55px 1fr; font-size: 0.75rem; gap: 2px 6px; }
     .journey-node { min-width: 60px; }
+    .modal-content {
+        width: 95%;
+        margin: 10% auto;
+    }
 }
 @media (max-width: 480px) {
     .elevation-chart {
@@ -696,6 +830,17 @@
         {% if banked_min >= 0 %}+{% endif %}{{ "%.1f"|format(banked_min / 60) }}h
     </div>
     <div class="label">Time Banked</div>
+</div>
+{% endif %}
+{% if upcoming_event %}
+<div class="stat-card" {% if signup_count and signup_count > 0 %}onclick="showSignupsModal()" style="cursor:pointer;transition:all 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 8px 20px rgba(0,0,0,0.12)';" onmouseout="this.style.transform='';this.style.boxShadow='';"{% else %}style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+    <div class="number" style="color:#0369a1;">
+        <svg viewBox="0 0 20 20" width="32" height="32" fill="currentColor" style="display:inline-block;vertical-align:middle;margin-right:4px;">
+            <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+        </svg>
+        <span id="signup-count-display">{{ signup_count or 0 }}</span>
+    </div>
+    <div class="label">Riders Signed Up</div>
 </div>
 {% endif %}
 </div>
@@ -1065,6 +1210,22 @@
 </div>
 
 </div>
+
+<!-- Signups Modal -->
+{% if upcoming_event %}
+<div id="signups-modal" class="modal" onclick="closeSignupsModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2 class="modal-title">Riders List</h2>
+            <button class="modal-close" onclick="closeSignupsModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="signups-modal-body">
+            <p style="text-align:center;color:var(--text-light);padding:20px;">Loading...</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% endblock %}
 
 {% block extra_js %}
@@ -1170,5 +1331,66 @@ function toggleSection(sectionId) {
         }
     });
 })();
+
+// Signups modal functions
+{% if upcoming_event %}
+function showSignupsModal() {
+    var countElement = document.getElementById('signup-count-display');
+    var count = parseInt(countElement.textContent);
+    if (count === 0) return;
+    
+    var modal = document.getElementById('signups-modal');
+    var modalBody = document.getElementById('signups-modal-body');
+    
+    modalBody.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">Loading...</p>';
+    modal.style.display = 'block';
+    
+    fetch('/signup/api/{{ upcoming_event.id }}/signups')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (data.count === 0) {
+                    modalBody.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">No riders signed up yet.</p>';
+                } else {
+                    var html = '';
+                    data.riders.forEach(rider => {
+                        var initials = rider.first_name.charAt(0) + rider.last_name.charAt(0);
+                        
+                        html += '<div class="rider-list-item">' +
+                                '<div class="rider-avatar">' + initials + '</div>' +
+                                '<div class="rider-info">' +
+                                '<div class="rider-name">' + rider.first_name + ' ' + rider.last_name + ' <span style="color:var(--text-light);font-weight:500;font-size:0.85rem;">(#' + rider.rusa_id + ')</span></div>' +
+                                '</div>' +
+                                '</div>';
+                    });
+                    modalBody.innerHTML = html;
+                }
+            } else {
+                modalBody.innerHTML = '<p style="text-align:center;color:#dc2626;padding:20px;">Failed to load signups.</p>';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            modalBody.innerHTML = '<p style="text-align:center;color:#dc2626;padding:20px;">Failed to load signups.</p>';
+        });
+}
+
+function closeSignupsModal(event) {
+    var modal = document.getElementById('signups-modal');
+    if (!event || event.target === modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// Close modal on ESC key
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape' || event.key === 'Esc') {
+        var modal = document.getElementById('signups-modal');
+        if (modal && modal.style.display === 'block') {
+            modal.style.display = 'none';
+        }
+    }
+});
+{% endif %}
 </script>
 {% endblock %}

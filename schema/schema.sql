@@ -196,6 +196,7 @@ CREATE TABLE rider_ride (
     ride_id INTEGER NOT NULL,
     status TEXT NOT NULL,
     finish_time TEXT,
+    signed_up_at TIMESTAMP,
     FOREIGN KEY (rider_id) REFERENCES rider(id) ON DELETE CASCADE,
     FOREIGN KEY (ride_id) REFERENCES ride(id) ON DELETE CASCADE,
     UNIQUE(rider_id, ride_id)
@@ -204,24 +205,11 @@ CREATE TABLE rider_ride (
 CREATE INDEX idx_rider_ride_rider ON rider_ride(rider_id);
 CREATE INDEX idx_rider_ride_ride ON rider_ride(ride_id);
 CREATE INDEX idx_rider_ride_status ON rider_ride(status);
+CREATE INDEX idx_rider_ride_signed_up_at ON rider_ride(signed_up_at);
 
-COMMENT ON TABLE rider_ride IS 'Tracks rider participation and completion status';
-COMMENT ON COLUMN rider_ride.status IS 'Status: yes, DNF, DNS';
-
-CREATE TABLE rider_ride_signup (
-    id SERIAL PRIMARY KEY,
-    rider_id INTEGER NOT NULL,
-    ride_id INTEGER NOT NULL,
-    signed_up_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (rider_id) REFERENCES rider(id) ON DELETE CASCADE,
-    FOREIGN KEY (ride_id) REFERENCES ride(id) ON DELETE CASCADE,
-    UNIQUE(rider_id, ride_id)
-);
-
-CREATE INDEX idx_rider_ride_signup_rider ON rider_ride_signup(rider_id);
-CREATE INDEX idx_rider_ride_signup_ride ON rider_ride_signup(ride_id);
-
-COMMENT ON TABLE rider_ride_signup IS 'Tracks ride registrations/signups';
+COMMENT ON TABLE rider_ride IS 'Tracks rider signups, participation and completion status (consolidated)';
+COMMENT ON COLUMN rider_ride.status IS 'Status: SIGNED_UP, FINISHED, DNF, DNS';
+COMMENT ON COLUMN rider_ride.signed_up_at IS 'Timestamp when rider signed up (NULL for historical rides)';
 
 -- ============================================================
 -- FOREIGN KEY CONSTRAINTS
@@ -300,6 +288,11 @@ COMMENT ON VIEW v_team_asha_rides IS 'Team Asha organized rides only';
 -- v3.1: Converted ride.date from TEXT to DATE type
 --       - Better data integrity and simpler queries
 --       - Added NOT NULL constraint to date column
+-- v4.0: Consolidated rider_ride_signup into rider_ride table
+--       - Added signed_up_at column to rider_ride
+--       - Updated status values: 'yes' → 'FINISHED', added 'SIGNED_UP'
+--       - Dropped rider_ride_signup table
+--       - Single table for complete signup → participation lifecycle
 
 -- ============================================================
 -- END OF SCHEMA
