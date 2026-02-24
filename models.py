@@ -54,7 +54,7 @@ def get_riders_for_season(season_id):
 
 def get_active_riders_for_season(season_id):
     """Get riders who have completed at least 1 ride (status=yes) in this season, only counting past rides."""
-    today = date.today().isoformat()
+    today = date.today()
     return _execute("""
         SELECT DISTINCT r.*, rp.photo_filename
         FROM rider r
@@ -69,41 +69,68 @@ def get_active_riders_for_season(season_id):
 # ========== RIDES ==========
 
 def get_rides_for_season(season_id):
+    """Get all rides for a season with club info."""
     return _execute("""
-        SELECT ri.*, c.code as club_code, c.name as club_name, rp.slug as plan_slug
-        FROM ride ri LEFT JOIN club c ON ri.club_id = c.id
+        SELECT ri.*, 
+               c.code as club_code, 
+               c.name as club_name,
+               c.region as region,
+               rp.slug as plan_slug,
+               (c.code = 'TA') as is_team_ride
+        FROM ride ri 
+        INNER JOIN club c ON ri.club_id = c.id
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE ri.season_id = %s
         ORDER BY ri.date
     """, (season_id,)).fetchall()
 
 def get_ride_by_id(ride_id):
+    """Get a single ride by ID with club info."""
     return _execute("""
-        SELECT ri.*, c.code as club_code, c.name as club_name
-        FROM ride ri LEFT JOIN club c ON ri.club_id = c.id
+        SELECT ri.*, 
+               c.code as club_code, 
+               c.name as club_name,
+               c.region as region,
+               (c.code = 'TA') as is_team_ride
+        FROM ride ri 
+        INNER JOIN club c ON ri.club_id = c.id
         WHERE ri.id = %s
     """, (ride_id,)).fetchone()
 
 def get_upcoming_rides():
-    today = date.today().isoformat()
+    """Get Team Asha upcoming rides."""
+    today = date.today()
+    ta_club_id = get_team_asha_club_id()
     return _execute("""
-        SELECT ri.*, c.code as club_code, rp.slug as plan_slug,
+        SELECT ri.*, 
+               c.code as club_code, 
+               c.name as club_name,
+               c.region as region,
+               rp.slug as plan_slug,
                (SELECT COUNT(*) FROM rider_ride_signup rrs WHERE rrs.ride_id = ri.id) as signup_count
-        FROM ride ri LEFT JOIN club c ON ri.club_id = c.id
+        FROM ride ri 
+        INNER JOIN club c ON ri.club_id = c.id
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
-        WHERE ri.date >= %s AND ri.is_team_ride = TRUE
+        WHERE ri.date >= %s AND ri.club_id = %s
         ORDER BY ri.date
-    """, (today,)).fetchall()
+    """, (today, ta_club_id)).fetchall()
 
 def get_past_rides_for_season(season_id):
-    today = date.today().isoformat()
+    """Get past Team Asha rides for a season."""
+    today = date.today()
+    ta_club_id = get_team_asha_club_id()
     return _execute("""
-        SELECT ri.*, c.code as club_code, rp.slug as plan_slug
-        FROM ride ri LEFT JOIN club c ON ri.club_id = c.id
+        SELECT ri.*, 
+               c.code as club_code, 
+               c.name as club_name,
+               c.region as region,
+               rp.slug as plan_slug
+        FROM ride ri 
+        INNER JOIN club c ON ri.club_id = c.id
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
-        WHERE ri.season_id = %s AND ri.date < %s
+        WHERE ri.season_id = %s AND ri.date < %s AND ri.club_id = %s
         ORDER BY ri.date
-    """, (season_id, today)).fetchall()
+    """, (season_id, today, ta_club_id)).fetchall()
 
 def get_clubs():
     return _execute("SELECT * FROM club ORDER BY name").fetchall()
@@ -179,7 +206,7 @@ def get_all_rider_season_stats(season_id):
 def detect_sr_for_rider_season(rider_id, season_id, date_filter=False):
     """Count complete SR sets (200+300+400+600) for a rider in a season.
     Returns count (min across all four buckets), or 0."""
-    today = date.today().isoformat()
+    today = date.today()
     if date_filter:
         rows = _execute("""
             SELECT ri.distance_km FROM rider_ride rr
@@ -209,7 +236,7 @@ def detect_sr_for_rider_season(rider_id, season_id, date_filter=False):
 
 def detect_sr_for_all_riders_in_season(season_id, date_filter=False):
     """Batch: SR count for ALL riders in a season. Returns dict keyed by rider_id."""
-    today = date.today().isoformat()
+    today = date.today()
     if date_filter:
         rows = _execute("""
             SELECT rr.rider_id, ri.distance_km FROM rider_ride rr
@@ -304,7 +331,7 @@ def get_season_stats(season_id, past_only=False):
     date_clause = ""
     params = [season_id]
     if past_only:
-        today = date.today().isoformat()
+        today = date.today()
         date_clause = " AND ri.date <= %s"
         params.append(today)
 
@@ -335,7 +362,15 @@ def get_season_stats(season_id, past_only=False):
     }
 
 
-# ========== UPCOMING RUSA EVENTS ==========
+# ========== CLUB HELPERS ==========
+
+def get_team_asha_club_id():
+    """Get Team Asha club ID (cached helper)."""
+    club = _execute("SELECT id FROM club WHERE code = 'TA'").fetchone()
+    return club['id'] if club else None
+
+
+# ========== UPCOMING EVENTS (UNIFIED) ==========
 
 def get_default_time_limit(distance_km):
     """Return standard RUSA/ACP time limit in hours based on distance."""
@@ -352,26 +387,46 @@ def get_default_time_limit(distance_km):
     else:
         return None
 
-def get_upcoming_rusa_events():
+def get_all_upcoming_events():
+    """Get all upcoming events (Team Asha and external) with club info."""
     today = date.today()
     events = _execute("""
-        SELECT * FROM upcoming_rusa_event
-        WHERE date >= %s AND event_status IN ('ACTIVE', 'INPROGRESS')
-        ORDER BY date
+        SELECT ri.*, 
+               c.code as club_code, 
+               c.name as club_name,
+               c.region as region,
+               rp.slug as plan_slug,
+               rp.rwgps_url_team as plan_rwgps_url_team,
+               (c.code = 'TA') as is_team_ride
+        FROM ride ri 
+        INNER JOIN club c ON ri.club_id = c.id
+        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
+        WHERE ri.date >= %s AND ri.event_status = 'UPCOMING'
+        ORDER BY ri.date
     """, (today,)).fetchall()
 
-    # Add default time limits for events that don't have them
     events_with_defaults = []
     for event in events:
         event_dict = dict(event)
-        # Convert date to string for template slicing (PG returns datetime.date)
         d = event_dict.get('date')
-        event_dict['date_str'] = d.isoformat() if hasattr(d, 'isoformat') else str(d or '')
+        event_dict['date_str'] = d if isinstance(d, str) else (d.isoformat() if hasattr(d, 'isoformat') else str(d or ''))
+        
+        # Add route_name alias for compatibility with templates
+        if not event_dict.get('route_name'):
+            event_dict['route_name'] = event_dict.get('name')
+        
+        # Add default time limits if missing
         if not event_dict.get('time_limit_hours') and event_dict.get('distance_km'):
             event_dict['time_limit_hours'] = get_default_time_limit(event_dict['distance_km'])
+        
         events_with_defaults.append(event_dict)
 
     return events_with_defaults
+
+def get_upcoming_rusa_events():
+    """Get external RUSA events (not Team Asha). Legacy function for compatibility."""
+    all_events = get_all_upcoming_events()
+    return [e for e in all_events if not e.get('is_team_ride')]
 
 
 # ========== PBP FINISHERS ==========
