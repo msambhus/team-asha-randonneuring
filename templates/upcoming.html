@@ -17,7 +17,10 @@
 {% for r in rides %}
 <tr>
 <td>{{ r.date }}</td>
-<td>{{ r.name }}</td>
+<td>
+{{ r.name }}
+{% if r.plan_slug %}<a href="{{ url_for('riders.ride_plan_detail', slug=r.plan_slug) }}" title="View ride plan" style="margin-left:6px;text-decoration:none;">&#x1F4CB;</a>{% endif %}
+</td>
 <td>{{ r.distance_km }} km</td>
 <td>{{ r.club_code or '' }}</td>
 <td style="text-align:center;">{{ r.signup_count }}</td>

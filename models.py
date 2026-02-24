@@ -70,8 +70,9 @@ def get_active_riders_for_season(season_id):
 
 def get_rides_for_season(season_id):
     return _execute("""
-        SELECT ri.*, c.code as club_code, c.name as club_name
+        SELECT ri.*, c.code as club_code, c.name as club_name, rp.slug as plan_slug
         FROM ride ri LEFT JOIN club c ON ri.club_id = c.id
+        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE ri.season_id = %s
         ORDER BY ri.date
     """, (season_id,)).fetchall()
@@ -86,9 +87,10 @@ def get_ride_by_id(ride_id):
 def get_upcoming_rides():
     today = date.today().isoformat()
     return _execute("""
-        SELECT ri.*, c.code as club_code,
+        SELECT ri.*, c.code as club_code, rp.slug as plan_slug,
                (SELECT COUNT(*) FROM rider_ride_signup rrs WHERE rrs.ride_id = ri.id) as signup_count
         FROM ride ri LEFT JOIN club c ON ri.club_id = c.id
+        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE ri.date >= %s AND ri.is_team_ride = TRUE
         ORDER BY ri.date
     """, (today,)).fetchall()
@@ -96,8 +98,9 @@ def get_upcoming_rides():
 def get_past_rides_for_season(season_id):
     today = date.today().isoformat()
     return _execute("""
-        SELECT ri.*, c.code as club_code
+        SELECT ri.*, c.code as club_code, rp.slug as plan_slug
         FROM ride ri LEFT JOIN club c ON ri.club_id = c.id
+        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE ri.season_id = %s AND ri.date < %s
         ORDER BY ri.date
     """, (season_id, today)).fetchall()
@@ -450,6 +453,48 @@ def update_rider_ride_status(ride_id, statuses):
                    (rider_id, ride_id, status))
     conn.commit()
 
+# ========== RIDE PLANS ==========
+
+def get_all_ride_plans():
+    return _execute("""
+        SELECT * FROM ride_plan ORDER BY name
+    """).fetchall()
+
+def get_ride_plan_by_slug(slug):
+    return _execute("""
+        SELECT * FROM ride_plan WHERE slug = %s
+    """, (slug,)).fetchone()
+
+def get_ride_plan_stops(ride_plan_id):
+    return _execute("""
+        SELECT * FROM ride_plan_stop
+        WHERE ride_plan_id = %s
+        ORDER BY stop_order
+    """, (ride_plan_id,)).fetchall()
+
+def find_ride_plan_for_ride(ride_name):
+    """Try to match a ride to a ride plan by fuzzy name matching."""
+    plans = _execute("SELECT id, name, slug FROM ride_plan").fetchall()
+    ride_lower = ride_name.lower()
+    for plan in plans:
+        plan_lower = plan['name'].lower()
+        # Extract key words from both (remove common suffixes like 'plan', '200k', etc.)
+        plan_key = plan_lower.replace(' plan', '').replace('-', ' ').strip()
+        if plan_key in ride_lower or ride_lower in plan_key:
+            return plan
+    # Try matching on the core route name (e.g., "Healdsburg" in "SFR 300k Healdsburg")
+    for plan in plans:
+        plan_words = set(plan['name'].lower().replace('-', ' ').replace('plan', '').split())
+        ride_words = set(ride_lower.replace('-', ' ').split())
+        # Remove common words
+        common_ignore = {'200k', '300k', '400k', '600k', '1000k', 'sfr', 'scr', 'dbc', 'plan', 'route', 'k', '2022', '2023', '2024', '2025', '2026'}
+        plan_words -= common_ignore
+        ride_words -= common_ignore
+        if plan_words and ride_words and plan_words & ride_words:
+            return plan
+    return None
+
+
 def update_rider_profile(rider_id, photo_filename=None, bio=None):
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -470,3 +515,88 @@ def update_rider_profile(rider_id, photo_filename=None, bio=None):
                       ON CONFLICT(rider_id) DO UPDATE SET bio = EXCLUDED.bio""",
                    (rider_id, bio))
     conn.commit()
+
+
+# ========== USER AUTHENTICATION ==========
+
+def get_user_by_email(email):
+    """Get user by email."""
+    return _execute("SELECT * FROM app_user WHERE email = %s", (email,)).fetchone()
+
+def get_user_by_google_id(google_id):
+    """Get user by Google ID."""
+    return _execute("SELECT * FROM app_user WHERE google_id = %s", (google_id,)).fetchone()
+
+def get_user_by_id(user_id):
+    """Get user by ID."""
+    return _execute("SELECT * FROM app_user WHERE id = %s", (user_id,)).fetchone()
+
+def create_user(email, google_id):
+    """Create a new user with Google credentials."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""INSERT INTO app_user (email, google_id, profile_completed, last_login)
+                  VALUES (%s, %s, FALSE, CURRENT_TIMESTAMP)
+                  RETURNING id, email, google_id, profile_completed, rider_id""",
+               (email, google_id))
+    user = cur.fetchone()
+    conn.commit()
+    return dict(user) if user else None
+
+def update_user_login_time(user_id):
+    """Update last login timestamp."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("UPDATE app_user SET last_login = CURRENT_TIMESTAMP WHERE id = %s", (user_id,))
+    conn.commit()
+
+def complete_user_profile(user_id, rider_id):
+    """Link user to rider and mark profile as completed."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""UPDATE app_user SET rider_id = %s, profile_completed = TRUE 
+                      WHERE id = %s""",
+                   (rider_id, user_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        return False
+
+def get_rider_by_name_and_rusa(first_name, last_name, rusa_id):
+    """Get rider by exact name match and RUSA ID."""
+    return _execute("""
+        SELECT * FROM rider 
+        WHERE LOWER(first_name) = LOWER(%s) 
+        AND LOWER(last_name) = LOWER(%s) 
+        AND rusa_id = %s
+    """, (first_name, last_name, rusa_id)).fetchone()
+
+def create_rider(first_name, last_name, rusa_id):
+    """Create a new rider record."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""INSERT INTO rider (first_name, last_name, rusa_id)
+                      VALUES (%s, %s, %s)
+                      RETURNING id, first_name, last_name, rusa_id""",
+                   (first_name, last_name, rusa_id))
+        rider = cur.fetchone()
+        conn.commit()
+        return dict(rider) if rider else None
+    except Exception as e:
+        conn.rollback()
+        return None
+
+def check_rusa_id_exists(rusa_id):
+    """Check if a RUSA ID is already registered."""
+    return _execute("SELECT id FROM rider WHERE rusa_id = %s", (rusa_id,)).fetchone()
+
+def is_rider_linked_to_user(rider_id):
+    """Check if a rider is already linked to a user account."""
+    return _execute("SELECT id FROM app_user WHERE rider_id = %s", (rider_id,)).fetchone()
+
+def get_rider_by_rusa_id(rusa_id):
+    """Get rider by RUSA ID."""
+    return _execute("SELECT * FROM rider WHERE rusa_id = %s", (rusa_id,)).fetchone()
