@@ -49,7 +49,7 @@
 
 <div class="card">
 {% for event in rusa_events %}
-<div class="event-item" data-region="{{ event.region }}" style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;{% if not loop.last %}border-bottom:1px solid var(--border);{% endif %}">
+<div class="event-item" data-region="{{ event.region }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;{% if not loop.last %}border-bottom:1px solid var(--border);{% endif %}">
 <div style="min-width:48px;text-align:center;">
     <div style="font-size:0.75rem;color:var(--text-light);text-transform:uppercase;">{{ event.date[5:7] }}/{{ event.date[8:10] }}</div>
     <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">{{ event.date[8:10] }}</div>
@@ -72,14 +72,15 @@
     <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">{% if 'DART' in event.route_name or 'Dart' in event.route_name or 'Fleche' in event.route_name or (event.rwgps_url and ('dart' in event.rwgps_url.lower() or 'fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}[DART] {% endif %}{{ event.route_name }}
     {% if event.climbing and not event.elevation_ft %}<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">{{ event.climbing }}</span>{% endif %}
     {% if event.rwgps_url %}
-    <a href="{{ event.rwgps_url }}" target="_blank" style="margin-left:8px;color:var(--accent);font-size:0.75rem;text-decoration:none;">
-      {% if 'Fleche' in event.route_name or (event.rwgps_url and ('fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}
-        View Event &rarr;
-      {% else %}
-        View Route &rarr;
-      {% endif %}
+    <a href="{{ event.rwgps_url }}" target="_blank" title="{% if 'Fleche' in event.route_name or (event.rwgps_url and ('fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}View Event on RideWithGPS{% else %}View Route on RideWithGPS{% endif %}" style="margin-left:8px;text-decoration:none;display:inline-flex;align-items:center;vertical-align:middle;">
+      <img src="https://ridewithgps.com/favicon.ico" alt="RideWithGPS" style="width:20px;height:20px;vertical-align:middle;">
     </a>
     {% endif %}
+    <span class="weather-forecast-link" style="margin-left:4px;display:none;">
+      <a href="#" target="_blank" title="Weather Forecast" style="font-size:1.25rem;text-decoration:none;display:inline-flex;align-items:center;vertical-align:middle;line-height:1;">
+        🌤️
+      </a>
+    </span>
     </div>
     {% if event.start_time or event.time_limit_hours or event.start_location %}
     <div style="font-size:0.75rem;margin-top:6px;color:var(--text-light);display:flex;flex-wrap:wrap;gap:12px;">
@@ -127,6 +128,48 @@ function filterByRegion(region) {
         }
     });
 }
+
+// Add weather forecast links for events within 10 days
+(function() {
+    const now = new Date();
+    const tenDaysFromNow = new Date(now.getTime() + (10 * 24 * 60 * 60 * 1000));
+    
+    document.querySelectorAll('.event-item').forEach(eventItem => {
+        const eventDate = eventItem.dataset.eventDate; // format: YYYY-MM-DD
+        const eventTime = eventItem.dataset.eventTime || '07:00'; // format: HH:MM
+        const rwgpsUrl = eventItem.dataset.rwgpsUrl;
+        const routeName = eventItem.dataset.routeName;
+        
+        if (!eventDate || !rwgpsUrl) return;
+        
+        // Parse event date and time
+        const [year, month, day] = eventDate.split('-').map(Number);
+        const [hours, minutes] = eventTime.split(':').map(Number);
+        const eventDateTime = new Date(year, month - 1, day, hours, minutes);
+        
+        // Check if event is within 10 days
+        if (eventDateTime <= tenDaysFromNow && eventDateTime >= now) {
+            // Extract route ID from rwgps URL
+            const routeIdMatch = rwgpsUrl.match(/\/routes\/(\d+)/);
+            if (!routeIdMatch) return;
+            
+            const routeId = routeIdMatch[1];
+            const startTimestamp = Math.floor(eventDateTime.getTime() / 1000);
+            const encodedName = encodeURIComponent(routeName);
+            
+            // Build weather forecast URL
+            const weatherUrl = `https://www.randoplan.com/?pace=B%2B&interval=1&metric=false&rwgpsRoute=${routeId}&provider=weatherapi&name=${encodedName}&startTimestamp=${startTimestamp}&zone=America%2FLos_Angeles`;
+            
+            // Show and update the weather forecast link
+            const weatherLinkContainer = eventItem.querySelector('.weather-forecast-link');
+            if (weatherLinkContainer) {
+                const weatherLink = weatherLinkContainer.querySelector('a');
+                weatherLink.href = weatherUrl;
+                weatherLinkContainer.style.display = 'inline';
+            }
+        }
+    });
+})();
 </script>
 {% endblock %}
 {% endblock %}
