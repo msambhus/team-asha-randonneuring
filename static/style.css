@@ -90,49 +90,57 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
 .coach-box { background: linear-gradient(135deg, #faf5ff, #ebf8ff); border: 2px solid #805ad5; border-radius: 12px; padding: 24px; margin: 20px 0; }
 .coach-box h3 { color: #553c9a; margin-bottom: 10px; }
 
-/* Section Navigation */
-.section-nav-container {
-    background: white;
-    border-bottom: 2px solid var(--border);
-    position: sticky;
-    top: 0;
-    z-index: 50;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-.section-nav {
-    max-width: 1200px;
-    margin: 0 auto;
+/* Section Navigation Sidebar */
+.resources-layout {
     display: flex;
-    overflow-x: auto;
-    gap: 4px;
-    padding: 12px 20px;
-    scrollbar-width: thin;
+    max-width: 1400px;
+    margin: 0 auto;
+    gap: 30px;
+    padding: 20px;
 }
-.section-nav::-webkit-scrollbar {
-    height: 4px;
-}
-.section-nav::-webkit-scrollbar-thumb {
-    background: var(--primary);
-    border-radius: 4px;
-}
-.section-nav-item {
+.section-nav-sidebar {
+    width: 220px;
     flex-shrink: 0;
-    padding: 8px 16px;
-    border-radius: 8px;
+    position: sticky;
+    top: 80px;
+    align-self: flex-start;
     background: var(--card-bg);
     border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+}
+.section-nav-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--accent);
+}
+.section-nav-item {
+    display: block;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: transparent;
+    border: 1px solid transparent;
     color: var(--text);
     text-decoration: none;
-    font-weight: 600;
+    font-weight: 500;
     font-size: 0.9rem;
     transition: all 0.2s ease;
-    white-space: nowrap;
+    margin-bottom: 6px;
 }
 .section-nav-item:hover {
     background: var(--primary);
     color: white;
     border-color: var(--primary);
-    transform: translateY(-2px);
+    transform: translateX(4px);
+}
+.resources-content {
+    flex: 1;
+    min-width: 0;
 }
 
 /* Back to Menu Button */
