@@ -275,7 +275,7 @@
 
 <div id="events-container">
 {% for event in rusa_events %}
-<div class="event-card" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
+<div class="event-card" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
 
     <div class="event-date">
         <div class="event-day">{{ event.date_str[8:10] }}</div>
@@ -464,6 +464,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const eventDate = eventItem.dataset.eventDate; // format: YYYY-MM-DD
         const eventTime = eventItem.dataset.eventTime || '07:00'; // format: HH:MM
         const rwgpsUrl = eventItem.dataset.rwgpsUrl;
+        const weatherRwgpsUrl = eventItem.dataset.weatherRwgpsUrl; // Team Asha route preferred
         const routeName = eventItem.dataset.routeName;
         
         if (!eventDate) return;
@@ -481,10 +482,10 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         
-        // Add weather forecast link for events within 10 days
-        if (rwgpsUrl && eventDateTime <= tenDaysFromNow && eventDateTime >= now) {
-            // Extract route ID from rwgps URL
-            const routeIdMatch = rwgpsUrl.match(/\/routes\/(\d+)/);
+        // Add weather forecast link for events within 10 days (use Team Asha route if available)
+        if (weatherRwgpsUrl && eventDateTime <= tenDaysFromNow && eventDateTime >= now) {
+            // Extract route ID from rwgps URL (prefer Team Asha route)
+            const routeIdMatch = weatherRwgpsUrl.match(/\/routes\/(\d+)/);
             if (!routeIdMatch) return;
             
             const routeId = routeIdMatch[1];
