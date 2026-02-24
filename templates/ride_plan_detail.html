@@ -61,6 +61,13 @@
     margin-top: 1px;
     font-variant-numeric: tabular-nums;
 }
+.journey-eta {
+    font-size: 0.55rem;
+    color: var(--text-light);
+    margin-top: 1px;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.8;
+}
 
 /* ===== TERRAIN DIFFICULTY STRIP ===== */
 .terrain-strip {
@@ -164,37 +171,54 @@
     width: 3px;
 }
 
-/* ===== TIME-OF-DAY CHART ===== */
-.tod-row {
-    display: flex;
+/* ===== TIME-OF-DAY CHART (grid layout) ===== */
+.tod-grid {
+    display: grid;
+    grid-template-columns: minmax(120px, 1.5fr) 75px 60px 70px 1fr;
+    gap: 2px 10px;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 5px;
     font-size: 0.8rem;
 }
+.tod-header {
+    font-size: 0.65rem;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-weight: 600;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2px;
+}
 .tod-label {
-    min-width: 130px;
     font-weight: 500;
     color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    padding: 4px 0;
 }
 .tod-time {
-    min-width: 70px;
     font-weight: 600;
     color: var(--primary);
     font-variant-numeric: tabular-nums;
     text-align: right;
+    padding: 4px 0;
+}
+.tod-dist {
+    text-align: right;
+    font-weight: 500;
+    color: var(--text-light);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem;
+    padding: 4px 0;
 }
 .tod-bank {
-    min-width: 60px;
     text-align: right;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
+    padding: 4px 0;
 }
 .tod-bar-bg {
-    flex: 1;
     height: 7px;
     background: #f1f5f9;
     border-radius: 4px;
@@ -370,6 +394,17 @@
 .weather-btn:hover { background: #0369a1; }
 .weather-btn:disabled { background: #94a3b8; cursor: not-allowed; }
 
+/* ===== START TIME INPUT ===== */
+.start-time-input {
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--primary);
+    background: white;
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
     .plan-table { font-size: 0.75rem; }
@@ -377,7 +412,7 @@
     .segment-metrics { gap: 10px; }
     .metric { min-width: 44px; }
     .metric-value { font-size: 0.85rem; }
-    .tod-label { min-width: 100px; font-size: 0.75rem; }
+    .tod-grid { grid-template-columns: minmax(90px, 1fr) 60px 50px 55px 1fr; font-size: 0.75rem; gap: 2px 6px; }
     .journey-node { min-width: 60px; }
 }
 </style>
@@ -401,7 +436,7 @@
     <h1>{{ plan.name }}</h1>
     <p style="opacity:0.85;margin-top:8px;">{{ stops|length }} stops &middot; {{ "%.1f"|format(plan.total_distance_miles) }} miles &middot; {{ "{:,}".format(plan.total_elevation_ft) }} ft of climbing</p>
     {% if plan.cutoff_hours %}
-    <p style="opacity:0.65;font-size:0.88rem;margin-top:4px;">ACP time limit: {{ plan.cutoff_hours }}h &middot; Start: {{ plan.start_time }}</p>
+    <p style="opacity:0.65;font-size:0.88rem;margin-top:4px;">ACP time limit: {{ plan.cutoff_hours }}h &middot; Start: <span id="hero-start-time">{{ plan.start_time }}</span></p>
     {% endif %}
 </div>
 
@@ -483,22 +518,23 @@
 <span class="plan-legend-item"><span class="plan-legend-dot" style="background:#94a3b8;"></span> Waypoint</span>
 </div>
 <div class="plan-legend" style="flex:1;">
-<span style="font-weight:600;color:var(--text);margin-right:4px;">Difficulty:</span>
-<span class="plan-legend-item"><span class="plan-legend-dot" style="background:#94a3b8;"></span> Flat</span>
-<span class="plan-legend-item"><span class="plan-legend-dot" style="background:#22c55e;"></span> Easy</span>
-<span class="plan-legend-item"><span class="plan-legend-dot" style="background:#f59e0b;"></span> Moderate</span>
-<span class="plan-legend-item"><span class="plan-legend-dot" style="background:#ef4444;"></span> Hard</span>
+<span style="font-weight:600;color:var(--text);margin-right:4px;">Difficulty (ft/mi):</span>
+<div style="display:flex;align-items:center;gap:6px;flex:1;">
+    <span style="font-size:0.7rem;color:var(--text-light);">0</span>
+    <div style="flex:1;height:10px;border-radius:5px;background:linear-gradient(90deg, #94a3b8 0%, #22c55e 25%, #f59e0b 50%, #ef4444 75%, #991b1b 100%);"></div>
+    <span style="font-size:0.7rem;color:var(--text-light);">100+</span>
+</div>
 </div>
 </div>
 
-{# ===== F. TERRAIN DIFFICULTY STRIP ===== #}
+{# ===== F. TERRAIN DIFFICULTY STRIP (gradient colors) ===== #}
 {% if plan.total_distance_miles > 0 %}
 <div class="section-label">Terrain Difficulty Profile</div>
-<div class="terrain-strip" style="margin-bottom:24px;" title="Segments colored by difficulty (ft/mile + conditions)">
+<div class="terrain-strip" style="margin-bottom:24px;" title="Segments colored by difficulty (ft/mile gradient)">
 {% for s in stops %}
 {% if s.seg_dist and s.seg_dist > 0 %}
 <div class="terrain-seg"
-     style="width:{{ (s.seg_dist / plan.total_distance_miles * 100)|round(1) }}%;background:{{ difficulty_colors.get(s.difficulty_label, '#94a3b8') }};"
+     style="width:{{ (s.seg_dist / plan.total_distance_miles * 100)|round(1) }}%;background:{{ s.difficulty_color }};"
      title="{{ s.location }}: {{ s.ft_per_mi or 0 }} ft/mi — {{ s.difficulty_label }}{% if s.difficulty_score %} ({{ s.difficulty_score }}){% endif %}">
 </div>
 {% endif %}
@@ -506,32 +542,51 @@
 </div>
 {% endif %}
 
-{# ===== G. ROUTE OVERVIEW / JOURNEY STRIP (collapsed) ===== #}
+{# ===== G. ROUTE OVERVIEW / JOURNEY STRIP with ETA ===== #}
 <div class="section-label">Route Overview</div>
 <div class="journey-strip" style="margin-bottom:24px;">
 {% for n in journey_nodes %}
 <div class="journey-node {{ n.node_type }}">
-    <div class="journey-dot" style="background:{{ difficulty_colors.get(n.difficulty_label, '#94a3b8') }};box-shadow:0 0 0 2px {{ difficulty_colors.get(n.difficulty_label, '#94a3b8') }};"></div>
+    <div class="journey-dot" style="background:{{ n.difficulty_color }};box-shadow:0 0 0 2px {{ n.difficulty_color }};"></div>
     <div class="journey-label">{{ n.label }}</div>
     <div class="journey-dist">{{ "%.1f"|format(n.distance_miles) }} mi</div>
+    {% if n.cum_time_min %}
+    <div class="journey-eta arrival-time" data-cum-min="{{ n.cum_time_min }}">~--:--</div>
+    {% endif %}
 </div>
 {% endfor %}
 </div>
 
-{# ===== H. TIME-OF-DAY & TIME BANK CHART ===== #}
+{# ===== H. TIME-OF-DAY & TIME BANK CHART (grid + start time + distance) ===== #}
 {% if plan.cutoff_hours %}
 <div class="card" style="margin-bottom:24px;padding:16px 20px;">
-    <div class="section-label" style="margin-bottom:4px;">Estimated Arrival Times & Time Bank</div>
-    <div style="font-size:0.75rem;color:var(--text-light);margin-bottom:12px;">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <div class="section-label" style="margin-bottom:0;">Estimated Arrival Times & Time Bank</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+            <label for="start-time-input" style="font-size:0.78rem;color:var(--text-light);font-weight:500;">Start Time:</label>
+            <input type="time" id="start-time-input" value="{{ plan.start_time }}" class="start-time-input">
+        </div>
+    </div>
+    <div id="tod-start-label" style="font-size:0.75rem;color:var(--text-light);margin-bottom:10px;">
         Based on {{ plan.start_time }} start. Time banked (+) or lost (&minus;) against {{ plan.cutoff_hours }}h cutoff.
     </div>
+    {# Column headers #}
+    <div class="tod-grid" style="margin-bottom:4px;">
+        <span class="tod-header">Location</span>
+        <span class="tod-header" style="text-align:right;">ETA</span>
+        <span class="tod-header" style="text-align:right;">Dist</span>
+        <span class="tod-header" style="text-align:right;">Time Bank</span>
+        <span class="tod-header"></span>
+    </div>
+    {# Data rows #}
     {% for s in stops %}
     {% if s.time_bank_min is not none and s.stop_type in ['control', 'rest', 'finish', 'start'] and s.distance_miles and s.distance_miles > 0 %}
-    <div class="tod-row">
+    <div class="tod-grid">
         <span class="tod-label">{{ s.location[:25] }}{% if s.location|length > 25 %}...{% endif %}</span>
         <span class="tod-time arrival-time" data-cum-min="{{ s.cum_time_min }}">
             &mdash;
         </span>
+        <span class="tod-dist">{{ "%.1f"|format(s.distance_miles) }} mi</span>
         <span class="tod-bank" style="color:{% if s.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
             {% if s.time_bank_min >= 0 %}+{% endif %}{% set abs_min = s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min %}{{ (abs_min // 60)|int }}h{{ "%02d"|format(abs_min % 60) }}m
         </span>
@@ -557,12 +612,12 @@
     </button>
 </div>
 
-{# ===== J. SEGMENT CARDS (default view) ===== #}
+{# ===== J. SEGMENT CARDS (gradient difficulty colors) ===== #}
 <div id="cards-view">
 <div class="segment-cards">
 {% for s in stops %}
-<div class="segment-card" style="border-left-color:{{ difficulty_colors.get(s.difficulty_label, '#cbd5e1') }};">
-    {% if s.difficulty_label and s.difficulty_label != 'flat' %}<div class="diff-stripe" style="background:{{ difficulty_colors.get(s.difficulty_label, '#94a3b8') }};"></div>{% endif %}
+<div class="segment-card" style="border-left-color:{{ s.difficulty_color }};">
+    {% if s.difficulty_label and s.difficulty_label != 'flat' %}<div class="diff-stripe" style="background:{{ s.difficulty_color }};"></div>{% endif %}
     <div class="segment-header">
         <div class="stop-icon {{ s.stop_type }}">
             {% if s.stop_type == 'start' %}&#x1F6A9;{% elif s.stop_type == 'finish' %}&#x1F3C1;{% elif s.stop_type == 'control' %}&#x25C6;{% elif s.stop_type == 'rest' %}&#x2615;{% else %}&#x2022;{% endif %}
@@ -573,7 +628,7 @@
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
             {% if s.difficulty_score and s.difficulty_score > 0 %}
-            <span class="diff-badge" style="background:{{ difficulty_colors.get(s.difficulty_label, '#94a3b8') }};color:white;">{{ s.difficulty_score }}</span>
+            <span class="diff-badge" style="background:{{ s.difficulty_color }};color:white;">{{ s.difficulty_score }}</span>
             {% endif %}
             <span class="type-badge {{ s.stop_type }}">{{ s.stop_type }}</span>
         </div>
@@ -630,7 +685,7 @@
 </div>
 </div>
 
-{# ===== K. DATA TABLE (hidden by default) ===== #}
+{# ===== K. DATA TABLE (gradient difficulty colors) ===== #}
 <div id="table-view" style="display:none;">
 <div class="table-wrap">
 <table class="plan-table">
@@ -652,7 +707,7 @@
 </thead>
 <tbody>
 {% for s in stops %}
-<tr style="border-left:3px solid {{ difficulty_colors.get(s.difficulty_label, 'transparent') }};">
+<tr style="border-left:3px solid {{ s.difficulty_color }};">
     <td style="text-align:center;color:var(--text-light);font-size:0.72rem;">{{ loop.index }}</td>
     <td><span class="type-badge {{ s.stop_type }}">{{ s.stop_type }}</span></td>
     <td><div style="font-weight:600;color:var(--primary);font-size:0.82rem;">{{ s.location }}</div></td>
@@ -688,7 +743,7 @@
     {% endif %}
     <td style="text-align:center;">
         {% if s.difficulty_score and s.difficulty_score > 0 %}
-        <span class="diff-badge" style="background:{{ difficulty_colors.get(s.difficulty_label, '#94a3b8') }};color:white;">{{ s.difficulty_score }}</span>
+        <span class="diff-badge" style="background:{{ s.difficulty_color }};color:white;">{{ s.difficulty_score }}</span>
         {% else %}&mdash;{% endif %}
     </td>
     <td>
@@ -741,13 +796,13 @@ function toggleView(view) {
     });
 }
 
-// Compute arrival times from start time + cumulative minutes
-(function() {
-    var startTime = '{{ plan.start_time }}';
-    var parts = startTime.split(':');
-    var startHour = parseInt(parts[0]) || 7;
+// Shared function to recalculate all arrival times from a given start time
+function recalcArrivalTimes(startTimeStr) {
+    var parts = startTimeStr.split(':');
+    var startHour = parseInt(parts[0]) || 6;
     var startMin = parseInt(parts[1]) || 0;
 
+    // Update all .arrival-time elements (time bank chart + journey strip ETAs)
     document.querySelectorAll('.arrival-time').forEach(function(el) {
         var cumMin = parseInt(el.dataset.cumMin) || 0;
         var totalMin = startHour * 60 + startMin + cumMin;
@@ -755,40 +810,76 @@ function toggleView(view) {
         var m = totalMin % 60;
         var ampm = h >= 12 ? 'PM' : 'AM';
         var displayH = h % 12 || 12;
-        el.textContent = displayH + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
+        // Journey strip ETAs get ~ prefix
+        var prefix = el.classList.contains('journey-eta') ? '~' : '';
+        el.textContent = prefix + displayH + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
     });
-})();
 
-// Weather forecast date picker
-(function() {
+    // Update hero start time display
+    var heroEl = document.getElementById('hero-start-time');
+    if (heroEl) heroEl.textContent = startTimeStr;
+
+    // Update subtitle text
+    var subtitleEl = document.getElementById('tod-start-label');
+    if (subtitleEl) {
+        subtitleEl.textContent = 'Based on ' + startTimeStr + ' start. Time banked (+) or lost (\u2212) against {{ plan.cutoff_hours or 0 }}h cutoff.';
+    }
+
+    // Update weather link if date is set
+    updateWeatherLink(startTimeStr);
+}
+
+// Weather forecast URL construction
+function updateWeatherLink(startTimeStr) {
     var dateInput = document.getElementById('weather-date');
     var weatherLink = document.getElementById('weather-link');
     if (!dateInput || !weatherLink) return;
 
     var routeId = '{{ rwgps_route_id or "" }}';
     var planName = '{{ plan.name|replace("'", "\\'") }}';
-    var startTime = '{{ plan.start_time }}';
+    var dateVal = dateInput.value;
 
-    dateInput.addEventListener('change', function() {
-        var dateVal = this.value;
-        if (!dateVal || !routeId) {
-            weatherLink.style.display = 'none';
-            return;
-        }
-        var parts = startTime.split(':');
-        var startHour = parseInt(parts[0]) || 7;
-        var startMin = parseInt(parts[1]) || 0;
-        var dt = new Date(dateVal + 'T' + (startHour < 10 ? '0' : '') + startHour + ':' + (startMin < 10 ? '0' : '') + startMin + ':00');
-        var ts = Math.floor(dt.getTime() / 1000);
-        var url = 'https://www.randoplan.com/?pace=B%2B&interval=1&metric=false'
-            + '&rwgpsRoute=' + routeId
-            + '&provider=weatherapi'
-            + '&name=' + encodeURIComponent(planName)
-            + '&startTimestamp=' + ts
-            + '&zone=America%2FLos_Angeles';
-        weatherLink.href = url;
-        weatherLink.style.display = 'inline-flex';
-    });
+    if (!dateVal || !routeId) {
+        weatherLink.style.display = 'none';
+        return;
+    }
+
+    var parts = startTimeStr.split(':');
+    var startHour = parseInt(parts[0]) || 6;
+    var startMin = parseInt(parts[1]) || 0;
+    var dt = new Date(dateVal + 'T' + (startHour < 10 ? '0' : '') + startHour + ':' + (startMin < 10 ? '0' : '') + startMin + ':00');
+    var ts = Math.floor(dt.getTime() / 1000);
+    var url = 'https://www.randoplan.com/?pace=B%2B&interval=1&metric=false'
+        + '&rwgpsRoute=' + routeId
+        + '&provider=weatherapi'
+        + '&name=' + encodeURIComponent(planName)
+        + '&startTimestamp=' + ts
+        + '&zone=America%2FLos_Angeles';
+    weatherLink.href = url;
+    weatherLink.style.display = 'inline-flex';
+}
+
+// Initial calculation on page load
+recalcArrivalTimes('{{ plan.start_time }}');
+
+// Start time input change handler
+(function() {
+    var startInput = document.getElementById('start-time-input');
+    if (startInput) {
+        startInput.addEventListener('change', function() {
+            recalcArrivalTimes(this.value);
+        });
+    }
+
+    // Weather date picker
+    var dateInput = document.getElementById('weather-date');
+    if (dateInput) {
+        dateInput.addEventListener('change', function() {
+            var startInput = document.getElementById('start-time-input');
+            var startTime = startInput ? startInput.value : '{{ plan.start_time }}';
+            updateWeatherLink(startTime);
+        });
+    }
 })();
 </script>
 {% endblock %}
