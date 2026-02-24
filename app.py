@@ -33,21 +33,10 @@ def create_app():
     @app.context_processor
     def inject_helpers():
         from models import get_all_seasons, get_current_season
-        try:
-            return dict(
-                seasons=get_all_seasons(),
-                current_season=get_current_season(),
-            )
-        except Exception:
-            # Return mock data if database is not available
-            return dict(
-                seasons=[
-                    {'id': 3, 'name': '2025-2026', 'is_current': True},
-                    {'id': 2, 'name': '2022-2023', 'is_current': False},
-                    {'id': 1, 'name': '2021-2022', 'is_current': False}
-                ],
-                current_season={'id': 3, 'name': '2025-2026', 'is_current': True},
-            )
+        return dict(
+            seasons=get_all_seasons(),
+            current_season=get_current_season(),
+        )
 
     return app
 
