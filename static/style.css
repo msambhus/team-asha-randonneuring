@@ -339,7 +339,7 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
     padding: 20px;
     background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
     border-radius: 12px;
-    border-left: 4px solid var(--primary);
+    border-bottom: 3px solid var(--primary);
 }
 .section-title {
     font-size: 1.4rem;
