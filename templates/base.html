@@ -4,36 +4,36 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{% block title %}Team Asha Randonneuring{% endblock %}</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='output.css') }}">
 {% block extra_head %}{% endblock %}
 </head>
-<body>
-<header>
-<div class="header-inner">
-<div class="logo"><a href="{{ url_for('main.index') }}">Team <span>Asha</span> Randonneuring</a></div>
-<nav>
-    <a href="{{ url_for('main.index') }}" {% if request.endpoint == 'main.index' %}class="active"{% endif %}>Home</a>
-    <a href="{{ url_for('main.about') }}" {% if request.endpoint == 'main.about' %}class="active"{% endif %}>About</a>
+<body class="bg-bg text-text">
+<header class="bg-gradient-to-br from-primary to-primary-dark text-white sticky top-0 z-[100] shadow-[0_2px_10px_rgba(0,0,0,0.15)]">
+<div class="flex items-center justify-between py-3 px-5 max-w-[1200px] mx-auto flex-col md:flex-row gap-2 md:gap-0">
+<div class="text-[1.4rem] font-bold tracking-tight"><a href="{{ url_for('main.index') }}" class="text-inherit no-underline">Team <span class="text-accent-light">Asha</span> Randonneuring</a></div>
+<nav class="flex gap-1 flex-wrap justify-center">
+    <a href="{{ url_for('main.index') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'main.index' %}bg-white/15 text-white{% endif %}">Home</a>
+    <a href="{{ url_for('main.about') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'main.about' %}bg-white/15 text-white{% endif %}">About</a>
     {% if current_season %}
-    <a href="{{ url_for('riders.upcoming_brevets', season_name=current_season.name) }}" {% if request.endpoint == 'riders.upcoming_brevets' %}class="active"{% endif %}>Upcoming Brevets</a>
+    <a href="{{ url_for('riders.upcoming_brevets', season_name=current_season.name) }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'riders.upcoming_brevets' %}bg-white/15 text-white{% endif %}">Upcoming Brevets</a>
     {% endif %}
     {% for s in seasons %}
     {% if s.is_current %}
     {% set is_active = request.view_args.get('season_name') == s.name and request.endpoint == 'riders.season_riders' %}
-    <a href="{{ url_for('riders.season_riders', season_name=s.name) }}" {% if is_active %}class="active"{% endif %}>{{ s.name[:4] }}/{{ s.name[5:] }}</a>
+    <a href="{{ url_for('riders.season_riders', season_name=s.name) }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if is_active %}bg-white/15 text-white{% endif %}">{{ s.name[:4] }}/{{ s.name[5:] }}</a>
     {% endif %}
     {% endfor %}
-    <div class="nav-dropdown">
-        <a>Past Seasons</a>
-        <div class="dropdown-content">
+    <div class="relative inline-block group">
+        <a class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs">Past Seasons</a>
+        <div class="hidden group-hover:block absolute top-full left-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[180px] z-[200] overflow-hidden pt-0">
             {% for s in seasons %}
             {% if not s.is_current %}
-            <a href="{{ url_for('riders.season_riders', season_name=s.name) }}">{{ s.name[:4] }}/{{ s.name[5:] }}</a>
+            <a href="{{ url_for('riders.season_riders', season_name=s.name) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">{{ s.name[:4] }}/{{ s.name[5:] }}</a>
             {% endif %}
             {% endfor %}
         </div>
     </div>
-    <a href="{{ url_for('main.resources') }}" {% if request.endpoint == 'main.resources' %}class="active"{% endif %}>Resources</a>
+    <a href="{{ url_for('main.resources') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'main.resources' %}bg-white/15 text-white{% endif %}">Resources</a>
 </nav>
 </div>
 </header>
@@ -41,43 +41,43 @@
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
 {% for category, message in messages %}
-<div class="flash flash-{{ category }}">{{ message }}</div>
+<div class="py-3 px-5 rounded-lg mx-5 my-2.5 text-sm {% if category == 'success' %}bg-[#c6f6d5] text-[#22543d]{% else %}bg-[#fed7d7] text-[#9b2c2c]{% endif %}">{{ message }}</div>
 {% endfor %}
 {% endif %}
 {% endwith %}
 
 {% block content %}{% endblock %}
 
-<footer>
-<div class="container">
-<div style="margin-bottom:12px;">
-<button class="feedback-btn" onclick="document.getElementById('feedback-modal').style.display='flex'">&#x2709; Send Feedback</button>
+<footer class="bg-primary text-white/70 text-center py-5 mt-10 text-[0.85rem]">
+<div class="max-w-[1200px] mx-auto px-5">
+<div class="mb-3">
+<button class="inline-block py-2 px-5 bg-white/15 text-white/85 border border-white/30 rounded-[20px] text-[0.85rem] font-medium cursor-pointer transition-all hover:bg-white/25 hover:text-white" onclick="document.getElementById('feedback-modal').style.display='flex'">&#x2709; Send Feedback</button>
 </div>
 Team Asha Randonneuring &copy; 2025-2026 &bull; Raising funds for education of underprivileged children in India
 </div>
 </footer>
 
 <!-- Feedback Modal -->
-<div id="feedback-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
-<div style="background:white;border-radius:12px;padding:30px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-<h3 style="margin:0;color:var(--primary);font-size:1.2rem;">Send Feedback</h3>
-<button onclick="document.getElementById('feedback-modal').style.display='none'" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);padding:0;line-height:1;">&times;</button>
+<div id="feedback-modal" class="hidden fixed top-0 left-0 w-full h-full bg-black/50 z-[1000] items-center justify-center" onclick="if(event.target===this)this.style.display='none'">
+<div class="bg-white rounded-xl p-8 max-w-[480px] w-[90%] shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+<div class="flex justify-between items-center mb-5">
+<h3 class="m-0 text-primary text-xl">Send Feedback</h3>
+<button onclick="document.getElementById('feedback-modal').style.display='none'" class="bg-transparent border-0 text-2xl cursor-pointer text-text-light p-0 leading-none">&times;</button>
 </div>
 <form id="feedback-form" onsubmit="submitFeedback(event)">
-<div style="margin-bottom:15px;">
-<label style="display:block;font-size:0.85rem;font-weight:600;color:var(--text);margin-bottom:4px;">Your Name</label>
-<input type="text" id="fb-name" required style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;box-sizing:border-box;" placeholder="e.g. Mihir Sambhus">
+<div class="mb-4">
+<label class="block text-[0.85rem] font-semibold text-text mb-1">Your Name</label>
+<input type="text" id="fb-name" required class="w-full py-2.5 px-3 border border-border rounded-lg text-sm" placeholder="e.g. Mihir Sambhus">
 </div>
-<div style="margin-bottom:15px;">
-<label style="display:block;font-size:0.85rem;font-weight:600;color:var(--text);margin-bottom:4px;">Your Email</label>
-<input type="email" id="fb-email" required style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;box-sizing:border-box;" placeholder="you@email.com">
+<div class="mb-4">
+<label class="block text-[0.85rem] font-semibold text-text mb-1">Your Email</label>
+<input type="email" id="fb-email" required class="w-full py-2.5 px-3 border border-border rounded-lg text-sm" placeholder="you@email.com">
 </div>
-<div style="margin-bottom:20px;">
-<label style="display:block;font-size:0.85rem;font-weight:600;color:var(--text);margin-bottom:4px;">Feedback</label>
-<textarea id="fb-text" required rows="4" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;box-sizing:border-box;resize:vertical;" placeholder="What would you like to share?"></textarea>
+<div class="mb-5">
+<label class="block text-[0.85rem] font-semibold text-text mb-1">Feedback</label>
+<textarea id="fb-text" required rows="4" class="w-full py-2.5 px-3 border border-border rounded-lg text-sm resize-y" placeholder="What would you like to share?"></textarea>
 </div>
-<button type="submit" class="btn btn-primary" style="width:100%;">Send Feedback</button>
+<button type="submit" class="inline-block py-2.5 px-6 rounded-lg font-semibold text-sm cursor-pointer border-0 transition-opacity bg-primary text-white hover:opacity-90 w-full">Send Feedback</button>
 </form>
 </div>
 </div>

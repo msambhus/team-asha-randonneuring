@@ -17,6 +17,7 @@ A dynamic web app for **Team Asha Randonneuring** — a group of Bay Area cyclis
 - **Database:** SQLite (read-only on Vercel)
 - **Hosting:** Vercel (serverless via `@vercel/python`)
 - **Templates:** Jinja2
+- **CSS:** Tailwind CSS
 
 ## Project Structure
 
@@ -43,16 +44,35 @@ vercel.json          # Vercel build & routing config
 
 ## Running Locally
 
+### 1. Install Python dependencies
 ```bash
 pip install -r requirements.txt
+```
+
+### 2. Install Node dependencies and build CSS
+```bash
+npm install
+npm run build:css
+```
+
+### 3. Run Flask
+```bash
 flask run
 ```
 
 The app will be available at `http://localhost:5000`.
 
+### Development Mode (Auto-rebuild CSS)
+```bash
+npm run dev
+```
+This watches for changes to `static/input.css` and templates, automatically rebuilding Tailwind CSS.
+
 ## Deployment
 
 The site auto-deploys to [Vercel](https://vercel.com/) on push to `main`. Vercel routes all requests through `api/index.py`, which wraps the Flask app as a serverless function.
+
+**Note:** Tailwind CSS is automatically built during deployment via the `buildCommand` in `vercel.json`.
 
 ### Environment Variables
 
