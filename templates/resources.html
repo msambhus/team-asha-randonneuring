@@ -1,6 +1,32 @@
 {% extends "base.html" %}
 {% block title %}Resources - Team Asha Randonneuring{% endblock %}
 
+{% block extra_head %}
+<style>
+@media (max-width: 768px) {
+    .coach-box {
+        flex-direction: column !important;
+        text-align: center;
+    }
+    .coach-box img {
+        width: 100px !important;
+        height: 100px !important;
+    }
+    .coach-box h3 {
+        font-size: 1.1rem !important;
+    }
+    .resource-list {
+        font-size: 0.9rem;
+    }
+    .resource-list .note {
+        display: block;
+        margin-left: 0 !important;
+        margin-top: 4px;
+    }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="bg-gradient-to-br from-primary via-primary-dark to-primary text-white py-10 px-5 text-center">
 <h1 class="text-[2.5rem] mb-2.5 font-extrabold">Resources</h1>
@@ -8,7 +34,7 @@
 </div>
 <div class="max-w-[1200px] mx-auto px-5 py-10">
 
-<div class="bg-gradient-to-br from-[#faf5ff] to-[#ebf8ff] border-2 border-[#805ad5] rounded-xl p-6 my-5 flex gap-5 items-start mb-8">
+<div class="coach-box bg-gradient-to-br from-[#faf5ff] to-[#ebf8ff] border-2 border-[#805ad5] rounded-xl p-6 my-5 flex gap-5 items-start mb-8">
 <img src="https://ta.ashanet.org/siliconvalley/marathon/images/coach_mani.jpg" alt="Coach Mani" class="w-[120px] h-[120px] object-cover rounded-[10px] flex-shrink-0">
 <div>
 <h3 class="text-[#553c9a] mb-2.5">Coach Mani &mdash; The OG of Randonneuring</h3>

@@ -137,9 +137,141 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
 .flash-success { background: #c6f6d5; color: #22543d; }
 .flash-error { background: #fed7d7; color: #9b2c2c; }
 
+/* Tablet styles */
+@media (max-width: 1024px) {
+    .container { padding: 0 15px; }
+    .frozen-table .frozen-col-1 { min-width: 140px; left: 0; }
+    .frozen-table .frozen-col-2 { min-width: 70px; left: 140px; }
+    .frozen-table .frozen-col-3 { min-width: 60px; left: 210px; }
+    .frozen-table .frozen-col-4 { min-width: 60px; left: 270px; }
+}
+
+/* Mobile styles */
 @media (max-width: 768px) {
     .header-inner { flex-direction: column; gap: 10px; }
     nav { flex-wrap: wrap; justify-content: center; }
+    nav a { padding: 8px 12px; font-size: 0.85rem; }
+    
+    .hero { padding: 30px 15px !important; }
     .hero h1 { font-size: 1.8rem; }
-    .stats-row { grid-template-columns: repeat(2, 1fr); margin-top: -30px; }
+    .hero p { font-size: 1rem; }
+    
+    .stats-row { 
+        grid-template-columns: repeat(2, 1fr); 
+        margin-top: -30px; 
+        gap: 12px;
+        padding: 0 15px;
+    }
+    .stat-card { padding: 16px; }
+    .stat-card .number { font-size: 1.8rem; }
+    .stat-card .label { font-size: 0.75rem; }
+    
+    .section { padding: 30px 0; }
+    .section h2 { font-size: 1.3rem; }
+    
+    .card { padding: 16px; }
+    
+    /* Make tables horizontally scrollable on mobile */
+    .table-wrap { 
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        margin: 0 -15px;
+        padding: 0 15px;
+    }
+    
+    /* Adjust frozen columns for mobile */
+    .frozen-table .frozen-col-1 { 
+        min-width: 120px; 
+        left: 0;
+        font-size: 0.85rem;
+    }
+    .frozen-table .frozen-col-2 { 
+        min-width: 60px; 
+        left: 120px;
+        font-size: 0.8rem;
+    }
+    .frozen-table .frozen-col-3 { 
+        min-width: 50px; 
+        left: 180px;
+        font-size: 0.8rem;
+    }
+    .frozen-table .frozen-col-4 { 
+        min-width: 50px; 
+        left: 230px;
+        font-size: 0.8rem;
+    }
+    
+    /* Improve table readability on mobile */
+    table { font-size: 0.85rem; }
+    th { padding: 8px 6px; font-size: 0.8rem; }
+    td { padding: 6px 6px; }
+    
+    /* Better badge sizing for mobile */
+    .badge { 
+        padding: 2px 6px; 
+        font-size: 0.7rem;
+        white-space: nowrap;
+    }
+    .sr-badge, .pbp-badge { 
+        padding: 2px 6px; 
+        font-size: 0.7rem; 
+    }
+    
+    /* Dropdown adjustments */
+    .dropdown-content { 
+        min-width: 140px;
+        font-size: 0.8rem;
+    }
+    .dropdown-content a { 
+        padding: 8px 12px; 
+        font-size: 0.8rem;
+    }
+    
+    /* Footer adjustments */
+    footer { padding: 15px; font-size: 0.8rem; }
+    
+    /* Form adjustments */
+    .form-group input, .form-group select, .form-group textarea {
+        font-size: 16px; /* Prevents iOS zoom on input focus */
+    }
+}
+
+/* Small mobile devices */
+@media (max-width: 480px) {
+    .hero h1 { font-size: 1.5rem; }
+    .hero p { font-size: 0.9rem; }
+    
+    .stats-row { 
+        grid-template-columns: 1fr; 
+        gap: 10px;
+    }
+    
+    nav a { 
+        padding: 6px 10px; 
+        font-size: 0.8rem;
+    }
+    
+    .logo { font-size: 1.2rem; }
+    
+    .section h2 { font-size: 1.2rem; }
+    
+    /* Stack frozen columns on very small screens */
+    .frozen-table .frozen-col-1 { min-width: 100px; }
+    .frozen-table .frozen-col-2 { 
+        min-width: 55px; 
+        left: 100px;
+    }
+    .frozen-table .frozen-col-3 { 
+        display: none; /* Hide ride count on very small screens */
+    }
+    .frozen-table .frozen-col-4 { 
+        min-width: 50px; 
+        left: 155px;
+    }
+    
+    /* Feedback modal adjustments */
+    #feedback-modal > div {
+        width: 95%;
+        padding: 20px;
+    }
 }
