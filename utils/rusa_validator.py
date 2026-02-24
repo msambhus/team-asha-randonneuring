@@ -4,6 +4,34 @@ from bs4 import BeautifulSoup
 import re
 
 
+def normalize_last_name(last_name):
+    """
+    Convert last name to proper title case.
+    Handles special cases like McDonald, O'Brien, etc.
+    
+    Args:
+        last_name: Last name string (can be uppercase, lowercase, or mixed)
+    
+    Returns:
+        str: Properly formatted last name in title case
+    """
+    if not last_name:
+        return last_name
+    
+    # First, convert to title case
+    name = last_name.strip().title()
+    
+    # Handle special prefixes (Mc, Mac, O')
+    # McDonald, not Mcdonald
+    name = re.sub(r'\bMc([a-z])', lambda m: f"Mc{m.group(1).upper()}", name)
+    # MacDonald, not Macdonald
+    name = re.sub(r'\bMac([a-z])', lambda m: f"Mac{m.group(1).upper()}", name)
+    # O'Brien, not O'brien
+    name = re.sub(r"\bO'([a-z])", lambda m: f"O'{m.group(1).upper()}", name)
+    
+    return name
+
+
 def validate_rusa_id(rusa_id, first_name, last_name):
     """
     Validate RUSA ID by scraping the RUSA website.
@@ -50,7 +78,10 @@ def validate_rusa_id(rusa_id, first_name, last_name):
         rusa_last = rusa_last.strip()
         rusa_first = rusa_first.strip()
         rusa_club = rusa_club.strip()
-        rusa_name = f"{rusa_last}, {rusa_first}"
+        
+        # Convert last name to proper title case
+        normalized_last = normalize_last_name(rusa_last)
+        rusa_name = f"{normalized_last}, {rusa_first}"
         
         # Normalize for comparison (case-insensitive)
         provided_last = last_name.strip().upper()
@@ -113,7 +144,8 @@ def get_rusa_name(rusa_id):
         
         if matches:
             rusa_last, rusa_first, rusa_club = matches[0]
-            return f"{rusa_last.strip()}, {rusa_first.strip()}"
+            normalized_last = normalize_last_name(rusa_last.strip())
+            return f"{normalized_last}, {rusa_first.strip()}"
         
         return None
         
@@ -161,11 +193,14 @@ def get_rusa_info(rusa_id):
             rusa_first = rusa_first.strip()
             rusa_club = rusa_club.strip()
             
+            # Convert last name to proper title case
+            normalized_last = normalize_last_name(rusa_last)
+            
             return {
                 'valid': True,
                 'first_name': rusa_first,
-                'last_name': rusa_last,
-                'rusa_name': f"{rusa_last}, {rusa_first}",
+                'last_name': normalized_last,
+                'rusa_name': f"{normalized_last}, {rusa_first}",
                 'rusa_club': rusa_club,
                 'error': None
             }
