@@ -58,6 +58,12 @@ tr:hover { background: #edf2f7; }
 .frozen-table .frozen-col-4 { left: 340px; min-width: 70px; box-shadow: 2px 0 5px rgba(0,0,0,0.1); }
 .frozen-table tbody .frozen-col { background: var(--card-bg); }
 .frozen-table thead .frozen-col { background: var(--primary); }
+
+/* Sortable columns */
+th.sortable { user-select: none; transition: background 0.2s; }
+th.sortable:hover { background: rgba(255,255,255,0.15) !important; }
+.frozen-table thead .frozen-col.sortable:hover { background: rgba(42, 74, 127, 1) !important; }
+.sort-icon { font-size: 0.7em; display: inline-block; transition: opacity 0.2s; }
 .sr-badge { background: linear-gradient(135deg, #d69e2e, #f6ad55); color: white; padding: 3px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: 700; }
 .pbp-badge { background: linear-gradient(135deg, #805ad5, #b794f4); color: white; padding: 3px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: 700; }
 footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: center; padding: 20px; margin-top: 40px; font-size: 0.85rem; }
@@ -86,7 +92,8 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
 
 /* Nav dropdown */
 .nav-dropdown { position: relative; display: inline-block; }
-.nav-dropdown > a { color: rgba(255,255,255,0.85); text-decoration: none; padding: 8px 14px; border-radius: 6px; font-size: 0.9rem; font-weight: 500; transition: all 0.2s; display: inline-block; }
+.nav-dropdown > a { color: rgba(255,255,255,0.85); text-decoration: none; padding: 8px 14px; border-radius: 6px; font-size: 0.9rem; font-weight: 500; transition: all 0.2s; display: inline-block; cursor: pointer; }
+.nav-dropdown > a::after { content: ' ▾'; font-size: 0.8em; }
 .nav-dropdown > a:hover, .nav-dropdown > a.active { background: rgba(255,255,255,0.15); color: white; }
 .dropdown-content { display: none; position: absolute; top: 100%; left: 0; background: white; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); min-width: 180px; z-index: 200; overflow: hidden; padding-top: 0; }
 .nav-dropdown::after { content: ''; position: absolute; top: 100%; left: 0; width: 100%; height: 10px; }
