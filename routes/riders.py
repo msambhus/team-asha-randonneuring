@@ -5,7 +5,8 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_rider_by_rusa, get_rider_participation, get_rider_career_stats,
                     get_rider_season_stats, get_all_seasons, get_current_season,
                     detect_sr_for_rider_season, get_rider_total_srs,
-                    get_upcoming_rusa_events, update_rider_profile)
+                    get_upcoming_rusa_events, update_rider_profile,
+                    get_pbp_finishers)
 from auth import login_required
 from datetime import date
 
@@ -80,6 +81,9 @@ def season_riders(season_name):
         rusa_events = get_upcoming_rusa_events()
         upcoming_count = len(rusa_events)
 
+    # PBP finishers for seasons that had PBP
+    pbp_finishers = get_pbp_finishers(season['id']) if not is_current else []
+
     return render_template('riders.html',
                            season=season,
                            season_label=label,
@@ -87,7 +91,8 @@ def season_riders(season_name):
                            past_rides=past_rides,
                            stats=stats,
                            is_current=is_current,
-                           upcoming_count=upcoming_count)
+                           upcoming_count=upcoming_count,
+                           pbp_finishers=pbp_finishers)
 
 
 @riders_bp.route('/riders/<season_name>/upcoming')

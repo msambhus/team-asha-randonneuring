@@ -335,6 +335,24 @@ def get_upcoming_rusa_events():
     return events_with_defaults
 
 
+# ========== PBP FINISHERS ==========
+
+def get_pbp_finishers(season_id):
+    """Get PBP finishers for a season, sorted by finish time."""
+    return get_db().execute("""
+        SELECT r.id, r.rusa_id, r.first_name, r.last_name,
+               rp.photo_filename, rp.pbp_2023_status,
+               rr.finish_time
+        FROM rider r
+        JOIN rider_profile rp ON r.id = rp.rider_id
+        JOIN rider_ride rr ON r.id = rr.rider_id
+        JOIN ride ri ON rr.ride_id = ri.id
+        WHERE ri.season_id = ? AND ri.ride_type = 'PBP'
+              AND LOWER(rr.status) = 'yes'
+        ORDER BY rr.finish_time
+    """, (season_id,)).fetchall()
+
+
 # ========== SIGNUPS ==========
 
 def get_signups_for_ride(ride_id):
