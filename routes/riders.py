@@ -439,6 +439,9 @@ def ride_plan_detail(slug):
     rwgps_url_display = plan.get('rwgps_url_team') or plan.get('rwgps_url')
     rwgps_url_label = 'Team Asha Route' if plan.get('rwgps_url_team') else 'Official Route'
     rwgps_route_id = _extract_rwgps_route_id(rwgps_url_display)
+    
+    # For weather forecast, always prefer Team Asha route if available
+    weather_route_id = _extract_rwgps_route_id(plan.get('rwgps_url_team')) if plan.get('rwgps_url_team') else rwgps_route_id
 
     stops = []
     cum_time_min = 0
@@ -512,6 +515,30 @@ def ride_plan_detail(slug):
     # Build collapsed journey nodes
     journey_nodes = _build_journey_nodes(stops)
 
+    # Check if there's an upcoming RUSA event that matches this ride plan
+    upcoming_event = None
+    from datetime import datetime, timedelta, date as date_type
+    from models import get_upcoming_rusa_events
+    rusa_events = get_upcoming_rusa_events()
+    today = date_type.today()
+    thirty_days_later = today + timedelta(days=30)
+    
+    for event in rusa_events:
+        e_words = _normalize_route(event.get('route_name', ''))
+        p_words = _normalize_route(plan['name'])
+        common = e_words & p_words
+        distinctive = common - _GENERIC_WORDS
+        if len(distinctive) >= 1 and len(common) >= 2:
+            # Check if event is within 30 days
+            event_date = event['date']
+            # Convert to date object if it's a string
+            if isinstance(event_date, str):
+                event_date = datetime.strptime(event_date, '%Y-%m-%d').date()
+            
+            if event_date >= today and event_date <= thirty_days_later:
+                upcoming_event = event
+                break
+
     return render_template('ride_plan_detail.html',
                            plan=plan,
                            stops=stops,
@@ -525,4 +552,6 @@ def ride_plan_detail(slug):
                            rwgps_url_display=rwgps_url_display,
                            rwgps_url_label=rwgps_url_label,
                            rwgps_route_id=rwgps_route_id,
-                           difficulty_colors=_DIFFICULTY_COLORS)
+                           weather_route_id=weather_route_id,
+                           difficulty_colors=_DIFFICULTY_COLORS,
+                           upcoming_event=upcoming_event)

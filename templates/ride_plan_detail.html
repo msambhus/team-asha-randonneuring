@@ -483,25 +483,19 @@
 
 <div class="container section">
 
-{# ===== C. RWGPS LINK (single, team preferred) ===== #}
+{# ===== C. RWGPS LINK (single, team preferred) & WEATHER ===== #}
 {% if rwgps_url_display %}
 <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
 <a href="{{ rwgps_url_display }}" target="_blank" class="route-link" style="color:var(--primary);">
     <img src="https://ridewithgps.com/favicon.ico" alt="">
     {{ rwgps_url_label }}
 </a>
-</div>
-{% endif %}
 
-{# ===== D. WEATHER FORECAST ===== #}
-{% if rwgps_route_id %}
-<div class="weather-section" style="margin-bottom:20px;" id="weather-section">
-    <span style="font-size:0.85rem;font-weight:600;color:#0c4a6e;">&#x1F324;&#xFE0F; Weather Forecast</span>
-    <input type="date" id="weather-date" style="padding:6px 10px;border:1px solid #bae6fd;border-radius:6px;font-size:0.82rem;">
-    <a id="weather-link" href="#" target="_blank" class="weather-btn" style="display:none;">
-        View on RandoPlan
-    </a>
-    <span style="font-size:0.72rem;color:#64748b;">Select a ride date to see forecast</span>
+{% if upcoming_event and weather_route_id %}
+<a href="#" id="auto-weather-link" target="_blank" class="route-link" style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-color:#fbbf24;color:#92400e;">
+    🌤️ Weather
+</a>
+{% endif %}
 </div>
 {% endif %}
 
@@ -822,39 +816,6 @@ function recalcArrivalTimes(startTimeStr) {
     if (subtitleEl) {
         subtitleEl.textContent = 'Based on ' + startTimeStr + ' start. Time banked (+) or lost (\u2212) against {{ plan.cutoff_hours or 0 }}h cutoff.';
     }
-
-    // Update weather link if date is set
-    updateWeatherLink(startTimeStr);
-}
-
-// Weather forecast URL construction
-function updateWeatherLink(startTimeStr) {
-    var dateInput = document.getElementById('weather-date');
-    var weatherLink = document.getElementById('weather-link');
-    if (!dateInput || !weatherLink) return;
-
-    var routeId = '{{ rwgps_route_id or "" }}';
-    var planName = '{{ plan.name|replace("'", "\\'") }}';
-    var dateVal = dateInput.value;
-
-    if (!dateVal || !routeId) {
-        weatherLink.style.display = 'none';
-        return;
-    }
-
-    var parts = startTimeStr.split(':');
-    var startHour = parseInt(parts[0]) || 6;
-    var startMin = parseInt(parts[1]) || 0;
-    var dt = new Date(dateVal + 'T' + (startHour < 10 ? '0' : '') + startHour + ':' + (startMin < 10 ? '0' : '') + startMin + ':00');
-    var ts = Math.floor(dt.getTime() / 1000);
-    var url = 'https://www.randoplan.com/?pace=B%2B&interval=1&metric=false'
-        + '&rwgpsRoute=' + routeId
-        + '&provider=weatherapi'
-        + '&name=' + encodeURIComponent(planName)
-        + '&startTimestamp=' + ts
-        + '&zone=America%2FLos_Angeles';
-    weatherLink.href = url;
-    weatherLink.style.display = 'inline-flex';
 }
 
 // Initial calculation on page load
@@ -869,15 +830,31 @@ recalcArrivalTimes('{{ plan.start_time }}');
         });
     }
 
-    // Weather date picker
-    var dateInput = document.getElementById('weather-date');
-    if (dateInput) {
-        dateInput.addEventListener('change', function() {
-            var startInput = document.getElementById('start-time-input');
-            var startTime = startInput ? startInput.value : '{{ plan.start_time }}';
-            updateWeatherLink(startTime);
-        });
+    // Auto weather link for upcoming events (using Team Asha route)
+    {% if upcoming_event %}
+    var autoWeatherLink = document.getElementById('auto-weather-link');
+    if (autoWeatherLink) {
+        var routeId = '{{ weather_route_id or "" }}';
+        var planName = '{{ plan.name|replace("'", "\\'") }}';
+        var eventDate = '{{ upcoming_event.date }}';
+        var eventTime = '{{ upcoming_event.start_time or "07:00" }}';
+        
+        if (routeId && eventDate) {
+            var parts = eventTime.split(':');
+            var startHour = parseInt(parts[0]) || 7;
+            var startMin = parseInt(parts[1]) || 0;
+            var dt = new Date(eventDate + 'T' + (startHour < 10 ? '0' : '') + startHour + ':' + (startMin < 10 ? '0' : '') + startMin + ':00');
+            var ts = Math.floor(dt.getTime() / 1000);
+            var url = 'https://www.randoplan.com/?pace=B%2B&interval=1&metric=false'
+                + '&rwgpsRoute=' + routeId
+                + '&provider=weatherapi'
+                + '&name=' + encodeURIComponent(planName)
+                + '&startTimestamp=' + ts
+                + '&zone=America%2FLos_Angeles';
+            autoWeatherLink.href = url;
+        }
     }
+    {% endif %}
 })();
 </script>
 {% endblock %}
