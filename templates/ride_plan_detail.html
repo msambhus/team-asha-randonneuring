@@ -3,6 +3,98 @@
 
 {% block extra_head %}
 <style>
+/* ===== STICKY RIDE HEADER (Mobile) ===== */
+.sticky-ride-header {
+    position: sticky;
+    top: 60px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    padding: 12px 20px;
+    z-index: 40;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    transform: translateY(-100%);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sticky-ride-header.visible {
+    transform: translateY(0);
+    opacity: 1;
+}
+.sticky-ride-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.sticky-ride-stats {
+    font-size: 0.7rem;
+    opacity: 0.9;
+    margin-top: 2px;
+}
+
+/* ===== ELEVATION CHART ===== */
+.elevation-chart-container {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    border: 1px solid var(--border);
+}
+.elevation-chart {
+    height: 180px;
+    position: relative;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.elevation-profile {
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    min-width: 100%;
+}
+.elevation-bar {
+    flex: 1;
+    min-width: 8px;
+    background: linear-gradient(to top, #3b82f6, #60a5fa);
+    border-radius: 2px 2px 0 0;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+.elevation-bar:hover {
+    filter: brightness(1.2);
+    transform: translateY(-4px);
+}
+.elevation-bar.control {
+    background: linear-gradient(to top, #dc2626, #ef4444);
+}
+.elevation-bar.waypoint {
+    background: linear-gradient(to top, #94a3b8, #cbd5e1);
+}
+.elevation-tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-8px);
+    background: rgba(0,0,0,0.9);
+    color: white;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 10;
+}
+.elevation-bar:hover .elevation-tooltip {
+    opacity: 1;
+}
+
 /* ===== JOURNEY STRIP ===== */
 .journey-strip {
     display: flex;
@@ -11,6 +103,7 @@
     padding: 16px 0 8px;
     gap: 0;
     scrollbar-width: thin;
+    scroll-snap-type: x proximity;
 }
 .journey-node {
     display: flex;
@@ -82,20 +175,36 @@
 .segment-cards {
     display: flex;
     flex-direction: column;
-    gap: 0;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
+    gap: 16px;
 }
 .segment-card {
-    padding: 14px 18px;
-    border-left: 4px solid var(--border);
+    background: white;
+    padding: 18px 20px;
+    border-left: 5px solid var(--border);
     position: relative;
-    transition: background 0.12s;
-    border-bottom: 1px solid #f1f5f9;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid var(--border);
+    opacity: 0;
+    transform: translateY(20px);
+    animation: fadeInUp 0.5s ease forwards;
 }
-.segment-card:last-child { border-bottom: none; }
-.segment-card:hover { background: #fafbfc; }
+@keyframes fadeInUp {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+.segment-card:nth-child(1) { animation-delay: 0.05s; }
+.segment-card:nth-child(2) { animation-delay: 0.1s; }
+.segment-card:nth-child(3) { animation-delay: 0.15s; }
+.segment-card:nth-child(4) { animation-delay: 0.2s; }
+.segment-card:nth-child(5) { animation-delay: 0.25s; }
+.segment-card:hover {
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    transform: translateY(-4px);
+}
 
 .segment-header {
     display: flex;
@@ -370,22 +479,146 @@
 .weather-btn:hover { background: #0369a1; }
 .weather-btn:disabled { background: #94a3b8; cursor: not-allowed; }
 
+/* ===== COLLAPSIBLE SECTIONS ===== */
+.collapsible-section {
+    margin-bottom: 20px;
+}
+.collapsible-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid var(--border);
+    user-select: none;
+}
+.collapsible-header:active {
+    transform: scale(0.98);
+}
+.collapsible-title {
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.collapsible-icon {
+    font-size: 1.2rem;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.collapsible-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.collapsible-section.expanded .collapsible-icon {
+    transform: rotate(180deg);
+}
+.collapsible-section.expanded .collapsible-content {
+    max-height: 10000px;
+}
+
+/* Quick action buttons */
+.quick-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+.quick-action-btn {
+    flex: 1;
+    min-width: 140px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, white, #f9fafb);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--primary);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
+}
+.quick-action-btn:active {
+    transform: scale(0.96);
+}
+.quick-action-btn:hover {
+    border-color: var(--primary);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
+    .sticky-ride-header {
+        top: 0;
+        padding: 10px 16px;
+    }
+    .elevation-chart {
+        height: 140px;
+    }
+    .elevation-chart-container {
+        padding: 16px;
+        margin-bottom: 20px;
+    }
+    .segment-cards {
+        gap: 12px;
+    }
+    .segment-card {
+        padding: 14px 16px;
+        border-radius: 10px;
+    }
     .plan-table { font-size: 0.75rem; }
     .plan-table thead th, .plan-table tbody td { padding: 7px 6px; }
-    .segment-metrics { gap: 10px; }
+    .segment-metrics {
+        gap: 12px;
+        grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+        display: grid;
+    }
     .metric { min-width: 44px; }
     .metric-value { font-size: 0.85rem; }
     .tod-label { min-width: 100px; font-size: 0.75rem; }
     .journey-node { min-width: 60px; }
+    .quick-action-btn {
+        min-width: 120px;
+        font-size: 0.8rem;
+        padding: 10px 14px;
+    }
+    .collapsible-header {
+        padding: 12px 14px;
+    }
+}
+@media (max-width: 480px) {
+    .elevation-chart {
+        height: 120px;
+    }
+    .segment-metrics {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
 </style>
 {% endblock %}
 
 {% block content %}
+{# ===== STICKY RIDE HEADER (Shows on scroll) ===== #}
+<div class="sticky-ride-header" id="sticky-header">
+    <div class="sticky-ride-title">
+        📍 {{ plan.name }}
+    </div>
+    <div class="sticky-ride-stats">
+        {{ "%.1f"|format(plan.total_distance_miles) }} mi &middot; {{ "{:,}".format(plan.total_elevation_ft) }} ft
+    </div>
+</div>
+
 {# ===== A. ENHANCED HERO ===== #}
-<div class="hero" style="padding:50px 20px 60px;">
+<div class="hero" style="padding:50px 20px 60px;" id="hero-section">
     <div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:10px;">
         <svg viewBox="0 0 20 20" width="24" height="24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M10 1C7.2 1 5 3.2 5 6c0 3.5 5 8 5 8s5-4.5 5-8c0-2.8-2.2-5-5-5z"/>
@@ -450,15 +683,58 @@
 
 <div class="container section">
 
-{# ===== C. RWGPS LINK (single, team preferred) ===== #}
-{% if rwgps_url_display %}
-<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
-<a href="{{ rwgps_url_display }}" target="_blank" class="route-link" style="color:var(--primary);">
-    <img src="https://ridewithgps.com/favicon.ico" alt="">
-    {{ rwgps_url_label }}
-</a>
+{# ===== QUICK ACTIONS ===== #}
+<div class="quick-actions">
+    {% if rwgps_url_display %}
+    <a href="{{ rwgps_url_display }}" target="_blank" class="quick-action-btn">
+        <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:20px;height:20px;">
+        <span>View Route</span>
+    </a>
+    {% endif %}
+    <a href="#time-bank-chart" class="quick-action-btn" onclick="document.getElementById('time-bank-section').classList.add('expanded'); return true;">
+        <span>⏱️</span>
+        <span>Time Bank</span>
+    </a>
+    <a href="#journey-view" class="quick-action-btn">
+        <span>🗺️</span>
+        <span>Journey</span>
+    </a>
 </div>
-{% endif %}
+
+{# ===== VISUAL ELEVATION CHART ===== #}
+<div class="elevation-chart-container">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div class="section-label" style="margin:0;">Elevation Profile</div>
+        <div style="font-size:0.75rem;color:var(--text-light);">{{ "{:,}".format(plan.total_elevation_ft) }} ft total</div>
+    </div>
+    <div class="elevation-chart">
+        <div class="elevation-profile">
+            {% for s in stops %}
+            {% if s.elevation_gain and s.elevation_gain > 0 %}
+            {% set max_elev = 2000 %}
+            {% set bar_height = (s.elevation_gain / max_elev * 100)|min(100) %}
+            <div class="elevation-bar {{ s.stop_type }}" style="height:{{ bar_height }}%;">
+                <div class="elevation-tooltip">
+                    <div style="font-weight:700;">{{ s.location[:20] }}{% if s.location|length > 20 %}...{% endif %}</div>
+                    <div>{{ s.elevation_gain }}ft gain</div>
+                    <div>{{ "%.1f"|format(s.distance_miles) }} mi</div>
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px;font-size:0.7rem;color:var(--text-light);justify-content:center;">
+        <span style="display:flex;align-items:center;gap:4px;">
+            <span style="width:12px;height:12px;background:linear-gradient(to top, #3b82f6, #60a5fa);border-radius:2px;"></span>
+            Waypoint
+        </span>
+        <span style="display:flex;align-items:center;gap:4px;">
+            <span style="width:12px;height:12px;background:linear-gradient(to top, #dc2626, #ef4444);border-radius:2px;"></span>
+            Control
+        </span>
+    </div>
+</div>
 
 {# ===== D. WEATHER FORECAST ===== #}
 {% if rwgps_route_id %}
@@ -518,30 +794,40 @@
 {% endfor %}
 </div>
 
-{# ===== H. TIME-OF-DAY & TIME BANK CHART ===== #}
+{# ===== H. TIME-OF-DAY & TIME BANK CHART (Collapsible on Mobile) ===== #}
 {% if plan.cutoff_hours %}
-<div class="card" style="margin-bottom:24px;padding:16px 20px;">
-    <div class="section-label" style="margin-bottom:4px;">Estimated Arrival Times & Time Bank</div>
-    <div style="font-size:0.75rem;color:var(--text-light);margin-bottom:12px;">
-        Based on {{ plan.start_time }} start. Time banked (+) or lost (&minus;) against {{ plan.cutoff_hours }}h cutoff.
+<div class="collapsible-section expanded" id="time-bank-section" style="margin-bottom:24px;">
+    <div class="collapsible-header" onclick="toggleSection('time-bank-section')">
+        <div class="collapsible-title">
+            <span>⏱️</span>
+            <span>Time Bank & Arrival Times</span>
+        </div>
+        <span class="collapsible-icon">▼</span>
     </div>
-    {% for s in stops %}
-    {% if s.time_bank_min is not none and s.stop_type in ['control', 'rest', 'finish', 'start'] and s.distance_miles and s.distance_miles > 0 %}
-    <div class="tod-row">
-        <span class="tod-label">{{ s.location[:25] }}{% if s.location|length > 25 %}...{% endif %}</span>
-        <span class="tod-time arrival-time" data-cum-min="{{ s.cum_time_min }}">
-            &mdash;
-        </span>
-        <span class="tod-bank" style="color:{% if s.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
-            {% if s.time_bank_min >= 0 %}+{% endif %}{% set abs_min = s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min %}{{ (abs_min // 60)|int }}h{{ "%02d"|format(abs_min % 60) }}m
-        </span>
-        <div class="tod-bar-bg">
-            {% set bank_pct = [((s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min) / (plan.cutoff_hours * 60) * 100)|round(0)|int, 100]|min %}
-            <div class="tod-bar" style="width:{{ bank_pct }}%;background:{% if s.time_bank_min >= 0 %}linear-gradient(90deg,#86efac,#22c55e){% else %}linear-gradient(90deg,#fca5a5,#dc2626){% endif %};"></div>
+    <div class="collapsible-content">
+        <div class="card" style="margin-top:12px;padding:16px 20px;border-radius:10px;">
+            <div style="font-size:0.75rem;color:var(--text-light);margin-bottom:12px;">
+                Based on {{ plan.start_time }} start. Time banked (+) or lost (&minus;) against {{ plan.cutoff_hours }}h cutoff.
+            </div>
+            {% for s in stops %}
+            {% if s.time_bank_min is not none and s.stop_type in ['control', 'rest', 'finish', 'start'] and s.distance_miles and s.distance_miles > 0 %}
+            <div class="tod-row">
+                <span class="tod-label">{{ s.location[:25] }}{% if s.location|length > 25 %}...{% endif %}</span>
+                <span class="tod-time arrival-time" data-cum-min="{{ s.cum_time_min }}">
+                    &mdash;
+                </span>
+                <span class="tod-bank" style="color:{% if s.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
+                    {% if s.time_bank_min >= 0 %}+{% endif %}{% set abs_min = s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min %}{{ (abs_min // 60)|int }}h{{ "%02d"|format(abs_min % 60) }}m
+                </span>
+                <div class="tod-bar-bg">
+                    {% set bank_pct = [((s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min) / (plan.cutoff_hours * 60) * 100)|round(0)|int, 100]|min %}
+                    <div class="tod-bar" style="width:{{ bank_pct }}%;background:{% if s.time_bank_min >= 0 %}linear-gradient(90deg,#86efac,#22c55e){% else %}linear-gradient(90deg,#fca5a5,#dc2626){% endif %};"></div>
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
         </div>
     </div>
-    {% endif %}
-    {% endfor %}
 </div>
 {% endif %}
 
@@ -571,7 +857,13 @@
             <div class="segment-loc-name">{{ s.location }}</div>
             {% if s.notes %}<div class="segment-loc-notes">{{ s.notes }}</div>{% endif %}
         </div>
-        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">
+            {% if s.time_bank_min is not none and s.stop_type in ['control', 'rest', 'finish'] %}
+            {% set abs_bank = s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min %}
+            <span class="diff-badge" style="background:{% if s.time_bank_min >= 0 %}#22c55e{% else %}#dc2626{% endif %};color:white;font-size:0.65rem;padding:3px 8px;">
+                {% if s.time_bank_min >= 0 %}+{% else %}-{% endif %}{{ (abs_bank // 60)|int }}:{{ "%02d"|format(abs_bank % 60) }}
+            </span>
+            {% endif %}
             {% if s.difficulty_score and s.difficulty_score > 0 %}
             <span class="diff-badge" style="background:{{ difficulty_colors.get(s.difficulty_label, '#94a3b8') }};color:white;">{{ s.difficulty_score }}</span>
             {% endif %}
@@ -733,6 +1025,30 @@
 
 {% block extra_js %}
 <script>
+// Toggle collapsible sections
+function toggleSection(sectionId) {
+    var section = document.getElementById(sectionId);
+    if (section) {
+        section.classList.toggle('expanded');
+    }
+}
+
+// Sticky header on scroll
+(function() {
+    var stickyHeader = document.getElementById('sticky-header');
+    var heroSection = document.getElementById('hero-section');
+    if (!stickyHeader || !heroSection) return;
+
+    window.addEventListener('scroll', function() {
+        var heroBottom = heroSection.getBoundingClientRect().bottom;
+        if (heroBottom < 60) {
+            stickyHeader.classList.add('visible');
+        } else {
+            stickyHeader.classList.remove('visible');
+        }
+    });
+})();
+
 function toggleView(view) {
     document.getElementById('cards-view').style.display = view === 'cards' ? 'block' : 'none';
     document.getElementById('table-view').style.display = view === 'table' ? 'block' : 'none';
