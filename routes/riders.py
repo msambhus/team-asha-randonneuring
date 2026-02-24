@@ -277,12 +277,13 @@ def _build_journey_nodes(stops):
 
 
 def _match_plans_to_events(events, plans):
-    """Attach plan_slug to RUSA events by matching route names.
+    """Attach plan_slug and Team Asha route URLs to RUSA events by matching route names.
     Requires at least 2 meaningful keyword matches to avoid false positives,
     unless there's a distinctive word match (e.g. 'healdsburg', 'hopland')."""
     for event in events:
         e_words = _normalize_route(event.get('route_name', ''))
         best_slug = None
+        best_plan = None
         best_score = 0
         for plan in plans:
             p_words = _normalize_route(plan['name'])
@@ -294,7 +295,11 @@ def _match_plans_to_events(events, plans):
                 if score > best_score:
                     best_score = score
                     best_slug = plan['slug']
+                    best_plan = plan
         event['plan_slug'] = best_slug
+        if best_plan:
+            event['plan_rwgps_url'] = best_plan.get('rwgps_url')
+            event['plan_rwgps_url_team'] = best_plan.get('rwgps_url_team')
 
 
 @riders_bp.route('/riders/<season_name>/upcoming')
