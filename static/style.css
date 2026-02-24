@@ -1,20 +1,23 @@
 :root {
-    --primary: #1a365d;
-    --accent: #e53e3e;
-    --accent-light: #fc8181;
-    --bg: #f7fafc;
+    /* Option 2: Saffron Sunrise Fusion - Indian heritage leads, US connection complements */
+    --primary: #ff6b00;           /* Saffron orange - Indian courage & sacrifice */
+    --primary-dark: #d45500;
+    --accent: #1e40af;            /* Deep blue - US/India unity */
+    --accent-light: #3b82f6;
+    --accent-red: #dc2626;        /* Vibrant red - shared passion */
+    --bg: #fefbf6;                /* Warm cream background */
     --card-bg: #ffffff;
     --text: #2d3748;
     --text-light: #718096;
-    --border: #e2e8f0;
-    --success: #38a169;
+    --border: #fed7aa;            /* Warm orange borders */
+    --success: #16a34a;           /* Indian green */
     --warning: #d69e2e;
-    --danger: #e53e3e;
+    --danger: #dc2626;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
 .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
-header { background: linear-gradient(135deg, var(--primary) 0%, #2a4a7f 100%); color: white; padding: 0; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.15); }
+header { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 50%, var(--accent) 100%); color: white; padding: 0; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.15); }
 .header-inner { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; max-width: 1200px; margin: 0 auto; }
 .logo { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.5px; }
 .logo span { color: var(--accent-light); }
@@ -38,7 +41,7 @@ nav a:hover, nav a.active {
 nav a:active {
     transform: translateY(0);
 }
-.hero { background: linear-gradient(135deg, var(--primary) 0%, #2a4a7f 50%, #1a365d 100%); color: white; padding: 60px 20px; text-align: center; }
+.hero { background: linear-gradient(135deg, var(--primary) 0%, var(--accent-light) 50%, var(--accent) 100%); color: white; padding: 60px 20px; text-align: center; }
 .hero h1 { font-size: 2.5rem; margin-bottom: 10px; font-weight: 800; }
 .hero p { font-size: 1.15rem; opacity: 0.9; max-width: 700px; margin: 0 auto; }
 .hero-img { max-width: 100%; border-radius: 12px; margin-top: 20px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); max-height: 400px; object-fit: cover; }
