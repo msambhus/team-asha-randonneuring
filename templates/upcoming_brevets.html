@@ -62,7 +62,7 @@
     margin-bottom: 40px;
 }
 .month-header {
-    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    background: linear-gradient(135deg, #0891b2, #0e7490);
     color: white;
     padding: 12px 20px;
     border-radius: 8px;
@@ -108,7 +108,7 @@
     top: 20px;
     right: 20px;
     text-align: center;
-    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    background: linear-gradient(135deg, #1e40af, #1e3a8a);
     color: white;
     border-radius: 8px;
     padding: 8px 12px;
@@ -118,13 +118,14 @@
     font-size: 1.8rem;
     font-weight: 800;
     line-height: 1;
+    color: white;
 }
 .event-month {
     font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
     margin-top: 2px;
-    opacity: 0.9;
+    color: #fb923c;
 }
 .event-region-badge {
     display: inline-flex;
@@ -299,11 +300,11 @@
         {% endif %}
     </div>
 
-    <div class="event-title">
+    <div class="event-title" style="overflow-wrap:break-word;word-break:break-word;">
         {% if 'DART' in event.route_name or 'Dart' in event.route_name or 'Fleche' in event.route_name or (event.rwgps_url and ('dart' in event.rwgps_url.lower() or 'fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}
         <span style="color:var(--accent);font-weight:800;">[DART]</span>
         {% endif %}
-        {{ event.route_name }}
+        {{ event.route_name }}{% if event.ride_type %} <span style="color:var(--text-light);font-size:0.75rem;font-weight:600;white-space:nowrap;">[{{ event.ride_type }}]</span>{% endif %}
     </div>
 
     <div class="event-links">
@@ -319,6 +320,13 @@
                 🌤️ Weather
             </a>
         </span>
+
+        {% if event.plan_rwgps_url_team %}
+        <a href="{{ event.plan_rwgps_url_team }}" target="_blank" class="event-link-btn" style="background:linear-gradient(135deg,#fff7ed,#ffedd5);border-color:#ff6b00;color:#c2410c;">
+            <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:16px;height:16px;">
+            Team Asha Route
+        </a>
+        {% endif %}
 
         {% if event.plan_slug %}
         <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug) }}" class="event-link-btn" style="background:linear-gradient(135deg,#f0f4ff,#e8f0fe);border-color:#c7d2fe;color:#4338ca;">
@@ -446,26 +454,35 @@ document.addEventListener('DOMContentLoaded', function() {
     groupEventsByMonth();
 });
 
-// Add weather forecast links for events within 10 days
+// Highlight events within 4 days and add weather forecast links for events within 10 days
 (function() {
     const now = new Date();
+    const fourDaysFromNow = new Date(now.getTime() + (5 * 24 * 60 * 60 * 1000));
     const tenDaysFromNow = new Date(now.getTime() + (10 * 24 * 60 * 60 * 1000));
     
-    document.querySelectorAll('.event-item').forEach(eventItem => {
+    document.querySelectorAll('.event-card').forEach(eventItem => {
         const eventDate = eventItem.dataset.eventDate; // format: YYYY-MM-DD
         const eventTime = eventItem.dataset.eventTime || '07:00'; // format: HH:MM
         const rwgpsUrl = eventItem.dataset.rwgpsUrl;
         const routeName = eventItem.dataset.routeName;
         
-        if (!eventDate || !rwgpsUrl) return;
+        if (!eventDate) return;
         
         // Parse event date and time
         const [year, month, day] = eventDate.split('-').map(Number);
         const [hours, minutes] = eventTime.split(':').map(Number);
         const eventDateTime = new Date(year, month - 1, day, hours, minutes);
         
-        // Check if event is within 10 days
-        if (eventDateTime <= tenDaysFromNow && eventDateTime >= now) {
+        // Highlight events within 4 days with light green color
+        if (eventDateTime <= fourDaysFromNow && eventDateTime >= now) {
+            const eventDateElement = eventItem.querySelector('.event-date');
+            if (eventDateElement) {
+                eventDateElement.style.background = 'linear-gradient(135deg, #86efac, #4ade80)';
+            }
+        }
+        
+        // Add weather forecast link for events within 10 days
+        if (rwgpsUrl && eventDateTime <= tenDaysFromNow && eventDateTime >= now) {
             // Extract route ID from rwgps URL
             const routeIdMatch = rwgpsUrl.match(/\/routes\/(\d+)/);
             if (!routeIdMatch) return;
@@ -482,7 +499,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (weatherLinkContainer) {
                 const weatherLink = weatherLinkContainer.querySelector('a');
                 weatherLink.href = weatherUrl;
-                weatherLinkContainer.style.display = 'inline';
+                weatherLinkContainer.style.display = 'inline-block';
             }
         }
     });
