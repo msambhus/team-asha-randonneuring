@@ -27,15 +27,15 @@ SFR_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1LO6FfMJeMP_cvnEUtCfBvpm
 
 def get_time_limit_hours(distance_km):
     """Calculate standard RUSA/ACP time limit in hours based on distance."""
-    if distance_km <= 200:
+    if distance_km == 200:
         return 13.5
-    elif distance_km <= 300:
+    elif distance_km == 300:
         return 20
-    elif distance_km <= 400:
+    elif distance_km == 400:
         return 27
-    elif distance_km <= 600:
+    elif distance_km == 600:
         return 40
-    elif distance_km >= 1000:
+    elif distance_km == 1000:
         return 75
     return None
 
@@ -478,7 +478,11 @@ def get_scr_events():
 
 
 def upsert_event(cursor, region, event):
-    """Insert or update a RUSA event."""
+    """Insert or update a RUSA event. Only processes rides with valid ACP time limits."""
+    # Filter: only process rides that have standard ACP time limits
+    if get_time_limit_hours(event['distance_km']) is None:
+        return 'filtered'
+    
     # Check if event exists
     cursor.execute("""
         SELECT id, event_status FROM upcoming_rusa_event 
@@ -555,7 +559,7 @@ def main():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    stats = {'inserted': 0, 'updated': 0, 'skipped': 0}
+    stats = {'inserted': 0, 'updated': 0, 'skipped': 0, 'filtered': 0}
     
     # Download and process SFR events
     print("\n📍 San Francisco Randonneurs")
@@ -565,6 +569,8 @@ def main():
         stats[action] += 1
         if action == 'skipped':
             print(f"  ⊘ {event['name']} ({event['date']}) [DONE - skipped]")
+        elif action == 'filtered':
+            print(f"  ⊗ {event['name']} ({event['date']}) [{event['distance_km']}km - filtered]")
         else:
             print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']})")
     
@@ -576,6 +582,8 @@ def main():
         stats[action] += 1
         if action == 'skipped':
             print(f"  ⊘ {event['name']} ({event['date']}) [DONE - skipped]")
+        elif action == 'filtered':
+            print(f"  ⊗ {event['name']} ({event['date']}) [{event['distance_km']}km - filtered]")
         else:
             print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']})")
     
@@ -588,6 +596,8 @@ def main():
             stats[action] += 1
             if action == 'skipped':
                 print(f"  ⊘ {event['name']} ({event['date']}) [DONE - skipped]")
+            elif action == 'filtered':
+                print(f"  ⊗ {event['name']} ({event['date']}) [{event['distance_km']}km - filtered]")
             else:
                 print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']})")
     
@@ -595,7 +605,7 @@ def main():
     conn.close()
     
     print("\n" + "=" * 60)
-    print(f"✅ Done! {stats['inserted']} inserted, {stats['updated']} updated, {stats['skipped']} skipped (DONE)")
+    print(f"✅ Done! {stats['inserted']} inserted, {stats['updated']} updated, {stats['skipped']} skipped (DONE), {stats['filtered']} filtered (distance)")
     print("=" * 60)
 
 
