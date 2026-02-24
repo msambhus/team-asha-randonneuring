@@ -13,6 +13,10 @@ class Config:
     GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
     GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
     
+    # Linear API Configuration
+    LINEAR_API_KEY = os.environ.get('LINEAR_API_KEY')
+    LINEAR_TEAM_ID = '33d7eaca-512f-4bac-b5cb-d6d61ac2fa74'
+
     # Session configuration for production security
     SESSION_COOKIE_SECURE = os.environ.get('VERCEL_ENV') == 'production'  # HTTPS only in prod
     SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to cookies

@@ -95,14 +95,41 @@ Team Asha Randonneuring &copy; 2025-2026 &bull; Raising funds for education of u
 <script>
 function submitFeedback(e) {
     e.preventDefault();
-    var name = document.getElementById('fb-name').value;
-    var email = document.getElementById('fb-email').value;
-    var text = document.getElementById('fb-text').value;
-    var subject = encodeURIComponent('Team Asha Randonneuring - Feedback from ' + name);
-    var body = encodeURIComponent('From: ' + name + ' (' + email + ')\n\n' + text);
-    window.location.href = 'mailto:mihir.sambhus@gmail.com?subject=' + subject + '&body=' + body;
-    document.getElementById('feedback-modal').style.display = 'none';
-    document.getElementById('feedback-form').reset();
+    var btn = e.target.querySelector('button[type="submit"]');
+    var origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    fetch('/api/feedback', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            name: document.getElementById('fb-name').value,
+            email: document.getElementById('fb-email').value,
+            feedback: document.getElementById('fb-text').value
+        })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.success) {
+            btn.textContent = '\u2713 Sent! Thank you.';
+            setTimeout(function() {
+                document.getElementById('feedback-modal').style.display = 'none';
+                document.getElementById('feedback-form').reset();
+                btn.disabled = false;
+                btn.textContent = origText;
+            }, 1500);
+        } else {
+            btn.textContent = origText;
+            btn.disabled = false;
+            alert('Could not send feedback. Please try again.');
+        }
+    })
+    .catch(function() {
+        btn.textContent = origText;
+        btn.disabled = false;
+        alert('Could not send feedback. Please try again.');
+    });
 }
 </script>
 {% block extra_js %}{% endblock %}
