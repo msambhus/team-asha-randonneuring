@@ -8,12 +8,14 @@ module.exports = {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#1a365d',
-          dark: '#2a4a7f',
+          DEFAULT: '#1e40af',
+          dark: '#1e3a8a',
         },
+        saffron: '#ff6b00',
+        'indian-green': '#138808',
         accent: {
-          DEFAULT: '#e53e3e',
-          light: '#fc8181',
+          DEFAULT: '#dc2626',
+          light: '#ef4444',
         },
         bg: '#f7fafc',
         'card-bg': '#ffffff',
@@ -22,9 +24,9 @@ module.exports = {
           light: '#718096',
         },
         border: '#e2e8f0',
-        success: '#38a169',
-        warning: '#d69e2e',
-        danger: '#e53e3e',
+        success: '#138808',
+        warning: '#ff6b00',
+        danger: '#dc2626',
       },
     },
   },
