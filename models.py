@@ -397,7 +397,8 @@ def get_all_upcoming_events():
                c.region as region,
                rp.slug as plan_slug,
                rp.rwgps_url_team as plan_rwgps_url_team,
-               (c.code = 'TA') as is_team_ride
+               (c.code = 'TA') as is_team_ride,
+               (SELECT COUNT(*) FROM rider_ride rr WHERE rr.ride_id = ri.id AND rr.signed_up_at IS NOT NULL) as signup_count
         FROM ride ri 
         INNER JOIN club c ON ri.club_id = c.id
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
