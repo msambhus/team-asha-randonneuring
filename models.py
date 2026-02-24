@@ -515,3 +515,88 @@ def update_rider_profile(rider_id, photo_filename=None, bio=None):
                       ON CONFLICT(rider_id) DO UPDATE SET bio = EXCLUDED.bio""",
                    (rider_id, bio))
     conn.commit()
+
+
+# ========== USER AUTHENTICATION ==========
+
+def get_user_by_email(email):
+    """Get user by email."""
+    return _execute("SELECT * FROM app_user WHERE email = %s", (email,)).fetchone()
+
+def get_user_by_google_id(google_id):
+    """Get user by Google ID."""
+    return _execute("SELECT * FROM app_user WHERE google_id = %s", (google_id,)).fetchone()
+
+def get_user_by_id(user_id):
+    """Get user by ID."""
+    return _execute("SELECT * FROM app_user WHERE id = %s", (user_id,)).fetchone()
+
+def create_user(email, google_id):
+    """Create a new user with Google credentials."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""INSERT INTO app_user (email, google_id, profile_completed, last_login)
+                  VALUES (%s, %s, FALSE, CURRENT_TIMESTAMP)
+                  RETURNING id, email, google_id, profile_completed, rider_id""",
+               (email, google_id))
+    user = cur.fetchone()
+    conn.commit()
+    return dict(user) if user else None
+
+def update_user_login_time(user_id):
+    """Update last login timestamp."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("UPDATE app_user SET last_login = CURRENT_TIMESTAMP WHERE id = %s", (user_id,))
+    conn.commit()
+
+def complete_user_profile(user_id, rider_id):
+    """Link user to rider and mark profile as completed."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""UPDATE app_user SET rider_id = %s, profile_completed = TRUE 
+                      WHERE id = %s""",
+                   (rider_id, user_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        return False
+
+def get_rider_by_name_and_rusa(first_name, last_name, rusa_id):
+    """Get rider by exact name match and RUSA ID."""
+    return _execute("""
+        SELECT * FROM rider 
+        WHERE LOWER(first_name) = LOWER(%s) 
+        AND LOWER(last_name) = LOWER(%s) 
+        AND rusa_id = %s
+    """, (first_name, last_name, rusa_id)).fetchone()
+
+def create_rider(first_name, last_name, rusa_id):
+    """Create a new rider record."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""INSERT INTO rider (first_name, last_name, rusa_id)
+                      VALUES (%s, %s, %s)
+                      RETURNING id, first_name, last_name, rusa_id""",
+                   (first_name, last_name, rusa_id))
+        rider = cur.fetchone()
+        conn.commit()
+        return dict(rider) if rider else None
+    except Exception as e:
+        conn.rollback()
+        return None
+
+def check_rusa_id_exists(rusa_id):
+    """Check if a RUSA ID is already registered."""
+    return _execute("SELECT id FROM rider WHERE rusa_id = %s", (rusa_id,)).fetchone()
+
+def is_rider_linked_to_user(rider_id):
+    """Check if a rider is already linked to a user account."""
+    return _execute("SELECT id FROM app_user WHERE rider_id = %s", (rider_id,)).fetchone()
+
+def get_rider_by_rusa_id(rusa_id):
+    """Get rider by RUSA ID."""
+    return _execute("SELECT * FROM rider WHERE rusa_id = %s", (rusa_id,)).fetchone()
