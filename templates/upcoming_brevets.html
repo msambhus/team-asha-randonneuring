@@ -81,7 +81,7 @@
 <div class="container section">
 <h2>Ride Calendar</h2>
 
-<div class="filter-container" style="margin-bottom:15px;">
+<div class="filter-container" style="margin-bottom:10px;">
 <div style="display:flex;gap:8px;flex-wrap:nowrap;font-size:0.85rem;min-height:44px;align-items:center;">
     <span class="region-filter active" data-region="all" onclick="filterByRegion('all')" style="display:inline-flex;align-items:center;gap:4px;min-height:44px;">
         <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#666;flex-shrink:0;"></span>All Clubs
@@ -93,11 +93,21 @@
     {% endfor %}
 </div>
 </div>
+{% if distances %}
+<div class="filter-container" style="margin-bottom:15px;">
+<div style="display:flex;gap:8px;flex-wrap:nowrap;font-size:0.85rem;min-height:44px;align-items:center;">
+    <span class="region-filter active" data-distance="all" onclick="filterByDistance('all')" style="min-height:44px;display:inline-flex;align-items:center;">All Distances</span>
+    {% for d in distances %}
+    <span class="region-filter" data-distance="{{ d }}" onclick="filterByDistance('{{ d }}')" style="min-height:44px;display:inline-flex;align-items:center;">{{ d }}k</span>
+    {% endfor %}
+</div>
+</div>
+{% endif %}
 <p style="font-size:0.8rem;color:var(--text-light);margin-bottom:15px;">Events sourced from <a href="https://rusa.org/cgi-bin/eventsearch_GF.pl" target="_blank" style="color:var(--accent);">RUSA</a> for Davis, San Francisco &amp; Santa Cruz regions.</p>
 
 <div class="card">
 {% for event in rusa_events %}
-<div class="event-item" data-region="{{ event.region }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;{% if not loop.last %}border-bottom:1px solid var(--border);{% endif %}">
+<div class="event-item" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;{% if not loop.last %}border-bottom:1px solid var(--border);{% endif %}">
 <div class="event-date-box" style="min-width:48px;text-align:center;">
     <div style="font-size:0.75rem;color:var(--text-light);text-transform:uppercase;">{{ event.date_str[5:7] }}/{{ event.date_str[8:10] }}</div>
     <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">{{ event.date_str[8:10] }}</div>
@@ -124,6 +134,11 @@
     {% if event.rwgps_url %}
     <a href="{{ event.rwgps_url }}" target="_blank" title="{% if 'Fleche' in event.route_name or (event.rwgps_url and ('fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}View Event on RideWithGPS{% else %}View Route on RideWithGPS{% endif %}" style="margin-left:8px;text-decoration:none;display:inline-flex;align-items:center;vertical-align:middle;min-width:44px;min-height:44px;justify-content:center;">
       <img src="https://ridewithgps.com/favicon.ico" alt="RideWithGPS" style="width:24px;height:24px;vertical-align:middle;">
+    </a>
+    {% endif %}
+    {% if event.plan_slug %}
+    <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug) }}" title="View Team Asha ride plan" style="margin-left:4px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;padding:2px 10px;background:linear-gradient(135deg,#f0f4ff,#e8f0fe);border:1px solid #c7d2fe;border-radius:6px;font-size:0.75rem;font-weight:600;color:#4338ca;min-height:30px;">
+      &#x1F4CB; Ride Plan
     </a>
     {% endif %}
     <span class="weather-forecast-link" style="margin-left:4px;display:none;">
@@ -158,25 +173,33 @@
 
 {% block extra_js %}
 <script>
-function filterByRegion(region) {
-    // Update active state on filters
-    document.querySelectorAll('.region-filter').forEach(filter => {
-        filter.classList.remove('active');
-    });
-    document.querySelector(`[data-region="${region}"]`).classList.add('active');
-    
-    // Show/hide events
-    document.querySelectorAll('.event-item').forEach(event => {
-        if (region === 'all') {
+var activeRegion = 'all';
+var activeDistance = 'all';
+
+function applyFilters() {
+    document.querySelectorAll('.event-item').forEach(function(event) {
+        var regionMatch = activeRegion === 'all' || event.dataset.region === activeRegion;
+        var distanceMatch = activeDistance === 'all' || event.dataset.distance === activeDistance;
+        if (regionMatch && distanceMatch) {
             event.classList.remove('hidden');
         } else {
-            if (event.dataset.region === region) {
-                event.classList.remove('hidden');
-            } else {
-                event.classList.add('hidden');
-            }
+            event.classList.add('hidden');
         }
     });
+}
+
+function filterByRegion(region) {
+    activeRegion = region;
+    document.querySelectorAll('[data-region].region-filter').forEach(function(f) { f.classList.remove('active'); });
+    document.querySelector('[data-region="' + region + '"].region-filter').classList.add('active');
+    applyFilters();
+}
+
+function filterByDistance(distance) {
+    activeDistance = distance;
+    document.querySelectorAll('[data-distance].region-filter').forEach(function(f) { f.classList.remove('active'); });
+    document.querySelector('[data-distance="' + distance + '"].region-filter').classList.add('active');
+    applyFilters();
 }
 
 // Add weather forecast links for events within 10 days

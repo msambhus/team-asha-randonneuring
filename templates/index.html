@@ -81,7 +81,7 @@
 {% else %}
 <p>{{ ss.active_riders }} riders completed {{ ss.total_rides }} brevets covering {{ ss.total_kms|commafy }} km.{% if ss.sr_rider_count > 0 %} {{ ss.sr_rider_count }} Super Randonneurs.{% endif %}</p>
 {% endif %}
-<p class="mt-2.5"><a href="{{ url_for('riders.season_riders', season_name=ss.name) }}" class="text-primary no-underline font-semibold hover:text-accent hover:underline">View {{ ss.name[:4] }}/{{ ss.name[5:7] }} season &rarr;</a></p>
+<p class="mt-2.5"><a href="{{ url_for('riders.season_riders', season_name=ss.name) }}" class="text-primary no-underline font-semibold hover:text-accent hover:underline">View {{ ss.name[:4] }}/{{ ss.name[5:] }} season &rarr;</a></p>
 </div>
 {% endfor %}
 </div>

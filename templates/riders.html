@@ -170,7 +170,10 @@
     <div style="font-size:0.7rem;color:rgba(255,255,255,0.7);">{{ ride.date }}</div>
     {% if ride.elevation_ft %}<div style="font-size:0.65rem;color:var(--accent-light);margin-top:2px;">{{ "{:,}".format(ride.elevation_ft) }}ft</div>{% endif %}
     {% if ride.ft_per_mile %}<div style="font-size:0.65rem;color:rgba(255,255,255,0.7);">{{ ride.ft_per_mile }}ft/mi</div>{% endif %}
-    {% if ride.rwgps_url %}<div style="min-height:18px;margin-top:2px;"><a href="{{ ride.rwgps_url }}" target="_blank" title="View route on RideWithGPS" style="text-decoration:none;display:inline-flex;align-items:center;"><img src="https://ridewithgps.com/favicon.ico" alt="RideWithGPS" style="width:16px;height:16px;"></a></div>{% endif %}
+    <div style="min-height:18px;margin-top:2px;display:flex;gap:6px;justify-content:center;align-items:center;">
+    {% if ride.rwgps_url %}<a href="{{ ride.rwgps_url }}" target="_blank" title="View route on RideWithGPS" style="text-decoration:none;display:inline-flex;align-items:center;"><img src="https://ridewithgps.com/favicon.ico" alt="RideWithGPS" style="width:16px;height:16px;"></a>{% endif %}
+    {% if ride.plan_slug %}<a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}" title="View ride plan" style="color:var(--accent-light);text-decoration:none;">&#x1F4CB;</a>{% endif %}
+    </div>
 </th>
 {% endfor %}
 </tr>
