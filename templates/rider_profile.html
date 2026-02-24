@@ -43,7 +43,7 @@
 <thead><tr><th>Date</th><th>Event</th><th>Distance</th><th>Elevation</th><th>Time</th></tr></thead>
 <tbody>
 {% for p in sd.participation %}
-{% if p.status|lower == 'yes' or p.status|lower == 'dnf' %}
+{% if p.status|lower == 'finished' or p.status|lower == 'dnf' %}
 <tr>
 <td>{{ p.date }}</td>
 <td>{{ p.ride_name }}
