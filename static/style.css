@@ -612,6 +612,22 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
     }
 }
 
+/* Mobile adjustments for Resources page */
+@media (max-width: 1024px) {
+    .resources-layout {
+        flex-direction: column;
+    }
+    .section-nav-sidebar {
+        width: 100%;
+        position: static;
+        max-height: none;
+    }
+    .section-nav-item {
+        display: inline-block;
+        margin-right: 8px;
+    }
+}
+
 /* Small mobile devices */
 @media (max-width: 480px) {
     .hero h1 { font-size: 1.5rem; }
