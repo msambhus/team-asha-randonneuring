@@ -66,18 +66,18 @@
 </div>
 
 <div class="stats-row">
-<div class="stat-card"><div class="number">{{ stats.active_riders }}</div><div class="label">Active Riders</div></div>
-<div class="stat-card"><div class="number">{{ stats.total_rides }}</div><div class="label">Brevets Completed</div></div>
-<div class="stat-card"><div class="number">{{ stats.total_kms|commafy }}</div><div class="label">Total Kilometers</div></div>
+<div class="stat-card"><div class="number stat-number" data-target="{{ stats.active_riders }}">0</div><div class="label">Active Riders</div></div>
+<div class="stat-card"><div class="number stat-number" data-target="{{ stats.total_rides }}">0</div><div class="label">Brevets Completed</div></div>
+<div class="stat-card"><div class="number stat-number" data-target="{{ stats.total_kms }}">0</div><div class="label">Total Kilometers</div></div>
 {% if stats.sr_rider_count > 0 %}
-<div class="stat-card"><div class="number">{{ stats.sr_rider_count }}</div><div class="label">Super Randonneurs</div></div>
+<div class="stat-card"><div class="number stat-number" data-target="{{ stats.sr_rider_count }}">0</div><div class="label">Super Randonneurs</div></div>
 {% endif %}
 {% if pbp_finishers %}
-<div class="stat-card"><div class="number" style="font-size:1.6rem;"><span class="pbp-badge" style="font-size:1rem;">PBP 2023</span></div><div class="label">{{ pbp_finishers|length }} Finishers</div></div>
+<div class="stat-card"><div class="number stat-number" data-target="{{ pbp_finishers|length }}" style="font-size:1.6rem;"><span class="pbp-badge" style="font-size:1rem;">PBP 2023</span></div><div class="label">{{ pbp_finishers|length }} Finishers</div></div>
 {% endif %}
 {% if is_current and upcoming_count > 0 %}
 <a href="{{ url_for('riders.upcoming_brevets', season_name=season.name) }}" class="stat-card" style="text-decoration:none;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;">
-<div class="number">{{ upcoming_count }}</div><div class="label">Upcoming Brevets &rarr;</div>
+<div class="number stat-number" data-target="{{ upcoming_count }}">0</div><div class="label">Upcoming Brevets &rarr;</div>
 </a>
 {% endif %}
 </div>
@@ -170,7 +170,10 @@
     <div style="font-size:0.7rem;color:rgba(255,255,255,0.7);">{{ ride.date }}</div>
     {% if ride.elevation_ft %}<div style="font-size:0.65rem;color:var(--accent-light);margin-top:2px;">{{ "{:,}".format(ride.elevation_ft) }}ft</div>{% endif %}
     {% if ride.ft_per_mile %}<div style="font-size:0.65rem;color:rgba(255,255,255,0.7);">{{ ride.ft_per_mile }}ft/mi</div>{% endif %}
-    {% if ride.rwgps_url %}<div style="min-height:18px;margin-top:2px;"><a href="{{ ride.rwgps_url }}" target="_blank" title="View route on RideWithGPS" style="text-decoration:none;display:inline-flex;align-items:center;"><img src="https://ridewithgps.com/favicon.ico" alt="RideWithGPS" style="width:16px;height:16px;"></a></div>{% endif %}
+    <div style="min-height:18px;margin-top:2px;display:flex;gap:6px;justify-content:center;align-items:center;">
+    {% if ride.rwgps_url %}<a href="{{ ride.rwgps_url }}" target="_blank" title="View route on RideWithGPS" style="text-decoration:none;display:inline-flex;align-items:center;"><img src="https://ridewithgps.com/favicon.ico" alt="RideWithGPS" style="width:16px;height:16px;"></a>{% endif %}
+    {% if ride.plan_slug %}<a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}" title="View ride plan" style="color:var(--accent-light);text-decoration:none;">&#x1F4CB;</a>{% endif %}
+    </div>
 </th>
 {% endfor %}
 </tr>
@@ -200,6 +203,58 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+// Animated counter for statistics
+function animateCounter(element, target, duration = 400) {
+    const start = 0;
+    const increment = target / (duration / 16); // 60fps
+    let current = 0;
+
+    const updateCounter = () => {
+        current += increment;
+        if (current < target) {
+            const displayValue = Math.floor(current);
+            element.textContent = displayValue.toLocaleString();
+            requestAnimationFrame(updateCounter);
+        } else {
+            element.textContent = target.toLocaleString();
+        }
+    };
+
+    requestAnimationFrame(updateCounter);
+}
+
+// Intersection Observer to trigger animation when stats come into view
+const observerOptions = {
+    threshold: 0.3,
+    rootMargin: '0px'
+};
+
+const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting && !entry.target.classList.contains('animated')) {
+            entry.target.classList.add('animated');
+            const statCards = entry.target.querySelectorAll('.stat-number');
+
+            statCards.forEach(card => {
+                const target = parseInt(card.getAttribute('data-target'));
+                animateCounter(card, target);
+            });
+
+            observer.unobserve(entry.target);
+        }
+    });
+}, observerOptions);
+
+// Start observing when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    const statsContainer = document.querySelector('.stats-row');
+    if (statsContainer) {
+        observer.observe(statsContainer);
+    }
+});
+</script>
+
 <script>
 (function() {
     // Sortable table logic - works for both summary-table and riders-table
