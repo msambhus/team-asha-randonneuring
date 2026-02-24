@@ -60,7 +60,9 @@ def create_app():
                     {'id': 1, 'name': '2021-2022', 'is_current': False}
                 ],
                 current_season={'id': 3, 'name': '2025-2026', 'is_current': True},
-   
+                user_logged_in=session.get('user_id') is not None,
+                user_email=session.get('email'),
+                rider_name=session.get('rider_name'),
             )
 
     return app

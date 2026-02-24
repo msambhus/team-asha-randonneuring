@@ -78,8 +78,8 @@ def season_riders(season_name):
                     'participation': matrix.get(r['id'], {}),
                 })
 
-        # Sort by rides completed descending, then name
-        rider_data.sort(key=lambda x: (-x['rides'], x['rider']['first_name']))
+        # Sort by kms descending, then rides descending, then name ascending
+        rider_data.sort(key=lambda x: (-x['kms'], -x['rides'], x['rider']['first_name']))
 
         label = SEASON_LABELS.get(season_name, f'{season_name} Season')
 
