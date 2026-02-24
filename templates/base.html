@@ -14,23 +14,25 @@
 <nav>
     <a href="{{ url_for('main.index') }}" {% if request.endpoint == 'main.index' %}class="active"{% endif %}>Home</a>
     <a href="{{ url_for('main.about') }}" {% if request.endpoint == 'main.about' %}class="active"{% endif %}>About</a>
+    {% if current_season %}
+    <a href="{{ url_for('riders.upcoming_brevets', season_name=current_season.name) }}" {% if request.endpoint == 'riders.upcoming_brevets' %}class="active"{% endif %}>Upcoming Brevets</a>
+    {% endif %}
     {% for s in seasons %}
-    {% set is_active = request.view_args.get('season_name') == s.name and (request.endpoint == 'riders.season_riders' or request.endpoint == 'riders.upcoming_brevets') %}
     {% if s.is_current %}
-    <div class="nav-dropdown">
-        <a href="{{ url_for('riders.season_riders', season_name=s.name) }}" {% if is_active %}class="active"{% endif %}>{{ s.name[:4] }}/{{ s.name[5:] }}</a>
-        <div class="dropdown-content">
-            <a href="{{ url_for('riders.season_riders', season_name=s.name) }}">Completed Brevets</a>
-            <a href="{{ url_for('riders.upcoming_brevets', season_name=s.name) }}">Upcoming Brevets</a>
-        </div>
-    </div>
-    {% else %}
-    <a href="{{ url_for('riders.season_riders', season_name=s.name) }}"
-       {% if is_active %}class="active"{% endif %}>
-       {{ s.name[:4] }}/{{ s.name[5:] }}
-    </a>
+    {% set is_active = request.view_args.get('season_name') == s.name and request.endpoint == 'riders.season_riders' %}
+    <a href="{{ url_for('riders.season_riders', season_name=s.name) }}" {% if is_active %}class="active"{% endif %}>{{ s.name[:4] }}/{{ s.name[5:] }}</a>
     {% endif %}
     {% endfor %}
+    <div class="nav-dropdown">
+        <a>Past Seasons</a>
+        <div class="dropdown-content">
+            {% for s in seasons %}
+            {% if not s.is_current %}
+            <a href="{{ url_for('riders.season_riders', season_name=s.name) }}">{{ s.name[:4] }}/{{ s.name[5:] }}</a>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
     <a href="{{ url_for('main.resources') }}" {% if request.endpoint == 'main.resources' %}class="active"{% endif %}>Resources</a>
 </nav>
 </div>
