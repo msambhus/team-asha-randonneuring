@@ -9,6 +9,7 @@
     border-radius: 20px;
     transition: all 0.2s;
     border: 2px solid transparent;
+    white-space: nowrap;
 }
 .region-filter:hover {
     background: rgba(0,0,0,0.05);
@@ -21,8 +22,53 @@
 .event-item.hidden {
     display: none !important;
 }
-</style>
-{% endblock %}
+
+/* Mobile-specific styles */
+@media (max-width: 768px) {
+    .filter-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 5px;
+    }
+    .filter-container > div {
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+    .region-filter {
+        padding: 8px 12px; /* Larger touch targets */
+        font-size: 0.85rem;
+    }
+    .event-item {
+        flex-direction: column !important;
+        gap: 10px !important;
+        padding: 16px 0 !important;
+    }
+    .event-date-box {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+    }
+    .event-content {
+        width: 100%;
+    }
+    .event-meta {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 8px !important;
+    }
+    .event-details {
+        flex-direction: column !important;
+        gap: 8px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .region-filter {
+        font-size: 0.8rem;
+        padding: 6px 10px;
+    }
+}
 
 {% block content %}
 <div class="hero" style="padding:40px 20px;">
@@ -33,14 +79,14 @@
 <div class="container section">
 <h2>Ride Calendar</h2>
 
-<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:15px;">
-<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:0.85rem;">
-    <span class="region-filter active" data-region="all" onclick="filterByRegion('all')" style="display:inline-flex;align-items:center;gap:4px;">
-        <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#666;"></span>All Clubs
+<div class="filter-container" style="margin-bottom:15px;">
+<div style="display:flex;gap:8px;flex-wrap:nowrap;font-size:0.85rem;min-height:44px;align-items:center;">
+    <span class="region-filter active" data-region="all" onclick="filterByRegion('all')" style="display:inline-flex;align-items:center;gap:4px;min-height:44px;">
+        <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#666;flex-shrink:0;"></span>All Clubs
     </span>
     {% for region, color in region_colors.items() %}
-    <span class="region-filter" data-region="{{ region }}" onclick="filterByRegion('{{ region }}')" style="display:inline-flex;align-items:center;gap:4px;">
-        <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{{ color }};"></span>{{ region }}
+    <span class="region-filter" data-region="{{ region }}" onclick="filterByRegion('{{ region }}')" style="display:inline-flex;align-items:center;gap:4px;min-height:44px;">
+        <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{{ color }};flex-shrink:0;"></span>{{ region }}
     </span>
     {% endfor %}
 </div>
@@ -50,13 +96,13 @@
 <div class="card">
 {% for event in rusa_events %}
 <div class="event-item" data-region="{{ event.region }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;{% if not loop.last %}border-bottom:1px solid var(--border);{% endif %}">
-<div style="min-width:48px;text-align:center;">
+<div class="event-date-box" style="min-width:48px;text-align:center;">
     <div style="font-size:0.75rem;color:var(--text-light);text-transform:uppercase;">{{ event.date_str[5:7] }}/{{ event.date_str[8:10] }}</div>
     <div style="font-size:1.4rem;font-weight:800;color:var(--primary);line-height:1;">{{ event.date_str[8:10] }}</div>
 </div>
-<div style="flex:1;min-width:0;">
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:{{ region_colors.get(event.region, '#999') }};">{{ event.region }}</span>
+<div class="event-content" style="flex:1;min-width:0;">
+    <div class="event-meta" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="display:inline-block;padding:4px 10px;border-radius:4px;font-size:0.75rem;font-weight:600;color:white;background:{{ region_colors.get(event.region, '#999') }};">{{ event.region }}</span>
         <span style="font-weight:700;color:var(--accent);">
           {% if event.distance_miles %}
             {{ "%.1f"|format(event.distance_miles) }} mi
@@ -71,21 +117,21 @@
           {% endif %}
         </span>
     </div>
-    <div style="font-size:0.85rem;margin-top:4px;color:var(--text);">{% if 'DART' in event.route_name or 'Dart' in event.route_name or 'Fleche' in event.route_name or (event.rwgps_url and ('dart' in event.rwgps_url.lower() or 'fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}[DART] {% endif %}{{ event.route_name }}{% if event.ride_type %} <span style="color:var(--text-light);font-size:0.75rem;">[{{ event.ride_type }}]</span>{% endif %}
+    <div style="font-size:0.9rem;margin-top:6px;color:var(--text);line-height:1.5;">{% if 'DART' in event.route_name or 'Dart' in event.route_name or 'Fleche' in event.route_name or (event.rwgps_url and ('dart' in event.rwgps_url.lower() or 'fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}[DART] {% endif %}{{ event.route_name }}{% if event.ride_type %} <span style="color:var(--text-light);font-size:0.75rem;">[{{ event.ride_type }}]</span>{% endif %}
     {% if event.climbing and not event.elevation_ft %}<span style="margin-left:8px;color:var(--text-light);font-size:0.75rem;">{{ event.climbing }}</span>{% endif %}
     {% if event.rwgps_url %}
-    <a href="{{ event.rwgps_url }}" target="_blank" title="{% if 'Fleche' in event.route_name or (event.rwgps_url and ('fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}View Event on RideWithGPS{% else %}View Route on RideWithGPS{% endif %}" style="margin-left:8px;text-decoration:none;display:inline-flex;align-items:center;vertical-align:middle;">
-      <img src="https://ridewithgps.com/favicon.ico" alt="RideWithGPS" style="width:20px;height:20px;vertical-align:middle;">
+    <a href="{{ event.rwgps_url }}" target="_blank" title="{% if 'Fleche' in event.route_name or (event.rwgps_url and ('fleche' in event.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in event.rwgps_url.lower())) %}View Event on RideWithGPS{% else %}View Route on RideWithGPS{% endif %}" style="margin-left:8px;text-decoration:none;display:inline-flex;align-items:center;vertical-align:middle;min-width:44px;min-height:44px;justify-content:center;">
+      <img src="https://ridewithgps.com/favicon.ico" alt="RideWithGPS" style="width:24px;height:24px;vertical-align:middle;">
     </a>
     {% endif %}
     <span class="weather-forecast-link" style="margin-left:4px;display:none;">
-      <a href="#" target="_blank" title="Weather Forecast" style="font-size:1.25rem;text-decoration:none;display:inline-flex;align-items:center;vertical-align:middle;line-height:1;">
+      <a href="#" target="_blank" title="Weather Forecast" style="font-size:1.25rem;text-decoration:none;display:inline-flex;align-items:center;vertical-align:middle;line-height:1;min-width:44px;min-height:44px;justify-content:center;">
         🌤️
       </a>
     </span>
     </div>
     {% if event.start_time or event.time_limit_hours or event.start_location %}
-    <div style="font-size:0.75rem;margin-top:6px;color:var(--text-light);display:flex;flex-wrap:wrap;gap:12px;">
+    <div class="event-details" style="font-size:0.8rem;margin-top:8px;color:var(--text-light);display:flex;flex-wrap:wrap;gap:12px;">
       {% if event.start_time %}
       <span><strong>Start:</strong> {{ event.start_time }}</span>
       {% endif %}

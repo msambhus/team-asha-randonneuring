@@ -1,6 +1,46 @@
 {% extends "base.html" %}
 {% block title %}{{ season_label }} - Team Asha Randonneuring{% endblock %}
 
+{% block extra_head %}
+<style>
+@media (max-width: 768px) {
+    /* Mobile table improvements */
+    .frozen-table {
+        font-size: 0.8rem;
+    }
+    .frozen-table th {
+        padding: 6px 4px;
+        line-height: 1.2;
+    }
+    .frozen-table td {
+        padding: 6px 4px;
+    }
+    .frozen-table .frozen-col-1 {
+        font-size: 0.85rem;
+    }
+    .rider-link {
+        display: inline-block;
+        max-width: 100%;
+        word-break: break-word;
+    }
+    /* PBP finishers grid */
+    .pbp-grid {
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)) !important;
+        gap: 12px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .frozen-table {
+        font-size: 0.75rem;
+    }
+    .pbp-grid {
+        grid-template-columns: 1fr !important;
+    }
+}
+</style>
+{% endblock %}
+
 {% macro badge(status, finish_time='') %}
 {% set v = status|string|lower|trim %}
 {% if v in ('yes', '1') %}
@@ -48,7 +88,7 @@
 <h2>Paris-Brest-Paris 2023 Finishers</h2>
 <p style="margin-bottom:20px;color:var(--text-light);">11 Team Asha riders completed the legendary 1,200 km Paris-Brest-Paris randonnée in August 2023.</p>
 
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;">
+<div class="pbp-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;">
 {% for f in pbp_finishers %}
 <a href="{{ url_for('riders.rider_profile', rusa_id=f.rusa_id) }}" class="card" style="display:flex;align-items:center;gap:14px;padding:16px 18px;text-decoration:none;color:inherit;transition:transform 0.15s,box-shadow 0.15s;border-left:4px solid #805ad5;">
     {% if f.photo_filename %}
@@ -57,7 +97,7 @@
     <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#805ad5,#b794f4);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:1.1rem;flex-shrink:0;">{{ f.first_name[0] }}</div>
     {% endif %}
     <div style="flex:1;min-width:0;">
-        <div style="font-weight:700;color:var(--primary);">{{ f.first_name }} {{ f.last_name }}</div>
+        <div style="font-weight:700;color:var(--primary);word-break:break-word;">{{ f.first_name }} {{ f.last_name }}</div>
         <div style="font-size:0.85rem;color:var(--text-light);">{{ f.finish_time }}h</div>
     </div>
     <span class="pbp-badge">PBP</span>
@@ -130,7 +170,7 @@
     <div style="font-size:0.7rem;color:rgba(255,255,255,0.7);">{{ ride.date }}</div>
     {% if ride.elevation_ft %}<div style="font-size:0.65rem;color:var(--accent-light);margin-top:2px;">{{ "{:,}".format(ride.elevation_ft) }}ft</div>{% endif %}
     {% if ride.ft_per_mile %}<div style="font-size:0.65rem;color:rgba(255,255,255,0.7);">{{ ride.ft_per_mile }}ft/mi</div>{% endif %}
-    {% if ride.rwgps_url %}<div style="min-height:18px;margin-top:2px;"><a href="{{ ride.rwgps_url }}" target="_blank" title="View route" style="color:var(--accent-light);text-decoration:none;">&#x1F5FA;</a></div>{% endif %}
+    {% if ride.rwgps_url %}<div style="min-height:18px;margin-top:2px;"><a href="{{ ride.rwgps_url }}" target="_blank" title="View route on RideWithGPS" style="text-decoration:none;display:inline-flex;align-items:center;"><img src="https://ridewithgps.com/favicon.ico" alt="RideWithGPS" style="width:16px;height:16px;"></a></div>{% endif %}
 </th>
 {% endfor %}
 </tr>

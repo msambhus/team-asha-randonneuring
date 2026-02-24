@@ -1,8 +1,36 @@
 {% extends "base.html" %}
 {% block title %}Home - Team Asha Randonneuring{% endblock %}
 
+{% block extra_head %}
+<style>
+@media (max-width: 768px) {
+    .hero-section img {
+        width: 100% !important;
+        height: auto !important;
+        max-width: 360px;
+    }
+    .hero-section > div {
+        flex-direction: column;
+        text-align: center !important;
+    }
+    .hero-section h1 {
+        font-size: 1.6rem !important;
+    }
+    .hero-section p {
+        font-size: 0.9rem !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .hero-section h1 {
+        font-size: 1.4rem !important;
+    }
+}
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="bg-gradient-to-br from-primary via-primary-dark to-primary text-white py-8 px-5 text-center">
+<div class="hero-section bg-gradient-to-br from-primary via-primary-dark to-primary text-white py-8 px-5 text-center">
 <div class="flex items-center justify-center gap-8 flex-wrap max-w-[1100px] mx-auto">
     <img src="{{ url_for('static', filename='team_photo.jpg') }}" alt="Team Asha riders" class="w-[360px] h-[250px] object-cover rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
     <div class="text-left max-w-[500px]">
