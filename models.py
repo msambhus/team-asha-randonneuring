@@ -3,6 +3,7 @@ from datetime import datetime, date
 from enum import Enum
 import psycopg2.extras
 from db import get_db
+from cache import cache, CACHE_TIMEOUT
 
 
 class RideStatus(str, Enum):
@@ -84,18 +85,22 @@ def _execute(sql, params=None):
 
 # ========== SEASONS ==========
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_all_seasons():
     return _execute("SELECT * FROM season ORDER BY start_date DESC").fetchall()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_current_season():
     return _execute("SELECT * FROM season WHERE is_current = TRUE").fetchone()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_season_by_name(name):
     return _execute("SELECT * FROM season WHERE name = %s", (name,)).fetchone()
 
 
 # ========== RIDERS ==========
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_all_riders():
     return _execute("""
         SELECT r.*, rp.photo_filename, rp.bio, rp.pbp_2023_registered, rp.pbp_2023_status
@@ -103,6 +108,7 @@ def get_all_riders():
         ORDER BY r.first_name
     """).fetchall()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_rider_by_rusa(rusa_id):
     return _execute("""
         SELECT r.*, rp.photo_filename, rp.bio, rp.pbp_2023_registered, rp.pbp_2023_status, rp.strava_data_private
@@ -110,6 +116,7 @@ def get_rider_by_rusa(rusa_id):
         WHERE r.rusa_id = %s
     """, (rusa_id,)).fetchone()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_riders_for_season(season_id):
     """Get riders who have any participation record in this season."""
     return _execute("""
@@ -122,6 +129,7 @@ def get_riders_for_season(season_id):
         ORDER BY r.first_name
     """, (season_id,)).fetchall()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_active_riders_for_season(season_id):
     """Get riders who have completed at least 1 ride (status=FINISHED) in this season, only counting past rides."""
     today = date.today()
@@ -138,6 +146,7 @@ def get_active_riders_for_season(season_id):
 
 # ========== RIDES ==========
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_rides_for_season(season_id):
     """Get all rides for a season with club info."""
     return _execute("""
@@ -154,6 +163,7 @@ def get_rides_for_season(season_id):
         ORDER BY ri.date
     """, (season_id,)).fetchall()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_ride_by_id(ride_id):
     """Get a single ride by ID with club info."""
     return _execute("""
@@ -167,6 +177,7 @@ def get_ride_by_id(ride_id):
         WHERE ri.id = %s
     """, (ride_id,)).fetchone()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_upcoming_rides():
     """Get Team Asha upcoming rides."""
     today = date.today()
@@ -185,6 +196,7 @@ def get_upcoming_rides():
         ORDER BY ri.date
     """, (today, ta_club_id)).fetchall()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_past_rides_for_season(season_id):
     """Get past Team Asha rides for a season."""
     today = date.today()
@@ -202,12 +214,14 @@ def get_past_rides_for_season(season_id):
         ORDER BY ri.date
     """, (season_id, today, ta_club_id)).fetchall()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_clubs():
     return _execute("SELECT * FROM club ORDER BY name").fetchall()
 
 
 # ========== PARTICIPATION ==========
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_participation_matrix(season_id):
     """Return {rider_id: {ride_id: {status, finish_time, signed_up_at}}} for a season."""
     rows = _execute("""
@@ -229,6 +243,7 @@ def get_participation_matrix(season_id):
         }
     return matrix
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_rider_participation(rider_id, season_id):
     return _execute("""
         SELECT rr.status, rr.finish_time, ri.name as ride_name, ri.date, ri.distance_km,
@@ -241,6 +256,7 @@ def get_rider_participation(rider_id, season_id):
         ORDER BY ri.date
     """, (rider_id, season_id)).fetchall()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_rider_career_stats(rider_id):
     """Total rides completed, total KMs, across all seasons."""
     row = _execute("""
@@ -253,6 +269,7 @@ def get_rider_career_stats(rider_id):
     """, (rider_id, RideStatus.FINISHED.value)).fetchone()
     return dict(row) if row else {'total_rides': 0, 'total_kms': 0}
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_rider_season_stats(rider_id, season_id):
     """Rides and KMs for a specific season."""
     row = _execute("""
@@ -264,6 +281,7 @@ def get_rider_season_stats(rider_id, season_id):
     """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchone()
     return dict(row) if row else {'rides': 0, 'kms': 0}
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_all_rider_season_stats(season_id):
     """Batch: rides and KMs for ALL riders in a season. Returns dict keyed by rider_id."""
     rows = _execute("""
@@ -278,6 +296,7 @@ def get_all_rider_season_stats(season_id):
 
 # ========== SR DETECTION ==========
 
+@cache.memoize(CACHE_TIMEOUT)
 def detect_sr_for_rider_season(rider_id, season_id, date_filter=False):
     """Count complete SR sets (200+300+400+600) for a rider in a season.
     Returns count (min across all four buckets), or 0."""
@@ -311,6 +330,7 @@ def detect_sr_for_rider_season(rider_id, season_id, date_filter=False):
             buckets[600] += 1
     return min(buckets.values())
 
+@cache.memoize(CACHE_TIMEOUT)
 def detect_sr_for_all_riders_in_season(season_id, date_filter=False):
     """Batch: SR count for ALL riders in a season. Returns dict keyed by rider_id."""
     today = date.today()
@@ -348,6 +368,7 @@ def detect_sr_for_all_riders_in_season(season_id, date_filter=False):
         result[rider_id] = min(buckets.values())
     return result
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_rider_total_srs(rider_id):
     """Total SRs across all seasons."""
     seasons = get_all_seasons()
@@ -359,6 +380,7 @@ def get_rider_total_srs(rider_id):
     return total
 
 
+@cache.memoize(CACHE_TIMEOUT)
 def detect_r12_awards(rider_id):
     """Detect R-12 awards: 12 consecutive months each with at least one 200+km finished ride.
 
@@ -432,6 +454,7 @@ def detect_r12_awards(rider_id):
 
 # ========== ALL-TIME STATS ==========
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_all_time_stats():
     # Single query for riders, rides, kms
     row = _execute("""
@@ -472,6 +495,7 @@ def get_all_time_stats():
 
 # ========== SEASON STATS ==========
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_season_stats(season_id, past_only=False):
     """Get season stats. If past_only=True, only count rides before today."""
     current = get_current_season()
@@ -513,6 +537,7 @@ def get_season_stats(season_id, past_only=False):
 
 # ========== CLUB HELPERS ==========
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_team_asha_club_id():
     """Get Team Asha club ID (cached helper)."""
     club = _execute("SELECT id FROM club WHERE code = 'TA'").fetchone()
@@ -536,6 +561,7 @@ def get_default_time_limit(distance_km):
     else:
         return None
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_all_upcoming_events():
     """Get all upcoming events (Team Asha and external) with club info."""
     today = date.today()
@@ -573,6 +599,7 @@ def get_all_upcoming_events():
 
     return events_with_defaults
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_upcoming_rusa_events():
     """Get external RUSA events (not Team Asha). Legacy function for compatibility."""
     all_events = get_all_upcoming_events()
@@ -581,6 +608,7 @@ def get_upcoming_rusa_events():
 
 # ========== PBP FINISHERS ==========
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_pbp_finishers(season_id):
     """Get PBP finishers for a season, sorted by finish time."""
     return _execute("""
@@ -599,6 +627,7 @@ def get_pbp_finishers(season_id):
 
 # ========== SIGNUPS ==========
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_signups_for_ride(ride_id):
     """Get all riders signed up for a ride (including those with results)."""
     return _execute("""
@@ -609,6 +638,7 @@ def get_signups_for_ride(ride_id):
         ORDER BY r.first_name, r.last_name
     """, (ride_id,)).fetchall()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_rider_signup_status(rider_id, ride_id):
     """Check if rider is signed up and get their current status."""
     return _execute("""
@@ -617,6 +647,7 @@ def get_rider_signup_status(rider_id, ride_id):
         WHERE rider_id = %s AND ride_id = %s
     """, (rider_id, ride_id)).fetchone()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_signup_count(ride_id):
     """Get count of riders signed up for a ride (excludes WITHDRAW status)."""
     row = _execute("""
@@ -625,6 +656,41 @@ def get_signup_count(ride_id):
         WHERE ride_id = %s AND signed_up_at IS NOT NULL AND status != %s
     """, (ride_id, RideStatus.WITHDRAW.value)).fetchone()
     return row['count'] if row else 0
+
+@cache.memoize(CACHE_TIMEOUT)
+def get_signup_counts_batch(ride_ids):
+    """Get signup counts for multiple rides in one query. Returns dict {ride_id: count}."""
+    if not ride_ids:
+        return {}
+    
+    placeholders = ','.join(['%s'] * len(ride_ids))
+    rows = _execute(f"""
+        SELECT ride_id, COUNT(*) as count 
+        FROM rider_ride 
+        WHERE ride_id IN ({placeholders}) 
+          AND signed_up_at IS NOT NULL 
+          AND status != %s
+        GROUP BY ride_id
+    """, tuple(ride_ids) + (RideStatus.WITHDRAW.value,)).fetchall()
+    
+    counts = {r['ride_id']: r['count'] for r in rows}
+    # Fill in zeros for rides with no signups
+    return {ride_id: counts.get(ride_id, 0) for ride_id in ride_ids}
+
+@cache.memoize(CACHE_TIMEOUT)
+def get_rider_signup_statuses_batch(rider_id, ride_ids):
+    """Get signup statuses for a rider across multiple rides in one query. Returns dict {ride_id: status_dict}."""
+    if not ride_ids or not rider_id:
+        return {}
+    
+    placeholders = ','.join(['%s'] * len(ride_ids))
+    rows = _execute(f"""
+        SELECT ride_id, status, signed_up_at, finish_time 
+        FROM rider_ride 
+        WHERE rider_id = %s AND ride_id IN ({placeholders})
+    """, (rider_id,) + tuple(ride_ids)).fetchall()
+    
+    return {r['ride_id']: {'status': r['status'], 'signed_up_at': r['signed_up_at'], 'finish_time': r['finish_time']} for r in rows}
 
 def signup_rider(rider_id, ride_id):
     """Sign up a rider for a ride. Updates status to GOING regardless of current status."""
@@ -827,16 +893,19 @@ def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None, start_time=N
 
 # ========== RIDE PLANS ==========
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_all_ride_plans():
     return _execute("""
         SELECT * FROM ride_plan ORDER BY name
     """).fetchall()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_ride_plan_by_slug(slug):
     return _execute("""
         SELECT * FROM ride_plan WHERE slug = %s
     """, (slug,)).fetchone()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_ride_plan_stops(ride_plan_id):
     return _execute("""
         SELECT * FROM ride_plan_stop
@@ -844,6 +913,7 @@ def get_ride_plan_stops(ride_plan_id):
         ORDER BY stop_order
     """, (ride_plan_id,)).fetchall()
 
+@cache.memoize(CACHE_TIMEOUT)
 def find_ride_plan_for_ride(ride_name):
     """Try to match a ride to a ride plan by fuzzy name matching."""
     plans = _execute("SELECT id, name, slug FROM ride_plan").fetchall()
@@ -903,14 +973,17 @@ def update_strava_privacy(rider_id, is_private):
 
 # ========== USER AUTHENTICATION ==========
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_user_by_email(email):
     """Get user by email."""
     return _execute("SELECT * FROM app_user WHERE email = %s", (email,)).fetchone()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_user_by_google_id(google_id):
     """Get user by Google ID."""
     return _execute("SELECT * FROM app_user WHERE google_id = %s", (google_id,)).fetchone()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_user_by_id(user_id):
     """Get user by ID."""
     return _execute("SELECT * FROM app_user WHERE id = %s", (user_id,)).fetchone()
@@ -948,6 +1021,7 @@ def complete_user_profile(user_id, rider_id):
         conn.rollback()
         return False
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_rider_by_name_and_rusa(first_name, last_name, rusa_id):
     """Get rider by exact name match and RUSA ID."""
     return _execute("""
@@ -973,14 +1047,17 @@ def create_rider(first_name, last_name, rusa_id):
         conn.rollback()
         return None
 
+@cache.memoize(CACHE_TIMEOUT)
 def check_rusa_id_exists(rusa_id):
     """Check if a RUSA ID is already registered."""
     return _execute("SELECT id FROM rider WHERE rusa_id = %s", (rusa_id,)).fetchone()
 
+@cache.memoize(CACHE_TIMEOUT)
 def is_rider_linked_to_user(rider_id):
     """Check if a rider is already linked to a user account."""
     return _execute("SELECT id FROM app_user WHERE rider_id = %s", (rider_id,)).fetchone()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_rider_by_rusa_id(rusa_id):
     """Get rider by RUSA ID."""
     return _execute("SELECT * FROM rider WHERE rusa_id = %s", (rusa_id,)).fetchone()
@@ -988,6 +1065,7 @@ def get_rider_by_rusa_id(rusa_id):
 
 # ========== STRAVA ==========
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_strava_connection(rider_id):
     """Get Strava connection for a rider."""
     return _execute(
@@ -1082,6 +1160,7 @@ def upsert_strava_activity(row):
     """, row)
     conn.commit()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_strava_activities(rider_id, days=28):
     """Get recent Strava activities for a rider."""
     return _execute("""
@@ -1090,6 +1169,7 @@ def get_strava_activities(rider_id, days=28):
         ORDER BY start_date_local DESC
     """, (rider_id, days)).fetchall()
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_strava_activities_for_calendar(rider_id, days=28):
     """Get activities with date column for calendar display."""
     return _execute("""
@@ -1100,6 +1180,7 @@ def get_strava_activities_for_calendar(rider_id, days=28):
     """, (rider_id, days)).fetchall()
 
 
+@cache.memoize(CACHE_TIMEOUT)
 def get_rider_upcoming_signups(rider_id):
     """Get upcoming rides a rider has signed up for or expressed interest in.
 

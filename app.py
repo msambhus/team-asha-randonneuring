@@ -3,6 +3,7 @@ from flask import Flask, session
 from dotenv import load_dotenv
 from config import Config
 import db
+from cache import init_cache
 
 # Load environment variables from .env file
 load_dotenv()
@@ -14,6 +15,9 @@ def create_app():
 
     # Initialize DB
     db.init_app(app)
+
+    # Initialize Cache
+    init_cache(app)
 
     # Initialize OAuth
     from routes.auth import init_oauth
@@ -54,6 +58,7 @@ def create_app():
     def inject_helpers():
         from models import get_all_seasons, get_current_season
         try:
+            # Note: get_all_seasons() and get_current_season() are cached at the model level
             return dict(
                 seasons=get_all_seasons(),
                 current_season=get_current_season(),

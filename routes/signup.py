@@ -4,6 +4,7 @@ from models import (get_ride_by_id, get_signups_for_ride, get_all_riders, signup
                     mark_interested, mark_maybe, mark_withdraw, remove_signup, 
                     get_rider_signup_status, get_user_by_id, RideStatus)
 from auth import login_required
+from cache import cache
 
 signup_bp = Blueprint('signup', __name__)
 
@@ -23,6 +24,7 @@ def ride_signup(ride_id):
                 remove_signup(rider_id, ride_id)
             else:
                 signup_rider(rider_id, ride_id)
+            cache.clear()  # Clear cache after signup change
         return redirect(url_for('signup.ride_signup', ride_id=ride_id))
 
     signups = get_signups_for_ride(ride_id)
@@ -59,6 +61,7 @@ def api_signup(ride_id):
     # Sign up the rider (allows status transitions)
     success = signup_rider(rider_id, ride_id)
     if success:
+        cache.clear()  # Clear cache after signup
         return jsonify({'success': True, 'status': 'GOING'})
     else:
         return jsonify({'success': False, 'error': 'Failed to sign up'}), 500
@@ -84,6 +87,7 @@ def api_interested(ride_id):
     # Mark as interested (allows status transitions)
     success = mark_interested(rider_id, ride_id)
     if success:
+        cache.clear()  # Clear cache after marking interest
         return jsonify({'success': True, 'status': 'INTERESTED'})
     return jsonify({'success': False, 'error': 'Failed to mark interest'}), 500
 
@@ -107,6 +111,7 @@ def api_maybe(ride_id):
 
     success = mark_maybe(rider_id, ride_id)
     if success:
+        cache.clear()  # Clear cache after marking maybe
         return jsonify({'success': True, 'status': 'MAYBE'})
     return jsonify({'success': False, 'error': 'Failed to mark as maybe'}), 500
 
@@ -130,6 +135,7 @@ def api_withdraw(ride_id):
 
     success = mark_withdraw(rider_id, ride_id)
     if success:
+        cache.clear()  # Clear cache after withdrawing
         return jsonify({'success': True, 'status': 'WITHDRAW'})
     return jsonify({'success': False, 'error': 'Failed to mark as withdrawn'}), 500
 
@@ -151,6 +157,7 @@ def api_unsignup(ride_id):
     # Remove signup (works for pre-ride statuses: GOING, INTERESTED, MAYBE)
     success = remove_signup(rider_id, ride_id)
     if success:
+        cache.clear()  # Clear cache after removing signup
         return jsonify({'success': True})
     else:
         return jsonify({'success': False, 'error': 'Cannot remove signup (may have already started/finished)'}), 400

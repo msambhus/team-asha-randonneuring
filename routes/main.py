@@ -3,6 +3,7 @@ import requests as http_requests
 from flask import Blueprint, render_template, request, jsonify, current_app
 from models import (get_all_time_stats, get_all_seasons, get_current_season,
                     get_season_stats, get_upcoming_rusa_events, get_upcoming_rides)
+from cache import cache, CACHE_TIMEOUT
 
 main_bp = Blueprint('main', __name__)
 
@@ -50,6 +51,7 @@ def get_mock_data():
 
 
 @main_bp.route('/')
+@cache.cached(timeout=CACHE_TIMEOUT, key_prefix='home_page')
 def index():
     try:
         stats = get_all_time_stats()
@@ -88,16 +90,19 @@ def index():
 
 
 @main_bp.route('/about')
+@cache.cached(timeout=CACHE_TIMEOUT, key_prefix='about_page')
 def about():
     return render_template('about.html')
 
 
 @main_bp.route('/resources')
+@cache.cached(timeout=CACHE_TIMEOUT, key_prefix='resources_page')
 def resources():
     return render_template('resources.html')
 
 
 @main_bp.route('/upcoming')
+@cache.cached(timeout=CACHE_TIMEOUT, key_prefix='upcoming_page')
 def upcoming():
     rides = get_upcoming_rides()
     rusa_events = get_upcoming_rusa_events()
