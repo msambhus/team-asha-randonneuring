@@ -517,18 +517,40 @@ def rider_profile(rusa_id):
     # --- Upcoming rides with readiness ---
     upcoming_rides = []
     signups = get_rider_upcoming_signups(rider['id'])
+    
+    # Convert signups to list of dicts and match ride plans (same logic as upcoming_brevets)
+    signups_list = []
+    for s in signups:
+        ride_dict = dict(s)
+        ride_dict['route_name'] = ride_dict.get('name', '')  # Add route_name for matching
+        signups_list.append(ride_dict)
+    
+    plans = get_all_ride_plans()
+    _match_plans_to_events(signups_list, plans)
 
     # Pass 1: compute readiness for all rides, collect context for AI
     rides_for_ai = []
-    for signup in signups:
-        ride_dict = dict(signup)
+    today = date.today()
+    for ride_dict in signups_list:
+        # Calculate days until ride and check if within 7 days
+        ride_date = ride_dict.get('date')
+        if ride_date:
+            if isinstance(ride_date, str):
+                ride_date = datetime.strptime(ride_date, '%Y-%m-%d').date()
+            days_until = (ride_date - today).days
+            ride_dict['days_until'] = days_until
+            ride_dict['is_soon'] = 0 <= days_until <= 7
+        else:
+            ride_dict['days_until'] = 999
+            ride_dict['is_soon'] = False
+        
         if has_strava and activities:
             readiness = assess_readiness(activities, ride_dict)
-            ride_date = signup.get('date')
+            ride_date = ride_dict.get('date')
             if ride_date:
                 if isinstance(ride_date, str):
                     ride_date = datetime.strptime(ride_date, '%Y-%m-%d').date()
-                weeks_until = max(0, (ride_date - date.today()).days // 7)
+                weeks_until = max(0, (ride_date - today).days // 7)
             else:
                 weeks_until = 4
             ride_dict['readiness'] = readiness
@@ -540,7 +562,7 @@ def rider_profile(rusa_id):
             'ride': ride_dict,
             'readiness': ride_dict.get('readiness'),
             'weeks_until': ride_dict.get('_weeks_until', 4),
-            'signup_status': signup.get('signup_status', 'GOING'),
+            'signup_status': ride_dict.get('signup_status', 'GOING'),
         })
         upcoming_rides.append(ride_dict)
 

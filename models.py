@@ -1097,9 +1097,10 @@ def get_rider_upcoming_signups(rider_id):
     return _execute("""
         SELECT ri.id, ri.name, ri.date, ri.distance_km, ri.distance_miles,
                ri.elevation_ft, ri.ft_per_mile, ri.time_limit_hours, ri.ride_type,
-               ri.rwgps_url, ri.event_status,
+               ri.rwgps_url, ri.event_status, ri.start_time, ri.start_location,
                c.code as club_code, c.name as club_name,
                rp.slug as plan_slug, rp.name as plan_name,
+               rp.rwgps_url as plan_rwgps_url, rp.rwgps_url_team as plan_rwgps_url_team,
                rr.status as signup_status, rr.signed_up_at
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id

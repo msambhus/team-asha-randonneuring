@@ -75,19 +75,28 @@
 {% if upcoming_rides %}
 <div style="margin-bottom:30px;">
     <h3 style="color:var(--primary); margin-bottom:10px;">Upcoming Rides</h3>
-    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:8px;">
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:12px;">
     {% for ride in upcoming_rides %}
-    <div style="padding:10px 12px; background:white; border-radius:10px; border:1px solid #e2e8f0; border-top:3px solid {% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %};">
+    <div style="display:flex; flex-direction:column; padding:12px 14px; background:white; border-radius:10px; border:2px solid {% if ride.is_soon %}#f59e0b{% else %}#e2e8f0{% endif %}; border-top:4px solid {% if ride.is_soon %}#f59e0b{% elif ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}; {% if ride.is_soon %}box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);{% endif %}">
         <div style="font-weight:600; font-size:0.82rem; color:var(--text); margin-bottom:4px; line-height:1.3;">
             {{ ride.name|clean_name }}
             {% if ride.signup_status == 'MAYBE' %}<span style="font-size:0.65rem; font-weight:500; color:#d69e2e;">(Maybe)</span>{% endif %}
+            {% if ride.is_soon %}<span style="font-size:0.65rem; font-weight:700; color:#f59e0b; margin-left:4px;">🔔 {{ ride.days_until }} day{% if ride.days_until != 1 %}s{% endif %}</span>{% endif %}
         </div>
         <div style="font-size:0.72rem; color:var(--text-light); margin-bottom:6px;">
-            {{ ride.date }}
+            {{ ride.date }}{% if ride.start_time %} {{ ride.start_time }}{% endif %}
             {% if ride.distance_miles %} &bull; {{ ride.distance_miles|round(0)|int }} mi{% elif ride.distance_km %} &bull; {{ (ride.distance_km * 0.621371)|round(0)|int }} mi{% endif %}
             {% if ride.elevation_ft %} &bull; {{ "{:,}".format(ride.elevation_ft) }} ft{% endif %}
         </div>
-        <div style="display:flex; align-items:center; gap:6px;">
+        
+        {# Start Location #}
+        {% if ride.start_location %}
+        <div style="font-size:0.7rem; color:var(--text-light); margin-bottom:8px;">
+            <strong>Location:</strong> {{ ride.start_location }}
+        </div>
+        {% endif %}
+        
+        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
         {% if ride.readiness %}
             <div style="width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:800; color:white; background:{{ ride.readiness.color }};">
                 {{ ride.readiness.score }}
@@ -103,9 +112,29 @@
             </span>
             {% endif %}
         </div>
-        {% if ride.plan_slug %}
-        <div style="margin-top:4px;"><a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}" style="font-size:0.72rem; color:var(--primary);">Plan &rarr;</a></div>
-        {% endif %}
+        
+        {# Ride Plan and Route Links - Pushed to bottom #}
+        <div style="display:flex; gap:6px; margin-top:auto; padding-top:8px; border-top:1px solid #f1f5f9; flex-wrap:wrap;">
+            {% if ride.plan_slug %}
+            <a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}" style="display:inline-flex; align-items:center; gap:4px; padding:5px 10px; border-radius:6px; font-size:0.7rem; font-weight:600; text-decoration:none; background:linear-gradient(135deg,#f0f4ff,#e8f0fe); border:1px solid #c7d2fe; color:#4338ca; transition:all 0.2s;">
+                📍 Ride Plan
+            </a>
+            {% else %}
+                {% if ride.plan_rwgps_url_team %}
+                <a href="{{ ride.plan_rwgps_url_team }}" target="_blank" style="display:inline-flex; align-items:center; gap:4px; padding:5px 10px; border-radius:6px; font-size:0.7rem; font-weight:600; text-decoration:none; background:linear-gradient(135deg,#fff7ed,#ffedd5); border:1px solid #ff6b00; color:#c2410c; transition:all 0.2s;">
+                    <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:14px;height:14px;">
+                    Team Route
+                </a>
+                {% endif %}
+                
+                {% if ride.rwgps_url %}
+                <a href="{{ ride.rwgps_url }}" target="_blank" style="display:inline-flex; align-items:center; gap:4px; padding:5px 10px; border-radius:6px; font-size:0.7rem; font-weight:600; text-decoration:none; background:linear-gradient(135deg,#f0f9ff,#e0f2fe); border:1px solid #7dd3fc; color:#0369a1; transition:all 0.2s;">
+                    <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:14px;height:14px;">
+                    Route
+                </a>
+                {% endif %}
+            {% endif %}
+        </div>
     </div>
     {% endfor %}
     </div>
