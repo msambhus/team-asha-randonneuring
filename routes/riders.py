@@ -1185,10 +1185,55 @@ def custom_ride_plan_editor(slug):
         if custom_plan.get('avg_moving_speed') is not None:
             custom_plan['avg_moving_speed'] = float(custom_plan['avg_moving_speed'])
         
-        # Load base stops and calculate cumulative times for reference
+        # Load base stops and calculate all metrics for reference/comparison
         base_stops_raw = get_ride_plan_stops(base_plan['id'])
-        from services.custom_plan_service import recalculate_cumulative_values
-        base_stops = recalculate_cumulative_values(list(base_stops_raw), base_plan)
+        
+        # Calculate derived metrics for base stops
+        distance_km = _extract_distance_km(base_plan['name'])
+        cutoff_hours = _get_cutoff_hours(distance_km)
+        total_distance = float(base_plan.get('total_distance_miles') or 0)
+        
+        base_stops = []
+        prev_dist = 0.0
+        cum_time_min = 0
+        
+        for s in base_stops_raw:
+            stop = dict(s)
+            stop['distance_miles'] = float(stop['distance_miles']) if stop.get('distance_miles') is not None else None
+            stop['elevation_gain'] = int(stop['elevation_gain']) if stop.get('elevation_gain') is not None else None
+            stop['segment_time_min'] = int(stop['segment_time_min']) if stop.get('segment_time_min') is not None else None
+            
+            cur_dist = stop['distance_miles'] or 0.0
+            seg_dist = round(cur_dist - prev_dist, 1)
+            stop['seg_dist'] = seg_dist
+            
+            # Ft/mile
+            elev = stop.get('elevation_gain') or 0
+            stop['ft_per_mi'] = int(round(elev / seg_dist)) if seg_dist > 0 and elev > 0 else None
+            
+            # Avg speed
+            seg_time = stop.get('segment_time_min') or 0
+            stop['avg_speed'] = round(seg_dist / (seg_time / 60.0), 1) if seg_time > 0 and seg_dist > 0 else None
+            
+            # Cumulative time
+            if seg_time:
+                cum_time_min += seg_time
+            stop['cum_time_min'] = cum_time_min
+            
+            # Time bank
+            if cutoff_hours and total_distance > 0 and cur_dist > 0:
+                fraction = cur_dist / total_distance
+                bookend_time_min = round(fraction * cutoff_hours * 60)
+                stop['time_bank_min'] = bookend_time_min - cum_time_min
+            else:
+                stop['time_bank_min'] = None
+            
+            # Difficulty score
+            stop['difficulty_score'] = _compute_difficulty_score(stop['ft_per_mi'], stop.get('notes'))
+            stop['difficulty_label'] = _difficulty_label(stop['difficulty_score'])
+            
+            prev_dist = cur_dist
+            base_stops.append(stop)
         
         custom_stops_raw = get_custom_plan_stops_raw(custom_plan['id'])
         
@@ -1229,6 +1274,12 @@ def custom_ride_plan_editor(slug):
                     if override.get('segment_time_min') is not None:
                         stop['segment_time_min'] = int(override['segment_time_min'])
                         stop['is_modified'] = True
+                    if override.get('distance_miles') is not None:
+                        stop['distance_miles'] = float(override['distance_miles'])
+                        stop['is_modified'] = True
+                    if override.get('elevation_gain') is not None:
+                        stop['elevation_gain'] = int(override['elevation_gain'])
+                        stop['is_modified'] = True
                     if override.get('notes'):
                         stop['notes'] = override['notes']
                         stop['is_modified'] = True
@@ -1264,15 +1315,98 @@ def custom_ride_plan_editor(slug):
         
         # Sort by distance_miles for proper display order
         custom_stops.sort(key=lambda s: (s.get('distance_miles') or 0, s.get('stop_order', 999)))
+        
+        # Calculate derived metrics for editor display
+        distance_km = _extract_distance_km(base_plan['name'])
+        cutoff_hours = _get_cutoff_hours(distance_km)
+        total_distance = float(base_plan.get('total_distance_miles') or 0)
+        
+        prev_dist = 0.0
+        cum_time_min = 0
+        
+        for stop in custom_stops:
+            cur_dist = stop.get('distance_miles') or 0.0
+            seg_dist = round(cur_dist - prev_dist, 1)
+            stop['seg_dist'] = seg_dist
+            
+            # Ft/mile
+            elev = stop.get('elevation_gain') or 0
+            stop['ft_per_mi'] = int(round(elev / seg_dist)) if seg_dist > 0 and elev > 0 else None
+            
+            # Avg speed
+            seg_time = stop.get('segment_time_min') or 0
+            stop['avg_speed'] = round(seg_dist / (seg_time / 60.0), 1) if seg_time > 0 and seg_dist > 0 else None
+            
+            # Cumulative time
+            if seg_time:
+                cum_time_min += seg_time
+            stop['cum_time_min'] = cum_time_min
+            
+            # Time bank
+            if cutoff_hours and total_distance > 0 and cur_dist > 0:
+                fraction = cur_dist / total_distance
+                bookend_time_min = round(fraction * cutoff_hours * 60)
+                stop['time_bank_min'] = bookend_time_min - cum_time_min
+            else:
+                stop['time_bank_min'] = None
+            
+            # Difficulty score
+            stop['difficulty_score'] = _compute_difficulty_score(stop['ft_per_mi'], stop.get('notes'))
+            stop['difficulty_label'] = _difficulty_label(stop['difficulty_score'])
+            
+            prev_dist = cur_dist
     else:
         # No custom plan yet - show base plan only
         custom_plan = None
         custom_stops = None
         base_stops_raw = get_ride_plan_stops(base_plan['id'])
         
-        # Calculate cumulative times for base stops
-        from services.custom_plan_service import recalculate_cumulative_values
-        base_stops = recalculate_cumulative_values(list(base_stops_raw), base_plan)
+        # Calculate derived metrics for base stops
+        distance_km = _extract_distance_km(base_plan['name'])
+        cutoff_hours = _get_cutoff_hours(distance_km)
+        total_distance = float(base_plan.get('total_distance_miles') or 0)
+        
+        base_stops = []
+        prev_dist = 0.0
+        cum_time_min = 0
+        
+        for s in base_stops_raw:
+            stop = dict(s)
+            stop['distance_miles'] = float(stop['distance_miles']) if stop.get('distance_miles') is not None else None
+            stop['elevation_gain'] = int(stop['elevation_gain']) if stop.get('elevation_gain') is not None else None
+            stop['segment_time_min'] = int(stop['segment_time_min']) if stop.get('segment_time_min') is not None else None
+            
+            cur_dist = stop['distance_miles'] or 0.0
+            seg_dist = round(cur_dist - prev_dist, 1)
+            stop['seg_dist'] = seg_dist
+            
+            # Ft/mile
+            elev = stop.get('elevation_gain') or 0
+            stop['ft_per_mi'] = int(round(elev / seg_dist)) if seg_dist > 0 and elev > 0 else None
+            
+            # Avg speed
+            seg_time = stop.get('segment_time_min') or 0
+            stop['avg_speed'] = round(seg_dist / (seg_time / 60.0), 1) if seg_time > 0 and seg_dist > 0 else None
+            
+            # Cumulative time
+            if seg_time:
+                cum_time_min += seg_time
+            stop['cum_time_min'] = cum_time_min
+            
+            # Time bank
+            if cutoff_hours and total_distance > 0 and cur_dist > 0:
+                fraction = cur_dist / total_distance
+                bookend_time_min = round(fraction * cutoff_hours * 60)
+                stop['time_bank_min'] = bookend_time_min - cum_time_min
+            else:
+                stop['time_bank_min'] = None
+            
+            # Difficulty score
+            stop['difficulty_score'] = _compute_difficulty_score(stop['ft_per_mi'], stop.get('notes'))
+            stop['difficulty_label'] = _difficulty_label(stop['difficulty_score'])
+            
+            prev_dist = cur_dist
+            base_stops.append(stop)
     
     # Get public custom plans from other riders
     public_plans = get_public_custom_plans(base_plan['id'])
@@ -1391,10 +1525,11 @@ def api_update_custom_stop(custom_plan_id, stop_id):
     data = request.json
     segment_time_min = data.get('segment_time_min')
     distance_miles = data.get('distance_miles')
+    elevation_gain = data.get('elevation_gain')
     notes = data.get('notes')
     
     try:
-        success = update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min, notes, distance_miles)
+        success = update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min, notes, distance_miles, elevation_gain)
         return jsonify({'success': success})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
