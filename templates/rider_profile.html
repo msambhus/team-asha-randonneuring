@@ -176,11 +176,11 @@
         {% if ride.readiness or ride.advice %}
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; padding:8px; background:#f7fafc; border-radius:8px;">
         {% if ride.readiness %}
-            <div style="display:inline-flex; align-items:center; gap:6px;">
-                <div style="width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:900; color:white; background:{{ ride.readiness.color }}; box-shadow:0 2px 4px rgba(0,0,0,0.15);">
+            <div style="display:inline-flex; align-items:center; gap:6px;" title="Readiness Score: {{ ride.readiness.score }}/100&#10;&#10;Distance: {{ ride.readiness.distance }}/{{ ride.readiness.distance_max | default(35) }} — longest ride vs target&#10;Elevation: {{ ride.readiness.elevation }}/{{ ride.readiness.elevation_max | default(25) }} — max climb vs target&#10;Volume: {{ ride.readiness.volume }}/{{ ride.readiness.volume_max | default(20) }} — weekly mileage&#10;Fitness: {{ ride.readiness.fitness }}/{{ ride.readiness.fitness_max | default(20) }} — overall Strava fitness">
+                <div style="width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:900; color:white; background:{{ ride.readiness.color }}; box-shadow:0 2px 4px rgba(0,0,0,0.15); cursor:help;">
                     {{ ride.readiness.score }}
                 </div>
-                <div style="display:inline-block; padding:4px 10px; border-radius:12px; font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:white; background:{{ ride.readiness.color }};">
+                <div style="display:inline-block; padding:4px 10px; border-radius:12px; font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:white; background:{{ ride.readiness.color }}; cursor:help;">
                     {% if ride.readiness.level == 'ready' %}✓ Ready{% elif ride.readiness.level == 'caution' %}⚠️ Needs Work{% else %}⚠️ Not Ready{% endif %}
                 </div>
             </div>
@@ -462,7 +462,7 @@
                     var tip = el.closest('.advice-tip');
                     var label = tip.querySelector('.advice-label');
                     var icon = tip.querySelector('.advice-icon');
-                    if (label) label.textContent = 'AI Advice';
+                    if (label) label.textContent = 'Advice';
                     if (icon) {
                         icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="' + (label ? getComputedStyle(label).color : '#4a5568') + '" stroke-width="2">' +
                             '<path d="M12 2l2.09 6.26L20.18 10l-6.09 1.74L12 18l-2.09-6.26L3.82 10l6.09-1.74L12 2z"/>' +
