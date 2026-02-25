@@ -1147,17 +1147,26 @@ function toggleSignupDropdown(rideId, event) {
             </button>
         `;
     } else if (currentStatus === 'GOING') {
-        // From Going: ONLY Withdraw
+        // From Going: Maybe, Withdraw
         menuHTML += `
+            <button class="signup-dropdown-item" onclick="handleStatusChange(${rideId}, 'MAYBE', '${clubCode}', event)">
+                <span>&#x003F;</span> Maybe
+            </button>
             <button class="signup-dropdown-item danger" onclick="handleStatusChange(${rideId}, 'WITHDRAW', '${clubCode}', event)">
                 <span>&#x229D;</span> Withdraw
             </button>
         `;
     } else if (currentStatus === 'WITHDRAW') {
-        // From Withdraw: ONLY Going
+        // From Withdraw: Maybe, Going, Interested
         menuHTML += `
+            <button class="signup-dropdown-item" onclick="handleStatusChange(${rideId}, 'MAYBE', '${clubCode}', event)">
+                <span>&#x003F;</span> Maybe
+            </button>
             <button class="signup-dropdown-item primary" onclick="handleStatusChange(${rideId}, 'GOING', '${clubCode}', event)">
                 <span>&#x2713;</span> Going
+            </button>
+            <button class="signup-dropdown-item" onclick="handleStatusChange(${rideId}, 'INTERESTED', '${clubCode}', event)">
+                <span>&#x2605;</span> Interested
             </button>
         `;
     }
