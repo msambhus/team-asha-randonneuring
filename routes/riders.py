@@ -6,7 +6,7 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_rider_season_stats, get_all_seasons, get_current_season,
                     detect_sr_for_rider_season, get_rider_total_srs,
                     get_all_rider_season_stats, detect_sr_for_all_riders_in_season,
-                    get_upcoming_rusa_events, update_rider_profile,
+                    get_upcoming_rusa_events, update_rider_profile, update_strava_privacy,
                     get_pbp_finishers,
                     get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops,
                     get_signup_count, get_rider_signup_status, get_ride_by_id, update_ride_details,
@@ -463,9 +463,18 @@ def edit_ride(ride_id):
 
 @riders_bp.route('/rider/<int:rusa_id>')
 def rider_profile(rusa_id):
+    from flask import session
+    
     rider = get_rider_by_rusa(rusa_id)
     if not rider:
         abort(404)
+
+    # Check if logged-in user is viewing their own profile
+    is_own_profile = session.get('rider_id') == rider['id']
+    
+    # Determine if Strava data should be visible
+    strava_data_private = rider.get('strava_data_private', False)
+    show_strava_data = is_own_profile or not strava_data_private
 
     seasons = get_all_seasons()
     current = get_current_season()
@@ -507,7 +516,8 @@ def rider_profile(rusa_id):
     has_strava = False
     activities = []
 
-    if strava_connection:
+    # Only load Strava data if it should be visible
+    if strava_connection and show_strava_data:
         has_strava = True
         activities = get_strava_activities(rider['id'], days=28)
         if activities:
@@ -603,7 +613,9 @@ def rider_profile(rusa_id):
                            upcoming_rides=upcoming_rides,
                            total_r12s=total_r12s,
                            r12_awards=r12_awards,
-                           r12_years=r12_years)
+                           r12_years=r12_years,
+                           is_own_profile=is_own_profile,
+                           show_strava_data=show_strava_data)
 
 
 @riders_bp.route('/rider/<int:rusa_id>/edit', methods=['GET', 'POST'])
@@ -628,6 +640,26 @@ def rider_edit(rusa_id):
         return redirect(url_for('riders.rider_profile', rusa_id=rusa_id))
 
     return render_template('rider_edit.html', rider=rider)
+
+
+@riders_bp.route('/rider/<int:rusa_id>/toggle-strava-privacy', methods=['POST'])
+def toggle_strava_privacy(rusa_id):
+    from flask import jsonify, session
+    
+    rider = get_rider_by_rusa(rusa_id)
+    if not rider:
+        abort(404)
+    
+    # Only allow the rider to toggle their own privacy
+    if session.get('rider_id') != rider['id']:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    try:
+        is_private = request.json.get('is_private', False)
+        update_strava_privacy(rider['id'], is_private)
+        return jsonify({'success': True, 'is_private': is_private})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @riders_bp.route('/ride-plans')
