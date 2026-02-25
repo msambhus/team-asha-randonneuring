@@ -905,6 +905,17 @@ def ride_plan_detail(slug):
     avg_moving_speed = round(plan['total_distance_miles'] / (total_moving_time / 60.0), 1) if total_moving_time > 0 else None
     avg_elapsed_speed = round(plan['total_distance_miles'] / (total_time / 60.0), 1) if total_time > 0 else None
     overall_ft_per_mile = round(plan['total_elevation_ft'] / plan['total_distance_miles'], 0) if plan['total_distance_miles'] > 0 else 0
+    
+    # Calculate weighted difficulty (distance-weighted average of difficulty scores)
+    weighted_difficulty = None
+    total_moving_distance = 0
+    weighted_difficulty_sum = 0
+    for s in stops:
+        if s.get('seg_dist') and s['seg_dist'] > 0 and s.get('difficulty_score'):
+            total_moving_distance += s['seg_dist']
+            weighted_difficulty_sum += s['difficulty_score'] * s['seg_dist']
+    if total_moving_distance > 0:
+        weighted_difficulty = round(weighted_difficulty_sum / total_moving_distance, 1)
 
     # Build collapsed journey nodes
     journey_nodes = _build_journey_nodes(stops)
@@ -968,6 +979,7 @@ def ride_plan_detail(slug):
                            avg_moving_speed=avg_moving_speed,
                            avg_elapsed_speed=avg_elapsed_speed,
                            overall_ft_per_mile=overall_ft_per_mile,
+                           weighted_difficulty=weighted_difficulty,
                            journey_nodes=journey_nodes,
                            rwgps_url_display=rwgps_url_display,
                            rwgps_url_label=rwgps_url_label,
@@ -1133,8 +1145,52 @@ def custom_ride_plan_view(slug):
     avg_elapsed_speed = round(plan['total_distance_miles'] / (total_time / 60.0), 1) if total_time > 0 else None
     overall_ft_per_mile = round(plan['total_elevation_ft'] / plan['total_distance_miles'], 0) if plan['total_distance_miles'] > 0 else 0
     
+    # Calculate weighted difficulty (distance-weighted average of difficulty scores)
+    weighted_difficulty = None
+    total_moving_distance = 0
+    weighted_difficulty_sum = 0
+    for s in stops:
+        if s.get('seg_dist') and s['seg_dist'] > 0 and s.get('difficulty_score'):
+            total_moving_distance += s['seg_dist']
+            weighted_difficulty_sum += s['difficulty_score'] * s['seg_dist']
+    if total_moving_distance > 0:
+        weighted_difficulty = round(weighted_difficulty_sum / total_moving_distance, 1)
+    
     # Build collapsed journey nodes
     journey_nodes = _build_journey_nodes(stops)
+    
+    # Check if there's an upcoming RUSA event that matches this ride plan
+    upcoming_event = None
+    signup_count = 0
+    user_signup_status = None
+    from datetime import datetime, timedelta, date as date_type
+    
+    rusa_events = get_upcoming_rusa_events()
+    today = date_type.today()
+    thirty_days_later = today + timedelta(days=30)
+    
+    for event in rusa_events:
+        e_words = _normalize_route(event.get('route_name', ''))
+        p_words = _normalize_route(plan['name'])
+        common = e_words & p_words
+        distinctive = common - _GENERIC_WORDS
+        if len(distinctive) >= 1 and len(common) >= 2:
+            # Check if event is within 30 days
+            event_date = event['date']
+            # Convert to date object if it's a string
+            if isinstance(event_date, str):
+                event_date = datetime.strptime(event_date, '%Y-%m-%d').date()
+            
+            if event_date >= today and event_date <= thirty_days_later:
+                upcoming_event = event
+                signup_count = get_signup_count(event['id'])
+                
+                # Check current user's signup status
+                if user and user.get('rider_id'):
+                    status = get_rider_signup_status(user['rider_id'], event['id'])
+                    if status:
+                        user_signup_status = status['status']
+                break
     
     return render_template('ride_plan_detail.html',
                          plan=plan,
@@ -1146,13 +1202,14 @@ def custom_ride_plan_view(slug):
                          avg_moving_speed=avg_moving_speed,
                          avg_elapsed_speed=avg_elapsed_speed,
                          overall_ft_per_mile=overall_ft_per_mile,
+                         weighted_difficulty=weighted_difficulty,
                          rwgps_url_display=rwgps_url_display,
                          rwgps_url_label=rwgps_url_label,
                          rwgps_route_id=rwgps_route_id,
                          weather_route_id=weather_route_id,
-                         upcoming_event=None,
-                         signup_count=None,
-                         user_signup_status=None,
+                         upcoming_event=upcoming_event,
+                         signup_count=signup_count,
+                         user_signup_status=user_signup_status,
                          user_custom_plan=custom_plan_data,
                          public_custom_plans=[],
                          is_custom_view=True,

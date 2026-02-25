@@ -827,56 +827,88 @@
     {% endif %}
 </div>
 
-{# ===== B. STATS ROW ===== #}
+{# ===== B. STATS ROW - Plan Summary ===== #}
 <div class="stats-row">
-<div class="stat-card">
-    <div class="number">{{ "%.1f"|format(plan.total_distance_miles) }}</div>
-    <div class="label">Miles</div>
+<div class="stat-card" style="background:linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);border-color:#bfdbfe;">
+    <div class="number" style="color:#1e40af;">{{ "%.1f"|format(plan.total_distance_miles) }}</div>
+    <div class="label" style="color:#1e3a8a;">Miles</div>
 </div>
-<div class="stat-card">
-    <div class="number">{{ "{:,}".format(plan.total_elevation_ft) }}</div>
-    <div class="label">Feet of Climbing</div>
+<div class="stat-card" style="background:linear-gradient(135deg, #ecfeff 0%, #cffafe 100%);border-color:#a5f3fc;">
+    <div class="number" style="color:#0e7490;">{{ "{:,}".format(plan.total_elevation_ft) }}</div>
+    <div class="label" style="color:#164e63;">Elevation (ft)</div>
 </div>
-<div class="stat-card">
-    <div class="number">{{ "%.0f"|format(overall_ft_per_mile) }}</div>
-    <div class="label">Ft / Mile</div>
+<div class="stat-card" style="background:linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%);border-color:#99f6e4;">
+    <div class="number" style="color:#0f766e;">{{ "%.0f"|format(overall_ft_per_mile) }}</div>
+    <div class="label" style="color:#134e4a;">Ft / Mile</div>
 </div>
-{% if total_moving_time > 0 %}
-<div class="stat-card">
-    <div class="number">{{ (total_moving_time // 60) }}h{{ "%02d"|format(total_moving_time % 60) }}m</div>
-    <div class="label">Moving Time</div>
-</div>
-{% endif %}
 {% if total_time > 0 %}
-<div class="stat-card">
-    <div class="number">{{ (total_time // 60) }}h{{ "%02d"|format(total_time % 60) }}m</div>
-    <div class="label">Elapsed Time</div>
+<div class="stat-card" style="background:linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);border-color:#e9d5ff;">
+    <div class="number" style="color:#7c3aed;">{{ (total_time // 60) }}:{{ "%02d"|format(total_time % 60) }}</div>
+    <div class="label" style="color:#5b21b6;">Elapsed Time</div>
 </div>
 {% endif %}
-{% if avg_moving_speed %}
-<div class="stat-card">
-    <div class="number">{{ "%.1f"|format(avg_moving_speed) }}</div>
-    <div class="label">Avg Moving MPH</div>
+{% if total_moving_time > 0 %}
+<div class="stat-card" style="background:linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);border-color:#ddd6fe;">
+    <div class="number" style="color:#6d28d9;">{{ (total_moving_time // 60) }}:{{ "%02d"|format(total_moving_time % 60) }}</div>
+    <div class="label" style="color:#4c1d95;">Moving Time</div>
+</div>
+{% endif %}
+{% if total_break_time > 0 %}
+<div class="stat-card" style="background:linear-gradient(135deg, #fdf4ff 0%, #fae8ff 100%);border-color:#f5d0fe;">
+    <div class="number" style="color:#a21caf;">{{ (total_break_time // 60) }}:{{ "%02d"|format(total_break_time % 60) }}</div>
+    <div class="label" style="color:#701a75;">Stop Time</div>
 </div>
 {% endif %}
 {% if plan.cutoff_hours and total_time > 0 %}
 {% set banked_min = (plan.cutoff_hours * 60) - total_time %}
-<div class="stat-card">
-    <div class="number" style="color:{% if banked_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
-        {% if banked_min >= 0 %}+{% endif %}{{ "%.1f"|format(banked_min / 60) }}h
+<div class="stat-card" style="background:linear-gradient(135deg, {% if banked_min >= 0 %}#ecfdf5 0%, #d1fae5 100%);border-color:#a7f3d0{% else %}#fef2f2 0%, #fee2e2 100%);border-color:#fecaca{% endif %};">
+    <div class="number" style="color:{% if banked_min >= 0 %}#047857{% else %}#b91c1c{% endif %};">
+        {% if banked_min >= 0 %}+{% endif %}{{ (banked_min // 60)|int }}:{{ "%02d"|format((banked_min % 60)|abs|int) }}
     </div>
-    <div class="label">Time Banked</div>
+    <div class="label" style="color:{% if banked_min >= 0 %}#065f46{% else %}#7f1d1d{% endif %};">Time Bank</div>
+</div>
+{% endif %}
+{% if avg_elapsed_speed %}
+<div class="stat-card" style="background:linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);border-color:#a7f3d0;">
+    <div class="number" style="color:#059669;">{{ "%.1f"|format(avg_elapsed_speed) }}</div>
+    <div class="label" style="color:#047857;">Elapsed Speed</div>
+</div>
+{% endif %}
+{% if avg_moving_speed %}
+<div class="stat-card" style="background:linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);border-color:#bbf7d0;">
+    <div class="number" style="color:#16a34a;">{{ "%.1f"|format(avg_moving_speed) }}</div>
+    <div class="label" style="color:#166534;">Moving Speed</div>
+</div>
+{% endif %}
+{% if weighted_difficulty %}
+<div class="stat-card" style="background:linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);border-color:#fed7aa;">
+    {% set diff_val = weighted_difficulty %}
+    {% if diff_val >= 7 %}
+        {% set diff_num_color = '#991b1b' %}
+        {% set diff_label_color = '#7f1d1d' %}
+    {% elif diff_val >= 4 %}
+        {% set diff_num_color = '#92400e' %}
+        {% set diff_label_color = '#78350f' %}
+    {% elif diff_val >= 1.5 %}
+        {% set diff_num_color = '#166534' %}
+        {% set diff_label_color = '#14532d' %}
+    {% else %}
+        {% set diff_num_color = '#475569' %}
+        {% set diff_label_color = '#334155' %}
+    {% endif %}
+    <div class="number" style="color:{{ diff_num_color }};">{{ "%.1f"|format(diff_val) }}</div>
+    <div class="label" style="color:{{ diff_label_color }};">Difficulty</div>
 </div>
 {% endif %}
 {% if upcoming_event %}
-<div class="stat-card" {% if signup_count and signup_count > 0 %}onclick="showSignupsModal()" style="cursor:pointer;transition:all 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 8px 20px rgba(0,0,0,0.12)';" onmouseout="this.style.transform='';this.style.boxShadow='';"{% else %}style="opacity:0.5;cursor:not-allowed;"{% endif %}>
-    <div class="number" style="color:#0369a1;">
-        <svg viewBox="0 0 20 20" width="32" height="32" fill="currentColor" style="display:inline-block;vertical-align:middle;margin-right:4px;">
+<div class="stat-card" style="background:linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);border-color:#c7d2fe;{% if signup_count and signup_count > 0 %}cursor:pointer;{% else %}opacity:0.5;cursor:not-allowed;{% endif %}" {% if signup_count and signup_count > 0 %}onclick="showSignupsModal()" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 8px 20px rgba(0,0,0,0.12)';" onmouseout="this.style.transform='';this.style.boxShadow='';"{% endif %}>
+    <div class="number" style="color:#4338ca;">
+        <svg viewBox="0 0 20 20" width="24" height="24" fill="currentColor" style="display:inline-block;vertical-align:middle;margin-right:4px;">
             <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
         </svg>
         <span id="signup-count-display">{{ signup_count or 0 }}</span>
     </div>
-    <div class="label">Riders Signed Up</div>
+    <div class="label" style="color:#312e81;">Riders Signed Up</div>
 </div>
 {% endif %}
 </div>
