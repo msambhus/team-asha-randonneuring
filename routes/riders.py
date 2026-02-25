@@ -80,8 +80,15 @@ def season_riders(season_name):
                     'participation': matrix.get(r['id'], {}),
                 })
 
-        # Sort by kms descending, then rides descending, then name ascending
-        rider_data.sort(key=lambda x: (-x['kms'], -x['rides'], x['rider']['first_name']))
+        # Sort by first name ascending (default), then last name
+        rider_data.sort(key=lambda x: (x['rider']['first_name'].lower(), x['rider']['last_name'].lower()))
+
+        # Filter past_rides to only those with at least one finisher/OTL among displayed riders
+        displayed_rider_ids = {rd['rider']['id'] for rd in rider_data}
+        past_rides = [r for r in past_rides if any(
+            matrix.get(rid, {}).get(r['id'], {}).get('status') in ('FINISHED', 'OTL')
+            for rid in displayed_rider_ids
+        )]
 
         label = SEASON_LABELS.get(season_name, f'{season_name} Season')
 
