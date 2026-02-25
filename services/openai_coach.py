@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # In-memory cache  (rider_id + data fingerprint → advice dict, 6-hour TTL)
 # ---------------------------------------------------------------------------
 _cache = {}
-_CACHE_TTL = 6 * 3600  # 6 hours
+_CACHE_TTL = 24 * 3600  # 24 hours
 
 
 def _cache_key(rider_id, activities, signups):
@@ -115,6 +115,23 @@ These riders can absolutely finish — brevets reward patience and steady effort
 - If fitness is low (<40): DO NOT dishearten. Many randonneurs finish with \
 modest training by riding smart — steady pace, never skipping meals, managing \
 sleep on overnight rides. Emphasize strategy over raw fitness.
+
+TRAINING RIDE PHILOSOPHY (critical — follow these rules):
+- NEVER recommend training rides longer than 100 miles (160 km). Rides above \
+100 miles in training are counterproductive — they create excessive fatigue and \
+recovery debt without proportional benefit.
+- The brevets themselves are the best long-distance training. A completed 200k \
+brevet IS the long ride that builds fitness for the 300k. A 300k builds for \
+the 400k. The season progression does the heavy lifting.
+- Between brevets, recommend 80-100 mile weekend rides as the longest efforts. \
+These build endurance without destroying recovery.
+- Weekday training is equally important: indoor trainer sessions, interval \
+workouts (VO2max, threshold), tempo rides, and moderate-distance commutes. \
+Suggest specific session types like "2x20min threshold intervals" or \
+"1-hour easy spin on the trainer" based on their gaps.
+- Quality over quantity: a structured week with 3-4 rides including one long \
+weekend ride (80-100 mi), one interval session, and 1-2 easy/moderate rides \
+is more effective than grinding out massive mileage.
 
 YOUR TASK:
 For each upcoming ride listed, provide a coaching thought — 2-5 concise \
