@@ -407,7 +407,7 @@ def get_season_stats(season_id, past_only=False):
     is_current = current and current['id'] == season_id
 
     date_clause = ""
-    params = [season_id]
+    params = [season_id, RideStatus.FINISHED.value]
     if past_only:
         today = date.today()
         date_clause = " AND ri.date <= %s"

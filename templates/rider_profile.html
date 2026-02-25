@@ -12,7 +12,7 @@
 
 <div class="stats-row">
 <div class="stat-card"><div class="number">{{ career_rides }}</div><div class="label">Career Rides</div></div>
-<div class="stat-card"><div class="number">{{ (career_kms * 0.621371)|round(0)|int|commafy }}</div><div class="label">Career Miles</div></div>
+<div class="stat-card"><div class="number">{{ career_kms|commafy }}</div><div class="label">Career KMs</div></div>
 {% if total_srs > 0 %}
 <div class="stat-card"><div class="number" style="color:var(--accent);">{% if total_srs > 1 %}SR*{{ total_srs }}{% else %}SR{% endif %}</div><div class="label">Super Randonneur</div></div>
 {% endif %}
