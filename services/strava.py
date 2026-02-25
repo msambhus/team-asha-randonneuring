@@ -79,7 +79,7 @@ def fetch_activities(connection, after_epoch=None, per_page=100):
     token = _get_valid_token(connection)
 
     if after_epoch is None:
-        after_epoch = int(time.time()) - (28 * 24 * 3600)  # 4 weeks
+        after_epoch = int(time.time()) - (365 * 24 * 3600)  # 1 year
 
     all_activities = []
     page = 1
@@ -141,8 +141,12 @@ def transform_activity(activity, rider_id):
     }
 
 
-def sync_rider_activities(rider_id):
-    """Pull last 4 weeks of activities for a rider and upsert into DB.
+def sync_rider_activities(rider_id, days=365):
+    """Pull activities for a rider and upsert into DB.
+
+    Args:
+        rider_id: rider ID
+        days: how many days back to fetch (default: 365 = 1 year)
 
     Returns:
         int: number of activities synced
@@ -153,7 +157,8 @@ def sync_rider_activities(rider_id):
     if not connection:
         return 0
 
-    activities = fetch_activities(connection)
+    after_epoch = int(time.time()) - (days * 24 * 3600)
+    activities = fetch_activities(connection, after_epoch=after_epoch)
     count = 0
     for activity in activities:
         row = transform_activity(activity, rider_id)
