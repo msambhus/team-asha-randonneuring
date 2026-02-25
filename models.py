@@ -972,3 +972,27 @@ def get_strava_activities_for_calendar(rider_id, days=28):
         WHERE rider_id = %s AND start_date_local >= NOW() - INTERVAL '%s days'
         ORDER BY start_date_local ASC
     """, (rider_id, days)).fetchall()
+
+
+def get_rider_upcoming_signups(rider_id):
+    """Get upcoming rides a rider has signed up for or expressed interest in.
+
+    Returns list of dicts with ride details + signup status, ordered by date.
+    """
+    today = date.today()
+    return _execute("""
+        SELECT ri.id, ri.name, ri.date, ri.distance_km, ri.distance_miles,
+               ri.elevation_ft, ri.ft_per_mile, ri.time_limit_hours, ri.ride_type,
+               ri.rwgps_url, ri.event_status,
+               c.code as club_code, c.name as club_name,
+               rp.slug as plan_slug, rp.name as plan_name,
+               rr.status as signup_status, rr.signed_up_at
+        FROM rider_ride rr
+        JOIN ride ri ON rr.ride_id = ri.id
+        JOIN club c ON ri.club_id = c.id
+        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
+        WHERE rr.rider_id = %s
+          AND ri.date >= %s
+          AND rr.status IN (%s, %s)
+        ORDER BY ri.date ASC
+    """, (rider_id, today, RideStatus.SIGNED_UP.value, RideStatus.INTERESTED.value)).fetchall()
