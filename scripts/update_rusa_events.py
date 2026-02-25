@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 from urllib.request import urlopen, Request
 from io import StringIO
+import html
 from html.parser import HTMLParser
 
 # Add parent directory to path to import from project
@@ -186,10 +187,10 @@ def get_rwgps_url_from_route(route_id):
         route_url = f'https://rusa.org/cgi-bin/routeview_PF.pl?rtid={route_id}'
         req = Request(route_url, headers={'User-Agent': 'Mozilla/5.0'})
         response = urlopen(req, timeout=10)
-        html = response.read().decode('utf-8')
+        html_content = response.read().decode('utf-8')
         
         # Look for ridewithgps.com links
-        rwgps_match = re.search(r'href=["\']?(https://ridewithgps\.com/routes/\d+)["\']?', html, re.IGNORECASE)
+        rwgps_match = re.search(r'href=["\']?(https://ridewithgps\.com/routes/\d+)["\']?', html_content, re.IGNORECASE)
         if rwgps_match:
             return rwgps_match.group(1)
         
@@ -210,7 +211,7 @@ def get_davis_events():
         # Fetch RUSA region 4 page
         req = Request(RUSA_REGION4_URL, headers={'User-Agent': 'Mozilla/5.0'})
         response = urlopen(req, timeout=10)
-        html = response.read().decode('utf-8')
+        html_content = response.read().decode('utf-8')
         
         events = []
         
@@ -219,7 +220,7 @@ def get_davis_events():
         
         # Find all table rows (case insensitive)
         row_pattern = r'<TR[^>]*>(.*?)</TR>'
-        rows = re.findall(row_pattern, html, re.DOTALL | re.IGNORECASE)
+        rows = re.findall(row_pattern, html_content, re.DOTALL | re.IGNORECASE)
         
         for row_html in rows:
             # Extract all cells from this row (case insensitive)
@@ -279,9 +280,9 @@ def get_davis_events():
             # Extract route name from Route column
             route_name_match = re.search(r'<A[^>]*>([^<]+)</A>', route_cell, re.IGNORECASE)
             if route_name_match:
-                route_name = route_name_match.group(1).strip()
+                route_name = html.unescape(route_name_match.group(1).strip())
             else:
-                route_name = re.sub(r'<[^>]+>', '', route_cell).strip()
+                route_name = html.unescape(re.sub(r'<[^>]+>', '', route_cell).strip())
             
             # Extract route ID to fetch RWGPS URL
             route_id_match = re.search(r'rtid=(\d+)', route_cell, re.IGNORECASE)
@@ -336,12 +337,12 @@ def get_rwgps_details(rwgps_url):
         # Fetch the route page
         req = Request(rwgps_url, headers={'User-Agent': 'Mozilla/5.0'})
         response = urlopen(req, timeout=10)
-        html = response.read().decode('utf-8')
+        html_content = response.read().decode('utf-8')
         
         # Parse distance and elevation from Open Graph meta tag
         # Format: "125.4 mi, +7490 ft. Bike ride in..."
         # The meta tag can have attributes in any order
-        og_desc_match = re.search(r'<meta[^>]+property=["\']og:description["\'][^>]*>', html)
+        og_desc_match = re.search(r'<meta[^>]+property=["\']og:description["\'][^>]*>', html_content)
         
         distance_miles = None
         elevation_ft = None
@@ -384,7 +385,7 @@ def get_scr_events():
         # Fetch SCR website
         req = Request(SCR_EVENTS_URL, headers={'User-Agent': 'Mozilla/5.0'})
         response = urlopen(req, timeout=10)
-        html = response.read().decode('utf-8')
+        html_content = response.read().decode('utf-8')
         
         events = []
         
@@ -393,7 +394,7 @@ def get_scr_events():
         # Pattern: <th><strong>Date</strong></th><th><a href="URL"><strong>Route</strong></a></th>...
         table_pattern = r'<th[^>]*><strong>(.*?)</strong></th>\s*<th[^>]*><a[^>]*href="([^"]*)"[^>]*><strong>(.*?)</strong></a></th>\s*<th[^>]*><strong>(.*?)</strong></th>\s*<th[^>]*><strong>(.*?)</strong></th>'
         
-        matches = re.findall(table_pattern, html, re.DOTALL)
+        matches = re.findall(table_pattern, html_content, re.DOTALL)
         
         for match in matches:
             date_str, route_url, route_name, location, start_time = match
@@ -401,7 +402,7 @@ def get_scr_events():
             # Clean up the data
             date_str = date_str.strip()
             route_url = route_url.strip()
-            route_name = route_name.strip()
+            route_name = html.unescape(route_name.strip())
             location = location.strip()
             start_time = start_time.strip()
             
