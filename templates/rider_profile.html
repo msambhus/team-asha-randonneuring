@@ -33,72 +33,45 @@
 </div>
 {% endif %}
 
-{# ===== UPCOMING RIDES WITH READINESS ===== #}
+{# ===== UPCOMING RIDES (COMPACT) ===== #}
 {% if upcoming_rides %}
 <div style="margin-bottom:30px;">
-    <h3 style="color:var(--primary); margin-bottom:15px;">Upcoming Rides</h3>
+    <h3 style="color:var(--primary); margin-bottom:12px;">Upcoming Rides</h3>
+    <div style="display:grid; gap:10px;">
     {% for ride in upcoming_rides %}
-    <div class="card" style="border-left:4px solid {% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}; margin-bottom:15px;">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
-            <div>
-                <h4 style="margin:0 0 4px 0; color:var(--text);">{{ ride.name }}</h4>
-                <p style="margin:0; font-size:0.85rem; color:var(--text-light);">
-                    {{ ride.date }} &bull; {{ ride.club_code }}
-                    {% if ride.distance_miles %} &bull; {{ ride.distance_miles|round(1) }} mi{% elif ride.distance_km %} &bull; {{ (ride.distance_km * 0.621371)|round(1) }} mi{% endif %}
-                    {% if ride.elevation_ft %} &bull; {{ "{:,}".format(ride.elevation_ft) }} ft{% endif %}
-                    {% if ride.time_limit_hours %} &bull; {{ ride.time_limit_hours }}h limit{% endif %}
-                </p>
-                {% if ride.plan_slug %}
-                <p style="margin:4px 0 0; font-size:0.8rem;"><a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}" style="color:var(--primary);">View ride plan &rarr;</a></p>
-                {% endif %}
+    <div style="display:flex; align-items:center; gap:12px; padding:12px 16px; background:white; border-radius:10px; border:1px solid #e2e8f0; border-left:4px solid {% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %};">
+        {# Readiness score circle #}
+        {% if ride.readiness %}
+        <div style="flex-shrink:0; width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1rem; font-weight:800; color:white; background:{{ ride.readiness.color }};">
+            {{ ride.readiness.score }}
+        </div>
+        {% endif %}
+        {# Ride info #}
+        <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:0.9rem; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                {{ ride.name }}
+                {% if ride.signup_status == 'MAYBE' %}<span style="font-size:0.7rem; font-weight:500; color:#d69e2e; margin-left:4px;">(Maybe)</span>{% endif %}
             </div>
+            <div style="font-size:0.78rem; color:var(--text-light); margin-top:2px;">
+                {{ ride.date }}
+                {% if ride.distance_miles %} &bull; {{ ride.distance_miles|round(0)|int }} mi{% elif ride.distance_km %} &bull; {{ (ride.distance_km * 0.621371)|round(0)|int }} mi{% endif %}
+                {% if ride.elevation_ft %} &bull; {{ "{:,}".format(ride.elevation_ft) }} ft{% endif %}
+            </div>
+        </div>
+        {# Readiness label + plan link #}
+        <div style="flex-shrink:0; text-align:right;">
             {% if ride.readiness %}
-            <div style="text-align:center; min-width:80px;">
-                <div style="font-size:1.8rem; font-weight:800; color:{{ ride.readiness.color }};">{{ ride.readiness.score }}</div>
-                <div style="display:inline-block; padding:2px 10px; border-radius:12px; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:white; background:{{ ride.readiness.color }};">
-                    {% if ride.readiness.level == 'ready' %}Ready{% elif ride.readiness.level == 'caution' %}Needs Work{% else %}Not Ready{% endif %}
-                </div>
+            <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:white; background:{{ ride.readiness.color }};">
+                {% if ride.readiness.level == 'ready' %}Ready{% elif ride.readiness.level == 'caution' %}Needs Work{% else %}Not Ready{% endif %}
             </div>
             {% endif %}
+            {% if ride.plan_slug %}
+            <div style="margin-top:4px;"><a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}" style="font-size:0.72rem; color:var(--primary);">Plan &rarr;</a></div>
+            {% endif %}
         </div>
-
-        {% if ride.readiness %}
-        {# Readiness dimension progress bars #}
-        <div style="margin-top:15px; display:grid; grid-template-columns:1fr 1fr; gap:8px 20px;">
-            {% set dims = [
-                ('Distance', ride.readiness.distance, ride.readiness.distance_max),
-                ('Elevation', ride.readiness.elevation, ride.readiness.elevation_max),
-                ('Volume', ride.readiness.volume, ride.readiness.volume_max),
-                ('Fitness', ride.readiness.fitness, ride.readiness.fitness_max)
-            ] %}
-            {% for label, val, maxval in dims %}
-            <div>
-                <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--text-light); margin-bottom:2px;">
-                    <span>{{ label }}</span>
-                    <span>{{ val }}/{{ maxval }}</span>
-                </div>
-                <div style="height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
-                    {% set pct = (val / maxval * 100) if maxval > 0 else 0 %}
-                    <div style="height:100%; width:{{ pct }}%; border-radius:3px; background:{% if pct >= 70 %}#38a169{% elif pct >= 40 %}#d69e2e{% else %}#e53e3e{% endif %}; transition:width 0.5s;"></div>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-
-        {# Training advice #}
-        {% if ride.advice and ride.readiness.level != 'ready' %}
-        <div style="margin-top:12px; padding:12px 16px; background:linear-gradient(135deg, #fffbeb, #fef3c7); border-radius:8px; border:1px solid #f6e05e;">
-            <div style="font-size:0.75rem; font-weight:700; color:#92400e; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Training Advice</div>
-            <ul style="margin:0; padding-left:18px; font-size:0.8rem; color:#78350f; line-height:1.6;">
-                {% for tip in ride.advice %}
-                <li>{{ tip }}</li>
-                {% endfor %}
-            </ul>
-        </div>
-        {% endif %}
-        {% endif %}
     </div>
     {% endfor %}
+    </div>
 </div>
 {% endif %}
 
@@ -209,7 +182,7 @@
 {% if sd.season.name == '2022-2023' and rider.pbp_2023_status == 'Yes' %} &bull; <span class="pbp-badge">PBP Finisher</span>{% endif %}
 {% if sd.season.name == '2022-2023' and rider.pbp_2023_status == 'DNF' %} &bull; <span class="badge badge-dnf">PBP DNF</span>{% endif %}
 </h3>
-<p>Rides: <strong>{{ sd.rides }}</strong> &bull; Distance: <strong>{{ (sd.kms * 0.621371)|round(0)|int|commafy }} mi</strong></p>
+<p>Rides: <strong>{{ sd.rides }}</strong> &bull; Distance: <strong>{{ sd.kms|commafy }} km</strong></p>
 <div class="table-wrap" style="margin-top:10px;">
 <table>
 <thead><tr><th>Date</th><th>Event</th><th>Distance</th><th>Elevation</th><th>Time</th></tr></thead>
@@ -222,7 +195,7 @@
 {% if p.rwgps_url %} <a href="{{ p.rwgps_url }}" target="_blank" style="font-size:0.8rem;">view route</a>{% endif %}
 {% if p.status|lower == 'dnf' %} <span class="badge badge-dnf">DNF</span>{% endif %}
 </td>
-<td>{{ (p.distance_km * 0.621371)|round(1) }} mi</td>
+<td>{{ p.distance_km }} km</td>
 <td>{% if p.elevation_ft %}{{ "{:,}".format(p.elevation_ft) }} ft{% endif %}</td>
 <td style="text-align:center;color:#666;">{{ p.finish_time or '' }}</td>
 </tr>

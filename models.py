@@ -371,7 +371,7 @@ def get_all_time_stats():
         JOIN ride ri ON rr.ride_id = ri.id
         WHERE rr.status = %s
           AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-    """).fetchone()
+    """, (RideStatus.FINISHED.value,)).fetchone()
     riders = row['riders']
     rides = row['rides']
     kms = row['kms']
