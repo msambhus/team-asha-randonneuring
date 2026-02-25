@@ -16,6 +16,8 @@ class Config:
     # Linear API Configuration
     LINEAR_API_KEY = os.environ.get('LINEAR_API_KEY')
     LINEAR_TEAM_ID = '33d7eaca-512f-4bac-b5cb-d6d61ac2fa74'
+    LINEAR_LABEL_BUG = 'f5529bdf-573a-47d3-8027-3d0cb6732e61'
+    LINEAR_LABEL_FEATURE = '93914cc6-28ef-4397-a109-fe38ecfc3160'
 
     # Session configuration for production security
     SESSION_COOKIE_SECURE = os.environ.get('VERCEL_ENV') == 'production'  # HTTPS only in prod
