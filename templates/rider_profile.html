@@ -302,32 +302,69 @@
 
 {# ===== BREVET SEASON HISTORY ===== #}
 {% for sd in season_data %}
-<div class="season-block">
-<h3>{{ sd.season.name }} Season
-{% if sd.sr_count > 0 %} &bull; <span class="sr-badge">{% if sd.sr_count > 1 %}SR*{{ sd.sr_count }}{% else %}SR{% endif %}</span>{% endif %}
-{% set season_years = sd.season.name.split('-') %}
-{% set r12_in_season = [] %}
-{% for award in r12_awards %}{% if award.end_year|string in season_years %}{% if r12_in_season.append(1) %}{% endif %}{% endif %}{% endfor %}
-{% if r12_in_season|length > 0 %} &bull; <span style="display:inline-block; padding:2px 10px; border-radius:12px; font-size:0.75rem; font-weight:700; color:white; background:#805ad5;">{% if r12_in_season|length > 1 %}R-12*{{ r12_in_season|length }}{% else %}R-12{% endif %}</span>{% endif %}
-{% if sd.season.name == '2022-2023' and rider.pbp_2023_status == 'Yes' %} &bull; <span class="pbp-badge">PBP Finisher</span>{% endif %}
-{% if sd.season.name == '2022-2023' and rider.pbp_2023_status == 'DNF' %} &bull; <span class="badge badge-dnf">PBP DNF</span>{% endif %}
-</h3>
-<p>Rides: <strong>{{ sd.rides }}</strong> &bull; Distance: <strong>{{ sd.kms|commafy }} km</strong></p>
-<div class="table-wrap" style="margin-top:10px;">
-<table>
-<thead><tr><th>Date</th><th>Event</th><th>Distance</th><th>Elevation</th><th>Time</th></tr></thead>
+<div class="season-block" style="margin-bottom:35px; background:white; border-radius:12px; padding:24px; box-shadow:0 2px 8px rgba(0,0,0,0.06); border-left:5px solid var(--primary);">
+<div style="margin-bottom:16px; padding-bottom:16px; border-bottom:2px solid #f1f5f9;">
+    <h3 style="margin:0 0 12px 0; font-size:1.4rem; font-weight:700; color:var(--primary); display:flex; align-items:center; flex-wrap:wrap; gap:10px;">
+        <span>{{ sd.season.name }} Season</span>
+        {% if sd.sr_count > 0 %}
+        <span class="sr-badge" style="background:linear-gradient(135deg, #4facfe, #00f2fe); padding:4px 12px; border-radius:10px; font-size:0.8rem; box-shadow:0 2px 6px rgba(0,0,0,0.12);">{% if sd.sr_count > 1 %}SR×{{ sd.sr_count }}{% else %}SR{% endif %}</span>
+        {% endif %}
+        {% set season_years = sd.season.name.split('-') %}
+        {% set r12_in_season = [] %}
+        {% for award in r12_awards %}{% if award.end_year|string in season_years %}{% if r12_in_season.append(1) %}{% endif %}{% endif %}{% endfor %}
+        {% if r12_in_season|length > 0 %}
+        <span style="display:inline-block; padding:4px 12px; border-radius:10px; font-size:0.8rem; font-weight:700; color:white; background:linear-gradient(135deg, #a8edea, #fed6e3); color:#805ad5; box-shadow:0 2px 6px rgba(0,0,0,0.12);">{% if r12_in_season|length > 1 %}R-12×{{ r12_in_season|length }}{% else %}R-12{% endif %}</span>
+        {% endif %}
+        {% if sd.season.name == '2022-2023' and rider.pbp_2023_status == 'Yes' %}
+        <span class="pbp-badge" style="background:linear-gradient(135deg, #ff6b6b, #ee5a6f); padding:4px 12px; border-radius:10px; font-size:0.8rem; box-shadow:0 2px 6px rgba(0,0,0,0.12);">PBP Finisher</span>
+        {% endif %}
+        {% if sd.season.name == '2022-2023' and rider.pbp_2023_status == 'DNF' %}
+        <span class="badge badge-dnf" style="padding:4px 12px; border-radius:10px; font-size:0.8rem;">PBP DNF</span>
+        {% endif %}
+    </h3>
+    <div style="display:flex; gap:20px; flex-wrap:wrap; font-size:0.9rem;">
+        <div style="display:flex; align-items:center; gap:6px;">
+            <span style="color:var(--text-light);">Rides:</span>
+            <span style="font-weight:700; color:var(--primary); font-size:1.1rem;">{{ sd.rides }}</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px;">
+            <span style="color:var(--text-light);">Distance:</span>
+            <span style="font-weight:700; color:var(--primary); font-size:1.1rem;">{{ sd.kms|commafy }} km</span>
+        </div>
+    </div>
+</div>
+
+<div class="table-wrap" style="margin-top:0; overflow-x:auto;">
+<table style="width:100%; border-collapse:separate; border-spacing:0;">
+<thead>
+<tr style="background:linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);">
+    <th style="padding:12px 16px; text-align:left; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text); border-bottom:2px solid #e2e8f0; border-top-left-radius:8px;">Date</th>
+    <th style="padding:12px 16px; text-align:left; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text); border-bottom:2px solid #e2e8f0;">Event</th>
+    <th style="padding:12px 16px; text-align:left; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text); border-bottom:2px solid #e2e8f0;">Distance</th>
+    <th style="padding:12px 16px; text-align:left; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text); border-bottom:2px solid #e2e8f0;">Elevation</th>
+    <th style="padding:12px 16px; text-align:center; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text); border-bottom:2px solid #e2e8f0; border-top-right-radius:8px;">Time</th>
+</tr>
+</thead>
 <tbody>
 {% for p in sd.participation %}
 {% if p.status|lower == 'finished' or p.status|lower == 'dnf' %}
-<tr>
-<td>{{ p.date }}</td>
-<td>{{ p.ride_name|clean_name }}
-{% if p.rwgps_url %} <a href="{{ p.rwgps_url }}" target="_blank" style="font-size:0.8rem;">view route</a>{% endif %}
-{% if p.status|lower == 'dnf' %} <span class="badge badge-dnf">DNF</span>{% endif %}
+<tr style="transition:background 0.2s;" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='white'">
+<td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; color:var(--text-light); font-weight:500;">{{ p.date }}</td>
+<td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; color:var(--text); line-height:1.5;">
+    <strong style="color:var(--primary);">{{ p.ride_name|clean_name }}</strong>
+    {% if p.rwgps_url %}
+    <a href="{{ p.rwgps_url }}" target="_blank" style="display:inline-flex; align-items:center; gap:3px; margin-left:8px; font-size:0.75rem; color:#4299e1; text-decoration:none; padding:2px 6px; border-radius:4px; background:#ebf8ff; transition:all 0.2s;">
+        <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:12px;height:12px;">
+        route
+    </a>
+    {% endif %}
+    {% if p.status|lower == 'dnf' %}
+    <span class="badge badge-dnf" style="display:inline-block; margin-left:6px; padding:2px 8px; border-radius:6px; font-size:0.7rem; font-weight:600;">DNF</span>
+    {% endif %}
 </td>
-<td>{{ p.distance_km }} km</td>
-<td>{% if p.elevation_ft %}{{ "{:,}".format(p.elevation_ft) }} ft{% endif %}</td>
-<td style="text-align:center;color:#666;">{{ p.finish_time or '' }}</td>
+<td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; font-weight:600; color:var(--text);">{{ p.distance_km }} km</td>
+<td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; color:var(--text-light);">{% if p.elevation_ft %}<span style="font-weight:600; color:var(--text);">{{ "{:,}".format(p.elevation_ft) }}</span> ft{% endif %}</td>
+<td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; text-align:center; font-size:0.85rem; color:#718096; font-weight:600; font-family:monospace;">{{ p.finish_time or '—' }}</td>
 </tr>
 {% endif %}
 {% endfor %}
