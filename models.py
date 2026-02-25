@@ -359,6 +359,73 @@ def get_rider_total_srs(rider_id):
     return total
 
 
+def detect_r12_awards(rider_id):
+    """Detect R-12 awards: 12 consecutive months each with at least one 200+km finished ride.
+
+    Returns a list of dicts with 'start_month' and 'end_month' (YYYY-MM strings)
+    for each R-12 completion. A rider can earn multiple R-12s.
+    """
+    rows = _execute("""
+        SELECT DISTINCT TO_CHAR(ri.date, 'YYYY-MM') as ride_month
+        FROM rider_ride rr
+        JOIN ride ri ON rr.ride_id = ri.id
+        WHERE rr.rider_id = %s
+          AND rr.status = %s
+          AND ri.distance_km >= 200
+          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
+        ORDER BY ride_month
+    """, (rider_id, RideStatus.FINISHED.value)).fetchall()
+
+    if not rows:
+        return []
+
+    months = [r['ride_month'] for r in rows]
+
+    # Convert to (year, month) tuples for consecutive checking
+    def parse_ym(ym_str):
+        y, m = ym_str.split('-')
+        return int(y), int(m)
+
+    def month_diff(ym1, ym2):
+        """Number of months between two (year, month) tuples."""
+        return (ym2[0] - ym1[0]) * 12 + (ym2[1] - ym1[1])
+
+    parsed = [parse_ym(m) for m in months]
+
+    # Find all runs of consecutive months
+    r12_awards = []
+    run_start = 0
+    for i in range(1, len(parsed)):
+        if month_diff(parsed[i - 1], parsed[i]) != 1:
+            # Break in consecutive months — check if we had 12+ consecutive
+            run_len = i - run_start
+            if run_len >= 12:
+                # Award for every complete 12-month window
+                for j in range(run_len - 11):
+                    s = parsed[run_start + j]
+                    e = parsed[run_start + j + 11]
+                    r12_awards.append({
+                        'start_month': f'{s[0]}-{s[1]:02d}',
+                        'end_month': f'{e[0]}-{e[1]:02d}',
+                        'end_year': e[0],
+                    })
+            run_start = i
+
+    # Check final run
+    run_len = len(parsed) - run_start
+    if run_len >= 12:
+        for j in range(run_len - 11):
+            s = parsed[run_start + j]
+            e = parsed[run_start + j + 11]
+            r12_awards.append({
+                'start_month': f'{s[0]}-{s[1]:02d}',
+                'end_month': f'{e[0]}-{e[1]:02d}',
+                'end_year': e[0],
+            })
+
+    return r12_awards
+
+
 # ========== ALL-TIME STATS ==========
 
 def get_all_time_stats():

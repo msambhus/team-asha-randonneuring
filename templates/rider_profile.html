@@ -16,6 +16,9 @@
 {% if total_srs > 0 %}
 <div class="stat-card"><div class="number" style="color:var(--accent);">{% if total_srs > 1 %}SR*{{ total_srs }}{% else %}SR{% endif %}</div><div class="label">Super Randonneur</div></div>
 {% endif %}
+{% if total_r12s > 0 %}
+<div class="stat-card"><div class="number" style="color:#805ad5;">{% if total_r12s > 1 %}R-12*{{ total_r12s }}{% else %}R-12{% endif %}</div><div class="label">Randonneur 12</div></div>
+{% endif %}
 {% if rider.pbp_2023_status == 'Yes' %}
 <div class="stat-card"><div class="number" style="font-size:1.4rem;"><span class="pbp-badge" style="font-size:1rem;">PBP 2023</span></div><div class="label">Paris-Brest-Paris</div></div>
 {% endif %}
@@ -33,42 +36,38 @@
 </div>
 {% endif %}
 
-{# ===== UPCOMING RIDES (COMPACT) ===== #}
+{# ===== UPCOMING RIDES (COMPACT GRID) ===== #}
 {% if upcoming_rides %}
 <div style="margin-bottom:30px;">
     <h3 style="color:var(--primary); margin-bottom:12px;">Upcoming Rides</h3>
-    <div style="display:grid; gap:10px;">
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px;">
     {% for ride in upcoming_rides %}
-    <div style="display:flex; align-items:center; gap:12px; padding:12px 16px; background:white; border-radius:10px; border:1px solid #e2e8f0; border-left:4px solid {% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %};">
-        {# Readiness score circle #}
+    <div style="padding:14px; background:white; border-radius:10px; border:1px solid #e2e8f0; border-top:3px solid {% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %};">
+        {# Ride name + maybe label #}
+        <div style="font-weight:600; font-size:0.85rem; color:var(--text); margin-bottom:6px; line-height:1.3;">
+            {{ ride.name }}
+            {% if ride.signup_status == 'MAYBE' %}<span style="font-size:0.65rem; font-weight:500; color:#d69e2e;">(Maybe)</span>{% endif %}
+        </div>
+        {# Date + distance #}
+        <div style="font-size:0.75rem; color:var(--text-light); margin-bottom:8px;">
+            {{ ride.date }}
+            {% if ride.distance_miles %} &bull; {{ ride.distance_miles|round(0)|int }} mi{% elif ride.distance_km %} &bull; {{ (ride.distance_km * 0.621371)|round(0)|int }} mi{% endif %}
+            {% if ride.elevation_ft %} &bull; {{ "{:,}".format(ride.elevation_ft) }} ft{% endif %}
+        </div>
+        {# Readiness score + label #}
         {% if ride.readiness %}
-        <div style="flex-shrink:0; width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1rem; font-weight:800; color:white; background:{{ ride.readiness.color }};">
-            {{ ride.readiness.score }}
-        </div>
-        {% endif %}
-        {# Ride info #}
-        <div style="flex:1; min-width:0;">
-            <div style="font-weight:600; font-size:0.9rem; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                {{ ride.name }}
-                {% if ride.signup_status == 'MAYBE' %}<span style="font-size:0.7rem; font-weight:500; color:#d69e2e; margin-left:4px;">(Maybe)</span>{% endif %}
+        <div style="display:flex; align-items:center; gap:8px;">
+            <div style="width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.9rem; font-weight:800; color:white; background:{{ ride.readiness.color }};">
+                {{ ride.readiness.score }}
             </div>
-            <div style="font-size:0.78rem; color:var(--text-light); margin-top:2px;">
-                {{ ride.date }}
-                {% if ride.distance_miles %} &bull; {{ ride.distance_miles|round(0)|int }} mi{% elif ride.distance_km %} &bull; {{ (ride.distance_km * 0.621371)|round(0)|int }} mi{% endif %}
-                {% if ride.elevation_ft %} &bull; {{ "{:,}".format(ride.elevation_ft) }} ft{% endif %}
-            </div>
-        </div>
-        {# Readiness label + plan link #}
-        <div style="flex-shrink:0; text-align:right;">
-            {% if ride.readiness %}
-            <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:white; background:{{ ride.readiness.color }};">
+            <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.6rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:white; background:{{ ride.readiness.color }};">
                 {% if ride.readiness.level == 'ready' %}Ready{% elif ride.readiness.level == 'caution' %}Needs Work{% else %}Not Ready{% endif %}
             </div>
-            {% endif %}
-            {% if ride.plan_slug %}
-            <div style="margin-top:4px;"><a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}" style="font-size:0.72rem; color:var(--primary);">Plan &rarr;</a></div>
-            {% endif %}
         </div>
+        {% endif %}
+        {% if ride.plan_slug %}
+        <div style="margin-top:6px;"><a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}" style="font-size:0.72rem; color:var(--primary);">Plan &rarr;</a></div>
+        {% endif %}
     </div>
     {% endfor %}
     </div>
@@ -179,6 +178,10 @@
 <div class="season-block">
 <h3>{{ sd.season.name }} Season
 {% if sd.sr_count > 0 %} &bull; <span class="sr-badge">{% if sd.sr_count > 1 %}SR*{{ sd.sr_count }}{% else %}SR{% endif %}</span>{% endif %}
+{% set season_years = sd.season.name.split('-') %}
+{% set r12_in_season = [] %}
+{% for award in r12_awards %}{% if award.end_year|string in season_years %}{% if r12_in_season.append(1) %}{% endif %}{% endif %}{% endfor %}
+{% if r12_in_season|length > 0 %} &bull; <span style="display:inline-block; padding:2px 10px; border-radius:12px; font-size:0.75rem; font-weight:700; color:white; background:#805ad5;">{% if r12_in_season|length > 1 %}R-12*{{ r12_in_season|length }}{% else %}R-12{% endif %}</span>{% endif %}
 {% if sd.season.name == '2022-2023' and rider.pbp_2023_status == 'Yes' %} &bull; <span class="pbp-badge">PBP Finisher</span>{% endif %}
 {% if sd.season.name == '2022-2023' and rider.pbp_2023_status == 'DNF' %} &bull; <span class="badge badge-dnf">PBP DNF</span>{% endif %}
 </h3>

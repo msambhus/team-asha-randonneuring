@@ -12,7 +12,7 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_signup_count, get_rider_signup_status, get_ride_by_id, update_ride_details,
                     get_user_by_id, _execute,
                     get_strava_connection, get_strava_activities,
-                    get_rider_upcoming_signups)
+                    get_rider_upcoming_signups, detect_r12_awards)
 from auth import login_required, user_login_required
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
@@ -493,6 +493,12 @@ def rider_profile(rusa_id):
 
     total_srs = get_rider_total_srs(rider['id'])
 
+    # --- R-12 awards ---
+    r12_awards = detect_r12_awards(rider['id'])
+    total_r12s = len(r12_awards)
+    # Build set of end_years for showing R-12 in season blocks
+    r12_years = set(a['end_year'] for a in r12_awards)
+
     # --- Strava training data ---
     strava_connection = get_strava_connection(rider['id'])
     training_rides = []
@@ -538,7 +544,10 @@ def rider_profile(rusa_id):
                            has_strava=has_strava,
                            training_rides=training_rides,
                            fitness_score=fitness_score,
-                           upcoming_rides=upcoming_rides)
+                           upcoming_rides=upcoming_rides,
+                           total_r12s=total_r12s,
+                           r12_awards=r12_awards,
+                           r12_years=r12_years)
 
 
 @riders_bp.route('/rider/<int:rusa_id>/edit', methods=['GET', 'POST'])
