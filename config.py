@@ -19,6 +19,14 @@ class Config:
     LINEAR_LABEL_BUG = 'f5529bdf-573a-47d3-8027-3d0cb6732e61'
     LINEAR_LABEL_FEATURE = '93914cc6-28ef-4397-a109-fe38ecfc3160'
 
+    # Strava OAuth Configuration
+    STRAVA_CLIENT_ID = os.environ.get('STRAVA_CLIENT_ID', '113090')
+    STRAVA_CLIENT_SECRET = os.environ.get('STRAVA_CLIENT_SECRET')
+    STRAVA_AUTH_URL = 'https://www.strava.com/oauth/authorize'
+    STRAVA_TOKEN_URL = 'https://www.strava.com/oauth/token'
+    STRAVA_API_BASE = 'https://www.strava.com/api/v3'
+    STRAVA_SCOPE = 'activity:read_all'
+
     # Session configuration for production security
     SESSION_COOKIE_SECURE = os.environ.get('VERCEL_ENV') == 'production'  # HTTPS only in prod
     SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to cookies

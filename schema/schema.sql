@@ -295,5 +295,59 @@ COMMENT ON VIEW v_team_asha_rides IS 'Team Asha organized rides only';
 --       - Single table for complete signup → participation lifecycle
 
 -- ============================================================
+-- STRAVA INTEGRATION
+-- ============================================================
+
+CREATE TABLE strava_connection (
+    rider_id INTEGER PRIMARY KEY REFERENCES rider(id) ON DELETE CASCADE,
+    strava_athlete_id BIGINT NOT NULL UNIQUE,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,       -- Unix epoch when access_token expires
+    scope TEXT,
+    connected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_sync_at TIMESTAMP
+);
+
+CREATE INDEX idx_strava_connection_athlete ON strava_connection(strava_athlete_id);
+
+COMMENT ON TABLE strava_connection IS 'Strava OAuth tokens linked to riders (one connection per rider)';
+COMMENT ON COLUMN strava_connection.expires_at IS 'Unix epoch when access_token expires (~6hrs from issue)';
+
+CREATE TABLE strava_activity (
+    id SERIAL PRIMARY KEY,
+    rider_id INTEGER NOT NULL REFERENCES rider(id) ON DELETE CASCADE,
+    strava_activity_id BIGINT NOT NULL UNIQUE,
+    name TEXT,
+    activity_type TEXT,                -- Ride, Run, Walk, etc.
+    distance REAL,                     -- meters
+    moving_time INTEGER,               -- seconds
+    elapsed_time INTEGER,              -- seconds
+    total_elevation_gain REAL,         -- meters
+    start_date TIMESTAMP NOT NULL,     -- UTC
+    start_date_local TIMESTAMP,        -- Local time for calendar display
+    average_heartrate REAL,
+    max_heartrate REAL,
+    has_heartrate BOOLEAN DEFAULT FALSE,
+    average_watts REAL,
+    max_watts REAL,
+    weighted_average_watts REAL,
+    kilojoules REAL,
+    device_watts BOOLEAN DEFAULT FALSE,
+    average_speed REAL,                -- m/s
+    max_speed REAL,                    -- m/s
+    suffer_score INTEGER,
+    strava_url TEXT,                   -- "View on Strava" link (compliance requirement)
+    fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_strava_activity_rider_date ON strava_activity(rider_id, start_date DESC);
+CREATE INDEX idx_strava_activity_strava_id ON strava_activity(strava_activity_id);
+
+COMMENT ON TABLE strava_activity IS 'Cached Strava activities for calendar view and fitness scoring';
+COMMENT ON COLUMN strava_activity.distance IS 'Distance in meters (divide by 1000 for km)';
+COMMENT ON COLUMN strava_activity.strava_url IS 'Direct link to activity on Strava (required for compliance)';
+
+-- ============================================================
 -- END OF SCHEMA
 -- ============================================================
