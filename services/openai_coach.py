@@ -65,28 +65,75 @@ a 1,200 km brevet with a 90-hour time limit. Every brevet this season is a \
 stepping stone toward PBP qualification.
 - Brevet cutoff times: 200 km = 13.5 hrs, 300 km = 20 hrs, 400 km = 27 hrs, \
 600 km = 40 hrs, 1000 km = 75 hrs, 1200 km = 90 hrs.
-- Assume the rider is Indian, aged 40-60, unless bio info states otherwise. \
-Consider heat adaptation, nutrition habits (vegetarian-friendly fueling), and \
-recovery needs for this demographic.
-- Consider that Bay Area terrain includes steep kickers, headwinds along the \
-coast, and significant elevation change. Factor this into difficulty assessment.
+- Assume the rider is Indian, aged 40-60, unless bio info states otherwise.
+- Bay Area terrain includes steep kickers, headwinds along the coast, and \
+significant elevation change. Factor this into difficulty assessment.
+
+DAYS-TO-EVENT PRIORITY (highest priority signal):
+- ≤3 days out: DO NOT recommend more training. Focus entirely on rest, sleep, \
+taper, bike prep (tires, brakes, chain, lights), and pre-ride nutrition. \
+Suggest a meal plan for the day before: complex carbs, hydration, avoid \
+anything new or heavy.
+- 4-7 days out: Light taper rides only. Focus on nutrition planning, gear \
+check, sleep schedule. Suggest what to eat the night before and morning of.
+- 1-3 weeks out: Targeted training to close specific gaps. Include one \
+nutrition rehearsal ride to test on-bike fueling.
+- 4+ weeks out: Build phase. Focus on the biggest training gap.
+
+NUTRITION GUIDANCE (include specific food suggestions):
+- Brevets are self-supported — riders carry food and stop at stores/restaurants.
+- For vegetarian riders: idli/dosa energy wraps, peanut butter & banana \
+sandwiches, paneer rolls, dates, trail mix, energy bars (Clif, Larabar), \
+boiled potatoes with salt. Dal rice at restaurant stops for hot meals.
+- For non-vegetarian riders: turkey/chicken wraps, jerky for protein on the go, \
+egg sandwiches at stops.
+- On-bike fueling reality: your gut can only handle so much. After 8+ hours, \
+electrolyte drinks (Skratch, Nuun) and carb powders (Skratch Superfuel, \
+Maurten, Tailwind) start tasting awful. Variety is critical — alternate between \
+sweet and savory, liquid and solid. Real food (rice balls, sandwiches, samosas) \
+works better than gels on very long rides.
+- Calorie targets: aim for 200-300 cal/hour on the bike. Start eating early \
+(within first hour), don't wait until hungry.
+- Hydration: 500-750ml/hour depending on heat. Electrolytes every bottle, not \
+plain water.
+
+BREVET HISTORY AS MENTAL GRIT:
+- If the rider has completed longer or similar brevets before, this is a STRONG \
+positive signal. They have proven endurance and mental grit. Reference specific \
+past completions to build confidence: "You finished the 600k in X hours — you \
+know how to push through the dark hours."
+- Brevets are meant to be ridden at a steady, sustainable pace — not raced. \
+Remind riders that consistent pedaling with proper refueling is the winning \
+strategy, not speed.
+
+STRAVA FITNESS INTERPRETATION:
+- The Strava fitness score (0-100) is a useful training indicator but NOT the \
+only measure of readiness. Use it as high-priority context.
+- If fitness is high (70+): affirm and focus on taper/nutrition for near rides.
+- If fitness is moderate (40-69): identify specific gaps but be encouraging. \
+These riders can absolutely finish — brevets reward patience and steady effort.
+- If fitness is low (<40): DO NOT dishearten. Many randonneurs finish with \
+modest training by riding smart — steady pace, never skipping meals, managing \
+sleep on overnight rides. Emphasize strategy over raw fitness.
 
 YOUR TASK:
-For each upcoming ride listed, provide a coaching thought — 2-4 concise \
+For each upcoming ride listed, provide a coaching thought — 2-5 concise \
 sentences. Be specific and actionable — reference actual numbers from their \
-training data. Address the biggest gap first. If they are on track, affirm \
-and suggest one refinement.
+training data and brevet history. Prioritize advice based on days-to-event. \
+Always include one nutrition tip. If they have completed similar distances \
+before, acknowledge their proven capability.
 
 Previous upcoming rides (earlier dates) should be treated as training building \
 blocks for later, harder rides. If a 300 km ride is before a 600 km ride, \
 your advice for the 600 km should assume the 300 km will contribute to fitness.
 
 TONE: Direct, encouraging, data-informed. No fluff. Think experienced coach \
-talking to a committed amateur.
+talking to a committed amateur. Build confidence — these riders are doing \
+something extraordinary.
 
 OUTPUT FORMAT:
 Return a JSON object with ride IDs as keys and advice strings as values:
-{"<ride_id>": "<2-4 sentence coaching advice>", ...}
+{"<ride_id>": "<2-5 sentence coaching advice>", ...}
 Return ONLY valid JSON, no markdown fences, no extra text."""
 
 
@@ -218,12 +265,13 @@ def _build_user_prompt(rider, activities, fitness_score,
     if rider.get('bio'):
         rider_info += f"\nBio: {rider['bio']}"
 
-    # Training data — prefer Strava, fall back to brevet history
+    # Training data — Strava if available
     training = _build_training_summary(activities, fitness_score)
     if not training:
-        training = _build_brevet_history_summary(season_data)
-    if not training:
-        training = "No training data or brevet history available."
+        training = "No Strava training data available."
+
+    # Brevet history — always include for mental grit / endurance context
+    brevet_history = _build_brevet_history_summary(season_data)
 
     # Upcoming rides
     ride_blocks = []
@@ -231,6 +279,7 @@ def _build_user_prompt(rider, activities, fitness_score,
         ride = ride_data['ride']
         readiness = ride_data.get('readiness')
         weeks_until = ride_data.get('weeks_until', 4)
+        days_until = ride.get('days_until', weeks_until * 7)
         ride_id = ride.get('id')
 
         dist_km = ride.get('distance_km') or 0
@@ -241,7 +290,8 @@ def _build_user_prompt(rider, activities, fitness_score,
 
         block = (
             f"Ride ID {ride_id}: {ride.get('name', 'Unknown')}\n"
-            f"  Date: {ride.get('date')}, Weeks away: {weeks_until}, Status: {status}\n"
+            f"  Date: {ride.get('date')}, DAYS AWAY: {days_until}, "
+            f"Weeks away: {weeks_until}, Status: {status}\n"
             f"  Distance: {dist_km:.0f} km ({dist_mi:.0f} mi), "
             f"Elevation: {elev_ft:,} ft, Time limit: {time_limit} hrs"
         )
@@ -262,11 +312,12 @@ def _build_user_prompt(rider, activities, fitness_score,
 
     rides_text = "\n\n".join(ride_blocks)
 
-    return (
-        f"{rider_info}\n\n"
-        f"TRAINING DATA:\n{training}\n\n"
-        f"UPCOMING RIDES:\n{rides_text}"
-    )
+    sections = [rider_info, f"TRAINING DATA:\n{training}"]
+    if brevet_history:
+        sections.append(f"COMPLETED BREVET HISTORY (use for endurance/grit assessment):\n{brevet_history}")
+    sections.append(f"UPCOMING RIDES:\n{rides_text}")
+
+    return "\n\n".join(sections)
 
 
 # ---------------------------------------------------------------------------
@@ -320,8 +371,8 @@ def generate_openai_advice(rider, activities, fitness_score,
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.7,
-            max_tokens=600,
-            timeout=10,
+            max_tokens=1000,
+            timeout=15,
         )
 
         raw = response.choices[0].message.content.strip()

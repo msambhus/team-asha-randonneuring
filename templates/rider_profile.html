@@ -54,6 +54,35 @@
     background: #f7fafc !important;
     box-shadow: 0 2px 6px rgba(0,0,0,0.1) !important;
 }
+
+/* AI advice loading animation */
+@keyframes ai-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+.advice-loading {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+}
+.advice-loading-dots span {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #a0aec0;
+    animation: ai-pulse 1.2s ease-in-out infinite;
+}
+.advice-loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+.advice-loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+/* AI sparkle icon */
+.ai-sparkle {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
 </style>
 {% endblock %}
 
@@ -156,13 +185,25 @@
                 </div>
             </div>
         {% endif %}
-            {% if ride.advice %}
-            <span class="advice-tip" style="position:relative; cursor:pointer; display:inline-flex; align-items:center; background:white; padding:4px 8px; border-radius:8px; border:1px solid #e2e8f0; transition:all 0.2s;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><circle cx="8" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/><circle cx="12" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/><circle cx="16" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/></svg>
-                <span style="font-size:0.65rem; margin-left:4px; font-weight:600; color:{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %};">Advice</span>
-                <span class="advice-tooltip">{% for tip in ride.advice %}{{ tip }}{% if not loop.last %}<br><br>{% endif %}{% endfor %}</span>
+            <span class="advice-tip" data-ride-id="{{ ride.id }}" style="position:relative; cursor:pointer; display:inline-flex; align-items:center; background:white; padding:4px 8px; border-radius:8px; border:1px solid #e2e8f0; transition:all 0.2s;">
+                <span class="advice-icon" data-icon-ride="{{ ride.id }}">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><circle cx="8" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/><circle cx="12" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/><circle cx="16" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/></svg>
+                </span>
+                <span class="advice-label" data-label-ride="{{ ride.id }}" style="font-size:0.65rem; margin-left:4px; font-weight:600; color:{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %};">Advice</span>
+                <span class="advice-tooltip" data-tooltip-ride="{{ ride.id }}">
+                    {# Rule-based advice shown immediately as fallback #}
+                    {% if ride.advice %}
+                    <span class="advice-fallback">{% for tip in ride.advice %}{{ tip }}{% if not loop.last %}<br><br>{% endif %}{% endfor %}</span>
+                    {% else %}
+                    <span class="advice-fallback" style="display:none;"></span>
+                    {% endif %}
+                    {# Loading indicator for async AI advice #}
+                    <div class="advice-loading" data-loading-ride="{{ ride.id }}" {% if ride.advice %}style="display:none;"{% endif %}>
+                        <span style="font-size:0.7rem; color:#a0aec0;">Generating AI advice</span>
+                        <span class="advice-loading-dots"><span></span><span></span><span></span></span>
+                    </div>
+                </span>
             </span>
-            {% endif %}
         </div>
         {% endif %}
         
@@ -379,4 +420,81 @@
 {% endif %}
 
 </div>
+
+{% if upcoming_rides %}
+<script>
+(function() {
+    var rusa_id = {{ rider.rusa_id }};
+    var tooltips = document.querySelectorAll('.advice-tooltip[data-tooltip-ride]');
+    if (!tooltips.length) return;
+
+    // Show loading state — hide fallback, show spinner
+    tooltips.forEach(function(el) {
+        var loader = el.querySelector('.advice-loading');
+        var fallback = el.querySelector('.advice-fallback');
+        if (loader) loader.style.display = 'flex';
+        if (fallback) fallback.style.display = 'none';
+    });
+
+    var sparkleIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2" style="flex-shrink:0;margin-top:1px;">' +
+        '<path d="M12 2l2.09 6.26L20.18 10l-6.09 1.74L12 18l-2.09-6.26L3.82 10l6.09-1.74L12 2z" stroke="#a78bfa"/>' +
+        '<path d="M20 7l.6 1.8L22.4 10l-1.8.6L20 12.4l-.6-1.8L17.6 10l1.8-.6L20 7z" stroke="#a78bfa" opacity=".6"/>' +
+        '<path d="M4 17l.4 1.2 1.2.4-1.2.4L4 20.2l-.4-1.2-1.2-.4 1.2-.4L4 17z" stroke="#a78bfa" opacity=".6"/></svg>';
+
+    fetch('/rider/' + rusa_id + '/advice')
+        .then(function(r) { return r.json(); })
+        .then(function(advice) {
+            tooltips.forEach(function(el) {
+                var rideId = el.getAttribute('data-tooltip-ride');
+                var loader = el.querySelector('.advice-loading');
+                var fallback = el.querySelector('.advice-fallback');
+
+                if (advice[rideId]) {
+                    // Replace with AI advice
+                    if (loader) loader.style.display = 'none';
+                    if (fallback) fallback.style.display = 'none';
+                    var aiDiv = document.createElement('div');
+                    aiDiv.style.cssText = 'display:flex;align-items:flex-start;gap:6px;';
+                    aiDiv.innerHTML = sparkleIcon + '<span>' + advice[rideId] + '</span>';
+                    el.appendChild(aiDiv);
+
+                    // Update button label and icon to show AI sparkle
+                    var tip = el.closest('.advice-tip');
+                    var label = tip.querySelector('.advice-label');
+                    var icon = tip.querySelector('.advice-icon');
+                    if (label) label.textContent = 'AI Advice';
+                    if (icon) {
+                        icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="' + (label ? getComputedStyle(label).color : '#4a5568') + '" stroke-width="2">' +
+                            '<path d="M12 2l2.09 6.26L20.18 10l-6.09 1.74L12 18l-2.09-6.26L3.82 10l6.09-1.74L12 2z"/>' +
+                            '<path d="M20 7l.6 1.8L22.4 10l-1.8.6L20 12.4l-.6-1.8L17.6 10l1.8-.6L20 7z" opacity=".6"/>' +
+                            '<path d="M4 17l.4 1.2 1.2.4-1.2.4L4 20.2l-.4-1.2-1.2-.4 1.2-.4L4 17z" opacity=".6"/></svg>';
+                    }
+                } else {
+                    // No AI advice — show rule-based fallback
+                    if (loader) loader.style.display = 'none';
+                    if (fallback && fallback.textContent.trim()) {
+                        fallback.style.display = '';
+                    } else {
+                        // No advice at all — hide the button
+                        el.closest('.advice-tip').style.display = 'none';
+                    }
+                }
+            });
+        })
+        .catch(function() {
+            // On failure, show rule-based fallback
+            tooltips.forEach(function(el) {
+                var loader = el.querySelector('.advice-loading');
+                var fallback = el.querySelector('.advice-fallback');
+                if (loader) loader.style.display = 'none';
+                if (fallback && fallback.textContent.trim()) {
+                    fallback.style.display = '';
+                } else {
+                    el.closest('.advice-tip').style.display = 'none';
+                }
+            });
+        });
+})();
+</script>
+{% endif %}
 {% endblock %}
