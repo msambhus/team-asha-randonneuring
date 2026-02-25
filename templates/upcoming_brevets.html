@@ -1471,7 +1471,7 @@ function showSignups(rideId, rideName) {
     const modalTitle = document.getElementById('modal-title');
     const modalBody = document.getElementById('modal-body');
     
-    modalTitle.textContent = 'Riders List';
+    modalTitle.innerHTML = '<span style="color:#fbbf24;">Riders List</span> <span style="margin-left:12px;background:#ffffff;color:#0369a1;padding:4px 12px;border-radius:20px;font-size:0.9rem;font-weight:700;">' + count + '</span>';
     modalBody.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">Loading...</p>';
     modal.style.display = 'block';
     
@@ -1479,6 +1479,9 @@ function showSignups(rideId, rideName) {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
+                // Update modal title with count
+                modalTitle.innerHTML = '<span style="color:#fbbf24;">Riders List</span> <span style="margin-left:12px;background:#ffffff;color:#0369a1;padding:4px 12px;border-radius:20px;font-size:0.9rem;font-weight:700;">' + data.count + '</span>';
+                
                 if (data.count === 0) {
                     modalBody.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">No riders signed up yet.</p>';
                 } else {

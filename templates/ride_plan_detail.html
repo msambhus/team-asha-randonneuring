@@ -1213,7 +1213,7 @@
 <div id="signups-modal" class="modal" onclick="closeSignupsModal(event)">
     <div class="modal-content" onclick="event.stopPropagation()">
         <div class="modal-header">
-            <h2 class="modal-title">Riders List</h2>
+            <h2 class="modal-title" id="signups-modal-title">Riders List</h2>
             <button class="modal-close" onclick="closeSignupsModal()">&times;</button>
         </div>
         <div class="modal-body" id="signups-modal-body">
@@ -1337,8 +1337,10 @@ function showSignupsModal() {
     if (count === 0) return;
     
     var modal = document.getElementById('signups-modal');
+    var modalTitle = document.getElementById('signups-modal-title');
     var modalBody = document.getElementById('signups-modal-body');
     
+    modalTitle.innerHTML = '<span style="color:#fbbf24;">Riders List</span> <span style="margin-left:12px;background:#ffffff;color:#0369a1;padding:4px 12px;border-radius:20px;font-size:0.9rem;font-weight:700;">' + count + '</span>';
     modalBody.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">Loading...</p>';
     modal.style.display = 'block';
     
@@ -1346,6 +1348,9 @@ function showSignupsModal() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
+                // Update modal title with count
+                modalTitle.innerHTML = '<span style="color:#fbbf24;">Riders List</span> <span style="margin-left:12px;background:#ffffff;color:#0369a1;padding:4px 12px;border-radius:20px;font-size:0.9rem;font-weight:700;">' + data.count + '</span>';
+                
                 if (data.count === 0) {
                     modalBody.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">No riders signed up yet.</p>';
                 } else {
