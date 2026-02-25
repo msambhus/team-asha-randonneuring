@@ -1,0 +1,1189 @@
+{% extends "base.html" %}
+{% block title %}Custom Plan - {{ base_plan.name }} - Team Asha Randonneuring{% endblock %}
+
+{% block extra_head %}
+<style>
+/* Layout */
+.editor-container {
+    display: grid;
+    grid-template-columns: 40% 60%;
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.plan-column {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 2px solid var(--border);
+}
+
+.plan-column.base {
+    opacity: 0.8;
+}
+
+.plan-column.custom {
+    border-color: var(--primary);
+}
+
+.column-header {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* Pace Slider */
+.pace-control {
+    background: #f0f9ff;
+    border: 2px solid #0ea5e9;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.pace-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #0369a1;
+    margin-bottom: 8px;
+}
+
+.pace-slider {
+    width: 100%;
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #ef4444, #f59e0b, #22c55e);
+    outline: none;
+    -webkit-appearance: none;
+}
+
+.pace-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: white;
+    border: 3px solid #0369a1;
+    cursor: pointer;
+}
+
+.pace-value {
+    text-align: center;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #0369a1;
+    margin-top: 8px;
+}
+
+/* Stop Rows */
+.stop-row {
+    padding: 12px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    transition: all 0.2s;
+    position: relative;
+}
+
+.stop-row:hover {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+}
+
+.stop-row.modified {
+    background: #fef9e7;
+    border-color: #fbbf24;
+}
+
+.stop-row.hidden {
+    opacity: 0.6;
+    background: #fef3c7;
+    border-left: 4px solid #f59e0b;
+}
+
+.stop-row.hidden .stop-location {
+    color: #94a3b8;
+}
+
+.hidden-badge {
+    display: inline-block;
+    background: #f59e0b;
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+.btn-delete {
+    background: #fee;
+    border-color: #ef4444;
+    color: #dc2626;
+}
+
+.btn-delete:hover {
+    background: #ef4444;
+    color: white;
+}
+
+.stop-row.custom-added {
+    background: #f0fdf4;
+    border-color: #22c55e;
+}
+
+.stop-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.stop-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    flex-shrink: 0;
+}
+
+.stop-icon.start { background: #dcfce7; color: #166534; }
+.stop-icon.finish { background: #fee2e2; color: #991b1b; }
+.stop-icon.control { background: #dbeafe; color: #1e40af; }
+.stop-icon.rest { background: #fef3c7; color: #92400e; }
+.stop-icon.waypoint { background: #f1f5f9; color: #64748b; }
+
+.stop-location {
+    flex: 1;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text);
+}
+
+.stop-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.btn-icon {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.15s;
+    font-weight: 500;
+}
+
+.btn-icon:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    transform: translateY(-1px);
+}
+
+.stop-metrics {
+    display: grid;
+    grid-template-columns: 80px 90px 85px 95px;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 0.75rem;
+}
+
+.metric-box {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.metric-label {
+    color: var(--text-light);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.metric-value {
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* Inline Editing */
+.inline-edit {
+    width: 60px;
+    padding: 3px 6px;
+    border: 1px solid var(--primary);
+    border-radius: 4px;
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.inline-edit:focus {
+    outline: none;
+    border-color: #0284c7;
+}
+
+/* Settings Panel */
+.settings-panel {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.settings-row {
+    margin-bottom: 12px;
+}
+
+.settings-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+}
+
+.settings-input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+
+.settings-input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.settings-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Save Button Inline - matches btn-icon style */
+.btn-save-inline {
+    display: inline-flex;
+    gap: 6px;
+}
+
+.btn-save-inline.saving {
+    background: #f59e0b !important;
+    border-color: #f59e0b !important;
+    color: white !important;
+    cursor: wait;
+}
+
+.btn-save-inline.saved {
+    background: #22c55e !important;
+    border-color: #22c55e !important;
+    color: white !important;
+}
+
+.btn-save-inline:disabled {
+    background: #f1f5f9 !important;
+    border-color: #cbd5e1 !important;
+    color: #94a3b8 !important;
+    cursor: not-allowed;
+}
+
+/* Create Plan CTA */
+.create-plan-form {
+    padding: 40px 20px;
+    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+    border-radius: 16px;
+    border: 2px solid #0ea5e9;
+}
+
+.create-plan-form h2 {
+    font-size: 2rem;
+    color: #0369a1;
+    margin-bottom: 8px;
+    text-align: center;
+}
+
+/* View Tabs */
+.view-tabs {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+.tab-link {
+    padding: 10px 24px;
+    background: white;
+    color: var(--text);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.tab-link:hover {
+    border-color: var(--primary);
+    background: #f0f9ff;
+    transform: translateY(-2px);
+}
+
+.tab-link.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.btn-create {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-create:hover {
+    background: var(--primary-dark);
+    transform: translateY(-2px);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* Responsive */
+@media (max-width: 968px) {
+    .editor-container {
+        grid-template-columns: 1fr;
+    }
+    
+    .plan-column.base {
+        display: none;
+    }
+    
+    .stop-metrics {
+        grid-template-columns: 70px 80px 75px 85px;
+        gap: 6px;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px 50px;">
+    <h1>🛠️ Custom Plan Editor</h1>
+    <p style="opacity:0.85;margin-top:8px;">{{ base_plan.name }}</p>
+    
+    {% if custom_plan %}
+    {# View Tabs #}
+    <div class="view-tabs">
+        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=base_plan.slug) }}" class="tab-link active">
+            📝 My Custom Plan
+        </a>
+        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug) }}?view=base" class="tab-link">
+            📋 Base Plan
+        </a>
+        <a href="{{ url_for('riders.compare_ride_plans', slug=base_plan.slug) }}" class="tab-link">
+            📊 Compare
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<div class="container section">
+    {# Always show editor - whether creating new or editing existing #}
+    <div class="editor-container">
+        {# Base Plan Column #}
+        <div class="plan-column base">
+            <div class="column-header">
+                <span>📋 Base Plan</span>
+            </div>
+            {% for stop in base_stops %}
+            <div class="stop-row">
+                <div class="stop-header">
+                    <div class="stop-icon {{ stop.stop_type }}">
+                        {% if stop.stop_type == 'start' %}🚩{% elif stop.stop_type == 'finish' %}🏁{% elif stop.stop_type == 'control' %}◆{% elif stop.stop_type == 'rest' %}☕{% else %}•{% endif %}
+                    </div>
+                    <div class="stop-location">{{ stop.location }}</div>
+                </div>
+                <div class="stop-metrics">
+                    <div class="metric-box">
+                        <div class="metric-label">Dist (mi)</div>
+                        <div class="metric-value">{{ "%.1f"|format(stop.distance_miles or 0) }}</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label">Seg Time</div>
+                        <div class="metric-value">{{ stop.segment_time_min or '—' }}</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label">Elev (ft)</div>
+                        <div class="metric-value">{{ stop.elevation_gain or '—' }}</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label">Cumul Time</div>
+                        <div class="metric-value" style="font-weight:600;color:#64748b;">
+                            {% if stop.cum_time_min %}
+                            {{ (stop.cum_time_min // 60)|int }}:{{ "%02d"|format(stop.cum_time_min % 60) }}
+                            {% else %}
+                            0:00
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        {# Custom Plan Column #}
+        <div class="plan-column custom">
+            <div class="column-header">
+                <span>✏️ {% if custom_plan %}My Custom Plan{% else %}Create Your Custom Plan{% endif %}</span>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-icon btn-save-inline" id="save-button-top" onclick="saveAllChanges()" disabled>
+                        <span id="save-icon-top">💾</span>
+                        <span id="save-text-top">Save</span>
+                    </button>
+                    {% if custom_plan %}
+                    <button class="btn-icon" onclick="deleteCustomPlan()">🗑️ Delete</button>
+                    {% endif %}
+                </div>
+            </div>
+            
+            {# Settings Panel #}
+            <div class="settings-panel">
+                <div class="settings-row">
+                    <div class="settings-label">Plan Name</div>
+                    <input type="text" class="settings-input" id="plan-name" 
+                           value="{{ custom_plan.name if custom_plan else 'My ' + base_plan.name }}"
+                           oninput="markDirty()">
+                </div>
+                <div class="settings-row">
+                    <div class="settings-label">Description (Optional)</div>
+                    <textarea class="settings-input" id="plan-description" 
+                              rows="2" oninput="markDirty()">{{ custom_plan.description or '' }}</textarea>
+                </div>
+                <div class="settings-row settings-checkbox">
+                    <input type="checkbox" id="plan-public" onchange="markDirty()"
+                           {% if custom_plan and custom_plan.is_public %}checked{% endif %}>
+                    <label for="plan-public" style="font-size:0.85rem;">Make this plan public (other riders can view/copy)</label>
+                </div>
+            </div>
+            
+            {# Pace Adjustment #}
+            <div class="pace-control">
+                <div class="pace-label">Average Moving Speed</div>
+                <input type="range" class="pace-slider" id="pace-slider" 
+                       min="10" max="20" step="0.5" 
+                       value="{{ custom_plan.avg_moving_speed|float if custom_plan and custom_plan.avg_moving_speed else 13 }}" 
+                       oninput="updatePaceDisplay()">
+                <div class="pace-value" id="pace-value">{{ custom_plan.avg_moving_speed|float if custom_plan and custom_plan.avg_moving_speed else 13 }} mph</div>
+                <button class="btn-icon" style="width:100%;margin-top:8px;" onclick="applyPaceAdjustment()">
+                    🔄 Apply This Pace to All Segments
+                </button>
+            </div>
+            
+            {# Custom Stops #}
+            <div id="custom-stops-container">
+                {% for stop in (custom_stops if custom_plan else base_stops) %}
+                <div class="stop-row {% if stop.is_custom_stop %}custom-added{% elif stop.is_modified %}modified{% endif %}" 
+                     data-stop-id="{{ stop.custom_stop_id or stop.id }}"
+                     data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
+                     data-distance="{{ stop.distance_miles or 0 }}">
+                    <div class="stop-header">
+                        <div class="stop-icon {{ stop.stop_type }}">
+                            {% if stop.stop_type == 'start' %}🚩{% elif stop.stop_type == 'finish' %}🏁{% elif stop.stop_type == 'control' %}◆{% elif stop.stop_type == 'rest' %}☕{% else %}•{% endif %}
+                        </div>
+                        <div class="stop-location">
+                            {{ stop.location }}
+                        </div>
+                        <div class="stop-actions">
+                            <button class="btn-icon" onclick="showAddStopForm({{ loop.index0 }}, {{ stop.distance_miles or 0 }})" 
+                                    title="Add a custom stop after this one">
+                                ➕
+                            </button>
+                            {% if stop.is_custom_stop %}
+                            <button class="btn-icon btn-delete" onclick="deleteStop(this, {{ stop.custom_stop_id }}, true)" 
+                                    title="Delete this custom stop permanently">
+                                🗑️
+                            </button>
+                            {% elif stop.stop_type == 'rest' %}
+                            <button class="btn-icon btn-delete" onclick="deleteStop(this, {{ stop.id }}, false)" 
+                                    title="Remove this rest stop from your custom plan">
+                                🗑️
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="stop-metrics">
+                        <div class="metric-box">
+                            <div class="metric-label">Dist (mi)</div>
+                            <div class="metric-value">{{ "%.1f"|format(stop.distance_miles or 0) }}</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Seg Time</div>
+                            <input type="number" class="inline-edit" 
+                                   value="{{ stop.segment_time_min or 0 }}"
+                                   data-stop-id="{{ stop.custom_stop_id or stop.id }}"
+                                   data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
+                                   onchange="trackTimeChange(this)">
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Elev (ft)</div>
+                            <div class="metric-value">{{ stop.elevation_gain or '—' }}</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Cumul Time</div>
+                            <div class="metric-value cumulative-time" style="font-weight:700;color:var(--primary);">
+                                {% if stop.cum_time_min %}
+                                {{ (stop.cum_time_min // 60)|int }}:{{ "%02d"|format(stop.cum_time_min % 60) }}
+                                {% else %}
+                                0:00
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            
+            {# Save Button - Bottom #}
+            <div style="text-align:center;margin-top:20px;padding-top:16px;border-top:2px solid var(--border);">
+                <button class="btn-icon btn-save-inline" id="save-button" onclick="saveAllChanges()" disabled>
+                    <span id="save-icon">💾</span>
+                    <span id="save-text">Save Changes</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    {# Add Custom Stop Modal #}
+    <div id="add-stop-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;" onclick="event.target === this && hideAddStopForm()">
+        <div style="background:white;border-radius:12px;padding:24px;max-width:500px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+            <h3 style="margin:0 0 20px 0;">Add Custom Stop</h3>
+            
+            <div style="margin-bottom:16px;">
+                <label style="display:block;font-weight:600;margin-bottom:6px;">Stop Location *</label>
+                <input type="text" id="new-stop-location" placeholder="e.g., Coffee Shop" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+            </div>
+            
+            <div style="margin-bottom:16px;">
+                <label style="display:block;font-weight:600;margin-bottom:6px;">Insert After Stop</label>
+                <input type="text" id="new-stop-after-name" readonly style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;background:#f9fafb;">
+                <input type="hidden" id="new-stop-after-distance">
+            </div>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                <div>
+                    <label style="display:block;font-weight:600;margin-bottom:6px;">Distance (miles) *</label>
+                    <input type="number" id="new-stop-distance" step="0.1" placeholder="0.0" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+                </div>
+                <div>
+                    <label style="display:block;font-weight:600;margin-bottom:6px;">Segment Time (min)</label>
+                    <input type="number" id="new-stop-time" placeholder="30" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+                </div>
+            </div>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                <div>
+                    <label style="display:block;font-weight:600;margin-bottom:6px;">Elevation Gain (ft)</label>
+                    <input type="number" id="new-stop-elevation" placeholder="0" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+                </div>
+                <div>
+                    <label style="display:block;font-weight:600;margin-bottom:6px;">Stop Type</label>
+                    <select id="new-stop-type" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+                        <option value="control">Control</option>
+                        <option value="rest">Rest/Info</option>
+                        <option value="intermediate">Intermediate</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:6px;">Notes</label>
+                <textarea id="new-stop-notes" rows="3" placeholder="Optional notes..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></textarea>
+            </div>
+            
+            <div style="display:flex;gap:12px;justify-content:flex-end;">
+                <button class="btn-icon" onclick="hideAddStopForm()" style="background:#f1f5f9;">Cancel</button>
+                <button class="btn-icon" onclick="addCustomStop()" style="background:var(--primary);color:white;">Add Stop</button>
+            </div>
+        </div>
+    </div>
+    
+    {# Action Buttons #}
+    <div style="text-align:center;margin-top:30px;">
+        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug) }}" 
+           class="back-link" style="margin-right:20px;">← Back to Base Plan</a>
+        {% if custom_plan %}
+        <a href="{{ url_for('riders.compare_ride_plans', slug=base_plan.slug) }}" 
+           class="btn-create">📊 Compare Plans</a>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let customPlanId = {{ custom_plan.id if custom_plan else 'null' }};
+const basePlanId = {{ base_plan.id }};
+const isCreateMode = !customPlanId;
+let hasUnsavedChanges = isCreateMode; // Mark dirty if creating new plan
+let pendingChanges = {
+    settings: {},
+    stopTimes: {},
+    addedStops: [],
+    deletedStops: []
+};
+
+let nextTempStopId = -1;
+
+// Enable save button immediately in create mode
+if (isCreateMode) {
+    document.getElementById('save-button').disabled = false;
+    document.getElementById('save-button-top').disabled = false;
+}
+
+// Calculate initial cumulative times on page load
+document.addEventListener('DOMContentLoaded', () => {
+    recalculateTimes();
+});
+
+// Helper to update all save buttons
+function updateSaveButtons(state, icon, text) {
+    const buttons = [document.getElementById('save-button'), document.getElementById('save-button-top')];
+    buttons.forEach(btn => {
+        if (!btn) return;
+        
+        if (state === 'disabled') btn.disabled = true;
+        else if (state === 'enabled') btn.disabled = false;
+        
+        if (state === 'saving') btn.classList.add('saving');
+        else btn.classList.remove('saving');
+        
+        if (state === 'saved') btn.classList.add('saved');
+        else btn.classList.remove('saved');
+        
+        const iconEl = btn.querySelector('[id^="save-icon"]');
+        const textEl = btn.querySelector('[id^="save-text"]');
+        if (iconEl && icon) iconEl.textContent = icon;
+        if (textEl && text) textEl.textContent = text;
+    });
+}
+
+function markDirty() {
+    hasUnsavedChanges = true;
+    
+    // Update both save buttons
+    const saveBtns = [document.getElementById('save-button'), document.getElementById('save-button-top')];
+    saveBtns.forEach(btn => {
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.remove('saved');
+        }
+    });
+    
+    // Update button text
+    const saveTextElements = document.querySelectorAll('[id^="save-text"]');
+    saveTextElements.forEach(el => {
+        if (el) el.textContent = 'Save Changes';
+    });
+}
+
+function trackTimeChange(input) {
+    const stopId = input.dataset.stopId;
+    const time = parseInt(input.value);
+    
+    // Only track changes in edit mode (when custom plan already exists)
+    // In create mode, user should use "Apply This Pace" button
+    if (!isCreateMode) {
+        pendingChanges.stopTimes[stopId] = time;
+    }
+    
+    // Recalculate cumulative times for all stops
+    recalculateTimes();
+    
+    markDirty();
+}
+
+function updatePaceDisplay() {
+    const pace = document.getElementById('pace-slider').value;
+    document.getElementById('pace-value').textContent = pace + ' mph';
+}
+
+function applyPaceAdjustment() {
+    const pace = parseFloat(document.getElementById('pace-slider').value);
+    
+    // Store the pace change
+    pendingChanges.settings.avg_moving_speed = pace;
+    
+    // Recalculate all segment times based on new pace
+    const allStops = document.querySelectorAll('.stop-row');
+    let prevDistance = 0;
+    
+    allStops.forEach((stop, index) => {
+        const distance = parseFloat(stop.dataset.distance || 0);
+        const segmentDistance = distance - prevDistance; // miles
+        
+        if (index > 0 && segmentDistance > 0) {
+            // Calculate segment time: (distance / speed) * 60 minutes
+            const segmentTimeMin = Math.round((segmentDistance / pace) * 60);
+            
+            // Update the input field
+            const timeInput = stop.querySelector('.inline-edit');
+            if (timeInput) {
+                timeInput.value = segmentTimeMin;
+            }
+        }
+        
+        prevDistance = distance;
+    });
+    
+    // Show feedback to user
+    const applyBtn = event.target;
+    const originalText = applyBtn.textContent;
+    applyBtn.textContent = '✓ Times Recalculated';
+    applyBtn.disabled = true;
+    
+    setTimeout(() => {
+        applyBtn.textContent = originalText;
+        applyBtn.disabled = false;
+    }, 2000);
+    
+    // Recalculate cumulative times after pace adjustment
+    recalculateTimes();
+    
+    markDirty();
+}
+
+function deleteStop(button, stopId, isCustomStop) {
+    const stopRow = button.closest('.stop-row');
+    
+    // Remove from DOM
+    stopRow.remove();
+    
+    // Track deletion (will be processed on save)
+    // IMPORTANT: Track deletions even in create mode so they're applied after plan creation
+    pendingChanges.deletedStops.push({
+        stopId: stopId,
+        isCustomStop: isCustomStop
+    });
+    
+    // Recalculate times for remaining stops
+    recalculateTimes();
+    
+    markDirty();
+}
+
+function showAddStopForm(stopIndex, afterStopDistance) {
+    const modal = document.getElementById('add-stop-modal');
+    modal.style.display = 'flex';
+    
+    // Get the stop information from the DOM
+    const stops = document.querySelectorAll('.stop-row');
+    if (stopIndex >= 0 && stopIndex < stops.length) {
+        const stopRow = stops[stopIndex];
+        const stopName = stopRow.querySelector('.stop-location').textContent.trim();
+        document.getElementById('new-stop-after-name').value = stopName;
+        document.getElementById('new-stop-after-distance').value = afterStopDistance;
+    }
+    
+    // Pre-fill distance with the next mile marker (round up to next mile)
+    if (afterStopDistance !== undefined) {
+        const nextMile = Math.ceil(afterStopDistance) + 1;
+        document.getElementById('new-stop-distance').value = nextMile;
+    }
+}
+
+function hideAddStopForm() {
+    const modal = document.getElementById('add-stop-modal');
+    modal.style.display = 'none';
+    
+    // Clear form
+    document.getElementById('new-stop-location').value = '';
+    document.getElementById('new-stop-distance').value = '';
+    document.getElementById('new-stop-after-name').value = '';
+    document.getElementById('new-stop-after-distance').value = '';
+    document.getElementById('new-stop-elevation').value = '';
+    document.getElementById('new-stop-time').value = '';
+    document.getElementById('new-stop-notes').value = '';
+}
+
+function addCustomStop() {
+    const location = document.getElementById('new-stop-location').value.trim();
+    const distance = parseFloat(document.getElementById('new-stop-distance').value);
+    const elevation = parseInt(document.getElementById('new-stop-elevation').value) || 0;
+    const segmentTime = parseInt(document.getElementById('new-stop-time').value) || 0;
+    const stopType = document.getElementById('new-stop-type').value;
+    const notes = document.getElementById('new-stop-notes').value.trim();
+    
+    if (!location) {
+        alert('Please enter a stop location');
+        return;
+    }
+    
+    if (!distance || distance <= 0) {
+        alert('Please enter a valid distance');
+        return;
+    }
+    
+    // Create temporary stop ID
+    const tempStopId = nextTempStopId--;
+    
+    // Track the addition
+    pendingChanges.addedStops.push({
+        tempId: tempStopId,
+        location: location,
+        distance_miles: distance,
+        elevation_gain: elevation,
+        segment_time_min: segmentTime,
+        stop_type: stopType,
+        notes: notes
+    });
+    
+    // Create new stop row in DOM
+    const stopIcon = stopType === 'control' ? '◆' : stopType === 'rest' ? '☕' : '•';
+    const stopRow = document.createElement('div');
+    stopRow.className = 'stop-row custom-added';
+    stopRow.dataset.stopId = tempStopId;
+    stopRow.dataset.distance = distance;
+    stopRow.dataset.isNewStop = 'true';
+    stopRow.innerHTML = `
+        <div class="stop-header">
+            <div class="stop-icon ${stopType}">${stopIcon}</div>
+            <div class="stop-location">${location}</div>
+            <div class="stop-actions">
+                <button class="btn-icon" onclick="showAddStopForm(getStopIndex(this), ${distance})" title="Add a custom stop after this one">➕</button>
+                <button class="btn-icon btn-delete" onclick="removeNewStop(this, ${tempStopId})" title="Remove this stop">🗑️</button>
+            </div>
+        </div>
+        <div class="stop-metrics">
+            <div class="metric-box">
+                <div class="metric-label">Dist (mi)</div>
+                <div class="metric-value">${distance.toFixed(1)}</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Seg Time</div>
+                <input type="number" class="inline-edit" value="${segmentTime}" data-stop-id="${tempStopId}" min="0" onchange="trackTimeChange(this)">
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Elev (ft)</div>
+                <div class="metric-value">${elevation}</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Cumul Time</div>
+                <div class="metric-value cumulative-time" style="font-weight:700;color:var(--primary);">0:00</div>
+            </div>
+        </div>
+    `;
+    
+    // Insert in correct position based on distance
+    const container = document.getElementById('custom-stops-container');
+    const allStops = container.querySelectorAll('.stop-row');
+    let inserted = false;
+    
+    for (let i = 0; i < allStops.length; i++) {
+        const existingDistance = parseFloat(allStops[i].dataset.distance || 0);
+        if (distance < existingDistance) {
+            container.insertBefore(stopRow, allStops[i]);
+            inserted = true;
+            break;
+        }
+    }
+    
+    if (!inserted) {
+        container.appendChild(stopRow);
+    }
+    
+    // Adjust timing of next stop
+    if (segmentTime > 0) {
+        adjustNextStopTime(distance, segmentTime);
+    }
+    
+    // Recalculate cumulative times for all stops
+    recalculateTimes();
+    
+    hideAddStopForm();
+    markDirty();
+}
+
+function getStopIndex(button) {
+    const stopRow = button.closest('.stop-row');
+    const allStops = document.querySelectorAll('.stop-row');
+    return Array.from(allStops).indexOf(stopRow);
+}
+
+function removeNewStop(button, tempStopId) {
+    const stopRow = button.closest('.stop-row');
+    const segmentTime = parseInt(stopRow.querySelector('.inline-edit')?.value || 0);
+    const distance = parseFloat(stopRow.dataset.distance || 0);
+    
+    // Remove from pending additions
+    pendingChanges.addedStops = pendingChanges.addedStops.filter(s => s.tempId !== tempStopId);
+    
+    // Remove from DOM
+    stopRow.remove();
+    
+    // Adjust timing of next stop (add back the time)
+    if (segmentTime > 0) {
+        adjustNextStopTime(distance, -segmentTime);
+    }
+    
+    // Recalculate cumulative times
+    recalculateTimes();
+    
+    markDirty();
+}
+
+function adjustNextStopTime(afterDistance, timeChange) {
+    // Find the next stop after the given distance
+    const allStops = document.querySelectorAll('.stop-row');
+    let nextStop = null;
+    
+    for (let stop of allStops) {
+        const stopDistance = parseFloat(stop.dataset.distance || 0);
+        if (stopDistance > afterDistance) {
+            nextStop = stop;
+            break;
+        }
+    }
+    
+    if (nextStop) {
+        const timeInput = nextStop.querySelector('.inline-edit');
+        if (timeInput) {
+            const currentTime = parseInt(timeInput.value || 0);
+            const newTime = Math.max(1, currentTime - timeChange);
+            timeInput.value = newTime;
+            
+            // Track the change
+            const stopId = timeInput.dataset.stopId;
+            pendingChanges.stopTimes[stopId] = newTime;
+        }
+    }
+}
+
+function recalculateTimes() {
+    // Recalculate cumulative times for all stops
+    const allStops = document.querySelectorAll('.stop-row');
+    let cumulativeTime = 0;
+    
+    allStops.forEach(stop => {
+        const timeInput = stop.querySelector('.inline-edit');
+        const segmentTime = parseInt(timeInput?.value || 0);
+        
+        // Add this segment's time to cumulative
+        cumulativeTime += segmentTime;
+        
+        // Update the cumulative time display
+        const cumulativeDisplay = stop.querySelector('.cumulative-time');
+        if (cumulativeDisplay) {
+            const hours = Math.floor(cumulativeTime / 60);
+            const mins = cumulativeTime % 60;
+            cumulativeDisplay.textContent = `${hours}:${mins.toString().padStart(2, '0')}`;
+        }
+    });
+}
+
+async function saveAllChanges() {
+    if (!hasUnsavedChanges) return;
+    
+    updateSaveButtons('disabled', '⏳', 'Saving...');
+    
+    try {
+        // Get basic settings
+        const name = document.getElementById('plan-name').value.trim();
+        const description = document.getElementById('plan-description').value.trim();
+        const isPublic = document.getElementById('plan-public').checked;
+        const pace = parseFloat(document.getElementById('pace-slider').value);
+        
+        if (!name) {
+            alert('Please enter a plan name');
+            updateSaveButtons('enabled', '💾', 'Save Changes');
+            return;
+        }
+        
+        // Step 1: Create plan if in create mode
+        if (isCreateMode) {
+            updateSaveButtons('disabled', '⏳', 'Creating plan...');
+            const createResponse = await fetch('/api/custom-plan/create', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    base_plan_id: basePlanId,
+                    name: name,
+                    description: description,
+                    avg_moving_speed: pace
+                })
+            });
+            
+            const createData = await createResponse.json();
+            if (!createData.success) {
+                throw new Error(createData.error || 'Failed to create plan');
+            }
+            
+            // Store the new plan ID for subsequent operations
+            customPlanId = createData.custom_plan_id;
+            
+            // Step 1b: Apply deletions immediately after plan creation
+            // This is important so deleted stops are removed before any other operations
+            if (pendingChanges.deletedStops.length > 0) {
+                updateSaveButtons('disabled', '⏳', 'Removing stops...');
+                const deletePromises = pendingChanges.deletedStops.map(del =>
+                    fetch(`/api/custom-plan/${customPlanId}/stop/${del.stopId}/delete`, {
+                        method: 'DELETE',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({is_custom_stop: del.isCustomStop})
+                    })
+                );
+                await Promise.all(deletePromises);
+            }
+        }
+        
+        // Step 2: If pace was applied (button clicked), persist all recalculated times
+        if (pendingChanges.settings.avg_moving_speed !== undefined) {
+            updateSaveButtons('disabled', '⏳', 'Applying pace...');
+            const paceResponse = await fetch(`/api/custom-plan/${customPlanId}/apply-pace`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({avg_moving_speed: pendingChanges.settings.avg_moving_speed})
+            });
+            
+            if (!paceResponse.ok) {
+                throw new Error('Failed to apply pace');
+            }
+        }
+        
+        // Step 3: Save all other changes in parallel
+        updateSaveButtons('disabled', '⏳', 'Saving changes...');
+        const promises = [];
+        
+        // Save settings (name, description, public)
+        const settingsPayload = {name, description, is_public: isPublic};
+        
+        // Only update pace in settings if we didn't already apply it above
+        if (!isCreateMode && pendingChanges.settings.avg_moving_speed === undefined) {
+            // If user changed settings but didn't apply pace
+            const currentPace = parseFloat(document.getElementById('pace-slider').value);
+            settingsPayload.avg_moving_speed = currentPace;
+        }
+        
+        if (!isCreateMode) {
+            promises.push(
+                fetch(`/api/custom-plan/${customPlanId}/settings`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(settingsPayload)
+                })
+            );
+        }
+        
+        // Save added stops
+        pendingChanges.addedStops.forEach(stop => {
+            promises.push(
+                fetch(`/api/custom-plan/${customPlanId}/stop/add`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        location: stop.location,
+                        distance_miles: stop.distance_miles,
+                        after_stop_order: 0,
+                        elevation_gain: stop.elevation_gain,
+                        segment_time_min: stop.segment_time_min,
+                        stop_type: stop.stop_type,
+                        notes: stop.notes
+                    })
+                })
+            );
+        });
+        
+        // Save deleted stops (only if not in create mode, as they were already deleted above)
+        if (!isCreateMode) {
+            pendingChanges.deletedStops.forEach(del => {
+                promises.push(
+                    fetch(`/api/custom-plan/${customPlanId}/stop/${del.stopId}/delete`, {
+                        method: 'DELETE',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({is_custom_stop: del.isCustomStop})
+                    })
+                );
+            });
+        }
+        
+        // Save manually edited stop times (only in edit mode)
+        // In create mode, times are set via apply-pace
+        if (!isCreateMode && Object.keys(pendingChanges.stopTimes).length > 0 && pendingChanges.settings.avg_moving_speed === undefined) {
+            Object.entries(pendingChanges.stopTimes).forEach(([stopId, time]) => {
+                promises.push(
+                    fetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({segment_time_min: time})
+                    })
+                );
+            });
+        }
+        
+        await Promise.all(promises);
+        
+        // Success!
+        updateSaveButtons('saved', '✓', 'Saved!');
+        hasUnsavedChanges = false;
+        
+        // Auto-reload to show updated calculations
+        setTimeout(() => window.location.reload(), 800);
+        
+    } catch (error) {
+        console.error('Save error:', error);
+        updateSaveButtons('enabled', '💾', 'Save Failed - Retry');
+        alert('Error saving changes: ' + error.message);
+    }
+}
+
+function deleteCustomPlan() {
+    if (isCreateMode) {
+        // In create mode, just navigate back - nothing to delete
+        window.location.href = '{{ url_for("riders.ride_plan_detail", slug=base_plan.slug) }}';
+        return;
+    }
+    
+    if (!confirm('Are you sure you want to delete this custom plan? This cannot be undone.')) return;
+    
+    fetch(`/api/custom-plan/${customPlanId}`, {
+        method: 'DELETE'
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            window.location.href = '{{ url_for("riders.ride_plan_detail", slug=base_plan.slug) }}';
+        }
+    });
+}
+
+// Warn before leaving with unsaved changes
+window.addEventListener('beforeunload', (e) => {
+    if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
+</script>
+{% endblock %}

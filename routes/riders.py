@@ -285,6 +285,9 @@ def _build_journey_nodes(stops):
             # Merge cum_time: take the max (rest adds break time)
             if s.get('cum_time_min', 0) > existing.get('cum_time_min', 0):
                 existing['cum_time_min'] = s['cum_time_min']
+            # Keep arrival time (should be the same for co-located stops)
+            if s.get('arrival_time_min') is not None:
+                existing['arrival_time_min'] = s['arrival_time_min']
         else:
             label = s['location'][:22]
             if s['stop_type'] == 'rest':
@@ -293,6 +296,7 @@ def _build_journey_nodes(stops):
                 'label': label,
                 'distance_miles': s.get('distance_miles') or 0,
                 'node_type': s['stop_type'],
+                'arrival_time_min': s.get('arrival_time_min'),
                 'difficulty_score': s.get('difficulty_score', 0),
                 'difficulty_label': s.get('difficulty_label', 'flat'),
                 'difficulty_color': s.get('difficulty_color', '#94a3b8'),
@@ -355,6 +359,7 @@ def upcoming_brevets(season_name):
     rider_id = None
     current_rider = None
     user_signups = {}
+    user_custom_plans = {}
     can_edit_rides = False
     user_id = session.get('user_id')
     
@@ -377,10 +382,24 @@ def upcoming_brevets(season_name):
             # Batch load signup statuses for all events (1 query instead of N queries)
             user_signup_statuses = get_rider_signup_statuses_batch(rider_id, ride_ids)
             user_signups = {ride_id: data['status'] for ride_id, data in user_signup_statuses.items()}
+            
+            # Load custom plans for this rider
+            # First, build a map of plan_slug -> plan_id
+            plan_slug_to_id = {plan['slug']: plan['id'] for plan in plans}
+            
+            for event in rusa_events:
+                if event.get('plan_slug'):
+                    plan_id = plan_slug_to_id.get(event['plan_slug'])
+                    if plan_id:
+                        custom_plan = get_custom_plan(rider_id, plan_id)
+                        if custom_plan:
+                            user_custom_plans[event['plan_slug']] = custom_plan
 
-    # Add signup counts to events
+    # Add signup counts and custom plan info to events
     for event in rusa_events:
         event['signup_count'] = signup_counts.get(event['id'], 0)
+        if event.get('plan_slug'):
+            event['has_custom_plan'] = event['plan_slug'] in user_custom_plans
 
     # Region color map
     region_colors = {
@@ -815,12 +834,20 @@ def ride_plan_detail(slug):
             else:
                 total_break_time += d['segment_time_min']
         d['cum_time_min'] = cum_time_min
+        
+        # Arrival time: cumulative time minus stop time (for zero-distance stops)
+        stop_time = d['segment_time_min'] if (seg_dist == 0 and d['segment_time_min']) else 0
+        d['arrival_time_min'] = cum_time_min - stop_time
+        
+        # Stop duration for display (only for zero-distance stops)
+        d['stop_duration_min'] = d['segment_time_min'] if (seg_dist == 0 and d['segment_time_min']) else None
 
-        # Bookend time: max allowed time to reach this point
+        # Bookend time: max allowed time to reach this point (arrival, not departure)
         if cutoff_hours and plan['total_distance_miles'] > 0 and d['distance_miles']:
             fraction = d['distance_miles'] / plan['total_distance_miles']
             d['bookend_time_min'] = round(fraction * cutoff_hours * 60)
-            d['time_bank_min'] = d['bookend_time_min'] - cum_time_min
+            # Time bank should be based on arrival time, not departure time
+            d['time_bank_min'] = d['bookend_time_min'] - d['arrival_time_min']
         else:
             d['bookend_time_min'] = None
             d['time_bank_min'] = None
@@ -902,6 +929,11 @@ def ride_plan_detail(slug):
         user = get_user_by_id(user_id)
         if user and user.get('rider_id'):
             user_custom_plan = get_custom_plan(user['rider_id'], plan['id'])
+            
+            # If user has custom plan and didn't explicitly request base view, redirect to custom
+            show_base = request.args.get('view') == 'base'
+            if user_custom_plan and not show_base:
+                return redirect(url_for('riders.custom_ride_plan_editor', slug=slug))
     
     # Get public custom plans from other riders
     public_custom_plans = get_public_custom_plans(plan['id'])
@@ -930,6 +962,156 @@ def ride_plan_detail(slug):
 
 # ========== CUSTOM RIDE PLANS ==========
 
+@riders_bp.route('/ride-plan/<slug>/my-plan')
+@user_login_required
+def custom_ride_plan_view(slug):
+    """View custom plan with same detail as base plan, but with custom timings."""
+    user_id = session.get('user_id')
+    user = get_user_by_id(user_id)
+    
+    if not user or not user.get('rider_id'):
+        return redirect(url_for('riders.ride_plan_detail', slug=slug))
+    
+    rider_id = user['rider_id']
+    
+    # Get base plan
+    base_plan = get_ride_plan_by_slug(slug)
+    if not base_plan:
+        abort(404)
+    
+    # Get custom plan
+    custom_plan = get_custom_plan(rider_id, base_plan['id'])
+    if not custom_plan:
+        # No custom plan, redirect to base plan
+        return redirect(url_for('riders.ride_plan_detail', slug=slug))
+    
+    # Get custom stops (merged with overrides)
+    from services.custom_plan_service import get_merged_plan_stops, recalculate_cumulative_values
+    custom_stops_raw, custom_plan_data = get_merged_plan_stops(custom_plan['id'])
+    
+    # Convert Decimal types to float for Jinja2 arithmetic
+    plan = dict(base_plan)
+    plan['total_distance_miles'] = float(base_plan.get('total_distance_miles') or 0)
+    plan['total_elevation_ft'] = int(base_plan.get('total_elevation_ft') or 0)
+    
+    # Override name with custom plan name for display
+    plan['custom_name'] = custom_plan_data.get('name') or f"My {base_plan['name']}"
+    
+    # Extract distance class for bookend time calculation
+    distance_km = _extract_distance_km(plan['name'])
+    cutoff_hours = _get_cutoff_hours(distance_km)
+    plan['distance_km'] = distance_km
+    plan['cutoff_hours'] = cutoff_hours
+    plan['start_time'] = plan.get('start_time') or '06:00'
+    
+    # Determine which RWGPS link to show
+    rwgps_url_display = plan.get('rwgps_url_team') or plan.get('rwgps_url')
+    rwgps_url_label = 'Team Asha Route' if plan.get('rwgps_url_team') else 'Official Route'
+    rwgps_route_id = _extract_rwgps_route_id(rwgps_url_display)
+    weather_route_id = _extract_rwgps_route_id(plan.get('rwgps_url_team')) if plan.get('rwgps_url_team') else rwgps_route_id
+    
+    # Process stops with full detail (same as base plan view)
+    stops = []
+    cum_time_min = 0
+    prev_dist = 0.0
+    total_moving_time = 0
+    total_break_time = 0
+    
+    for s in custom_stops_raw:
+        d = dict(s)
+        d['distance_miles'] = float(d['distance_miles']) if d.get('distance_miles') is not None else None
+        d['elevation_gain'] = int(d['elevation_gain']) if d.get('elevation_gain') is not None else None
+        d['segment_time_min'] = int(d['segment_time_min']) if d.get('segment_time_min') is not None else None
+        
+        cur_dist = d['distance_miles'] or 0.0
+        seg_dist = round(cur_dist - prev_dist, 1)
+        d['seg_dist'] = seg_dist
+        
+        # Ft/mile for this segment
+        d['ft_per_mi'] = int(round(d['elevation_gain'] / seg_dist)) if d.get('elevation_gain') and seg_dist > 0 else None
+        
+        # Average speed for this segment
+        d['avg_speed'] = round(seg_dist / (d['segment_time_min'] / 60.0), 1) if d.get('segment_time_min') and d['segment_time_min'] > 0 and seg_dist > 0 else None
+        
+        # Cumulative time
+        if d['segment_time_min']:
+            cum_time_min += d['segment_time_min']
+            if seg_dist > 0:
+                total_moving_time += d['segment_time_min']
+            else:
+                total_break_time += d['segment_time_min']
+        d['cum_time_min'] = cum_time_min
+        
+        # Arrival time: cumulative time minus stop time (for zero-distance stops)
+        stop_time = d['segment_time_min'] if (seg_dist == 0 and d['segment_time_min']) else 0
+        d['arrival_time_min'] = cum_time_min - stop_time
+        
+        # Stop duration for display (only for zero-distance stops)
+        d['stop_duration_min'] = d['segment_time_min'] if (seg_dist == 0 and d['segment_time_min']) else None
+        
+        # Bookend time: max allowed time to reach this point (arrival, not departure)
+        if cutoff_hours and plan['total_distance_miles'] > 0 and d['distance_miles']:
+            fraction = d['distance_miles'] / plan['total_distance_miles']
+            d['bookend_time_min'] = round(fraction * cutoff_hours * 60)
+            # Time bank should be based on arrival time, not departure time
+            d['time_bank_min'] = d['bookend_time_min'] - d['arrival_time_min']
+        else:
+            d['bookend_time_min'] = None
+            d['time_bank_min'] = None
+        
+        # Difficulty scoring
+        d['difficulty_score'] = _compute_difficulty_score(d['ft_per_mi'], d.get('notes'))
+        d['difficulty_label'] = _difficulty_label(d['difficulty_score'])
+        d['difficulty_color'] = _difficulty_color(d['ft_per_mi'])
+        
+        # Terrain difficulty label
+        if d['ft_per_mi']:
+            if d['ft_per_mi'] >= 80:
+                d['terrain_label'] = 'steep'
+            elif d['ft_per_mi'] >= 50:
+                d['terrain_label'] = 'rolling'
+            elif d['ft_per_mi'] >= 25:
+                d['terrain_label'] = 'moderate'
+            else:
+                d['terrain_label'] = 'flat'
+        else:
+            d['terrain_label'] = None
+        
+        prev_dist = cur_dist
+        stops.append(d)
+    
+    total_time = cum_time_min
+    
+    # Plan-level aggregates
+    avg_moving_speed = round(plan['total_distance_miles'] / (total_moving_time / 60.0), 1) if total_moving_time > 0 else None
+    avg_elapsed_speed = round(plan['total_distance_miles'] / (total_time / 60.0), 1) if total_time > 0 else None
+    overall_ft_per_mile = round(plan['total_elevation_ft'] / plan['total_distance_miles'], 0) if plan['total_distance_miles'] > 0 else 0
+    
+    # Build collapsed journey nodes
+    journey_nodes = _build_journey_nodes(stops)
+    
+    return render_template('ride_plan_detail.html',
+                         plan=plan,
+                         stops=stops,
+                         journey_nodes=journey_nodes,
+                         total_time=total_time,
+                         total_moving_time=total_moving_time,
+                         total_break_time=total_break_time,
+                         avg_moving_speed=avg_moving_speed,
+                         avg_elapsed_speed=avg_elapsed_speed,
+                         overall_ft_per_mile=overall_ft_per_mile,
+                         rwgps_url_display=rwgps_url_display,
+                         rwgps_url_label=rwgps_url_label,
+                         rwgps_route_id=rwgps_route_id,
+                         weather_route_id=weather_route_id,
+                         upcoming_event=None,
+                         signup_count=None,
+                         user_signup_status=None,
+                         user_custom_plan=custom_plan_data,
+                         public_custom_plans=[],
+                         is_custom_view=True)
+
+
 @riders_bp.route('/ride-plan/<slug>/custom')
 @user_login_required
 def custom_ride_plan_editor(slug):
@@ -955,60 +1137,56 @@ def custom_ride_plan_editor(slug):
         custom_plan = dict(custom_plan)
         if custom_plan.get('avg_moving_speed') is not None:
             custom_plan['avg_moving_speed'] = float(custom_plan['avg_moving_speed'])
-        # Load base stops and custom overrides separately for editor
-        base_stops = get_ride_plan_stops(base_plan['id'])
+        
+        # Load base stops and calculate cumulative times for reference
+        base_stops_raw = get_ride_plan_stops(base_plan['id'])
+        from services.custom_plan_service import recalculate_cumulative_values
+        base_stops = recalculate_cumulative_values(list(base_stops_raw), base_plan)
+        
         custom_stops_raw = get_custom_plan_stops_raw(custom_plan['id'])
-        custom_plan_data = custom_plan
         
-        # Build override map
-        overrides = {}
+        # Build maps for efficient lookup
+        base_stops_map = {s['id']: dict(s) for s in base_stops}
+        custom_overrides = {}
+        custom_only_stops = []
+        
         for cs in custom_stops_raw:
-            if cs.get('base_stop_id'):
-                overrides[cs['base_stop_id']] = cs
+            cs_dict = dict(cs)
+            if cs_dict.get('base_stop_id'):
+                # This is an override of a base stop
+                custom_overrides[cs_dict['stop_order']] = cs_dict
+            elif cs_dict.get('is_custom_stop'):
+                # This is a custom-added stop
+                custom_only_stops.append(cs_dict)
         
-        # Build custom stops list for display (include ALL stops, even hidden ones)
+        # Build the final merged list sorted by distance
         custom_stops = []
-        for base_stop in base_stops:
-            stop = dict(base_stop)
-            override = overrides.get(base_stop['id'])
-            
-            # Initialize flags
-            stop['is_modified'] = False
-            stop['is_custom_stop'] = False
-            stop['is_hidden_display'] = False
-            stop['custom_stop_id'] = None
-            
-            # Convert Decimal to float for template
-            if stop.get('distance_miles') is not None:
-                stop['distance_miles'] = float(stop['distance_miles'])
-            if stop.get('elevation_gain') is not None:
-                stop['elevation_gain'] = int(stop['elevation_gain'])
-            if stop.get('segment_time_min') is not None:
-                stop['segment_time_min'] = int(stop['segment_time_min'])
-            
-            if override:
-                # Apply overrides
-                if override.get('segment_time_min') is not None:
-                    stop['segment_time_min'] = int(override['segment_time_min'])
-                    stop['is_modified'] = True
-                if override.get('notes'):
-                    stop['notes'] = override['notes']
-                    stop['is_modified'] = True
-                if override.get('is_hidden'):
-                    stop['is_hidden_display'] = True
-                stop['custom_stop_id'] = override['id']
-            
-            # ALWAYS add the stop to the list (even if hidden)
-            custom_stops.append(stop)
         
-        # Add custom-only stops
+        # Add all non-deleted base stops
+        hidden_base_stop_ids = set()
         for cs in custom_stops_raw:
-            if cs.get('is_custom_stop'):
-                stop = dict(cs)
-                stop['is_custom_stop'] = True
-                stop['is_modified'] = True
-                stop['is_hidden_display'] = False
-                stop['custom_stop_id'] = cs['id']
+            if cs.get('base_stop_id') and cs.get('is_hidden'):
+                hidden_base_stop_ids.add(cs['base_stop_id'])
+        
+        for bs in base_stops:
+            if bs['id'] not in hidden_base_stop_ids:
+                stop = dict(bs)
+                stop['is_modified'] = False
+                stop['is_custom_stop'] = False
+                stop['custom_stop_id'] = None
+                
+                # Check for overrides
+                override = next((cs for cs in custom_stops_raw 
+                               if cs.get('base_stop_id') == bs['id'] and not cs.get('is_hidden')), None)
+                if override:
+                    if override.get('segment_time_min') is not None:
+                        stop['segment_time_min'] = int(override['segment_time_min'])
+                        stop['is_modified'] = True
+                    if override.get('notes'):
+                        stop['notes'] = override['notes']
+                        stop['is_modified'] = True
+                    stop['custom_stop_id'] = override['id']
+                
                 # Convert types
                 if stop.get('distance_miles') is not None:
                     stop['distance_miles'] = float(stop['distance_miles'])
@@ -1016,15 +1194,38 @@ def custom_ride_plan_editor(slug):
                     stop['elevation_gain'] = int(stop['elevation_gain'])
                 if stop.get('segment_time_min') is not None:
                     stop['segment_time_min'] = int(stop['segment_time_min'])
+                
                 custom_stops.append(stop)
         
-        # Sort by stop_order
-        custom_stops.sort(key=lambda s: s.get('stop_order', 999))
+        # Add custom-only stops
+        for cs in custom_stops_raw:
+            if cs.get('is_custom_stop'):
+                stop = dict(cs)
+                stop['is_custom_stop'] = True
+                stop['is_modified'] = True
+                stop['custom_stop_id'] = cs['id']
+                
+                # Convert types
+                if stop.get('distance_miles') is not None:
+                    stop['distance_miles'] = float(stop['distance_miles'])
+                if stop.get('elevation_gain') is not None:
+                    stop['elevation_gain'] = int(stop['elevation_gain'])
+                if stop.get('segment_time_min') is not None:
+                    stop['segment_time_min'] = int(stop['segment_time_min'])
+                
+                custom_stops.append(stop)
+        
+        # Sort by distance_miles for proper display order
+        custom_stops.sort(key=lambda s: (s.get('distance_miles') or 0, s.get('stop_order', 999)))
     else:
         # No custom plan yet - show base plan only
         custom_plan = None
         custom_stops = None
-        base_stops = get_ride_plan_stops(base_plan['id'])
+        base_stops_raw = get_ride_plan_stops(base_plan['id'])
+        
+        # Calculate cumulative times for base stops
+        from services.custom_plan_service import recalculate_cumulative_values
+        base_stops = recalculate_cumulative_values(list(base_stops_raw), base_plan)
     
     # Get public custom plans from other riders
     public_plans = get_public_custom_plans(base_plan['id'])
@@ -1148,6 +1349,7 @@ def api_add_custom_stop(custom_plan_id):
     stop_type = data.get('stop_type', 'waypoint')
     distance_miles = data.get('distance_miles')
     elevation_gain = data.get('elevation_gain', 0)
+    segment_time_min = data.get('segment_time_min')
     after_stop_order = data.get('after_stop_order')
     notes = data.get('notes')
     
@@ -1157,7 +1359,7 @@ def api_add_custom_stop(custom_plan_id):
     try:
         stop_id = add_custom_stop(
             custom_plan_id, location, stop_type, distance_miles,
-            elevation_gain, after_stop_order, notes
+            elevation_gain, after_stop_order, segment_time_min, notes
         )
         return jsonify({'success': True, 'stop_id': stop_id})
     except Exception as e:
@@ -1326,22 +1528,37 @@ def api_apply_pace_to_all_segments(custom_plan_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@riders_bp.route('/api/custom-plan/<int:custom_plan_id>/stop/<int:custom_stop_id>/delete', methods=['DELETE'])
+@riders_bp.route('/api/custom-plan/<int:custom_plan_id>/stop/<int:stop_id>/delete', methods=['DELETE'])
 @user_login_required
-def api_delete_custom_stop(custom_plan_id, custom_stop_id):
-    """Delete a custom stop."""
+def api_delete_custom_stop(custom_plan_id, stop_id):
+    """Delete a stop from custom plan."""
     user_id = session.get('user_id')
     user = get_user_by_id(user_id)
     
     if not user or not user.get('rider_id'):
         return jsonify({'success': False, 'error': 'Unauthorized'}), 403
     
+    # Verify ownership
+    custom_plan = get_custom_plan_by_id(custom_plan_id)
+    if not custom_plan or custom_plan['rider_id'] != user['rider_id']:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    data = request.json or {}
+    is_custom_stop = data.get('is_custom_stop', False)
+    
     try:
-        success = delete_custom_stop(custom_stop_id, user['rider_id'])
-        if success:
-            return jsonify({'success': True})
+        if is_custom_stop:
+            # Delete custom-added stop
+            success = delete_custom_stop(stop_id, user['rider_id'])
+            if not success:
+                return jsonify({'success': False, 'error': 'Failed to delete stop'}), 400
         else:
-            return jsonify({'success': False, 'error': 'Cannot delete base stops, only custom-added stops'}), 400
+            # For base stops, hide them permanently (user sees this as "delete")
+            success = hide_base_stop(custom_plan_id, stop_id)
+            if not success:
+                return jsonify({'success': False, 'error': 'Failed to remove stop'}), 400
+        
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -1385,16 +1602,68 @@ def compare_ride_plans(slug):
     if not custom_plan:
         return redirect(url_for('riders.ride_plan_detail', slug=slug))
     
-    # Load base stops
-    base_stops = get_ride_plan_stops(base_plan['id'])
+    # Load base stops and calculate cumulative times
+    base_stops_raw = get_ride_plan_stops(base_plan['id'])
+    
+    # Calculate cumulative times for base stops
+    from services.custom_plan_service import recalculate_cumulative_values
+    base_stops = recalculate_cumulative_values(list(base_stops_raw), base_plan)
     
     # Load custom stops (merged, which excludes hidden stops)
     custom_stops_merged, custom_plan_data = get_merged_plan_stops(custom_plan['id'])
+    
+    # Recalculate cumulative times for custom stops
+    custom_stops_merged = recalculate_cumulative_values(list(custom_stops_merged), custom_plan_data)
     
     # Get raw overrides to identify hidden stops
     custom_stops_raw = get_custom_plan_stops_raw(custom_plan['id'])
     hidden_stop_ids = {cs['base_stop_id'] for cs in custom_stops_raw 
                        if cs.get('is_hidden') and cs.get('base_stop_id')}
+    
+    # Build a comprehensive comparison list with all stops in order
+    all_stops_for_comparison = []
+    
+    # Add all base stops (including hidden ones)
+    for base_stop in base_stops:
+        is_hidden = base_stop['id'] in hidden_stop_ids
+        custom_stop = None
+        if not is_hidden:
+            custom_stop = next((s for s in custom_stops_merged if s.get('id') == base_stop['id']), None)
+        
+        all_stops_for_comparison.append({
+            'base_stop': base_stop,
+            'custom_stop': custom_stop,
+            'is_hidden': is_hidden,
+            'is_custom_only': False,
+            'distance_miles': base_stop.get('distance_miles', 0)
+        })
+    
+    # Add custom-only stops (new stops not in base plan)
+    for custom_stop in custom_stops_merged:
+        if custom_stop.get('is_custom_stop'):
+            all_stops_for_comparison.append({
+                'base_stop': None,
+                'custom_stop': custom_stop,
+                'is_hidden': False,
+                'is_custom_only': True,
+                'distance_miles': custom_stop.get('distance_miles', 0)
+            })
+    
+    # Sort all stops by distance
+    all_stops_for_comparison.sort(key=lambda x: float(x['distance_miles']))
+    
+    # Calculate cumulative times for removed stops by tracking custom plan cumulative at each distance
+    prev_custom_cumulative = 0
+    for i, item in enumerate(all_stops_for_comparison):
+        if item['is_hidden']:
+            # For removed stops, use the previous stop's cumulative (no time added since we're not stopping)
+            item['custom_cumulative_at_distance'] = prev_custom_cumulative
+        elif item['custom_stop'] and item['custom_stop'].get('cum_time_min'):
+            # For existing/modified/new stops, use the actual cumulative time
+            item['custom_cumulative_at_distance'] = item['custom_stop']['cum_time_min']
+            prev_custom_cumulative = item['custom_stop']['cum_time_min']
+        else:
+            item['custom_cumulative_at_distance'] = None
     
     # Generate comparison
     comparison = compare_plans(base_stops, custom_stops_merged)
@@ -1405,7 +1674,8 @@ def compare_ride_plans(slug):
                            custom_plan=custom_plan_data,
                            custom_stops=custom_stops_merged,
                            hidden_stop_ids=hidden_stop_ids,
-                           comparison=comparison)
+                           comparison=comparison,
+                           all_stops_for_comparison=all_stops_for_comparison)
 
 
 @riders_bp.route('/api/custom-plan/<int:source_plan_id>/clone', methods=['POST'])
