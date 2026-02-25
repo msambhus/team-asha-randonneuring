@@ -13,11 +13,19 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_user_by_id, _execute,
                     get_strava_connection, get_strava_activities,
                     get_rider_upcoming_signups, detect_r12_awards,
-                    get_signup_counts_batch, get_rider_signup_statuses_batch)
+                    get_signup_counts_batch, get_rider_signup_statuses_batch,
+                    get_custom_plan, get_custom_plan_by_id, create_custom_plan,
+                    get_custom_plan_stops_raw, update_custom_plan_stop,
+                    add_custom_stop, hide_base_stop, unhide_base_stop,
+                    update_custom_plan_settings, delete_custom_plan,
+                    get_public_custom_plans, clone_custom_plan, delete_custom_stop)
 from auth import login_required, user_login_required
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
 from services.openai_coach import generate_openai_advice
+from services.custom_plan_service import (get_merged_plan_stops, 
+                                          recalculate_cumulative_values,
+                                          apply_pace_adjustment, compare_plans)
 from cache import cache, CACHE_TIMEOUT
 from datetime import date, datetime, timedelta
 import re
@@ -750,7 +758,6 @@ def ride_plans_index():
 
 
 @riders_bp.route('/ride-plan/<slug>')
-@cache.cached(timeout=CACHE_TIMEOUT)
 def ride_plan_detail(slug):
     plan = get_ride_plan_by_slug(slug)
     if not plan:
@@ -886,6 +893,18 @@ def ride_plan_detail(slug):
                         if status:
                             user_signup_status = status['status']
                 break
+    
+    # Check if user has custom plan for this base plan
+    user_custom_plan = None
+    public_custom_plans = []
+    user_id = session.get('user_id')
+    if user_id:
+        user = get_user_by_id(user_id)
+        if user and user.get('rider_id'):
+            user_custom_plan = get_custom_plan(user['rider_id'], plan['id'])
+    
+    # Get public custom plans from other riders
+    public_custom_plans = get_public_custom_plans(plan['id'])
 
     return render_template('ride_plan_detail.html',
                            plan=plan,
@@ -904,4 +923,509 @@ def ride_plan_detail(slug):
                            difficulty_colors=_DIFFICULTY_COLORS,
                            upcoming_event=upcoming_event,
                            signup_count=signup_count,
-                           user_signup_status=user_signup_status)
+                           user_signup_status=user_signup_status,
+                           user_custom_plan=user_custom_plan,
+                           public_custom_plans=public_custom_plans)
+
+
+# ========== CUSTOM RIDE PLANS ==========
+
+@riders_bp.route('/ride-plan/<slug>/custom')
+@user_login_required
+def custom_ride_plan_editor(slug):
+    """View/edit custom ride plan page."""
+    user_id = session.get('user_id')
+    user = get_user_by_id(user_id)
+    
+    if not user or not user.get('rider_id'):
+        return redirect(url_for('auth.complete_profile'))
+    
+    rider_id = user['rider_id']
+    
+    # Get base plan
+    base_plan = get_ride_plan_by_slug(slug)
+    if not base_plan:
+        abort(404)
+    
+    # Check if user has custom plan
+    custom_plan = get_custom_plan(rider_id, base_plan['id'])
+    
+    if custom_plan:
+        # Convert to dict and ensure avg_moving_speed is float
+        custom_plan = dict(custom_plan)
+        if custom_plan.get('avg_moving_speed') is not None:
+            custom_plan['avg_moving_speed'] = float(custom_plan['avg_moving_speed'])
+        # Load base stops and custom overrides separately for editor
+        base_stops = get_ride_plan_stops(base_plan['id'])
+        custom_stops_raw = get_custom_plan_stops_raw(custom_plan['id'])
+        custom_plan_data = custom_plan
+        
+        # Build override map
+        overrides = {}
+        for cs in custom_stops_raw:
+            if cs.get('base_stop_id'):
+                overrides[cs['base_stop_id']] = cs
+        
+        # Build custom stops list for display (include ALL stops, even hidden ones)
+        custom_stops = []
+        for base_stop in base_stops:
+            stop = dict(base_stop)
+            override = overrides.get(base_stop['id'])
+            
+            # Initialize flags
+            stop['is_modified'] = False
+            stop['is_custom_stop'] = False
+            stop['is_hidden_display'] = False
+            stop['custom_stop_id'] = None
+            
+            # Convert Decimal to float for template
+            if stop.get('distance_miles') is not None:
+                stop['distance_miles'] = float(stop['distance_miles'])
+            if stop.get('elevation_gain') is not None:
+                stop['elevation_gain'] = int(stop['elevation_gain'])
+            if stop.get('segment_time_min') is not None:
+                stop['segment_time_min'] = int(stop['segment_time_min'])
+            
+            if override:
+                # Apply overrides
+                if override.get('segment_time_min') is not None:
+                    stop['segment_time_min'] = int(override['segment_time_min'])
+                    stop['is_modified'] = True
+                if override.get('notes'):
+                    stop['notes'] = override['notes']
+                    stop['is_modified'] = True
+                if override.get('is_hidden'):
+                    stop['is_hidden_display'] = True
+                stop['custom_stop_id'] = override['id']
+            
+            # ALWAYS add the stop to the list (even if hidden)
+            custom_stops.append(stop)
+        
+        # Add custom-only stops
+        for cs in custom_stops_raw:
+            if cs.get('is_custom_stop'):
+                stop = dict(cs)
+                stop['is_custom_stop'] = True
+                stop['is_modified'] = True
+                stop['is_hidden_display'] = False
+                stop['custom_stop_id'] = cs['id']
+                # Convert types
+                if stop.get('distance_miles') is not None:
+                    stop['distance_miles'] = float(stop['distance_miles'])
+                if stop.get('elevation_gain') is not None:
+                    stop['elevation_gain'] = int(stop['elevation_gain'])
+                if stop.get('segment_time_min') is not None:
+                    stop['segment_time_min'] = int(stop['segment_time_min'])
+                custom_stops.append(stop)
+        
+        # Sort by stop_order
+        custom_stops.sort(key=lambda s: s.get('stop_order', 999))
+    else:
+        # No custom plan yet - show base plan only
+        custom_plan = None
+        custom_stops = None
+        base_stops = get_ride_plan_stops(base_plan['id'])
+    
+    # Get public custom plans from other riders
+    public_plans = get_public_custom_plans(base_plan['id'])
+    
+    return render_template('custom_ride_plan.html',
+                           base_plan=base_plan,
+                           base_stops=base_stops,
+                           custom_plan=custom_plan,
+                           custom_stops=custom_stops,
+                           public_plans=public_plans)
+
+
+@riders_bp.route('/api/custom-plan/create', methods=['POST'])
+@user_login_required
+def api_create_custom_plan():
+    """Create a new custom plan."""
+    user_id = session.get('user_id')
+    user = get_user_by_id(user_id)
+    
+    if not user or not user.get('rider_id'):
+        return jsonify({'success': False, 'error': 'User not linked to rider'}), 403
+    
+    data = request.json
+    base_plan_id = data.get('base_plan_id')
+    name = data.get('name')
+    description = data.get('description')
+    avg_moving_speed = data.get('avg_moving_speed')
+    
+    if not base_plan_id or not name:
+        return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+    
+    try:
+        custom_plan_id = create_custom_plan(
+            user['rider_id'], 
+            base_plan_id, 
+            name, 
+            description,
+            avg_moving_speed
+        )
+        return jsonify({'success': True, 'custom_plan_id': custom_plan_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@riders_bp.route('/api/custom-plan/<int:custom_plan_id>')
+@user_login_required
+def api_get_custom_plan(custom_plan_id):
+    """Get custom plan details with merged stops."""
+    try:
+        custom_stops, custom_plan = get_merged_plan_stops(custom_plan_id)
+        
+        if not custom_plan:
+            return jsonify({'success': False, 'error': 'Plan not found'}), 404
+        
+        # Convert to JSON-serializable format
+        stops_data = []
+        for stop in custom_stops:
+            stop_dict = dict(stop)
+            # Convert Decimal to float
+            for key in ['distance_miles', 'avg_speed', 'avg_moving_speed']:
+                if key in stop_dict and stop_dict[key] is not None:
+                    stop_dict[key] = float(stop_dict[key])
+            stops_data.append(stop_dict)
+        
+        plan_dict = dict(custom_plan)
+        if 'avg_moving_speed' in plan_dict and plan_dict['avg_moving_speed']:
+            plan_dict['avg_moving_speed'] = float(plan_dict['avg_moving_speed'])
+        
+        return jsonify({
+            'success': True,
+            'plan': plan_dict,
+            'stops': stops_data
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@riders_bp.route('/api/custom-plan/<int:custom_plan_id>/stop/<int:stop_id>', methods=['PUT'])
+@user_login_required
+def api_update_custom_stop(custom_plan_id, stop_id):
+    """Update timing or notes for a stop."""
+    user_id = session.get('user_id')
+    user = get_user_by_id(user_id)
+    
+    if not user or not user.get('rider_id'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    # Verify ownership
+    custom_plan = get_custom_plan_by_id(custom_plan_id)
+    if not custom_plan or custom_plan['rider_id'] != user['rider_id']:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    data = request.json
+    segment_time_min = data.get('segment_time_min')
+    notes = data.get('notes')
+    
+    try:
+        success = update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min, notes)
+        return jsonify({'success': success})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@riders_bp.route('/api/custom-plan/<int:custom_plan_id>/stop/add', methods=['POST'])
+@user_login_required
+def api_add_custom_stop(custom_plan_id):
+    """Add a custom stop."""
+    user_id = session.get('user_id')
+    user = get_user_by_id(user_id)
+    
+    if not user or not user.get('rider_id'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    # Verify ownership
+    custom_plan = get_custom_plan_by_id(custom_plan_id)
+    if not custom_plan or custom_plan['rider_id'] != user['rider_id']:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    data = request.json
+    location = data.get('location')
+    stop_type = data.get('stop_type', 'waypoint')
+    distance_miles = data.get('distance_miles')
+    elevation_gain = data.get('elevation_gain', 0)
+    after_stop_order = data.get('after_stop_order')
+    notes = data.get('notes')
+    
+    if not location or distance_miles is None or after_stop_order is None:
+        return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+    
+    try:
+        stop_id = add_custom_stop(
+            custom_plan_id, location, stop_type, distance_miles,
+            elevation_gain, after_stop_order, notes
+        )
+        return jsonify({'success': True, 'stop_id': stop_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@riders_bp.route('/api/custom-plan/<int:custom_plan_id>/stop/<int:base_stop_id>/hide', methods=['POST'])
+@user_login_required
+def api_hide_base_stop(custom_plan_id, base_stop_id):
+    """Hide a base stop in custom plan."""
+    user_id = session.get('user_id')
+    user = get_user_by_id(user_id)
+    
+    if not user or not user.get('rider_id'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    # Verify ownership
+    custom_plan = get_custom_plan_by_id(custom_plan_id)
+    if not custom_plan or custom_plan['rider_id'] != user['rider_id']:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    try:
+        success = hide_base_stop(custom_plan_id, base_stop_id)
+        return jsonify({'success': success})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@riders_bp.route('/api/custom-plan/<int:custom_plan_id>/stop/<int:base_stop_id>/unhide', methods=['POST'])
+@user_login_required
+def api_unhide_base_stop(custom_plan_id, base_stop_id):
+    """Unhide a previously hidden base stop."""
+    user_id = session.get('user_id')
+    user = get_user_by_id(user_id)
+    
+    if not user or not user.get('rider_id'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    # Verify ownership
+    custom_plan = get_custom_plan_by_id(custom_plan_id)
+    if not custom_plan or custom_plan['rider_id'] != user['rider_id']:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    try:
+        success = unhide_base_stop(custom_plan_id, base_stop_id)
+        return jsonify({'success': success})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@riders_bp.route('/api/custom-plan/<int:custom_plan_id>/settings', methods=['PUT'])
+@user_login_required
+def api_update_custom_plan_settings(custom_plan_id):
+    """Update custom plan settings."""
+    user_id = session.get('user_id')
+    user = get_user_by_id(user_id)
+    
+    if not user or not user.get('rider_id'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    # Verify ownership
+    custom_plan = get_custom_plan_by_id(custom_plan_id)
+    if not custom_plan or custom_plan['rider_id'] != user['rider_id']:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    data = request.json
+    name = data.get('name')
+    description = data.get('description')
+    is_public = data.get('is_public')
+    avg_moving_speed = data.get('avg_moving_speed')
+    
+    try:
+        success = update_custom_plan_settings(
+            custom_plan_id, user['rider_id'],
+            name, description, is_public, avg_moving_speed
+        )
+        return jsonify({'success': success})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@riders_bp.route('/api/custom-plan/<int:custom_plan_id>/apply-pace', methods=['POST'])
+@user_login_required
+def api_apply_pace_to_all_segments(custom_plan_id):
+    """Apply pace adjustment to all segments, recalculating times."""
+    user_id = session.get('user_id')
+    user = get_user_by_id(user_id)
+    
+    if not user or not user.get('rider_id'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    # Verify ownership
+    custom_plan = get_custom_plan_by_id(custom_plan_id)
+    if not custom_plan or custom_plan['rider_id'] != user['rider_id']:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    data = request.json
+    avg_moving_speed = data.get('avg_moving_speed')
+    
+    if not avg_moving_speed or avg_moving_speed <= 0:
+        return jsonify({'success': False, 'error': 'Invalid speed'}), 400
+    
+    try:
+        # Get current merged stops
+        custom_stops, _ = get_merged_plan_stops(custom_plan_id)
+        
+        # Apply pace adjustment
+        adjusted_stops = apply_pace_adjustment(custom_stops, avg_moving_speed)
+        
+        # Update each stop's timing in the database
+        from db import get_db
+        import psycopg2.extras
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        
+        for stop in adjusted_stops:
+            if stop.get('is_modified') and not stop.get('is_custom_stop'):
+                # This is a base stop with adjusted timing
+                base_stop_id = stop.get('id')
+                new_time = stop.get('segment_time_min')
+                
+                if base_stop_id and new_time:
+                    # Check if override exists
+                    cur.execute("""
+                        SELECT id FROM custom_ride_plan_stop
+                        WHERE custom_plan_id = %s AND base_stop_id = %s
+                    """, (custom_plan_id, base_stop_id))
+                    existing = cur.fetchone()
+                    
+                    if existing:
+                        # Update existing override
+                        cur.execute("""
+                            UPDATE custom_ride_plan_stop
+                            SET segment_time_min = %s
+                            WHERE id = %s
+                        """, (new_time, existing['id']))
+                    else:
+                        # Create new override
+                        cur.execute("""
+                            INSERT INTO custom_ride_plan_stop
+                            (custom_plan_id, base_stop_id, stop_order, location, stop_type,
+                             distance_miles, elevation_gain, segment_time_min)
+                            SELECT %s, id, stop_order, location, stop_type,
+                                   distance_miles, elevation_gain, %s
+                            FROM ride_plan_stop
+                            WHERE id = %s
+                        """, (custom_plan_id, new_time, base_stop_id))
+        
+        # Save the avg_moving_speed setting
+        cur.execute("""
+            UPDATE custom_ride_plan
+            SET avg_moving_speed = %s
+            WHERE id = %s
+        """, (avg_moving_speed, custom_plan_id))
+        
+        conn.commit()
+        
+        # Clear caches
+        cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
+        cache.delete_memoized(get_custom_plan_by_id, custom_plan_id)
+        cache.delete_memoized(get_custom_plan, custom_plan['rider_id'], custom_plan['base_plan_id'])
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@riders_bp.route('/api/custom-plan/<int:custom_plan_id>/stop/<int:custom_stop_id>/delete', methods=['DELETE'])
+@user_login_required
+def api_delete_custom_stop(custom_plan_id, custom_stop_id):
+    """Delete a custom stop."""
+    user_id = session.get('user_id')
+    user = get_user_by_id(user_id)
+    
+    if not user or not user.get('rider_id'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    try:
+        success = delete_custom_stop(custom_stop_id, user['rider_id'])
+        if success:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'Cannot delete base stops, only custom-added stops'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@riders_bp.route('/api/custom-plan/<int:custom_plan_id>', methods=['DELETE'])
+@user_login_required
+def api_delete_custom_plan(custom_plan_id):
+    """Delete a custom plan."""
+    user_id = session.get('user_id')
+    user = get_user_by_id(user_id)
+    
+    if not user or not user.get('rider_id'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    try:
+        success = delete_custom_plan(custom_plan_id, user['rider_id'])
+        return jsonify({'success': success})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@riders_bp.route('/ride-plan/<slug>/compare')
+@user_login_required
+def compare_ride_plans(slug):
+    """Side-by-side comparison of base plan vs custom plan."""
+    user_id = session.get('user_id')
+    user = get_user_by_id(user_id)
+    
+    if not user or not user.get('rider_id'):
+        return redirect(url_for('auth.complete_profile'))
+    
+    rider_id = user['rider_id']
+    
+    # Get base plan
+    base_plan = get_ride_plan_by_slug(slug)
+    if not base_plan:
+        abort(404)
+    
+    # Get custom plan
+    custom_plan = get_custom_plan(rider_id, base_plan['id'])
+    if not custom_plan:
+        return redirect(url_for('riders.ride_plan_detail', slug=slug))
+    
+    # Load base stops
+    base_stops = get_ride_plan_stops(base_plan['id'])
+    
+    # Load custom stops (merged, which excludes hidden stops)
+    custom_stops_merged, custom_plan_data = get_merged_plan_stops(custom_plan['id'])
+    
+    # Get raw overrides to identify hidden stops
+    custom_stops_raw = get_custom_plan_stops_raw(custom_plan['id'])
+    hidden_stop_ids = {cs['base_stop_id'] for cs in custom_stops_raw 
+                       if cs.get('is_hidden') and cs.get('base_stop_id')}
+    
+    # Generate comparison
+    comparison = compare_plans(base_stops, custom_stops_merged)
+    
+    return render_template('ride_plan_compare.html',
+                           base_plan=base_plan,
+                           base_stops=base_stops,
+                           custom_plan=custom_plan_data,
+                           custom_stops=custom_stops_merged,
+                           hidden_stop_ids=hidden_stop_ids,
+                           comparison=comparison)
+
+
+@riders_bp.route('/api/custom-plan/<int:source_plan_id>/clone', methods=['POST'])
+@user_login_required
+def api_clone_custom_plan(source_plan_id):
+    """Clone another rider's public custom plan."""
+    user_id = session.get('user_id')
+    user = get_user_by_id(user_id)
+    
+    if not user or not user.get('rider_id'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    data = request.json
+    new_name = data.get('name')
+    
+    try:
+        new_plan_id = clone_custom_plan(source_plan_id, user['rider_id'], new_name)
+        if new_plan_id:
+            return jsonify({'success': True, 'custom_plan_id': new_plan_id})
+        else:
+            return jsonify({'success': False, 'error': 'Plan not found or not public'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500

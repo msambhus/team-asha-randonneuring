@@ -714,6 +714,71 @@
     to { transform: translateY(0); opacity: 1; }
 }
 
+/* ===== CUSTOM PLAN BANNER ===== */
+.custom-plan-banner {
+    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+    border: 2px solid #0ea5e9;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.custom-plan-banner h3 {
+    margin: 0;
+    color: #0369a1;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.custom-plan-banner p {
+    margin: 4px 0 0 0;
+    color: #0284c7;
+    font-size: 0.85rem;
+}
+
+.btn-custom-plan {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.9rem;
+}
+
+.btn-custom-plan:hover {
+    background: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.btn-custom-plan.create {
+    background: #22c55e;
+}
+
+.btn-custom-plan.create:hover {
+    background: #16a34a;
+}
+
+.shared-plans-info {
+    font-size: 0.8rem;
+    color: #0284c7;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
     .sticky-ride-header {
@@ -882,6 +947,44 @@
         <span>Journey</span>
     </a>
 </div>
+
+{# ===== CUSTOM PLAN BANNER ===== #}
+{% if session.user_id %}
+<div class="custom-plan-banner">
+    <div>
+        {% if user_custom_plan %}
+        <h3>✏️ You have a custom plan for this ride</h3>
+        <p>View or edit your personalized version with your own pace and stops</p>
+        {% else %}
+        <h3>🛠️ Create Your Own Plan</h3>
+        <p>Personalize this ride plan with your own pace, timing, and stops</p>
+        {% endif %}
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+        {% if public_custom_plans %}
+        <div class="shared-plans-info">
+            <span>👥</span>
+            <span>{{ public_custom_plans|length }} shared plan{{ 's' if public_custom_plans|length != 1 }}</span>
+        </div>
+        {% endif %}
+        {% if user_custom_plan %}
+        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}" 
+           class="btn-custom-plan">
+            📝 View My Custom Plan
+        </a>
+        <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}" 
+           class="btn-custom-plan" style="background:#f59e0b;">
+            📊 Compare Plans
+        </a>
+        {% else %}
+        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}" 
+           class="btn-custom-plan create">
+            ➕ Create Custom Plan
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 
 {# ===== VISUAL ELEVATION CHART ===== #}
 <div class="elevation-chart-container">

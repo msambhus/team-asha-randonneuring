@@ -1204,3 +1204,370 @@ def get_rider_upcoming_signups(rider_id):
           AND rr.status IN (%s, %s, %s)
         ORDER BY ri.date ASC
     """, (rider_id, today, RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.MAYBE.value)).fetchall()
+
+
+# ========== CUSTOM RIDE PLANS ==========
+
+@cache.memoize(CACHE_TIMEOUT)
+def get_custom_plan(rider_id, base_plan_id):
+    """Get a rider's custom plan for a specific base plan."""
+    return _execute("""
+        SELECT * FROM custom_ride_plan
+        WHERE rider_id = %s AND base_plan_id = %s
+    """, (rider_id, base_plan_id)).fetchone()
+
+@cache.memoize(CACHE_TIMEOUT)
+def get_custom_plan_by_id(custom_plan_id):
+    """Get a custom plan by ID."""
+    return _execute("""
+        SELECT * FROM custom_ride_plan WHERE id = %s
+    """, (custom_plan_id,)).fetchone()
+
+@cache.memoize(CACHE_TIMEOUT)
+def get_custom_plan_with_rider_info(custom_plan_id):
+    """Get a custom plan with rider information for display."""
+    return _execute("""
+        SELECT cp.*, r.first_name, r.last_name, r.rusa_id,
+               rp.name as base_plan_name, rp.slug as base_plan_slug
+        FROM custom_ride_plan cp
+        JOIN rider r ON cp.rider_id = r.id
+        JOIN ride_plan rp ON cp.base_plan_id = rp.id
+        WHERE cp.id = %s
+    """, (custom_plan_id,)).fetchone()
+
+def create_custom_plan(rider_id, base_plan_id, name, description=None, avg_moving_speed=None):
+    """Create a new custom plan. Returns the new plan ID."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""
+            INSERT INTO custom_ride_plan (rider_id, base_plan_id, name, description, avg_moving_speed)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        """, (rider_id, base_plan_id, name, description, avg_moving_speed))
+        result = cur.fetchone()
+        conn.commit()
+        cache.delete_memoized(get_custom_plan, rider_id, base_plan_id)
+        cache.delete_memoized(get_public_custom_plans, base_plan_id)
+        
+        # Clear the ride plan detail page cache
+        cur.execute("SELECT slug FROM ride_plan WHERE id = %s", (base_plan_id,))
+        plan = cur.fetchone()
+        if plan:
+            cache_key = f"flask_cache_view//ride-plan/{plan['slug']}"
+            cache.delete(cache_key)
+        
+        return result['id'] if result else None
+    except Exception as e:
+        conn.rollback()
+        raise e
+
+@cache.memoize(CACHE_TIMEOUT)
+def get_custom_plan_stops_raw(custom_plan_id):
+    """Get raw custom plan stop overrides (not merged with base)."""
+    return _execute("""
+        SELECT * FROM custom_ride_plan_stop
+        WHERE custom_plan_id = %s
+        ORDER BY stop_order
+    """, (custom_plan_id,)).fetchall()
+
+def update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min=None, notes=None):
+    """Update timing or notes for a custom plan stop."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    updates = []
+    params = []
+    
+    if segment_time_min is not None:
+        updates.append("segment_time_min = %s")
+        params.append(segment_time_min)
+    
+    if notes is not None:
+        updates.append("notes = %s")
+        params.append(notes)
+    
+    if not updates:
+        return False
+    
+    params.extend([stop_id, custom_plan_id])
+    sql = f"UPDATE custom_ride_plan_stop SET {', '.join(updates)} WHERE id = %s AND custom_plan_id = %s"
+    
+    cur.execute(sql, params)
+    conn.commit()
+    
+    cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
+    return cur.rowcount > 0
+
+def add_custom_stop(custom_plan_id, location, stop_type, distance_miles, elevation_gain, after_stop_order, notes=None):
+    """Add a custom stop at a specific position."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    try:
+        new_order = after_stop_order + 1
+        
+        # Shift subsequent stops down
+        cur.execute("""
+            UPDATE custom_ride_plan_stop
+            SET stop_order = stop_order + 1
+            WHERE custom_plan_id = %s AND stop_order >= %s
+        """, (custom_plan_id, new_order))
+        
+        # Insert new custom stop
+        cur.execute("""
+            INSERT INTO custom_ride_plan_stop 
+            (custom_plan_id, stop_order, location, stop_type, distance_miles, 
+             elevation_gain, notes, is_custom_stop)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)
+            RETURNING id
+        """, (custom_plan_id, new_order, location, stop_type, distance_miles, 
+              elevation_gain, notes))
+        
+        result = cur.fetchone()
+        conn.commit()
+        cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
+        return result['id'] if result else None
+    except Exception as e:
+        conn.rollback()
+        raise e
+
+def hide_base_stop(custom_plan_id, base_stop_id):
+    """Mark a base stop as hidden in the custom plan."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    try:
+        # Check if override already exists
+        cur.execute("""
+            SELECT id FROM custom_ride_plan_stop
+            WHERE custom_plan_id = %s AND base_stop_id = %s
+        """, (custom_plan_id, base_stop_id))
+        existing = cur.fetchone()
+        
+        if existing:
+            # Update existing override
+            cur.execute("""
+                UPDATE custom_ride_plan_stop
+                SET is_hidden = TRUE
+                WHERE id = %s
+            """, (existing['id'],))
+        else:
+            # Get base stop info to create override
+            cur.execute("SELECT * FROM ride_plan_stop WHERE id = %s", (base_stop_id,))
+            base_stop = cur.fetchone()
+            
+            if not base_stop:
+                conn.rollback()
+                return False
+            
+            # Create new override with hidden flag
+            cur.execute("""
+                INSERT INTO custom_ride_plan_stop
+                (custom_plan_id, base_stop_id, stop_order, location, stop_type,
+                 distance_miles, elevation_gain, is_hidden)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)
+            """, (custom_plan_id, base_stop['id'], base_stop['stop_order'],
+                  base_stop['location'], base_stop['stop_type'],
+                  base_stop['distance_miles'], base_stop['elevation_gain']))
+        
+        conn.commit()
+        cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
+        return True
+    except Exception as e:
+        conn.rollback()
+        raise e
+
+def unhide_base_stop(custom_plan_id, base_stop_id):
+    """Unhide a previously hidden base stop."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    cur.execute("""
+        UPDATE custom_ride_plan_stop
+        SET is_hidden = FALSE
+        WHERE custom_plan_id = %s AND base_stop_id = %s
+    """, (custom_plan_id, base_stop_id))
+    
+    conn.commit()
+    cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
+    return cur.rowcount > 0
+
+def update_custom_plan_settings(custom_plan_id, rider_id, name=None, description=None, 
+                                 is_public=None, avg_moving_speed=None):
+    """Update custom plan settings."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    updates = []
+    params = []
+    
+    if name is not None:
+        updates.append("name = %s")
+        params.append(name)
+    
+    if description is not None:
+        updates.append("description = %s")
+        params.append(description)
+    
+    if is_public is not None:
+        updates.append("is_public = %s")
+        params.append(is_public)
+    
+    if avg_moving_speed is not None:
+        updates.append("avg_moving_speed = %s")
+        params.append(avg_moving_speed)
+    
+    if not updates:
+        return False
+    
+    params.extend([custom_plan_id, rider_id])
+    sql = f"UPDATE custom_ride_plan SET {', '.join(updates)} WHERE id = %s AND rider_id = %s"
+    
+    cur.execute(sql, params)
+    conn.commit()
+    
+    # Get the plan to invalidate correct cache
+    cur.execute("""
+        SELECT cp.rider_id, cp.base_plan_id, rp.slug 
+        FROM custom_ride_plan cp
+        JOIN ride_plan rp ON cp.base_plan_id = rp.id
+        WHERE cp.id = %s
+    """, (custom_plan_id,))
+    plan = cur.fetchone()
+    if plan:
+        cache.delete_memoized(get_custom_plan, plan['rider_id'], plan['base_plan_id'])
+        cache.delete_memoized(get_custom_plan_by_id, custom_plan_id)
+        if is_public is not None:
+            cache.delete_memoized(get_public_custom_plans, plan['base_plan_id'])
+        
+        # Clear the ride plan detail page cache
+        cache_key = f"flask_cache_view//ride-plan/{plan['slug']}"
+        cache.delete(cache_key)
+    
+    return cur.rowcount > 0
+
+def delete_custom_plan(custom_plan_id, rider_id):
+    """Delete a custom plan (only owner can delete)."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    # Get plan info before deletion for cache invalidation
+    cur.execute("""
+        SELECT cp.rider_id, cp.base_plan_id, rp.slug 
+        FROM custom_ride_plan cp
+        JOIN ride_plan rp ON cp.base_plan_id = rp.id
+        WHERE cp.id = %s AND cp.rider_id = %s
+    """, (custom_plan_id, rider_id))
+    plan = cur.fetchone()
+    
+    if not plan:
+        return False
+    
+    cur.execute("""
+        DELETE FROM custom_ride_plan
+        WHERE id = %s AND rider_id = %s
+    """, (custom_plan_id, rider_id))
+    
+    conn.commit()
+    
+    cache.delete_memoized(get_custom_plan, plan['rider_id'], plan['base_plan_id'])
+    cache.delete_memoized(get_custom_plan_by_id, custom_plan_id)
+    cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
+    cache.delete_memoized(get_public_custom_plans, plan['base_plan_id'])
+    
+    # Clear the ride plan detail page cache for this specific plan
+    from flask import request
+    cache_key = f"flask_cache_view//ride-plan/{plan['slug']}"
+    cache.delete(cache_key)
+    
+    return cur.rowcount > 0
+
+@cache.memoize(CACHE_TIMEOUT)
+def get_public_custom_plans(base_plan_id):
+    """Get all public custom plans for a base plan."""
+    return _execute("""
+        SELECT cp.*, r.first_name, r.last_name, r.rusa_id
+        FROM custom_ride_plan cp
+        JOIN rider r ON cp.rider_id = r.id
+        WHERE cp.base_plan_id = %s AND cp.is_public = TRUE
+        ORDER BY cp.updated_at DESC
+    """, (base_plan_id,)).fetchall()
+
+def delete_custom_stop(custom_stop_id, rider_id):
+    """Delete a custom stop (only works for custom-added stops, not base stops)."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    # Verify the stop belongs to a plan owned by this rider
+    cur.execute("""
+        SELECT cs.custom_plan_id, cs.is_custom_stop, cp.rider_id, cp.base_plan_id
+        FROM custom_ride_plan_stop cs
+        JOIN custom_ride_plan cp ON cs.custom_plan_id = cp.id
+        WHERE cs.id = %s
+    """, (custom_stop_id,))
+    result = cur.fetchone()
+    
+    if not result or result['rider_id'] != rider_id:
+        return False
+    
+    if not result['is_custom_stop']:
+        # Cannot delete base stops, only hide them
+        return False
+    
+    # Delete the custom stop
+    cur.execute("DELETE FROM custom_ride_plan_stop WHERE id = %s", (custom_stop_id,))
+    conn.commit()
+    
+    # Clear caches
+    cache.delete_memoized(get_custom_plan_stops_raw, result['custom_plan_id'])
+    cache.delete_memoized(get_custom_plan_by_id, result['custom_plan_id'])
+    cache.delete_memoized(get_custom_plan, result['rider_id'], result['base_plan_id'])
+    
+    return True
+
+def clone_custom_plan(source_plan_id, target_rider_id, new_name=None):
+    """Clone a public custom plan to a new rider."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    try:
+        # Get source plan
+        cur.execute("SELECT * FROM custom_ride_plan WHERE id = %s AND is_public = TRUE", (source_plan_id,))
+        source_plan = cur.fetchone()
+        
+        if not source_plan:
+            return None
+        
+        # Create new plan
+        plan_name = new_name or f"{source_plan['name']} (Copy)"
+        cur.execute("""
+            INSERT INTO custom_ride_plan 
+            (rider_id, base_plan_id, name, description, avg_moving_speed, is_public)
+            VALUES (%s, %s, %s, %s, %s, FALSE)
+            RETURNING id
+        """, (target_rider_id, source_plan['base_plan_id'], plan_name,
+              source_plan['description'], source_plan['avg_moving_speed']))
+        
+        new_plan = cur.fetchone()
+        new_plan_id = new_plan['id']
+        
+        # Copy stops
+        cur.execute("""
+            INSERT INTO custom_ride_plan_stop
+            (custom_plan_id, base_stop_id, stop_order, location, stop_type,
+             distance_miles, elevation_gain, segment_time_min, notes, 
+             is_custom_stop, is_hidden)
+            SELECT %s, base_stop_id, stop_order, location, stop_type,
+                   distance_miles, elevation_gain, segment_time_min, notes,
+                   is_custom_stop, is_hidden
+            FROM custom_ride_plan_stop
+            WHERE custom_plan_id = %s
+        """, (new_plan_id, source_plan_id))
+        
+        conn.commit()
+        cache.delete_memoized(get_custom_plan, target_rider_id, source_plan['base_plan_id'])
+        return new_plan_id
+    except Exception as e:
+        conn.rollback()
+        raise e
