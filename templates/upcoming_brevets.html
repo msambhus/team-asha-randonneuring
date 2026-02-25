@@ -222,17 +222,17 @@
     padding-top: 12px;
     border-top: 1px solid var(--border);
     display: flex;
-    flex-direction: column;
-    gap: 8px;
-    align-items: flex-start;
+    flex-direction: row;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
 }
 .signup-actions {
     display: flex;
     gap: 6px;
     align-items: center;
     flex-wrap: wrap;
-    width: 100%;
-    justify-content: flex-end;
 }
 .signup-actions .signup-status {
     margin-right: auto;
@@ -286,6 +286,115 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
+.signup-dropdown-container {
+    position: relative;
+    display: inline-block;
+}
+.signup-dropdown-btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: 2px solid var(--primary);
+    background: white;
+    color: var(--primary);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+.signup-dropdown-btn:hover {
+    background: var(--primary);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(26, 54, 93, 0.2);
+}
+.signup-dropdown-btn.signed-up {
+    background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+    color: #166534;
+    border-color: #86efac;
+}
+.signup-dropdown-btn.signed-up:hover {
+    background: linear-gradient(135deg, #bbf7d0, #86efac);
+}
+.signup-dropdown-btn.interested {
+    background: linear-gradient(135deg, #fef9c3, #fef08a);
+    color: #854d0e;
+    border-color: #fde047;
+}
+.signup-dropdown-btn.interested:hover {
+    background: linear-gradient(135deg, #fef08a, #fde68a);
+}
+.signup-dropdown-btn.maybe {
+    background: linear-gradient(135deg, #ffedd5, #fed7aa);
+    color: #9a3412;
+    border-color: #fb923c;
+}
+.signup-dropdown-btn.maybe:hover {
+    background: linear-gradient(135deg, #fed7aa, #fdba74);
+}
+.signup-dropdown-btn.withdraw {
+    background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+    color: #374151;
+    border-color: #9ca3af;
+}
+.signup-dropdown-btn.withdraw:hover {
+    background: linear-gradient(135deg, #e5e7eb, #d1d5db);
+}
+.signup-dropdown-menu {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 4px;
+    background: white;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 100;
+    min-width: 160px;
+    overflow: hidden;
+}
+.signup-dropdown-menu.show {
+    display: block;
+    animation: dropdownSlide 0.2s ease-out;
+}
+@keyframes dropdownSlide {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.signup-dropdown-item {
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    color: var(--text);
+}
+.signup-dropdown-item:hover {
+    background: #f8fafc;
+}
+.signup-dropdown-item.primary {
+    color: var(--primary);
+}
+.signup-dropdown-item.danger {
+    color: #dc2626;
+    border-top: 1px solid var(--border);
+}
+.signup-dropdown-item.current {
+    background: #f0f9ff;
+    color: var(--primary);
+    font-weight: 700;
+}
 .signup-status {
     padding: 6px 12px;
     border-radius: 6px;
@@ -297,26 +406,10 @@
     align-items: center;
     gap: 4px;
 }
-.signup-status.signed-up {
-    background: linear-gradient(135deg, #dcfce7, #bbf7d0);
-    color: #166534;
-    border: 1px solid #86efac;
-    transition: all 0.2s;
-}
-.signup-status.signed-up:hover {
-    background: linear-gradient(135deg, #bbf7d0, #86efac);
-    transform: translateY(-2px);
-    box-shadow: 0 2px 8px rgba(22, 101, 52, 0.2);
-}
 .signup-status.finished {
     background: linear-gradient(135deg, #dbeafe, #bfdbfe);
     color: #1e40af;
     border: 1px solid #93c5fd;
-}
-.signup-status.interested {
-    background: linear-gradient(135deg, #fef9c3, #fef08a);
-    color: #854d0e;
-    border: 1px solid #fde047;
 }
 .uninterest-btn {
     background: none;
@@ -453,6 +546,16 @@
     background: #fef9c3;
     color: #854d0e;
     border: 1px solid #fde047;
+}
+.rider-status-badge.maybe {
+    background: #ffedd5;
+    color: #9a3412;
+    border: 1px solid #fb923c;
+}
+.rider-status-badge.withdraw {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #9ca3af;
 }
 @keyframes fadeIn {
     from { opacity: 0; }
@@ -653,27 +756,33 @@
         <div class="signup-actions">
         {% if current_rider_id %}
             {% set user_status = user_signups.get(event.id) %}
-            {% if user_status == 'SIGNED_UP' %}
-                <div style="display:flex;gap:6px;align-items:center;width:100%;" data-status-group="SIGNED_UP">
-                    <span class="signup-status signed-up">&#x2713; Signed Up</span>
-                    <button class="uninterest-btn" onclick="unsignupFromEvent({{ event.id }}, this)" data-ride-id="{{ event.id }}" data-club-code="{{ event.club_code }}" title="Remove signup">&#x2715;</button>
-                </div>
-            {% elif user_status == 'INTERESTED' %}
-                <div style="display:flex;gap:6px;align-items:center;width:100%;" data-status-group="INTERESTED">
-                    <span class="signup-status interested">&#x2605; Interested</span>
-                    <button class="uninterest-btn" onclick="unsignupFromEvent({{ event.id }}, this)" data-ride-id="{{ event.id }}" data-club-code="{{ event.club_code }}" title="Remove interest">&#x2715;</button>
-                    <button class="signup-btn signup-btn-sm" onclick="signupForEvent({{ event.id }}, '{{ event.club_code }}', this)" data-ride-id="{{ event.id }}" data-club-code="{{ event.club_code }}">Sign Up &rarr;</button>
-                </div>
-            {% elif user_status in ['FINISHED', 'DNF', 'DNS', 'OTL'] %}
+            {% if user_status in ['FINISHED', 'DNF', 'DNS', 'OTL'] %}
                 <span class="signup-status finished">{{ user_status }}</span>
             {% else %}
-                <button class="signup-btn" onclick="markInterested({{ event.id }}, '{{ event.club_code }}', this)" data-ride-id="{{ event.id }}" data-club-code="{{ event.club_code }}">
-                    Interested?
-                </button>
+                <div class="signup-dropdown-container" data-ride-id="{{ event.id }}" data-club-code="{{ event.club_code }}">
+                    <button class="signup-dropdown-btn {% if user_status == 'GOING' %}signed-up{% elif user_status == 'INTERESTED' %}interested{% elif user_status == 'MAYBE' %}maybe{% elif user_status == 'WITHDRAW' %}withdraw{% endif %}" 
+                            onclick="toggleSignupDropdown({{ event.id }}, event)">
+                        {% if user_status == 'GOING' %}
+                            <span>&#x2713; Going</span>
+                        {% elif user_status == 'INTERESTED' %}
+                            <span>&#x2605; Interested</span>
+                        {% elif user_status == 'MAYBE' %}
+                            <span>&#x003F; Maybe</span>
+                        {% elif user_status == 'WITHDRAW' %}
+                            <span>&#x229D; Withdraw</span>
+                        {% else %}
+                            <span>Going</span>
+                        {% endif %}
+                        <span style="font-size:0.7rem;">&#x25BE;</span>
+                    </button>
+                    <div class="signup-dropdown-menu" id="dropdown-{{ event.id }}">
+                        <!-- Dropdown content will be generated by JavaScript -->
+                    </div>
+                </div>
             {% endif %}
         {% else %}
             <a href="{{ url_for('auth.login', next=request.path) }}" class="signup-btn" style="text-decoration:none;">
-                Interested?
+                Going
             </a>
         {% endif %}
         </div>
@@ -966,6 +1075,300 @@ document.addEventListener('DOMContentLoaded', function() {
     groupEventsByMonth();
 });
 
+// Dropdown menu management
+function toggleSignupDropdown(rideId, event) {
+    event.stopPropagation();
+    
+    const dropdown = document.getElementById('dropdown-' + rideId);
+    const container = dropdown.closest('.signup-dropdown-container');
+    const button = container.querySelector('.signup-dropdown-btn');
+    const clubCode = container.getAttribute('data-club-code');
+    
+    // Close all other dropdowns
+    document.querySelectorAll('.signup-dropdown-menu.show').forEach(menu => {
+        if (menu.id !== 'dropdown-' + rideId) {
+            menu.classList.remove('show');
+        }
+    });
+    
+    // Toggle this dropdown
+    const isShowing = dropdown.classList.contains('show');
+    if (isShowing) {
+        dropdown.classList.remove('show');
+        return;
+    }
+    
+    // Determine current status
+    const currentStatus = button.classList.contains('signed-up') ? 'GOING' : 
+                         button.classList.contains('interested') ? 'INTERESTED' :
+                         button.classList.contains('maybe') ? 'MAYBE' :
+                         button.classList.contains('withdraw') ? 'WITHDRAW' : null;
+    
+    let menuHTML = '';
+    
+    // Workflow logic based on current status
+    if (!currentStatus) {
+        // Initial state: Show Interested, Maybe, Going
+        menuHTML += `
+            <button class="signup-dropdown-item" onclick="handleStatusChange(${rideId}, 'INTERESTED', '${clubCode}', event)">
+                <span>&#x2605;</span> Interested
+            </button>
+            <button class="signup-dropdown-item" onclick="handleStatusChange(${rideId}, 'MAYBE', '${clubCode}', event)">
+                <span>&#x003F;</span> Maybe
+            </button>
+            <button class="signup-dropdown-item primary" onclick="handleStatusChange(${rideId}, 'GOING', '${clubCode}', event)">
+                <span>&#x2713;</span> Going
+            </button>
+        `;
+    } else if (currentStatus === 'INTERESTED') {
+        // From Interested: Maybe, Going, Clear
+        menuHTML += `
+            <button class="signup-dropdown-item" onclick="handleStatusChange(${rideId}, 'MAYBE', '${clubCode}', event)">
+                <span>&#x003F;</span> Maybe
+            </button>
+            <button class="signup-dropdown-item primary" onclick="handleStatusChange(${rideId}, 'GOING', '${clubCode}', event)">
+                <span>&#x2713;</span> Going
+            </button>
+            <button class="signup-dropdown-item danger" onclick="handleStatusChange(${rideId}, 'CLEAR', '${clubCode}', event)">
+                <span>&#x2715;</span> Clear Status
+            </button>
+        `;
+    } else if (currentStatus === 'MAYBE') {
+        // From Maybe: Interested, Going, Clear
+        menuHTML += `
+            <button class="signup-dropdown-item" onclick="handleStatusChange(${rideId}, 'INTERESTED', '${clubCode}', event)">
+                <span>&#x2605;</span> Interested
+            </button>
+            <button class="signup-dropdown-item primary" onclick="handleStatusChange(${rideId}, 'GOING', '${clubCode}', event)">
+                <span>&#x2713;</span> Going
+            </button>
+            <button class="signup-dropdown-item danger" onclick="handleStatusChange(${rideId}, 'CLEAR', '${clubCode}', event)">
+                <span>&#x2715;</span> Clear Status
+            </button>
+        `;
+    } else if (currentStatus === 'GOING') {
+        // From Going: ONLY Withdraw
+        menuHTML += `
+            <button class="signup-dropdown-item danger" onclick="handleStatusChange(${rideId}, 'WITHDRAW', '${clubCode}', event)">
+                <span>&#x229D;</span> Withdraw
+            </button>
+        `;
+    } else if (currentStatus === 'WITHDRAW') {
+        // From Withdraw: ONLY Going
+        menuHTML += `
+            <button class="signup-dropdown-item primary" onclick="handleStatusChange(${rideId}, 'GOING', '${clubCode}', event)">
+                <span>&#x2713;</span> Going
+            </button>
+        `;
+    }
+    
+    dropdown.innerHTML = menuHTML;
+    dropdown.classList.add('show');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(event) {
+    if (!event.target.closest('.signup-dropdown-container')) {
+        document.querySelectorAll('.signup-dropdown-menu.show').forEach(menu => {
+            menu.classList.remove('show');
+        });
+    }
+});
+
+function handleStatusChange(rideId, newStatus, clubCode, event) {
+    event.stopPropagation();
+    
+    // Close dropdown
+    const dropdown = document.getElementById('dropdown-' + rideId);
+    dropdown.classList.remove('show');
+    
+    const container = dropdown.closest('.signup-dropdown-container');
+    const button = container.querySelector('.signup-dropdown-btn');
+    const currentStatus = button.classList.contains('signed-up') ? 'GOING' : 
+                         button.classList.contains('interested') ? 'INTERESTED' :
+                         button.classList.contains('maybe') ? 'MAYBE' :
+                         button.classList.contains('withdraw') ? 'WITHDRAW' : null;
+    
+    if (newStatus === 'CLEAR') {
+        // Clear status
+        clearStatus(rideId, button, currentStatus);
+    } else if (newStatus === 'GOING') {
+        // Check if external club and show reminder (but skip if coming from WITHDRAW - they already registered)
+        if (clubCode && clubCode !== 'TA' && currentStatus !== 'WITHDRAW') {
+            showExternalClubReminder(clubCode, rideId, button, currentStatus);
+        } else {
+            performStatusChange(rideId, newStatus, button, currentStatus);
+        }
+    } else {
+        // INTERESTED, MAYBE, or WITHDRAW
+        performStatusChange(rideId, newStatus, button, currentStatus);
+    }
+}
+
+function performStatusChange(rideId, newStatus, button, currentStatus) {
+    // Map status to API endpoint
+    const endpointMap = {
+        'GOING': 'signup',
+        'INTERESTED': 'interested',
+        'MAYBE': 'maybe',
+        'WITHDRAW': 'withdraw'
+    };
+    const endpoint = endpointMap[newStatus];
+    
+    if (!endpoint) {
+        console.error('Unknown status:', newStatus);
+        return;
+    }
+    
+    // Update button text to loading
+    const originalHTML = button.innerHTML;
+    button.innerHTML = '<span>...</span>';
+    button.disabled = true;
+    
+    fetch('/signup/api/' + rideId + '/' + endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin'
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => { throw data; });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            // Update count based on status transitions
+            const countEl = document.getElementById('signup-count-' + rideId);
+            if (countEl) {
+                let countChange = 0;
+                
+                // Increment count when: no status → any status, or WITHDRAW → any other status
+                if (!currentStatus || currentStatus === 'WITHDRAW') {
+                    countChange = 1;
+                }
+                // Decrement count when: any status → WITHDRAW
+                else if (newStatus === 'WITHDRAW') {
+                    countChange = -1;
+                }
+                
+                if (countChange !== 0) {
+                    const newCount = Math.max(0, parseInt(countEl.textContent) + countChange);
+                    countEl.textContent = newCount;
+                    const countBadge = countEl.closest('.signup-count');
+                    if (countBadge) {
+                        if (newCount === 0) {
+                            countBadge.classList.add('disabled');
+                            countBadge.onclick = null;
+                        } else {
+                            countBadge.classList.remove('disabled');
+                            const eventCard = button.closest('.event-card');
+                            const routeName = eventCard ? eventCard.getAttribute('data-route-name') : '';
+                            countBadge.onclick = function() { showSignups(rideId, routeName); };
+                        }
+                    }
+                    updatePopularBadge(rideId, newCount);
+                }
+            }
+            
+            // Update button appearance
+            updateButtonStatus(button, newStatus);
+        } else if (data.redirect) {
+            alert('Please log in to continue');
+            window.location.href = data.redirect;
+        } else {
+            alert(data.error || 'Failed to update status');
+            button.innerHTML = originalHTML;
+            button.disabled = false;
+        }
+    })
+    .catch(error => {
+        if (error && error.redirect) {
+            alert('Please log in to continue');
+            window.location.href = error.redirect;
+        } else {
+            console.error('Error:', error);
+            alert(error.error || 'Failed to update status. Please try again.');
+            button.innerHTML = originalHTML;
+            button.disabled = false;
+        }
+    });
+}
+
+function clearStatus(rideId, button, currentStatus) {
+    if (!confirm('Are you sure you want to clear your status?')) {
+        return;
+    }
+    
+    const originalHTML = button.innerHTML;
+    button.innerHTML = '<span>...</span>';
+    button.disabled = true;
+    
+    fetch('/signup/api/' + rideId + '/unsignup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin'
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.error || 'Failed to clear status');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            // Decrement count only if had a status (and not WITHDRAW)
+            const countEl = document.getElementById('signup-count-' + rideId);
+            if (countEl && currentStatus && currentStatus !== 'WITHDRAW') {
+                const newCount = Math.max(0, parseInt(countEl.textContent) - 1);
+                countEl.textContent = newCount;
+                const countBadge = countEl.closest('.signup-count');
+                if (countBadge && newCount === 0) {
+                    countBadge.classList.add('disabled');
+                    countBadge.onclick = null;
+                }
+                updatePopularBadge(rideId, newCount);
+            }
+            
+            // Reset button to initial state
+            updateButtonStatus(button, null);
+        } else {
+            alert(data.error || 'Failed to clear status');
+            button.innerHTML = originalHTML;
+            button.disabled = false;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert(error.message || 'Failed to clear status. Please try again.');
+        button.innerHTML = originalHTML;
+        button.disabled = false;
+    });
+}
+
+function updateButtonStatus(button, status) {
+    button.disabled = false;
+    button.classList.remove('signed-up', 'interested', 'maybe', 'withdraw');
+    
+    if (status === 'GOING') {
+        button.classList.add('signed-up');
+        button.innerHTML = '<span>&#x2713; Going</span><span style="font-size:0.7rem;">&#x25BE;</span>';
+    } else if (status === 'INTERESTED') {
+        button.classList.add('interested');
+        button.innerHTML = '<span>&#x2605; Interested</span><span style="font-size:0.7rem;">&#x25BE;</span>';
+    } else if (status === 'MAYBE') {
+        button.classList.add('maybe');
+        button.innerHTML = '<span>&#x003F; Maybe</span><span style="font-size:0.7rem;">&#x25BE;</span>';
+    } else if (status === 'WITHDRAW') {
+        button.classList.add('withdraw');
+        button.innerHTML = '<span>&#x229D; Withdraw</span><span style="font-size:0.7rem;">&#x25BE;</span>';
+    } else {
+        button.innerHTML = '<span>Going</span><span style="font-size:0.7rem;">&#x25BE;</span>';
+    }
+}
+
 // Signup functions
 function updatePopularBadge(rideId, count) {
     const eventCard = document.querySelector('[data-event-card-id="' + rideId + '"]');
@@ -995,24 +1398,12 @@ function updatePopularBadge(rideId, count) {
 // Store ride info for signup after confirmation
 let pendingSignup = null;
 
-function signupForEvent(rideId, clubCode, buttonElement) {
-    // Check if this is an external club event (not Team Asha)
-    if (clubCode && clubCode !== 'TA') {
-        // Show external club registration reminder
-        showExternalClubReminder(clubCode, rideId, buttonElement);
-        return;
-    }
-    
-    // Proceed with direct signup for Team Asha events
-    performSignup(rideId, buttonElement);
-}
-
-function showExternalClubReminder(clubCode, rideId, buttonElement) {
+function showExternalClubReminder(clubCode, rideId, button, currentStatus) {
     const modal = document.getElementById('external-club-modal');
     const infoDiv = document.getElementById('club-registration-info');
     
     // Store for later
-    pendingSignup = { rideId, buttonElement };
+    pendingSignup = { rideId, button, currentStatus };
     
     // Set club-specific information
     let clubInfo = '';
@@ -1049,7 +1440,8 @@ function proceedWithSignup() {
     if (pendingSignup) {
         // Store values before closing modal (which sets pendingSignup to null)
         const rideId = pendingSignup.rideId;
-        const buttonElement = pendingSignup.buttonElement;
+        const button = pendingSignup.button;
+        const currentStatus = pendingSignup.currentStatus;
         
         // Close modal
         const modal = document.getElementById('external-club-modal');
@@ -1057,243 +1449,8 @@ function proceedWithSignup() {
         pendingSignup = null;
         
         // Now proceed with signup
-        performSignup(rideId, buttonElement);
+        performStatusChange(rideId, 'GOING', button, currentStatus);
     }
-}
-
-function performSignup(rideId, buttonElement) {
-    if (buttonElement.disabled) return;
-    buttonElement.disabled = true;
-    buttonElement.textContent = 'Signing up...';
-    
-    fetch('/signup/api/' + rideId + '/signup', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        credentials: 'same-origin'
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => {
-                throw new Error(data.error || 'Failed to sign up');
-            });
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            // Check if upgrading from INTERESTED (button is inside a status group)
-            const statusGroup = buttonElement.closest('[data-status-group]');
-            const clubCode = buttonElement.getAttribute('data-club-code');
-
-            if (!statusGroup) {
-                // Fresh signup: increment count
-                const countEl = document.getElementById('signup-count-' + rideId);
-                if (countEl) {
-                    const newCount = parseInt(countEl.textContent) + 1;
-                    countEl.textContent = newCount;
-                    const countBadge = countEl.closest('.signup-count');
-                    if (countBadge && countBadge.classList.contains('disabled')) {
-                        countBadge.classList.remove('disabled');
-                        const eventCard = buttonElement.closest('.event-card');
-                        const routeName = eventCard ? eventCard.getAttribute('data-route-name') : '';
-                        countBadge.onclick = function() { showSignups(rideId, routeName); };
-                    }
-                    updatePopularBadge(rideId, newCount);
-                }
-                buttonElement.replaceWith(createSignedUpGroup(rideId, clubCode));
-            } else {
-                // Upgrade from INTERESTED: count stays same, replace entire group
-                statusGroup.replaceWith(createSignedUpGroup(rideId, clubCode));
-            }
-        } else {
-            if (data.redirect) {
-                alert('Please log in to sign up for events');
-                window.location.href = data.redirect;
-            } else {
-                alert(data.error || 'Failed to sign up');
-                buttonElement.disabled = false;
-                buttonElement.textContent = 'Sign Up \u2192';
-            }
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert(error.message || 'Failed to sign up. Please try again.');
-        buttonElement.disabled = false;
-        buttonElement.textContent = 'Sign Up \u2192';
-    });
-}
-
-function createSignedUpGroup(rideId, clubCode) {
-    const div = document.createElement('div');
-    div.style.cssText = 'display:flex;gap:6px;align-items:center;width:100%;';
-    div.setAttribute('data-status-group', 'SIGNED_UP');
-
-    const span = document.createElement('span');
-    span.className = 'signup-status signed-up';
-    span.textContent = '\u2713 Signed Up';
-
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'uninterest-btn';
-    removeBtn.textContent = '\u2715';
-    removeBtn.title = 'Remove signup';
-    removeBtn.setAttribute('data-ride-id', rideId);
-    removeBtn.setAttribute('data-club-code', clubCode || '');
-    removeBtn.onclick = function() { unsignupFromEvent(rideId, this); };
-
-    div.appendChild(span);
-    div.appendChild(removeBtn);
-    return div;
-}
-
-function createInterestedButton(rideId, clubCode) {
-    const button = document.createElement('button');
-    button.className = 'signup-btn';
-    button.textContent = 'Interested?';
-    button.setAttribute('data-ride-id', rideId);
-    button.setAttribute('data-club-code', clubCode || '');
-    button.onclick = function() { markInterested(rideId, clubCode, this); };
-    return button;
-}
-
-function createInterestedGroup(rideId, clubCode) {
-    const div = document.createElement('div');
-    div.style.cssText = 'display:flex;gap:6px;align-items:center;width:100%;';
-    div.setAttribute('data-status-group', 'INTERESTED');
-
-    const span = document.createElement('span');
-    span.className = 'signup-status interested';
-    span.textContent = '\u2605 Interested';
-
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'uninterest-btn';
-    removeBtn.textContent = '\u2715';
-    removeBtn.title = 'Remove interest';
-    removeBtn.setAttribute('data-ride-id', rideId);
-    removeBtn.setAttribute('data-club-code', clubCode || '');
-    removeBtn.onclick = function() { unsignupFromEvent(rideId, this); };
-
-    const signupBtn = document.createElement('button');
-    signupBtn.className = 'signup-btn signup-btn-sm';
-    signupBtn.textContent = 'Sign Up \u2192';
-    signupBtn.setAttribute('data-ride-id', rideId);
-    signupBtn.setAttribute('data-club-code', clubCode || '');
-    signupBtn.onclick = function() { signupForEvent(rideId, clubCode, this); };
-
-    div.appendChild(span);
-    div.appendChild(removeBtn);
-    div.appendChild(signupBtn);
-    return div;
-}
-
-function markInterested(rideId, clubCode, buttonElement) {
-    if (buttonElement.disabled) return;
-    buttonElement.disabled = true;
-    buttonElement.textContent = '...';
-
-    fetch('/signup/api/' + rideId + '/interested', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin'
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => { throw data; });
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            const countEl = document.getElementById('signup-count-' + rideId);
-            if (countEl) {
-                const newCount = parseInt(countEl.textContent) + 1;
-                countEl.textContent = newCount;
-                const countBadge = countEl.closest('.signup-count');
-                if (countBadge && countBadge.classList.contains('disabled')) {
-                    countBadge.classList.remove('disabled');
-                    const eventCard = buttonElement.closest('.event-card');
-                    const routeName = eventCard ? eventCard.getAttribute('data-route-name') : '';
-                    countBadge.onclick = function() { showSignups(rideId, routeName); };
-                }
-                updatePopularBadge(rideId, newCount);
-            }
-            buttonElement.replaceWith(createInterestedGroup(rideId, clubCode));
-        } else if (data.redirect) {
-            alert('Please log in to express interest');
-            window.location.href = data.redirect;
-        } else {
-            buttonElement.disabled = false;
-            buttonElement.textContent = 'Interested?';
-        }
-    })
-    .catch(error => {
-        if (error && error.redirect) {
-            alert('Please log in to express interest');
-            window.location.href = error.redirect;
-        } else {
-            console.error('Error:', error);
-            buttonElement.disabled = false;
-            buttonElement.textContent = 'Interested?';
-        }
-    });
-}
-
-function unsignupFromEvent(rideId, badgeElement) {
-    const statusGroup = badgeElement.closest('[data-status-group]');
-    const status = statusGroup ? statusGroup.getAttribute('data-status-group') : 'SIGNED_UP';
-    const confirmMsg = status === 'INTERESTED'
-        ? 'Are you sure you want to remove your interest?'
-        : 'Are you sure you want to remove your signup?';
-    if (!confirm(confirmMsg)) {
-        return;
-    }
-    const replaceTarget = statusGroup || badgeElement;
-    const clubCode = badgeElement.getAttribute('data-club-code');
-
-    badgeElement.disabled = true;
-
-    fetch('/signup/api/' + rideId + '/unsignup', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        credentials: 'same-origin'
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => {
-                throw new Error(data.error || 'Failed to unsign');
-            });
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            // Decrement count
-            const countEl = document.getElementById('signup-count-' + rideId);
-            if (countEl) {
-                const newCount = Math.max(0, parseInt(countEl.textContent) - 1);
-                countEl.textContent = newCount;
-                const countBadge = countEl.closest('.signup-count');
-                if (countBadge && newCount === 0) {
-                    countBadge.classList.add('disabled');
-                    countBadge.onclick = null;
-                }
-                updatePopularBadge(rideId, newCount);
-            }
-            replaceTarget.replaceWith(createInterestedButton(rideId, clubCode));
-        } else {
-            alert(data.error || 'Failed to remove signup');
-            badgeElement.disabled = false;
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert(error.message || 'Failed to remove signup. Please try again.');
-        badgeElement.disabled = false;
-    });
 }
 
 function showSignups(rideId, rideName) {
@@ -1316,17 +1473,38 @@ function showSignups(rideId, rideName) {
                 if (data.count === 0) {
                     modalBody.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">No riders signed up yet.</p>';
                 } else {
-                    // Sort: SIGNED_UP first, then INTERESTED
+                    // Sort: GOING first, then INTERESTED, then MAYBE, then WITHDRAW
+                    const statusOrder = {'GOING': 1, 'INTERESTED': 2, 'MAYBE': 3, 'WITHDRAW': 4};
                     data.riders.sort((a, b) => {
-                        if (a.status === b.status) return 0;
-                        return a.status === 'SIGNED_UP' ? -1 : 1;
+                        return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
                     });
                     let html = '';
                     data.riders.forEach(rider => {
                         const initials = rider.first_name.charAt(0) + rider.last_name.charAt(0);
-                        const isInterested = rider.status === 'INTERESTED';
-                        const badgeClass = isInterested ? 'interested' : 'signed-up';
-                        const badgeText = isInterested ? '\u2605 Interested' : '\u2713 Signed Up';
+                        let badgeClass, badgeText;
+                        
+                        switch(rider.status) {
+                            case 'GOING':
+                                badgeClass = 'signed-up';
+                                badgeText = '\u2713 Going';
+                                break;
+                            case 'INTERESTED':
+                                badgeClass = 'interested';
+                                badgeText = '\u2605 Interested';
+                                break;
+                            case 'MAYBE':
+                                badgeClass = 'maybe';
+                                badgeText = '\u003F Maybe';
+                                break;
+                            case 'WITHDRAW':
+                                badgeClass = 'withdraw';
+                                badgeText = '\u229D Withdraw';
+                                break;
+                            default:
+                                badgeClass = 'signed-up';
+                                badgeText = rider.status;
+                        }
+                        
                         html += `
                             <div class="rider-list-item">
                                 <div class="rider-avatar">${initials}</div>
@@ -1355,9 +1533,14 @@ function closeModal(event) {
     }
 }
 
-// Close modals on ESC key
+// Close modals and dropdowns on ESC key
 document.addEventListener('keydown', function(event) {
     if (event.key === 'Escape' || event.key === 'Esc') {
+        // Close dropdowns
+        document.querySelectorAll('.signup-dropdown-menu.show').forEach(menu => {
+            menu.classList.remove('show');
+        });
+        
         const signupsModal = document.getElementById('signups-modal');
         if (signupsModal && signupsModal.style.display === 'flex') {
             signupsModal.style.display = 'none';

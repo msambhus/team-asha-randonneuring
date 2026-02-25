@@ -12,8 +12,10 @@ class RideStatus(str, Enum):
     Inherits from str to allow direct comparison with database TEXT values.
     """
     # Pre-ride statuses
-    INTERESTED = "INTERESTED"       # Soft interest, pre-signup
-    SIGNED_UP = "SIGNED_UP"         # Rider officially registered for upcoming ride
+    INTERESTED = "INTERESTED"       # Soft interest, considering the ride
+    MAYBE = "MAYBE"                 # Tentative, less certain than interested
+    GOING = "GOING"                 # Rider officially registered for upcoming ride (formerly SIGNED_UP)
+    WITHDRAW = "WITHDRAW"           # Was going but withdrew
 
     # Post-ride statuses (ride has occurred)
     FINISHED = "FINISHED"           # Successfully completed within time limit
@@ -39,6 +41,7 @@ class RideStatus(str, Enum):
             '1': cls.FINISHED,
             'NO': cls.DNS,
             '0': cls.DNS,
+            'SIGNED_UP': cls.GOING,  # Legacy: SIGNED_UP renamed to GOING
         }
 
         if val in legacy_mapping:
@@ -52,8 +55,8 @@ class RideStatus(str, Enum):
 
     @classmethod
     def is_pre_ride(cls, status: 'RideStatus') -> bool:
-        """Check if status is pre-ride (INTERESTED or SIGNED_UP)."""
-        return status in (cls.INTERESTED, cls.SIGNED_UP)
+        """Check if status is pre-ride (INTERESTED, MAYBE, or GOING)."""
+        return status in (cls.INTERESTED, cls.MAYBE, cls.GOING)
 
     @classmethod
     def is_post_ride(cls, status: 'RideStatus') -> bool:
@@ -67,8 +70,8 @@ class RideStatus(str, Enum):
 
     @classmethod
     def can_remove_signup(cls, status: 'RideStatus') -> bool:
-        """Check if rider can remove their signup (INTERESTED or SIGNED_UP)."""
-        return status in (cls.INTERESTED, cls.SIGNED_UP)
+        """Check if rider can remove their signup (INTERESTED, MAYBE, or GOING)."""
+        return status in (cls.INTERESTED, cls.MAYBE, cls.GOING)
 
 
 def _execute(sql, params=None):
@@ -544,16 +547,16 @@ def get_rider_signup_status(rider_id, ride_id):
     """, (rider_id, ride_id)).fetchone()
 
 def get_signup_count(ride_id):
-    """Get count of riders signed up for a ride."""
+    """Get count of riders signed up for a ride (excludes WITHDRAW status)."""
     row = _execute("""
         SELECT COUNT(*) as count 
         FROM rider_ride 
-        WHERE ride_id = %s AND signed_up_at IS NOT NULL
-    """, (ride_id,)).fetchone()
+        WHERE ride_id = %s AND signed_up_at IS NOT NULL AND status != %s
+    """, (ride_id, RideStatus.WITHDRAW.value)).fetchone()
     return row['count'] if row else 0
 
 def signup_rider(rider_id, ride_id):
-    """Sign up a rider for a ride. Upgrades INTERESTED → SIGNED_UP if already interested."""
+    """Sign up a rider for a ride. Updates status to GOING regardless of current status."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -562,11 +565,9 @@ def signup_rider(rider_id, ride_id):
             VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
             ON CONFLICT (rider_id, ride_id) DO UPDATE
               SET status = %s, signed_up_at = CURRENT_TIMESTAMP
-              WHERE rider_ride.status = %s
         """, (rider_id, ride_id,
-              RideStatus.SIGNED_UP.value,
-              RideStatus.SIGNED_UP.value,
-              RideStatus.INTERESTED.value))
+              RideStatus.GOING.value,
+              RideStatus.GOING.value))
         conn.commit()
         return True
     except Exception:
@@ -575,23 +576,65 @@ def signup_rider(rider_id, ride_id):
 
 
 def mark_interested(rider_id, ride_id):
-    """Mark a rider as interested in a ride (soft pre-signup)."""
+    """Mark a rider as interested in a ride. Updates status to INTERESTED regardless of current status."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         cur.execute("""
             INSERT INTO rider_ride (rider_id, ride_id, status, signed_up_at)
             VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-        """, (rider_id, ride_id, RideStatus.INTERESTED.value))
+            ON CONFLICT (rider_id, ride_id) DO UPDATE
+              SET status = %s, signed_up_at = CURRENT_TIMESTAMP
+        """, (rider_id, ride_id, 
+              RideStatus.INTERESTED.value,
+              RideStatus.INTERESTED.value))
         conn.commit()
         return True
     except Exception:
         conn.rollback()
         return False
 
+
+def mark_maybe(rider_id, ride_id):
+    """Mark a rider as maybe for a ride. Updates status to MAYBE regardless of current status."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""
+            INSERT INTO rider_ride (rider_id, ride_id, status, signed_up_at)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (rider_id, ride_id) DO UPDATE
+              SET status = %s, signed_up_at = CURRENT_TIMESTAMP
+        """, (rider_id, ride_id, 
+              RideStatus.MAYBE.value,
+              RideStatus.MAYBE.value))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+
+
+def mark_withdraw(rider_id, ride_id):
+    """Mark a rider as withdrawn from a ride. Updates status to WITHDRAW."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""
+            UPDATE rider_ride
+            SET status = %s, signed_up_at = CURRENT_TIMESTAMP
+            WHERE rider_id = %s AND ride_id = %s
+        """, (RideStatus.WITHDRAW.value, rider_id, ride_id))
+        conn.commit()
+        return cur.rowcount > 0
+    except Exception:
+        conn.rollback()
+        return False
+
+
 def remove_signup(rider_id, ride_id):
     """
-    Remove a rider's signup (only if status is SIGNED_UP).
+    Remove a rider's signup (only if status is pre-ride: GOING, INTERESTED, or MAYBE).
 
     Returns:
         bool: True if signup was removed, False otherwise
@@ -614,12 +657,12 @@ def remove_signup(rider_id, ride_id):
         if not RideStatus.can_remove_signup(current_status):
             raise ValueError(f"Cannot remove signup with status '{current_status.value}'. Only pre-ride signups can be removed.")
 
-    # Delete if status allows it (SIGNED_UP or INTERESTED can be removed)
+    # Delete if status allows it (GOING, INTERESTED, or MAYBE can be removed)
     cur.execute("""
         DELETE FROM rider_ride
         WHERE rider_id = %s AND ride_id = %s
-        AND status IN (%s, %s)
-    """, (rider_id, ride_id, RideStatus.SIGNED_UP.value, RideStatus.INTERESTED.value))
+        AND status IN (%s, %s, %s)
+    """, (rider_id, ride_id, RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.MAYBE.value))
 
     conn.commit()
     return cur.rowcount > 0
