@@ -16,6 +16,7 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
 from auth import login_required, user_login_required
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
+from services.openai_coach import generate_openai_advice
 from datetime import date, datetime, timedelta
 import re
 
@@ -516,6 +517,9 @@ def rider_profile(rusa_id):
     # --- Upcoming rides with readiness ---
     upcoming_rides = []
     signups = get_rider_upcoming_signups(rider['id'])
+
+    # Pass 1: compute readiness for all rides, collect context for AI
+    rides_for_ai = []
     for signup in signups:
         ride_dict = dict(signup)
         if has_strava and activities:
@@ -527,13 +531,43 @@ def rider_profile(rusa_id):
                 weeks_until = max(0, (ride_date - date.today()).days // 7)
             else:
                 weeks_until = 4
-            advice = generate_training_advice(readiness, ride_dict, weeks_until)
             ride_dict['readiness'] = readiness
-            ride_dict['advice'] = advice
+            ride_dict['_weeks_until'] = weeks_until
         else:
             ride_dict['readiness'] = None
-            ride_dict['advice'] = []
+            ride_dict['_weeks_until'] = 4
+        rides_for_ai.append({
+            'ride': ride_dict,
+            'readiness': ride_dict.get('readiness'),
+            'weeks_until': ride_dict.get('_weeks_until', 4),
+            'signup_status': signup.get('signup_status', 'GOING'),
+        })
         upcoming_rides.append(ride_dict)
+
+    # Pass 2: one batched AI coaching call (with brevet history fallback)
+    ai_advice = {}
+    if rides_for_ai:
+        ai_advice = generate_openai_advice(
+            rider, activities, fitness_score, rides_for_ai, season_data
+        )
+
+    # Pass 3: assign advice — AI if available, else rule-based fallback
+    for ride_dict in upcoming_rides:
+        ride_id = ride_dict.get('id')
+        if ride_id and ride_id in ai_advice:
+            ride_dict['advice'] = [ai_advice[ride_id]]
+        elif ride_dict.get('readiness') is not None:
+            weeks_until = ride_dict.pop('_weeks_until', 4)
+            ride_dict['advice'] = generate_training_advice(
+                ride_dict['readiness'], ride_dict, weeks_until
+            )
+        else:
+            # No Strava, no AI — check if AI returned advice via brevet history
+            if ride_id and ride_id in ai_advice:
+                ride_dict['advice'] = [ai_advice[ride_id]]
+            else:
+                ride_dict['advice'] = []
+        ride_dict.pop('_weeks_until', None)
 
     return render_template('rider_profile.html',
                            rider=rider,

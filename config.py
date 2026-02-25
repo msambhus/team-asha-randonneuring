@@ -27,6 +27,9 @@ class Config:
     STRAVA_API_BASE = 'https://www.strava.com/api/v3'
     STRAVA_SCOPE = 'activity:read_all'
 
+    # OpenAI Configuration (optional — AI coaching falls back to rule-based if not set)
+    OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+
     # Session configuration for production security
     SESSION_COOKIE_SECURE = os.environ.get('VERCEL_ENV') == 'production'  # HTTPS only in prod
     SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to cookies

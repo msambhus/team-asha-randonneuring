@@ -87,22 +87,22 @@
             {% if ride.distance_miles %} &bull; {{ ride.distance_miles|round(0)|int }} mi{% elif ride.distance_km %} &bull; {{ (ride.distance_km * 0.621371)|round(0)|int }} mi{% endif %}
             {% if ride.elevation_ft %} &bull; {{ "{:,}".format(ride.elevation_ft) }} ft{% endif %}
         </div>
-        {% if ride.readiness %}
         <div style="display:flex; align-items:center; gap:6px;">
+        {% if ride.readiness %}
             <div style="width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:800; color:white; background:{{ ride.readiness.color }};">
                 {{ ride.readiness.score }}
             </div>
             <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.6rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:white; background:{{ ride.readiness.color }};">
                 {% if ride.readiness.level == 'ready' %}Ready{% elif ride.readiness.level == 'caution' %}Needs Work{% else %}Not Ready{% endif %}
             </div>
+        {% endif %}
             {% if ride.advice %}
             <span class="advice-tip" style="position:relative; cursor:pointer; display:flex; align-items:center;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{ ride.readiness.color }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 14l2 2 4-4"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><circle cx="8" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/><circle cx="12" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/><circle cx="16" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/></svg>
                 <span class="advice-tooltip">{% for tip in ride.advice %}{{ tip }}{% if not loop.last %}<br><br>{% endif %}{% endfor %}</span>
             </span>
             {% endif %}
         </div>
-        {% endif %}
         {% if ride.plan_slug %}
         <div style="margin-top:4px;"><a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}" style="font-size:0.72rem; color:var(--primary);">Plan &rarr;</a></div>
         {% endif %}
