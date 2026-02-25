@@ -42,6 +42,14 @@ def create_app():
         except (ValueError, TypeError):
             return value
 
+    @app.template_filter('clean_name')
+    def clean_name_filter(value):
+        """Clean HTML entities from ride names (e.g. &nbsp; from web scraping)."""
+        if not value:
+            return value
+        import html as html_mod
+        return html_mod.unescape(str(value)).replace('\xa0', ' ')
+
     @app.context_processor
     def inject_helpers():
         from models import get_all_seasons, get_current_season

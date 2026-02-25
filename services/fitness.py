@@ -146,10 +146,10 @@ def _parse_dt(val):
 _CYCLING_TYPES = ('Ride', 'VirtualRide', 'EBikeRide')
 
 _GRADE_MAP = [
-    (80, 'A', '#38a169'),   # green
-    (60, 'B', '#2b6cb0'),   # blue
-    (40, 'C', '#d69e2e'),   # amber
-    (20, 'D', '#e53e3e'),   # red
+    (70, 'A', '#38a169'),   # green
+    (50, 'B', '#2b6cb0'),   # blue
+    (30, 'C', '#d69e2e'),   # amber
+    (15, 'D', '#e53e3e'),   # red
     (0,  'F', '#9b2c2c'),   # dark red
 ]
 
@@ -166,8 +166,8 @@ def calculate_per_ride_score(activity, previous_activities):
     """Score a single training ride 0-100.
 
     Components:
-      Distance       (30): 100 km single ride = full marks
-      Elevation      (20): 1500 m gain = full marks
+      Distance       (30): 60 km single ride = full marks
+      Elevation      (20): 1000 m gain = full marks
       Intensity      (25): Adaptive (HR / power / suffer / duration fallback)
       Prog. Overload (25): Compare vs average of previous 14-day rides
 
@@ -179,10 +179,10 @@ def calculate_per_ride_score(activity, previous_activities):
     moving_sec = activity.get('moving_time') or 0
 
     # --- Distance (0-30) ---
-    distance_pts = min(30, round(dist_km / 100.0 * 30))
+    distance_pts = min(30, round(dist_km / 60.0 * 30))
 
     # --- Elevation (0-20) ---
-    elevation_pts = min(20, round(elev_m / 1500.0 * 20))
+    elevation_pts = min(20, round(elev_m / 1000.0 * 20))
 
     # --- Intensity (0-25) — adaptive ---
     intensity_pts = 0
@@ -210,7 +210,7 @@ def calculate_per_ride_score(activity, previous_activities):
         intensity_pts = min(15, round(duration_min / 120.0 * 15))
 
     # --- Progressive Overload (0-25) ---
-    overload_pts = 12  # neutral default if no prior data
+    overload_pts = 15  # neutral default if no prior data
     trend = 'maintaining'
 
     prev_rides = [a for a in previous_activities
