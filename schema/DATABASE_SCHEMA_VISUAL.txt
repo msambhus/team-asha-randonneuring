@@ -31,7 +31,39 @@
     │    first_name       │       │     bio                 │
     │    last_name        │       │     pbp_2023_registered │
     └─────────────────────┘       │     pbp_2023_status     │
+           │                      │     show_private_rides  │
            │                      └─────────────────────────┘
+           │
+           │    ┌──────────────────────────┐
+           ├───►│  strava_connection       │
+           │    ├──────────────────────────┤
+           │    │ 🔑👤 rider_id (PK,FK)    │
+           │    │ 🏃 strava_athlete_id     │
+           │    │     access_token         │
+           │    │     refresh_token        │
+           │    │     expires_at           │
+           │    │     scope                │
+           │    │     connected_at         │
+           │    │     last_sync_at         │
+           │    └──────────────────────────┘
+           │
+           │    ┌──────────────────────────┐
+           ├───►│  strava_activity         │
+           │    ├──────────────────────────┤
+           │    │ 🔑 id                    │
+           │    │ 👤 rider_id (FK)         │
+           │    │ 🏃 strava_activity_id    │
+           │    │     name                 │
+           │    │     activity_type        │
+           │    │     distance             │
+           │    │     moving_time          │
+           │    │     elapsed_time         │
+           │    │     total_elevation_gain │
+           │    │     start_date           │
+           │    │     average_speed        │
+           │    │     strava_url           │
+           │    │     fetched_at           │
+           │    └──────────────────────────┘
            │
            │    ┌─────────────────────────────────────────────────┐
            │    │                                                 │
@@ -110,9 +142,33 @@
                                   │              │    cum_time_min         │
                                   │              │    bookend_time_min     │
                                   │              │    time_bank_min        │
-                                  │              │    difficulty_score     │
-                                  │              └─────────────────────────┘
-                                  │              └─────────────────────────┘
+                                 │              │    difficulty_score     │
+                                 │              └─────────────────────────┘
+                                 │
+                                 │                       │
+                                 │                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        CUSTOM RIDE PLANS (User Personalization)               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────┐              ┌──────────────────────────────┐
+    │   custom_ride_plan      │              │  custom_ride_plan_stop       │
+    ├─────────────────────────┤              ├──────────────────────────────┤
+    │ 🔑 id                   │              │ 🔑 id                        │
+    │ 👤 rider_id (FK)        │◄─────────────│ 📝 custom_plan_id (FK)       │
+    │ 📋 base_plan_id (FK)    │              │ 📌 base_stop_id (FK)         │
+    │    name                 │              │    stop_order                │
+    │    description          │              │    location                  │
+    │    is_public            │              │    stop_type                 │
+    │    avg_moving_speed     │              │    distance_miles            │
+    │    created_at           │              │    elevation_gain            │
+    │    updated_at           │              │    segment_time_min          │
+    └─────────────────────────┘              │    notes                     │
+         │                                   │    is_custom_stop            │
+         │                                   │    is_hidden                 │
+         └───────────────────────────────────┴──────────────────────────────┘
+                                             
+         UNIQUE(rider_id, base_plan_id)     ↑ base_stop_id references ride_plan_stop
 
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -125,6 +181,9 @@ LEGEND:
   🏠  Foreign Key to club
   📋  Foreign Key to ride_plan
   🚴  Foreign Key to ride
+  📝  Foreign Key to custom_ride_plan
+  📌  Foreign Key to ride_plan_stop (base stop)
+  🏃  Strava identifier (athlete or activity)
   🎫  RUSA ID (unique)
   ⏰  Timestamp
 
@@ -143,19 +202,43 @@ RELATIONSHIP SUMMARY:
 3. Ride Participation:
    rider → rider_ride → ride (consolidated lifecycle: signup → result)
 
-4. Event Management:
+4. Strava Integration:
+   rider → strava_connection (1:1, OAuth tokens)
+   rider → strava_activity (1:many, cached activities)
+   
+   Key behaviors:
+   • One Strava connection per rider
+   • Activities cached for 1 year rolling window
+   • Privacy control via rider_profile.show_private_rides
+   • Used for fitness scoring and calendar view
+
+5. Custom Ride Plans:
+   rider → custom_ride_plan → base_plan_id (references ride_plan)
+   custom_ride_plan → custom_ride_plan_stop (1:many)
+   custom_ride_plan_stop → base_stop_id (references ride_plan_stop, optional)
+   
+   Key behaviors:
+   • One custom plan per rider per base plan (UNIQUE constraint)
+   • Stops can inherit from base (base_stop_id) or be custom (is_custom_stop=TRUE)
+   • Base stops can be hidden (is_hidden=TRUE) without deletion
+   • Custom plans can be shared (is_public=TRUE) for other riders to view/copy
+   • Pace can be customized (avg_moving_speed) to recalculate segment times
+
+6. Event Management:
    • All events (Team Asha + external RUSA) in unified ride table
    • Team Asha rides: club_id = 'TA' (Bay Area)
    • External events: club_id = DBC/SFR/SCR/SRR (by region)
    • Use club_id to differentiate event types
 
-5. Key Features:
+7. Key Features:
    • Google OAuth authentication
    • RUSA member integration
    • Detailed ride planning with waypoints
+   • Custom ride plans for personalization
    • Ride signup and completion tracking
    • Multi-season management
    • Club-based organization
    • Unified event calendar (Team Asha + external)
+   • Strava integration for activity tracking
 
 ═══════════════════════════════════════════════════════════════════════════════

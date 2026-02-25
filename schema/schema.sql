@@ -293,6 +293,16 @@ COMMENT ON VIEW v_team_asha_rides IS 'Team Asha organized rides only';
 --       - Updated status values: 'yes' → 'FINISHED', added 'SIGNED_UP'
 --       - Dropped rider_ride_signup table
 --       - Single table for complete signup → participation lifecycle
+-- v5.0: Added Strava integration
+--       - strava_connection table for OAuth tokens
+--       - strava_activity table for cached activity data
+--       - Privacy controls (show_private_rides)
+-- v6.0: Added Custom Ride Plans feature
+--       - custom_ride_plan table for user-personalized plans
+--       - custom_ride_plan_stop table for customized stops
+--       - One custom plan per rider per base plan (UNIQUE constraint)
+--       - Support for hiding base stops, adding custom stops, pace adjustment
+--       - Public sharing capability for custom plans
 
 -- ============================================================
 -- STRAVA INTEGRATION
@@ -347,6 +357,75 @@ CREATE INDEX idx_strava_activity_strava_id ON strava_activity(strava_activity_id
 COMMENT ON TABLE strava_activity IS 'Cached Strava activities for calendar view and fitness scoring';
 COMMENT ON COLUMN strava_activity.distance IS 'Distance in meters (divide by 1000 for km)';
 COMMENT ON COLUMN strava_activity.strava_url IS 'Direct link to activity on Strava (required for compliance)';
+
+-- ============================================================
+-- CUSTOM RIDE PLANS
+-- ============================================================
+
+CREATE TABLE custom_ride_plan (
+    id SERIAL PRIMARY KEY,
+    rider_id INTEGER NOT NULL,
+    base_plan_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    is_public BOOLEAN DEFAULT FALSE,
+    avg_moving_speed NUMERIC,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    FOREIGN KEY (rider_id) REFERENCES rider(id) ON DELETE CASCADE,
+    FOREIGN KEY (base_plan_id) REFERENCES ride_plan(id) ON DELETE CASCADE,
+    UNIQUE (rider_id, base_plan_id)
+);
+
+CREATE TABLE custom_ride_plan_stop (
+    id SERIAL PRIMARY KEY,
+    custom_plan_id INTEGER NOT NULL,
+    base_stop_id INTEGER,
+    stop_order INTEGER NOT NULL,
+    location TEXT NOT NULL,
+    stop_type TEXT DEFAULT 'waypoint',
+    distance_miles NUMERIC,
+    elevation_gain INTEGER,
+    segment_time_min INTEGER,
+    notes TEXT,
+    is_custom_stop BOOLEAN DEFAULT FALSE,
+    is_hidden BOOLEAN DEFAULT FALSE,
+    FOREIGN KEY (custom_plan_id) REFERENCES custom_ride_plan(id) ON DELETE CASCADE,
+    FOREIGN KEY (base_stop_id) REFERENCES ride_plan_stop(id) ON DELETE SET NULL
+);
+
+-- Indexes for performance
+CREATE INDEX idx_custom_ride_plan_rider ON custom_ride_plan(rider_id);
+CREATE INDEX idx_custom_ride_plan_base ON custom_ride_plan(base_plan_id);
+CREATE INDEX idx_custom_ride_plan_public ON custom_ride_plan(is_public) WHERE is_public = TRUE;
+CREATE INDEX idx_custom_ride_plan_stop_plan ON custom_ride_plan_stop(custom_plan_id);
+CREATE INDEX idx_custom_ride_plan_stop_base ON custom_ride_plan_stop(base_stop_id);
+CREATE INDEX idx_custom_ride_plan_stop_order ON custom_ride_plan_stop(custom_plan_id, stop_order);
+
+-- Documentation comments
+COMMENT ON TABLE custom_ride_plan IS 'User-created custom ride plans based on admin base plans';
+COMMENT ON TABLE custom_ride_plan_stop IS 'Customized stops for custom ride plans';
+COMMENT ON COLUMN custom_ride_plan.rider_id IS 'Owner of the custom plan';
+COMMENT ON COLUMN custom_ride_plan.base_plan_id IS 'Base plan this custom plan inherits from';
+COMMENT ON COLUMN custom_ride_plan.is_public IS 'Whether other riders can view/copy this plan';
+COMMENT ON COLUMN custom_ride_plan.avg_moving_speed IS 'User custom pace override (mph)';
+COMMENT ON COLUMN custom_ride_plan_stop.base_stop_id IS 'Link to original base plan stop if inherited';
+COMMENT ON COLUMN custom_ride_plan_stop.is_custom_stop IS 'TRUE if user added this stop (not from base)';
+COMMENT ON COLUMN custom_ride_plan_stop.is_hidden IS 'TRUE if user hid this base stop';
+
+-- Trigger to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_custom_ride_plan_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_custom_ride_plan_updated_at
+    BEFORE UPDATE ON custom_ride_plan
+    FOR EACH ROW
+    EXECUTE FUNCTION update_custom_ride_plan_updated_at();
 
 -- ============================================================
 -- END OF SCHEMA
