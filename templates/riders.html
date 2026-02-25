@@ -339,6 +339,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initSortable('summary-table');
     initSortable('riders-table');
+
+    // Set initial sort indicator on Rider column (matches server-side default sort)
+    document.querySelectorAll('#riders-table th.sortable[data-sort="rider"], #summary-table th.sortable[data-sort="rider"]').forEach(th => {
+        const icon = th.querySelector('.sort-icon');
+        if (icon) { icon.textContent = ' \u25B2'; icon.style.opacity = '1'; }
+    });
 })();
 </script>
 {% endblock %}
