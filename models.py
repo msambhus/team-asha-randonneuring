@@ -723,3 +723,117 @@ def is_rider_linked_to_user(rider_id):
 def get_rider_by_rusa_id(rusa_id):
     """Get rider by RUSA ID."""
     return _execute("SELECT * FROM rider WHERE rusa_id = %s", (rusa_id,)).fetchone()
+
+
+# ========== STRAVA ==========
+
+def get_strava_connection(rider_id):
+    """Get Strava connection for a rider."""
+    return _execute(
+        "SELECT * FROM strava_connection WHERE rider_id = %s", (rider_id,)
+    ).fetchone()
+
+def create_strava_connection(rider_id, strava_athlete_id, access_token,
+                              refresh_token, expires_at, scope=None):
+    """Create or update Strava connection for a rider."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        INSERT INTO strava_connection
+            (rider_id, strava_athlete_id, access_token, refresh_token, expires_at, scope)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (rider_id) DO UPDATE SET
+            strava_athlete_id = EXCLUDED.strava_athlete_id,
+            access_token = EXCLUDED.access_token,
+            refresh_token = EXCLUDED.refresh_token,
+            expires_at = EXCLUDED.expires_at,
+            scope = EXCLUDED.scope,
+            connected_at = CURRENT_TIMESTAMP
+    """, (rider_id, strava_athlete_id, access_token, refresh_token, expires_at, scope))
+    conn.commit()
+
+def update_strava_tokens(rider_id, access_token, refresh_token, expires_at):
+    """Update tokens after a refresh."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        UPDATE strava_connection
+        SET access_token = %s, refresh_token = %s, expires_at = %s
+        WHERE rider_id = %s
+    """, (access_token, refresh_token, expires_at, rider_id))
+    conn.commit()
+
+def update_strava_last_sync(rider_id):
+    """Update last_sync_at timestamp."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        "UPDATE strava_connection SET last_sync_at = CURRENT_TIMESTAMP WHERE rider_id = %s",
+        (rider_id,)
+    )
+    conn.commit()
+
+def delete_strava_connection(rider_id):
+    """Delete Strava connection and all stored activities."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("DELETE FROM strava_activity WHERE rider_id = %s", (rider_id,))
+    cur.execute("DELETE FROM strava_connection WHERE rider_id = %s", (rider_id,))
+    conn.commit()
+
+def upsert_strava_activity(row):
+    """Insert or update a Strava activity."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        INSERT INTO strava_activity (
+            rider_id, strava_activity_id, name, activity_type, distance,
+            moving_time, elapsed_time, total_elevation_gain, start_date,
+            start_date_local, average_heartrate, max_heartrate, has_heartrate,
+            average_watts, max_watts, weighted_average_watts, kilojoules,
+            device_watts, average_speed, max_speed, suffer_score, strava_url
+        ) VALUES (
+            %(rider_id)s, %(strava_activity_id)s, %(name)s, %(activity_type)s,
+            %(distance)s, %(moving_time)s, %(elapsed_time)s, %(total_elevation_gain)s,
+            %(start_date)s, %(start_date_local)s, %(average_heartrate)s,
+            %(max_heartrate)s, %(has_heartrate)s, %(average_watts)s, %(max_watts)s,
+            %(weighted_average_watts)s, %(kilojoules)s, %(device_watts)s,
+            %(average_speed)s, %(max_speed)s, %(suffer_score)s, %(strava_url)s
+        )
+        ON CONFLICT (strava_activity_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            distance = EXCLUDED.distance,
+            moving_time = EXCLUDED.moving_time,
+            elapsed_time = EXCLUDED.elapsed_time,
+            total_elevation_gain = EXCLUDED.total_elevation_gain,
+            average_heartrate = EXCLUDED.average_heartrate,
+            max_heartrate = EXCLUDED.max_heartrate,
+            has_heartrate = EXCLUDED.has_heartrate,
+            average_watts = EXCLUDED.average_watts,
+            max_watts = EXCLUDED.max_watts,
+            weighted_average_watts = EXCLUDED.weighted_average_watts,
+            kilojoules = EXCLUDED.kilojoules,
+            device_watts = EXCLUDED.device_watts,
+            average_speed = EXCLUDED.average_speed,
+            max_speed = EXCLUDED.max_speed,
+            suffer_score = EXCLUDED.suffer_score,
+            fetched_at = CURRENT_TIMESTAMP
+    """, row)
+    conn.commit()
+
+def get_strava_activities(rider_id, days=28):
+    """Get recent Strava activities for a rider."""
+    return _execute("""
+        SELECT * FROM strava_activity
+        WHERE rider_id = %s AND start_date_local >= NOW() - INTERVAL '%s days'
+        ORDER BY start_date_local DESC
+    """, (rider_id, days)).fetchall()
+
+def get_strava_activities_for_calendar(rider_id, days=28):
+    """Get activities with date column for calendar display."""
+    return _execute("""
+        SELECT *, DATE(start_date_local) as activity_date
+        FROM strava_activity
+        WHERE rider_id = %s AND start_date_local >= NOW() - INTERVAL '%s days'
+        ORDER BY start_date_local ASC
+    """, (rider_id, days)).fetchall()
