@@ -57,9 +57,11 @@ def index():
         current = get_current_season()
         current_stats = get_season_stats(current['id'], past_only=True) if current else {}
 
-        # Season summaries for cards
+        # Season summaries for cards (exclude Pune Randonneurs pre-2021 seasons)
         season_summaries = []
         for s in seasons:
+            if s['name'] < '2021':
+                continue
             ss = get_season_stats(s['id'])
             season_summaries.append({
                 'name': s['name'],
@@ -110,29 +112,43 @@ def submit_feedback():
         return jsonify({'error': 'Invalid request'}), 400
 
     name = (data.get('name') or '').strip()
-    email = (data.get('email') or '').strip()
+    email = (data.get('email') or '').strip()  # optional, only present for logged-in users
     text = (data.get('feedback') or '').strip()
+    fb_type = (data.get('type') or 'feature').strip().lower()
 
-    if not name or not email or not text:
-        return jsonify({'error': 'All fields are required'}), 400
+    if not name or not text:
+        return jsonify({'error': 'Name and description are required'}), 400
+
+    if fb_type not in ('feature', 'bug'):
+        fb_type = 'feature'
 
     api_key = current_app.config.get('LINEAR_API_KEY')
     team_id = current_app.config.get('LINEAR_TEAM_ID')
     if not api_key or not team_id:
         return jsonify({'error': 'Feedback service is temporarily unavailable'}), 503
 
-    # Build title from first 60 chars of feedback
-    short_text = text[:60] + ('...' if len(text) > 60 else '')
-    title = f"Website Feedback: {short_text}"
+    # Map type to Linear label ID
+    label_id = (current_app.config.get('LINEAR_LABEL_BUG') if fb_type == 'bug'
+                else current_app.config.get('LINEAR_LABEL_FEATURE'))
 
-    description = f"**From:** {name} ({email})\n\n{text}"
+    # Build title with type prefix
+    type_label = 'Bug' if fb_type == 'bug' else 'Feature'
+    short_text = text[:60] + ('...' if len(text) > 60 else '')
+    title = f"[{type_label}] {short_text}"
+
+    # Build description with optional email
+    from_line = f"**From:** {name}"
+    if email:
+        from_line += f" ({email})"
+    description = f"{from_line}\n\n{text}"
 
     mutation = """
-    mutation($title: String!, $description: String!, $teamId: String!) {
+    mutation($title: String!, $description: String!, $teamId: String!, $labelIds: [String!]) {
       issueCreate(input: {
         teamId: $teamId
         title: $title
         description: $description
+        labelIds: $labelIds
       }) {
         success
         issue { id identifier url }
@@ -140,17 +156,17 @@ def submit_feedback():
     }
     """
 
+    variables = {
+        'title': title,
+        'description': description,
+        'teamId': team_id,
+        'labelIds': [label_id] if label_id else [],
+    }
+
     try:
         resp = http_requests.post(
             'https://api.linear.app/graphql',
-            json={
-                'query': mutation,
-                'variables': {
-                    'title': title,
-                    'description': description,
-                    'teamId': team_id,
-                }
-            },
+            json={'query': mutation, 'variables': variables},
             headers={
                 'Content-Type': 'application/json',
                 'Authorization': api_key,
