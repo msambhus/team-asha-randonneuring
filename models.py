@@ -523,7 +523,7 @@ def get_pbp_finishers(season_id):
         WHERE ri.season_id = %s AND ri.ride_type = 'PBP'
               AND rr.status = %s
         ORDER BY rr.finish_time
-    """, (season_id,)).fetchall()
+    """, (season_id, RideStatus.FINISHED.value)).fetchall()
 
 
 # ========== SIGNUPS ==========
