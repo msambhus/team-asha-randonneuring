@@ -1,5 +1,5 @@
 """Rider routes: season view, individual profiles, profile edit, upcoming brevets, ride plans."""
-from flask import Blueprint, render_template, abort, request, redirect, url_for, session
+from flask import Blueprint, render_template, abort, request, redirect, url_for, session, jsonify
 from models import (get_season_by_name, get_riders_for_season, get_active_riders_for_season,
                     get_rides_for_season, get_participation_matrix, get_season_stats,
                     get_rider_by_rusa, get_rider_participation, get_rider_career_stats,
@@ -583,29 +583,15 @@ def rider_profile(rusa_id):
         })
         upcoming_rides.append(ride_dict)
 
-    # Pass 2: one batched AI coaching call (with brevet history fallback)
-    ai_advice = {}
-    if rides_for_ai:
-        ai_advice = generate_openai_advice(
-            rider, activities, fitness_score, rides_for_ai, season_data
-        )
-
-    # Pass 3: assign advice — AI if available, else rule-based fallback
+    # Assign rule-based advice immediately (AI advice loaded async after page load)
     for ride_dict in upcoming_rides:
-        ride_id = ride_dict.get('id')
-        if ride_id and ride_id in ai_advice:
-            ride_dict['advice'] = [ai_advice[ride_id]]
-        elif ride_dict.get('readiness') is not None:
+        if ride_dict.get('readiness') is not None:
             weeks_until = ride_dict.pop('_weeks_until', 4)
             ride_dict['advice'] = generate_training_advice(
                 ride_dict['readiness'], ride_dict, weeks_until
             )
         else:
-            # No Strava, no AI — check if AI returned advice via brevet history
-            if ride_id and ride_id in ai_advice:
-                ride_dict['advice'] = [ai_advice[ride_id]]
-            else:
-                ride_dict['advice'] = []
+            ride_dict['advice'] = []
         ride_dict.pop('_weeks_until', None)
 
     return render_template('rider_profile.html',
@@ -623,6 +609,89 @@ def rider_profile(rusa_id):
                            r12_years=r12_years,
                            is_own_profile=is_own_profile,
                            show_strava_data=show_strava_data)
+
+
+@riders_bp.route('/rider/<int:rusa_id>/advice')
+def rider_advice_api(rusa_id):
+    """Async API endpoint: returns AI coaching advice as JSON."""
+    rider = get_rider_by_rusa(rusa_id)
+    if not rider:
+        return jsonify({}), 404
+
+    # Determine if Strava data should be visible
+    is_own_profile = session.get('rider_id') == rider['id']
+    strava_data_private = rider.get('strava_data_private', False)
+    show_strava_data = is_own_profile or not strava_data_private
+
+    # Load Strava data
+    strava_connection = get_strava_connection(rider['id'])
+    activities = []
+    fitness_score = None
+    if strava_connection and show_strava_data:
+        activities = get_strava_activities(rider['id'], days=28)
+        if activities:
+            fitness_score = calculate_fitness_score(activities)
+
+    # Build season data for brevet history fallback
+    seasons = get_all_seasons()
+    current = get_current_season()
+    season_data = []
+    for s in seasons:
+        participation = get_rider_participation(rider['id'], s['id'])
+        stats = get_rider_season_stats(rider['id'], s['id'])
+        is_cur = current and current['id'] == s['id']
+        if participation:
+            season_data.append({
+                'season': s,
+                'participation': participation,
+                'rides': stats['rides'],
+                'kms': stats['kms'],
+                'is_current': is_cur,
+            })
+
+    # Build upcoming rides with readiness
+    signups = get_rider_upcoming_signups(rider['id'])
+    signups_list = []
+    for s in signups:
+        ride_dict = dict(s)
+        ride_dict['route_name'] = ride_dict.get('name', '')
+        signups_list.append(ride_dict)
+
+    plans = get_all_ride_plans()
+    _match_plans_to_events(signups_list, plans)
+
+    rides_for_ai = []
+    today = date.today()
+    for ride_dict in signups_list:
+        ride_date = ride_dict.get('date')
+        if ride_date:
+            if isinstance(ride_date, str):
+                ride_date = datetime.strptime(ride_date, '%Y-%m-%d').date()
+            weeks_until = max(0, (ride_date - today).days // 7)
+        else:
+            weeks_until = 4
+
+        if activities:
+            readiness = assess_readiness(activities, ride_dict)
+            ride_dict['readiness'] = readiness
+        else:
+            ride_dict['readiness'] = None
+
+        rides_for_ai.append({
+            'ride': ride_dict,
+            'readiness': ride_dict.get('readiness'),
+            'weeks_until': weeks_until,
+            'signup_status': ride_dict.get('signup_status', 'GOING'),
+        })
+
+    ai_advice = {}
+    if rides_for_ai:
+        ai_advice = generate_openai_advice(
+            rider, activities, fitness_score, rides_for_ai, season_data
+        )
+
+    # Return as {ride_id_str: advice_string}
+    return jsonify({str(k): v for k, v in ai_advice.items()})
 
 
 @riders_bp.route('/rider/<int:rusa_id>/edit', methods=['GET', 'POST'])
