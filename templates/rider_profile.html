@@ -44,6 +44,16 @@
     color: #2c5282 !important;
     text-decoration: underline !important;
 }
+
+/* Upcoming ride card hover effects */
+.upcoming-ride-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12) !important;
+}
+.advice-tip:hover {
+    background: #f7fafc !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1) !important;
+}
 </style>
 {% endblock %}
 
@@ -84,45 +94,78 @@
 
 {# ===== UPCOMING RIDES (COMPACT GRID) ===== #}
 {% if upcoming_rides %}
-<div style="margin-bottom:30px;">
-    <h3 style="color:var(--primary); margin-bottom:10px;">Upcoming Rides</h3>
-    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:12px;">
+<div style="margin-bottom:40px;">
+    <div style="margin-bottom:20px; padding-bottom:12px; border-bottom:2px solid #e2e8f0;">
+        <h3 style="color:var(--primary); margin:0 0 4px 0; font-size:1.5rem; font-weight:700;">Upcoming Rides</h3>
+        <p style="margin:0; font-size:0.85rem; color:var(--text-light);">Rides you're signed up for</p>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:14px;">
     {% for ride in upcoming_rides %}
-    <div style="display:flex; flex-direction:column; padding:12px 14px; background:white; border-radius:10px; border:2px solid {% if ride.is_soon %}#f59e0b{% else %}#e2e8f0{% endif %}; border-top:4px solid {% if ride.is_soon %}#f59e0b{% elif ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}; {% if ride.is_soon %}box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);{% endif %}">
-        <div style="font-weight:600; font-size:0.82rem; color:var(--text); margin-bottom:4px; line-height:1.3;">
-            {{ ride.name|clean_name }}
-            {% if ride.signup_status == 'MAYBE' %}<span style="font-size:0.65rem; font-weight:500; color:#d69e2e;">(Maybe)</span>{% endif %}
-            {% if ride.is_soon %}<span style="font-size:0.65rem; font-weight:700; color:#f59e0b; margin-left:4px;">🔔 {{ ride.days_until }} day{% if ride.days_until != 1 %}s{% endif %}</span>{% endif %}
-        </div>
-        <div style="font-size:0.72rem; color:var(--text-light); margin-bottom:6px;">
-            {{ ride.date }}{% if ride.start_time %} {{ ride.start_time }}{% endif %}
-            {% if ride.distance_miles %} &bull; {{ ride.distance_miles|round(0)|int }} mi{% elif ride.distance_km %} &bull; {{ (ride.distance_km * 0.621371)|round(0)|int }} mi{% endif %}
-            {% if ride.elevation_ft %} &bull; {{ "{:,}".format(ride.elevation_ft) }} ft{% endif %}
+    <div class="upcoming-ride-card" style="display:flex; flex-direction:column; padding:14px 16px; background:white; border-radius:12px; border:2px solid {% if ride.is_soon %}#f59e0b{% else %}#e2e8f0{% endif %}; border-top:5px solid {% if ride.is_soon %}#f59e0b{% elif ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}; {% if ride.is_soon %}box-shadow: 0 4px 16px rgba(245, 158, 11, 0.25);{% else %}box-shadow: 0 2px 4px rgba(0,0,0,0.05);{% endif %} transition:all 0.2s ease;">
+        <div style="margin-bottom:10px;">
+            <div style="font-weight:700; font-size:0.9rem; color:var(--text); margin-bottom:6px; line-height:1.3;">
+                {{ ride.name|clean_name }}
+                {% if ride.signup_status == 'MAYBE' %}
+                <span style="display:inline-block; font-size:0.65rem; font-weight:600; color:#d69e2e; background:#fef3c7; padding:2px 6px; border-radius:4px; margin-left:4px;">Maybe</span>
+                {% endif %}
+            </div>
+            {% if ride.is_soon %}
+            <div style="display:inline-flex; align-items:center; gap:4px; font-size:0.7rem; font-weight:700; color:#f59e0b; background:#fff7ed; padding:4px 8px; border-radius:6px; margin-bottom:8px;">
+                <span style="font-size:0.9rem;">🔔</span>
+                <span>{{ ride.days_until }} day{% if ride.days_until != 1 %}s{% endif %} away</span>
+            </div>
+            {% endif %}
+            <div style="display:flex; flex-wrap:wrap; gap:8px; font-size:0.75rem; color:var(--text-light); margin-bottom:4px;">
+                <span style="display:inline-flex; align-items:center; gap:3px; font-weight:600;">
+                    📅 {{ ride.date }}{% if ride.start_time %} {{ ride.start_time }}{% endif %}
+                </span>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:10px; font-size:0.75rem; color:var(--text-light);">
+                {% if ride.distance_miles %}
+                <span style="display:inline-flex; align-items:center; gap:3px;">
+                    <span style="font-weight:600; color:var(--text);">{{ ride.distance_miles|round(0)|int }}</span> mi
+                </span>
+                {% elif ride.distance_km %}
+                <span style="display:inline-flex; align-items:center; gap:3px;">
+                    <span style="font-weight:600; color:var(--text);">{{ (ride.distance_km * 0.621371)|round(0)|int }}</span> mi
+                </span>
+                {% endif %}
+                {% if ride.elevation_ft %}
+                <span style="display:inline-flex; align-items:center; gap:3px;">
+                    <span style="font-weight:600; color:var(--text);">{{ "{:,}".format(ride.elevation_ft) }}</span> ft
+                </span>
+                {% endif %}
+            </div>
         </div>
         
         {# Start Location #}
         {% if ride.start_location %}
-        <div style="font-size:0.7rem; color:var(--text-light); margin-bottom:8px;">
-            <strong>Location:</strong> {{ ride.start_location }}
+        <div style="font-size:0.75rem; color:var(--text-light); margin-bottom:10px; padding:6px 8px; background:#f7fafc; border-radius:6px; border-left:3px solid var(--primary);">
+            <span style="font-weight:600; color:var(--text);">📍</span> {{ ride.start_location }}
         </div>
         {% endif %}
         
-        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+        {% if ride.readiness or ride.advice %}
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; padding:8px; background:#f7fafc; border-radius:8px;">
         {% if ride.readiness %}
-            <div style="width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:800; color:white; background:{{ ride.readiness.color }};">
-                {{ ride.readiness.score }}
-            </div>
-            <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.6rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:white; background:{{ ride.readiness.color }};">
-                {% if ride.readiness.level == 'ready' %}Ready{% elif ride.readiness.level == 'caution' %}Needs Work{% else %}Not Ready{% endif %}
+            <div style="display:inline-flex; align-items:center; gap:6px;">
+                <div style="width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:900; color:white; background:{{ ride.readiness.color }}; box-shadow:0 2px 4px rgba(0,0,0,0.15);">
+                    {{ ride.readiness.score }}
+                </div>
+                <div style="display:inline-block; padding:4px 10px; border-radius:12px; font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:white; background:{{ ride.readiness.color }};">
+                    {% if ride.readiness.level == 'ready' %}✓ Ready{% elif ride.readiness.level == 'caution' %}⚠️ Needs Work{% else %}⚠️ Not Ready{% endif %}
+                </div>
             </div>
         {% endif %}
             {% if ride.advice %}
-            <span class="advice-tip" style="position:relative; cursor:pointer; display:flex; align-items:center;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><circle cx="8" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/><circle cx="12" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/><circle cx="16" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/></svg>
+            <span class="advice-tip" style="position:relative; cursor:pointer; display:inline-flex; align-items:center; background:white; padding:4px 8px; border-radius:8px; border:1px solid #e2e8f0; transition:all 0.2s;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><circle cx="8" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/><circle cx="12" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/><circle cx="16" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/></svg>
+                <span style="font-size:0.65rem; margin-left:4px; font-weight:600; color:{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %};">Advice</span>
                 <span class="advice-tooltip">{% for tip in ride.advice %}{{ tip }}{% if not loop.last %}<br><br>{% endif %}{% endfor %}</span>
             </span>
             {% endif %}
         </div>
+        {% endif %}
         
         {# Ride Plan and Route Links - Pushed to bottom #}
         <div style="display:flex; gap:6px; margin-top:auto; padding-top:8px; border-top:1px solid #f1f5f9; flex-wrap:wrap;">
