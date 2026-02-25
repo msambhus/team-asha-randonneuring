@@ -26,11 +26,11 @@
 <td>
 <select name="status_{{ r.id }}" class="status-select">
 <option value="">--</option>
-<option value="Yes" {{ 'selected' if ride_statuses.get(r.id) == 'Yes' }}>Yes (Finished)</option>
-<option value="No" {{ 'selected' if ride_statuses.get(r.id) == 'No' }}>No (Did not ride)</option>
-<option value="DNF" {{ 'selected' if ride_statuses.get(r.id) == 'DNF' }}>DNF</option>
-<option value="DNS" {{ 'selected' if ride_statuses.get(r.id) == 'DNS' }}>DNS</option>
+<option value="FINISHED" {{ 'selected' if ride_statuses.get(r.id) == 'FINISHED' }}>✓ Finished</option>
+<option value="DNF" {{ 'selected' if ride_statuses.get(r.id) == 'DNF' }}>DNF (Did Not Finish)</option>
+<option value="DNS" {{ 'selected' if ride_statuses.get(r.id) == 'DNS' }}>DNS (Did Not Start)</option>
 <option value="OTL" {{ 'selected' if ride_statuses.get(r.id) == 'OTL' }}>OTL (Over Time Limit)</option>
+<option value="SIGNED_UP" {{ 'selected' if ride_statuses.get(r.id) == 'SIGNED_UP' }}>Signed Up (Pre-ride)</option>
 </select>
 </td>
 </tr>
