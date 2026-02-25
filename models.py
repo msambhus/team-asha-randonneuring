@@ -1036,6 +1036,6 @@ def get_rider_upcoming_signups(rider_id):
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE rr.rider_id = %s
           AND ri.date >= %s
-          AND rr.status IN (%s, %s)
+          AND rr.status IN (%s, %s, %s)
         ORDER BY ri.date ASC
-    """, (rider_id, today, RideStatus.SIGNED_UP.value, RideStatus.INTERESTED.value)).fetchall()
+    """, (rider_id, today, RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.MAYBE.value)).fetchall()
