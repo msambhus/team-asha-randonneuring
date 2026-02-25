@@ -10,17 +10,26 @@ def exchange_code_for_token(code):
     Returns:
         dict with athlete, access_token, refresh_token, expires_at
     """
+    client_secret = current_app.config['STRAVA_CLIENT_SECRET']
+    if not client_secret:
+        raise Exception("STRAVA_CLIENT_SECRET not configured — add it to environment variables")
+
     resp = http_requests.post(
         current_app.config['STRAVA_TOKEN_URL'],
         data={
             'client_id': current_app.config['STRAVA_CLIENT_ID'],
-            'client_secret': current_app.config['STRAVA_CLIENT_SECRET'],
+            'client_secret': client_secret,
             'code': code,
             'grant_type': 'authorization_code',
         },
         timeout=10,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        try:
+            detail = resp.json()
+        except Exception:
+            detail = resp.text
+        raise Exception(f"Strava token error ({resp.status_code}): {detail}")
     return resp.json()
 
 
@@ -50,7 +59,12 @@ def _get_valid_token(connection):
         },
         timeout=10,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        try:
+            detail = resp.json()
+        except Exception:
+            detail = resp.text
+        raise Exception(f"Strava token refresh error ({resp.status_code}): {detail}")
     token_data = resp.json()
 
     # Persist new tokens
