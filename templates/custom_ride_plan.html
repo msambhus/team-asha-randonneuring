@@ -536,7 +536,12 @@
                     <div class="stop-metrics">
                         <div class="metric-box">
                             <div class="metric-label">Dist (mi)</div>
-                            <div class="metric-value">{{ "%.1f"|format(stop.distance_miles or 0) }}</div>
+                            <input type="number" class="inline-edit" 
+                                   step="0.1"
+                                   value="{{ "%.1f"|format(stop.distance_miles or 0) }}"
+                                   data-stop-id="{{ stop.custom_stop_id or stop.id }}"
+                                   data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
+                                   onchange="trackDistanceChange(this)">
                         </div>
                         <div class="metric-box">
                             <div class="metric-label">Seg Time</div>
@@ -651,6 +656,7 @@ let hasUnsavedChanges = isCreateMode; // Mark dirty if creating new plan
 let pendingChanges = {
     settings: {},
     stopTimes: {},
+    stopDistances: {},
     addedStops: [],
     deletedStops: []
 };
@@ -721,6 +727,24 @@ function trackTimeChange(input) {
     
     // Recalculate cumulative times for all stops
     recalculateTimes();
+    
+    markDirty();
+}
+
+function trackDistanceChange(input) {
+    const stopId = input.dataset.stopId;
+    const distance = parseFloat(input.value);
+    
+    // Track distance changes in edit mode
+    if (!isCreateMode) {
+        pendingChanges.stopDistances[stopId] = distance;
+    }
+    
+    // Update the data-distance attribute on the stop row
+    const stopRow = input.closest('.stop-row');
+    if (stopRow) {
+        stopRow.dataset.distance = distance;
+    }
     
     markDirty();
 }
@@ -1137,6 +1161,19 @@ async function saveAllChanges() {
                         method: 'PUT',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({segment_time_min: time})
+                    })
+                );
+            });
+        }
+        
+        // Save manually edited stop distances
+        if (!isCreateMode && Object.keys(pendingChanges.stopDistances).length > 0) {
+            Object.entries(pendingChanges.stopDistances).forEach(([stopId, distance]) => {
+                promises.push(
+                    fetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({distance_miles: distance})
                     })
                 );
             });

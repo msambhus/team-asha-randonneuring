@@ -725,7 +725,7 @@
         {% endif %}
 
         {% if event.plan_slug %}
-        <a href="{% if event.has_custom_plan %}{{ url_for('riders.custom_ride_plan_view', slug=event.plan_slug) }}{% else %}{{ url_for('riders.ride_plan_detail', slug=event.plan_slug) }}{% endif %}" class="event-link-btn" style="background:linear-gradient(135deg,#f0f4ff,#e8f0fe);border-color:#c7d2fe;color:#4338ca;">
+        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug, view='custom' if event.has_custom_plan else 'base') }}" class="event-link-btn" style="background:linear-gradient(135deg,#f0f4ff,#e8f0fe);border-color:#c7d2fe;color:#4338ca;">
             📍 Ride Plan{% if event.has_custom_plan %} (Custom){% endif %}
         </a>
         {% endif %}
