@@ -78,14 +78,30 @@ Team Asha Randonneuring &copy; 2025-2026 &bull; Raising funds for education of u
 <form id="feedback-form" onsubmit="submitFeedback(event)">
 <div class="mb-4">
 <label class="block text-[0.85rem] font-semibold text-text mb-1">Your Name</label>
+{% if user_logged_in and rider_name %}
+<input type="text" id="fb-name" required class="w-full py-2.5 px-3 border border-border rounded-lg text-sm bg-gray-50" value="{{ rider_name }}" readonly>
+{% else %}
 <input type="text" id="fb-name" required class="w-full py-2.5 px-3 border border-border rounded-lg text-sm" placeholder="e.g. Mihir Sambhus">
+{% endif %}
 </div>
+{% if user_logged_in and user_email %}
+<input type="hidden" id="fb-email" value="{{ user_email }}">
+{% endif %}
 <div class="mb-4">
-<label class="block text-[0.85rem] font-semibold text-text mb-1">Your Email</label>
-<input type="email" id="fb-email" required class="w-full py-2.5 px-3 border border-border rounded-lg text-sm" placeholder="you@email.com">
+<label class="block text-[0.85rem] font-semibold text-text mb-2">Type</label>
+<div class="flex gap-2">
+<label class="flex-1 cursor-pointer">
+    <input type="radio" name="fb-type" value="feature" checked class="hidden peer">
+    <div class="text-center py-2 px-3 rounded-lg border-2 border-border text-sm font-medium transition-all peer-checked:border-purple-500 peer-checked:bg-purple-50 peer-checked:text-purple-700">Feature Request</div>
+</label>
+<label class="flex-1 cursor-pointer">
+    <input type="radio" name="fb-type" value="bug" class="hidden peer">
+    <div class="text-center py-2 px-3 rounded-lg border-2 border-border text-sm font-medium transition-all peer-checked:border-red-500 peer-checked:bg-red-50 peer-checked:text-red-700">Bug Report</div>
+</label>
+</div>
 </div>
 <div class="mb-5">
-<label class="block text-[0.85rem] font-semibold text-text mb-1">Feedback</label>
+<label class="block text-[0.85rem] font-semibold text-text mb-1">Description</label>
 <textarea id="fb-text" required rows="4" class="w-full py-2.5 px-3 border border-border rounded-lg text-sm resize-y" placeholder="What would you like to share?"></textarea>
 </div>
 <button type="submit" class="inline-block py-2.5 px-6 rounded-lg font-semibold text-sm cursor-pointer border-0 transition-opacity bg-primary text-white hover:opacity-90 w-full">Send Feedback</button>
@@ -100,14 +116,19 @@ function submitFeedback(e) {
     btn.disabled = true;
     btn.textContent = 'Sending...';
 
+    var typeEl = document.querySelector('input[name="fb-type"]:checked');
+    var emailEl = document.getElementById('fb-email');
+    var payload = {
+        name: document.getElementById('fb-name').value,
+        feedback: document.getElementById('fb-text').value,
+        type: typeEl ? typeEl.value : 'feature'
+    };
+    if (emailEl) payload.email = emailEl.value;
+
     fetch('/api/feedback', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            name: document.getElementById('fb-name').value,
-            email: document.getElementById('fb-email').value,
-            feedback: document.getElementById('fb-text').value
-        })
+        body: JSON.stringify(payload)
     })
     .then(function(r) { return r.json(); })
     .then(function(data) {
