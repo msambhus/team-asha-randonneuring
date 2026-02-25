@@ -1299,35 +1299,97 @@ def update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min=None, note
     cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
     return cur.rowcount > 0
 
-def add_custom_stop(custom_plan_id, location, stop_type, distance_miles, elevation_gain, after_stop_order, notes=None):
-    """Add a custom stop at a specific position."""
+def add_custom_stop(custom_plan_id, location, stop_type, distance_miles, elevation_gain, after_stop_order, segment_time_min=None, notes=None):
+    """Add a custom stop at a specific position by distance."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
     try:
-        new_order = after_stop_order + 1
+        # Get the base plan id
+        cur.execute("SELECT base_plan_id, rider_id FROM custom_ride_plan WHERE id = %s", (custom_plan_id,))
+        plan = cur.fetchone()
+        if not plan:
+            raise Exception("Custom plan not found")
         
-        # Shift subsequent stops down
+        # Find max stop_order to append at end
         cur.execute("""
-            UPDATE custom_ride_plan_stop
-            SET stop_order = stop_order + 1
-            WHERE custom_plan_id = %s AND stop_order >= %s
-        """, (custom_plan_id, new_order))
+            SELECT COALESCE(MAX(stop_order), 0) as max_order
+            FROM (
+                SELECT stop_order FROM ride_plan_stop WHERE ride_plan_id = %s
+                UNION
+                SELECT stop_order FROM custom_ride_plan_stop WHERE custom_plan_id = %s
+            ) combined
+        """, (plan['base_plan_id'], custom_plan_id))
+        result = cur.fetchone()
+        new_order = result['max_order'] + 1
         
-        # Insert new custom stop
+        # Insert new custom stop with high stop_order
+        # It will be sorted by distance_miles for display
         cur.execute("""
             INSERT INTO custom_ride_plan_stop 
             (custom_plan_id, stop_order, location, stop_type, distance_miles, 
-             elevation_gain, notes, is_custom_stop)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)
+             elevation_gain, segment_time_min, notes, is_custom_stop)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE)
             RETURNING id
         """, (custom_plan_id, new_order, location, stop_type, distance_miles, 
-              elevation_gain, notes))
+              elevation_gain, segment_time_min, notes))
         
-        result = cur.fetchone()
+        new_stop_id = cur.fetchone()['id']
+        
+        # Adjust timing for the next stop if segment_time_min was provided
+        if segment_time_min and segment_time_min > 0:
+            # Find the next stop by distance
+            cur.execute("""
+                SELECT rps.id as base_stop_id, rps.distance_miles, rps.segment_time_min,
+                       crps.id as override_id, crps.segment_time_min as custom_time
+                FROM ride_plan_stop rps
+                LEFT JOIN custom_ride_plan_stop crps 
+                    ON crps.custom_plan_id = %s AND crps.base_stop_id = rps.id
+                WHERE rps.ride_plan_id = %s 
+                AND rps.distance_miles > %s
+                AND NOT EXISTS (
+                    SELECT 1 FROM custom_ride_plan_stop 
+                    WHERE custom_plan_id = %s AND base_stop_id = rps.id AND is_hidden = TRUE
+                )
+                ORDER BY rps.distance_miles ASC
+                LIMIT 1
+            """, (custom_plan_id, plan['base_plan_id'], distance_miles, custom_plan_id))
+            
+            next_stop = cur.fetchone()
+            if next_stop:
+                original_time = int(next_stop['custom_time'] or next_stop['segment_time_min'] or 0)
+                if original_time > 0:
+                    # Calculate adjusted time: original_time - new_stop_time
+                    adjusted_time = max(1, original_time - segment_time_min)
+                    
+                    # Create or update override for the next stop
+                    if next_stop['override_id']:
+                        # Update existing override
+                        cur.execute("""
+                            UPDATE custom_ride_plan_stop
+                            SET segment_time_min = %s
+                            WHERE id = %s
+                        """, (adjusted_time, next_stop['override_id']))
+                    else:
+                        # Create new override
+                        cur.execute("""
+                            INSERT INTO custom_ride_plan_stop
+                            (custom_plan_id, base_stop_id, stop_order, location, stop_type,
+                             distance_miles, elevation_gain, segment_time_min, is_custom_stop)
+                            SELECT %s, id, stop_order, location, stop_type,
+                                   distance_miles, elevation_gain, %s, FALSE
+                            FROM ride_plan_stop
+                            WHERE id = %s
+                        """, (custom_plan_id, adjusted_time, next_stop['base_stop_id']))
+        
         conn.commit()
+        
+        # Clear caches
         cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
-        return result['id'] if result else None
+        cache.delete_memoized(get_custom_plan_by_id, custom_plan_id)
+        cache.delete_memoized(get_custom_plan, plan['rider_id'], plan['base_plan_id'])
+        
+        return new_stop_id
     except Exception as e:
         conn.rollback()
         raise e

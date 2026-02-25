@@ -62,11 +62,11 @@
     font-variant-numeric: tabular-nums;
 }
 .journey-eta {
-    font-size: 0.55rem;
-    color: var(--text-light);
-    margin-top: 1px;
+    font-size: 0.7rem;
+    color: #0369a1;
+    margin-top: 3px;
     font-variant-numeric: tabular-nums;
-    opacity: 0.8;
+    font-weight: 600;
 }
 
 /* ===== TERRAIN DIFFICULTY STRIP ===== */
@@ -140,26 +140,33 @@
 }
 .segment-metrics {
     display: flex;
-    gap: 16px;
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid #f1f5f9;
     flex-wrap: wrap;
+    gap: 18px;
+    margin-top: 14px;
+    margin-left: 15px;
+    padding-top: 14px;
+    border-top: 1px solid #e2e8f0;
 }
-.metric { text-align: center; min-width: 52px; }
+.metric { 
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+    min-width: 60px;
+}
 .metric-value {
     font-size: 0.95rem;
     font-weight: 700;
-    color: var(--primary);
+    color: var(--text);
     font-variant-numeric: tabular-nums;
 }
 .metric-value.elev { color: #dc2626; }
 .metric-label {
-    font-size: 0.6rem;
-    color: var(--text-light);
+    font-size: 0.65rem;
+    color: #94a3b8;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-top: 1px;
+    letter-spacing: 0.3px;
+    font-weight: 600;
 }
 
 /* Difficulty stripe on right edge */
@@ -849,10 +856,42 @@
         <span style="background:rgba(255,255,255,0.2);padding:4px 14px;border-radius:20px;font-size:0.85rem;font-weight:600;">{{ plan.distance_km }}K Brevet</span>
         {% endif %}
     </div>
-    <h1>{{ plan.name }}</h1>
+    <h1>{% if is_custom_view and plan.custom_name %}{{ plan.custom_name }}{% else %}{{ plan.name }}{% endif %}</h1>
     <p style="opacity:0.85;margin-top:8px;">{{ stops|length }} stops &middot; {{ "%.1f"|format(plan.total_distance_miles) }} miles &middot; {{ "{:,}".format(plan.total_elevation_ft) }} ft of climbing</p>
     {% if plan.cutoff_hours %}
     <p style="opacity:0.65;font-size:0.88rem;margin-top:4px;">ACP time limit: {{ plan.cutoff_hours }}h &middot; Start: <span id="hero-start-time">{{ plan.start_time }}</span></p>
+    {% endif %}
+    
+    {# View Tabs - show when user has custom plan #}
+    {% if user_custom_plan %}
+    <div style="display:flex;gap:0;justify-content:center;margin-top:20px;border-bottom:2px solid rgba(255,255,255,0.2);padding-bottom:0;">
+        <a href="{{ url_for('riders.custom_ride_plan_view', slug=plan.slug) }}" 
+           class="tab-link {% if is_custom_view %}active{% endif %}"
+           style="padding:12px 24px;font-weight:600;border-bottom:3px solid {% if is_custom_view %}white{% else %}transparent{% endif %};color:{% if is_custom_view %}white{% else %}rgba(255,255,255,0.7){% endif %};text-decoration:none;transition:all 0.2s;">
+            My Custom Plan
+        </a>
+        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug) }}" 
+           class="tab-link {% if not is_custom_view %}active{% endif %}"
+           style="padding:12px 24px;font-weight:600;border-bottom:3px solid {% if not is_custom_view %}white{% else %}transparent{% endif %};color:{% if not is_custom_view %}white{% else %}rgba(255,255,255,0.7){% endif %};text-decoration:none;transition:all 0.2s;">
+            Base Plan
+        </a>
+        <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}" 
+           class="tab-link"
+           style="padding:12px 24px;font-weight:600;border-bottom:3px solid transparent;color:rgba(255,255,255,0.7);text-decoration:none;transition:all 0.2s;">
+            Compare
+        </a>
+        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}" 
+           class="tab-link"
+           style="padding:12px 24px;font-weight:600;border-bottom:3px solid transparent;color:rgba(255,255,255,0.7);text-decoration:none;transition:all 0.2s;">
+            ✏️ Edit
+        </a>
+    </div>
+    <style>
+    .tab-link:hover {
+        color: white !important;
+        border-bottom-color: white !important;
+    }
+    </style>
     {% endif %}
 </div>
 
@@ -1065,9 +1104,7 @@
     <div class="journey-dot" style="background:{{ n.difficulty_color }};box-shadow:0 0 0 2px {{ n.difficulty_color }};"></div>
     <div class="journey-label">{{ n.label }}</div>
     <div class="journey-dist">{{ "%.1f"|format(n.distance_miles) }} mi</div>
-    {% if n.cum_time_min %}
-    <div class="journey-eta arrival-time" data-cum-min="{{ n.cum_time_min }}">~--:--</div>
-    {% endif %}
+    <div class="journey-eta arrival-time" data-cum-min="{{ (n['arrival_time_min']|default(0))|int }}">{% if n.distance_miles > 0 %}--:--{% endif %}</div>
 </div>
 {% endfor %}
 </div>
@@ -1106,18 +1143,14 @@
     {% for s in stops %}
     {% if s.time_bank_min is not none and s.stop_type in ['control', 'rest', 'finish', 'start'] and s.distance_miles and s.distance_miles > 0 %}
     <div class="tod-grid">
-        <span class="tod-label">{{ s.location }}</span>
-        <span class="tod-time arrival-time" data-cum-min="{{ s.cum_time_min }}">
+        <span class="tod-label">{{ s.location }}{% if s.stop_duration_min %} <span style="color:#94a3b8;font-size:0.75rem;">({{ s.stop_duration_min }}min stop)</span>{% endif %}</span>
+        <span class="tod-time arrival-time" data-cum-min="{{ (s['arrival_time_min']|default(0))|int }}">
             &mdash;
         </span>
         <span class="tod-dist">{{ "%.1f"|format(s.distance_miles) }} mi</span>
-        <span class="tod-bank" style="color:{% if s.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
+        <span class="tod-bank" style="font-weight:600;color:{% if s.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
             {% if s.time_bank_min >= 0 %}+{% endif %}{% set abs_min = s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min %}{{ (abs_min // 60)|int }}h{{ "%02d"|format(abs_min % 60) }}m
         </span>
-        <div class="tod-bar-bg">
-            {% set bank_pct = [((s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min) / (plan.cutoff_hours * 60) * 100)|round(0)|int, 100]|min %}
-            <div class="tod-bar" style="width:{{ bank_pct }}%;background:{% if s.time_bank_min >= 0 %}linear-gradient(90deg,#86efac,#22c55e){% else %}linear-gradient(90deg,#fca5a5,#dc2626){% endif %};"></div>
-        </div>
     </div>
     {% endif %}
     {% endfor %}
@@ -1163,16 +1196,16 @@
     <div class="segment-metrics">
         <div class="metric">
             <div class="metric-value">{{ "%.1f"|format(s.seg_dist) }}</div>
-            <div class="metric-label">Seg. Miles</div>
+            <div class="metric-label">Seg Mi</div>
         </div>
         <div class="metric">
-            <div class="metric-value" style="color:var(--primary);">{{ "%.1f"|format(s.distance_miles) if s.distance_miles else '&mdash;' }}</div>
-            <div class="metric-label">Cumul. Mi</div>
+            <div class="metric-value" style="color:var(--primary);">{{ "%.1f"|format(s.distance_miles) if s.distance_miles else '—' }}</div>
+            <div class="metric-label">Cumul Mi</div>
         </div>
         {% if s.elevation_gain and s.elevation_gain > 0 %}
         <div class="metric">
             <div class="metric-value elev">{{ "{:,}".format(s.elevation_gain) }}</div>
-            <div class="metric-label">Elev. Gain</div>
+            <div class="metric-label">Elev Ft</div>
         </div>
         {% endif %}
         {% if s.ft_per_mi %}
@@ -1186,7 +1219,7 @@
             <div class="metric-value">
                 {% if s.segment_time_min >= 60 %}{{ s.segment_time_min // 60 }}h{{ "%02d"|format(s.segment_time_min % 60) }}m{% else %}{{ s.segment_time_min }}m{% endif %}
             </div>
-            <div class="metric-label">Seg. Time</div>
+            <div class="metric-label">Seg Time</div>
         </div>
         {% endif %}
         {% if s.avg_speed %}
@@ -1198,7 +1231,7 @@
         {% if s.time_bank_min is not none %}
         <div class="metric">
             {% set abs_bank = s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min %}
-            <div class="metric-value" style="color:{% if s.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};font-size:0.82rem;">
+            <div class="metric-value" style="color:{% if s.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
                 {% if s.time_bank_min >= 0 %}+{% else %}&minus;{% endif %}{{ (abs_bank // 60)|int }}:{{ "%02d"|format(abs_bank % 60) }}
             </div>
             <div class="metric-label">Time Bank</div>
@@ -1346,15 +1379,14 @@ function recalcArrivalTimes(startTimeStr) {
 
     // Update all .arrival-time elements (time bank chart + journey strip ETAs)
     document.querySelectorAll('.arrival-time').forEach(function(el) {
-        var cumMin = parseInt(el.dataset.cumMin) || 0;
+        var cumMin = parseInt(el.dataset.cumMin, 10);
+        if (isNaN(cumMin)) cumMin = 0;
         var totalMin = startHour * 60 + startMin + cumMin;
         var h = Math.floor(totalMin / 60) % 24;
         var m = totalMin % 60;
         var ampm = h >= 12 ? 'PM' : 'AM';
         var displayH = h % 12 || 12;
-        // Journey strip ETAs get ~ prefix
-        var prefix = el.classList.contains('journey-eta') ? '~' : '';
-        el.textContent = prefix + displayH + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
+        el.textContent = displayH + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
     });
 
     // Update hero start time display
