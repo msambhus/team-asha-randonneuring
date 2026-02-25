@@ -42,20 +42,24 @@
 {% endblock %}
 
 {% macro badge(status, finish_time='', signed_up_at=None) %}
-{% set v = status|string|lower|trim %}
-{% if v in ('yes', '1', 'finished') %}
+{% set v = status|string|upper|trim %}
+{% if v in ('YES', '1', 'FINISHED') %}
 <span class="badge badge-yes">&#x2713;</span>
 {% if finish_time %}<br><span style="font-size:0.7rem;color:#666;">{{ finish_time }}</span>{% endif %}
-{% elif v == 'dnf' %}
-{# empty #}
-{% elif v == 'dns' %}
+{% elif v == 'DNF' %}
+<span class="badge badge-dnf">DNF</span>
+{% elif v == 'DNS' %}
 {# Only show DNS if they actually signed up (signed_up_at exists), otherwise treat as didn't participate #}
 {% if signed_up_at %}<span class="badge badge-dns">DNS</span>{% endif %}
-{% elif v == 'maybe' %}
+{% elif v == 'OTL' %}
+<span class="badge badge-otl">OTL</span>
+{% elif v == 'SIGNED_UP' %}
+<span class="badge badge-signup">&#x2192;</span>
+{% elif v == 'INTERESTED' %}
+<span class="badge badge-interested">?</span>
+{% elif v == 'MAYBE' %}
 <span class="badge badge-maybe">Maybe</span>
-{% elif v == 'otl' %}
-<span class="badge badge-dnf">OTL</span>
-{% elif v not in ('no', '0', '', 'nan', 'none') %}
+{% elif v not in ('NO', '0', '', 'NAN', 'NONE') %}
 <span class="badge">{{ status }}</span>
 {% endif %}
 {% endmacro %}

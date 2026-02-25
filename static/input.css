@@ -145,12 +145,24 @@
     @apply bg-[#fefcbf] text-[#744210];
   }
   
+  .badge-interested {
+    @apply bg-yellow-100 text-yellow-800 py-0.5 px-2.5 rounded-xl text-[0.78rem] font-semibold;
+  }
+
   .badge-maybe {
     @apply bg-[#e9d8fd] text-[#553c9a];
   }
   
   .badge-dns {
     @apply bg-[#feebc8] text-[#7b341e];
+  }
+
+  .badge-otl {
+    @apply bg-orange-100 text-orange-700 py-0.5 px-2.5 rounded-xl text-[0.78rem] font-semibold;
+  }
+
+  .badge-signup {
+    @apply bg-blue-100 text-blue-700 py-0.5 px-2.5 rounded-xl text-[0.78rem] font-semibold;
   }
   
   .sr-badge {

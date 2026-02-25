@@ -1,7 +1,74 @@
 """Data access layer — all SQL queries live here (PostgreSQL via psycopg2)."""
 from datetime import datetime, date
+from enum import Enum
 import psycopg2.extras
 from db import get_db
+
+
+class RideStatus(str, Enum):
+    """
+    Enumeration for rider_ride.status field.
+    Uses EXISTING database string values - no data migration needed.
+    Inherits from str to allow direct comparison with database TEXT values.
+    """
+    # Pre-ride statuses
+    INTERESTED = "INTERESTED"       # Soft interest, pre-signup
+    SIGNED_UP = "SIGNED_UP"         # Rider officially registered for upcoming ride
+
+    # Post-ride statuses (ride has occurred)
+    FINISHED = "FINISHED"           # Successfully completed within time limit
+    DNF = "DNF"                     # Did Not Finish
+    DNS = "DNS"                     # Did Not Start (signed up but didn't show)
+    OTL = "OTL"                     # Over Time Limit (finished but past cutoff)
+
+    @classmethod
+    def normalize(cls, value: str) -> 'RideStatus':
+        """
+        Normalize legacy status values to current enum.
+        Raises ValueError if status is invalid.
+        """
+        if not value or not value.strip():
+            raise ValueError("Status cannot be empty")
+
+        # Normalize to uppercase
+        val = value.upper().strip()
+
+        # Handle legacy values
+        legacy_mapping = {
+            'YES': cls.FINISHED,
+            '1': cls.FINISHED,
+            'NO': cls.DNS,
+            '0': cls.DNS,
+        }
+
+        if val in legacy_mapping:
+            return legacy_mapping[val]
+
+        # Try to match enum value
+        try:
+            return cls[val]
+        except KeyError:
+            raise ValueError(f"Invalid status: {value}. Must be one of: {', '.join([s.value for s in cls])}")
+
+    @classmethod
+    def is_pre_ride(cls, status: 'RideStatus') -> bool:
+        """Check if status is pre-ride (INTERESTED or SIGNED_UP)."""
+        return status in (cls.INTERESTED, cls.SIGNED_UP)
+
+    @classmethod
+    def is_post_ride(cls, status: 'RideStatus') -> bool:
+        """Check if status is post-ride (finished, dnf, dns, otl)."""
+        return status in (cls.FINISHED, cls.DNF, cls.DNS, cls.OTL)
+
+    @classmethod
+    def is_successful(cls, status: 'RideStatus') -> bool:
+        """Check if status represents successful completion."""
+        return status == cls.FINISHED
+
+    @classmethod
+    def can_remove_signup(cls, status: 'RideStatus') -> bool:
+        """Check if rider can remove their signup (INTERESTED or SIGNED_UP)."""
+        return status in (cls.INTERESTED, cls.SIGNED_UP)
 
 
 def _execute(sql, params=None):
@@ -61,9 +128,9 @@ def get_active_riders_for_season(season_id):
         LEFT JOIN rider_profile rp ON r.id = rp.rider_id
         JOIN rider_ride rr ON r.id = rr.rider_id
         JOIN ride ri ON rr.ride_id = ri.id
-        WHERE ri.season_id = %s AND rr.status = 'FINISHED' AND ri.date <= %s
+        WHERE ri.season_id = %s AND rr.status = %s AND ri.date <= %s
         ORDER BY r.first_name
-    """, (season_id, today)).fetchall()
+    """, (season_id, RideStatus.FINISHED.value, today)).fetchall()
 
 
 # ========== RIDES ==========
@@ -178,9 +245,9 @@ def get_rider_career_stats(rider_id):
                COALESCE(SUM(ri.distance_km), 0) as total_kms
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
-        WHERE rr.rider_id = %s AND rr.status = 'FINISHED'
+        WHERE rr.rider_id = %s AND rr.status = %s
           AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-    """, (rider_id,)).fetchone()
+    """, (rider_id, RideStatus.FINISHED.value)).fetchone()
     return dict(row) if row else {'total_rides': 0, 'total_kms': 0}
 
 def get_rider_season_stats(rider_id, season_id):
@@ -189,9 +256,9 @@ def get_rider_season_stats(rider_id, season_id):
         SELECT COUNT(*) as rides, COALESCE(SUM(ri.distance_km), 0) as kms
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
-        WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = 'FINISHED'
+        WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
           AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-    """, (rider_id, season_id)).fetchone()
+    """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchone()
     return dict(row) if row else {'rides': 0, 'kms': 0}
 
 def get_all_rider_season_stats(season_id):
@@ -200,9 +267,9 @@ def get_all_rider_season_stats(season_id):
         SELECT rr.rider_id, COUNT(*) as rides, COALESCE(SUM(ri.distance_km), 0) as kms
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
-        WHERE ri.season_id = %s AND rr.status = 'FINISHED'
+        WHERE ri.season_id = %s AND rr.status = %s
         GROUP BY rr.rider_id
-    """, (season_id,)).fetchall()
+    """, (season_id, RideStatus.FINISHED.value)).fetchall()
     return {r['rider_id']: {'rides': r['rides'], 'kms': r['kms']} for r in rows}
 
 
@@ -216,17 +283,17 @@ def detect_sr_for_rider_season(rider_id, season_id, date_filter=False):
         rows = _execute("""
             SELECT ri.distance_km FROM rider_ride rr
             JOIN ride ri ON rr.ride_id = ri.id
-            WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = 'FINISHED'
+            WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
               AND ri.date <= %s
               AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-        """, (rider_id, season_id, today)).fetchall()
+        """, (rider_id, season_id, RideStatus.FINISHED.value, today)).fetchall()
     else:
         rows = _execute("""
             SELECT ri.distance_km FROM rider_ride rr
             JOIN ride ri ON rr.ride_id = ri.id
-            WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = 'FINISHED'
+            WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
               AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-        """, (rider_id, season_id)).fetchall()
+        """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchall()
 
     buckets = {200: 0, 300: 0, 400: 0, 600: 0}
     for row in rows:
@@ -248,14 +315,14 @@ def detect_sr_for_all_riders_in_season(season_id, date_filter=False):
         rows = _execute("""
             SELECT rr.rider_id, ri.distance_km FROM rider_ride rr
             JOIN ride ri ON rr.ride_id = ri.id
-            WHERE ri.season_id = %s AND rr.status = 'FINISHED' AND ri.date <= %s
-        """, (season_id, today)).fetchall()
+            WHERE ri.season_id = %s AND rr.status = %s AND ri.date <= %s
+        """, (season_id, RideStatus.FINISHED.value, today)).fetchall()
     else:
         rows = _execute("""
             SELECT rr.rider_id, ri.distance_km FROM rider_ride rr
             JOIN ride ri ON rr.ride_id = ri.id
-            WHERE ri.season_id = %s AND rr.status = 'FINISHED'
-        """, (season_id,)).fetchall()
+            WHERE ri.season_id = %s AND rr.status = %s
+        """, (season_id, RideStatus.FINISHED.value)).fetchall()
 
     # Group by rider, then compute SR per rider
     from collections import defaultdict
@@ -299,7 +366,7 @@ def get_all_time_stats():
                COALESCE(SUM(ri.distance_km), 0) as kms
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
-        WHERE rr.status = 'FINISHED'
+        WHERE rr.status = %s
           AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
     """).fetchone()
     riders = row['riders']
@@ -350,7 +417,7 @@ def get_season_stats(season_id, past_only=False):
                COALESCE(SUM(ri.distance_km), 0) as kms
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
-        WHERE ri.season_id = %s AND rr.status = 'FINISHED'{date_clause}
+        WHERE ri.season_id = %s AND rr.status = %s{date_clause}
     """, params).fetchone()
     active = row['active']
     total_rides = row['rides']
@@ -451,7 +518,7 @@ def get_pbp_finishers(season_id):
         JOIN rider_ride rr ON r.id = rr.rider_id
         JOIN ride ri ON rr.ride_id = ri.id
         WHERE ri.season_id = %s AND ri.ride_type = 'PBP'
-              AND rr.status = 'FINISHED'
+              AND rr.status = %s
         ORDER BY rr.finish_time
     """, (season_id,)).fetchall()
 
@@ -486,14 +553,36 @@ def get_signup_count(ride_id):
     return row['count'] if row else 0
 
 def signup_rider(rider_id, ride_id):
-    """Sign up a rider for a ride."""
+    """Sign up a rider for a ride. Upgrades INTERESTED → SIGNED_UP if already interested."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         cur.execute("""
-            INSERT INTO rider_ride (rider_id, ride_id, status, signed_up_at) 
-            VALUES (%s, %s, 'SIGNED_UP', CURRENT_TIMESTAMP)
-        """, (rider_id, ride_id))
+            INSERT INTO rider_ride (rider_id, ride_id, status, signed_up_at)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (rider_id, ride_id) DO UPDATE
+              SET status = %s, signed_up_at = CURRENT_TIMESTAMP
+              WHERE rider_ride.status = %s
+        """, (rider_id, ride_id,
+              RideStatus.SIGNED_UP.value,
+              RideStatus.SIGNED_UP.value,
+              RideStatus.INTERESTED.value))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+
+
+def mark_interested(rider_id, ride_id):
+    """Mark a rider as interested in a ride (soft pre-signup)."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""
+            INSERT INTO rider_ride (rider_id, ride_id, status, signed_up_at)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+        """, (rider_id, ride_id, RideStatus.INTERESTED.value))
         conn.commit()
         return True
     except Exception:
@@ -501,13 +590,37 @@ def signup_rider(rider_id, ride_id):
         return False
 
 def remove_signup(rider_id, ride_id):
-    """Remove a rider's signup (only if status is SIGNED_UP)."""
+    """
+    Remove a rider's signup (only if status is SIGNED_UP).
+
+    Returns:
+        bool: True if signup was removed, False otherwise
+
+    Raises:
+        ValueError: If signup exists but status doesn't allow removal
+    """
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Get current status first to provide better error message
     cur.execute("""
-        DELETE FROM rider_ride 
-        WHERE rider_id = %s AND ride_id = %s AND status = 'SIGNED_UP'
+        SELECT status FROM rider_ride
+        WHERE rider_id = %s AND ride_id = %s
     """, (rider_id, ride_id))
+    row = cur.fetchone()
+
+    if row:
+        current_status = RideStatus.normalize(row['status'])
+        if not RideStatus.can_remove_signup(current_status):
+            raise ValueError(f"Cannot remove signup with status '{current_status.value}'. Only pre-ride signups can be removed.")
+
+    # Delete if status allows it (SIGNED_UP or INTERESTED can be removed)
+    cur.execute("""
+        DELETE FROM rider_ride
+        WHERE rider_id = %s AND ride_id = %s
+        AND status IN (%s, %s)
+    """, (rider_id, ride_id, RideStatus.SIGNED_UP.value, RideStatus.INTERESTED.value))
+
     conn.commit()
     return cur.rowcount > 0
 
@@ -529,14 +642,36 @@ def create_ride(season_id, club_id, name, ride_type, ride_date, distance_km,
     return new_id
 
 def update_rider_ride_status(ride_id, statuses):
-    """statuses is a dict of {rider_id: status_string}."""
+    """
+    Update rider status for a specific ride.
+
+    Args:
+        ride_id: The ride ID
+        statuses: Dict mapping rider_id -> status string
+
+    Raises:
+        ValueError: If any status value is invalid
+    """
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Validate all statuses before making any changes
+    normalized_statuses = {}
     for rider_id, status in statuses.items():
-        cur.execute("""INSERT INTO rider_ride (rider_id, ride_id, status)
-                      VALUES (%s, %s, %s)
-                      ON CONFLICT(rider_id, ride_id) DO UPDATE SET status = EXCLUDED.status""",
-                   (rider_id, ride_id, status))
+        try:
+            normalized_statuses[rider_id] = RideStatus.normalize(status).value
+        except ValueError as e:
+            raise ValueError(f"Invalid status for rider {rider_id}: {e}")
+
+    # Insert/update with validated statuses
+    for rider_id, status in normalized_statuses.items():
+        cur.execute("""
+            INSERT INTO rider_ride (rider_id, ride_id, status)
+            VALUES (%s, %s, %s)
+            ON CONFLICT(rider_id, ride_id)
+            DO UPDATE SET status = EXCLUDED.status
+        """, (rider_id, ride_id, status))
+
     conn.commit()
 
 def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None, start_time=None, 

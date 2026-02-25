@@ -1,7 +1,8 @@
 """Rider signup routes for upcoming rides."""
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, jsonify, session
-from models import (get_ride_by_id, get_signups_for_ride, get_all_riders, signup_rider, 
-                    remove_signup, get_rider_signup_status, get_user_by_id)
+from models import (get_ride_by_id, get_signups_for_ride, get_all_riders, signup_rider,
+                    mark_interested, remove_signup, get_rider_signup_status, get_user_by_id,
+                    RideStatus)
 from auth import login_required
 
 signup_bp = Blueprint('signup', __name__)
@@ -55,17 +56,44 @@ def api_signup(ride_id):
     
     rider_id = user['rider_id']
     
-    # Check if already signed up
+    # Check if already signed up (block if SIGNED_UP; allow upgrade from INTERESTED)
     existing = get_rider_signup_status(rider_id, ride_id)
-    if existing:
-        return jsonify({'success': False, 'error': 'Already signed up', 'status': existing['status']}), 400
-    
-    # Sign up the rider
+    if existing and existing['status'] == RideStatus.SIGNED_UP.value:
+        return jsonify({'success': False, 'error': 'Already signed up', 'status': 'SIGNED_UP'}), 400
+
+    # Sign up the rider (handles new insert or INTERESTED → SIGNED_UP upgrade)
     success = signup_rider(rider_id, ride_id)
     if success:
         return jsonify({'success': True, 'status': 'SIGNED_UP'})
     else:
         return jsonify({'success': False, 'error': 'Failed to sign up'}), 500
+
+
+@signup_bp.route('/api/<int:ride_id>/interested', methods=['POST'])
+def api_interested(ride_id):
+    """API endpoint to mark current user as interested in a ride."""
+    user_id = session.get('user_id')
+    if not user_id:
+        referer = request.headers.get('Referer', url_for('riders.upcoming_brevets', _external=False))
+        login_url = url_for('auth.login', next=referer, _external=False)
+        return jsonify({'success': False, 'error': 'Not logged in', 'redirect': login_url}), 401
+
+    user = get_user_by_id(user_id)
+    if not user or not user.get('rider_id'):
+        referer = request.headers.get('Referer', url_for('riders.upcoming_brevets', _external=False))
+        session['next_url'] = referer
+        return jsonify({'success': False, 'error': 'Profile not completed', 'redirect': url_for('auth.setup_profile', _external=False)}), 400
+
+    rider_id = user['rider_id']
+
+    existing = get_rider_signup_status(rider_id, ride_id)
+    if existing:
+        return jsonify({'success': False, 'error': 'Already signed up or interested', 'status': existing['status']}), 400
+
+    success = mark_interested(rider_id, ride_id)
+    if success:
+        return jsonify({'success': True, 'status': 'INTERESTED'})
+    return jsonify({'success': False, 'error': 'Failed to mark interest'}), 500
 
 
 @signup_bp.route('/api/<int:ride_id>/unsignup', methods=['POST'])
