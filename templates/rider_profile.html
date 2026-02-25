@@ -97,7 +97,7 @@
             </div>
             {% if ride.advice %}
             <span class="advice-tip" style="position:relative; cursor:pointer; display:flex; align-items:center;">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{ ride.readiness.color }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 100-2 1 1 0 000 2zM12 17.5V14l-3-3 4-3 2 3h3"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{ ride.readiness.color }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 14l2 2 4-4"/></svg>
                 <span class="advice-tooltip">{% for tip in ride.advice %}{{ tip }}{% if not loop.last %}<br><br>{% endif %}{% endfor %}</span>
             </span>
             {% endif %}
