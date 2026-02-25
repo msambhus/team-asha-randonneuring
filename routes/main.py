@@ -57,9 +57,11 @@ def index():
         current = get_current_season()
         current_stats = get_season_stats(current['id'], past_only=True) if current else {}
 
-        # Season summaries for cards
+        # Season summaries for cards (exclude Pune Randonneurs pre-2021 seasons)
         season_summaries = []
         for s in seasons:
+            if s['name'] < '2021':
+                continue
             ss = get_season_stats(s['id'])
             season_summaries.append({
                 'name': s['name'],
