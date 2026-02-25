@@ -458,9 +458,6 @@ def edit_ride(ride_id):
 
 @riders_bp.route('/rider/<int:rusa_id>')
 def rider_profile(rusa_id):
-    from flask import session
-    from models import get_strava_connection, get_strava_activities_for_calendar
-
     rider = get_rider_by_rusa(rusa_id)
     if not rider:
         abort(404)
@@ -492,39 +489,12 @@ def rider_profile(rusa_id):
 
     total_srs = get_rider_total_srs(rider['id'])
 
-    # Strava integration
-    is_own_profile = session.get('rider_id') == rider['id']
-    strava_connection = get_strava_connection(rider['id'])
-    strava_activities = []
-    fitness_score = None
-
-    if strava_connection:
-        # Auto-sync if stale (> 6 hours since last sync)
-        import time
-        last_sync = strava_connection.get('last_sync_at')
-        if not last_sync or (time.time() - last_sync.timestamp()) > 6 * 3600:
-            try:
-                from services.strava import sync_rider_activities
-                sync_rider_activities(rider['id'])
-                strava_connection = get_strava_connection(rider['id'])
-            except Exception:
-                pass  # Silent failure — stale data is better than no page
-
-        strava_activities = get_strava_activities_for_calendar(rider['id'], days=28)
-        if strava_activities:
-            from services.fitness import calculate_fitness_score
-            fitness_score = calculate_fitness_score(strava_activities)
-
     return render_template('rider_profile.html',
                            rider=rider,
                            season_data=season_data,
                            career_rides=career_rides,
                            career_kms=career_kms,
-                           total_srs=total_srs,
-                           is_own_profile=is_own_profile,
-                           strava_connection=strava_connection,
-                           strava_activities=strava_activities,
-                           fitness_score=fitness_score)
+                           total_srs=total_srs)
 
 
 @riders_bp.route('/rider/<int:rusa_id>/edit', methods=['GET', 'POST'])

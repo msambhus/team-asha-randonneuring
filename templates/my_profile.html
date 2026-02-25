@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}My Profile - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:30px 20px;">
+{% if rider.photo_filename %}
+<img src="{{ url_for('static', filename='riders/' + rider.photo_filename) }}" alt="{{ rider.first_name }} {{ rider.last_name }}" style="width:150px;height:150px;border-radius:50%;object-fit:cover;border:4px solid white;margin-bottom:15px;">
+{% else %}
+<div style="width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;margin:0 auto 15px;font-size:3rem;color:white;">
+    {{ rider.first_name[0] }}{{ rider.last_name[0] }}
+</div>
+{% endif %}
+<h1>{{ rider.first_name }} {{ rider.last_name }}</h1>
+<p>RUSA# {{ rider.rusa_id }}</p>
+<p style="font-size:0.9rem; opacity:0.8;">{{ email }}</p>
+</div>
+
+<div class="stats-row">
+<div class="stat-card"><div class="number">{{ career_rides }}</div><div class="label">Career Rides</div></div>
+<div class="stat-card"><div class="number">{{ career_kms|commafy }}</div><div class="label">Career KMs</div></div>
+{% if total_srs > 0 %}
+<div class="stat-card"><div class="number" style="color:var(--accent);">{% if total_srs > 1 %}SR*{{ total_srs }}{% else %}SR{% endif %}</div><div class="label">Super Randonneur</div></div>
+{% endif %}
+{% if rider.pbp_2023_status == 'Yes' %}
+<div class="stat-card"><div class="number" style="font-size:1.4rem;"><span class="pbp-badge" style="font-size:1rem;">PBP 2023</span></div><div class="label">Paris-Brest-Paris</div></div>
+{% endif %}
+{% if fitness_score %}
+<div class="stat-card"><div class="number" style="color:{% if fitness_score.total >= 70 %}#38a169{% elif fitness_score.total >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ fitness_score.total }}</div><div class="label">Fitness Score</div></div>
+{% endif %}
+</div>
+
+<div class="container section">
+
+{% if rider.bio %}
+<div class="card">
+<p>{{ rider.bio }}</p>
+</div>
+{% endif %}
+
+{# ===== STRAVA: Connect Button (not connected) ===== #}
+{% if not strava_connection %}
+<div class="card" style="text-align:center; padding:30px;">
+    <p style="color:var(--text-light); margin-bottom:15px;">Connect your Strava account to see your recent training and fitness score</p>
+    <a href="{{ url_for('strava.connect') }}" style="display:inline-block;">
+        <img src="{{ url_for('static', filename='img/btn_strava_connectwith_orange.svg') }}"
+             alt="Connect with Strava" style="height:48px;">
+    </a>
+</div>
+{% endif %}
+
+{# ===== STRAVA: Activity Calendar + Fitness Score (connected) ===== #}
+{% if strava_connection and strava_activities %}
+<div class="card" style="border-left:4px solid #FC5200;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; gap:8px;">
+        <h3 style="color:var(--primary); margin:0;">Recent Training</h3>
+        <div style="display:flex; align-items:center; gap:12px;">
+            <a href="{{ url_for('strava.sync') }}" style="font-size:0.85rem; color:var(--primary);">&#x21bb; Sync</a>
+            <img src="{{ url_for('static', filename='img/powered_by_strava.svg') }}"
+                 alt="Powered by Strava" style="height:24px;">
+        </div>
+    </div>
+
+    {# Fitness Score Breakdown #}
+    {% if fitness_score %}
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(100px, 1fr)); gap:12px; margin-bottom:20px; padding:16px; background:#f7fafc; border-radius:8px;">
+        <div style="text-align:center;">
+            <div style="font-size:2rem; font-weight:800; color:{% if fitness_score.total >= 70 %}#38a169{% elif fitness_score.total >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ fitness_score.total }}</div>
+            <div style="font-size:0.7rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px;">Overall</div>
+        </div>
+        <div style="text-align:center;">
+            <div style="font-size:1.2rem; font-weight:700; color:var(--primary);">{{ fitness_score.frequency }}</div>
+            <div style="font-size:0.7rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px;">Frequency /25</div>
+        </div>
+        <div style="text-align:center;">
+            <div style="font-size:1.2rem; font-weight:700; color:var(--primary);">{{ fitness_score.volume }}</div>
+            <div style="font-size:0.7rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px;">Volume /35</div>
+        </div>
+        <div style="text-align:center;">
+            <div style="font-size:1.2rem; font-weight:700; color:var(--primary);">{{ fitness_score.intensity }}</div>
+            <div style="font-size:0.7rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px;">Intensity /25</div>
+        </div>
+        <div style="text-align:center;">
+            <div style="font-size:1.2rem; font-weight:700; color:var(--primary);">{{ fitness_score.recency }}</div>
+            <div style="font-size:0.7rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px;">Recency /15</div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# Calendar Grid (rendered by JS) #}
+    <div id="strava-calendar"></div>
+</div>
+{% elif strava_connection and not strava_activities %}
+<div class="card" style="border-left:4px solid #FC5200; text-align:center; padding:20px;">
+    <p style="color:var(--text-light);">Strava connected &mdash; no activities in the last 4 weeks.</p>
+    <a href="{{ url_for('strava.sync') }}" style="font-size:0.85rem; color:var(--primary);">&#x21bb; Sync now</a>
+    <div style="margin-top:10px;">
+        <img src="{{ url_for('static', filename='img/powered_by_strava.svg') }}" alt="Powered by Strava" style="height:20px;">
+    </div>
+</div>
+{% endif %}
+
+{# ===== STRAVA: Disconnect (connected) ===== #}
+{% if strava_connection %}
+<form method="POST" action="{{ url_for('strava.disconnect') }}"
+      onsubmit="return confirm('Disconnect Strava? This will remove your activity data.');"
+      style="margin-top:10px; margin-bottom:20px;">
+    <button type="submit" style="background:none; border:none; color:var(--text-light); font-size:0.85rem; cursor:pointer; text-decoration:underline;">
+        Disconnect Strava
+    </button>
+</form>
+{% endif %}
+
+<div style="margin-top:20px;">
+    <a href="{{ url_for('riders.rider_profile', rusa_id=rider.rusa_id) }}" class="btn btn-primary btn-sm">View Public Profile</a>
+</div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if strava_connection and strava_activities %}
+<script>
+(function() {
+    // Activity data embedded from server
+    var activities = [
+        {% for a in strava_activities %}
+        {
+            strava_activity_id: {{ a.strava_activity_id }},
+            name: {{ a.name|tojson }},
+            activity_type: {{ a.activity_type|tojson }},
+            distance: {{ a.distance or 0 }},
+            moving_time: {{ a.moving_time or 0 }},
+            total_elevation_gain: {{ a.total_elevation_gain or 0 }},
+            start_date_local: {{ (a.start_date_local|string)|tojson }},
+            activity_date: {{ (a.activity_date|string)|tojson }},
+            has_heartrate: {{ 'true' if a.has_heartrate else 'false' }},
+            average_heartrate: {{ a.average_heartrate or 'null' }},
+            device_watts: {{ 'true' if a.device_watts else 'false' }},
+            average_watts: {{ a.average_watts or 'null' }},
+            strava_url: {{ a.strava_url|tojson }}
+        }{{ ',' if not loop.last }}
+        {% endfor %}
+    ];
+
+    // Group by date
+    var byDate = {};
+    activities.forEach(function(a) {
+        var d = a.activity_date;
+        if (!d) return;
+        d = d.split(' ')[0]; // strip time if present
+        if (!byDate[d]) byDate[d] = [];
+        byDate[d].push(a);
+    });
+
+    var cal = document.getElementById('strava-calendar');
+    if (!cal) return;
+
+    // Build 4-week grid from today backwards
+    var today = new Date();
+    var todayStr = today.toISOString().split('T')[0];
+
+    var html = '<div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:3px;">';
+
+    // Day headers
+    var dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    dayNames.forEach(function(d) {
+        html += '<div style="text-align:center; font-size:0.7rem; color:var(--text-light); font-weight:600; padding:4px 0;">' + d + '</div>';
+    });
+
+    // Calculate start: 27 days ago, aligned to Monday
+    var start = new Date(today);
+    start.setDate(start.getDate() - 27);
+    var dow = start.getDay();
+    var mondayOffset = dow === 0 ? -6 : 1 - dow;
+    start.setDate(start.getDate() + mondayOffset);
+
+    // Calculate total days to render (from aligned Monday to today)
+    var end = new Date(today);
+    var totalDays = Math.ceil((end - start) / (24 * 3600 * 1000)) + 1;
+
+    for (var i = 0; i < totalDays; i++) {
+        var d = new Date(start);
+        d.setDate(start.getDate() + i);
+        var key = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+        var isToday = (key === todayStr);
+        var dayActs = byDate[key] || [];
+
+        var cellStyle = 'min-height:56px; border:1px solid #e2e8f0; border-radius:6px; padding:3px; font-size:0.75rem; overflow:hidden;';
+        if (isToday) cellStyle += ' background:#ebf8ff; border-color:var(--primary);';
+        else if (dayActs.length > 0) cellStyle += ' background:#f0fff4;';
+        else cellStyle += ' background:#fafafa;';
+
+        html += '<div style="' + cellStyle + '">';
+        html += '<div style="font-weight:600; color:var(--text-light); font-size:0.6rem; margin-bottom:1px;">' + d.getDate() + '</div>';
+
+        dayActs.forEach(function(a) {
+            var dist = a.distance ? (a.distance / 1000).toFixed(0) + 'km' : '';
+            var icon = a.activity_type === 'Ride' ? '\uD83D\uDEB4' : (a.activity_type === 'Run' ? '\uD83C\uDFC3' : '\uD83C\uDFCB');
+            var url = a.strava_url || ('https://www.strava.com/activities/' + a.strava_activity_id);
+            var badges = '';
+            if (a.has_heartrate && a.average_heartrate) badges += ' \u2764\uFE0F';
+            if (a.device_watts && a.average_watts) badges += ' \u26A1';
+            html += '<a href="' + url + '" target="_blank" rel="noopener" title="' + (a.name || '') + ' - View on Strava" style="display:block; background:white; border-radius:3px; padding:2px 3px; margin-top:1px; text-decoration:none; color:var(--text); font-size:0.6rem; border:1px solid #e2e8f0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">';
+            html += icon + ' ' + dist + badges;
+            html += '</a>';
+        });
+
+        html += '</div>';
+    }
+    html += '</div>';
+    cal.innerHTML = html;
+})();
+</script>
+{% endif %}
+{% endblock %}
