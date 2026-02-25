@@ -267,7 +267,7 @@ def _build_brevet_history_summary(season_data):
     total_brevets = len(finished_rides)
 
     summary = (
-        f"BREVET HISTORY (no Strava data — using finish records as training signal):\n"
+        f"BREVET HISTORY (finish records as endurance/training signal):\n"
         f"Total completed brevets: {total_brevets}, Total distance: {total_km:.0f} km.\n"
         f"Recent completions:\n" + "\n".join(lines)
     )
@@ -285,7 +285,15 @@ def _build_user_prompt(rider, activities, fitness_score,
     # Training data — Strava if available
     training = _build_training_summary(activities, fitness_score)
     if not training:
-        training = "No Strava training data available."
+        training = (
+            "No Strava training data available. USE BREVET HISTORY BELOW as the "
+            "PRIMARY training signal. Infer fitness from: (1) distances and finish "
+            "times of completed brevets — faster finishes relative to cutoff times "
+            "indicate strong fitness, (2) recency and frequency of completions — "
+            "recent back-to-back finishes suggest active training, (3) progression "
+            "through longer distances — completing a 400k signals readiness for "
+            "600k-level efforts. Base all training recommendations on this history."
+        )
 
     # Brevet history — always include for mental grit / endurance context
     brevet_history = _build_brevet_history_summary(season_data)
