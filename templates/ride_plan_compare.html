@@ -339,10 +339,10 @@
     
     {# View Tabs #}
     <div class="view-tabs">
-        <a href="{{ url_for('riders.custom_ride_plan_view', slug=base_plan.slug) }}" class="tab-link">
+        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug, view='custom') }}" class="tab-link">
             My Custom Plan
         </a>
-        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug) }}" class="tab-link">
+        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug, view='base') }}" class="tab-link">
             Base Plan
         </a>
         <a href="{{ url_for('riders.compare_ride_plans', slug=base_plan.slug) }}" class="tab-link active">
@@ -520,9 +520,9 @@
     
     {# Action Buttons #}
     <div style="text-align:center;margin-top:30px;">
-        <a href="{{ url_for('riders.custom_ride_plan_view', slug=base_plan.slug) }}" 
+        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug, view='custom') }}" 
            class="back-link" style="margin-right:20px;">← Back to My Custom Plan</a>
-        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug) }}" 
+        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug, view='base') }}" 
            class="back-link">← Back to Base Plan</a>
     </div>
 </div>

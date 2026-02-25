@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Base Plan - {{ base_plan.name }}{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:1000px;margin-top:30px;">
+    <div style="margin-bottom:24px;">
+        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug, view='base') }}" 
+           style="display:inline-flex;align-items:center;gap:6px;color:var(--text-light);text-decoration:none;font-size:0.9rem;">
+            ← Back to Base Plan View
+        </a>
+    </div>
+    
+    <div class="card" style="padding:24px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+            <h2 style="margin:0;">Edit Base Plan: {{ base_plan.name }}</h2>
+            <div style="display:flex;gap:8px;">
+                <button class="btn-icon" id="save-button" onclick="saveBasePlan()" disabled style="background:#16a34a;color:white;">
+                    💾 <span>Save Changes</span>
+                </button>
+            </div>
+        </div>
+        
+        <div style="color:#dc2626;font-weight:600;margin-bottom:16px;">
+            ⚠️ ADMIN ONLY: Changes affect all riders
+        </div>
+        
+        {# Stops List #}
+        <div id="stops-container">
+            {% for stop in base_stops %}
+            <div class="stop-row" data-stop-id="{{ stop.id }}" data-distance="{{ stop.distance_miles or 0 }}">
+                <div class="stop-header">
+                    <div class="stop-icon {{ stop.stop_type }}">
+                        {% if stop.stop_type == 'start' %}🚩{% elif stop.stop_type == 'finish' %}🏁{% elif stop.stop_type == 'control' %}◆{% elif stop.stop_type == 'rest' %}☕{% else %}•{% endif %}
+                    </div>
+                    <div class="stop-location">{{ stop.location }}</div>
+                </div>
+                <div class="stop-metrics">
+                    <div class="metric-box">
+                        <div class="metric-label">Dist (mi)</div>
+                        <input type="number" class="inline-edit" step="0.1"
+                               value="{{ "%.1f"|format(stop.distance_miles or 0) }}"
+                               data-field="distance_miles"
+                               onchange="trackChange(this)">
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label">Seg Time (min)</div>
+                        <input type="number" class="inline-edit"
+                               value="{{ stop.segment_time_min or 0 }}"
+                               data-field="segment_time_min"
+                               onchange="trackChange(this)">
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label">Elev (ft)</div>
+                        <input type="number" class="inline-edit"
+                               value="{{ stop.elevation_gain or 0 }}"
+                               data-field="elevation_gain"
+                               onchange="trackChange(this)">
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<style>
+.stop-row {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    background: white;
+}
+.stop-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.stop-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+}
+.stop-icon.start { background: #dcfce7; }
+.stop-icon.finish { background: #fee2e2; }
+.stop-icon.control { background: #dbeafe; }
+.stop-icon.rest { background: #fef3c7; }
+.stop-location {
+    flex: 1;
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+.stop-metrics {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.metric-box {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.metric-label {
+    font-size: 0.7rem;
+    color: #64748b;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+.inline-edit {
+    width: 100px;
+    padding: 6px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+.inline-edit:focus {
+    outline: none;
+    border-color: #3b82f6;
+}
+.btn-icon {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.btn-icon:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+</style>
+
+<script>
+let pendingChanges = {};
+
+function trackChange(input) {
+    const stopRow = input.closest('.stop-row');
+    const stopId = stopRow.dataset.stopId;
+    const field = input.dataset.field;
+    const value = field === 'distance_miles' ? parseFloat(input.value) : parseInt(input.value);
+    
+    if (!pendingChanges[stopId]) {
+        pendingChanges[stopId] = {};
+    }
+    pendingChanges[stopId][field] = value;
+    
+    document.getElementById('save-button').disabled = false;
+}
+
+async function saveBasePlan() {
+    const saveBtn = document.getElementById('save-button');
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '⏳ <span>Saving...</span>';
+    
+    try {
+        const promises = [];
+        
+        for (const [stopId, changes] of Object.entries(pendingChanges)) {
+            promises.push(
+                fetch(`/api/base-plan/stop/${stopId}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(changes)
+                })
+            );
+        }
+        
+        await Promise.all(promises);
+        
+        saveBtn.innerHTML = '✅ <span>Saved!</span>';
+        setTimeout(() => {
+            window.location.reload();
+        }, 800);
+        
+    } catch (error) {
+        console.error('Save error:', error);
+        alert('Error saving changes: ' + error.message);
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '💾 <span>Save Changes</span>';
+    }
+}
+</script>
+{% endblock %}

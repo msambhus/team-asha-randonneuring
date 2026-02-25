@@ -1,5 +1,23 @@
 """Rider routes: season view, individual profiles, profile edit, upcoming brevets, ride plans."""
 from flask import Blueprint, render_template, abort, request, redirect, url_for, session, jsonify
+
+def is_admin_user():
+    """Check if current logged-in user is an admin."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return False
+    
+    from models import get_user_by_id, _execute
+    user = get_user_by_id(user_id)
+    if not user or not user.get('rider_id'):
+        return False
+    
+    rider = _execute("SELECT first_name FROM rider WHERE id = %s", (user['rider_id'],)).fetchone()
+    if not rider:
+        return False
+    
+    allowed_names = ['sriharsha', 'venkatesh', 'mihir']
+    return rider.get('first_name', '').lower() in allowed_names
 from models import (get_season_by_name, get_riders_for_season, get_active_riders_for_season,
                     get_rides_for_season, get_participation_matrix, get_season_stats,
                     get_rider_by_rusa, get_rider_participation, get_rider_career_stats,
@@ -778,6 +796,14 @@ def ride_plans_index():
 
 @riders_bp.route('/ride-plan/<slug>')
 def ride_plan_detail(slug):
+    # Check if user wants to view their custom plan
+    view = request.args.get('view', 'base')
+    
+    if view == 'custom':
+        # Redirect to custom plan view function
+        return custom_ride_plan_view(slug)
+    
+    # Otherwise show base plan
     plan = get_ride_plan_by_slug(slug)
     if not plan:
         abort(404)
@@ -929,11 +955,6 @@ def ride_plan_detail(slug):
         user = get_user_by_id(user_id)
         if user and user.get('rider_id'):
             user_custom_plan = get_custom_plan(user['rider_id'], plan['id'])
-            
-            # If user has custom plan and didn't explicitly request base view, redirect to custom
-            show_base = request.args.get('view') == 'base'
-            if user_custom_plan and not show_base:
-                return redirect(url_for('riders.custom_ride_plan_editor', slug=slug))
     
     # Get public custom plans from other riders
     public_custom_plans = get_public_custom_plans(plan['id'])
@@ -957,13 +978,38 @@ def ride_plan_detail(slug):
                            signup_count=signup_count,
                            user_signup_status=user_signup_status,
                            user_custom_plan=user_custom_plan,
-                           public_custom_plans=public_custom_plans)
+                           public_custom_plans=public_custom_plans,
+                           is_admin=is_admin_user())
 
 
 # ========== CUSTOM RIDE PLANS ==========
 
-@riders_bp.route('/ride-plan/<slug>/my-plan')
+@riders_bp.route('/ride-plan/<slug>/edit-base')
 @user_login_required
+def base_plan_editor(slug):
+    """Admin-only editor for base ride plans."""
+    if not is_admin_user():
+        abort(403)
+    
+    # Get base plan
+    base_plan = get_ride_plan_by_slug(slug)
+    if not base_plan:
+        abort(404)
+    
+    # Load base stops
+    base_stops = list(get_ride_plan_stops(base_plan['id']))
+    from services.custom_plan_service import recalculate_cumulative_values
+    base_stops = recalculate_cumulative_values(base_stops, base_plan)
+    
+    # Convert Decimal types
+    base_plan = dict(base_plan)
+    base_plan['total_distance_miles'] = float(base_plan.get('total_distance_miles') or 0)
+    base_plan['total_elevation_ft'] = int(base_plan.get('total_elevation_ft') or 0)
+    
+    return render_template('base_ride_plan_editor.html',
+                           base_plan=base_plan,
+                           base_stops=base_stops)
+
 def custom_ride_plan_view(slug):
     """View custom plan with same detail as base plan, but with custom timings."""
     user_id = session.get('user_id')
@@ -1109,7 +1155,8 @@ def custom_ride_plan_view(slug):
                          user_signup_status=None,
                          user_custom_plan=custom_plan_data,
                          public_custom_plans=[],
-                         is_custom_view=True)
+                         is_custom_view=True,
+                         is_admin=is_admin_user())
 
 
 @riders_bp.route('/ride-plan/<slug>/custom')
@@ -1303,10 +1350,33 @@ def api_get_custom_plan(custom_plan_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@riders_bp.route('/api/base-plan/stop/<int:stop_id>', methods=['PUT'])
+@user_login_required
+def api_update_base_stop(stop_id):
+    """Admin-only: Update base plan stop."""
+    import sys
+    if not is_admin_user():
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    data = request.json
+    print(f"DEBUG: Updating stop {stop_id} with data: {data}", file=sys.stderr)
+    
+    try:
+        from models import update_base_plan_stop
+        success = update_base_plan_stop(stop_id, data)
+        print(f"DEBUG: Update result: {success}", file=sys.stderr)
+        return jsonify({'success': success})
+    except Exception as e:
+        print(f"DEBUG ERROR: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @riders_bp.route('/api/custom-plan/<int:custom_plan_id>/stop/<int:stop_id>', methods=['PUT'])
 @user_login_required
 def api_update_custom_stop(custom_plan_id, stop_id):
-    """Update timing or notes for a stop."""
+    """Update timing, distance, or notes for a stop."""
     user_id = session.get('user_id')
     user = get_user_by_id(user_id)
     
@@ -1320,10 +1390,11 @@ def api_update_custom_stop(custom_plan_id, stop_id):
     
     data = request.json
     segment_time_min = data.get('segment_time_min')
+    distance_miles = data.get('distance_miles')
     notes = data.get('notes')
     
     try:
-        success = update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min, notes)
+        success = update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min, notes, distance_miles)
         return jsonify({'success': success})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

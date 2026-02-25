@@ -410,34 +410,6 @@
     background: white;
 }
 
-/* ===== STICKY RIDE HEADER ===== */
-.sticky-ride-header {
-    position: sticky;
-    top: 60px;
-    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-    color: white;
-    padding: 12px 20px;
-    z-index: 40;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    transform: translateY(-100%);
-    opacity: 0;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.sticky-ride-header.visible {
-    transform: translateY(0);
-    opacity: 1;
-}
-.sticky-ride-title {
-    font-size: 0.9rem;
-    font-weight: 700;
-    margin: 0;
-}
-.sticky-ride-stats {
-    font-size: 0.7rem;
-    opacity: 0.9;
-    margin-top: 2px;
-}
-
 /* ===== ELEVATION CHART ===== */
 .elevation-chart-container {
     background: white;
@@ -770,6 +742,12 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
+.btn-custom-plan.active {
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.9), 0 0 0 5px currentColor;
+    transform: scale(1.05);
+    font-weight: 700;
+}
+
 .btn-custom-plan.create {
     background: #22c55e;
 }
@@ -788,10 +766,6 @@
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
-    .sticky-ride-header {
-        top: 0;
-        padding: 10px 16px;
-    }
     .elevation-chart {
         height: 140px;
     }
@@ -832,16 +806,6 @@
 {% endblock %}
 
 {% block content %}
-{# ===== STICKY RIDE HEADER (Shows on scroll) ===== #}
-<div class="sticky-ride-header" id="sticky-header">
-    <div class="sticky-ride-title">
-        📍 {{ plan.name }}
-    </div>
-    <div class="sticky-ride-stats">
-        {{ "%.1f"|format(plan.total_distance_miles) }} mi &middot; {{ "{:,}".format(plan.total_elevation_ft) }} ft
-    </div>
-</div>
-
 {# ===== A. ENHANCED HERO ===== #}
 <div class="hero" style="padding:50px 20px 60px;" id="hero-section">
     <div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:10px;">
@@ -860,38 +824,6 @@
     <p style="opacity:0.85;margin-top:8px;">{{ stops|length }} stops &middot; {{ "%.1f"|format(plan.total_distance_miles) }} miles &middot; {{ "{:,}".format(plan.total_elevation_ft) }} ft of climbing</p>
     {% if plan.cutoff_hours %}
     <p style="opacity:0.65;font-size:0.88rem;margin-top:4px;">ACP time limit: {{ plan.cutoff_hours }}h &middot; Start: <span id="hero-start-time">{{ plan.start_time }}</span></p>
-    {% endif %}
-    
-    {# View Tabs - show when user has custom plan #}
-    {% if user_custom_plan %}
-    <div style="display:flex;gap:0;justify-content:center;margin-top:20px;border-bottom:2px solid rgba(255,255,255,0.2);padding-bottom:0;">
-        <a href="{{ url_for('riders.custom_ride_plan_view', slug=plan.slug) }}" 
-           class="tab-link {% if is_custom_view %}active{% endif %}"
-           style="padding:12px 24px;font-weight:600;border-bottom:3px solid {% if is_custom_view %}white{% else %}transparent{% endif %};color:{% if is_custom_view %}white{% else %}rgba(255,255,255,0.7){% endif %};text-decoration:none;transition:all 0.2s;">
-            My Custom Plan
-        </a>
-        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug) }}" 
-           class="tab-link {% if not is_custom_view %}active{% endif %}"
-           style="padding:12px 24px;font-weight:600;border-bottom:3px solid {% if not is_custom_view %}white{% else %}transparent{% endif %};color:{% if not is_custom_view %}white{% else %}rgba(255,255,255,0.7){% endif %};text-decoration:none;transition:all 0.2s;">
-            Base Plan
-        </a>
-        <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}" 
-           class="tab-link"
-           style="padding:12px 24px;font-weight:600;border-bottom:3px solid transparent;color:rgba(255,255,255,0.7);text-decoration:none;transition:all 0.2s;">
-            Compare
-        </a>
-        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}" 
-           class="tab-link"
-           style="padding:12px 24px;font-weight:600;border-bottom:3px solid transparent;color:rgba(255,255,255,0.7);text-decoration:none;transition:all 0.2s;">
-            ✏️ Edit
-        </a>
-    </div>
-    <style>
-    .tab-link:hover {
-        color: white !important;
-        border-bottom-color: white !important;
-    }
-    </style>
     {% endif %}
 </div>
 
@@ -993,28 +925,37 @@
     <div>
         {% if user_custom_plan %}
         <h3>✏️ You have a custom plan for this ride</h3>
-        <p>View or edit your personalized version with your own pace and stops</p>
+        <p>{% if is_custom_view %}Viewing your personalized version · {% endif %}Switch between views or edit your plan</p>
         {% else %}
         <h3>🛠️ Create Your Own Plan</h3>
         <p>Personalize this ride plan with your own pace, timing, and stops</p>
         {% endif %}
     </div>
-    <div style="display:flex;align-items:center;gap:12px;">
-        {% if public_custom_plans %}
-        <div class="shared-plans-info">
-            <span>👥</span>
-            <span>{{ public_custom_plans|length }} shared plan{{ 's' if public_custom_plans|length != 1 }}</span>
-        </div>
-        {% endif %}
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         {% if user_custom_plan %}
-        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}" 
-           class="btn-custom-plan">
-            📝 View My Custom Plan
+        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}" 
+           class="btn-custom-plan {% if is_custom_view %}active{% endif %}">
+            📋 View My Custom Plan
+        </a>
+        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='base') }}" 
+           class="btn-custom-plan {% if not is_custom_view %}active{% endif %}" style="background:#6366f1;">
+            📄 Base Plan
         </a>
         <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}" 
            class="btn-custom-plan" style="background:#f59e0b;">
             📊 Compare Plans
         </a>
+        {% if is_custom_view %}
+        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}" 
+           class="btn-custom-plan" style="background:#16a34a;">
+            ✏️ Edit
+        </a>
+        {% elif is_admin %}
+        <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}" 
+           class="btn-custom-plan" style="background:#16a34a;">
+            ✏️ Edit Base
+        </a>
+        {% endif %}
         {% else %}
         <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}" 
            class="btn-custom-plan create">
@@ -1447,22 +1388,6 @@ function toggleSection(sectionId) {
         section.classList.toggle('expanded');
     }
 }
-
-// Sticky header on scroll
-(function() {
-    var stickyHeader = document.getElementById('sticky-header');
-    var heroSection = document.getElementById('hero-section');
-    if (!stickyHeader || !heroSection) return;
-
-    window.addEventListener('scroll', function() {
-        var heroBottom = heroSection.getBoundingClientRect().bottom;
-        if (heroBottom < 60) {
-            stickyHeader.classList.add('visible');
-        } else {
-            stickyHeader.classList.remove('visible');
-        }
-    });
-})();
 
 // Signups modal functions
 {% if upcoming_event %}
