@@ -187,7 +187,7 @@
         {% endif %}
             <span class="advice-tip" data-ride-id="{{ ride.id }}" style="position:relative; cursor:pointer; display:inline-flex; align-items:center; background:white; padding:4px 8px; border-radius:8px; border:1px solid #e2e8f0; transition:all 0.2s;">
                 <span class="advice-icon" data-icon-ride="{{ ride.id }}">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><circle cx="8" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/><circle cx="12" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/><circle cx="16" cy="10" r="1" fill="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}"/></svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}" stroke-width="2"><path d="M12 2l2.09 6.26L20.18 10l-6.09 1.74L12 18l-2.09-6.26L3.82 10l6.09-1.74L12 2z"/><path d="M20 7l.6 1.8L22.4 10l-1.8.6L20 12.4l-.6-1.8L17.6 10l1.8-.6L20 7z" opacity=".6"/><path d="M4 17l.4 1.2 1.2.4-1.2.4L4 20.2l-.4-1.2-1.2-.4 1.2-.4L4 17z" opacity=".6"/></svg>
                 </span>
                 <span class="advice-label" data-label-ride="{{ ride.id }}" style="font-size:0.65rem; margin-left:4px; font-weight:600; color:{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %};">Advice</span>
                 <span class="advice-tooltip" data-tooltip-ride="{{ ride.id }}">
@@ -458,17 +458,7 @@
                     aiDiv.innerHTML = sparkleIcon + '<span>' + advice[rideId] + '</span>';
                     el.appendChild(aiDiv);
 
-                    // Update button label and icon to show AI sparkle
-                    var tip = el.closest('.advice-tip');
-                    var label = tip.querySelector('.advice-label');
-                    var icon = tip.querySelector('.advice-icon');
-                    if (label) label.textContent = 'Advice';
-                    if (icon) {
-                        icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="' + (label ? getComputedStyle(label).color : '#4a5568') + '" stroke-width="2">' +
-                            '<path d="M12 2l2.09 6.26L20.18 10l-6.09 1.74L12 18l-2.09-6.26L3.82 10l6.09-1.74L12 2z"/>' +
-                            '<path d="M20 7l.6 1.8L22.4 10l-1.8.6L20 12.4l-.6-1.8L17.6 10l1.8-.6L20 7z" opacity=".6"/>' +
-                            '<path d="M4 17l.4 1.2 1.2.4-1.2.4L4 20.2l-.4-1.2-1.2-.4 1.2-.4L4 17z" opacity=".6"/></svg>';
-                    }
+                    // Icon is already sparkle from initial render, no swap needed
                 } else {
                     // No AI advice — show rule-based fallback
                     if (loader) loader.style.display = 'none';

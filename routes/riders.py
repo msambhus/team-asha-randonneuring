@@ -591,7 +591,9 @@ def rider_profile(rusa_id):
                 ride_dict['readiness'], ride_dict, weeks_until
             )
         else:
-            ride_dict['advice'] = []
+            # No Strava — show placeholder so advice button appears;
+            # AI advice will load async using brevet history as signal
+            ride_dict['advice'] = ['Loading AI coaching advice based on your brevet history...']
         ride_dict.pop('_weeks_until', None)
 
     return render_template('rider_profile.html',
