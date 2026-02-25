@@ -400,8 +400,9 @@ def detect_r12_awards(rider_id):
             # Break in consecutive months — check if we had 12+ consecutive
             run_len = i - run_start
             if run_len >= 12:
-                # Award for every complete 12-month window
-                for j in range(run_len - 11):
+                # Award one R-12 per non-overlapping 12-month block
+                j = 0
+                while j + 12 <= run_len:
                     s = parsed[run_start + j]
                     e = parsed[run_start + j + 11]
                     r12_awards.append({
@@ -409,12 +410,14 @@ def detect_r12_awards(rider_id):
                         'end_month': f'{e[0]}-{e[1]:02d}',
                         'end_year': e[0],
                     })
+                    j += 12
             run_start = i
 
     # Check final run
     run_len = len(parsed) - run_start
     if run_len >= 12:
-        for j in range(run_len - 11):
+        j = 0
+        while j + 12 <= run_len:
             s = parsed[run_start + j]
             e = parsed[run_start + j + 11]
             r12_awards.append({
@@ -422,6 +425,7 @@ def detect_r12_awards(rider_id):
                 'end_month': f'{e[0]}-{e[1]:02d}',
                 'end_year': e[0],
             })
+            j += 12
 
     return r12_awards
 
