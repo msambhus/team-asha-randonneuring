@@ -10,9 +10,13 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_pbp_finishers,
                     get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops,
                     get_signup_count, get_rider_signup_status, get_ride_by_id, update_ride_details,
-                    get_user_by_id, _execute)
+                    get_user_by_id, _execute,
+                    get_strava_connection, get_strava_activities,
+                    get_rider_upcoming_signups)
 from auth import login_required, user_login_required
-from datetime import date
+from services.fitness import (calculate_fitness_score, score_all_activities,
+                              assess_readiness, generate_training_advice)
+from datetime import date, datetime, timedelta
 import re
 
 riders_bp = Blueprint('riders', __name__)
@@ -489,12 +493,52 @@ def rider_profile(rusa_id):
 
     total_srs = get_rider_total_srs(rider['id'])
 
+    # --- Strava training data ---
+    strava_connection = get_strava_connection(rider['id'])
+    training_rides = []
+    fitness_score = None
+    has_strava = False
+    activities = []
+
+    if strava_connection:
+        has_strava = True
+        activities = get_strava_activities(rider['id'], days=28)
+        if activities:
+            fitness_score = calculate_fitness_score(activities)
+            training_rides = score_all_activities(activities)
+
+    # --- Upcoming rides with readiness ---
+    upcoming_rides = []
+    signups = get_rider_upcoming_signups(rider['id'])
+    for signup in signups:
+        ride_dict = dict(signup)
+        if has_strava and activities:
+            readiness = assess_readiness(activities, ride_dict)
+            ride_date = signup.get('date')
+            if ride_date:
+                if isinstance(ride_date, str):
+                    ride_date = datetime.strptime(ride_date, '%Y-%m-%d').date()
+                weeks_until = max(0, (ride_date - date.today()).days // 7)
+            else:
+                weeks_until = 4
+            advice = generate_training_advice(readiness, ride_dict, weeks_until)
+            ride_dict['readiness'] = readiness
+            ride_dict['advice'] = advice
+        else:
+            ride_dict['readiness'] = None
+            ride_dict['advice'] = []
+        upcoming_rides.append(ride_dict)
+
     return render_template('rider_profile.html',
                            rider=rider,
                            season_data=season_data,
                            career_rides=career_rides,
                            career_kms=career_kms,
-                           total_srs=total_srs)
+                           total_srs=total_srs,
+                           has_strava=has_strava,
+                           training_rides=training_rides,
+                           fitness_score=fitness_score,
+                           upcoming_rides=upcoming_rides)
 
 
 @riders_bp.route('/rider/<int:rusa_id>/edit', methods=['GET', 'POST'])

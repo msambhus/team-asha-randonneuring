@@ -76,9 +76,9 @@ def callback():
             scope=scope,
         )
 
-        # Initial sync (synchronous — 4 weeks of data is typically fast)
+        # Initial sync — fetch 1 year of history
         try:
-            count = sync_rider_activities(rider_id)
+            count = sync_rider_activities(rider_id, days=365)
             flash(f'Strava connected! Synced {count} activities.', 'success')
         except Exception as e:
             flash('Strava connected, but activity sync failed. We will retry later.', 'warning')

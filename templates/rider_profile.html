@@ -12,12 +12,15 @@
 
 <div class="stats-row">
 <div class="stat-card"><div class="number">{{ career_rides }}</div><div class="label">Career Rides</div></div>
-<div class="stat-card"><div class="number">{{ career_kms|commafy }}</div><div class="label">Career KMs</div></div>
+<div class="stat-card"><div class="number">{{ (career_kms * 0.621371)|round(0)|int|commafy }}</div><div class="label">Career Miles</div></div>
 {% if total_srs > 0 %}
 <div class="stat-card"><div class="number" style="color:var(--accent);">{% if total_srs > 1 %}SR*{{ total_srs }}{% else %}SR{% endif %}</div><div class="label">Super Randonneur</div></div>
 {% endif %}
 {% if rider.pbp_2023_status == 'Yes' %}
 <div class="stat-card"><div class="number" style="font-size:1.4rem;"><span class="pbp-badge" style="font-size:1rem;">PBP 2023</span></div><div class="label">Paris-Brest-Paris</div></div>
+{% endif %}
+{% if fitness_score %}
+<div class="stat-card"><div class="number" style="color:{% if fitness_score.total >= 70 %}#38a169{% elif fitness_score.total >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ fitness_score.total }}</div><div class="label">Fitness Score</div></div>
 {% endif %}
 </div>
 
@@ -30,6 +33,175 @@
 </div>
 {% endif %}
 
+{# ===== UPCOMING RIDES WITH READINESS ===== #}
+{% if upcoming_rides %}
+<div style="margin-bottom:30px;">
+    <h3 style="color:var(--primary); margin-bottom:15px;">Upcoming Rides</h3>
+    {% for ride in upcoming_rides %}
+    <div class="card" style="border-left:4px solid {% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}; margin-bottom:15px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+            <div>
+                <h4 style="margin:0 0 4px 0; color:var(--text);">{{ ride.name }}</h4>
+                <p style="margin:0; font-size:0.85rem; color:var(--text-light);">
+                    {{ ride.date }} &bull; {{ ride.club_code }}
+                    {% if ride.distance_miles %} &bull; {{ ride.distance_miles|round(1) }} mi{% elif ride.distance_km %} &bull; {{ (ride.distance_km * 0.621371)|round(1) }} mi{% endif %}
+                    {% if ride.elevation_ft %} &bull; {{ "{:,}".format(ride.elevation_ft) }} ft{% endif %}
+                    {% if ride.time_limit_hours %} &bull; {{ ride.time_limit_hours }}h limit{% endif %}
+                </p>
+                {% if ride.plan_slug %}
+                <p style="margin:4px 0 0; font-size:0.8rem;"><a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}" style="color:var(--primary);">View ride plan &rarr;</a></p>
+                {% endif %}
+            </div>
+            {% if ride.readiness %}
+            <div style="text-align:center; min-width:80px;">
+                <div style="font-size:1.8rem; font-weight:800; color:{{ ride.readiness.color }};">{{ ride.readiness.score }}</div>
+                <div style="display:inline-block; padding:2px 10px; border-radius:12px; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:white; background:{{ ride.readiness.color }};">
+                    {% if ride.readiness.level == 'ready' %}Ready{% elif ride.readiness.level == 'caution' %}Needs Work{% else %}Not Ready{% endif %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if ride.readiness %}
+        {# Readiness dimension progress bars #}
+        <div style="margin-top:15px; display:grid; grid-template-columns:1fr 1fr; gap:8px 20px;">
+            {% set dims = [
+                ('Distance', ride.readiness.distance, ride.readiness.distance_max),
+                ('Elevation', ride.readiness.elevation, ride.readiness.elevation_max),
+                ('Volume', ride.readiness.volume, ride.readiness.volume_max),
+                ('Fitness', ride.readiness.fitness, ride.readiness.fitness_max)
+            ] %}
+            {% for label, val, maxval in dims %}
+            <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--text-light); margin-bottom:2px;">
+                    <span>{{ label }}</span>
+                    <span>{{ val }}/{{ maxval }}</span>
+                </div>
+                <div style="height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+                    {% set pct = (val / maxval * 100) if maxval > 0 else 0 %}
+                    <div style="height:100%; width:{{ pct }}%; border-radius:3px; background:{% if pct >= 70 %}#38a169{% elif pct >= 40 %}#d69e2e{% else %}#e53e3e{% endif %}; transition:width 0.5s;"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {# Training advice #}
+        {% if ride.advice and ride.readiness.level != 'ready' %}
+        <div style="margin-top:12px; padding:12px 16px; background:linear-gradient(135deg, #fffbeb, #fef3c7); border-radius:8px; border:1px solid #f6e05e;">
+            <div style="font-size:0.75rem; font-weight:700; color:#92400e; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Training Advice</div>
+            <ul style="margin:0; padding-left:18px; font-size:0.8rem; color:#78350f; line-height:1.6;">
+                {% for tip in ride.advice %}
+                <li>{{ tip }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{# ===== RECENT TRAINING (STRAVA) ===== #}
+{% if has_strava and training_rides %}
+<div style="margin-bottom:30px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; gap:8px;">
+        <h3 style="color:var(--primary); margin:0;">Recent Training</h3>
+        <img src="{{ url_for('static', filename='img/powered_by_strava.svg') }}" alt="Powered by Strava" style="height:24px;">
+    </div>
+
+    {# Fitness Score Breakdown #}
+    {% if fitness_score %}
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(90px, 1fr)); gap:10px; margin-bottom:20px; padding:14px; background:#f7fafc; border-radius:8px; border:1px solid #e2e8f0;">
+        <div style="text-align:center;">
+            <div style="font-size:1.8rem; font-weight:800; color:{% if fitness_score.total >= 70 %}#38a169{% elif fitness_score.total >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ fitness_score.total }}</div>
+            <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px;">Overall</div>
+        </div>
+        <div style="text-align:center;">
+            <div style="font-size:1.1rem; font-weight:700; color:var(--primary);">{{ fitness_score.frequency }}</div>
+            <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px;">Freq /25</div>
+        </div>
+        <div style="text-align:center;">
+            <div style="font-size:1.1rem; font-weight:700; color:var(--primary);">{{ fitness_score.volume }}</div>
+            <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px;">Vol /35</div>
+        </div>
+        <div style="text-align:center;">
+            <div style="font-size:1.1rem; font-weight:700; color:var(--primary);">{{ fitness_score.intensity }}</div>
+            <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px;">Int /25</div>
+        </div>
+        <div style="text-align:center;">
+            <div style="font-size:1.1rem; font-weight:700; color:var(--primary);">{{ fitness_score.recency }}</div>
+            <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px;">Rec /15</div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# Training Rides Table #}
+    <div class="table-wrap">
+    <table>
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Activity</th>
+            <th style="text-align:right;">Distance</th>
+            <th style="text-align:right;">Elevation</th>
+            <th style="text-align:right;">Duration</th>
+            <th style="text-align:center;">HR</th>
+            <th style="text-align:center;">Power</th>
+            <th style="text-align:center;">Grade</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for ride in training_rides %}
+        <tr>
+            <td style="white-space:nowrap; font-size:0.85rem;">
+                {% if ride.start_date_local %}
+                    {{ ride.start_date_local.strftime('%b %d') if ride.start_date_local is not string else ride.start_date_local[:10] }}
+                {% endif %}
+            </td>
+            <td>
+                <a href="{{ ride.strava_url or ('https://www.strava.com/activities/' ~ ride.strava_activity_id) }}" target="_blank" rel="noopener" style="color:var(--primary); text-decoration:none; font-weight:500;" title="View on Strava">
+                    {{ ride.name or 'Ride' }}
+                </a>
+            </td>
+            <td style="text-align:right; white-space:nowrap;">{{ ((ride.distance or 0) / 1609.34)|round(1) }} mi</td>
+            <td style="text-align:right; white-space:nowrap;">{{ "{:,}".format(((ride.total_elevation_gain or 0) * 3.28084)|round(0)|int) }} ft</td>
+            <td style="text-align:right; white-space:nowrap; color:#666;">
+                {% if ride.moving_time %}
+                    {% set hrs = (ride.moving_time // 3600)|int %}
+                    {% set mins = ((ride.moving_time % 3600) // 60)|int %}
+                    {% if hrs > 0 %}{{ hrs }}h {{ mins }}m{% else %}{{ mins }}m{% endif %}
+                {% endif %}
+            </td>
+            <td style="text-align:center; font-size:0.85rem;">
+                {% if ride.has_heartrate and ride.average_heartrate %}
+                    <span title="Avg HR">{{ ride.average_heartrate|round(0)|int }}</span>
+                {% else %}
+                    <span style="color:#cbd5e0;">&mdash;</span>
+                {% endif %}
+            </td>
+            <td style="text-align:center; font-size:0.85rem;">
+                {% if ride.device_watts and ride.average_watts %}
+                    <span title="Avg Power">{{ ride.average_watts|round(0)|int }}W</span>
+                {% else %}
+                    <span style="color:#cbd5e0;">&mdash;</span>
+                {% endif %}
+            </td>
+            <td style="text-align:center;">
+                <span style="display:inline-block; min-width:42px; padding:3px 8px; border-radius:12px; font-size:0.75rem; font-weight:700; color:white; background:{{ ride.color }}; letter-spacing:0.3px;" title="Score: {{ ride.total }}/100">
+                    {{ ride.grade }}
+                    {% if ride.trend == 'building' %}&#x25B2;{% elif ride.trend == 'declining' %}&#x25BC;{% endif %}
+                </span>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+    </table>
+    </div>
+</div>
+{% endif %}
+
+{# ===== BREVET SEASON HISTORY ===== #}
 {% for sd in season_data %}
 <div class="season-block">
 <h3>{{ sd.season.name }} Season
@@ -37,7 +209,7 @@
 {% if sd.season.name == '2022-2023' and rider.pbp_2023_status == 'Yes' %} &bull; <span class="pbp-badge">PBP Finisher</span>{% endif %}
 {% if sd.season.name == '2022-2023' and rider.pbp_2023_status == 'DNF' %} &bull; <span class="badge badge-dnf">PBP DNF</span>{% endif %}
 </h3>
-<p>Rides: <strong>{{ sd.rides }}</strong> &bull; Distance: <strong>{{ sd.kms|commafy }} km</strong></p>
+<p>Rides: <strong>{{ sd.rides }}</strong> &bull; Distance: <strong>{{ (sd.kms * 0.621371)|round(0)|int|commafy }} mi</strong></p>
 <div class="table-wrap" style="margin-top:10px;">
 <table>
 <thead><tr><th>Date</th><th>Event</th><th>Distance</th><th>Elevation</th><th>Time</th></tr></thead>
@@ -50,7 +222,7 @@
 {% if p.rwgps_url %} <a href="{{ p.rwgps_url }}" target="_blank" style="font-size:0.8rem;">view route</a>{% endif %}
 {% if p.status|lower == 'dnf' %} <span class="badge badge-dnf">DNF</span>{% endif %}
 </td>
-<td>{{ p.distance_km }} km</td>
+<td>{{ (p.distance_km * 0.621371)|round(1) }} mi</td>
 <td>{% if p.elevation_ft %}{{ "{:,}".format(p.elevation_ft) }} ft{% endif %}</td>
 <td style="text-align:center;color:#666;">{{ p.finish_time or '' }}</td>
 </tr>
