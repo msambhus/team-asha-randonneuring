@@ -1,6 +1,41 @@
 {% extends "base.html" %}
 {% block title %}{{ rider.first_name }} {{ rider.last_name }} - Team Asha Randonneuring{% endblock %}
 
+{% block extra_head %}
+<style>
+.advice-tip .advice-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a202c;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 400;
+    line-height: 1.5;
+    padding: 8px 12px;
+    border-radius: 8px;
+    width: 240px;
+    z-index: 10;
+    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    pointer-events: none;
+}
+.advice-tip .advice-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: #1a202c;
+}
+.advice-tip:hover .advice-tooltip {
+    display: block;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="hero" style="padding:30px 20px;">
 {% if rider.photo_filename %}
@@ -60,6 +95,12 @@
             <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.6rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:white; background:{{ ride.readiness.color }};">
                 {% if ride.readiness.level == 'ready' %}Ready{% elif ride.readiness.level == 'caution' %}Needs Work{% else %}Not Ready{% endif %}
             </div>
+            {% if ride.advice %}
+            <span class="advice-tip" style="position:relative; cursor:pointer; display:flex; align-items:center;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{ ride.readiness.color }}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <span class="advice-tooltip">{% for tip in ride.advice %}{{ tip }}{% if not loop.last %}<br><br>{% endif %}{% endfor %}</span>
+            </span>
+            {% endif %}
         </div>
         {% endif %}
         {% if ride.plan_slug %}
