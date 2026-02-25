@@ -242,9 +242,9 @@ def my_profile():
         flash('Please complete your profile setup first.', 'warning')
         return redirect(url_for('auth.setup_profile'))
 
-    # Get rider info (with profile data — photo, bio, PBP)
+    # Get rider info (with profile data — photo, bio, PBP, strava privacy)
     rider_row = models._execute("""
-        SELECT r.*, rp.photo_filename, rp.bio, rp.pbp_2023_registered, rp.pbp_2023_status
+        SELECT r.*, rp.photo_filename, rp.bio, rp.pbp_2023_registered, rp.pbp_2023_status, rp.strava_data_private
         FROM rider r LEFT JOIN rider_profile rp ON r.id = rp.rider_id
         WHERE r.id = %s
     """, (rider_id,)).fetchone()

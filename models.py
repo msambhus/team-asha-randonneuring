@@ -105,7 +105,7 @@ def get_all_riders():
 
 def get_rider_by_rusa(rusa_id):
     return _execute("""
-        SELECT r.*, rp.photo_filename, rp.bio, rp.pbp_2023_registered, rp.pbp_2023_status
+        SELECT r.*, rp.photo_filename, rp.bio, rp.pbp_2023_registered, rp.pbp_2023_status, rp.strava_data_private
         FROM rider r LEFT JOIN rider_profile rp ON r.id = rp.rider_id
         WHERE r.rusa_id = %s
     """, (rusa_id,)).fetchone()
@@ -886,6 +886,18 @@ def update_rider_profile(rider_id, photo_filename=None, bio=None):
                       VALUES (%s, %s)
                       ON CONFLICT(rider_id) DO UPDATE SET bio = EXCLUDED.bio""",
                    (rider_id, bio))
+    conn.commit()
+
+
+def update_strava_privacy(rider_id, is_private):
+    """Update Strava data privacy setting for a rider."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        INSERT INTO rider_profile (rider_id, strava_data_private)
+        VALUES (%s, %s)
+        ON CONFLICT(rider_id) DO UPDATE SET strava_data_private = EXCLUDED.strava_data_private
+    """, (rider_id, is_private))
     conn.commit()
 
 
