@@ -230,6 +230,70 @@ def setup_profile():
     return render_template('setup_profile.html')
 
 
+@auth_bp.route('/my-profile')
+def my_profile():
+    """My Profile page — shows name, email, photo, Strava integration, fitness score."""
+    if not session.get('user_id'):
+        flash('Please log in to view your profile.', 'warning')
+        return redirect(url_for('auth.login', next=request.path))
+
+    rider_id = session.get('rider_id')
+    if not rider_id:
+        flash('Please complete your profile setup first.', 'warning')
+        return redirect(url_for('auth.setup_profile'))
+
+    # Get rider info (with profile data — photo, bio, PBP)
+    rider_row = models._execute("""
+        SELECT r.*, rp.photo_filename, rp.bio, rp.pbp_2023_registered, rp.pbp_2023_status
+        FROM rider r LEFT JOIN rider_profile rp ON r.id = rp.rider_id
+        WHERE r.id = %s
+    """, (rider_id,)).fetchone()
+
+    if not rider_row:
+        flash('Rider not found.', 'error')
+        return redirect(url_for('main.index'))
+
+    rider = dict(rider_row)
+
+    # Career stats
+    career = models.get_rider_career_stats(rider_id)
+
+    # Total SR count
+    total_srs = models.get_rider_total_srs(rider_id)
+
+    # Strava integration
+    strava_connection = models.get_strava_connection(rider_id)
+    strava_activities = []
+    fitness_score = None
+
+    if strava_connection:
+        # Auto-sync if stale (> 6 hours since last sync)
+        import time
+        last_sync = strava_connection.get('last_sync_at')
+        if not last_sync or (time.time() - last_sync.timestamp()) > 6 * 3600:
+            try:
+                from services.strava import sync_rider_activities
+                sync_rider_activities(rider_id)
+                strava_connection = models.get_strava_connection(rider_id)
+            except Exception:
+                pass  # Silent failure — stale data is better than no page
+
+        strava_activities = models.get_strava_activities_for_calendar(rider_id, days=28)
+        if strava_activities:
+            from services.fitness import calculate_fitness_score
+            fitness_score = calculate_fitness_score(strava_activities)
+
+    return render_template('my_profile.html',
+                           rider=rider,
+                           email=session.get('email'),
+                           career_rides=career['total_rides'],
+                           career_kms=career['total_kms'],
+                           total_srs=total_srs,
+                           strava_connection=strava_connection,
+                           strava_activities=strava_activities,
+                           fitness_score=fitness_score)
+
+
 @auth_bp.route('/logout')
 def logout():
     """Log out the current user."""

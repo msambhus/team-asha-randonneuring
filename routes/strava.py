@@ -9,12 +9,6 @@ from services.strava import exchange_code_for_token, sync_rider_activities, deau
 strava_bp = Blueprint('strava', __name__)
 
 
-def _rider_rusa_id(rider_id):
-    """Helper to get rusa_id for a rider_id (for redirects)."""
-    row = models._execute("SELECT rusa_id FROM rider WHERE id = %s", (rider_id,)).fetchone()
-    return row['rusa_id'] if row else None
-
-
 @strava_bp.route('/connect')
 @profile_required
 def connect():
@@ -25,8 +19,7 @@ def connect():
     existing = models.get_strava_connection(rider_id)
     if existing:
         flash('Strava is already connected.', 'info')
-        rusa_id = _rider_rusa_id(rider_id)
-        return redirect(url_for('riders.rider_profile', rusa_id=rusa_id))
+        return redirect(url_for('auth.my_profile'))
 
     # Store rider_id in session for callback
     session['strava_connecting_rider_id'] = rider_id
@@ -54,8 +47,7 @@ def callback():
     error = request.args.get('error')
     if error:
         flash(f'Strava authorization was denied: {error}', 'error')
-        rusa_id = _rider_rusa_id(rider_id)
-        return redirect(url_for('riders.rider_profile', rusa_id=rusa_id))
+        return redirect(url_for('auth.my_profile'))
 
     code = request.args.get('code')
     scope = request.args.get('scope', '')
@@ -72,8 +64,7 @@ def callback():
 
         if not strava_athlete_id:
             flash('Failed to get athlete info from Strava.', 'error')
-            rusa_id = _rider_rusa_id(rider_id)
-            return redirect(url_for('riders.rider_profile', rusa_id=rusa_id))
+            return redirect(url_for('auth.my_profile'))
 
         # Store connection
         models.create_strava_connection(
@@ -97,8 +88,7 @@ def callback():
         flash(f'Failed to connect Strava: {str(e)}', 'error')
         print(f"Strava OAuth error: {e}")
 
-    rusa_id = _rider_rusa_id(rider_id)
-    return redirect(url_for('riders.rider_profile', rusa_id=rusa_id))
+    return redirect(url_for('auth.my_profile'))
 
 
 @strava_bp.route('/sync')
@@ -113,8 +103,7 @@ def sync():
     except Exception as e:
         flash(f'Sync failed: {str(e)}', 'error')
 
-    rusa_id = _rider_rusa_id(rider_id)
-    return redirect(url_for('riders.rider_profile', rusa_id=rusa_id))
+    return redirect(url_for('auth.my_profile'))
 
 
 @strava_bp.route('/disconnect', methods=['POST'])
@@ -133,5 +122,4 @@ def disconnect():
     else:
         flash('No Strava connection found.', 'info')
 
-    rusa_id = _rider_rusa_id(rider_id)
-    return redirect(url_for('riders.rider_profile', rusa_id=rusa_id))
+    return redirect(url_for('auth.my_profile'))
