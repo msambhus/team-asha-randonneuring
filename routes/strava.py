@@ -5,6 +5,7 @@ from auth import profile_required
 from urllib.parse import urlencode
 import models
 from services.strava import exchange_code_for_token, sync_rider_activities, deauthorize_strava
+from cache import cache
 
 strava_bp = Blueprint('strava', __name__)
 
@@ -79,6 +80,7 @@ def callback():
         # Initial sync — fetch 1 year of history
         try:
             count = sync_rider_activities(rider_id, days=365)
+            cache.clear()  # Clear cache after Strava sync
             flash(f'Strava connected! Synced {count} activities.', 'success')
         except Exception as e:
             flash('Strava connected, but activity sync failed. We will retry later.', 'warning')
@@ -99,6 +101,7 @@ def sync():
 
     try:
         count = sync_rider_activities(rider_id)
+        cache.clear()  # Clear cache after Strava sync
         flash(f'Synced {count} activities from Strava.', 'success')
     except Exception as e:
         flash(f'Sync failed: {str(e)}', 'error')
@@ -118,6 +121,7 @@ def disconnect():
         deauthorize_strava(connection['access_token'])
         # Delete from DB
         models.delete_strava_connection(rider_id)
+        cache.clear()  # Clear cache after Strava disconnect
         flash('Strava has been disconnected.', 'success')
     else:
         flash('No Strava connection found.', 'info')

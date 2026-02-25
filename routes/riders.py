@@ -1,5 +1,5 @@
 """Rider routes: season view, individual profiles, profile edit, upcoming brevets, ride plans."""
-from flask import Blueprint, render_template, abort, request, redirect, url_for
+from flask import Blueprint, render_template, abort, request, redirect, url_for, session
 from models import (get_season_by_name, get_riders_for_season, get_active_riders_for_season,
                     get_rides_for_season, get_participation_matrix, get_season_stats,
                     get_rider_by_rusa, get_rider_participation, get_rider_career_stats,
@@ -12,11 +12,13 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_signup_count, get_rider_signup_status, get_ride_by_id, update_ride_details,
                     get_user_by_id, _execute,
                     get_strava_connection, get_strava_activities,
-                    get_rider_upcoming_signups, detect_r12_awards)
+                    get_rider_upcoming_signups, detect_r12_awards,
+                    get_signup_counts_batch, get_rider_signup_statuses_batch)
 from auth import login_required, user_login_required
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
 from services.openai_coach import generate_openai_advice
+from cache import cache, CACHE_TIMEOUT
 from datetime import date, datetime, timedelta
 import re
 
@@ -31,6 +33,7 @@ SEASON_LABELS = {
 
 
 @riders_bp.route('/riders/<season_name>')
+@cache.cached(timeout=CACHE_TIMEOUT)
 def season_riders(season_name):
     try:
         season = get_season_by_name(season_name)
@@ -346,6 +349,11 @@ def upcoming_brevets(season_name):
     user_signups = {}
     can_edit_rides = False
     user_id = session.get('user_id')
+    
+    # Batch load signup counts for all events (1 query instead of N queries)
+    ride_ids = [e['id'] for e in rusa_events]
+    signup_counts = get_signup_counts_batch(ride_ids)
+    
     if user_id:
         user = get_user_by_id(user_id)
         if user and user.get('rider_id'):
@@ -358,15 +366,13 @@ def upcoming_brevets(season_name):
                 allowed_names = ['sriharsha', 'venkatesh', 'mihir']
                 can_edit_rides = current_rider.get('first_name', '').lower() in allowed_names
             
-            # Get signup status for each event
-            for event in rusa_events:
-                status = get_rider_signup_status(rider_id, event['id'])
-                if status:
-                    user_signups[event['id']] = status['status']
+            # Batch load signup statuses for all events (1 query instead of N queries)
+            user_signup_statuses = get_rider_signup_statuses_batch(rider_id, ride_ids)
+            user_signups = {ride_id: data['status'] for ride_id, data in user_signup_statuses.items()}
 
     # Add signup counts to events
     for event in rusa_events:
-        event['signup_count'] = get_signup_count(event['id'])
+        event['signup_count'] = signup_counts.get(event['id'], 0)
 
     # Region color map
     region_colors = {
@@ -445,6 +451,7 @@ def edit_ride(ride_id):
             start_location=start_location if start_location else None,
             time_limit_hours=time_limit_hours
         )
+        cache.clear()  # Clear cache after ride update
         
         # Return JSON for AJAX requests
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -637,6 +644,7 @@ def rider_edit(rusa_id):
             photo.save(os.path.join(current_app.config['UPLOAD_FOLDER'], photo_filename))
 
         update_rider_profile(rider['id'], photo_filename=photo_filename, bio=bio)
+        cache.clear()  # Clear cache after profile update
         return redirect(url_for('riders.rider_profile', rusa_id=rusa_id))
 
     return render_template('rider_edit.html', rider=rider)
@@ -657,18 +665,21 @@ def toggle_strava_privacy(rusa_id):
     try:
         is_private = request.json.get('is_private', False)
         update_strava_privacy(rider['id'], is_private)
+        cache.clear()  # Clear cache after privacy update
         return jsonify({'success': True, 'is_private': is_private})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @riders_bp.route('/ride-plans')
+@cache.cached(timeout=CACHE_TIMEOUT, key_prefix='ride_plans_index')
 def ride_plans_index():
     plans = get_all_ride_plans()
     return render_template('ride_plans.html', plans=plans)
 
 
 @riders_bp.route('/ride-plan/<slug>')
+@cache.cached(timeout=CACHE_TIMEOUT)
 def ride_plan_detail(slug):
     plan = get_ride_plan_by_slug(slug)
     if not plan:
