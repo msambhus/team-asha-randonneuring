@@ -772,8 +772,9 @@ function applyPaceAdjustment() {
             // Calculate segment time: (distance / speed) * 60 minutes
             const segmentTimeMin = Math.round((segmentDistance / pace) * 60);
             
-            // Update the input field
-            const timeInput = stop.querySelector('.inline-edit');
+            // Update the segment time input field (second inline-edit input in the row)
+            const allInputs = stop.querySelectorAll('.inline-edit');
+            const timeInput = allInputs[1]; // Index 0 = distance, Index 1 = time
             if (timeInput) {
                 timeInput.value = segmentTimeMin;
             }
