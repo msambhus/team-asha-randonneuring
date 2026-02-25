@@ -1308,8 +1308,8 @@ def get_custom_plan_stops_raw(custom_plan_id):
         ORDER BY stop_order
     """, (custom_plan_id,)).fetchall()
 
-def update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min=None, notes=None, distance_miles=None):
-    """Update timing, distance, or notes for a custom plan stop."""
+def update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min=None, notes=None, distance_miles=None, elevation_gain=None):
+    """Update timing, distance, elevation, or notes for a custom plan stop."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
@@ -1323,6 +1323,10 @@ def update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min=None, note
     if distance_miles is not None:
         updates.append("distance_miles = %s")
         params.append(distance_miles)
+    
+    if elevation_gain is not None:
+        updates.append("elevation_gain = %s")
+        params.append(elevation_gain)
     
     if notes is not None:
         updates.append("notes = %s")
