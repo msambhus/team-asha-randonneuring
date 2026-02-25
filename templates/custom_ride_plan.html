@@ -417,6 +417,9 @@
             <div class="column-header">
                 <span>✏️ {% if custom_plan %}My Custom Plan{% else %}Create Your Custom Plan{% endif %}</span>
                 <div style="display:flex;gap:8px;">
+                    <button class="btn-icon" style="background:#f1f5f9;border-color:#cbd5e1;color:#64748b;" onclick="resetToBasePlan()">
+                        ↶ Reset
+                    </button>
                     <button class="btn-icon btn-save-inline" id="save-button-top" onclick="saveAllChanges()" disabled>
                         <span id="save-icon-top">💾</span>
                         <span id="save-text-top">Save</span>
@@ -455,9 +458,63 @@
                        value="{{ custom_plan.avg_moving_speed|float if custom_plan and custom_plan.avg_moving_speed else 13 }}" 
                        oninput="updatePaceDisplay()">
                 <div class="pace-value" id="pace-value">{{ custom_plan.avg_moving_speed|float if custom_plan and custom_plan.avg_moving_speed else 13 }} mph</div>
-                <button class="btn-icon" style="width:100%;margin-top:8px;" onclick="applyPaceAdjustment()">
-                    🔄 Apply This Pace to All Segments
-                </button>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+                    <button class="btn-icon" onclick="applyPaceAdjustment()">
+                        🔄 Apply Pace
+                    </button>
+                    <button class="btn-icon" style="background:#f1f5f9;border-color:#cbd5e1;color:#64748b;" onclick="undoPaceAdjustment()">
+                        ↶ Undo
+                    </button>
+                </div>
+            </div>
+            
+            {# Plan Summary Stats #}
+            <div style="background:#f0f9ff;border:2px solid #0ea5e9;border-radius:10px;padding:16px;margin-bottom:20px;">
+                <div style="font-size:0.85rem;font-weight:600;color:#0369a1;margin-bottom:12px;">Plan Summary</div>
+                <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:12px;font-size:0.85rem;margin-bottom:12px;">
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Elapsed Time</div>
+                        <div id="summary-elapsed-time" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Moving Time</div>
+                        <div id="summary-moving-time" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Stop Time</div>
+                        <div id="summary-stop-time" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Time Bank</div>
+                        <div id="summary-time-bank" style="font-weight:700;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Elapsed Speed</div>
+                        <div id="summary-avg-elapsed-speed" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Moving Speed</div>
+                        <div id="summary-avg-moving-speed" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Difficulty</div>
+                        <div id="summary-difficulty" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;font-size:0.85rem;padding-top:10px;border-top:1px solid #bae6fd;">
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Total Miles</div>
+                        <div id="summary-miles" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Total Elevation</div>
+                        <div id="summary-elevation" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Avg Ft/Mile</div>
+                        <div id="summary-ft-per-mi" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                </div>
             </div>
             
             {# Custom Stops #}
@@ -613,10 +670,15 @@
             
             {# Save Button - Bottom #}
             <div style="text-align:center;margin-top:20px;padding-top:16px;border-top:2px solid var(--border);">
-                <button class="btn-icon btn-save-inline" id="save-button" onclick="saveAllChanges()" disabled>
-                    <span id="save-icon">💾</span>
-                    <span id="save-text">Save Changes</span>
-                </button>
+                <div style="display:flex;gap:12px;justify-content:center;">
+                    <button class="btn-icon" style="background:#f1f5f9;border-color:#cbd5e1;color:#64748b;" onclick="resetToBasePlan()">
+                        ↶ Reset to Base Plan
+                    </button>
+                    <button class="btn-icon btn-save-inline" id="save-button" onclick="saveAllChanges()" disabled>
+                        <span id="save-icon">💾</span>
+                        <span id="save-text">Save Changes</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -728,6 +790,12 @@ let pendingChanges = {
     deletedStops: []
 };
 
+// Store the original pace from the current plan (custom or base)
+const originalPace = {{ custom_plan.avg_moving_speed|float if custom_plan and custom_plan.avg_moving_speed else 13 }};
+
+// Store original segment times on page load to support undo
+const originalSegmentTimes = {};
+
 let nextTempStopId = -1;
 
 // Enable save button immediately in create mode
@@ -738,6 +806,17 @@ if (isCreateMode) {
 
 // Calculate initial cumulative times on page load
 document.addEventListener('DOMContentLoaded', () => {
+    // Capture original segment times for undo functionality
+    const allStops = document.querySelectorAll('.stop-row');
+    allStops.forEach(stop => {
+        const stopId = stop.dataset.stopId || stop.dataset.tempStopId;
+        const allInputs = stop.querySelectorAll('.inline-edit');
+        const timeInput = allInputs[2]; // Index 2 = seg time
+        if (timeInput && stopId) {
+            originalSegmentTimes[stopId] = parseInt(timeInput.value);
+        }
+    });
+    
     recalculateTimes();
 });
 
@@ -1024,6 +1103,49 @@ function applyPaceAdjustment() {
     }, 2000);
     
     // Recalculate cumulative times after pace adjustment
+    recalculateTimes();
+    
+    markDirty();
+}
+
+function undoPaceAdjustment() {
+    // Restore all segment times to original values from when page loaded
+    const allStops = document.querySelectorAll('.stop-row');
+    
+    allStops.forEach(stop => {
+        const stopId = stop.dataset.stopId || stop.dataset.tempStopId;
+        const originalTime = originalSegmentTimes[stopId];
+        
+        // Restore if we have the original time stored
+        if (originalTime !== undefined) {
+            const allInputs = stop.querySelectorAll('.inline-edit');
+            const timeInput = allInputs[2]; // Index 2 = seg time
+            if (timeInput) {
+                timeInput.value = originalTime;
+            }
+        }
+    });
+    
+    // Reset the slider to the original pace from current plan
+    const slider = document.getElementById('pace-slider');
+    slider.value = originalPace;
+    document.getElementById('pace-value').textContent = originalPace + ' mph';
+    
+    // Clear the pending pace adjustment
+    delete pendingChanges.settings.avg_moving_speed;
+    
+    // Show feedback to user
+    const undoBtn = event.target;
+    const originalText = undoBtn.textContent;
+    undoBtn.textContent = '✓ Restored';
+    undoBtn.disabled = true;
+    
+    setTimeout(() => {
+        undoBtn.textContent = originalText;
+        undoBtn.disabled = false;
+    }, 2000);
+    
+    // Recalculate all derived metrics
     recalculateTimes();
     
     markDirty();
@@ -1519,6 +1641,67 @@ function calculateDifficultyScore(ftPerMi, notes) {
     return Math.round(Math.min(Math.max(base, 0), 10) * 10) / 10; // Round to 1 decimal
 }
 
+function updateSummaryPanel(movingTime, elapsedTime, movingDistance, totalElev, weightedDiffSum, timeBank) {
+    // Elapsed Time
+    const elapsedHours = Math.floor(elapsedTime / 60);
+    const elapsedMins = elapsedTime % 60;
+    document.getElementById('summary-elapsed-time').textContent = `${elapsedHours}:${elapsedMins.toString().padStart(2, '0')}`;
+    
+    // Moving Time
+    const movingHours = Math.floor(movingTime / 60);
+    const movingMins = movingTime % 60;
+    document.getElementById('summary-moving-time').textContent = `${movingHours}:${movingMins.toString().padStart(2, '0')}`;
+    
+    // Stop Time (elapsed - moving)
+    const stopTime = elapsedTime - movingTime;
+    const stopHours = Math.floor(stopTime / 60);
+    const stopMins = stopTime % 60;
+    document.getElementById('summary-stop-time').textContent = `${stopHours}:${stopMins.toString().padStart(2, '0')}`;
+    
+    // Final Time Bank
+    const timeBankEl = document.getElementById('summary-time-bank');
+    if (timeBank !== null) {
+        const absBank = Math.abs(timeBank);
+        const tbHours = Math.floor(absBank / 60);
+        const tbMins = absBank % 60;
+        const sign = timeBank >= 0 ? '+' : '−';
+        const color = timeBank >= 0 ? '#16a34a' : '#dc2626';
+        timeBankEl.innerHTML = `<span style="color:${color};">${sign}${tbHours}:${tbMins.toString().padStart(2, '0')}</span>`;
+    } else {
+        timeBankEl.textContent = '—';
+    }
+    
+    // Avg Elapsed Speed (includes stops)
+    const totalDistance = {{ base_plan.total_distance_miles }};
+    const avgElapsedSpeed = totalDistance > 0 && elapsedTime > 0 ? totalDistance / (elapsedTime / 60.0) : 0;
+    document.getElementById('summary-avg-elapsed-speed').textContent = avgElapsedSpeed > 0 ? avgElapsedSpeed.toFixed(1) + ' mph' : '—';
+    
+    // Avg Moving Speed
+    const avgMovingSpeed = movingDistance > 0 && movingTime > 0 ? movingDistance / (movingTime / 60.0) : 0;
+    document.getElementById('summary-avg-moving-speed').textContent = avgMovingSpeed > 0 ? avgMovingSpeed.toFixed(1) + ' mph' : '—';
+    
+    // Weighted Difficulty Score
+    const weightedDifficulty = movingDistance > 0 ? weightedDiffSum / movingDistance : 0;
+    const diffEl = document.getElementById('summary-difficulty');
+    if (weightedDifficulty > 0) {
+        const color = weightedDifficulty >= 7 ? '#ef4444' : weightedDifficulty >= 4 ? '#f59e0b' : weightedDifficulty >= 1.5 ? '#22c55e' : '#94a3b8';
+        const label = weightedDifficulty >= 7 ? 'Hard' : weightedDifficulty >= 4 ? 'Moderate' : weightedDifficulty >= 1.5 ? 'Easy' : 'Flat';
+        diffEl.innerHTML = `<span style="color:${color};">${weightedDifficulty.toFixed(1)} - ${label}</span>`;
+    } else {
+        diffEl.textContent = '—';
+    }
+    
+    // Total Miles
+    document.getElementById('summary-miles').textContent = movingDistance > 0 ? movingDistance.toFixed(1) + ' mi' : '—';
+    
+    // Total Elevation
+    document.getElementById('summary-elevation').textContent = totalElev > 0 ? totalElev.toLocaleString() + ' ft' : '—';
+    
+    // Avg Ft/Mile
+    const avgFtPerMi = movingDistance > 0 ? totalElev / movingDistance : 0;
+    document.getElementById('summary-ft-per-mi').textContent = avgFtPerMi > 0 ? avgFtPerMi.toFixed(0) + ' ft/mi' : '—';
+}
+
 function recalculateTimes() {
     // Recalculate all derived metrics for all stops
     const allStops = document.querySelectorAll('.stop-row');
@@ -1527,6 +1710,14 @@ function recalculateTimes() {
     
     let cumulativeTime = 0;
     let prevDistance = 0;
+    
+    // Summary tracking variables
+    let totalMovingTime = 0;
+    let totalElapsedTime = 0;
+    let totalMovingDistance = 0;
+    let totalElevation = 0;
+    let weightedDifficultySum = 0;
+    let finalTimeBank = null;
     
     allStops.forEach(stop => {
         // Get all inline-edit inputs in order:
@@ -1597,9 +1788,10 @@ function recalculateTimes() {
         
         // Calculate difficulty score
         const difficultyDisplay = stop.querySelector('.difficulty-score');
+        let difficultyScore = 0;
         if (difficultyDisplay) {
             const ftPerMi = ftPerMiInput?.value ? parseFloat(ftPerMiInput.value) : 0;
-            const difficultyScore = calculateDifficultyScore(ftPerMi, null); // notes not available in DOM
+            difficultyScore = calculateDifficultyScore(ftPerMi, null); // notes not available in DOM
             difficultyDisplay.dataset.score = difficultyScore;
             
             if (difficultyScore > 0) {
@@ -1610,11 +1802,25 @@ function recalculateTimes() {
             }
         }
         
+        // Track summary metrics
+        totalElapsedTime += segmentTime;
+        totalElevation += elevGain;
+        if (segMiles > 0) {
+            // This is a moving segment (not a zero-distance stop)
+            totalMovingTime += segmentTime;
+            totalMovingDistance += segMiles;
+            weightedDifficultySum += difficultyScore * segMiles;
+        }
+        finalTimeBank = timeBank;
+        
         // Update diff indicators (show base plan values in parentheses)
         updateDiffIndicators(stop, distance, segMiles, segmentTime, avgSpeedInput?.value, elevGain, ftPerMiInput?.value, cumulativeTime, timeBank);
         
         prevDistance = distance;
     });
+    
+    // Update summary panel
+    updateSummaryPanel(totalMovingTime, totalElapsedTime, totalMovingDistance, totalElevation, weightedDifficultySum, finalTimeBank);
 }
 
 function updateDiffIndicators(stop, distance, segMiles, segTime, avgSpeed, elevation, ftPerMi, cumTime, timeBank) {
@@ -1886,6 +2092,14 @@ async function saveAllChanges() {
         updateSaveButtons('enabled', '💾', 'Save Failed - Retry');
         alert('Error saving changes: ' + error.message);
     }
+}
+
+function resetToBasePlan() {
+    // Disable the unsaved changes warning for this reload
+    hasUnsavedChanges = false;
+    
+    // Reload the page to discard all pending changes
+    window.location.reload();
 }
 
 function deleteCustomPlan() {
