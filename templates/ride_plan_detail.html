@@ -178,6 +178,108 @@
     width: 3px;
 }
 
+/* ===== TIMELINE LAYOUT ===== */
+.timeline-container {
+    position: relative;
+    padding-left: 24px;
+    border: none;
+    border-radius: 0;
+    overflow: visible;
+}
+.timeline-container::before {
+    content: '';
+    position: absolute;
+    left: 11px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, #16a34a 0%, #cbd5e1 5%, #cbd5e1 95%, #dc2626 100%);
+    z-index: 0;
+}
+/* Timeline node connector */
+.timeline-container .segment-card {
+    position: relative;
+    z-index: 1;
+    border-radius: 8px;
+    margin-bottom: 4px;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--border);
+    background: white;
+}
+.timeline-container .segment-card::before {
+    content: '';
+    position: absolute;
+    top: 20px;
+    height: 2px;
+    background: #cbd5e1;
+    z-index: 1;
+}
+/* Level 0: Start & Finish — flush left */
+.timeline-container .segment-card.level-start,
+.timeline-container .segment-card.level-finish {
+    margin-left: 0;
+}
+.timeline-container .segment-card.level-start::before,
+.timeline-container .segment-card.level-finish::before {
+    left: -24px;
+    width: 20px;
+}
+/* Level 1: Controls */
+.timeline-container .segment-card.level-control {
+    margin-left: 28px;
+}
+.timeline-container .segment-card.level-control::before {
+    left: -52px;
+    width: 48px;
+}
+/* Level 2: Waypoints */
+.timeline-container .segment-card.level-waypoint {
+    margin-left: 52px;
+}
+.timeline-container .segment-card.level-waypoint::before {
+    left: -76px;
+    width: 72px;
+}
+/* Break chip pills */
+.break-chips-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    margin-left: 15px;
+}
+.break-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 0.73rem;
+    font-weight: 600;
+    white-space: nowrap;
+    border: 1px solid #fcd34d;
+}
+.break-chip .break-icon { font-size: 0.7rem; }
+/* Seg time combined annotation */
+.seg-time-break-note {
+    font-size: 0.65rem;
+    color: #92400e;
+    font-weight: 500;
+    margin-left: 2px;
+}
+@media (max-width: 768px) {
+    .timeline-container { padding-left: 18px; }
+    .timeline-container::before { left: 8px; }
+    .timeline-container .segment-card.level-control { margin-left: 18px; }
+    .timeline-container .segment-card.level-waypoint { margin-left: 32px; }
+    .timeline-container .segment-card.level-start::before,
+    .timeline-container .segment-card.level-finish::before { left: -18px; width: 14px; }
+    .timeline-container .segment-card.level-control::before { left: -36px; width: 32px; }
+    .timeline-container .segment-card.level-waypoint::before { left: -50px; width: 46px; }
+}
+
 /* ===== TIME-OF-DAY CHART (grid layout) ===== */
 .tod-grid {
     display: grid;
@@ -1144,8 +1246,102 @@
     </button>
 </div>
 
-{# ===== J. SEGMENT CARDS (gradient difficulty colors) ===== #}
+{# ===== J. SEGMENT CARDS (timeline layout with break merging) ===== #}
 <div id="cards-view">
+{% if use_timeline %}
+<div class="segment-cards timeline-container">
+{% for s in stops %}
+{# Skip zero-distance rest stops — they are merged as break chips on the preceding card #}
+{% if s.get('_is_merged_break') %}
+{% else %}
+{% set level_class = 'level-start' if s.stop_type == 'start' else 'level-finish' if s.stop_type == 'finish' else 'level-control' if s.stop_type == 'control' else 'level-waypoint' %}
+<div class="segment-card {{ level_class }}" style="border-left-color:{{ s.difficulty_color }};">
+    {% if s.difficulty_label and s.difficulty_label != 'flat' %}<div class="diff-stripe" style="background:{{ s.difficulty_color }};"></div>{% endif %}
+    <div class="segment-header">
+        <div class="stop-icon {{ s.stop_type }}">
+            {% if s.stop_type == 'start' %}&#x1F6A9;{% elif s.stop_type == 'finish' %}&#x1F3C1;{% elif s.stop_type == 'control' %}&#x25C6;{% else %}&#x2022;{% endif %}
+        </div>
+        <div class="segment-loc">
+            <div class="segment-loc-name">{{ s.location }}</div>
+            {% if s.notes %}<div class="segment-loc-notes">{{ s.notes }}</div>{% endif %}
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+            {% if s.difficulty_score and s.difficulty_score > 0 %}
+            <span class="diff-badge" style="background:{{ s.difficulty_color }};color:white;">{{ s.difficulty_score }}</span>
+            {% endif %}
+            <span class="type-badge {{ s.stop_type }}">{{ s.stop_type }}</span>
+        </div>
+    </div>
+    {% if s.seg_dist and s.seg_dist > 0 %}
+    <div class="segment-metrics">
+        <div class="metric">
+            <div class="metric-value">{{ "%.1f"|format(s.seg_dist) }}</div>
+            <div class="metric-label">Seg Mi</div>
+        </div>
+        <div class="metric">
+            <div class="metric-value" style="color:var(--primary);">{{ "%.1f"|format(s.distance_miles) if s.distance_miles else '—' }}</div>
+            <div class="metric-label">Cumul Mi</div>
+        </div>
+        {% if s.elevation_gain and s.elevation_gain > 0 %}
+        <div class="metric">
+            <div class="metric-value elev">{{ "{:,}".format(s.elevation_gain) }}</div>
+            <div class="metric-label">Elev Ft</div>
+        </div>
+        {% endif %}
+        {% if s.ft_per_mi %}
+        <div class="metric">
+            <div class="metric-value">{{ s.ft_per_mi }}</div>
+            <div class="metric-label">Ft/Mi</div>
+        </div>
+        {% endif %}
+        {% if s.segment_time_min and s.segment_time_min > 0 %}
+        <div class="metric">
+            <div class="metric-value">
+                {% set break_time = s.get('_break_time_min', 0) %}
+                {% set combined = s.segment_time_min + break_time %}
+                {% if combined >= 60 %}{{ combined // 60 }}h{{ "%02d"|format(combined % 60) }}m{% else %}{{ combined }}m{% endif %}
+                {% if break_time > 0 %}<span class="seg-time-break-note">(+{{ break_time }}m&nbsp;rest)</span>{% endif %}
+            </div>
+            <div class="metric-label">Seg Time</div>
+        </div>
+        {% endif %}
+        {% if s.avg_speed %}
+        <div class="metric">
+            <div class="metric-value">{{ "%.1f"|format(s.avg_speed) }}</div>
+            <div class="metric-label">Avg MPH</div>
+        </div>
+        {% endif %}
+        {# Time Bank: use the last break's time_bank if breaks follow, else use this stop's #}
+        {% set effective_bank = s.get('_next_breaks', [])[-1].time_bank_min if s.get('_next_breaks') and s.get('_next_breaks')[-1].get('time_bank_min') is not none else s.time_bank_min %}
+        {% if effective_bank is not none %}
+        <div class="metric">
+            {% set abs_bank = effective_bank if effective_bank >= 0 else -effective_bank %}
+            <div class="metric-value" style="color:{% if effective_bank >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
+                {% if effective_bank >= 0 %}+{% else %}&minus;{% endif %}{{ (abs_bank // 60)|int }}:{{ "%02d"|format(abs_bank % 60) }}
+            </div>
+            <div class="metric-label">Time Bank</div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    {# Break chips — merged rest stops #}
+    {% if s.get('_next_breaks') %}
+    <div class="break-chips-row">
+        {% for brk in s._next_breaks %}
+        <div class="break-chip" title="{{ brk.location }}{% if brk.notes %} — {{ brk.notes }}{% endif %}">
+            <span class="break-icon">&#x2615;</span>
+            {{ brk.location[:30] }}
+            {% if brk.segment_time_min %}({{ brk.segment_time_min }}min){% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+{% endfor %}
+</div>
+{% else %}
+{# Fallback: original flat card view when stop types are unknown #}
 <div class="segment-cards">
 {% for s in stops %}
 <div class="segment-card" style="border-left-color:{{ s.difficulty_color }};">
@@ -1215,6 +1411,7 @@
 </div>
 {% endfor %}
 </div>
+{% endif %}
 </div>
 
 {# ===== K. DATA TABLE (gradient difficulty colors) ===== #}

@@ -323,6 +323,52 @@ def _build_journey_nodes(stops):
     return nodes
 
 
+def _attach_break_metadata(stops):
+    """Attach break merging metadata for the timeline layout.
+
+    For each non-break stop, collects subsequent zero-distance rest stops
+    into '_next_breaks' and sums their time into '_break_time_min'.
+    Returns (stops, use_timeline) — use_timeline is False if stop types
+    are missing/ambiguous, signaling templates to use the original flat view.
+    """
+    KNOWN_TYPES = {'start', 'finish', 'control', 'rest', 'waypoint'}
+    # Check if stops have identifiable stop_type values
+    types_found = {s.get('stop_type') for s in stops if s.get('stop_type')}
+    if not types_found or not types_found & KNOWN_TYPES:
+        return stops, False
+
+    # Mark merged breaks and collect them onto their parent segment
+    merged_indices = set()
+    for i, stop in enumerate(stops):
+        is_zero_dist_rest = (
+            stop.get('stop_type') == 'rest'
+            and not (stop.get('seg_dist') or 0) > 0
+        )
+        if is_zero_dist_rest:
+            stop['_is_merged_break'] = True
+            continue
+
+        stop['_is_merged_break'] = False
+        next_breaks = []
+        j = i + 1
+        while j < len(stops):
+            candidate = stops[j]
+            if (candidate.get('stop_type') == 'rest'
+                    and not (candidate.get('seg_dist') or 0) > 0):
+                next_breaks.append(candidate)
+                merged_indices.add(j)
+                j += 1
+            else:
+                break
+
+        stop['_next_breaks'] = next_breaks
+        stop['_break_time_min'] = sum(
+            b.get('segment_time_min') or 0 for b in next_breaks
+        )
+
+    return stops, True
+
+
 def _match_plans_to_events(events, plans):
     """Attach plan_slug and Team Asha route URLs to RUSA events by matching route names.
     Requires at least 2 meaningful keyword matches to avoid false positives,
@@ -970,9 +1016,13 @@ def ride_plan_detail(slug):
     # Get public custom plans from other riders
     public_custom_plans = get_public_custom_plans(plan['id'])
 
+    # Attach break merging metadata for timeline layout
+    stops, use_timeline = _attach_break_metadata(stops)
+
     return render_template('ride_plan_detail.html',
                            plan=plan,
                            stops=stops,
+                           use_timeline=use_timeline,
                            total_time=total_time,
                            total_moving_time=total_moving_time,
                            total_break_time=total_break_time,
@@ -1467,12 +1517,18 @@ def custom_ride_plan_editor(slug):
     
     # Get public custom plans from other riders
     public_plans = get_public_custom_plans(base_plan['id'])
-    
+
+    # Attach break merging metadata for timeline layout
+    base_stops, use_timeline = _attach_break_metadata(base_stops)
+    if custom_stops:
+        custom_stops, _ = _attach_break_metadata(custom_stops)
+
     return render_template('custom_ride_plan.html',
                            base_plan=base_plan,
                            base_stops=base_stops,
                            custom_plan=custom_plan,
                            custom_stops=custom_stops,
+                           use_timeline=use_timeline,
                            public_plans=public_plans)
 
 
