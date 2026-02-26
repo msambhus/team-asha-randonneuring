@@ -143,39 +143,12 @@
 /* ===== TIMELINE LAYOUT ===== */
 #custom-stops-container.timeline-container {
     position: relative;
-    padding-left: 24px;
-}
-#custom-stops-container.timeline-container::before {
-    content: '';
-    position: absolute;
-    left: 11px;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: linear-gradient(to bottom, #16a34a 0%, #cbd5e1 5%, #cbd5e1 95%, #dc2626 100%);
-    z-index: 0;
+    padding-left: 0;
 }
 #custom-stops-container.timeline-container .stop-row {
     position: relative;
     z-index: 1;
 }
-/* Timeline dots on the vertical line */
-#custom-stops-container.timeline-container .stop-row::before {
-    content: '';
-    position: absolute;
-    left: -19px;
-    top: 18px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #94a3b8;
-    border: 2px solid white;
-    z-index: 2;
-}
-.stop-row.level-start::before   { background: #16a34a; width: 12px; height: 12px; left: -20px; }
-.stop-row.level-finish::before  { background: #dc2626; width: 12px; height: 12px; left: -20px; }
-.stop-row.level-control::before { background: #2563eb; width: 12px; height: 12px; left: -20px; }
-.stop-row.level-waypoint::before { background: #94a3b8; width: 8px; height: 8px; left: -18px; top: 20px; }
 /* Controls as section headers — bold divider above */
 .stop-row.level-control {
     margin-top: 18px;
@@ -257,12 +230,7 @@
     font-weight: 500;
 }
 @media (max-width: 768px) {
-    #custom-stops-container.timeline-container { padding-left: 18px; }
-    #custom-stops-container.timeline-container::before { left: 8px; }
-    #custom-stops-container.timeline-container .stop-row::before { left: -16px; }
-    .stop-row.level-start::before,
-    .stop-row.level-finish::before,
-    .stop-row.level-control::before { left: -17px; }
+    #custom-stops-container.timeline-container { padding-left: 0; }
 }
 
 .stop-header {
