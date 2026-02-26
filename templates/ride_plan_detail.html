@@ -181,20 +181,10 @@
 /* ===== TIMELINE LAYOUT ===== */
 .timeline-container {
     position: relative;
-    padding-left: 24px;
+    padding-left: 0;
     border: none;
     border-radius: 0;
     overflow: visible;
-}
-.timeline-container::before {
-    content: '';
-    position: absolute;
-    left: 11px;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: linear-gradient(to bottom, #16a34a 0%, #cbd5e1 5%, #cbd5e1 95%, #dc2626 100%);
-    z-index: 0;
 }
 /* Timeline node connector */
 .timeline-container .segment-card {
@@ -206,23 +196,6 @@
     border-left: 4px solid var(--border);
     background: white;
 }
-/* Timeline dots on the vertical line */
-.timeline-container .segment-card::before {
-    content: '';
-    position: absolute;
-    left: -19px;
-    top: 18px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #94a3b8;
-    border: 2px solid white;
-    z-index: 2;
-}
-.timeline-container .segment-card.level-start::before   { background: #16a34a; width: 12px; height: 12px; left: -20px; }
-.timeline-container .segment-card.level-finish::before   { background: #dc2626; width: 12px; height: 12px; left: -20px; }
-.timeline-container .segment-card.level-control::before  { background: #2563eb; width: 12px; height: 12px; left: -20px; }
-.timeline-container .segment-card.level-waypoint::before { background: #94a3b8; width: 8px; height: 8px; left: -18px; top: 20px; }
 /* Controls as section headers — bold divider above */
 .timeline-container .segment-card.level-control {
     margin-top: 18px;
@@ -274,12 +247,7 @@
     margin-left: 2px;
 }
 @media (max-width: 768px) {
-    .timeline-container { padding-left: 18px; }
-    .timeline-container::before { left: 8px; }
-    .timeline-container .segment-card::before { left: -16px; }
-    .timeline-container .segment-card.level-start::before,
-    .timeline-container .segment-card.level-finish::before,
-    .timeline-container .segment-card.level-control::before { left: -17px; }
+    .timeline-container { padding-left: 0; }
 }
 
 /* ===== TIME-OF-DAY CHART (grid layout) ===== */
