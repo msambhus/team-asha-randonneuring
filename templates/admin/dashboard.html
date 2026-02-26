@@ -10,7 +10,7 @@
 
 <div style="display:flex;gap:15px;margin-bottom:30px;flex-wrap:wrap;">
 <a href="{{ url_for('admin.add_ride') }}" class="btn btn-primary">+ Add New Ride</a>
-<a href="{{ url_for('admin.generate_plan_form') }}" class="btn" style="background:#2b6cb0;color:#fff;">Generate Plan from RWGPS</a>
+{% if is_admin %}<a href="{{ url_for('admin.generate_plan_form') }}" class="btn" style="background:#2b6cb0;color:#fff;">Generate Plan from RWGPS</a>{% endif %}
 <a href="{{ url_for('admin.logout') }}" class="btn" style="background:var(--text-light);color:#fff;">Logout</a>
 </div>
 

@@ -5,7 +5,7 @@ from models import (get_current_season, get_rides_for_season, get_riders_for_sea
                     get_ride_by_id, get_participation_matrix, get_clubs,
                     create_ride, update_rider_ride_status, get_all_riders,
                     get_ride_plan_by_rwgps_route_id, create_ride_plan_from_rwgps)
-from auth import login_required, verify_password
+from auth import login_required, user_login_required, verify_password
 from services.rwgps import (extract_rwgps_route_id, fetch_route, extract_controls,
                             build_ride_plan, slugify)
 
@@ -34,9 +34,11 @@ def logout():
 @admin_bp.route('/')
 @login_required
 def dashboard():
+    from routes.riders import is_admin_user
     current = get_current_season()
     rides = get_rides_for_season(current['id']) if current else []
-    return render_template('admin/dashboard.html', season=current, rides=rides)
+    return render_template('admin/dashboard.html', season=current, rides=rides,
+                           is_admin=is_admin_user())
 
 
 @admin_bp.route('/rides/new', methods=['GET', 'POST'])
@@ -108,14 +110,20 @@ def mark_status(ride_id):
 # ── RWGPS Plan Generation ────────────────────────────────────────────
 
 @admin_bp.route('/generate-plan', methods=['GET'])
-@login_required
+@user_login_required
 def generate_plan_form():
+    from routes.riders import is_admin_user
+    if not is_admin_user():
+        abort(403)
     return render_template('admin/generate_plan.html')
 
 
 @admin_bp.route('/generate-plan/preview', methods=['POST'])
-@login_required
+@user_login_required
 def generate_plan_preview():
+    from routes.riders import is_admin_user
+    if not is_admin_user():
+        abort(403)
     rwgps_url = request.form.get('rwgps_url', '').strip()
     if not rwgps_url:
         flash('Please enter a RideWithGPS URL.', 'error')
@@ -145,8 +153,11 @@ def generate_plan_preview():
 
 
 @admin_bp.route('/generate-plan/save', methods=['POST'])
-@login_required
+@user_login_required
 def generate_plan_save():
+    from routes.riders import is_admin_user
+    if not is_admin_user():
+        abort(403)
     plan_json_str = request.form.get('plan_json', '')
     name_override = request.form.get('plan_name', '').strip()
 
