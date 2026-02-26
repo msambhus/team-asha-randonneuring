@@ -108,8 +108,8 @@ def get_all_riders():
         ORDER BY r.first_name
     """).fetchall()
 
-@cache.memoize(CACHE_TIMEOUT)
 def get_rider_by_rusa(rusa_id):
+    """Get rider by RUSA ID. NOT CACHED - rider data should not be cached in serverless environments."""
     return _execute("""
         SELECT r.*, rp.photo_filename, rp.bio, rp.pbp_2023_registered, rp.pbp_2023_status, rp.strava_data_private
         FROM rider r LEFT JOIN rider_profile rp ON r.id = rp.rider_id
@@ -243,7 +243,7 @@ def get_participation_matrix(season_id):
         }
     return matrix
 
-@cache.memoize(CACHE_TIMEOUT)
+#  NOT CACHED - rider-specific data should not be cached in serverless environments
 def get_rider_participation(rider_id, season_id):
     return _execute("""
         SELECT rr.status, rr.finish_time, ri.name as ride_name, ri.date, ri.distance_km,
@@ -256,7 +256,7 @@ def get_rider_participation(rider_id, season_id):
         ORDER BY ri.date
     """, (rider_id, season_id)).fetchall()
 
-@cache.memoize(CACHE_TIMEOUT)
+# NOT CACHED - rider-specific data should not be cached in serverless environments
 def get_rider_career_stats(rider_id):
     """Total rides completed, total KMs, across all seasons."""
     row = _execute("""
@@ -269,7 +269,7 @@ def get_rider_career_stats(rider_id):
     """, (rider_id, RideStatus.FINISHED.value)).fetchone()
     return dict(row) if row else {'total_rides': 0, 'total_kms': 0}
 
-@cache.memoize(CACHE_TIMEOUT)
+# NOT CACHED - rider-specific data should not be cached in serverless environments
 def get_rider_season_stats(rider_id, season_id):
     """Rides and KMs for a specific season."""
     row = _execute("""
@@ -638,7 +638,7 @@ def get_signups_for_ride(ride_id):
         ORDER BY r.first_name, r.last_name
     """, (ride_id,)).fetchall()
 
-@cache.memoize(CACHE_TIMEOUT)
+# NOT CACHED - rider-specific data should not be cached in serverless environments
 def get_rider_signup_status(rider_id, ride_id):
     """Check if rider is signed up and get their current status."""
     return _execute("""
@@ -1097,19 +1097,16 @@ def update_strava_privacy(rider_id, is_private):
 
 # ========== USER AUTHENTICATION ==========
 
-@cache.memoize(CACHE_TIMEOUT)
 def get_user_by_email(email):
-    """Get user by email."""
+    """Get user by email. NOT CACHED - user data should not be cached in serverless environments."""
     return _execute("SELECT * FROM app_user WHERE email = %s", (email,)).fetchone()
 
-@cache.memoize(CACHE_TIMEOUT)
 def get_user_by_google_id(google_id):
-    """Get user by Google ID."""
+    """Get user by Google ID. NOT CACHED - user data should not be cached in serverless environments."""
     return _execute("SELECT * FROM app_user WHERE google_id = %s", (google_id,)).fetchone()
 
-@cache.memoize(CACHE_TIMEOUT)
 def get_user_by_id(user_id):
-    """Get user by ID."""
+    """Get user by ID. NOT CACHED - user data should not be cached in serverless environments."""
     return _execute("SELECT * FROM app_user WHERE id = %s", (user_id,)).fetchone()
 
 def create_user(email, google_id):
@@ -1181,9 +1178,8 @@ def is_rider_linked_to_user(rider_id):
     """Check if a rider is already linked to a user account."""
     return _execute("SELECT id FROM app_user WHERE rider_id = %s", (rider_id,)).fetchone()
 
-@cache.memoize(CACHE_TIMEOUT)
 def get_rider_by_rusa_id(rusa_id):
-    """Get rider by RUSA ID."""
+    """Get rider by RUSA ID. NOT CACHED - rider data should not be cached in serverless environments."""
     return _execute("SELECT * FROM rider WHERE rusa_id = %s", (rusa_id,)).fetchone()
 
 
