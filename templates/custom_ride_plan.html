@@ -140,6 +140,101 @@
     border-color: #22c55e;
 }
 
+/* ===== TIMELINE LAYOUT ===== */
+#custom-stops-container.timeline-container {
+    position: relative;
+    padding-left: 24px;
+}
+#custom-stops-container.timeline-container::before {
+    content: '';
+    position: absolute;
+    left: 11px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, #16a34a 0%, #cbd5e1 5%, #cbd5e1 95%, #dc2626 100%);
+    z-index: 0;
+}
+#custom-stops-container.timeline-container .stop-row {
+    position: relative;
+    z-index: 1;
+}
+#custom-stops-container.timeline-container .stop-row::before {
+    content: '';
+    position: absolute;
+    top: 20px;
+    height: 2px;
+    background: #cbd5e1;
+    z-index: 1;
+}
+.stop-row.level-start, .stop-row.level-finish { margin-left: 0; }
+.stop-row.level-start::before, .stop-row.level-finish::before { left: -24px; width: 20px; }
+.stop-row.level-control { margin-left: 28px; }
+.stop-row.level-control::before { left: -52px; width: 48px; }
+.stop-row.level-waypoint { margin-left: 52px; }
+.stop-row.level-waypoint::before { left: -76px; width: 72px; }
+
+/* Hidden break rows (keep in DOM for JS indexing) */
+.break-hidden-row { display: none !important; }
+
+/* Break chip pills */
+.break-chips-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    margin-left: 34px;
+}
+.break-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 0.73rem;
+    font-weight: 600;
+    white-space: nowrap;
+    border: 1px solid #fcd34d;
+}
+.break-chip .break-icon { font-size: 0.7rem; }
+.break-time-edit {
+    width: 38px;
+    padding: 1px 4px;
+    border: 1px solid #d97706;
+    border-radius: 4px;
+    font-size: 0.73rem;
+    font-weight: 600;
+    color: #92400e;
+    background: white;
+    text-align: center;
+}
+.break-delete-btn {
+    background: none;
+    border: none;
+    color: #92400e;
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 0 2px;
+    opacity: 0.6;
+}
+.break-delete-btn:hover { opacity: 1; color: #dc2626; }
+.seg-time-break-note {
+    font-size: 0.6rem;
+    color: #92400e;
+    font-weight: 500;
+}
+@media (max-width: 768px) {
+    #custom-stops-container.timeline-container { padding-left: 18px; }
+    #custom-stops-container.timeline-container::before { left: 8px; }
+    .stop-row.level-control { margin-left: 18px; }
+    .stop-row.level-waypoint { margin-left: 32px; }
+    .stop-row.level-start::before, .stop-row.level-finish::before { left: -18px; width: 14px; }
+    .stop-row.level-control::before { left: -36px; width: 32px; }
+    .stop-row.level-waypoint::before { left: -50px; width: 46px; }
+}
+
 .stop-header {
     display: flex;
     align-items: center;
@@ -517,15 +612,21 @@
                 </div>
             </div>
             
-            {# Custom Stops #}
-            <div id="custom-stops-container">
+            {# Custom Stops — Timeline layout with break merging #}
+            <div id="custom-stops-container" {% if use_timeline %}class="timeline-container"{% endif %}>
                 {% for stop in (custom_stops if custom_plan else base_stops) %}
                 {% set base_stop = base_stops|selectattr('id', 'equalto', stop.id if not stop.is_custom_stop else 0)|list|first %}
-                <div class="stop-row {% if stop.is_custom_stop %}custom-added{% elif stop.is_modified %}modified{% endif %}" 
+                {% set is_break = stop.get('_is_merged_break', false) %}
+                {% set level_class = '' %}
+                {% if use_timeline and not is_break %}
+                    {% set level_class = 'level-start' if stop.stop_type == 'start' else 'level-finish' if stop.stop_type == 'finish' else 'level-control' if stop.stop_type == 'control' else 'level-waypoint' %}
+                {% endif %}
+                <div class="stop-row {% if is_break and use_timeline %}break-hidden-row{% endif %} {{ level_class }} {% if stop.is_custom_stop %}custom-added{% elif stop.is_modified %}modified{% endif %}"
                      data-stop-id="{{ stop.custom_stop_id or stop.id }}"
                      data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
                      data-distance="{{ stop.distance_miles or 0 }}"
                      data-elevation="{{ stop.elevation_gain or 0 }}"
+                     data-stop-type="{{ stop.stop_type }}"
                      data-base-distance="{{ base_stop.distance_miles if base_stop else '' }}"
                      data-base-seg-miles="{{ base_stop.seg_dist if base_stop else '' }}"
                      data-base-time="{{ base_stop.segment_time_min if base_stop else '' }}"
@@ -542,17 +643,17 @@
                             {{ stop.location }}
                         </div>
                         <div class="stop-actions">
-                            <button class="btn-icon" onclick="showAddStopForm({{ loop.index0 }}, {{ stop.distance_miles or 0 }})" 
+                            <button class="btn-icon" onclick="showAddStopForm({{ loop.index0 }}, {{ stop.distance_miles or 0 }})"
                                     title="Add a custom stop after this one">
                                 ➕
                             </button>
                             {% if stop.is_custom_stop %}
-                            <button class="btn-icon btn-delete" onclick="deleteStop(this, {{ stop.custom_stop_id }}, true)" 
+                            <button class="btn-icon btn-delete" onclick="deleteStop(this, {{ stop.custom_stop_id }}, true)"
                                     title="Delete this custom stop permanently">
                                 🗑️
                             </button>
                             {% elif stop.stop_type == 'rest' %}
-                            <button class="btn-icon btn-delete" onclick="deleteStop(this, {{ stop.id }}, false)" 
+                            <button class="btn-icon btn-delete" onclick="deleteStop(this, {{ stop.id }}, false)"
                                     title="Remove this rest stop from your custom plan">
                                 🗑️
                             </button>
@@ -563,7 +664,7 @@
                         <div class="metric-box">
                             <div class="metric-label">Cumul Dist</div>
                             <div style="display:flex;flex-direction:column;gap:2px;">
-                                <input type="number" class="inline-edit" 
+                                <input type="number" class="inline-edit"
                                        step="0.1"
                                        value="{{ "%.1f"|format(stop.distance_miles or 0) }}"
                                        data-stop-id="{{ stop.custom_stop_id or stop.id }}"
@@ -575,7 +676,7 @@
                         <div class="metric-box">
                             <div class="metric-label">Seg Miles</div>
                             <div style="display:flex;flex-direction:column;gap:2px;">
-                                <input type="number" class="inline-edit seg-miles" 
+                                <input type="number" class="inline-edit seg-miles"
                                        step="0.1"
                                        value="{{ "%.1f"|format(stop.get('seg_dist', 0) or 0) }}"
                                        data-stop-id="{{ stop.custom_stop_id or stop.id }}"
@@ -587,7 +688,7 @@
                         <div class="metric-box">
                             <div class="metric-label">Seg Time</div>
                             <div style="display:flex;flex-direction:column;gap:2px;">
-                                <input type="number" class="inline-edit" 
+                                <input type="number" class="inline-edit"
                                        value="{{ stop.segment_time_min or 0 }}"
                                        data-stop-id="{{ stop.custom_stop_id or stop.id }}"
                                        data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
@@ -598,7 +699,7 @@
                         <div class="metric-box">
                             <div class="metric-label">Avg Speed</div>
                             <div style="display:flex;flex-direction:column;gap:2px;">
-                                <input type="number" class="inline-edit avg-speed" 
+                                <input type="number" class="inline-edit avg-speed"
                                        step="0.1"
                                        value="{{ "%.1f"|format(stop.get('avg_speed', 0)) if stop.get('avg_speed') else '' }}"
                                        data-stop-id="{{ stop.custom_stop_id or stop.id }}"
@@ -609,7 +710,7 @@
                         </div>
                         <div class="metric-box">
                             <div class="metric-label">Elev (ft)</div>
-                            <input type="number" class="inline-edit elevation" 
+                            <input type="number" class="inline-edit elevation"
                                    value="{{ stop.elevation_gain or 0 }}"
                                    data-stop-id="{{ stop.custom_stop_id or stop.id }}"
                                    data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
@@ -617,7 +718,7 @@
                         </div>
                         <div class="metric-box">
                             <div class="metric-label">Ft/Mi</div>
-                            <input type="number" class="inline-edit ft-per-mi" 
+                            <input type="number" class="inline-edit ft-per-mi"
                                    value="{{ stop.get('ft_per_mi', '') or '' }}"
                                    data-stop-id="{{ stop.custom_stop_id or stop.id }}"
                                    data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
@@ -664,6 +765,28 @@
                             </div>
                         </div>
                     </div>
+                    {# Break chips — editable rest stops merged inline #}
+                    {% if use_timeline and stop.get('_next_breaks') %}
+                    <div class="break-chips-row">
+                        {% for brk in stop._next_breaks %}
+                        <div class="break-chip" data-break-stop-id="{{ brk.custom_stop_id or brk.id }}" title="{{ brk.location }}{% if brk.notes %} — {{ brk.notes }}{% endif %}">
+                            <span class="break-icon">☕</span>
+                            <span class="break-name">{{ brk.location[:25] }}</span>
+                            <input type="number" class="break-time-edit"
+                                   value="{{ brk.segment_time_min or 0 }}"
+                                   data-break-stop-id="{{ brk.custom_stop_id or brk.id }}"
+                                   onchange="trackBreakTimeChange(this)"
+                                   title="Break duration (minutes)">
+                            <span style="font-size:0.65rem;">min</span>
+                            {% if brk.is_custom_stop %}
+                            <button class="break-delete-btn" onclick="deleteBreakStop(this, {{ brk.custom_stop_id }}, true)" title="Remove break">✕</button>
+                            {% elif brk.stop_type == 'rest' %}
+                            <button class="break-delete-btn" onclick="deleteBreakStop(this, {{ brk.id }}, false)" title="Remove break">✕</button>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                 </div>
                 {% endfor %}
             </div>
@@ -874,6 +997,71 @@ function trackTimeChange(input) {
     // Recalculate cumulative times for all stops
     recalculateTimes();
     
+    markDirty();
+}
+
+/* ── Break chip helpers (timeline mode) ── */
+
+function trackBreakTimeChange(chipInput) {
+    // Sync the editable break chip's time value back to the hidden .break-hidden-row
+    const breakStopId = chipInput.dataset.breakStopId;
+    if (!breakStopId) return;
+
+    // Find the hidden break row by matching data-stop-id
+    const hiddenRow = document.querySelector(
+        `.break-hidden-row[data-stop-id="${breakStopId}"]`
+    );
+    if (!hiddenRow) return;
+
+    const newTime = parseInt(chipInput.value) || 0;
+
+    // Update the hidden row's time input (index 2: distance, seg-miles, time, ...)
+    const hiddenInputs = hiddenRow.querySelectorAll('.inline-edit');
+    const hiddenTimeInput = hiddenInputs[2];
+    if (hiddenTimeInput) {
+        hiddenTimeInput.value = newTime;
+
+        // Track the change so it persists on save
+        const stopId = hiddenTimeInput.dataset.stopId || breakStopId;
+        if (!isCreateMode) {
+            pendingChanges.stopTimes[stopId] = newTime;
+        }
+    }
+
+    // Recalculate cumulative times / time banks for all rows (including hidden)
+    recalculateTimes();
+    markDirty();
+}
+
+function deleteBreakStop(button, stopId, isCustomStop) {
+    // Remove the visible chip
+    const chip = button.closest('.break-chip');
+    const chipRow = chip ? chip.closest('.break-chips-row') : null;
+
+    // Remove the hidden break row from the DOM
+    const hiddenRow = document.querySelector(
+        `.break-hidden-row[data-stop-id="${stopId}"]`
+    );
+    if (hiddenRow) {
+        hiddenRow.remove();
+    }
+
+    // Remove the visible chip
+    if (chip) chip.remove();
+
+    // If the chips row is now empty, remove it too
+    if (chipRow && chipRow.querySelectorAll('.break-chip').length === 0) {
+        chipRow.remove();
+    }
+
+    // Track the deletion for the save payload
+    pendingChanges.deletedStops.push({
+        stopId: stopId,
+        isCustomStop: isCustomStop
+    });
+
+    // Recalculate everything
+    recalculateTimes();
     markDirty();
 }
 
