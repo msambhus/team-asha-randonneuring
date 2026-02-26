@@ -27,6 +27,10 @@ class Config:
     STRAVA_API_BASE = 'https://www.strava.com/api/v3'
     STRAVA_SCOPE = 'activity:read_all'
 
+    # RideWithGPS API Configuration
+    RWGPS_API_KEY = os.environ.get('RWGPS_API_KEY')
+    RWGPS_AUTH_TOKEN = os.environ.get('RWGPS_AUTH_TOKEN')
+
     # OpenAI Configuration (optional — AI coaching falls back to rule-based if not set)
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
