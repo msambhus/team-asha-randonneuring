@@ -1274,12 +1274,10 @@
             <div class="metric-value" style="color:var(--primary);">{{ "%.1f"|format(s.distance_miles) if s.distance_miles else '—' }}</div>
             <div class="metric-label">Cumul Mi</div>
         </div>
-        {% if s.cum_time_min and s.cum_time_min > 0 %}
+        {% if s.avg_speed %}
         <div class="metric">
-            <div class="metric-value" style="color:var(--primary);">
-                {% if s.cum_time_min >= 60 %}{{ s.cum_time_min // 60 }}h{{ "%02d"|format(s.cum_time_min % 60) }}m{% else %}{{ s.cum_time_min }}m{% endif %}
-            </div>
-            <div class="metric-label">Cumul Time</div>
+            <div class="metric-value">{{ "%.1f"|format(s.avg_speed) }}</div>
+            <div class="metric-label">Avg MPH</div>
         </div>
         {% endif %}
         {% if s.elevation_gain and s.elevation_gain > 0 %}
@@ -1303,6 +1301,14 @@
             <div class="metric-label">Seg Time</div>
         </div>
         {% endif %}
+        {% if s.cum_time_min and s.cum_time_min > 0 %}
+        <div class="metric">
+            <div class="metric-value" style="color:var(--primary);">
+                {% if s.cum_time_min >= 60 %}{{ s.cum_time_min // 60 }}h{{ "%02d"|format(s.cum_time_min % 60) }}m{% else %}{{ s.cum_time_min }}m{% endif %}
+            </div>
+            <div class="metric-label">Cumul Time</div>
+        </div>
+        {% endif %}
         {% if s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
         <div class="metric">
             <div class="metric-value">
@@ -1310,12 +1316,6 @@
                 {% if s.stop_duration_min >= 60 %}{{ s.stop_duration_min // 60 }}h{{ "%02d"|format(s.stop_duration_min % 60) }}m{% else %}{{ s.stop_duration_min }}m{% endif %}
             </div>
             <div class="metric-label">Stop Time</div>
-        </div>
-        {% endif %}
-        {% if s.avg_speed %}
-        <div class="metric">
-            <div class="metric-value">{{ "%.1f"|format(s.avg_speed) }}</div>
-            <div class="metric-label">Avg MPH</div>
         </div>
         {% endif %}
         {# Time Bank: use this stop's time_bank #}
@@ -1381,12 +1381,10 @@
             <div class="metric-value" style="color:var(--primary);">{{ "%.1f"|format(s.distance_miles) if s.distance_miles else '—' }}</div>
             <div class="metric-label">Cumul Mi</div>
         </div>
-        {% if s.cum_time_min and s.cum_time_min > 0 %}
+        {% if s.avg_speed %}
         <div class="metric">
-            <div class="metric-value" style="color:var(--primary);">
-                {% if s.cum_time_min >= 60 %}{{ s.cum_time_min // 60 }}h{{ "%02d"|format(s.cum_time_min % 60) }}m{% else %}{{ s.cum_time_min }}m{% endif %}
-            </div>
-            <div class="metric-label">Cumul Time</div>
+            <div class="metric-value">{{ "%.1f"|format(s.avg_speed) }}</div>
+            <div class="metric-label">Avg MPH</div>
         </div>
         {% endif %}
         {% if s.elevation_gain and s.elevation_gain > 0 %}
@@ -1410,6 +1408,14 @@
             <div class="metric-label">Seg Time</div>
         </div>
         {% endif %}
+        {% if s.cum_time_min and s.cum_time_min > 0 %}
+        <div class="metric">
+            <div class="metric-value" style="color:var(--primary);">
+                {% if s.cum_time_min >= 60 %}{{ s.cum_time_min // 60 }}h{{ "%02d"|format(s.cum_time_min % 60) }}m{% else %}{{ s.cum_time_min }}m{% endif %}
+            </div>
+            <div class="metric-label">Cumul Time</div>
+        </div>
+        {% endif %}
         {% if s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
         <div class="metric">
             <div class="metric-value">
@@ -1417,12 +1423,6 @@
                 {% if s.stop_duration_min >= 60 %}{{ s.stop_duration_min // 60 }}h{{ "%02d"|format(s.stop_duration_min % 60) }}m{% else %}{{ s.stop_duration_min }}m{% endif %}
             </div>
             <div class="metric-label">Stop Time</div>
-        </div>
-        {% endif %}
-        {% if s.avg_speed %}
-        <div class="metric">
-            <div class="metric-value">{{ "%.1f"|format(s.avg_speed) }}</div>
-            <div class="metric-label">Avg MPH</div>
         </div>
         {% endif %}
         {% if s.time_bank_min is not none %}
