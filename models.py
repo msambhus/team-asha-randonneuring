@@ -1308,6 +1308,28 @@ def get_custom_plan_stops_raw(custom_plan_id):
         ORDER BY stop_order
     """, (custom_plan_id,)).fetchall()
 
+def _clear_custom_plan_cache(custom_plan_id):
+    """Force clear all caches related to a custom plan."""
+    print(f"[DEBUG] Clearing all caches for custom_plan_id={custom_plan_id}")
+    
+    # Clear memoized function caches
+    cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
+    cache.delete_memoized(get_custom_plan_by_id, custom_plan_id)
+    
+    # Clear direct cache keys
+    cache.cache.delete(f'get_custom_plan_stops_raw_{custom_plan_id}')
+    cache.cache.delete(f'get_custom_plan_by_id_{custom_plan_id}')
+    
+    # Clear any pattern-based cache keys
+    try:
+        # Flask-Caching doesn't have a built-in pattern delete, so we'll do specific keys
+        for key in [f'custom_plan_{custom_plan_id}', f'merged_plan_stops_{custom_plan_id}']:
+            cache.cache.delete(key)
+    except Exception as e:
+        print(f"[DEBUG] Error clearing additional cache keys: {e}")
+    
+    print(f"[DEBUG] Cache cleared successfully")
+
 def update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min=None, stop_duration_min=None, stop_name=None, location=None, notes=None, distance_miles=None, elevation_gain=None, explicit_fields=None):
     """Update timing, distance, elevation, stop_name, location, or notes for a custom plan stop.
     
@@ -1381,10 +1403,8 @@ def update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min=None, stop
         cur.execute(sql, params)
         conn.commit()
         
-        # Clear caches aggressively
-        cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
-        cache.cache.delete(f'get_custom_plan_stops_raw_{custom_plan_id}')
-        cache.cache.delete(f'get_custom_plan_by_id_{custom_plan_id}')
+        # Clear all caches
+        _clear_custom_plan_cache(custom_plan_id)
         print(f"[DEBUG] Updated {cur.rowcount} row(s)")
         return cur.rowcount > 0
     else:
@@ -1441,10 +1461,8 @@ def update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min=None, stop
             cur.execute(sql, params)
             conn.commit()
             
-            # Clear caches
-            cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
-            cache.cache.delete(f'get_custom_plan_stops_raw_{custom_plan_id}')
-            cache.cache.delete(f'get_custom_plan_by_id_{custom_plan_id}')
+            # Clear all caches
+            _clear_custom_plan_cache(custom_plan_id)
             print(f"[DEBUG] Updated {cur.rowcount} row(s) via override")
             return cur.rowcount > 0
         else:
@@ -1503,10 +1521,8 @@ def update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min=None, stop
             cur.execute(sql, values)
             conn.commit()
             
-            # Clear caches
-            cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
-            cache.cache.delete(f'get_custom_plan_stops_raw_{custom_plan_id}')
-            cache.cache.delete(f'get_custom_plan_by_id_{custom_plan_id}')
+            # Clear all caches
+            _clear_custom_plan_cache(custom_plan_id)
             print(f"[DEBUG] Created new override successfully")
             return True
 
@@ -1595,9 +1611,8 @@ def add_custom_stop(custom_plan_id, location, stop_type, distance_miles, elevati
         
         conn.commit()
         
-        # Clear caches
-        cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
-        cache.delete_memoized(get_custom_plan_by_id, custom_plan_id)
+        # Clear all caches
+        _clear_custom_plan_cache(custom_plan_id)
         cache.delete_memoized(get_custom_plan, plan['rider_id'], plan['base_plan_id'])
         
         return new_stop_id
@@ -1645,7 +1660,7 @@ def hide_base_stop(custom_plan_id, base_stop_id):
                   base_stop['distance_miles'], base_stop['elevation_gain']))
         
         conn.commit()
-        cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
+        _clear_custom_plan_cache(custom_plan_id)
         return True
     except Exception as e:
         conn.rollback()
@@ -1663,7 +1678,7 @@ def unhide_base_stop(custom_plan_id, base_stop_id):
     """, (custom_plan_id, base_stop_id))
     
     conn.commit()
-    cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
+    _clear_custom_plan_cache(custom_plan_id)
     return cur.rowcount > 0
 
 def update_custom_plan_settings(custom_plan_id, rider_id, name=None, description=None, 
@@ -1744,9 +1759,9 @@ def delete_custom_plan(custom_plan_id, rider_id):
     
     conn.commit()
     
+    # Clear all caches
+    _clear_custom_plan_cache(custom_plan_id)
     cache.delete_memoized(get_custom_plan, plan['rider_id'], plan['base_plan_id'])
-    cache.delete_memoized(get_custom_plan_by_id, custom_plan_id)
-    cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
     cache.delete_memoized(get_public_custom_plans, plan['base_plan_id'])
     
     # Clear the ride plan detail page cache for this specific plan
@@ -1792,9 +1807,8 @@ def delete_custom_stop(custom_stop_id, rider_id):
     cur.execute("DELETE FROM custom_ride_plan_stop WHERE id = %s", (custom_stop_id,))
     conn.commit()
     
-    # Clear caches
-    cache.delete_memoized(get_custom_plan_stops_raw, result['custom_plan_id'])
-    cache.delete_memoized(get_custom_plan_by_id, result['custom_plan_id'])
+    # Clear all caches
+    _clear_custom_plan_cache(result['custom_plan_id'])
     cache.delete_memoized(get_custom_plan, result['rider_id'], result['base_plan_id'])
     
     return True

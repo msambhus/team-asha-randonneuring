@@ -290,7 +290,7 @@
 
 .stop-metrics {
     display: grid;
-    grid-template-columns: 80px 80px 75px 85px 75px 70px 85px 90px 90px 70px;
+    grid-template-columns: 80px 80px 75px 85px 70px 85px 90px 90px 70px;
     gap: 8px;
     margin-top: 8px;
     margin-left: 34px;
@@ -708,18 +708,6 @@
                                        data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
                                        onchange="trackAvgSpeedChange(this)">
                                 <span class="diff-indicator diff-avg-speed"></span>
-                            </div>
-                        </div>
-                        <div class="metric-box">
-                            <div class="metric-label">Stop Time</div>
-                            <div style="display:flex;flex-direction:column;gap:2px;">
-                                <input type="number" class="inline-edit stop-duration"
-                                       value="{{ 0 if stop.stop_duration_min == -1 else (stop.stop_duration_min or 0) }}"
-                                       data-stop-id="{{ stop.custom_stop_id or stop.id }}"
-                                       data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
-                                       onchange="trackStopDurationChange(this)"
-                                       placeholder="0">
-                                <span class="diff-indicator diff-stop-duration"></span>
                             </div>
                         </div>
                         <div class="metric-box">
@@ -1324,7 +1312,20 @@ function trackStopDurationChange(input) {
     // Track the change
     if (!isCreateMode) {
         pendingChanges.stopDurations[stopId] = duration;
-        console.log('Updated pendingChanges.stopDurations:', pendingChanges.stopDurations);
+        
+        // Also track the stop_name from the break chip
+        const breakChip = input.closest('.break-chip');
+        if (breakChip) {
+            const stopNameElem = breakChip.querySelector('.break-name');
+            if (stopNameElem) {
+                pendingChanges.stopNames[stopId] = stopNameElem.textContent;
+            }
+        }
+        
+        console.log('Updated pendingChanges:', {
+            stopDurations: pendingChanges.stopDurations,
+            stopNames: pendingChanges.stopNames
+        });
     }
     
     // Recalculate cumulative times
@@ -2096,15 +2097,17 @@ function recalculateTimes() {
     
     allStops.forEach(stop => {
         // Get all inline-edit inputs in order:
-        // 0: distance, 1: seg miles, 2: seg time, 3: avg speed, 4: stop duration, 5: elevation, 6: ft/mi
+        // 0: distance, 1: seg miles, 2: seg time, 3: avg speed, 4: elevation, 5: ft/mi
         const allInputs = stop.querySelectorAll('.inline-edit');
         const distanceInput = allInputs[0];
         const segMilesInput = allInputs[1];
         const timeInput = allInputs[2];
         const avgSpeedInput = allInputs[3];
-        const stopDurationInput = allInputs[4];
-        const elevationInput = allInputs[5];
-        const ftPerMiInput = allInputs[6];
+        const elevationInput = allInputs[4];
+        const ftPerMiInput = allInputs[5];
+        
+        // Get stop duration from break chip input (if exists)
+        const stopDurationInput = stop.querySelector('.stop-duration');
         
         const distance = parseFloat(distanceInput?.value || 0);
         const segmentTime = parseInt(timeInput?.value || 0);
