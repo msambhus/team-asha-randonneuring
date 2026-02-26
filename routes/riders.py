@@ -337,6 +337,10 @@ def _attach_break_metadata(stops):
     if not types_found or not types_found & KNOWN_TYPES:
         return stops, False
 
+    # Require first stop to be 'start' for timeline layout
+    if stops and stops[0].get('stop_type') != 'start':
+        return stops, False
+
     # Mark merged breaks and collect them onto their parent segment
     merged_indices = set()
     for i, stop in enumerate(stops):
@@ -1208,7 +1212,10 @@ def custom_ride_plan_view(slug):
     
     # Build collapsed journey nodes
     journey_nodes = _build_journey_nodes(stops)
-    
+
+    # Attach break merging metadata for timeline layout
+    stops, use_timeline = _attach_break_metadata(stops)
+
     # Check if there's an upcoming RUSA event that matches this ride plan
     upcoming_event = None
     signup_count = 0
@@ -1245,6 +1252,7 @@ def custom_ride_plan_view(slug):
     return render_template('ride_plan_detail.html',
                          plan=plan,
                          stops=stops,
+                         use_timeline=use_timeline,
                          journey_nodes=journey_nodes,
                          total_time=total_time,
                          total_moving_time=total_moving_time,
