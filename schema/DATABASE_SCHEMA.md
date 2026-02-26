@@ -7,11 +7,18 @@ erDiagram
     app_user ||--o| rider : "links to"
     rider ||--o| rider_profile : "has"
     rider ||--o{ rider_ride : "participates"
+    rider ||--o{ custom_ride_plan : "creates"
+    rider ||--o| strava_connection : "connects"
+    rider ||--o{ strava_activity : "tracks"
     
     season ||--o{ ride : "contains"
     club ||--o{ ride : "organizes"
     ride_plan ||--o{ ride : "plans"
     ride_plan ||--o{ ride_plan_stop : "has stops"
+    ride_plan ||--o{ custom_ride_plan : "base for"
+    
+    custom_ride_plan ||--o{ custom_ride_plan_stop : "has overrides"
+    ride_plan_stop ||--o{ custom_ride_plan_stop : "can be overridden"
     
     ride ||--o{ rider_ride : "includes"
     
@@ -85,6 +92,8 @@ erDiagram
         numeric distance_miles
         int elevation_gain
         int segment_time_min
+        int stop_duration_min
+        text stop_name
         text notes
         numeric seg_dist
         int ft_per_mi
@@ -122,6 +131,62 @@ erDiagram
         text status
         text finish_time
         timestamp signed_up_at
+    }
+    
+    custom_ride_plan {
+        int id PK
+        int rider_id FK
+        int base_plan_id FK
+        text name
+        text description
+        boolean is_public
+        numeric avg_moving_speed
+        timestamp created_at
+        timestamp updated_at
+    }
+    
+    custom_ride_plan_stop {
+        int id PK
+        int custom_plan_id FK
+        int base_stop_id FK
+        int stop_order
+        text location
+        text stop_type
+        numeric distance_miles
+        int elevation_gain
+        int segment_time_min
+        int stop_duration_min
+        text stop_name
+        text notes
+        boolean is_custom_stop
+        boolean is_hidden
+    }
+    
+    strava_connection {
+        int rider_id PK_FK
+        bigint strava_athlete_id
+        text access_token
+        text refresh_token
+        bigint expires_at
+        text scope
+        timestamp connected_at
+        timestamp last_sync_at
+    }
+    
+    strava_activity {
+        int id PK
+        int rider_id FK
+        bigint strava_activity_id
+        text name
+        text activity_type
+        real distance
+        int moving_time
+        int elapsed_time
+        real total_elevation_gain
+        timestamp start_date
+        real average_speed
+        text strava_url
+        timestamp fetched_at
     }
 ```
 
@@ -172,6 +237,49 @@ Extended rider profile information.
 
 **Foreign Keys:**
 - `rider_id` → `rider(id)` (CASCADE on delete)
+
+#### `strava_connection`
+Stores Strava OAuth connection and tokens for a rider.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| rider_id | integer | PK, FK → rider(id) | Primary key and foreign key to rider |
+| strava_athlete_id | bigint | NOT NULL | Strava athlete ID |
+| access_token | text | NOT NULL | OAuth access token (encrypted) |
+| refresh_token | text | NOT NULL | OAuth refresh token (encrypted) |
+| expires_at | bigint | NOT NULL | Token expiration timestamp |
+| scope | text | NULL | OAuth scopes granted |
+| connected_at | timestamp | DEFAULT CURRENT_TIMESTAMP | Initial connection timestamp |
+| last_sync_at | timestamp | NULL | Last activity sync timestamp |
+
+**Foreign Keys:**
+- `rider_id` → `rider(id)` (CASCADE on delete)
+
+**Note:** One-to-one relationship. One Strava connection per rider.
+
+#### `strava_activity`
+Cached Strava activities for fitness scoring and calendar display.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | integer | PK, AUTO | Primary key |
+| rider_id | integer | NOT NULL, FK → rider(id) | Rider who performed activity |
+| strava_activity_id | bigint | NOT NULL, UNIQUE | Strava's activity ID |
+| name | text | NULL | Activity name |
+| activity_type | text | NULL | Type (Ride, VirtualRide, etc.) |
+| distance | real | NULL | Distance in meters |
+| moving_time | integer | NULL | Moving time in seconds |
+| elapsed_time | integer | NULL | Elapsed time in seconds |
+| total_elevation_gain | real | NULL | Elevation gain in meters |
+| start_date | timestamp | NULL | Activity start date/time |
+| average_speed | real | NULL | Average speed in m/s |
+| strava_url | text | NULL | Link to activity on Strava |
+| fetched_at | timestamp | DEFAULT CURRENT_TIMESTAMP | When activity was cached |
+
+**Foreign Keys:**
+- `rider_id` → `rider(id)` (CASCADE on delete)
+
+**Note:** Activities cached for 1 year rolling window. Used for fitness scoring and training calendar.
 
 ---
 
@@ -234,7 +342,9 @@ Individual stops/waypoints along a ride plan.
 | stop_type | text | DEFAULT 'waypoint' | Type: waypoint/control/rest |
 | distance_miles | numeric | NULL | Cumulative distance to stop |
 | elevation_gain | integer | NULL | Elevation gain to this stop |
-| segment_time_min | integer | NULL | Time for this segment |
+| segment_time_min | integer | NULL | Time for this segment (riding time, excludes stop) |
+| stop_duration_min | integer | NULL | Break/rest duration at this stop (minutes) |
+| stop_name | text | NULL | Break/rest stop name (e.g., "Lunch Break", "Coffee Stop") |
 | notes | text | NULL | Additional notes |
 | seg_dist | numeric | NULL | Segment distance |
 | ft_per_mi | integer | NULL | Feet per mile for segment |
@@ -305,6 +415,68 @@ Tracks rider signups, participation and completion status (consolidated lifecycl
 
 ---
 
+### Custom Ride Plans
+
+#### `custom_ride_plan`
+User-customized versions of base ride plans with personalized pacing and timing.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | integer | PK, AUTO | Primary key |
+| rider_id | integer | NOT NULL, FK → rider(id) | Owner of this custom plan |
+| base_plan_id | integer | NOT NULL, FK → ride_plan(id) | Base plan being customized |
+| name | text | NULL | Custom plan name |
+| description | text | NULL | Custom plan description |
+| is_public | boolean | DEFAULT FALSE | Whether other riders can view/copy this plan |
+| avg_moving_speed | numeric | NULL | Custom average moving speed for recalculations |
+| created_at | timestamp | DEFAULT CURRENT_TIMESTAMP | Creation timestamp |
+| updated_at | timestamp | DEFAULT CURRENT_TIMESTAMP | Last update timestamp |
+
+**Foreign Keys:**
+- `rider_id` → `rider(id)` (CASCADE on delete)
+- `base_plan_id` → `ride_plan(id)` (CASCADE on delete)
+
+**Unique Constraints:**
+- `UNIQUE(rider_id, base_plan_id)` - One custom plan per rider per base plan
+
+#### `custom_ride_plan_stop`
+Individual stop overrides within a custom ride plan. Implements a delta/override model where only changed values are stored.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | integer | PK, AUTO | Primary key |
+| custom_plan_id | integer | NOT NULL, FK → custom_ride_plan(id) | Parent custom plan |
+| base_stop_id | integer | FK → ride_plan_stop(id) | Base stop being overridden (NULL for custom stops) |
+| stop_order | integer | NOT NULL | Sequential stop number |
+| location | text | NOT NULL | Stop location name |
+| stop_type | text | NOT NULL | Type: waypoint/control/rest/start/finish |
+| distance_miles | numeric | NULL | Cumulative distance override |
+| elevation_gain | integer | NULL | Elevation gain override |
+| segment_time_min | integer | NULL | Custom segment time (NULL = inherit from base) |
+| stop_duration_min | integer | NULL | Break duration override (NULL/0 = inherit, -1 = explicitly removed, >0 = custom) |
+| stop_name | text | NULL | Break name override (NULL = inherit or cleared based on stop_duration_min) |
+| notes | text | NULL | Custom notes override |
+| is_custom_stop | boolean | DEFAULT FALSE | TRUE if this is a new stop not in base plan |
+| is_hidden | boolean | DEFAULT FALSE | TRUE if base stop is hidden in this custom plan |
+
+**Foreign Keys:**
+- `custom_plan_id` → `custom_ride_plan(id)` (CASCADE on delete)
+- `base_stop_id` → `ride_plan_stop(id)` (SET NULL on delete)
+
+**Override/Inheritance Logic:**
+- **Delta Model:** Only stores fields that differ from base plan
+- **NULL values:** Means "inherit from base" (for most fields)
+- **Special Sentinels:**
+  - `stop_duration_min = -1`: Explicitly removed (don't inherit from base)
+  - `stop_duration_min = NULL or 0`: Inherit from base
+  - `stop_duration_min > 0`: Use custom value
+- **Coupled Fields:** `stop_duration_min` and `stop_name` work together
+  - When duration inherited → name also inherited
+  - When duration removed (-1) → name also cleared
+  - When duration custom (>0) → can optionally override name
+
+---
+
 ## Key Relationships
 
 ### User Authentication Flow
@@ -333,6 +505,20 @@ rider → rider_ride → ride
 - Complete lifecycle in `rider_ride`: signup → participation → result
 - Status progression: SIGNED_UP → FINISHED/DNF/DNS
 
+### Custom Ride Plans
+```
+rider → custom_ride_plan → custom_ride_plan_stop
+                ↓                      ↓
+           base_plan_id           base_stop_id
+                ↓                      ↓
+           ride_plan          ride_plan_stop
+```
+- Riders can create custom versions of any ride plan
+- Custom stops override or extend base stops
+- Delta model: Only changed fields stored in custom_ride_plan_stop
+- Inheritance: NULL values mean "use base plan value"
+- Special handling for breaks: `-1` sentinel = explicitly removed
+
 ---
 
 ## Indexes & Constraints
@@ -351,14 +537,16 @@ All foreign keys have proper CASCADE constraints on delete to maintain data inte
 
 ## Database Statistics
 
-**Total Tables:** 9
-**Total Foreign Key Relationships:** 9
+**Total Tables:** 11
+**Total Foreign Key Relationships:** 13
 **Authentication Tables:** 1
 **Core Tables:** 5
 **Junction Tables:** 1
 **Reference Tables:** 2
+**Custom Plan Tables:** 2
+**Strava Tables:** 2
 
 ---
 
 *Generated on: 2026-02-24*  
-*Last updated: 2026-02-24 - Consolidated rider_ride_signup into rider_ride; updated status values (yes→FINISHED, added SIGNED_UP); added signed_up_at timestamp*
+*Last updated: 2026-02-25 - Added stop_duration_min and stop_name columns to ride_plan_stop and custom_ride_plan_stop for break/rest stop management with delta inheritance model*
