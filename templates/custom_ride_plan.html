@@ -220,6 +220,22 @@
     opacity: 0.6;
 }
 .break-delete-btn:hover { opacity: 1; color: #dc2626; }
+.add-break-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: transparent;
+    color: #d97706;
+    font-size: 0.73rem;
+    font-weight: 600;
+    border: 1px dashed #d97706;
+    cursor: pointer;
+    white-space: nowrap;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+.add-break-btn:hover { opacity: 1; background: #fffbeb; }
 .seg-time-break-note {
     font-size: 0.6rem;
     color: #92400e;
@@ -765,9 +781,10 @@
                             </div>
                         </div>
                     </div>
-                    {# Break chips — editable rest stops merged inline #}
-                    {% if use_timeline and stop.get('_next_breaks') %}
+                    {# Break chips — editable rest stops merged inline + Add Break button #}
+                    {% if use_timeline and not is_break %}
                     <div class="break-chips-row">
+                        {% if stop.get('_next_breaks') %}
                         {% for brk in stop._next_breaks %}
                         <div class="break-chip" data-break-stop-id="{{ brk.custom_stop_id or brk.id }}" title="{{ brk.location }}{% if brk.notes %} — {{ brk.notes }}{% endif %}">
                             <span class="break-icon">☕</span>
@@ -785,6 +802,10 @@
                             {% endif %}
                         </div>
                         {% endfor %}
+                        {% endif %}
+                        {% if stop.stop_type != 'start' and stop.stop_type != 'finish' %}
+                        <button class="add-break-btn" onclick="showAddBreakForm(this)" title="Add a break at this stop">+ break</button>
+                        {% endif %}
                     </div>
                     {% endif %}
                 </div>
@@ -884,10 +905,38 @@
             </div>
         </div>
     </div>
-    
+
+    {# Add Break Modal #}
+    <div id="add-break-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;" onclick="event.target === this && hideAddBreakForm()">
+        <div style="background:white;border-radius:12px;padding:24px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+            <h3 style="margin:0 0 16px 0;">☕ Add Break</h3>
+            <input type="hidden" id="new-break-parent-stop-id">
+
+            <div style="margin-bottom:14px;">
+                <label style="display:block;font-weight:600;margin-bottom:6px;">Break Name *</label>
+                <input type="text" id="new-break-name" placeholder="e.g., Lunch stop, Coffee break" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+            </div>
+
+            <div style="margin-bottom:14px;">
+                <label style="display:block;font-weight:600;margin-bottom:6px;">Duration (minutes) *</label>
+                <input type="number" id="new-break-duration" placeholder="15" min="1" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+            </div>
+
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:6px;">Notes</label>
+                <textarea id="new-break-notes" rows="2" placeholder="Optional notes..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></textarea>
+            </div>
+
+            <div style="display:flex;gap:12px;justify-content:flex-end;">
+                <button class="btn-icon" onclick="hideAddBreakForm()" style="background:#f1f5f9;">Cancel</button>
+                <button class="btn-icon" onclick="addBreakStop()" style="background:#d97706;color:white;">Add Break</button>
+            </div>
+        </div>
+    </div>
+
     {# Action Buttons #}
     <div style="text-align:center;margin-top:30px;">
-        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug) }}" 
+        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug) }}"
            class="back-link" style="margin-right:20px;">← Back to Base Plan</a>
         {% if custom_plan %}
         <a href="{{ url_for('riders.compare_ride_plans', slug=base_plan.slug) }}" 
@@ -1062,6 +1111,136 @@ function deleteBreakStop(button, stopId, isCustomStop) {
 
     // Recalculate everything
     recalculateTimes();
+    markDirty();
+}
+
+/* ── Add Break helpers ── */
+
+function showAddBreakForm(button) {
+    const stopRow = button.closest('.stop-row');
+    if (!stopRow) return;
+    document.getElementById('new-break-parent-stop-id').value = stopRow.dataset.stopId;
+    const modal = document.getElementById('add-break-modal');
+    modal.style.display = 'flex';
+    setTimeout(() => document.getElementById('new-break-name').focus(), 100);
+}
+
+function hideAddBreakForm() {
+    document.getElementById('add-break-modal').style.display = 'none';
+    document.getElementById('new-break-name').value = '';
+    document.getElementById('new-break-duration').value = '';
+    document.getElementById('new-break-notes').value = '';
+    document.getElementById('new-break-parent-stop-id').value = '';
+}
+
+function addBreakStop() {
+    const breakName = document.getElementById('new-break-name').value.trim();
+    const duration = parseInt(document.getElementById('new-break-duration').value) || 0;
+    const notes = document.getElementById('new-break-notes').value.trim();
+    const parentStopId = document.getElementById('new-break-parent-stop-id').value;
+
+    if (!breakName) { alert('Please enter a break name'); return; }
+    if (duration <= 0) { alert('Please enter a valid duration'); return; }
+
+    const parentRow = document.querySelector(`.stop-row[data-stop-id="${parentStopId}"]`);
+    if (!parentRow) { alert('Could not find the parent stop'); return; }
+
+    const parentDistance = parseFloat(parentRow.dataset.distance || 0);
+    const tempStopId = nextTempStopId--;
+
+    // 1. Track in pending changes
+    pendingChanges.addedStops.push({
+        tempId: tempStopId,
+        location: breakName,
+        distance_miles: parentDistance,
+        elevation_gain: 0,
+        segment_time_min: duration,
+        stop_type: 'rest',
+        notes: notes
+    });
+
+    // 2. Create hidden break row (needed for recalculateTimes)
+    const hiddenRow = document.createElement('div');
+    hiddenRow.className = 'stop-row break-hidden-row custom-added';
+    hiddenRow.dataset.stopId = tempStopId;
+    hiddenRow.dataset.distance = parentDistance;
+    hiddenRow.dataset.elevation = 0;
+    hiddenRow.dataset.stopType = 'rest';
+    hiddenRow.dataset.isNewStop = 'true';
+    hiddenRow.innerHTML = `
+        <div class="stop-header">
+            <div class="stop-icon rest">☕</div>
+            <div class="stop-location">${breakName}</div>
+        </div>
+        <div class="stop-metrics" style="margin-left:34px;">
+            <div class="metric-box"><div class="metric-label">Cumul Dist</div>
+                <div><input type="number" class="inline-edit" step="0.1" value="${parentDistance.toFixed(1)}" data-stop-id="${tempStopId}"><span class="diff-indicator diff-distance"></span></div>
+            </div>
+            <div class="metric-box"><div class="metric-label">Seg Miles</div>
+                <div><input type="number" class="inline-edit seg-miles" step="0.1" value="0.0" data-stop-id="${tempStopId}"><span class="diff-indicator diff-seg-miles"></span></div>
+            </div>
+            <div class="metric-box"><div class="metric-label">Seg Time</div>
+                <div><input type="number" class="inline-edit" value="${duration}" data-stop-id="${tempStopId}" onchange="trackTimeChange(this)"><span class="diff-indicator diff-time"></span></div>
+            </div>
+            <div class="metric-box"><div class="metric-label">Avg Speed</div>
+                <div><input type="number" class="inline-edit avg-speed" step="0.1" value="" data-stop-id="${tempStopId}"><span class="diff-indicator diff-avg-speed"></span></div>
+            </div>
+            <div class="metric-box"><div class="metric-label">Elev (ft)</div>
+                <input type="number" class="inline-edit elevation" value="0" data-stop-id="${tempStopId}">
+            </div>
+            <div class="metric-box"><div class="metric-label">Ft/Mi</div>
+                <input type="number" class="inline-edit ft-per-mi" value="" data-stop-id="${tempStopId}">
+            </div>
+            <div class="metric-box"><div class="metric-label">Cumul Time</div>
+                <div><div class="metric-value cumulative-time" style="font-weight:700;color:var(--primary);">0:00</div><span class="diff-indicator diff-cum-time"></span></div>
+            </div>
+            <div class="metric-box"><div class="metric-label">Time Bank</div>
+                <div><div class="metric-value time-bank" style="font-weight:700;">—</div><span class="diff-indicator diff-time-bank"></span></div>
+            </div>
+            <div class="metric-box"><div class="metric-label">Difficulty</div>
+                <div class="metric-value difficulty-score" style="font-weight:600;">—</div>
+            </div>
+        </div>
+    `;
+
+    // Insert hidden row after the parent (and after any existing break-hidden-rows)
+    let insertAfter = parentRow;
+    let nextSibling = parentRow.nextElementSibling;
+    while (nextSibling && nextSibling.classList.contains('break-hidden-row')) {
+        insertAfter = nextSibling;
+        nextSibling = nextSibling.nextElementSibling;
+    }
+    insertAfter.after(hiddenRow);
+
+    // 3. Create visible break chip on the parent card
+    const chipsRow = parentRow.querySelector('.break-chips-row');
+    if (chipsRow) {
+        const addBtn = chipsRow.querySelector('.add-break-btn');
+        const chip = document.createElement('div');
+        chip.className = 'break-chip';
+        chip.dataset.breakStopId = tempStopId;
+        chip.title = breakName + (notes ? ' — ' + notes : '');
+        chip.innerHTML = `
+            <span class="break-icon">☕</span>
+            <span class="break-name">${breakName.substring(0, 25)}</span>
+            <input type="number" class="break-time-edit"
+                   value="${duration}"
+                   data-break-stop-id="${tempStopId}"
+                   onchange="trackBreakTimeChange(this)"
+                   title="Break duration (minutes)">
+            <span style="font-size:0.65rem;">min</span>
+            <button class="break-delete-btn" onclick="deleteBreakStop(this, ${tempStopId}, true)" title="Remove break">✕</button>
+        `;
+        if (addBtn) {
+            chipsRow.insertBefore(chip, addBtn);
+        } else {
+            chipsRow.appendChild(chip);
+        }
+    }
+
+    // 4. Recalculate and close
+    recalculateTimes();
+    hideAddBreakForm();
     markDirty();
 }
 
