@@ -135,6 +135,8 @@
                                   │              │    distance_miles       │
                                   │              │    elevation_gain       │
                                   │              │    segment_time_min     │
+                                  │              │ ☕ stop_duration_min    │
+                                  │              │ ☕ stop_name            │
                                   │              │    notes                │
                                   │              │    seg_dist             │
                                   │              │    ft_per_mi            │
@@ -163,7 +165,9 @@
     │    avg_moving_speed     │              │    distance_miles            │
     │    created_at           │              │    elevation_gain            │
     │    updated_at           │              │    segment_time_min          │
-    └─────────────────────────┘              │    notes                     │
+    └─────────────────────────┘              │ ☕ stop_duration_min         │
+         │                                   │ ☕ stop_name                 │
+         │                                   │    notes                     │
          │                                   │    is_custom_stop            │
          │                                   │    is_hidden                 │
          └───────────────────────────────────┴──────────────────────────────┘
@@ -186,6 +190,7 @@ LEGEND:
   🏃  Strava identifier (athlete or activity)
   🎫  RUSA ID (unique)
   ⏰  Timestamp
+  ☕  Break/Rest stop data (duration and name)
 
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -223,6 +228,14 @@ RELATIONSHIP SUMMARY:
    • Base stops can be hidden (is_hidden=TRUE) without deletion
    • Custom plans can be shared (is_public=TRUE) for other riders to view/copy
    • Pace can be customized (avg_moving_speed) to recalculate segment times
+   
+   Break/Rest Stop Inheritance (stop_duration_min & stop_name):
+   • Delta model: custom_ride_plan_stop stores only overrides
+   • stop_duration_min = NULL or 0: Inherit from base plan
+   • stop_duration_min = -1: Explicitly removed (don't inherit even if base has it)
+   • stop_duration_min > 0: Use custom value
+   • stop_name follows stop_duration_min (coupled together)
+   • When duration inherited, name also inherited; when removed, both cleared
 
 6. Event Management:
    • All events (Team Asha + external RUSA) in unified ride table
@@ -234,11 +247,20 @@ RELATIONSHIP SUMMARY:
    • Google OAuth authentication
    • RUSA member integration
    • Detailed ride planning with waypoints
-   • Custom ride plans for personalization
+   • Custom ride plans for personalization with break/rest stop overrides
    • Ride signup and completion tracking
    • Multi-season management
    • Club-based organization
    • Unified event calendar (Team Asha + external)
    • Strava integration for activity tracking
+
+═══════════════════════════════════════════════════════════════════════════════
+
+RECENT SCHEMA CHANGES:
+• 2026-02-25: Added stop_duration_min ☕ and stop_name ☕ to ride_plan_stop and 
+              custom_ride_plan_stop for break/rest stop management
+              - Implements delta inheritance model with sentinel values
+              - stop_duration_min: NULL/0 = inherit, -1 = removed, >0 = custom
+              - Coupled with stop_name for consistent break display
 
 ═══════════════════════════════════════════════════════════════════════════════
