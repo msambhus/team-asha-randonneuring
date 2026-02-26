@@ -159,20 +159,35 @@
     position: relative;
     z-index: 1;
 }
+/* Timeline dots on the vertical line */
 #custom-stops-container.timeline-container .stop-row::before {
     content: '';
     position: absolute;
-    top: 20px;
-    height: 2px;
-    background: #cbd5e1;
-    z-index: 1;
+    left: -19px;
+    top: 18px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #94a3b8;
+    border: 2px solid white;
+    z-index: 2;
 }
-.stop-row.level-start, .stop-row.level-finish { margin-left: 0; }
-.stop-row.level-start::before, .stop-row.level-finish::before { left: -24px; width: 20px; }
-.stop-row.level-control { margin-left: 28px; }
-.stop-row.level-control::before { left: -52px; width: 48px; }
-.stop-row.level-waypoint { margin-left: 52px; }
-.stop-row.level-waypoint::before { left: -76px; width: 72px; }
+.stop-row.level-start::before   { background: #16a34a; width: 12px; height: 12px; left: -20px; }
+.stop-row.level-finish::before  { background: #dc2626; width: 12px; height: 12px; left: -20px; }
+.stop-row.level-control::before { background: #2563eb; width: 12px; height: 12px; left: -20px; }
+.stop-row.level-waypoint::before { background: #94a3b8; width: 8px; height: 8px; left: -18px; top: 20px; }
+/* Controls as section headers — bold divider above */
+.stop-row.level-control {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 2px solid #e2e8f0;
+}
+.stop-row.level-control .stop-name { font-weight: 700; font-size: 1.02rem; }
+/* Waypoints — lighter styling */
+.stop-row.level-waypoint .stop-name { color: #475569; font-weight: 500; }
+/* Start/Finish — bold treatment */
+.stop-row.level-start .stop-name,
+.stop-row.level-finish .stop-name { font-weight: 700; font-size: 1.02rem; }
 
 /* Hidden break rows (keep in DOM for JS indexing) */
 .break-hidden-row { display: none !important; }
@@ -183,7 +198,7 @@
     flex-wrap: wrap;
     gap: 6px;
     margin-top: 8px;
-    margin-left: 34px;
+    margin-left: 15px;
 }
 .break-chip {
     display: inline-flex;
@@ -244,11 +259,10 @@
 @media (max-width: 768px) {
     #custom-stops-container.timeline-container { padding-left: 18px; }
     #custom-stops-container.timeline-container::before { left: 8px; }
-    .stop-row.level-control { margin-left: 18px; }
-    .stop-row.level-waypoint { margin-left: 32px; }
-    .stop-row.level-start::before, .stop-row.level-finish::before { left: -18px; width: 14px; }
-    .stop-row.level-control::before { left: -36px; width: 32px; }
-    .stop-row.level-waypoint::before { left: -50px; width: 46px; }
+    #custom-stops-container.timeline-container .stop-row::before { left: -16px; }
+    .stop-row.level-start::before,
+    .stop-row.level-finish::before,
+    .stop-row.level-control::before { left: -17px; }
 }
 
 .stop-header {
@@ -803,7 +817,7 @@
                         </div>
                         {% endfor %}
                         {% endif %}
-                        {% if stop.stop_type != 'start' and stop.stop_type != 'finish' %}
+                        {% if stop.stop_type != 'start' and stop.stop_type != 'finish' and not stop.get('_next_breaks') %}
                         <button class="add-break-btn" onclick="showAddBreakForm(this)" title="Add a break at this stop">+ break</button>
                         {% endif %}
                     </div>
@@ -1098,9 +1112,24 @@ function deleteBreakStop(button, stopId, isCustomStop) {
     // Remove the visible chip
     if (chip) chip.remove();
 
-    // If the chips row is now empty, remove it too
+    // If no break chips remain, show/re-create the + break button
     if (chipRow && chipRow.querySelectorAll('.break-chip').length === 0) {
-        chipRow.remove();
+        let addBtn = chipRow.querySelector('.add-break-btn');
+        if (addBtn) {
+            addBtn.style.display = '';
+        } else {
+            // Re-create button for stops that had server-rendered breaks
+            const stopRow = chipRow.closest('.stop-row');
+            const stopType = stopRow ? stopRow.dataset.stopType : '';
+            if (stopType !== 'start' && stopType !== 'finish') {
+                addBtn = document.createElement('button');
+                addBtn.className = 'add-break-btn';
+                addBtn.onclick = function() { showAddBreakForm(this); };
+                addBtn.title = 'Add a break at this stop';
+                addBtn.textContent = '+ break';
+                chipRow.appendChild(addBtn);
+            }
+        }
     }
 
     // Track the deletion for the save payload
@@ -1233,6 +1262,8 @@ function addBreakStop() {
         `;
         if (addBtn) {
             chipsRow.insertBefore(chip, addBtn);
+            // Hide + break button after adding a break
+            addBtn.style.display = 'none';
         } else {
             chipsRow.appendChild(chip);
         }

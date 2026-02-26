@@ -206,39 +206,43 @@
     border-left: 4px solid var(--border);
     background: white;
 }
+/* Timeline dots on the vertical line */
 .timeline-container .segment-card::before {
     content: '';
     position: absolute;
-    top: 20px;
-    height: 2px;
-    background: #cbd5e1;
-    z-index: 1;
+    left: -19px;
+    top: 18px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #94a3b8;
+    border: 2px solid white;
+    z-index: 2;
 }
-/* Level 0: Start & Finish — flush left */
-.timeline-container .segment-card.level-start,
-.timeline-container .segment-card.level-finish {
-    margin-left: 0;
-}
-.timeline-container .segment-card.level-start::before,
-.timeline-container .segment-card.level-finish::before {
-    left: -24px;
-    width: 20px;
-}
-/* Level 1: Controls */
+.timeline-container .segment-card.level-start::before   { background: #16a34a; width: 12px; height: 12px; left: -20px; }
+.timeline-container .segment-card.level-finish::before   { background: #dc2626; width: 12px; height: 12px; left: -20px; }
+.timeline-container .segment-card.level-control::before  { background: #2563eb; width: 12px; height: 12px; left: -20px; }
+.timeline-container .segment-card.level-waypoint::before { background: #94a3b8; width: 8px; height: 8px; left: -18px; top: 20px; }
+/* Controls as section headers — bold divider above */
 .timeline-container .segment-card.level-control {
-    margin-left: 28px;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 2px solid #e2e8f0;
 }
-.timeline-container .segment-card.level-control::before {
-    left: -52px;
-    width: 48px;
+.timeline-container .segment-card.level-control .stop-name {
+    font-weight: 700;
+    font-size: 1.02rem;
 }
-/* Level 2: Waypoints */
-.timeline-container .segment-card.level-waypoint {
-    margin-left: 52px;
+/* Waypoints — subordinate, lighter styling */
+.timeline-container .segment-card.level-waypoint .stop-name {
+    color: #475569;
+    font-weight: 500;
 }
-.timeline-container .segment-card.level-waypoint::before {
-    left: -76px;
-    width: 72px;
+/* Start/Finish — bold treatment */
+.timeline-container .segment-card.level-start .stop-name,
+.timeline-container .segment-card.level-finish .stop-name {
+    font-weight: 700;
+    font-size: 1.02rem;
 }
 /* Break chip pills */
 .break-chips-row {
@@ -272,12 +276,10 @@
 @media (max-width: 768px) {
     .timeline-container { padding-left: 18px; }
     .timeline-container::before { left: 8px; }
-    .timeline-container .segment-card.level-control { margin-left: 18px; }
-    .timeline-container .segment-card.level-waypoint { margin-left: 32px; }
+    .timeline-container .segment-card::before { left: -16px; }
     .timeline-container .segment-card.level-start::before,
-    .timeline-container .segment-card.level-finish::before { left: -18px; width: 14px; }
-    .timeline-container .segment-card.level-control::before { left: -36px; width: 32px; }
-    .timeline-container .segment-card.level-waypoint::before { left: -50px; width: 46px; }
+    .timeline-container .segment-card.level-finish::before,
+    .timeline-container .segment-card.level-control::before { left: -17px; }
 }
 
 /* ===== TIME-OF-DAY CHART (grid layout) ===== */
