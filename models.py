@@ -1308,41 +1308,207 @@ def get_custom_plan_stops_raw(custom_plan_id):
         ORDER BY stop_order
     """, (custom_plan_id,)).fetchall()
 
-def update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min=None, notes=None, distance_miles=None, elevation_gain=None):
-    """Update timing, distance, elevation, or notes for a custom plan stop."""
+def update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min=None, stop_duration_min=None, stop_name=None, location=None, notes=None, distance_miles=None, elevation_gain=None, explicit_fields=None):
+    """Update timing, distance, elevation, stop_name, location, or notes for a custom plan stop.
+    
+    stop_id can be either:
+    - A custom_ride_plan_stop.id (for existing overrides or custom stops)
+    - A ride_plan_stop.id (base stop) - in which case we create an override
+    
+    explicit_fields: Set of field names that were explicitly provided (to distinguish None from missing)
+    """
+    if explicit_fields is None:
+        explicit_fields = set()
+    
+    print(f"[DEBUG] update_custom_plan_stop called:")
+    print(f"  custom_plan_id={custom_plan_id}, stop_id={stop_id}")
+    print(f"  stop_name={stop_name}, stop_duration_min={stop_duration_min}")
+    print(f"  explicit_fields={explicit_fields}")
+    
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
-    updates = []
-    params = []
+    # First, check if this is an existing custom stop record
+    cur.execute("""
+        SELECT id, base_stop_id, is_custom_stop 
+        FROM custom_ride_plan_stop
+        WHERE id = %s AND custom_plan_id = %s
+    """, (stop_id, custom_plan_id))
+    existing_custom_stop = cur.fetchone()
+    print(f"[DEBUG] existing_custom_stop query result: {existing_custom_stop}")
     
-    if segment_time_min is not None:
-        updates.append("segment_time_min = %s")
-        params.append(segment_time_min)
-    
-    if distance_miles is not None:
-        updates.append("distance_miles = %s")
-        params.append(distance_miles)
-    
-    if elevation_gain is not None:
-        updates.append("elevation_gain = %s")
-        params.append(elevation_gain)
-    
-    if notes is not None:
-        updates.append("notes = %s")
-        params.append(notes)
-    
-    if not updates:
-        return False
-    
-    params.extend([stop_id, custom_plan_id])
-    sql = f"UPDATE custom_ride_plan_stop SET {', '.join(updates)} WHERE id = %s AND custom_plan_id = %s"
-    
-    cur.execute(sql, params)
-    conn.commit()
-    
-    cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
-    return cur.rowcount > 0
+    if existing_custom_stop:
+        # This is an existing custom stop override - update it directly
+        updates = []
+        params = []
+        
+        if 'segment_time_min' in explicit_fields:
+            updates.append("segment_time_min = %s")
+            params.append(segment_time_min)
+        
+        if 'stop_duration_min' in explicit_fields:
+            updates.append("stop_duration_min = %s")
+            params.append(stop_duration_min)
+        
+        if 'stop_name' in explicit_fields:
+            updates.append("stop_name = %s")
+            params.append(stop_name)
+        
+        if 'location' in explicit_fields:
+            updates.append("location = %s")
+            params.append(location)
+        
+        if 'distance_miles' in explicit_fields:
+            updates.append("distance_miles = %s")
+            params.append(distance_miles)
+        
+        if 'elevation_gain' in explicit_fields:
+            updates.append("elevation_gain = %s")
+            params.append(elevation_gain)
+        
+        if 'notes' in explicit_fields:
+            updates.append("notes = %s")
+            params.append(notes)
+        
+        if not updates:
+            return False
+        
+        params.extend([stop_id, custom_plan_id])
+        sql = f"UPDATE custom_ride_plan_stop SET {', '.join(updates)} WHERE id = %s AND custom_plan_id = %s"
+        
+        print(f"[DEBUG] Executing UPDATE on existing custom stop: {sql}")
+        print(f"[DEBUG] Params: {params}")
+        cur.execute(sql, params)
+        conn.commit()
+        
+        # Clear caches aggressively
+        cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
+        cache.cache.delete(f'get_custom_plan_stops_raw_{custom_plan_id}')
+        cache.cache.delete(f'get_custom_plan_by_id_{custom_plan_id}')
+        print(f"[DEBUG] Updated {cur.rowcount} row(s)")
+        return cur.rowcount > 0
+    else:
+        # This might be a base_stop_id - check if an override exists for this base stop
+        cur.execute("""
+            SELECT id 
+            FROM custom_ride_plan_stop
+            WHERE custom_plan_id = %s AND base_stop_id = %s
+        """, (custom_plan_id, stop_id))
+        override = cur.fetchone()
+        print(f"[DEBUG] Checking for override by base_stop_id={stop_id}: {override}")
+        
+        if override:
+            # Override exists, update it
+            updates = []
+            params = []
+            
+            if 'segment_time_min' in explicit_fields:
+                updates.append("segment_time_min = %s")
+                params.append(segment_time_min)
+            
+            if 'stop_duration_min' in explicit_fields:
+                updates.append("stop_duration_min = %s")
+                params.append(stop_duration_min)
+            
+            if 'stop_name' in explicit_fields:
+                updates.append("stop_name = %s")
+                params.append(stop_name)
+            
+            if 'location' in explicit_fields:
+                updates.append("location = %s")
+                params.append(location)
+            
+            if 'distance_miles' in explicit_fields:
+                updates.append("distance_miles = %s")
+                params.append(distance_miles)
+            
+            if 'elevation_gain' in explicit_fields:
+                updates.append("elevation_gain = %s")
+                params.append(elevation_gain)
+            
+            if 'notes' in explicit_fields:
+                updates.append("notes = %s")
+                params.append(notes)
+            
+            if not updates:
+                return False
+            
+            params.append(override['id'])
+            sql = f"UPDATE custom_ride_plan_stop SET {', '.join(updates)} WHERE id = %s"
+            
+            print(f"[DEBUG] Executing UPDATE on override: {sql}")
+            print(f"[DEBUG] Params: {params}")
+            cur.execute(sql, params)
+            conn.commit()
+            
+            # Clear caches
+            cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
+            cache.cache.delete(f'get_custom_plan_stops_raw_{custom_plan_id}')
+            cache.cache.delete(f'get_custom_plan_by_id_{custom_plan_id}')
+            print(f"[DEBUG] Updated {cur.rowcount} row(s) via override")
+            return cur.rowcount > 0
+        else:
+            # No override exists - create one for this base stop
+            print(f"[DEBUG] No override found, fetching base stop with id={stop_id}")
+            cur.execute("""
+                SELECT id, stop_order, stop_name, location, stop_type, distance_miles, elevation_gain
+                FROM ride_plan_stop
+                WHERE id = %s
+            """, (stop_id,))
+            base_stop = cur.fetchone()
+            
+            if not base_stop:
+                print(f"[DEBUG] Base stop not found!")
+                return False
+            
+            print(f"[DEBUG] Base stop found: {base_stop}")
+            
+            # Create new override - ONLY store explicitly provided fields (delta model)
+            # Required fields from base, optional fields only if explicitly changed
+            columns = ['custom_plan_id', 'base_stop_id', 'stop_order', 'location', 'stop_type', 'distance_miles', 'elevation_gain', 'is_custom_stop']
+            values = [
+                custom_plan_id,
+                base_stop['id'],
+                base_stop['stop_order'],
+                location if 'location' in explicit_fields else base_stop['location'],
+                base_stop['stop_type'],
+                distance_miles if 'distance_miles' in explicit_fields else base_stop['distance_miles'],
+                elevation_gain if 'elevation_gain' in explicit_fields else base_stop['elevation_gain'],
+                False
+            ]
+            
+            # Only add optional columns if explicitly provided in the request
+            if 'segment_time_min' in explicit_fields:
+                columns.append('segment_time_min')
+                values.append(segment_time_min)
+            
+            if 'stop_duration_min' in explicit_fields:
+                columns.append('stop_duration_min')
+                values.append(stop_duration_min)
+            
+            if 'stop_name' in explicit_fields:
+                columns.append('stop_name')
+                values.append(stop_name)
+            
+            if 'notes' in explicit_fields:
+                columns.append('notes')
+                values.append(notes)
+            
+            placeholders = ', '.join(['%s'] * len(values))
+            sql = f"INSERT INTO custom_ride_plan_stop ({', '.join(columns)}) VALUES ({placeholders})"
+            
+            print(f"[DEBUG] Inserting new override with SQL: {sql}")
+            print(f"[DEBUG] Values: {values}")
+            
+            cur.execute(sql, values)
+            conn.commit()
+            
+            # Clear caches
+            cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
+            cache.cache.delete(f'get_custom_plan_stops_raw_{custom_plan_id}')
+            cache.cache.delete(f'get_custom_plan_by_id_{custom_plan_id}')
+            print(f"[DEBUG] Created new override successfully")
+            return True
 
 def add_custom_stop(custom_plan_id, location, stop_type, distance_miles, elevation_gain, after_stop_order, segment_time_min=None, notes=None):
     """Add a custom stop at a specific position by distance."""

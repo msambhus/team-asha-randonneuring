@@ -1147,7 +1147,14 @@
 {% for n in journey_nodes %}
 <div class="journey-node {{ n.node_type }}">
     <div class="journey-dot" style="background:{{ n.difficulty_color }};box-shadow:0 0 0 2px {{ n.difficulty_color }};"></div>
-    <div class="journey-label">{{ n.label }}</div>
+    <div class="journey-label">
+        {{ n.label }}
+    </div>
+    {% if n.stop_name and n.stop_duration_min and n.stop_duration_min > 0 and n.stop_duration_min != -1 %}
+    <div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:4px;padding:2px 6px;margin-top:4px;font-size:0.65rem;color:#92400e;font-weight:600;">
+        {{ n.stop_duration_min }}m
+    </div>
+    {% endif %}
     <div class="journey-dist">{{ "%.1f"|format(n.distance_miles) }} mi</div>
     <div class="journey-eta arrival-time" data-cum-min="{{ (n['arrival_time_min']|default(0))|int }}">{% if n.distance_miles > 0 %}--:--{% endif %}</div>
 </div>
@@ -1186,9 +1193,18 @@
     </div>
     {# Data rows #}
     {% for s in stops %}
-    {% if s.time_bank_min is not none and s.stop_type in ['control', 'rest', 'finish', 'start'] and s.distance_miles and s.distance_miles > 0 %}
+    {% if s.time_bank_min is not none and (s.stop_name or s.stop_type in ['control', 'rest', 'finish', 'start', 'waypoint']) and s.distance_miles and s.distance_miles > 0 %}
     <div class="tod-grid">
-        <span class="tod-label">{{ s.location }}{% if s.stop_duration_min %} <span style="color:#94a3b8;font-size:0.75rem;">({{ s.stop_duration_min }}min stop)</span>{% endif %}</span>
+        <span class="tod-label">
+            {% if s.stop_name %}
+                {{ s.stop_name }} <span style="color:#94a3b8;">({{ s.location }})</span>
+            {% else %}
+                {{ s.location }}
+            {% endif %}
+            {% if s.stop_name and s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
+            <span style="color:#92400e;background:#fef3c7;border:1px solid #fbbf24;border-radius:3px;padding:1px 5px;margin-left:4px;font-size:0.7rem;font-weight:600;">☕ {{ s.stop_duration_min }}m</span>
+            {% endif %}
+        </span>
         <span class="tod-time arrival-time" data-cum-min="{{ (s['arrival_time_min']|default(0))|int }}">
             &mdash;
         </span>
@@ -1232,7 +1248,13 @@
             {% if s.stop_type == 'start' %}&#x1F6A9;{% elif s.stop_type == 'finish' %}&#x1F3C1;{% elif s.stop_type == 'control' %}&#x25C6;{% else %}&#x2022;{% endif %}
         </div>
         <div class="segment-loc">
-            <div class="segment-loc-name">{{ s.location }}</div>
+            <div class="segment-loc-name">
+                {% if s.stop_name %}
+                    {{ s.stop_name }} <span style="color:#94a3b8;font-weight:400;font-size:0.85rem;">({{ s.location }})</span>
+                {% else %}
+                    {{ s.location }}
+                {% endif %}
+            </div>
             {% if s.notes %}<div class="segment-loc-notes">{{ s.notes }}</div>{% endif %}
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
@@ -1252,6 +1274,14 @@
             <div class="metric-value" style="color:var(--primary);">{{ "%.1f"|format(s.distance_miles) if s.distance_miles else '—' }}</div>
             <div class="metric-label">Cumul Mi</div>
         </div>
+        {% if s.cum_time_min and s.cum_time_min > 0 %}
+        <div class="metric">
+            <div class="metric-value" style="color:var(--primary);">
+                {% if s.cum_time_min >= 60 %}{{ s.cum_time_min // 60 }}h{{ "%02d"|format(s.cum_time_min % 60) }}m{% else %}{{ s.cum_time_min }}m{% endif %}
+            </div>
+            <div class="metric-label">Cumul Time</div>
+        </div>
+        {% endif %}
         {% if s.elevation_gain and s.elevation_gain > 0 %}
         <div class="metric">
             <div class="metric-value elev">{{ "{:,}".format(s.elevation_gain) }}</div>
@@ -1267,12 +1297,19 @@
         {% if s.segment_time_min and s.segment_time_min > 0 %}
         <div class="metric">
             <div class="metric-value">
-                {% set break_time = s.get('_break_time_min', 0) %}
-                {% set combined = s.segment_time_min + break_time %}
-                {% if combined >= 60 %}{{ combined // 60 }}h{{ "%02d"|format(combined % 60) }}m{% else %}{{ combined }}m{% endif %}
-                {% if break_time > 0 %}<span class="seg-time-break-note">(+{{ break_time }}m&nbsp;rest)</span>{% endif %}
+                {# Segment time only (riding time, not including stop duration) #}
+                {% if s.segment_time_min >= 60 %}{{ s.segment_time_min // 60 }}h{{ "%02d"|format(s.segment_time_min % 60) }}m{% else %}{{ s.segment_time_min }}m{% endif %}
             </div>
             <div class="metric-label">Seg Time</div>
+        </div>
+        {% endif %}
+        {% if s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
+        <div class="metric">
+            <div class="metric-value">
+                {# Stop duration (time spent at this stop) #}
+                {% if s.stop_duration_min >= 60 %}{{ s.stop_duration_min // 60 }}h{{ "%02d"|format(s.stop_duration_min % 60) }}m{% else %}{{ s.stop_duration_min }}m{% endif %}
+            </div>
+            <div class="metric-label">Stop Time</div>
         </div>
         {% endif %}
         {% if s.avg_speed %}
@@ -1281,29 +1318,26 @@
             <div class="metric-label">Avg MPH</div>
         </div>
         {% endif %}
-        {# Time Bank: use the last break's time_bank if breaks follow, else use this stop's #}
-        {% set effective_bank = s.get('_next_breaks', [])[-1].time_bank_min if s.get('_next_breaks') and s.get('_next_breaks')[-1].get('time_bank_min') is not none else s.time_bank_min %}
-        {% if effective_bank is not none %}
+        {# Time Bank: use this stop's time_bank #}
+        {% if s.time_bank_min is not none %}
         <div class="metric">
-            {% set abs_bank = effective_bank if effective_bank >= 0 else -effective_bank %}
-            <div class="metric-value" style="color:{% if effective_bank >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
-                {% if effective_bank >= 0 %}+{% else %}&minus;{% endif %}{{ (abs_bank // 60)|int }}:{{ "%02d"|format(abs_bank % 60) }}
+            {% set abs_bank = s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min %}
+            <div class="metric-value" style="color:{% if s.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
+                {% if s.time_bank_min >= 0 %}+{% else %}&minus;{% endif %}{{ (abs_bank // 60)|int }}:{{ "%02d"|format(abs_bank % 60) }}
             </div>
             <div class="metric-label">Time Bank</div>
         </div>
         {% endif %}
     </div>
     {% endif %}
-    {# Break chips — merged rest stops #}
-    {% if s.get('_next_breaks') %}
+    {# Break chip — rest stop info via stop_name and stop_duration_min #}
+    {% if s.stop_name and s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
     <div class="break-chips-row">
-        {% for brk in s._next_breaks %}
-        <div class="break-chip" title="{{ brk.location }}{% if brk.notes %} — {{ brk.notes }}{% endif %}">
+        <div class="break-chip" title="{{ s.stop_name }}{% if s.notes %} — {{ s.notes }}{% endif %}">
             <span class="break-icon">&#x2615;</span>
-            {{ brk.location[:30] }}
-            {% if brk.segment_time_min %}({{ brk.segment_time_min }}min){% endif %}
+            {{ s.stop_name }}
+            ({{ s.stop_duration_min }}m)
         </div>
-        {% endfor %}
     </div>
     {% endif %}
 </div>
@@ -1321,7 +1355,13 @@
             {% if s.stop_type == 'start' %}&#x1F6A9;{% elif s.stop_type == 'finish' %}&#x1F3C1;{% elif s.stop_type == 'control' %}&#x25C6;{% elif s.stop_type == 'rest' %}&#x2615;{% else %}&#x2022;{% endif %}
         </div>
         <div class="segment-loc">
-            <div class="segment-loc-name">{{ s.location }}</div>
+            <div class="segment-loc-name">
+                {% if s.stop_name %}
+                    {{ s.stop_name }} <span style="color:#94a3b8;font-weight:400;font-size:0.85rem;">({{ s.location }})</span>
+                {% else %}
+                    {{ s.location }}
+                {% endif %}
+            </div>
             {% if s.notes %}<div class="segment-loc-notes">{{ s.notes }}</div>{% endif %}
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
@@ -1341,6 +1381,14 @@
             <div class="metric-value" style="color:var(--primary);">{{ "%.1f"|format(s.distance_miles) if s.distance_miles else '—' }}</div>
             <div class="metric-label">Cumul Mi</div>
         </div>
+        {% if s.cum_time_min and s.cum_time_min > 0 %}
+        <div class="metric">
+            <div class="metric-value" style="color:var(--primary);">
+                {% if s.cum_time_min >= 60 %}{{ s.cum_time_min // 60 }}h{{ "%02d"|format(s.cum_time_min % 60) }}m{% else %}{{ s.cum_time_min }}m{% endif %}
+            </div>
+            <div class="metric-label">Cumul Time</div>
+        </div>
+        {% endif %}
         {% if s.elevation_gain and s.elevation_gain > 0 %}
         <div class="metric">
             <div class="metric-value elev">{{ "{:,}".format(s.elevation_gain) }}</div>
@@ -1356,9 +1404,19 @@
         {% if s.segment_time_min and s.segment_time_min > 0 %}
         <div class="metric">
             <div class="metric-value">
+                {# Segment time only (riding time, not including stop duration) #}
                 {% if s.segment_time_min >= 60 %}{{ s.segment_time_min // 60 }}h{{ "%02d"|format(s.segment_time_min % 60) }}m{% else %}{{ s.segment_time_min }}m{% endif %}
             </div>
             <div class="metric-label">Seg Time</div>
+        </div>
+        {% endif %}
+        {% if s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
+        <div class="metric">
+            <div class="metric-value">
+                {# Stop duration (time spent at this stop) #}
+                {% if s.stop_duration_min >= 60 %}{{ s.stop_duration_min // 60 }}h{{ "%02d"|format(s.stop_duration_min % 60) }}m{% else %}{{ s.stop_duration_min }}m{% endif %}
+            </div>
+            <div class="metric-label">Stop Time</div>
         </div>
         {% endif %}
         {% if s.avg_speed %}
@@ -1376,6 +1434,16 @@
             <div class="metric-label">Time Bank</div>
         </div>
         {% endif %}
+    </div>
+    {% endif %}
+    {# Break chip — rest stop info via stop_name and stop_duration_min #}
+    {% if s.stop_name and s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
+    <div class="break-chips-row">
+        <div class="break-chip" title="{{ s.stop_name }}{% if s.notes %} — {{ s.notes }}{% endif %}">
+            <span class="break-icon">&#x2615;</span>
+            {{ s.stop_name }}
+            ({{ s.stop_duration_min }}m)
+        </div>
     </div>
     {% endif %}
 </div>
@@ -1409,7 +1477,22 @@
 <tr style="border-left:3px solid {{ s.difficulty_color }};">
     <td style="text-align:center;color:var(--text-light);font-size:0.72rem;">{{ loop.index }}</td>
     <td><span class="type-badge {{ s.stop_type }}">{{ s.stop_type }}</span></td>
-    <td><div style="font-weight:600;color:var(--primary);font-size:0.82rem;">{{ s.location }}</div></td>
+    <td>
+        <div style="font-weight:600;color:var(--primary);font-size:0.82rem;display:flex;flex-direction:column;gap:4px;">
+            <div>
+                {% if s.stop_name %}
+                    {{ s.stop_name }} <span style="color:#94a3b8;font-weight:400;">({{ s.location }})</span>
+                {% else %}
+                    {{ s.location }}
+                {% endif %}
+            </div>
+            {% if s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
+            <div>
+                <span style="color:#92400e;background:#fef3c7;border:1px solid #fbbf24;border-radius:3px;padding:2px 6px;font-size:0.7rem;font-weight:600;white-space:nowrap;">Stop: {{ s.stop_duration_min }}m</span>
+            </div>
+            {% endif %}
+        </div>
+    </td>
     <td class="num-cell">
         {% if s.seg_dist and s.seg_dist > 0 %}{{ "%.1f"|format(s.seg_dist) }}{% else %}&mdash;{% endif %}
     </td>
