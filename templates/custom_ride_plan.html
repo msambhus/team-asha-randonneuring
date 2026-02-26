@@ -188,7 +188,7 @@
 }
 .break-chip .break-icon { font-size: 0.7rem; }
 .break-time-edit {
-    width: 38px;
+    width: 50px;
     padding: 1px 4px;
     border: 1px solid #d97706;
     border-radius: 4px;
@@ -290,7 +290,7 @@
 
 .stop-metrics {
     display: grid;
-    grid-template-columns: 80px 80px 75px 85px 75px 70px 85px 90px 85px;
+    grid-template-columns: 80px 80px 75px 85px 75px 70px 85px 90px 90px 70px;
     gap: 8px;
     margin-top: 8px;
     margin-left: 34px;
@@ -628,6 +628,7 @@
                      data-base-distance="{{ base_stop.distance_miles if base_stop else '' }}"
                      data-base-seg-miles="{{ base_stop.seg_dist if base_stop else '' }}"
                      data-base-time="{{ base_stop.segment_time_min if base_stop else '' }}"
+                     data-base-stop-duration="{{ base_stop.stop_duration_min if base_stop else '0' }}"
                      data-base-elevation="{{ base_stop.elevation_gain if base_stop else '' }}"
                      data-base-avg-speed="{{ base_stop.avg_speed if base_stop else '' }}"
                      data-base-ft-per-mi="{{ base_stop.ft_per_mi if base_stop else '' }}"
@@ -637,22 +638,21 @@
                         <div class="stop-icon {{ stop.stop_type }}">
                             {% if stop.stop_type == 'start' %}🚩{% elif stop.stop_type == 'finish' %}🏁{% elif stop.stop_type == 'control' %}◆{% elif stop.stop_type == 'rest' %}☕{% else %}•{% endif %}
                         </div>
-                        <div class="stop-location">
-                            {{ stop.location }}
-                        </div>
-                        <div class="stop-actions">
+                        <div class="stop-location">{{ stop.location }}</div>
+                        <div class="stop-actions" style="display:none;">
+                            {# Add/Delete disabled - only timing edits allowed #}
                             <button class="btn-icon" onclick="showAddStopForm({{ loop.index0 }}, {{ stop.distance_miles or 0 }})"
-                                    title="Add a custom stop after this one">
+                                    title="Add a custom stop after this one" style="display:none;">
                                 ➕
                             </button>
                             {% if stop.is_custom_stop %}
                             <button class="btn-icon btn-delete" onclick="deleteStop(this, {{ stop.custom_stop_id }}, true)"
-                                    title="Delete this custom stop permanently">
+                                    title="Delete this custom stop permanently" style="display:none;">
                                 🗑️
                             </button>
                             {% elif stop.stop_type == 'rest' %}
                             <button class="btn-icon btn-delete" onclick="deleteStop(this, {{ stop.id }}, false)"
-                                    title="Remove this rest stop from your custom plan">
+                                    title="Remove this rest stop from your custom plan" style="display:none;">
                                 🗑️
                             </button>
                             {% endif %}
@@ -667,7 +667,9 @@
                                        value="{{ "%.1f"|format(stop.distance_miles or 0) }}"
                                        data-stop-id="{{ stop.custom_stop_id or stop.id }}"
                                        data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
-                                       onchange="trackDistanceChange(this)">
+                                       onchange="trackDistanceChange(this)"
+                                       readonly
+                                       style="background:#f8fafc;cursor:not-allowed;">
                                 <span class="diff-indicator diff-distance"></span>
                             </div>
                         </div>
@@ -679,7 +681,9 @@
                                        value="{{ "%.1f"|format(stop.get('seg_dist', 0) or 0) }}"
                                        data-stop-id="{{ stop.custom_stop_id or stop.id }}"
                                        data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
-                                       onchange="trackSegMilesChange(this)">
+                                       onchange="trackSegMilesChange(this)"
+                                       readonly
+                                       style="background:#f8fafc;cursor:not-allowed;">
                                 <span class="diff-indicator diff-seg-miles"></span>
                             </div>
                         </div>
@@ -707,12 +711,26 @@
                             </div>
                         </div>
                         <div class="metric-box">
+                            <div class="metric-label">Stop Time</div>
+                            <div style="display:flex;flex-direction:column;gap:2px;">
+                                <input type="number" class="inline-edit stop-duration"
+                                       value="{{ 0 if stop.stop_duration_min == -1 else (stop.stop_duration_min or 0) }}"
+                                       data-stop-id="{{ stop.custom_stop_id or stop.id }}"
+                                       data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
+                                       onchange="trackStopDurationChange(this)"
+                                       placeholder="0">
+                                <span class="diff-indicator diff-stop-duration"></span>
+                            </div>
+                        </div>
+                        <div class="metric-box">
                             <div class="metric-label">Elev (ft)</div>
                             <input type="number" class="inline-edit elevation"
                                    value="{{ stop.elevation_gain or 0 }}"
                                    data-stop-id="{{ stop.custom_stop_id or stop.id }}"
                                    data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
-                                   onchange="trackElevationChange(this)">
+                                   onchange="trackElevationChange(this)"
+                                   readonly
+                                   style="background:#f8fafc;cursor:not-allowed;">
                         </div>
                         <div class="metric-box">
                             <div class="metric-label">Ft/Mi</div>
@@ -720,7 +738,9 @@
                                    value="{{ stop.get('ft_per_mi', '') or '' }}"
                                    data-stop-id="{{ stop.custom_stop_id or stop.id }}"
                                    data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
-                                   onchange="trackFtPerMiChange(this)">
+                                   onchange="trackFtPerMiChange(this)"
+                                   readonly
+                                   style="background:#f8fafc;cursor:not-allowed;">
                         </div>
                         <div class="metric-box">
                             <div class="metric-label">Cumul Time</div>
@@ -763,29 +783,23 @@
                             </div>
                         </div>
                     </div>
-                    {# Break chips — editable rest stops merged inline + Add Break button #}
-                    {% if use_timeline and not is_break %}
+                    {# Break chips and Add Break button #}
+                    {% if stop.stop_type != 'start' and stop.stop_type != 'finish' %}
                     <div class="break-chips-row">
-                        {% if stop.get('_next_breaks') %}
-                        {% for brk in stop._next_breaks %}
-                        <div class="break-chip" data-break-stop-id="{{ brk.custom_stop_id or brk.id }}" title="{{ brk.location }}{% if brk.notes %} — {{ brk.notes }}{% endif %}">
+                        {% if stop.stop_name and stop.stop_duration_min and stop.stop_duration_min > 0 and stop.stop_duration_min != -1 %}
+                        <div class="break-chip" title="{{ stop.stop_name }}{% if stop.notes %} — {{ stop.notes }}{% endif %}">
                             <span class="break-icon">☕</span>
-                            <span class="break-name">{{ brk.location[:25] }}</span>
-                            <input type="number" class="break-time-edit"
-                                   value="{{ brk.segment_time_min or 0 }}"
-                                   data-break-stop-id="{{ brk.custom_stop_id or brk.id }}"
-                                   onchange="trackBreakTimeChange(this)"
+                            <span class="break-name">{{ stop.stop_name }}</span>
+                            <input type="number" class="break-time-edit stop-duration"
+                                   value="{{ stop.stop_duration_min }}"
+                                   data-stop-id="{{ stop.custom_stop_id or stop.id }}"
+                                   data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
+                                   onchange="trackStopDurationChange(this)"
                                    title="Break duration (minutes)">
                             <span style="font-size:0.65rem;">min</span>
-                            {% if brk.is_custom_stop %}
-                            <button class="break-delete-btn" onclick="deleteBreakStop(this, {{ brk.custom_stop_id }}, true)" title="Remove break">✕</button>
-                            {% elif brk.stop_type == 'rest' %}
-                            <button class="break-delete-btn" onclick="deleteBreakStop(this, {{ brk.id }}, false)" title="Remove break">✕</button>
-                            {% endif %}
+                            <button class="break-delete-btn" onclick="deleteBreakInfo(this, '{{ stop.custom_stop_id or stop.id }}')" title="Remove break">✕</button>
                         </div>
-                        {% endfor %}
-                        {% endif %}
-                        {% if stop.stop_type != 'start' and stop.stop_type != 'finish' and not stop.get('_next_breaks') %}
+                        {% else %}
                         <button class="add-break-btn" onclick="showAddBreakForm(this)" title="Add a break at this stop">+ break</button>
                         {% endif %}
                     </div>
@@ -938,6 +952,8 @@ let hasUnsavedChanges = isCreateMode; // Mark dirty if creating new plan
 let pendingChanges = {
     settings: {},
     stopTimes: {},
+    stopDurations: {},
+    stopNames: {},
     stopDistances: {},
     stopElevations: {},
     addedStops: [],
@@ -1084,7 +1100,7 @@ function deleteBreakStop(button, stopId, isCustomStop) {
     if (chipRow && chipRow.querySelectorAll('.break-chip').length === 0) {
         let addBtn = chipRow.querySelector('.add-break-btn');
         if (addBtn) {
-            addBtn.style.display = '';
+            addBtn.style.display = 'inline-flex'; // Show button
         } else {
             // Re-create button for stops that had server-rendered breaks
             const stopRow = chipRow.closest('.stop-row');
@@ -1107,6 +1123,44 @@ function deleteBreakStop(button, stopId, isCustomStop) {
     });
 
     // Recalculate everything
+    recalculateTimes();
+    markDirty();
+}
+
+function deleteBreakInfo(button, stopId) {
+    // Clear stop_name and stop_duration_min for this stop
+    const chip = button.closest('.break-chip');
+    const chipRow = chip ? chip.closest('.break-chips-row') : null;
+    
+    console.log('deleteBreakInfo called:', {stopId, isCreateMode});
+    
+    // Track the change - use -1 as sentinel value for "explicitly removed"
+    if (!isCreateMode) {
+        pendingChanges.stopDurations[stopId] = -1;  // -1 means "explicitly removed"
+        pendingChanges.stopNames[stopId] = null;    // NULL means clear the name
+        console.log('Updated pendingChanges:', {
+            stopNames: pendingChanges.stopNames,
+            stopDurations: pendingChanges.stopDurations
+        });
+    }
+    
+    // Remove the chip and show the "+ break" button
+    if (chip) chip.remove();
+    
+    if (chipRow) {
+        let addBtn = chipRow.querySelector('.add-break-btn');
+        if (!addBtn) {
+            addBtn = document.createElement('button');
+            addBtn.className = 'add-break-btn';
+            addBtn.onclick = function() { showAddBreakForm(this); };
+            addBtn.title = 'Add a break at this stop';
+            addBtn.textContent = '+ break';
+            chipRow.appendChild(addBtn);
+        } else {
+            addBtn.style.display = 'inline-flex';
+        }
+    }
+    
     recalculateTimes();
     markDirty();
 }
@@ -1141,105 +1195,42 @@ function addBreakStop() {
 
     const parentRow = document.querySelector(`.stop-row[data-stop-id="${parentStopId}"]`);
     if (!parentRow) { alert('Could not find the parent stop'); return; }
-
-    const parentDistance = parseFloat(parentRow.dataset.distance || 0);
-    const tempStopId = nextTempStopId--;
-
-    // 1. Track in pending changes
-    pendingChanges.addedStops.push({
-        tempId: tempStopId,
-        location: breakName,
-        distance_miles: parentDistance,
-        elevation_gain: 0,
-        segment_time_min: duration,
-        stop_type: 'rest',
-        notes: notes
-    });
-
-    // 2. Create hidden break row (needed for recalculateTimes)
-    const hiddenRow = document.createElement('div');
-    hiddenRow.className = 'stop-row break-hidden-row custom-added';
-    hiddenRow.dataset.stopId = tempStopId;
-    hiddenRow.dataset.distance = parentDistance;
-    hiddenRow.dataset.elevation = 0;
-    hiddenRow.dataset.stopType = 'rest';
-    hiddenRow.dataset.isNewStop = 'true';
-    hiddenRow.innerHTML = `
-        <div class="stop-header">
-            <div class="stop-icon rest">☕</div>
-            <div class="stop-location">${breakName}</div>
-        </div>
-        <div class="stop-metrics" style="margin-left:34px;">
-            <div class="metric-box"><div class="metric-label">Cumul Dist</div>
-                <div><input type="number" class="inline-edit" step="0.1" value="${parentDistance.toFixed(1)}" data-stop-id="${tempStopId}"><span class="diff-indicator diff-distance"></span></div>
-            </div>
-            <div class="metric-box"><div class="metric-label">Seg Miles</div>
-                <div><input type="number" class="inline-edit seg-miles" step="0.1" value="0.0" data-stop-id="${tempStopId}"><span class="diff-indicator diff-seg-miles"></span></div>
-            </div>
-            <div class="metric-box"><div class="metric-label">Seg Time</div>
-                <div><input type="number" class="inline-edit" value="${duration}" data-stop-id="${tempStopId}" onchange="trackTimeChange(this)"><span class="diff-indicator diff-time"></span></div>
-            </div>
-            <div class="metric-box"><div class="metric-label">Avg Speed</div>
-                <div><input type="number" class="inline-edit avg-speed" step="0.1" value="" data-stop-id="${tempStopId}"><span class="diff-indicator diff-avg-speed"></span></div>
-            </div>
-            <div class="metric-box"><div class="metric-label">Elev (ft)</div>
-                <input type="number" class="inline-edit elevation" value="0" data-stop-id="${tempStopId}">
-            </div>
-            <div class="metric-box"><div class="metric-label">Ft/Mi</div>
-                <input type="number" class="inline-edit ft-per-mi" value="" data-stop-id="${tempStopId}">
-            </div>
-            <div class="metric-box"><div class="metric-label">Cumul Time</div>
-                <div><div class="metric-value cumulative-time" style="font-weight:700;color:var(--primary);">0:00</div><span class="diff-indicator diff-cum-time"></span></div>
-            </div>
-            <div class="metric-box"><div class="metric-label">Time Bank</div>
-                <div><div class="metric-value time-bank" style="font-weight:700;">—</div><span class="diff-indicator diff-time-bank"></span></div>
-            </div>
-            <div class="metric-box"><div class="metric-label">Difficulty</div>
-                <div class="metric-value difficulty-score" style="font-weight:600;">—</div>
-            </div>
-        </div>
-    `;
-
-    // Insert hidden row after the parent (and after any existing break-hidden-rows)
-    let insertAfter = parentRow;
-    let nextSibling = parentRow.nextElementSibling;
-    while (nextSibling && nextSibling.classList.contains('break-hidden-row')) {
-        insertAfter = nextSibling;
-        nextSibling = nextSibling.nextElementSibling;
+    
+    console.log('addBreakStop called:', {parentStopId, breakName, duration, isCreateMode});
+    
+    // Track the changes - set stop_name and stop_duration_min for this stop
+    if (!isCreateMode) {
+        pendingChanges.stopNames[parentStopId] = breakName;
+        pendingChanges.stopDurations[parentStopId] = duration;
+        console.log('Updated pendingChanges:', {
+            stopNames: pendingChanges.stopNames,
+            stopDurations: pendingChanges.stopDurations
+        });
     }
-    insertAfter.after(hiddenRow);
-
-    // 3. Create visible break chip on the parent card
-    const chipsRow = parentRow.querySelector('.break-chips-row');
-    if (chipsRow) {
-        const addBtn = chipsRow.querySelector('.add-break-btn');
-        const chip = document.createElement('div');
-        chip.className = 'break-chip';
-        chip.dataset.breakStopId = tempStopId;
-        chip.title = breakName + (notes ? ' — ' + notes : '');
-        chip.innerHTML = `
-            <span class="break-icon">☕</span>
-            <span class="break-name">${breakName.substring(0, 25)}</span>
-            <input type="number" class="break-time-edit"
-                   value="${duration}"
-                   data-break-stop-id="${tempStopId}"
-                   onchange="trackBreakTimeChange(this)"
-                   title="Break duration (minutes)">
-            <span style="font-size:0.65rem;">min</span>
-            <button class="break-delete-btn" onclick="deleteBreakStop(this, ${tempStopId}, true)" title="Remove break">✕</button>
+    
+    // Update the UI - replace "+ break" button with break chip
+    const chipRow = parentRow.querySelector('.break-chips-row');
+    if (chipRow) {
+        chipRow.innerHTML = `
+            <div class="break-chip" title="${breakName}${notes ? ' — ' + notes : ''}">
+                <span class="break-icon">☕</span>
+                <span class="break-name">${breakName}</span>
+                <input type="number" class="break-time-edit stop-duration"
+                       value="${duration}"
+                       data-stop-id="${parentStopId}"
+                       onchange="trackStopDurationChange(this)"
+                       title="Break duration (minutes)">
+                <span style="font-size:0.65rem;">min</span>
+                <button class="break-delete-btn" onclick="deleteBreakInfo(this, '${parentStopId}')" title="Remove break">✕</button>
+            </div>
         `;
-        if (addBtn) {
-            chipsRow.insertBefore(chip, addBtn);
-            // Hide + break button after adding a break
-            addBtn.style.display = 'none';
-        } else {
-            chipsRow.appendChild(chip);
-        }
     }
-
-    // 4. Recalculate and close
-    recalculateTimes();
+    
+    // Close modal
     hideAddBreakForm();
+    
+    // Recalculate everything
+    recalculateTimes();
     markDirty();
 }
 
@@ -1323,6 +1314,24 @@ function trackAvgSpeedChange(input) {
         }
     }
 }
+
+function trackStopDurationChange(input) {
+    const stopId = input.dataset.stopId;
+    const duration = parseInt(input.value) || 0;
+    
+    console.log('trackStopDurationChange called:', {stopId, duration, isCreateMode});
+    
+    // Track the change
+    if (!isCreateMode) {
+        pendingChanges.stopDurations[stopId] = duration;
+        console.log('Updated pendingChanges.stopDurations:', pendingChanges.stopDurations);
+    }
+    
+    // Recalculate cumulative times
+    recalculateTimes();
+    markDirty();
+}
+
 
 function trackElevationChange(input) {
     const stopRow = input.closest('.stop-row');
@@ -1756,23 +1765,23 @@ function addCustomStop() {
         <div class="stop-header">
             <div class="stop-icon ${stopType}">${stopIcon}</div>
             <div class="stop-location">${location}</div>
-            <div class="stop-actions">
-                <button class="btn-icon" onclick="showAddStopForm(getStopIndex(this), ${distance})" title="Add a custom stop after this one">➕</button>
-                <button class="btn-icon btn-delete" onclick="removeNewStop(this, ${tempStopId})" title="Remove this stop">🗑️</button>
+            <div class="stop-actions" style="display:none;">
+                <button class="btn-icon" onclick="showAddStopForm(getStopIndex(this), ${distance})" title="Add a custom stop after this one" style="display:none;">➕</button>
+                <button class="btn-icon btn-delete" onclick="removeNewStop(this, ${tempStopId})" title="Remove this stop" style="display:none;">🗑️</button>
             </div>
         </div>
         <div class="stop-metrics" style="margin-left:34px;">
             <div class="metric-box">
                 <div class="metric-label">Cumul Dist</div>
                 <div style="display:flex;flex-direction:column;gap:2px;">
-                    <input type="number" class="inline-edit" step="0.1" value="${distance.toFixed(1)}" data-stop-id="${tempStopId}" onchange="trackDistanceChange(this)">
+                    <input type="number" class="inline-edit" step="0.1" value="${distance.toFixed(1)}" data-stop-id="${tempStopId}" onchange="trackDistanceChange(this)" readonly style="background:#f8fafc;cursor:not-allowed;">
                     <span class="diff-indicator diff-distance"></span>
                 </div>
             </div>
             <div class="metric-box">
                 <div class="metric-label">Seg Miles</div>
                 <div style="display:flex;flex-direction:column;gap:2px;">
-                    <input type="number" class="inline-edit seg-miles" step="0.1" value="0.0" data-stop-id="${tempStopId}" onchange="trackSegMilesChange(this)">
+                    <input type="number" class="inline-edit seg-miles" step="0.1" value="0.0" data-stop-id="${tempStopId}" onchange="trackSegMilesChange(this)" readonly style="background:#f8fafc;cursor:not-allowed;">
                     <span class="diff-indicator diff-seg-miles"></span>
                 </div>
             </div>
@@ -1792,11 +1801,11 @@ function addCustomStop() {
             </div>
             <div class="metric-box">
                 <div class="metric-label">Elev (ft)</div>
-                <input type="number" class="inline-edit elevation" value="${elevation}" data-stop-id="${tempStopId}" onchange="trackElevationChange(this)">
+                <input type="number" class="inline-edit elevation" value="${elevation}" data-stop-id="${tempStopId}" onchange="trackElevationChange(this)" readonly style="background:#f8fafc;cursor:not-allowed;">
             </div>
             <div class="metric-box">
                 <div class="metric-label">Ft/Mi</div>
-                <input type="number" class="inline-edit ft-per-mi" value="" data-stop-id="${tempStopId}" onchange="trackFtPerMiChange(this)">
+                <input type="number" class="inline-edit ft-per-mi" value="" data-stop-id="${tempStopId}" onchange="trackFtPerMiChange(this)" readonly style="background:#f8fafc;cursor:not-allowed;">
             </div>
             <div class="metric-box">
                 <div class="metric-label">Cumul Time</div>
@@ -2087,17 +2096,21 @@ function recalculateTimes() {
     
     allStops.forEach(stop => {
         // Get all inline-edit inputs in order:
-        // 0: distance, 1: seg miles, 2: seg time, 3: avg speed, 4: elevation, 5: ft/mi
+        // 0: distance, 1: seg miles, 2: seg time, 3: avg speed, 4: stop duration, 5: elevation, 6: ft/mi
         const allInputs = stop.querySelectorAll('.inline-edit');
         const distanceInput = allInputs[0];
         const segMilesInput = allInputs[1];
         const timeInput = allInputs[2];
         const avgSpeedInput = allInputs[3];
-        const elevationInput = allInputs[4];
-        const ftPerMiInput = allInputs[5];
+        const stopDurationInput = allInputs[4];
+        const elevationInput = allInputs[5];
+        const ftPerMiInput = allInputs[6];
         
         const distance = parseFloat(distanceInput?.value || 0);
         const segmentTime = parseInt(timeInput?.value || 0);
+        const rawStopDuration = parseInt(stopDurationInput?.value || 0);
+        // Treat -1 (sentinel for removed) as 0 in calculations
+        const stopDuration = rawStopDuration === -1 ? 0 : rawStopDuration;
         const segMiles = distance - prevDistance;
         
         // Get elevation from input (not data attribute)
@@ -2108,7 +2121,7 @@ function recalculateTimes() {
             segMilesInput.value = segMiles.toFixed(1);
         }
         
-        // Calculate and update avg speed (only for moving segments)
+        // Calculate and update avg speed (only for moving segments, based on segment time not including stop duration)
         if (avgSpeedInput && segMiles > 0 && segmentTime > 0) {
             const avgSpeed = segMiles / (segmentTime / 60.0);
             avgSpeedInput.value = avgSpeed.toFixed(1);
@@ -2124,8 +2137,9 @@ function recalculateTimes() {
             ftPerMiInput.value = '';
         }
         
-        // Add this segment's time to cumulative
+        // Add this segment's time and stop duration to cumulative
         cumulativeTime += segmentTime;
+        cumulativeTime += stopDuration;
         
         // Update cumulative time display
         const cumulativeDisplay = stop.querySelector('.cumulative-time');
@@ -2135,13 +2149,14 @@ function recalculateTimes() {
             cumulativeDisplay.textContent = `${hours}:${mins.toString().padStart(2, '0')}`;
         }
         
-        // Calculate time bank
+        // Calculate time bank (based on arrival time, not including stop duration)
         let timeBank = null;
         const timeBankDisplay = stop.querySelector('.time-bank');
         if (timeBankDisplay && cutoffHours > 0 && totalDistance > 0 && distance > 0) {
             const fraction = distance / totalDistance;
             const bookendTime = Math.round(fraction * cutoffHours * 60);
-            timeBank = bookendTime - cumulativeTime;
+            const arrivalTime = cumulativeTime - stopDuration; // Time bank calculated on arrival, before resting
+            timeBank = bookendTime - arrivalTime;
             const absBank = Math.abs(timeBank);
             const hours = Math.floor(absBank / 60);
             const mins = absBank % 60;
@@ -2170,6 +2185,7 @@ function recalculateTimes() {
         
         // Track summary metrics
         totalElapsedTime += segmentTime;
+        totalElapsedTime += stopDuration;
         totalElevation += elevGain;
         if (segMiles > 0) {
             // This is a moving segment (not a zero-distance stop)
@@ -2281,6 +2297,8 @@ function updateDiffIndicators(stop, distance, segMiles, segTime, avgSpeed, eleva
 
 async function saveAllChanges() {
     if (!hasUnsavedChanges) return;
+    
+    console.log('saveAllChanges called. pendingChanges:', JSON.stringify(pendingChanges, null, 2));
     
     updateSaveButtons('disabled', '⏳', 'Saving...');
     
@@ -2441,6 +2459,48 @@ async function saveAllChanges() {
                         body: JSON.stringify({elevation_gain: elevation})
                     })
                 );
+            });
+        }
+        
+        // Save stop durations and names (combined to avoid duplicate API calls)
+        if (!isCreateMode) {
+            const allStopUpdates = new Set([
+                ...Object.keys(pendingChanges.stopDurations || {}),
+                ...Object.keys(pendingChanges.stopNames || {})
+            ]);
+            
+            allStopUpdates.forEach(stopId => {
+                const payload = {};
+                
+                if (pendingChanges.stopDurations && stopId in pendingChanges.stopDurations) {
+                    payload.stop_duration_min = pendingChanges.stopDurations[stopId];
+                }
+                
+                if (pendingChanges.stopNames && stopId in pendingChanges.stopNames) {
+                    payload.stop_name = pendingChanges.stopNames[stopId];
+                }
+                
+                if (Object.keys(payload).length > 0) {
+                    console.log(`Saving stop break info for stopId=${stopId}:`, payload);
+                    promises.push(
+                        fetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
+                            method: 'PUT',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(payload)
+                        })
+                        .then(r => {
+                            console.log(`API response status for stopId=${stopId}:`, r.status);
+                            return r.json();
+                        })
+                        .then(d => {
+                            console.log(`Break save response for stopId=${stopId}:`, d);
+                            if (!d.success) {
+                                console.error(`Failed to save stopId=${stopId}:`, d);
+                            }
+                        })
+                        .catch(err => console.error(`Error saving stopId=${stopId}:`, err))
+                    );
+                }
             });
         }
         

@@ -62,8 +62,45 @@ def get_merged_plan_stops(custom_plan_id):
         
         # Apply customizations
         if override:
+            # Apply overrides with sentinel value handling:
+            # - stop_duration_min: -1 = explicitly removed, NULL/0 = inherit from base, >0 = use custom value
+            # - stop_name: coupled with stop_duration_min
+            #   * If custom duration is NULL/0: inherit both duration and name from base
+            #   * If custom duration is -1: clear both (explicitly removed)
+            #   * If custom duration > 0: use custom duration, and use custom name if present (not null)
+            
             if override.get('segment_time_min') is not None:
                 stop['segment_time_min'] = override['segment_time_min']
+                stop['is_modified'] = True
+            
+            # Handle stop_duration_min and stop_name together
+            if 'stop_duration_min' in override:
+                override_duration = override.get('stop_duration_min')
+                
+                if override_duration == -1:
+                    # Explicitly removed - clear both duration and name
+                    stop['stop_duration_min'] = 0
+                    stop['stop_name'] = None
+                    stop['is_modified'] = True
+                    
+                elif override_duration is not None and override_duration > 0:
+                    # Custom duration > 0: use custom duration
+                    stop['stop_duration_min'] = override_duration
+                    
+                    # For stop_name: use custom if present (not null), otherwise keep base
+                    if 'stop_name' in override and override.get('stop_name') is not None:
+                        stop['stop_name'] = override['stop_name']
+                    # else: keep base stop_name (already in stop from dict(base_stop))
+                    
+                    base_duration = base_stop.get('stop_duration_min') or 0
+                    if stop['stop_duration_min'] != base_duration:
+                        stop['is_modified'] = True
+                        
+                # else: duration is NULL or 0 in override - inherit BOTH duration and name from base
+                # (already set via stop = dict(base_stop), so no action needed)
+            
+            if override.get('location'):
+                stop['location'] = override['location']
                 stop['is_modified'] = True
             if override.get('notes'):
                 stop['notes'] = override['notes']
@@ -131,6 +168,7 @@ def recalculate_cumulative_values(stops, custom_plan):
         cur_dist = float(stop.get('distance_miles') or 0)
         elev_gain = int(stop.get('elevation_gain') or 0)
         seg_time = int(stop.get('segment_time_min') or 0)
+        stop_duration = int(stop.get('stop_duration_min') or 0)
         
         # Calculate segment distance
         seg_dist = round(cur_dist - prev_dist, 1)
@@ -142,23 +180,28 @@ def recalculate_cumulative_values(stops, custom_plan):
         else:
             stop['ft_per_mi'] = None
         
-        # Calculate average speed for this segment
+        # Calculate average speed for this segment (based on segment time only, not including stop duration)
         if seg_time and seg_time > 0 and seg_dist > 0:
             stop['avg_speed'] = round(seg_dist / (seg_time / 60.0), 1)
         else:
             stop['avg_speed'] = None
         
-        # Cumulative time
+        # Cumulative time includes both segment time (riding) and stop duration (rest)
         if seg_time:
             cum_time_min += seg_time
+        if stop_duration:
+            cum_time_min += stop_duration
         stop['cum_time_min'] = cum_time_min
         
-        # Time bank calculation (bookend time - cumulative time)
+        # Arrival time: cumulative time minus stop duration (time you arrive, before resting)
+        stop['arrival_time_min'] = cum_time_min - stop_duration
+        
+        # Time bank calculation (bookend time - arrival time, not including stop duration)
         if cutoff_hours and total_distance > 0 and cur_dist > 0:
             fraction = cur_dist / total_distance
             bookend_time_min = round(fraction * cutoff_hours * 60)
             stop['bookend_time_min'] = bookend_time_min
-            stop['time_bank_min'] = bookend_time_min - cum_time_min
+            stop['time_bank_min'] = bookend_time_min - stop['arrival_time_min']
         else:
             stop['bookend_time_min'] = None
             stop['time_bank_min'] = None

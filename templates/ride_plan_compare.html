@@ -458,6 +458,9 @@
                         {% if base_stop.avg_speed %}
                         <div style="font-size:0.75rem;color:#94a3b8;margin-top:2px;">{{ base_stop.avg_speed }} mph</div>
                         {% endif %}
+                        {% if base_stop.stop_name and base_stop.stop_duration_min and base_stop.stop_duration_min > 0 and base_stop.stop_duration_min != -1 %}
+                        <div style="font-size:0.75rem;color:#92400e;background:#fef3c7;border:1px solid #fbbf24;border-radius:3px;padding:2px 4px;margin-top:4px;display:inline-block;">☕ {{ base_stop.stop_duration_min }}m</div>
+                        {% endif %}
                         {% else %}
                         -
                         {% endif %}
@@ -471,6 +474,9 @@
                         <div style="font-weight:600;">{{ custom_stop.segment_time_min }} min</div>
                         {% if custom_stop.avg_speed %}
                         <div style="font-size:0.75rem;color:#64748b;margin-top:2px;">{{ custom_stop.avg_speed }} mph</div>
+                        {% endif %}
+                        {% if custom_stop.stop_name and custom_stop.stop_duration_min and custom_stop.stop_duration_min > 0 and custom_stop.stop_duration_min != -1 %}
+                        <div style="font-size:0.75rem;color:#92400e;background:#fef3c7;border:1px solid #fbbf24;border-radius:3px;padding:2px 4px;margin-top:4px;display:inline-block;">☕ {{ custom_stop.stop_duration_min }}m</div>
                         {% endif %}
                         {% else %}
                         -

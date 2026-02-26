@@ -307,8 +307,9 @@ def _build_journey_nodes(stops):
             if s.get('arrival_time_min') is not None:
                 existing['arrival_time_min'] = s['arrival_time_min']
         else:
-            label = s['location'][:22]
-            if s['stop_type'] == 'rest':
+            # Use stop_name if available, otherwise fallback to location
+            label = s.get('stop_name') or s['location'][:22]
+            if s['stop_type'] == 'rest' and not s.get('stop_name'):
                 label = "Rest @ {}".format(s['location'][:18])
             nodes.append({
                 'label': label,
@@ -319,15 +320,17 @@ def _build_journey_nodes(stops):
                 'difficulty_label': s.get('difficulty_label', 'flat'),
                 'difficulty_color': s.get('difficulty_color', '#94a3b8'),
                 'cum_time_min': s.get('cum_time_min', 0),
+                'stop_name': s.get('stop_name'),
+                'stop_duration_min': s.get('stop_duration_min', 0),
             })
     return nodes
 
 
 def _attach_break_metadata(stops):
-    """Attach break merging metadata for the timeline layout.
+    """Attach break metadata for the timeline layout.
 
-    For each non-break stop, collects subsequent zero-distance rest stops
-    into '_next_breaks' and sums their time into '_break_time_min'.
+    Now that rest stops are integrated into stops via stop_name and stop_duration_min,
+    this function simply marks stops as having break info if they have stop_name/duration.
     Returns (stops, use_timeline) — use_timeline is False if stop types
     are missing/ambiguous, signaling templates to use the original flat view.
     """
@@ -341,34 +344,10 @@ def _attach_break_metadata(stops):
     if stops and stops[0].get('stop_type') != 'start':
         return stops, False
 
-    # Mark merged breaks and collect them onto their parent segment
-    merged_indices = set()
-    for i, stop in enumerate(stops):
-        is_zero_dist_rest = (
-            stop.get('stop_type') == 'rest'
-            and not (stop.get('seg_dist') or 0) > 0
-        )
-        if is_zero_dist_rest:
-            stop['_is_merged_break'] = True
-            continue
-
+    # Mark stops with break info (stop_name and stop_duration_min)
+    for stop in stops:
         stop['_is_merged_break'] = False
-        next_breaks = []
-        j = i + 1
-        while j < len(stops):
-            candidate = stops[j]
-            if (candidate.get('stop_type') == 'rest'
-                    and not (candidate.get('seg_dist') or 0) > 0):
-                next_breaks.append(candidate)
-                merged_indices.add(j)
-                j += 1
-            else:
-                break
-
-        stop['_next_breaks'] = next_breaks
-        stop['_break_time_min'] = sum(
-            b.get('segment_time_min') or 0 for b in next_breaks
-        )
+        stop['_has_break'] = bool(stop.get('stop_name') and stop.get('stop_duration_min'))
 
     return stops, True
 
@@ -890,6 +869,7 @@ def ride_plan_detail(slug):
         d['distance_miles'] = float(d['distance_miles']) if d.get('distance_miles') is not None else None
         d['elevation_gain'] = int(d['elevation_gain']) if d.get('elevation_gain') is not None else None
         d['segment_time_min'] = int(d['segment_time_min']) if d.get('segment_time_min') is not None else None
+        d['stop_duration_min'] = int(d['stop_duration_min']) if d.get('stop_duration_min') is not None else 0
 
         cur_dist = d['distance_miles'] or 0.0
         seg_dist = round(cur_dist - prev_dist, 1)
@@ -898,25 +878,23 @@ def ride_plan_detail(slug):
         # Ft/mile for this segment
         d['ft_per_mi'] = int(round(d['elevation_gain'] / seg_dist)) if d.get('elevation_gain') and seg_dist > 0 else None
 
-        # Average speed for this segment
+        # Average speed for this segment (based on segment time only, not including stop duration)
         d['avg_speed'] = round(seg_dist / (d['segment_time_min'] / 60.0), 1) if d.get('segment_time_min') and d['segment_time_min'] > 0 and seg_dist > 0 else None
 
-        # Cumulative time
+        # Cumulative time includes both segment time (riding) and stop duration (rest)
         if d['segment_time_min']:
             cum_time_min += d['segment_time_min']
-            # Moving vs break: seg_dist > 0 = riding, seg_dist == 0 = break
-            if seg_dist > 0:
-                total_moving_time += d['segment_time_min']
-            else:
-                total_break_time += d['segment_time_min']
+            total_moving_time += d['segment_time_min']
+        
+        # Add stop duration to cumulative time
+        if d['stop_duration_min']:
+            cum_time_min += d['stop_duration_min']
+            total_break_time += d['stop_duration_min']
+        
         d['cum_time_min'] = cum_time_min
         
-        # Arrival time: cumulative time minus stop time (for zero-distance stops)
-        stop_time = d['segment_time_min'] if (seg_dist == 0 and d['segment_time_min']) else 0
-        d['arrival_time_min'] = cum_time_min - stop_time
-        
-        # Stop duration for display (only for zero-distance stops)
-        d['stop_duration_min'] = d['segment_time_min'] if (seg_dist == 0 and d['segment_time_min']) else None
+        # Arrival time: cumulative time minus stop duration (time you arrive, before resting)
+        d['arrival_time_min'] = cum_time_min - (d['stop_duration_min'] or 0)
 
         # Bookend time: max allowed time to reach this point (arrival, not departure)
         if cutoff_hours and plan['total_distance_miles'] > 0 and d['distance_miles']:
@@ -1045,6 +1023,7 @@ def ride_plan_detail(slug):
                            user_signup_status=user_signup_status,
                            user_custom_plan=user_custom_plan,
                            public_custom_plans=public_custom_plans,
+                           is_custom_view=False,
                            is_admin=is_admin_user())
 
 
@@ -1134,6 +1113,7 @@ def custom_ride_plan_view(slug):
         d['distance_miles'] = float(d['distance_miles']) if d.get('distance_miles') is not None else None
         d['elevation_gain'] = int(d['elevation_gain']) if d.get('elevation_gain') is not None else None
         d['segment_time_min'] = int(d['segment_time_min']) if d.get('segment_time_min') is not None else None
+        d['stop_duration_min'] = int(d['stop_duration_min']) if d.get('stop_duration_min') is not None else 0
         
         cur_dist = d['distance_miles'] or 0.0
         seg_dist = round(cur_dist - prev_dist, 1)
@@ -1142,24 +1122,23 @@ def custom_ride_plan_view(slug):
         # Ft/mile for this segment
         d['ft_per_mi'] = int(round(d['elevation_gain'] / seg_dist)) if d.get('elevation_gain') and seg_dist > 0 else None
         
-        # Average speed for this segment
+        # Average speed for this segment (based on segment time only, not including stop duration)
         d['avg_speed'] = round(seg_dist / (d['segment_time_min'] / 60.0), 1) if d.get('segment_time_min') and d['segment_time_min'] > 0 and seg_dist > 0 else None
         
-        # Cumulative time
+        # Cumulative time includes both segment time (riding) and stop duration (rest)
         if d['segment_time_min']:
             cum_time_min += d['segment_time_min']
-            if seg_dist > 0:
-                total_moving_time += d['segment_time_min']
-            else:
-                total_break_time += d['segment_time_min']
+            total_moving_time += d['segment_time_min']
+        
+        # Add stop duration to cumulative time
+        if d['stop_duration_min']:
+            cum_time_min += d['stop_duration_min']
+            total_break_time += d['stop_duration_min']
+        
         d['cum_time_min'] = cum_time_min
         
-        # Arrival time: cumulative time minus stop time (for zero-distance stops)
-        stop_time = d['segment_time_min'] if (seg_dist == 0 and d['segment_time_min']) else 0
-        d['arrival_time_min'] = cum_time_min - stop_time
-        
-        # Stop duration for display (only for zero-distance stops)
-        d['stop_duration_min'] = d['segment_time_min'] if (seg_dist == 0 and d['segment_time_min']) else None
+        # Arrival time: cumulative time minus stop duration (time you arrive, before resting)
+        d['arrival_time_min'] = cum_time_min - (d['stop_duration_min'] or 0)
         
         # Bookend time: max allowed time to reach this point (arrival, not departure)
         if cutoff_hours and plan['total_distance_miles'] > 0 and d['distance_miles']:
@@ -1398,6 +1377,23 @@ def custom_ride_plan_editor(slug):
                     if override.get('notes'):
                         stop['notes'] = override['notes']
                         stop['is_modified'] = True
+                    
+                    # Handle stop_duration_min and stop_name with inheritance logic
+                    override_duration = override.get('stop_duration_min')
+                    if override_duration == -1:
+                        # Explicitly removed - clear both
+                        stop['stop_duration_min'] = 0
+                        stop['stop_name'] = None
+                        stop['is_modified'] = True
+                    elif override_duration is not None and override_duration > 0:
+                        # Custom duration > 0: use custom duration
+                        stop['stop_duration_min'] = int(override_duration)
+                        # Use custom name if present (not null), otherwise keep base
+                        if override.get('stop_name') is not None:
+                            stop['stop_name'] = override['stop_name']
+                        stop['is_modified'] = True
+                    # else: duration is NULL or 0 - inherit both from base (already in stop)
+                    
                     stop['custom_stop_id'] = override['id']
                 
                 # Convert types
@@ -1644,13 +1640,32 @@ def api_update_custom_stop(custom_plan_id, stop_id):
         return jsonify({'success': False, 'error': 'Unauthorized'}), 403
     
     data = request.json
-    segment_time_min = data.get('segment_time_min')
-    distance_miles = data.get('distance_miles')
-    elevation_gain = data.get('elevation_gain')
-    notes = data.get('notes')
+    
+    # Handle explicit None/null values vs. missing keys
+    segment_time_min = data.get('segment_time_min') if 'segment_time_min' in data else None
+    stop_duration_min = data.get('stop_duration_min') if 'stop_duration_min' in data else None
+    stop_name = data.get('stop_name') if 'stop_name' in data else None
+    location = data.get('location') if 'location' in data else None
+    distance_miles = data.get('distance_miles') if 'distance_miles' in data else None
+    elevation_gain = data.get('elevation_gain') if 'elevation_gain' in data else None
+    notes = data.get('notes') if 'notes' in data else None
+    
+    print(f"[DEBUG] api_update_custom_stop: custom_plan_id={custom_plan_id}, stop_id={stop_id}")
+    print(f"[DEBUG] Request data: {data}")
+    print(f"[DEBUG] Explicit fields: {set(data.keys())}")
     
     try:
-        success = update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min, notes, distance_miles, elevation_gain)
+        success = update_custom_plan_stop(
+            custom_plan_id, stop_id, 
+            segment_time_min=segment_time_min,
+            stop_duration_min=stop_duration_min,
+            stop_name=stop_name,
+            location=location,
+            notes=notes,
+            distance_miles=distance_miles,
+            elevation_gain=elevation_gain,
+            explicit_fields=set(data.keys())
+        )
         return jsonify({'success': success})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

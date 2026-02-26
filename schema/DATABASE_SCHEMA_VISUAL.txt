@@ -142,8 +142,8 @@
                                   │              │    cum_time_min         │
                                   │              │    bookend_time_min     │
                                   │              │    time_bank_min        │
-                                 │              │    difficulty_score     │
-                                 │              └─────────────────────────┘
+                                 │               │    difficulty_score     │
+                                 │               └─────────────────────────┘
                                  │
                                  │                       │
                                  │                       ▼
