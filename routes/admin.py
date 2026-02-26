@@ -1,9 +1,13 @@
-"""Admin routes: login, dashboard, ride entry, status marking."""
+"""Admin routes: login, dashboard, ride entry, status marking, RWGPS plan generation."""
+import json
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, abort
 from models import (get_current_season, get_rides_for_season, get_riders_for_season,
                     get_ride_by_id, get_participation_matrix, get_clubs,
-                    create_ride, update_rider_ride_status, get_all_riders)
+                    create_ride, update_rider_ride_status, get_all_riders,
+                    get_ride_plan_by_rwgps_route_id, create_ride_plan_from_rwgps)
 from auth import login_required, verify_password
+from services.rwgps import (extract_rwgps_route_id, fetch_route, extract_controls,
+                            build_ride_plan, slugify)
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -99,3 +103,76 @@ def mark_status(ride_id):
                            ride=ride,
                            riders=riders,
                            ride_statuses=ride_statuses)
+
+
+# ── RWGPS Plan Generation ────────────────────────────────────────────
+
+@admin_bp.route('/generate-plan', methods=['GET'])
+@login_required
+def generate_plan_form():
+    return render_template('admin/generate_plan.html')
+
+
+@admin_bp.route('/generate-plan/preview', methods=['POST'])
+@login_required
+def generate_plan_preview():
+    rwgps_url = request.form.get('rwgps_url', '').strip()
+    if not rwgps_url:
+        flash('Please enter a RideWithGPS URL.', 'error')
+        return redirect(url_for('admin.generate_plan_form'))
+
+    route_id = extract_rwgps_route_id(rwgps_url)
+    if not route_id:
+        flash('Could not extract route ID from that URL. Use a URL like https://ridewithgps.com/routes/12345', 'error')
+        return redirect(url_for('admin.generate_plan_form'))
+
+    # Check for existing plan
+    existing = get_ride_plan_by_rwgps_route_id(route_id)
+
+    try:
+        route_data = fetch_route(route_id)
+        controls = extract_controls(route_data)
+        result = build_ride_plan(route_data, controls)
+    except Exception as e:
+        flash(f'Error fetching route: {e}', 'error')
+        return redirect(url_for('admin.generate_plan_form'))
+
+    return render_template('admin/generate_plan_preview.html',
+                           plan=result['plan'],
+                           stops=result['stops'],
+                           existing=existing,
+                           plan_json=json.dumps(result))
+
+
+@admin_bp.route('/generate-plan/save', methods=['POST'])
+@login_required
+def generate_plan_save():
+    plan_json_str = request.form.get('plan_json', '')
+    name_override = request.form.get('plan_name', '').strip()
+
+    if not plan_json_str:
+        flash('No plan data to save.', 'error')
+        return redirect(url_for('admin.generate_plan_form'))
+
+    try:
+        result = json.loads(plan_json_str)
+    except json.JSONDecodeError:
+        flash('Invalid plan data.', 'error')
+        return redirect(url_for('admin.generate_plan_form'))
+
+    plan_data = result['plan']
+    stops_data = result['stops']
+
+    # Apply name override if admin edited it
+    if name_override and name_override != plan_data['name']:
+        plan_data['name'] = name_override
+        plan_data['slug'] = slugify(name_override)
+
+    try:
+        plan_id = create_ride_plan_from_rwgps(plan_data, stops_data)
+        flash(f'Ride plan "{plan_data["name"]}" saved successfully!', 'success')
+    except Exception as e:
+        flash(f'Error saving plan: {e}', 'error')
+        return redirect(url_for('admin.generate_plan_form'))
+
+    return redirect(url_for('riders.ride_plan_detail', slug=plan_data['slug']))

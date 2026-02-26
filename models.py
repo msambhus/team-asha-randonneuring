@@ -844,6 +844,93 @@ def update_base_plan_stop(stop_id, changes):
     
     return cur.rowcount > 0
 
+def get_ride_plan_by_rwgps_route_id(route_id):
+    """Check if a ride plan already exists for a given RWGPS route ID."""
+    return _execute(
+        "SELECT * FROM ride_plan WHERE rwgps_route_id = %s", (route_id,)
+    ).fetchone()
+
+
+def create_ride_plan_from_rwgps(plan_data, stops_data):
+    """Insert or update a ride plan and its stops generated from RWGPS data.
+
+    Uses upsert on slug to handle duplicates. Deletes old stops and re-inserts.
+
+    Args:
+        plan_data: dict with ride_plan column values
+        stops_data: list of dicts with ride_plan_stop column values
+
+    Returns:
+        New/updated ride_plan id
+    """
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Upsert ride_plan
+    cur.execute("""
+        INSERT INTO ride_plan (name, slug, total_distance_miles, total_elevation_ft,
+            rwgps_url, rwgps_route_id, distance_km, cutoff_hours, start_time,
+            avg_moving_speed, avg_elapsed_speed, total_moving_time_min,
+            total_elapsed_time_min, total_break_time_min, overall_ft_per_mile)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (slug) DO UPDATE SET
+            name = EXCLUDED.name,
+            total_distance_miles = EXCLUDED.total_distance_miles,
+            total_elevation_ft = EXCLUDED.total_elevation_ft,
+            rwgps_url = EXCLUDED.rwgps_url,
+            rwgps_route_id = EXCLUDED.rwgps_route_id,
+            distance_km = EXCLUDED.distance_km,
+            cutoff_hours = EXCLUDED.cutoff_hours,
+            avg_moving_speed = EXCLUDED.avg_moving_speed,
+            avg_elapsed_speed = EXCLUDED.avg_elapsed_speed,
+            total_moving_time_min = EXCLUDED.total_moving_time_min,
+            total_elapsed_time_min = EXCLUDED.total_elapsed_time_min,
+            total_break_time_min = EXCLUDED.total_break_time_min,
+            overall_ft_per_mile = EXCLUDED.overall_ft_per_mile
+        RETURNING id
+    """, (
+        plan_data['name'], plan_data['slug'],
+        plan_data.get('total_distance_miles'), plan_data.get('total_elevation_ft'),
+        plan_data.get('rwgps_url'), plan_data.get('rwgps_route_id'),
+        plan_data.get('distance_km'), plan_data.get('cutoff_hours'),
+        plan_data.get('start_time', '07:00'),
+        plan_data.get('avg_moving_speed'), plan_data.get('avg_elapsed_speed'),
+        plan_data.get('total_moving_time_min'), plan_data.get('total_elapsed_time_min'),
+        plan_data.get('total_break_time_min'), plan_data.get('overall_ft_per_mile'),
+    ))
+
+    plan_id = cur.fetchone()['id']
+
+    # Delete old stops and re-insert
+    cur.execute("DELETE FROM ride_plan_stop WHERE ride_plan_id = %s", (plan_id,))
+
+    for stop in stops_data:
+        cur.execute("""
+            INSERT INTO ride_plan_stop (ride_plan_id, stop_order, location, stop_type,
+                distance_miles, elevation_gain, segment_time_min, notes,
+                seg_dist, ft_per_mi, avg_speed, cum_time_min,
+                bookend_time_min, time_bank_min, difficulty_score)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            plan_id, stop['stop_order'], stop['location'], stop['stop_type'],
+            stop.get('distance_miles'), stop.get('elevation_gain'),
+            stop.get('segment_time_min'), stop.get('notes', ''),
+            stop.get('seg_dist'), stop.get('ft_per_mi'),
+            stop.get('avg_speed'), stop.get('cum_time_min'),
+            stop.get('bookend_time_min'), stop.get('time_bank_min'),
+            stop.get('difficulty_score'),
+        ))
+
+    conn.commit()
+
+    # Clear relevant caches
+    cache.delete_memoized(get_all_ride_plans)
+    cache.delete_memoized(get_ride_plan_by_slug, plan_data['slug'])
+    cache.delete_memoized(get_ride_plan_stops, plan_id)
+
+    return plan_id
+
+
 def create_ride(season_id, club_id, name, ride_type, ride_date, distance_km,
                 elevation_ft=None, distance_miles=None, ft_per_mile=None, rwgps_url=None):
     conn = get_db()
