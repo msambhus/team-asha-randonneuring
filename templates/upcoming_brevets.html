@@ -617,13 +617,14 @@
 {% block content %}
 <div class="hero" style="padding:40px 20px;">
 <h1>Upcoming Brevets</h1>
-<p>{{ season_label }} &mdash; RUSA events in the Bay Area</p>
+<p>{{ season_label }} &mdash; Upcoming RUSA-sanctioned brevets in the Bay Area</p>
 </div>
 
 <div class="container section">
 <h2 style="margin-bottom:25px;">Ride Calendar</h2>
 
 <div class="filter-section">
+    <p style="font-size:0.85rem;color:var(--text-light);margin-bottom:15px;">Events from <a href="https://rusa.org/cgi-bin/eventsearch_GF.pl" target="_blank" style="color:var(--accent);font-weight:600;">RUSA</a> (Davis, San Francisco, Santa Cruz)</p>
     <div class="filter-label">Filter by Club</div>
     <div class="filter-buttons">
         <span class="region-filter active" data-region="all" onclick="filterByRegion('all')">
@@ -646,8 +647,6 @@
     </div>
     {% endif %}
 </div>
-
-<p style="font-size:0.85rem;color:var(--text-light);margin-bottom:30px;">Events sourced from <a href="https://rusa.org/cgi-bin/eventsearch_GF.pl" target="_blank" style="color:var(--accent);font-weight:600;">RUSA</a> for Davis, San Francisco &amp; Santa Cruz regions.</p>
 
 <div id="events-container">
 {% for event in rusa_events %}
@@ -815,7 +814,7 @@
 <div id="external-club-modal" class="modal" onclick="closeExternalClubModal(event)">
     <div class="modal-content" onclick="event.stopPropagation()" style="max-width:500px;">
         <div class="modal-header">
-            <h2 class="modal-title">⚠️ External Club Registration Required</h2>
+            <h2 class="modal-title">External Club Registration</h2>
             <button class="modal-close" onclick="closeExternalClubModal()">&times;</button>
         </div>
         <div class="modal-body">
@@ -826,7 +825,7 @@
                 <!-- Club-specific info will be inserted here -->
             </div>
             <p style="font-size:0.9rem;color:var(--text-light);margin-bottom:20px;">
-                You can still sign up on Team Asha to show your interest and connect with other riders.
+                You can sign up on Team Asha to show interest and coordinate with other riders.
             </p>
             <div style="display:flex;gap:12px;">
                 <button onclick="proceedWithSignup()" class="btn btn-primary" style="flex:1;">

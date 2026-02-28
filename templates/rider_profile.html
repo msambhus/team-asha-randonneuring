@@ -176,7 +176,7 @@
         {% if ride.readiness or ride.advice %}
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; padding:8px; background:#f7fafc; border-radius:8px;">
         {% if ride.readiness %}
-            <div style="display:inline-flex; align-items:center; gap:6px;" title="Readiness Score: {{ ride.readiness.score }}/100&#10;&#10;Distance: {{ ride.readiness.distance }}/{{ ride.readiness.distance_max | default(35) }} — longest ride vs target&#10;Elevation: {{ ride.readiness.elevation }}/{{ ride.readiness.elevation_max | default(25) }} — max climb vs target&#10;Volume: {{ ride.readiness.volume }}/{{ ride.readiness.volume_max | default(20) }} — weekly mileage&#10;Fitness: {{ ride.readiness.fitness }}/{{ ride.readiness.fitness_max | default(20) }} — overall Strava fitness">
+            <div style="display:inline-flex; align-items:center; gap:6px;" title="Readiness Score: {{ ride.readiness.score }}/100&#10;&#10;Distance: {{ ride.readiness.distance }}/{{ ride.readiness.distance_max | default(35) }} (longest vs target)&#10;Elevation: {{ ride.readiness.elevation }}/{{ ride.readiness.elevation_max | default(25) }} (max climb vs target)&#10;Volume: {{ ride.readiness.volume }}/{{ ride.readiness.volume_max | default(20) }} (weekly mileage)&#10;Fitness: {{ ride.readiness.fitness }}/{{ ride.readiness.fitness_max | default(20) }} (overall Strava fitness)">
                 <div style="width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:900; color:white; background:{{ ride.readiness.color }}; box-shadow:0 2px 4px rgba(0,0,0,0.15); cursor:help;">
                     {{ ride.readiness.score }}
                 </div>
@@ -197,9 +197,9 @@
                     {% else %}
                     <span class="advice-fallback" style="display:none;"></span>
                     {% endif %}
-                    {# Loading indicator for async AI advice #}
+                    {# Loading indicator for async personalized tips #}
                     <div class="advice-loading" data-loading-ride="{{ ride.id }}" {% if ride.advice %}style="display:none;"{% endif %}>
-                        <span style="font-size:0.7rem; color:#a0aec0;">Generating AI advice</span>
+                        <span style="font-size:0.7rem; color:#a0aec0;">Loading personalized tips</span>
                         <span class="advice-loading-dots"><span></span><span></span><span></span></span>
                     </div>
                 </span>
@@ -241,7 +241,7 @@
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; padding-bottom:12px; border-bottom:2px solid #e2e8f0;">
         <div>
             <h3 style="color:var(--primary); margin:0 0 4px 0; font-size:1.5rem; font-weight:700;">Recent Training</h3>
-            <p style="margin:0; font-size:0.85rem; color:var(--text-light);">Last 28 days of activity</p>
+            <p style="margin:0; font-size:0.85rem; color:var(--text-light);">From Strava (last 28 days)</p>
         </div>
         <img src="{{ url_for('static', filename='img/powered_by_strava.svg') }}" alt="Powered by Strava" style="height:28px; opacity:0.9;">
     </div>
