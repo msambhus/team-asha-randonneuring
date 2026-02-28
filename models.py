@@ -1240,6 +1240,23 @@ def delete_strava_connection(rider_id):
     cur.execute("DELETE FROM strava_connection WHERE rider_id = %s", (rider_id,))
     conn.commit()
 
+def get_all_active_strava_connections():
+    """Get all riders with active Strava connections.
+
+    Returns riders ordered by last_sync (oldest first) to prioritize
+    those who haven't synced in longest time.
+
+    Returns:
+        list of dicts with rider_id, access_token, refresh_token, expires_at, last_sync_at
+    """
+    return _execute("""
+        SELECT rider_id, access_token, refresh_token, expires_at, last_sync_at as last_sync
+        FROM strava_connection
+        WHERE access_token IS NOT NULL
+        ORDER BY last_sync_at ASC NULLS FIRST
+        LIMIT 100
+    """).fetchall()
+
 def upsert_strava_activity(row):
     """Insert or update a Strava activity."""
     conn = get_db()
