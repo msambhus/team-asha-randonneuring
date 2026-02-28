@@ -110,6 +110,9 @@
 {% if fitness_score %}
 <div class="stat-card"><div class="number" style="color:{% if fitness_score.total >= 70 %}#38a169{% elif fitness_score.total >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ fitness_score.total }}</div><div class="label">Fitness Score</div></div>
 {% endif %}
+{% if eddington_data %}
+<div class="stat-card" style="cursor:help;" title="Eddington Number: {{ eddington_data.miles }} — you've ridden {{ eddington_data.miles }}+ miles on {{ eddington_data.miles }}+ different days"><div class="number" style="color:{{ eddington_data.badge.color }};">{{ eddington_data.badge.emoji }} E{{ eddington_data.miles }}</div><div class="label">Eddington Number</div></div>
+{% endif %}
 </div>
 
 <div class="container section">
@@ -272,6 +275,42 @@
             <div style="font-size:1.3rem; font-weight:800; color:var(--primary);">{{ fitness_score.recency }}</div>
             <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.4px; font-weight:500;">Recency</div>
             <div style="font-size:0.6rem; color:#a0aec0; margin-top:1px;">/15</div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# Eddington Number Progress #}
+    {% if eddington_data %}
+    <div style="margin-bottom:24px; padding:20px; background:linear-gradient(135deg, {{ eddington_data.badge.color }}15, {{ eddington_data.badge.color }}05); border-radius:12px; border:2px solid {{ eddington_data.badge.color }}40;">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+            <div style="flex:1; min-width:200px;">
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+                    <div style="font-size:3rem; line-height:1;">{{ eddington_data.badge.emoji }}</div>
+                    <div>
+                        <div style="font-size:1.8rem; font-weight:900; color:{{ eddington_data.badge.color }}; line-height:1.2;">E{{ eddington_data.miles }}</div>
+                        <div style="font-size:0.75rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">{{ eddington_data.badge.label }}</div>
+                    </div>
+                </div>
+                <p style="font-size:0.85rem; color:var(--text); margin:8px 0 0 0; line-height:1.5;">
+                    You've ridden <strong>{{ eddington_data.miles }}+ miles</strong> on <strong>{{ eddington_data.miles }}+ different days</strong>
+                    <span style="color:var(--text-light);">(E{{ eddington_data.km }} km)</span>
+                </p>
+            </div>
+            <div style="flex:1; min-width:200px; padding:16px; background:white; border-radius:10px; border:1px solid #e2e8f0;">
+                <div style="font-size:0.75rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin-bottom:8px;">Next Milestone: E{{ eddington_data.progress.next_target }}</div>
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                    <div style="flex:1; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden;">
+                        <div style="width:{{ eddington_data.progress.progress_pct }}%; height:100%; background:{{ eddington_data.badge.color }}; transition:width 0.3s ease;"></div>
+                    </div>
+                    <div style="font-size:0.75rem; font-weight:700; color:{{ eddington_data.badge.color }}; min-width:40px; text-align:right;">{{ eddington_data.progress.progress_pct }}%</div>
+                </div>
+                <div style="font-size:0.8rem; color:var(--text);">
+                    <strong>{{ eddington_data.progress.days_completed }}</strong>/{{ eddington_data.progress.next_target }} days completed
+                    {% if eddington_data.progress.days_needed > 0 %}
+                    <span style="color:var(--text-light);">· {{ eddington_data.progress.days_needed }} more {{ 'day' if eddington_data.progress.days_needed == 1 else 'days' }} needed</span>
+                    {% endif %}
+                </div>
+            </div>
         </div>
     </div>
     {% endif %}

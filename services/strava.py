@@ -155,17 +155,20 @@ def transform_activity(activity, rider_id):
     }
 
 
-def sync_rider_activities(rider_id, days=365):
+def sync_rider_activities(rider_id, days=365, calculate_eddington=True):
     """Pull activities for a rider and upsert into DB.
 
     Args:
         rider_id: rider ID
         days: how many days back to fetch (default: 365 = 1 year)
+        calculate_eddington: whether to recalculate Eddington number after sync
 
     Returns:
         int: number of activities synced
     """
-    from models import get_strava_connection, upsert_strava_activity, update_strava_last_sync
+    from models import (get_strava_connection, upsert_strava_activity,
+                        update_strava_last_sync, get_all_strava_activities_for_eddington,
+                        update_eddington_number)
 
     connection = get_strava_connection(rider_id)
     if not connection:
@@ -180,6 +183,23 @@ def sync_rider_activities(rider_id, days=365):
         count += 1
 
     update_strava_last_sync(rider_id)
+
+    # Calculate Eddington number after sync
+    if calculate_eddington and count > 0:
+        try:
+            from services.eddington import calculate_eddington_number
+            all_activities = get_all_strava_activities_for_eddington(rider_id)
+
+            # Calculate both miles and km
+            eddington_miles = calculate_eddington_number(all_activities, unit='miles')
+            eddington_km = calculate_eddington_number(all_activities, unit='km')
+
+            # Update database
+            update_eddington_number(rider_id, eddington_miles, eddington_km)
+        except Exception as e:
+            # Don't fail the sync if Eddington calculation fails
+            print(f"Warning: Eddington calculation failed for rider {rider_id}: {e}")
+
     return count
 
 

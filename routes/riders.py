@@ -596,6 +596,7 @@ def rider_profile(rusa_id):
     fitness_score = None
     has_strava = False
     activities = []
+    eddington_data = None
 
     # Only load Strava data if it should be visible
     if strava_connection and show_strava_data:
@@ -604,6 +605,28 @@ def rider_profile(rusa_id):
         if activities:
             fitness_score = calculate_fitness_score(activities)
             training_rides = score_all_activities(activities)
+
+        # Get Eddington number and progress
+        if strava_connection.get('eddington_number_miles'):
+            from services.eddington import get_eddington_progress, get_eddington_badge_level
+            from models import get_all_strava_activities_for_eddington
+
+            eddington_miles = strava_connection.get('eddington_number_miles', 0)
+            eddington_km = strava_connection.get('eddington_number_km', 0)
+
+            # Get all activities for progress calculation
+            all_activities = get_all_strava_activities_for_eddington(rider['id'])
+
+            # Calculate progress towards next milestone
+            progress_miles = get_eddington_progress(all_activities, eddington_miles, unit='miles')
+            badge = get_eddington_badge_level(eddington_miles)
+
+            eddington_data = {
+                'miles': eddington_miles,
+                'km': eddington_km,
+                'progress': progress_miles,
+                'badge': badge,
+            }
 
     # --- Upcoming rides with readiness ---
     upcoming_rides = []
@@ -679,6 +702,7 @@ def rider_profile(rusa_id):
                            has_strava=has_strava,
                            training_rides=training_rides,
                            fitness_score=fitness_score,
+                           eddington_data=eddington_data,
                            upcoming_rides=upcoming_rides,
                            total_r12s=total_r12s,
                            r12_awards=r12_awards,
