@@ -31,6 +31,9 @@ class Config:
     RWGPS_API_KEY = os.environ.get('RWGPS_API_KEY')
     RWGPS_AUTH_TOKEN = os.environ.get('RWGPS_AUTH_TOKEN')
 
+    # Cron Job Authentication
+    CRON_SECRET = os.environ.get('CRON_SECRET')
+
     # OpenAI Configuration (optional — AI coaching falls back to rule-based if not set)
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
