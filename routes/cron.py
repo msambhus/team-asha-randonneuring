@@ -159,11 +159,15 @@ def _do_gradual_backfill(connections):
             best_oldest = None
             break
 
-        # Parse the date
+        # Parse the date (ensure naive UTC for consistent comparison)
         if isinstance(oldest, str):
             oldest_dt = datetime.fromisoformat(oldest.replace('Z', '+00:00'))
+            if oldest_dt.tzinfo is not None:
+                oldest_dt = oldest_dt.replace(tzinfo=None)
         else:
             oldest_dt = oldest
+            if hasattr(oldest_dt, 'tzinfo') and oldest_dt.tzinfo is not None:
+                oldest_dt = oldest_dt.replace(tzinfo=None)
 
         # Skip if we've already gone back to 2008
         if oldest_dt.year <= EARLIEST_YEAR:
@@ -189,7 +193,7 @@ def _do_gradual_backfill(connections):
         )
     else:
         # Calculate how many days back from today to go 90 days before oldest activity
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         target = best_oldest - timedelta(days=BACKFILL_DAYS)
         days_back = (now - target).days
         current_app.logger.info(
