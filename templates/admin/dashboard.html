@@ -10,8 +10,10 @@
 
 <div style="display:flex;gap:15px;margin-bottom:30px;flex-wrap:wrap;">
 <a href="{{ url_for('admin.add_ride') }}" class="btn btn-primary">+ Add New Ride</a>
-{% if is_admin %}<a href="{{ url_for('admin.generate_plan_form') }}" class="btn" style="background:#2b6cb0;color:#fff;">Generate Plan from RWGPS</a>{% endif %}
-<a href="{{ url_for('admin.logout') }}" class="btn" style="background:var(--text-light);color:#fff;">Logout</a>
+<form method="post" action="{{ url_for('admin.finalize_past_rides') }}" style="display:inline;">
+<button type="submit" class="btn" style="background:#38a169;color:#fff;">Finalize Past Rides</button>
+</form>
+<a href="{{ url_for('admin.generate_plan_form') }}" class="btn" style="background:#2b6cb0;color:#fff;">Generate Plan from RWGPS</a>
 </div>
 
 {% if rides %}
@@ -23,19 +25,38 @@
 <th>Date</th>
 <th>Name</th>
 <th>Distance</th>
-<th>Type</th>
-<th>Club</th>
+<th>Status</th>
+<th>Signups</th>
 <th></th>
 </tr>
 </thead>
 <tbody>
 {% for r in rides %}
-<tr>
+{% set is_past = r.date and r.date < today %}
+<tr{% if is_past and r.going_count > 0 %} style="background:#fffaf0;"{% endif %}>
 <td>{{ r.date }}</td>
 <td>{{ r.name }}</td>
 <td>{{ r.distance_km }} km</td>
-<td>{{ r.ride_type or '' }}</td>
-<td>{{ r.club_code or '' }}</td>
+<td>
+{% if is_past and r.going_count > 0 %}
+<span style="color:#c05621;font-weight:600;">Needs Results</span>
+{% elif is_past and r.result_count > 0 %}
+<span style="color:#38a169;">Done</span>
+{% elif is_past %}
+<span style="color:var(--text-light);">Past</span>
+{% else %}
+<span style="color:#2b6cb0;">Upcoming</span>
+{% endif %}
+</td>
+<td>
+{% if r.going_count > 0 %}
+<span style="color:#c05621;">{{ r.going_count }} going</span>
+{% endif %}
+{% if r.result_count > 0 %}
+<span style="color:#38a169;">{{ r.result_count }} results</span>
+{% endif %}
+{% if r.total_signups == 0 %}<span style="color:var(--text-light);">-</span>{% endif %}
+</td>
 <td>
 <a href="{{ url_for('admin.mark_status', ride_id=r.id) }}" class="rider-link">Mark Status &rarr;</a>
 </td>

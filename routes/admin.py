@@ -1,15 +1,24 @@
 """Admin routes: login, dashboard, ride entry, status marking, RWGPS plan generation."""
 import json
+from datetime import date
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, abort
 from models import (get_current_season, get_rides_for_season, get_riders_for_season,
                     get_ride_by_id, get_participation_matrix, get_clubs,
                     create_ride, update_rider_ride_status, get_all_riders,
-                    get_ride_plan_by_rwgps_route_id, create_ride_plan_from_rwgps)
+                    get_ride_plan_by_rwgps_route_id, create_ride_plan_from_rwgps,
+                    auto_finalize_past_rides, get_rides_with_signup_counts)
 from auth import login_required, user_login_required, verify_password
 from services.rwgps import (extract_rwgps_route_id, fetch_route, extract_controls,
                             build_ride_plan, slugify)
 
 admin_bp = Blueprint('admin', __name__)
+
+
+def _require_admin():
+    """Check if current user is an admin. Aborts with 403 if not."""
+    from routes.riders import is_admin_user
+    if not is_admin_user():
+        abort(403)
 
 
 @admin_bp.route('/login', methods=['GET', 'POST'])
@@ -32,18 +41,34 @@ def logout():
 
 
 @admin_bp.route('/')
-@login_required
+@user_login_required
 def dashboard():
-    from routes.riders import is_admin_user
+    _require_admin()
     current = get_current_season()
-    rides = get_rides_for_season(current['id']) if current else []
+    rides = get_rides_with_signup_counts(current['id']) if current else []
+    today = date.today()
     return render_template('admin/dashboard.html', season=current, rides=rides,
-                           is_admin=is_admin_user())
+                           today=today)
+
+
+@admin_bp.route('/finalize-past-rides', methods=['POST'])
+@user_login_required
+def finalize_past_rides():
+    _require_admin()
+    results = auto_finalize_past_rides()
+    if results:
+        total = sum(r['riders_finalized'] for r in results)
+        ride_names = ', '.join(r['ride_name'] for r in results)
+        flash(f'Finalized {total} riders across {len(results)} rides: {ride_names}', 'success')
+    else:
+        flash('No past rides with pending signups to finalize.', 'info')
+    return redirect(url_for('admin.dashboard'))
 
 
 @admin_bp.route('/rides/new', methods=['GET', 'POST'])
-@login_required
+@user_login_required
 def add_ride():
+    _require_admin()
     current = get_current_season()
     clubs = get_clubs()
 
@@ -76,8 +101,9 @@ def add_ride():
 
 
 @admin_bp.route('/rides/<int:ride_id>/status', methods=['GET', 'POST'])
-@login_required
+@user_login_required
 def mark_status(ride_id):
+    _require_admin()
     ride = get_ride_by_id(ride_id)
     if not ride:
         abort(404)
@@ -93,17 +119,23 @@ def mark_status(ride_id):
             if val:
                 statuses[r['id']] = val
         update_rider_ride_status(ride_id, statuses)
+        flash(f'Statuses updated for {ride["name"]}.', 'success')
         return redirect(url_for('admin.dashboard'))
 
     # Current statuses for this ride
     ride_statuses = {}
-    for rider_id, rides in matrix.items():
-        if ride_id in rides:
-            ride_statuses[rider_id] = rides[ride_id]['status']
+    for rider_id, rides_map in matrix.items():
+        if ride_id in rides_map:
+            ride_statuses[rider_id] = rides_map[ride_id]['status']
+
+    # Sort: riders with a status for this ride come first
+    signed_up = [r for r in riders if r['id'] in ride_statuses]
+    others = [r for r in riders if r['id'] not in ride_statuses]
 
     return render_template('admin/mark_status.html',
                            ride=ride,
-                           riders=riders,
+                           signed_up_riders=signed_up,
+                           other_riders=others,
                            ride_statuses=ride_statuses)
 
 
@@ -112,18 +144,14 @@ def mark_status(ride_id):
 @admin_bp.route('/generate-plan', methods=['GET'])
 @user_login_required
 def generate_plan_form():
-    from routes.riders import is_admin_user
-    if not is_admin_user():
-        abort(403)
+    _require_admin()
     return render_template('admin/generate_plan.html')
 
 
 @admin_bp.route('/generate-plan/preview', methods=['POST'])
 @user_login_required
 def generate_plan_preview():
-    from routes.riders import is_admin_user
-    if not is_admin_user():
-        abort(403)
+    _require_admin()
     rwgps_url = request.form.get('rwgps_url', '').strip()
     if not rwgps_url:
         flash('Please enter a RideWithGPS URL.', 'error')
@@ -155,9 +183,7 @@ def generate_plan_preview():
 @admin_bp.route('/generate-plan/save', methods=['POST'])
 @user_login_required
 def generate_plan_save():
-    from routes.riders import is_admin_user
-    if not is_admin_user():
-        abort(403)
+    _require_admin()
     plan_json_str = request.form.get('plan_json', '')
     name_override = request.form.get('plan_name', '').strip()
 

@@ -252,3 +252,32 @@ def _do_gradual_backfill(connections, force_rider_id=None):
             pass
         current_app.logger.error(f'Backfill failed for {rider_name}: {e}')
         return {'rider_id': rider_id, 'name': rider_name, 'error': str(e)}
+
+
+@cron_bp.route('/finalize-rides', methods=['POST'])
+def finalize_rides():
+    """Auto-finalize past rides: mark GOING riders as FINISHED.
+
+    Called daily by GitHub Actions to ensure ride results are recorded.
+    Admins can then fix DNF/DNS/OTL via the admin dashboard.
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    from models import auto_finalize_past_rides
+
+    try:
+        results = auto_finalize_past_rides()
+        total = sum(r['riders_finalized'] for r in results)
+        current_app.logger.info(
+            f'Finalized {total} riders across {len(results)} rides'
+        )
+        return jsonify({
+            'finalized_rides': len(results),
+            'total_riders': total,
+            'details': results,
+        }), 200
+    except Exception as e:
+        current_app.logger.error(f'Finalize rides failed: {e}')
+        return jsonify({'error': str(e)}), 500
