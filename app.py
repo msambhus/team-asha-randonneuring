@@ -30,6 +30,7 @@ def create_app():
     from routes.admin import admin_bp
     from routes.auth import auth_bp
     from routes.strava import strava_bp
+    from routes.cron import cron_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(riders_bp)
@@ -37,6 +38,7 @@ def create_app():
     app.register_blueprint(admin_bp, url_prefix='/admin')
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(strava_bp, url_prefix='/strava')
+    app.register_blueprint(cron_bp, url_prefix='/api/cron')
 
     # Template helpers
     @app.template_filter('commafy')

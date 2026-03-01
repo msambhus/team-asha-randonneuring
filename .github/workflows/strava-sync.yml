@@ -1,0 +1,56 @@
+name: Periodic Strava Sync
+
+on:
+  schedule:
+    # Run every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC
+    # Adjust schedule as needed based on rider activity patterns
+    - cron: '0 */6 * * *'
+
+  workflow_dispatch:  # Allow manual trigger from GitHub Actions UI
+
+jobs:
+  sync-strava:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5  # Prevent hanging
+
+    steps:
+      - name: Trigger Strava Sync Endpoint
+        id: sync
+        run: |
+          echo "Starting Strava sync for all riders..."
+
+          # Call the cron endpoint with authentication
+          response=$(curl -X POST https://team-asha-randonneuring.vercel.app/api/cron/sync-strava \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -w "\n%{http_code}" \
+            -s)
+
+          # Extract HTTP status code (last line)
+          http_code=$(echo "$response" | tail -n1)
+          # Extract response body (all but last line)
+          body=$(echo "$response" | sed '$d')
+
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+
+          # Check if successful (200-299)
+          if [[ "$http_code" =~ ^2 ]]; then
+            echo "✅ Strava sync completed successfully"
+            echo "$body" | jq -r '"Synced: \(.synced) riders, Failed: \(.failed), Skipped: \(.skipped)"' || echo "$body"
+            exit 0
+          else
+            echo "❌ Strava sync failed with status $http_code"
+            echo "$body"
+            exit 1
+          fi
+
+      - name: Report Failure
+        if: failure()
+        run: |
+          echo "::error::Strava sync failed - check the logs above for details"
+          echo "Possible causes:"
+          echo "- CRON_SECRET not set or incorrect"
+          echo "- Vercel deployment issue"
+          echo "- Strava API rate limit exceeded"
+          echo "- Database connection error"
