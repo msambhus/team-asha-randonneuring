@@ -79,9 +79,9 @@ def callback():
 
         # Initial sync — fetch 1 year of history
         try:
-            count = sync_rider_activities(rider_id, days=365)
+            counts = sync_rider_activities(rider_id, days=365)
             cache.clear()  # Clear cache after Strava sync
-            flash(f'Strava connected! Synced {count} activities.', 'success')
+            flash(f'Strava connected! Synced {counts["new"]} new activities.', 'success')
         except Exception as e:
             flash('Strava connected, but activity sync failed. We will retry later.', 'warning')
             print(f"Strava initial sync error for rider {rider_id}: {e}")
@@ -100,9 +100,9 @@ def sync():
     rider_id = session.get('rider_id')
 
     try:
-        count = sync_rider_activities(rider_id)
+        counts = sync_rider_activities(rider_id)
         cache.clear()  # Clear cache after Strava sync
-        flash(f'Synced {count} activities from Strava.', 'success')
+        flash(f'Synced {counts["new"]} new, {counts["updated"]} updated activities from Strava.', 'success')
     except Exception as e:
         flash(f'Sync failed: {str(e)}', 'error')
 

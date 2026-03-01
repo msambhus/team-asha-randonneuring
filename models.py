@@ -1276,7 +1276,11 @@ def get_oldest_activity_date(rider_id):
 
 
 def upsert_strava_activity(row):
-    """Insert or update a Strava activity."""
+    """Insert or update a Strava activity.
+
+    Returns:
+        bool: True if this was a new insert, False if it updated an existing row
+    """
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
@@ -1312,8 +1316,11 @@ def upsert_strava_activity(row):
             max_speed = EXCLUDED.max_speed,
             suffer_score = EXCLUDED.suffer_score,
             fetched_at = CURRENT_TIMESTAMP
+        RETURNING (xmax = 0) AS is_new
     """, row)
+    result = cur.fetchone()
     conn.commit()
+    return result['is_new'] if result else False
 
 @cache.memoize(CACHE_TIMEOUT)
 def get_strava_activities(rider_id, days=28):

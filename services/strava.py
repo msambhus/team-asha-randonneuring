@@ -164,7 +164,7 @@ def sync_rider_activities(rider_id, days=365, calculate_eddington=True):
         calculate_eddington: whether to recalculate Eddington number after sync
 
     Returns:
-        int: number of activities synced
+        dict: {'new': int, 'updated': int, 'failed': int, 'total': int}
     """
     from models import (get_strava_connection, upsert_strava_activity,
                         update_strava_last_sync, get_all_strava_activities_for_eddington,
@@ -172,18 +172,23 @@ def sync_rider_activities(rider_id, days=365, calculate_eddington=True):
 
     connection = get_strava_connection(rider_id)
     if not connection:
-        return 0
+        return {'new': 0, 'updated': 0, 'failed': 0, 'total': 0}
 
     after_epoch = int(time.time()) - (days * 24 * 3600)
     activities = fetch_activities(connection, after_epoch=after_epoch)
-    count = 0
+    new_count = 0
+    updated_count = 0
+    failed_count = 0
     for activity in activities:
         row = transform_activity(activity, rider_id)
         try:
-            upsert_strava_activity(row)
-            count += 1
+            is_new = upsert_strava_activity(row)
+            if is_new:
+                new_count += 1
+            else:
+                updated_count += 1
         except Exception as e:
-            # Rollback so the connection is usable for the next activity
+            failed_count += 1
             try:
                 from models import get_db
                 get_db().rollback()
@@ -194,23 +199,21 @@ def sync_rider_activities(rider_id, days=365, calculate_eddington=True):
 
     update_strava_last_sync(rider_id)
 
+    total = new_count + updated_count
     # Calculate Eddington number after sync
-    if calculate_eddington and count > 0:
+    if calculate_eddington and total > 0:
         try:
             from services.eddington import calculate_eddington_number
             all_activities = get_all_strava_activities_for_eddington(rider_id)
 
-            # Calculate both miles and km
             eddington_miles = calculate_eddington_number(all_activities, unit='miles')
             eddington_km = calculate_eddington_number(all_activities, unit='km')
 
-            # Update database
             update_eddington_number(rider_id, eddington_miles, eddington_km)
         except Exception as e:
-            # Don't fail the sync if Eddington calculation fails
             print(f"Warning: Eddington calculation failed for rider {rider_id}: {e}")
 
-    return count
+    return {'new': new_count, 'updated': updated_count, 'failed': failed_count, 'total': len(activities)}
 
 
 def deauthorize_strava(access_token):

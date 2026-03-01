@@ -74,7 +74,7 @@ def sync_strava():
         rider_name = conn.get('rider_name', f'Rider {rider_id}')
 
         try:
-            count = sync_rider_activities(
+            counts = sync_rider_activities(
                 rider_id=rider_id,
                 days=7,
                 calculate_eddington=True,
@@ -84,10 +84,12 @@ def sync_strava():
             results['details'].append({
                 'rider_id': rider_id,
                 'name': rider_name,
-                'activities': count,
+                'new': counts['new'],
+                'updated': counts['updated'],
             })
             current_app.logger.info(
-                f'Synced {rider_name} (id={rider_id}): {count} activities'
+                f'Synced {rider_name} (id={rider_id}): '
+                f'{counts["new"]} new, {counts["updated"]} updated'
             )
 
             if i < len(connections_to_sync) - 1:
@@ -110,10 +112,10 @@ def sync_strava():
                 break
 
     # --- Phase 2: Gradual backfill (one rider per run) ---
-    # Pick the rider whose oldest activity is most recent (least history fetched)
-    # and fetch 90 more days further back
+    # Optional: pass {"rider_id": 6} in request body to force backfill a specific rider
+    force_rider_id = (request.get_json(silent=True) or {}).get('rider_id')
     try:
-        backfill_result = _do_gradual_backfill(connections_to_sync)
+        backfill_result = _do_gradual_backfill(connections_to_sync, force_rider_id=force_rider_id)
         results['backfill'] = backfill_result
     except Exception as e:
         current_app.logger.error(f'Backfill failed: {e}')
@@ -127,12 +129,12 @@ def sync_strava():
     return jsonify(results), 200
 
 
-def _do_gradual_backfill(connections):
+def _do_gradual_backfill(connections, force_rider_id=None):
     """Backfill one rider per run, going 90 days further back each time.
 
-    Strategy: Find the rider with the least historical data (newest oldest-activity)
-    and fetch 90 days before their oldest activity. Over many runs, all riders
-    will gradually accumulate full history.
+    Args:
+        connections: list of active strava connections
+        force_rider_id: optional rider_id to backfill instead of auto-picking
 
     Returns:
         dict with backfill details
@@ -144,38 +146,53 @@ def _do_gradual_backfill(connections):
     EARLIEST_YEAR = 2008
     BACKFILL_DAYS = 90
 
-    # Find rider with least history (most recent oldest activity)
-    best_rider = None
-    best_oldest = None
-
-    for conn in connections:
-        rider_id = conn['rider_id']
-        rider_name = conn.get('rider_name', f'Rider {rider_id}')
-        oldest = get_oldest_activity_date(rider_id)
-
+    # If a specific rider is requested, use that one
+    if force_rider_id:
+        force_rider_id = int(force_rider_id)
+        best_rider = next((c for c in connections if c['rider_id'] == force_rider_id), None)
+        if not best_rider:
+            return {'error': f'Rider {force_rider_id} not found in active connections'}
+        oldest = get_oldest_activity_date(force_rider_id)
         if oldest is None:
-            # No activities at all — this rider needs a full initial pull
-            best_rider = conn
             best_oldest = None
-            break
-
-        # Parse the date (ensure naive UTC for consistent comparison)
-        if isinstance(oldest, str):
-            oldest_dt = datetime.fromisoformat(oldest.replace('Z', '+00:00'))
-            if oldest_dt.tzinfo is not None:
-                oldest_dt = oldest_dt.replace(tzinfo=None)
         else:
-            oldest_dt = oldest
-            if hasattr(oldest_dt, 'tzinfo') and oldest_dt.tzinfo is not None:
-                oldest_dt = oldest_dt.replace(tzinfo=None)
+            if isinstance(oldest, str):
+                best_oldest = datetime.fromisoformat(oldest.replace('Z', '+00:00')).replace(tzinfo=None)
+            else:
+                best_oldest = oldest.replace(tzinfo=None) if hasattr(oldest, 'tzinfo') and oldest.tzinfo else oldest
+        rider_name = best_rider.get('rider_name', f'Rider {force_rider_id}')
+        current_app.logger.info(f'Backfill: forced for {rider_name} (id={force_rider_id})')
+    else:
+        # Find rider with least history (most recent oldest activity)
+        best_rider = None
+        best_oldest = None
 
-        # Skip if we've already gone back to 2008
-        if oldest_dt.year <= EARLIEST_YEAR:
-            continue
+    if not force_rider_id:
+        for conn in connections:
+            rider_id = conn['rider_id']
+            rider_name = conn.get('rider_name', f'Rider {rider_id}')
+            oldest = get_oldest_activity_date(rider_id)
 
-        if best_oldest is None or oldest_dt > best_oldest:
-            best_oldest = oldest_dt
-            best_rider = conn
+            if oldest is None:
+                best_rider = conn
+                best_oldest = None
+                break
+
+            if isinstance(oldest, str):
+                oldest_dt = datetime.fromisoformat(oldest.replace('Z', '+00:00'))
+                if oldest_dt.tzinfo is not None:
+                    oldest_dt = oldest_dt.replace(tzinfo=None)
+            else:
+                oldest_dt = oldest
+                if hasattr(oldest_dt, 'tzinfo') and oldest_dt.tzinfo is not None:
+                    oldest_dt = oldest_dt.replace(tzinfo=None)
+
+            if oldest_dt.year <= EARLIEST_YEAR:
+                continue
+
+            if best_oldest is None or oldest_dt > best_oldest:
+                best_oldest = oldest_dt
+                best_rider = conn
 
     if best_rider is None:
         msg = 'All riders fully backfilled'
@@ -202,7 +219,7 @@ def _do_gradual_backfill(connections):
         )
 
     try:
-        count = sync_rider_activities(
+        counts = sync_rider_activities(
             rider_id=rider_id,
             days=days_back,
             calculate_eddington=True,
@@ -212,9 +229,14 @@ def _do_gradual_backfill(connections):
             'name': rider_name,
             'oldest_before': str(best_oldest.date()) if best_oldest else None,
             'days_back': days_back,
-            'activities': count,
+            'new': counts['new'],
+            'updated': counts['updated'],
+            'total_fetched': counts['total'],
         }
-        current_app.logger.info(f'Backfill complete for {rider_name}: {count} activities')
+        current_app.logger.info(
+            f'Backfill complete for {rider_name}: '
+            f'{counts["new"]} new, {counts["updated"]} updated'
+        )
         return result
     except Exception as e:
         try:
