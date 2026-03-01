@@ -111,7 +111,7 @@
 <div class="stat-card"><div class="number" style="color:{% if fitness_score.total >= 70 %}#38a169{% elif fitness_score.total >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ fitness_score.total }}</div><div class="label">Fitness Score</div></div>
 {% endif %}
 {% if eddington_data %}
-<div class="stat-card" style="cursor:help;" title="Eddington Number: {{ eddington_data.miles }} — you've ridden {{ eddington_data.miles }}+ miles on {{ eddington_data.miles }}+ different days"><div class="number" style="color:{{ eddington_data.badge.color }};">{{ eddington_data.badge.emoji }} E{{ eddington_data.miles }}</div><div class="label">Eddington Number*</div></div>
+<div class="stat-card" id="eddington-toggle" style="cursor:pointer;" title="Click to expand"><div class="number" style="color:{{ eddington_data.badge.color }};">{{ eddington_data.badge.emoji }} E{{ eddington_data.miles }}</div><div class="label">Eddington Number*</div></div>
 {% endif %}
 </div>
 
@@ -279,9 +279,9 @@
     </div>
     {% endif %}
 
-    {# Eddington Number Progress #}
+    {# Eddington Number Progress (hidden by default, toggled by stat card click) #}
     {% if eddington_data %}
-    <div style="margin-bottom:24px; padding:20px; background:linear-gradient(135deg, {{ eddington_data.badge.color }}15, {{ eddington_data.badge.color }}05); border-radius:12px; border:2px solid {{ eddington_data.badge.color }}40;">
+    <div id="eddington-detail" style="display:none; margin-bottom:24px; padding:20px; background:linear-gradient(135deg, {{ eddington_data.badge.color }}15, {{ eddington_data.badge.color }}05); border-radius:12px; border:2px solid {{ eddington_data.badge.color }}40;">
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
             <div style="flex:1; min-width:200px;">
                 <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
@@ -317,6 +317,13 @@
         </div>
         <p style="font-size:0.7rem; color:#a0aec0; margin:10px 0 0 0; font-style:italic;">* Eddington number is a work in progress — Strava activities are still being backfilled and this score will update as more historical rides are synced.</p>
     </div>
+    <script>
+    document.getElementById('eddington-toggle').addEventListener('click', function() {
+        var el = document.getElementById('eddington-detail');
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        if (el.style.display === 'block') el.scrollIntoView({behavior:'smooth', block:'nearest'});
+    });
+    </script>
     {% endif %}
 
     {# Training Rides Card Grid #}
