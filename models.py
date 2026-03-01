@@ -977,6 +977,7 @@ def update_rider_ride_status(ride_id, statuses):
         """, (rider_id, ride_id, status))
 
     conn.commit()
+    cache.clear()
 
 
 def auto_finalize_past_rides():
