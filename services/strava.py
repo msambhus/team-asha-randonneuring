@@ -79,12 +79,13 @@ def _get_valid_token(connection):
     return token_data['access_token']
 
 
-def fetch_activities(connection, after_epoch=None, per_page=100):
+def fetch_activities(connection, after_epoch=None, before_epoch=None, per_page=100):
     """Fetch activities from Strava API.
 
     Args:
         connection: strava_connection row dict
-        after_epoch: Unix timestamp to fetch activities after (default: 4 weeks ago)
+        after_epoch: Unix timestamp to fetch activities after (default: 1 year ago)
+        before_epoch: Unix timestamp to fetch activities before (default: None = now)
         per_page: Activities per API page (max 200)
 
     Returns:
@@ -99,14 +100,18 @@ def fetch_activities(connection, after_epoch=None, per_page=100):
     page = 1
 
     while True:
+        params = {
+            'after': after_epoch,
+            'per_page': per_page,
+            'page': page,
+        }
+        if before_epoch is not None:
+            params['before'] = before_epoch
+
         resp = http_requests.get(
             f"{current_app.config['STRAVA_API_BASE']}/athlete/activities",
             headers={'Authorization': f'Bearer {token}'},
-            params={
-                'after': after_epoch,
-                'per_page': per_page,
-                'page': page,
-            },
+            params=params,
             timeout=15,
         )
         if resp.status_code == 429:
@@ -155,12 +160,13 @@ def transform_activity(activity, rider_id):
     }
 
 
-def sync_rider_activities(rider_id, days=365, calculate_eddington=True):
+def sync_rider_activities(rider_id, days=365, before_epoch=None, calculate_eddington=True):
     """Pull activities for a rider and upsert into DB.
 
     Args:
         rider_id: rider ID
         days: how many days back to fetch (default: 365 = 1 year)
+        before_epoch: Unix timestamp — only fetch activities before this time (for backfill)
         calculate_eddington: whether to recalculate Eddington number after sync
 
     Returns:
@@ -175,7 +181,7 @@ def sync_rider_activities(rider_id, days=365, calculate_eddington=True):
         return {'new': 0, 'updated': 0, 'failed': 0, 'total': 0}
 
     after_epoch = int(time.time()) - (days * 24 * 3600)
-    activities = fetch_activities(connection, after_epoch=after_epoch)
+    activities = fetch_activities(connection, after_epoch=after_epoch, before_epoch=before_epoch)
     new_count = 0
     updated_count = 0
     failed_count = 0

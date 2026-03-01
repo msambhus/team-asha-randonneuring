@@ -202,6 +202,7 @@ def _do_gradual_backfill(connections, force_rider_id=None):
     rider_id = best_rider['rider_id']
     rider_name = best_rider.get('rider_name', f'Rider {rider_id}')
 
+    before_epoch = None
     if best_oldest is None:
         # No activities — do a big initial pull (1 year)
         days_back = 365
@@ -209,19 +210,24 @@ def _do_gradual_backfill(connections, force_rider_id=None):
             f'Backfill: {rider_name} has no activities, pulling last {days_back} days'
         )
     else:
-        # Calculate how many days back from today to go 90 days before oldest activity
+        # Fetch ONLY the window: (oldest - 90 days) to oldest
+        # before_epoch = oldest activity date (don't re-fetch what we have)
+        # after_epoch  = oldest - 90 days (go further back)
+        before_epoch = int(best_oldest.timestamp())
         now = datetime.utcnow()
         target = best_oldest - timedelta(days=BACKFILL_DAYS)
         days_back = (now - target).days
         current_app.logger.info(
             f'Backfill: {rider_name} oldest activity is {best_oldest.date()}, '
-            f'fetching {BACKFILL_DAYS} days further back (days_back={days_back})'
+            f'fetching {BACKFILL_DAYS} days before that '
+            f'(after={target.date()}, before={best_oldest.date()})'
         )
 
     try:
         counts = sync_rider_activities(
             rider_id=rider_id,
             days=days_back,
+            before_epoch=before_epoch,
             calculate_eddington=True,
         )
         result = {
