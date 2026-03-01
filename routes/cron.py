@@ -132,6 +132,10 @@ def sync_strava():
 def _do_gradual_backfill(connections, force_rider_id=None):
     """Backfill one rider per run, going 90 days further back each time.
 
+    Uses backfill_cursor (stored in strava_connection) to track how far back
+    we've searched. This avoids getting stuck when there are gaps in riding
+    history (no activities for 90+ days).
+
     Args:
         connections: list of active strava connections
         force_rider_id: optional rider_id to backfill instead of auto-picking
@@ -139,7 +143,8 @@ def _do_gradual_backfill(connections, force_rider_id=None):
     Returns:
         dict with backfill details
     """
-    from models import get_oldest_activity_date
+    from models import (get_backfill_cursor, update_backfill_cursor,
+                        get_oldest_activity_date)
     from services.strava import sync_rider_activities
 
     # Strava was founded in 2009; don't go back further than 2008
@@ -152,46 +157,29 @@ def _do_gradual_backfill(connections, force_rider_id=None):
         best_rider = next((c for c in connections if c['rider_id'] == force_rider_id), None)
         if not best_rider:
             return {'error': f'Rider {force_rider_id} not found in active connections'}
-        oldest = get_oldest_activity_date(force_rider_id)
-        if oldest is None:
-            best_oldest = None
-        else:
-            if isinstance(oldest, str):
-                best_oldest = datetime.fromisoformat(oldest.replace('Z', '+00:00')).replace(tzinfo=None)
-            else:
-                best_oldest = oldest.replace(tzinfo=None) if hasattr(oldest, 'tzinfo') and oldest.tzinfo else oldest
+        cursor = get_backfill_cursor(force_rider_id)
         rider_name = best_rider.get('rider_name', f'Rider {force_rider_id}')
-        current_app.logger.info(f'Backfill: forced for {rider_name} (id={force_rider_id})')
+        current_app.logger.info(f'Backfill: forced for {rider_name} (id={force_rider_id}), cursor={cursor}')
     else:
-        # Find rider with least history (most recent oldest activity)
+        # Find rider with least history (most recent backfill cursor)
         best_rider = None
-        best_oldest = None
+        cursor = None
 
-    if not force_rider_id:
         for conn in connections:
-            rider_id = conn['rider_id']
-            rider_name = conn.get('rider_name', f'Rider {rider_id}')
-            oldest = get_oldest_activity_date(rider_id)
+            rid = conn['rider_id']
+            c = get_backfill_cursor(rid)
 
-            if oldest is None:
+            if c is None:
+                # Never backfilled — pick this one
                 best_rider = conn
-                best_oldest = None
+                cursor = None
                 break
 
-            if isinstance(oldest, str):
-                oldest_dt = datetime.fromisoformat(oldest.replace('Z', '+00:00'))
-                if oldest_dt.tzinfo is not None:
-                    oldest_dt = oldest_dt.replace(tzinfo=None)
-            else:
-                oldest_dt = oldest
-                if hasattr(oldest_dt, 'tzinfo') and oldest_dt.tzinfo is not None:
-                    oldest_dt = oldest_dt.replace(tzinfo=None)
+            if c.year <= EARLIEST_YEAR:
+                continue  # Fully backfilled
 
-            if oldest_dt.year <= EARLIEST_YEAR:
-                continue
-
-            if best_oldest is None or oldest_dt > best_oldest:
-                best_oldest = oldest_dt
+            if cursor is None or c > cursor:
+                cursor = c
                 best_rider = conn
 
     if best_rider is None:
@@ -202,25 +190,40 @@ def _do_gradual_backfill(connections, force_rider_id=None):
     rider_id = best_rider['rider_id']
     rider_name = best_rider.get('rider_name', f'Rider {rider_id}')
 
-    before_epoch = None
-    if best_oldest is None:
-        # No activities — do a big initial pull (1 year)
-        days_back = 365
-        current_app.logger.info(
-            f'Backfill: {rider_name} has no activities, pulling last {days_back} days'
-        )
+    if cursor is None:
+        # First backfill — start from the oldest activity we have, or now
+        oldest = get_oldest_activity_date(rider_id)
+        if oldest is None:
+            # No activities at all — pull last year
+            days_back = 365
+            before_epoch = None
+            cursor_after = datetime.utcnow() - timedelta(days=365)
+            current_app.logger.info(
+                f'Backfill: {rider_name} has no activities, pulling last {days_back} days'
+            )
+        else:
+            if isinstance(oldest, str):
+                oldest_dt = datetime.fromisoformat(oldest.replace('Z', '+00:00')).replace(tzinfo=None)
+            else:
+                oldest_dt = oldest.replace(tzinfo=None) if hasattr(oldest, 'tzinfo') and oldest.tzinfo else oldest
+            before_epoch = int(oldest_dt.timestamp())
+            target = oldest_dt - timedelta(days=BACKFILL_DAYS)
+            days_back = (datetime.utcnow() - target).days
+            cursor_after = target
+            current_app.logger.info(
+                f'Backfill: {rider_name} first backfill, oldest activity is {oldest_dt.date()}, '
+                f'fetching {BACKFILL_DAYS} days before that'
+            )
     else:
-        # Fetch ONLY the window: (oldest - 90 days) to oldest
-        # before_epoch = oldest activity date (don't re-fetch what we have)
-        # after_epoch  = oldest - 90 days (go further back)
-        before_epoch = int(best_oldest.timestamp())
-        now = datetime.utcnow()
-        target = best_oldest - timedelta(days=BACKFILL_DAYS)
-        days_back = (now - target).days
+        # Continue from where we left off
+        before_epoch = int(datetime.combine(cursor, datetime.min.time()).timestamp())
+        target = cursor - timedelta(days=BACKFILL_DAYS)
+        days_back = (datetime.utcnow() - target).days
+        cursor_after = target
         current_app.logger.info(
-            f'Backfill: {rider_name} oldest activity is {best_oldest.date()}, '
+            f'Backfill: {rider_name} cursor={cursor}, '
             f'fetching {BACKFILL_DAYS} days before that '
-            f'(after={target.date()}, before={best_oldest.date()})'
+            f'(after={target.date()}, before={cursor})'
         )
 
     try:
@@ -230,18 +233,23 @@ def _do_gradual_backfill(connections, force_rider_id=None):
             before_epoch=before_epoch,
             calculate_eddington=True,
         )
+
+        # Always advance the cursor, even if 0 activities found (gaps in history)
+        update_backfill_cursor(rider_id, cursor_after.date() if hasattr(cursor_after, 'date') else cursor_after)
+
         result = {
             'rider_id': rider_id,
             'name': rider_name,
-            'oldest_before': str(best_oldest.date()) if best_oldest else None,
-            'days_back': days_back,
+            'cursor_moved_to': str(cursor_after.date() if hasattr(cursor_after, 'date') else cursor_after),
+            'days_back': BACKFILL_DAYS,
             'new': counts['new'],
             'updated': counts['updated'],
             'total_fetched': counts['total'],
         }
         current_app.logger.info(
             f'Backfill complete for {rider_name}: '
-            f'{counts["new"]} new, {counts["updated"]} updated'
+            f'{counts["new"]} new, {counts["updated"]} updated, '
+            f'cursor now at {result["cursor_moved_to"]}'
         )
         return result
     except Exception as e:

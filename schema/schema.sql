@@ -316,7 +316,8 @@ CREATE TABLE strava_connection (
     expires_at INTEGER NOT NULL,       -- Unix epoch when access_token expires
     scope TEXT,
     connected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_sync_at TIMESTAMP
+    last_sync_at TIMESTAMP,
+    backfill_cursor DATE                -- How far back gradual backfill has searched
 );
 
 CREATE INDEX idx_strava_connection_athlete ON strava_connection(strava_athlete_id);
