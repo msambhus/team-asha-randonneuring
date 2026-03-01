@@ -179,8 +179,18 @@ def sync_rider_activities(rider_id, days=365, calculate_eddington=True):
     count = 0
     for activity in activities:
         row = transform_activity(activity, rider_id)
-        upsert_strava_activity(row)
-        count += 1
+        try:
+            upsert_strava_activity(row)
+            count += 1
+        except Exception as e:
+            # Rollback so the connection is usable for the next activity
+            try:
+                from models import get_db
+                get_db().rollback()
+            except Exception:
+                pass
+            print(f"Warning: Failed to upsert activity {row.get('strava_activity_id')} "
+                  f"for rider {rider_id}: {e}")
 
     update_strava_last_sync(rider_id)
 
