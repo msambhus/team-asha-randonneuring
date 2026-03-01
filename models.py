@@ -1516,6 +1516,7 @@ def update_eddington_number(rider_id, eddington_miles, eddington_km):
         WHERE rider_id = %s
     """, (eddington_miles, eddington_km, rider_id))
     conn.commit()
+    cache.clear()
 
 @cache.memoize(CACHE_TIMEOUT)
 def get_all_strava_activities_for_eddington(rider_id):

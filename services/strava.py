@@ -207,7 +207,7 @@ def sync_rider_activities(rider_id, days=365, before_epoch=None, calculate_eddin
 
     total = new_count + updated_count
     # Calculate Eddington number after sync
-    if calculate_eddington and total > 0:
+    if calculate_eddington:
         try:
             from services.eddington import calculate_eddington_number
             all_activities = get_all_strava_activities_for_eddington(rider_id)
