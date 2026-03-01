@@ -133,10 +133,9 @@ tbody tr:hover td {
 }
 .frozen-table thead .frozen-col { z-index: 3; }
 .frozen-table .frozen-col-1 { left: 0; min-width: 180px; }
-.frozen-table .frozen-col-2 { left: 180px; min-width: 90px; }
-.frozen-table .frozen-col-3 { left: 270px; min-width: 70px; }
-.frozen-table .frozen-col-4 {
-    left: 340px;
+.frozen-table .frozen-col-2 { left: 180px; min-width: 70px; }
+.frozen-table .frozen-col-3 {
+    left: 250px;
     min-width: 70px;
     box-shadow:
         2px 0 4px rgba(0,0,0,0.08),
@@ -598,9 +597,8 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
     .stat-card .number { font-size: 1.5rem; }
     .stat-card .label { font-size: 0.72rem; }
     .frozen-table .frozen-col-1 { min-width: 140px; left: 0; }
-    .frozen-table .frozen-col-2 { min-width: 70px; left: 140px; }
-    .frozen-table .frozen-col-3 { min-width: 60px; left: 210px; }
-    .frozen-table .frozen-col-4 { min-width: 60px; left: 270px; }
+    .frozen-table .frozen-col-2 { min-width: 60px; left: 140px; }
+    .frozen-table .frozen-col-3 { min-width: 60px; left: 200px; }
 }
 
 /* Mobile styles */
@@ -637,24 +635,19 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
     }
     
     /* Adjust frozen columns for mobile */
-    .frozen-table .frozen-col-1 { 
-        min-width: 120px; 
+    .frozen-table .frozen-col-1 {
+        min-width: 120px;
         left: 0;
         font-size: 0.85rem;
     }
-    .frozen-table .frozen-col-2 { 
-        min-width: 60px; 
+    .frozen-table .frozen-col-2 {
+        min-width: 50px;
         left: 120px;
         font-size: 0.8rem;
     }
-    .frozen-table .frozen-col-3 { 
-        min-width: 50px; 
-        left: 180px;
-        font-size: 0.8rem;
-    }
-    .frozen-table .frozen-col-4 { 
-        min-width: 50px; 
-        left: 230px;
+    .frozen-table .frozen-col-3 {
+        min-width: 50px;
+        left: 170px;
         font-size: 0.8rem;
     }
     
@@ -717,16 +710,13 @@ footer { background: var(--primary); color: rgba(255,255,255,0.7); text-align: c
     
     /* Stack frozen columns on very small screens */
     .frozen-table .frozen-col-1 { min-width: 100px; }
-    .frozen-table .frozen-col-2 { 
-        min-width: 55px; 
+    .frozen-table .frozen-col-2 {
+        min-width: 50px;
         left: 100px;
     }
-    .frozen-table .frozen-col-3 { 
-        display: none; /* Hide ride count on very small screens */
-    }
-    .frozen-table .frozen-col-4 { 
-        min-width: 50px; 
-        left: 155px;
+    .frozen-table .frozen-col-3 {
+        min-width: 50px;
+        left: 150px;
     }
     
     /* Feedback modal adjustments */
