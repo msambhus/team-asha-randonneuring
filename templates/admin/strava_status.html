@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Strava Status - Admin{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Strava Sync Status</h1>
+<p>{{ riders|length }} connected riders</p>
+</div>
+<div class="container section">
+
+<div style="margin-bottom:20px;">
+<a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Dashboard</a>
+</div>
+
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Rider</th>
+<th style="text-align:right;">Activities</th>
+<th style="text-align:right;">Eddington (mi)</th>
+<th style="text-align:right;">Eddington (km)</th>
+<th>Oldest Activity</th>
+<th>Newest Activity</th>
+<th>Backfill Cursor</th>
+<th>Last Sync</th>
+</tr>
+</thead>
+<tbody>
+{% for r in riders %}
+<tr>
+<td>
+<a href="{{ url_for('riders.rider_profile', rusa_id=r.rusa_id) }}" style="color:var(--primary);text-decoration:none;font-weight:600;">
+{{ r.first_name }} {{ r.last_name }}
+</a>
+</td>
+<td style="text-align:right;">{{ r.activity_count or 0 }}</td>
+<td style="text-align:right;font-weight:600;">{{ r.eddington_number_miles or 0 }}</td>
+<td style="text-align:right;">{{ r.eddington_number_km or 0 }}</td>
+<td>{{ r.oldest_activity or '—' }}</td>
+<td>{{ r.newest_activity or '—' }}</td>
+<td>
+{% if r.backfill_cursor %}
+{{ r.backfill_cursor }}
+{% if r.backfill_cursor.year <= 2008 %}
+<span style="color:#38a169;font-size:0.8rem;">Done</span>
+{% endif %}
+{% else %}
+<span style="color:#c05621;">Not started</span>
+{% endif %}
+</td>
+<td style="font-size:0.85rem;color:var(--text-light);">
+{% if r.last_sync_at %}
+{{ r.last_sync_at.strftime('%Y-%m-%d %H:%M') }}
+{% else %}
+—
+{% endif %}
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+
+</div>
+{% endblock %}

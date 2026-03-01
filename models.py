@@ -1423,6 +1423,25 @@ def get_all_active_strava_connections():
     """).fetchall()
 
 
+def get_strava_admin_summary():
+    """Get Strava sync summary for all connected riders (admin page)."""
+    return _execute("""
+        SELECT r.id AS rider_id, r.first_name, r.last_name, r.rusa_id,
+               sc.eddington_number_miles, sc.eddington_number_km,
+               sc.eddington_calculated_at, sc.backfill_cursor, sc.last_sync_at,
+               COUNT(sa.id) AS activity_count,
+               MIN(sa.start_date)::date AS oldest_activity,
+               MAX(sa.start_date)::date AS newest_activity
+        FROM strava_connection sc
+        JOIN rider r ON r.id = sc.rider_id
+        LEFT JOIN strava_activity sa ON sa.rider_id = sc.rider_id
+        GROUP BY r.id, r.first_name, r.last_name, r.rusa_id,
+                 sc.eddington_number_miles, sc.eddington_number_km,
+                 sc.eddington_calculated_at, sc.backfill_cursor, sc.last_sync_at
+        ORDER BY r.first_name, r.last_name
+    """).fetchall()
+
+
 def get_oldest_activity_date(rider_id):
     """Get the earliest activity start_date for a rider.
 
