@@ -6,7 +6,12 @@ on:
     # Adjust schedule as needed based on rider activity patterns
     - cron: '0 */6 * * *'
 
-  workflow_dispatch:  # Allow manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      rider_id:
+        description: 'Optional rider ID to force backfill (leave empty for auto)'
+        required: false
+        type: string
 
 jobs:
   sync-strava:
@@ -19,10 +24,18 @@ jobs:
         run: |
           echo "Starting Strava sync for all riders..."
 
+          # Build request body (include rider_id if provided)
+          BODY="{}"
+          if [ -n "${{ github.event.inputs.rider_id }}" ]; then
+            BODY='{"rider_id": ${{ github.event.inputs.rider_id }}}'
+            echo "Forcing backfill for rider_id=${{ github.event.inputs.rider_id }}"
+          fi
+
           # Call the cron endpoint with authentication
           response=$(curl -X POST https://team-asha-randonneuring.vercel.app/api/cron/sync-strava \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json" \
+            -d "$BODY" \
             -w "\n%{http_code}" \
             -s)
 
