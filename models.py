@@ -1437,6 +1437,31 @@ def get_oldest_activity_date(rider_id):
     return row['oldest'] if row else None
 
 
+def get_backfill_cursor(rider_id):
+    """Get the backfill cursor date for a rider.
+
+    The cursor tracks how far back we've searched for Strava activities,
+    independent of whether activities were found (handles gaps in history).
+
+    Returns:
+        date or None: How far back we've searched, or None if never backfilled
+    """
+    row = _execute("""
+        SELECT backfill_cursor FROM strava_connection WHERE rider_id = %s
+    """, (rider_id,)).fetchone()
+    return row['backfill_cursor'] if row else None
+
+
+def update_backfill_cursor(rider_id, cursor_date):
+    """Update the backfill cursor to track how far back we've searched."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE strava_connection SET backfill_cursor = %s WHERE rider_id = %s
+    """, (cursor_date, rider_id))
+    conn.commit()
+
+
 def upsert_strava_activity(row):
     """Insert or update a Strava activity.
 
@@ -1516,6 +1541,7 @@ def update_eddington_number(rider_id, eddington_miles, eddington_km):
         WHERE rider_id = %s
     """, (eddington_miles, eddington_km, rider_id))
     conn.commit()
+    cache.clear()
 
 @cache.memoize(CACHE_TIMEOUT)
 def get_all_strava_activities_for_eddington(rider_id):

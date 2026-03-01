@@ -608,7 +608,10 @@ def rider_profile(rusa_id):
 
         # Get Eddington number and progress
         if strava_connection.get('eddington_number_miles'):
-            from services.eddington import get_eddington_progress, get_eddington_badge_level
+            from services.eddington import (
+                calculate_eddington_number, get_eddington_progress,
+                get_eddington_badge_level,
+            )
             from models import get_all_strava_activities_for_eddington
 
             eddington_miles = strava_connection.get('eddington_number_miles', 0)
@@ -616,6 +619,14 @@ def rider_profile(rusa_id):
 
             # Get all activities for progress calculation
             all_activities = get_all_strava_activities_for_eddington(rider['id'])
+
+            # Recalculate from activities if stored value looks stale
+            if all_activities:
+                live_miles = calculate_eddington_number(all_activities, unit='miles')
+                live_km = calculate_eddington_number(all_activities, unit='km')
+                if live_miles > eddington_miles:
+                    eddington_miles = live_miles
+                    eddington_km = live_km
 
             # Calculate progress towards next milestone
             progress_miles = get_eddington_progress(all_activities, eddington_miles, unit='miles')
