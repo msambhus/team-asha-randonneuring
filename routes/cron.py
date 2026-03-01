@@ -74,7 +74,7 @@ def sync_strava():
         rider_name = conn.get('rider_name', f'Rider {rider_id}')
 
         try:
-            count = sync_rider_activities(
+            counts = sync_rider_activities(
                 rider_id=rider_id,
                 days=7,
                 calculate_eddington=True,
@@ -84,10 +84,12 @@ def sync_strava():
             results['details'].append({
                 'rider_id': rider_id,
                 'name': rider_name,
-                'activities': count,
+                'new': counts['new'],
+                'updated': counts['updated'],
             })
             current_app.logger.info(
-                f'Synced {rider_name} (id={rider_id}): {count} activities'
+                f'Synced {rider_name} (id={rider_id}): '
+                f'{counts["new"]} new, {counts["updated"]} updated'
             )
 
             if i < len(connections_to_sync) - 1:
@@ -217,7 +219,7 @@ def _do_gradual_backfill(connections, force_rider_id=None):
         )
 
     try:
-        count = sync_rider_activities(
+        counts = sync_rider_activities(
             rider_id=rider_id,
             days=days_back,
             calculate_eddington=True,
@@ -227,9 +229,14 @@ def _do_gradual_backfill(connections, force_rider_id=None):
             'name': rider_name,
             'oldest_before': str(best_oldest.date()) if best_oldest else None,
             'days_back': days_back,
-            'activities': count,
+            'new': counts['new'],
+            'updated': counts['updated'],
+            'total_fetched': counts['total'],
         }
-        current_app.logger.info(f'Backfill complete for {rider_name}: {count} activities')
+        current_app.logger.info(
+            f'Backfill complete for {rider_name}: '
+            f'{counts["new"]} new, {counts["updated"]} updated'
+        )
         return result
     except Exception as e:
         try:
