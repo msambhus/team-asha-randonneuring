@@ -16,13 +16,12 @@ on:
 jobs:
   sync-strava:
     runs-on: ubuntu-latest
-    timeout-minutes: 5  # Prevent hanging
+    timeout-minutes: 15
 
     steps:
-      - name: Trigger Strava Sync Endpoint
-        id: sync
+      - name: Sync and Backfill Strava Activities
         run: |
-          echo "Starting Strava sync for all riders..."
+          echo "Starting Strava sync..."
 
           # Build request body (include rider_id if provided)
           BODY="{}"
@@ -31,32 +30,55 @@ jobs:
             echo "Forcing backfill for rider_id=${{ github.event.inputs.rider_id }}"
           fi
 
-          # Call the cron endpoint with authentication
-          response=$(curl -X POST https://team-asha-randonneuring.vercel.app/api/cron/sync-strava \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            -H "Content-Type: application/json" \
-            -d "$BODY" \
-            -w "\n%{http_code}" \
-            -s)
+          # Loop: each call does Phase 1 (recent sync) + Phase 2 (one backfill round)
+          # Keep calling until rate-limited or all riders fully backfilled
+          ROUND=0
+          MAX_ROUNDS=20
 
-          # Extract HTTP status code (last line)
-          http_code=$(echo "$response" | tail -n1)
-          # Extract response body (all but last line)
-          body=$(echo "$response" | sed '$d')
+          while [ $ROUND -lt $MAX_ROUNDS ]; do
+            ROUND=$((ROUND + 1))
+            echo ""
+            echo "=== Round $ROUND ==="
 
-          echo "HTTP Status: $http_code"
-          echo "Response: $body"
+            response=$(curl -X POST https://team-asha-randonneuring.vercel.app/api/cron/sync-strava \
+              -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+              -H "Content-Type: application/json" \
+              -d "$BODY" \
+              -w "\n%{http_code}" \
+              --max-time 60 \
+              -s)
 
-          # Check if successful (200-299)
-          if [[ "$http_code" =~ ^2 ]]; then
-            echo "✅ Strava sync completed successfully"
-            echo "$body" | jq -r '"Synced: \(.synced) riders, Failed: \(.failed), Skipped: \(.skipped)"' || echo "$body"
-            exit 0
-          else
-            echo "❌ Strava sync failed with status $http_code"
-            echo "$body"
-            exit 1
-          fi
+            http_code=$(echo "$response" | tail -n1)
+            body=$(echo "$response" | sed '$d')
+
+            echo "HTTP Status: $http_code"
+            echo "Response: $body"
+
+            if ! [[ "$http_code" =~ ^2 ]]; then
+              echo "Sync failed with status $http_code — stopping"
+              break
+            fi
+
+            # Check if backfill hit rate limit or error
+            backfill_error=$(echo "$body" | jq -r '.backfill.error // empty' 2>/dev/null)
+            if [ -n "$backfill_error" ]; then
+              echo "Backfill error: $backfill_error — stopping"
+              break
+            fi
+
+            # Check if all riders fully backfilled
+            backfill_status=$(echo "$body" | jq -r '.backfill.status // empty' 2>/dev/null)
+            if [ "$backfill_status" = "All riders fully backfilled" ]; then
+              echo "All riders fully backfilled — done!"
+              break
+            fi
+
+            # Brief pause between rounds
+            sleep 2
+          done
+
+          echo ""
+          echo "Completed $ROUND round(s)"
 
       - name: Report Failure
         if: failure()

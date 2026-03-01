@@ -1,7 +1,7 @@
 """Cron endpoints for scheduled background tasks."""
 import os
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from flask import Blueprint, request, jsonify, current_app
 
 cron_bp = Blueprint('cron', __name__)
@@ -111,15 +111,30 @@ def sync_strava():
                 results['skipped'] += len(connections_to_sync) - i - 1
                 break
 
-    # --- Phase 2: Gradual backfill (one rider per run) ---
+    # --- Phase 2: Gradual backfill (loop until rate-limited) ---
     # Optional: pass {"rider_id": 6} in request body to force backfill a specific rider
     force_rider_id = (request.get_json(silent=True) or {}).get('rider_id')
+    backfill_rounds = []
     try:
-        backfill_result = _do_gradual_backfill(connections_to_sync, force_rider_id=force_rider_id)
-        results['backfill'] = backfill_result
+        while True:
+            backfill_result = _do_gradual_backfill(connections_to_sync, force_rider_id=force_rider_id)
+            backfill_rounds.append(backfill_result)
+
+            # Stop if all riders fully backfilled
+            if backfill_result.get('status') == 'All riders fully backfilled':
+                break
+
+            # Stop on error (including rate limits)
+            if backfill_result.get('error'):
+                break
+
+            time.sleep(1)
     except Exception as e:
-        current_app.logger.error(f'Backfill failed: {e}')
-        results['backfill'] = {'error': str(e)}
+        current_app.logger.error(f'Backfill loop stopped: {e}')
+        backfill_rounds.append({'error': str(e)})
+
+    results['backfill'] = backfill_rounds
+    results['backfill_rounds'] = len(backfill_rounds)
 
     current_app.logger.info(
         f'Sync complete: {results["synced"]} synced, '
@@ -197,7 +212,7 @@ def _do_gradual_backfill(connections, force_rider_id=None):
             # No activities at all — pull last year
             days_back = 365
             before_epoch = None
-            cursor_after = datetime.utcnow() - timedelta(days=365)
+            cursor_after = date.today() - timedelta(days=365)
             current_app.logger.info(
                 f'Backfill: {rider_name} has no activities, pulling last {days_back} days'
             )
@@ -207,9 +222,9 @@ def _do_gradual_backfill(connections, force_rider_id=None):
             else:
                 oldest_dt = oldest.replace(tzinfo=None) if hasattr(oldest, 'tzinfo') and oldest.tzinfo else oldest
             before_epoch = int(oldest_dt.timestamp())
-            target = oldest_dt - timedelta(days=BACKFILL_DAYS)
-            days_back = (datetime.utcnow() - target).days
-            cursor_after = target
+            target_dt = oldest_dt - timedelta(days=BACKFILL_DAYS)
+            days_back = (datetime.utcnow() - target_dt).days
+            cursor_after = target_dt.date()
             current_app.logger.info(
                 f'Backfill: {rider_name} first backfill, oldest activity is {oldest_dt.date()}, '
                 f'fetching {BACKFILL_DAYS} days before that'
@@ -218,12 +233,12 @@ def _do_gradual_backfill(connections, force_rider_id=None):
         # Continue from where we left off
         before_epoch = int(datetime.combine(cursor, datetime.min.time()).timestamp())
         target = cursor - timedelta(days=BACKFILL_DAYS)
-        days_back = (datetime.utcnow() - target).days
+        days_back = (date.today() - target).days
         cursor_after = target
         current_app.logger.info(
             f'Backfill: {rider_name} cursor={cursor}, '
             f'fetching {BACKFILL_DAYS} days before that '
-            f'(after={target.date()}, before={cursor})'
+            f'(after={target}, before={cursor})'
         )
 
     try:
@@ -235,12 +250,12 @@ def _do_gradual_backfill(connections, force_rider_id=None):
         )
 
         # Always advance the cursor, even if 0 activities found (gaps in history)
-        update_backfill_cursor(rider_id, cursor_after.date() if hasattr(cursor_after, 'date') else cursor_after)
+        update_backfill_cursor(rider_id, cursor_after)
 
         result = {
             'rider_id': rider_id,
             'name': rider_name,
-            'cursor_moved_to': str(cursor_after.date() if hasattr(cursor_after, 'date') else cursor_after),
+            'cursor_moved_to': str(cursor_after),
             'days_back': BACKFILL_DAYS,
             'new': counts['new'],
             'updated': counts['updated'],
