@@ -1247,15 +1247,33 @@ def get_all_active_strava_connections():
     those who haven't synced in longest time.
 
     Returns:
-        list of dicts with rider_id, access_token, refresh_token, expires_at, last_sync_at
+        list of dicts with rider_id, rider_name, access_token, refresh_token, expires_at, last_sync_at
     """
     return _execute("""
-        SELECT rider_id, access_token, refresh_token, expires_at, last_sync_at as last_sync
-        FROM strava_connection
-        WHERE access_token IS NOT NULL
-        ORDER BY last_sync_at ASC NULLS FIRST
+        SELECT sc.rider_id, r.first_name || ' ' || r.last_name AS rider_name,
+               sc.access_token, sc.refresh_token, sc.expires_at,
+               sc.last_sync_at AS last_sync
+        FROM strava_connection sc
+        JOIN rider r ON r.id = sc.rider_id
+        WHERE sc.access_token IS NOT NULL
+        ORDER BY sc.last_sync_at ASC NULLS FIRST
         LIMIT 100
     """).fetchall()
+
+
+def get_oldest_activity_date(rider_id):
+    """Get the earliest activity start_date for a rider.
+
+    Returns:
+        str or None: ISO date string of oldest activity, or None if no activities
+    """
+    row = _execute("""
+        SELECT MIN(start_date) AS oldest
+        FROM strava_activity
+        WHERE rider_id = %s
+    """, (rider_id,)).fetchone()
+    return row['oldest'] if row else None
+
 
 def upsert_strava_activity(row):
     """Insert or update a Strava activity."""
