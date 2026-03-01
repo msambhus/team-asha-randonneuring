@@ -84,6 +84,12 @@ def sync_strava():
                 time.sleep(1)
 
         except Exception as e:
+            # Rollback to clear aborted transaction state so next rider can proceed
+            try:
+                from models import get_db
+                get_db().rollback()
+            except Exception:
+                pass
             results['failed'] += 1
             error_msg = f'Rider {rider_id}: {str(e)}'
             results['errors'].append(error_msg)
