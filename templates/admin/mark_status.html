@@ -9,7 +9,56 @@
 <div class="container section">
 
 <form method="post">
+
+{% if signed_up_riders %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+<h3 style="margin:0;">Signed-Up Riders ({{ signed_up_riders|length }})</h3>
+<button type="button" onclick="markAllFinished()" class="btn" style="background:#38a169;color:#fff;padding:6px 14px;font-size:0.85rem;">Mark All as Finished</button>
+</div>
 <div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Rider</th>
+<th>RUSA #</th>
+<th>Current</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+{% for r in signed_up_riders %}
+{% set current_status = ride_statuses.get(r.id, '') %}
+<tr style="background:{% if current_status == 'GOING' %}#fffaf0{% elif current_status == 'FINISHED' %}#f0fff4{% else %}#fff{% endif %};">
+<td><strong>{{ r.first_name }} {{ r.last_name }}</strong></td>
+<td>{{ r.rusa_id }}</td>
+<td>
+{% if current_status == 'GOING' %}<span style="color:#c05621;font-weight:600;">Going</span>
+{% elif current_status == 'FINISHED' %}<span style="color:#38a169;">Finished</span>
+{% elif current_status == 'DNF' %}<span style="color:#e53e3e;">DNF</span>
+{% elif current_status == 'DNS' %}<span style="color:#718096;">DNS</span>
+{% elif current_status == 'OTL' %}<span style="color:#d69e2e;">OTL</span>
+{% else %}{{ current_status }}{% endif %}
+</td>
+<td>
+<select name="status_{{ r.id }}" class="status-select signed-up-select">
+<option value="">--</option>
+<option value="FINISHED" {{ 'selected' if current_status in ('FINISHED', 'GOING') }}>Finished</option>
+<option value="DNF" {{ 'selected' if current_status == 'DNF' }}>DNF</option>
+<option value="DNS" {{ 'selected' if current_status == 'DNS' }}>DNS</option>
+<option value="OTL" {{ 'selected' if current_status == 'OTL' }}>OTL</option>
+</select>
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+
+{% if other_riders %}
+<details style="margin-top:24px;">
+<summary style="cursor:pointer;color:var(--text-light);font-size:0.9rem;">Other Riders ({{ other_riders|length }}) &mdash; click to add results for riders who weren't signed up</summary>
+<div class="table-wrap" style="margin-top:12px;">
 <table>
 <thead>
 <tr>
@@ -19,18 +68,17 @@
 </tr>
 </thead>
 <tbody>
-{% for r in riders %}
+{% for r in other_riders %}
 <tr>
 <td>{{ r.first_name }} {{ r.last_name }}</td>
 <td>{{ r.rusa_id }}</td>
 <td>
 <select name="status_{{ r.id }}" class="status-select">
 <option value="">--</option>
-<option value="FINISHED" {{ 'selected' if ride_statuses.get(r.id) == 'FINISHED' }}>✓ Finished</option>
-<option value="DNF" {{ 'selected' if ride_statuses.get(r.id) == 'DNF' }}>DNF (Did Not Finish)</option>
-<option value="DNS" {{ 'selected' if ride_statuses.get(r.id) == 'DNS' }}>DNS (Did Not Start)</option>
-<option value="OTL" {{ 'selected' if ride_statuses.get(r.id) == 'OTL' }}>OTL (Over Time Limit)</option>
-<option value="SIGNED_UP" {{ 'selected' if ride_statuses.get(r.id) == 'SIGNED_UP' }}>Signed Up (Pre-ride)</option>
+<option value="FINISHED">Finished</option>
+<option value="DNF">DNF</option>
+<option value="DNS">DNS</option>
+<option value="OTL">OTL</option>
 </select>
 </td>
 </tr>
@@ -38,12 +86,22 @@
 </tbody>
 </table>
 </div>
+</details>
+{% endif %}
 
 <div style="display:flex;gap:15px;margin-top:20px;">
 <button type="submit" class="btn btn-primary">Save Statuses</button>
 <a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:var(--text-light);color:#fff;">Cancel</a>
 </div>
 </form>
+
+<script>
+function markAllFinished() {
+    document.querySelectorAll('.signed-up-select').forEach(function(sel) {
+        sel.value = 'FINISHED';
+    });
+}
+</script>
 
 </div>
 {% endblock %}

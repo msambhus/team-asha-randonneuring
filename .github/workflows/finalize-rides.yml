@@ -1,0 +1,40 @@
+name: Auto-Finalize Past Rides
+
+on:
+  schedule:
+    # Run daily at 06:00 UTC (night before in US Pacific)
+    - cron: '0 6 * * *'
+
+  workflow_dispatch: {}
+
+jobs:
+  finalize-rides:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Finalize Past Rides
+        run: |
+          echo "Auto-finalizing past rides..."
+
+          response=$(curl -X POST https://team-asha-randonneuring.vercel.app/api/cron/finalize-rides \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -w "\n%{http_code}" \
+            -s)
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+
+          if [[ "$http_code" =~ ^2 ]]; then
+            echo "Finalize completed successfully"
+            echo "$body" | jq -r '"Finalized: \(.total_riders) riders across \(.finalized_rides) rides"' || echo "$body"
+            exit 0
+          else
+            echo "Finalize failed with status $http_code"
+            echo "$body"
+            exit 1
+          fi

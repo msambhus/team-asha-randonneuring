@@ -978,7 +978,75 @@ def update_rider_ride_status(ride_id, statuses):
 
     conn.commit()
 
-def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None, start_time=None, 
+
+def auto_finalize_past_rides():
+    """Mark all GOING riders as FINISHED for rides whose date has passed.
+
+    Also sets event_status='COMPLETED' on those rides.
+
+    Returns:
+        list of dicts: [{'ride_id': int, 'ride_name': str, 'riders_finalized': int}]
+    """
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Find past rides that still have GOING riders
+    cur.execute("""
+        SELECT ri.id AS ride_id, ri.name AS ride_name, COUNT(rr.id) AS going_count
+        FROM ride ri
+        JOIN rider_ride rr ON rr.ride_id = ri.id
+        WHERE ri.date < CURRENT_DATE
+          AND rr.status = 'GOING'
+        GROUP BY ri.id, ri.name
+    """)
+    rides_to_finalize = cur.fetchall()
+
+    results = []
+    for ride in rides_to_finalize:
+        # Mark GOING riders as FINISHED
+        cur.execute("""
+            UPDATE rider_ride
+            SET status = 'FINISHED'
+            WHERE ride_id = %s AND status = 'GOING'
+        """, (ride['ride_id'],))
+        count = cur.rowcount
+
+        # Mark ride as COMPLETED
+        cur.execute("""
+            UPDATE ride SET event_status = 'COMPLETED'
+            WHERE id = %s AND event_status = 'UPCOMING'
+        """, (ride['ride_id'],))
+
+        results.append({
+            'ride_id': ride['ride_id'],
+            'ride_name': ride['ride_name'],
+            'riders_finalized': count,
+        })
+
+    conn.commit()
+    cache.clear()
+    return results
+
+
+def get_rides_with_signup_counts(season_id):
+    """Get all rides for a season with signup/result counts for admin dashboard."""
+    return _execute("""
+        SELECT ri.*,
+               c.code AS club_code,
+               c.name AS club_name,
+               COUNT(rr.id) FILTER (WHERE rr.status = 'GOING') AS going_count,
+               COUNT(rr.id) FILTER (WHERE rr.status IN ('FINISHED','DNF','DNS','OTL')) AS result_count,
+               COUNT(rr.id) FILTER (WHERE rr.status IS NOT NULL) AS total_signups
+        FROM ride ri
+        JOIN club c ON ri.club_id = c.id
+        LEFT JOIN rider_ride rr ON rr.ride_id = ri.id
+        WHERE ri.season_id = %s
+        GROUP BY ri.id, c.code, c.name
+        ORDER BY ri.date
+    """, (season_id,)).fetchall()
+
+
+def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None, start_time=None,
                        start_location=None, time_limit_hours=None):
     """Update ride details (route, team route, start time, location, time limit)."""
     conn = get_db()
