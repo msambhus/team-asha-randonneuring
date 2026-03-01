@@ -1029,6 +1029,99 @@ def auto_finalize_past_rides():
     return results
 
 
+def sync_rusa_finish_times():
+    """Fetch official finish times from RUSA for FINISHED rides missing them.
+
+    Groups by rider to minimize RUSA page fetches (one per rider).
+    Matches RUSA results to rides using date ±5 days and distance ±20km.
+
+    Returns:
+        list of dicts with per-rider sync details
+    """
+    import time
+    from services.rusa import fetch_rider_results
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Find all FINISHED rider_ride records missing finish_time
+    cur.execute("""
+        SELECT rr.id AS rr_id, rr.rider_id, rr.ride_id,
+               r.rusa_id, r.first_name, r.last_name,
+               ri.date AS ride_date, ri.distance_km
+        FROM rider_ride rr
+        JOIN rider r ON rr.rider_id = r.id
+        JOIN ride ri ON rr.ride_id = ri.id
+        WHERE rr.status = 'FINISHED'
+          AND (rr.finish_time IS NULL OR rr.finish_time = '')
+          AND r.rusa_id IS NOT NULL
+        ORDER BY r.id, ri.date
+    """)
+    rows = cur.fetchall()
+
+    if not rows:
+        return []
+
+    # Group by rider
+    riders = {}
+    for row in rows:
+        rid = row['rider_id']
+        if rid not in riders:
+            riders[rid] = {
+                'rusa_id': row['rusa_id'],
+                'name': f"{row['first_name']} {row['last_name']}",
+                'rides': [],
+            }
+        riders[rid]['rides'].append(row)
+
+    results = []
+    total_updated = 0
+
+    for i, (rider_id, info) in enumerate(riders.items()):
+        rusa_results = fetch_rider_results(info['rusa_id'])
+        matched = 0
+
+        for ride_row in info['rides']:
+            ride_date = ride_row['ride_date']
+            if not ride_date:
+                continue
+            # Ensure ride_date is a date object
+            if hasattr(ride_date, 'date'):
+                ride_date = ride_date.date()
+
+            distance_km = ride_row['distance_km'] or 0
+
+            # Find matching RUSA result
+            for rr in rusa_results:
+                date_diff = abs((ride_date - rr['date']).days)
+                dist_diff = abs(distance_km - rr['distance_km'])
+                if date_diff <= 5 and (dist_diff <= 20 or (distance_km >= 1000 and rr['distance_km'] >= 1000)):
+                    cur.execute(
+                        "UPDATE rider_ride SET finish_time = %s WHERE id = %s",
+                        (rr['finish_time'], ride_row['rr_id'])
+                    )
+                    matched += 1
+                    break
+
+        results.append({
+            'rider_name': info['name'],
+            'rusa_id': info['rusa_id'],
+            'rides_checked': len(info['rides']),
+            'results_found': matched,
+        })
+        total_updated += matched
+
+        # Be respectful to RUSA servers
+        if i < len(riders) - 1:
+            time.sleep(1)
+
+    if total_updated > 0:
+        conn.commit()
+        cache.clear()
+
+    return results
+
+
 def get_rides_with_signup_counts(season_id):
     """Get all rides for a season with signup/result counts for admin dashboard."""
     return _execute("""

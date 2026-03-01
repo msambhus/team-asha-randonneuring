@@ -281,3 +281,33 @@ def finalize_rides():
     except Exception as e:
         current_app.logger.error(f'Finalize rides failed: {e}')
         return jsonify({'error': str(e)}), 500
+
+
+@cron_bp.route('/sync-rusa-results', methods=['POST'])
+def sync_rusa_results():
+    """Sync official finish times from RUSA for completed rides.
+
+    Scrapes rusa.org for each rider with FINISHED rides missing a finish_time.
+    Called daily by GitHub Actions, scheduled after finalize-rides.
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    from models import sync_rusa_finish_times
+
+    try:
+        results = sync_rusa_finish_times()
+        total_synced = sum(r['results_found'] for r in results)
+        current_app.logger.info(
+            f'RUSA sync: {total_synced} finish times updated '
+            f'across {len(results)} riders'
+        )
+        return jsonify({
+            'synced': total_synced,
+            'riders_checked': len(results),
+            'details': results,
+        }), 200
+    except Exception as e:
+        current_app.logger.error(f'RUSA sync failed: {e}')
+        return jsonify({'error': str(e)}), 500

@@ -1,0 +1,40 @@
+name: Sync RUSA Finish Times
+
+on:
+  schedule:
+    # Run daily at 07:00 UTC (after finalize-rides at 06:00)
+    - cron: '0 7 * * *'
+
+  workflow_dispatch: {}
+
+jobs:
+  sync-rusa-results:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Sync RUSA Results
+        run: |
+          echo "Syncing RUSA finish times..."
+
+          response=$(curl -X POST https://team-asha-randonneuring.vercel.app/api/cron/sync-rusa-results \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -w "\n%{http_code}" \
+            -s)
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+
+          if [[ "$http_code" =~ ^2 ]]; then
+            echo "RUSA sync completed successfully"
+            echo "$body" | jq -r '"Synced: \(.synced) finish times across \(.riders_checked) riders"' || echo "$body"
+            exit 0
+          else
+            echo "RUSA sync failed with status $http_code"
+            echo "$body"
+            exit 1
+          fi
