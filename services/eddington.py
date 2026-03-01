@@ -134,7 +134,7 @@ def get_eddington_progress(activities, current_eddington, unit='miles'):
     # Count days with distance >= next_target
     days_completed = sum(1 for dist in daily_distances.values() if dist >= next_target)
     days_needed = max(0, next_target - days_completed)
-    progress_pct = int((days_completed / next_target) * 100) if next_target > 0 else 0
+    progress_pct = min(100, int((days_completed / next_target) * 100)) if next_target > 0 else 0
 
     return {
         'next_target': next_target,
