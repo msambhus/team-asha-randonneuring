@@ -111,7 +111,41 @@
 <div class="stat-card"><div class="number" style="color:{% if fitness_score.total >= 70 %}#38a169{% elif fitness_score.total >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ fitness_score.total }}</div><div class="label">Fitness Score</div></div>
 {% endif %}
 {% if eddington_data %}
+<div style="position:relative;">
 <div class="stat-card" id="eddington-toggle" style="cursor:pointer;" title="Click to expand"><div class="number" style="color:{{ eddington_data.badge.color }};">{{ eddington_data.badge.emoji }} E{{ eddington_data.miles }}</div><div class="label">Eddington Number*</div></div>
+<div id="eddington-detail" style="display:none; position:absolute; top:100%; left:0; z-index:10; width:360px; max-width:90vw; margin-top:8px; padding:16px; background:white; border-radius:12px; border:2px solid {{ eddington_data.badge.color }}40; box-shadow:0 8px 24px rgba(0,0,0,0.15);">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <div style="font-size:2rem; line-height:1;">{{ eddington_data.badge.emoji }}</div>
+        <div>
+            <div style="font-size:1.4rem; font-weight:900; color:{{ eddington_data.badge.color }}; line-height:1.2;">E{{ eddington_data.miles }}</div>
+            <div style="font-size:0.7rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">{{ eddington_data.badge.label }}</div>
+        </div>
+    </div>
+    <p style="font-size:0.8rem; color:var(--text); margin:0 0 8px 0; line-height:1.4;">
+        You've ridden <strong>{{ eddington_data.miles }}+ miles</strong> on <strong>{{ eddington_data.miles }}+ different days</strong>
+        <span style="color:var(--text-light);">(E{{ eddington_data.km }} km)</span>
+    </p>
+    <div style="padding:10px; background:#f7fafc; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:8px;">
+        <div style="font-size:0.7rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin-bottom:6px;">Next: E{{ eddington_data.progress.next_target }}</div>
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+            <div style="flex:1; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+                <div style="width:{{ eddington_data.progress.progress_pct }}%; height:100%; background:{{ eddington_data.badge.color }};"></div>
+            </div>
+            <div style="font-size:0.7rem; font-weight:700; color:{{ eddington_data.badge.color }};">{{ eddington_data.progress.progress_pct }}%</div>
+        </div>
+        <div style="font-size:0.75rem; color:var(--text);">
+            <strong>{{ eddington_data.progress.days_completed }}</strong>/{{ eddington_data.progress.next_target }} days
+            {% if eddington_data.progress.days_needed > 0 %}
+            · {{ eddington_data.progress.days_needed }} more needed
+            {% endif %}
+        </div>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <a href="https://en.wikipedia.org/wiki/Arthur_Eddington#Eddington_number_for_cycling" target="_blank" rel="noopener" style="font-size:0.7rem; color:var(--text-light); text-decoration:underline;">What is the Eddington number?</a>
+    </div>
+    <p style="font-size:0.65rem; color:#a0aec0; margin:6px 0 0 0; font-style:italic;">* WIP — Strava activities still being backfilled.</p>
+</div>
+</div>
 {% endif %}
 </div>
 
@@ -279,49 +313,19 @@
     </div>
     {% endif %}
 
-    {# Eddington Number Progress (hidden by default, toggled by stat card click) #}
     {% if eddington_data %}
-    <div id="eddington-detail" style="display:none; margin-bottom:24px; padding:20px; background:linear-gradient(135deg, {{ eddington_data.badge.color }}15, {{ eddington_data.badge.color }}05); border-radius:12px; border:2px solid {{ eddington_data.badge.color }}40;">
-        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
-            <div style="flex:1; min-width:200px;">
-                <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
-                    <div style="font-size:3rem; line-height:1;">{{ eddington_data.badge.emoji }}</div>
-                    <div>
-                        <div style="font-size:1.8rem; font-weight:900; color:{{ eddington_data.badge.color }}; line-height:1.2;">E{{ eddington_data.miles }}</div>
-                        <div style="font-size:0.75rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">{{ eddington_data.badge.label }}</div>
-                    </div>
-                </div>
-                <p style="font-size:0.85rem; color:var(--text); margin:8px 0 0 0; line-height:1.5;">
-                    You've ridden <strong>{{ eddington_data.miles }}+ miles</strong> on <strong>{{ eddington_data.miles }}+ different days</strong>
-                    <span style="color:var(--text-light);">(E{{ eddington_data.km }} km)</span>
-                </p>
-                <p style="font-size:0.75rem; color:var(--text-light); margin:4px 0 0 0;">
-                    <a href="https://en.wikipedia.org/wiki/Arthur_Eddington#Eddington_number_for_cycling" target="_blank" rel="noopener" style="color:var(--text-light); text-decoration:underline;">What is the Eddington number?</a>
-                </p>
-            </div>
-            <div style="flex:1; min-width:200px; padding:16px; background:white; border-radius:10px; border:1px solid #e2e8f0;">
-                <div style="font-size:0.75rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin-bottom:8px;">Next Milestone: E{{ eddington_data.progress.next_target }}</div>
-                <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-                    <div style="flex:1; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden;">
-                        <div style="width:{{ eddington_data.progress.progress_pct }}%; height:100%; background:{{ eddington_data.badge.color }}; transition:width 0.3s ease;"></div>
-                    </div>
-                    <div style="font-size:0.75rem; font-weight:700; color:{{ eddington_data.badge.color }}; min-width:40px; text-align:right;">{{ eddington_data.progress.progress_pct }}%</div>
-                </div>
-                <div style="font-size:0.8rem; color:var(--text);">
-                    <strong>{{ eddington_data.progress.days_completed }}</strong>/{{ eddington_data.progress.next_target }} days completed
-                    {% if eddington_data.progress.days_needed > 0 %}
-                    <span style="color:var(--text-light);">· {{ eddington_data.progress.days_needed }} more {{ 'day' if eddington_data.progress.days_needed == 1 else 'days' }} needed</span>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-        <p style="font-size:0.7rem; color:#a0aec0; margin:10px 0 0 0; font-style:italic;">* Eddington number is a work in progress — Strava activities are still being backfilled and this score will update as more historical rides are synced.</p>
-    </div>
     <script>
-    document.getElementById('eddington-toggle').addEventListener('click', function() {
+    document.getElementById('eddington-toggle').addEventListener('click', function(e) {
+        e.stopPropagation();
         var el = document.getElementById('eddington-detail');
         el.style.display = el.style.display === 'none' ? 'block' : 'none';
-        if (el.style.display === 'block') el.scrollIntoView({behavior:'smooth', block:'nearest'});
+    });
+    document.addEventListener('click', function(e) {
+        var detail = document.getElementById('eddington-detail');
+        var toggle = document.getElementById('eddington-toggle');
+        if (detail && detail.style.display === 'block' && !detail.contains(e.target) && !toggle.contains(e.target)) {
+            detail.style.display = 'none';
+        }
     });
     </script>
     {% endif %}
