@@ -56,9 +56,10 @@
 {% endif %}
 
 {% if other_riders %}
-<details style="margin-top:24px;">
-<summary style="cursor:pointer;color:var(--text-light);font-size:0.9rem;">Other Riders ({{ other_riders|length }}) &mdash; click to add results for riders who weren't signed up</summary>
-<div class="table-wrap" style="margin-top:12px;">
+<div style="margin-top:24px; padding:16px; background:#f7fafc; border-radius:12px; border:1px solid #e2e8f0;">
+<h3 style="margin:0 0 12px 0; font-size:1rem; color:var(--text);">Add Other Riders ({{ other_riders|length }})</h3>
+<p style="font-size:0.85rem; color:var(--text-light); margin:0 0 12px 0;">Set a status for riders who weren't signed up but participated.</p>
+<div class="table-wrap">
 <table>
 <thead>
 <tr>
@@ -86,7 +87,7 @@
 </tbody>
 </table>
 </div>
-</details>
+</div>
 {% endif %}
 
 <div style="display:flex;gap:15px;margin-top:20px;">
