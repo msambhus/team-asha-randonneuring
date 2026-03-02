@@ -639,14 +639,9 @@ def rider_profile(rusa_id):
                 'badge': badge,
             }
 
-    # --- Strava ride matches (for analysis links in season history) ---
-    if has_strava:
-        from services.strava_analysis import batch_match_rides
-        for sd in season_data:
-            sd['strava_matches'] = batch_match_rides(rider['id'], sd['participation'])
-    else:
-        for sd in season_data:
-            sd['strava_matches'] = {}
+    # Strava ride analysis moved to /my/strava-analysis (private page)
+    for sd in season_data:
+        sd['strava_matches'] = {}
 
     # --- Upcoming rides with readiness ---
     upcoming_rides = []
@@ -774,7 +769,8 @@ def ride_strava_analysis(rusa_id, ride_id):
         return render_template('strava_ride_analysis.html',
                                rider=rider, ride=ride, activity=None,
                                comparison=None, error=None,
-                               has_plan=False, has_custom=False, plan_slug=None)
+                               has_plan=False, has_custom=False, plan_slug=None,
+                               is_own_profile=is_own_profile)
 
     # Load plan stops if available
     plan_stops = []
@@ -807,7 +803,8 @@ def ride_strava_analysis(rusa_id, ride_id):
                                rider=rider, ride=ride, activity=dict(match),
                                comparison=None, error=analysis['error'],
                                has_plan=has_plan, has_custom=has_custom,
-                               plan_slug=plan_slug)
+                               plan_slug=plan_slug,
+                               is_own_profile=is_own_profile)
 
     # Build comparison data
     comparison = build_comparison(
@@ -821,7 +818,8 @@ def ride_strava_analysis(rusa_id, ride_id):
                            rider=rider, ride=ride, activity=dict(match),
                            comparison=comparison, error=None,
                            has_plan=has_plan, has_custom=has_custom,
-                           plan_slug=plan_slug)
+                           plan_slug=plan_slug,
+                           is_own_profile=is_own_profile)
 
 
 @riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/strava-retry', methods=['POST'])
@@ -838,6 +836,137 @@ def retry_strava_analysis(rusa_id, ride_id):
         clear_strava_ride_analysis(match['id'])
 
     return redirect(url_for('riders.ride_strava_analysis', rusa_id=rusa_id, ride_id=ride_id))
+
+
+@riders_bp.route('/my/strava-analysis')
+def my_strava_analysis():
+    """Private page: rider's Strava analysis for all brevet rides."""
+    from auth import profile_required as _profile_required
+    from models import (get_strava_connection, get_all_seasons, get_current_season,
+                        get_rider_participation, _execute)
+    from flask import flash
+
+    # Auth check (inline instead of decorator so we can keep it on riders_bp)
+    if not session.get('user_id'):
+        flash('Please log in to access this page', 'warning')
+        return redirect(url_for('auth.login', next=request.path))
+    rider_id = session.get('rider_id')
+    if not rider_id:
+        flash('Please complete your profile setup', 'warning')
+        return redirect(url_for('auth.setup_profile'))
+
+    # Get rider info
+    rider_row = _execute("""
+        SELECT r.*, rp.photo_filename
+        FROM rider r LEFT JOIN rider_profile rp ON r.id = rp.rider_id
+        WHERE r.id = %s
+    """, (rider_id,)).fetchone()
+    if not rider_row:
+        flash('Rider not found.', 'error')
+        return redirect(url_for('main.index'))
+    rider = dict(rider_row)
+
+    # Check Strava connection
+    strava_connection = get_strava_connection(rider_id)
+    if not strava_connection:
+        flash('Connect your Strava account first to see ride analysis.', 'info')
+        return redirect(url_for('auth.my_profile'))
+
+    # Load all seasons and participation
+    seasons = get_all_seasons()
+    current = get_current_season()
+
+    season_analysis = []
+    METERS_PER_MILE = 1609.34
+
+    for s in seasons:
+        participation = get_rider_participation(rider_id, s['id'])
+        if not participation:
+            continue
+
+        is_cur = current and current['id'] == s['id']
+
+        # Run batch matching (DB-only, no Strava API calls)
+        try:
+            from services.strava_analysis import batch_match_rides
+            strava_matches = batch_match_rides(rider_id, participation)
+        except Exception:
+            strava_matches = {}
+
+        # Build ride cards for finished rides
+        ride_cards = []
+        for p in participation:
+            if p['status'].upper() != 'FINISHED':
+                continue
+
+            ride_id_val = p.get('ride_id')
+            if not ride_id_val:
+                continue
+
+            has_plan = bool(p.get('ride_plan_id'))
+            match_info = strava_matches.get(ride_id_val)
+            activity_data = None
+
+            if match_info:
+                # Get full activity data from strava_activity table
+                activity_row = _execute("""
+                    SELECT distance, moving_time, elapsed_time,
+                           total_elevation_gain, average_speed,
+                           average_heartrate, max_heartrate, has_heartrate,
+                           average_watts, max_watts, weighted_average_watts,
+                           kilojoules, device_watts, suffer_score, strava_url
+                    FROM strava_activity
+                    WHERE strava_activity_id = %s AND rider_id = %s
+                """, (match_info['strava_activity_id'], rider_id)).fetchone()
+
+                if activity_row:
+                    a = dict(activity_row)
+                    distance_miles = (a.get('distance') or 0) / METERS_PER_MILE
+                    moving_time_min = (a.get('moving_time') or 0) / 60
+                    elapsed_time_min = (a.get('elapsed_time') or 0) / 60
+                    elevation_ft = (a.get('total_elevation_gain') or 0) * 3.28084
+                    avg_speed_mph = (a.get('average_speed') or 0) * 2.23694
+
+                    activity_data = {
+                        'distance_miles': round(distance_miles, 1),
+                        'moving_time_hrs': int(moving_time_min // 60),
+                        'moving_time_min': int(moving_time_min % 60),
+                        'elapsed_time_hrs': int(elapsed_time_min // 60),
+                        'elapsed_time_min': int(elapsed_time_min % 60),
+                        'stopped_time_min': round(elapsed_time_min - moving_time_min),
+                        'elevation_ft': round(elevation_ft),
+                        'avg_speed_mph': round(avg_speed_mph, 1),
+                        'strava_url': a.get('strava_url'),
+                        'has_heartrate': a.get('has_heartrate'),
+                        'average_heartrate': a.get('average_heartrate'),
+                        'max_heartrate': a.get('max_heartrate'),
+                        'device_watts': a.get('device_watts'),
+                        'average_watts': a.get('average_watts'),
+                        'suffer_score': a.get('suffer_score'),
+                    }
+
+            ride_cards.append({
+                'ride_id': ride_id_val,
+                'ride_name': p.get('ride_name', ''),
+                'date': p['date'],
+                'distance_km': p.get('distance_km'),
+                'elevation_ft': p.get('elevation_ft'),
+                'finish_time': p.get('finish_time'),
+                'has_plan': has_plan,
+                'has_match': match_info is not None,
+                'activity': activity_data,
+            })
+
+        if ride_cards:
+            season_analysis.append({
+                'season': dict(s),
+                'is_current': is_cur,
+                'ride_cards': ride_cards,
+            })
+
+    return render_template('my_strava_analysis.html',
+                           rider=rider,
+                           season_analysis=season_analysis)
 
 
 @riders_bp.route('/rider/<int:rusa_id>/advice')

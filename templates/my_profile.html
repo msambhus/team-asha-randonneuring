@@ -159,6 +159,25 @@
 </div>
 {% endif %}
 
+{% if strava_connection %}
+<div class="card" style="border-left:4px solid #FC5200; padding:20px; margin-bottom:15px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+            <h4 style="margin:0 0 4px 0; color:var(--primary); font-size:1rem;">Strava Ride Analysis</h4>
+            <p style="margin:0; font-size:0.85rem; color:var(--text-light);">
+                See how your Strava data compares to your brevet ride plans
+            </p>
+        </div>
+        <a href="{{ url_for('riders.my_strava_analysis') }}"
+           style="display:inline-flex; align-items:center; gap:6px; padding:10px 20px; background:#fc4c02; color:white; border-radius:8px; text-decoration:none; font-weight:600; font-size:0.9rem; transition:background 0.2s;"
+           onmouseover="this.style.background='#e04302'" onmouseout="this.style.background='#fc4c02'">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+            View Ride Analysis
+        </a>
+    </div>
+</div>
+{% endif %}
+
 <div style="margin-top:20px;">
     <a href="{{ url_for('riders.rider_profile', rusa_id=rider.rusa_id) }}" class="btn btn-primary btn-sm">View Public Profile</a>
 </div>
