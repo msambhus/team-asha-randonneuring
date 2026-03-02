@@ -1,0 +1,509 @@
+{% extends "base.html" %}
+{% block title %}Strava Analysis - {{ ride.name }} - Team Asha Randonneuring{% endblock %}
+
+{% block extra_head %}
+<style>
+/* Summary Card */
+.analysis-summary {
+    background: linear-gradient(135deg, #fff5f0, #fed7aa);
+    border: 2px solid #fc4c02;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 30px;
+}
+.analysis-summary .summary-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #c2410c;
+    margin-bottom: 16px;
+    text-align: center;
+}
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+}
+.summary-item {
+    text-align: center;
+    padding: 12px 8px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #fed7aa;
+}
+.summary-label {
+    font-size: 0.7rem;
+    color: #9a3412;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+.summary-row {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    align-items: baseline;
+}
+.summary-plan {
+    font-size: 0.8rem;
+    color: #64748b;
+}
+.summary-actual {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #c2410c;
+}
+.summary-delta {
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+.delta-faster { color: #16a34a; }
+.delta-slower { color: #dc2626; }
+.delta-neutral { color: #64748b; }
+
+/* HR/Power Card */
+.hr-power-card {
+    background: white;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 30px;
+}
+.hr-power-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+}
+.hr-power-item {
+    text-align: center;
+    padding: 10px;
+}
+.hr-power-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+}
+.hr-value { color: #dc2626; }
+.power-value { color: #7c3aed; }
+.suffer-value { color: #ea580c; }
+.hr-power-label {
+    font-size: 0.7rem;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+}
+
+/* Comparison Table */
+.analysis-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.85rem;
+}
+.analysis-table thead th {
+    background: #1e293b;
+    color: white;
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding: 10px 8px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+.analysis-table thead th:first-child { border-radius: 8px 0 0 0; }
+.analysis-table thead th:last-child { border-radius: 0 8px 0 0; }
+
+.analysis-table tbody td {
+    padding: 10px 8px;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: middle;
+    font-variant-numeric: tabular-nums;
+}
+.analysis-table tbody tr:hover { background: #f8fafc; }
+
+.stop-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.stop-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.65rem;
+    flex-shrink: 0;
+}
+.stop-icon.start { background: #dcfce7; color: #166534; }
+.stop-icon.finish { background: #fee2e2; color: #991b1b; }
+.stop-icon.control { background: #dbeafe; color: #1e40af; }
+.stop-icon.rest { background: #fef3c7; color: #92400e; }
+.stop-icon.waypoint { background: #f1f5f9; color: #64748b; }
+.stop-icon.extra { background: #fef3c7; color: #92400e; border: 2px dashed #f59e0b; }
+
+.extra-badge {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: #f59e0b;
+    color: white;
+    margin-left: 4px;
+}
+
+.extra-row { background: #fffbeb; }
+.extra-row:hover { background: #fef3c7 !important; }
+
+/* Legend */
+.analysis-legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 12px;
+    background: #f8fafc;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    margin-bottom: 20px;
+}
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+}
+
+/* Error/No-match states */
+.analysis-message {
+    text-align: center;
+    padding: 40px 20px;
+    background: white;
+    border-radius: 12px;
+    border: 2px dashed #e2e8f0;
+    margin: 20px 0;
+}
+.analysis-message h3 {
+    color: var(--text-light);
+    margin-bottom: 10px;
+}
+.analysis-message p {
+    color: var(--text-light);
+    font-size: 0.9rem;
+}
+
+/* Responsive */
+@media (max-width: 968px) {
+    .summary-grid { grid-template-columns: repeat(2, 1fr); }
+    .hr-power-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+    .analysis-table { font-size: 0.75rem; }
+    .analysis-table thead th, .analysis-table tbody td { padding: 6px 4px; }
+    .summary-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px 50px;">
+    <h1>Strava Ride Analysis</h1>
+    <p style="opacity:0.85;margin-top:8px;">
+        {{ ride.name|clean_name }} &mdash; {{ ride.date }}
+    </p>
+    {% if activity %}
+    <div style="margin-top:12px;">
+        <a href="{{ activity.strava_url }}" target="_blank" rel="noopener"
+           style="display:inline-flex; align-items:center; gap:6px; padding:8px 16px; background:#fc4c02; color:white; border-radius:8px; text-decoration:none; font-weight:600; font-size:0.85rem;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+            View on Strava
+        </a>
+        <a href="{{ url_for('riders.rider_profile', rusa_id=rider.rusa_id) }}"
+           style="display:inline-flex; align-items:center; gap:4px; margin-left:12px; padding:8px 16px; background:rgba(255,255,255,0.2); color:white; border-radius:8px; text-decoration:none; font-size:0.85rem;">
+            &larr; Back to Profile
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<div class="container section">
+
+{% if error %}
+{# ===== ERROR STATE ===== #}
+<div class="analysis-message">
+    <h3>Analysis Error</h3>
+    <p>{{ error }}</p>
+    <form method="post" action="{{ url_for('riders.retry_strava_analysis', rusa_id=rider.rusa_id, ride_id=ride.id) }}" style="margin-top:16px;">
+        <button type="submit" class="btn btn-primary">Retry Analysis</button>
+    </form>
+</div>
+
+{% elif not activity %}
+{# ===== NO MATCH STATE ===== #}
+<div class="analysis-message">
+    <h3>No Matching Strava Activity</h3>
+    <p>No Strava activity found matching this ride's date ({{ ride.date }}) and distance ({{ ride.distance_km }} km).</p>
+    <p style="margin-top:8px; font-size:0.8rem;">Make sure the activity is synced and is a "Ride" type activity.</p>
+</div>
+
+{% else %}
+{# ===== ANALYSIS VIEW ===== #}
+
+{# --- Summary Card --- #}
+<div class="analysis-summary">
+    <div class="summary-title">Plan vs Actual</div>
+    <div class="summary-grid">
+        <div class="summary-item">
+            <div class="summary-label">Distance</div>
+            <div class="summary-actual">{{ "%.1f"|format(comparison.summary.actual_distance_miles) }} mi</div>
+            {% if comparison.summary.plan_distance_miles %}
+            <div class="summary-plan">Plan: {{ "%.1f"|format(comparison.summary.plan_distance_miles) }} mi</div>
+            {% endif %}
+        </div>
+        <div class="summary-item">
+            <div class="summary-label">Elevation</div>
+            <div class="summary-actual">{{ "{:,}".format(comparison.summary.actual_elevation_ft) }} ft</div>
+            {% if comparison.summary.plan_elevation_ft %}
+            <div class="summary-plan">Plan: {{ "{:,}".format(comparison.summary.plan_elevation_ft) }} ft</div>
+            {% endif %}
+        </div>
+        <div class="summary-item">
+            <div class="summary-label">Total Time</div>
+            <div class="summary-actual">{{ (comparison.summary.actual_elapsed_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.actual_elapsed_time_min % 60) }}m</div>
+            {% if comparison.summary.plan_total_time_min %}
+            <div class="summary-plan">Plan: {{ (comparison.summary.plan_total_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.plan_total_time_min % 60) }}m</div>
+            {% endif %}
+        </div>
+        <div class="summary-item">
+            <div class="summary-label">Moving Time</div>
+            <div class="summary-actual">{{ (comparison.summary.actual_moving_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.actual_moving_time_min % 60) }}m</div>
+        </div>
+        <div class="summary-item">
+            <div class="summary-label">Stopped Time</div>
+            <div class="summary-actual">{{ comparison.summary.actual_stopped_time_min }} min</div>
+            {% if comparison.summary.plan_break_time_min %}
+            <div class="summary-plan">Plan: {{ comparison.summary.plan_break_time_min }} min</div>
+            {% endif %}
+        </div>
+        <div class="summary-item">
+            <div class="summary-label">Avg Speed</div>
+            <div class="summary-actual">{{ comparison.summary.actual_avg_speed_mph }} mph</div>
+            {% if comparison.summary.plan_avg_speed_mph %}
+            <div class="summary-plan">Plan: {{ comparison.summary.plan_avg_speed_mph }} mph</div>
+            {% endif %}
+        </div>
+        <div class="summary-item">
+            <div class="summary-label">Stops Found</div>
+            <div class="summary-actual">{{ comparison.summary.stops_detected }}</div>
+            {% if comparison.summary.stops_planned %}
+            <div class="summary-plan">Planned: {{ comparison.summary.stops_planned }}</div>
+            {% endif %}
+        </div>
+        {% if comparison.summary.stops_extra > 0 %}
+        <div class="summary-item" style="border-color:#f59e0b;">
+            <div class="summary-label" style="color:#92400e;">Extra Stops</div>
+            <div class="summary-actual" style="color:#d97706;">{{ comparison.summary.stops_extra }}</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{# --- HR/Power Card --- #}
+{% if comparison.hr_power %}
+<div class="hr-power-card">
+    <div style="font-size:1.1rem; font-weight:700; color:var(--text); margin-bottom:16px; text-align:center;">Performance Metrics</div>
+    <div class="hr-power-grid">
+        {% if comparison.hr_power.avg_hr %}
+        <div class="hr-power-item">
+            <div class="hr-power-value hr-value">{{ comparison.hr_power.avg_hr|round(0)|int }}</div>
+            <div class="hr-power-label">Avg HR (bpm)</div>
+        </div>
+        {% endif %}
+        {% if comparison.hr_power.max_hr %}
+        <div class="hr-power-item">
+            <div class="hr-power-value hr-value">{{ comparison.hr_power.max_hr|round(0)|int }}</div>
+            <div class="hr-power-label">Max HR (bpm)</div>
+        </div>
+        {% endif %}
+        {% if comparison.hr_power.avg_watts %}
+        <div class="hr-power-item">
+            <div class="hr-power-value power-value">{{ comparison.hr_power.avg_watts|round(0)|int }}</div>
+            <div class="hr-power-label">Avg Power (W)</div>
+        </div>
+        {% endif %}
+        {% if comparison.hr_power.weighted_avg_watts %}
+        <div class="hr-power-item">
+            <div class="hr-power-value power-value">{{ comparison.hr_power.weighted_avg_watts|round(0)|int }}</div>
+            <div class="hr-power-label">NP (W)</div>
+        </div>
+        {% endif %}
+        {% if comparison.hr_power.max_watts %}
+        <div class="hr-power-item">
+            <div class="hr-power-value power-value">{{ comparison.hr_power.max_watts|round(0)|int }}</div>
+            <div class="hr-power-label">Max Power (W)</div>
+        </div>
+        {% endif %}
+        {% if comparison.hr_power.kilojoules %}
+        <div class="hr-power-item">
+            <div class="hr-power-value power-value">{{ comparison.hr_power.kilojoules|round(0)|int }}</div>
+            <div class="hr-power-label">Energy (kJ)</div>
+        </div>
+        {% endif %}
+        {% if comparison.hr_power.suffer_score %}
+        <div class="hr-power-item">
+            <div class="hr-power-value suffer-value">{{ comparison.hr_power.suffer_score }}</div>
+            <div class="hr-power-label">Suffer Score</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{# --- Comparison Table --- #}
+{% if comparison.rows %}
+<div class="analysis-legend">
+    <span style="font-weight:600;color:var(--text);">Legend:</span>
+    <div class="legend-item">
+        <div class="legend-color" style="background:#dbeafe;"></div>
+        <span>Control</span>
+    </div>
+    <div class="legend-item">
+        <div class="legend-color" style="background:#fef3c7;"></div>
+        <span>Rest Stop</span>
+    </div>
+    <div class="legend-item">
+        <div class="legend-color" style="background:#fffbeb; border:2px dashed #f59e0b;"></div>
+        <span>Unplanned Stop</span>
+    </div>
+    <div class="legend-item">
+        <div class="legend-color" style="background:#dcfce7;"></div>
+        <span>Ahead of Plan</span>
+    </div>
+    <div class="legend-item">
+        <div class="legend-color" style="background:#fee2e2;"></div>
+        <span>Behind Plan</span>
+    </div>
+</div>
+
+<div style="background:white;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.08);overflow-x:auto;">
+<table class="analysis-table">
+<thead>
+<tr>
+    <th style="text-align:left;width:28%;">Stop</th>
+    <th style="text-align:right;width:10%;">Distance</th>
+    <th style="text-align:right;width:14%;">Plan Time</th>
+    {% if has_custom %}
+    <th style="text-align:right;width:14%;">Custom Plan</th>
+    {% endif %}
+    <th style="text-align:right;width:14%;">Actual Stop</th>
+    <th style="text-align:right;width:8%;">&Delta;</th>
+    <th style="text-align:right;width:12%;">Plan Cumul</th>
+</tr>
+</thead>
+<tbody>
+{% for row in comparison.rows %}
+<tr class="{% if row.is_extra %}extra-row{% endif %}">
+    {# Stop name #}
+    <td>
+        <div class="stop-cell">
+            <div class="stop-icon {{ row.stop_type }}">
+                {% if row.stop_type == 'start' %}&#x1f6a9;{% elif row.stop_type == 'finish' %}&#x1f3c1;{% elif row.stop_type == 'control' %}&#x25c6;{% elif row.stop_type == 'rest' %}&#x2615;{% elif row.stop_type == 'extra' %}&#x26a0;{% else %}&#x2022;{% endif %}
+            </div>
+            <span style="font-weight:{% if row.is_extra %}600{% else %}500{% endif %}; color:{% if row.is_extra %}#92400e{% else %}var(--text){% endif %};">{{ row.location }}</span>
+            {% if row.is_extra %}
+            <span class="extra-badge">Unplanned</span>
+            {% endif %}
+        </div>
+    </td>
+
+    {# Distance #}
+    <td style="text-align:right;font-weight:600;color:#64748b;">{{ "%.1f"|format(row.distance_miles) }} mi</td>
+
+    {# Plan stop duration #}
+    <td style="text-align:right;">
+        {% if row.plan_stop_duration_min %}
+        <div style="font-weight:600;">{{ row.plan_stop_duration_min }} min</div>
+        {% elif row.stop_type in ('start', 'finish') %}
+        <span style="color:var(--text-light);">—</span>
+        {% else %}
+        <span style="color:var(--text-light);">—</span>
+        {% endif %}
+    </td>
+
+    {# Custom plan (if applicable) #}
+    {% if has_custom %}
+    <td style="text-align:right;">
+        {% if row.custom and row.custom.stop_duration_min %}
+        <div style="font-weight:600; color:var(--primary);">{{ row.custom.stop_duration_min }} min</div>
+        {% else %}
+        <span style="color:var(--text-light);">—</span>
+        {% endif %}
+    </td>
+    {% endif %}
+
+    {# Actual stop duration #}
+    <td style="text-align:right;">
+        {% if row.actual_stop_duration_min is not none %}
+        <div style="font-weight:700; color:#c2410c;">{{ row.actual_stop_duration_min }} min</div>
+        {% else %}
+        <span style="color:var(--text-light);">—</span>
+        {% endif %}
+    </td>
+
+    {# Delta #}
+    <td style="text-align:right;font-weight:700;">
+        {% if row.stop_delta_min is not none %}
+        {% if row.stop_delta_min > 0 %}
+        <span class="delta-slower">+{{ row.stop_delta_min|round(0)|int }}</span>
+        {% elif row.stop_delta_min < 0 %}
+        <span class="delta-faster">{{ row.stop_delta_min|round(0)|int }}</span>
+        {% else %}
+        <span class="delta-neutral">0</span>
+        {% endif %}
+        {% elif row.is_extra and row.actual_stop_duration_min %}
+        <span class="delta-slower">+{{ row.actual_stop_duration_min|round(0)|int }}</span>
+        {% else %}
+        <span style="color:var(--text-light);">—</span>
+        {% endif %}
+    </td>
+
+    {# Plan cumulative #}
+    <td style="text-align:right;font-size:0.85rem;">
+        {% if row.plan_cum_time_min %}
+        {{ (row.plan_cum_time_min // 60)|int }}:{{ "%02d"|format(row.plan_cum_time_min % 60) }}
+        {% else %}
+        <span style="color:var(--text-light);">—</span>
+        {% endif %}
+    </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% elif not has_plan %}
+{# --- No Plan State --- #}
+<div class="analysis-message" style="border-color:#fed7aa;">
+    <h3>Summary Only</h3>
+    <p>No ride plan is linked to this brevet. Only Strava summary metrics are shown above.</p>
+    <p style="margin-top:8px; font-size:0.8rem; color:var(--text-light);">Ask an admin to link a ride plan for per-stop comparison.</p>
+</div>
+{% endif %}
+
+{# --- Back Link --- #}
+<div style="text-align:center;margin-top:30px;">
+    <a href="{{ url_for('riders.rider_profile', rusa_id=rider.rusa_id) }}" class="back-link">&larr; Back to Profile</a>
+    {% if has_plan and plan_slug %}
+    <a href="{{ url_for('riders.ride_plan_detail', slug=plan_slug) }}" class="back-link" style="margin-left:20px;">&larr; View Ride Plan</a>
+    {% endif %}
+</div>
+
+{% endif %}
+</div>
+{% endblock %}

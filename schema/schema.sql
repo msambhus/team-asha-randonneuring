@@ -360,6 +360,39 @@ COMMENT ON COLUMN strava_activity.distance IS 'Distance in meters (divide by 100
 COMMENT ON COLUMN strava_activity.strava_url IS 'Direct link to activity on Strava (required for compliance)';
 
 -- ============================================================
+-- STRAVA RIDE ANALYSIS
+-- ============================================================
+
+CREATE TABLE strava_ride_match (
+    id SERIAL PRIMARY KEY,
+    rider_id INTEGER NOT NULL REFERENCES rider(id) ON DELETE CASCADE,
+    ride_id INTEGER NOT NULL REFERENCES ride(id) ON DELETE CASCADE,
+    strava_activity_id BIGINT NOT NULL,
+    match_confidence TEXT DEFAULT 'auto',
+    matched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (rider_id, ride_id)
+);
+
+CREATE INDEX idx_strava_ride_match_rider ON strava_ride_match(rider_id);
+CREATE INDEX idx_strava_ride_match_ride ON strava_ride_match(ride_id);
+
+COMMENT ON TABLE strava_ride_match IS 'Links a rider brevet ride to a matching Strava activity';
+COMMENT ON COLUMN strava_ride_match.match_confidence IS 'auto = matched by date/distance, manual = user override';
+
+CREATE TABLE strava_ride_analysis (
+    id SERIAL PRIMARY KEY,
+    match_id INTEGER NOT NULL UNIQUE REFERENCES strava_ride_match(id) ON DELETE CASCADE,
+    detected_stops JSONB,
+    stream_summary JSONB,
+    analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    strava_api_error TEXT
+);
+
+COMMENT ON TABLE strava_ride_analysis IS 'Cached Strava stream analysis for ride plan comparison';
+COMMENT ON COLUMN strava_ride_analysis.detected_stops IS 'JSON array of detected stops with distance, duration, plan matching';
+COMMENT ON COLUMN strava_ride_analysis.strava_api_error IS 'NULL if success, error message if streams unavailable';
+
+-- ============================================================
 -- CUSTOM RIDE PLANS
 -- ============================================================
 

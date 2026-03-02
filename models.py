@@ -246,8 +246,9 @@ def get_participation_matrix(season_id):
 #  NOT CACHED - rider-specific data should not be cached in serverless environments
 def get_rider_participation(rider_id, season_id):
     return _execute("""
-        SELECT rr.status, rr.finish_time, ri.name as ride_name, ri.date, ri.distance_km,
-               ri.elevation_ft, ri.ft_per_mile, ri.rwgps_url, c.code as club_code
+        SELECT rr.status, rr.finish_time, ri.id as ride_id, ri.name as ride_name,
+               ri.date, ri.distance_km, ri.elevation_ft, ri.ft_per_mile, ri.rwgps_url,
+               ri.ride_plan_id, c.code as club_code
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
         LEFT JOIN club c ON ri.club_id = c.id
@@ -2213,3 +2214,110 @@ def clone_custom_plan(source_plan_id, target_rider_id, new_name=None):
     except Exception as e:
         conn.rollback()
         raise e
+
+
+# ========== STRAVA RIDE ANALYSIS ==========
+
+def get_strava_ride_match(rider_id, ride_id):
+    """Get existing Strava match for a rider's ride."""
+    return _execute("""
+        SELECT srm.*, sa.strava_url, sa.name as activity_name,
+               sa.distance, sa.moving_time, sa.elapsed_time,
+               sa.total_elevation_gain, sa.average_speed,
+               sa.average_heartrate, sa.max_heartrate, sa.has_heartrate,
+               sa.average_watts, sa.max_watts, sa.weighted_average_watts,
+               sa.kilojoules, sa.device_watts, sa.suffer_score,
+               sa.start_date_local
+        FROM strava_ride_match srm
+        JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
+                                AND sa.rider_id = srm.rider_id
+        WHERE srm.rider_id = %s AND srm.ride_id = %s
+    """, (rider_id, ride_id)).fetchone()
+
+
+def create_strava_ride_match(rider_id, ride_id, strava_activity_id, confidence='auto'):
+    """Create a ride-to-activity match."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO strava_ride_match (rider_id, ride_id, strava_activity_id, match_confidence)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (rider_id, ride_id) DO UPDATE SET
+            strava_activity_id = EXCLUDED.strava_activity_id,
+            match_confidence = EXCLUDED.match_confidence,
+            matched_at = CURRENT_TIMESTAMP
+        RETURNING id
+    """, (rider_id, ride_id, strava_activity_id, confidence))
+    result = cur.fetchone()
+    conn.commit()
+    return result['id'] if result else None
+
+
+def get_all_strava_ride_matches(rider_id, ride_ids):
+    """Batch get matches for multiple rides. Returns {ride_id: {strava_activity_id, strava_url}}."""
+    if not ride_ids:
+        return {}
+    placeholders = ','.join(['%s'] * len(ride_ids))
+    rows = _execute(f"""
+        SELECT srm.ride_id, srm.strava_activity_id, sa.strava_url
+        FROM strava_ride_match srm
+        JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
+                                AND sa.rider_id = srm.rider_id
+        WHERE srm.rider_id = %s AND srm.ride_id IN ({placeholders})
+    """, (rider_id, *ride_ids)).fetchall()
+    return {r['ride_id']: dict(r) for r in rows}
+
+
+def get_strava_ride_analysis(match_id):
+    """Get cached analysis for a match."""
+    return _execute("""
+        SELECT * FROM strava_ride_analysis WHERE match_id = %s
+    """, (match_id,)).fetchone()
+
+
+def upsert_strava_ride_analysis(match_id, detected_stops, stream_summary, error=None):
+    """Insert or update analysis results."""
+    conn = get_db()
+    cur = conn.cursor()
+    import json
+    cur.execute("""
+        INSERT INTO strava_ride_analysis (match_id, detected_stops, stream_summary, strava_api_error)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (match_id) DO UPDATE SET
+            detected_stops = EXCLUDED.detected_stops,
+            stream_summary = EXCLUDED.stream_summary,
+            strava_api_error = EXCLUDED.strava_api_error,
+            analyzed_at = CURRENT_TIMESTAMP
+    """, (match_id, json.dumps(detected_stops), json.dumps(stream_summary), error))
+    conn.commit()
+
+
+def clear_strava_ride_analysis(match_id):
+    """Clear cached analysis (for retry)."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM strava_ride_analysis WHERE match_id = %s", (match_id,))
+    conn.commit()
+
+
+def get_strava_activities_in_date_range(rider_id, date_start, date_end):
+    """Get Ride-type Strava activities in a date range for matching."""
+    return _execute("""
+        SELECT strava_activity_id, name, distance, moving_time, elapsed_time,
+               total_elevation_gain, start_date_local, strava_url,
+               average_heartrate, has_heartrate, average_watts, device_watts
+        FROM strava_activity
+        WHERE rider_id = %s AND activity_type = 'Ride'
+          AND start_date_local::date BETWEEN %s AND %s
+        ORDER BY distance DESC
+    """, (rider_id, date_start, date_end)).fetchall()
+
+
+def get_ride_by_id_full(ride_id):
+    """Get ride with plan info."""
+    return _execute("""
+        SELECT ri.*, rp.slug as plan_slug, rp.id as plan_id
+        FROM ride ri
+        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
+        WHERE ri.id = %s
+    """, (ride_id,)).fetchone()
