@@ -459,6 +459,20 @@
 <td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; font-weight:600; color:var(--text);">{{ p.distance_km }} km</td>
 <td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; color:var(--text-light);">{% if p.elevation_ft %}<span style="font-weight:600; color:var(--text);">{{ "{:,}".format(p.elevation_ft) }}</span> ft{% endif %}</td>
 <td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; text-align:center; font-size:0.85rem; color:#718096; font-weight:600; font-family:monospace;">{{ p.finish_time or '—' }}</td>
+{% if sd.strava_matches %}
+<td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; text-align:center;">
+    {% if p.ride_id and p.ride_id in sd.strava_matches %}
+    <a href="{{ url_for('riders.ride_strava_analysis', rusa_id=rider.rusa_id, ride_id=p.ride_id) }}"
+       style="display:inline-flex; align-items:center; gap:3px; font-size:0.75rem; color:#fc4c02; text-decoration:none; padding:2px 6px; border-radius:4px; background:#fff5f0; transition:all 0.2s;"
+       onmouseover="this.style.background='#fed7aa'" onmouseout="this.style.background='#fff5f0'">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="#fc4c02"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+        analysis
+    </a>
+    {% else %}
+    <span style="color:var(--text-light); font-size:0.75rem;">—</span>
+    {% endif %}
+</td>
+{% endif %}
 </tr>
 {% endif %}
 {% endfor %}
