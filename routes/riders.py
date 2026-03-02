@@ -844,7 +844,7 @@ def my_strava_analysis():
     from auth import profile_required as _profile_required
     from models import (get_strava_connection, get_all_seasons, get_current_season,
                         get_rider_participation, _execute)
-    from flask import flash
+    from flask import flash, current_app
 
     # Auth check (inline instead of decorator so we can keep it on riders_bp)
     if not session.get('user_id'):
@@ -890,7 +890,8 @@ def my_strava_analysis():
         try:
             from services.strava_analysis import batch_match_rides
             strava_matches = batch_match_rides(rider_id, participation)
-        except Exception:
+        except Exception as e:
+            current_app.logger.error(f'batch_match_rides failed: {e}', exc_info=True)
             strava_matches = {}
 
         # Build ride cards for finished rides

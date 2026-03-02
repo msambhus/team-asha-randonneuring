@@ -94,17 +94,21 @@ def batch_match_rides(rider_id, participation_list):
         if p.get('status', '').upper() == 'FINISHED' and p.get('ride_id')
     ]
     if not finished_rides:
+        current_app.logger.debug(f'batch_match_rides: no finished rides for rider {rider_id}')
         return {}
 
     # Check if rider has Strava connected
     conn = get_strava_connection(rider_id)
     if not conn:
+        current_app.logger.debug(f'batch_match_rides: no strava connection for rider {rider_id}')
         return {}
 
     ride_ids = [p['ride_id'] for p in finished_rides]
+    current_app.logger.info(f'batch_match_rides: rider {rider_id}, {len(finished_rides)} finished rides, ride_ids={ride_ids}')
 
     # Get existing matches
     existing = get_all_strava_ride_matches(rider_id, ride_ids)
+    current_app.logger.info(f'batch_match_rides: {len(existing)} existing matches')
 
     # Try to match unmatched rides
     for p in finished_rides:
@@ -112,19 +116,27 @@ def batch_match_rides(rider_id, participation_list):
         if rid in existing:
             continue
 
-        match = find_matching_activity(
-            rider_id=rider_id,
-            ride_date=p['date'],
-            ride_distance_km=p['distance_km'],
-            ride_name=p.get('ride_name', ''),
-        )
-        if match:
-            create_strava_ride_match(rider_id, rid, match['strava_activity_id'])
-            existing[rid] = {
-                'ride_id': rid,
-                'strava_activity_id': match['strava_activity_id'],
-                'strava_url': match.get('strava_url'),
-            }
+        try:
+            match = find_matching_activity(
+                rider_id=rider_id,
+                ride_date=p['date'],
+                ride_distance_km=p['distance_km'],
+                ride_name=p.get('ride_name', ''),
+            )
+            current_app.logger.info(
+                f'batch_match_rides: ride {rid} ({p.get("ride_name")}) '
+                f'date={p["date"]} dist={p["distance_km"]}km -> '
+                f'match={"YES " + str(match.get("strava_activity_id")) if match else "NONE"}'
+            )
+            if match:
+                create_strava_ride_match(rider_id, rid, match['strava_activity_id'])
+                existing[rid] = {
+                    'ride_id': rid,
+                    'strava_activity_id': match['strava_activity_id'],
+                    'strava_url': match.get('strava_url'),
+                }
+        except Exception as e:
+            current_app.logger.error(f'batch_match_rides: error matching ride {rid}: {e}', exc_info=True)
 
     return existing
 
