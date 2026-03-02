@@ -33,7 +33,16 @@ def find_matching_activity(rider_id, ride_date, ride_distance_km, ride_name):
     date_start = ride_date - timedelta(days=1)
     date_end = ride_date + timedelta(days=1)
 
+    current_app.logger.info(
+        f'find_matching_activity: rider={rider_id} date={ride_date} '
+        f'dist_km={ride_distance_km} name="{ride_name}" '
+        f'range={date_start} to {date_end}'
+    )
+
     activities = get_strava_activities_in_date_range(rider_id, date_start, date_end)
+    current_app.logger.info(
+        f'find_matching_activity: {len(activities) if activities else 0} activities in date range'
+    )
     if not activities:
         return None
 
@@ -44,10 +53,17 @@ def find_matching_activity(rider_id, ride_date, ride_distance_km, ride_name):
     candidates = []
     for a in activities:
         dist = a.get('distance') or 0
-        if abs(dist - target_distance_m) <= tolerance:
+        diff = abs(dist - target_distance_m)
+        current_app.logger.info(
+            f'  activity {a.get("strava_activity_id")}: '
+            f'dist={dist:.0f}m diff={diff:.0f}m tol={tolerance:.0f}m '
+            f'match={diff <= tolerance}'
+        )
+        if diff <= tolerance:
             candidates.append(a)
 
     if not candidates:
+        current_app.logger.info('find_matching_activity: no candidates after distance filter')
         return None
 
     if len(candidates) == 1:
@@ -348,7 +364,8 @@ def match_stops_to_plan(detected_stops, plan_stops):
     return detected_stops
 
 
-def build_comparison(plan_stops, detected_stops, activity, custom_stops=None):
+def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
+                     plan_start_time=None, actual_start_time=None):
     """Build comparison data structure for template rendering.
 
     Merges plan stops with detected actual stops into a unified timeline.
@@ -358,16 +375,29 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None):
         detected_stops: list from detect_stops() with matching info
         activity: strava activity dict (distance, moving_time, elapsed_time, etc.)
         custom_stops: optional custom plan stops
+        plan_start_time: string like "07:00" from ride_plan.start_time
+        actual_start_time: datetime from strava_activity.start_date_local
 
     Returns:
         dict with 'rows' (list of comparison rows), 'summary' (metrics dict)
     """
+    from datetime import datetime as _dt
+
     actual_distance_miles = (activity.get('distance') or 0) / METERS_PER_MILE
     actual_moving_time_min = (activity.get('moving_time') or 0) / 60
     actual_elapsed_time_min = (activity.get('elapsed_time') or 0) / 60
     actual_stopped_time_min = actual_elapsed_time_min - actual_moving_time_min
     actual_elevation_ft = (activity.get('total_elevation_gain') or 0) * 3.28084
     actual_avg_speed_mph = (activity.get('average_speed') or 0) * 2.23694
+
+    # Parse plan start time for TOD calculations
+    plan_start_dt = None
+    if plan_start_time:
+        try:
+            h, m = map(int, str(plan_start_time).split(':'))
+            plan_start_dt = _dt(2000, 1, 1, h, m)
+        except (ValueError, AttributeError):
+            plan_start_dt = None
 
     # Build a map of detected stops by approximate distance for matching
     detected_by_dist = {}
@@ -389,8 +419,6 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None):
 
     # Build comparison rows from plan stops
     rows = []
-    plan_cum_time = 0
-    actual_cum_time = 0
 
     for ps in plan_stops:
         location = ps.get('location', '')
@@ -404,10 +432,28 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None):
         actual_stop = matched_stops_by_name.get(location)
         actual_stop_duration = actual_stop['duration_min'] if actual_stop else None
 
+        # Actual cumulative time (seconds from ride start → minutes)
+        actual_cum_time = None
+        cum_time_delta = None
+        if actual_stop and actual_stop.get('start_time_s') is not None:
+            actual_cum_time = round(actual_stop['start_time_s'] / 60)
+            if plan_cum_time:
+                cum_time_delta = round(actual_cum_time - plan_cum_time)
+
+        # Time of day calculations
+        plan_tod = None
+        if plan_start_dt and plan_cum_time:
+            plan_tod_dt = plan_start_dt + timedelta(minutes=plan_cum_time)
+            plan_tod = plan_tod_dt.strftime('%H:%M')
+
+        actual_tod = None
+        if actual_stop and actual_start_time and actual_stop.get('start_time_s') is not None:
+            actual_tod_dt = actual_start_time + timedelta(seconds=actual_stop['start_time_s'])
+            actual_tod = actual_tod_dt.strftime('%H:%M')
+
         # Custom plan data
         custom_data = None
         if custom_stops:
-            # Find custom stop at this distance
             cs = custom_by_dist.get(distance_miles)
             if cs:
                 custom_data = {
@@ -424,6 +470,10 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None):
             'plan_stop_duration_min': plan_stop_duration,
             'plan_cum_time_min': plan_cum_time,
             'actual_stop_duration_min': actual_stop_duration,
+            'actual_cum_time_min': actual_cum_time,
+            'cum_time_delta_min': cum_time_delta,
+            'plan_time_of_day': plan_tod,
+            'actual_time_of_day': actual_tod,
             'is_extra': False,
             'custom': custom_data,
         }
@@ -439,6 +489,13 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None):
     # Insert extra (unplanned) stops at their correct distance position
     extra_stops = [ds for ds in (detected_stops or []) if ds.get('is_extra')]
     for es in extra_stops:
+        actual_cum_time = round(es['start_time_s'] / 60) if es.get('start_time_s') is not None else None
+
+        actual_tod = None
+        if actual_start_time and es.get('start_time_s') is not None:
+            actual_tod_dt = actual_start_time + timedelta(seconds=es['start_time_s'])
+            actual_tod = actual_tod_dt.strftime('%H:%M')
+
         row = {
             'location': f"Unplanned stop",
             'stop_type': 'extra',
@@ -447,6 +504,10 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None):
             'plan_stop_duration_min': None,
             'plan_cum_time_min': None,
             'actual_stop_duration_min': es['duration_min'],
+            'actual_cum_time_min': actual_cum_time,
+            'cum_time_delta_min': None,
+            'plan_time_of_day': None,
+            'actual_time_of_day': actual_tod,
             'is_extra': True,
             'stop_delta_min': None,
             'custom': None,
@@ -485,6 +546,12 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None):
         'stops_planned': len([s for s in plan_stops if (s.get('stop_duration_min') or 0) > 0]),
         'stops_detected': len(detected_stops or []),
         'stops_extra': len(extra_stops),
+        # Deltas (positive = over plan, negative = under plan)
+        'distance_delta_miles': round(actual_distance_miles - plan_total_distance, 1) if plan_total_distance else None,
+        'elevation_delta_ft': round(actual_elevation_ft - (plan_total_elevation or 0)) if plan_total_elevation else None,
+        'time_delta_min': round(actual_elapsed_time_min - plan_total_time_min) if plan_total_time_min else None,
+        'speed_delta_mph': round(actual_avg_speed_mph - plan_avg_speed, 1) if plan_avg_speed else None,
+        'break_delta_min': round(actual_stopped_time_min - plan_break_time) if plan_break_time else None,
     }
 
     # HR/Power data from activity

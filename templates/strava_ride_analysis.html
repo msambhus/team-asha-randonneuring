@@ -20,7 +20,7 @@
 }
 .summary-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
     gap: 12px;
 }
 .summary-item {
@@ -35,26 +35,29 @@
     color: #9a3412;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
 }
 .summary-row {
     display: flex;
     justify-content: center;
-    gap: 8px;
+    gap: 12px;
     align-items: baseline;
+    flex-wrap: wrap;
 }
 .summary-plan {
     font-size: 0.8rem;
     color: #64748b;
+    font-weight: 500;
 }
 .summary-actual {
-    font-size: 1.3rem;
+    font-size: 1.1rem;
     font-weight: 700;
     color: #c2410c;
 }
 .summary-delta {
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     font-weight: 600;
+    margin-top: 2px;
 }
 .delta-faster { color: #16a34a; }
 .delta-slower { color: #dc2626; }
@@ -97,25 +100,26 @@
     width: 100%;
     border-collapse: separate;
     border-spacing: 0;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
 }
 .analysis-table thead th {
     background: #1e293b;
     color: white;
     font-weight: 600;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     text-transform: uppercase;
     letter-spacing: 0.3px;
-    padding: 10px 8px;
+    padding: 10px 6px;
     position: sticky;
     top: 0;
     z-index: 2;
+    white-space: nowrap;
 }
 .analysis-table thead th:first-child { border-radius: 8px 0 0 0; }
 .analysis-table thead th:last-child { border-radius: 0 8px 0 0; }
 
 .analysis-table tbody td {
-    padding: 10px 8px;
+    padding: 8px 6px;
     border-bottom: 1px solid #e2e8f0;
     vertical-align: middle;
     font-variant-numeric: tabular-nums;
@@ -125,16 +129,16 @@
 .stop-cell {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 }
 .stop-icon {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.65rem;
+    font-size: 0.6rem;
     flex-shrink: 0;
 }
 .stop-icon.start { background: #dcfce7; color: #166534; }
@@ -205,8 +209,8 @@
     .hr-power-grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 640px) {
-    .analysis-table { font-size: 0.75rem; }
-    .analysis-table thead th, .analysis-table tbody td { padding: 6px 4px; }
+    .analysis-table { font-size: 0.7rem; }
+    .analysis-table thead th, .analysis-table tbody td { padding: 6px 3px; }
     .summary-grid { grid-template-columns: repeat(2, 1fr); }
 }
 </style>
@@ -265,47 +269,86 @@
 
 {# --- Summary Card --- #}
 <div class="analysis-summary">
-    <div class="summary-title">Plan vs Actual</div>
+    <div class="summary-title">Plan vs Actual Summary</div>
     <div class="summary-grid">
+        {# Distance #}
         <div class="summary-item">
             <div class="summary-label">Distance</div>
-            <div class="summary-actual">{{ "%.1f"|format(comparison.summary.actual_distance_miles) }} mi</div>
             {% if comparison.summary.plan_distance_miles %}
             <div class="summary-plan">Plan: {{ "%.1f"|format(comparison.summary.plan_distance_miles) }} mi</div>
             {% endif %}
+            <div class="summary-actual">{{ "%.1f"|format(comparison.summary.actual_distance_miles) }} mi</div>
+            {% if comparison.summary.distance_delta_miles is not none %}
+            <div class="summary-delta {% if comparison.summary.distance_delta_miles > 0.5 %}delta-slower{% elif comparison.summary.distance_delta_miles < -0.5 %}delta-faster{% else %}delta-neutral{% endif %}">
+                &Delta; {{ "%+.1f"|format(comparison.summary.distance_delta_miles) }} mi
+            </div>
+            {% endif %}
         </div>
+
+        {# Elevation #}
         <div class="summary-item">
             <div class="summary-label">Elevation</div>
-            <div class="summary-actual">{{ "{:,}".format(comparison.summary.actual_elevation_ft) }} ft</div>
             {% if comparison.summary.plan_elevation_ft %}
             <div class="summary-plan">Plan: {{ "{:,}".format(comparison.summary.plan_elevation_ft) }} ft</div>
             {% endif %}
+            <div class="summary-actual">{{ "{:,}".format(comparison.summary.actual_elevation_ft) }} ft</div>
+            {% if comparison.summary.elevation_delta_ft is not none %}
+            <div class="summary-delta {% if comparison.summary.elevation_delta_ft > 100 %}delta-slower{% elif comparison.summary.elevation_delta_ft < -100 %}delta-faster{% else %}delta-neutral{% endif %}">
+                &Delta; {% if comparison.summary.elevation_delta_ft >= 0 %}+{% endif %}{{ "{:,}".format(comparison.summary.elevation_delta_ft) }} ft
+            </div>
+            {% endif %}
         </div>
+
+        {# Total Time #}
         <div class="summary-item">
             <div class="summary-label">Total Time</div>
-            <div class="summary-actual">{{ (comparison.summary.actual_elapsed_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.actual_elapsed_time_min % 60) }}m</div>
             {% if comparison.summary.plan_total_time_min %}
             <div class="summary-plan">Plan: {{ (comparison.summary.plan_total_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.plan_total_time_min % 60) }}m</div>
             {% endif %}
+            <div class="summary-actual">{{ (comparison.summary.actual_elapsed_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.actual_elapsed_time_min % 60) }}m</div>
+            {% if comparison.summary.time_delta_min is not none %}
+            {% set td = comparison.summary.time_delta_min %}
+            <div class="summary-delta {% if td > 5 %}delta-slower{% elif td < -5 %}delta-faster{% else %}delta-neutral{% endif %}">
+                &Delta; {% if td >= 0 %}+{% endif %}{{ (td // 60)|int }}h{{ "%02d"|format((td|abs) % 60) }}m
+            </div>
+            {% endif %}
         </div>
+
+        {# Moving Time #}
         <div class="summary-item">
             <div class="summary-label">Moving Time</div>
             <div class="summary-actual">{{ (comparison.summary.actual_moving_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.actual_moving_time_min % 60) }}m</div>
         </div>
+
+        {# Stopped Time #}
         <div class="summary-item">
             <div class="summary-label">Stopped Time</div>
-            <div class="summary-actual">{{ comparison.summary.actual_stopped_time_min }} min</div>
             {% if comparison.summary.plan_break_time_min %}
             <div class="summary-plan">Plan: {{ comparison.summary.plan_break_time_min }} min</div>
             {% endif %}
+            <div class="summary-actual">{{ comparison.summary.actual_stopped_time_min }} min</div>
+            {% if comparison.summary.break_delta_min is not none %}
+            <div class="summary-delta {% if comparison.summary.break_delta_min > 5 %}delta-slower{% elif comparison.summary.break_delta_min < -5 %}delta-faster{% else %}delta-neutral{% endif %}">
+                &Delta; {{ "%+d"|format(comparison.summary.break_delta_min) }} min
+            </div>
+            {% endif %}
         </div>
+
+        {# Avg Speed #}
         <div class="summary-item">
             <div class="summary-label">Avg Speed</div>
-            <div class="summary-actual">{{ comparison.summary.actual_avg_speed_mph }} mph</div>
             {% if comparison.summary.plan_avg_speed_mph %}
             <div class="summary-plan">Plan: {{ comparison.summary.plan_avg_speed_mph }} mph</div>
             {% endif %}
+            <div class="summary-actual">{{ comparison.summary.actual_avg_speed_mph }} mph</div>
+            {% if comparison.summary.speed_delta_mph is not none %}
+            <div class="summary-delta {% if comparison.summary.speed_delta_mph > 0.5 %}delta-faster{% elif comparison.summary.speed_delta_mph < -0.5 %}delta-slower{% else %}delta-neutral{% endif %}">
+                &Delta; {{ "%+.1f"|format(comparison.summary.speed_delta_mph) }} mph
+            </div>
+            {% endif %}
         </div>
+
+        {# Stops Found #}
         <div class="summary-item">
             <div class="summary-label">Stops Found</div>
             <div class="summary-actual">{{ comparison.summary.stops_detected }}</div>
@@ -313,6 +356,8 @@
             <div class="summary-plan">Planned: {{ comparison.summary.stops_planned }}</div>
             {% endif %}
         </div>
+
+        {# Extra Stops #}
         {% if comparison.summary.stops_extra > 0 %}
         <div class="summary-item" style="border-color:#f59e0b;">
             <div class="summary-label" style="color:#92400e;">Extra Stops</div>
@@ -403,15 +448,19 @@
 <table class="analysis-table">
 <thead>
 <tr>
-    <th style="text-align:left;width:28%;">Stop</th>
-    <th style="text-align:right;width:10%;">Distance</th>
-    <th style="text-align:right;width:14%;">Plan Time</th>
+    <th style="text-align:left;">Stop</th>
+    <th style="text-align:right;">Dist</th>
+    <th style="text-align:right;">Plan Stop</th>
     {% if has_custom %}
-    <th style="text-align:right;width:14%;">Custom Plan</th>
+    <th style="text-align:right;">Custom</th>
     {% endif %}
-    <th style="text-align:right;width:14%;">Actual Stop</th>
-    <th style="text-align:right;width:8%;">&Delta;</th>
-    <th style="text-align:right;width:12%;">Plan Cumul</th>
+    <th style="text-align:right;">Actual Stop</th>
+    <th style="text-align:right;">&Delta;</th>
+    <th style="text-align:right;">Plan Cumul</th>
+    <th style="text-align:right;">Actual Cumul</th>
+    <th style="text-align:right;">&Delta; Cumul</th>
+    <th style="text-align:right;">Plan TOD</th>
+    <th style="text-align:right;">Actual TOD</th>
 </tr>
 </thead>
 <tbody>
@@ -431,16 +480,14 @@
     </td>
 
     {# Distance #}
-    <td style="text-align:right;font-weight:600;color:#64748b;">{{ "%.1f"|format(row.distance_miles) }} mi</td>
+    <td style="text-align:right;font-weight:600;color:#64748b;">{{ "%.1f"|format(row.distance_miles) }}</td>
 
     {# Plan stop duration #}
     <td style="text-align:right;">
         {% if row.plan_stop_duration_min %}
-        <div style="font-weight:600;">{{ row.plan_stop_duration_min }} min</div>
-        {% elif row.stop_type in ('start', 'finish') %}
-        <span style="color:var(--text-light);">—</span>
+        <span style="font-weight:600;">{{ row.plan_stop_duration_min }}m</span>
         {% else %}
-        <span style="color:var(--text-light);">—</span>
+        <span style="color:var(--text-light);">&mdash;</span>
         {% endif %}
     </td>
 
@@ -448,9 +495,9 @@
     {% if has_custom %}
     <td style="text-align:right;">
         {% if row.custom and row.custom.stop_duration_min %}
-        <div style="font-weight:600; color:var(--primary);">{{ row.custom.stop_duration_min }} min</div>
+        <span style="font-weight:600; color:var(--primary);">{{ row.custom.stop_duration_min }}m</span>
         {% else %}
-        <span style="color:var(--text-light);">—</span>
+        <span style="color:var(--text-light);">&mdash;</span>
         {% endif %}
     </td>
     {% endif %}
@@ -458,13 +505,13 @@
     {# Actual stop duration #}
     <td style="text-align:right;">
         {% if row.actual_stop_duration_min is not none %}
-        <div style="font-weight:700; color:#c2410c;">{{ row.actual_stop_duration_min }} min</div>
+        <span style="font-weight:700; color:#c2410c;">{{ row.actual_stop_duration_min }}m</span>
         {% else %}
-        <span style="color:var(--text-light);">—</span>
+        <span style="color:var(--text-light);">&mdash;</span>
         {% endif %}
     </td>
 
-    {# Delta #}
+    {# Stop Delta #}
     <td style="text-align:right;font-weight:700;">
         {% if row.stop_delta_min is not none %}
         {% if row.stop_delta_min > 0 %}
@@ -477,17 +524,51 @@
         {% elif row.is_extra and row.actual_stop_duration_min %}
         <span class="delta-slower">+{{ row.actual_stop_duration_min|round(0)|int }}</span>
         {% else %}
-        <span style="color:var(--text-light);">—</span>
+        <span style="color:var(--text-light);">&mdash;</span>
         {% endif %}
     </td>
 
     {# Plan cumulative #}
-    <td style="text-align:right;font-size:0.85rem;">
+    <td style="text-align:right;">
         {% if row.plan_cum_time_min %}
         {{ (row.plan_cum_time_min // 60)|int }}:{{ "%02d"|format(row.plan_cum_time_min % 60) }}
         {% else %}
-        <span style="color:var(--text-light);">—</span>
+        <span style="color:var(--text-light);">&mdash;</span>
         {% endif %}
+    </td>
+
+    {# Actual cumulative #}
+    <td style="text-align:right;">
+        {% if row.actual_cum_time_min is not none %}
+        <span style="font-weight:600;color:#c2410c;">{{ (row.actual_cum_time_min // 60)|int }}:{{ "%02d"|format(row.actual_cum_time_min % 60) }}</span>
+        {% else %}
+        <span style="color:var(--text-light);">&mdash;</span>
+        {% endif %}
+    </td>
+
+    {# Cumulative delta #}
+    <td style="text-align:right;font-weight:700;">
+        {% if row.cum_time_delta_min is not none %}
+        {% if row.cum_time_delta_min > 0 %}
+        <span class="delta-slower">+{{ row.cum_time_delta_min|round(0)|int }}</span>
+        {% elif row.cum_time_delta_min < 0 %}
+        <span class="delta-faster">{{ row.cum_time_delta_min|round(0)|int }}</span>
+        {% else %}
+        <span class="delta-neutral">0</span>
+        {% endif %}
+        {% else %}
+        <span style="color:var(--text-light);">&mdash;</span>
+        {% endif %}
+    </td>
+
+    {# Plan Time of Day #}
+    <td style="text-align:right;color:#64748b;">
+        {% if row.plan_time_of_day %}{{ row.plan_time_of_day }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+    </td>
+
+    {# Actual Time of Day #}
+    <td style="text-align:right;font-weight:600;color:#c2410c;">
+        {% if row.actual_time_of_day %}{{ row.actual_time_of_day }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
     </td>
 </tr>
 {% endfor %}
