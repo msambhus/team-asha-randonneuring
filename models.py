@@ -2316,7 +2316,8 @@ def get_strava_activities_in_date_range(rider_id, date_start, date_end):
 def get_ride_by_id_full(ride_id):
     """Get ride with plan info."""
     return _execute("""
-        SELECT ri.*, rp.slug as plan_slug, rp.id as plan_id
+        SELECT ri.*, rp.slug as plan_slug, rp.id as plan_id,
+               rp.start_time as plan_start_time
         FROM ride ri
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE ri.id = %s

@@ -1,5 +1,5 @@
 """Rider routes: season view, individual profiles, profile edit, upcoming brevets, ride plans."""
-from flask import Blueprint, render_template, abort, request, redirect, url_for, session, jsonify
+from flask import Blueprint, render_template, abort, request, redirect, url_for, session, jsonify, current_app
 
 def is_admin_user():
     """Check if current logged-in user is an admin."""
@@ -744,6 +744,8 @@ def ride_strava_analysis(rusa_id, ride_id):
 
     # Check Strava visibility
     is_own_profile = session.get('rider_id') == rider['id']
+    if current_app.debug:
+        is_own_profile = True  # Always treat as own profile in debug mode
     strava_data_private = rider.get('strava_data_private', False)
     show_strava_data = is_own_profile or not strava_data_private
     if not show_strava_data:
@@ -807,11 +809,16 @@ def ride_strava_analysis(rusa_id, ride_id):
                                is_own_profile=is_own_profile)
 
     # Build comparison data
+    plan_start_time = ride.get('start_time') or ride.get('plan_start_time')
+    actual_start_time = match.get('start_date_local')
+
     comparison = build_comparison(
         plan_stops=plan_stops,
         detected_stops=analysis['detected_stops'],
         activity=dict(match),
         custom_stops=custom_stops,
+        plan_start_time=plan_start_time,
+        actual_start_time=actual_start_time,
     )
 
     return render_template('strava_ride_analysis.html',
@@ -838,22 +845,80 @@ def retry_strava_analysis(rusa_id, ride_id):
     return redirect(url_for('riders.ride_strava_analysis', rusa_id=rusa_id, ride_id=ride_id))
 
 
+@riders_bp.route('/debug/match-check/<int:rider_id>/<int:ride_id>')
+def debug_match_check(rider_id, ride_id):
+    """Debug endpoint to diagnose Strava matching issues. Only available in debug mode."""
+    from models import get_ride_by_id_full, get_strava_activities_in_date_range, _execute
+    from datetime import timedelta
+
+    if not current_app.debug:
+        abort(404)
+
+    ride = get_ride_by_id_full(ride_id)
+    if not ride:
+        return jsonify({'error': 'Ride not found'})
+
+    date_start = ride['date'] - timedelta(days=1)
+    date_end = ride['date'] + timedelta(days=1)
+
+    activities = get_strava_activities_in_date_range(rider_id, date_start, date_end)
+
+    total = _execute("SELECT COUNT(*) as cnt FROM strava_activity WHERE rider_id = %s", (rider_id,)).fetchone()
+    conn_row = _execute("SELECT * FROM strava_connection WHERE rider_id = %s", (rider_id,)).fetchone()
+
+    target_m = (ride['distance_km'] or 0) * 1000
+    tolerance = target_m * 0.20
+
+    return jsonify({
+        'ride': {
+            'id': ride['id'], 'name': ride['name'],
+            'date': str(ride['date']), 'distance_km': ride['distance_km'],
+            'target_m': target_m, 'tolerance_m': tolerance,
+        },
+        'date_range': {'start': str(date_start), 'end': str(date_end)},
+        'strava_connection': bool(conn_row),
+        'total_activities_for_rider': total['cnt'] if total else 0,
+        'activities_in_range': [
+            {
+                'strava_activity_id': a['strava_activity_id'],
+                'name': a['name'],
+                'distance_m': a['distance'],
+                'diff_m': abs((a['distance'] or 0) - target_m),
+                'within_tolerance': abs((a['distance'] or 0) - target_m) <= tolerance,
+                'start_date_local': str(a['start_date_local']),
+            }
+            for a in (activities or [])
+        ],
+    })
+
+
 @riders_bp.route('/my/strava-analysis')
 def my_strava_analysis():
     """Private page: rider's Strava analysis for all brevet rides."""
     from auth import profile_required as _profile_required
     from models import (get_strava_connection, get_all_seasons, get_current_season,
                         get_rider_participation, _execute)
-    from flask import flash, current_app
+    from flask import flash
 
     # Auth check (inline instead of decorator so we can keep it on riders_bp)
-    if not session.get('user_id'):
-        flash('Please log in to access this page', 'warning')
-        return redirect(url_for('auth.login', next=request.path))
-    rider_id = session.get('rider_id')
-    if not rider_id:
-        flash('Please complete your profile setup', 'warning')
-        return redirect(url_for('auth.setup_profile'))
+    if current_app.debug:
+        # Debug mode: allow unauthenticated access for local testing
+        rider_id = request.args.get('rider_id', type=int)
+        if not rider_id:
+            # Fall back to first rider with a Strava connection
+            fallback = _execute("SELECT rider_id FROM strava_connection LIMIT 1").fetchone()
+            rider_id = fallback['rider_id'] if fallback else None
+        if not rider_id:
+            flash('No rider with Strava connection found (debug mode)', 'error')
+            return redirect(url_for('main.index'))
+    else:
+        if not session.get('user_id'):
+            flash('Please log in to access this page', 'warning')
+            return redirect(url_for('auth.login', next=request.path))
+        rider_id = session.get('rider_id')
+        if not rider_id:
+            flash('Please complete your profile setup', 'warning')
+            return redirect(url_for('auth.setup_profile'))
 
     # Get rider info
     rider_row = _execute("""
