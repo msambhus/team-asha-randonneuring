@@ -16,7 +16,10 @@ admin_bp = Blueprint('admin', __name__)
 
 
 def _require_admin():
-    """Check if current user is an admin. Aborts with 403 if not."""
+    """Check if current user is an admin. Aborts with 403 if not. Skipped on localhost (debug mode)."""
+    from flask import current_app
+    if current_app.debug:
+        return
     from routes.riders import is_admin_user
     if not is_admin_user():
         abort(403)

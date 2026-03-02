@@ -639,6 +639,15 @@ def rider_profile(rusa_id):
                 'badge': badge,
             }
 
+    # --- Strava ride matches (for analysis links in season history) ---
+    if has_strava:
+        from services.strava_analysis import batch_match_rides
+        for sd in season_data:
+            sd['strava_matches'] = batch_match_rides(rider['id'], sd['participation'])
+    else:
+        for sd in season_data:
+            sd['strava_matches'] = {}
+
     # --- Upcoming rides with readiness ---
     upcoming_rides = []
     signups = get_rider_upcoming_signups(rider['id'])
@@ -720,6 +729,115 @@ def rider_profile(rusa_id):
                            r12_years=r12_years,
                            is_own_profile=is_own_profile,
                            show_strava_data=show_strava_data)
+
+
+@riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/strava-analysis')
+def ride_strava_analysis(rusa_id, ride_id):
+    """Show Strava performance analysis for a specific ride."""
+    from models import (get_ride_by_id_full, get_strava_ride_match, get_strava_connection,
+                        get_ride_plan_stops, get_custom_plan)
+    from services.strava_analysis import (find_matching_activity, build_comparison,
+                                          fetch_and_analyze, match_stops_to_plan)
+
+    rider = get_rider_by_rusa(rusa_id)
+    if not rider:
+        abort(404)
+
+    ride = get_ride_by_id_full(ride_id)
+    if not ride:
+        abort(404)
+
+    # Check Strava visibility
+    is_own_profile = session.get('rider_id') == rider['id']
+    strava_data_private = rider.get('strava_data_private', False)
+    show_strava_data = is_own_profile or not strava_data_private
+    if not show_strava_data:
+        abort(403)
+
+    # Look for existing match
+    match = get_strava_ride_match(rider['id'], ride_id)
+
+    # Try auto-matching if no match exists
+    if not match:
+        activity = find_matching_activity(
+            rider_id=rider['id'],
+            ride_date=ride['date'],
+            ride_distance_km=ride['distance_km'],
+            ride_name=ride['name'],
+        )
+        if activity:
+            from models import create_strava_ride_match
+            create_strava_ride_match(rider['id'], ride_id, activity['strava_activity_id'])
+            match = get_strava_ride_match(rider['id'], ride_id)
+
+    if not match:
+        return render_template('strava_ride_analysis.html',
+                               rider=rider, ride=ride, activity=None,
+                               comparison=None, error=None,
+                               has_plan=False, has_custom=False, plan_slug=None)
+
+    # Load plan stops if available
+    plan_stops = []
+    custom_stops = None
+    has_plan = bool(ride.get('ride_plan_id'))
+    has_custom = False
+    plan_slug = ride.get('plan_slug')
+
+    if has_plan:
+        plan_stops = get_ride_plan_stops(ride['ride_plan_id'])
+
+        # Check for custom plan
+        custom_plan = get_custom_plan(rider['id'], ride['ride_plan_id'])
+        if custom_plan:
+            has_custom = True
+            from services.custom_plan_service import get_merged_plan_stops
+            custom_stops_merged, _ = get_merged_plan_stops(custom_plan['id'])
+            custom_stops = custom_stops_merged
+
+    # Fetch and analyze streams
+    analysis = fetch_and_analyze(
+        rider_id=rider['id'],
+        match_id=match['id'],
+        strava_activity_id=match['strava_activity_id'],
+        plan_stops=plan_stops if plan_stops else None,
+    )
+
+    if analysis.get('error'):
+        return render_template('strava_ride_analysis.html',
+                               rider=rider, ride=ride, activity=dict(match),
+                               comparison=None, error=analysis['error'],
+                               has_plan=has_plan, has_custom=has_custom,
+                               plan_slug=plan_slug)
+
+    # Build comparison data
+    comparison = build_comparison(
+        plan_stops=plan_stops,
+        detected_stops=analysis['detected_stops'],
+        activity=dict(match),
+        custom_stops=custom_stops,
+    )
+
+    return render_template('strava_ride_analysis.html',
+                           rider=rider, ride=ride, activity=dict(match),
+                           comparison=comparison, error=None,
+                           has_plan=has_plan, has_custom=has_custom,
+                           plan_slug=plan_slug)
+
+
+@riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/strava-retry', methods=['POST'])
+def retry_strava_analysis(rusa_id, ride_id):
+    """Clear cached analysis error and retry stream fetch."""
+    from models import get_strava_ride_match, clear_strava_ride_analysis
+
+    rider = get_rider_by_rusa(rusa_id)
+    if not rider:
+        abort(404)
+
+    match = get_strava_ride_match(rider['id'], ride_id)
+    if match:
+        clear_strava_ride_analysis(match['id'])
+
+    return redirect(url_for('riders.ride_strava_analysis', rusa_id=rusa_id, ride_id=ride_id))
 
 
 @riders_bp.route('/rider/<int:rusa_id>/advice')

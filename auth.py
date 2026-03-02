@@ -13,9 +13,11 @@ def login_required(f):
 
 
 def user_login_required(f):
-    """Require user authentication via Google OAuth."""
+    """Require user authentication via Google OAuth. Skipped on localhost (debug mode)."""
     @wraps(f)
     def decorated(*args, **kwargs):
+        if current_app.debug:
+            return f(*args, **kwargs)
         if not session.get('user_id'):
             flash('Please log in to access this page', 'warning')
             return redirect(url_for('auth.login', next=request.path))
