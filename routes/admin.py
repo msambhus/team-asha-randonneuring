@@ -6,7 +6,8 @@ from models import (get_current_season, get_rides_for_season, get_riders_for_sea
                     get_ride_by_id, get_participation_matrix, get_clubs,
                     create_ride, update_rider_ride_status, get_all_riders,
                     get_ride_plan_by_rwgps_route_id, create_ride_plan_from_rwgps,
-                    auto_finalize_past_rides, get_rides_with_signup_counts)
+                    auto_finalize_past_rides, get_rides_with_signup_counts,
+                    get_strava_admin_summary)
 from auth import login_required, user_login_required, verify_password
 from services.rwgps import (extract_rwgps_route_id, fetch_route, extract_controls,
                             build_ride_plan, slugify)
@@ -49,6 +50,14 @@ def dashboard():
     today = date.today()
     return render_template('admin/dashboard.html', season=current, rides=rides,
                            today=today)
+
+
+@admin_bp.route('/strava')
+@user_login_required
+def strava_status():
+    _require_admin()
+    riders = get_strava_admin_summary()
+    return render_template('admin/strava_status.html', riders=riders)
 
 
 @admin_bp.route('/finalize-past-rides', methods=['POST'])
