@@ -50,6 +50,12 @@ SCR_EVENTS_URL = 'https://santacruzrandonneurs.org/'
 # RUSA website for region 4 (includes Davis)
 RUSA_REGION4_URL = 'https://rusa.org/cgi-bin/eventsearch_PF.pl?region=4&sortby=date'
 
+# Santa Rosa Randonneurs brevet calendar
+SRR_EVENTS_URL = 'https://www.santarosarandos.org/2026-brevets'
+
+# San Luis Obispo Randonneurs brevet calendar
+SLO_EVENTS_URL = 'https://slorandonneur.org/2026-brevets/'
+
 
 def download_sfr_events():
     """
@@ -482,6 +488,227 @@ def get_scr_events():
         return []
 
 
+def get_srr_events():
+    """
+    Download and parse Santa Rosa Randonneurs events from their website.
+    The page is a Google Docs embed with heavily nested spans.
+    Fetches elevation from RideWithGPS links when available.
+    """
+    print("📥 Downloading Santa Rosa Randonneurs events...")
+
+    try:
+        req = Request(SRR_EVENTS_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        response = urlopen(req, timeout=10)
+        html_content = response.read().decode('utf-8')
+
+        events = []
+
+        months = {
+            'january': '01', 'february': '02', 'march': '03',
+            'april': '04', 'may': '05', 'june': '06',
+            'july': '07', 'august': '08', 'september': '09',
+            'october': '10', 'november': '11', 'december': '12',
+        }
+
+        # The page embeds a Google Doc. Dates are in <h3> tags with nested
+        # spans (digits may be split across spans). Event names and RWGPS
+        # links are in <h2> tags. Start times appear in paragraphs after
+        # each event heading.
+
+        # Step 1: collect ALL h3 headers with document positions.
+        # Valid date headers get (pos, day, month_name); invalid ones get
+        # (pos, None, None) — used to detect "no specific date" events.
+        h3_all = []
+        h3_dates = []
+        for m in re.finditer(
+            r'<h3[^>]*>(.*?)</h3>', html_content, re.DOTALL | re.IGNORECASE
+        ):
+            text = re.sub(r'<[^>]+>', '', m.group(1)).strip()
+            date_match = re.search(
+                r'(\d+)\s+(\w+)\s+\((\w+)\)', text, re.IGNORECASE
+            )
+            if date_match:
+                entry = (m.start(), date_match.group(1), date_match.group(2))
+                h3_all.append(entry)
+                h3_dates.append(entry)
+            elif text:  # non-empty h3 with no parseable date
+                h3_all.append((m.start(), None, None))
+
+        # Step 2: collect RWGPS links from <h2> tags with their positions.
+        # Inner span text is concatenated by stripping inner HTML tags.
+        rwgps_events = []
+        for m in re.finditer(
+            r'<h2[^>]*>.*?href="(https://ridewithgps\.com/routes/\d+)"'
+            r'[^>]*>(.*?)</a>.*?</h2>',
+            html_content, re.DOTALL | re.IGNORECASE
+        ):
+            url = m.group(1)
+            name = re.sub(r'<[^>]+>', '', m.group(2)).strip()
+            if name:
+                rwgps_events.append((m.start(), url, name))
+
+        # Step 3: collect start times with positions.
+        start_times = [
+            (m.start(), m.group(1))
+            for m in re.finditer(r'start:\s*(\d{4})', html_content, re.IGNORECASE)
+        ]
+
+        # Step 4: associate each event with its nearest preceding date header
+        # and nearest following start time (before the next RWGPS event).
+        for i, (rwgps_pos, url, name) in enumerate(rwgps_events):
+            # Find the nearest preceding h3 (valid or not)
+            preceding_all = [h for h in h3_all if h[0] < rwgps_pos]
+            if not preceding_all:
+                continue
+            nearest_h3 = max(preceding_all, key=lambda x: x[0])
+            # If the nearest h3 has no parseable date, skip this event
+            if nearest_h3[1] is None:
+                continue
+            _, day, month_name = nearest_h3
+
+            month_num = months.get(month_name.lower())
+            if not month_num:
+                continue  # e.g. "april (date upon request)" — no specific date
+
+            event_date = f"2026-{month_num}-{day.zfill(2)}"
+
+            # Distance from name (e.g. "West County 200km" → 200)
+            dist_match = re.search(r'(\d+)km', name, re.IGNORECASE)
+            distance_km = int(dist_match.group(1)) if dist_match else 0
+            if not distance_km:
+                continue
+
+            # Start time between this and the next RWGPS event
+            next_pos = rwgps_events[i + 1][0] if i + 1 < len(rwgps_events) else len(html_content)
+            window_starts = [(p, t) for p, t in start_times if rwgps_pos < p < next_pos]
+            start_time = None
+            if window_starts:
+                raw = min(window_starts, key=lambda x: x[0])[1]
+                start_time = f"{raw[:2]}:{raw[2:]}" if len(raw) == 4 else None
+
+            # Fetch elevation from RideWithGPS
+            elevation_ft = None
+            if url:
+                print(f"  Fetching elevation for {name}...")
+                _, elevation_ft = get_rwgps_details(url)
+
+            events.append({
+                'date': event_date,
+                'name': name,
+                'distance_km': distance_km,
+                'distance_miles': None,
+                'elevation_ft': elevation_ft,
+                'rwgps_url': url,
+                'start_time': start_time,
+                'time_limit_hours': get_time_limit_hours(distance_km),
+                'start_location': 'Santa Rosa, CA',
+            })
+
+        if events:
+            print(f"✅ Downloaded {len(events)} SRR events")
+        else:
+            print("⚠️  No SRR events found")
+
+        return events
+
+    except Exception as e:
+        print(f"❌ Error downloading SRR events: {e}")
+        return []
+
+
+def get_slo_events():
+    """
+    Download and parse San Luis Obispo Randonneurs events from their website.
+    The page is a WordPress post with date text inline before each event link.
+    Populaires (sub-200km) are returned but filtered by upsert_event().
+    """
+    print("📥 Downloading San Luis Obispo Randonneurs events...")
+
+    try:
+        req = Request(SLO_EVENTS_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        response = urlopen(req, timeout=10)
+        html_content = response.read().decode('utf-8')
+
+        events = []
+
+        months = {
+            'jan': '01', 'feb': '02', 'mar': '03',
+            'apr': '04', 'may': '05', 'jun': '06',
+            'jul': '07', 'aug': '08', 'sep': '09',
+            'oct': '10', 'nov': '11', 'dec': '12',
+        }
+
+        # Narrow to the entry-content section to avoid sidebar noise.
+        start = html_content.find('entry-content')
+        content = html_content[start:] if start >= 0 else html_content
+
+        # Each event line looks like:
+        #   Jan 3   <a href="...">200k Morro Bay More Coastal</a> (ACP)
+        #   March 28   <a href="...">300k Mostly SLO (ACP)</a>
+        # Some events (e.g. 400k) have HTML tags between the date text and
+        # the link, and nested tags inside the link. Allow for both.
+        pattern = re.compile(
+            r'(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May'
+            r'|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?'
+            r'|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)'
+            r'\s+(\d+)(?:[^<]|<[^>]+>)*?'
+            r'<a[^>]+href="[^"]*"[^>]*>(.*?)</a>',
+            re.IGNORECASE | re.DOTALL,
+        )
+
+        seen = set()  # deduplicate (date, name) pairs
+        for m in pattern.finditer(content):
+            month_word = m.group(1)[:3].lower()
+            day = m.group(2)
+            link_text = re.sub(r'<[^>]+>', '', m.group(3)).strip()
+            link_text = html.unescape(link_text)
+            dist_match = re.search(r'^(\d+)k\s*(.*)', link_text, re.IGNORECASE)
+            if not dist_match:
+                continue
+            distance_km = int(dist_match.group(1))
+            route_name = dist_match.group(2).strip()
+            full_name = f"{dist_match.group(1)}k {route_name}"
+
+            month_num = months.get(month_word)
+            if not month_num:
+                continue
+
+            event_date = f"2026-{month_num}-{day.zfill(2)}"
+            key = (event_date, full_name)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            # Infer start location from event name
+            if 'morro bay' in full_name.lower():
+                start_location = 'Morro Bay, CA'
+            else:
+                start_location = 'San Luis Obispo, CA'
+
+            events.append({
+                'date': event_date,
+                'name': full_name,
+                'distance_km': distance_km,
+                'distance_miles': None,
+                'elevation_ft': None,
+                'rwgps_url': None,
+                'start_time': None,
+                'time_limit_hours': get_time_limit_hours(distance_km),
+                'start_location': start_location,
+            })
+
+        if events:
+            print(f"✅ Downloaded {len(events)} SLO events")
+        else:
+            print("⚠️  No SLO events found")
+
+        return events
+
+    except Exception as e:
+        print(f"❌ Error downloading SLO events: {e}")
+        return []
+
+
 def upsert_event(cursor, region, event):
     """Insert or update a RUSA event in the ride table. Only processes rides with valid ACP time limits."""
     # Filter: only process rides that have standard ACP time limits
@@ -637,7 +864,35 @@ def main():
                 print(f"  ⊗ {event['name']} ({event['date']}) [{event['distance_km']}km - filtered]")
             else:
                 print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']})")
-    
+
+    # Process Santa Rosa Randonneurs events
+    srr_events = get_srr_events()
+    if srr_events:
+        print("\n📍 Santa Rosa Randonneurs")
+        for event in srr_events:
+            action = upsert_event(cursor, 'Santa Rosa', event)
+            stats[action] += 1
+            if action == 'skipped':
+                print(f"  ⊘ {event['name']} ({event['date']}) [DONE - skipped]")
+            elif action == 'filtered':
+                print(f"  ⊗ {event['name']} ({event['date']}) [{event['distance_km']}km - filtered]")
+            else:
+                print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']})")
+
+    # Process San Luis Obispo Randonneurs events
+    slo_events = get_slo_events()
+    if slo_events:
+        print("\n📍 San Luis Obispo Randonneurs")
+        for event in slo_events:
+            action = upsert_event(cursor, 'San Luis Obispo', event)
+            stats[action] += 1
+            if action == 'skipped':
+                print(f"  ⊘ {event['name']} ({event['date']}) [DONE - skipped]")
+            elif action == 'filtered':
+                print(f"  ⊗ {event['name']} ({event['date']}) [{event['distance_km']}km - filtered]")
+            else:
+                print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']})")
+
     conn.commit()
     conn.close()
     
