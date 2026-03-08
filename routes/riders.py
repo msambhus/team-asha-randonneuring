@@ -453,6 +453,8 @@ def upcoming_brevets(season_name):
         'San Francisco': '#e74c3c',
         'Davis': '#2ecc71',
         'Santa Cruz': '#3498db',
+        'Santa Rosa': '#9b59b6',
+        'San Luis Obispo': '#f39c12',
     }
 
     # Build distance filter from actual event data

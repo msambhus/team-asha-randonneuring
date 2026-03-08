@@ -624,7 +624,7 @@
 <h2 style="margin-bottom:25px;">Ride Calendar</h2>
 
 <div class="filter-section">
-    <p style="font-size:0.85rem;color:var(--text-light);margin-bottom:15px;">Events from <a href="https://rusa.org/cgi-bin/eventsearch_GF.pl" target="_blank" style="color:var(--accent);font-weight:600;">RUSA</a> (Davis, San Francisco, Santa Cruz)</p>
+    <p style="font-size:0.85rem;color:var(--text-light);margin-bottom:15px;">Events from <a href="https://rusa.org/cgi-bin/eventsearch_GF.pl" target="_blank" style="color:var(--accent);font-weight:600;">RUSA</a> (Davis, San Francisco, Santa Cruz, Santa Rosa, San Luis Obispo)</p>
     <div class="filter-label">Filter by Club</div>
     <div class="filter-buttons">
         <span class="region-filter active" data-region="all" onclick="filterByRegion('all')">
@@ -1427,6 +1427,9 @@ function showExternalClubReminder(clubCode, rideId, button, currentStatus) {
             break;
         case 'DBC':
             clubInfo = '<strong>Davis Bike Club</strong><br><span style="color:var(--text);">Please sign up on the Davis Bike Club website.</span>';
+            break;
+        case 'SLO':
+            clubInfo = '<strong>San Luis Obispo Randonneurs</strong><br><a href="https://pci.jotform.com/form/253584659180972" target="_blank" style="color:var(--primary);font-weight:600;">Online Registration (JotForm)</a>';
             break;
         default:
             clubInfo = '<strong>External Club</strong><br><span style="color:var(--text);">Please register on the club\'s official website.</span>';
