@@ -210,11 +210,12 @@ def _do_gradual_backfill(connections, force_rider_id=None):
         oldest = get_oldest_activity_date(rider_id)
         if oldest is None:
             # No activities at all — pull last year
-            days_back = 365
+            target_dt = datetime.utcnow() - timedelta(days=365)
+            after_epoch = int(target_dt.timestamp())
             before_epoch = None
             cursor_after = date.today() - timedelta(days=365)
             current_app.logger.info(
-                f'Backfill: {rider_name} has no activities, pulling last {days_back} days'
+                f'Backfill: {rider_name} has no activities, pulling last 365 days'
             )
         else:
             if isinstance(oldest, str):
@@ -223,7 +224,7 @@ def _do_gradual_backfill(connections, force_rider_id=None):
                 oldest_dt = oldest.replace(tzinfo=None) if hasattr(oldest, 'tzinfo') and oldest.tzinfo else oldest
             before_epoch = int(oldest_dt.timestamp())
             target_dt = oldest_dt - timedelta(days=BACKFILL_DAYS)
-            days_back = (datetime.utcnow() - target_dt).days
+            after_epoch = int(target_dt.timestamp())
             cursor_after = target_dt.date()
             current_app.logger.info(
                 f'Backfill: {rider_name} first backfill, oldest activity is {oldest_dt.date()}, '
@@ -233,7 +234,7 @@ def _do_gradual_backfill(connections, force_rider_id=None):
         # Continue from where we left off
         before_epoch = int(datetime.combine(cursor, datetime.min.time()).timestamp())
         target = cursor - timedelta(days=BACKFILL_DAYS)
-        days_back = (date.today() - target).days
+        after_epoch = int(datetime.combine(target, datetime.min.time()).timestamp())
         cursor_after = target
         current_app.logger.info(
             f'Backfill: {rider_name} cursor={cursor}, '
@@ -244,7 +245,7 @@ def _do_gradual_backfill(connections, force_rider_id=None):
     try:
         counts = sync_rider_activities(
             rider_id=rider_id,
-            days=days_back,
+            after_epoch=after_epoch,
             before_epoch=before_epoch,
             calculate_eddington=True,
         )

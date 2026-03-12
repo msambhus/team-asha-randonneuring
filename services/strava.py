@@ -160,13 +160,14 @@ def transform_activity(activity, rider_id):
     }
 
 
-def sync_rider_activities(rider_id, days=365, before_epoch=None, calculate_eddington=True):
+def sync_rider_activities(rider_id, days=365, before_epoch=None, after_epoch=None, calculate_eddington=True):
     """Pull activities for a rider and upsert into DB.
 
     Args:
         rider_id: rider ID
-        days: how many days back to fetch (default: 365 = 1 year)
+        days: how many days back to fetch (default: 365 = 1 year). Ignored if after_epoch is set.
         before_epoch: Unix timestamp — only fetch activities before this time (for backfill)
+        after_epoch: Unix timestamp — only fetch activities after this time. Overrides days.
         calculate_eddington: whether to recalculate Eddington number after sync
 
     Returns:
@@ -180,7 +181,8 @@ def sync_rider_activities(rider_id, days=365, before_epoch=None, calculate_eddin
     if not connection:
         return {'new': 0, 'updated': 0, 'failed': 0, 'total': 0}
 
-    after_epoch = int(time.time()) - (days * 24 * 3600)
+    if after_epoch is None:
+        after_epoch = int(time.time()) - (days * 24 * 3600)
     activities = fetch_activities(connection, after_epoch=after_epoch, before_epoch=before_epoch)
     new_count = 0
     updated_count = 0

@@ -338,11 +338,9 @@ def force_resync(rider_id):
     from datetime import date as _date
     start_of_year = _date(year, 1, 1)
     end_of_year = _date(year, 12, 31)
-    today = _date.today()
 
     after_epoch = int(_time.mktime(start_of_year.timetuple()))
     before_epoch = int(_time.mktime(_date(year + 1, 1, 1).timetuple()))
-    days_from_start = (today - start_of_year).days
 
     current_app.logger.info(
         f'Force re-sync: rider={rider_id} year={year} '
@@ -351,7 +349,7 @@ def force_resync(rider_id):
 
     counts = sync_rider_activities(
         rider_id=rider_id,
-        days=days_from_start,
+        after_epoch=after_epoch,
         before_epoch=before_epoch,
         calculate_eddington=True,
     )
