@@ -8,7 +8,7 @@ on 50+ different days.
 """
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # All Strava activity types that count as cycling
 CYCLING_TYPES = {
@@ -19,6 +19,9 @@ CYCLING_TYPES = {
 
 def _get_daily_distances(activities, unit='miles', activity_types=None):
     """Build {date_key: total_distance} dict from activities.
+
+    Multi-day rides (elapsed_time > 24h) are split proportionally across
+    calendar days, matching swinny.net's Eddington calculation approach.
 
     Args:
         activities: List of activity dicts
@@ -51,13 +54,42 @@ def _get_daily_distances(activities, unit='miles', activity_types=None):
         if isinstance(start_date, str):
             try:
                 date_obj = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-                date_key = date_obj.date().isoformat()
             except (ValueError, AttributeError):
                 continue
         else:
-            date_key = start_date.date().isoformat()
-        daily[date_key] += distance
+            date_obj = start_date
+
+        elapsed = activity.get('elapsed_time') or 0
+
+        # Split multi-day rides across calendar days proportionally
+        if elapsed > 86400:
+            _split_multiday(daily, date_obj, distance, elapsed)
+        else:
+            daily[date_obj.date().isoformat()] += distance
     return daily
+
+
+def _split_multiday(daily, start_dt, total_distance, elapsed_seconds):
+    """Split a multi-day ride's distance proportionally across calendar days.
+
+    Allocates distance based on what fraction of elapsed time falls on each
+    calendar day, matching swinny.net's approach.
+    """
+    start = start_dt.replace(tzinfo=None) if hasattr(start_dt, 'tzinfo') and start_dt.tzinfo else start_dt
+    end = start + timedelta(seconds=elapsed_seconds)
+
+    current = start
+    while current < end:
+        next_midnight = (current.date() + timedelta(days=1))
+        next_midnight_dt = datetime(next_midnight.year, next_midnight.month, next_midnight.day)
+
+        day_end = min(end, next_midnight_dt)
+        seconds_on_day = (day_end - current).total_seconds()
+
+        fraction = seconds_on_day / elapsed_seconds
+        daily[current.date().isoformat()] += total_distance * fraction
+
+        current = next_midnight_dt
 
 
 def _eddington_from_distances(daily_distances):
