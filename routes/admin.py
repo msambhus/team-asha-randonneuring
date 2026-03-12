@@ -7,7 +7,8 @@ from models import (get_current_season, get_rides_for_season, get_riders_for_sea
                     create_ride, update_rider_ride_status, get_all_riders,
                     get_ride_plan_by_rwgps_route_id, create_ride_plan_from_rwgps,
                     auto_finalize_past_rides, get_rides_with_signup_counts,
-                    get_strava_admin_summary)
+                    get_strava_admin_summary, get_all_active_strava_connections,
+                    get_all_strava_activities_for_eddington, update_eddington_number)
 from auth import login_required, user_login_required, verify_password
 from services.rwgps import (extract_rwgps_route_id, fetch_route, extract_controls,
                             build_ride_plan, slugify)
@@ -358,4 +359,35 @@ def force_resync(rider_id):
         'rider_id': rider_id,
         'year': year,
         'result': counts,
+    })
+
+
+@admin_bp.route('/recalculate-eddington')
+@user_login_required
+def recalculate_eddington():
+    """Recalculate Eddington numbers for all riders with Strava connections."""
+    _require_admin()
+    from flask import jsonify
+    from services.eddington import calculate_eddington_number
+
+    connections = get_all_active_strava_connections()
+    results = []
+    for conn in connections:
+        rid = conn['rider_id']
+        name = conn['rider_name']
+        activities = get_all_strava_activities_for_eddington(rid)
+        miles = calculate_eddington_number(activities, unit='miles')
+        km = calculate_eddington_number(activities, unit='km')
+        update_eddington_number(rid, miles, km)
+        results.append({
+            'rider_id': rid,
+            'name': name,
+            'eddington_miles': miles,
+            'eddington_km': km,
+            'activities': len(activities),
+        })
+
+    return jsonify({
+        'recalculated': len(results),
+        'riders': results,
     })
