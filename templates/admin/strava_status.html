@@ -8,8 +8,9 @@
 </div>
 <div class="container section">
 
-<div style="margin-bottom:20px;">
+<div style="margin-bottom:20px;display:flex;gap:10px;align-items:center;">
 <a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Dashboard</a>
+<a href="{{ url_for('admin.recalculate_eddington') }}" class="btn" style="background:var(--primary);color:#fff;" onclick="this.textContent='Recalculating...';this.style.opacity='0.6';">Recalculate All Eddington</a>
 </div>
 
 <div class="table-wrap">
