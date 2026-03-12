@@ -1565,13 +1565,32 @@ def update_eddington_number(rider_id, eddington_miles, eddington_km):
 
 @cache.memoize(CACHE_TIMEOUT)
 def get_all_strava_activities_for_eddington(rider_id):
-    """Get ALL Strava riding activities for Eddington calculation (no time limit)."""
+    """Get ALL Strava cycling activities for Eddington calculation (no time limit).
+
+    Includes all cycling-related activity types: Ride, VirtualRide,
+    MountainBikeRide, GravelRide, EBikeRide, Handcycle, Velomobile.
+    """
     return _execute("""
         SELECT distance, start_date, start_date_local, activity_type
         FROM strava_activity
-        WHERE rider_id = %s AND activity_type = 'Ride'
+        WHERE rider_id = %s
+          AND activity_type IN (
+              'Ride', 'VirtualRide', 'MountainBikeRide', 'GravelRide',
+              'EBikeRide', 'Handcycle', 'Velomobile'
+          )
         ORDER BY start_date_local DESC
     """, (rider_id,)).fetchall()
+
+@cache.memoize(CACHE_TIMEOUT)
+def get_all_strava_activities_unfiltered(rider_id):
+    """Get ALL Strava activities regardless of type (for 'All' Eddington comparison)."""
+    return _execute("""
+        SELECT distance, start_date, start_date_local, activity_type
+        FROM strava_activity
+        WHERE rider_id = %s
+        ORDER BY start_date_local DESC
+    """, (rider_id,)).fetchall()
+
 
 @cache.memoize(CACHE_TIMEOUT)
 def get_rider_upcoming_signups(rider_id):
