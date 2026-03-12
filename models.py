@@ -1571,7 +1571,7 @@ def get_all_strava_activities_for_eddington(rider_id):
     MountainBikeRide, GravelRide, EBikeRide, Handcycle, Velomobile.
     """
     return _execute("""
-        SELECT distance, start_date, start_date_local, activity_type
+        SELECT distance, start_date, start_date_local, activity_type, elapsed_time
         FROM strava_activity
         WHERE rider_id = %s
           AND activity_type IN (
@@ -1585,7 +1585,7 @@ def get_all_strava_activities_for_eddington(rider_id):
 def get_all_strava_activities_unfiltered(rider_id):
     """Get ALL Strava activities regardless of type (for 'All' Eddington comparison)."""
     return _execute("""
-        SELECT distance, start_date, start_date_local, activity_type
+        SELECT distance, start_date, start_date_local, activity_type, elapsed_time
         FROM strava_activity
         WHERE rider_id = %s
         ORDER BY start_date_local DESC
