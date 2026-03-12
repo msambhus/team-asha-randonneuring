@@ -892,6 +892,152 @@ def debug_match_check(rider_id, ride_id):
     })
 
 
+@riders_bp.route('/debug/eddington-check/<int:rider_id>')
+def debug_eddington_check(rider_id):
+    """Debug endpoint to diagnose Eddington number discrepancies. Only available in debug mode."""
+    from models import (get_all_strava_activities_for_eddington,
+                        get_all_strava_activities_unfiltered, _execute)
+    from services.eddington import (calculate_eddington_number, calculate_eddington_by_year,
+                                    CYCLING_TYPES)
+
+    if not current_app.debug:
+        abort(404)
+
+    # Get stored Eddington numbers and backfill cursor
+    conn_row = _execute("""
+        SELECT eddington_number_miles, eddington_number_km,
+               eddington_calculated_at, backfill_cursor, last_sync_at
+        FROM strava_connection WHERE rider_id = %s
+    """, (rider_id,)).fetchone()
+
+    # Activity type distribution
+    type_counts = _execute("""
+        SELECT activity_type, COUNT(*) as cnt,
+               MIN(start_date_local)::date as oldest,
+               MAX(start_date_local)::date as newest
+        FROM strava_activity
+        WHERE rider_id = %s
+        GROUP BY activity_type
+        ORDER BY cnt DESC
+    """, (rider_id,)).fetchall()
+
+    # Fetch both filtered and unfiltered activity sets
+    all_cycling = get_all_strava_activities_for_eddington(rider_id)
+    all_unfiltered = get_all_strava_activities_unfiltered(rider_id)
+
+    # Calculate Eddington with 3 filter levels
+    ride_only = [a for a in all_cycling if a.get('activity_type') == 'Ride']
+
+    recalculated = {}
+    for label, acts, at_filter in [
+        ('ride_only', ride_only, {'Ride'}),
+        ('all_cycling_types', all_cycling, None),
+        ('all_types', all_unfiltered, 'all'),
+    ]:
+        recalculated[label] = {
+            'miles': calculate_eddington_number(acts, unit='miles', activity_types=at_filter),
+            'km': calculate_eddington_number(acts, unit='km', activity_types=at_filter),
+            'activity_count': len(acts),
+        }
+
+    # Per-year breakdown using cycling filter (primary) + all-types for comparison
+    by_year_cycling = calculate_eddington_by_year(all_cycling, unit='miles')
+    by_year_all = calculate_eddington_by_year(all_unfiltered, unit='miles', activity_types='all')
+
+    per_year = []
+    all_years = sorted(set(list(by_year_cycling.keys()) + list(by_year_all.keys())), reverse=True)
+    for year in all_years:
+        c = by_year_cycling.get(year, {})
+        a = by_year_all.get(year, {})
+        per_year.append({
+            'year': year,
+            'eddington_miles': c.get('eddington', 0),
+            'cumulative_miles': c.get('eddington_cumulative', 0),
+            'ride_days': c.get('ride_days', 0),
+            'rides': c.get('rides', 0),
+            'all_types_eddington_miles': a.get('eddington', 0),
+            'all_types_cumulative_miles': a.get('eddington_cumulative', 0),
+            'all_types_days': a.get('ride_days', 0),
+            'all_types_count': a.get('rides', 0),
+        })
+
+    return jsonify({
+        'rider_id': rider_id,
+        'stored': {
+            'eddington_miles': conn_row['eddington_number_miles'] if conn_row else None,
+            'eddington_km': conn_row['eddington_number_km'] if conn_row else None,
+            'calculated_at': str(conn_row['eddington_calculated_at']) if conn_row and conn_row['eddington_calculated_at'] else None,
+            'backfill_cursor': str(conn_row['backfill_cursor']) if conn_row and conn_row['backfill_cursor'] else None,
+            'last_sync_at': str(conn_row['last_sync_at']) if conn_row and conn_row['last_sync_at'] else None,
+        },
+        'recalculated': recalculated,
+        'per_year': per_year,
+        'activity_type_distribution': [
+            {
+                'type': row['activity_type'],
+                'count': row['cnt'],
+                'oldest': str(row['oldest']) if row['oldest'] else None,
+                'newest': str(row['newest']) if row['newest'] else None,
+                'included_in_eddington': row['activity_type'] in CYCLING_TYPES,
+            }
+            for row in type_counts
+        ],
+    })
+
+
+@riders_bp.route('/debug/force-resync/<int:rider_id>')
+def debug_force_resync(rider_id):
+    """Force re-sync Strava activities for a specific year. Debug mode only.
+
+    Usage: /debug/force-resync/6?year=2023
+    Syncs all activities for the given year from Strava API.
+    """
+    import time as _time
+    from services.strava import sync_rider_activities
+    from models import get_strava_connection
+
+    if not current_app.debug:
+        abort(404)
+
+    year = request.args.get('year', type=int)
+    if not year:
+        return jsonify({'error': 'year parameter required, e.g. ?year=2023'}), 400
+
+    conn = get_strava_connection(rider_id)
+    if not conn:
+        return jsonify({'error': f'No Strava connection for rider {rider_id}'}), 404
+
+    # Calculate days from Jan 1 of that year to today
+    from datetime import date as _date
+    start_of_year = _date(year, 1, 1)
+    end_of_year = _date(year, 12, 31)
+    today = _date.today()
+
+    # after_epoch = Jan 1 of year, before_epoch = Jan 1 of next year
+    after_epoch = int(_time.mktime(start_of_year.timetuple()))
+    before_epoch = int(_time.mktime(_date(year + 1, 1, 1).timetuple()))
+
+    days_from_start = (today - start_of_year).days
+
+    current_app.logger.info(
+        f'Force re-sync: rider={rider_id} year={year} '
+        f'range={start_of_year} to {end_of_year}'
+    )
+
+    counts = sync_rider_activities(
+        rider_id=rider_id,
+        days=days_from_start,
+        before_epoch=before_epoch,
+        calculate_eddington=True,
+    )
+
+    return jsonify({
+        'rider_id': rider_id,
+        'year': year,
+        'result': counts,
+    })
+
+
 @riders_bp.route('/my/strava-analysis')
 def my_strava_analysis():
     """Private page: rider's Strava analysis for all brevet rides."""
