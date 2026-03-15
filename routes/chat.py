@@ -16,6 +16,7 @@ def chat_stream():
     message = (data.get('message') or '').strip()
     conversation_id = data.get('conversation_id')
     user_id = session.get('user_id')
+    rider_id = session.get('rider_id')
 
     if not message:
         return {'error': 'Message required'}, 400
@@ -28,6 +29,7 @@ def chat_stream():
                 user_id=user_id,
                 message=message,
                 conversation_id=conversation_id,
+                rider_id=rider_id,
             ):
                 yield chunk
         except Exception:

@@ -2402,6 +2402,17 @@ def get_recent_messages(conversation_id, limit=20):
     return list(reversed(rows))
 
 
+def get_rider_privacy_flag(rider_id):
+    """Check if rider has strava_data_private set. Returns True if private, False otherwise."""
+    row = _execute(
+        "SELECT strava_data_private FROM rider_profile WHERE rider_id = %s",
+        (rider_id,)
+    ).fetchone()
+    if row is None:
+        return False
+    return bool(row.get('strava_data_private'))
+
+
 def touch_conversation(conversation_id):
     """Update last_active_at timestamp on each message exchange."""
     conn = get_db()
