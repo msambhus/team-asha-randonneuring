@@ -63,12 +63,12 @@ Plans:
   3. Asking an off-topic question ("What's the best pizza in Seattle?") is classified as `off_topic` and no DB queries are executed — the agent loop exits after intent classification
   4. The agent loop never exceeds 5 iterations or 3 DB queries per message; tool results are capped at 50 rows; a query that runs longer than 5 seconds is aborted
   5. Every response in `chat_message` records `prompt_tokens` and `completion_tokens` from `response.usage` — token consumption is visible per message in the DB
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: Intent classification with Pydantic model and `chat.completions.parse()`
-- [ ] 03-02: Tool registry (fitness_score, brevet_history, upcoming_rides, career_stats, recent_activities, get_team_stats, get_ride_plan) with allowlist enforcement
-- [ ] 03-03: Agent loop with iteration guard, timeout enforcement, data citation instruction
+- [ ] 03-01-PLAN.md — Intent classification with Pydantic IntentResult model and classify_intent() via chat.completions.parse()
+- [ ] 03-02-PLAN.md — Tool registry: populate ALLOWED_QUERIES with 7 named queries, add SET LOCAL timeout enforcement
+- [ ] 03-03-PLAN.md — Agent loop with iteration/query guards, tool result injection, data citation, process_message() wiring
 
 ### Phase 4: Braintrust Evals + Observability
 **Goal**: The chatbot's quality is measurable — intent classification accuracy, data grounding correctness, and guardrail effectiveness are tracked via Braintrust eval datasets, with every production conversation emitting trace spans to the Team Asha workspace
