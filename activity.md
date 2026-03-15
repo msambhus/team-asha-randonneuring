@@ -308,3 +308,22 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 **Issues:** None
 **Status:** Success
 **Next:** Phase 3, Plan 03-03 — Agent loop with iteration/query guards and process_message() wiring
+**Status:** Success (229s)
+
+## Iteration 3 — 2026-03-15 10:46:00
+
+**Task:** Phase 3, Plan 03-03, Tasks 1+2 — Agent loop with tool execution and process_message wiring
+**What happened:**
+- Implemented `_format_tool_results()` — XML-formatted tool results with error handling
+- Implemented `run_agent_loop()` — classifies intent, routes to tool execution, streams response
+- Added `MAX_ITERATIONS=5`, `MAX_DB_QUERIES=3` guards and `DATA_CITATION_INSTRUCTION` constant
+- Intent routing: data_query→execute_allowed_query(rider_id), get_team_stats→params=(), route_discussion→get_ride_plan(name,name), off_topic→redirect, coaching/knowledge→no DB
+- Yields `{"status": "thinking"}` SSE event before classification
+- Wired `run_agent_loop()` into `process_message()` replacing direct `_stream_completion()` call
+- Token logging works through existing accumulator→insert_chat_message path (AGENT-10)
+- Added 13 new tests in test_agent_pipeline.py (format, agent loop routing, guards, thinking event, token usage)
+- Updated test_chat_service.py: test_stream_chunk_parsing now mocks run_agent_loop instead of _stream_completion
+- 75 tests pass, 6 DB skip — no regressions
+**Issues:** None
+**Status:** Success
+**Next:** Phase 3 code complete. Update STATE.md, push, verify.

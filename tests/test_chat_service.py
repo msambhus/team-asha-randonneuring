@@ -289,19 +289,20 @@ def test_stream_chunk_parsing(app):
     with app.app_context():
         from services.chat_service import process_message
 
+        def mock_agent_loop(client, msg, messages, rider_id, user_id):
+            yield 'data: {"status": "thinking"}\n\n'
+            yield 'data: "Hello"\n\n'
+            yield 'data: " world"\n\n'
+
         with patch('services.chat_service.moderate_input', return_value=True), \
              patch('services.chat_service.models') as mock_models, \
-             patch('services.chat_service._stream_completion') as mock_stream, \
+             patch('services.chat_service.run_agent_loop', side_effect=mock_agent_loop), \
+             patch('services.chat_service._get_client', return_value=MagicMock()), \
              patch('services.chat_service._get_system_prompt', return_value='system'), \
              patch('services.chat_service.assemble_rider_context', return_value=''), \
              patch('services.chat_service.assemble_team_context', return_value=''):
             mock_models.create_conversation.return_value = {'id': 'conv-123'}
             mock_models.get_recent_messages.return_value = []
-            # Simulate streaming tokens
-            mock_stream.return_value = iter([
-                'data: "Hello"\n\n',
-                'data: " world"\n\n',
-            ])
 
             chunks = list(process_message(user_id=1, message='Hi', rider_id=5))
             # Every SSE line should end with \n\n

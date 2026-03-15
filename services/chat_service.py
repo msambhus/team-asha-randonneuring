@@ -15,6 +15,7 @@ from pydantic import BaseModel
 import models
 from services.fitness import calculate_fitness_score
 from services.openai_coach import _build_training_summary, _build_brevet_history_summary
+from services.chat_tools import ALLOWED_QUERIES, execute_allowed_query
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,116 @@ def classify_intent(client, user_message, conversation_messages):
         # Refusal or parse failure — treat as off_topic
         result = IntentResult(intent='off_topic')
     return result, response.usage
+
+
+MAX_ITERATIONS = 5
+MAX_DB_QUERIES = 3
+
+DATA_CITATION_INSTRUCTION = (
+    "IMPORTANT: The <tool_results> block above contains real data from the database. "
+    "You MUST reference specific numbers, dates, and values from this data in your response. "
+    "Do not estimate or hedge — cite the actual values."
+)
+
+
+def _format_tool_results(tool_results):
+    """Format tool results as XML block for injection into messages.
+
+    Args:
+        tool_results: List of {'tool': name, 'result': dict} entries
+
+    Returns:
+        XML string with <tool_results> wrapper, or empty string for empty list.
+    """
+    if not tool_results:
+        return ''
+
+    parts = ['<tool_results>']
+    for entry in tool_results:
+        tool_name = entry['tool']
+        result = entry['result']
+        if 'error' in result:
+            parts.append(f'<tool_result tool="{tool_name}">Error: {result["error"]}</tool_result>')
+        else:
+            parts.append(f'<tool_result tool="{tool_name}">{json.dumps(result["rows"], default=str)}</tool_result>')
+    parts.append('</tool_results>')
+    return '\n'.join(parts)
+
+
+def run_agent_loop(client, user_message, messages, rider_id, user_id):
+    """Agent loop: classify intent, execute tools if needed, stream response.
+
+    Generator function yielding SSE chunks (same interface as _stream_completion).
+    Classifies intent once, executes at most one tool, then streams the final answer.
+
+    Args:
+        client: OpenAI client instance
+        user_message: The user's message text
+        messages: Full message list (system + history + user)
+        rider_id: Rider ID for user-scoped queries
+        user_id: Authenticated user ID from session
+    """
+    # Yield thinking indicator before classification
+    yield f'data: {json.dumps({"status": "thinking"})}\n\n'
+
+    # Classify intent
+    system_content = messages[0]['content'] if messages else ''
+    intent_result, _intent_usage = classify_intent(client, user_message, system_content)
+
+    tool_results = []
+    db_query_count = 0
+
+    for _iteration in range(MAX_ITERATIONS):
+        if intent_result.intent == 'off_topic':
+            # Append system message instructing polite cycling redirect
+            messages.append({
+                'role': 'system',
+                'content': 'The user asked an off-topic question. Politely redirect them to cycling and randonneuring topics.'
+            })
+            break
+
+        elif intent_result.intent == 'data_query':
+            if db_query_count < MAX_DB_QUERIES and intent_result.query_type and intent_result.query_type in ALLOWED_QUERIES:
+                # get_team_stats is team-scoped (no rider_id)
+                if intent_result.query_type == 'get_team_stats':
+                    params = ()
+                else:
+                    params = (rider_id,)
+                result = execute_allowed_query(
+                    query_type=intent_result.query_type,
+                    params=params,
+                    user_id=user_id,
+                )
+                tool_results.append({'tool': intent_result.query_type, 'result': result})
+                db_query_count += 1
+            break
+
+        elif intent_result.intent == 'route_discussion':
+            if intent_result.ride_name and db_query_count < MAX_DB_QUERIES:
+                result = execute_allowed_query(
+                    query_type='get_ride_plan',
+                    params=(intent_result.ride_name, intent_result.ride_name),
+                    user_id=user_id,
+                )
+                tool_results.append({'tool': 'get_ride_plan', 'result': result})
+                db_query_count += 1
+            break
+
+        else:
+            # coaching / knowledge — no tool execution needed
+            break
+
+    # Inject tool results into messages if any
+    if tool_results:
+        formatted = _format_tool_results(tool_results)
+        messages.append({
+            'role': 'system',
+            'content': f'{formatted}\n\n{DATA_CITATION_INSTRUCTION}',
+        })
+
+    # Stream the final response
+    accumulator = {}
+    yield from _stream_completion(messages, accumulator)
 
 
 def moderate_input(message):
@@ -269,9 +380,9 @@ def process_message(user_id, message, conversation_id=None, rider_id=None):
     # Step 6: Send conversation_id to client
     yield f'data: {json.dumps({"conversation_id": str(conversation_id)})}\n\n'
 
-    # Step 7: Stream completion
+    # Step 7: Agent loop with intent classification and tool execution
     accumulator = {}
-    for chunk in _stream_completion(messages, accumulator):
+    for chunk in run_agent_loop(_get_client(), message, messages, rider_id, user_id):
         yield chunk
 
     # Step 8: Persist assistant response
