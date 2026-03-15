@@ -7,7 +7,10 @@ error handling (no broad except Exception), prompt injection defense.
 import os
 import json
 import logging
+from typing import Literal, Optional
+
 from openai import OpenAI, RateLimitError, APITimeoutError, InternalServerError, APIError
+from pydantic import BaseModel
 
 import models
 from services.fitness import calculate_fitness_score
@@ -26,6 +29,57 @@ def _get_client():
             raise RuntimeError("OPENAI_API_KEY not configured")
         _client = OpenAI(api_key=api_key)
     return _client
+
+
+class IntentResult(BaseModel):
+    """Structured intent classification result for the agentic pipeline."""
+    intent: Literal['data_query', 'coaching', 'knowledge', 'route_discussion', 'off_topic']
+    query_type: Optional[str] = None   # e.g. "fitness_score", "brevet_history"
+    ride_name: Optional[str] = None    # for route_discussion intent
+
+
+INTENT_CLASSIFICATION_PROMPT = """\
+Classify the user's message intent for a cycling/randonneuring coaching chatbot.
+
+Intents:
+- data_query: User wants their personal stats, fitness score, history, or upcoming rides.
+  Set query_type to one of: fitness_score, brevet_history, upcoming_rides, career_stats, recent_activities
+- coaching: User wants training advice, strategy, or personalized coaching.
+- knowledge: User wants general randonneuring info (rules, cutoffs, gear, nutrition).
+- route_discussion: User asks about a specific ride plan, route, or control stops.
+  Set ride_name to the full ride name including distance (e.g., "Cascade 400").
+- off_topic: Question is not related to cycling, randonneuring, or Team Asha.
+
+Return the intent and, where applicable, the query_type or ride_name.
+"""
+
+
+def classify_intent(client, user_message, conversation_messages):
+    """Classify user message intent using OpenAI structured outputs.
+
+    Args:
+        client: OpenAI client instance
+        user_message: The user's message text
+        conversation_messages: Recent conversation history (unused in v1, reserved for context)
+
+    Returns:
+        Tuple of (IntentResult, usage) where usage is the CompletionUsage object.
+    """
+    response = client.chat.completions.parse(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": INTENT_CLASSIFICATION_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
+        response_format=IntentResult,
+        max_tokens=200,
+        timeout=10,
+    )
+    result = response.choices[0].message.parsed
+    if result is None:
+        # Refusal or parse failure — treat as off_topic
+        result = IntentResult(intent='off_topic')
+    return result, response.usage
 
 
 def moderate_input(message):
