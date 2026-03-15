@@ -1,0 +1,6 @@
+# Dev/test/eval dependencies — not deployed to Vercel
+-r requirements.txt
+pytest==8.3.0
+pytest-flask==1.3.0
+braintrust==0.9.0
+autoevals
