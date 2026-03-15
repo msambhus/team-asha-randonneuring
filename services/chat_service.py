@@ -56,16 +56,29 @@ class IntentResult(BaseModel):
 
 
 INTENT_CLASSIFICATION_PROMPT = """\
-Classify the user's message intent for a cycling/randonneuring coaching chatbot.
+Classify the user's message intent for a cycling/randonneuring coaching chatbot for Team Asha.
 
 Intents:
-- data_query: User wants their personal stats, fitness score, history, or upcoming rides.
-  Set query_type to one of: fitness_score, brevet_history, upcoming_rides, career_stats, recent_activities
+- data_query: User wants stats, scores, leaderboards, rankings, history, or ride data.
+  This includes personal stats AND team-wide data (leaderboard, rankings, Eddington scores).
+  Set query_type to one of:
+    fitness_score - personal fitness/training stats from Strava
+    brevet_history - personal completed brevet rides
+    upcoming_rides - personal upcoming ride signups
+    career_stats - personal all-time ride stats
+    recent_activities - recent Strava activities
+    get_team_stats - current season team summary
+    get_team_leaderboard - all-time team rankings by total km
+    get_eddington_scores - team Eddington number leaderboard
+    get_my_eddington - personal Eddington number
 - coaching: User wants training advice, strategy, or personalized coaching.
-- knowledge: User wants general randonneuring info (rules, cutoffs, gear, nutrition).
+- knowledge: User wants general randonneuring info (rules, cutoffs, gear, nutrition, bikes).
 - route_discussion: User asks about a specific ride plan, route, or control stops.
   Set ride_name to the full ride name including distance (e.g., "Cascade 400").
-- off_topic: Question is not related to cycling, randonneuring, or Team Asha.
+- off_topic: Question is NOT related to cycling, randonneuring, bikes, or Team Asha.
+
+IMPORTANT: Questions about team data, leaderboards, rankings, scores, and rider comparisons
+are data_query — NOT off_topic. Team Asha questions are always relevant.
 
 Return the intent and, where applicable, the query_type or ride_name.
 """
@@ -185,8 +198,9 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
 
         elif intent_result.intent == 'data_query':
             if db_query_count < MAX_DB_QUERIES and intent_result.query_type and intent_result.query_type in ALLOWED_QUERIES:
-                # get_team_stats is team-scoped (no rider_id)
-                if intent_result.query_type == 'get_team_stats':
+                # Team-scoped queries don't need rider_id
+                _TEAM_QUERIES = {'get_team_stats', 'get_team_leaderboard', 'get_eddington_scores'}
+                if intent_result.query_type in _TEAM_QUERIES:
                     params = ()
                 else:
                     params = (rider_id,)

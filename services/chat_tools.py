@@ -81,6 +81,36 @@ ALLOWED_QUERIES: dict[str, str] = {
           AND s.is_current = TRUE
         GROUP BY s.name
     """,
+    "get_team_leaderboard": """
+        SELECT r.first_name || ' ' || r.last_name AS rider_name,
+               COUNT(*) AS rides_finished,
+               COALESCE(SUM(ri.distance_km), 0) AS total_km,
+               MAX(ri.distance_km) AS longest_ride_km
+        FROM rider_ride rr
+        JOIN ride ri ON rr.ride_id = ri.id
+        JOIN rider r ON rr.rider_id = r.id
+        WHERE rr.status = 'FINISHED'
+        GROUP BY r.id, r.first_name, r.last_name
+        ORDER BY total_km DESC
+        LIMIT 20
+    """,
+    "get_eddington_scores": """
+        SELECT r.first_name || ' ' || r.last_name AS rider_name,
+               sc.eddington_number_miles,
+               sc.eddington_number_km,
+               sc.eddington_calculated_at
+        FROM strava_connection sc
+        JOIN rider r ON r.id = sc.rider_id
+        WHERE sc.eddington_number_miles IS NOT NULL
+        ORDER BY sc.eddington_number_miles DESC
+    """,
+    "get_my_eddington": """
+        SELECT sc.eddington_number_miles,
+               sc.eddington_number_km,
+               sc.eddington_calculated_at
+        FROM strava_connection sc
+        WHERE sc.rider_id = %s
+    """,
     "get_ride_plan": """
         SELECT rp.name, rp.distance_km, rp.total_elevation_ft, rp.cutoff_hours,
                rps.stop_order, rps.stop_name, rps.location, rps.stop_type,
