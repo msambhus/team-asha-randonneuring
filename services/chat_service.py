@@ -156,6 +156,21 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
     system_content = messages[0]['content'] if messages else ''
     intent_result, _intent_usage = classify_intent(client, user_message, system_content)
 
+    # Send coach persona: Coach Shriram for bike-specific topics, Coach Venki for everything else
+    _BIKE_KEYWORDS = {
+        'bike', 'bicycle', 'tire', 'tyre', 'chain', 'derailleur', 'brake',
+        'groupset', 'cassette', 'crankset', 'handlebar', 'seatpost', 'headset',
+        'spoke', 'hub', 'axle', 'pedal', 'cleat', 'tubeless', 'puncture',
+        'flat fix', 'tube', 'rim', 'fork', 'frame', 'stem', 'dropout',
+        'maintenance', 'repair', 'mechanic', 'lube', 'grease', 'shifting',
+        'bottom bracket', 'saddle height', 'bike fit',
+    }
+    if intent_result.intent != 'off_topic':
+        msg_lower = user_message.lower()
+        is_bike = any(kw in msg_lower for kw in _BIKE_KEYWORDS)
+        coach = 'shriram' if is_bike else 'venki'
+        yield f'data: {json.dumps({"coach": coach})}\n\n'
+
     tool_results = []
     db_query_count = 0
 
