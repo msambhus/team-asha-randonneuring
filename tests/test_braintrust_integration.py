@@ -152,6 +152,114 @@ def test_span_log_called(app, mock_bt_logger, mock_bt_span):
             assert log_kwargs['metadata']['completion_tokens'] == 30
 
 
+# ========== EVAL DATASET COVERAGE & SCORER TESTS (Plan 04-02) ==========
+
+
+def test_intent_dataset_coverage():
+    """EVAL-02: Intent dataset has 20+ records with all 5 intent types, >= 4 each."""
+    from evals.eval_intent import INTENT_DATASET_RECORDS
+
+    assert len(INTENT_DATASET_RECORDS) >= 20
+
+    # Group by expected intent
+    from collections import Counter
+    counts = Counter(r["expected"] for r in INTENT_DATASET_RECORDS)
+
+    expected_types = {"data_query", "coaching", "knowledge", "route_discussion", "off_topic"}
+    assert set(counts.keys()) == expected_types, f"Missing intents: {expected_types - set(counts.keys())}"
+
+    for intent_type, count in counts.items():
+        assert count >= 4, f"Intent '{intent_type}' has only {count} records, need >= 4"
+
+    # Each record must have input and expected keys
+    for record in INTENT_DATASET_RECORDS:
+        assert "input" in record
+        assert "expected" in record
+
+
+def test_intent_scorer_correct():
+    """EVAL-02: intent_accuracy_scorer returns 1 on match, 0 on mismatch."""
+    from evals.eval_intent import intent_accuracy_scorer
+
+    result_match = intent_accuracy_scorer(
+        input={"question": "test"}, output="data_query", expected="data_query"
+    )
+    assert result_match["score"] == 1
+    assert result_match["name"] == "intent_accuracy"
+
+    result_mismatch = intent_accuracy_scorer(
+        input={"question": "test"}, output="coaching", expected="off_topic"
+    )
+    assert result_mismatch["score"] == 0
+
+
+def test_grounding_dataset_coverage():
+    """EVAL-03: Grounding dataset has 10+ records with input and expected keys."""
+    from evals.eval_grounding import GROUNDING_DATASET_RECORDS
+
+    assert len(GROUNDING_DATASET_RECORDS) >= 10
+
+    for record in GROUNDING_DATASET_RECORDS:
+        assert "input" in record
+        assert "expected" in record
+
+
+def test_grounding_scorer():
+    """EVAL-03: contains_expected_value_scorer returns 1 when value found, 0 otherwise."""
+    from evals.eval_grounding import contains_expected_value_scorer
+
+    result_found = contains_expected_value_scorer(
+        input={"question": "test"},
+        output='{"rows": [{"total_km": 485.3}]}',
+        expected="485.3",
+    )
+    assert result_found["score"] == 1
+    assert result_found["name"] == "contains_expected_value"
+
+    result_missing = contains_expected_value_scorer(
+        input={"question": "test"},
+        output='{"rows": [{"total_km": 100}]}',
+        expected="485.3",
+    )
+    assert result_missing["score"] == 0
+
+
+def test_guardrail_dataset_coverage():
+    """EVAL-04: Guardrail dataset has 10+ bypass patterns."""
+    from evals.eval_guardrail import BYPASS_PATTERNS
+
+    assert len(BYPASS_PATTERNS) >= 10
+
+
+def test_guardrail_scorer():
+    """EVAL-04: guardrail_scorer returns 1 only when off_topic + no DB call."""
+    from evals.eval_guardrail import guardrail_scorer
+
+    # Correct: off_topic, no DB call
+    result_pass = guardrail_scorer(
+        input={"question": "test"},
+        output={"intent": "off_topic", "db_tool_called": False},
+        expected="blocked",
+    )
+    assert result_pass["score"] == 1
+
+    # Fail: data_query with DB call
+    result_fail_query = guardrail_scorer(
+        input={"question": "test"},
+        output={"intent": "data_query", "db_tool_called": True},
+        expected="blocked",
+    )
+    assert result_fail_query["score"] == 0
+
+    # Fail: off_topic but DB call happened (shouldn't happen, but score 0)
+    result_fail_db = guardrail_scorer(
+        input={"question": "test"},
+        output={"intent": "off_topic", "db_tool_called": True},
+        expected="blocked",
+    )
+    assert result_fail_db["score"] == 0
+
+
 def test_graceful_degradation_no_logger(app):
     """When _bt_logger is None, process_message works without spans."""
     with app.app_context():
