@@ -1,6 +1,7 @@
 """Flask app factory for Team Asha Randonneuring."""
 from flask import Flask, session
 from dotenv import load_dotenv
+from werkzeug.middleware.proxy_fix import ProxyFix
 from config import Config
 import db
 from cache import init_cache
