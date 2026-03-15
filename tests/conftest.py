@@ -17,8 +17,6 @@ def app():
     application.debug = False
     if DB_URL:
         application.config['DATABASE_URL'] = DB_URL
-    else:
-        pytest.skip('TEST_DATABASE_URL or DATABASE_URL env var required for integration tests')
     return application
 
 
