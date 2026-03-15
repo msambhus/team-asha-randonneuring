@@ -25,6 +25,19 @@ def user_login_required(f):
     return decorated
 
 
+def api_login_required(f):
+    """Require authentication for API endpoints. Returns 401 JSON on failure.
+    Does NOT redirect — use @user_login_required for page routes instead.
+    NEVER skips auth in debug mode.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('user_id'):
+            return {'error': 'Authentication required'}, 401
+        return f(*args, **kwargs)
+    return decorated
+
+
 def profile_required(f):
     """Require user to have completed profile setup."""
     @wraps(f)

@@ -31,6 +31,7 @@ def create_app():
     from routes.auth import auth_bp
     from routes.strava import strava_bp
     from routes.cron import cron_bp
+    from routes.chat import chat_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(riders_bp)
@@ -39,6 +40,7 @@ def create_app():
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(strava_bp, url_prefix='/strava')
     app.register_blueprint(cron_bp, url_prefix='/api/cron')
+    app.register_blueprint(chat_bp)
 
     # Template helpers
     @app.template_filter('commafy')
@@ -55,6 +57,28 @@ def create_app():
             return value
         import html as html_mod
         return html_mod.unescape(str(value)).replace('\xa0', ' ')
+
+    # Debug auto-login: simulate an authenticated user in local dev
+    @app.before_request
+    def debug_auto_login():
+        if app.debug and 'user_id' not in session:
+            from models import _execute
+            try:
+                # Pick the first app_user who has a linked rider (for Strava context)
+                row = _execute(
+                    "SELECT au.id, au.email, au.rider_id, r.first_name, r.last_name "
+                    "FROM app_user au "
+                    "LEFT JOIN rider r ON r.id = au.rider_id "
+                    "WHERE au.rider_id IS NOT NULL "
+                    "ORDER BY au.id LIMIT 1"
+                ).fetchone()
+                if row:
+                    session['user_id'] = row['id']
+                    session['email'] = row['email']
+                    session['rider_id'] = row['rider_id']
+                    session['rider_name'] = f"{row['first_name']} {row['last_name']}"
+            except Exception:
+                pass  # DB not available — skip
 
     @app.context_processor
     def inject_helpers():
