@@ -158,6 +158,7 @@ function submitFeedback(e) {
     });
 }
 </script>
+{% if user_logged_in %}{% include 'chat_widget.html' %}{% endif %}
 {% block extra_js %}{% endblock %}
 
 <script>
