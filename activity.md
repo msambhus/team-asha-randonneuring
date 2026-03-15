@@ -4,6 +4,21 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ---
 
+## Iteration 5 — 2026-03-15 11:59:23
+
+**Task:** Phase 4, Plan 04-01, Task 1 — Install Braintrust SDK and create test scaffold
+**What happened:**
+- Added `braintrust==0.9.0` and `autoevals` to requirements.txt, installed successfully
+- Verified span attribute names at runtime: `span.id` (row ID), `span.root_span_id` (trace root), `span.span_id` (tree position) — confirmed research was correct
+- Confirmed `insert_chat_message()` already accepts `metadata` kwarg (Open Question 2 resolved)
+- Created `tests/test_braintrust_integration.py` with 5 tests covering EVAL-01, EVAL-05, EVAL-06
+- All 5 tests fail (RED phase confirmed) — chat_service.py lacks `_bt_logger`
+- All 40 existing tests pass (no regressions)
+- Committed: `0572cf2`
+**Result:** Success — Task 1 complete, ready for Task 2 (wire Braintrust into chat_service.py)
+
+---
+
 ## Iteration 4 — 2026-03-15 10:49:40
 
 **Task:** Plan Phase 4 (Braintrust Evals + Observability)
@@ -346,4 +361,101 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 **Status:** Success (215s)
 
 ## Iteration 4 — 2026-03-15 10:49:40
+
+**Status:** Success (4178s)
+
+## Iteration 5 — 2026-03-15 11:59:23
+
+**Status:** Success (1313s)
+
+## Iteration 6 — 2026-03-15 12:21:21
+
+**Task:** Phase 4, Plan 04-01, Task 2 — Wire Braintrust span logging into process_message
+**What happened:**
+- Added `import braintrust` with try/except ImportError fallback
+- Initialized `_bt_logger` at module scope with `project="Team Asha"`, `async_flush=False`, guarded by `BRAINTRUST_API_KEY` env check
+- Fixed accumulator bug: `run_agent_loop()` now accepts `accumulator` param — previously `process_message` and `run_agent_loop` had separate accumulator dicts, so assistant messages were never persisted
+- Wrapped Steps 6-8 in `process_message()` with Braintrust span context manager
+- `span_id` and `trace_id` stored in `chat_message.metadata` via `insert_chat_message()`
+- `span.log()` called in `finally` block with `response_length`, `conversation_id`, token counts
+- Graceful degradation: when `_bt_logger` is None, runs without span wrapping
+- Updated `test_stream_chunk_parsing` mock to accept new `accumulator` kwarg
+- All 80 tests pass (6 DB skip), no regressions
+- Committed as `543b39f`
+**Result:** Success — Plan 04-01 complete (both tasks done). Ready for Plan 04-02 (eval datasets).
+
+**Status:** Success (787s)
+
+## Iteration 7 — 2026-03-15 12:34:33
+
+**Task:** Phase 4, Plan 04-02 — Eval datasets and scorers (intent, grounding, guardrail)
+**What happened:**
+- Created `evals/` package with `__init__.py` and 3 eval scripts
+- `eval_intent.py`: 24 labeled records across all 5 intent types (≥4 each), `intent_accuracy_scorer`, `classify_task`, `seed_and_run()`
+- `eval_grounding.py`: 12 records with known fixture values, mocked DB via `unittest.mock.patch`, `contains_expected_value_scorer`, synchronous classify+query pipeline (avoids SSE generator)
+- `eval_guardrail.py`: 12 adversarial/off-topic patterns (prompt injection, social engineering, generic off-topic), `guardrail_scorer` checks intent==off_topic AND no DB call
+- Added 6 unit tests to `test_braintrust_integration.py`: dataset coverage (counts, types), scorer correctness (match/mismatch/edge cases)
+- All 86 tests pass (6 DB skip), no regressions
+- Committed as `a8ec73f`
+**Result:** Success — Plan 04-02 complete. Phase 4 fully implemented (both plans done).
+**Next:** Phase 4 complete. All 4 phases code-complete. Update STATE.md, push branch.
+
+**Status:** Success (301s)
+
+## Iteration 8 — 2026-03-15 12:39:39
+
+**Task:** Push Phase 3+4 commits, update PR #115, verify final state
+**What happened:**
+- All 86 tests pass (6 DB skip) — confirmed green
+- Pushed 7 unpushed commits (Phase 3: 3 commits, Phase 4: 4 commits) to origin
+- Updated PR #115 title to "feat(chat): AI coaching chatbot — all 4 phases" with comprehensive description
+- PR now covers all 4 phases with test plan checklist for human verification
+- Updated STATE.md with PR link and current status
+- All autonomous work is complete — project is 100% code complete
+**Issues:** None
+**Status:** Success
+**Next:** Human must verify: (1) Deploy to Vercel Preview, (2) Test KNOW-01 guardrail, (3) Test Strava personalization, (4) Apply chat_schema.sql to Supabase, (5) Check Braintrust dashboard. Then merge PR #115.
+
+**Status:** Success (119s)
+
+## Iteration 9 — 2026-03-15 12:41:44
+
+**Task:** Check for remaining work
+**What happened:**
+- Read STATE.md, ROADMAP.md, REQUIREMENTS.md — all 4 phases code complete
+- All 11 plans executed across 4 phases, 86 tests pass (6 DB skip)
+- PR #115 open and updated with all 4 phases
+- No autonomous tasks remain — project is blocked on human verification
+**Issues:** None
+**Status:** Success (no-op — nothing to execute)
+**Next:** Human must: (1) Deploy to Vercel Preview, (2) Test KNOW-01 guardrail, (3) Test Strava personalization, (4) Apply chat_schema.sql to Supabase, (5) Check Braintrust dashboard, (6) Merge PR #115.
+
+**Status:** Success (37s)
+
+## Iteration 10 — 2026-03-15 12:42:26
+
+**Task:** Check for remaining work
+**What happened:**
+- Read STATE.md, ROADMAP.md, REQUIREMENTS.md — all 4 phases code complete
+- All 11 plans executed across 4 phases, 86 tests pass (6 DB skip)
+- PR #115 open and updated with all 4 phases
+- No autonomous tasks remain — project is blocked on human verification
+**Issues:** None
+**Status:** Success (no-op — nothing to execute)
+**Next:** Human must: (1) Deploy to Vercel Preview, (2) Test KNOW-01 guardrail, (3) Test Strava personalization, (4) Apply chat_schema.sql to Supabase, (5) Check Braintrust dashboard, (6) Merge PR #115.
+
+**Status:** Success (291s)
+
+## Iteration 11 — 2026-03-15 12:47:22
+
+**Task:** Update ROADMAP.md and REQUIREMENTS.md to reflect code completion
+**What happened:**
+- All 4 phases code complete, 86 tests pass (6 DB skip) — confirmed
+- Updated ROADMAP.md: checked all phase/plan checkboxes, updated progress table to "Code complete"
+- Updated REQUIREMENTS.md: checked all 43 requirement checkboxes, updated traceability status to "Code complete"
+- No code changes — documentation accuracy update only
+- PR #115 still awaiting human verification and merge
+**Issues:** None
+**Status:** Success
+**Next:** Human must: (1) Deploy to Vercel Preview, (2) Test KNOW-01 guardrail, (3) Test Strava personalization, (4) Apply chat_schema.sql to Supabase, (5) Check Braintrust dashboard, (6) Merge PR #115.
 

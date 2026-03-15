@@ -12,10 +12,10 @@ This roadmap adds a cycling-domain AI coaching chatbot to the existing Flask/Ver
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Secure Foundation** - Chat API, SSE streaming endpoint, DB schema, security controls, system prompt — all pitfalls addressed before any UI
-- [ ] **Phase 2: Core Chat Experience** - Floating widget, multi-turn conversations, Strava personalization, conversation list
-- [ ] **Phase 3: Agentic Tool-Calling Pipeline** - Intent classification, tool execution, agent loop, data-grounded responses
-- [ ] **Phase 4: Braintrust Evals + Observability** - Eval datasets, Braintrust integration, quality metrics dashboard
+- [x] **Phase 1: Secure Foundation** - Chat API, SSE streaming endpoint, DB schema, security controls, system prompt — all pitfalls addressed before any UI
+- [x] **Phase 2: Core Chat Experience** - Floating widget, multi-turn conversations, Strava personalization, conversation list
+- [x] **Phase 3: Agentic Tool-Calling Pipeline** - Intent classification, tool execution, agent loop, data-grounded responses
+- [x] **Phase 4: Braintrust Evals + Observability** - Eval datasets, Braintrust integration, quality metrics dashboard
 
 ## Phase Details
 
@@ -32,9 +32,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — DB schema, read-only role, pytest infrastructure, and models.py CRUD functions
-- [ ] 01-02-PLAN.md — SSE streaming endpoint with auth gating, moderation, token limits, and error handling
-- [ ] 01-03-PLAN.md — System prompt with randonneuring knowledge, SQL allowlist scaffold, and Vercel config
+- [x] 01-01-PLAN.md — DB schema, read-only role, pytest infrastructure, and models.py CRUD functions
+- [x] 01-02-PLAN.md — SSE streaming endpoint with auth gating, moderation, token limits, and error handling
+- [x] 01-03-PLAN.md — System prompt with randonneuring knowledge, SQL allowlist scaffold, and Vercel config
 
 ### Phase 2: Core Chat Experience
 **Goal**: A floating chat widget accessible on every page of the app allows logged-in users to have multi-turn conversations with context drawn from their Strava data, persisted across sessions, with cross-user isolation enforced throughout
@@ -49,9 +49,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Chat widget (Jinja partial + inline JS) with SSE client, open/close state, error display
-- [ ] 02-02-PLAN.md — Strava context assembly, cross-user isolation, privacy flag enforcement
-- [ ] 02-03-PLAN.md — Conversation list endpoint and UI, new conversation creation
+- [x] 02-01-PLAN.md — Chat widget (Jinja partial + inline JS) with SSE client, open/close state, error display
+- [x] 02-02-PLAN.md — Strava context assembly, cross-user isolation, privacy flag enforcement
+- [x] 02-03-PLAN.md — Conversation list endpoint and UI, new conversation creation
 
 ### Phase 3: Agentic Tool-Calling Pipeline
 **Goal**: The chatbot detects when a user is asking a data-seeking question, executes the appropriate pre-written SQL query via the tool registry, and synthesizes a response that cites specific numbers from the result — without ever executing free-form SQL
@@ -66,9 +66,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Intent classification with Pydantic IntentResult model and classify_intent() via chat.completions.parse()
-- [ ] 03-02-PLAN.md — Tool registry: populate ALLOWED_QUERIES with 7 named queries, add SET LOCAL timeout enforcement
-- [ ] 03-03-PLAN.md — Agent loop with iteration/query guards, tool result injection, data citation, process_message() wiring
+- [x] 03-01-PLAN.md — Intent classification with Pydantic IntentResult model and classify_intent() via chat.completions.parse()
+- [x] 03-02-PLAN.md — Tool registry: populate ALLOWED_QUERIES with 7 named queries, add SET LOCAL timeout enforcement
+- [x] 03-03-PLAN.md — Agent loop with iteration/query guards, tool result injection, data citation, process_message() wiring
 
 ### Phase 4: Braintrust Evals + Observability
 **Goal**: The chatbot's quality is measurable — intent classification accuracy, data grounding correctness, and guardrail effectiveness are tracked via Braintrust eval datasets, with every production conversation emitting trace spans to the Team Asha workspace
@@ -83,8 +83,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — Braintrust SDK install, production span logging in chat_service.py, span_id/trace_id in chat_message metadata
-- [ ] 04-02-PLAN.md — Eval datasets (intent classification, data grounding, guardrail) with custom scorers and baseline eval scripts
+- [x] 04-01-PLAN.md — Braintrust SDK install, production span logging in chat_service.py, span_id/trace_id in chat_message metadata
+- [x] 04-02-PLAN.md — Eval datasets (intent classification, data grounding, guardrail) with custom scorers and baseline eval scripts
 
 ## Progress
 
@@ -93,7 +93,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Secure Foundation | 0/3 | Not started | - |
-| 2. Core Chat Experience | 0/3 | Not started | - |
-| 3. Agentic Tool-Calling Pipeline | 0/3 | Not started | - |
-| 4. Braintrust Evals + Observability | 0/2 | Not started | - |
+| 1. Secure Foundation | 3/3 | Code complete | 2026-03-15 |
+| 2. Core Chat Experience | 3/3 | Code complete | 2026-03-15 |
+| 3. Agentic Tool-Calling Pipeline | 3/3 | Code complete | 2026-03-15 |
+| 4. Braintrust Evals + Observability | 2/2 | Code complete | 2026-03-15 |

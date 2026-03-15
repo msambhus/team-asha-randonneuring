@@ -9,73 +9,73 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Infrastructure
 
-- [ ] **INFRA-01**: DB schema — `conversation` and `chat_message` tables with proper indexes
-- [ ] **INFRA-02**: Chat API endpoint with SSE streaming (`/api/chat/stream`)
-- [ ] **INFRA-03**: Auth gating via `@api_login_required` (returns 401 JSON, no debug bypass) on all chat endpoints
-- [ ] **INFRA-04**: `maxDuration: 60` in `vercel.json` for chat routes
-- [ ] **INFRA-05**: Conversation CRUD functions in `models.py`
-- [ ] **INFRA-06**: Chat message CRUD functions in `models.py`
+- [x] **INFRA-01**: DB schema — `conversation` and `chat_message` tables with proper indexes
+- [x] **INFRA-02**: Chat API endpoint with SSE streaming (`/api/chat/stream`)
+- [x] **INFRA-03**: Auth gating via `@api_login_required` (returns 401 JSON, no debug bypass) on all chat endpoints
+- [x] **INFRA-04**: `maxDuration: 60` in `vercel.json` for chat routes
+- [x] **INFRA-05**: Conversation CRUD functions in `models.py`
+- [x] **INFRA-06**: Chat message CRUD functions in `models.py`
 
 ### Security
 
-- [ ] **SEC-01**: Read-only PostgreSQL role for chat queries
-- [ ] **SEC-02**: `ALLOWED_QUERIES` dict — LLM picks query type from enum, Python owns all SQL
-- [ ] **SEC-03**: `sqlparse` validation as secondary defense layer on any SQL
-- [ ] **SEC-04**: OpenAI Moderation API on all user input before processing
-- [ ] **SEC-05**: Prompt injection defense — user content in `role: user` only, DB data in delimited sections
-- [ ] **SEC-06**: `max_tokens` enforced on all completions (500-800)
-- [ ] **SEC-07**: Conversation history capped at last 10 turns per request
-- [ ] **SEC-08**: Specific OpenAI error handling (`RateLimitError`, `APITimeoutError`, `InternalServerError`)
-- [ ] **SEC-09**: Input validation — character limits and sanitization on chat input
-- [ ] **SEC-10**: Cross-user isolation — all queries filtered by `WHERE user_id = authenticated_user_id`
-- [ ] **SEC-11**: Respect `strava_data_private` flag in context assembly
+- [x] **SEC-01**: Read-only PostgreSQL role for chat queries
+- [x] **SEC-02**: `ALLOWED_QUERIES` dict — LLM picks query type from enum, Python owns all SQL
+- [x] **SEC-03**: `sqlparse` validation as secondary defense layer on any SQL
+- [x] **SEC-04**: OpenAI Moderation API on all user input before processing
+- [x] **SEC-05**: Prompt injection defense — user content in `role: user` only, DB data in delimited sections
+- [x] **SEC-06**: `max_tokens` enforced on all completions (500-800)
+- [x] **SEC-07**: Conversation history capped at last 10 turns per request
+- [x] **SEC-08**: Specific OpenAI error handling (`RateLimitError`, `APITimeoutError`, `InternalServerError`)
+- [x] **SEC-09**: Input validation — character limits and sanitization on chat input
+- [x] **SEC-10**: Cross-user isolation — all queries filtered by `WHERE user_id = authenticated_user_id`
+- [x] **SEC-11**: Respect `strava_data_private` flag in context assembly
 
 ### Chat Experience
 
-- [ ] **CHAT-01**: Floating chat widget accessible on every page
-- [ ] **CHAT-02**: Widget open/close state persisted via `sessionStorage`
-- [ ] **CHAT-03**: Multi-turn conversation — last 8 turns loaded from DB
-- [ ] **CHAT-04**: Streaming response rendering in widget (SSE client)
-- [ ] **CHAT-05**: User-visible error handling — friendly message on API failure
-- [ ] **CHAT-06**: Conversation list UI — view/continue previous conversations
-- [ ] **CHAT-07**: New conversation creation from widget
+- [x] **CHAT-01**: Floating chat widget accessible on every page
+- [x] **CHAT-02**: Widget open/close state persisted via `sessionStorage`
+- [x] **CHAT-03**: Multi-turn conversation — last 8 turns loaded from DB
+- [x] **CHAT-04**: Streaming response rendering in widget (SSE client)
+- [x] **CHAT-05**: User-visible error handling — friendly message on API failure
+- [x] **CHAT-06**: Conversation list UI — view/continue previous conversations
+- [x] **CHAT-07**: New conversation creation from widget
 
 ### Coaching & Knowledge
 
-- [ ] **KNOW-01**: System prompt with cycling/randonneuring guardrails
-- [ ] **KNOW-02**: Randonneuring knowledge — ACP/RUSA rules, brevet distances, cutoffs, SR/R-12, PBP
-- [ ] **KNOW-03**: Off-topic query handling — polite redirect with cycling topic suggestion
-- [ ] **KNOW-04**: Bike repair, maintenance, and gear guidance in system prompt
-- [ ] **KNOW-05**: Nutrition advice for long-distance cycling in system prompt
-- [ ] **KNOW-06**: Training plan suggestions based on upcoming rides and fitness
+- [x] **KNOW-01**: System prompt with cycling/randonneuring guardrails
+- [x] **KNOW-02**: Randonneuring knowledge — ACP/RUSA rules, brevet distances, cutoffs, SR/R-12, PBP
+- [x] **KNOW-03**: Off-topic query handling — polite redirect with cycling topic suggestion
+- [x] **KNOW-04**: Bike repair, maintenance, and gear guidance in system prompt
+- [x] **KNOW-05**: Nutrition advice for long-distance cycling in system prompt
+- [x] **KNOW-06**: Training plan suggestions based on upcoming rides and fitness
 
 ### Personalization
 
-- [ ] **PERS-01**: Strava context injection — fitness score + recent activities + upcoming brevets
-- [ ] **PERS-02**: Graceful fallback for non-Strava users (general knowledge mode)
-- [ ] **PERS-03**: Team Asha context — upcoming brevets, ride plans, routes, team stats
+- [x] **PERS-01**: Strava context injection — fitness score + recent activities + upcoming brevets
+- [x] **PERS-02**: Graceful fallback for non-Strava users (general knowledge mode)
+- [x] **PERS-03**: Team Asha context — upcoming brevets, ride plans, routes, team stats
 
 ### Agentic Pipeline
 
-- [ ] **AGENT-01**: Intent classification via `chat.completions.parse()` with Pydantic model
-- [ ] **AGENT-02**: Intent enum: `data_query`, `coaching`, `knowledge`, `route_discussion`, `off_topic`
-- [ ] **AGENT-03**: Tool execution for `data_query` intents — maps query type enum to pre-written SQL
-- [ ] **AGENT-04**: Named tool coverage: `fitness_score`, `brevet_history`, `upcoming_rides`, `career_stats`, `recent_activities`
-- [ ] **AGENT-05**: `get_team_stats` tool — season stats, upcoming brevets (non-scoped)
-- [ ] **AGENT-06**: `get_ride_plan` tool — control stops, distances, elevation for specific ride
-- [ ] **AGENT-07**: Agent loop with `MAX_ITERATIONS=5` guard; max 3 DB queries per message
-- [ ] **AGENT-08**: Tool results capped at 50 rows; per-query 5s timeout
-- [ ] **AGENT-09**: Data citation — LLM references specific numbers from tool results
-- [ ] **AGENT-10**: Token logging (`prompt_tokens`, `completion_tokens`) in `chat_message` table
+- [x] **AGENT-01**: Intent classification via `chat.completions.parse()` with Pydantic model
+- [x] **AGENT-02**: Intent enum: `data_query`, `coaching`, `knowledge`, `route_discussion`, `off_topic`
+- [x] **AGENT-03**: Tool execution for `data_query` intents — maps query type enum to pre-written SQL
+- [x] **AGENT-04**: Named tool coverage: `fitness_score`, `brevet_history`, `upcoming_rides`, `career_stats`, `recent_activities`
+- [x] **AGENT-05**: `get_team_stats` tool — season stats, upcoming brevets (non-scoped)
+- [x] **AGENT-06**: `get_ride_plan` tool — control stops, distances, elevation for specific ride
+- [x] **AGENT-07**: Agent loop with `MAX_ITERATIONS=5` guard; max 3 DB queries per message
+- [x] **AGENT-08**: Tool results capped at 50 rows; per-query 5s timeout
+- [x] **AGENT-09**: Data citation — LLM references specific numbers from tool results
+- [x] **AGENT-10**: Token logging (`prompt_tokens`, `completion_tokens`) in `chat_message` table
 
 ### Evals & Observability
 
-- [ ] **EVAL-01**: Braintrust project linked to Team Asha workspace
-- [ ] **EVAL-02**: Eval dataset for intent classification accuracy (golden labeled messages)
-- [ ] **EVAL-03**: Eval dataset for data grounding (questions with known correct DB values)
-- [ ] **EVAL-04**: Eval dataset for guardrail effectiveness (off-topic bypass patterns)
-- [ ] **EVAL-05**: Logging of `span_id`/`trace_id` from Braintrust in `chat_message.metadata`
-- [ ] **EVAL-06**: Conversation-level quality metrics visible in Braintrust dashboard
+- [x] **EVAL-01**: Braintrust project linked to Team Asha workspace
+- [x] **EVAL-02**: Eval dataset for intent classification accuracy (golden labeled messages)
+- [x] **EVAL-03**: Eval dataset for data grounding (questions with known correct DB values)
+- [x] **EVAL-04**: Eval dataset for guardrail effectiveness (off-topic bypass patterns)
+- [x] **EVAL-05**: Logging of `span_id`/`trace_id` from Braintrust in `chat_message.metadata`
+- [x] **EVAL-06**: Conversation-level quality metrics visible in Braintrust dashboard
 
 ## v2 Requirements
 
@@ -115,55 +115,55 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | Phase 1 | Pending |
-| INFRA-02 | Phase 1 | Pending |
-| INFRA-03 | Phase 1 | Pending |
-| INFRA-04 | Phase 1 | Pending |
-| INFRA-05 | Phase 1 | Pending |
-| INFRA-06 | Phase 1 | Pending |
-| SEC-01 | Phase 1 | Pending |
-| SEC-02 | Phase 1 | Pending |
-| SEC-03 | Phase 1 | Pending |
-| SEC-04 | Phase 1 | Pending |
-| SEC-05 | Phase 1 | Pending |
-| SEC-06 | Phase 1 | Pending |
-| SEC-07 | Phase 1 | Pending |
-| SEC-08 | Phase 1 | Pending |
-| SEC-09 | Phase 1 | Pending |
-| SEC-10 | Phase 2 | Pending |
-| SEC-11 | Phase 2 | Pending |
-| CHAT-01 | Phase 2 | Pending |
-| CHAT-02 | Phase 2 | Pending |
-| CHAT-03 | Phase 2 | Pending |
-| CHAT-04 | Phase 2 | Pending |
-| CHAT-05 | Phase 2 | Pending |
-| CHAT-06 | Phase 2 | Pending |
-| CHAT-07 | Phase 2 | Pending |
-| KNOW-01 | Phase 1 | Pending |
-| KNOW-02 | Phase 1 | Pending |
-| KNOW-03 | Phase 1 | Pending |
-| KNOW-04 | Phase 1 | Pending |
-| KNOW-05 | Phase 1 | Pending |
-| KNOW-06 | Phase 2 | Pending |
-| PERS-01 | Phase 2 | Pending |
-| PERS-02 | Phase 2 | Pending |
-| PERS-03 | Phase 2 | Pending |
-| AGENT-01 | Phase 3 | Pending |
-| AGENT-02 | Phase 3 | Pending |
-| AGENT-03 | Phase 3 | Pending |
-| AGENT-04 | Phase 3 | Pending |
-| AGENT-05 | Phase 3 | Pending |
-| AGENT-06 | Phase 3 | Pending |
-| AGENT-07 | Phase 3 | Pending |
-| AGENT-08 | Phase 3 | Pending |
-| AGENT-09 | Phase 3 | Pending |
-| AGENT-10 | Phase 3 | Pending |
-| EVAL-01 | Phase 4 | Pending |
-| EVAL-02 | Phase 4 | Pending |
-| EVAL-03 | Phase 4 | Pending |
-| EVAL-04 | Phase 4 | Pending |
-| EVAL-05 | Phase 4 | Pending |
-| EVAL-06 | Phase 4 | Pending |
+| INFRA-01 | Phase 1 | Code complete |
+| INFRA-02 | Phase 1 | Code complete |
+| INFRA-03 | Phase 1 | Code complete |
+| INFRA-04 | Phase 1 | Code complete |
+| INFRA-05 | Phase 1 | Code complete |
+| INFRA-06 | Phase 1 | Code complete |
+| SEC-01 | Phase 1 | Code complete |
+| SEC-02 | Phase 1 | Code complete |
+| SEC-03 | Phase 1 | Code complete |
+| SEC-04 | Phase 1 | Code complete |
+| SEC-05 | Phase 1 | Code complete |
+| SEC-06 | Phase 1 | Code complete |
+| SEC-07 | Phase 1 | Code complete |
+| SEC-08 | Phase 1 | Code complete |
+| SEC-09 | Phase 1 | Code complete |
+| SEC-10 | Phase 2 | Code complete |
+| SEC-11 | Phase 2 | Code complete |
+| CHAT-01 | Phase 2 | Code complete |
+| CHAT-02 | Phase 2 | Code complete |
+| CHAT-03 | Phase 2 | Code complete |
+| CHAT-04 | Phase 2 | Code complete |
+| CHAT-05 | Phase 2 | Code complete |
+| CHAT-06 | Phase 2 | Code complete |
+| CHAT-07 | Phase 2 | Code complete |
+| KNOW-01 | Phase 1 | Code complete |
+| KNOW-02 | Phase 1 | Code complete |
+| KNOW-03 | Phase 1 | Code complete |
+| KNOW-04 | Phase 1 | Code complete |
+| KNOW-05 | Phase 1 | Code complete |
+| KNOW-06 | Phase 2 | Code complete |
+| PERS-01 | Phase 2 | Code complete |
+| PERS-02 | Phase 2 | Code complete |
+| PERS-03 | Phase 2 | Code complete |
+| AGENT-01 | Phase 3 | Code complete |
+| AGENT-02 | Phase 3 | Code complete |
+| AGENT-03 | Phase 3 | Code complete |
+| AGENT-04 | Phase 3 | Code complete |
+| AGENT-05 | Phase 3 | Code complete |
+| AGENT-06 | Phase 3 | Code complete |
+| AGENT-07 | Phase 3 | Code complete |
+| AGENT-08 | Phase 3 | Code complete |
+| AGENT-09 | Phase 3 | Code complete |
+| AGENT-10 | Phase 3 | Code complete |
+| EVAL-01 | Phase 4 | Code complete |
+| EVAL-02 | Phase 4 | Code complete |
+| EVAL-03 | Phase 4 | Code complete |
+| EVAL-04 | Phase 4 | Code complete |
+| EVAL-05 | Phase 4 | Code complete |
+| EVAL-06 | Phase 4 | Code complete |
 
 **Coverage:**
 - v1 requirements: 43 total
