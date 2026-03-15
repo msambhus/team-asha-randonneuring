@@ -80,11 +80,11 @@ Plans:
   3. The data grounding eval dataset contains at least 10 question/answer pairs with known correct DB values; the eval flags responses that do not cite the expected numbers
   4. The guardrail eval dataset contains at least 10 known off-topic bypass patterns; every pattern is classified as `off_topic` and produces no DB tool calls
   5. Every production chat message stores `span_id` and `trace_id` in `chat_message.metadata` — a specific conversation can be looked up by span in the Braintrust dashboard
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 04-01: Braintrust project setup, Python SDK integration, span logging in SSE generator
-- [ ] 04-02: Eval datasets (intent classification, data grounding, guardrail) and baseline eval run
+- [ ] 04-01-PLAN.md — Braintrust SDK install, production span logging in chat_service.py, span_id/trace_id in chat_message metadata
+- [ ] 04-02-PLAN.md — Eval datasets (intent classification, data grounding, guardrail) with custom scorers and baseline eval scripts
 
 ## Progress
 

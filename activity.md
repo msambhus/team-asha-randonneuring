@@ -4,6 +4,22 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ---
 
+## Iteration 4 — 2026-03-15 10:49:40
+
+**Task:** Plan Phase 4 (Braintrust Evals + Observability)
+**What happened:**
+- Verified Phase 3 complete: all 3 plans committed, 75 tests pass (6 DB skip)
+- Updated STATE.md to Phase 4
+- Ran Phase 4 research (Braintrust SDK, span logging, eval datasets)
+- Spawned planner: created 2 plans (04-01 SDK+spans, 04-02 eval datasets)
+- Plan checker found 2 blockers (missing VALIDATION.md, underspecified eval_grounding.py import)
+- Created VALIDATION.md, sent plans for revision
+- Re-verified: all issues resolved, verification passed
+- Phase 4 is fully planned and ready for execution
+**Result:** Success — Phase 4 planned with 2 plans in 2 waves
+
+---
+
 ## Iteration 1 — 2026-03-14 23:02:20
 
 **Status:** Success (2657s)
@@ -327,3 +343,7 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 **Issues:** None
 **Status:** Success
 **Next:** Phase 3 code complete. Update STATE.md, push, verify.
+**Status:** Success (215s)
+
+## Iteration 4 — 2026-03-15 10:49:40
+
