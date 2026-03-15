@@ -289,12 +289,13 @@ def test_stream_chunk_parsing(app):
     with app.app_context():
         from services.chat_service import process_message
 
-        def mock_agent_loop(client, msg, messages, rider_id, user_id):
+        def mock_agent_loop(client, msg, messages, rider_id, user_id, accumulator=None):
             yield 'data: {"status": "thinking"}\n\n'
             yield 'data: "Hello"\n\n'
             yield 'data: " world"\n\n'
 
         with patch('services.chat_service.moderate_input', return_value=True), \
+             patch('services.chat_service._bt_logger', None), \
              patch('services.chat_service.models') as mock_models, \
              patch('services.chat_service.run_agent_loop', side_effect=mock_agent_loop), \
              patch('services.chat_service._get_client', return_value=MagicMock()), \

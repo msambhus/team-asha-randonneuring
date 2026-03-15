@@ -12,6 +12,11 @@ from typing import Literal, Optional
 from openai import OpenAI, RateLimitError, APITimeoutError, InternalServerError, APIError
 from pydantic import BaseModel
 
+try:
+    import braintrust
+except ImportError:
+    braintrust = None
+
 import models
 from services.fitness import calculate_fitness_score
 from services.openai_coach import _build_training_summary, _build_brevet_history_summary
@@ -20,6 +25,17 @@ from services.chat_tools import ALLOWED_QUERIES, execute_allowed_query
 logger = logging.getLogger(__name__)
 
 _client = None
+
+# Braintrust observability — graceful degradation if no API key or SDK
+_bt_logger = None
+if braintrust is not None and os.environ.get('BRAINTRUST_API_KEY'):
+    try:
+        _bt_logger = braintrust.init_logger(
+            project="Team Asha",
+            async_flush=False,  # CRITICAL for Vercel serverless
+        )
+    except Exception:
+        logger.warning("Braintrust logger init failed — spans disabled")
 
 
 def _get_client():
@@ -117,7 +133,7 @@ def _format_tool_results(tool_results):
     return '\n'.join(parts)
 
 
-def run_agent_loop(client, user_message, messages, rider_id, user_id):
+def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulator=None):
     """Agent loop: classify intent, execute tools if needed, stream response.
 
     Generator function yielding SSE chunks (same interface as _stream_completion).
@@ -129,7 +145,10 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id):
         messages: Full message list (system + history + user)
         rider_id: Rider ID for user-scoped queries
         user_id: Authenticated user ID from session
+        accumulator: Optional dict to collect full_content and token counts
     """
+    if accumulator is None:
+        accumulator = {}
     # Yield thinking indicator before classification
     yield f'data: {json.dumps({"status": "thinking"})}\n\n'
 
@@ -189,7 +208,6 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id):
         })
 
     # Stream the final response
-    accumulator = {}
     yield from _stream_completion(messages, accumulator)
 
 
@@ -380,17 +398,57 @@ def process_message(user_id, message, conversation_id=None, rider_id=None):
     # Step 6: Send conversation_id to client
     yield f'data: {json.dumps({"conversation_id": str(conversation_id)})}\n\n'
 
-    # Step 7: Agent loop with intent classification and tool execution
+    # Steps 7-8 wrapped in Braintrust span for observability
     accumulator = {}
-    for chunk in run_agent_loop(_get_client(), message, messages, rider_id, user_id):
-        yield chunk
+    span_metadata = None
 
-    # Step 8: Persist assistant response
-    full_content = accumulator.get('full_content', '')
-    if full_content:
-        models.insert_chat_message(
-            conversation_id, 'assistant', full_content,
-            prompt_tokens=accumulator.get('prompt_tokens'),
-            completion_tokens=accumulator.get('completion_tokens'),
+    if _bt_logger:
+        span = _bt_logger.start_span(
+            name="chat_message",
+            span_attributes={"type": "task"},
+            input={"message": message, "conversation_id": str(conversation_id)},
         )
-        models.touch_conversation(conversation_id)
+        span.__enter__()
+        try:
+            span_id = span.id
+            trace_id = span.root_span_id
+            span_metadata = {"span_id": span_id, "trace_id": trace_id}
+
+            # Step 7: Agent loop
+            for chunk in run_agent_loop(_get_client(), message, messages, rider_id, user_id, accumulator=accumulator):
+                yield chunk
+
+            # Step 8: Persist assistant response
+            full_content = accumulator.get('full_content', '')
+            if full_content:
+                models.insert_chat_message(
+                    conversation_id, 'assistant', full_content,
+                    prompt_tokens=accumulator.get('prompt_tokens'),
+                    completion_tokens=accumulator.get('completion_tokens'),
+                    metadata=span_metadata,
+                )
+                models.touch_conversation(conversation_id)
+        finally:
+            full_content = accumulator.get('full_content', '')
+            span.log(
+                output={"response_length": len(full_content)},
+                metadata={
+                    "conversation_id": str(conversation_id),
+                    "prompt_tokens": accumulator.get('prompt_tokens'),
+                    "completion_tokens": accumulator.get('completion_tokens'),
+                },
+            )
+            span.__exit__(None, None, None)
+    else:
+        # No Braintrust — run without span wrapping
+        for chunk in run_agent_loop(_get_client(), message, messages, rider_id, user_id, accumulator=accumulator):
+            yield chunk
+
+        full_content = accumulator.get('full_content', '')
+        if full_content:
+            models.insert_chat_message(
+                conversation_id, 'assistant', full_content,
+                prompt_tokens=accumulator.get('prompt_tokens'),
+                completion_tokens=accumulator.get('completion_tokens'),
+            )
+            models.touch_conversation(conversation_id)
