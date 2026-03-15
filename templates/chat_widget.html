@@ -383,9 +383,35 @@
     window.showConversationList = function() {
         var panel = document.getElementById('chat-conv-list');
         panel.style.display = 'flex';
-        // Conversation list loading will be wired in Plan 03
         var items = document.getElementById('chat-conv-list-items');
-        items.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-light);font-size:0.85rem;">Coming soon</div>';
+        items.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-light);font-size:0.85rem;">Loading...</div>';
+
+        fetch('/api/chat/conversations')
+        .then(function(resp) {
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            return resp.json();
+        })
+        .then(function(data) {
+            var convs = data.conversations || [];
+            if (convs.length === 0) {
+                items.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-light);font-size:0.85rem;">No conversations yet</div>';
+                return;
+            }
+            items.innerHTML = '';
+            for (var i = 0; i < convs.length; i++) {
+                var c = convs[i];
+                var el = document.createElement('div');
+                el.className = 'conv-item';
+                el.setAttribute('data-conv-id', c.id);
+                el.innerHTML = '<div class="conv-title">' + escHtml(c.title) + '</div>'
+                    + '<div class="conv-time">' + escHtml(c.last_active_at) + '</div>';
+                el.onclick = (function(id) { return function() { loadConversation(id); }; })(c.id);
+                items.appendChild(el);
+            }
+        })
+        .catch(function() {
+            items.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-light);font-size:0.85rem;">Failed to load conversations</div>';
+        });
     };
 
     window.hideConversationList = function() {
@@ -393,9 +419,31 @@
     };
 
     window.loadConversation = function(convId) {
-        // Will be wired in Plan 03
         currentConversationId = convId;
         hideConversationList();
+        var messagesDiv = document.getElementById('chat-messages');
+        messagesDiv.innerHTML = '';
+        appendSystemNote('Loading conversation...');
+
+        fetch('/api/chat/conversations/' + convId + '/messages')
+        .then(function(resp) {
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            return resp.json();
+        })
+        .then(function(data) {
+            messagesDiv.innerHTML = '';
+            var msgs = data.messages || [];
+            for (var i = 0; i < msgs.length; i++) {
+                appendMessage(msgs[i].role, msgs[i].content);
+            }
+            if (msgs.length === 0) {
+                appendSystemNote('No messages in this conversation');
+            }
+        })
+        .catch(function() {
+            messagesDiv.innerHTML = '';
+            appendSystemNote('Failed to load conversation history.');
+        });
     };
 
     function appendMessage(role, text) {
@@ -414,6 +462,12 @@
         document.getElementById('chat-messages').appendChild(div);
         scrollMessages();
         return div;
+    }
+
+    function escHtml(str) {
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
     }
 
     function scrollMessages() {
