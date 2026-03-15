@@ -2341,3 +2341,73 @@ def get_ride_by_id_full(ride_id):
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE ri.id = %s
     """, (ride_id,)).fetchone()
+
+
+# ========== CHAT ==========
+
+def create_conversation(user_id, title=None):
+    """Create a new chat conversation. Returns the created row as dict."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        "INSERT INTO conversation (user_id, title) VALUES (%s, %s) RETURNING *",
+        (user_id, title)
+    )
+    result = cur.fetchone()
+    conn.commit()
+    return result
+
+
+def get_conversation(conversation_id, user_id):
+    """Get a conversation by ID. ALWAYS requires user_id — never look up by ID alone (SEC-10)."""
+    return _execute(
+        "SELECT * FROM conversation WHERE id = %s AND user_id = %s",
+        (conversation_id, user_id)
+    ).fetchone()
+
+
+def get_conversations_for_user(user_id, limit=20):
+    """Get recent conversations for a user, ordered by last activity."""
+    return _execute(
+        "SELECT * FROM conversation WHERE user_id = %s ORDER BY last_active_at DESC LIMIT %s",
+        (user_id, limit)
+    ).fetchall()
+
+
+def insert_chat_message(conversation_id, role, content, prompt_tokens=None, completion_tokens=None, metadata=None):
+    """Insert a chat message. Returns the created row as dict."""
+    import json as _json
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        """INSERT INTO chat_message
+           (conversation_id, role, content, prompt_tokens, completion_tokens, metadata)
+           VALUES (%s, %s, %s, %s, %s, %s) RETURNING *""",
+        (conversation_id, role, content, prompt_tokens, completion_tokens,
+         _json.dumps(metadata or {}))
+    )
+    result = cur.fetchone()
+    conn.commit()
+    return result
+
+
+def get_recent_messages(conversation_id, limit=20):
+    """Fetch last N messages for context window. limit=20 = last 10 turns (SEC-07)."""
+    rows = _execute(
+        """SELECT role, content FROM chat_message
+           WHERE conversation_id = %s
+           ORDER BY created_at DESC LIMIT %s""",
+        (conversation_id, limit)
+    ).fetchall()
+    return list(reversed(rows))
+
+
+def touch_conversation(conversation_id):
+    """Update last_active_at timestamp on each message exchange."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE conversation SET last_active_at = NOW() WHERE id = %s",
+        (conversation_id,)
+    )
+    conn.commit()
