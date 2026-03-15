@@ -267,3 +267,44 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 **Next:** Human verification → merge PR #115 → `/gsd:execute-phase 3`
 
 
+**Status:** Success (86s)
+
+---
+## Loop Summary — 2026-03-15 01:42:30
+- Iterations: 20 (20 succeeded, 0 failed)
+- Total time: 160m 10s
+
+
+## Iteration 1 — 2026-03-15 10:39:25
+
+**Task:** Phase 3, Plan 03-01, Task 1 — IntentResult model + classify_intent() function
+**What happened:**
+- Created `IntentResult` Pydantic model with 5 Literal intent values, optional query_type and ride_name
+- Added `classify_intent()` function using `chat.completions.parse()` with gpt-4o-mini
+- Added `INTENT_CLASSIFICATION_PROMPT` constant documenting all 5 intents
+- Handles parse() refusal (None) gracefully as off_topic
+- Created `tests/test_agent_pipeline.py` with 9 tests covering all intent types, refusal, validation, API params
+- Installed missing deps (pytest, sqlparse) in venv
+- All 51 tests pass (6 DB skip)
+- Committed as 512725f
+**Issues:** None
+**Status:** Success
+**Next:** Phase 3, Plan 03-02 — Tool registry (populate ALLOWED_QUERIES with 7 named queries)
+**Status:** Success (156s)
+
+## Iteration 2 — 2026-03-15 10:42:06
+
+**Task:** Phase 3, Plan 03-02 — Tool registry (populate ALLOWED_QUERIES + SET LOCAL timeout)
+**What happened:**
+- Populated ALLOWED_QUERIES with all 7 named queries: fitness_score, brevet_history, upcoming_rides, career_stats, recent_activities, get_team_stats, get_ride_plan
+- All queries are hardcoded parameterized SQL (no f-strings, no concatenation)
+- User-scoped queries parameterized by rider_id, get_team_stats has no user param, get_ride_plan has 2 ILIKE params
+- Upgraded execute_allowed_query() to use get_db() directly with RealDictCursor (not models._execute)
+- Added SET LOCAL statement_timeout = '5000' before every query (AGENT-08)
+- 50-row cap via fetchmany(50) (AGENT-08)
+- Timeout errors caught and returned as {"error": "Query timed out after 5 seconds"}
+- Wrote 13 tests covering: query population, safety validation, rider params, team stats no params, ride plan 2 params, timeout enforcement, timeout error handling, row cap, RealDictCursor, dict conversion, general error handling
+- 62 tests pass (6 DB skip), no regressions
+**Issues:** None
+**Status:** Success
+**Next:** Phase 3, Plan 03-03 — Agent loop with iteration/query guards and process_message() wiring
