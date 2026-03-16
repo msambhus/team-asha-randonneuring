@@ -35,15 +35,16 @@ def test_sqlparse_validation():
 # --- AGENT-04 through AGENT-06: ALLOWED_QUERIES population tests ---
 
 def test_allowed_queries_populated():
-    """AGENT-04/05/06: ALLOWED_QUERIES contains exactly 7 named queries."""
+    """AGENT-04/05/06: ALLOWED_QUERIES contains all named queries."""
     from services.chat_tools import ALLOWED_QUERIES
 
     expected_keys = {
         "fitness_score", "brevet_history", "upcoming_rides",
         "career_stats", "recent_activities", "get_team_stats", "get_ride_plan",
+        "get_team_leaderboard", "get_eddington_scores", "get_my_eddington",
     }
     assert set(ALLOWED_QUERIES.keys()) == expected_keys
-    assert len(ALLOWED_QUERIES) == 7
+    assert len(ALLOWED_QUERIES) == 10
 
 
 def test_all_queries_pass_safety_check():

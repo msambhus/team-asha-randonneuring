@@ -41,10 +41,10 @@ def test_widget_has_session_storage(client):
     assert 'chatOpen' in html
 
 
-def test_widget_has_coach_asha_title(client):
-    """Widget header shows Coach Asha title."""
+def test_widget_has_coach_title(client):
+    """Widget header shows Team Asha Coaches title."""
     with client.session_transaction() as sess:
         sess['user_id'] = 1
     resp = client.get('/')
     html = resp.get_data(as_text=True)
-    assert 'Coach Asha' in html
+    assert 'Team Asha Coaches' in html
