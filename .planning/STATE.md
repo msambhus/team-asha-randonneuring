@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-03-16T05:27:08.016Z"
-last_activity: 2026-03-16 — Executed 05-01-PLAN.md (WhatsApp parser TDD). 17 tests pass.
+stopped_at: Completed 05-03-PLAN.md
+last_updated: "2026-03-16T05:35:37.395Z"
+last_activity: 2026-03-16 — Executed 05-03-PLAN.md (RAG retrieval integration). 10 new tests, 100 total pass.
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 9
-  completed_plans: 1
+  completed_plans: 2
   percent: 7
 ---
 
@@ -21,21 +21,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-14)
 
 **Core value:** Personalized, data-grounded cycling coaching and randonneuring information — answering "Am I ready for my next brevet?" with actual training data, not generic advice.
-**Current focus:** Phase 5 (WhatsApp Knowledge Base) in progress. Plan 01 (parser/chunker/filter) complete. Plans 02-03 remaining.
+**Current focus:** All 5 phases code complete. Phase 5 (WhatsApp Knowledge Base) finished: parser/chunker/filter, pgvector schema/import, RAG integration.
 
 ## Current Position
 
 Phase: 5 of 5 (WhatsApp Knowledge Base)
-Plan: 2 of 3 in current phase (plan 01 complete, plans 02-03 remaining)
-Status: Phase 5 Plan 01 complete. WhatsApp parser, chunker, rule filter, LLM classifier, and formatter implemented with 17 TDD tests passing.
-Last activity: 2026-03-16 — Executed 05-01-PLAN.md (WhatsApp parser TDD). 17 tests pass.
+Plan: 3 of 3 in current phase (plans 01-03 complete)
+Status: Phase 5 complete. All 3 plans executed: parser/chunker/filter, pgvector schema/import, RAG integration.
+Last activity: 2026-03-16 — Executed 05-03-PLAN.md (RAG retrieval integration). 10 new tests, 100 total pass.
 
 Progress: [█░░░░░░░░░] 7% (1/14 plans complete with summaries)
 Phase 1: Code complete — 3 plans executed (01-01 DB/CRUD, 01-02 SSE endpoint, 01-03 system prompt)
 Phase 2: Code complete — 3 plans executed (02-01 widget, 02-02 context, 02-03 conversations)
 Phase 3: Code complete — 3 plans executed (03-01 intent, 03-02 tools, 03-03 agent loop)
 Phase 4: Code complete — 2 plans executed (04-01 SDK+spans, 04-02 eval datasets+scorers)
-Phase 5: In progress — 1/3 plans executed (05-01 parser/chunker/filter)
+Phase 5: Code complete — 3 plans executed (05-01 parser/chunker/filter, 05-02 pgvector/import, 05-03 RAG integration)
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Phase 5: In progress — 1/3 plans executed (05-01 parser/chunker/filter)
 
 *Updated after each plan completion*
 | Phase 05 P01 | 3min | 1 tasks | 3 files |
+| Phase 05 P03 | 5min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,9 @@ Recent decisions affecting current work:
 - [05-01]: No external dependencies for WhatsApp parser module -- only Python stdlib. OpenAI client passed as parameter for testability.
 - [05-01]: Fail-open error handling in LLM classifier -- API failures return all chunks unchanged, never discard data.
 - [Phase 05]: No external dependencies for WhatsApp parser module -- only Python stdlib. OpenAI client passed as parameter for testability.
+- [Phase 05]: Module-level import of get_db and psycopg2.extras for RAG retrieval testability
+- [Phase 05]: Injection safety note in knowledge_context XML block header as prompt injection defense
+- [Phase 05]: RAG retrieval before tool execution loop so both community knowledge and tool results available to final completion
 
 ### Pending Todos
 
@@ -88,9 +92,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-16T05:26:56.045Z
-Stopped at: Completed 05-01-PLAN.md
-- Phase 5 Plan 01 complete: 17 tests pass, scripts/whatsapp_parser.py exports 5 functions
-- Next: 05-02-PLAN.md (pgvector schema, CLI import script)
-- All 4 prior phases: code complete on `feature/chat-db-schema-crud`
+Last session: 2026-03-16T05:35:37.393Z
+Stopped at: Completed 05-03-PLAN.md
+- Phase 5 Plan 03 complete: RAG retrieval integration with 10 new tests, 100 total pass
+- Phase 5 all plans complete: parser/chunker/filter, pgvector schema/import, RAG integration
+- All 5 phases: code complete on `feature/web-search-bike-specs`
 - PR #115: https://github.com/msambhus/team-asha-randonneuring/pull/115
