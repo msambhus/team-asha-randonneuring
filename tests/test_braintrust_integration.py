@@ -156,7 +156,7 @@ def test_span_log_called(app, mock_bt_logger, mock_bt_span):
 
 
 def test_intent_dataset_coverage():
-    """EVAL-02: Intent dataset has 20+ records with all 5 intent types, >= 4 each."""
+    """EVAL-02: Intent dataset has 20+ records with all 6 intent types, >= 4 each."""
     from evals.eval_intent import INTENT_DATASET_RECORDS
 
     assert len(INTENT_DATASET_RECORDS) >= 20
@@ -165,7 +165,7 @@ def test_intent_dataset_coverage():
     from collections import Counter
     counts = Counter(r["expected"] for r in INTENT_DATASET_RECORDS)
 
-    expected_types = {"data_query", "coaching", "knowledge", "route_discussion", "off_topic"}
+    expected_types = {"data_query", "coaching", "knowledge", "route_discussion", "web_search", "off_topic"}
     assert set(counts.keys()) == expected_types, f"Missing intents: {expected_types - set(counts.keys())}"
 
     for intent_type, count in counts.items():
@@ -296,17 +296,17 @@ def test_graceful_degradation_no_logger(app):
 
 
 def test_e2e_dataset_coverage():
-    """EVAL-05: E2E dataset has 18+ records across all 6 scenario types."""
+    """EVAL-05: E2E dataset has 20+ records across all 7 scenario types."""
     from evals.eval_e2e import E2E_DATASET_RECORDS
 
-    assert len(E2E_DATASET_RECORDS) >= 18
+    assert len(E2E_DATASET_RECORDS) >= 20
 
     from collections import Counter
     scenarios = Counter(r["metadata"]["scenario"] for r in E2E_DATASET_RECORDS)
 
     expected_scenarios = {
         "data_query", "coaching", "knowledge",
-        "bike_shriram", "off_topic", "route_discussion",
+        "bike_knowledge", "web_search", "off_topic", "route_discussion",
     }
     assert set(scenarios.keys()) == expected_scenarios, (
         f"Missing scenarios: {expected_scenarios - set(scenarios.keys())}"

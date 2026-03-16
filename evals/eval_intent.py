@@ -1,7 +1,7 @@
 """Intent classification accuracy eval (EVAL-02).
 
 Measures whether classify_intent() correctly identifies user intent across
-all 5 intent types. Dataset has 20+ labeled randonneuring-specific messages.
+all 6 intent types. Dataset has 20+ labeled randonneuring-specific messages.
 
 Run: braintrust eval evals/eval_intent.py
   or: python evals/eval_intent.py
@@ -17,7 +17,7 @@ from openai import OpenAI
 
 from services.chat_service import classify_intent
 
-# 24 labeled records — at least 4 per intent type
+# 28 labeled records — at least 4 per intent type
 INTENT_DATASET_RECORDS = [
     # data_query (5 records)
     {"input": {"question": "What is my fitness score?"}, "expected": "data_query"},
@@ -39,6 +39,12 @@ INTENT_DATASET_RECORDS = [
     {"input": {"question": "How does R-12 work?"}, "expected": "knowledge"},
     {"input": {"question": "What should I eat on a 600km brevet?"}, "expected": "knowledge"},
     {"input": {"question": "What are the official brevet distances?"}, "expected": "knowledge"},
+
+    # web_search (4 records)
+    {"input": {"question": "What's a good bike for randonneuring under $2000?"}, "expected": "web_search"},
+    {"input": {"question": "Is the Shimano 105 groupset good for brevets?"}, "expected": "web_search"},
+    {"input": {"question": "Schwalbe Marathon vs Continental Gatorskin for long rides?"}, "expected": "web_search"},
+    {"input": {"question": "Best dynamo hub for randonneuring?"}, "expected": "web_search"},
 
     # route_discussion (5 records)
     {"input": {"question": "Tell me about the Cascade 400 route"}, "expected": "route_discussion"},

@@ -39,21 +39,8 @@ _BIKE_KEYWORDS = {
     'bottom bracket', 'saddle height', 'bike fit',
 }
 
-# Coach Shriram persona — replicated from run_agent_loop() (inline, not importable)
-_SHRIRAM_PERSONA = (
-    'You are Coach Shriram. You are deeply knowledgeable about bikes and '
-    'maintenance, but you have a well-known quirk: you firmly believe the '
-    'correct number of bikes to own is always n+1 (where n is however many '
-    'you currently have). No matter what bike question is asked — maintenance, '
-    'upgrades, tire choice, fit issues — find a tongue-in-cheek way to work in '
-    'a suggestion that maybe the real answer is just getting another bike. '
-    'Keep it playful and brief (one line max), and still give genuinely helpful '
-    'advice on the actual question. You love bikes and want everyone else to '
-    'stock up on them too.'
-)
-
 # ---------------------------------------------------------------------------
-# Fixture data (extends eval_grounding.py fixtures with team + ride plan)
+# Fixture data (extends eval_grounding.py fixtures with team + ride plan + web search)
 # ---------------------------------------------------------------------------
 FIXTURE_RESULTS = {
     "fitness_score": {"rows": [
@@ -100,10 +87,21 @@ FIXTURE_RESULTS = {
          "distance_from_start_miles": 32, "segment_elevation_ft": 1500,
          "segment_time_min": 120, "cum_time_min": 120},
     ]},
+    "web_search": {"rows": [
+        {"text": "The Trek Checkpoint ALR 5 is an excellent gravel/randonneuring "
+         "bike priced around $1,800. It features a Shimano 105 groupset, "
+         "carbon fork, and clearance for 45mm tires. The Surly Long Haul "
+         "Trucker at $1,600 is a classic steel touring choice with proven "
+         "reliability for brevets.",
+         "sources": [
+             {"title": "Best Randonneuring Bikes 2026", "url": "https://example.com/best-rando-bikes"},
+             {"title": "Trek Checkpoint Review", "url": "https://example.com/trek-checkpoint"},
+         ]},
+    ]},
 }
 
 # ---------------------------------------------------------------------------
-# Dataset — 18 records across 6 scenario types
+# Dataset — 20 records across 7 scenario types
 # ---------------------------------------------------------------------------
 E2E_DATASET_RECORDS = [
     # --- data_query (4 records) ---
@@ -202,7 +200,7 @@ E2E_DATASET_RECORDS = [
         "metadata": {"scenario": "knowledge"},
     },
 
-    # --- bike / Shriram persona (3 records) ---
+    # --- bike knowledge / Shriram coach (3 records) ---
     {
         "input": {"question": "My derailleur is skipping gears, how do I fix it?"},
         "expected": {
@@ -210,7 +208,7 @@ E2E_DATASET_RECORDS = [
             "tool_called": None, "coach": "shriram",
             "response_keywords": ["derailleur"],
         },
-        "metadata": {"scenario": "bike_shriram"},
+        "metadata": {"scenario": "bike_knowledge"},
     },
     {
         "input": {"question": "When should I replace my bike chain?"},
@@ -219,7 +217,7 @@ E2E_DATASET_RECORDS = [
             "tool_called": None, "coach": "shriram",
             "response_keywords": ["chain", "wear"],
         },
-        "metadata": {"scenario": "bike_shriram"},
+        "metadata": {"scenario": "bike_knowledge"},
     },
     {
         "input": {"question": "What tire pressure should I use for my bike on a 200km brevet?"},
@@ -228,7 +226,27 @@ E2E_DATASET_RECORDS = [
             "tool_called": None, "coach": "shriram",
             "response_keywords": ["tire", "pressure"],
         },
-        "metadata": {"scenario": "bike_shriram"},
+        "metadata": {"scenario": "bike_knowledge"},
+    },
+
+    # --- web_search (2 records) ---
+    {
+        "input": {"question": "What's a good bike for randonneuring under $2000?"},
+        "expected": {
+            "intent": "web_search", "query_type": None,
+            "tool_called": "web_search", "coach": "shriram",
+            "response_keywords": ["bike"],
+        },
+        "metadata": {"scenario": "web_search"},
+    },
+    {
+        "input": {"question": "Schwalbe Marathon vs Continental Gatorskin for long rides?"},
+        "expected": {
+            "intent": "web_search", "query_type": None,
+            "tool_called": "web_search", "coach": "shriram",
+            "response_keywords": ["tire"],
+        },
+        "metadata": {"scenario": "web_search"},
     },
 
     # --- off_topic (3 records) ---
@@ -403,12 +421,16 @@ def e2e_task(input):
                 'result': FIXTURE_RESULTS['get_ride_plan'],
             })
 
+    elif intent_result.intent == 'web_search':
+        tool_called = 'web_search'
+        if 'web_search' in FIXTURE_RESULTS:
+            tool_results.append({
+                'tool': 'web_search',
+                'result': FIXTURE_RESULTS['web_search'],
+            })
+
     # Step 4: Build message list
     messages = build_messages(question, [], CHAT_SYSTEM_PROMPT)
-
-    # Inject Shriram persona if bike topic
-    if coach == 'shriram':
-        messages.append({'role': 'system', 'content': _SHRIRAM_PERSONA})
 
     # Inject off-topic redirect
     if intent_result.intent == 'off_topic':
