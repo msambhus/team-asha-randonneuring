@@ -5,28 +5,14 @@
       "main": true
     }
   },
-  "buildCommand": "npm install && npm run build:css",
-  "builds": [
-    {
-      "src": "api/index.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxDuration": 60
-      }
-    },
-    {
-      "src": "static/**",
-      "use": "@vercel/static"
+  "buildCommand": "npm install && npm run build:css && mkdir -p public/static && cp -r static/* public/static/",
+  "functions": {
+    "api/index.py": {
+      "runtime": "@vercel/python",
+      "maxDuration": 60
     }
-  ],
-  "routes": [
-    {
-      "src": "/static/(.*)",
-      "dest": "/static/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.py"
-    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index.py" }
   ]
 }
