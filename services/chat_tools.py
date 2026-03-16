@@ -186,3 +186,58 @@ def execute_allowed_query(query_type: str, params: tuple = (), user_id: int = No
             return {"error": "Query timed out after 5 seconds"}
         logger.error(f"Query '{query_type}' execution error: {e}")
         return {"error": "Query execution failed"}
+
+
+def execute_web_search(client, query: str) -> dict:
+    """Search the web for cycling/bike information using OpenAI Responses API.
+
+    Args:
+        client: OpenAI client instance (reused from agent loop)
+        query: The user's original question
+
+    Returns:
+        dict with "rows" key containing search text and sources, or "error" key
+    """
+    try:
+        response = client.responses.create(
+            model="gpt-4o-mini",
+            tools=[{"type": "web_search"}],
+            input=(
+                f"Search for cycling and bike-related information to answer: {query}\n"
+                "Focus on randonneuring, long-distance cycling, and brevet-relevant gear."
+            ),
+            timeout=15,
+        )
+
+        # Extract text and citations from response
+        text = ""
+        sources = []
+        for item in response.output:
+            if hasattr(item, 'content'):
+                for content_block in item.content:
+                    if hasattr(content_block, 'text'):
+                        text += content_block.text
+                    if hasattr(content_block, 'annotations'):
+                        for annotation in content_block.annotations:
+                            if hasattr(annotation, 'url') and hasattr(annotation, 'title'):
+                                sources.append({
+                                    "title": annotation.title,
+                                    "url": annotation.url,
+                                })
+
+        if not text:
+            return {"error": "Web search returned no results"}
+
+        # Deduplicate sources
+        seen_urls = set()
+        unique_sources = []
+        for s in sources:
+            if s["url"] not in seen_urls:
+                seen_urls.add(s["url"])
+                unique_sources.append(s)
+
+        return {"rows": [{"text": text, "sources": unique_sources[:5]}]}
+
+    except Exception as e:
+        logger.warning(f"Web search failed: {e}")
+        return {"error": "Web search unavailable — please try again"}

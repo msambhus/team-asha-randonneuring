@@ -16,6 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Core Chat Experience** - Floating widget, multi-turn conversations, Strava personalization, conversation list
 - [x] **Phase 3: Agentic Tool-Calling Pipeline** - Intent classification, tool execution, agent loop, data-grounded responses
 - [x] **Phase 4: Braintrust Evals + Observability** - Eval datasets, Braintrust integration, quality metrics dashboard
+- [ ] **Phase 5: WhatsApp Knowledge Base** - Import group chat exports, parse and filter cycling content, store in vector DB, integrate RAG into chatbot
 
 ## Phase Details
 
@@ -86,10 +87,28 @@ Plans:
 - [x] 04-01-PLAN.md — Braintrust SDK install, production span logging in chat_service.py, span_id/trace_id in chat_message metadata
 - [x] 04-02-PLAN.md — Eval datasets (intent classification, data grounding, guardrail) with custom scorers and baseline eval scripts
 
+### Phase 5: WhatsApp Knowledge Base
+**Goal**: The chatbot answers cycling questions with grounded community knowledge from real Team Asha WhatsApp group discussions — parsed, filtered (rules + LLM), embedded, stored in pgvector, and retrieved via RAG at query time
+**Depends on**: Phase 4
+**Requirements**: WA-01, WA-02, WA-03, WA-04, WA-05, WA-06, WA-07, WA-08, WA-09, WA-10
+**Success Criteria** (what must be TRUE):
+  1. WhatsApp export files are parsed correctly, handling U+202F timestamps and multi-line messages
+  2. Two-stage filtering (rule-based + LLM classification) retains cycling-relevant content and discards noise
+  3. Filtered chunks are embedded with text-embedding-3-small and stored in pgvector with HNSW index
+  4. Re-importing only processes new messages after the last imported timestamp (incremental append)
+  5. The chatbot retrieves relevant community knowledge for non-off-topic questions and attributes it naturally
+  6. RAG failure degrades gracefully — chatbot continues working without community knowledge
+**Plans**: 3 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — WhatsApp parser, chunker, two-stage filter (rule-based + LLM), and formatter with TDD
+- [ ] 05-02-PLAN.md — pgvector schema, CLI import script with incremental append and two-stage filtering
+- [ ] 05-03-PLAN.md — RAG retrieval function, agent loop integration, system prompt update
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -97,3 +116,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 2. Core Chat Experience | 3/3 | Code complete | 2026-03-15 |
 | 3. Agentic Tool-Calling Pipeline | 3/3 | Code complete | 2026-03-15 |
 | 4. Braintrust Evals + Observability | 2/2 | Code complete | 2026-03-15 |
+| 5. WhatsApp Knowledge Base | 0/3 | Planning | — |

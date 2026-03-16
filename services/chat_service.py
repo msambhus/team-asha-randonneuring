@@ -20,7 +20,7 @@ except ImportError:
 import models
 from services.fitness import calculate_fitness_score
 from services.openai_coach import _build_training_summary, _build_brevet_history_summary
-from services.chat_tools import ALLOWED_QUERIES, execute_allowed_query
+from services.chat_tools import ALLOWED_QUERIES, execute_allowed_query, execute_web_search
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ def _get_client():
 
 class IntentResult(BaseModel):
     """Structured intent classification result for the agentic pipeline."""
-    intent: Literal['data_query', 'coaching', 'knowledge', 'route_discussion', 'off_topic']
+    intent: Literal['data_query', 'coaching', 'knowledge', 'route_discussion', 'web_search', 'off_topic']
     query_type: Optional[str] = None   # e.g. "fitness_score", "brevet_history"
     ride_name: Optional[str] = None    # for route_discussion intent
 
@@ -72,13 +72,21 @@ Intents:
     get_eddington_scores - team Eddington number leaderboard
     get_my_eddington - personal Eddington number
 - coaching: User wants training advice, strategy, or personalized coaching.
-- knowledge: User wants general randonneuring info (rules, cutoffs, gear, nutrition, bikes).
+- knowledge: User wants general randonneuring info (rules, cutoffs, nutrition, general training).
+- web_search: User asks about specific bike models, gear specs, product recommendations, \
+component comparisons, current pricing, tire/wheel reviews, or any cycling question that \
+requires up-to-date external information beyond general randonneuring knowledge. Examples: \
+"What's a good bike for randonneuring under $2000?", "Is the Shimano 105 groupset good for \
+brevets?", "Schwalbe Marathon vs Continental Gatorskin for long rides?", "Best dynamo hub \
+for randonneuring?", "Trek Checkpoint vs Surly Long Haul Trucker?"
 - route_discussion: User asks about a specific ride plan, route, or control stops.
   Set ride_name to the full ride name including distance (e.g., "Cascade 400").
 - off_topic: Question is NOT related to cycling, randonneuring, bikes, or Team Asha.
 
 IMPORTANT: Questions about team data, leaderboards, rankings, scores, and rider comparisons
 are data_query — NOT off_topic. Team Asha questions are always relevant.
+IMPORTANT: Questions about specific bike brands, models, components, or gear comparisons \
+are web_search — NOT knowledge or off_topic.
 
 Return the intent and, where applicable, the query_type or ride_name.
 """
@@ -184,23 +192,6 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
         coach = 'shriram' if is_bike else 'venki'
         yield f'data: {json.dumps({"coach": coach})}\n\n'
 
-        # Inject Coach Shriram's personality for bike topics
-        if is_bike:
-            messages.append({
-                'role': 'system',
-                'content': (
-                    'You are Coach Shriram. You are deeply knowledgeable about bikes and '
-                    'maintenance, but you have a well-known quirk: you firmly believe the '
-                    'correct number of bikes to own is always n+1 (where n is however many '
-                    'you currently have). No matter what bike question is asked — maintenance, '
-                    'upgrades, tire choice, fit issues — find a tongue-in-cheek way to work in '
-                    'a suggestion that maybe the real answer is just getting another bike. '
-                    'Keep it playful and brief (one line max), and still give genuinely helpful '
-                    'advice on the actual question. You love bikes and want everyone else to '
-                    'stock up on them too.'
-                ),
-            })
-
     tool_results = []
     db_query_count = 0
 
@@ -239,6 +230,11 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
                 )
                 tool_results.append({'tool': 'get_ride_plan', 'result': result})
                 db_query_count += 1
+            break
+
+        elif intent_result.intent == 'web_search':
+            result = execute_web_search(client, user_message)
+            tool_results.append({'tool': 'web_search', 'result': result})
             break
 
         else:
