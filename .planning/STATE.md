@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-03-16T05:35:37.395Z"
+stopped_at: Completed 05-02-PLAN.md (pgvector schema and import script, human-verify checkpoint approved)
+last_updated: "2026-03-16T07:14:46.961Z"
 last_activity: 2026-03-16 — Executed 05-03-PLAN.md (RAG retrieval integration). 10 new tests, 100 total pass.
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 9
-  completed_plans: 2
+  completed_plans: 3
   percent: 7
 ---
 
@@ -30,7 +30,7 @@ Plan: 3 of 3 in current phase (plans 01-03 complete)
 Status: Phase 5 complete. All 3 plans executed: parser/chunker/filter, pgvector schema/import, RAG integration.
 Last activity: 2026-03-16 — Executed 05-03-PLAN.md (RAG retrieval integration). 10 new tests, 100 total pass.
 
-Progress: [█░░░░░░░░░] 7% (1/14 plans complete with summaries)
+Progress: [██░░░░░░░░] 21% (3/14 plans complete with summaries)
 Phase 1: Code complete — 3 plans executed (01-01 DB/CRUD, 01-02 SSE endpoint, 01-03 system prompt)
 Phase 2: Code complete — 3 plans executed (02-01 widget, 02-02 context, 02-03 conversations)
 Phase 3: Code complete — 3 plans executed (03-01 intent, 03-02 tools, 03-03 agent loop)
@@ -56,6 +56,7 @@ Phase 5: Code complete — 3 plans executed (05-01 parser/chunker/filter, 05-02 
 
 *Updated after each plan completion*
 | Phase 05 P01 | 3min | 1 tasks | 3 files |
+| Phase 05 P02 | 4min | 2 tasks | 3 files |
 | Phase 05 P03 | 5min | 2 tasks | 3 files |
 
 ## Accumulated Context
@@ -71,6 +72,9 @@ Recent decisions affecting current work:
 - [Research]: Phase 4 (Braintrust Evals) needs a research phase before planning — integration pattern for Flask + SSE + tool-calling is undocumented in current research files
 - [05-01]: No external dependencies for WhatsApp parser module -- only Python stdlib. OpenAI client passed as parameter for testability.
 - [05-01]: Fail-open error handling in LLM classifier -- API failures return all chunks unchanged, never discard data.
+- [05-02]: HNSW index over IVFFlat -- works on empty tables, better recall at expected scale (~22k rows)
+- [05-02]: Dev-only dependencies (pgvector, numpy, tqdm) in requirements-dev.txt, not production requirements.txt
+- [05-02]: UNIQUE constraint on (source, chunk_start, chunk_end) for idempotent re-import
 - [Phase 05]: No external dependencies for WhatsApp parser module -- only Python stdlib. OpenAI client passed as parameter for testability.
 - [Phase 05]: Module-level import of get_db and psycopg2.extras for RAG retrieval testability
 - [Phase 05]: Injection safety note in knowledge_context XML block header as prompt injection defense
@@ -92,8 +96,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-16T05:35:37.393Z
-Stopped at: Completed 05-03-PLAN.md
+Last session: 2026-03-16T07:14:46.954Z
+Stopped at: Completed 05-02-PLAN.md (pgvector schema and import script, human-verify checkpoint approved)
 - Phase 5 Plan 03 complete: RAG retrieval integration with 10 new tests, 100 total pass
 - Phase 5 all plans complete: parser/chunker/filter, pgvector schema/import, RAG integration
 - All 5 phases: code complete on `feature/web-search-bike-specs`

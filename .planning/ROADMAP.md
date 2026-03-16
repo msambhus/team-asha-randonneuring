@@ -102,8 +102,8 @@ Plans:
 
 Plans:
 - [x] 05-01-PLAN.md — WhatsApp parser, chunker, two-stage filter (rule-based + LLM), and formatter with TDD
-- [ ] 05-02-PLAN.md — pgvector schema, CLI import script with incremental append and two-stage filtering
-- [ ] 05-03-PLAN.md — RAG retrieval function, agent loop integration, system prompt update
+- [x] 05-02-PLAN.md — pgvector schema, CLI import script with incremental append and two-stage filtering
+- [x] 05-03-PLAN.md — RAG retrieval function, agent loop integration, system prompt update
 
 ## Progress
 
@@ -116,4 +116,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Core Chat Experience | 3/3 | Code complete | 2026-03-15 |
 | 3. Agentic Tool-Calling Pipeline | 3/3 | Code complete | 2026-03-15 |
 | 4. Braintrust Evals + Observability | 2/2 | Code complete | 2026-03-15 |
-| 5. WhatsApp Knowledge Base | 1/3 | In Progress | — |
+| 5. WhatsApp Knowledge Base | 3/3 | Code complete | 2026-03-16 |
