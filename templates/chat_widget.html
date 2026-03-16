@@ -311,6 +311,81 @@
     margin-top: 2px;
 }
 
+/* ── Source cards for web search results ── */
+.source-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-self: flex-start;
+    max-width: 88%;
+    margin-top: 4px;
+}
+.source-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    text-decoration: none;
+    color: var(--text);
+    font-size: 0.8rem;
+    transition: background 0.15s, border-color 0.15s;
+    max-width: 200px;
+    overflow: hidden;
+}
+.source-card:hover {
+    background: #eef2ff;
+    border-color: var(--primary);
+}
+.source-icon {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.source-icon svg {
+    width: 14px;
+    height: 14px;
+    stroke: var(--text-light);
+}
+.source-card:hover .source-icon svg {
+    stroke: var(--primary);
+}
+.source-info {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.source-title {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.source-domain {
+    color: var(--text-light);
+    font-size: 0.72rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── Expanded chat panel ── */
+#chat-panel.expanded {
+    width: 680px;
+    max-height: 700px;
+}
+
+@media (max-width: 720px) {
+    #chat-panel.expanded {
+        width: calc(100vw - 24px);
+    }
+}
+
 @media (max-width: 520px) {
     #chat-panel {
         width: calc(100vw - 24px);
@@ -353,6 +428,7 @@
         <div class="chat-actions">
             <button onclick="showConversationList()" title="History">&#128196;</button>
             <button onclick="newConversation()" title="New chat">&#43;</button>
+            <button id="chat-expand-btn" onclick="toggleChatWidth()" title="Expand">&#8596;</button>
             <button onclick="closeWidget()" title="Close">&times;</button>
         </div>
     </div>
@@ -394,6 +470,49 @@
     function resetCoach() {
         document.getElementById('chat-coach-name').textContent = 'Team Asha Coaches';
         document.getElementById('chat-coach-sub').textContent = 'Venki \u2022 Shriram';
+    }
+
+    /* ── Width expand/collapse ── */
+    window.toggleChatWidth = function() {
+        var panel = document.getElementById('chat-panel');
+        var btn = document.getElementById('chat-expand-btn');
+        panel.classList.toggle('expanded');
+        if (panel.classList.contains('expanded')) {
+            btn.innerHTML = '&#8594;';  // → arrow to indicate collapse
+            btn.title = 'Collapse';
+        } else {
+            btn.innerHTML = '&#8596;';  // ↔ arrow to indicate expand
+            btn.title = 'Expand';
+        }
+        scrollMessages();
+    };
+
+    /* ── Source cards renderer ── */
+    function renderSourceCards(bubble, sources) {
+        var container = document.createElement('div');
+        container.className = 'source-cards';
+        var linkSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+            + '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>'
+            + '<path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'
+            + '</svg>';
+        for (var i = 0; i < sources.length; i++) {
+            var s = sources[i];
+            var card = document.createElement('a');
+            card.className = 'source-card';
+            card.href = s.url;
+            card.target = '_blank';
+            card.rel = 'noopener noreferrer';
+            var domain = '';
+            try { domain = new URL(s.url).hostname.replace(/^www\./, ''); } catch(e) {}
+            card.innerHTML = '<span class="source-icon">' + linkSvg + '</span>'
+                + '<span class="source-info">'
+                + '<span class="source-title">' + escHtml(s.title || domain) + '</span>'
+                + '<span class="source-domain">' + escHtml(domain) + '</span>'
+                + '</span>';
+            container.appendChild(card);
+        }
+        // Insert source cards after the assistant bubble
+        bubble.parentNode.insertBefore(container, bubble.nextSibling);
     }
 
     // Restore open/close state from sessionStorage
@@ -600,6 +719,9 @@
                                 currentConversationId = parsed.conversation_id;
                             } else if (parsed.coach) {
                                 setCoach(parsed.coach);
+                            } else if (parsed.sources) {
+                                renderSourceCards(assistantBubble, parsed.sources);
+                                scrollMessages();
                             } else if (parsed.status === 'thinking') {
                                 assistantBubble.innerHTML = '<div class="chat-thinking"><span></span><span></span><span></span></div>';
                                 scrollMessages();

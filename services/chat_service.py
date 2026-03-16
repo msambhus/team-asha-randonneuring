@@ -252,6 +252,13 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
     # Stream the final response
     yield from _stream_completion(messages, accumulator)
 
+    # Emit source cards for web search results (after response stream completes)
+    for entry in tool_results:
+        if entry['tool'] == 'web_search' and 'rows' in entry.get('result', {}):
+            rows = entry['result']['rows']
+            if rows and isinstance(rows[0], dict) and rows[0].get('sources'):
+                yield f'data: {json.dumps({"sources": rows[0]["sources"]})}\n\n'
+
 
 def moderate_input(message):
     """Check message against OpenAI Moderation API.
