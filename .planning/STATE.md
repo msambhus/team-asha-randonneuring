@@ -87,6 +87,7 @@ None yet.
 ### Roadmap Evolution
 
 - Phase 5 added: WhatsApp knowledge base — import group chat exports, parse and filter cycling content, store in vector DB, integrate RAG into chatbot
+- Phase 6 added: Show product images and bike accessory photos in chatbot responses when available instead of just links
 
 ### Blockers/Concerns
 

@@ -117,3 +117,13 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 3. Agentic Tool-Calling Pipeline | 3/3 | Code complete | 2026-03-15 |
 | 4. Braintrust Evals + Observability | 2/2 | Code complete | 2026-03-15 |
 | 5. WhatsApp Knowledge Base | 3/3 | Code complete | 2026-03-16 |
+
+### Phase 6: Show product images and bike accessory photos in chatbot responses when available instead of just links
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 5
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 6 to break down)
