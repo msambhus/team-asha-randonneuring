@@ -290,3 +290,193 @@ def test_graceful_degradation_no_logger(app):
             insert_calls = mock_models.insert_chat_message.call_args_list
             assistant_calls = [c for c in insert_calls if len(c[0]) >= 2 and c[0][1] == 'assistant']
             assert len(assistant_calls) == 1
+
+
+# ========== E2E EVAL DATASET & SCORER TESTS (EVAL-05) ==========
+
+
+def test_e2e_dataset_coverage():
+    """EVAL-05: E2E dataset has 18+ records across all 6 scenario types."""
+    from evals.eval_e2e import E2E_DATASET_RECORDS
+
+    assert len(E2E_DATASET_RECORDS) >= 18
+
+    from collections import Counter
+    scenarios = Counter(r["metadata"]["scenario"] for r in E2E_DATASET_RECORDS)
+
+    expected_scenarios = {
+        "data_query", "coaching", "knowledge",
+        "bike_shriram", "off_topic", "route_discussion",
+    }
+    assert set(scenarios.keys()) == expected_scenarios, (
+        f"Missing scenarios: {expected_scenarios - set(scenarios.keys())}"
+    )
+
+    for record in E2E_DATASET_RECORDS:
+        assert "input" in record
+        assert "expected" in record
+        assert "intent" in record["expected"]
+
+
+def test_e2e_intent_scorer():
+    """EVAL-05: intent_correct_scorer returns 1 on match, 0 on mismatch."""
+    from evals.eval_e2e import intent_correct_scorer
+
+    result_match = intent_correct_scorer(
+        input={"question": "test"},
+        output={"intent": "data_query"},
+        expected={"intent": "data_query"},
+    )
+    assert result_match["score"] == 1
+    assert result_match["name"] == "intent_correct"
+
+    result_mismatch = intent_correct_scorer(
+        input={"question": "test"},
+        output={"intent": "coaching"},
+        expected={"intent": "off_topic"},
+    )
+    assert result_mismatch["score"] == 0
+
+
+def test_e2e_tool_scorer():
+    """EVAL-05: tool_called_correctly_scorer checks tool or None."""
+    from evals.eval_e2e import tool_called_correctly_scorer
+
+    # Correct tool
+    result = tool_called_correctly_scorer(
+        input={"question": "test"},
+        output={"tool_called": "fitness_score"},
+        expected={"tool_called": "fitness_score"},
+    )
+    assert result["score"] == 1
+
+    # Wrong tool
+    result = tool_called_correctly_scorer(
+        input={"question": "test"},
+        output={"tool_called": "brevet_history"},
+        expected={"tool_called": "fitness_score"},
+    )
+    assert result["score"] == 0
+
+    # Correctly no tool
+    result = tool_called_correctly_scorer(
+        input={"question": "test"},
+        output={"tool_called": None},
+        expected={"tool_called": None},
+    )
+    assert result["score"] == 1
+
+
+def test_e2e_response_quality_scorer():
+    """EVAL-05: response_quality_scorer returns fractional keyword match score."""
+    from evals.eval_e2e import response_quality_scorer
+
+    # All keywords found
+    result = response_quality_scorer(
+        input={"question": "test"},
+        output={"response_text": "You have 485 km across 12 rides"},
+        expected={"response_keywords": ["485", "12"]},
+    )
+    assert result["score"] == 1.0
+
+    # Partial match (1 of 2)
+    result = response_quality_scorer(
+        input={"question": "test"},
+        output={"response_text": "You have 485 km total"},
+        expected={"response_keywords": ["485", "12"]},
+    )
+    assert result["score"] == 0.5
+
+    # No match
+    result = response_quality_scorer(
+        input={"question": "test"},
+        output={"response_text": "I can help with cycling"},
+        expected={"response_keywords": ["485", "12"]},
+    )
+    assert result["score"] == 0.0
+
+    # No keywords expected
+    result = response_quality_scorer(
+        input={"question": "test"},
+        output={"response_text": "anything"},
+        expected={"response_keywords": []},
+    )
+    assert result["score"] == 1.0
+
+
+def test_e2e_scope_scorer():
+    """EVAL-05: scope_maintained_scorer checks redirect for off-topic, no leak for on-topic."""
+    from evals.eval_e2e import scope_maintained_scorer
+
+    # Off-topic with cycling redirect — pass
+    result = scope_maintained_scorer(
+        input={"question": "test"},
+        output={"intent": "off_topic",
+                "response_text": "I focus on cycling and randonneuring coaching."},
+        expected={},
+    )
+    assert result["score"] == 1
+
+    # Off-topic without cycling redirect — fail
+    result = scope_maintained_scorer(
+        input={"question": "test"},
+        output={"intent": "off_topic",
+                "response_text": "The capital of France is Paris."},
+        expected={},
+    )
+    assert result["score"] == 0
+
+    # On-topic without leakage — pass
+    result = scope_maintained_scorer(
+        input={"question": "test"},
+        output={"intent": "knowledge",
+                "response_text": "ACP time limits are 13.5 hours for 200km."},
+        expected={},
+    )
+    assert result["score"] == 1
+
+    # On-topic with off-topic leakage — fail
+    result = scope_maintained_scorer(
+        input={"question": "test"},
+        output={"intent": "knowledge",
+                "response_text": "Here is a recipe for pasta."},
+        expected={},
+    )
+    assert result["score"] == 0
+
+
+def test_e2e_persona_scorer():
+    """EVAL-05: persona_correct_scorer matches coach persona."""
+    from evals.eval_e2e import persona_correct_scorer
+
+    # Shriram match
+    result = persona_correct_scorer(
+        input={"question": "test"},
+        output={"coach": "shriram"},
+        expected={"coach": "shriram"},
+    )
+    assert result["score"] == 1
+
+    # Venki match
+    result = persona_correct_scorer(
+        input={"question": "test"},
+        output={"coach": "venki"},
+        expected={"coach": "venki"},
+    )
+    assert result["score"] == 1
+
+    # None match (off-topic)
+    result = persona_correct_scorer(
+        input={"question": "test"},
+        output={"coach": None},
+        expected={"coach": None},
+    )
+    assert result["score"] == 1
+
+    # Mismatch
+    result = persona_correct_scorer(
+        input={"question": "test"},
+        output={"coach": "venki"},
+        expected={"coach": "shriram"},
+    )
+    assert result["score"] == 0
