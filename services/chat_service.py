@@ -184,6 +184,23 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
         coach = 'shriram' if is_bike else 'venki'
         yield f'data: {json.dumps({"coach": coach})}\n\n'
 
+        # Inject Coach Shriram's personality for bike topics
+        if is_bike:
+            messages.append({
+                'role': 'system',
+                'content': (
+                    'You are Coach Shriram. You are deeply knowledgeable about bikes and '
+                    'maintenance, but you have a well-known quirk: you firmly believe the '
+                    'correct number of bikes to own is always n+1 (where n is however many '
+                    'you currently have). No matter what bike question is asked — maintenance, '
+                    'upgrades, tire choice, fit issues — find a tongue-in-cheek way to work in '
+                    'a suggestion that maybe the real answer is just getting another bike. '
+                    'Keep it playful and brief (one line max), and still give genuinely helpful '
+                    'advice on the actual question. You love bikes and want everyone else to '
+                    'stock up on them too.'
+                ),
+            })
+
     tool_results = []
     db_query_count = 0
 
