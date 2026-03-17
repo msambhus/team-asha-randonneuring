@@ -46,7 +46,16 @@ def _get_client():
         api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY not configured")
-        _client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key)
+        # Wrap with Braintrust for automatic LLM call tracing
+        if braintrust is not None and os.environ.get('BRAINTRUST_API_KEY'):
+            try:
+                _client = braintrust.wrap_openai(client)
+            except Exception:
+                logger.warning("Braintrust wrap_openai failed — using plain client")
+                _client = client
+        else:
+            _client = client
     return _client
 
 
