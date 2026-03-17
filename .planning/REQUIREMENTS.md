@@ -79,14 +79,14 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Image Previews
 
-- [ ] **IMG-01**: Backend endpoint (`/api/image-preview`) accepts a URL, validates it against an allowlist of domains, fetches OpenGraph `og:image` metadata, and returns `{image_url, title, domain}` JSON — never proxies raw image bytes
-- [ ] **IMG-02**: Allowlist of approved domains for image preview: cycling/product sites (competitivecyclist.com, trekbikes.com, bike24.com, wiggle.com, chainreactioncycles.com, jensonusa.com, revelatedesigns.com, ortlieb.com, shimano.com, ridewithgps.com, strava.com)
+- [x] **IMG-01**: Backend endpoint (`/api/image-preview`) accepts a URL, validates it against an allowlist of domains, fetches OpenGraph `og:image` metadata, and returns `{image_url, title, domain}` JSON — never proxies raw image bytes
+- [x] **IMG-02**: Allowlist of approved domains for image preview: cycling/product sites (competitivecyclist.com, trekbikes.com, bike24.com, wiggle.com, chainreactioncycles.com, jensonusa.com, revelatedesigns.com, ortlieb.com, shimano.com, ridewithgps.com, strava.com)
 - [ ] **IMG-03**: Frontend detects URLs in assistant chat messages after stream completes, calls `/api/image-preview` per URL (max 3 per message), and renders image cards below the message bubble
 - [ ] **IMG-04**: Image cards render as styled `<img>` elements in a `.image-cards` container below the assistant bubble with title, domain, and link — never inside the SSE stream or `innerHTML` from LLM output
-- [ ] **IMG-05**: Image preview endpoint enforces: 2-second timeout on outbound fetch, HTTPS-only scheme check, no private IP ranges, no redirect following, 100KB response size limit on HTML body read
-- [ ] **IMG-06**: Image preview caches successful results for 1 hour in-process (Flask-Caching SimpleCache already present) to avoid re-fetching the same URL across multiple conversations
+- [x] **IMG-05**: Image preview endpoint enforces: 2-second timeout on outbound fetch, HTTPS-only scheme check, no private IP ranges, no redirect following, 100KB response size limit on HTML body read
+- [x] **IMG-06**: Image preview caches successful results for 1 hour in-process (Flask-Caching SimpleCache already present) to avoid re-fetching the same URL across multiple conversations
 - [ ] **IMG-07**: Image card rendering degrades gracefully: if preview fetch fails, times out, or returns no `og:image`, no card is shown — existing text link remains the fallback
-- [ ] **IMG-08**: CSP `img-src` header extended to include `https:` to permit loading images from external HTTPS origins (confirm existing CSP state before adding)
+- [x] **IMG-08**: CSP `img-src` header extended to include `https:` to permit loading images from external HTTPS origins (confirm existing CSP state before adding)
 - [ ] **IMG-09**: URLs in assistant messages are parsed on the frontend using a regex after stream completion — no URL detection during streaming to avoid partial-URL false positives
 
 ## v2 Requirements
