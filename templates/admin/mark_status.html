@@ -23,6 +23,7 @@
 <th>RUSA #</th>
 <th>Current</th>
 <th>Status</th>
+<th></th>
 </tr>
 </thead>
 <tbody>
@@ -47,6 +48,9 @@
 <option value="DNS" {{ 'selected' if current_status == 'DNS' }}>DNS</option>
 <option value="OTL" {{ 'selected' if current_status == 'OTL' }}>OTL</option>
 </select>
+</td>
+<td>
+<button type="button" onclick="removeRider({{ r.id }}, '{{ r.first_name }} {{ r.last_name }}')" class="btn" style="background:#e53e3e;color:#fff;padding:4px 10px;font-size:0.78rem;border-radius:6px;" title="Remove participation">&times;</button>
 </td>
 </tr>
 {% endfor %}
@@ -96,11 +100,21 @@
 </div>
 </form>
 
+<form id="remove-rider-form" method="post" action="{{ url_for('admin.remove_rider_from_ride', ride_id=ride.id) }}" style="display:none;">
+<input type="hidden" name="rider_id" id="remove-rider-id">
+</form>
+
 <script>
 function markAllFinished() {
     document.querySelectorAll('.signed-up-select').forEach(function(sel) {
         sel.value = 'FINISHED';
     });
+}
+
+function removeRider(riderId, riderName) {
+    if (!confirm('Remove ' + riderName + ' from this ride? This deletes their participation record.')) return;
+    document.getElementById('remove-rider-id').value = riderId;
+    document.getElementById('remove-rider-form').submit();
 }
 </script>
 

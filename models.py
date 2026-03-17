@@ -806,6 +806,26 @@ def remove_signup(rider_id, ride_id):
     return cur.rowcount > 0
 
 
+def admin_delete_rider_ride(rider_id, ride_id):
+    """Admin-only: Remove a rider_ride record regardless of status.
+
+    Unlike remove_signup() which is user-facing and restricted to pre-ride
+    statuses, this function allows admins to delete any participation record
+    (e.g. correcting data entry errors).
+
+    Returns:
+        bool: True if a record was deleted, False if no matching record found.
+    """
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "DELETE FROM rider_ride WHERE rider_id = %s AND ride_id = %s",
+        (rider_id, ride_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
 # ========== ADMIN WRITES ==========
 
 def update_base_plan_stop(stop_id, changes):
