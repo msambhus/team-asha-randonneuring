@@ -8,7 +8,8 @@ from models import (get_current_season, get_rides_for_season, get_riders_for_sea
                     get_ride_plan_by_rwgps_route_id, create_ride_plan_from_rwgps,
                     auto_finalize_past_rides, get_rides_with_signup_counts,
                     get_strava_admin_summary, get_all_active_strava_connections,
-                    get_all_strava_activities_for_eddington, update_eddington_number)
+                    get_all_strava_activities_for_eddington, update_eddington_number,
+                    admin_delete_rider_ride)
 from auth import login_required, user_login_required, verify_password
 from services.rwgps import (extract_rwgps_route_id, fetch_route, extract_controls,
                             build_ride_plan, slugify)
@@ -150,6 +151,24 @@ def mark_status(ride_id):
                            signed_up_riders=signed_up,
                            other_riders=others,
                            ride_statuses=ride_statuses)
+
+
+@admin_bp.route('/rides/<int:ride_id>/remove-rider', methods=['POST'])
+@user_login_required
+def remove_rider_from_ride(ride_id):
+    """Admin-only: remove a rider's participation record from a ride."""
+    _require_admin()
+    rider_id = request.form.get('rider_id', type=int)
+    if not rider_id:
+        flash('Missing rider ID.', 'error')
+        return redirect(url_for('admin.mark_status', ride_id=ride_id))
+
+    deleted = admin_delete_rider_ride(rider_id, ride_id)
+    if deleted:
+        flash('Rider participation removed.', 'success')
+    else:
+        flash('No participation record found to remove.', 'warning')
+    return redirect(url_for('admin.mark_status', ride_id=ride_id))
 
 
 # ── RWGPS Plan Generation ────────────────────────────────────────────
