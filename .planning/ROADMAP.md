@@ -136,3 +136,33 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 4. Braintrust Evals + Observability | 2/2 | Code complete | 2026-03-15 |
 | 5. WhatsApp Knowledge Base | 3/3 | Code complete | 2026-03-16 |
 | 6. Image Preview Cards | 0/2 | Planned | — |
+
+### Phase 7: When asked about a route, the chatbot should access RWGPS route data via API to provide details like elevation profile, distance, control points, and key segments -- not just cached ride plan data
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 6
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 7 to break down)
+
+### Phase 8: Weather and wind forecasting for routes — use RandoPlan-style data to answer about headwinds, tailwinds, temperature, and conditions along a route
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 7
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 8 to break down)
+
+### Phase 9: Prioritize WhatsApp community knowledge in chatbot responses — attribute insights to the group, then compare and contrast with web search results
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 8
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 9 to break down)
