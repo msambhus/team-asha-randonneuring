@@ -823,7 +823,10 @@ def admin_delete_rider_ride(rider_id, ride_id):
         (rider_id, ride_id),
     )
     conn.commit()
-    return cur.rowcount > 0
+    deleted = cur.rowcount > 0
+    if deleted:
+        cache.clear()
+    return deleted
 
 
 # ========== ADMIN WRITES ==========
@@ -956,12 +959,18 @@ def create_ride(season_id, club_id, name, ride_type, ride_date, distance_km,
                 elevation_ft=None, distance_miles=None, ft_per_mile=None, rwgps_url=None):
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Auto-match ride plan by name (e.g. "Healdsburg" matches "SFR 300k Healdsburg" plan)
+    matched_plan = find_ride_plan_for_ride(name)
+    plan_id = matched_plan['id'] if matched_plan else None
+
     cur.execute("""INSERT INTO ride (season_id, club_id, name, ride_type, date, distance_km,
-                  elevation_ft, distance_miles, ft_per_mile, rwgps_url, is_team_ride)
-                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                  elevation_ft, distance_miles, ft_per_mile, rwgps_url, is_team_ride,
+                  ride_plan_id)
+                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s)
                   RETURNING id""",
                (season_id, club_id, name, ride_type, ride_date, distance_km,
-                elevation_ft, distance_miles, ft_per_mile, rwgps_url))
+                elevation_ft, distance_miles, ft_per_mile, rwgps_url, plan_id))
     new_id = cur.fetchone()['id']
     conn.commit()
     return new_id
