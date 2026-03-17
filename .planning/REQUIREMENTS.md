@@ -77,6 +77,18 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **EVAL-05**: Logging of `span_id`/`trace_id` from Braintrust in `chat_message.metadata`
 - [x] **EVAL-06**: Conversation-level quality metrics visible in Braintrust dashboard
 
+### Image Previews
+
+- [ ] **IMG-01**: Backend endpoint (`/api/image-preview`) accepts a URL, validates it against an allowlist of domains, fetches OpenGraph `og:image` metadata, and returns `{image_url, title, domain}` JSON — never proxies raw image bytes
+- [ ] **IMG-02**: Allowlist of approved domains for image preview: cycling/product sites (competitivecyclist.com, trekbikes.com, bike24.com, wiggle.com, chainreactioncycles.com, jensonusa.com, revelatedesigns.com, ortlieb.com, shimano.com, ridewithgps.com, strava.com)
+- [ ] **IMG-03**: Frontend detects URLs in assistant chat messages after stream completes, calls `/api/image-preview` per URL (max 3 per message), and renders image cards below the message bubble
+- [ ] **IMG-04**: Image cards render as styled `<img>` elements in a `.image-cards` container below the assistant bubble with title, domain, and link — never inside the SSE stream or `innerHTML` from LLM output
+- [ ] **IMG-05**: Image preview endpoint enforces: 2-second timeout on outbound fetch, HTTPS-only scheme check, no private IP ranges, no redirect following, 100KB response size limit on HTML body read
+- [ ] **IMG-06**: Image preview caches successful results for 1 hour in-process (Flask-Caching SimpleCache already present) to avoid re-fetching the same URL across multiple conversations
+- [ ] **IMG-07**: Image card rendering degrades gracefully: if preview fetch fails, times out, or returns no `og:image`, no card is shown — existing text link remains the fallback
+- [ ] **IMG-08**: CSP `img-src` header extended to include `https:` to permit loading images from external HTTPS origins (confirm existing CSP state before adding)
+- [ ] **IMG-09**: URLs in assistant messages are parsed on the frontend using a regex after stream completion — no URL detection during streaming to avoid partial-URL false positives
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -164,12 +176,21 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EVAL-04 | Phase 4 | Code complete |
 | EVAL-05 | Phase 4 | Code complete |
 | EVAL-06 | Phase 4 | Code complete |
+| IMG-01 | Phase 6 | Planned |
+| IMG-02 | Phase 6 | Planned |
+| IMG-03 | Phase 6 | Planned |
+| IMG-04 | Phase 6 | Planned |
+| IMG-05 | Phase 6 | Planned |
+| IMG-06 | Phase 6 | Planned |
+| IMG-07 | Phase 6 | Planned |
+| IMG-08 | Phase 6 | Planned |
+| IMG-09 | Phase 6 | Planned |
 
 **Coverage:**
-- v1 requirements: 43 total
-- Mapped to phases: 43
+- v1 requirements: 52 total
+- Mapped to phases: 52
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-14*
-*Last updated: 2026-03-14 after plan revision (INFRA-03 corrected to @api_login_required)*
+*Last updated: 2026-03-16 — Added IMG-01 through IMG-09 for Phase 6 (image previews)*

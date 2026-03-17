@@ -16,7 +16,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Core Chat Experience** - Floating widget, multi-turn conversations, Strava personalization, conversation list
 - [x] **Phase 3: Agentic Tool-Calling Pipeline** - Intent classification, tool execution, agent loop, data-grounded responses
 - [x] **Phase 4: Braintrust Evals + Observability** - Eval datasets, Braintrust integration, quality metrics dashboard
-- [ ] **Phase 5: WhatsApp Knowledge Base** - Import group chat exports, parse and filter cycling content, store in vector DB, integrate RAG into chatbot
+- [x] **Phase 5: WhatsApp Knowledge Base** - Import group chat exports, parse and filter cycling content, store in vector DB, integrate RAG into chatbot
+- [ ] **Phase 6: Image Preview Cards** - Show product images and bike accessory photos inline in chatbot responses via OpenGraph extraction
 
 ## Phase Details
 
@@ -105,10 +106,27 @@ Plans:
 - [x] 05-02-PLAN.md — pgvector schema, CLI import script with incremental append and two-stage filtering
 - [x] 05-03-PLAN.md — RAG retrieval function, agent loop integration, system prompt update
 
+### Phase 6: Image Preview Cards
+**Goal**: When the chatbot mentions product URLs from allowlisted cycling/gear domains, image preview cards with product photos appear below the assistant message — extracted via server-side OpenGraph metadata fetching with SSRF defenses, rendered via safe DOM construction, with graceful degradation when previews are unavailable
+**Depends on**: Phase 5
+**Requirements**: IMG-01, IMG-02, IMG-03, IMG-04, IMG-05, IMG-06, IMG-07, IMG-08, IMG-09
+**Success Criteria** (what must be TRUE):
+  1. GET `/api/image-preview?url=<allowlisted_url>` returns JSON with `image_url`, `title`, `domain` — extracted from the page's OpenGraph metadata
+  2. Non-allowlisted domains return 403; HTTP URLs return 403; unauthenticated requests return 401
+  3. After an assistant message stream completes, HTTPS URLs in the response are detected and up to 3 image preview cards appear below the bubble
+  4. Image cards show product photo, title, and domain — clicking opens the original URL in a new tab
+  5. Failed previews degrade gracefully: no card shown, existing text link remains
+  6. All image card DOM construction uses safe methods (createElement, textContent) — no innerHTML with API response data
+**Plans**: 2 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — Backend image preview service (TDD): fetch_og_image(), domain allowlist, /api/image-preview endpoint with SSRF defenses and caching
+- [ ] 06-02-PLAN.md — Frontend image card rendering: URL extraction, DOM card builder, CSS styles, finishStream() integration, human-verify checkpoint
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -117,13 +135,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 3. Agentic Tool-Calling Pipeline | 3/3 | Code complete | 2026-03-15 |
 | 4. Braintrust Evals + Observability | 2/2 | Code complete | 2026-03-15 |
 | 5. WhatsApp Knowledge Base | 3/3 | Code complete | 2026-03-16 |
-
-### Phase 6: Show product images and bike accessory photos in chatbot responses when available instead of just links
-
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 5
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (run /gsd:plan-phase 6 to break down)
+| 6. Image Preview Cards | 0/2 | Planned | — |
