@@ -109,9 +109,16 @@ def fetch_route(route_id):
     auth_token = current_app.config.get('RWGPS_AUTH_TOKEN')
 
     if not api_key or not auth_token:
+        missing = []
+        if not api_key:
+            missing.append('RWGPS_API_KEY')
+        if not auth_token:
+            missing.append('RWGPS_AUTH_TOKEN')
         raise Exception(
-            "RWGPS API credentials not configured. "
-            "Set RWGPS_API_KEY and RWGPS_AUTH_TOKEN in environment variables."
+            f"RWGPS API credentials not configured — missing: {', '.join(missing)}. "
+            "Go to ridewithgps.com → Account Settings → Developers tab → "
+            "create an API client to get your api_key, then generate an auth token. "
+            "Add both as Vercel environment variables."
         )
 
     url = f'https://ridewithgps.com/api/v1/routes/{route_id}.json'
@@ -125,7 +132,11 @@ def fetch_route(route_id):
     if resp.status_code == 404:
         raise Exception(f"RWGPS route {route_id} not found.")
     if resp.status_code == 401:
-        raise Exception("RWGPS API authentication failed. Check your API key and auth token.")
+        raise Exception(
+            "RWGPS API authentication failed (401). "
+            "Verify RWGPS_API_KEY and RWGPS_AUTH_TOKEN are correct in Vercel env vars. "
+            "Generate a fresh auth token at ridewithgps.com → Account Settings → Developers tab."
+        )
     if resp.status_code == 429:
         raise Exception("RWGPS API rate limited. Please try again in a few minutes.")
     if not resp.ok:

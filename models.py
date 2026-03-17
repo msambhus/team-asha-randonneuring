@@ -823,7 +823,10 @@ def admin_delete_rider_ride(rider_id, ride_id):
         (rider_id, ride_id),
     )
     conn.commit()
-    return cur.rowcount > 0
+    deleted = cur.rowcount > 0
+    if deleted:
+        cache.clear()
+    return deleted
 
 
 # ========== ADMIN WRITES ==========
@@ -832,37 +835,52 @@ def update_base_plan_stop(stop_id, changes):
     """Admin-only: Update a base plan stop's details."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
+
     updates = []
     params = []
-    
+
+    # Core metrics
     if 'distance_miles' in changes:
         updates.append("distance_miles = %s")
         params.append(changes['distance_miles'])
-    
+
     if 'segment_time_min' in changes:
         updates.append("segment_time_min = %s")
         params.append(changes['segment_time_min'])
-    
+
     if 'elevation_gain' in changes:
         updates.append("elevation_gain = %s")
         params.append(changes['elevation_gain'])
-    
+
+    # Break / stop details
+    if 'stop_duration_min' in changes:
+        updates.append("stop_duration_min = %s")
+        params.append(changes['stop_duration_min'])
+
+    if 'stop_name' in changes:
+        updates.append("stop_name = %s")
+        params.append(changes['stop_name'] or None)
+
+    if 'notes' in changes:
+        updates.append("notes = %s")
+        params.append(changes['notes'] or None)
+
     if not updates:
         return False
-    
+
     params.append(stop_id)
     sql = f"UPDATE ride_plan_stop SET {', '.join(updates)} WHERE id = %s"
-    
+
     cur.execute(sql, params)
     conn.commit()
-    
+
     # Clear cache for the affected plan
     cur.execute("SELECT plan_id FROM ride_plan_stop WHERE id = %s", (stop_id,))
     result = cur.fetchone()
     if result:
         cache.delete_memoized(get_ride_plan_stops, result['plan_id'])
-    
+    cache.clear()
+
     return cur.rowcount > 0
 
 def get_ride_plan_by_rwgps_route_id(route_id):
@@ -956,12 +974,18 @@ def create_ride(season_id, club_id, name, ride_type, ride_date, distance_km,
                 elevation_ft=None, distance_miles=None, ft_per_mile=None, rwgps_url=None):
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Auto-match ride plan by name (e.g. "Healdsburg" matches "SFR 300k Healdsburg" plan)
+    matched_plan = find_ride_plan_for_ride(name)
+    plan_id = matched_plan['id'] if matched_plan else None
+
     cur.execute("""INSERT INTO ride (season_id, club_id, name, ride_type, date, distance_km,
-                  elevation_ft, distance_miles, ft_per_mile, rwgps_url, is_team_ride)
-                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                  elevation_ft, distance_miles, ft_per_mile, rwgps_url, is_team_ride,
+                  ride_plan_id)
+                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s)
                   RETURNING id""",
                (season_id, club_id, name, ride_type, ride_date, distance_km,
-                elevation_ft, distance_miles, ft_per_mile, rwgps_url))
+                elevation_ft, distance_miles, ft_per_mile, rwgps_url, plan_id))
     new_id = cur.fetchone()['id']
     conn.commit()
     return new_id
