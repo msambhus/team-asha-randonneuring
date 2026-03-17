@@ -4,6 +4,96 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ---
 
+## 2026-03-16 — Iteration 9 (ralph.sh)
+
+**Task:** Verification pass + commit uncommitted planning updates
+**Branch:** `feature/web-search-bike-specs`
+**Status:** All 5 phases code complete. Committed pending planning/activity updates.
+**Tests:** 119 passed, 6 skipped
+**Notes:** No code work remaining. Committed uncommitted STATE.md, ROADMAP.md, and activity.md updates from iterations 4-8.
+
+---
+
+## 2026-03-16 — Iteration 6 (ralph.sh)
+
+**Task:** Verification pass — all Phase 3 tasks already complete
+**Branch:** `feature/web-search-bike-specs`
+**Status:** No work needed — Phase 3 fully implemented in prior iterations
+**Tests:** 119 passed, 6 skipped
+**Notes:** All 5 phases code complete. Phase 3 has all 3 summaries and all code. Nothing to do — exiting cleanly.
+
+---
+
+## 2026-03-16 — Iteration 5 (ralph.sh)
+
+**Task:** Verification pass — all Phase 3 tasks already complete
+**Branch:** `feature/web-search-bike-specs`
+**Status:** No work needed — Phase 3 fully implemented in prior iterations
+**Tests:** 119 passed, 6 skipped
+**Notes:** STATE.md confirms all 5 phases code complete. Phase 3 has all 3 summaries, all code (IntentResult, classify_intent, ALLOWED_QUERIES with 10 queries, run_agent_loop, process_message wiring) implemented and tested. Nothing to do.
+
+---
+
+## 2026-03-16 — Iteration 3 (ralph.sh)
+
+**Task:** Create missing Phase 3 summary files (03-01, 03-02, 03-03)
+**Branch:** `feature/web-search-bike-specs`
+
+**What happened:**
+- All Phase 3 code was already complete from prior iterations
+- Tests: 119 passed, 6 skipped — all green
+- Created 03-01-SUMMARY.md (intent classification), 03-02-SUMMARY.md (tool registry), 03-03-SUMMARY.md (agent loop)
+- Summaries document actual implementation state including post-plan evolution (10 queries instead of 7, 6 intents instead of 5, web_search intent, coach persona routing)
+
+**Status:** Phase 3 summaries complete. All 5 phases code complete with documentation.
+
+---
+
+## 2026-03-16 — Iteration 1 (ralph.sh)
+
+**Task:** Fix stale tests after Phase 3-5 code evolved beyond original plan specs
+**Branch:** `feature/web-search-bike-specs`
+**Commit:** `2a9341a`
+
+**What happened:**
+- Phase 3 (and all 5 phases) already code complete — nothing to build
+- 3 tests were failing due to codebase evolution:
+  1. `test_allowed_queries_populated` expected 7 queries but code has 10 (added leaderboard, eddington)
+  2. `test_widget_has_coach_asha_title` expected "Coach Asha" but header is now "Team Asha Coaches"
+  3. `test_max_duration` checked `vercel.json["functions"]` key that no longer exists
+- Fixed all 3 tests. Suite: 119 passed, 6 skipped.
+
+**Status:** All phases code complete. Tests green. No remaining Phase 3 tasks.
+
+---
+
+## Iteration 13 — 2026-03-15 12:50:33
+
+**Task:** Fix Vercel deployment failure on PR #115
+**What happened:**
+- Noticed Vercel build status was FAILURE on PR #115
+- Investigated: `braintrust`, `autoevals`, `pytest`, `pytest-flask` in main `requirements.txt` were bloating the serverless function bundle
+- Created `requirements-dev.txt` with `-r requirements.txt` plus dev/eval deps
+- Removed test/eval deps from `requirements.txt` (runtime only)
+- `chat_service.py` already has `try/except ImportError` for braintrust — no runtime impact
+- All 86 tests still pass (6 skipped)
+- Committed `cec0a54` and pushed to trigger fresh Vercel build
+**Result:** Dependency split committed and pushed. Vercel rebuild in progress.
+
+---
+
+## Iteration 12 — 2026-03-15 12:49:37
+
+**Task:** Verify project completion — all phases done
+**What happened:**
+- Read STATE.md, ROADMAP.md, REQUIREMENTS.md — all 4 phases marked code complete, all 43 requirements satisfied
+- Ran `python3 -m pytest`: 86 passed, 6 skipped (DB) — no regressions
+- No remaining tasks in any phase plan
+- Project is fully code complete on `feature/chat-db-schema-crud`, awaiting human verification and merge via PR #115
+**Result:** No-op iteration — nothing left to build. Project complete.
+
+---
+
 ## Iteration 5 — 2026-03-15 11:59:23
 
 **Task:** Phase 4, Plan 04-01, Task 1 — Install Braintrust SDK and create test scaffold
@@ -458,4 +548,297 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 **Issues:** None
 **Status:** Success
 **Next:** Human must: (1) Deploy to Vercel Preview, (2) Test KNOW-01 guardrail, (3) Test Strava personalization, (4) Apply chat_schema.sql to Supabase, (5) Check Braintrust dashboard, (6) Merge PR #115.
+
+**Status:** Success (129s)
+
+## Iteration 12 — 2026-03-15 12:49:37
+
+**Status:** Success (50s)
+
+## Iteration 13 — 2026-03-15 12:50:32
+
+**Status:** Success (1141s)
+
+## Iteration 14 — 2026-03-15 13:09:39
+
+**Task:** Check for remaining work
+**What happened:**
+- All 4 phases code complete, 86 tests pass (6 DB skip) — confirmed
+- No new commits or changes since iteration 13 (`cec0a54`)
+- PR #115 still awaiting human verification and merge
+- No autonomous tasks remain
+**Issues:** None
+**Status:** Success (no-op — nothing to execute)
+**Next:** Human must: (1) Deploy to Vercel Preview, (2) Test KNOW-01 guardrail, (3) Test Strava personalization, (4) Apply chat_schema.sql to Supabase, (5) Check Braintrust dashboard, (6) Merge PR #115.
+
+**Status:** Success (979s)
+
+## Iteration 15 — 2026-03-15 13:26:02
+
+**Task:** Check for remaining work
+**What happened:**
+- All 4 phases code complete, 86 tests pass (6 DB skip) — confirmed
+- No new commits or changes since iteration 13 (`cec0a54`)
+- PR #115 still awaiting human verification and merge
+- No autonomous tasks remain
+**Issues:** None
+**Status:** Success (no-op — nothing to execute)
+**Next:** Human must: (1) Deploy to Vercel Preview, (2) Test KNOW-01 guardrail, (3) Test Strava personalization, (4) Apply chat_schema.sql to Supabase, (5) Check Braintrust dashboard, (6) Merge PR #115.
+
+**Status:** Success (27s)
+
+## Iteration 16 — 2026-03-15 13:26:34
+
+**Task:** Check for remaining work
+**What happened:**
+- All 4 phases code complete, 86 tests pass (6 DB skip) — confirmed
+- No new commits or changes since iteration 13 (`cec0a54`)
+- PR #115 still awaiting human verification and merge
+- No autonomous tasks remain
+**Issues:** None
+**Status:** Success (no-op — nothing to execute)
+**Next:** Human must: (1) Deploy to Vercel Preview, (2) Test KNOW-01 guardrail, (3) Test Strava personalization, (4) Apply chat_schema.sql to Supabase, (5) Check Braintrust dashboard, (6) Merge PR #115.
+
+**Status:** Success (31s)
+
+## Iteration 17 — 2026-03-15 13:27:10
+
+**Task:** Check for remaining work
+**What happened:**
+- All 4 phases code complete, 86 tests pass (6 DB skip) — confirmed
+- No new commits or changes since iteration 13 (`cec0a54`)
+- PR #115 still awaiting human verification and merge
+- No autonomous tasks remain
+**Issues:** None
+**Status:** Success (no-op — nothing to execute)
+**Next:** Human must: (1) Deploy to Vercel Preview, (2) Test KNOW-01 guardrail, (3) Test Strava personalization, (4) Apply chat_schema.sql to Supabase, (5) Check Braintrust dashboard, (6) Merge PR #115.
+
+**Status:** Success (36s)
+
+## Iteration 18 — 2026-03-15 13:27:51
+
+**Task:** Check for remaining work
+**What happened:**
+- All 4 phases code complete, 86 tests pass (6 DB skip) — confirmed
+- No new commits or changes since iteration 13 (`cec0a54`)
+- PR #115 still awaiting human verification and merge
+- No autonomous tasks remain
+**Issues:** None
+**Status:** Success (no-op — nothing to execute)
+**Next:** Human must: (1) Deploy to Vercel Preview, (2) Test KNOW-01 guardrail, (3) Test Strava personalization, (4) Apply chat_schema.sql to Supabase, (5) Check Braintrust dashboard, (6) Merge PR #115.
+
+**Status:** Success (24s)
+
+## Iteration 19 — 2026-03-15 13:28:20
+
+**Task:** Check for remaining work
+**What happened:**
+- All 4 phases code complete, 86 tests pass (6 DB skip) — confirmed
+- No new commits or changes since iteration 13 (`cec0a54`)
+- PR #115 still awaiting human verification and merge
+- No autonomous tasks remain
+**Issues:** None
+**Status:** Success (no-op — nothing to execute)
+**Next:** Human must: (1) Deploy to Vercel Preview, (2) Test KNOW-01 guardrail, (3) Test Strava personalization, (4) Apply chat_schema.sql to Supabase, (5) Check Braintrust dashboard, (6) Merge PR #115.
+
+**Status:** Success (19s)
+
+## Iteration 20 — 2026-03-15 13:28:44
+
+**Task:** Final iteration — verify state, exit cleanly
+**What happened:**
+- All 4 phases code complete, 86 tests pass (6 DB skip) — confirmed
+- No new commits or changes since iteration 13 (`cec0a54`)
+- PR #115 still awaiting human verification and merge
+- No autonomous tasks remain — this is iteration 20 of 20 (loop complete)
+**Issues:** None
+**Status:** Success (no-op — nothing to execute)
+**Next:** Human must: (1) Deploy to Vercel Preview, (2) Test KNOW-01 guardrail, (3) Test Strava personalization, (4) Apply chat_schema.sql to Supabase, (5) Check Braintrust dashboard, (6) Merge PR #115.
+
+**Status:** Success (46s)
+
+---
+## Loop Summary — 2026-03-15 13:29:30
+- Iterations: 20 (20 succeeded, 0 failed)
+- Total time: 170m 5s
+
+
+## Iteration 1 — 2026-03-16 00:11:47
+
+**Status:** Success (141s)
+
+## Iteration 2 — 2026-03-16 00:14:13
+
+**Task:** Check for remaining Phase 3 work
+**What happened:**
+- Read STATE.md — all 5 phases code complete
+- Read all 3 Phase 3 plans (03-01, 03-02, 03-03) — all implemented
+- Verified source: chat_service.py has IntentResult, classify_intent(), run_agent_loop(), process_message() wiring
+- Verified source: chat_tools.py has 10 ALLOWED_QUERIES, execute_allowed_query() with SET LOCAL timeout, execute_web_search()
+- Ran full test suite: 119 passed, 6 skipped — all green
+- No autonomous tasks remain
+**Issues:** None
+**Status:** Success (no-op — nothing to execute)
+**Next:** Project is fully code complete. PR #115 awaiting human verification and merge.
+
+**Status:** Success (65s)
+
+## Iteration 3 — 2026-03-16 00:15:23
+
+**Status:** Success (159s)
+
+## Iteration 4 — 2026-03-16 00:18:07
+
+**Task:** Check for remaining Phase 3 work
+**What happened:**
+- All 5 phases code complete — confirmed via STATE.md and source inspection
+- Full test suite: 119 passed, 6 skipped — all green
+- No autonomous tasks remain
+**Issues:** None
+**Status:** Success (no-op — nothing to execute)
+**Next:** Project is fully code complete. PR #115 awaiting human verification and merge.
+
+**Status:** Success (53s)
+
+## Iteration 5 — 2026-03-16 00:19:05
+
+**Status:** Success (49s)
+
+## Iteration 6 — 2026-03-16 00:19:59
+
+**Task:** Verification pass — all phases complete
+**Branch:** `feature/web-search-bike-specs`
+**Status:** No work needed — all 5 phases fully implemented
+**Tests:** 119 passed, 6 skipped
+**Notes:** STATE.md confirms all 5 phases code complete. No autonomous tasks remain. Project is blocked on human verification and PR #115 merge.
+
+**Status:** Success (48s)
+
+## Iteration 7 — 2026-03-16 00:20:52
+
+**Task:** Verification pass — all phases complete
+**Branch:** `feature/web-search-bike-specs`
+**Status:** No work needed — all 5 phases fully implemented
+**Tests:** 119 passed, 6 skipped
+**Notes:** STATE.md confirms all 5 phases code complete. No autonomous tasks remain. Project is blocked on human verification and PR #115 merge.
+
+**Status:** Success (no-op)
+
+**Status:** Success (40s)
+
+## Iteration 8 — 2026-03-16 00:21:37
+
+**Task:** Verification pass — all phases complete
+**Branch:** `feature/web-search-bike-specs`
+**Status:** No work needed — all 5 phases fully implemented
+**Tests:** 119 passed, 6 skipped
+**Notes:** All Phase 3 code exists (IntentResult, classify_intent, run_agent_loop, ALLOWED_QUERIES with 10 queries, execute_allowed_query with timeout). All 3 summaries present. STATE.md confirms all 5 phases code complete. No autonomous tasks remain.
+
+**Status:** Success (no-op)
+
+**Status:** Success (41s)
+
+## Iteration 9 — 2026-03-16 00:22:23
+
+**Task:** Verification pass — all phases complete
+**Branch:** `feature/web-search-bike-specs`
+**Status:** No work needed — all 5 phases fully implemented
+**Tests:** 119 passed, 6 skipped
+**Notes:** All Phase 3 code exists and tested. All 5 phases code complete. No autonomous tasks remain. Project blocked on human verification and PR #115 merge.
+
+**Status:** Success (no-op)
+
+**Status:** Success (36s)
+
+## Iteration 10 — 2026-03-16 00:23:04
+
+**Task:** Final iteration — verify state, exit cleanly
+**Branch:** `feature/web-search-bike-specs`
+**Status:** No work needed — all 5 phases fully implemented
+**Tests:** 119 passed, 6 skipped
+**Notes:** Final iteration of loop. All 5 phases code complete with summaries. No autonomous tasks remain. Project blocked on human verification and PR #115 merge.
+
+**Status:** Success (no-op)
+
+**Status:** Success (44s)
+
+---
+## Loop Summary — 2026-03-16 00:23:48
+- Iterations: 10 (10 succeeded, 0 failed)
+- Total time: 12m 1s
+
+
+## Iteration 1 — 2026-03-16 00:26:58
+
+**Status:** Success (46s)
+
+## Iteration 2 — 2026-03-16 00:27:49
+
+**Task:** Verification pass — all phases complete
+**Branch:** `feature/web-search-bike-specs`
+**Status:** No work needed — all 5 phases fully implemented
+**Tests:** 119 passed, 6 skipped
+**Notes:** Phase 3 fully implemented with all summaries. All 5 phases code complete. No autonomous tasks remain. Project blocked on human verification and PR #115 merge.
+
+**Status:** Success (no-op)
+
+**Status:** Success (55s)
+
+## Iteration 3 — 2026-03-16 00:28:49
+
+**Task:** Verification pass — all phases complete
+**Branch:** `feature/web-search-bike-specs`
+**Status:** No work needed — all 5 phases fully implemented
+**Tests:** 119 passed, 6 skipped
+**Notes:** All Phase 3 plans (03-01, 03-02, 03-03) fully implemented with summaries. All 5 phases code complete. No autonomous tasks remain. Project blocked on human verification and PR #115 merge.
+
+**Status:** Success (no-op)
+
+**Status:** Success (54s)
+
+## Iteration 4 — 2026-03-16 00:29:48
+
+**Task:** Verification pass — all phases complete
+**Branch:** `feature/web-search-bike-specs`
+**Status:** No work needed — all 5 phases fully implemented
+**Tests:** 119 passed, 6 skipped
+**Notes:** All Phase 3 plans (03-01, 03-02, 03-03) fully implemented with summaries. All 5 phases code complete. No autonomous tasks remain. Project blocked on human verification and PR #115 merge.
+
+**Status:** Success (no-op)
+
+**Status:** Success (52s)
+
+## Iteration 5 — 2026-03-16 00:30:45
+
+**Status:** Success (56s)
+
+## Iteration 6 — 2026-03-16 00:31:46
+
+**Status:** Success (47s)
+
+## Iteration 7 — 2026-03-16 00:32:39
+
+**Task:** Verification pass — all phases complete
+**Branch:** `feature/web-search-bike-specs`
+**Status:** No work needed — all 5 phases fully implemented
+**Tests:** 119 passed, 6 skipped
+**Notes:** All Phase 3 code exists and tested. All 5 phases code complete with summaries. No autonomous tasks remain. Project blocked on human verification and PR #115 merge.
+
+**Status:** Success (no-op)
+
+**Status:** Success (49s)
+
+## Iteration 8 — 2026-03-16 00:33:32
+
+**Task:** Verification pass — all phases complete
+**Branch:** `feature/web-search-bike-specs`
+**Status:** No work needed — all 5 phases fully implemented
+**Tests:** 119 passed, 6 skipped
+**Notes:** All Phase 3 code exists and tested. All 5 phases code complete with summaries. No autonomous tasks remain. Project blocked on human verification and PR #115 merge.
+
+**Status:** Success (no-op)
+
+**Status:** Success (54s)
+
+## Iteration 9 — 2026-03-16 00:34:31
 

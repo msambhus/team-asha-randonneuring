@@ -374,6 +374,53 @@
     text-overflow: ellipsis;
 }
 
+/* ── Image preview cards ── */
+.image-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-self: flex-start;
+    max-width: 88%;
+    margin-top: 6px;
+}
+.image-preview-card {
+    display: flex;
+    flex-direction: column;
+    width: 160px;
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    text-decoration: none;
+    color: var(--text);
+    overflow: hidden;
+    transition: border-color 0.15s;
+}
+.image-preview-card:hover {
+    border-color: var(--primary);
+}
+.image-preview-card img {
+    width: 100%;
+    height: 100px;
+    object-fit: cover;
+    display: block;
+}
+.image-preview-meta {
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.image-preview-title {
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.image-preview-domain {
+    font-size: 0.68rem;
+    color: var(--text-light);
+}
 /* ── Expanded chat panel ── */
 #chat-panel.expanded {
     width: 680px;
@@ -747,12 +794,117 @@
         });
     };
 
+    /* ── Image preview cards ── */
+    var MAX_IMAGE_PREVIEWS = 3;
+
+    function extractUrls(text) {
+        var urlRe = /https:\/\/[^\s\)<>"']+/g;
+        var matches = text.match(urlRe) || [];
+        var seen = {};
+        var unique = [];
+        for (var i = 0; i < matches.length; i++) {
+            var u = matches[i].replace(/[.,;:!?)]$/, '');
+            if (!seen[u]) { seen[u] = true; unique.push(u); }
+        }
+        return unique;
+    }
+
+    function getSourceCardUrls(bubble) {
+        var urls = new Set();
+        var sibling = bubble.nextElementSibling;
+        if (sibling && sibling.classList.contains('source-cards')) {
+            var links = sibling.querySelectorAll('a.source-card');
+            for (var i = 0; i < links.length; i++) {
+                urls.add(links[i].href);
+            }
+        }
+        return urls;
+    }
+
+    function renderImageCards(bubble, urls) {
+        var sourceUrls = getSourceCardUrls(bubble);
+        var filtered = [];
+        for (var i = 0; i < urls.length; i++) {
+            if (!sourceUrls.has(urls[i])) {
+                filtered.push(urls[i]);
+            }
+        }
+        if (filtered.length === 0) return;
+
+        var remaining = Math.min(filtered.length, MAX_IMAGE_PREVIEWS);
+        var container = document.createElement('div');
+        container.className = 'image-cards';
+        var loaded = 0;
+
+        function tryInsert() {
+            if (loaded === 0) return;
+            if (!container.parentNode) {
+                // Insert after any existing source-cards sibling
+                var insertAfter = bubble.nextElementSibling;
+                while (insertAfter && insertAfter.classList.contains('source-cards')) {
+                    insertAfter = insertAfter.nextElementSibling;
+                }
+                bubble.parentNode.insertBefore(container, insertAfter);
+                scrollMessages();
+            }
+        }
+
+        for (var j = 0; j < remaining; j++) {
+            (function(url) {
+                fetch('/api/image-preview?url=' + encodeURIComponent(url))
+                    .then(function(r) { return r.ok ? r.json() : Promise.reject(); })
+                    .then(function(data) {
+                        if (!data.image_url) return;
+
+                        var card = document.createElement('a');
+                        card.className = 'image-preview-card';
+                        card.href = url;
+                        card.target = '_blank';
+                        card.rel = 'noopener noreferrer';
+
+                        var img = document.createElement('img');
+                        img.src = data.image_url;
+                        img.alt = data.title || data.domain;
+                        img.loading = 'lazy';
+                        img.onerror = function() {
+                            if (card.parentNode) card.parentNode.removeChild(card);
+                        };
+
+                        var meta = document.createElement('div');
+                        meta.className = 'image-preview-meta';
+
+                        var titleSpan = document.createElement('span');
+                        titleSpan.className = 'image-preview-title';
+                        titleSpan.textContent = data.title || data.domain;
+
+                        var domainSpan = document.createElement('span');
+                        domainSpan.className = 'image-preview-domain';
+                        domainSpan.textContent = data.domain;
+
+                        meta.appendChild(titleSpan);
+                        meta.appendChild(domainSpan);
+                        card.appendChild(img);
+                        card.appendChild(meta);
+                        container.appendChild(card);
+                        loaded++;
+                        tryInsert();
+                    })
+                    .catch(function() { /* graceful degradation */ });
+            })(filtered[j]);
+        }
+    }
+
     function finishStream(bubble) {
         isStreaming = false;
         document.getElementById('chat-send').disabled = false;
         // Final markdown render to clean up any trailing formatting
         if (streamRawText) {
             bubble.innerHTML = renderMarkdown(streamRawText);
+            // Post-stream: extract URLs and fetch image previews (IMG-09)
+            var urls = extractUrls(streamRawText);
+            if (urls.length > 0) {
+                renderImageCards(bubble, urls);
+            }
         }
     }
 

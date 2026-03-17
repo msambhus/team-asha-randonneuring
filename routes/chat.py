@@ -1,6 +1,8 @@
-"""Chat API routes — SSE streaming endpoint, conversation management."""
-from flask import Blueprint, Response, request, session, stream_with_context
+"""Chat API routes — SSE streaming endpoint, conversation management, image preview."""
+from flask import Blueprint, Response, jsonify, request, session, stream_with_context
 from auth import api_login_required
+from cache import cache
+from services.image_preview import fetch_og_image, _is_safe_url
 import models
 import services.chat_service as chat_service
 
@@ -71,3 +73,31 @@ def get_conversation_messages(conversation_id):
             for m in messages
         ]
     }
+
+
+@chat_bp.route('/api/image-preview')
+@api_login_required
+def image_preview():
+    """Fetch OpenGraph image metadata for a URL on an allowlisted domain.
+
+    Returns JSON {image_url, title, domain} or error.
+    Caches successful results for 1 hour.
+    """
+    url = request.args.get('url', '').strip()
+    if not url:
+        return jsonify({'error': 'url parameter required'}), 400
+    if not _is_safe_url(url):
+        return jsonify({'error': 'domain not allowed'}), 403
+
+    # Check cache first
+    cache_key = f'og_preview:{url}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
+    result = fetch_og_image(url, timeout=2.0)
+    if result is None:
+        return jsonify({'error': 'no preview available'}), 404
+
+    cache.set(cache_key, result, timeout=3600)
+    return jsonify(result)

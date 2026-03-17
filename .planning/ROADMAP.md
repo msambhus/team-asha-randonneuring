@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Agentic Tool-Calling Pipeline** - Intent classification, tool execution, agent loop, data-grounded responses
 - [x] **Phase 4: Braintrust Evals + Observability** - Eval datasets, Braintrust integration, quality metrics dashboard
 - [x] **Phase 5: WhatsApp Knowledge Base** - Import group chat exports, parse and filter cycling content, store in vector DB, integrate RAG into chatbot
-- [x] **Phase 6: Image Preview Cards** - Show product images and bike accessory photos inline in chatbot responses via OpenGraph extraction
+- [ ] **Phase 6: Image Preview Cards** - Show product images and bike accessory photos inline in chatbot responses via OpenGraph extraction
 
 ## Phase Details
 
@@ -120,13 +120,13 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [x] 06-01-PLAN.md — Backend image preview service (TDD): fetch_og_image(), domain allowlist, /api/image-preview endpoint with SSRF defenses and caching
-- [x] 06-02-PLAN.md — Frontend image card rendering: URL extraction, DOM card builder, CSS styles, finishStream() integration, human-verify checkpoint
+- [ ] 06-01-PLAN.md — Backend image preview service (TDD): fetch_og_image(), domain allowlist, /api/image-preview endpoint with SSRF defenses and caching
+- [ ] 06-02-PLAN.md — Frontend image card rendering: URL extraction, DOM card builder, CSS styles, finishStream() integration, human-verify checkpoint
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -135,4 +135,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 3. Agentic Tool-Calling Pipeline | 3/3 | Code complete | 2026-03-15 |
 | 4. Braintrust Evals + Observability | 2/2 | Code complete | 2026-03-15 |
 | 5. WhatsApp Knowledge Base | 3/3 | Code complete | 2026-03-16 |
-| 6. Image Preview Cards | 2/2 | Code complete | 2026-03-16 |
+| 6. Image Preview Cards | 0/2 | Planned | — |
