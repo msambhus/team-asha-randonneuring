@@ -484,7 +484,7 @@ def generate_openai_advice(rider, activities, fitness_score,
         client = OpenAI(api_key=api_key)
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5.4",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},

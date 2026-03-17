@@ -143,8 +143,8 @@ def test_intent_result_optional_fields(app):
         assert obj.ride_name is None
 
 
-def test_classify_intent_uses_gpt4o_mini(app):
-    """classify_intent uses gpt-4o-mini model for fast, cheap classification."""
+def test_classify_intent_uses_gpt5(app):
+    """classify_intent uses gpt-5.4 model for high-quality classification."""
     with app.app_context():
         from services.chat_service import classify_intent, IntentResult
 
@@ -157,7 +157,7 @@ def test_classify_intent_uses_gpt4o_mini(app):
         classify_intent(mock_client, "test message", [])
 
         call_kwargs = mock_client.chat.completions.parse.call_args[1]
-        assert call_kwargs['model'] == 'gpt-4o-mini'
+        assert call_kwargs['model'] == 'gpt-5.4'
         assert call_kwargs['max_tokens'] == 200
 
 

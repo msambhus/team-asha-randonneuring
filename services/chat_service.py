@@ -115,7 +115,7 @@ def classify_intent(client, user_message, conversation_messages):
         Tuple of (IntentResult, usage) where usage is the CompletionUsage object.
     """
     response = client.chat.completions.parse(
-        model="gpt-4o-mini",
+        model="gpt-5.4",
         messages=[
             {"role": "system", "content": INTENT_CLASSIFICATION_PROMPT},
             {"role": "user", "content": user_message},
@@ -327,7 +327,7 @@ def _stream_completion(messages, accumulator):
 
     try:
         stream = _get_client().chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5.4",
             messages=messages,
             max_tokens=700,
             stream=True,
