@@ -1385,25 +1385,61 @@ def base_plan_editor(slug):
     """Admin-only editor for base ride plans."""
     if not is_admin_user():
         abort(403)
-    
+
     # Get base plan
     base_plan = get_ride_plan_by_slug(slug)
     if not base_plan:
         abort(404)
-    
-    # Load base stops
+
+    # Load base stops and recalculate all derived values
     base_stops = list(get_ride_plan_stops(base_plan['id']))
     from services.custom_plan_service import recalculate_cumulative_values
     base_stops = recalculate_cumulative_values(base_stops, base_plan)
-    
+
+    # Attach break metadata for timeline layout
+    base_stops, use_timeline = _attach_break_metadata(base_stops)
+
     # Convert Decimal types
     base_plan = dict(base_plan)
     base_plan['total_distance_miles'] = float(base_plan.get('total_distance_miles') or 0)
     base_plan['total_elevation_ft'] = int(base_plan.get('total_elevation_ft') or 0)
-    
+
+    # Calculate summary statistics
+    total_moving_time = sum(s.get('segment_time_min') or 0 for s in base_stops)
+    total_break_time = sum(s.get('stop_duration_min') or 0 for s in base_stops)
+    total_time = total_moving_time + total_break_time
+    total_distance = base_plan['total_distance_miles']
+    total_elevation = base_plan['total_elevation_ft']
+
+    avg_moving_speed = round(total_distance / (total_moving_time / 60.0), 1) if total_moving_time > 0 else 0
+    avg_elapsed_speed = round(total_distance / (total_time / 60.0), 1) if total_time > 0 else 0
+    overall_ft_per_mile = int(round(total_elevation / total_distance)) if total_distance > 0 else 0
+
+    # Weighted difficulty
+    weighted_difficulty = 0
+    total_seg_dist = sum(float(s.get('seg_dist') or 0) for s in base_stops)
+    if total_seg_dist > 0:
+        weighted_difficulty = round(
+            sum(float(s.get('difficulty_score') or 0) * float(s.get('seg_dist') or 0) for s in base_stops) / total_seg_dist, 1
+        )
+
+    # Time bank at finish
+    finish_time_bank = None
+    if base_stops:
+        finish_time_bank = base_stops[-1].get('time_bank_min')
+
     return render_template('base_ride_plan_editor.html',
                            base_plan=base_plan,
-                           base_stops=base_stops)
+                           base_stops=base_stops,
+                           use_timeline=use_timeline,
+                           total_time=total_time,
+                           total_moving_time=total_moving_time,
+                           total_break_time=total_break_time,
+                           avg_moving_speed=avg_moving_speed,
+                           avg_elapsed_speed=avg_elapsed_speed,
+                           overall_ft_per_mile=overall_ft_per_mile,
+                           weighted_difficulty=weighted_difficulty,
+                           finish_time_bank=finish_time_bank)
 
 def custom_ride_plan_view(slug):
     """View custom plan with same detail as base plan, but with custom timings."""

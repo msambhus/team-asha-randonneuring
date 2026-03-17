@@ -1,170 +1,766 @@
 {% extends "base.html" %}
-
 {% block title %}Edit Base Plan - {{ base_plan.name }}{% endblock %}
 
-{% block content %}
-<div class="container" style="max-width:1000px;margin-top:30px;">
-    <div style="margin-bottom:24px;">
-        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug, view='base') }}" 
-           style="display:inline-flex;align-items:center;gap:6px;color:var(--text-light);text-decoration:none;font-size:0.9rem;">
-            ← Back to Base Plan View
-        </a>
-    </div>
-    
-    <div class="card" style="padding:24px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
-            <h2 style="margin:0;">Edit Base Plan: {{ base_plan.name }}</h2>
-            <div style="display:flex;gap:8px;">
-                <button class="btn-icon" id="save-button" onclick="saveBasePlan()" disabled style="background:#16a34a;color:white;">
-                    💾 <span>Save Changes</span>
-                </button>
-            </div>
-        </div>
-        
-        <div style="color:#dc2626;font-weight:600;margin-bottom:16px;">
-            ⚠️ ADMIN ONLY: Changes affect all riders
-        </div>
-        
-        {# Stops List #}
-        <div id="stops-container">
-            {% for stop in base_stops %}
-            <div class="stop-row" data-stop-id="{{ stop.id }}" data-distance="{{ stop.distance_miles or 0 }}">
-                <div class="stop-header">
-                    <div class="stop-icon {{ stop.stop_type }}">
-                        {% if stop.stop_type == 'start' %}🚩{% elif stop.stop_type == 'finish' %}🏁{% elif stop.stop_type == 'control' %}◆{% elif stop.stop_type == 'rest' %}☕{% else %}•{% endif %}
-                    </div>
-                    <div class="stop-location">{{ stop.location }}</div>
-                </div>
-                <div class="stop-metrics">
-                    <div class="metric-box">
-                        <div class="metric-label">Dist (mi)</div>
-                        <input type="number" class="inline-edit" step="0.1"
-                               value="{{ "%.1f"|format(stop.distance_miles or 0) }}"
-                               data-field="distance_miles"
-                               onchange="trackChange(this)">
-                    </div>
-                    <div class="metric-box">
-                        <div class="metric-label">Seg Time (min)</div>
-                        <input type="number" class="inline-edit"
-                               value="{{ stop.segment_time_min or 0 }}"
-                               data-field="segment_time_min"
-                               onchange="trackChange(this)">
-                    </div>
-                    <div class="metric-box">
-                        <div class="metric-label">Elev (ft)</div>
-                        <input type="number" class="inline-edit"
-                               value="{{ stop.elevation_gain or 0 }}"
-                               data-field="elevation_gain"
-                               onchange="trackChange(this)">
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-</div>
-
+{% block extra_head %}
 <style>
+/* Layout */
+.editor-container {
+    max-width: 1200px;
+    margin: 0 auto 30px;
+}
+
+.plan-column {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 2px solid #dc2626;
+}
+
+.column-header {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #dc2626;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* Stop Rows */
 .stop-row {
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
     padding: 12px;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    transition: all 0.2s;
+    position: relative;
+}
+
+.stop-row:hover {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+}
+
+.stop-row.dirty {
+    background: #fef9e7;
+    border-color: #fbbf24;
+}
+
+/* Timeline layout: controls as section headers */
+#stops-container.timeline-container .stop-row {
+    position: relative;
+    z-index: 1;
+}
+.stop-row.level-control {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 2px solid #e2e8f0;
+}
+.stop-row.level-control .stop-location { font-weight: 700; font-size: 1.02rem; }
+.stop-row.level-waypoint .stop-location { color: #475569; font-weight: 500; }
+.stop-row.level-start .stop-location,
+.stop-row.level-finish .stop-location { font-weight: 700; font-size: 1.02rem; }
+
+/* Break chips */
+.break-chips-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    margin-left: 34px;
+}
+.break-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 0.73rem;
+    font-weight: 600;
+    white-space: nowrap;
+    border: 1px solid #fcd34d;
+}
+.break-chip .break-icon { font-size: 0.7rem; }
+.break-time-edit {
+    width: 50px;
+    padding: 1px 4px;
+    border: 1px solid #d97706;
+    border-radius: 4px;
+    font-size: 0.73rem;
+    font-weight: 600;
+    color: #92400e;
+    background: white;
+    text-align: center;
+}
+.break-name-edit {
+    width: 100px;
+    padding: 1px 4px;
+    border: 1px solid #d97706;
+    border-radius: 4px;
+    font-size: 0.73rem;
+    font-weight: 600;
+    color: #92400e;
     background: white;
 }
+.break-delete-btn {
+    background: none;
+    border: none;
+    color: #92400e;
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 0 2px;
+    opacity: 0.6;
+}
+.break-delete-btn:hover { opacity: 1; color: #dc2626; }
+.add-break-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: transparent;
+    color: #d97706;
+    font-size: 0.73rem;
+    font-weight: 600;
+    border: 1px dashed #d97706;
+    cursor: pointer;
+    white-space: nowrap;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+.add-break-btn:hover { opacity: 1; background: #fffbeb; }
+
 .stop-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 12px;
+    gap: 10px;
+    margin-bottom: 8px;
 }
+
 .stop-icon {
-    width: 32px;
-    height: 32px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.9rem;
+    font-size: 0.7rem;
+    flex-shrink: 0;
 }
-.stop-icon.start { background: #dcfce7; }
-.stop-icon.finish { background: #fee2e2; }
-.stop-icon.control { background: #dbeafe; }
-.stop-icon.rest { background: #fef3c7; }
+
+.stop-icon.start { background: #dcfce7; color: #166534; }
+.stop-icon.finish { background: #fee2e2; color: #991b1b; }
+.stop-icon.control { background: #dbeafe; color: #1e40af; }
+.stop-icon.rest { background: #fef3c7; color: #92400e; }
+.stop-icon.waypoint { background: #f1f5f9; color: #64748b; }
+
 .stop-location {
     flex: 1;
     font-weight: 600;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
+    color: var(--text);
 }
+
 .stop-metrics {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 80px 80px 75px 85px 70px 85px 90px 90px 70px;
+    gap: 8px;
+    margin-top: 8px;
+    margin-left: 34px;
+    font-size: 0.75rem;
 }
+
 .metric-box {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
 }
+
 .metric-label {
-    font-size: 0.7rem;
-    color: #64748b;
+    color: var(--text-light);
+    font-size: 0.65rem;
     text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.metric-value {
     font-weight: 600;
+    color: var(--text);
 }
+
+/* Inline Editing */
 .inline-edit {
-    width: 100px;
-    padding: 6px 8px;
-    border: 1px solid #cbd5e1;
+    width: 70px;
+    padding: 4px 8px;
+    border: 1px solid #dc2626;
     border-radius: 4px;
-    font-size: 0.9rem;
+    font-weight: 600;
+    color: #dc2626;
+    font-size: 0.85rem;
 }
+
 .inline-edit:focus {
     outline: none;
-    border-color: #3b82f6;
+    border-color: #991b1b;
 }
-.btn-icon {
-    padding: 10px 16px;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    font-weight: 600;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-.btn-icon:disabled {
-    opacity: 0.5;
+
+.inline-edit[readonly] {
+    border: 1px solid #e2e8f0;
+    color: var(--text);
+    background: #f8fafc;
     cursor: not-allowed;
 }
+
+/* Buttons */
+.btn-icon {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.15s;
+    font-weight: 500;
+}
+
+.btn-icon:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    transform: translateY(-1px);
+}
+
+.btn-icon:disabled {
+    background: #f1f5f9 !important;
+    border-color: #cbd5e1 !important;
+    color: #94a3b8 !important;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+.btn-save-inline.saving {
+    background: #f59e0b !important;
+    border-color: #f59e0b !important;
+    color: white !important;
+    cursor: wait;
+}
+
+.btn-save-inline.saved {
+    background: #22c55e !important;
+    border-color: #22c55e !important;
+    color: white !important;
+}
+
+/* Responsive */
+@media (max-width: 968px) {
+    .stop-metrics {
+        grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+        gap: 6px;
+    }
+}
 </style>
+{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px 30px;">
+    <h1>Edit Base Plan</h1>
+    <p style="opacity:0.85;margin-top:8px;">{{ base_plan.name }}</p>
+    <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;">
+        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug) }}?view=base" class="tab-link" style="padding:10px 24px;background:white;color:var(--text);border:2px solid var(--border);border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem;">
+            Base Plan View
+        </a>
+    </div>
+</div>
+
+<div class="container section">
+    <div class="editor-container">
+        <div class="plan-column">
+            <div class="column-header">
+                <span>Edit Base Plan Stops</span>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <div style="color:#dc2626;font-size:0.78rem;font-weight:600;">Changes affect all riders</div>
+                    <button class="btn-icon btn-save-inline" id="save-button-top" onclick="saveBasePlan()" disabled>
+                        <span id="save-icon-top">💾</span>
+                        <span id="save-text-top">Save</span>
+                    </button>
+                </div>
+            </div>
+
+            {# Plan Summary Stats #}
+            <div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:10px;padding:16px;margin-bottom:20px;">
+                <div style="font-size:0.85rem;font-weight:600;color:#991b1b;margin-bottom:12px;">Plan Summary</div>
+                <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:12px;font-size:0.85rem;margin-bottom:12px;">
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Elapsed Time</div>
+                        <div id="summary-elapsed-time" style="font-weight:700;color:#991b1b;">
+                            {{ (total_time // 60)|int }}h {{ "%02d"|format(total_time % 60) }}m
+                        </div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Moving Time</div>
+                        <div id="summary-moving-time" style="font-weight:700;color:#991b1b;">
+                            {{ (total_moving_time // 60)|int }}h {{ "%02d"|format(total_moving_time % 60) }}m
+                        </div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Stop Time</div>
+                        <div id="summary-stop-time" style="font-weight:700;color:#991b1b;">
+                            {{ total_break_time }} min
+                        </div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Time Bank</div>
+                        <div id="summary-time-bank" style="font-weight:700;">
+                            {% if finish_time_bank is not none %}
+                            {% set abs_bank = finish_time_bank if finish_time_bank >= 0 else -finish_time_bank %}
+                            <span style="color:{% if finish_time_bank >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
+                                {% if finish_time_bank >= 0 %}+{% else %}-{% endif %}{{ (abs_bank // 60)|int }}:{{ "%02d"|format(abs_bank % 60) }}
+                            </span>
+                            {% else %}--{% endif %}
+                        </div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Elapsed Speed</div>
+                        <div id="summary-elapsed-speed" style="font-weight:700;color:#991b1b;">{{ avg_elapsed_speed }} mph</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Moving Speed</div>
+                        <div id="summary-moving-speed" style="font-weight:700;color:#991b1b;">{{ avg_moving_speed }} mph</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Difficulty</div>
+                        <div id="summary-difficulty" style="font-weight:700;color:#991b1b;">{{ "%.1f"|format(weighted_difficulty) }}</div>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;font-size:0.85rem;padding-top:10px;border-top:1px solid #fca5a5;">
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Total Miles</div>
+                        <div style="font-weight:700;color:#991b1b;">{{ "%.1f"|format(base_plan.total_distance_miles) }}</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Total Elevation</div>
+                        <div style="font-weight:700;color:#991b1b;">{{ "{:,}".format(base_plan.total_elevation_ft) }} ft</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Avg Ft/Mile</div>
+                        <div style="font-weight:700;color:#991b1b;">{{ overall_ft_per_mile }}</div>
+                    </div>
+                </div>
+            </div>
+
+            {# Stops — Timeline layout #}
+            <div id="stops-container" {% if use_timeline %}class="timeline-container"{% endif %}>
+                {% for stop in base_stops %}
+                {% set level_class = '' %}
+                {% if use_timeline %}
+                    {% set level_class = 'level-start' if stop.stop_type == 'start' else 'level-finish' if stop.stop_type == 'finish' else 'level-control' if stop.stop_type == 'control' else 'level-waypoint' %}
+                {% endif %}
+                <div class="stop-row {{ level_class }}"
+                     data-stop-id="{{ stop.id }}"
+                     data-distance="{{ stop.distance_miles or 0 }}"
+                     data-elevation="{{ stop.elevation_gain or 0 }}"
+                     data-stop-type="{{ stop.stop_type }}">
+                    <div class="stop-header">
+                        <div class="stop-icon {{ stop.stop_type }}">
+                            {% if stop.stop_type == 'start' %}🚩{% elif stop.stop_type == 'finish' %}🏁{% elif stop.stop_type == 'control' %}◆{% elif stop.stop_type == 'rest' %}☕{% else %}•{% endif %}
+                        </div>
+                        <div class="stop-location">{{ stop.location }}</div>
+                    </div>
+                    <div class="stop-metrics">
+                        <div class="metric-box">
+                            <div class="metric-label">Cumul Dist</div>
+                            <input type="number" class="inline-edit"
+                                   step="0.1"
+                                   value="{{ "%.1f"|format(stop.distance_miles or 0) }}"
+                                   data-field="distance_miles"
+                                   onchange="trackChange(this)">
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Seg Miles</div>
+                            <div class="metric-value seg-miles">{{ "%.1f"|format(stop.seg_dist or 0) }}</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Seg Time</div>
+                            <input type="number" class="inline-edit"
+                                   value="{{ stop.segment_time_min or 0 }}"
+                                   data-field="segment_time_min"
+                                   onchange="trackChange(this)">
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Avg Speed</div>
+                            <div class="metric-value avg-speed">
+                                {% if stop.avg_speed %}{{ "%.1f"|format(stop.avg_speed) }}{% else %}--{% endif %}
+                            </div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Elev (ft)</div>
+                            <input type="number" class="inline-edit"
+                                   value="{{ stop.elevation_gain or 0 }}"
+                                   data-field="elevation_gain"
+                                   onchange="trackChange(this)">
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Ft/Mi</div>
+                            <div class="metric-value ft-per-mi">
+                                {% if stop.ft_per_mi %}{{ stop.ft_per_mi }}{% else %}--{% endif %}
+                            </div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Cumul Time</div>
+                            <div class="metric-value cumulative-time" style="font-weight:700;color:var(--primary);">
+                                {% if stop.cum_time_min %}
+                                {{ (stop.cum_time_min // 60)|int }}:{{ "%02d"|format(stop.cum_time_min % 60) }}
+                                {% else %}0:00{% endif %}
+                            </div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Time Bank</div>
+                            <div class="metric-value time-bank" style="font-weight:700;">
+                                {% if stop.time_bank_min is not none %}
+                                {% set abs_bank = stop.time_bank_min if stop.time_bank_min >= 0 else -stop.time_bank_min %}
+                                <span style="color:{% if stop.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
+                                    {% if stop.time_bank_min >= 0 %}+{% else %}-{% endif %}{{ (abs_bank // 60)|int }}:{{ "%02d"|format(abs_bank % 60) }}
+                                </span>
+                                {% else %}--{% endif %}
+                            </div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Difficulty</div>
+                            <div class="metric-value difficulty-score" data-score="{{ stop.difficulty_score or 0 }}">
+                                {% if stop.difficulty_score %}
+                                {% set color = '#94a3b8' if stop.difficulty_label == 'flat' else '#22c55e' if stop.difficulty_label == 'easy' else '#f59e0b' if stop.difficulty_label == 'moderate' else '#ef4444' %}
+                                <span style="color:{{color}};">{{ "%.1f"|format(stop.difficulty_score) }}</span>
+                                {% else %}--{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {# Break chips #}
+                    {% if stop.stop_type != 'start' and stop.stop_type != 'finish' %}
+                    <div class="break-chips-row">
+                        {% if stop.stop_name and stop.stop_duration_min and stop.stop_duration_min > 0 %}
+                        <div class="break-chip" title="{{ stop.stop_name }}{% if stop.notes %} - {{ stop.notes }}{% endif %}">
+                            <span class="break-icon">☕</span>
+                            <input type="text" class="break-name-edit"
+                                   value="{{ stop.stop_name }}"
+                                   data-stop-id="{{ stop.id }}"
+                                   data-field="stop_name"
+                                   onchange="trackChange(this)"
+                                   title="Break name">
+                            <input type="number" class="break-time-edit"
+                                   value="{{ stop.stop_duration_min }}"
+                                   data-stop-id="{{ stop.id }}"
+                                   data-field="stop_duration_min"
+                                   onchange="trackChange(this)"
+                                   title="Break duration (minutes)">
+                            <span style="font-size:0.65rem;">min</span>
+                            <button class="break-delete-btn" onclick="removeBreak(this)" title="Remove break">&#x2715;</button>
+                        </div>
+                        {% else %}
+                        <button class="add-break-btn" onclick="addBreak(this)" title="Add a break at this stop">+ break</button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+
+            {# Save Button - Bottom #}
+            <div style="text-align:center;margin-top:20px;padding-top:16px;border-top:2px solid var(--border);">
+                <div style="display:flex;gap:12px;justify-content:center;">
+                    <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug) }}?view=base" class="btn-icon" style="background:#f1f5f9;border-color:#cbd5e1;color:#64748b;text-decoration:none;">
+                        ← Back to Plan
+                    </a>
+                    <button class="btn-icon btn-save-inline" id="save-button" onclick="saveBasePlan()" disabled>
+                        <span id="save-icon">💾</span>
+                        <span id="save-text">Save Changes</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Add Break Modal #}
+<div id="add-break-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;" onclick="event.target === this && hideBreakModal()">
+    <div style="background:white;border-radius:12px;padding:24px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+        <h3 style="margin:0 0 16px 0;">Add Break</h3>
+        <input type="hidden" id="break-modal-stop-id">
+        <div style="margin-bottom:16px;">
+            <label style="display:block;font-weight:600;margin-bottom:6px;">Break Name</label>
+            <input type="text" id="break-modal-name" placeholder="e.g. Lunch, Coffee, Control Check-in" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+        </div>
+        <div style="margin-bottom:16px;">
+            <label style="display:block;font-weight:600;margin-bottom:6px;">Duration (minutes)</label>
+            <input type="number" id="break-modal-duration" placeholder="15" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+        </div>
+        <div style="display:flex;gap:12px;justify-content:flex-end;">
+            <button class="btn-icon" onclick="hideBreakModal()" style="background:#f1f5f9;">Cancel</button>
+            <button class="btn-icon" onclick="confirmAddBreak()" style="background:#dc2626;color:white;border-color:#dc2626;">Add Break</button>
+        </div>
+    </div>
+</div>
 
 <script>
 let pendingChanges = {};
 
+function markDirty(stopId) {
+    const row = document.querySelector(`.stop-row[data-stop-id="${stopId}"]`);
+    if (row) row.classList.add('dirty');
+    document.getElementById('save-button').disabled = false;
+    document.getElementById('save-button-top').disabled = false;
+}
+
 function trackChange(input) {
     const stopRow = input.closest('.stop-row');
-    const stopId = stopRow.dataset.stopId;
+    const stopId = stopRow ? stopRow.dataset.stopId : input.dataset.stopId;
     const field = input.dataset.field;
-    const value = field === 'distance_miles' ? parseFloat(input.value) : parseInt(input.value);
-    
+    let value;
+
+    if (field === 'distance_miles') {
+        value = parseFloat(input.value);
+    } else if (field === 'stop_name' || field === 'notes') {
+        value = input.value;
+    } else {
+        value = parseInt(input.value);
+    }
+
     if (!pendingChanges[stopId]) {
         pendingChanges[stopId] = {};
     }
     pendingChanges[stopId][field] = value;
-    
-    document.getElementById('save-button').disabled = false;
+    markDirty(stopId);
+
+    // Recalculate derived values
+    recalculateAll();
+}
+
+function recalculateAll() {
+    const rows = document.querySelectorAll('.stop-row');
+    let cumTime = 0;
+    let prevDist = 0;
+    let totalMoving = 0;
+    let totalBreak = 0;
+    let totalElev = 0;
+
+    // Get total distance for time bank
+    const lastRow = rows[rows.length - 1];
+    const distInput = lastRow ? lastRow.querySelector('input[data-field="distance_miles"]') : null;
+    const totalDist = distInput ? parseFloat(distInput.value) || 0 : 0;
+
+    // Get cutoff hours from plan name
+    const planName = '{{ base_plan.name }}';
+    const distMatch = planName.match(/(\d{3,4})\s*k/i);
+    const distKm = distMatch ? parseInt(distMatch[1]) : 0;
+    let cutoffHours = 0;
+    if (distKm <= 200) cutoffHours = 13.5;
+    else if (distKm <= 300) cutoffHours = 20;
+    else if (distKm <= 400) cutoffHours = 27;
+    else if (distKm <= 600) cutoffHours = 40;
+    else if (distKm <= 1000) cutoffHours = 75;
+
+    rows.forEach(function(row) {
+        const distInput = row.querySelector('input[data-field="distance_miles"]');
+        const timeInput = row.querySelector('input[data-field="segment_time_min"]');
+        const elevInput = row.querySelector('input[data-field="elevation_gain"]');
+
+        const curDist = distInput ? parseFloat(distInput.value) || 0 : 0;
+        const segTime = timeInput ? parseInt(timeInput.value) || 0 : 0;
+        const elevGain = elevInput ? parseInt(elevInput.value) || 0 : 0;
+
+        // Get stop duration from break chip
+        const breakTimeInput = row.querySelector('.break-time-edit');
+        const stopDuration = breakTimeInput ? parseInt(breakTimeInput.value) || 0 : 0;
+
+        const segDist = Math.round((curDist - prevDist) * 10) / 10;
+
+        // Update seg miles display
+        const segMilesEl = row.querySelector('.seg-miles');
+        if (segMilesEl) segMilesEl.textContent = segDist.toFixed(1);
+
+        // Avg speed
+        const avgSpeedEl = row.querySelector('.avg-speed');
+        if (avgSpeedEl) {
+            if (segTime > 0 && segDist > 0) {
+                avgSpeedEl.textContent = (segDist / (segTime / 60)).toFixed(1);
+            } else {
+                avgSpeedEl.textContent = '--';
+            }
+        }
+
+        // Ft/mi
+        const ftPerMiEl = row.querySelector('.ft-per-mi');
+        if (ftPerMiEl) {
+            if (elevGain > 0 && segDist > 0) {
+                ftPerMiEl.textContent = Math.round(elevGain / segDist);
+            } else {
+                ftPerMiEl.textContent = '--';
+            }
+        }
+
+        // Cumulative time
+        cumTime += segTime + stopDuration;
+        totalMoving += segTime;
+        totalBreak += stopDuration;
+        totalElev += elevGain;
+
+        const cumTimeEl = row.querySelector('.cumulative-time');
+        if (cumTimeEl) {
+            const h = Math.floor(cumTime / 60);
+            const m = cumTime % 60;
+            cumTimeEl.textContent = h + ':' + String(m).padStart(2, '0');
+        }
+
+        // Time bank
+        const timeBankEl = row.querySelector('.time-bank');
+        if (timeBankEl) {
+            if (cutoffHours > 0 && totalDist > 0 && curDist > 0) {
+                const arrivalTime = cumTime - stopDuration;
+                const bookendMin = Math.round((curDist / totalDist) * cutoffHours * 60);
+                const bankMin = bookendMin - arrivalTime;
+                const absBank = Math.abs(bankMin);
+                const bh = Math.floor(absBank / 60);
+                const bm = absBank % 60;
+                const sign = bankMin >= 0 ? '+' : '-';
+                const color = bankMin >= 0 ? '#16a34a' : '#dc2626';
+                timeBankEl.innerHTML = `<span style="color:${color};">${sign}${bh}:${String(bm).padStart(2, '0')}</span>`;
+            } else {
+                timeBankEl.textContent = '--';
+            }
+        }
+
+        // Difficulty
+        const diffEl = row.querySelector('.difficulty-score');
+        if (diffEl) {
+            const ftPerMi = segDist > 0 ? elevGain / segDist : 0;
+            if (ftPerMi > 0) {
+                let color = '#94a3b8';
+                if (ftPerMi > 80) color = '#ef4444';
+                else if (ftPerMi > 50) color = '#f59e0b';
+                else if (ftPerMi > 30) color = '#22c55e';
+                diffEl.innerHTML = `<span style="color:${color};">${ftPerMi.toFixed(1)}</span>`;
+            } else {
+                diffEl.textContent = '--';
+            }
+        }
+
+        prevDist = curDist;
+    });
+
+    // Update summary
+    const totalTime = totalMoving + totalBreak;
+    const elH = Math.floor(totalTime / 60);
+    const elM = totalTime % 60;
+    document.getElementById('summary-elapsed-time').textContent = elH + 'h ' + String(elM).padStart(2, '0') + 'm';
+
+    const mvH = Math.floor(totalMoving / 60);
+    const mvM = totalMoving % 60;
+    document.getElementById('summary-moving-time').textContent = mvH + 'h ' + String(mvM).padStart(2, '0') + 'm';
+
+    document.getElementById('summary-stop-time').textContent = totalBreak + ' min';
+
+    if (totalMoving > 0) {
+        document.getElementById('summary-moving-speed').textContent = (totalDist / (totalMoving / 60)).toFixed(1) + ' mph';
+    }
+    if (totalTime > 0) {
+        document.getElementById('summary-elapsed-speed').textContent = (totalDist / (totalTime / 60)).toFixed(1) + ' mph';
+    }
+
+    // Finish time bank
+    const tbEl = document.getElementById('summary-time-bank');
+    if (cutoffHours > 0 && totalDist > 0) {
+        const finishBank = Math.round(cutoffHours * 60) - totalMoving;
+        const absBank = Math.abs(finishBank);
+        const bh = Math.floor(absBank / 60);
+        const bm = absBank % 60;
+        const sign = finishBank >= 0 ? '+' : '-';
+        const color = finishBank >= 0 ? '#16a34a' : '#dc2626';
+        tbEl.innerHTML = `<span style="color:${color};">${sign}${bh}:${String(bm).padStart(2, '0')}</span>`;
+    }
+}
+
+// Break management
+let breakModalBtn = null;
+
+function addBreak(btn) {
+    breakModalBtn = btn;
+    const stopRow = btn.closest('.stop-row');
+    document.getElementById('break-modal-stop-id').value = stopRow.dataset.stopId;
+    document.getElementById('break-modal-name').value = '';
+    document.getElementById('break-modal-duration').value = '15';
+    const modal = document.getElementById('add-break-modal');
+    modal.style.display = 'flex';
+    document.getElementById('break-modal-name').focus();
+}
+
+function hideBreakModal() {
+    document.getElementById('add-break-modal').style.display = 'none';
+}
+
+function confirmAddBreak() {
+    const stopId = document.getElementById('break-modal-stop-id').value;
+    const name = document.getElementById('break-modal-name').value || 'Break';
+    const duration = parseInt(document.getElementById('break-modal-duration').value) || 15;
+
+    // Track changes for save
+    if (!pendingChanges[stopId]) pendingChanges[stopId] = {};
+    pendingChanges[stopId]['stop_name'] = name;
+    pendingChanges[stopId]['stop_duration_min'] = duration;
+    markDirty(stopId);
+
+    // Replace the "+ break" button with a chip
+    if (breakModalBtn) {
+        const chipsRow = breakModalBtn.closest('.break-chips-row');
+        chipsRow.innerHTML = `
+            <div class="break-chip">
+                <span class="break-icon">☕</span>
+                <input type="text" class="break-name-edit" value="${name}" data-stop-id="${stopId}" data-field="stop_name" onchange="trackChange(this)" title="Break name">
+                <input type="number" class="break-time-edit" value="${duration}" data-stop-id="${stopId}" data-field="stop_duration_min" onchange="trackChange(this)" title="Break duration (minutes)">
+                <span style="font-size:0.65rem;">min</span>
+                <button class="break-delete-btn" onclick="removeBreak(this)" title="Remove break">&#x2715;</button>
+            </div>
+        `;
+    }
+
+    hideBreakModal();
+    recalculateAll();
+}
+
+function removeBreak(btn) {
+    const chip = btn.closest('.break-chip');
+    const chipsRow = chip.closest('.break-chips-row');
+    const stopRow = chip.closest('.stop-row');
+    const stopId = stopRow.dataset.stopId;
+
+    // Track deletion
+    if (!pendingChanges[stopId]) pendingChanges[stopId] = {};
+    pendingChanges[stopId]['stop_name'] = '';
+    pendingChanges[stopId]['stop_duration_min'] = 0;
+    markDirty(stopId);
+
+    // Replace with add button
+    chipsRow.innerHTML = '<button class="add-break-btn" onclick="addBreak(this)" title="Add a break at this stop">+ break</button>';
+    recalculateAll();
 }
 
 async function saveBasePlan() {
-    const saveBtn = document.getElementById('save-button');
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = '⏳ <span>Saving...</span>';
-    
+    const btns = [document.getElementById('save-button'), document.getElementById('save-button-top')];
+    btns.forEach(btn => {
+        btn.disabled = true;
+        btn.classList.add('saving');
+        const icon = btn.querySelector('span:first-child');
+        const text = btn.querySelector('span:last-child');
+        if (icon) icon.textContent = '⏳';
+        if (text) text.textContent = 'Saving...';
+    });
+
     try {
         const promises = [];
-        
+
         for (const [stopId, changes] of Object.entries(pendingChanges)) {
             promises.push(
                 fetch(`/api/base-plan/stop/${stopId}`, {
@@ -174,19 +770,41 @@ async function saveBasePlan() {
                 })
             );
         }
-        
-        await Promise.all(promises);
-        
-        saveBtn.innerHTML = '✅ <span>Saved!</span>';
-        setTimeout(() => {
-            window.location.reload();
-        }, 800);
-        
+
+        const results = await Promise.all(promises);
+        const allOk = results.every(r => r.ok);
+
+        if (allOk) {
+            btns.forEach(btn => {
+                btn.classList.remove('saving');
+                btn.classList.add('saved');
+                const icon = btn.querySelector('span:first-child');
+                const text = btn.querySelector('span:last-child');
+                if (icon) icon.textContent = '✅';
+                if (text) text.textContent = 'Saved!';
+            });
+
+            pendingChanges = {};
+            document.querySelectorAll('.stop-row.dirty').forEach(r => r.classList.remove('dirty'));
+
+            setTimeout(() => {
+                window.location.reload();
+            }, 800);
+        } else {
+            throw new Error('Some updates failed');
+        }
+
     } catch (error) {
         console.error('Save error:', error);
         alert('Error saving changes: ' + error.message);
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = '💾 <span>Save Changes</span>';
+        btns.forEach(btn => {
+            btn.disabled = false;
+            btn.classList.remove('saving');
+            const icon = btn.querySelector('span:first-child');
+            const text = btn.querySelector('span:last-child');
+            if (icon) icon.textContent = '💾';
+            if (text) text.textContent = 'Save';
+        });
     }
 }
 </script>
