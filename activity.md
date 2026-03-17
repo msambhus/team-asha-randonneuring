@@ -4,6 +4,58 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ---
 
+## 2026-03-16 — Iteration 8 on fix/link-rendering-model-upgrade (ralph.sh)
+
+**Task:** Verification pass + commit uncommitted planning updates
+**Branch:** `fix/link-rendering-model-upgrade`
+**Status:** No-op for code. Committed ROADMAP.md updates (Phase 8+9 goals/plans) and activity log.
+**Tests:** 144 passed, 6 skipped
+**PR:** #127 already open
+**Notes:** Phase 3 still fully complete. PROMPT.md still stale (targeting Phase 3). Committed outstanding ROADMAP.md changes from previous sessions. Recommend updating PROMPT.md to Phase 6 Plan 02 or Phase 7+ for remaining iterations.
+
+---
+
+## 2026-03-16 — Iteration 7 on fix/link-rendering-model-upgrade (ralph.sh)
+
+**Task:** Verification pass — Phase 3 already complete (no-op)
+**Branch:** `fix/link-rendering-model-upgrade`
+**Status:** No-op. Phase 3 is fully code complete. PROMPT.md focus on Phase 3 is stale.
+**Tests:** 144 passed, 6 skipped
+**PR:** #127 already open for this branch's changes (link rendering + gpt-5.4 upgrade)
+**Notes:** No code changes needed. Recommend updating PROMPT.md to target Phase 6 Plan 02 or Phase 7+ for future iterations.
+
+---
+
+## 2026-03-16 — Iteration 6 on fix/link-rendering-model-upgrade (ralph.sh)
+
+**Task:** Verification pass — Phase 3 already complete (no-op)
+**Branch:** `fix/link-rendering-model-upgrade`
+**Status:** No-op. Phase 3 is fully code complete. PROMPT.md focus on Phase 3 is stale.
+**Tests:** 144 passed, 6 skipped
+**Notes:** Confirmed all Phase 3 plans (03-01, 03-02, 03-03) are implemented. This branch has 3 commits over main (link rendering, roadmap docs, model upgrade). No code changes needed this iteration.
+
+---
+
+## 2026-03-16 — Iteration 4 on fix/link-rendering-model-upgrade (ralph.sh)
+
+**Task:** Verification pass — Phase 3 already complete (again)
+**Branch:** `fix/link-rendering-model-upgrade`
+**Status:** No-op. Phase 3 is fully code complete. PROMPT.md focus on Phase 3 is stale.
+**Tests:** 144 passed, 6 skipped
+**Notes:** Confirmed all Phase 3 plans (03-01, 03-02, 03-03) are implemented. This branch's actual changes are model upgrade (gpt-4o-mini→gpt-5.4) and link rendering fixes. No code changes needed this iteration.
+
+---
+
+## 2026-03-16 — Iteration 1 on fix/link-rendering-model-upgrade (ralph.sh)
+
+**Task:** Verification pass — Phase 3 already complete
+**Branch:** `fix/link-rendering-model-upgrade`
+**Status:** No-op. Phase 3 (Agentic Tool-Calling Pipeline) is fully code complete with all 3 plan summaries. PROMPT.md focus on Phase 3 is stale — actual next work is Phase 6 Plan 02 (frontend image cards) or Phase 7+.
+**Tests:** 144 passed, 6 skipped
+**Notes:** Prompt instructed Phase 3 work but all plans (03-01, 03-02, 03-03) have summaries. IntentResult, classify_intent, ALLOWED_QUERIES (7 queries), run_agent_loop all exist and are wired into process_message(). No code changes needed.
+
+---
+
 ## 2026-03-16 — Iteration 9 (ralph.sh)
 
 **Task:** Verification pass + commit uncommitted planning updates
@@ -841,4 +893,57 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 **Status:** Success (54s)
 
 ## Iteration 9 — 2026-03-16 00:34:31
+
+
+## Iteration 1 — 2026-03-16 23:08:59
+
+**Status:** Success (116s)
+
+## Iteration 2 — 2026-03-16 23:10:59
+
+**Task:** Verification pass — Phase 3 already complete
+**Branch:** `fix/link-rendering-model-upgrade`
+**Status:** No-op. Phase 3 (Agentic Tool-Calling Pipeline) is fully code complete with all 3 plan summaries. PROMPT.md focus on Phase 3 is stale — actual next work is Phase 6 Plan 02 (frontend image cards) or Phase 7+.
+**Tests:** 144 passed, 6 skipped
+**Notes:** Confirmed all Phase 3 code exists (IntentResult, classify_intent, ALLOWED_QUERIES with 10 queries, run_agent_loop, process_message wiring). Branch has 3 commits not in main (link rendering, roadmap docs, model upgrade). No code changes needed.
+
+**Status:** Success (77s)
+
+## Iteration 3 — 2026-03-16 23:12:21
+
+**Task:** Verification pass — Phase 3 already complete
+**Branch:** `fix/link-rendering-model-upgrade`
+**Status:** No-op. Phase 3 (Agentic Tool-Calling Pipeline) is fully code complete with all 3 plan summaries. PROMPT.md focus on Phase 3 is stale — actual next work is Phase 6 Plan 02 (frontend image cards) or Phase 7+.
+**Tests:** 144 passed, 6 skipped
+**Notes:** Confirmed all Phase 3 code exists. No code changes needed.
+
+**Status:** Success (no-op)
+
+**Status:** Success (41s)
+
+## Iteration 4 — 2026-03-16 23:13:07
+
+**Status:** Success (65s)
+
+## Iteration 5 — 2026-03-16 23:14:18
+
+**Task:** Verification pass — Phase 3 already complete (again)
+**Branch:** `fix/link-rendering-model-upgrade`
+**Status:** No-op. Phase 3 is fully code complete. PROMPT.md focus on Phase 3 is stale.
+**Tests:** 144 passed, 6 skipped
+**Notes:** Confirmed all Phase 3 plans (03-01, 03-02, 03-03) are implemented. This branch's actual changes are model upgrade (gpt-4o-mini→gpt-5.4) and link rendering fixes. No code changes needed this iteration.
+
+**Status:** Success (no-op)
+
+**Status:** Success (53s)
+
+## Iteration 6 — 2026-03-16 23:15:16
+
+**Status:** Success (48s)
+
+## Iteration 7 — 2026-03-16 23:17:04
+
+**Status:** Success (90s)
+
+## Iteration 8 — 2026-03-16 23:18:39
 
