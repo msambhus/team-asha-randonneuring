@@ -4,6 +4,25 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ---
 
+## 2026-03-18 — Iteration 14 (ralph.sh)
+
+**Task:** Execute Phase 12 (Knowledge Base Expansion) — both plans
+**Branch:** `feature/personality-coaching-admin`
+**Status:** Phase 12 COMPLETE. 2 plans executed, all tests green. MILESTONE 2 COMPLETE.
+**Tests:** 200 passed, 44 skipped (full suite green)
+**Commits:**
+- `579c384` feat(12-01): add web resource embedding script with SHA-256 dedup (TDD)
+- `6acb302` feat(12-02): add knowledge base admin page with source list, remove, re-embed
+
+**What was done:**
+- Plan 12-01: Created `scripts/embed_resources.py` — CLI script that crawls URLs from Google Sheets CSV, extracts content via trafilatura, chunks at paragraph boundaries, embeds with text-embedding-3-small, stores in whatsapp_chunk with web_ source prefix and SHA-256 content hash dedup. Supports --dry-run, --url, --source, --url-column flags. Created `migrations/013_add_content_hash.sql` for dedup column. 18 unit tests.
+- Plan 12-02: Added `get_knowledge_sources()` and `delete_knowledge_source()` to models.py. Created admin routes at /admin/knowledge (list, remove, re-embed). Created `templates/admin/knowledge.html` with source table. Added Knowledge Base link to admin dashboard. 5 unit tests.
+- Requirements covered: KB-01 through KB-06
+
+**Notes:** Milestone 2 (Phases 7-12) is now fully complete — 16/16 plans executed across 6 phases.
+
+---
+
 ## 2026-03-18 — Iteration 13 (ralph.sh)
 
 **Task:** Plan Phase 12 (Knowledge Base Expansion)
@@ -1083,4 +1102,8 @@ Also in this iteration:
 **Status:** Success (535s)
 
 ## Iteration 13 — 2026-03-18 03:25:52
+
+**Status:** Success (924s)
+
+## Iteration 14 — 2026-03-18 03:41:21
 
