@@ -26,6 +26,7 @@ from services.weather import (
     get_cached_route_weather, format_weather_response,
 )
 from cache import cache
+import models
 
 logger = logging.getLogger(__name__)
 
