@@ -42,9 +42,10 @@ def test_allowed_queries_populated():
         "fitness_score", "brevet_history", "upcoming_rides",
         "career_stats", "recent_activities", "get_team_stats", "get_ride_plan",
         "get_team_leaderboard", "get_eddington_scores", "get_my_eddington",
+        "get_ride_rwgps_url", "get_ride_plan_for_weather",
     }
     assert set(ALLOWED_QUERIES.keys()) == expected_keys
-    assert len(ALLOWED_QUERIES) == 10
+    assert len(ALLOWED_QUERIES) == 12
 
 
 def test_all_queries_pass_safety_check():
