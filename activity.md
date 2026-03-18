@@ -4,6 +4,27 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ---
 
+## 2026-03-18 — Iteration 10 (ralph.sh)
+
+**Task:** Execute Phase 10 (Admin UI) — all 3 plans
+**Branch:** `feature/personality-coaching-admin`
+**Status:** Phase 10 COMPLETE. All 3 plans executed successfully.
+**Tests:** 171 passed, 44 skipped (full suite green)
+**Commits:**
+- `386300d` feat(10-01): add personality admin pages — list with completeness, edit with evidence
+- `c3e347a` feat(10-02): add gear admin pages — list with status, edit with typed inputs
+- `7319b06` feat(10-03): add coach roster and guardrail CRUD admin pages
+
+**What was done:**
+- Plan 10-01: Added get_trait_evidence() and get_all_guardrails() model helpers, compute_completeness() route helper, /admin/personalities list page (X/8 trait completeness, confidence badges, source priority), /admin/personalities/<id> edit page (enum dropdowns, textarea for arrays, evidence quotes, re-extraction CLI display). 8 test scaffolds.
+- Plan 10-02: Added /admin/gear list page (bike info, material, value orientation, has-gear indicator), /admin/gear/<id> edit page (text inputs, number for year, dropdowns for bike_material and value_orientation, textareas for components). 4 test scaffolds.
+- Plan 10-03: Added /admin/coaches roster (grouped by coach, persona status badge, FALLBACK badge, domain assignment toggle), /admin/guardrails list (toggle, edit, delete, version display), guardrail create/edit form, soft-delete route. 6 test scaffolds.
+- Requirements covered: ADMN-01 through ADMN-06, GEAR-01, GEAR-02, COACH-01, GUARD-02 through GUARD-05
+
+**Notes:** All 3 plans executed in one iteration. Clean execution, no blockers. Dashboard now has 5 admin nav buttons (Strava, Personalities, Gear, Coaches, Guardrails). Phase 11 (Braintrust Evals) is next — needs planning.
+
+---
+
 ## 2026-03-18 — Iteration 9 (ralph.sh)
 
 **Task:** Plan Phase 10 (Admin UI)
@@ -981,4 +1002,8 @@ Also in this iteration:
 **Status:** Success (432s)
 
 ## Iteration 9 — 2026-03-18 00:33:55
+
+**Status:** Success (1425s)
+
+## Iteration 10 — 2026-03-18 00:57:45
 

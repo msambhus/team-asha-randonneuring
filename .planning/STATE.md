@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Personality-Driven Coaching
 status: executing
-stopped_at: Phase 10 planned (3 plans in 3 waves, verified)
-last_updated: "2026-03-18T09:00:00.000Z"
-last_activity: "2026-03-18 — Phase 10 planned: 3 plans (personality, gear, coach/guardrail admin), verified by checker."
+stopped_at: Phase 10 complete (3 plans executed, all admin pages built)
+last_updated: "2026-03-18T10:00:00.000Z"
+last_activity: "2026-03-18 — Phase 10 executed: personality admin, gear admin, coach/guardrail admin. 171 passed, 44 skipped."
 progress:
   total_phases: 12
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 14
-  completed_plans: 10
+  completed_plans: 13
 ---
 
 # Project State
@@ -20,29 +20,29 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-17)
 
 **Core value:** Coaching that feels like it comes from a real teammate who knows you — matching each rider's communication style and each coach's authentic personality, grounded in actual conversation data.
-**Current focus:** Phase 10 (Admin UI) — planned, ready to execute.
+**Current focus:** Phase 11 (Braintrust Evals) — needs planning.
 
 ## Current Position
 
-Phase: 10 of 12 (Admin UI) — PLANNED
-Plan: 0 of 3 in current phase — ready to execute
-Status: Phase 10 planned. Ready to execute.
-Last activity: 2026-03-18 — Phase 10 planned: 3 plans (personality, gear, coach/guardrail admin), verified by checker.
+Phase: 10 of 12 (Admin UI) — COMPLETE
+Plan: 3 of 3 in current phase — all done
+Status: Phase 10 complete. Ready to plan Phase 11.
+Last activity: 2026-03-18 — Phase 10 executed: personality admin, gear admin, coach/guardrail admin. 171 passed, 44 skipped.
 
-Progress (Milestone 2): [██████░░░░] 53% (10/14 plans complete)
+Progress (Milestone 2): [█████████░] 93% (13/14 plans complete)
 Phase 7: COMPLETE — schema migration, 12 model functions, seed data
 Phase 8: COMPLETE — schema extension, WhatsApp extraction, blog+merge
 Phase 9: COMPLETE — DB-driven coach routing, guardrails, gear context, wiring
-Phase 10: PLANNED — personality admin (10-01), gear admin (10-02), coach/guardrail admin (10-03)
+Phase 10: COMPLETE — personality admin, gear admin, coach/guardrail admin (3 plans)
 Phase 11: Not started — dynamic eval script, eval dataset coverage
 Phase 12: Not started — embed script, knowledge admin page
 
 ## Performance Metrics
 
 **Velocity (Milestone 2):**
-- Total plans completed: 10
+- Total plans completed: 13
 - Average duration: ~5 min per plan
-- Total execution time: ~50 min
+- Total execution time: ~65 min
 
 **By Phase:**
 
@@ -51,9 +51,10 @@ Phase 12: Not started — embed script, knowledge admin page
 | 7 | 3/3 | ~15min | ~5min |
 | 8 | 3/3 | ~12min | ~4min |
 | 9 | 2/2 | ~8min | ~4min |
+| 10 | 3/3 | ~10min | ~3min |
 
 **Recent Trend:**
-- Last 3 plans: 09-01 (coach routing), 09-02 (guardrails+gear+wiring)
+- Last 3 plans: 10-01 (personality), 10-02 (gear), 10-03 (coach/guardrail)
 - Trend: fast execution, clean test results
 
 ## Accumulated Context
@@ -74,6 +75,8 @@ Recent decisions affecting current work:
 - [Phase 08-02]: technical_depth made Optional in PersonalityExtraction — test fixture omits it; GPT-4o prompt still requests it
 - [Phase 08-02]: group_by_sender accepts Union[str, list] — supports both filepath and pre-parsed list call patterns
 - [Phase 09]: Module-level _BIKE_KEYWORDS kept as fallback; inline version in run_agent_loop replaced with select_coach_for_message()
+- [Phase 10]: Profile priority for admin display: merged > manual > whatsapp > blog
+- [Phase 10]: POST saves use extraction_source='manual' to prevent overwriting merged/whatsapp rows
 
 ### Pending Todos
 
@@ -86,6 +89,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T08:00:00.000Z
-Stopped at: Phase 9 complete. Ready to plan Phase 10.
+Last session: 2026-03-18T10:00:00.000Z
+Stopped at: Phase 10 complete. Ready to plan Phase 11.
 Resume file: None
