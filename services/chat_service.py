@@ -93,7 +93,10 @@ requires up-to-date external information beyond general randonneuring knowledge.
 "What's a good bike for randonneuring under $2000?", "Is the Shimano 105 groupset good for \
 brevets?", "Schwalbe Marathon vs Continental Gatorskin for long rides?", "Best dynamo hub \
 for randonneuring?", "Trek Checkpoint vs Surly Long Haul Trucker?"
-- route_discussion: User asks about a specific ride plan, route, control stops, elevation profile, or route details.
+- route_discussion: User asks about a specific ride plan, route, control stops, elevation profile, \
+route details, food/rest stops along the route, where to eat or refuel, or any question about \
+what to expect on a specific ride. This includes questions about lunch spots, convenience stores, \
+or refueling options along a brevet route.
   The system can look up ride plans from the database AND fetch live route data from RideWithGPS (elevation, distance, control stops, key segments).
   Set ride_name to the full ride name including distance (e.g., "Cascade 400").
 - weather_query: User asks about weather conditions, wind, headwinds, tailwinds, temperature, \
@@ -107,6 +110,8 @@ IMPORTANT: Questions about specific bike brands, models, components, or gear com
 are web_search — NOT knowledge or off_topic.
 IMPORTANT: Questions about weather, wind conditions, headwinds, or temperature along a route \
 are weather_query — NOT route_discussion.
+IMPORTANT: Questions about food, lunch, rest stops, refueling, or where to eat along a route \
+are route_discussion — NOT off_topic. These are core brevet planning questions.
 
 Return the intent and, where applicable, the query_type, ride_name, or start_datetime.
 """
