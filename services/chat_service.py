@@ -165,6 +165,72 @@ def _format_tool_results(tool_results):
     return '\n'.join(parts)
 
 
+# DEPRECATED — replaced by select_coach_for_message(). Kept as fallback for DB errors.
+_BIKE_KEYWORDS = {
+    'bike', 'bicycle', 'tire', 'tyre', 'chain', 'derailleur', 'brake',
+    'groupset', 'cassette', 'crankset', 'handlebar', 'seatpost', 'headset',
+    'spoke', 'hub', 'axle', 'pedal', 'cleat', 'tubeless', 'puncture',
+    'flat fix', 'tube', 'rim', 'fork', 'frame', 'stem', 'dropout',
+    'maintenance', 'repair', 'mechanic', 'lube', 'grease', 'shifting',
+    'bottom bracket', 'saddle height', 'bike fit',
+}
+
+
+def _legacy_coach_selection(user_message: str) -> str:
+    """Fallback coach selection using deprecated _BIKE_KEYWORDS."""
+    msg_lower = user_message.lower()
+    is_bike = any(kw in msg_lower for kw in _BIKE_KEYWORDS)
+    return 'shriram' if is_bike else 'venki'
+
+
+def _get_coach_name(rider_id: int) -> Optional[str]:
+    """Fetch lowercase first_name for a rider by id."""
+    try:
+        rider = models.get_rider_by_id(rider_id)
+        if rider and rider.get('first_name'):
+            return rider['first_name'].lower()
+        return None
+    except Exception:
+        logger.warning("Failed to get coach name for rider_id=%s", rider_id)
+        return None
+
+
+def select_coach_for_message(user_message: str) -> str:
+    """Return coach first_name (lowercase) for the given user message.
+
+    Queries coach_assignment rows from DB. Falls back to is_default coach.
+    On any DB error, falls back to legacy _BIKE_KEYWORDS.
+    """
+    try:
+        assignments = models.get_coach_assignments(active_only=True)
+        if not assignments:
+            return 'venki'
+
+        msg_lower = user_message.lower()
+        default_assignment = None
+
+        for assignment in assignments:
+            if assignment.get('is_default'):
+                default_assignment = assignment
+                continue
+            domain = assignment.get('topic_domain', '')
+            if domain and domain in msg_lower:
+                name = _get_coach_name(assignment['coach_rider_id'])
+                if name:
+                    return name
+
+        # No domain match — use default coach
+        if default_assignment:
+            name = _get_coach_name(default_assignment['coach_rider_id'])
+            if name:
+                return name
+
+        return 'venki'
+    except Exception:
+        logger.warning("DB-driven coach routing failed, falling back to legacy keywords")
+        return _legacy_coach_selection(user_message)
+
+
 def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulator=None):
     """Agent loop: classify intent, execute tools if needed, stream response.
 

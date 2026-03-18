@@ -116,6 +116,15 @@ def get_rider_by_rusa(rusa_id):
         WHERE r.rusa_id = %s
     """, (rusa_id,)).fetchone()
 
+
+def get_rider_by_id(rider_id):
+    """Get rider by primary key ID. Returns dict or None."""
+    return _execute(
+        "SELECT * FROM rider WHERE id = %s",
+        (rider_id,)
+    ).fetchone()
+
+
 @cache.memoize(CACHE_TIMEOUT)
 def get_riders_for_season(season_id):
     """Get riders who have any participation record in this season."""
