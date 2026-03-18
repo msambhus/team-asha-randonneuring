@@ -129,7 +129,7 @@ def classify_intent(client, user_message, conversation_messages):
             {"role": "user", "content": user_message},
         ],
         response_format=IntentResult,
-        max_tokens=200,
+        max_completion_tokens=200,
         timeout=10,
     )
     result = response.choices[0].message.parsed
@@ -382,7 +382,7 @@ def _stream_completion(messages, accumulator, max_tokens=700):
         stream = _get_client().chat.completions.create(
             model="gpt-5.4",
             messages=messages,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_tokens,
             stream=True,
             stream_options={"include_usage": True},
             timeout=50,

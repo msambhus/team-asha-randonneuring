@@ -72,7 +72,7 @@ def test_max_tokens_set(app):
             list(gen)  # exhaust the generator
 
             call_kwargs = mock_client.return_value.chat.completions.create.call_args[1]
-            assert call_kwargs['max_tokens'] <= 800
+            assert call_kwargs['max_completion_tokens'] <= 800
             assert call_kwargs['stream'] is True
             assert call_kwargs.get('timeout', 60) <= 50
 
