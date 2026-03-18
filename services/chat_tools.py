@@ -7,9 +7,15 @@ pre-written parameterized query.
 SEC-02: ALLOWED_QUERIES dict enforces the allowlist
 SEC-03: validate_sql_safety() is a secondary defense using sqlparse
 AGENT-03 through AGENT-08: Populated queries, timeout, row cap
+RWGPS-01 through RWGPS-06: Route data lookup, summarization, caching
 """
 import sqlparse
 import logging
+from services.rwgps import (
+    fetch_route, extract_controls, build_ride_plan,
+    METERS_TO_MILES, METERS_TO_FEET,
+)
+from cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +116,13 @@ ALLOWED_QUERIES: dict[str, str] = {
                sc.eddington_calculated_at
         FROM strava_connection sc
         WHERE sc.rider_id = %s
+    """,
+    "get_ride_rwgps_url": """
+        SELECT ri.name, ri.rwgps_url, ri.distance_km
+        FROM ride ri
+        WHERE ri.name ILIKE %s OR ri.name ILIKE %s
+        ORDER BY ri.date DESC
+        LIMIT 1
     """,
     "get_ride_plan": """
         SELECT rp.name, rp.distance_km, rp.total_elevation_ft, rp.cutoff_hours,
@@ -241,3 +254,89 @@ def execute_web_search(client, query: str) -> dict:
     except Exception as e:
         logger.warning(f"Web search failed: {e}")
         return {"error": "Web search unavailable — please try again"}
+
+
+def summarize_route_for_chat(route_data, controls):
+    """Convert RWGPS route data + controls into a compact dict for LLM context.
+
+    RWGPS-03: Returns only the fields the LLM needs — no track_points.
+    """
+    plan_result = build_ride_plan(route_data, controls)
+    plan = plan_result['plan']
+    stops = plan_result['stops']
+
+    control_stops = [
+        {
+            'location': s['location'],
+            'distance_miles': s['distance_miles'],
+            'stop_type': s['stop_type'],
+            'elevation_gain_ft': s['elevation_gain'],
+        }
+        for s in stops
+    ]
+
+    return {
+        'name': plan['name'],
+        'total_distance_miles': plan['total_distance_miles'],
+        'total_elevation_ft': plan['total_elevation_ft'],
+        'distance_km': plan['distance_km'],
+        'cutoff_hours': plan['cutoff_hours'],
+        'overall_ft_per_mile': plan['overall_ft_per_mile'],
+        'avg_moving_speed_mph': plan['avg_moving_speed'],
+        'rwgps_url': plan['rwgps_url'],
+        'control_stops': control_stops,
+        'source': 'live_rwgps_api',
+    }
+
+
+def fetch_and_summarize_route(route_id):
+    """Fetch RWGPS route data with caching and comprehensive error handling.
+
+    RWGPS-04/05/06: Cache-first pattern with 5-min TTL. All errors produce
+    user-friendly dicts, never exceptions.
+    """
+    cache_key = f'rwgps_route_{route_id}'
+
+    # RWGPS-06: Check cache first
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return {'rows': [cached]}
+
+    # Fetch from RWGPS API
+    try:
+        route_data = fetch_route(route_id)
+    except Exception as e:
+        msg = str(e).lower()
+        if 'not found' in msg or '404' in msg:
+            return {'error': f"Route not found on RideWithGPS (ID: {route_id}). Check the route ID and try again."}
+        if '401' in msg or 'authentication' in msg:
+            return {'error': "RWGPS API credentials issue. Please contact the admin to verify API keys."}
+        if '429' in msg or 'rate limit' in msg:
+            return {'error': "RWGPS rate limit hit. Please try again in a few minutes."}
+        logger.warning(f"RWGPS fetch error for route {route_id}: {e}")
+        return {'error': f"Could not fetch route data: {str(e)[:200]}"}
+
+    # Extract controls — fall back to minimal summary if no waypoints
+    try:
+        controls = extract_controls(route_data)
+        summary = summarize_route_for_chat(route_data, controls)
+    except Exception:
+        # RWGPS-05: No waypoints — build minimal summary from route-level fields
+        total_dist_m = route_data.get('distance', 0) or 0
+        total_elev_m = route_data.get('elevation_gain', 0) or 0
+        total_miles = round(total_dist_m * METERS_TO_MILES, 1)
+        total_ft = int(round(total_elev_m * METERS_TO_FEET))
+        route_id_str = str(route_data.get('id', route_id))
+        summary = {
+            'name': route_data.get('name', 'Unknown Route'),
+            'total_distance_miles': total_miles,
+            'total_elevation_ft': total_ft,
+            'distance_km': int(round(total_dist_m / 1000)),
+            'rwgps_url': f'https://ridewithgps.com/routes/{route_id_str}',
+            'control_stops': [],
+            'source': 'live_rwgps_api',
+        }
+
+    # RWGPS-06: Cache with 5-min TTL
+    cache.set(cache_key, summary, timeout=300)
+    return {'rows': [summary]}
