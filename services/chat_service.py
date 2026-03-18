@@ -22,7 +22,8 @@ import models
 from db import get_db
 from services.fitness import calculate_fitness_score
 from services.openai_coach import _build_training_summary, _build_brevet_history_summary
-from services.chat_tools import ALLOWED_QUERIES, execute_allowed_query, execute_web_search
+from services.chat_tools import ALLOWED_QUERIES, execute_allowed_query, execute_web_search, fetch_and_summarize_route
+from services.rwgps import extract_rwgps_route_id
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,8 @@ requires up-to-date external information beyond general randonneuring knowledge.
 "What's a good bike for randonneuring under $2000?", "Is the Shimano 105 groupset good for \
 brevets?", "Schwalbe Marathon vs Continental Gatorskin for long rides?", "Best dynamo hub \
 for randonneuring?", "Trek Checkpoint vs Surly Long Haul Trucker?"
-- route_discussion: User asks about a specific ride plan, route, or control stops.
+- route_discussion: User asks about a specific ride plan, route, control stops, elevation profile, or route details.
+  The system can look up ride plans from the database AND fetch live route data from RideWithGPS (elevation, distance, control stops, key segments).
   Set ride_name to the full ride name including distance (e.g., "Cascade 400").
 - off_topic: Question is NOT related to cycling, randonneuring, bikes, or Team Asha.
 
@@ -258,6 +260,21 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
                 )
                 tool_results.append({'tool': 'get_ride_plan', 'result': result})
                 db_query_count += 1
+
+                # Cache-first fallback: if no ride plan cached, try live RWGPS fetch
+                if not result.get('rows') and db_query_count < MAX_DB_QUERIES:
+                    url_result = execute_allowed_query(
+                        query_type='get_ride_rwgps_url',
+                        params=(intent_result.ride_name, intent_result.ride_name),
+                        user_id=user_id,
+                    )
+                    db_query_count += 1
+                    url_rows = url_result.get('rows', [])
+                    if url_rows and url_rows[0].get('rwgps_url'):
+                        route_id = extract_rwgps_route_id(url_rows[0]['rwgps_url'])
+                        if route_id is not None:
+                            live_result = fetch_and_summarize_route(route_id)
+                            tool_results.append({'tool': 'live_route_data', 'result': live_result})
             break
 
         elif intent_result.intent == 'web_search':

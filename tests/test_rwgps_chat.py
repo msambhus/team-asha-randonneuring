@@ -249,3 +249,224 @@ class TestFetchAndSummarizeRouteErrors:
             assert summary['name'] == 'SFR 300K Brevet'
             assert 'control_stops' not in summary or summary['control_stops'] == []
             assert summary['source'] == 'live_rwgps_api'
+
+
+# ── RWGPS-02/07: Agent loop integration — route_discussion with live RWGPS fallback ──
+
+def _mock_stream(messages, accumulator):
+    """Helper that simulates _stream_completion yielding one chunk."""
+    accumulator['full_content'] = 'Route info here'
+    accumulator['prompt_tokens'] = 100
+    accumulator['completion_tokens'] = 20
+    yield 'data: "Route info here"\n\n'
+
+
+class TestRouteDiscussionLiveFetch:
+    """Agent loop integration tests for route_discussion with cache-first + live RWGPS fallback."""
+
+    def test_cached_ride_plan_returns_immediately(self, app):
+        """When get_ride_plan returns rows, no live RWGPS fetch is attempted (RWGPS-04)."""
+        with app.app_context():
+            from services.chat_service import run_agent_loop, IntentResult
+
+            intent = IntentResult(intent='route_discussion', ride_name='SFR 300K')
+            cached_plan = {'rows': [{'name': 'SFR 300K', 'plan': 'Start at 5am...'}]}
+
+            with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+                 patch('services.chat_service.execute_allowed_query', return_value=cached_plan) as mock_exec, \
+                 patch('services.chat_service.fetch_and_summarize_route') as mock_live, \
+                 patch('services.chat_service._stream_completion', side_effect=_mock_stream):
+
+                messages = [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'test'}]
+                list(run_agent_loop(MagicMock(), 'Tell me about SFR 300K', messages, rider_id=5, user_id=1))
+
+                # get_ride_plan called once, live fetch NOT called
+                mock_exec.assert_called_once_with(
+                    query_type='get_ride_plan',
+                    params=('SFR 300K', 'SFR 300K'),
+                    user_id=1,
+                )
+                mock_live.assert_not_called()
+
+    def test_no_cached_plan_triggers_live_fetch(self, app):
+        """When get_ride_plan returns no rows, falls back to RWGPS URL lookup + live fetch."""
+        with app.app_context():
+            from services.chat_service import run_agent_loop, IntentResult
+
+            intent = IntentResult(intent='route_discussion', ride_name='SFR 300K')
+            empty_plan = {'rows': []}
+            url_result = {'rows': [{'name': 'SFR 300K Brevet', 'rwgps_url': 'https://ridewithgps.com/routes/12345', 'distance_km': 300}]}
+            live_data = {'rows': [{'name': 'SFR 300K Brevet', 'source': 'live_rwgps_api'}]}
+
+            def mock_exec_side_effect(query_type, params, user_id):
+                if query_type == 'get_ride_plan':
+                    return empty_plan
+                elif query_type == 'get_ride_rwgps_url':
+                    return url_result
+                return {'rows': []}
+
+            with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+                 patch('services.chat_service.execute_allowed_query', side_effect=mock_exec_side_effect) as mock_exec, \
+                 patch('services.chat_service.extract_rwgps_route_id', return_value='12345') as mock_extract_id, \
+                 patch('services.chat_service.fetch_and_summarize_route', return_value=live_data) as mock_live, \
+                 patch('services.chat_service._stream_completion', side_effect=_mock_stream):
+
+                messages = [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'test'}]
+                chunks = list(run_agent_loop(MagicMock(), 'Tell me about SFR 300K', messages, rider_id=5, user_id=1))
+
+                # Both queries made
+                assert mock_exec.call_count == 2
+                mock_extract_id.assert_called_once_with('https://ridewithgps.com/routes/12345')
+                mock_live.assert_called_once_with('12345')
+
+    def test_no_rwgps_url_rows_no_live_fetch(self, app):
+        """When get_ride_rwgps_url returns no rows, no live fetch is attempted."""
+        with app.app_context():
+            from services.chat_service import run_agent_loop, IntentResult
+
+            intent = IntentResult(intent='route_discussion', ride_name='Unknown Route')
+
+            def mock_exec_side_effect(query_type, params, user_id):
+                if query_type == 'get_ride_plan':
+                    return {'rows': []}
+                elif query_type == 'get_ride_rwgps_url':
+                    return {'rows': []}
+                return {'rows': []}
+
+            with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+                 patch('services.chat_service.execute_allowed_query', side_effect=mock_exec_side_effect), \
+                 patch('services.chat_service.fetch_and_summarize_route') as mock_live, \
+                 patch('services.chat_service._stream_completion', side_effect=_mock_stream):
+
+                messages = [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'test'}]
+                list(run_agent_loop(MagicMock(), 'Tell me about Unknown Route', messages, rider_id=5, user_id=1))
+
+                mock_live.assert_not_called()
+
+    def test_null_rwgps_url_no_live_fetch(self, app):
+        """When ride row has null rwgps_url, no live fetch is attempted."""
+        with app.app_context():
+            from services.chat_service import run_agent_loop, IntentResult
+
+            intent = IntentResult(intent='route_discussion', ride_name='Old Route')
+
+            def mock_exec_side_effect(query_type, params, user_id):
+                if query_type == 'get_ride_plan':
+                    return {'rows': []}
+                elif query_type == 'get_ride_rwgps_url':
+                    return {'rows': [{'name': 'Old Route 200', 'rwgps_url': None, 'distance_km': 200}]}
+                return {'rows': []}
+
+            with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+                 patch('services.chat_service.execute_allowed_query', side_effect=mock_exec_side_effect), \
+                 patch('services.chat_service.fetch_and_summarize_route') as mock_live, \
+                 patch('services.chat_service._stream_completion', side_effect=_mock_stream):
+
+                messages = [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'test'}]
+                list(run_agent_loop(MagicMock(), 'Tell me about Old Route', messages, rider_id=5, user_id=1))
+
+                mock_live.assert_not_called()
+
+    def test_malformed_rwgps_url_no_live_fetch(self, app):
+        """When extract_rwgps_route_id returns None (malformed URL), no live fetch."""
+        with app.app_context():
+            from services.chat_service import run_agent_loop, IntentResult
+
+            intent = IntentResult(intent='route_discussion', ride_name='Bad URL Route')
+
+            def mock_exec_side_effect(query_type, params, user_id):
+                if query_type == 'get_ride_plan':
+                    return {'rows': []}
+                elif query_type == 'get_ride_rwgps_url':
+                    return {'rows': [{'name': 'Bad URL Route', 'rwgps_url': 'not-a-valid-url', 'distance_km': 200}]}
+                return {'rows': []}
+
+            with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+                 patch('services.chat_service.execute_allowed_query', side_effect=mock_exec_side_effect), \
+                 patch('services.chat_service.extract_rwgps_route_id', return_value=None), \
+                 patch('services.chat_service.fetch_and_summarize_route') as mock_live, \
+                 patch('services.chat_service._stream_completion', side_effect=_mock_stream):
+
+                messages = [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'test'}]
+                list(run_agent_loop(MagicMock(), 'Tell me about Bad URL Route', messages, rider_id=5, user_id=1))
+
+                mock_live.assert_not_called()
+
+    def test_db_query_count_incremented_correctly(self, app):
+        """db_query_count incremented twice: once for get_ride_plan, once for get_ride_rwgps_url."""
+        with app.app_context():
+            from services.chat_service import run_agent_loop, IntentResult
+
+            intent = IntentResult(intent='route_discussion', ride_name='SFR 300K')
+
+            call_log = []
+
+            def mock_exec_side_effect(query_type, params, user_id):
+                call_log.append(query_type)
+                if query_type == 'get_ride_plan':
+                    return {'rows': []}
+                elif query_type == 'get_ride_rwgps_url':
+                    return {'rows': [{'name': 'SFR 300K', 'rwgps_url': 'https://ridewithgps.com/routes/12345', 'distance_km': 300}]}
+                return {'rows': []}
+
+            with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+                 patch('services.chat_service.execute_allowed_query', side_effect=mock_exec_side_effect), \
+                 patch('services.chat_service.extract_rwgps_route_id', return_value='12345'), \
+                 patch('services.chat_service.fetch_and_summarize_route', return_value={'rows': [{'name': 'test'}]}), \
+                 patch('services.chat_service._stream_completion', side_effect=_mock_stream):
+
+                messages = [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'test'}]
+                list(run_agent_loop(MagicMock(), 'Tell me about SFR 300K', messages, rider_id=5, user_id=1))
+
+                assert call_log == ['get_ride_plan', 'get_ride_rwgps_url']
+
+    def test_live_route_data_tool_result_appended(self, app):
+        """Live route data is appended to tool_results with tool='live_route_data'."""
+        with app.app_context():
+            from services.chat_service import run_agent_loop, IntentResult, _format_tool_results
+            import json
+
+            intent = IntentResult(intent='route_discussion', ride_name='SFR 300K')
+            live_data = {'rows': [{'name': 'SFR 300K Brevet', 'source': 'live_rwgps_api'}]}
+
+            def mock_exec_side_effect(query_type, params, user_id):
+                if query_type == 'get_ride_plan':
+                    return {'rows': []}
+                elif query_type == 'get_ride_rwgps_url':
+                    return {'rows': [{'name': 'SFR 300K', 'rwgps_url': 'https://ridewithgps.com/routes/12345', 'distance_km': 300}]}
+                return {'rows': []}
+
+            captured_messages = []
+
+            def mock_stream(messages, accumulator):
+                captured_messages.extend(messages)
+                accumulator['full_content'] = 'Route info'
+                accumulator['prompt_tokens'] = 100
+                accumulator['completion_tokens'] = 20
+                yield 'data: "Route info"\n\n'
+
+            with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+                 patch('services.chat_service.execute_allowed_query', side_effect=mock_exec_side_effect), \
+                 patch('services.chat_service.extract_rwgps_route_id', return_value='12345'), \
+                 patch('services.chat_service.fetch_and_summarize_route', return_value=live_data), \
+                 patch('services.chat_service._stream_completion', side_effect=mock_stream):
+
+                messages = [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'test'}]
+                list(run_agent_loop(MagicMock(), 'Tell me about SFR 300K', messages, rider_id=5, user_id=1))
+
+                # Check that tool_results were injected into messages
+                system_msgs = [m for m in captured_messages if m['role'] == 'system']
+                tool_content = [m['content'] for m in system_msgs if 'live_route_data' in m['content']]
+                assert len(tool_content) > 0
+                assert 'live_rwgps_api' in tool_content[0]
+
+
+# ── RWGPS-07: Intent prompt update ──────────────────────────────────
+
+class TestIntentPromptLiveRoute:
+    def test_intent_prompt_mentions_live_route(self, app):
+        """Intent classification prompt describes live RWGPS route data capability."""
+        with app.app_context():
+            from services.chat_service import INTENT_CLASSIFICATION_PROMPT
+            assert 'RideWithGPS' in INTENT_CLASSIFICATION_PROMPT
+            assert 'live route data' in INTENT_CLASSIFICATION_PROMPT or 'live' in INTENT_CLASSIFICATION_PROMPT
