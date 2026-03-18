@@ -878,3 +878,20 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 **Issues:** None. Clean execution. Phase 7 complete.
 
+**Status:** Success (221s)
+
+## Iteration 3 — 2026-03-17 Phase 8 Plan 01
+
+**Plan:** 08-01 (TDD: Weather service module)
+**Branch:** `feature/phase-7-9-execution`
+**Commit:** 4f55ebe
+
+**What was done:**
+- Wrote 37 tests first (RED): sampling, bearing, headwind, wind label, WMO codes, hour index, Open-Meteo fetch, caching, response formatting, graceful degradation
+- Implemented `services/weather.py` (199 lines) with all 9 exported functions
+- Pure math functions tested without mocks; API/cache functions tested with mocks
+- Fixed headwind sign convention (cosine projection direction)
+- Full suite: 205 passing, 6 skipped
+
+**Issues:** None. Clean execution.
+
