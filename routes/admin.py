@@ -12,7 +12,8 @@ from models import (get_current_season, get_rides_for_season, get_riders_for_sea
                     admin_delete_rider_ride,
                     get_all_personality_profiles, get_personality_profile,
                     upsert_personality_profile, get_trait_evidence,
-                    get_rider_by_id)
+                    get_rider_by_id,
+                    get_gear_preference, upsert_gear_preference)
 from auth import login_required, user_login_required, verify_password
 from services.rwgps import (extract_rwgps_route_id, fetch_route, extract_controls,
                             build_ride_plan, slugify)
@@ -34,6 +35,17 @@ COACH_TRAIT_FIELDS = [
     'tone', 'humor_type', 'directness', 'signature_phrases',
     'topic_biases', 'topics_allowed', 'response_length_tendency',
     'question_asking_behavior',
+]
+
+GEAR_ENUMS = {
+    'bike_material': ['aluminum', 'steel', 'titanium', 'carbon', 'other'],
+    'value_orientation': ['budget', 'mid-range', 'premium', 'buy-once-buy-right'],
+}
+
+GEAR_FIELDS = [
+    'bike_make', 'bike_model', 'bike_year', 'bike_material',
+    'wheels_tires', 'lighting', 'bags', 'navigation', 'kit',
+    'value_orientation',
 ]
 
 
@@ -535,3 +547,47 @@ def personality_edit(rider_id):
                            evidence_by_trait=evidence_by_trait,
                            PERSONALITY_ENUMS=PERSONALITY_ENUMS,
                            COACH_TRAIT_FIELDS=COACH_TRAIT_FIELDS)
+
+
+# ── Gear Admin ───────────────────────────────────────────────────────
+
+@admin_bp.route('/gear')
+@user_login_required
+def gear():
+    """List all riders with gear preference status."""
+    _require_admin()
+    riders = get_all_riders()
+    gear_map = {}
+    for r in riders:
+        g = get_gear_preference(r['id'])
+        gear_map[r['id']] = g
+    return render_template('admin/gear.html', riders=riders, gear_map=gear_map,
+                           GEAR_FIELDS=GEAR_FIELDS)
+
+
+@admin_bp.route('/gear/<int:rider_id>', methods=['GET', 'POST'])
+@user_login_required
+def gear_edit(rider_id):
+    """View or edit gear preferences for a single rider."""
+    _require_admin()
+    rider = get_rider_by_id(rider_id)
+    if not rider:
+        abort(404)
+
+    if request.method == 'POST':
+        fields = {}
+        for field in GEAR_FIELDS:
+            val = request.form.get(field, '').strip()
+            if field == 'bike_year':
+                fields[field] = int(val) if val else None
+            elif field in GEAR_ENUMS:
+                fields[field] = val if val else None
+            else:
+                fields[field] = val if val else None
+        upsert_gear_preference(rider_id, fields, updated_by='admin')
+        flash('Gear preferences saved.', 'success')
+        return redirect(url_for('admin.gear_edit', rider_id=rider_id))
+
+    gear = get_gear_preference(rider_id)
+    return render_template('admin/gear_edit.html', rider=rider, gear=gear,
+                           GEAR_ENUMS=GEAR_ENUMS, GEAR_FIELDS=GEAR_FIELDS)
