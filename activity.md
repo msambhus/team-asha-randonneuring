@@ -895,3 +895,26 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 **Issues:** None. Clean execution.
 
+**Status:** Success (300s)
+
+## Iteration 4 — 2026-03-17 Phase 8 Plan 02
+
+**Plan:** 08-02 (Intent classification + agent loop integration for weather)
+**Branch:** `feature/phase-7-9-execution`
+**Commit:** 6c0faa9
+
+**What was done:**
+- Wrote 8 tests first (RED): intent classification, start_datetime field, agent loop branch, execute_route_weather success/error/timeout
+- Added `weather_query` as 7th intent type to IntentResult with `start_datetime` field
+- Updated INTENT_CLASSIFICATION_PROMPT with weather_query description and disambiguation
+- Created `execute_route_weather()` in chat_tools.py — orchestrates ride plan lookup, RWGPS track fetch, point sampling, Open-Meteo forecast, segment formatting
+- Added `get_ride_plan_for_weather` SQL query to ALLOWED_QUERIES
+- Wired weather_query branch into run_agent_loop (before route_discussion)
+- Graceful degradation: missing RWGPS URL, API timeout, no track data, >16-day forecast
+- Updated test_agent_pipeline.py intent literal validation and test_chat_tools.py query count
+- Full suite: 213 passing, 6 skipped
+
+**Issues:** None. Clean execution. Phase 8 complete.
+
+**Status:** Success
+
