@@ -1,112 +1,93 @@
-# Requirements: Team Asha Randonneuring Chatbot
+# Requirements: Team Asha Randonneuring
 
-**Defined:** 2026-03-14
-**Core Value:** Personalized, data-grounded cycling coaching and randonneuring information — answering "Am I ready for my next brevet?" with actual training data, not generic advice.
+**Defined:** 2026-03-14 (Milestone 1) | 2026-03-17 (Milestone 2)
+**Core Value:** Coaching that feels like it comes from a real teammate who knows you — matching each rider's communication style and each coach's authentic personality, grounded in actual conversation data.
 
-## v1 Requirements
+## Milestone 1 Requirements (Complete)
 
-Requirements for initial release. Each maps to roadmap phases.
+All 62 requirements from Milestone 1 are code complete. See git history for details.
+Categories: Infrastructure (6), Security (11), Chat Experience (7), Coaching & Knowledge (6), Personalization (3), Agentic Pipeline (10), Evals & Observability (6), WhatsApp Knowledge Base (10), Image Previews (9).
 
-### Infrastructure
+## Milestone 2 Requirements (Active)
 
-- [x] **INFRA-01**: DB schema — `conversation` and `chat_message` tables with proper indexes
-- [x] **INFRA-02**: Chat API endpoint with SSE streaming (`/api/chat/stream`)
-- [x] **INFRA-03**: Auth gating via `@api_login_required` (returns 401 JSON, no debug bypass) on all chat endpoints
-- [x] **INFRA-04**: `maxDuration: 60` in `vercel.json` for chat routes
-- [x] **INFRA-05**: Conversation CRUD functions in `models.py`
-- [x] **INFRA-06**: Chat message CRUD functions in `models.py`
+### Personality Extraction
 
-### Security
+- [ ] **EXTR-01**: System extracts personality traits per person from WhatsApp exported chat logs using GPT-4o
+- [ ] **EXTR-02**: System extracts personality traits from blog posts (WordPress URL and Google Drive PDF)
+- [ ] **EXTR-03**: Extraction captures tone register, humor type, directness level, encouragement style, domain bias, signature phrases, response length tendency, and question-asking behavior
+- [ ] **EXTR-04**: Extraction stores 3-5 source example quotes per trait as evidence for admin verification
+- [ ] **EXTR-05**: Extraction pre-filters WhatsApp noise (media messages, system messages, short reactions) before trait analysis
+- [ ] **EXTR-06**: Extraction assigns confidence level per trait based on source message volume (high/medium/low)
+- [ ] **EXTR-07**: Extraction merges blog-derived traits with chat-derived traits, weighting by confidence
 
-- [x] **SEC-01**: Read-only PostgreSQL role for chat queries
-- [x] **SEC-02**: `ALLOWED_QUERIES` dict — LLM picks query type from enum, Python owns all SQL
-- [x] **SEC-03**: `sqlparse` validation as secondary defense layer on any SQL
-- [x] **SEC-04**: OpenAI Moderation API on all user input before processing
-- [x] **SEC-05**: Prompt injection defense — user content in `role: user` only, DB data in delimited sections
-- [x] **SEC-06**: `max_tokens` enforced on all completions (500-800)
-- [x] **SEC-07**: Conversation history capped at last 10 turns per request
-- [x] **SEC-08**: Specific OpenAI error handling (`RateLimitError`, `APITimeoutError`, `InternalServerError`)
-- [x] **SEC-09**: Input validation — character limits and sanitization on chat input
-- [x] **SEC-10**: Cross-user isolation — all queries filtered by `WHERE user_id = authenticated_user_id`
-- [x] **SEC-11**: Respect `strava_data_private` flag in context assembly
+### Personality Profiles
 
-### Chat Experience
+- [ ] **PROF-01**: Database stores personality profiles with structured, queryable fields (not free-form text blobs)
+- [ ] **PROF-02**: Coach profiles include tone, humor type, directness, signature phrases, topic biases, and topics allowed
+- [ ] **PROF-03**: Rider profiles include preferred formality, humor sensitivity, encouragement preference, and technical depth
+- [ ] **PROF-04**: Each profile tracks extraction source (whatsapp/blog/manual), extraction date, source message count, and confidence
+- [ ] **PROF-05**: Profile changes are auditable (last_modified_by, timestamp)
 
-- [x] **CHAT-01**: Floating chat widget accessible on every page
-- [x] **CHAT-02**: Widget open/close state persisted via `sessionStorage`
-- [x] **CHAT-03**: Multi-turn conversation — last 8 turns loaded from DB
-- [x] **CHAT-04**: Streaming response rendering in widget (SSE client)
-- [x] **CHAT-05**: User-visible error handling — friendly message on API failure
-- [x] **CHAT-06**: Conversation list UI — view/continue previous conversations
-- [x] **CHAT-07**: New conversation creation from widget
+### Gear Preferences
 
-### Coaching & Knowledge
+- [ ] **GEAR-01**: Admin can capture gear preferences per rider: bike (make/model/year/material), wheels/tires, lighting, bags, navigation, kit
+- [ ] **GEAR-02**: Admin can set value orientation per rider (budget/mid-range/premium/buy-once-buy-right)
+- [ ] **GEAR-03**: Gear data is loadable into chatbot conversation context for grounded recommendations
 
-- [x] **KNOW-01**: System prompt with cycling/randonneuring guardrails
-- [x] **KNOW-02**: Randonneuring knowledge — ACP/RUSA rules, brevet distances, cutoffs, SR/R-12, PBP
-- [x] **KNOW-03**: Off-topic query handling — polite redirect with cycling topic suggestion
-- [x] **KNOW-04**: Bike repair, maintenance, and gear guidance in system prompt
-- [x] **KNOW-05**: Nutrition advice for long-distance cycling in system prompt
-- [x] **KNOW-06**: Training plan suggestions based on upcoming rides and fitness
+### Admin UI — Personality
 
-### Personalization
+- [ ] **ADMN-01**: Admin can view list of all team members with profile completeness indicator
+- [ ] **ADMN-02**: Admin can view and edit personality traits per person with structured fields (dropdowns for enumerations, text for phrases)
+- [ ] **ADMN-03**: Admin can see source example quotes alongside each trait for verification
+- [ ] **ADMN-04**: Admin can see confidence badge per trait (warns when LOW confidence)
+- [ ] **ADMN-05**: Admin can trigger re-extraction per person from source data
+- [ ] **ADMN-06**: Admin can view and edit gear preferences per rider
 
-- [x] **PERS-01**: Strava context injection — fitness score + recent activities + upcoming brevets
-- [x] **PERS-02**: Graceful fallback for non-Strava users (general knowledge mode)
-- [x] **PERS-03**: Team Asha context — upcoming brevets, ride plans, routes, team stats
+### Admin UI — Coaching Config
 
-### Agentic Pipeline
+- [ ] **COACH-01**: Admin can view coach roster with persona status and active/inactive toggle
+- [ ] **COACH-02**: Admin can assign topic domains per coach (replaces hardcoded keyword routing)
+- [ ] **COACH-03**: Admin can configure routing rules: intent/keyword → coach mapping
+- [ ] **COACH-04**: Admin can designate a fallback coach for unrouted queries
+- [ ] **COACH-05**: Adding a new coach does not require code changes
 
-- [x] **AGENT-01**: Intent classification via `chat.completions.parse()` with Pydantic model
-- [x] **AGENT-02**: Intent enum: `data_query`, `coaching`, `knowledge`, `route_discussion`, `off_topic`
-- [x] **AGENT-03**: Tool execution for `data_query` intents — maps query type enum to pre-written SQL
-- [x] **AGENT-04**: Named tool coverage: `fitness_score`, `brevet_history`, `upcoming_rides`, `career_stats`, `recent_activities`
-- [x] **AGENT-05**: `get_team_stats` tool — season stats, upcoming brevets (non-scoped)
-- [x] **AGENT-06**: `get_ride_plan` tool — control stops, distances, elevation for specific ride
-- [x] **AGENT-07**: Agent loop with `MAX_ITERATIONS=5` guard; max 3 DB queries per message
-- [x] **AGENT-08**: Tool results capped at 50 rows; per-query 5s timeout
-- [x] **AGENT-09**: Data citation — LLM references specific numbers from tool results
-- [x] **AGENT-10**: Token logging (`prompt_tokens`, `completion_tokens`) in `chat_message` table
+### Coaching Guardrails
 
-### Evals & Observability
+- [ ] **GUARD-01**: Guardrails stored as structured database rows (rule_type, rule_value, is_active), not hardcoded in prompts
+- [ ] **GUARD-02**: Admin can configure topic scope per coach (what each coach can/cannot answer)
+- [ ] **GUARD-03**: Admin can configure tone limits (e.g., never shame a rider for fitness)
+- [ ] **GUARD-04**: Admin can configure escalation rules (when to deflect to doctor, RUSA, etc.)
+- [ ] **GUARD-05**: Admin can toggle individual guardrail rules active/inactive without code deploy
+- [ ] **GUARD-06**: Guardrails are version-stamped so Braintrust evals correlate to specific rule sets
+- [ ] **GUARD-07**: Guardrails loaded at conversation start and injected into system prompt dynamically
 
-- [x] **EVAL-01**: Braintrust project linked to Team Asha workspace
-- [x] **EVAL-02**: Eval dataset for intent classification accuracy (golden labeled messages)
-- [x] **EVAL-03**: Eval dataset for data grounding (questions with known correct DB values)
-- [x] **EVAL-04**: Eval dataset for guardrail effectiveness (off-topic bypass patterns)
-- [x] **EVAL-05**: Logging of `span_id`/`trace_id` from Braintrust in `chat_message.metadata`
-- [x] **EVAL-06**: Conversation-level quality metrics visible in Braintrust dashboard
+### Evaluation
 
-### WhatsApp Knowledge Base
+- [ ] **EVAL2-01**: Braintrust eval dataset covers scope enforcement (correct coach handles correct topics)
+- [ ] **EVAL2-02**: Braintrust eval dataset covers topic blocking (off-cycling queries get redirected)
+- [ ] **EVAL2-03**: Braintrust eval dataset covers medical deflection (health questions get "consult a doctor")
+- [ ] **EVAL2-04**: Braintrust eval dataset covers persona consistency (Shriram mentions gear, Venki doesn't volunteer gear recs)
+- [ ] **EVAL2-05**: Eval uses LLM-as-judge scoring (not keyword matching) for semantic compliance
+- [ ] **EVAL2-06**: Eval results can be compared across guardrail rule versions
 
-- [x] **WA-01**: WhatsApp export parser handles U+202F timestamps and multi-line messages
-- [x] **WA-02**: Rule-based filter removes noise (short messages, media, joins/leaves)
-- [x] **WA-03**: LLM classifier retains cycling-relevant content
-- [x] **WA-04**: Two-stage filtering pipeline (rules then LLM)
-- [x] **WA-05**: text-embedding-3-small embeddings stored in pgvector with HNSW index
-- [x] **WA-06**: Incremental import -- only new messages after last imported timestamp
-- [x] **WA-07**: UNIQUE constraint on (source, chunk_start, chunk_end) for idempotent re-import
-- [x] **WA-08**: RAG retrieval for non-off-topic questions with natural attribution
-- [x] **WA-09**: RAG failure degrades gracefully -- chatbot works without community knowledge
-- [x] **WA-10**: CLI import script with progress reporting
+### Knowledge Base Expansion
 
-### Image Previews
+- [ ] **KB-01**: System crawls URLs from the resources Google Sheets spreadsheet
+- [ ] **KB-02**: Crawled content extracted (main text only, no nav/footer/ads), chunked, and embedded using text-embedding-3-small
+- [ ] **KB-03**: Embedded content stored in existing pgvector table with source tagging (web_* prefix)
+- [ ] **KB-04**: Admin can view list of embedded sources with URL, embed date, and chunk count
+- [ ] **KB-05**: Admin can trigger re-embed per source (refresh stale content)
+- [ ] **KB-06**: Admin can remove all embeddings from a specific source
 
-- [x] **IMG-01**: Backend endpoint (`/api/image-preview`) accepts a URL, validates it against an allowlist of domains, fetches OpenGraph `og:image` metadata, and returns `{image_url, title, domain}` JSON -- never proxies raw image bytes
-- [x] **IMG-02**: Allowlist of approved domains for image preview: cycling/product sites (competitivecyclist.com, trekbikes.com, bike24.com, wiggle.com, chainreactioncycles.com, jensonusa.com, revelatedesigns.com, ortlieb.com, shimano.com, ridewithgps.com, strava.com)
-- [x] **IMG-03**: Frontend detects URLs in assistant chat messages after stream completes, calls `/api/image-preview` per URL (max 3 per message), and renders image cards below the message bubble
-- [x] **IMG-04**: Image cards render as styled `<img>` elements in a `.image-cards` container below the assistant bubble with title, domain, and link -- never inside the SSE stream or `innerHTML` from LLM output
-- [x] **IMG-05**: Image preview endpoint enforces: 2-second timeout on outbound fetch, HTTPS-only scheme check, no private IP ranges, no redirect following, 100KB response size limit on HTML body read
-- [x] **IMG-06**: Image preview caches successful results for 1 hour in-process (Flask-Caching SimpleCache already present) to avoid re-fetching the same URL across multiple conversations
-- [x] **IMG-07**: Image card rendering degrades gracefully: if preview fetch fails, times out, or returns no `og:image`, no card is shown -- existing text link remains the fallback
-- [x] **IMG-08**: CSP `img-src` header extended to include `https:` to permit loading images from external HTTPS origins (confirm existing CSP state before adding)
-- [x] **IMG-09**: URLs in assistant messages are parsed on the frontend using a regex after stream completion -- no URL detection during streaming to avoid partial-URL false positives
+## v3 Requirements (Deferred)
 
-## v2 Requirements
+### Personalized Chat Responses
 
-Deferred to future release. Tracked but not in current roadmap.
+- **PCHAT-01**: Chatbot adapts response tone, humor, and depth to match each rider's communication style profile
+- **PCHAT-02**: Coach personas dynamically generated from personality profile data (not hardcoded prompts)
+- **PCHAT-03**: Rider self-service profile form for gear preferences and communication style preferences
 
-### Advanced Features
+### Advanced Features (from Milestone 1)
 
 - **ADV-01**: Token budget dashboard — per-user daily/monthly usage
 - **ADV-02**: Conversation summarization for long histories
@@ -117,103 +98,33 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ## Out of Scope
 
-Explicitly excluded. Documented to prevent scope creep.
-
 | Feature | Reason |
 |---------|--------|
-| Free-form SQL generation | Critical security risk — LLM output IS the injection vector |
-| Voice input/output | Text-only for v1; complexity not justified |
-| Multi-user chat or forums | Completely different product |
-| Garmin/Wahoo integration | Strava only for v1 |
-| GPS tracking / live location | Use Strava/RideWithGPS |
-| Medical advice | Always defer to healthcare professionals |
-| Non-cycling topics | Strict guardrails |
-| LangChain/LangGraph | Adds 50MB deps, slow cold starts, conflicts with psycopg2 layer |
-| WebSocket-based chat | Incompatible with Vercel serverless |
-| Proactive push notifications | Incompatible with Vercel serverless |
-| Unlimited conversation history | Quadratic token cost growth |
-| Assistants API | Polling incompatible with Vercel timeouts |
+| Real-time personality inference during conversation | High latency; noisy from few messages; contradicts stored profile architecture |
+| Automatic coach persona updates from new chat data | Profile corruption risk without admin review |
+| Rider-facing personality profile transparency | Could feel invasive for small team; no product value |
+| Automated blog scraping on schedule | Blogs update infrequently; manual re-extraction sufficient |
+| Multi-coach simultaneous responses | Committee feel; single-coach routing is correct |
+| Personality trait suggestions based on other riders | Individual profiling is the goal |
+| Real-time WhatsApp integration | Uses exported .txt files only |
+| Free-form SQL generation | Security risk — LLM output IS the injection vector |
+| Voice input/output | Text-only; complexity not justified |
+| Mobile app | Web-first |
+| LangChain/LangGraph | 50MB deps, slow cold starts, conflicts with psycopg2 |
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
+<!-- Updated during roadmap creation -->
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | Phase 1 | Code complete |
-| INFRA-02 | Phase 1 | Code complete |
-| INFRA-03 | Phase 1 | Code complete |
-| INFRA-04 | Phase 1 | Code complete |
-| INFRA-05 | Phase 1 | Code complete |
-| INFRA-06 | Phase 1 | Code complete |
-| SEC-01 | Phase 1 | Code complete |
-| SEC-02 | Phase 1 | Code complete |
-| SEC-03 | Phase 1 | Code complete |
-| SEC-04 | Phase 1 | Code complete |
-| SEC-05 | Phase 1 | Code complete |
-| SEC-06 | Phase 1 | Code complete |
-| SEC-07 | Phase 1 | Code complete |
-| SEC-08 | Phase 1 | Code complete |
-| SEC-09 | Phase 1 | Code complete |
-| SEC-10 | Phase 2 | Code complete |
-| SEC-11 | Phase 2 | Code complete |
-| CHAT-01 | Phase 2 | Code complete |
-| CHAT-02 | Phase 2 | Code complete |
-| CHAT-03 | Phase 2 | Code complete |
-| CHAT-04 | Phase 2 | Code complete |
-| CHAT-05 | Phase 2 | Code complete |
-| CHAT-06 | Phase 2 | Code complete |
-| CHAT-07 | Phase 2 | Code complete |
-| KNOW-01 | Phase 1 | Code complete |
-| KNOW-02 | Phase 1 | Code complete |
-| KNOW-03 | Phase 1 | Code complete |
-| KNOW-04 | Phase 1 | Code complete |
-| KNOW-05 | Phase 1 | Code complete |
-| KNOW-06 | Phase 2 | Code complete |
-| PERS-01 | Phase 2 | Code complete |
-| PERS-02 | Phase 2 | Code complete |
-| PERS-03 | Phase 2 | Code complete |
-| AGENT-01 | Phase 3 | Code complete |
-| AGENT-02 | Phase 3 | Code complete |
-| AGENT-03 | Phase 3 | Code complete |
-| AGENT-04 | Phase 3 | Code complete |
-| AGENT-05 | Phase 3 | Code complete |
-| AGENT-06 | Phase 3 | Code complete |
-| AGENT-07 | Phase 3 | Code complete |
-| AGENT-08 | Phase 3 | Code complete |
-| AGENT-09 | Phase 3 | Code complete |
-| AGENT-10 | Phase 3 | Code complete |
-| EVAL-01 | Phase 4 | Code complete |
-| EVAL-02 | Phase 4 | Code complete |
-| EVAL-03 | Phase 4 | Code complete |
-| EVAL-04 | Phase 4 | Code complete |
-| EVAL-05 | Phase 4 | Code complete |
-| EVAL-06 | Phase 4 | Code complete |
-| WA-01 | Phase 5 | Code complete |
-| WA-02 | Phase 5 | Code complete |
-| WA-03 | Phase 5 | Code complete |
-| WA-04 | Phase 5 | Code complete |
-| WA-05 | Phase 5 | Code complete |
-| WA-06 | Phase 5 | Code complete |
-| WA-07 | Phase 5 | Code complete |
-| WA-08 | Phase 5 | Code complete |
-| WA-09 | Phase 5 | Code complete |
-| WA-10 | Phase 5 | Code complete |
-| IMG-01 | Phase 6 | Code complete |
-| IMG-02 | Phase 6 | Code complete |
-| IMG-03 | Phase 6 | Code complete |
-| IMG-04 | Phase 6 | Code complete |
-| IMG-05 | Phase 6 | Code complete |
-| IMG-06 | Phase 6 | Code complete |
-| IMG-07 | Phase 6 | Code complete |
-| IMG-08 | Phase 6 | Code complete |
-| IMG-09 | Phase 6 | Code complete |
+| — | — | — |
 
 **Coverage:**
-- v1 requirements: 62 total
-- Mapped to phases: 62
-- Unmapped: 0
+- Milestone 2 requirements: 38 total
+- Mapped to phases: 0
+- Unmapped: 38 (pending roadmap creation)
 
 ---
-*Requirements defined: 2026-03-14*
-*Last updated: 2026-03-17 -- All requirements complete. IMG-03, IMG-04, IMG-07, IMG-09 marked complete (Plan 06-02).*
+*Requirements defined: 2026-03-14 (M1) / 2026-03-17 (M2)*
+*Last updated: 2026-03-17 after Milestone 2 requirements definition*
