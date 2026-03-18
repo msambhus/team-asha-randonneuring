@@ -12,12 +12,12 @@ Categories: Infrastructure (6), Security (11), Chat Experience (7), Coaching & K
 
 ### Personality Extraction
 
-- [ ] **EXTR-01**: System extracts personality traits per person from WhatsApp exported chat logs using GPT-4o
+- [x] **EXTR-01**: System extracts personality traits per person from WhatsApp exported chat logs using GPT-4o
 - [ ] **EXTR-02**: System extracts personality traits from blog posts (WordPress URL and Google Drive PDF)
-- [ ] **EXTR-03**: Extraction captures tone register, humor type, directness level, encouragement style, domain bias, signature phrases, response length tendency, and question-asking behavior
-- [ ] **EXTR-04**: Extraction stores 3-5 source example quotes per trait as evidence for admin verification
-- [ ] **EXTR-05**: Extraction pre-filters WhatsApp noise (media messages, system messages, short reactions) before trait analysis
-- [ ] **EXTR-06**: Extraction assigns confidence level per trait based on source message volume (high/medium/low)
+- [x] **EXTR-03**: Extraction captures tone register, humor type, directness level, encouragement style, domain bias, signature phrases, response length tendency, and question-asking behavior
+- [x] **EXTR-04**: Extraction stores 3-5 source example quotes per trait as evidence for admin verification
+- [x] **EXTR-05**: Extraction pre-filters WhatsApp noise (media messages, system messages, short reactions) before trait analysis
+- [x] **EXTR-06**: Extraction assigns confidence level per trait based on source message volume (high/medium/low)
 - [ ] **EXTR-07**: Extraction merges blog-derived traits with chat-derived traits, weighting by confidence
 
 ### Personality Profiles
@@ -125,12 +125,12 @@ Categories: Infrastructure (6), Security (11), Chat Experience (7), Coaching & K
 | PROF-05 | Phase 7 | Pending |
 | GUARD-01 | Phase 7 | Pending |
 | GUARD-06 | Phase 7 | Pending |
-| EXTR-01 | Phase 8 | Pending |
+| EXTR-01 | Phase 8 | Complete |
 | EXTR-02 | Phase 8 | Pending |
-| EXTR-03 | Phase 8 | Pending |
-| EXTR-04 | Phase 8 | Pending |
-| EXTR-05 | Phase 8 | Pending |
-| EXTR-06 | Phase 8 | Pending |
+| EXTR-03 | Phase 8 | Complete |
+| EXTR-04 | Phase 8 | Complete |
+| EXTR-05 | Phase 8 | Complete |
+| EXTR-06 | Phase 8 | Complete |
 | EXTR-07 | Phase 8 | Pending |
 | GUARD-07 | Phase 9 | Pending |
 | COACH-02 | Phase 9 | Pending |

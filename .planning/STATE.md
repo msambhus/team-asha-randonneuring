@@ -3,15 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Personality-Driven Coaching
 status: executing
-stopped_at: Phase 8 planned. 3 plans in 3 waves. Ready to execute.
-last_updated: "2026-03-17"
-last_activity: 2026-03-17 — Phase 8 planned. 3 plans, 3 waves, checker-verified.
+stopped_at: Completed 08-01-PLAN.md (schema migration + test scaffolds)
+last_updated: "2026-03-18T06:17:25.087Z"
+last_activity: "2026-03-17 — Phase 8 planned: schema extension, WhatsApp extraction, blog+merge."
 progress:
-  total_phases: 6
-  completed_phases: 1
-  total_plans: 19
-  completed_plans: 3
-  percent: 19
+  total_phases: 12
+  completed_phases: 0
+  total_plans: 12
+  completed_plans: 6
 ---
 
 # Project State
@@ -56,6 +55,7 @@ Phase 12: Not started — embed script, knowledge admin page
 - Trend: fast execution
 
 *Updated after each plan completion*
+| Phase 08-personality-extraction P01 | 3 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -70,6 +70,8 @@ Recent decisions affecting current work:
 - [Research]: Personality traits stored as structured typed fields with character limits, not free-text blobs — prompt injection defense (OWASP LLM01)
 - [Research]: Two-stage guardrail architecture — classifier pass before persona prompt; DENY rules use canned redirects, not model-generated responses
 - [Research]: Phase 12 (knowledge expansion) is architecturally independent and can parallelize with Phases 8-11 after Phase 7 is complete
+- [Phase 08-01]: UNIQUE constraint changed from (rider_id, profile_type) to (rider_id, profile_type, extraction_source) to allow per-source rows for extraction pipeline
+- [Phase 08-01]: extraction_source CHECK expanded to include 'merged' for post-merge combined profiles
 
 ### Pending Todos
 
@@ -85,6 +87,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17
-Stopped at: Phase 8 planned. 3 plans in 3 waves, checker-verified. Ready to execute Phase 8.
+Last session: 2026-03-18T06:17:25.084Z
+Stopped at: Completed 08-01-PLAN.md (schema migration + test scaffolds)
 Resume file: None
