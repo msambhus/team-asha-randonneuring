@@ -495,16 +495,121 @@ class TestCrudCoachAssignment:
             assert len(all_assigns) == 2
 
 
-# ========== Seed Validation Test Stubs (Plan 07-03) ==========
+# ========== Seed Validation Tests (Plan 07-03) ==========
 
 
-@pytest.mark.skip(reason="Seed data not yet created — Plan 07-03")
-def test_seed_shriram_profile():
-    """Will verify Shriram's seeded coach profile and assignments."""
-    pass
+class TestSeedProfiles:
+    """Seed validation tests — require seed script to have been run."""
 
+    def test_seed_shriram_profile(self, db_conn):
+        """Verify Shriram's seeded coach profile and assignments."""
+        cur = db_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-@pytest.mark.skip(reason="Seed data not yet created — Plan 07-03")
-def test_seed_venki_profile():
-    """Will verify Venki's seeded coach profile and assignments."""
-    pass
+        # Find Shriram
+        cur.execute("SELECT id FROM rider WHERE first_name = 'Shriram' LIMIT 1")
+        rider = cur.fetchone()
+        if not rider:
+            pytest.skip('Shriram not in rider table — seed data not applicable')
+
+        # Check profile
+        cur.execute("""
+            SELECT * FROM personality_profile
+            WHERE rider_id = %s AND profile_type = 'coach' AND deleted_at IS NULL
+        """, (rider['id'],))
+        profile = cur.fetchone()
+        if not profile:
+            pytest.skip('Seed data not yet applied — run scripts/seed_coaching_profiles.py first')
+
+        assert profile['tone'] == 'direct'
+        assert profile['humor_type'] == 'dry'
+        assert profile['directness'] == 'high'
+        assert profile['extraction_source'] == 'manual'
+        assert profile['extraction_confidence'] == 'high'
+        assert 'bike' in profile['topics_allowed']
+        assert 'gear' in profile['topics_allowed']
+        assert len(profile['signature_phrases']) > 0
+
+        # Check coach assignments
+        cur.execute("""
+            SELECT topic_domain FROM coach_assignment
+            WHERE coach_rider_id = %s AND deleted_at IS NULL
+            ORDER BY topic_domain
+        """, (rider['id'],))
+        domains = [r['topic_domain'] for r in cur.fetchall()]
+        assert 'bikes' in domains
+        assert 'gear' in domains
+        assert 'maintenance' in domains
+
+    def test_seed_venki_profile(self, db_conn):
+        """Verify Venki's seeded coach profile and assignments."""
+        cur = db_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # Find Venki (may be stored as Venkatesh etc.)
+        cur.execute("SELECT id FROM rider WHERE first_name ILIKE 'Venk%%' LIMIT 1")
+        rider = cur.fetchone()
+        if not rider:
+            pytest.skip('Venki not in rider table — seed data not applicable')
+
+        cur.execute("""
+            SELECT * FROM personality_profile
+            WHERE rider_id = %s AND profile_type = 'coach' AND deleted_at IS NULL
+        """, (rider['id'],))
+        profile = cur.fetchone()
+        if not profile:
+            pytest.skip('Seed data not yet applied — run scripts/seed_coaching_profiles.py first')
+
+        assert profile['tone'] == 'playful'
+        assert profile['humor_type'] == 'sarcastic'
+        assert profile['directness'] == 'medium'
+        assert profile['extraction_source'] == 'manual'
+        assert 'training' in profile['topics_allowed']
+        assert 'general' in profile['topics_allowed']
+
+        # Check default coach assignment
+        cur.execute("""
+            SELECT * FROM coach_assignment
+            WHERE coach_rider_id = %s AND topic_domain = 'general' AND deleted_at IS NULL
+        """, (rider['id'],))
+        general = cur.fetchone()
+        assert general is not None
+        assert general['is_default'] is True
+
+    def test_seed_idempotency(self, db_conn):
+        """Running upsert twice on same rider+type does not create duplicates."""
+        cur = db_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        cur.execute("""
+            INSERT INTO rider (first_name, last_name)
+            VALUES ('IdempTest', 'Seed')
+            RETURNING id
+        """)
+        rider_id = cur.fetchone()['id']
+
+        # Insert a profile
+        cur.execute("""
+            INSERT INTO personality_profile (rider_id, profile_type, tone, updated_by)
+            VALUES (%s, 'coach', 'direct', 'test')
+            ON CONFLICT (rider_id, profile_type) DO UPDATE SET
+            tone = EXCLUDED.tone, updated_at = NOW()
+        """, (rider_id,))
+
+        # Run the same upsert again
+        cur.execute("""
+            INSERT INTO personality_profile (rider_id, profile_type, tone, updated_by)
+            VALUES (%s, 'coach', 'warm', 'test')
+            ON CONFLICT (rider_id, profile_type) DO UPDATE SET
+            tone = EXCLUDED.tone, updated_at = NOW()
+        """, (rider_id,))
+
+        # Should still be exactly 1 row
+        cur.execute("""
+            SELECT count(*) as cnt FROM personality_profile
+            WHERE rider_id = %s AND profile_type = 'coach'
+        """, (rider_id,))
+        assert cur.fetchone()['cnt'] == 1
+
+    def test_existing_tests_unbroken(self):
+        """Confirm CHAT_SYSTEM_PROMPT constant still exists (not removed by seed work)."""
+        from services.openai_coach import CHAT_SYSTEM_PROMPT
+        assert isinstance(CHAT_SYSTEM_PROMPT, str)
+        assert len(CHAT_SYSTEM_PROMPT) > 100
