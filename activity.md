@@ -4,6 +4,25 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ---
 
+## 2026-03-18 — Iteration 11 (ralph.sh)
+
+**Task:** Plan Phase 11 (Braintrust Evals)
+**Branch:** `feature/personality-coaching-admin`
+**Status:** Phase 11 PLANNED. 1 plan, 2 tasks, verification passed.
+**Commits:**
+- `d46e484` docs(11): plan Phase 11 — Braintrust dynamic guardrail evals
+
+**What was done:**
+- Researched Phase 11: confirmed autoevals.LLMClassifier API, Braintrust Eval() metadata for version stamps, Flask app context pattern for DB access, non-streaming task function pattern from eval_e2e.py.
+- Created VALIDATION.md with test map for all 6 EVAL2 requirements.
+- Created 11-01-PLAN.md: 2 tasks (TDD tests first, then eval script implementation). Covers all 6 EVAL2 requirements in a single plan since both tasks share one eval script file.
+- Plan checker verified: all 8 dimensions passed. One informational note about stale VALIDATION.md row referencing Plan 02.
+- Requirements covered: EVAL2-01 through EVAL2-06
+
+**Notes:** Consolidated from 2 roadmap-sketched plans to 1 plan since splitting by eval category would mean both plans touch the same file. Ready for `/gsd:execute-phase 11`.
+
+---
+
 ## 2026-03-18 — Iteration 10 (ralph.sh)
 
 **Task:** Execute Phase 10 (Admin UI) — all 3 plans
@@ -1006,4 +1025,8 @@ Also in this iteration:
 **Status:** Success (1425s)
 
 ## Iteration 10 — 2026-03-18 00:57:45
+
+**Status:** Success (3131s)
+
+## Iteration 11 — 2026-03-18 01:50:02
 
