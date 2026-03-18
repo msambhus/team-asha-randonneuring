@@ -5,11 +5,12 @@
 <div class="hero" style="padding:40px 20px;">
 <h1>{{ rider.first_name }} {{ rider.last_name }} — Personality</h1>
 {% if profile and profile.extraction_confidence %}
-{% if profile.extraction_confidence == 'HIGH' %}
+{% set conf = profile.extraction_confidence|lower %}
+{% if conf == 'high' %}
 <span style="background:#c6f6d5;color:#276749;padding:4px 12px;border-radius:4px;font-size:0.9rem;font-weight:600;">HIGH confidence</span>
-{% elif profile.extraction_confidence == 'MED' %}
-<span style="background:#fefcbf;color:#975a16;padding:4px 12px;border-radius:4px;font-size:0.9rem;font-weight:600;">MED confidence</span>
-{% elif profile.extraction_confidence == 'LOW' %}
+{% elif conf in ('med', 'medium') %}
+<span style="background:#fefcbf;color:#975a16;padding:4px 12px;border-radius:4px;font-size:0.9rem;font-weight:600;">MEDIUM confidence</span>
+{% elif conf == 'low' %}
 <span style="background:#fed7d7;color:#9b2c2c;padding:4px 12px;border-radius:4px;font-size:0.9rem;font-weight:600;">LOW confidence</span>
 {% endif %}
 {% endif %}

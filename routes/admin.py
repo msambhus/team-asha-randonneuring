@@ -32,13 +32,24 @@ PERSONALITY_ENUMS = {
     'technical_depth': ['beginner', 'intermediate', 'expert'],
     'response_length_tendency': ['brief', 'moderate', 'verbose'],
     'question_asking_behavior': ['rarely', 'sometimes', 'frequently'],
+    'riding_speed': ['slow', 'moderate', 'fast', 'very-fast'],
+    'power_level': ['low', 'moderate', 'strong', 'elite'],
+    'group_category': ['A', 'B', 'C'],
+    'mind_games': ['none', 'subtle', 'moderate', 'expert'],
+    'social_style': ['quiet', 'social', 'leader', 'entertainer'],
 }
 
-COACH_TRAIT_FIELDS = [
+# All trait fields used for display and editing
+ALL_TRAIT_FIELDS = [
     'tone', 'humor_type', 'directness', 'signature_phrases',
     'topic_biases', 'topics_allowed', 'response_length_tendency',
-    'question_asking_behavior',
+    'question_asking_behavior', 'encouragement_style', 'technical_depth',
+    'domain_bias', 'riding_speed', 'power_level', 'group_category',
+    'mind_games', 'social_style',
 ]
+
+# Legacy alias
+COACH_TRAIT_FIELDS = ALL_TRAIT_FIELDS
 
 GEAR_ENUMS = {
     'bike_material': ['aluminum', 'steel', 'titanium', 'carbon', 'other'],
@@ -640,6 +651,36 @@ def coaches():
             coaches_map[cid]['is_default'] = True
 
     return render_template('admin/coaches.html', coaches=coaches_map)
+
+
+@admin_bp.route('/coaches/add', methods=['GET', 'POST'])
+@user_login_required
+def add_coach():
+    """Add a new coach by selecting an existing rider and assigning topic domains."""
+    _require_admin()
+    if request.method == 'POST':
+        rider_id = request.form.get('rider_id', type=int)
+        domains = request.form.get('domains', '').strip()
+        is_default = request.form.get('is_default') == 'on'
+        if not rider_id or not domains:
+            flash('Rider and at least one domain are required.', 'error')
+            return redirect(url_for('admin.add_coach'))
+        # Create coach profile if needed
+        existing = get_personality_profile(rider_id, 'coach')
+        if not existing:
+            upsert_personality_profile(rider_id, 'coach', {
+                'extraction_source': 'manual',
+            }, updated_by='admin')
+        # Create assignments for each domain
+        for domain in [d.strip() for d in domains.split(',') if d.strip()]:
+            upsert_coach_assignment(rider_id, domain,
+                                    {'is_active': True, 'is_default': is_default},
+                                    updated_by='admin')
+        flash(f'Coach added with domains: {domains}', 'success')
+        return redirect(url_for('admin.coaches'))
+    # GET: show form with all riders
+    riders = get_all_riders()
+    return render_template('admin/add_coach.html', riders=riders)
 
 
 @admin_bp.route('/coaches/<int:coach_rider_id>/<topic_domain>/toggle', methods=['POST'])

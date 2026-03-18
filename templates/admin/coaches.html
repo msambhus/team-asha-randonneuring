@@ -8,8 +8,9 @@
 </div>
 <div class="container section">
 
-<div style="margin-bottom:20px;">
+<div style="margin-bottom:20px;display:flex;gap:12px;">
 <a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Dashboard</a>
+<a href="{{ url_for('admin.add_coach') }}" class="btn" style="background:var(--primary);color:#fff;">+ Add Coach</a>
 </div>
 
 {% if coaches %}
