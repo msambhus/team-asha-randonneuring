@@ -164,12 +164,11 @@ Plans:
   3. A fallback coach is designated in the database and handles all unrouted queries — removing all domain mappings for one coach does not break the chatbot
   4. Guardrail rules are loaded from the `coaching_guardrail` table at conversation start and injected into the system prompt as a `<guardrails>` XML block — changing a rule in the DB takes effect on the next message without a redeploy
   5. Gear preferences for the logged-in rider are loaded from `gear_preference` and included in the conversation context — a rider who has a Trek Checkpoint listed receives gear recommendations grounded to that specific bike
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 09-01: Coach routing — `select_coach_for_message()` with DB-driven domain lookup, fallback coach, replaces `_BIKE_KEYWORDS`
-- [ ] 09-02: Context assembly — `assemble_coach_context()` loads persona + guardrails from DB, wraps in XML boundary markers
-- [ ] 09-03: Gear context — load rider gear preferences into conversation context, integrate with existing context assembly
+- [ ] 09-01-PLAN.md — DB-driven coach routing: select_coach_for_message(), get_rider_by_id() helper, TDD test scaffold
+- [ ] 09-02-PLAN.md — Guardrail injection, gear context assembly, wire into process_message/run_agent_loop, seed guardrails
 
 ### Phase 10: Admin UI
 **Goal**: The admin interface lets Mihir view all team member profiles with completeness indicators, edit personality traits with source quote evidence, manage gear preferences per rider, configure coach assignments and routing rules, and manage all guardrail rules — all through the existing admin blueprint without any new frameworks
@@ -236,7 +235,7 @@ Phases 7-12 execute in numeric order (with Phase 12 parallelizable after Phase 7
 | 6. Image Preview Cards | v1.0 | 2/2 | Complete | 2026-03-17 |
 | 7. Data Foundation | v2.0 | 0/3 | Not started | - |
 | 8. Personality Extraction | 2/3 | In Progress|  | - |
-| 9. Chat Integration | v2.0 | 0/3 | Not started | - |
+| 9. Chat Integration | v2.0 | 0/2 | Not started | - |
 | 10. Admin UI | v2.0 | 0/3 | Not started | - |
 | 11. Braintrust Evals | v2.0 | 0/2 | Not started | - |
 | 12. Knowledge Base Expansion | v2.0 | 0/2 | Not started | - |
