@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Personality-Driven Coaching
 status: executing
-stopped_at: Completed 08-03-PLAN.md (blog extraction + merge script)
-last_updated: "2026-03-18T07:00:00.000Z"
-last_activity: "2026-03-18 — Phase 8 complete: all 3 plans done (schema, WhatsApp, blog+merge)."
+stopped_at: Completed Phase 9 planning (2 plans, checker verified)
+last_updated: "2026-03-18T07:30:00.000Z"
+last_activity: "2026-03-18 — Phase 9 planned: coach routing (W1), context assembly + gear + wiring (W2)."
 progress:
   total_phases: 12
   completed_phases: 1
@@ -20,19 +20,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-17)
 
 **Core value:** Coaching that feels like it comes from a real teammate who knows you — matching each rider's communication style and each coach's authentic personality, grounded in actual conversation data.
-**Current focus:** Phase 9 (Chat Integration) — not started, ready for planning.
+**Current focus:** Phase 9 (Chat Integration) — planned, ready for execution.
 
 ## Current Position
 
-Phase: 9 of 12 (Chat Integration) — NOT STARTED
-Plan: 0 of 3 in current phase — needs planning
-Status: Phase 8 complete. Phase 9 next.
-Last activity: 2026-03-18 — Phase 8 complete: all 3 plans done (schema, WhatsApp, blog+merge).
+Phase: 9 of 12 (Chat Integration) — PLANNED
+Plan: 0 of 2 in current phase — ready for execution
+Status: Phase 9 planned. 2 plans in 2 waves. Ready to execute.
+Last activity: 2026-03-18 — Phase 9 planned: coach routing (W1), context assembly + gear + wiring (W2).
 
 Progress (Milestone 2): [████░░░░░░] 42% (8/19 plans complete)
 Phase 7: COMPLETE — schema migration, 12 model functions, seed data
 Phase 8: COMPLETE — schema extension, WhatsApp extraction, blog+merge
-Phase 9: Not started — coach routing, context assembly, gear context
+Phase 9: PLANNED — coach routing (W1), context assembly + gear + wiring (W2)
 Phase 10: Not started — personality admin, gear admin, coach/guardrail admin
 Phase 11: Not started — dynamic eval script, eval dataset coverage
 Phase 12: Not started — embed script, knowledge admin page
