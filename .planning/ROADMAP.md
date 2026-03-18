@@ -198,11 +198,10 @@ Plans:
   3. Each guardrail rule has at least 3 test cases: a clear violation that must fail, a clear pass that must pass, and a boundary case — plus 2 adversarial inputs designed to elicit the blocked behavior
   4. Scoring uses `autoevals.LLMClassifier` for semantic compliance, not keyword matching — a response that deflects with different wording still scores as compliant
   5. Eval results are tagged with the guardrail rule version stamp so a specific result set can be correlated to the exact rule configuration that produced it — a rule change produces a new version and a new comparable result set
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 11-01: Dynamic eval script — DB-driven test case generation, LLMClassifier scorer, version-stamped result tagging
-- [ ] 11-02: Eval dataset coverage — scope enforcement, topic blocking, medical deflection, persona consistency cases with adversarial inputs
+- [ ] 11-01-PLAN.md — Dynamic eval script with DB-driven test case generation across all 4 compliance categories, LLMClassifier scorer, version-stamped result tagging, and unit tests
 
 ### Phase 12: Knowledge Base Expansion
 **Goal**: The chatbot's knowledge base is expanded with content from external cycling and randonneuring URLs listed in the resources Google Sheets spreadsheet — crawled, content-extracted, quality-filtered, deduplicated, and embedded into the existing pgvector table with admin visibility and control over each source
@@ -233,9 +232,9 @@ Phases 7-12 execute in numeric order (with Phase 12 parallelizable after Phase 7
 | 4. Braintrust Evals + Observability | v1.0 | 2/2 | Complete | 2026-03-15 |
 | 5. WhatsApp Knowledge Base | v1.0 | 3/3 | Complete | 2026-03-16 |
 | 6. Image Preview Cards | v1.0 | 2/2 | Complete | 2026-03-17 |
-| 7. Data Foundation | v2.0 | 0/3 | Not started | - |
-| 8. Personality Extraction | 2/3 | In Progress|  | - |
-| 9. Chat Integration | v2.0 | 0/2 | Not started | - |
-| 10. Admin UI | v2.0 | 0/3 | Not started | - |
-| 11. Braintrust Evals | v2.0 | 0/2 | Not started | - |
+| 7. Data Foundation | v2.0 | 3/3 | Complete | - |
+| 8. Personality Extraction | v2.0 | 3/3 | Complete | - |
+| 9. Chat Integration | v2.0 | 2/2 | Complete | - |
+| 10. Admin UI | v2.0 | 3/3 | Complete | - |
+| 11. Braintrust Evals | v2.0 | 0/1 | Not started | - |
 | 12. Knowledge Base Expansion | v2.0 | 0/2 | Not started | - |
