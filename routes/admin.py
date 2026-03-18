@@ -736,3 +736,45 @@ def guardrail_delete(guardrail_id):
     soft_delete_guardrail(guardrail_id, updated_by='admin')
     flash('Guardrail deleted.', 'success')
     return redirect(url_for('admin.guardrails'))
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Base Admin (Phase 12)
+# ---------------------------------------------------------------------------
+
+@admin_bp.route('/knowledge')
+@user_login_required
+def knowledge():
+    """List all embedded web sources with chunk counts and dates."""
+    _require_admin()
+    from models import get_knowledge_sources
+    sources = get_knowledge_sources()
+    return render_template('admin/knowledge.html', sources=sources)
+
+
+@admin_bp.route('/knowledge/<path:source>/remove', methods=['POST'])
+@user_login_required
+def knowledge_remove(source):
+    """Remove all embeddings for a web source."""
+    _require_admin()
+    if not source.startswith('web_'):
+        flash('Can only remove web_ sources.', 'error')
+        return redirect(url_for('admin.knowledge'))
+    from models import delete_knowledge_source
+    count = delete_knowledge_source(source)
+    flash(f'Removed {count} chunks from {source}.', 'success')
+    return redirect(url_for('admin.knowledge'))
+
+
+@admin_bp.route('/knowledge/<path:source>/re-embed', methods=['POST'])
+@user_login_required
+def knowledge_reembed(source):
+    """Clear embeddings for a source and show CLI re-embed instruction."""
+    _require_admin()
+    if not source.startswith('web_'):
+        flash('Can only re-embed web_ sources.', 'error')
+        return redirect(url_for('admin.knowledge'))
+    from models import delete_knowledge_source
+    count = delete_knowledge_source(source)
+    flash(f'Cleared {count} chunks from {source}. Run: python scripts/embed_resources.py --source {source}', 'info')
+    return redirect(url_for('admin.knowledge'))

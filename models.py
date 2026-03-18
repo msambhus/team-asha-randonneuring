@@ -2717,3 +2717,39 @@ def soft_delete_guardrail(guardrail_id, updated_by='system'):
         (updated_by, guardrail_id)
     )
     conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Base (Phase 12)
+# ---------------------------------------------------------------------------
+
+def get_knowledge_sources():
+    """Return web_* sources with chunk count and embed dates from whatsapp_chunk."""
+    return _execute("""
+        SELECT source,
+               COUNT(*) AS chunk_count,
+               MIN(created_at) AS first_embedded,
+               MAX(created_at) AS last_embedded
+        FROM whatsapp_chunk
+        WHERE source LIKE 'web_%%'
+        GROUP BY source
+        ORDER BY last_embedded DESC
+    """).fetchall()
+
+
+def delete_knowledge_source(source):
+    """Delete all chunks for a web_* source. Returns deleted count.
+
+    Raises ValueError if source does not start with 'web_'.
+    """
+    if not source or not source.startswith('web_'):
+        raise ValueError("Can only delete web_ sources, got: " + repr(source))
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        "DELETE FROM whatsapp_chunk WHERE source = %s RETURNING id",
+        (source,)
+    )
+    deleted = len(cur.fetchall())
+    conn.commit()
+    return deleted
