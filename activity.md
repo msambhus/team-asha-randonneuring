@@ -4,6 +4,25 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ---
 
+## 2026-03-18 — Iteration 8 (ralph.sh)
+
+**Task:** Execute Phase 9 (Chat Integration) — both plans
+**Branch:** `feature/personality-coaching-admin`
+**Status:** Phase 9 COMPLETE. Both plans executed successfully.
+**Tests:** 171 passed, 26 skipped (full suite green)
+**Commits:**
+- `e306709` feat(09-01): implement DB-driven coach routing
+- `f79dfef` feat(09-02): wire guardrails, gear context, and DB-driven routing into chat pipeline
+
+**What was done:**
+- Plan 09-01: Added `select_coach_for_message()` with DB-driven routing via `coach_assignment` table, `_legacy_coach_selection()` fallback, `_get_coach_name()` helper, `get_rider_by_id()` in models.py. 8 tests.
+- Plan 09-02: Added `assemble_coach_context()` (guardrail injection as XML), `assemble_gear_context()` (gear preferences as XML), wired into `process_message()` and `run_agent_loop()`. Added guardrail seed data. 11 tests.
+- Requirements covered: COACH-02, COACH-03, COACH-04, COACH-05, GUARD-07, GEAR-03
+
+**Notes:** Clean execution, no blockers. Phase 10 (Admin UI) is next — needs planning.
+
+---
+
 ## 2026-03-16 — Iteration 9 (ralph.sh)
 
 **Task:** Verification pass + commit uncommitted planning updates
@@ -931,4 +950,8 @@ Also in this iteration:
 **Issues:** None
 **Status:** Success — Phase 9 planned
 **Next:** Execute Phase 9 (`/gsd:execute-phase 9`)
+
+**Status:** Success (2912s)
+
+## Iteration 8 — 2026-03-18 00:26:38
 

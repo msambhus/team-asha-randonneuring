@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Personality-Driven Coaching
 status: executing
-stopped_at: Completed Phase 9 planning (2 plans, checker verified)
-last_updated: "2026-03-18T07:30:00.000Z"
-last_activity: "2026-03-18 — Phase 9 planned: coach routing (W1), context assembly + gear + wiring (W2)."
+stopped_at: Completed Phase 9 execution (2 plans, both verified)
+last_updated: "2026-03-18T08:00:00.000Z"
+last_activity: "2026-03-18 — Phase 9 complete: DB-driven coach routing, guardrails, gear context, wiring."
 progress:
   total_phases: 12
-  completed_phases: 1
+  completed_phases: 3
   total_plans: 12
-  completed_plans: 8
+  completed_plans: 10
 ---
 
 # Project State
@@ -20,19 +20,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-17)
 
 **Core value:** Coaching that feels like it comes from a real teammate who knows you — matching each rider's communication style and each coach's authentic personality, grounded in actual conversation data.
-**Current focus:** Phase 9 (Chat Integration) — planned, ready for execution.
+**Current focus:** Phase 10 (Admin UI) — not yet planned.
 
 ## Current Position
 
-Phase: 9 of 12 (Chat Integration) — PLANNED
-Plan: 0 of 2 in current phase — ready for execution
-Status: Phase 9 planned. 2 plans in 2 waves. Ready to execute.
-Last activity: 2026-03-18 — Phase 9 planned: coach routing (W1), context assembly + gear + wiring (W2).
+Phase: 10 of 12 (Admin UI) — NOT STARTED
+Plan: 0 of ? in current phase — needs planning
+Status: Phase 9 complete. Ready to plan Phase 10.
+Last activity: 2026-03-18 — Phase 9 complete: DB-driven coach routing, guardrails, gear context, wiring.
 
-Progress (Milestone 2): [████░░░░░░] 42% (8/19 plans complete)
+Progress (Milestone 2): [██████░░░░] 53% (10/19 plans complete)
 Phase 7: COMPLETE — schema migration, 12 model functions, seed data
 Phase 8: COMPLETE — schema extension, WhatsApp extraction, blog+merge
-Phase 9: PLANNED — coach routing (W1), context assembly + gear + wiring (W2)
+Phase 9: COMPLETE — DB-driven coach routing, guardrails, gear context, wiring
 Phase 10: Not started — personality admin, gear admin, coach/guardrail admin
 Phase 11: Not started — dynamic eval script, eval dataset coverage
 Phase 12: Not started — embed script, knowledge admin page
@@ -40,23 +40,21 @@ Phase 12: Not started — embed script, knowledge admin page
 ## Performance Metrics
 
 **Velocity (Milestone 2):**
-- Total plans completed: 3
+- Total plans completed: 10
 - Average duration: ~5 min per plan
-- Total execution time: ~15 min
+- Total execution time: ~50 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 7 | 3/3 | ~15min | ~5min |
+| 8 | 3/3 | ~12min | ~4min |
+| 9 | 2/2 | ~8min | ~4min |
 
 **Recent Trend:**
-- Last 3 plans: 07-01 (schema), 07-02 (CRUD), 07-03 (seed)
-- Trend: fast execution
-
-*Updated after each plan completion*
-| Phase 08-personality-extraction P01 | 3 | 2 tasks | 6 files |
-| Phase 08-personality-extraction P02 | 4min | 2 tasks | 3 files |
+- Last 3 plans: 09-01 (coach routing), 09-02 (guardrails+gear+wiring)
+- Trend: fast execution, clean test results
 
 ## Accumulated Context
 
@@ -75,6 +73,7 @@ Recent decisions affecting current work:
 - [Phase 08-01]: extraction_source CHECK expanded to include 'merged' for post-merge combined profiles
 - [Phase 08-02]: technical_depth made Optional in PersonalityExtraction — test fixture omits it; GPT-4o prompt still requests it
 - [Phase 08-02]: group_by_sender accepts Union[str, list] — supports both filepath and pre-parsed list call patterns
+- [Phase 09]: Module-level _BIKE_KEYWORDS kept as fallback; inline version in run_agent_loop replaced with select_coach_for_message()
 
 ### Pending Todos
 
@@ -82,14 +81,11 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Pre-Phase 8]: Confirm Venki's Google Drive PDF is publicly accessible before building blog extraction — if private, add google-api-python-client dependency
-- [Pre-Phase 8]: Audit actual WhatsApp export files for Shriram and Venki to verify timestamp format and multi-line handling before finalizing extraction script
-- [Pre-Phase 8]: Extraction prompt quality is the highest-uncertainty item — plan for 2-3 test runs with admin review before committing to final schema
 - [Pre-Phase 9]: Venki and Shriram must review 5-10 sample AI responses before Phase 9 goes live to real riders (human review gate)
 - [Pre-Phase 9]: Verify current Vercel plan timeout limit (Hobby: 60s vs Pro: 300s) before scoping chat integration
 
 ## Session Continuity
 
-Last session: 2026-03-18T07:00:00.000Z
-Stopped at: Completed 08-03-PLAN.md (blog extraction + merge script) — Phase 8 complete
+Last session: 2026-03-18T08:00:00.000Z
+Stopped at: Phase 9 complete. Ready to plan Phase 10.
 Resume file: None
