@@ -116,6 +116,15 @@ def get_rider_by_rusa(rusa_id):
         WHERE r.rusa_id = %s
     """, (rusa_id,)).fetchone()
 
+
+def get_rider_by_id(rider_id):
+    """Get rider by primary key ID. Returns dict or None."""
+    return _execute(
+        "SELECT * FROM rider WHERE id = %s",
+        (rider_id,)
+    ).fetchone()
+
+
 @cache.memoize(CACHE_TIMEOUT)
 def get_riders_for_season(season_id):
     """Get riders who have any participation record in this season."""
@@ -2466,3 +2475,281 @@ def touch_conversation(conversation_id):
         (conversation_id,)
     )
     conn.commit()
+
+
+# ========== PERSONALITY & COACHING ==========
+# CRUD functions for personality_profile, gear_preference, coach_assignment, coaching_guardrail.
+# NOT cached — admin edits must be immediately visible.
+# All SELECTs include WHERE deleted_at IS NULL.
+# All writes call conn.commit().
+
+
+def get_personality_profile(rider_id, profile_type='coach'):
+    """Get active personality profile for a rider. Returns dict or None."""
+    return _execute(
+        """SELECT * FROM personality_profile
+           WHERE rider_id = %s AND profile_type = %s AND deleted_at IS NULL""",
+        (rider_id, profile_type)
+    ).fetchone()
+
+
+def get_all_personality_profiles(profile_type=None):
+    """Get all active personality profiles, optionally filtered by type."""
+    if profile_type:
+        return _execute(
+            """SELECT * FROM personality_profile
+               WHERE profile_type = %s AND deleted_at IS NULL
+               ORDER BY rider_id""",
+            (profile_type,)
+        ).fetchall()
+    return _execute(
+        """SELECT * FROM personality_profile
+           WHERE deleted_at IS NULL ORDER BY rider_id"""
+    ).fetchall()
+
+
+def upsert_personality_profile(rider_id, profile_type, fields, updated_by='system'):
+    """Insert or update personality profile. fields dict maps column names to values."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    col_names = list(fields.keys())
+    col_values = list(fields.values())
+    # Build INSERT columns and placeholders
+    all_cols = ['rider_id', 'profile_type', 'updated_by'] + col_names
+    all_placeholders = ['%s', '%s', '%s'] + ['%s'] * len(col_names)
+    all_values = [rider_id, profile_type, updated_by] + col_values
+    # Build ON CONFLICT SET clause
+    set_parts = [f"{c} = EXCLUDED.{c}" for c in col_names]
+    set_parts.append("updated_by = EXCLUDED.updated_by")
+    set_parts.append("updated_at = NOW()")
+    cur.execute(
+        f"""INSERT INTO personality_profile ({', '.join(all_cols)})
+            VALUES ({', '.join(all_placeholders)})
+            ON CONFLICT (rider_id, profile_type, extraction_source) DO UPDATE SET
+            {', '.join(set_parts)}
+            RETURNING *""",
+        all_values
+    )
+    result = cur.fetchone()
+    conn.commit()
+    return result
+
+
+def soft_delete_personality_profile(profile_id, updated_by='system'):
+    """Soft-delete a personality profile by setting deleted_at."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE personality_profile SET deleted_at = NOW(), updated_by = %s WHERE id = %s",
+        (updated_by, profile_id)
+    )
+    conn.commit()
+
+
+def get_gear_preference(rider_id):
+    """Get active gear preference for a rider. Returns dict or None."""
+    return _execute(
+        """SELECT * FROM gear_preference
+           WHERE rider_id = %s AND deleted_at IS NULL""",
+        (rider_id,)
+    ).fetchone()
+
+
+def upsert_gear_preference(rider_id, fields, updated_by='system'):
+    """Insert or update gear preference. fields dict maps column names to values."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    col_names = list(fields.keys())
+    col_values = list(fields.values())
+    all_cols = ['rider_id', 'updated_by'] + col_names
+    all_placeholders = ['%s', '%s'] + ['%s'] * len(col_names)
+    all_values = [rider_id, updated_by] + col_values
+    set_parts = [f"{c} = EXCLUDED.{c}" for c in col_names]
+    set_parts.append("updated_by = EXCLUDED.updated_by")
+    set_parts.append("updated_at = NOW()")
+    cur.execute(
+        f"""INSERT INTO gear_preference ({', '.join(all_cols)})
+            VALUES ({', '.join(all_placeholders)})
+            ON CONFLICT (rider_id) DO UPDATE SET
+            {', '.join(set_parts)}
+            RETURNING *""",
+        all_values
+    )
+    result = cur.fetchone()
+    conn.commit()
+    return result
+
+
+def get_coach_assignments(coach_rider_id=None, topic_domain=None, active_only=True):
+    """Get coach assignments with optional filters. Always excludes soft-deleted."""
+    conditions = ["deleted_at IS NULL"]
+    params = []
+    if active_only:
+        conditions.append("is_active = TRUE")
+    if coach_rider_id is not None:
+        conditions.append("coach_rider_id = %s")
+        params.append(coach_rider_id)
+    if topic_domain is not None:
+        conditions.append("topic_domain = %s")
+        params.append(topic_domain)
+    where = " AND ".join(conditions)
+    return _execute(
+        f"SELECT * FROM coach_assignment WHERE {where} ORDER BY topic_domain",
+        tuple(params)
+    ).fetchall()
+
+
+def upsert_coach_assignment(coach_rider_id, topic_domain, fields, updated_by='system'):
+    """Insert or update coach assignment. fields dict maps column names to values."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    col_names = list(fields.keys())
+    col_values = list(fields.values())
+    all_cols = ['coach_rider_id', 'topic_domain', 'updated_by'] + col_names
+    all_placeholders = ['%s', '%s', '%s'] + ['%s'] * len(col_names)
+    all_values = [coach_rider_id, topic_domain, updated_by] + col_values
+    set_parts = [f"{c} = EXCLUDED.{c}" for c in col_names]
+    set_parts.append("updated_by = EXCLUDED.updated_by")
+    set_parts.append("updated_at = NOW()")
+    cur.execute(
+        f"""INSERT INTO coach_assignment ({', '.join(all_cols)})
+            VALUES ({', '.join(all_placeholders)})
+            ON CONFLICT (coach_rider_id, topic_domain) DO UPDATE SET
+            {', '.join(set_parts)}
+            RETURNING *""",
+        all_values
+    )
+    result = cur.fetchone()
+    conn.commit()
+    return result
+
+
+def get_active_guardrails(rule_type=None, applies_to=None):
+    """Get active guardrails with optional filters. Excludes soft-deleted and inactive."""
+    conditions = ["is_active = TRUE", "deleted_at IS NULL"]
+    params = []
+    if rule_type is not None:
+        conditions.append("rule_type = %s")
+        params.append(rule_type)
+    if applies_to is not None:
+        conditions.append("applies_to = %s")
+        params.append(applies_to)
+    where = " AND ".join(conditions)
+    return _execute(
+        f"SELECT * FROM coaching_guardrail WHERE {where} ORDER BY rule_type",
+        tuple(params)
+    ).fetchall()
+
+
+def insert_guardrail(rule_type, rule_value, applies_to='all', updated_by='system'):
+    """Insert a new guardrail row. Returns the inserted row."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        """INSERT INTO coaching_guardrail (rule_type, rule_value, applies_to, updated_by)
+           VALUES (%s, %s, %s, %s)
+           RETURNING *""",
+        (rule_type, rule_value, applies_to, updated_by)
+    )
+    result = cur.fetchone()
+    conn.commit()
+    return result
+
+
+def update_guardrail(guardrail_id, fields, updated_by='system'):
+    """Update guardrail fields. DB trigger handles rule_version increment."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    set_parts = [f"{k} = %s" for k in fields.keys()]
+    set_parts.append("updated_by = %s")
+    values = list(fields.values()) + [updated_by, guardrail_id]
+    cur.execute(
+        f"""UPDATE coaching_guardrail
+            SET {', '.join(set_parts)}
+            WHERE id = %s
+            RETURNING *""",
+        values
+    )
+    result = cur.fetchone()
+    conn.commit()
+    return result
+
+
+def get_trait_evidence(rider_id, extraction_source=None):
+    """Get personality trait evidence quotes for a rider. Returns list of dicts."""
+    if extraction_source:
+        return _execute(
+            """SELECT * FROM personality_trait_evidence
+               WHERE rider_id = %s AND extraction_source = %s
+               ORDER BY trait_name, created_at DESC""",
+            (rider_id, extraction_source)
+        ).fetchall()
+    return _execute(
+        """SELECT * FROM personality_trait_evidence
+           WHERE rider_id = %s
+           ORDER BY trait_name, created_at DESC""",
+        (rider_id,)
+    ).fetchall()
+
+
+def get_all_guardrails(rule_type=None):
+    """Get all non-deleted guardrails (active AND inactive) for admin display."""
+    if rule_type:
+        return _execute(
+            """SELECT * FROM coaching_guardrail
+               WHERE deleted_at IS NULL AND rule_type = %s
+               ORDER BY rule_type, id""",
+            (rule_type,)
+        ).fetchall()
+    return _execute(
+        """SELECT * FROM coaching_guardrail
+           WHERE deleted_at IS NULL
+           ORDER BY rule_type, id"""
+    ).fetchall()
+
+
+def soft_delete_guardrail(guardrail_id, updated_by='system'):
+    """Soft-delete a guardrail by setting deleted_at."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE coaching_guardrail SET deleted_at = NOW(), updated_by = %s WHERE id = %s",
+        (updated_by, guardrail_id)
+    )
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Base (Phase 12)
+# ---------------------------------------------------------------------------
+
+def get_knowledge_sources():
+    """Return web_* sources with chunk count and embed dates from whatsapp_chunk."""
+    return _execute("""
+        SELECT source,
+               COUNT(*) AS chunk_count,
+               MIN(created_at) AS first_embedded,
+               MAX(created_at) AS last_embedded
+        FROM whatsapp_chunk
+        WHERE source LIKE 'web_%%'
+        GROUP BY source
+        ORDER BY last_embedded DESC
+    """).fetchall()
+
+
+def delete_knowledge_source(source):
+    """Delete all chunks for a web_* source. Returns deleted count.
+
+    Raises ValueError if source does not start with 'web_'.
+    """
+    if not source or not source.startswith('web_'):
+        raise ValueError("Can only delete web_ sources, got: " + repr(source))
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        "DELETE FROM whatsapp_chunk WHERE source = %s RETURNING id",
+        (source,)
+    )
+    deleted = len(cur.fetchall())
+    conn.commit()
+    return deleted

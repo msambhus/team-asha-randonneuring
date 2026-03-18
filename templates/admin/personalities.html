@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Personality Profiles - Admin{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Personality Profiles</h1>
+<p>{{ riders|length }} team members</p>
+</div>
+<div class="container section">
+
+<div style="margin-bottom:20px;">
+<a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Dashboard</a>
+</div>
+
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Rider</th>
+<th>Profile Completeness</th>
+<th>Confidence</th>
+<th>Source</th>
+<th>Last Updated</th>
+</tr>
+</thead>
+<tbody>
+{% for r in riders %}
+{% set comp = completeness.get(r.id, (0, 8, None)) %}
+{% set profile = profiles.get(r.id) %}
+<tr>
+<td>
+<a href="{{ url_for('admin.personality_edit', rider_id=r.id) }}" style="color:var(--primary);text-decoration:none;font-weight:600;">
+{{ r.first_name }} {{ r.last_name }}
+</a>
+</td>
+<td>
+<span style="font-weight:600;">{{ comp[0] }}/{{ comp[1] }} traits</span>
+{% if comp[0] == comp[1] %}
+<span style="color:#38a169;font-size:0.8rem;margin-left:4px;">Complete</span>
+{% elif comp[0] > 0 %}
+<span style="color:#c05621;font-size:0.8rem;margin-left:4px;">Partial</span>
+{% else %}
+<span style="color:var(--text-light);font-size:0.8rem;margin-left:4px;">Empty</span>
+{% endif %}
+</td>
+<td>
+{% if comp[2] == 'HIGH' %}
+<span style="background:#c6f6d5;color:#276749;padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:600;">HIGH</span>
+{% elif comp[2] == 'MED' %}
+<span style="background:#fefcbf;color:#975a16;padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:600;">MED</span>
+{% elif comp[2] == 'LOW' %}
+<span style="background:#fed7d7;color:#9b2c2c;padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:600;">LOW</span>
+{% else %}
+<span style="color:var(--text-light);">—</span>
+{% endif %}
+</td>
+<td>{{ profile.extraction_source if profile else '—' }}</td>
+<td style="font-size:0.85rem;color:var(--text-light);">
+{% if profile and profile.updated_at %}
+{{ profile.updated_at.strftime('%Y-%m-%d %H:%M') if profile.updated_at else '—' }}
+{% else %}
+—
+{% endif %}
+</td>
+</tr>
+{% endfor %}
+{% if not riders %}
+<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:20px;">No riders found.</td></tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+
+</div>
+{% endblock %}
