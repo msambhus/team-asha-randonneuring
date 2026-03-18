@@ -842,3 +842,23 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ## Iteration 9 — 2026-03-16 00:34:31
 
+
+## Iteration 1 — 2026-03-17 22:27:43
+
+**Status:** Success (882s)
+
+## Iteration 2 — 2026-03-17 22:42:31
+
+**Task:** Execute Phase 7 — Data Foundation (all 3 plans)
+**Branch:** `feature/personality-coaching-admin`
+**Commits:** `391aada`, `f3b435f`, `d34283d`
+
+**What happened:**
+- Plan 07-01: Created migration SQL (`011_personality_coaching_tables.sql`) with 4 tables (personality_profile, gear_preference, coach_assignment, coaching_guardrail), indexes, FK constraints, soft-delete columns, and rule_version auto-increment trigger. Created apply script and 12 test functions (8 schema validation + 4 CRUD stubs).
+- Plan 07-02: Added 12 CRUD functions to models.py under PERSONALITY & COACHING section. All use parameterized SQL, no caching, all SELECTs include `deleted_at IS NULL`, all writes call `conn.commit()`. Unskipped CRUD stubs and implemented full test coverage (upsert/read/update/soft-delete for all 4 tables).
+- Plan 07-03: Created idempotent seed script for Shriram (direct/dry/high — bikes/gear/maintenance domains) and Venki (playful/sarcastic/medium — training/nutrition/randonneuring/general with is_default). Seed validation tests and CHAT_SYSTEM_PROMPT preservation test added.
+- Tests: 145 passed, 23 skipped (DB-dependent tests skip without DATABASE_URL)
+**Issues:** None
+**Status:** Success — Phase 7 complete
+**Next:** Plan Phase 8 (Personality Extraction)
+
