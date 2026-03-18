@@ -4,6 +4,26 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ---
 
+## Iteration 5 — 2026-03-17 Phase 9 Plan 01
+
+**Plan:** 09-01 (WhatsApp community knowledge prioritization)
+**Branch:** `feature/phase-7-9-execution`
+**Commit:** a244b3c
+
+**What was done:**
+- TDD: Wrote 5 new tests (RED), 3 failed as expected, then implemented production changes (GREEN)
+- Added COMMUNITY_KNOWLEDGE_INSTRUCTION and WEB_WITH_COMMUNITY_INSTRUCTION constants
+- Strengthened RAG injection: "ALWAYS present community knowledge FIRST" with named attribution
+- When web_search + community context present, uses structured community-first instruction
+- Updated CHAT_SYSTEM_PROMPT: "COMMUNITY KNOWLEDGE PRIORITY:" section with contradiction handling
+- Bumped max_tokens to 800 for web_search intent (parameterized _stream_completion)
+- Fixed 5 mock helpers across test files to accept **kwargs for new max_tokens param
+- Full suite: 218 passing, 6 skipped — all green
+
+**Status:** Phase 9 Plan 01 complete. ALL PHASES COMPLETE (07-01, 07-02, 08-01, 08-02, 09-01).
+
+---
+
 ## Iteration 1 — 2026-03-17 Phase 7 Plan 01
 
 **Plan:** 07-01 (TDD: RWGPS route data functions)
@@ -917,4 +937,8 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 **Issues:** None. Clean execution. Phase 8 complete.
 
 **Status:** Success
+
+**Status:** Success (374s)
+
+## Iteration 5 — 2026-03-17 21:12:32
 
