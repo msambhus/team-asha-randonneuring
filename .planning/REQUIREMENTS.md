@@ -118,13 +118,57 @@ Categories: Infrastructure (6), Security (11), Chat Experience (7), Coaching & K
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| — | — | — |
+| PROF-01 | Phase 7 | Pending |
+| PROF-02 | Phase 7 | Pending |
+| PROF-03 | Phase 7 | Pending |
+| PROF-04 | Phase 7 | Pending |
+| PROF-05 | Phase 7 | Pending |
+| GUARD-01 | Phase 7 | Pending |
+| GUARD-06 | Phase 7 | Pending |
+| EXTR-01 | Phase 8 | Pending |
+| EXTR-02 | Phase 8 | Pending |
+| EXTR-03 | Phase 8 | Pending |
+| EXTR-04 | Phase 8 | Pending |
+| EXTR-05 | Phase 8 | Pending |
+| EXTR-06 | Phase 8 | Pending |
+| EXTR-07 | Phase 8 | Pending |
+| GUARD-07 | Phase 9 | Pending |
+| COACH-02 | Phase 9 | Pending |
+| COACH-03 | Phase 9 | Pending |
+| COACH-04 | Phase 9 | Pending |
+| COACH-05 | Phase 9 | Pending |
+| GEAR-03 | Phase 9 | Pending |
+| ADMN-01 | Phase 10 | Pending |
+| ADMN-02 | Phase 10 | Pending |
+| ADMN-03 | Phase 10 | Pending |
+| ADMN-04 | Phase 10 | Pending |
+| ADMN-05 | Phase 10 | Pending |
+| ADMN-06 | Phase 10 | Pending |
+| GEAR-01 | Phase 10 | Pending |
+| GEAR-02 | Phase 10 | Pending |
+| COACH-01 | Phase 10 | Pending |
+| GUARD-02 | Phase 10 | Pending |
+| GUARD-03 | Phase 10 | Pending |
+| GUARD-04 | Phase 10 | Pending |
+| GUARD-05 | Phase 10 | Pending |
+| EVAL2-01 | Phase 11 | Pending |
+| EVAL2-02 | Phase 11 | Pending |
+| EVAL2-03 | Phase 11 | Pending |
+| EVAL2-04 | Phase 11 | Pending |
+| EVAL2-05 | Phase 11 | Pending |
+| EVAL2-06 | Phase 11 | Pending |
+| KB-01 | Phase 12 | Pending |
+| KB-02 | Phase 12 | Pending |
+| KB-03 | Phase 12 | Pending |
+| KB-04 | Phase 12 | Pending |
+| KB-05 | Phase 12 | Pending |
+| KB-06 | Phase 12 | Pending |
 
 **Coverage:**
-- Milestone 2 requirements: 38 total
-- Mapped to phases: 0
-- Unmapped: 38 (pending roadmap creation)
+- Milestone 2 requirements: 45 total
+- Mapped to phases: 45
+- Unmapped: 0 (100% coverage)
 
 ---
 *Requirements defined: 2026-03-14 (M1) / 2026-03-17 (M2)*
-*Last updated: 2026-03-17 after Milestone 2 requirements definition*
+*Last updated: 2026-03-17 after Milestone 2 roadmap creation*
