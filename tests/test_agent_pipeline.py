@@ -269,7 +269,7 @@ def test_agent_loop_route_discussion(app):
             messages = [{'role': 'system', 'content': 'system'}, {'role': 'user', 'content': 'test'}]
             list(run_agent_loop(mock_client, 'Tell me about Cascade 400', messages, rider_id=5, user_id=1))
 
-            mock_exec.assert_called_once_with(query_type='get_ride_plan', params=('Cascade 400', 'Cascade 400'), user_id=1)
+            mock_exec.assert_called_once_with(query_type='get_ride_plan', params=('%Cascade 400%', '%Cascade 400%'), user_id=1)
 
 
 def test_agent_loop_off_topic_no_db(app):

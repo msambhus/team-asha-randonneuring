@@ -284,7 +284,7 @@ class TestRouteDiscussionLiveFetch:
                 # get_ride_plan called once, live fetch NOT called
                 mock_exec.assert_called_once_with(
                     query_type='get_ride_plan',
-                    params=('SFR 300K', 'SFR 300K'),
+                    params=('%SFR 300K%', '%SFR 300K%'),
                     user_id=1,
                 )
                 mock_live.assert_not_called()

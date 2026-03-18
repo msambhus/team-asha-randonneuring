@@ -349,6 +349,10 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
 
         elif intent_result.intent == 'route_discussion':
             if intent_result.ride_name and db_query_count < MAX_DB_QUERIES:
+                # Fuzzy match: wrap with % for ILIKE wildcard matching
+                # DB names may have suffixes like "(#2973)" that the LLM won't extract
+                fuzzy_name = f'%{intent_result.ride_name}%'
+
                 # Priority: 1) Custom plan, 2) Base plan, 3) Live RWGPS
                 used_custom = False
 
@@ -362,7 +366,7 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
                 # 2) Base ride plan from DB
                 result = execute_allowed_query(
                     query_type='get_ride_plan',
-                    params=(intent_result.ride_name, intent_result.ride_name),
+                    params=(fuzzy_name, fuzzy_name),
                     user_id=user_id,
                 )
                 db_query_count += 1
@@ -374,7 +378,7 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
                 if not result.get('rows') and db_query_count < MAX_DB_QUERIES:
                     url_result = execute_allowed_query(
                         query_type='get_ride_rwgps_url',
-                        params=(intent_result.ride_name, intent_result.ride_name),
+                        params=(fuzzy_name, fuzzy_name),
                         user_id=user_id,
                     )
                     db_query_count += 1
