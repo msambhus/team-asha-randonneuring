@@ -5,6 +5,7 @@ Security controls: moderation pre-filter, max_tokens enforcement, specific
 error handling (no broad except Exception), prompt injection defense.
 """
 import os
+import re
 import json
 import logging
 from typing import Literal, Optional
@@ -22,7 +23,7 @@ import models
 from db import get_db
 from services.fitness import calculate_fitness_score
 from services.openai_coach import _build_training_summary, _build_brevet_history_summary
-from services.chat_tools import ALLOWED_QUERIES, execute_allowed_query, execute_web_search, fetch_and_summarize_route, execute_route_weather
+from services.chat_tools import ALLOWED_QUERIES, execute_allowed_query, execute_web_search, fetch_and_summarize_route, execute_route_weather, fetch_custom_plan_comparison
 from services.rwgps import extract_rwgps_route_id
 
 logger = logging.getLogger(__name__)
@@ -111,21 +112,72 @@ Return the intent and, where applicable, the query_type, ride_name, or start_dat
 """
 
 
-def classify_intent(client, user_message, conversation_messages):
+_RWGPS_URL_PATTERN = re.compile(r'https?://(?:www\.)?ridewithgps\.com/routes/(\d+)')
+
+
+def _extract_rwgps_urls(message):
+    """Extract RWGPS route IDs from a chat message."""
+    return _RWGPS_URL_PATTERN.findall(message)
+
+
+def _build_intent_context(rider_id):
+    """Build compact rider + team context for intent classification.
+
+    Allows the intent classifier to resolve references like
+    "this weekend's ride" or "the 300K" to specific ride names.
+    """
+    if rider_id is None:
+        return ''
+
+    sections = []
+
+    upcoming = models.get_rider_upcoming_signups(rider_id)
+    if upcoming:
+        lines = ["YOUR UPCOMING RIDES:"]
+        for signup in upcoming[:3]:
+            date_str = str(signup.get('date', ''))[:10]
+            name = signup.get('name', 'Unknown')
+            dist = signup.get('distance_km') or 0
+            lines.append(f"  {date_str}: {name} ({dist:.0f}km)")
+        sections.append("\n".join(lines))
+
+    team_rides = models.get_upcoming_rides()
+    if team_rides:
+        lines = ["TEAM RIDES:"]
+        for ride in team_rides[:5]:
+            date_str = str(ride.get('date', ''))[:10]
+            name = ride.get('name', 'Unknown')
+            dist = ride.get('distance_km') or 0
+            lines.append(f"  {date_str}: {name} ({dist:.0f}km)")
+        sections.append("\n".join(lines))
+
+    return "\n".join(sections)
+
+
+def classify_intent(client, user_message, conversation_messages, rider_context=''):
     """Classify user message intent using OpenAI structured outputs.
 
     Args:
         client: OpenAI client instance
         user_message: The user's message text
         conversation_messages: Recent conversation history (unused in v1, reserved for context)
+        rider_context: Compact rider/team context for resolving ride references
 
     Returns:
         Tuple of (IntentResult, usage) where usage is the CompletionUsage object.
     """
+    system_content = INTENT_CLASSIFICATION_PROMPT
+    if rider_context:
+        system_content += (
+            "\n\nCONTEXT — Use this to resolve ride references "
+            "(e.g., 'this weekend\\'s ride', 'my next ride', 'the 300K'):\n"
+            + rider_context
+        )
+
     response = client.chat.completions.parse(
         model="gpt-5.4",
         messages=[
-            {"role": "system", "content": INTENT_CLASSIFICATION_PROMPT},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": user_message},
         ],
         response_format=IntentResult,
@@ -217,9 +269,13 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
     # Yield thinking indicator before classification
     yield f'data: {json.dumps({"status": "thinking"})}\n\n'
 
-    # Classify intent
+    # Pre-scan: extract RWGPS URLs from user message
+    rwgps_route_ids = _extract_rwgps_urls(user_message)
+
+    # Classify intent with rider context for ride reference resolution
     system_content = messages[0]['content'] if messages else ''
-    intent_result, _intent_usage = classify_intent(client, user_message, system_content)
+    intent_context = _build_intent_context(rider_id)
+    intent_result, _intent_usage = classify_intent(client, user_message, system_content, rider_context=intent_context)
 
     # Send coach persona: Coach Shriram for bike-specific topics, Coach Venki for everything else
     _BIKE_KEYWORDS = {
@@ -247,6 +303,14 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
 
     tool_results = []
     db_query_count = 0
+
+    # Pre-fetch RWGPS route if URL pasted in message
+    if rwgps_route_ids:
+        route_id = rwgps_route_ids[0]  # Limit to 1 URL per message
+        live_result = fetch_and_summarize_route(route_id)
+        tool_results.append({'tool': 'rwgps_url_fetch', 'result': live_result})
+        if intent_result.intent not in ('route_discussion', 'weather_query'):
+            intent_result = IntentResult(intent='route_discussion', ride_name=None)
 
     for _iteration in range(MAX_ITERATIONS):
         if intent_result.intent == 'off_topic':
@@ -292,6 +356,15 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
                 )
                 tool_results.append({'tool': 'get_ride_plan', 'result': result})
                 db_query_count += 1
+
+                # Custom plan comparison: check if rider has a customized plan
+                plan_rows = result.get('rows', [])
+                if plan_rows and rider_id:
+                    plan_slug = plan_rows[0].get('slug')
+                    if plan_slug:
+                        custom_result = fetch_custom_plan_comparison(rider_id, plan_slug)
+                        if custom_result:
+                            tool_results.append({'tool': 'custom_plan_comparison', 'result': custom_result})
 
                 # Cache-first fallback: if no ride plan cached, try live RWGPS fetch
                 if not result.get('rows') and db_query_count < MAX_DB_QUERIES:

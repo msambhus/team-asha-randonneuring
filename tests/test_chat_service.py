@@ -392,6 +392,7 @@ def test_weather_query_agent_loop_branch(app):
             yield 'data: "Weather looks good"\n\n'
 
         with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
              patch('services.chat_service.execute_route_weather', return_value=mock_weather_result) as mock_exec, \
              patch('services.chat_service._stream_completion', side_effect=_mock_stream):
 
