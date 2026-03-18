@@ -130,12 +130,12 @@ Plans:
   3. Coach profiles include structured typed fields (tone, humor_type, directness, signature_phrases, topic_biases, topics_allowed) — not free-text blobs; character limits are enforced at the column level
   4. Each config table (`coach_assignment`, `coaching_guardrail`) has `updated_at`, `updated_by`, and `deleted_at` columns for soft-delete and audit history from day one
   5. Guardrail rows carry a `rule_version` stamp that increments on edit — a specific version is queryable without looking at audit history
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 07-01: Schema migration — four new tables, indexes, FK constraints, character limits, soft-delete columns
-- [ ] 07-02: Model functions — CRUD functions in models.py for all four new tables with parameterized queries
-- [ ] 07-03: Seed data — manually seed Shriram and Venki profiles from existing CHAT_SYSTEM_PROMPT content
+- [ ] 07-01-PLAN.md — Schema migration: four new tables, indexes, FK constraints, character limits, soft-delete columns, rule_version trigger
+- [ ] 07-02-PLAN.md — Model functions: CRUD functions in models.py for all four new tables with parameterized queries
+- [ ] 07-03-PLAN.md — Seed data: manually seed Shriram and Venki profiles and coach assignments from CHAT_SYSTEM_PROMPT content
 
 ### Phase 8: Personality Extraction
 **Goal**: Offline CLI scripts extract structured personality traits per person from WhatsApp chat exports and blog posts, store them with source quote evidence and confidence levels in the `personality_profile` table, and merge multi-source traits into a single profile ready for admin review
