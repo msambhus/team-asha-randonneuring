@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Personality-Driven Coaching
 status: executing
-stopped_at: Phase 11 planned (1 plan, 2 tasks, verified by plan-checker)
-last_updated: "2026-03-18T11:00:00.000Z"
-last_activity: "2026-03-18 — Phase 11 planned: 1 plan (dynamic eval script + tests), all 6 EVAL2 requirements covered, verification passed."
+stopped_at: Completed 11-01-PLAN.md — Phase 11 complete
+last_updated: "2026-03-18T10:22:00.157Z"
+last_activity: "2026-03-18 — Phase 11 planned: 1 plan (dynamic eval script + tests), all 6 EVAL2 requirements covered."
 progress:
   total_phases: 12
   completed_phases: 4
-  total_plans: 14
-  completed_plans: 13
+  total_plans: 18
+  completed_plans: 14
 ---
 
 # Project State
@@ -56,6 +56,7 @@ Phase 12: Not started — embed script, knowledge admin page
 **Recent Trend:**
 - Last 3 plans: 10-01 (personality), 10-02 (gear), 10-03 (coach/guardrail)
 - Trend: fast execution, clean test results
+| Phase 11-braintrust-evals P01 | 3 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,8 @@ Recent decisions affecting current work:
 - [Phase 09]: Module-level _BIKE_KEYWORDS kept as fallback; inline version in run_agent_loop replaced with select_coach_for_message()
 - [Phase 10]: Profile priority for admin display: merged > manual > whatsapp > blog
 - [Phase 10]: POST saves use extraction_source='manual' to prevent overwriting merged/whatsapp rows
+- [Phase 11-braintrust-evals]: Patch _classifier module-level instance in tests (not LLMClassifier class) — avoids re-import complexity; module-level instances must be patched directly
+- [Phase 11-braintrust-evals]: CASE_GENERATORS dispatcher dict for eval test cases — adding new rule_type only requires new generator function, load_dataset() unchanged
 
 ### Pending Todos
 
@@ -89,6 +92,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T10:00:00.000Z
-Stopped at: Phase 10 complete. Ready to plan Phase 11.
+Last session: 2026-03-18T10:22:00.155Z
+Stopped at: Completed 11-01-PLAN.md — Phase 11 complete
 Resume file: None

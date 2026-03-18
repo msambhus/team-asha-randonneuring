@@ -63,12 +63,12 @@ Categories: Infrastructure (6), Security (11), Chat Experience (7), Coaching & K
 
 ### Evaluation
 
-- [ ] **EVAL2-01**: Braintrust eval dataset covers scope enforcement (correct coach handles correct topics)
-- [ ] **EVAL2-02**: Braintrust eval dataset covers topic blocking (off-cycling queries get redirected)
-- [ ] **EVAL2-03**: Braintrust eval dataset covers medical deflection (health questions get "consult a doctor")
-- [ ] **EVAL2-04**: Braintrust eval dataset covers persona consistency (Shriram mentions gear, Venki doesn't volunteer gear recs)
-- [ ] **EVAL2-05**: Eval uses LLM-as-judge scoring (not keyword matching) for semantic compliance
-- [ ] **EVAL2-06**: Eval results can be compared across guardrail rule versions
+- [x] **EVAL2-01**: Braintrust eval dataset covers scope enforcement (correct coach handles correct topics)
+- [x] **EVAL2-02**: Braintrust eval dataset covers topic blocking (off-cycling queries get redirected)
+- [x] **EVAL2-03**: Braintrust eval dataset covers medical deflection (health questions get "consult a doctor")
+- [x] **EVAL2-04**: Braintrust eval dataset covers persona consistency (Shriram mentions gear, Venki doesn't volunteer gear recs)
+- [x] **EVAL2-05**: Eval uses LLM-as-judge scoring (not keyword matching) for semantic compliance
+- [x] **EVAL2-06**: Eval results can be compared across guardrail rule versions
 
 ### Knowledge Base Expansion
 
@@ -151,12 +151,12 @@ Categories: Infrastructure (6), Security (11), Chat Experience (7), Coaching & K
 | GUARD-03 | Phase 10 | Pending |
 | GUARD-04 | Phase 10 | Pending |
 | GUARD-05 | Phase 10 | Pending |
-| EVAL2-01 | Phase 11 | Pending |
-| EVAL2-02 | Phase 11 | Pending |
-| EVAL2-03 | Phase 11 | Pending |
-| EVAL2-04 | Phase 11 | Pending |
-| EVAL2-05 | Phase 11 | Pending |
-| EVAL2-06 | Phase 11 | Pending |
+| EVAL2-01 | Phase 11 | Complete |
+| EVAL2-02 | Phase 11 | Complete |
+| EVAL2-03 | Phase 11 | Complete |
+| EVAL2-04 | Phase 11 | Complete |
+| EVAL2-05 | Phase 11 | Complete |
+| EVAL2-06 | Phase 11 | Complete |
 | KB-01 | Phase 12 | Pending |
 | KB-02 | Phase 12 | Pending |
 | KB-03 | Phase 12 | Pending |
