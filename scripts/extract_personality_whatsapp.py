@@ -244,13 +244,24 @@ def main() -> None:
             conn.autocommit = False
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-            # Look up rider by sender name prefix
+            # Look up rider by sender name — try multiple strategies
             from scripts.seed_coaching_profiles import lookup_rider
             rider_id = lookup_rider(cur, f'{matched_sender}%')
             if rider_id is None:
-                # Try the first word of the sender name as a fallback
+                # Try first name only
                 first_name = matched_sender.split()[0]
                 rider_id = lookup_rider(cur, f'{first_name}%')
+            if rider_id is None and len(matched_sender.split()) > 1:
+                # Try last name match
+                last_name = matched_sender.split()[-1]
+                cur.execute(
+                    "SELECT id, first_name, last_name FROM rider WHERE last_name ILIKE %s LIMIT 1",
+                    (f'{last_name}%',)
+                )
+                row = cur.fetchone()
+                if row:
+                    rider_id = row['id']
+                    print(f"  Found rider by last name: {row['first_name']} {row['last_name']} (id={rider_id})")
             if rider_id is None:
                 print(f"Error: Rider '{matched_sender}' not found in DB.")
                 print("  Use scripts/seed_coaching_profiles.py to seed rider first,")
