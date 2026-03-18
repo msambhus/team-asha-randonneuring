@@ -147,12 +147,12 @@ Plans:
   3. Each extracted trait row includes 3-5 verbatim source quotes from the actual messages or blog text that justified that trait — an admin reading the quotes can verify or dispute the extraction
   4. Each trait carries a confidence level (high/medium/low) calculated from the source message volume for that sender — a sender with fewer than 20 qualifying messages shows LOW confidence
   5. When a person has both WhatsApp and blog extraction results, the merge script combines them into one profile, weighting blog-derived traits more heavily than group-chat-derived traits, with no duplicate fields
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 08-01: WhatsApp extraction script — pre-filter noise, per-sender grouping, GPT-4o structured extraction via instructor, confidence scoring
-- [ ] 08-02: Blog extraction script — WordPress URL via trafilatura, Google Drive PDF via pdfplumber, structured trait extraction
-- [ ] 08-03: Merge logic — combine multi-source traits, apply blog weighting, resolve conflicts, write final profile rows
+- [ ] 08-01-PLAN.md — Schema migration (3 new columns, evidence table, UNIQUE constraint fix), test scaffolds, dev dependencies
+- [ ] 08-02-PLAN.md — WhatsApp extraction: personality_helpers.py shared module + extract_personality_whatsapp.py CLI script
+- [ ] 08-03-PLAN.md — Blog extraction (trafilatura + pdfplumber) + merge_personality.py multi-source merge script
 
 ### Phase 9: Chat Integration
 **Goal**: The live chat pipeline reads coach personas, routing rules, and guardrails from the database instead of hardcoded strings — `assemble_coach_context()` replaces the static `CHAT_SYSTEM_PROMPT` persona block and `select_coach_for_message()` replaces the hardcoded `_BIKE_KEYWORDS` routing, with guardrails enforced via a classifier pass before the persona prompt
