@@ -175,13 +175,13 @@ def classify_intent(client, user_message, conversation_messages, rider_context='
         )
 
     response = client.chat.completions.parse(
-        model="gpt-5.4",
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": system_content},
             {"role": "user", "content": user_message},
         ],
         response_format=IntentResult,
-        max_completion_tokens=200,
+        max_tokens=200,
         timeout=10,
     )
     result = response.choices[0].message.parsed
@@ -349,24 +349,28 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
 
         elif intent_result.intent == 'route_discussion':
             if intent_result.ride_name and db_query_count < MAX_DB_QUERIES:
+                # Priority: 1) Custom plan, 2) Base plan, 3) Live RWGPS
+                used_custom = False
+
+                # 1) Check for rider's custom plan first
+                if rider_id:
+                    custom_result = fetch_custom_plan_comparison(rider_id, intent_result.ride_name)
+                    if custom_result:
+                        tool_results.append({'tool': 'custom_ride_plan', 'result': custom_result})
+                        used_custom = True
+
+                # 2) Base ride plan from DB
                 result = execute_allowed_query(
                     query_type='get_ride_plan',
                     params=(intent_result.ride_name, intent_result.ride_name),
                     user_id=user_id,
                 )
-                tool_results.append({'tool': 'get_ride_plan', 'result': result})
                 db_query_count += 1
+                if result.get('rows'):
+                    tool_name = 'base_ride_plan' if used_custom else 'get_ride_plan'
+                    tool_results.append({'tool': tool_name, 'result': result})
 
-                # Custom plan comparison: check if rider has a customized plan
-                plan_rows = result.get('rows', [])
-                if plan_rows and rider_id:
-                    plan_slug = plan_rows[0].get('slug')
-                    if plan_slug:
-                        custom_result = fetch_custom_plan_comparison(rider_id, plan_slug)
-                        if custom_result:
-                            tool_results.append({'tool': 'custom_plan_comparison', 'result': custom_result})
-
-                # Cache-first fallback: if no ride plan cached, try live RWGPS fetch
+                # 3) Fallback: live RWGPS fetch if no base plan
                 if not result.get('rows') and db_query_count < MAX_DB_QUERIES:
                     url_result = execute_allowed_query(
                         query_type='get_ride_rwgps_url',
@@ -404,7 +408,7 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
 
     # Stream the final response — tool-heavy intents need more tokens for data presentation
     _TOOL_INTENTS = {'web_search', 'route_discussion', 'weather_query', 'data_query'}
-    stream_max_tokens = 1200 if intent_result.intent in _TOOL_INTENTS else 800
+    stream_max_tokens = 2000 if intent_result.intent in _TOOL_INTENTS else 1000
     yield from _stream_completion(messages, accumulator, max_tokens=stream_max_tokens)
 
     # Emit source cards for web search results (after response stream completes)
@@ -454,9 +458,9 @@ def _stream_completion(messages, accumulator, max_tokens=700):
 
     try:
         stream = _get_client().chat.completions.create(
-            model="gpt-5.4",
+            model="gpt-4o",
             messages=messages,
-            max_completion_tokens=max_tokens,
+            max_tokens=max_tokens,
             stream=True,
             stream_options={"include_usage": True},
             timeout=50,
