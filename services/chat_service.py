@@ -402,8 +402,9 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
             'content': f'{formatted}\n\n{instruction}',
         })
 
-    # Stream the final response (bump max_tokens for web_search with longer combined responses)
-    stream_max_tokens = 800 if intent_result.intent == 'web_search' else 700
+    # Stream the final response — tool-heavy intents need more tokens for data presentation
+    _TOOL_INTENTS = {'web_search', 'route_discussion', 'weather_query', 'data_query'}
+    stream_max_tokens = 1200 if intent_result.intent in _TOOL_INTENTS else 800
     yield from _stream_completion(messages, accumulator, max_tokens=stream_max_tokens)
 
     # Emit source cards for web search results (after response stream completes)
