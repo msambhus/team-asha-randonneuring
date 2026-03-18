@@ -102,6 +102,40 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **IMG-08**: CSP `img-src` header extended to include `https:` to permit loading images from external HTTPS origins (confirm existing CSP state before adding)
 - [x] **IMG-09**: URLs in assistant messages are parsed on the frontend using a regex after stream completion -- no URL detection during streaming to avoid partial-URL false positives
 
+### RWGPS Route Intelligence
+
+- [ ] **RWGPS-01**: `route_discussion` intent resolves ride name to RWGPS route ID via `ride` table `rwgps_url` column using a new `get_ride_rwgps_url` allowed query
+- [ ] **RWGPS-02**: Agent loop calls `fetch_route()` from `services/rwgps.py` when ride plan cache is missing — live RWGPS fallback in `route_discussion` branch
+- [ ] **RWGPS-03**: Route data is summarized (distance, elevation, control stops, key segments) into a compact dict for LLM consumption — never dumps raw track_points
+- [ ] **RWGPS-04**: Cached ride plan (if exists in `ride_plan` table) is returned first; live RWGPS fetch is the fallback only when cache misses
+- [ ] **RWGPS-05**: RWGPS API errors (404, 401, 429, timeout, no waypoints) are caught and produce user-friendly error dicts, not exceptions
+- [ ] **RWGPS-06**: RWGPS responses are cached in-memory for 5 minutes via Flask-Caching SimpleCache to avoid duplicate API calls within a chat session
+- [ ] **RWGPS-07**: Intent classification prompt updated so `route_discussion` explicitly describes live RWGPS route data capability
+
+### Weather/Wind Forecasting
+
+- [ ] **WTHR-01**: `weather_query` intent type added to IntentResult and intent classification prompt
+- [ ] **WTHR-02**: `get_route_weather` tool added to chat_tools.py, called from agent loop for weather_query intent
+- [ ] **WTHR-03**: Route geometry sampling — extract lat/lng coordinates at ~50km intervals from RWGPS track_points
+- [ ] **WTHR-04**: Bearing computation per segment using Haversine forward bearing formula
+- [ ] **WTHR-05**: Headwind/tailwind component calculated from wind direction (meteorological convention: +180 deg) vs route bearing via cosine projection
+- [ ] **WTHR-06**: Open-Meteo batch API call — single HTTP request with comma-separated multi-coordinate arrays for all sample points
+- [ ] **WTHR-07**: Time-adjusted forecast selection — uses estimated arrival time from ride plan segment timing, not current-hour weather
+- [ ] **WTHR-08**: Weather results cached for 1 hour using Flask-Caching SimpleCache
+- [ ] **WTHR-09**: Structured segment summary response format with temperature, wind speed, wind assessment (headwind/tailwind/crosswind), and precipitation
+- [ ] **WTHR-10**: Graceful degradation — Open-Meteo unavailable or no RWGPS track data returns clear explanation, not crash
+
+### WhatsApp Knowledge Prioritization
+
+- [ ] **WA-PRI-01**: RAG retrieval runs for ALL non-off-topic intents, including `web_search` — community knowledge is always available
+- [ ] **WA-PRI-02**: When both RAG and web search results are present, community knowledge is presented FIRST in the response
+- [ ] **WA-PRI-03**: Community knowledge attributed explicitly with team member names when available ("Venki suggested...", "Team discussion...")
+- [ ] **WA-PRI-04**: Web search results attributed distinctly as external sources ("According to web sources...", "Online reviews suggest...")
+- [ ] **WA-PRI-05**: Contradiction handling instruction in system prompt — frame differences between community and web knowledge constructively
+- [ ] **WA-PRI-06**: When no community context matches, web-only responses proceed normally without hallucinated community references
+- [ ] **WA-PRI-07**: Source cards SSE event still emitted after web search responses (no regression from existing behavior)
+- [ ] **WA-PRI-08**: All existing tests pass after prompt/instruction changes (regression safety)
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -208,12 +242,37 @@ Which phases cover which requirements. Updated during roadmap creation.
 | IMG-07 | Phase 6 | Code complete |
 | IMG-08 | Phase 6 | Code complete |
 | IMG-09 | Phase 6 | Code complete |
+| RWGPS-01 | Phase 7 | Planned |
+| RWGPS-02 | Phase 7 | Planned |
+| RWGPS-03 | Phase 7 | Planned |
+| RWGPS-04 | Phase 7 | Planned |
+| RWGPS-05 | Phase 7 | Planned |
+| RWGPS-06 | Phase 7 | Planned |
+| RWGPS-07 | Phase 7 | Planned |
+| WTHR-01 | Phase 8 | Planned |
+| WTHR-02 | Phase 8 | Planned |
+| WTHR-03 | Phase 8 | Planned |
+| WTHR-04 | Phase 8 | Planned |
+| WTHR-05 | Phase 8 | Planned |
+| WTHR-06 | Phase 8 | Planned |
+| WTHR-07 | Phase 8 | Planned |
+| WTHR-08 | Phase 8 | Planned |
+| WTHR-09 | Phase 8 | Planned |
+| WTHR-10 | Phase 8 | Planned |
+| WA-PRI-01 | Phase 9 | Planned |
+| WA-PRI-02 | Phase 9 | Planned |
+| WA-PRI-03 | Phase 9 | Planned |
+| WA-PRI-04 | Phase 9 | Planned |
+| WA-PRI-05 | Phase 9 | Planned |
+| WA-PRI-06 | Phase 9 | Planned |
+| WA-PRI-07 | Phase 9 | Planned |
+| WA-PRI-08 | Phase 9 | Planned |
 
 **Coverage:**
-- v1 requirements: 62 total
-- Mapped to phases: 62
+- v1 requirements: 87 total (62 complete + 25 planned)
+- Mapped to phases: 87
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-14*
-*Last updated: 2026-03-17 -- All requirements complete. IMG-03, IMG-04, IMG-07, IMG-09 marked complete (Plan 06-02).*
+*Last updated: 2026-03-17 -- Phases 7-9 requirements added (RWGPS-01-07, WTHR-01-10, WA-PRI-01-08).*

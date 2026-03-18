@@ -126,7 +126,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -135,17 +135,26 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Agentic Tool-Calling Pipeline | 3/3 | Code complete | 2026-03-15 |
 | 4. Braintrust Evals + Observability | 2/2 | Code complete | 2026-03-15 |
 | 5. WhatsApp Knowledge Base | 3/3 | Code complete | 2026-03-16 |
-| 6. Image Preview Cards | 0/2 | Planned | — |
+| 6. Image Preview Cards | 2/2 | Code complete | 2026-03-17 |
+| 7. RWGPS Route Intelligence | 0/2 | Planned | — |
+| 8. Weather/Wind Forecasting | 0/2 | Planned | — |
+| 9. WhatsApp Knowledge Priority | 0/1 | Planned | — |
 
-### Phase 7: When asked about a route, the chatbot should access RWGPS route data via API to provide details like elevation profile, distance, control points, and key segments -- not just cached ride plan data
-
-**Goal:** [To be planned]
-**Requirements**: TBD
+### Phase 7: RWGPS Route Intelligence
+**Goal:** When the user asks about a route, the chatbot resolves the ride name to a RWGPS route ID, checks for a cached ride plan first, and if none exists, fetches live route data from the RWGPS API -- providing elevation profile, distance, control points, and key segments grounded in real route data, not generic advice
 **Depends on:** Phase 6
-**Plans:** 0 plans
+**Requirements**: RWGPS-01, RWGPS-02, RWGPS-03, RWGPS-04, RWGPS-05, RWGPS-06, RWGPS-07
+**Success Criteria** (what must be TRUE):
+  1. Asking "Tell me about the Cascade 400" with no cached ride plan triggers a live RWGPS API fetch and returns elevation, distance, control stops, and key segment data
+  2. Asking about a route that HAS a cached ride plan returns the cached data without calling the RWGPS API
+  3. RWGPS API errors (404, 401, 429, timeout) produce user-friendly messages, not crashes
+  4. RWGPS responses are cached in-memory for 5 minutes to avoid duplicate API calls within a chat session
+  5. The intent classification prompt describes route_discussion as capable of live RWGPS data access
+**Plans**: 2 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 7 to break down)
+- [ ] 07-01-PLAN.md — Route data functions (TDD): get_ride_rwgps_url SQL query, summarize_route_for_chat(), fetch_and_summarize_route() with caching and error handling
+- [ ] 07-02-PLAN.md — Agent loop wiring: extend route_discussion branch with live RWGPS fallback, update intent classification prompt
 
 ### Phase 8: Weather and wind forecasting for routes — use RandoPlan-style data to answer about headwinds, tailwinds, temperature, and conditions along a route
 
