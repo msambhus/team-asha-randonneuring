@@ -92,6 +92,9 @@ None yet.
 
 - Phase 5 added: WhatsApp knowledge base — import group chat exports, parse and filter cycling content, store in vector DB, integrate RAG into chatbot
 - Phase 6 added: Show product images and bike accessory photos in chatbot responses when available instead of just links
+- Phase 7 added: RWGPS route intelligence — access route data via API for elevation, distance, control points, key segments
+- Phase 8 added: Weather and wind forecasting for routes — RandoPlan-style headwind/tailwind/conditions analysis
+- Phase 9 added: WhatsApp community knowledge prioritization — attribute to group, compare/contrast with web results
 
 ### Blockers/Concerns
 

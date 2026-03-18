@@ -233,7 +233,7 @@ def execute_web_search(client, query: str) -> dict:
     """
     try:
         response = client.responses.create(
-            model="gpt-4o-mini",
+            model="gpt-5.4",
             tools=[{"type": "web_search"}],
             input=(
                 f"Search for cycling and bike-related information to answer: {query}\n"
