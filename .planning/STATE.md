@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Personality-Driven Coaching
 status: executing
-stopped_at: Completed 11-01-PLAN.md — Phase 11 complete
-last_updated: "2026-03-18T10:24:44.117Z"
-last_activity: "2026-03-18 — Phase 11 planned: 1 plan (dynamic eval script + tests), all 6 EVAL2 requirements covered."
+stopped_at: Phase 12 planned — 2 plans (embed script + knowledge admin), ready to execute
+last_updated: "2026-03-18T11:00:00.000Z"
+last_activity: "2026-03-18 — Phase 12 planned: 2 plans in 2 waves, all 6 KB requirements covered."
 progress:
   total_phases: 12
-  completed_phases: 4
-  total_plans: 18
+  completed_phases: 5
+  total_plans: 16
   completed_plans: 14
 ---
 
@@ -20,22 +20,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-17)
 
 **Core value:** Coaching that feels like it comes from a real teammate who knows you — matching each rider's communication style and each coach's authentic personality, grounded in actual conversation data.
-**Current focus:** Phase 11 (Braintrust Evals) — planned, ready to execute.
+**Current focus:** Phase 12 (Knowledge Base Expansion) — planned, ready to execute.
 
 ## Current Position
 
-Phase: 11 of 12 (Braintrust Evals) — PLANNED
-Plan: 0 of 1 in current phase — ready to execute
-Status: Phase 11 planned. Ready to execute.
-Last activity: 2026-03-18 — Phase 11 planned: 1 plan (dynamic eval script + tests), all 6 EVAL2 requirements covered.
+Phase: 12 of 12 (Knowledge Base Expansion) — PLANNED
+Plan: 0 of 2 in current phase — ready to execute
+Status: Phase 12 planned. Ready to execute.
+Last activity: 2026-03-18 — Phase 12 planned: 2 plans in 2 waves, all 6 KB requirements covered.
 
-Progress (Milestone 2): [█████████░] 93% (13/14 plans complete)
+Progress (Milestone 2): [█████████░] 88% (14/16 plans complete)
 Phase 7: COMPLETE — schema migration, 12 model functions, seed data
 Phase 8: COMPLETE — schema extension, WhatsApp extraction, blog+merge
 Phase 9: COMPLETE — DB-driven coach routing, guardrails, gear context, wiring
 Phase 10: COMPLETE — personality admin, gear admin, coach/guardrail admin (3 plans)
-Phase 11: PLANNED — 1 plan (dynamic eval script + LLMClassifier scoring + version stamps)
-Phase 12: Not started — embed script, knowledge admin page
+Phase 11: COMPLETE — dynamic guardrail eval with LLMClassifier scoring + version stamps
+Phase 12: PLANNED — 2 plans (embed script + knowledge admin page)
 
 ## Performance Metrics
 

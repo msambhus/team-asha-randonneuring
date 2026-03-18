@@ -4,6 +4,28 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ---
 
+## 2026-03-18 — Iteration 13 (ralph.sh)
+
+**Task:** Plan Phase 12 (Knowledge Base Expansion)
+**Branch:** `feature/personality-coaching-admin`
+**Status:** Phase 12 PLANNED. 2 plans in 2 waves, verification passed (all 8 dimensions).
+**Commits:**
+- `1b47c64` docs(12): research phase — knowledge base expansion
+- `9113366` docs(12): add research and validation strategy
+- `4c46526` docs(12): create phase plan — 2 plans, 2 waves
+
+**What was done:**
+- Researched Phase 12: confirmed trafilatura, embed_texts(), Google Sheets CSV pattern all already in codebase
+- Created 12-VALIDATION.md with per-task verification map
+- Created 12-01-PLAN.md: CLI embed script (Google Sheets CSV parsing, trafilatura, SHA-256 dedup, pgvector)
+- Created 12-02-PLAN.md: Knowledge admin page (source list, re-embed trigger, source removal)
+- Plan checker passed all 8 verification dimensions on first try
+- Updated STATE.md to reflect Phase 12 planned status
+
+**Issues:** None. Clean planning iteration.
+
+---
+
 ## 2026-03-18 — Iteration 12 (ralph.sh)
 
 **Task:** Execute Phase 11 (Braintrust Evals)
@@ -1057,4 +1079,8 @@ Also in this iteration:
 **Status:** Success (5205s)
 
 ## Iteration 12 — 2026-03-18 03:16:52
+
+**Status:** Success (535s)
+
+## Iteration 13 — 2026-03-18 03:25:52
 
