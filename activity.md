@@ -4,6 +4,30 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ---
 
+## 2026-03-18 — Iteration 12 (ralph.sh)
+
+**Task:** Execute Phase 11 (Braintrust Evals)
+**Branch:** `feature/personality-coaching-admin`
+**Status:** Phase 11 COMPLETE. 1 plan executed, verification passed.
+**Tests:** 177 passed, 44 skipped (full suite green)
+**Commits:**
+- `d98e485` test(11-01): add failing EVAL2 unit tests for dynamic guardrail eval (TDD RED)
+- `c4593c4` feat(11-01): implement dynamic guardrail eval with DB-driven test case generation (TDD GREEN)
+- `8445a54` docs(11-01): complete dynamic guardrail eval plan
+- `8636d12` docs(phase-11): complete phase execution
+
+**What was done:**
+- Executed plan 11-01: TDD tests first (6 test functions for EVAL2-01 through EVAL2-06), then implementation.
+- Created `evals/eval_guardrail_dynamic.py` (469 lines): loads guardrail rules from DB, generates 5 test cases per rule (violation, pass, boundary, 2 adversarial) for 4 rule types (scope, topic_block, escalation, tone_limit). LLMClassifier scores compliance with chain-of-thought. MD5 version stamp for reproducible Braintrust experiments.
+- Created `tests/test_braintrust_integration.py` additions (6 tests at line 485+).
+- One deviation: patched `_classifier` instance directly instead of class+reload (module-level singleton).
+- Verification: 4/4 must-haves, all 6 EVAL2 requirements satisfied.
+- Requirements covered: EVAL2-01 through EVAL2-06
+
+**Notes:** Phase 12 (Knowledge Base Expansion) is next — needs planning.
+
+---
+
 ## 2026-03-18 — Iteration 11 (ralph.sh)
 
 **Task:** Plan Phase 11 (Braintrust Evals)
@@ -1029,4 +1053,8 @@ Also in this iteration:
 **Status:** Success (3131s)
 
 ## Iteration 11 — 2026-03-18 01:50:02
+
+**Status:** Success (5205s)
+
+## Iteration 12 — 2026-03-18 03:16:52
 
