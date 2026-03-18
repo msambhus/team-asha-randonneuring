@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Personality-Driven Coaching
 status: executing
-stopped_at: Completed 08-01-PLAN.md (schema migration + test scaffolds)
-last_updated: "2026-03-18T06:17:25.087Z"
+stopped_at: Completed 08-02-PLAN.md (WhatsApp extraction script + shared helpers)
+last_updated: "2026-03-18T06:23:27.789Z"
 last_activity: "2026-03-17 — Phase 8 planned: schema extension, WhatsApp extraction, blog+merge."
 progress:
   total_phases: 12
   completed_phases: 0
   total_plans: 12
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -56,6 +56,7 @@ Phase 12: Not started — embed script, knowledge admin page
 
 *Updated after each plan completion*
 | Phase 08-personality-extraction P01 | 3 | 2 tasks | 6 files |
+| Phase 08-personality-extraction P02 | 4min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ Recent decisions affecting current work:
 - [Research]: Phase 12 (knowledge expansion) is architecturally independent and can parallelize with Phases 8-11 after Phase 7 is complete
 - [Phase 08-01]: UNIQUE constraint changed from (rider_id, profile_type) to (rider_id, profile_type, extraction_source) to allow per-source rows for extraction pipeline
 - [Phase 08-01]: extraction_source CHECK expanded to include 'merged' for post-merge combined profiles
+- [Phase 08-02]: technical_depth made Optional in PersonalityExtraction — test fixture omits it; GPT-4o prompt still requests it
+- [Phase 08-02]: group_by_sender accepts Union[str, list] — supports both filepath and pre-parsed list call patterns
 
 ### Pending Todos
 
@@ -87,6 +90,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T06:17:25.084Z
-Stopped at: Completed 08-01-PLAN.md (schema migration + test scaffolds)
+Last session: 2026-03-18T06:23:27.787Z
+Stopped at: Completed 08-02-PLAN.md (WhatsApp extraction script + shared helpers)
 Resume file: None
