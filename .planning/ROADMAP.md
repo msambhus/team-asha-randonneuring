@@ -167,8 +167,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — DB-driven coach routing: select_coach_for_message(), get_rider_by_id() helper, TDD test scaffold
-- [ ] 09-02-PLAN.md — Guardrail injection, gear context assembly, wire into process_message/run_agent_loop, seed guardrails
+- [x] 09-01-PLAN.md — DB-driven coach routing: select_coach_for_message(), get_rider_by_id() helper, TDD test scaffold
+- [x] 09-02-PLAN.md — Guardrail injection, gear context assembly, wire into process_message/run_agent_loop, seed guardrails
 
 ### Phase 10: Admin UI
 **Goal**: The admin interface lets Mihir view all team member profiles with completeness indicators, edit personality traits with source quote evidence, manage gear preferences per rider, configure coach assignments and routing rules, and manage all guardrail rules — all through the existing admin blueprint without any new frameworks
@@ -184,9 +184,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 10-01-PLAN.md — Personality admin: model helpers (get_trait_evidence, get_all_guardrails), team list with completeness, trait edit with evidence quotes and confidence badges
-- [ ] 10-02-PLAN.md — Gear admin: per-rider gear list, gear edit form with typed inputs and value orientation dropdown
-- [ ] 10-03-PLAN.md — Coach and guardrail admin: coach roster with domain assignments, guardrail CRUD with toggle/create/edit/delete
+- [x] 10-01-PLAN.md — Personality admin: model helpers (get_trait_evidence, get_all_guardrails), team list with completeness, trait edit with evidence quotes and confidence badges
+- [x] 10-02-PLAN.md — Gear admin: per-rider gear list, gear edit form with typed inputs and value orientation dropdown
+- [x] 10-03-PLAN.md — Coach and guardrail admin: coach roster with domain assignments, guardrail CRUD with toggle/create/edit/delete
 
 ### Phase 11: Braintrust Evals
 **Goal**: A Braintrust eval suite validates that the guardrail configuration in the database is actually enforced by the chat pipeline — loading rules dynamically at eval time, generating test cases per rule, and scoring compliance with LLM-as-judge across scope enforcement, topic blocking, medical deflection, and persona consistency
@@ -201,7 +201,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 11-01-PLAN.md — Dynamic eval script with DB-driven test case generation across all 4 compliance categories, LLMClassifier scorer, version-stamped result tagging, and unit tests
+- [x] 11-01-PLAN.md — Dynamic eval script with DB-driven test case generation across all 4 compliance categories, LLMClassifier scorer, version-stamped result tagging, and unit tests
 
 ### Phase 12: Knowledge Base Expansion
 **Goal**: The chatbot's knowledge base is expanded with content from external cycling and randonneuring URLs listed in the resources Google Sheets spreadsheet — crawled, content-extracted, quality-filtered, deduplicated, and embedded into the existing pgvector table with admin visibility and control over each source
@@ -213,11 +213,11 @@ Plans:
   3. Duplicate detection prevents re-embedding identical content — running the script twice against the same URL produces the same chunk count, not double the chunks
   4. The admin `/admin/knowledge` page lists every embedded source with URL, embed date, and chunk count — an admin can see at a glance what is in the knowledge base and when it was last indexed
   5. The admin can trigger re-embed for a specific URL from the UI (refreshes stale content) and can remove all embeddings from a specific source (removes a low-quality or off-topic site) — both without code changes
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 12-01: Embed script — Google Sheets CSV export URL parsing, trafilatura extraction, quality filter, SHA-256 deduplication, source-tagged pgvector ingestion
-- [ ] 12-02: Knowledge admin page — per-source list with chunk counts, embed dates, re-embed trigger, source removal
+- [ ] 12-01-PLAN.md — Embed script: migration, pure functions (CSV parsing, trafilatura extraction, chunking, source naming, SHA-256 dedup), CLI pipeline with --dry-run/--source/--url flags
+- [ ] 12-02-PLAN.md — Knowledge admin: model helpers (get_knowledge_sources, delete_knowledge_source), /admin/knowledge page with source list, re-embed trigger, source removal
 
 ## Progress
 
@@ -236,5 +236,5 @@ Phases 7-12 execute in numeric order (with Phase 12 parallelizable after Phase 7
 | 8. Personality Extraction | v2.0 | 3/3 | Complete | - |
 | 9. Chat Integration | v2.0 | 2/2 | Complete | - |
 | 10. Admin UI | v2.0 | 3/3 | Complete | - |
-| 11. Braintrust Evals | 1/1 | Complete    | 2026-03-18 | - |
-| 12. Knowledge Base Expansion | v2.0 | 0/2 | Not started | - |
+| 11. Braintrust Evals | v2.0 | 1/1 | Complete | 2026-03-18 |
+| 12. Knowledge Base Expansion | v2.0 | 0/2 | Planned | - |
