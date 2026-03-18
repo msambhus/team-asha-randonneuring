@@ -473,10 +473,12 @@ def personalities():
     """List all riders with personality profile completeness indicators."""
     _require_admin()
     riders = get_all_riders()
-    all_profiles = get_all_personality_profiles(profile_type='coach')
+    # Load both coach and rider profiles — show whichever exists for each person
+    all_profiles = get_all_personality_profiles(profile_type=None)
 
-    # Build profiles dict keyed by rider_id, preferring merged > manual > whatsapp
+    # Build profiles dict keyed by rider_id, preferring: coach > rider, then merged > manual > whatsapp
     profiles = {}
+    type_priority = {'coach': 0, 'rider': 1}
     source_priority = {'merged': 0, 'manual': 1, 'whatsapp': 2, 'blog': 3}
     for p in all_profiles:
         rid = p['rider_id']
@@ -484,10 +486,15 @@ def personalities():
         if existing is None:
             profiles[rid] = p
         else:
-            cur_pri = source_priority.get(existing.get('extraction_source', ''), 99)
-            new_pri = source_priority.get(p.get('extraction_source', ''), 99)
-            if new_pri < cur_pri:
+            cur_type_pri = type_priority.get(existing.get('profile_type', ''), 99)
+            new_type_pri = type_priority.get(p.get('profile_type', ''), 99)
+            if new_type_pri < cur_type_pri:
                 profiles[rid] = p
+            elif new_type_pri == cur_type_pri:
+                cur_src_pri = source_priority.get(existing.get('extraction_source', ''), 99)
+                new_src_pri = source_priority.get(p.get('extraction_source', ''), 99)
+                if new_src_pri < cur_src_pri:
+                    profiles[rid] = p
 
     completeness = {}
     for r in riders:
@@ -524,22 +531,26 @@ def personality_edit(rider_id):
         flash('Personality profile saved.', 'success')
         return redirect(url_for('admin.personality_edit', rider_id=rider_id))
 
-    # GET: load profile preferring merged > manual > any
+    # GET: load profile preferring merged > manual > whatsapp, checking both coach and rider types
     profile = None
-    for source in ('merged', 'manual', 'whatsapp', 'blog'):
-        from models import _execute
-        import psycopg2.extras
-        row = _execute(
-            """SELECT * FROM personality_profile
-               WHERE rider_id = %s AND profile_type = 'coach'
-               AND extraction_source = %s AND deleted_at IS NULL""",
-            (rider_id, source)
-        ).fetchone()
-        if row:
-            profile = row
+    from models import _execute
+    for ptype in ('coach', 'rider'):
+        for source in ('merged', 'manual', 'whatsapp', 'blog'):
+            row = _execute(
+                """SELECT * FROM personality_profile
+                   WHERE rider_id = %s AND profile_type = %s
+                   AND extraction_source = %s AND deleted_at IS NULL""",
+                (rider_id, ptype, source)
+            ).fetchone()
+            if row:
+                profile = row
+                break
+        if profile:
             break
     if not profile:
         profile = get_personality_profile(rider_id, 'coach')
+        if not profile:
+            profile = get_personality_profile(rider_id, 'rider')
 
     evidence = get_trait_evidence(rider_id)
     # Group evidence by trait_name
