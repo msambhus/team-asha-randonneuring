@@ -121,7 +121,12 @@ def find_sender(
             print(f"  {name} ({len(by_sender[name])} qualifying messages)")
         return None
 
-    # Multiple matches — ambiguous
+    # Multiple matches — check for exact match first
+    exact = [name for name in matches if name.lower() == prefix_lower]
+    if len(exact) == 1:
+        return exact[0]
+
+    # Still ambiguous — report
     print(f"Error: Multiple senders match '{sender_arg}':")
     for name in sorted(matches):
         print(f"  {name} ({len(by_sender[name])} qualifying messages)")
