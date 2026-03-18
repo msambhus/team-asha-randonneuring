@@ -4,6 +4,29 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ---
 
+## 2026-03-18 — Iteration 9 (ralph.sh)
+
+**Task:** Plan Phase 10 (Admin UI)
+**Branch:** `feature/personality-coaching-admin`
+**Status:** Phase 10 PLANNED. 3 plans in 3 sequential waves, verified by plan checker.
+**Commits:**
+- `61d8c26` docs(10): research phase 10 — admin UI
+- `2158150` docs(10): add research and validation strategy
+- `fb936f5` docs(10): create phase plan — 3 plans across 3 waves
+- `829dae4` fix(10): revise plans based on checker feedback
+
+**What was done:**
+- Research: Confirmed all model functions exist, identified 2 new helpers needed (get_trait_evidence, get_all_guardrails), re-extraction must be CLI display only (Vercel constraint)
+- Plan 10-01 (Wave 1): Personality admin — model helpers, team list with completeness indicators, trait edit with evidence quotes + confidence badges, re-extraction CLI display
+- Plan 10-02 (Wave 2): Gear admin — per-rider gear list and edit form with typed inputs, value orientation dropdown
+- Plan 10-03 (Wave 3): Coach roster with active/inactive toggle + guardrail CRUD (create, edit, toggle, soft-delete)
+- Verification: Failed iteration 1 (COACH-01 toggle missing, Wave 0 test files not created). Fixed and passed iteration 2.
+- Requirements covered: ADMN-01 through ADMN-06, GEAR-01, GEAR-02, COACH-01, GUARD-02 through GUARD-05
+
+**Notes:** Plans are sequential (not parallel) because all modify routes/admin.py. Each plan includes a Wave 0 task for test scaffolds. Ready to execute.
+
+---
+
 ## 2026-03-18 — Iteration 8 (ralph.sh)
 
 **Task:** Execute Phase 9 (Chat Integration) — both plans
@@ -954,4 +977,8 @@ Also in this iteration:
 **Status:** Success (2912s)
 
 ## Iteration 8 — 2026-03-18 00:26:38
+
+**Status:** Success (432s)
+
+## Iteration 9 — 2026-03-18 00:33:55
 
