@@ -496,7 +496,7 @@ def generate_openai_advice(rider, activities, fitness_score,
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.7,
-            max_tokens=1000,
+            max_completion_tokens=1000,
             timeout=15,
         )
 

@@ -158,7 +158,7 @@ def test_classify_intent_uses_gpt5(app):
 
         call_kwargs = mock_client.chat.completions.parse.call_args[1]
         assert call_kwargs['model'] == 'gpt-5.4'
-        assert call_kwargs['max_tokens'] == 200
+        assert call_kwargs['max_completion_tokens'] == 200
 
 
 # ========== _format_tool_results() tests ==========
