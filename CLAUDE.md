@@ -3,6 +3,7 @@
 ## Git Workflow Rules
 - **NEVER push directly to main.** Always create a feature branch and open a PR.
 - **Always merge from main** before creating a PR (`git merge main`).
+- **Always create a Linear ticket** before merging a PR. Assign to the implementer and link in the PR body.
 - Use descriptive branch names: `fix/`, `feature/`, `chore/` prefixes.
 - Commit messages should explain the "why", not just the "what".
 

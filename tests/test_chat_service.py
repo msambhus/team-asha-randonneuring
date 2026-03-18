@@ -58,7 +58,7 @@ def test_message_construction(app):
 
 
 def test_max_tokens_set(app):
-    """Streaming call sets max_completion_tokens <= 1200, stream=True, timeout."""
+    """Streaming call sets max_tokens <= 2000, stream=True, timeout."""
     with app.app_context():
         from services.chat_service import _stream_completion
 
@@ -72,7 +72,7 @@ def test_max_tokens_set(app):
             list(gen)  # exhaust the generator
 
             call_kwargs = mock_client.return_value.chat.completions.create.call_args[1]
-            assert call_kwargs['max_completion_tokens'] <= 1200
+            assert call_kwargs['max_tokens'] <= 2000
             assert call_kwargs['stream'] is True
             assert call_kwargs.get('timeout', 60) <= 50
 

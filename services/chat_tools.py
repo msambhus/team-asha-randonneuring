@@ -234,7 +234,7 @@ def execute_web_search(client, query: str) -> dict:
     """
     try:
         response = client.responses.create(
-            model="gpt-5.4",
+            model="gpt-4o",
             tools=[{"type": "web_search"}],
             input=(
                 f"Search for cycling and bike-related information to answer: {query}\n"
@@ -448,17 +448,25 @@ def execute_route_weather(ride_name: str, start_datetime: str = None) -> dict:
         return {'error': "Unable to fetch weather for this route. Please try again."}
 
 
-def fetch_custom_plan_comparison(rider_id, plan_slug):
+def fetch_custom_plan_comparison(rider_id, ride_name):
     """Fetch custom plan comparison if the rider has customized a base plan.
+
+    Args:
+        rider_id: Rider ID to check for custom plan
+        ride_name: Ride name or slug to look up the base plan
 
     Returns dict with 'rows' containing comparison data, or None if no custom plan.
     Uses cached model functions — no new SQL queries.
     """
-    if not rider_id or not plan_slug:
+    if not rider_id or not ride_name:
         return None
 
     try:
-        base_plan = models.get_ride_plan_by_slug(plan_slug)
+        # Try slug match first, then name match
+        from services.rwgps import slugify
+        base_plan = models.get_ride_plan_by_slug(slugify(ride_name))
+        if not base_plan:
+            base_plan = models.get_ride_plan_by_slug(ride_name)
         if not base_plan:
             return None
 
@@ -500,5 +508,5 @@ def fetch_custom_plan_comparison(rider_id, plan_slug):
         return {'rows': [summary]}
 
     except Exception as e:
-        logger.warning(f"Custom plan comparison failed for rider {rider_id}, plan {plan_slug}: {e}")
+        logger.warning(f"Custom plan comparison failed for rider {rider_id}, plan {ride_name}: {e}")
         return None

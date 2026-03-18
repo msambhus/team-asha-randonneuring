@@ -504,13 +504,13 @@ def generate_openai_advice(rider, activities, fitness_score,
         client = OpenAI(api_key=api_key)
 
         response = client.chat.completions.create(
-            model="gpt-5.4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.7,
-            max_completion_tokens=1000,
+            max_tokens=1000,
             timeout=15,
         )
 

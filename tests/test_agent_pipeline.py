@@ -143,8 +143,8 @@ def test_intent_result_optional_fields(app):
         assert obj.ride_name is None
 
 
-def test_classify_intent_uses_gpt5(app):
-    """classify_intent uses gpt-5.4 model for high-quality classification."""
+def test_classify_intent_uses_gpt4o(app):
+    """classify_intent uses gpt-4o model."""
     with app.app_context():
         from services.chat_service import classify_intent, IntentResult
 
@@ -157,8 +157,8 @@ def test_classify_intent_uses_gpt5(app):
         classify_intent(mock_client, "test message", [])
 
         call_kwargs = mock_client.chat.completions.parse.call_args[1]
-        assert call_kwargs['model'] == 'gpt-5.4'
-        assert call_kwargs['max_completion_tokens'] == 200
+        assert call_kwargs['model'] == 'gpt-4o'
+        assert call_kwargs['max_tokens'] == 200
 
 
 # ========== _format_tool_results() tests ==========
@@ -669,7 +669,7 @@ def test_custom_plan_appended_when_exists(app):
             messages = [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'test'}]
             list(run_agent_loop(mock_client, "Cascade 300 plan", messages, rider_id=5, user_id=1))
 
-            mock_custom.assert_called_once_with(5, 'cascade-300')
+            mock_custom.assert_called_once_with(5, 'Cascade 300')
 
 
 def test_custom_plan_not_fetched_without_rider(app):
