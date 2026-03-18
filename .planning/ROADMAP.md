@@ -236,5 +236,5 @@ Phases 7-12 execute in numeric order (with Phase 12 parallelizable after Phase 7
 | 8. Personality Extraction | v2.0 | 3/3 | Complete | - |
 | 9. Chat Integration | v2.0 | 2/2 | Complete | - |
 | 10. Admin UI | v2.0 | 3/3 | Complete | - |
-| 11. Braintrust Evals | 1/1 | Complete   | 2026-03-18 | - |
+| 11. Braintrust Evals | 1/1 | Complete    | 2026-03-18 | - |
 | 12. Knowledge Base Expansion | v2.0 | 0/2 | Not started | - |
