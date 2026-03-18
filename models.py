@@ -2675,6 +2675,39 @@ def update_guardrail(guardrail_id, fields, updated_by='system'):
     return result
 
 
+def get_trait_evidence(rider_id, extraction_source=None):
+    """Get personality trait evidence quotes for a rider. Returns list of dicts."""
+    if extraction_source:
+        return _execute(
+            """SELECT * FROM personality_trait_evidence
+               WHERE rider_id = %s AND extraction_source = %s
+               ORDER BY trait_name, created_at DESC""",
+            (rider_id, extraction_source)
+        ).fetchall()
+    return _execute(
+        """SELECT * FROM personality_trait_evidence
+           WHERE rider_id = %s
+           ORDER BY trait_name, created_at DESC""",
+        (rider_id,)
+    ).fetchall()
+
+
+def get_all_guardrails(rule_type=None):
+    """Get all non-deleted guardrails (active AND inactive) for admin display."""
+    if rule_type:
+        return _execute(
+            """SELECT * FROM coaching_guardrail
+               WHERE deleted_at IS NULL AND rule_type = %s
+               ORDER BY rule_type, id""",
+            (rule_type,)
+        ).fetchall()
+    return _execute(
+        """SELECT * FROM coaching_guardrail
+           WHERE deleted_at IS NULL
+           ORDER BY rule_type, id"""
+    ).fetchall()
+
+
 def soft_delete_guardrail(guardrail_id, updated_by='system'):
     """Soft-delete a guardrail by setting deleted_at."""
     conn = get_db()

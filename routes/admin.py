@@ -9,12 +9,32 @@ from models import (get_current_season, get_rides_for_season, get_riders_for_sea
                     auto_finalize_past_rides, get_rides_with_signup_counts,
                     get_strava_admin_summary, get_all_active_strava_connections,
                     get_all_strava_activities_for_eddington, update_eddington_number,
-                    admin_delete_rider_ride)
+                    admin_delete_rider_ride,
+                    get_all_personality_profiles, get_personality_profile,
+                    upsert_personality_profile, get_trait_evidence,
+                    get_rider_by_id)
 from auth import login_required, user_login_required, verify_password
 from services.rwgps import (extract_rwgps_route_id, fetch_route, extract_controls,
                             build_ride_plan, slugify)
 
 admin_bp = Blueprint('admin', __name__)
+
+# ── Personality & Coaching constants ─────────────────────────────────
+PERSONALITY_ENUMS = {
+    'tone': ['direct', 'warm', 'playful', 'serious', 'sarcastic'],
+    'humor_type': ['none', 'dry', 'sarcastic', 'gentle', 'self-deprecating'],
+    'directness': ['low', 'medium', 'high'],
+    'encouragement_style': ['data-driven', 'emotional', 'balanced', 'tough-love'],
+    'technical_depth': ['beginner', 'intermediate', 'expert'],
+    'response_length_tendency': ['brief', 'moderate', 'verbose'],
+    'question_asking_behavior': ['rarely', 'sometimes', 'frequently'],
+}
+
+COACH_TRAIT_FIELDS = [
+    'tone', 'humor_type', 'directness', 'signature_phrases',
+    'topic_biases', 'topics_allowed', 'response_length_tendency',
+    'question_asking_behavior',
+]
 
 
 def _require_admin():
@@ -410,3 +430,108 @@ def recalculate_eddington():
         'recalculated': len(results),
         'riders': results,
     })
+
+
+# ── Personality Admin ────────────────────────────────────────────────
+
+def compute_completeness(profile):
+    """Count non-null/non-empty trait fields. Returns (filled, total, confidence)."""
+    if not profile:
+        return (0, len(COACH_TRAIT_FIELDS), None)
+    filled = 0
+    for field in COACH_TRAIT_FIELDS:
+        val = profile.get(field)
+        if val is not None and val != '' and val != []:
+            filled += 1
+    confidence = profile.get('extraction_confidence') if profile else None
+    return (filled, len(COACH_TRAIT_FIELDS), confidence)
+
+
+@admin_bp.route('/personalities')
+@user_login_required
+def personalities():
+    """List all riders with personality profile completeness indicators."""
+    _require_admin()
+    riders = get_all_riders()
+    all_profiles = get_all_personality_profiles(profile_type='coach')
+
+    # Build profiles dict keyed by rider_id, preferring merged > manual > whatsapp
+    profiles = {}
+    source_priority = {'merged': 0, 'manual': 1, 'whatsapp': 2, 'blog': 3}
+    for p in all_profiles:
+        rid = p['rider_id']
+        existing = profiles.get(rid)
+        if existing is None:
+            profiles[rid] = p
+        else:
+            cur_pri = source_priority.get(existing.get('extraction_source', ''), 99)
+            new_pri = source_priority.get(p.get('extraction_source', ''), 99)
+            if new_pri < cur_pri:
+                profiles[rid] = p
+
+    completeness = {}
+    for r in riders:
+        completeness[r['id']] = compute_completeness(profiles.get(r['id']))
+
+    return render_template('admin/personalities.html',
+                           riders=riders, profiles=profiles,
+                           completeness=completeness)
+
+
+@admin_bp.route('/personalities/<int:rider_id>', methods=['GET', 'POST'])
+@user_login_required
+def personality_edit(rider_id):
+    """View or edit personality traits for a single rider."""
+    _require_admin()
+    rider = get_rider_by_id(rider_id)
+    if not rider:
+        abort(404)
+
+    if request.method == 'POST':
+        fields = {}
+        for trait in COACH_TRAIT_FIELDS:
+            val = request.form.get(trait, '').strip()
+            if trait in ('signature_phrases', 'topic_biases', 'topics_allowed'):
+                # Newline-separated textarea -> list
+                lines = [line.strip() for line in val.split('\n') if line.strip()]
+                fields[trait] = lines if lines else None
+            elif trait in PERSONALITY_ENUMS:
+                fields[trait] = val if val else None
+            else:
+                fields[trait] = val if val else None
+        fields['extraction_source'] = 'manual'
+        upsert_personality_profile(rider_id, 'coach', fields, updated_by='admin')
+        flash('Personality profile saved.', 'success')
+        return redirect(url_for('admin.personality_edit', rider_id=rider_id))
+
+    # GET: load profile preferring merged > manual > any
+    profile = None
+    for source in ('merged', 'manual', 'whatsapp', 'blog'):
+        from models import _execute
+        import psycopg2.extras
+        row = _execute(
+            """SELECT * FROM personality_profile
+               WHERE rider_id = %s AND profile_type = 'coach'
+               AND extraction_source = %s AND deleted_at IS NULL""",
+            (rider_id, source)
+        ).fetchone()
+        if row:
+            profile = row
+            break
+    if not profile:
+        profile = get_personality_profile(rider_id, 'coach')
+
+    evidence = get_trait_evidence(rider_id)
+    # Group evidence by trait_name
+    evidence_by_trait = {}
+    for ev in evidence:
+        trait = ev['trait_name']
+        if trait not in evidence_by_trait:
+            evidence_by_trait[trait] = []
+        evidence_by_trait[trait].append(ev)
+
+    return render_template('admin/personality_edit.html',
+                           rider=rider, profile=profile,
+                           evidence_by_trait=evidence_by_trait,
+                           PERSONALITY_ENUMS=PERSONALITY_ENUMS,
+                           COACH_TRAIT_FIELDS=COACH_TRAIT_FIELDS)
