@@ -124,7 +124,7 @@ def test_intent_result_validates_literal(app):
         from services.chat_service import IntentResult
 
         # Valid intents
-        for intent in ['data_query', 'coaching', 'knowledge', 'route_discussion', 'off_topic']:
+        for intent in ['data_query', 'coaching', 'knowledge', 'route_discussion', 'web_search', 'weather_query', 'off_topic']:
             obj = IntentResult(intent=intent)
             assert obj.intent == intent
 
@@ -205,7 +205,7 @@ def test_format_tool_results_empty_list(app):
 # ========== run_agent_loop() tests ==========
 
 
-def _mock_stream_completion(messages, accumulator):
+def _mock_stream_completion(messages, accumulator, **kwargs):
     """Helper that simulates _stream_completion yielding one chunk."""
     accumulator['full_content'] = 'Hello'
     accumulator['prompt_tokens'] = 100
@@ -388,3 +388,96 @@ def test_agent_loop_token_usage_in_accumulator(app):
             chunks = list(gen)
             # Content chunks should be present
             assert any('"Hello"' in c for c in chunks)
+
+
+# ========== WhatsApp community knowledge prioritization tests (WA-PRI) ==========
+
+
+def test_web_search_also_triggers_rag(app):
+    """WA-PRI-01: web_search intent calls retrieve_knowledge_context with user message."""
+    with app.app_context():
+        from services.chat_service import run_agent_loop, IntentResult
+
+        intent = IntentResult(intent='web_search')
+        mock_client = MagicMock()
+
+        with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service.retrieve_knowledge_context', return_value='') as mock_rag, \
+             patch('services.chat_service.execute_web_search', return_value={'rows': [{'text': 'web result', 'sources': []}]}), \
+             patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
+
+            messages = [{'role': 'system', 'content': 'system'}, {'role': 'user', 'content': 'test'}]
+            list(run_agent_loop(mock_client, 'Best bike for randonneuring?', messages, rider_id=5, user_id=1))
+
+            mock_rag.assert_called_once_with(mock_client, 'Best bike for randonneuring?')
+
+
+def test_combined_context_instruction_references_community_first(app):
+    """WA-PRI-02/04: When RAG + web search both present, tool results instruction references community first."""
+    with app.app_context():
+        from services.chat_service import run_agent_loop, IntentResult
+
+        intent = IntentResult(intent='web_search')
+        mock_client = MagicMock()
+        knowledge_block = '<knowledge_context>\nTeam discussion about bikes\n</knowledge_context>'
+
+        captured_messages = []
+
+        def capture_stream(messages, accumulator, **kwargs):
+            captured_messages.extend(messages)
+            accumulator['full_content'] = 'Response'
+            accumulator['prompt_tokens'] = 100
+            accumulator['completion_tokens'] = 20
+            yield 'data: "Response"\n\n'
+
+        with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service.retrieve_knowledge_context', return_value=knowledge_block), \
+             patch('services.chat_service.execute_web_search', return_value={'rows': [{'text': 'web result', 'sources': []}]}), \
+             patch('services.chat_service._stream_completion', side_effect=capture_stream):
+
+            messages = [{'role': 'system', 'content': 'system'}, {'role': 'user', 'content': 'test'}]
+            list(run_agent_loop(mock_client, 'Best bike for randonneuring?', messages, rider_id=5, user_id=1))
+
+            # Find the system message containing tool_results
+            tool_messages = [
+                m for m in captured_messages
+                if m['role'] == 'system' and '<tool_results>' in m.get('content', '')
+            ]
+            assert len(tool_messages) == 1
+            content_lower = tool_messages[0]['content'].lower()
+            assert 'community' in content_lower or 'team asha' in content_lower
+
+
+def test_web_search_no_community_uses_standard_citation(app):
+    """WA-PRI-06: When RAG returns empty + web search runs, standard DATA_CITATION_INSTRUCTION is used."""
+    with app.app_context():
+        from services.chat_service import run_agent_loop, IntentResult, DATA_CITATION_INSTRUCTION
+
+        intent = IntentResult(intent='web_search')
+        mock_client = MagicMock()
+
+        captured_messages = []
+
+        def capture_stream(messages, accumulator, **kwargs):
+            captured_messages.extend(messages)
+            accumulator['full_content'] = 'Response'
+            accumulator['prompt_tokens'] = 100
+            accumulator['completion_tokens'] = 20
+            yield 'data: "Response"\n\n'
+
+        with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service.retrieve_knowledge_context', return_value=''), \
+             patch('services.chat_service.execute_web_search', return_value={'rows': [{'text': 'web result', 'sources': []}]}), \
+             patch('services.chat_service._stream_completion', side_effect=capture_stream):
+
+            messages = [{'role': 'system', 'content': 'system'}, {'role': 'user', 'content': 'test'}]
+            list(run_agent_loop(mock_client, 'Best bike for randonneuring?', messages, rider_id=5, user_id=1))
+
+            tool_messages = [
+                m for m in captured_messages
+                if m['role'] == 'system' and '<tool_results>' in m.get('content', '')
+            ]
+            assert len(tool_messages) == 1
+            assert DATA_CITATION_INSTRUCTION in tool_messages[0]['content']
+            # Should NOT contain the community-first variant
+            assert 'community knowledge FIRST' not in tool_messages[0]['content']

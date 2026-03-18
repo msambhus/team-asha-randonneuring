@@ -54,6 +54,17 @@ def test_nutrition_content():
     assert matches >= 1, f"Expected at least 1 nutrition term, found {matches}"
 
 
+def test_community_knowledge_priority_section():
+    """WA-PRI-05: System prompt has COMMUNITY KNOWLEDGE PRIORITY section with contradiction handling."""
+    from services.openai_coach import CHAT_SYSTEM_PROMPT
+
+    assert 'COMMUNITY KNOWLEDGE PRIORITY' in CHAT_SYSTEM_PROMPT
+    prompt_lower = CHAT_SYSTEM_PROMPT.lower()
+    # Contradiction/difference handling guidance
+    assert 'agree' in prompt_lower or 'aligns' in prompt_lower
+    assert 'differ' in prompt_lower or 'different' in prompt_lower
+
+
 def test_chat_system_prompt_not_placeholder():
     """Guard: CHAT_SYSTEM_PROMPT is the real prompt, not the Plan 02 fallback."""
     from services.openai_coach import CHAT_SYSTEM_PROMPT

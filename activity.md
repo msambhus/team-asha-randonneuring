@@ -4,121 +4,41 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ---
 
-## 2026-03-17 — Iteration 14 on fix/link-rendering-model-upgrade (ralph.sh)
+## Iteration 5 — 2026-03-17 Phase 9 Plan 01
 
-**Task:** No-op — push unpushed commits, log iteration
-**Branch:** `fix/link-rendering-model-upgrade`
-**Status:** No-op. Phase 3 fully complete. Pushed 2 unpushed commits to remote. PR #127 open, mergeable, Vercel checks pass.
-**Tests:** 144 passed, 6 skipped
-**PR:** #127 already open
-**Notes:** 14th iteration. PROMPT.md still targets Phase 3 (stale). All code work on this branch was completed in iterations 1-2. Recommend merging PR #127 and updating PROMPT.md for next work target.
+**Plan:** 09-01 (WhatsApp community knowledge prioritization)
+**Branch:** `feature/phase-7-9-execution`
+**Commit:** a244b3c
 
----
+**What was done:**
+- TDD: Wrote 5 new tests (RED), 3 failed as expected, then implemented production changes (GREEN)
+- Added COMMUNITY_KNOWLEDGE_INSTRUCTION and WEB_WITH_COMMUNITY_INSTRUCTION constants
+- Strengthened RAG injection: "ALWAYS present community knowledge FIRST" with named attribution
+- When web_search + community context present, uses structured community-first instruction
+- Updated CHAT_SYSTEM_PROMPT: "COMMUNITY KNOWLEDGE PRIORITY:" section with contradiction handling
+- Bumped max_tokens to 800 for web_search intent (parameterized _stream_completion)
+- Fixed 5 mock helpers across test files to accept **kwargs for new max_tokens param
+- Full suite: 218 passing, 6 skipped — all green
 
-## 2026-03-17 — Iteration 13 on fix/link-rendering-model-upgrade (ralph.sh)
-
-**Task:** No-op — Phase 3 already complete
-**Branch:** `fix/link-rendering-model-upgrade`
-**Status:** No-op. Phase 3 is fully code complete. PROMPT.md focus on Phase 3 is stale.
-**Tests:** 144 passed, 6 skipped
-**PR:** #127 already open
-**Notes:** 13th iteration, again no-op. PROMPT.md must be updated to target Phase 7+ or remaining work. Recommend merging PR #127 first, then updating PROMPT.md for the next milestone.
+**Status:** Phase 9 Plan 01 complete. ALL PHASES COMPLETE (07-01, 07-02, 08-01, 08-02, 09-01).
 
 ---
 
-## 2026-03-17 — Iteration 12 on fix/link-rendering-model-upgrade (ralph.sh)
+## Iteration 1 — 2026-03-17 Phase 7 Plan 01
 
-**Task:** No-op — Phase 3 already complete
-**Branch:** `fix/link-rendering-model-upgrade`
-**Status:** No-op. Phase 3 is fully code complete. PROMPT.md focus on Phase 3 is stale.
-**Tests:** 144 passed, 6 skipped
-**PR:** #127 already open
-**Notes:** 12th iteration, again no-op. PROMPT.md must be updated to target Phase 7+ or remaining work before ralph.sh runs will produce value. Recommend merging PR #127 first.
+**Plan:** 07-01 (TDD: RWGPS route data functions)
+**Branch:** `feature/phase-7-9-execution` (created from main)
+**Commit:** 36e6a80
 
----
+**What was done:**
+- Wrote 16 tests first (red), then implemented (green)
+- Added `get_ride_rwgps_url` SQL query to ALLOWED_QUERIES
+- Added `summarize_route_for_chat()` and `fetch_and_summarize_route()` to chat_tools.py
+- Cache-first pattern with 5-min TTL, error handling for 404/401/429/no-waypoints
+- Updated test_chat_tools.py expected query count (10 → 11)
+- Full suite: 160 passing, 6 skipped
 
-## 2026-03-17 — Iteration 11 on fix/link-rendering-model-upgrade (ralph.sh)
-
-**Task:** Commit uncommitted planning docs (REQUIREMENTS.md, ROADMAP.md)
-**Branch:** `fix/link-rendering-model-upgrade`
-**Status:** No code changes. Phase 3 fully complete. Committed outstanding planning updates (Phase 7-9 requirements and roadmap progress).
-**Tests:** 144 passed, 6 skipped
-**PR:** #127 already open
-**Notes:** PROMPT.md still targets Phase 3 (stale). Committed REQUIREMENTS.md (RWGPS, Weather, WA-Priority requirement IDs) and ROADMAP.md (Phase 6 marked complete, Phases 7-9 rows added). Recommend merging PR #127 and updating PROMPT.md for Phase 7+.
-
----
-
-## 2026-03-17 — Iteration 10 on fix/link-rendering-model-upgrade (ralph.sh)
-
-**Task:** Final iteration — Phase 3 already complete (no-op)
-**Branch:** `fix/link-rendering-model-upgrade`
-**Status:** No-op. Phase 3 is fully code complete. PROMPT.md focus on Phase 3 is stale.
-**Tests:** 144 passed, 6 skipped
-**PR:** #127 already open
-**Notes:** 10th and final iteration. All Phase 3 work was completed in iterations 1-2. Iterations 3-10 were no-ops because PROMPT.md still targets Phase 3. Recommend merging PR #127, then updating PROMPT.md to target Phase 6 Plan 02 or Phase 7+ for future ralph.sh runs.
-
----
-
-## 2026-03-17 — Iteration 9 on fix/link-rendering-model-upgrade (ralph.sh)
-
-**Task:** Verification pass — Phase 3 already complete (no-op)
-**Branch:** `fix/link-rendering-model-upgrade`
-**Status:** No-op. Phase 3 is fully code complete. PROMPT.md focus on Phase 3 is stale.
-**Tests:** 144 passed, 6 skipped
-**PR:** #127 already open
-**Notes:** 9th iteration with stale PROMPT.md targeting Phase 3. All code on this branch is committed. Recommend either merging PR #127 and moving to Phase 6 Plan 02 or Phase 7+, or updating PROMPT.md to target remaining work.
-
----
-
-## 2026-03-16 — Iteration 8 on fix/link-rendering-model-upgrade (ralph.sh)
-
-**Task:** Verification pass + commit uncommitted planning updates
-**Branch:** `fix/link-rendering-model-upgrade`
-**Status:** No-op for code. Committed ROADMAP.md updates (Phase 8+9 goals/plans) and activity log.
-**Tests:** 144 passed, 6 skipped
-**PR:** #127 already open
-**Notes:** Phase 3 still fully complete. PROMPT.md still stale (targeting Phase 3). Committed outstanding ROADMAP.md changes from previous sessions. Recommend updating PROMPT.md to Phase 6 Plan 02 or Phase 7+ for remaining iterations.
-
----
-
-## 2026-03-16 — Iteration 7 on fix/link-rendering-model-upgrade (ralph.sh)
-
-**Task:** Verification pass — Phase 3 already complete (no-op)
-**Branch:** `fix/link-rendering-model-upgrade`
-**Status:** No-op. Phase 3 is fully code complete. PROMPT.md focus on Phase 3 is stale.
-**Tests:** 144 passed, 6 skipped
-**PR:** #127 already open for this branch's changes (link rendering + gpt-5.4 upgrade)
-**Notes:** No code changes needed. Recommend updating PROMPT.md to target Phase 6 Plan 02 or Phase 7+ for future iterations.
-
----
-
-## 2026-03-16 — Iteration 6 on fix/link-rendering-model-upgrade (ralph.sh)
-
-**Task:** Verification pass — Phase 3 already complete (no-op)
-**Branch:** `fix/link-rendering-model-upgrade`
-**Status:** No-op. Phase 3 is fully code complete. PROMPT.md focus on Phase 3 is stale.
-**Tests:** 144 passed, 6 skipped
-**Notes:** Confirmed all Phase 3 plans (03-01, 03-02, 03-03) are implemented. This branch has 3 commits over main (link rendering, roadmap docs, model upgrade). No code changes needed this iteration.
-
----
-
-## 2026-03-16 — Iteration 4 on fix/link-rendering-model-upgrade (ralph.sh)
-
-**Task:** Verification pass — Phase 3 already complete (again)
-**Branch:** `fix/link-rendering-model-upgrade`
-**Status:** No-op. Phase 3 is fully code complete. PROMPT.md focus on Phase 3 is stale.
-**Tests:** 144 passed, 6 skipped
-**Notes:** Confirmed all Phase 3 plans (03-01, 03-02, 03-03) are implemented. This branch's actual changes are model upgrade (gpt-4o-mini→gpt-5.4) and link rendering fixes. No code changes needed this iteration.
-
----
-
-## 2026-03-16 — Iteration 1 on fix/link-rendering-model-upgrade (ralph.sh)
-
-**Task:** Verification pass — Phase 3 already complete
-**Branch:** `fix/link-rendering-model-upgrade`
-**Status:** No-op. Phase 3 (Agentic Tool-Calling Pipeline) is fully code complete with all 3 plan summaries. PROMPT.md focus on Phase 3 is stale — actual next work is Phase 6 Plan 02 (frontend image cards) or Phase 7+.
-**Tests:** 144 passed, 6 skipped
-**Notes:** Prompt instructed Phase 3 work but all plans (03-01, 03-02, 03-03) have summaries. IntentResult, classify_intent, ALLOWED_QUERIES (7 queries), run_agent_loop all exist and are wired into process_message(). No code changes needed.
+**Issues:** None. Clean execution.
 
 ---
 
@@ -960,86 +880,65 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ## Iteration 9 — 2026-03-16 00:34:31
 
+**Status:** Success (228s)
 
-## Iteration 1 — 2026-03-16 23:08:59
+## Iteration 2 — 2026-03-17 Phase 7 Plan 02
 
-**Status:** Success (116s)
+**Plan:** 07-02 (Agent loop wiring + intent prompt update)
+**Branch:** `feature/phase-7-9-execution`
+**Commit:** ed57439
 
-## Iteration 2 — 2026-03-16 23:10:59
+**What was done:**
+- Wrote 8 tests first (RED): 7 agent loop integration + 1 intent prompt content
+- Extended route_discussion branch with cache-first + live RWGPS fallback
+- When get_ride_plan returns no rows, queries get_ride_rwgps_url, extracts route ID, fetches live data
+- Graceful degradation for missing rows, null URL, malformed URL
+- Updated intent classification prompt to describe live RWGPS capability
+- Full suite: 168 passing, 6 skipped
 
-**Task:** Verification pass — Phase 3 already complete
-**Branch:** `fix/link-rendering-model-upgrade`
-**Status:** No-op. Phase 3 (Agentic Tool-Calling Pipeline) is fully code complete with all 3 plan summaries. PROMPT.md focus on Phase 3 is stale — actual next work is Phase 6 Plan 02 (frontend image cards) or Phase 7+.
-**Tests:** 144 passed, 6 skipped
-**Notes:** Confirmed all Phase 3 code exists (IntentResult, classify_intent, ALLOWED_QUERIES with 10 queries, run_agent_loop, process_message wiring). Branch has 3 commits not in main (link rendering, roadmap docs, model upgrade). No code changes needed.
+**Issues:** None. Clean execution. Phase 7 complete.
 
-**Status:** Success (77s)
+**Status:** Success (221s)
 
-## Iteration 3 — 2026-03-16 23:12:21
+## Iteration 3 — 2026-03-17 Phase 8 Plan 01
 
-**Task:** Verification pass — Phase 3 already complete
-**Branch:** `fix/link-rendering-model-upgrade`
-**Status:** No-op. Phase 3 (Agentic Tool-Calling Pipeline) is fully code complete with all 3 plan summaries. PROMPT.md focus on Phase 3 is stale — actual next work is Phase 6 Plan 02 (frontend image cards) or Phase 7+.
-**Tests:** 144 passed, 6 skipped
-**Notes:** Confirmed all Phase 3 code exists. No code changes needed.
+**Plan:** 08-01 (TDD: Weather service module)
+**Branch:** `feature/phase-7-9-execution`
+**Commit:** 4f55ebe
 
-**Status:** Success (no-op)
+**What was done:**
+- Wrote 37 tests first (RED): sampling, bearing, headwind, wind label, WMO codes, hour index, Open-Meteo fetch, caching, response formatting, graceful degradation
+- Implemented `services/weather.py` (199 lines) with all 9 exported functions
+- Pure math functions tested without mocks; API/cache functions tested with mocks
+- Fixed headwind sign convention (cosine projection direction)
+- Full suite: 205 passing, 6 skipped
 
-**Status:** Success (41s)
+**Issues:** None. Clean execution.
 
-## Iteration 4 — 2026-03-16 23:13:07
+**Status:** Success (300s)
 
-**Status:** Success (65s)
+## Iteration 4 — 2026-03-17 Phase 8 Plan 02
 
-## Iteration 5 — 2026-03-16 23:14:18
+**Plan:** 08-02 (Intent classification + agent loop integration for weather)
+**Branch:** `feature/phase-7-9-execution`
+**Commit:** 6c0faa9
 
-**Task:** Verification pass — Phase 3 already complete (again)
-**Branch:** `fix/link-rendering-model-upgrade`
-**Status:** No-op. Phase 3 is fully code complete. PROMPT.md focus on Phase 3 is stale.
-**Tests:** 144 passed, 6 skipped
-**Notes:** Confirmed all Phase 3 plans (03-01, 03-02, 03-03) are implemented. This branch's actual changes are model upgrade (gpt-4o-mini→gpt-5.4) and link rendering fixes. No code changes needed this iteration.
+**What was done:**
+- Wrote 8 tests first (RED): intent classification, start_datetime field, agent loop branch, execute_route_weather success/error/timeout
+- Added `weather_query` as 7th intent type to IntentResult with `start_datetime` field
+- Updated INTENT_CLASSIFICATION_PROMPT with weather_query description and disambiguation
+- Created `execute_route_weather()` in chat_tools.py — orchestrates ride plan lookup, RWGPS track fetch, point sampling, Open-Meteo forecast, segment formatting
+- Added `get_ride_plan_for_weather` SQL query to ALLOWED_QUERIES
+- Wired weather_query branch into run_agent_loop (before route_discussion)
+- Graceful degradation: missing RWGPS URL, API timeout, no track data, >16-day forecast
+- Updated test_agent_pipeline.py intent literal validation and test_chat_tools.py query count
+- Full suite: 213 passing, 6 skipped
 
-**Status:** Success (no-op)
+**Issues:** None. Clean execution. Phase 8 complete.
 
-**Status:** Success (53s)
+**Status:** Success
 
-## Iteration 6 — 2026-03-16 23:15:16
+**Status:** Success (374s)
 
-**Status:** Success (48s)
-
-## Iteration 7 — 2026-03-16 23:17:04
-
-**Status:** Success (90s)
-
-## Iteration 8 — 2026-03-16 23:18:39
-
-**Status:** Success (79s)
-
-## Iteration 9 — 2026-03-16 23:20:03
-
-**Status:** Success (5143s)
-
-## Iteration 10 — 2026-03-17 00:45:52
-
-**Status:** Success (1900s)
-
----
-## Loop Summary — 2026-03-17 01:17:32
-- Iterations: 10 (10 succeeded, 0 failed)
-- Total time: 128m 34s
-
-
-## Iteration 1 — 2026-03-17 20:48:06
-
-**Status:** Success (93s)
-
-## Iteration 2 — 2026-03-17 20:49:44
-
-**Status:** Success (51s)
-
-## Iteration 3 — 2026-03-17 20:50:40
-
-**Status:** Success (60s)
-
-## Iteration 4 — 2026-03-17 20:51:45
+## Iteration 5 — 2026-03-17 21:12:32
 
