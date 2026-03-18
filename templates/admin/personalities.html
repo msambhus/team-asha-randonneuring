@@ -44,11 +44,12 @@
 {% endif %}
 </td>
 <td>
-{% if comp[2] == 'HIGH' %}
+{% set conf = comp[2]|lower if comp[2] else '' %}
+{% if conf == 'high' %}
 <span style="background:#c6f6d5;color:#276749;padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:600;">HIGH</span>
-{% elif comp[2] == 'MED' %}
-<span style="background:#fefcbf;color:#975a16;padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:600;">MED</span>
-{% elif comp[2] == 'LOW' %}
+{% elif conf in ('med', 'medium') %}
+<span style="background:#fefcbf;color:#975a16;padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:600;">MEDIUM</span>
+{% elif conf == 'low' %}
 <span style="background:#fed7d7;color:#9b2c2c;padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:600;">LOW</span>
 {% else %}
 <span style="color:var(--text-light);">—</span>
