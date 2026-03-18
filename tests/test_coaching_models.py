@@ -280,19 +280,222 @@ class TestSoftDelete:
         assert cur.fetchone() is not None
 
 
-# ========== CRUD Function Test Stubs (Plan 07-02) ==========
+# ========== CRUD Function Tests (Plan 07-02) ==========
 
 
-@pytest.mark.skip(reason="CRUD functions not yet implemented — Plan 07-02")
-def test_crud_personality_profile():
-    """Will test upsert, read, soft-delete for personality_profile."""
-    pass
+class TestCrudPersonalityProfile:
+    """Test CRUD functions for personality_profile table."""
+
+    def test_crud_personality_profile(self, app, db_conn):
+        """Upsert a coach profile, read it back, update, soft-delete."""
+        from models import (get_personality_profile, upsert_personality_profile,
+                            soft_delete_personality_profile)
+
+        # Create test rider
+        cur = db_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            INSERT INTO rider (first_name, last_name)
+            VALUES ('CrudTest', 'Profile')
+            RETURNING id
+        """)
+        rider_id = cur.fetchone()['id']
+        db_conn.commit()
+
+        with app.app_context():
+            # Upsert a new profile
+            result = upsert_personality_profile(rider_id, 'coach', {
+                'tone': 'direct',
+                'humor_type': 'dry',
+                'directness': 'high',
+                'signature_phrases': ['phrase1', 'phrase2'],
+                'topics_allowed': ['bike', 'gear'],
+            }, updated_by='test')
+
+            assert result['tone'] == 'direct'
+            assert result['rider_id'] == rider_id
+
+            # Read it back
+            profile = get_personality_profile(rider_id, 'coach')
+            assert profile is not None
+            assert profile['tone'] == 'direct'
+            assert profile['humor_type'] == 'dry'
+            assert profile['signature_phrases'] == ['phrase1', 'phrase2']
+
+            # Update via upsert
+            updated = upsert_personality_profile(rider_id, 'coach', {
+                'tone': 'warm',
+            }, updated_by='test_update')
+            assert updated['tone'] == 'warm'
+
+            # Verify update persisted
+            profile2 = get_personality_profile(rider_id, 'coach')
+            assert profile2['tone'] == 'warm'
+
+            # Soft-delete
+            soft_delete_personality_profile(profile2['id'], updated_by='test_delete')
+            assert get_personality_profile(rider_id, 'coach') is None
+
+    def test_get_all_personality_profiles(self, app, db_conn):
+        """get_all_personality_profiles returns active profiles, filterable by type."""
+        from models import upsert_personality_profile, get_all_personality_profiles
+
+        cur = db_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            INSERT INTO rider (first_name, last_name)
+            VALUES ('AllTest', 'Profiles')
+            RETURNING id
+        """)
+        rider_id = cur.fetchone()['id']
+        db_conn.commit()
+
+        with app.app_context():
+            upsert_personality_profile(rider_id, 'coach', {'tone': 'direct'})
+            upsert_personality_profile(rider_id, 'rider', {'preferred_formality': 'casual'})
+
+            all_profiles = get_all_personality_profiles()
+            assert len(all_profiles) >= 2
+
+            coach_only = get_all_personality_profiles(profile_type='coach')
+            rider_only = get_all_personality_profiles(profile_type='rider')
+            assert all(p['profile_type'] == 'coach' for p in coach_only)
+            assert all(p['profile_type'] == 'rider' for p in rider_only)
 
 
-@pytest.mark.skip(reason="CRUD functions not yet implemented — Plan 07-02")
-def test_crud_guardrail():
-    """Will test insert, read, update (version increment), soft-delete for guardrails."""
-    pass
+class TestCrudGuardrail:
+    """Test CRUD functions for coaching_guardrail table."""
+
+    def test_crud_guardrail(self, app, db_conn):
+        """Insert, read, update (version increment), toggle active, soft-delete."""
+        from models import (insert_guardrail, get_active_guardrails,
+                            update_guardrail, soft_delete_guardrail)
+
+        with app.app_context():
+            # Insert
+            row = insert_guardrail('topic_block', 'no_medical_advice', 'all', 'test')
+            assert row['rule_type'] == 'topic_block'
+            assert row['rule_value'] == 'no_medical_advice'
+            assert row['rule_version'] == 1
+            assert row['is_active'] is True
+
+            # Read back via get_active_guardrails
+            rules = get_active_guardrails(rule_type='topic_block')
+            assert any(r['id'] == row['id'] for r in rules)
+
+            # Update — trigger should increment rule_version
+            updated = update_guardrail(row['id'], {'rule_value': 'no_medical_v2'}, 'test')
+            assert updated['rule_version'] == 2
+            assert updated['rule_value'] == 'no_medical_v2'
+
+            # Toggle is_active off
+            toggled = update_guardrail(row['id'], {'is_active': False}, 'test')
+            assert toggled['is_active'] is False
+            # Should no longer appear in active list
+            active_rules = get_active_guardrails(rule_type='topic_block')
+            assert not any(r['id'] == row['id'] for r in active_rules)
+
+            # Soft-delete
+            soft_delete_guardrail(row['id'], 'test')
+
+    def test_guardrail_filters(self, app, db_conn):
+        """get_active_guardrails filters by rule_type and applies_to."""
+        from models import insert_guardrail, get_active_guardrails
+
+        with app.app_context():
+            insert_guardrail('scope', 'cycling_only', 'all', 'test')
+            insert_guardrail('tone_limit', 'no_shame', 'shriram', 'test')
+
+            scope_rules = get_active_guardrails(rule_type='scope')
+            assert all(r['rule_type'] == 'scope' for r in scope_rules)
+
+            shriram_rules = get_active_guardrails(applies_to='shriram')
+            assert all(r['applies_to'] == 'shriram' for r in shriram_rules)
+
+
+class TestCrudGearPreference:
+    """Test CRUD functions for gear_preference table."""
+
+    def test_crud_gear_preference(self, app, db_conn):
+        """Upsert gear, read back, update, verify."""
+        from models import get_gear_preference, upsert_gear_preference
+
+        cur = db_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            INSERT INTO rider (first_name, last_name)
+            VALUES ('GearTest', 'Rider')
+            RETURNING id
+        """)
+        rider_id = cur.fetchone()['id']
+        db_conn.commit()
+
+        with app.app_context():
+            # Upsert
+            result = upsert_gear_preference(rider_id, {
+                'bike_make': 'Surly',
+                'bike_model': 'Long Haul Trucker',
+                'bike_material': 'steel',
+            }, updated_by='test')
+            assert result['bike_make'] == 'Surly'
+            assert result['bike_material'] == 'steel'
+
+            # Read back
+            gear = get_gear_preference(rider_id)
+            assert gear is not None
+            assert gear['bike_model'] == 'Long Haul Trucker'
+
+            # Update via upsert
+            upsert_gear_preference(rider_id, {
+                'bike_make': 'Rivendell',
+            }, updated_by='test_update')
+            gear2 = get_gear_preference(rider_id)
+            assert gear2['bike_make'] == 'Rivendell'
+
+
+class TestCrudCoachAssignment:
+    """Test CRUD functions for coach_assignment table."""
+
+    def test_crud_coach_assignment(self, app, db_conn):
+        """Insert assignments, list by coach, list by domain, toggle active."""
+        from models import get_coach_assignments, upsert_coach_assignment
+
+        cur = db_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            INSERT INTO rider (first_name, last_name)
+            VALUES ('CoachTest', 'Assignment')
+            RETURNING id
+        """)
+        coach_id = cur.fetchone()['id']
+        db_conn.commit()
+
+        with app.app_context():
+            # Insert assignments
+            upsert_coach_assignment(coach_id, 'bikes', {
+                'is_default': False, 'is_active': True
+            }, updated_by='test')
+            upsert_coach_assignment(coach_id, 'general', {
+                'is_default': True, 'is_active': True
+            }, updated_by='test')
+
+            # List by coach
+            assignments = get_coach_assignments(coach_rider_id=coach_id)
+            assert len(assignments) == 2
+
+            # List by domain
+            bike_assigns = get_coach_assignments(topic_domain='bikes')
+            assert any(a['coach_rider_id'] == coach_id for a in bike_assigns)
+
+            # Toggle active off
+            upsert_coach_assignment(coach_id, 'bikes', {
+                'is_active': False
+            }, updated_by='test')
+            active_assigns = get_coach_assignments(coach_rider_id=coach_id, active_only=True)
+            assert not any(a['topic_domain'] == 'bikes' for a in active_assigns)
+
+            # Include inactive
+            all_assigns = get_coach_assignments(coach_rider_id=coach_id, active_only=False)
+            assert len(all_assigns) == 2
+
+
+# ========== Seed Validation Test Stubs (Plan 07-03) ==========
 
 
 @pytest.mark.skip(reason="Seed data not yet created — Plan 07-03")
