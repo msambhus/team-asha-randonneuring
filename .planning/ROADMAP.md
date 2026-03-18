@@ -133,9 +133,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 07-01-PLAN.md — Schema migration: four new tables, indexes, FK constraints, character limits, soft-delete columns, rule_version trigger
-- [ ] 07-02-PLAN.md — Model functions: CRUD functions in models.py for all four new tables with parameterized queries
-- [ ] 07-03-PLAN.md — Seed data: manually seed Shriram and Venki profiles and coach assignments from CHAT_SYSTEM_PROMPT content
+- [x] 07-01-PLAN.md — Schema migration: four new tables, indexes, FK constraints, character limits, soft-delete columns, rule_version trigger
+- [x] 07-02-PLAN.md — Model functions: CRUD functions in models.py for all four new tables with parameterized queries
+- [x] 07-03-PLAN.md — Seed data: manually seed Shriram and Venki profiles and coach assignments from CHAT_SYSTEM_PROMPT content
 
 ### Phase 8: Personality Extraction
 **Goal**: Offline CLI scripts extract structured personality traits per person from WhatsApp chat exports and blog posts, store them with source quote evidence and confidence levels in the `personality_profile` table, and merge multi-source traits into a single profile ready for admin review
@@ -150,9 +150,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — Schema migration (3 new columns, evidence table, UNIQUE constraint fix), test scaffolds, dev dependencies
-- [ ] 08-02-PLAN.md — WhatsApp extraction: personality_helpers.py shared module + extract_personality_whatsapp.py CLI script
-- [ ] 08-03-PLAN.md — Blog extraction (trafilatura + pdfplumber) + merge_personality.py multi-source merge script
+- [x] 08-01-PLAN.md — Schema migration (3 new columns, evidence table, UNIQUE constraint fix), test scaffolds, dev dependencies
+- [x] 08-02-PLAN.md — WhatsApp extraction: personality_helpers.py shared module + extract_personality_whatsapp.py CLI script
+- [x] 08-03-PLAN.md — Blog extraction (trafilatura + pdfplumber) + merge_personality.py multi-source merge script
 
 ### Phase 9: Chat Integration
 **Goal**: The live chat pipeline reads coach personas, routing rules, and guardrails from the database instead of hardcoded strings — `assemble_coach_context()` replaces the static `CHAT_SYSTEM_PROMPT` persona block and `select_coach_for_message()` replaces the hardcoded `_BIKE_KEYWORDS` routing, with guardrails enforced via a classifier pass before the persona prompt

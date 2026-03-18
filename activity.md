@@ -883,3 +883,36 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 **Next:** Execute Phase 8 (`/gsd:execute-phase 8`)
 
 
+**Status:** Success (1323s)
+
+## Iteration 4 — 2026-03-17 23:12:37
+
+**Status:** Failed (exit 1, 897s)
+
+## Iteration 5 — 2026-03-17 23:27:39
+
+**Status:** Failed (exit 1, 214s)
+
+## Iteration 6 — 2026-03-17 23:31:19
+
+**Status:** Failed (exit 1, 397s)
+
+## Iteration 7 — 2026-03-17 23:38:01
+
+**Task:** Complete Phase 8 Plan 03 — blog extraction + merge script (documentation + verification)
+**Branch:** `feature/personality-coaching-admin`
+
+**What happened:**
+- All 3 Phase 8 scripts already fully implemented from prior iterations (08-01, 08-02, 08-03 code)
+- Verified: extract_personality_blog.py handles --url (trafilatura) and --pdf-path (pdfplumber), Google Drive warning, --dry-run
+- Verified: merge_personality.py reads whatsapp+blog rows, calls merge_profiles(), upserts merged row, copies evidence
+- Verified: merge_profiles() in personality_helpers.py — blog wins on enums, phrases unioned capped at 5, lower confidence
+- All 7 unit tests pass in test_personality_extraction.py, 3 integration stubs skip
+- Full suite: 152 passed, 26 skipped — all green
+- Created 08-03-SUMMARY.md documenting completion
+- Updated STATE.md: Phase 8 COMPLETE, Phase 9 next
+- Updated ROADMAP.md: checked off all Phase 7 and Phase 8 plan checkboxes
+**Issues:** None
+**Status:** Success — Phase 8 complete
+**Next:** Plan Phase 9 (Chat Integration)
+
