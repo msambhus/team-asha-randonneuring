@@ -13,7 +13,10 @@ from models import (get_current_season, get_rides_for_season, get_riders_for_sea
                     get_all_personality_profiles, get_personality_profile,
                     upsert_personality_profile, get_trait_evidence,
                     get_rider_by_id,
-                    get_gear_preference, upsert_gear_preference)
+                    get_gear_preference, upsert_gear_preference,
+                    get_coach_assignments, upsert_coach_assignment,
+                    get_all_guardrails, insert_guardrail,
+                    update_guardrail, soft_delete_guardrail)
 from auth import login_required, user_login_required, verify_password
 from services.rwgps import (extract_rwgps_route_id, fetch_route, extract_controls,
                             build_ride_plan, slugify)
@@ -47,6 +50,11 @@ GEAR_FIELDS = [
     'wheels_tires', 'lighting', 'bags', 'navigation', 'kit',
     'value_orientation',
 ]
+
+GUARDRAIL_ENUMS = {
+    'rule_type': ['topic_block', 'tone_limit', 'escalation', 'scope'],
+    'applies_to': ['all', 'shriram', 'venki'],
+}
 
 
 def _require_admin():
@@ -591,3 +599,140 @@ def gear_edit(rider_id):
     gear = get_gear_preference(rider_id)
     return render_template('admin/gear_edit.html', rider=rider, gear=gear,
                            GEAR_ENUMS=GEAR_ENUMS, GEAR_FIELDS=GEAR_FIELDS)
+
+
+# ── Coach Admin ──────────────────────────────────────────────────────
+
+@admin_bp.route('/coaches')
+@user_login_required
+def coaches():
+    """Coach roster with domain assignments and persona status."""
+    _require_admin()
+    assignments = get_coach_assignments(active_only=False)
+    profiles = get_all_personality_profiles(profile_type='coach')
+    profile_by_rider = {p['rider_id']: p for p in profiles}
+
+    # Group assignments by coach_rider_id
+    coaches_map = {}
+    for a in assignments:
+        cid = a['coach_rider_id']
+        if cid not in coaches_map:
+            rider = get_rider_by_id(cid)
+            coaches_map[cid] = {
+                'rider': rider,
+                'has_profile': cid in profile_by_rider,
+                'is_default': False,
+                'assignments': [],
+            }
+        coaches_map[cid]['assignments'].append(a)
+        if a.get('is_default'):
+            coaches_map[cid]['is_default'] = True
+
+    return render_template('admin/coaches.html', coaches=coaches_map)
+
+
+@admin_bp.route('/coaches/<int:coach_rider_id>/<topic_domain>/toggle', methods=['POST'])
+@user_login_required
+def toggle_coach(coach_rider_id, topic_domain):
+    """Toggle active/inactive on a coach assignment."""
+    _require_admin()
+    assignments = get_coach_assignments(
+        coach_rider_id=coach_rider_id, topic_domain=topic_domain, active_only=False)
+    if not assignments:
+        flash('Coach assignment not found.', 'error')
+        return redirect(url_for('admin.coaches'))
+    current_active = assignments[0].get('is_active', True)
+    upsert_coach_assignment(coach_rider_id, topic_domain,
+                            {'is_active': not current_active}, updated_by='admin')
+    flash('Coach assignment toggled.', 'success')
+    return redirect(url_for('admin.coaches'))
+
+
+# ── Guardrail Admin ──────────────────────────────────────────────────
+
+@admin_bp.route('/guardrails')
+@user_login_required
+def guardrails():
+    """List all guardrail rules (active and inactive)."""
+    _require_admin()
+    rules = get_all_guardrails()
+    return render_template('admin/guardrails.html', guardrails=rules,
+                           GUARDRAIL_ENUMS=GUARDRAIL_ENUMS)
+
+
+@admin_bp.route('/guardrails/<int:guardrail_id>/toggle', methods=['POST'])
+@user_login_required
+def toggle_guardrail(guardrail_id):
+    """Toggle a guardrail rule active/inactive."""
+    _require_admin()
+    rules = get_all_guardrails()
+    target = None
+    for r in rules:
+        if r['id'] == guardrail_id:
+            target = r
+            break
+    if not target:
+        flash('Guardrail not found.', 'error')
+        return redirect(url_for('admin.guardrails'))
+    update_guardrail(guardrail_id, {'is_active': not target['is_active']},
+                     updated_by='admin')
+    flash('Guardrail toggled.', 'success')
+    return redirect(url_for('admin.guardrails'))
+
+
+@admin_bp.route('/guardrails/new', methods=['GET', 'POST'])
+@user_login_required
+def guardrail_new():
+    """Create a new guardrail rule."""
+    _require_admin()
+    if request.method == 'POST':
+        rule_type = request.form.get('rule_type', '').strip()
+        rule_value = request.form.get('rule_value', '').strip()
+        applies_to = request.form.get('applies_to', 'all').strip()
+        if not rule_type or not rule_value:
+            flash('Rule type and value are required.', 'error')
+            return redirect(url_for('admin.guardrail_new'))
+        insert_guardrail(rule_type, rule_value, applies_to, updated_by='admin')
+        flash('Guardrail created.', 'success')
+        return redirect(url_for('admin.guardrails'))
+    return render_template('admin/guardrail_edit.html', guardrail=None,
+                           GUARDRAIL_ENUMS=GUARDRAIL_ENUMS)
+
+
+@admin_bp.route('/guardrails/<int:guardrail_id>/edit', methods=['GET', 'POST'])
+@user_login_required
+def guardrail_edit(guardrail_id):
+    """Edit an existing guardrail rule."""
+    _require_admin()
+    rules = get_all_guardrails()
+    target = None
+    for r in rules:
+        if r['id'] == guardrail_id:
+            target = r
+            break
+    if not target:
+        flash('Guardrail not found.', 'error')
+        return redirect(url_for('admin.guardrails'))
+
+    if request.method == 'POST':
+        fields = {
+            'rule_type': request.form.get('rule_type', '').strip(),
+            'rule_value': request.form.get('rule_value', '').strip(),
+            'applies_to': request.form.get('applies_to', 'all').strip(),
+        }
+        update_guardrail(guardrail_id, fields, updated_by='admin')
+        flash('Guardrail updated.', 'success')
+        return redirect(url_for('admin.guardrails'))
+
+    return render_template('admin/guardrail_edit.html', guardrail=target,
+                           GUARDRAIL_ENUMS=GUARDRAIL_ENUMS)
+
+
+@admin_bp.route('/guardrails/<int:guardrail_id>/delete', methods=['POST'])
+@user_login_required
+def guardrail_delete(guardrail_id):
+    """Soft-delete a guardrail rule."""
+    _require_admin()
+    soft_delete_guardrail(guardrail_id, updated_by='admin')
+    flash('Guardrail deleted.', 'success')
+    return redirect(url_for('admin.guardrails'))

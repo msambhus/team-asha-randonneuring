@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Guardrail' if guardrail else 'New Guardrail' }} - Admin{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>{{ 'Edit Guardrail' if guardrail else 'New Guardrail' }}</h1>
+</div>
+<div class="container section">
+
+<div style="margin-bottom:20px;">
+<a href="{{ url_for('admin.guardrails') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Guardrails</a>
+</div>
+
+<form method="POST" style="max-width:600px;">
+
+<div style="margin-bottom:16px;">
+<label style="display:block;font-weight:600;margin-bottom:4px;">Rule Type</label>
+<select name="rule_type" required style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:4px;">
+<option value="">— Select —</option>
+{% for opt in GUARDRAIL_ENUMS.rule_type %}
+<option value="{{ opt }}" {% if guardrail and guardrail.rule_type == opt %}selected{% endif %}>{{ opt }}</option>
+{% endfor %}
+</select>
+</div>
+
+<div style="margin-bottom:16px;">
+<label style="display:block;font-weight:600;margin-bottom:4px;">Rule Value</label>
+<textarea name="rule_value" rows="4" required style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:4px;font-family:inherit;" placeholder="e.g., Never recommend medical treatments">{{ guardrail.rule_value if guardrail else '' }}</textarea>
+</div>
+
+<div style="margin-bottom:16px;">
+<label style="display:block;font-weight:600;margin-bottom:4px;">Applies To</label>
+<select name="applies_to" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:4px;">
+{% for opt in GUARDRAIL_ENUMS.applies_to %}
+<option value="{{ opt }}" {% if guardrail and guardrail.applies_to == opt %}selected{% endif %}>{{ opt }}</option>
+{% endfor %}
+</select>
+</div>
+
+<div style="margin-top:20px;">
+<button type="submit" class="btn btn-primary" style="padding:10px 24px;">{{ 'Save' if guardrail else 'Create' }}</button>
+</div>
+
+</form>
+
+</div>
+{% endblock %}
