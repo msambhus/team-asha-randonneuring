@@ -222,6 +222,7 @@ def test_agent_loop_data_query(app):
         mock_client = MagicMock()
 
         with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())) as mock_classify, \
+             patch('services.chat_service._build_intent_context', return_value=''), \
              patch('services.chat_service.execute_allowed_query', return_value={'rows': [{'score': 85}]}) as mock_exec, \
              patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
 
@@ -242,6 +243,7 @@ def test_agent_loop_team_stats_no_rider_id(app):
         mock_client = MagicMock()
 
         with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
              patch('services.chat_service.execute_allowed_query', return_value={'rows': [{'count': 10}]}) as mock_exec, \
              patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
 
@@ -260,6 +262,7 @@ def test_agent_loop_route_discussion(app):
         mock_client = MagicMock()
 
         with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
              patch('services.chat_service.execute_allowed_query', return_value={'rows': [{'name': 'Cascade 400'}]}) as mock_exec, \
              patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
 
@@ -278,6 +281,7 @@ def test_agent_loop_off_topic_no_db(app):
         mock_client = MagicMock()
 
         with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
              patch('services.chat_service.execute_allowed_query') as mock_exec, \
              patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
 
@@ -296,6 +300,7 @@ def test_agent_loop_coaching_no_db(app):
         mock_client = MagicMock()
 
         with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
              patch('services.chat_service.execute_allowed_query') as mock_exec, \
              patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
 
@@ -314,6 +319,7 @@ def test_agent_loop_knowledge_no_db(app):
         mock_client = MagicMock()
 
         with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
              patch('services.chat_service.execute_allowed_query') as mock_exec, \
              patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
 
@@ -335,6 +341,7 @@ def test_agent_loop_max_iterations_guard(app):
         mock_client = MagicMock()
 
         with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
              patch('services.chat_service.execute_allowed_query', return_value={'rows': [{'score': 85}]}), \
              patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
 
@@ -360,6 +367,7 @@ def test_agent_loop_thinking_event(app):
         mock_client = MagicMock()
 
         with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
              patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
 
             messages = [{'role': 'system', 'content': 'system'}, {'role': 'user', 'content': 'test'}]
@@ -381,6 +389,7 @@ def test_agent_loop_token_usage_in_accumulator(app):
         mock_client = MagicMock()
 
         with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
              patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
 
             messages = [{'role': 'system', 'content': 'system'}, {'role': 'user', 'content': 'test'}]
@@ -402,6 +411,7 @@ def test_web_search_also_triggers_rag(app):
         mock_client = MagicMock()
 
         with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
              patch('services.chat_service.retrieve_knowledge_context', return_value='') as mock_rag, \
              patch('services.chat_service.execute_web_search', return_value={'rows': [{'text': 'web result', 'sources': []}]}), \
              patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
@@ -431,6 +441,7 @@ def test_combined_context_instruction_references_community_first(app):
             yield 'data: "Response"\n\n'
 
         with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
              patch('services.chat_service.retrieve_knowledge_context', return_value=knowledge_block), \
              patch('services.chat_service.execute_web_search', return_value={'rows': [{'text': 'web result', 'sources': []}]}), \
              patch('services.chat_service._stream_completion', side_effect=capture_stream):
@@ -466,6 +477,7 @@ def test_web_search_no_community_uses_standard_citation(app):
             yield 'data: "Response"\n\n'
 
         with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
              patch('services.chat_service.retrieve_knowledge_context', return_value=''), \
              patch('services.chat_service.execute_web_search', return_value={'rows': [{'text': 'web result', 'sources': []}]}), \
              patch('services.chat_service._stream_completion', side_effect=capture_stream):
@@ -481,3 +493,215 @@ def test_web_search_no_community_uses_standard_citation(app):
             assert DATA_CITATION_INSTRUCTION in tool_messages[0]['content']
             # Should NOT contain the community-first variant
             assert 'community knowledge FIRST' not in tool_messages[0]['content']
+
+
+# ========== Rider context in intent classification (Phase 10) ==========
+
+
+def test_extract_rwgps_urls():
+    """_extract_rwgps_urls finds route IDs from RWGPS URLs."""
+    from services.chat_service import _extract_rwgps_urls
+    assert _extract_rwgps_urls("check https://ridewithgps.com/routes/12345") == ['12345']
+    assert _extract_rwgps_urls("no url here") == []
+    assert _extract_rwgps_urls("http://www.ridewithgps.com/routes/99999 and more") == ['99999']
+    assert _extract_rwgps_urls("two urls https://ridewithgps.com/routes/111 and https://ridewithgps.com/routes/222") == ['111', '222']
+
+
+def test_build_intent_context_no_rider(app):
+    """_build_intent_context returns empty string when rider_id is None."""
+    with app.app_context():
+        from services.chat_service import _build_intent_context
+        assert _build_intent_context(None) == ''
+
+
+def test_build_intent_context_with_signups(app):
+    """_build_intent_context includes rider's upcoming rides."""
+    with app.app_context():
+        from services.chat_service import _build_intent_context
+
+        mock_signups = [{'date': '2026-03-22', 'name': 'HMB-Marina 300K', 'distance_km': 300, 'plan_slug': 'hmb-marina-300k'}]
+        mock_team = [{'date': '2026-03-22', 'name': 'HMB-Marina 300K', 'distance_km': 300}]
+
+        with patch('models.get_rider_upcoming_signups', return_value=mock_signups), \
+             patch('models.get_upcoming_rides', return_value=mock_team):
+            result = _build_intent_context(5)
+            assert 'HMB-Marina 300K' in result
+            assert 'YOUR UPCOMING RIDES' in result
+            assert 'TEAM RIDES' in result
+
+
+def test_classify_intent_with_rider_context(app):
+    """Rider context is injected into classification system prompt."""
+    with app.app_context():
+        from services.chat_service import classify_intent, IntentResult
+
+        intent_obj = IntentResult(intent='route_discussion', ride_name='HMB-Marina 300K')
+        mock_response = _mock_parse_response(intent_obj)
+        mock_client = MagicMock()
+        mock_client.chat.completions.parse.return_value = mock_response
+
+        context = "YOUR UPCOMING RIDES:\n  2026-03-22: HMB-Marina 300K (300km)"
+        classify_intent(mock_client, "tell me about this weekend's ride", [], rider_context=context)
+
+        call_args = mock_client.chat.completions.parse.call_args[1]
+        system_msg = call_args['messages'][0]['content']
+        assert 'HMB-Marina 300K' in system_msg
+        assert 'UPCOMING RIDES' in system_msg
+
+
+def test_classify_intent_without_rider_context(app):
+    """classify_intent works without rider_context (backward compatible)."""
+    with app.app_context():
+        from services.chat_service import classify_intent, IntentResult
+
+        intent_obj = IntentResult(intent='coaching')
+        mock_response = _mock_parse_response(intent_obj)
+        mock_client = MagicMock()
+        mock_client.chat.completions.parse.return_value = mock_response
+
+        result, _ = classify_intent(mock_client, "test", [])
+        assert result.intent == 'coaching'
+
+        call_args = mock_client.chat.completions.parse.call_args[1]
+        system_msg = call_args['messages'][0]['content']
+        assert 'UPCOMING RIDES' not in system_msg
+
+
+# ========== RWGPS URL pre-scan tests ==========
+
+
+def test_rwgps_url_prescan_triggers_fetch(app):
+    """RWGPS URL pasted in chat triggers live route fetch."""
+    with app.app_context():
+        from services.chat_service import run_agent_loop, IntentResult
+
+        intent = IntentResult(intent='knowledge')
+        mock_client = MagicMock()
+
+        with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
+             patch('services.chat_service.retrieve_knowledge_context', return_value=None), \
+             patch('services.chat_service.fetch_and_summarize_route', return_value={'rows': [{'name': 'Test Route'}]}) as mock_fetch, \
+             patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
+
+            messages = [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'test'}]
+            list(run_agent_loop(mock_client, "the route is https://ridewithgps.com/routes/38845484", messages, rider_id=5, user_id=1))
+
+            mock_fetch.assert_called_once_with('38845484')
+
+
+def test_rwgps_url_no_url_no_fetch(app):
+    """No RWGPS URL in message does not trigger fetch."""
+    with app.app_context():
+        from services.chat_service import run_agent_loop, IntentResult
+
+        intent = IntentResult(intent='coaching')
+        mock_client = MagicMock()
+
+        with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
+             patch('services.chat_service.retrieve_knowledge_context', return_value=None), \
+             patch('services.chat_service.fetch_and_summarize_route') as mock_fetch, \
+             patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
+
+            messages = [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'test'}]
+            list(run_agent_loop(mock_client, "how should I train?", messages, rider_id=5, user_id=1))
+
+            mock_fetch.assert_not_called()
+
+
+def test_rwgps_url_overrides_non_route_intent(app):
+    """RWGPS URL overrides intent to route_discussion when misclassified."""
+    with app.app_context():
+        from services.chat_service import run_agent_loop, IntentResult
+
+        intent = IntentResult(intent='knowledge')  # Wrong classification
+        mock_client = MagicMock()
+
+        captured_messages = []
+
+        def capture_stream(messages, accumulator, **kwargs):
+            captured_messages.extend(messages)
+            accumulator['full_content'] = 'Response'
+            yield 'data: "Response"\n\n'
+
+        with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
+             patch('services.chat_service.retrieve_knowledge_context', return_value=None), \
+             patch('services.chat_service.fetch_and_summarize_route', return_value={'rows': [{'name': 'Route'}]}), \
+             patch('services.chat_service._stream_completion', side_effect=capture_stream):
+
+            messages = [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'test'}]
+            list(run_agent_loop(mock_client, "check https://ridewithgps.com/routes/123", messages, rider_id=5, user_id=1))
+
+            # Route data should appear in tool results
+            tool_msgs = [m for m in captured_messages if 'rwgps_url_fetch' in m.get('content', '')]
+            assert len(tool_msgs) > 0
+
+
+# ========== Custom plan comparison tests ==========
+
+
+def test_custom_plan_appended_when_exists(app):
+    """Custom plan comparison is appended when rider has customized a plan."""
+    with app.app_context():
+        from services.chat_service import run_agent_loop, IntentResult
+
+        intent = IntentResult(intent='route_discussion', ride_name='Cascade 300')
+        mock_client = MagicMock()
+
+        captured_messages = []
+
+        def capture_stream(messages, accumulator, **kwargs):
+            captured_messages.extend(messages)
+            accumulator['full_content'] = 'Response'
+            yield 'data: "Response"\n\n'
+
+        mock_plan_result = {'rows': [{'name': 'Cascade 300', 'slug': 'cascade-300'}]}
+
+        with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
+             patch('services.chat_service.retrieve_knowledge_context', return_value=None), \
+             patch('services.chat_service.execute_allowed_query', return_value=mock_plan_result), \
+             patch('services.chat_service.fetch_custom_plan_comparison', return_value={'rows': [{'has_custom_plan': True}]}) as mock_custom, \
+             patch('services.chat_service._stream_completion', side_effect=capture_stream):
+
+            messages = [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'test'}]
+            list(run_agent_loop(mock_client, "Cascade 300 plan", messages, rider_id=5, user_id=1))
+
+            mock_custom.assert_called_once_with(5, 'cascade-300')
+
+
+def test_custom_plan_not_fetched_without_rider(app):
+    """Custom plan is not fetched when rider_id is None."""
+    with app.app_context():
+        from services.chat_service import run_agent_loop, IntentResult
+
+        intent = IntentResult(intent='route_discussion', ride_name='Cascade 300')
+        mock_client = MagicMock()
+
+        mock_plan_result = {'rows': [{'name': 'Cascade 300', 'slug': 'cascade-300'}]}
+
+        with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
+             patch('services.chat_service.retrieve_knowledge_context', return_value=None), \
+             patch('services.chat_service.execute_allowed_query', return_value=mock_plan_result), \
+             patch('services.chat_service.fetch_custom_plan_comparison') as mock_custom, \
+             patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
+
+            messages = [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'test'}]
+            list(run_agent_loop(mock_client, "Cascade 300 plan", messages, rider_id=None, user_id=1))
+
+            mock_custom.assert_not_called()
+
+
+# ========== System prompt tests (Phase 10) ==========
+
+
+def test_system_prompt_no_internal_disclosure(app):
+    """System prompt instructs LLM to never disclose internal details."""
+    with app.app_context():
+        from services.openai_coach import CHAT_SYSTEM_PROMPT
+        assert 'NEVER DISCLOSE' in CHAT_SYSTEM_PROMPT
+        assert 'knowledge_context' in CHAT_SYSTEM_PROMPT
+        assert 'RESPONSE LENGTH' in CHAT_SYSTEM_PROMPT

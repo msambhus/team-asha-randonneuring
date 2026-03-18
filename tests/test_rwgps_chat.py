@@ -273,6 +273,7 @@ class TestRouteDiscussionLiveFetch:
             cached_plan = {'rows': [{'name': 'SFR 300K', 'plan': 'Start at 5am...'}]}
 
             with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
                  patch('services.chat_service.execute_allowed_query', return_value=cached_plan) as mock_exec, \
                  patch('services.chat_service.fetch_and_summarize_route') as mock_live, \
                  patch('services.chat_service._stream_completion', side_effect=_mock_stream):
@@ -306,6 +307,7 @@ class TestRouteDiscussionLiveFetch:
                 return {'rows': []}
 
             with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
                  patch('services.chat_service.execute_allowed_query', side_effect=mock_exec_side_effect) as mock_exec, \
                  patch('services.chat_service.extract_rwgps_route_id', return_value='12345') as mock_extract_id, \
                  patch('services.chat_service.fetch_and_summarize_route', return_value=live_data) as mock_live, \
@@ -334,6 +336,7 @@ class TestRouteDiscussionLiveFetch:
                 return {'rows': []}
 
             with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
                  patch('services.chat_service.execute_allowed_query', side_effect=mock_exec_side_effect), \
                  patch('services.chat_service.fetch_and_summarize_route') as mock_live, \
                  patch('services.chat_service._stream_completion', side_effect=_mock_stream):
@@ -358,6 +361,7 @@ class TestRouteDiscussionLiveFetch:
                 return {'rows': []}
 
             with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
                  patch('services.chat_service.execute_allowed_query', side_effect=mock_exec_side_effect), \
                  patch('services.chat_service.fetch_and_summarize_route') as mock_live, \
                  patch('services.chat_service._stream_completion', side_effect=_mock_stream):
@@ -382,6 +386,7 @@ class TestRouteDiscussionLiveFetch:
                 return {'rows': []}
 
             with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
                  patch('services.chat_service.execute_allowed_query', side_effect=mock_exec_side_effect), \
                  patch('services.chat_service.extract_rwgps_route_id', return_value=None), \
                  patch('services.chat_service.fetch_and_summarize_route') as mock_live, \
@@ -410,6 +415,7 @@ class TestRouteDiscussionLiveFetch:
                 return {'rows': []}
 
             with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
                  patch('services.chat_service.execute_allowed_query', side_effect=mock_exec_side_effect), \
                  patch('services.chat_service.extract_rwgps_route_id', return_value='12345'), \
                  patch('services.chat_service.fetch_and_summarize_route', return_value={'rows': [{'name': 'test'}]}), \
@@ -446,6 +452,7 @@ class TestRouteDiscussionLiveFetch:
                 yield 'data: "Route info"\n\n'
 
             with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
                  patch('services.chat_service.execute_allowed_query', side_effect=mock_exec_side_effect), \
                  patch('services.chat_service.extract_rwgps_route_id', return_value='12345'), \
                  patch('services.chat_service.fetch_and_summarize_route', return_value=live_data), \

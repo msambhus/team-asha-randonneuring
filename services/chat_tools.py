@@ -26,6 +26,7 @@ from services.weather import (
     get_cached_route_weather, format_weather_response,
 )
 from cache import cache
+import models
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,7 @@ ALLOWED_QUERIES: dict[str, str] = {
         ORDER BY rps.stop_order
     """,
     "get_ride_plan": """
-        SELECT rp.name, rp.distance_km, rp.total_elevation_ft, rp.cutoff_hours,
+        SELECT rp.name, rp.slug, rp.distance_km, rp.total_elevation_ft, rp.cutoff_hours,
                rps.stop_order, rps.stop_name, rps.location, rps.stop_type,
                rps.distance_miles AS distance_from_start_miles,
                rps.elevation_gain AS segment_elevation_ft,
@@ -445,3 +446,59 @@ def execute_route_weather(ride_name: str, start_datetime: str = None) -> dict:
     except Exception as e:
         logger.warning(f"Weather fetch failed for '{ride_name}': {e}")
         return {'error': "Unable to fetch weather for this route. Please try again."}
+
+
+def fetch_custom_plan_comparison(rider_id, plan_slug):
+    """Fetch custom plan comparison if the rider has customized a base plan.
+
+    Returns dict with 'rows' containing comparison data, or None if no custom plan.
+    Uses cached model functions — no new SQL queries.
+    """
+    if not rider_id or not plan_slug:
+        return None
+
+    try:
+        base_plan = models.get_ride_plan_by_slug(plan_slug)
+        if not base_plan:
+            return None
+
+        custom_plan = models.get_custom_plan(rider_id, base_plan['id'])
+        if not custom_plan:
+            return None
+
+        from services.custom_plan_service import get_merged_plan_stops, compare_plans
+        merged_stops = get_merged_plan_stops(custom_plan['id'])
+        if not merged_stops:
+            return None
+
+        base_stops = models.get_ride_plan_stops(base_plan['id'])
+        if not base_stops:
+            return None
+
+        comparison = compare_plans(base_stops, merged_stops)
+
+        summary = {
+            'has_custom_plan': True,
+            'custom_plan_name': custom_plan.get('name', 'Custom Plan'),
+            'total_time_diff_min': comparison.get('total_time_diff', 0),
+            'stops_added': comparison.get('stops_added', 0),
+            'stops_hidden': comparison.get('stops_hidden', 0),
+            'stops_modified': comparison.get('stops_modified', 0),
+            'custom_stops': [
+                {
+                    'stop_order': i + 1,
+                    'location': s.get('location', ''),
+                    'distance_miles': float(s.get('distance_miles') or 0),
+                    'segment_time_min': s.get('segment_time_min', 0),
+                    'cum_time_min': s.get('cum_time_min', 0),
+                    'is_modified': s.get('is_modified', False),
+                    'is_custom_stop': s.get('is_custom_stop', False),
+                }
+                for i, s in enumerate(merged_stops)
+            ],
+        }
+        return {'rows': [summary]}
+
+    except Exception as e:
+        logger.warning(f"Custom plan comparison failed for rider {rider_id}, plan {plan_slug}: {e}")
+        return None

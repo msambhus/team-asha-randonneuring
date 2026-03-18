@@ -224,6 +224,7 @@ class TestAgentLoopRAGIntegration:
             mock_client = MagicMock()
 
             with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
                  patch('services.chat_service.retrieve_knowledge_context') as mock_rag, \
                  patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
 
@@ -241,6 +242,7 @@ class TestAgentLoopRAGIntegration:
             mock_client = MagicMock()
 
             with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
                  patch('services.chat_service.retrieve_knowledge_context', return_value='') as mock_rag, \
                  patch('services.chat_service._stream_completion', side_effect=_mock_stream_completion):
 
@@ -268,6 +270,7 @@ class TestAgentLoopRAGIntegration:
                 yield 'data: "Response"\n\n'
 
             with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
                  patch('services.chat_service.retrieve_knowledge_context', return_value=knowledge_block), \
                  patch('services.chat_service._stream_completion', side_effect=capture_stream):
 
@@ -302,6 +305,7 @@ class TestAgentLoopRAGIntegration:
                 yield 'data: "Response"\n\n'
 
             with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
                  patch('services.chat_service.retrieve_knowledge_context', return_value=knowledge_block), \
                  patch('services.chat_service._stream_completion', side_effect=capture_stream):
 
