@@ -385,7 +385,7 @@ def test_weather_query_agent_loop_branch(app):
             }]
         }
 
-        def _mock_stream(messages, accumulator):
+        def _mock_stream(messages, accumulator, **kwargs):
             accumulator['full_content'] = 'Weather looks good'
             accumulator['prompt_tokens'] = 100
             accumulator['completion_tokens'] = 20

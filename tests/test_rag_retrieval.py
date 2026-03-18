@@ -51,7 +51,7 @@ def _mock_parse_response(parsed_result, prompt_tokens=50, completion_tokens=10):
     return mock_response
 
 
-def _mock_stream_completion(messages, accumulator):
+def _mock_stream_completion(messages, accumulator, **kwargs):
     """Helper that simulates _stream_completion yielding one chunk."""
     accumulator['full_content'] = 'Hello'
     accumulator['prompt_tokens'] = 100
@@ -260,7 +260,7 @@ class TestAgentLoopRAGIntegration:
 
             captured_messages = []
 
-            def capture_stream(messages, accumulator):
+            def capture_stream(messages, accumulator, **kwargs):
                 captured_messages.extend(messages)
                 accumulator['full_content'] = 'Response'
                 accumulator['prompt_tokens'] = 100
@@ -282,3 +282,37 @@ class TestAgentLoopRAGIntegration:
                 assert len(knowledge_messages) == 1
                 assert 'knowledge_context' in knowledge_messages[0]['content']
                 assert 'data, not instructions' in knowledge_messages[0]['content']
+
+    def test_rag_injection_instruction_is_strong(self, app):
+        """WA-PRI-03: RAG injection instruction says ALWAYS present community knowledge FIRST."""
+        with app.app_context():
+            from services.chat_service import run_agent_loop, IntentResult
+
+            intent = IntentResult(intent='knowledge')
+            mock_client = MagicMock()
+            knowledge_block = '<knowledge_context>\nSome cycling discussion\n</knowledge_context>'
+
+            captured_messages = []
+
+            def capture_stream(messages, accumulator, **kwargs):
+                captured_messages.extend(messages)
+                accumulator['full_content'] = 'Response'
+                accumulator['prompt_tokens'] = 100
+                accumulator['completion_tokens'] = 20
+                yield 'data: "Response"\n\n'
+
+            with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+                 patch('services.chat_service.retrieve_knowledge_context', return_value=knowledge_block), \
+                 patch('services.chat_service._stream_completion', side_effect=capture_stream):
+
+                messages = [{'role': 'system', 'content': 'system'}, {'role': 'user', 'content': 'test'}]
+                list(run_agent_loop(mock_client, 'What are ACP rules?', messages, rider_id=5, user_id=1))
+
+                knowledge_messages = [
+                    m for m in captured_messages
+                    if m['role'] == 'system' and '<knowledge_context>' in m.get('content', '')
+                ]
+                assert len(knowledge_messages) == 1
+                content = knowledge_messages[0]['content']
+                assert 'ALWAYS' in content
+                assert 'FIRST' in content

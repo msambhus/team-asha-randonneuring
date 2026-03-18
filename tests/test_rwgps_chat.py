@@ -253,7 +253,7 @@ class TestFetchAndSummarizeRouteErrors:
 
 # ── RWGPS-02/07: Agent loop integration — route_discussion with live RWGPS fallback ──
 
-def _mock_stream(messages, accumulator):
+def _mock_stream(messages, accumulator, **kwargs):
     """Helper that simulates _stream_completion yielding one chunk."""
     accumulator['full_content'] = 'Route info here'
     accumulator['prompt_tokens'] = 100
@@ -438,7 +438,7 @@ class TestRouteDiscussionLiveFetch:
 
             captured_messages = []
 
-            def mock_stream(messages, accumulator):
+            def mock_stream(messages, accumulator, **kwargs):
                 captured_messages.extend(messages)
                 accumulator['full_content'] = 'Route info'
                 accumulator['prompt_tokens'] = 100
