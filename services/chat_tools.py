@@ -8,12 +8,22 @@ SEC-02: ALLOWED_QUERIES dict enforces the allowlist
 SEC-03: validate_sql_safety() is a secondary defense using sqlparse
 AGENT-03 through AGENT-08: Populated queries, timeout, row cap
 RWGPS-01 through RWGPS-06: Route data lookup, summarization, caching
+WTHR-01/02: Weather query tool orchestration
 """
 import sqlparse
 import logging
+from datetime import datetime, timedelta
+
+import requests
+
 from services.rwgps import (
     fetch_route, extract_controls, build_ride_plan,
+    extract_rwgps_route_id,
     METERS_TO_MILES, METERS_TO_FEET,
+)
+from services.weather import (
+    sample_track_points, calculate_bearing,
+    get_cached_route_weather, format_weather_response,
 )
 from cache import cache
 
@@ -123,6 +133,16 @@ ALLOWED_QUERIES: dict[str, str] = {
         WHERE ri.name ILIKE %s OR ri.name ILIKE %s
         ORDER BY ri.date DESC
         LIMIT 1
+    """,
+    "get_ride_plan_for_weather": """
+        SELECT rp.name, rp.slug, rp.distance_km,
+               ri.rwgps_url,
+               rps.cum_time_min
+        FROM ride_plan rp
+        JOIN ride ri ON ri.name ILIKE rp.name
+        LEFT JOIN ride_plan_stop rps ON rps.ride_plan_id = rp.id
+        WHERE rp.slug ILIKE %s OR rp.name ILIKE %s
+        ORDER BY rps.stop_order
     """,
     "get_ride_plan": """
         SELECT rp.name, rp.distance_km, rp.total_elevation_ft, rp.cutoff_hours,
@@ -340,3 +360,88 @@ def fetch_and_summarize_route(route_id):
     # RWGPS-06: Cache with 5-min TTL
     cache.set(cache_key, summary, timeout=300)
     return {'rows': [summary]}
+
+
+def execute_route_weather(ride_name: str, start_datetime: str = None) -> dict:
+    """Fetch weather forecast for a route by ride name.
+
+    Orchestrates: ride plan lookup -> RWGPS fetch -> weather sampling -> formatting.
+    WTHR-01/02: Intent-triggered weather tool for the agent loop.
+
+    Args:
+        ride_name: Name of the ride/route to look up
+        start_datetime: Optional ISO datetime for ride start (default: now + 12h)
+
+    Returns:
+        dict with 'rows' containing formatted weather response, or 'error' on failure
+    """
+    try:
+        # Step 1: Look up ride plan to get RWGPS URL
+        plan_result = execute_allowed_query(
+            query_type='get_ride_plan_for_weather',
+            params=(ride_name, ride_name),
+            user_id=None,
+        )
+        rows = plan_result.get('rows', [])
+        if not rows:
+            return {'error': f"I couldn't find a ride plan for '{ride_name}'. Check the ride name and try again."}
+
+        row = rows[0]
+        rwgps_url = row.get('rwgps_url')
+        route_slug = row.get('slug', ride_name.lower().replace(' ', '-'))
+
+        if not rwgps_url:
+            return {'error': "I need the route's GPS track to forecast weather. This route doesn't have an RWGPS link."}
+
+        route_id = extract_rwgps_route_id(rwgps_url)
+        if route_id is None:
+            return {'error': "Could not extract a valid route ID from the RWGPS URL."}
+
+        # Step 2: Fetch route geometry from RWGPS
+        route_data = fetch_route(route_id)
+        track_points = route_data.get('track_points', [])
+
+        if not track_points:
+            return {'error': "This route has no GPS track data available for weather forecasting."}
+
+        # Step 3: Sample track points at 50km intervals
+        sample_points = sample_track_points(track_points, interval_m=50000)
+        if not sample_points:
+            return {'error': "This route has no GPS track data available for weather forecasting."}
+
+        # Step 4: Parse start datetime
+        if start_datetime:
+            try:
+                start_dt = datetime.fromisoformat(start_datetime)
+            except (ValueError, TypeError):
+                start_dt = datetime.now() + timedelta(hours=12)
+        else:
+            start_dt = datetime.now() + timedelta(hours=12)
+
+        # Check if within 16-day forecast window
+        max_forecast = datetime.now() + timedelta(days=16)
+        if start_dt > max_forecast:
+            return {'error': "Weather forecasts are only available up to 16 days ahead. Check back closer to your ride date."}
+
+        # Step 5: Fetch weather data (cached)
+        start_hour_str = start_dt.strftime("%Y-%m-%dT%H:00")
+        weather_data = get_cached_route_weather(route_slug, start_hour_str, sample_points, cache=cache)
+
+        # Step 6: Compute bearings between consecutive sample points
+        bearings = []
+        for i in range(len(sample_points) - 1):
+            b = calculate_bearing(
+                sample_points[i]['lat'], sample_points[i]['lng'],
+                sample_points[i + 1]['lat'], sample_points[i + 1]['lng'],
+            )
+            bearings.append(b)
+
+        # Step 7: Format response
+        formatted = format_weather_response(sample_points, weather_data, bearings, start_dt)
+        return {'rows': [formatted]}
+
+    except requests.RequestException:
+        return {'error': "Weather data is temporarily unavailable. The route information is still accessible — try asking about the route details instead."}
+    except Exception as e:
+        logger.warning(f"Weather fetch failed for '{ride_name}': {e}")
+        return {'error': "Unable to fetch weather for this route. Please try again."}

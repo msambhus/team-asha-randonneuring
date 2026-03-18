@@ -124,7 +124,7 @@ def test_intent_result_validates_literal(app):
         from services.chat_service import IntentResult
 
         # Valid intents
-        for intent in ['data_query', 'coaching', 'knowledge', 'route_discussion', 'off_topic']:
+        for intent in ['data_query', 'coaching', 'knowledge', 'route_discussion', 'web_search', 'weather_query', 'off_topic']:
             obj = IntentResult(intent=intent)
             assert obj.intent == intent
 

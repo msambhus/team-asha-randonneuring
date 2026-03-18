@@ -22,7 +22,7 @@ import models
 from db import get_db
 from services.fitness import calculate_fitness_score
 from services.openai_coach import _build_training_summary, _build_brevet_history_summary
-from services.chat_tools import ALLOWED_QUERIES, execute_allowed_query, execute_web_search, fetch_and_summarize_route
+from services.chat_tools import ALLOWED_QUERIES, execute_allowed_query, execute_web_search, fetch_and_summarize_route, execute_route_weather
 from services.rwgps import extract_rwgps_route_id
 
 logger = logging.getLogger(__name__)
@@ -62,9 +62,10 @@ def _get_client():
 
 class IntentResult(BaseModel):
     """Structured intent classification result for the agentic pipeline."""
-    intent: Literal['data_query', 'coaching', 'knowledge', 'route_discussion', 'web_search', 'off_topic']
+    intent: Literal['data_query', 'coaching', 'knowledge', 'route_discussion', 'web_search', 'weather_query', 'off_topic']
     query_type: Optional[str] = None   # e.g. "fitness_score", "brevet_history"
-    ride_name: Optional[str] = None    # for route_discussion intent
+    ride_name: Optional[str] = None    # for route_discussion / weather_query intent
+    start_datetime: Optional[str] = None  # ISO format for weather_query (e.g. '2026-03-20T06:00')
 
 
 INTENT_CLASSIFICATION_PROMPT = """\
@@ -94,14 +95,19 @@ for randonneuring?", "Trek Checkpoint vs Surly Long Haul Trucker?"
 - route_discussion: User asks about a specific ride plan, route, control stops, elevation profile, or route details.
   The system can look up ride plans from the database AND fetch live route data from RideWithGPS (elevation, distance, control stops, key segments).
   Set ride_name to the full ride name including distance (e.g., "Cascade 400").
+- weather_query: User asks about weather conditions, wind, headwinds, tailwinds, temperature, \
+or forecast for a specific route or ride. Set ride_name to the full ride name. \
+Set start_datetime to ISO format if user specifies a date/time (e.g., '2026-03-20T06:00'), else leave null.
 - off_topic: Question is NOT related to cycling, randonneuring, bikes, or Team Asha.
 
 IMPORTANT: Questions about team data, leaderboards, rankings, scores, and rider comparisons
 are data_query — NOT off_topic. Team Asha questions are always relevant.
 IMPORTANT: Questions about specific bike brands, models, components, or gear comparisons \
 are web_search — NOT knowledge or off_topic.
+IMPORTANT: Questions about weather, wind conditions, headwinds, or temperature along a route \
+are weather_query — NOT route_discussion.
 
-Return the intent and, where applicable, the query_type or ride_name.
+Return the intent and, where applicable, the query_type, ride_name, or start_datetime.
 """
 
 
@@ -249,6 +255,15 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
                 )
                 tool_results.append({'tool': intent_result.query_type, 'result': result})
                 db_query_count += 1
+            break
+
+        elif intent_result.intent == 'weather_query':
+            if intent_result.ride_name:
+                result = execute_route_weather(
+                    ride_name=intent_result.ride_name,
+                    start_datetime=intent_result.start_datetime,
+                )
+                tool_results.append({'tool': 'get_route_weather', 'result': result})
             break
 
         elif intent_result.intent == 'route_discussion':
