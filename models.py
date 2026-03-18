@@ -2516,7 +2516,7 @@ def upsert_personality_profile(rider_id, profile_type, fields, updated_by='syste
     cur.execute(
         f"""INSERT INTO personality_profile ({', '.join(all_cols)})
             VALUES ({', '.join(all_placeholders)})
-            ON CONFLICT (rider_id, profile_type) DO UPDATE SET
+            ON CONFLICT (rider_id, profile_type, extraction_source) DO UPDATE SET
             {', '.join(set_parts)}
             RETURNING *""",
         all_values
