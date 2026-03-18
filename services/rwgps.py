@@ -307,6 +307,23 @@ def build_ride_plan(route_data, controls):
 
     cutoff_hours = _get_cutoff_hours(distance_km)
 
+    # Use RWGPS corrected elevation_gain (smoothed, more accurate than raw
+    # track point summation which over-counts due to GPS jitter)
+    corrected_elev_m = route_data.get('elevation_gain', 0) or 0
+    corrected_elev_ft = int(round(corrected_elev_m * METERS_TO_FEET))
+
+    # Compute raw segment gains from track points for proportional distribution
+    raw_segment_gains = []
+    raw_total = 0
+    for i, ctrl in enumerate(controls):
+        if i > 0:
+            prev_dist_m = controls[i - 1]['distance_m']
+            raw_gain = _compute_segment_elevation(track_points, prev_dist_m, ctrl['distance_m'])
+        else:
+            raw_gain = 0
+        raw_segment_gains.append(raw_gain)
+        raw_total += raw_gain
+
     # Build stops
     stops = []
     cum_time_min = 0
@@ -320,12 +337,11 @@ def build_ride_plan(route_data, controls):
         # Segment metrics (vs previous stop)
         seg_dist = round(dist_miles - prev_dist_miles, 1)
 
-        # Elevation gain for this segment from track points
-        if i > 0:
-            prev_dist_m = controls[i - 1]['distance_m']
-            elev_gain = _compute_segment_elevation(track_points, prev_dist_m, ctrl['distance_m'])
+        # Scale segment elevation to match RWGPS corrected total
+        if raw_total > 0 and corrected_elev_ft > 0:
+            elev_gain = int(round(raw_segment_gains[i] * corrected_elev_ft / raw_total))
         else:
-            elev_gain = 0
+            elev_gain = raw_segment_gains[i]
 
         total_elevation_ft += elev_gain
 
@@ -374,11 +390,14 @@ def build_ride_plan(route_data, controls):
     avg_elapsed_speed = round(total_dist_miles / (total_elapsed / 60.0), 1) if total_elapsed > 0 else None
     overall_ft_per_mile = round(total_elevation_ft / total_dist_miles, 1) if total_dist_miles > 0 else 0
 
+    # Prefer RWGPS corrected elevation over summed segments (avoids rounding drift)
+    final_elevation_ft = corrected_elev_ft if corrected_elev_ft > 0 else total_elevation_ft
+
     plan = {
         'name': route_name,
         'slug': slugify(route_name),
         'total_distance_miles': total_dist_miles,
-        'total_elevation_ft': total_elevation_ft,
+        'total_elevation_ft': final_elevation_ft,
         'rwgps_url': f'https://ridewithgps.com/routes/{route_id}' if route_id else None,
         'rwgps_route_id': route_id or None,
         'distance_km': distance_km,
