@@ -25,12 +25,31 @@ sys.path.insert(0, str(_project_root))
 try:
     import trafilatura
 except ImportError:
-    trafilatura = None  # type: ignore
+    # Create a placeholder module with stub attributes so unittest.mock.patch
+    # can patch them in tests even when the library is not installed.
+    from types import ModuleType as _ModuleType
+
+    def _trafilatura_not_installed(*args, **kwargs):
+        raise ImportError("trafilatura is required: pip install trafilatura==2.0.0")
+
+    _trafilatura_mod = _ModuleType('trafilatura')
+    _trafilatura_mod.fetch_url = _trafilatura_not_installed  # type: ignore
+    _trafilatura_mod.extract = _trafilatura_not_installed  # type: ignore
+    trafilatura = _trafilatura_mod  # type: ignore
 
 try:
     import pdfplumber
 except ImportError:
-    pdfplumber = None  # type: ignore
+    # Create a placeholder module with stub attributes so unittest.mock.patch
+    # can patch pdfplumber.open in tests even when the library is not installed.
+    from types import ModuleType as _ModuleType
+
+    def _pdfplumber_not_installed(*args, **kwargs):
+        raise ImportError("pdfplumber is required: pip install pdfplumber==0.11.9")
+
+    _pdfplumber_mod = _ModuleType('pdfplumber')
+    _pdfplumber_mod.open = _pdfplumber_not_installed  # type: ignore
+    pdfplumber = _pdfplumber_mod  # type: ignore
 
 
 def fetch_blog_text(url: str) -> str:

@@ -53,7 +53,7 @@ class PersonalityExtraction(BaseModel):
     humor_type: Literal['none', 'dry', 'sarcastic', 'gentle', 'self-deprecating']
     directness: Literal['low', 'medium', 'high']
     encouragement_style: Literal['data-driven', 'emotional', 'balanced', 'tough-love']
-    technical_depth: Literal['beginner', 'intermediate', 'expert']
+    technical_depth: Optional[Literal['beginner', 'intermediate', 'expert']] = None
     domain_bias: Optional[str] = None          # e.g. "gear and components"
     response_length_tendency: Literal['brief', 'moderate', 'verbose']
     question_asking_behavior: Literal['rarely', 'sometimes', 'frequently']
