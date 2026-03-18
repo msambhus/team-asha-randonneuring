@@ -181,12 +181,12 @@ Plans:
   4. The admin `/admin/gear` page shows per-rider gear fields (bike make/model/year/material, wheels/tires, lighting, bags, navigation, kit) and value orientation — all editable with typed fields, no free-text blobs
   5. The admin `/admin/coaches` page shows the coach roster with active/inactive toggle, topic domain assignments editable per coach, routing rules, and fallback coach designation
   6. The admin `/admin/guardrails` page shows all guardrail rules with type, value, and active/inactive toggle — rules can be created, edited, toggled off, and soft-deleted without touching code or redeploying
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 10-01: Personality admin pages — team member list with completeness, trait edit view with source quotes, confidence badges, re-extraction trigger
-- [ ] 10-02: Gear preferences admin — per-rider gear fields with typed inputs, value orientation, AJAX saves
-- [ ] 10-03: Coach and guardrail admin — coach roster, domain assignments, routing rules, fallback config, guardrail CRUD with toggle
+- [ ] 10-01-PLAN.md — Personality admin: model helpers (get_trait_evidence, get_all_guardrails), team list with completeness, trait edit with evidence quotes and confidence badges
+- [ ] 10-02-PLAN.md — Gear admin: per-rider gear list, gear edit form with typed inputs and value orientation dropdown
+- [ ] 10-03-PLAN.md — Coach and guardrail admin: coach roster with domain assignments, guardrail CRUD with toggle/create/edit/delete
 
 ### Phase 11: Braintrust Evals
 **Goal**: A Braintrust eval suite validates that the guardrail configuration in the database is actually enforced by the chat pipeline — loading rules dynamically at eval time, generating test cases per rule, and scoring compliance with LLM-as-judge across scope enforcement, topic blocking, medical deflection, and persona consistency
