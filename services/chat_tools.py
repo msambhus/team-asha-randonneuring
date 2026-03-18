@@ -377,10 +377,11 @@ def execute_route_weather(ride_name: str, start_datetime: str = None) -> dict:
         dict with 'rows' containing formatted weather response, or 'error' on failure
     """
     try:
-        # Step 1: Look up ride plan to get RWGPS URL
+        # Step 1: Look up ride plan to get RWGPS URL (fuzzy match for DB suffixes)
+        fuzzy_name = f'%{ride_name}%'
         plan_result = execute_allowed_query(
             query_type='get_ride_plan_for_weather',
-            params=(ride_name, ride_name),
+            params=(fuzzy_name, fuzzy_name),
             user_id=None,
         )
         rows = plan_result.get('rows', [])
