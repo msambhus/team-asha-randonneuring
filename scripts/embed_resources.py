@@ -135,11 +135,24 @@ def fetch_sheet_urls(sheet_url: str, url_column: str | None = None) -> list[str]
         if name in fieldnames:
             return [r[name].strip() for r in rows if r.get(name, "").strip().startswith("http")]
 
-    # 3. Auto-detect column with http values
+    # 3. Auto-detect column with http values (DictReader)
     for col in fieldnames:
         values = [r.get(col, "").strip() for r in rows]
         if any(v.startswith("http") for v in values):
             return [v for v in values if v.startswith("http")]
+
+    # 4. Fallback: raw CSV reader (handles duplicate/empty column names)
+    raw_reader = csv.reader(io.StringIO(response.text))
+    next(raw_reader, None)  # skip header
+    for col_idx in range(10):  # check first 10 columns
+        raw_reader = csv.reader(io.StringIO(response.text))
+        next(raw_reader, None)
+        urls = []
+        for row in raw_reader:
+            if len(row) > col_idx and row[col_idx].strip().startswith("http"):
+                urls.append(row[col_idx].strip())
+        if urls:
+            return urls
 
     return []
 
