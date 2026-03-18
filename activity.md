@@ -4,150 +4,41 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ---
 
-## 2026-03-18 — Iteration 14 (ralph.sh)
+## Iteration 5 — 2026-03-17 Phase 9 Plan 01
 
-**Task:** Execute Phase 12 (Knowledge Base Expansion) — both plans
-**Branch:** `feature/personality-coaching-admin`
-**Status:** Phase 12 COMPLETE. 2 plans executed, all tests green. MILESTONE 2 COMPLETE.
-**Tests:** 200 passed, 44 skipped (full suite green)
-**Commits:**
-- `579c384` feat(12-01): add web resource embedding script with SHA-256 dedup (TDD)
-- `6acb302` feat(12-02): add knowledge base admin page with source list, remove, re-embed
+**Plan:** 09-01 (WhatsApp community knowledge prioritization)
+**Branch:** `feature/phase-7-9-execution`
+**Commit:** a244b3c
 
 **What was done:**
-- Plan 12-01: Created `scripts/embed_resources.py` — CLI script that crawls URLs from Google Sheets CSV, extracts content via trafilatura, chunks at paragraph boundaries, embeds with text-embedding-3-small, stores in whatsapp_chunk with web_ source prefix and SHA-256 content hash dedup. Supports --dry-run, --url, --source, --url-column flags. Created `migrations/013_add_content_hash.sql` for dedup column. 18 unit tests.
-- Plan 12-02: Added `get_knowledge_sources()` and `delete_knowledge_source()` to models.py. Created admin routes at /admin/knowledge (list, remove, re-embed). Created `templates/admin/knowledge.html` with source table. Added Knowledge Base link to admin dashboard. 5 unit tests.
-- Requirements covered: KB-01 through KB-06
+- TDD: Wrote 5 new tests (RED), 3 failed as expected, then implemented production changes (GREEN)
+- Added COMMUNITY_KNOWLEDGE_INSTRUCTION and WEB_WITH_COMMUNITY_INSTRUCTION constants
+- Strengthened RAG injection: "ALWAYS present community knowledge FIRST" with named attribution
+- When web_search + community context present, uses structured community-first instruction
+- Updated CHAT_SYSTEM_PROMPT: "COMMUNITY KNOWLEDGE PRIORITY:" section with contradiction handling
+- Bumped max_tokens to 800 for web_search intent (parameterized _stream_completion)
+- Fixed 5 mock helpers across test files to accept **kwargs for new max_tokens param
+- Full suite: 218 passing, 6 skipped — all green
 
-**Notes:** Milestone 2 (Phases 7-12) is now fully complete — 16/16 plans executed across 6 phases.
+**Status:** Phase 9 Plan 01 complete. ALL PHASES COMPLETE (07-01, 07-02, 08-01, 08-02, 09-01).
 
 ---
 
-## 2026-03-18 — Iteration 13 (ralph.sh)
+## Iteration 1 — 2026-03-17 Phase 7 Plan 01
 
-**Task:** Plan Phase 12 (Knowledge Base Expansion)
-**Branch:** `feature/personality-coaching-admin`
-**Status:** Phase 12 PLANNED. 2 plans in 2 waves, verification passed (all 8 dimensions).
-**Commits:**
-- `1b47c64` docs(12): research phase — knowledge base expansion
-- `9113366` docs(12): add research and validation strategy
-- `4c46526` docs(12): create phase plan — 2 plans, 2 waves
+**Plan:** 07-01 (TDD: RWGPS route data functions)
+**Branch:** `feature/phase-7-9-execution` (created from main)
+**Commit:** 36e6a80
 
 **What was done:**
-- Researched Phase 12: confirmed trafilatura, embed_texts(), Google Sheets CSV pattern all already in codebase
-- Created 12-VALIDATION.md with per-task verification map
-- Created 12-01-PLAN.md: CLI embed script (Google Sheets CSV parsing, trafilatura, SHA-256 dedup, pgvector)
-- Created 12-02-PLAN.md: Knowledge admin page (source list, re-embed trigger, source removal)
-- Plan checker passed all 8 verification dimensions on first try
-- Updated STATE.md to reflect Phase 12 planned status
+- Wrote 16 tests first (red), then implemented (green)
+- Added `get_ride_rwgps_url` SQL query to ALLOWED_QUERIES
+- Added `summarize_route_for_chat()` and `fetch_and_summarize_route()` to chat_tools.py
+- Cache-first pattern with 5-min TTL, error handling for 404/401/429/no-waypoints
+- Updated test_chat_tools.py expected query count (10 → 11)
+- Full suite: 160 passing, 6 skipped
 
-**Issues:** None. Clean planning iteration.
-
----
-
-## 2026-03-18 — Iteration 12 (ralph.sh)
-
-**Task:** Execute Phase 11 (Braintrust Evals)
-**Branch:** `feature/personality-coaching-admin`
-**Status:** Phase 11 COMPLETE. 1 plan executed, verification passed.
-**Tests:** 177 passed, 44 skipped (full suite green)
-**Commits:**
-- `d98e485` test(11-01): add failing EVAL2 unit tests for dynamic guardrail eval (TDD RED)
-- `c4593c4` feat(11-01): implement dynamic guardrail eval with DB-driven test case generation (TDD GREEN)
-- `8445a54` docs(11-01): complete dynamic guardrail eval plan
-- `8636d12` docs(phase-11): complete phase execution
-
-**What was done:**
-- Executed plan 11-01: TDD tests first (6 test functions for EVAL2-01 through EVAL2-06), then implementation.
-- Created `evals/eval_guardrail_dynamic.py` (469 lines): loads guardrail rules from DB, generates 5 test cases per rule (violation, pass, boundary, 2 adversarial) for 4 rule types (scope, topic_block, escalation, tone_limit). LLMClassifier scores compliance with chain-of-thought. MD5 version stamp for reproducible Braintrust experiments.
-- Created `tests/test_braintrust_integration.py` additions (6 tests at line 485+).
-- One deviation: patched `_classifier` instance directly instead of class+reload (module-level singleton).
-- Verification: 4/4 must-haves, all 6 EVAL2 requirements satisfied.
-- Requirements covered: EVAL2-01 through EVAL2-06
-
-**Notes:** Phase 12 (Knowledge Base Expansion) is next — needs planning.
-
----
-
-## 2026-03-18 — Iteration 11 (ralph.sh)
-
-**Task:** Plan Phase 11 (Braintrust Evals)
-**Branch:** `feature/personality-coaching-admin`
-**Status:** Phase 11 PLANNED. 1 plan, 2 tasks, verification passed.
-**Commits:**
-- `d46e484` docs(11): plan Phase 11 — Braintrust dynamic guardrail evals
-
-**What was done:**
-- Researched Phase 11: confirmed autoevals.LLMClassifier API, Braintrust Eval() metadata for version stamps, Flask app context pattern for DB access, non-streaming task function pattern from eval_e2e.py.
-- Created VALIDATION.md with test map for all 6 EVAL2 requirements.
-- Created 11-01-PLAN.md: 2 tasks (TDD tests first, then eval script implementation). Covers all 6 EVAL2 requirements in a single plan since both tasks share one eval script file.
-- Plan checker verified: all 8 dimensions passed. One informational note about stale VALIDATION.md row referencing Plan 02.
-- Requirements covered: EVAL2-01 through EVAL2-06
-
-**Notes:** Consolidated from 2 roadmap-sketched plans to 1 plan since splitting by eval category would mean both plans touch the same file. Ready for `/gsd:execute-phase 11`.
-
----
-
-## 2026-03-18 — Iteration 10 (ralph.sh)
-
-**Task:** Execute Phase 10 (Admin UI) — all 3 plans
-**Branch:** `feature/personality-coaching-admin`
-**Status:** Phase 10 COMPLETE. All 3 plans executed successfully.
-**Tests:** 171 passed, 44 skipped (full suite green)
-**Commits:**
-- `386300d` feat(10-01): add personality admin pages — list with completeness, edit with evidence
-- `c3e347a` feat(10-02): add gear admin pages — list with status, edit with typed inputs
-- `7319b06` feat(10-03): add coach roster and guardrail CRUD admin pages
-
-**What was done:**
-- Plan 10-01: Added get_trait_evidence() and get_all_guardrails() model helpers, compute_completeness() route helper, /admin/personalities list page (X/8 trait completeness, confidence badges, source priority), /admin/personalities/<id> edit page (enum dropdowns, textarea for arrays, evidence quotes, re-extraction CLI display). 8 test scaffolds.
-- Plan 10-02: Added /admin/gear list page (bike info, material, value orientation, has-gear indicator), /admin/gear/<id> edit page (text inputs, number for year, dropdowns for bike_material and value_orientation, textareas for components). 4 test scaffolds.
-- Plan 10-03: Added /admin/coaches roster (grouped by coach, persona status badge, FALLBACK badge, domain assignment toggle), /admin/guardrails list (toggle, edit, delete, version display), guardrail create/edit form, soft-delete route. 6 test scaffolds.
-- Requirements covered: ADMN-01 through ADMN-06, GEAR-01, GEAR-02, COACH-01, GUARD-02 through GUARD-05
-
-**Notes:** All 3 plans executed in one iteration. Clean execution, no blockers. Dashboard now has 5 admin nav buttons (Strava, Personalities, Gear, Coaches, Guardrails). Phase 11 (Braintrust Evals) is next — needs planning.
-
----
-
-## 2026-03-18 — Iteration 9 (ralph.sh)
-
-**Task:** Plan Phase 10 (Admin UI)
-**Branch:** `feature/personality-coaching-admin`
-**Status:** Phase 10 PLANNED. 3 plans in 3 sequential waves, verified by plan checker.
-**Commits:**
-- `61d8c26` docs(10): research phase 10 — admin UI
-- `2158150` docs(10): add research and validation strategy
-- `fb936f5` docs(10): create phase plan — 3 plans across 3 waves
-- `829dae4` fix(10): revise plans based on checker feedback
-
-**What was done:**
-- Research: Confirmed all model functions exist, identified 2 new helpers needed (get_trait_evidence, get_all_guardrails), re-extraction must be CLI display only (Vercel constraint)
-- Plan 10-01 (Wave 1): Personality admin — model helpers, team list with completeness indicators, trait edit with evidence quotes + confidence badges, re-extraction CLI display
-- Plan 10-02 (Wave 2): Gear admin — per-rider gear list and edit form with typed inputs, value orientation dropdown
-- Plan 10-03 (Wave 3): Coach roster with active/inactive toggle + guardrail CRUD (create, edit, toggle, soft-delete)
-- Verification: Failed iteration 1 (COACH-01 toggle missing, Wave 0 test files not created). Fixed and passed iteration 2.
-- Requirements covered: ADMN-01 through ADMN-06, GEAR-01, GEAR-02, COACH-01, GUARD-02 through GUARD-05
-
-**Notes:** Plans are sequential (not parallel) because all modify routes/admin.py. Each plan includes a Wave 0 task for test scaffolds. Ready to execute.
-
----
-
-## 2026-03-18 — Iteration 8 (ralph.sh)
-
-**Task:** Execute Phase 9 (Chat Integration) — both plans
-**Branch:** `feature/personality-coaching-admin`
-**Status:** Phase 9 COMPLETE. Both plans executed successfully.
-**Tests:** 171 passed, 26 skipped (full suite green)
-**Commits:**
-- `e306709` feat(09-01): implement DB-driven coach routing
-- `f79dfef` feat(09-02): wire guardrails, gear context, and DB-driven routing into chat pipeline
-
-**What was done:**
-- Plan 09-01: Added `select_coach_for_message()` with DB-driven routing via `coach_assignment` table, `_legacy_coach_selection()` fallback, `_get_coach_name()` helper, `get_rider_by_id()` in models.py. 8 tests.
-- Plan 09-02: Added `assemble_coach_context()` (guardrail injection as XML), `assemble_gear_context()` (gear preferences as XML), wired into `process_message()` and `run_agent_loop()`. Added guardrail seed data. 11 tests.
-- Requirements covered: COACH-02, COACH-03, COACH-04, COACH-05, GUARD-07, GEAR-03
-
-**Notes:** Clean execution, no blockers. Phase 10 (Admin UI) is next — needs planning.
+**Issues:** None. Clean execution.
 
 ---
 
@@ -989,121 +880,65 @@ Autonomous iteration log. Each entry = one fresh Claude context window.
 
 ## Iteration 9 — 2026-03-16 00:34:31
 
+**Status:** Success (228s)
 
-## Iteration 1 — 2026-03-17 22:27:43
+## Iteration 2 — 2026-03-17 Phase 7 Plan 02
 
-**Status:** Success (882s)
+**Plan:** 07-02 (Agent loop wiring + intent prompt update)
+**Branch:** `feature/phase-7-9-execution`
+**Commit:** ed57439
 
-## Iteration 2 — 2026-03-17 22:42:31
+**What was done:**
+- Wrote 8 tests first (RED): 7 agent loop integration + 1 intent prompt content
+- Extended route_discussion branch with cache-first + live RWGPS fallback
+- When get_ride_plan returns no rows, queries get_ride_rwgps_url, extracts route ID, fetches live data
+- Graceful degradation for missing rows, null URL, malformed URL
+- Updated intent classification prompt to describe live RWGPS capability
+- Full suite: 168 passing, 6 skipped
 
-**Task:** Execute Phase 7 — Data Foundation (all 3 plans)
-**Branch:** `feature/personality-coaching-admin`
-**Commits:** `391aada`, `f3b435f`, `d34283d`
+**Issues:** None. Clean execution. Phase 7 complete.
 
-**What happened:**
-- Plan 07-01: Created migration SQL (`011_personality_coaching_tables.sql`) with 4 tables (personality_profile, gear_preference, coach_assignment, coaching_guardrail), indexes, FK constraints, soft-delete columns, and rule_version auto-increment trigger. Created apply script and 12 test functions (8 schema validation + 4 CRUD stubs).
-- Plan 07-02: Added 12 CRUD functions to models.py under PERSONALITY & COACHING section. All use parameterized SQL, no caching, all SELECTs include `deleted_at IS NULL`, all writes call `conn.commit()`. Unskipped CRUD stubs and implemented full test coverage (upsert/read/update/soft-delete for all 4 tables).
-- Plan 07-03: Created idempotent seed script for Shriram (direct/dry/high — bikes/gear/maintenance domains) and Venki (playful/sarcastic/medium — training/nutrition/randonneuring/general with is_default). Seed validation tests and CHAT_SYSTEM_PROMPT preservation test added.
-- Tests: 145 passed, 23 skipped (DB-dependent tests skip without DATABASE_URL)
-**Issues:** None
-**Status:** Success — Phase 7 complete
-**Next:** Plan Phase 8 (Personality Extraction)
+**Status:** Success (221s)
 
-**Status:** Success (474s)
+## Iteration 3 — 2026-03-17 Phase 8 Plan 01
 
-## Iteration 3 — 2026-03-17 22:50:29
+**Plan:** 08-01 (TDD: Weather service module)
+**Branch:** `feature/phase-7-9-execution`
+**Commit:** 4f55ebe
 
-**Task:** Plan Phase 8 — Personality Extraction
-**Branch:** `feature/personality-coaching-admin`
-**Commits:** `d966628` (research), `ca0c975` (validation), `1118b1a` (plans), `e351e23` (revision)
+**What was done:**
+- Wrote 37 tests first (RED): sampling, bearing, headwind, wind label, WMO codes, hour index, Open-Meteo fetch, caching, response formatting, graceful degradation
+- Implemented `services/weather.py` (199 lines) with all 9 exported functions
+- Pure math functions tested without mocks; API/cache functions tested with mocks
+- Fixed headwind sign convention (cosine projection direction)
+- Full suite: 205 passing, 6 skipped
 
-**What happened:**
-- Spawned researcher: produced 08-RESEARCH.md covering schema gaps (3 missing columns + evidence table), library choices (trafilatura 2.0.0, pdfplumber 0.11.9), existing patterns (whatsapp_parser.py, chat.completions.parse()), and validation architecture
-- Created 08-VALIDATION.md from template + research
-- Spawned planner: created 3 plans in 2 waves (08-01 schema+tests, 08-02 WhatsApp extraction, 08-03 blog+merge)
-- Spawned checker: found 2 blockers (missing EXTR-01 test in scaffold, concurrent write conflict on personality_helpers.py)
-- Spawned planner revision: added test_extract_from_messages_returns_model to 08-01, changed 08-03 depends_on to [08-01, 08-02] making it Wave 3
-- Re-ran checker: VERIFICATION PASSED — all 7 requirements covered, all 8 dimensions pass
-- Final wave structure: Wave 1 (schema), Wave 2 (WhatsApp extraction), Wave 3 (blog+merge)
-**Issues:** None
-**Status:** Success — Phase 8 planned
-**Next:** Execute Phase 8 (`/gsd:execute-phase 8`)
+**Issues:** None. Clean execution.
 
+**Status:** Success (300s)
 
-**Status:** Success (1323s)
+## Iteration 4 — 2026-03-17 Phase 8 Plan 02
 
-## Iteration 4 — 2026-03-17 23:12:37
+**Plan:** 08-02 (Intent classification + agent loop integration for weather)
+**Branch:** `feature/phase-7-9-execution`
+**Commit:** 6c0faa9
 
-**Status:** Failed (exit 1, 897s)
+**What was done:**
+- Wrote 8 tests first (RED): intent classification, start_datetime field, agent loop branch, execute_route_weather success/error/timeout
+- Added `weather_query` as 7th intent type to IntentResult with `start_datetime` field
+- Updated INTENT_CLASSIFICATION_PROMPT with weather_query description and disambiguation
+- Created `execute_route_weather()` in chat_tools.py — orchestrates ride plan lookup, RWGPS track fetch, point sampling, Open-Meteo forecast, segment formatting
+- Added `get_ride_plan_for_weather` SQL query to ALLOWED_QUERIES
+- Wired weather_query branch into run_agent_loop (before route_discussion)
+- Graceful degradation: missing RWGPS URL, API timeout, no track data, >16-day forecast
+- Updated test_agent_pipeline.py intent literal validation and test_chat_tools.py query count
+- Full suite: 213 passing, 6 skipped
 
-## Iteration 5 — 2026-03-17 23:27:39
+**Issues:** None. Clean execution. Phase 8 complete.
 
-**Status:** Failed (exit 1, 214s)
+**Status:** Success
 
-## Iteration 6 — 2026-03-17 23:31:19
+**Status:** Success (374s)
 
-**Status:** Failed (exit 1, 397s)
-
-## Iteration 7 — 2026-03-17 23:38:01
-
-**Task:** Complete Phase 8 Plan 03 — blog extraction + merge script (documentation + verification)
-**Branch:** `feature/personality-coaching-admin`
-
-**What happened:**
-- All 3 Phase 8 scripts already fully implemented from prior iterations (08-01, 08-02, 08-03 code)
-- Verified: extract_personality_blog.py handles --url (trafilatura) and --pdf-path (pdfplumber), Google Drive warning, --dry-run
-- Verified: merge_personality.py reads whatsapp+blog rows, calls merge_profiles(), upserts merged row, copies evidence
-- Verified: merge_profiles() in personality_helpers.py — blog wins on enums, phrases unioned capped at 5, lower confidence
-- All 7 unit tests pass in test_personality_extraction.py, 3 integration stubs skip
-- Full suite: 152 passed, 26 skipped — all green
-- Created 08-03-SUMMARY.md documenting completion
-- Updated STATE.md: Phase 8 COMPLETE, Phase 9 next
-- Updated ROADMAP.md: checked off all Phase 7 and Phase 8 plan checkboxes
-**Issues:** None
-**Status:** Success — Phase 8 complete
-**Next:** Plan Phase 9 (Chat Integration)
-
-Also in this iteration:
-
-**Task:** Plan Phase 9 — Chat Integration
-**Commits:** `4a3bc21` (research), `94334cc` (validation), `29b67ed` (plans)
-
-**What happened:**
-- Spawned researcher: produced 09-RESEARCH.md covering exact replacement targets (_BIKE_KEYWORDS at lines 192-199, _get_system_prompt at line 359), confirmed all model functions exist (get_coach_assignments, get_active_guardrails, get_gear_preference), identified guardrail seed gap
-- Created 09-VALIDATION.md from template + research
-- Spawned planner: created 2 plans in 2 waves (09-01 coach routing TDD, 09-02 context assembly + gear + wiring)
-- Consolidated from 3 to 2 plans: both plans modify services/chat_service.py, so gear context merged into Plan 02
-- Spawned checker: VERIFICATION PASSED — all 6 requirements covered, all dimensions pass
-- Key design: graceful degradation on DB errors (fallback to existing hardcoded behavior), CHAT_SYSTEM_PROMPT preserved for backward compat
-**Issues:** None
-**Status:** Success — Phase 9 planned
-**Next:** Execute Phase 9 (`/gsd:execute-phase 9`)
-
-**Status:** Success (2912s)
-
-## Iteration 8 — 2026-03-18 00:26:38
-
-**Status:** Success (432s)
-
-## Iteration 9 — 2026-03-18 00:33:55
-
-**Status:** Success (1425s)
-
-## Iteration 10 — 2026-03-18 00:57:45
-
-**Status:** Success (3131s)
-
-## Iteration 11 — 2026-03-18 01:50:02
-
-**Status:** Success (5205s)
-
-## Iteration 12 — 2026-03-18 03:16:52
-
-**Status:** Success (535s)
-
-## Iteration 13 — 2026-03-18 03:25:52
-
-**Status:** Success (924s)
-
-## Iteration 14 — 2026-03-18 03:41:21
+## Iteration 5 — 2026-03-17 21:12:32
 

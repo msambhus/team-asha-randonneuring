@@ -183,6 +183,14 @@
     font-size: 0.8rem;
     line-height: 1.5;
 }
+.chat-msg.assistant a {
+    color: var(--primary);
+    text-decoration: underline;
+    word-break: break-all;
+}
+.chat-msg.assistant a:hover {
+    color: #1a5c2e;
+}
 .chat-msg.assistant pre code {
     background: none;
     padding: 0;
@@ -603,6 +611,10 @@
             line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
             line = line.replace(/\*(.+?)\*/g, '<em>$1</em>');
             line = line.replace(/`([^`]+)`/g, '<code>$1</code>');
+            // Markdown links: [text](url)
+            line = line.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+            // Bare URLs (not already inside an href)
+            line = line.replace(/(^|[^"=])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
 
             // Headings
             var headingMatch = line.match(/^(#{1,3}) (.+)$/);
@@ -798,13 +810,22 @@
     var MAX_IMAGE_PREVIEWS = 3;
 
     function extractUrls(text) {
-        var urlRe = /https:\/\/[^\s\)<>"']+/g;
-        var matches = text.match(urlRe) || [];
+        // Match markdown links [text](url) first, then bare URLs
+        var mdLinkRe = /\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g;
+        var bareUrlRe = /https?:\/\/[^\s\)<>"'\]]+/g;
         var seen = {};
         var unique = [];
-        for (var i = 0; i < matches.length; i++) {
-            var u = matches[i].replace(/[.,;:!?)]$/, '');
+        var m;
+        // Extract URLs from markdown links
+        while ((m = mdLinkRe.exec(text)) !== null) {
+            var u = m[2].replace(/[.,;:!?)]$/, '');
             if (!seen[u]) { seen[u] = true; unique.push(u); }
+        }
+        // Extract bare URLs (not already captured from markdown links)
+        var matches = text.match(bareUrlRe) || [];
+        for (var i = 0; i < matches.length; i++) {
+            var u2 = matches[i].replace(/[.,;:!?)]$/, '');
+            if (!seen[u2]) { seen[u2] = true; unique.push(u2); }
         }
         return unique;
     }

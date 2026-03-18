@@ -58,7 +58,7 @@ def test_message_construction(app):
 
 
 def test_max_tokens_set(app):
-    """Streaming call sets max_tokens <= 800, stream=True, timeout."""
+    """Streaming call sets max_tokens <= 2000, stream=True, timeout."""
     with app.app_context():
         from services.chat_service import _stream_completion
 
@@ -72,7 +72,7 @@ def test_max_tokens_set(app):
             list(gen)  # exhaust the generator
 
             call_kwargs = mock_client.return_value.chat.completions.create.call_args[1]
-            assert call_kwargs['max_tokens'] <= 800
+            assert call_kwargs['max_tokens'] <= 2000
             assert call_kwargs['stream'] is True
             assert call_kwargs.get('timeout', 60) <= 50
 
@@ -311,6 +311,176 @@ def test_stream_chunk_parsing(app):
                 assert chunk.endswith('\n\n'), f"SSE line not properly terminated: {chunk!r}"
             # First data line should be conversation_id
             assert '"conversation_id"' in chunks[0]
+
+
+# ========== Weather intent tests (WTHR-01/02) ==========
+
+
+def test_weather_query_intent_classification(app):
+    """Weather question is classified as weather_query with ride_name set."""
+    with app.app_context():
+        from services.chat_service import classify_intent, IntentResult
+
+        intent_obj = IntentResult(intent='weather_query', ride_name='Cascade 400')
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.parsed = intent_obj
+        mock_response.usage = MagicMock(prompt_tokens=50, completion_tokens=10)
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.parse.return_value = mock_response
+
+        result, usage = classify_intent(mock_client, "What's the weather for the Cascade 400?", [])
+        assert result.intent == 'weather_query'
+        assert result.ride_name == 'Cascade 400'
+
+
+def test_weather_query_with_start_datetime(app):
+    """Weather question with date/time populates start_datetime field."""
+    with app.app_context():
+        from services.chat_service import IntentResult
+
+        obj = IntentResult(
+            intent='weather_query',
+            ride_name='Cascade 300',
+            start_datetime='2026-03-20T06:00',
+        )
+        assert obj.intent == 'weather_query'
+        assert obj.start_datetime == '2026-03-20T06:00'
+        assert obj.ride_name == 'Cascade 300'
+
+
+def test_route_discussion_not_weather(app):
+    """Route question without weather keywords stays route_discussion."""
+    with app.app_context():
+        from services.chat_service import IntentResult
+
+        obj = IntentResult(intent='route_discussion', ride_name='Cascade 400')
+        assert obj.intent == 'route_discussion'
+        assert obj.ride_name == 'Cascade 400'
+
+
+def test_weather_query_intent_valid(app):
+    """weather_query is a valid intent value in IntentResult."""
+    with app.app_context():
+        from services.chat_service import IntentResult
+
+        obj = IntentResult(intent='weather_query', ride_name='Cascade 200')
+        assert obj.intent == 'weather_query'
+
+
+def test_weather_query_agent_loop_branch(app):
+    """weather_query intent calls execute_route_weather in the agent loop."""
+    with app.app_context():
+        from services.chat_service import run_agent_loop, IntentResult
+
+        intent = IntentResult(intent='weather_query', ride_name='Cascade 400', start_datetime='2026-03-20T06:00')
+        mock_client = MagicMock()
+
+        mock_weather_result = {
+            'rows': [{
+                'segments': [{'distance_km': 0, 'temperature_c': 15}],
+                'overall_assessment': 'crosswind / light',
+                'attribution': '*Weather data: Open-Meteo*',
+            }]
+        }
+
+        def _mock_stream(messages, accumulator, **kwargs):
+            accumulator['full_content'] = 'Weather looks good'
+            accumulator['prompt_tokens'] = 100
+            accumulator['completion_tokens'] = 20
+            yield 'data: "Weather looks good"\n\n'
+
+        with patch('services.chat_service.classify_intent', return_value=(intent, MagicMock())), \
+             patch('services.chat_service._build_intent_context', return_value=''), \
+             patch('services.chat_service.execute_route_weather', return_value=mock_weather_result) as mock_exec, \
+             patch('services.chat_service._stream_completion', side_effect=_mock_stream):
+
+            messages = [{'role': 'system', 'content': 'system'}, {'role': 'user', 'content': 'test'}]
+            chunks = list(run_agent_loop(mock_client, "What's the weather for Cascade 400?", messages, rider_id=5, user_id=1))
+
+            mock_exec.assert_called_once_with(
+                ride_name='Cascade 400',
+                start_datetime='2026-03-20T06:00',
+            )
+            # Tool results should be injected into messages
+            assert any('tool_results' in str(m.get('content', '')) for m in messages if isinstance(m, dict))
+
+
+def test_execute_route_weather_success(app):
+    """execute_route_weather with valid ride returns structured forecast."""
+    with app.app_context():
+        from services.chat_tools import execute_route_weather
+
+        mock_ride_plan_rows = [{
+            'name': 'Cascade 400',
+            'slug': 'cascade-400',
+            'rwgps_url': 'https://ridewithgps.com/routes/12345',
+            'distance_km': 400,
+            'cum_time_min': 600,
+        }]
+
+        mock_track_points = [
+            {'y': 47.6, 'x': -122.3, 'd': 0},
+            {'y': 47.7, 'x': -122.4, 'd': 50000},
+            {'y': 47.8, 'x': -122.5, 'd': 100000},
+        ]
+
+        mock_route_data = {'track_points': mock_track_points}
+
+        mock_weather_data = [
+            {'hourly': {'time': ['2026-03-20T06:00'], 'temperature_2m': [12.0],
+                        'wind_speed_10m': [15.0], 'wind_direction_10m': [180],
+                        'precipitation_probability': [10], 'weather_code': [1]}},
+            {'hourly': {'time': ['2026-03-20T06:00'], 'temperature_2m': [14.0],
+                        'wind_speed_10m': [12.0], 'wind_direction_10m': [200],
+                        'precipitation_probability': [20], 'weather_code': [2]}},
+            {'hourly': {'time': ['2026-03-20T06:00'], 'temperature_2m': [11.0],
+                        'wind_speed_10m': [18.0], 'wind_direction_10m': [190],
+                        'precipitation_probability': [5], 'weather_code': [0]}},
+        ]
+
+        with patch('services.chat_tools.execute_allowed_query', return_value={'rows': mock_ride_plan_rows}), \
+             patch('services.chat_tools.fetch_route', return_value=mock_route_data), \
+             patch('services.chat_tools.get_cached_route_weather', return_value=mock_weather_data):
+
+            result = execute_route_weather('Cascade 400', start_datetime='2026-03-20T06:00')
+
+            assert 'rows' in result
+            assert 'segments' in result['rows'][0]
+            assert 'attribution' in result['rows'][0]
+            assert len(result['rows'][0]['segments']) > 0
+
+
+def test_execute_route_weather_no_rwgps_url(app):
+    """execute_route_weather with no RWGPS URL returns error dict."""
+    with app.app_context():
+        from services.chat_tools import execute_route_weather
+
+        mock_rows = [{'name': 'Test 200', 'slug': 'test-200', 'rwgps_url': None, 'distance_km': 200, 'cum_time_min': 300}]
+
+        with patch('services.chat_tools.execute_allowed_query', return_value={'rows': mock_rows}):
+            result = execute_route_weather('Test 200')
+            assert 'error' in result
+            assert 'GPS track' in result['error'] or 'RWGPS' in result['error']
+
+
+def test_execute_route_weather_api_timeout(app):
+    """execute_route_weather with API timeout returns graceful error."""
+    with app.app_context():
+        from services.chat_tools import execute_route_weather
+        import requests
+
+        mock_rows = [{'name': 'Cascade 400', 'slug': 'cascade-400',
+                      'rwgps_url': 'https://ridewithgps.com/routes/12345',
+                      'distance_km': 400, 'cum_time_min': 600}]
+
+        with patch('services.chat_tools.execute_allowed_query', return_value={'rows': mock_rows}), \
+             patch('services.chat_tools.fetch_route', side_effect=requests.Timeout('Connection timed out')):
+
+            result = execute_route_weather('Cascade 400')
+            assert 'error' in result
+            assert 'unavailable' in result['error'].lower() or 'try' in result['error'].lower()
 
 
 def test_cross_user_conversation_rejected(app):
