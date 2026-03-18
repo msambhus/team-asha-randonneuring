@@ -156,6 +156,32 @@ def upsert_assignment(cur, coach_rider_id, assignment):
     return 'updated' if existed else 'created'
 
 
+GUARDRAIL_RULES = [
+    ('scope', 'all', 'Coach Shriram handles bike/gear/maintenance topics. Coach Venki handles training/nutrition/randonneuring. Stay within your assigned domain.'),
+    ('topic_block', 'all', 'Do not discuss politics, religion, or non-cycling topics. Redirect with: I am a cycling coach and can only help with cycling and randonneuring topics.'),
+    ('escalation', 'all', 'For medical questions about injuries, pain, or health conditions, always respond with: I am not a medical professional. Please consult your doctor for health-related concerns. I can help with cycling training and preparation instead.'),
+    ('tone_limit', 'all', 'Never shame or criticize a rider for their fitness level, pace, or DNF/DNS results. Always be encouraging and constructive.'),
+]
+
+
+def seed_guardrails(cur):
+    """Seed coaching guardrail rules. Idempotent via ON CONFLICT DO NOTHING."""
+    count = 0
+    for rule_type, applies_to, rule_value in GUARDRAIL_RULES:
+        cur.execute(
+            """INSERT INTO coaching_guardrail (rule_type, rule_value, applies_to, is_active, updated_by)
+               VALUES (%s, %s, %s, TRUE, 'seed_script')
+               ON CONFLICT DO NOTHING""",
+            (rule_type, rule_value, applies_to)
+        )
+        if cur.rowcount > 0:
+            count += 1
+            print(f"  Guardrail '{rule_type}': created")
+        else:
+            print(f"  Guardrail '{rule_type}': already exists")
+    return count
+
+
 def seed():
     """Main seed function."""
     print("=" * 60)
@@ -207,11 +233,17 @@ def seed():
         else:
             print("  ⚠️  Venki not found in rider table — skipping")
 
+        print()
+
+        # Seed guardrails
+        print("Seeding guardrail rules...")
+        guardrail_count = seed_guardrails(cur)
+
         conn.commit()
 
         print()
         print("=" * 60)
-        print(f"Seeded {profile_count} profiles, {assignment_count} coach assignments")
+        print(f"Seeded {profile_count} profiles, {assignment_count} coach assignments, {guardrail_count} guardrails")
         print("=" * 60)
         return True
 

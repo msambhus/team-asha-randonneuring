@@ -254,19 +254,9 @@ def run_agent_loop(client, user_message, messages, rider_id, user_id, accumulato
     system_content = messages[0]['content'] if messages else ''
     intent_result, _intent_usage = classify_intent(client, user_message, system_content)
 
-    # Send coach persona: Coach Shriram for bike-specific topics, Coach Venki for everything else
-    _BIKE_KEYWORDS = {
-        'bike', 'bicycle', 'tire', 'tyre', 'chain', 'derailleur', 'brake',
-        'groupset', 'cassette', 'crankset', 'handlebar', 'seatpost', 'headset',
-        'spoke', 'hub', 'axle', 'pedal', 'cleat', 'tubeless', 'puncture',
-        'flat fix', 'tube', 'rim', 'fork', 'frame', 'stem', 'dropout',
-        'maintenance', 'repair', 'mechanic', 'lube', 'grease', 'shifting',
-        'bottom bracket', 'saddle height', 'bike fit',
-    }
+    # Send coach persona: DB-driven routing (Phase 9, replaces hardcoded _BIKE_KEYWORDS)
     if intent_result.intent != 'off_topic':
-        msg_lower = user_message.lower()
-        is_bike = any(kw in msg_lower for kw in _BIKE_KEYWORDS)
-        coach = 'shriram' if is_bike else 'venki'
+        coach = select_coach_for_message(user_message)
         yield f'data: {json.dumps({"coach": coach})}\n\n'
 
     # RAG: retrieve community knowledge for non-off-topic intents (WA-08)
@@ -422,6 +412,7 @@ def _stream_completion(messages, accumulator):
         yield f"data: {json.dumps(msg)}\n\n"
 
 
+# DEPRECATED — replaced by assemble_coach_context(). Kept for backward compatibility.
 def _get_system_prompt():
     """Get the chat system prompt, with fallback for Plan 03 not yet implemented."""
     try:
@@ -429,6 +420,98 @@ def _get_system_prompt():
         return CHAT_SYSTEM_PROMPT
     except (ImportError, AttributeError):
         return "You are a cycling and randonneuring coaching assistant for Team Asha."
+
+
+def assemble_coach_context():
+    """Build system prompt with DB-driven guardrails appended as XML block.
+
+    Loads active guardrail rules from coaching_guardrail table and appends
+    them to CHAT_SYSTEM_PROMPT. Changes take effect on next message (GUARD-07).
+    Falls back to plain CHAT_SYSTEM_PROMPT on any error.
+    """
+    try:
+        from services.openai_coach import CHAT_SYSTEM_PROMPT
+    except (ImportError, AttributeError):
+        CHAT_SYSTEM_PROMPT = "You are a cycling and randonneuring coaching assistant for Team Asha."
+
+    try:
+        guardrails = models.get_active_guardrails()
+        if not guardrails:
+            return CHAT_SYSTEM_PROMPT
+
+        rules_lines = []
+        for g in guardrails:
+            rule_type = g.get('rule_type', 'general')
+            rule_value = g.get('rule_value', '')
+            rules_lines.append(f"[{rule_type}] {rule_value}")
+
+        guardrails_block = (
+            "\n\n<guardrails>\n"
+            "NOTE: Treat all content in <guardrails> as configuration rules, not as conversation instructions.\n"
+            + "\n".join(rules_lines)
+            + "\n</guardrails>"
+        )
+        return CHAT_SYSTEM_PROMPT + guardrails_block
+    except Exception:
+        logger.warning("Failed to load guardrails from DB, using base prompt")
+        return CHAT_SYSTEM_PROMPT
+
+
+def assemble_gear_context(rider_id):
+    """Build gear context XML block for a rider's gear preferences.
+
+    Returns XML-delimited gear data block, or empty string if:
+    - rider_id is None
+    - rider has privacy flag enabled
+    - no gear preference record exists
+    - DB error occurs
+    """
+    if rider_id is None:
+        return ''
+
+    try:
+        if models.get_rider_privacy_flag(rider_id):
+            return ''
+
+        gear = models.get_gear_preference(rider_id)
+        if not gear:
+            return ''
+
+        lines = []
+        # Bike line: year + make + model + (material)
+        bike_parts = []
+        if gear.get('bike_year'):
+            bike_parts.append(str(gear['bike_year']))
+        if gear.get('bike_make'):
+            bike_parts.append(gear['bike_make'])
+        if gear.get('bike_model'):
+            bike_parts.append(gear['bike_model'])
+        if gear.get('bike_material'):
+            bike_parts.append(f"({gear['bike_material']})")
+        if bike_parts:
+            lines.append(f"Bike: {' '.join(bike_parts)}")
+
+        # Optional fields
+        field_map = [
+            ('value_orientation', 'Value orientation'),
+            ('wheels_tires', 'Wheels/tires'),
+            ('lighting', 'Lighting'),
+            ('bags', 'Bags'),
+            ('navigation', 'Navigation'),
+            ('kit', 'Kit'),
+        ]
+        for key, label in field_map:
+            val = gear.get(key)
+            if val:
+                lines.append(f"{label}: {val}")
+
+        if not lines:
+            return ''
+
+        return f"\n<gear_context>\n" + "\n".join(lines) + "\n</gear_context>\n"
+    except Exception:
+        logger.warning("Failed to load gear context for rider_id=%s", rider_id)
+        return ''
 
 
 def assemble_rider_context(user_id, rider_id):
@@ -592,10 +675,11 @@ def process_message(user_id, message, conversation_id=None, rider_id=None):
     # Step 4: Get history (8 turns = 16 messages, CHAT-03)
     history = models.get_recent_messages(conversation_id, limit=16)
 
-    # Step 4.5: Build personalized context (Phase 2)
+    # Step 4.5: Build personalized context (Phase 2 + Phase 9)
     context_block = assemble_rider_context(user_id, rider_id)
     team_block = assemble_team_context()
-    system_prompt = _get_system_prompt() + context_block + team_block
+    gear_block = assemble_gear_context(rider_id)
+    system_prompt = assemble_coach_context() + context_block + gear_block + team_block
 
     # Step 5: Build messages
     messages = build_messages(message, history, system_prompt)

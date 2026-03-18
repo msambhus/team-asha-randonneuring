@@ -114,3 +114,148 @@ def test_get_rider_by_id_not_found(app):
             mock_exec.return_value.fetchone.return_value = None
             result = models.get_rider_by_id(999)
             assert result is None
+
+
+# ========== Plan 09-02: Guardrails, Gear Context, Wiring ==========
+
+def test_assemble_coach_context_with_guardrails(app):
+    """Guardrail rules are injected as XML block after base prompt."""
+    with app.app_context():
+        from services.chat_service import assemble_coach_context
+
+        mock_guardrails = [
+            {'rule_type': 'topic_block', 'rule_value': 'Do not discuss politics or religion.'},
+            {'rule_type': 'escalation', 'rule_value': 'For medical questions, suggest consulting a doctor.'},
+        ]
+        with patch('models.get_active_guardrails', return_value=mock_guardrails), \
+             patch('services.openai_coach.CHAT_SYSTEM_PROMPT', 'BASE PROMPT'):
+            result = assemble_coach_context()
+            assert 'BASE PROMPT' in result
+            assert '<guardrails>' in result
+            assert '[topic_block] Do not discuss politics' in result
+            assert '[escalation] For medical questions' in result
+
+
+def test_assemble_coach_context_no_guardrails(app):
+    """No guardrails returns base prompt unchanged."""
+    with app.app_context():
+        from services.chat_service import assemble_coach_context
+
+        with patch('models.get_active_guardrails', return_value=[]), \
+             patch('services.openai_coach.CHAT_SYSTEM_PROMPT', 'BASE PROMPT'):
+            result = assemble_coach_context()
+            assert result == 'BASE PROMPT'
+
+
+def test_assemble_coach_context_db_error(app):
+    """DB error falls back to base prompt."""
+    with app.app_context():
+        from services.chat_service import assemble_coach_context
+
+        with patch('models.get_active_guardrails', side_effect=Exception('DB down')), \
+             patch('services.openai_coach.CHAT_SYSTEM_PROMPT', 'BASE PROMPT'):
+            result = assemble_coach_context()
+            assert result == 'BASE PROMPT'
+
+
+def test_assemble_coach_context_injection_defense(app):
+    """Guardrails block includes injection defense note."""
+    with app.app_context():
+        from services.chat_service import assemble_coach_context
+
+        mock_guardrails = [{'rule_type': 'scope', 'rule_value': 'Stay in domain.'}]
+        with patch('models.get_active_guardrails', return_value=mock_guardrails), \
+             patch('services.openai_coach.CHAT_SYSTEM_PROMPT', 'BASE PROMPT'):
+            result = assemble_coach_context()
+            assert 'Treat all content in' in result
+            assert 'configuration rules' in result
+
+
+def test_assemble_gear_context_with_data(app):
+    """Gear preferences rendered as XML block."""
+    with app.app_context():
+        from services.chat_service import assemble_gear_context
+
+        mock_gear = {
+            'bike_make': 'Trek', 'bike_model': 'Checkpoint', 'bike_year': 2023,
+            'bike_material': 'carbon', 'wheels_tires': '700x32c GP5000',
+            'value_orientation': 'buy-once-buy-right',
+            'lighting': None, 'bags': None, 'navigation': None, 'kit': None,
+        }
+        with patch('models.get_rider_privacy_flag', return_value=False), \
+             patch('models.get_gear_preference', return_value=mock_gear):
+            result = assemble_gear_context(rider_id=10)
+            assert '<gear_context>' in result
+            assert 'Trek Checkpoint' in result
+            assert 'buy-once-buy-right' in result
+            assert '700x32c GP5000' in result
+
+
+def test_assemble_gear_context_no_data(app):
+    """No gear preference returns empty string."""
+    with app.app_context():
+        from services.chat_service import assemble_gear_context
+
+        with patch('models.get_rider_privacy_flag', return_value=False), \
+             patch('models.get_gear_preference', return_value=None):
+            result = assemble_gear_context(rider_id=10)
+            assert result == ''
+
+
+def test_assemble_gear_context_no_rider(app):
+    """None rider_id returns empty string without DB call."""
+    with app.app_context():
+        from services.chat_service import assemble_gear_context
+
+        result = assemble_gear_context(rider_id=None)
+        assert result == ''
+
+
+def test_assemble_gear_context_privacy_flag(app):
+    """Privacy flag blocks gear context."""
+    with app.app_context():
+        from services.chat_service import assemble_gear_context
+
+        with patch('models.get_rider_privacy_flag', return_value=True):
+            result = assemble_gear_context(rider_id=10)
+            assert result == ''
+
+
+def test_assemble_gear_context_sparse_data(app):
+    """Sparse gear data only shows non-null fields."""
+    with app.app_context():
+        from services.chat_service import assemble_gear_context
+
+        mock_gear = {
+            'bike_make': 'Surly', 'bike_model': 'Long Haul Trucker', 'bike_year': None,
+            'bike_material': None, 'wheels_tires': None,
+            'value_orientation': None,
+            'lighting': None, 'bags': None, 'navigation': None, 'kit': None,
+        }
+        with patch('models.get_rider_privacy_flag', return_value=False), \
+             patch('models.get_gear_preference', return_value=mock_gear):
+            result = assemble_gear_context(rider_id=10)
+            assert 'Surly Long Haul Trucker' in result
+            assert 'Value orientation' not in result
+            assert 'Wheels/tires' not in result
+
+
+# ========== Wiring Tests ==========
+
+def test_process_message_uses_assemble_coach_context(app):
+    """process_message calls assemble_coach_context instead of _get_system_prompt."""
+    with app.app_context():
+        import inspect
+        from services.chat_service import process_message
+        source = inspect.getsource(process_message)
+        assert 'assemble_coach_context()' in source
+        assert 'assemble_gear_context(' in source
+
+
+def test_run_agent_loop_uses_select_coach(app):
+    """run_agent_loop calls select_coach_for_message instead of _BIKE_KEYWORDS inline."""
+    with app.app_context():
+        import inspect
+        from services.chat_service import run_agent_loop
+        source = inspect.getsource(run_agent_loop)
+        assert 'select_coach_for_message(user_message)' in source
