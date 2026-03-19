@@ -1,6 +1,8 @@
 """Admin routes: login, dashboard, ride entry, status marking, RWGPS plan generation."""
 import json
+import os
 from datetime import date
+from pathlib import Path
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, abort
 from models import (get_current_season, get_rides_for_season, get_riders_for_season,
                     get_ride_by_id, get_participation_matrix, get_clubs,
@@ -587,24 +589,33 @@ def gear():
     """List all riders with gear preference status."""
     _require_admin()
     riders = get_all_riders()
-    gear_map = {}
+    from models import get_all_gear_for_rider
+    gear_map = {}       # rider_id -> primary gear row
+    bike_counts = {}    # rider_id -> total bike count
+    all_bikes = {}      # rider_id -> list of all gear rows
     for r in riders:
-        g = get_gear_preference(r['id'])
-        gear_map[r['id']] = g
+        bikes = get_all_gear_for_rider(r['id'])
+        gear_map[r['id']] = bikes[0] if bikes else None
+        bike_counts[r['id']] = len(bikes)
+        all_bikes[r['id']] = bikes
     return render_template('admin/gear.html', riders=riders, gear_map=gear_map,
+                           bike_counts=bike_counts, all_bikes=all_bikes,
                            GEAR_FIELDS=GEAR_FIELDS)
 
 
 @admin_bp.route('/gear/<int:rider_id>', methods=['GET', 'POST'])
 @user_login_required
 def gear_edit(rider_id):
-    """View or edit gear preferences for a single rider."""
+    """View or edit gear preferences for a single rider (multiple bikes)."""
     _require_admin()
     rider = get_rider_by_id(rider_id)
     if not rider:
         abort(404)
 
+    from models import get_all_gear_for_rider
+
     if request.method == 'POST':
+        label = request.form.get('label', 'Primary').strip() or 'Primary'
         fields = {}
         for field in GEAR_FIELDS:
             val = request.form.get(field, '').strip()
@@ -614,12 +625,23 @@ def gear_edit(rider_id):
                 fields[field] = val if val else None
             else:
                 fields[field] = val if val else None
-        upsert_gear_preference(rider_id, fields, updated_by='admin')
-        flash('Gear preferences saved.', 'success')
-        return redirect(url_for('admin.gear_edit', rider_id=rider_id))
+        upsert_gear_preference(rider_id, fields, updated_by='admin', label=label)
+        flash(f'Gear saved for {label} bike.', 'success')
+        return redirect(url_for('admin.gear_edit', rider_id=rider_id, bike=label))
 
-    gear = get_gear_preference(rider_id)
+    bikes = get_all_gear_for_rider(rider_id)
+    selected_label = request.args.get('bike', 'Primary')
+    gear = None
+    for b in bikes:
+        if b.get('label') == selected_label:
+            gear = b
+            break
+    if not gear and bikes:
+        gear = bikes[0]
+        selected_label = gear.get('label', 'Primary')
+
     return render_template('admin/gear_edit.html', rider=rider, gear=gear,
+                           bikes=bikes, selected_label=selected_label,
                            GEAR_ENUMS=GEAR_ENUMS, GEAR_FIELDS=GEAR_FIELDS)
 
 
