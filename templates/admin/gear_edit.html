@@ -3,18 +3,43 @@
 
 {% block content %}
 <div class="hero" style="padding:40px 20px;">
-<h1>{{ rider.first_name }} {{ rider.last_name }} — Gear Preferences</h1>
+<h1>{{ rider.first_name }} {{ rider.last_name }} — Gear</h1>
+{% if bikes|length > 0 %}
+<p>{{ bikes|length }} bike{{ 's' if bikes|length != 1 else '' }} on file</p>
+{% endif %}
 </div>
 <div class="container section">
 
-<div style="margin-bottom:20px;">
+<div style="margin-bottom:20px;display:flex;gap:12px;flex-wrap:wrap;">
 <a href="{{ url_for('admin.gear') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Gear List</a>
+{% if bikes is defined and bikes|length > 0 %}
+{% for b in bikes %}
+<a href="{{ url_for('admin.gear_edit', rider_id=rider.id, bike=b.label) }}"
+   class="btn" style="{% if b.label == selected_label %}background:var(--primary);color:#fff;{% else %}background:#e2e8f0;color:var(--text);{% endif %}">
+{{ b.label }}{% if b.bike_make %} ({{ b.bike_make }}{% if b.bike_model %} {{ b.bike_model }}{% endif %}){% endif %}
+</a>
+{% endfor %}
+{% endif %}
+<a href="{{ url_for('admin.gear_edit', rider_id=rider.id, bike='__new__') }}"
+   class="btn" style="background:#38a169;color:#fff;">+ Add Bike</a>
 </div>
 
 <form method="POST" action="{{ url_for('admin.gear_edit', rider_id=rider.id) }}">
 
 <div style="margin-bottom:24px;padding:16px;background:#f7fafc;border-radius:8px;">
 <h3 style="margin-top:0;margin-bottom:12px;">Bike</h3>
+
+<div style="margin-bottom:12px;">
+<label style="display:block;font-weight:600;margin-bottom:4px;">Label</label>
+<input type="text" name="label"
+       value="{% if selected_label is defined and selected_label != '__new__' %}{{ selected_label }}{% endif %}"
+       placeholder="e.g. Primary, Backup, Gravel, Winter"
+       style="width:100%;max-width:300px;padding:8px;border:1px solid #e2e8f0;border-radius:4px;"
+       {% if selected_label is defined and selected_label != '__new__' %}readonly{% endif %}>
+{% if selected_label is defined and selected_label == '__new__' %}
+<p style="font-size:0.8rem;color:var(--text-light);margin-top:2px;">Give this bike a label (Primary, Backup, Gravel, etc.)</p>
+{% endif %}
+</div>
 
 <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px;">
 <div style="flex:1;min-width:200px;">
@@ -45,12 +70,23 @@
 </div>
 
 <div style="margin-bottom:24px;padding:16px;background:#f7fafc;border-radius:8px;">
-<h3 style="margin-top:0;margin-bottom:12px;">Components</h3>
+<h3 style="margin-top:0;margin-bottom:12px;">Components & Accessories</h3>
 
-{% for field in ['wheels_tires', 'lighting', 'bags', 'navigation', 'kit'] %}
+{% for field in ['wheels_tires', 'lighting', 'tail_lights', 'bags', 'navigation', 'kit'] %}
 <div style="margin-bottom:12px;">
 <label style="display:block;font-weight:600;margin-bottom:4px;text-transform:capitalize;">{{ field.replace('_', ' ') }}</label>
-<textarea name="{{ field }}" rows="2" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:4px;font-family:inherit;">{{ gear[field] if gear and gear[field] else '' }}</textarea>
+<textarea name="{{ field }}" rows="2" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:4px;font-family:inherit;">{{ gear[field] if gear and gear.get(field) else '' }}</textarea>
+</div>
+{% endfor %}
+</div>
+
+<div style="margin-bottom:24px;padding:16px;background:#f7fafc;border-radius:8px;">
+<h3 style="margin-top:0;margin-bottom:12px;">Other Gear</h3>
+
+{% for field in ['cold_weather_gear', 'indoor_trainer', 'accessories'] %}
+<div style="margin-bottom:12px;">
+<label style="display:block;font-weight:600;margin-bottom:4px;text-transform:capitalize;">{{ field.replace('_', ' ') }}</label>
+<textarea name="{{ field }}" rows="2" placeholder="{% if field == 'accessories' %}Pedals, cleats, saddle, helmet, sunglasses, tools, pumps{% elif field == 'cold_weather_gear' %}Jackets, vests, shoe covers, thermal bibs, gloves{% elif field == 'indoor_trainer' %}Wahoo KICKR, Tacx, Zwift setup{% endif %}" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:4px;font-family:inherit;">{{ gear[field] if gear and gear.get(field) else '' }}</textarea>
 </div>
 {% endfor %}
 </div>

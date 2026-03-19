@@ -2546,31 +2546,45 @@ def soft_delete_personality_profile(profile_id, updated_by='system'):
     conn.commit()
 
 
-def get_gear_preference(rider_id):
-    """Get active gear preference for a rider. Returns dict or None."""
+def get_gear_preference(rider_id, label=None):
+    """Get active gear preference for a rider. Returns primary bike or specific label."""
+    if label:
+        return _execute(
+            "SELECT * FROM gear_preference WHERE rider_id = %s AND label = %s AND deleted_at IS NULL",
+            (rider_id, label)
+        ).fetchone()
     return _execute(
-        """SELECT * FROM gear_preference
-           WHERE rider_id = %s AND deleted_at IS NULL""",
+        """SELECT * FROM gear_preference WHERE rider_id = %s AND deleted_at IS NULL
+           ORDER BY CASE WHEN label = 'Primary' THEN 0 ELSE 1 END, id LIMIT 1""",
         (rider_id,)
     ).fetchone()
 
 
-def upsert_gear_preference(rider_id, fields, updated_by='system'):
-    """Insert or update gear preference. fields dict maps column names to values."""
+def get_all_gear_for_rider(rider_id):
+    """Get all active gear rows (multiple bikes) for a rider."""
+    return _execute(
+        """SELECT * FROM gear_preference WHERE rider_id = %s AND deleted_at IS NULL
+           ORDER BY CASE WHEN label = 'Primary' THEN 0 ELSE 1 END, id""",
+        (rider_id,)
+    ).fetchall()
+
+
+def upsert_gear_preference(rider_id, fields, updated_by='system', label='Primary'):
+    """Insert or update gear preference. Uses (rider_id, label) for multi-bike support."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     col_names = list(fields.keys())
     col_values = list(fields.values())
-    all_cols = ['rider_id', 'updated_by'] + col_names
-    all_placeholders = ['%s', '%s'] + ['%s'] * len(col_names)
-    all_values = [rider_id, updated_by] + col_values
+    all_cols = ['rider_id', 'label', 'updated_by'] + col_names
+    all_placeholders = ['%s', '%s', '%s'] + ['%s'] * len(col_names)
+    all_values = [rider_id, label, updated_by] + col_values
     set_parts = [f"{c} = EXCLUDED.{c}" for c in col_names]
     set_parts.append("updated_by = EXCLUDED.updated_by")
     set_parts.append("updated_at = NOW()")
     cur.execute(
         f"""INSERT INTO gear_preference ({', '.join(all_cols)})
             VALUES ({', '.join(all_placeholders)})
-            ON CONFLICT (rider_id) DO UPDATE SET
+            ON CONFLICT (rider_id, label) DO UPDATE SET
             {', '.join(set_parts)}
             RETURNING *""",
         all_values

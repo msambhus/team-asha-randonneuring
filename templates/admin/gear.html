@@ -17,14 +17,13 @@
 <thead>
 <tr>
 <th>Rider</th>
-<th>Bike</th>
-<th>Material</th>
+<th>Bikes</th>
 <th>Value Orientation</th>
-<th>Has Gear</th>
 </tr>
 </thead>
 <tbody>
 {% for r in riders %}
+{% set bikes = all_bikes.get(r.id, []) %}
 {% set g = gear_map.get(r.id) %}
 <tr>
 <td>
@@ -33,25 +32,23 @@
 </a>
 </td>
 <td>
-{% if g and (g.bike_make or g.bike_model) %}
-{{ g.bike_make or '' }} {{ g.bike_model or '' }}
+{% if bikes %}
+{% for b in bikes %}
+<a href="{{ url_for('admin.gear_edit', rider_id=r.id, bike=b.label) }}"
+   style="display:inline-block;margin:2px 4px 2px 0;padding:3px 10px;border-radius:4px;font-size:0.85rem;text-decoration:none;
+   {% if b.bike_make or b.bike_model %}background:#e6fffa;color:#234e52;border:1px solid #b2f5ea;{% else %}background:#f7fafc;color:var(--text-light);border:1px solid #e2e8f0;{% endif %}">
+<strong>{{ b.label }}</strong>{% if b.bike_make %}: {{ b.bike_make }}{% endif %}{% if b.bike_model %} {{ b.bike_model }}{% endif %}{% if b.bike_material %} <span style="font-size:0.75rem;opacity:0.7;">({{ b.bike_material }})</span>{% endif %}
+</a>
+{% endfor %}
 {% else %}
-<span style="color:var(--text-light);">Not set</span>
+<span style="color:var(--text-light);font-size:0.85rem;">No bikes</span>
 {% endif %}
 </td>
-<td>{{ g.bike_material if g and g.bike_material else '—' }}</td>
 <td>{{ g.value_orientation if g and g.value_orientation else '—' }}</td>
-<td>
-{% if g and (g.bike_make or g.bike_model or g.wheels_tires or g.lighting or g.bags or g.navigation or g.kit) %}
-<span style="color:#38a169;font-weight:600;">&#10003;</span>
-{% else %}
-<span style="color:var(--text-light);">—</span>
-{% endif %}
-</td>
 </tr>
 {% endfor %}
 {% if not riders %}
-<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:20px;">No riders found.</td></tr>
+<tr><td colspan="3" style="text-align:center;color:var(--text-light);padding:20px;">No riders found.</td></tr>
 {% endif %}
 </tbody>
 </table>
