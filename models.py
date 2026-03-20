@@ -866,9 +866,13 @@ def update_base_plan_stop(stop_id, changes):
         updates.append("stop_duration_min = %s")
         params.append(changes['stop_duration_min'])
 
-    if 'stop_name' in changes:
-        updates.append("stop_name = %s")
-        params.append(changes['stop_name'] or None)
+    if 'location' in changes:
+        updates.append("location = %s")
+        params.append(changes['location'] or None)
+
+    if 'stop_type' in changes:
+        updates.append("stop_type = %s")
+        params.append(changes['stop_type'] or None)
 
     if 'notes' in changes:
         updates.append("notes = %s")
@@ -884,10 +888,10 @@ def update_base_plan_stop(stop_id, changes):
     conn.commit()
 
     # Clear cache for the affected plan
-    cur.execute("SELECT plan_id FROM ride_plan_stop WHERE id = %s", (stop_id,))
+    cur.execute("SELECT ride_plan_id FROM ride_plan_stop WHERE id = %s", (stop_id,))
     result = cur.fetchone()
     if result:
-        cache.delete_memoized(get_ride_plan_stops, result['plan_id'])
+        cache.delete_memoized(get_ride_plan_stops, result['ride_plan_id'])
     cache.clear()
 
     return cur.rowcount > 0
@@ -1192,6 +1196,26 @@ def get_rides_with_signup_counts(season_id):
         GROUP BY ri.id, c.code, c.name
         ORDER BY ri.date
     """, (season_id,)).fetchall()
+
+
+def update_ride_core(ride_id, fields):
+    """Update core ride fields: name, date, distance_km, ride_type, club_id, elevation_ft, distance_miles, ft_per_mile."""
+    allowed = {'name', 'date', 'distance_km', 'ride_type', 'club_id', 'elevation_ft', 'distance_miles', 'ft_per_mile'}
+    conn = get_db()
+    cur = conn.cursor()
+    updates = []
+    params = []
+    for col in allowed:
+        if col in fields:
+            updates.append(f"{col} = %s")
+            params.append(fields[col] if fields[col] != '' else None)
+    if updates:
+        params.append(ride_id)
+        cur.execute(f"UPDATE ride SET {', '.join(updates)} WHERE id = %s", params)
+        conn.commit()
+        cache.clear()
+        return True
+    return False
 
 
 def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None, start_time=None,
