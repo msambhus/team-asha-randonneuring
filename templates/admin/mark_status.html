@@ -8,6 +8,10 @@
 </div>
 <div class="container section">
 
+<div style="margin-bottom:16px;">
+<a href="{{ url_for('admin.ride_edit', ride_id=ride.id) }}" class="btn" style="background:#e2e8f0;color:var(--text);">Edit Ride Details</a>
+</div>
+
 <form method="post">
 
 {% if signed_up_riders %}

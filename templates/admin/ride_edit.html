@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Edit Ride - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Edit Ride</h1>
+<p>{{ ride.name }}</p>
+</div>
+<div class="container section" style="max-width:700px;">
+
+<div style="margin-bottom:20px;display:flex;gap:12px;">
+<a href="{{ url_for('admin.mark_status', ride_id=ride.id) }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Status</a>
+<a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Dashboard</a>
+</div>
+
+<form method="post">
+
+<div class="form-group">
+<label for="name">Ride Name *</label>
+<input type="text" id="name" name="name" required value="{{ ride.name }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+<div class="form-group">
+<label for="date">Date *</label>
+<input type="date" id="date" name="date" required value="{{ ride.date }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+<div class="form-group">
+<label for="distance_km">Distance (km) *</label>
+<input type="number" id="distance_km" name="distance_km" required value="{{ ride.distance_km or '' }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+<div class="form-group">
+<label for="ride_type">Type</label>
+<select id="ride_type" name="ride_type"
+        style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+{% for t in ['BRM', 'Permanent', 'Populaire', 'Fleche', 'Other'] %}
+<option value="{{ t }}" {% if ride.ride_type == t %}selected{% endif %}>{{ t }}</option>
+{% endfor %}
+</select>
+</div>
+<div class="form-group">
+<label for="club_id">Club</label>
+<select id="club_id" name="club_id"
+        style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+<option value="">-- Select --</option>
+{% for c in clubs %}
+<option value="{{ c.id }}" {% if ride.club_id == c.id %}selected{% endif %}>{{ c.code }} - {{ c.name }}</option>
+{% endfor %}
+</select>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px;">
+<div class="form-group">
+<label for="elevation_ft">Elevation (ft)</label>
+<input type="number" id="elevation_ft" name="elevation_ft" value="{{ ride.elevation_ft or '' }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+<div class="form-group">
+<label for="distance_miles">Distance (mi)</label>
+<input type="number" id="distance_miles" name="distance_miles" step="0.1" value="{{ ride.distance_miles or '' }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+<div class="form-group">
+<label for="ft_per_mile">Ft/Mile</label>
+<input type="number" id="ft_per_mile" name="ft_per_mile" step="0.1" value="{{ ride.ft_per_mile or '' }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+</div>
+
+<div class="form-group">
+<label for="rwgps_url">RideWithGPS URL</label>
+<input type="url" id="rwgps_url" name="rwgps_url" value="{{ ride.rwgps_url or '' }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px;">
+<div class="form-group">
+<label for="start_location">Start Location</label>
+<input type="text" id="start_location" name="start_location" value="{{ ride.start_location or '' }}"
+       placeholder="e.g. Peet's Coffee, Mill Valley"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+<div class="form-group">
+<label for="start_time">Start Time</label>
+<input type="text" id="start_time" name="start_time" value="{{ ride.start_time or '' }}"
+       placeholder="e.g. 6:00 AM"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+<div class="form-group">
+<label for="time_limit_hours">Time Limit (hrs)</label>
+<input type="number" id="time_limit_hours" name="time_limit_hours" step="0.5" value="{{ ride.time_limit_hours or '' }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+</div>
+
+{% if stops %}
+<hr style="margin:30px 0;">
+<h2 style="margin-bottom:15px;">Waypoints / Controls</h2>
+<p style="color:var(--text-light);font-size:0.9rem;margin-bottom:15px;">Edit location names, types, distances, and notes for each stop.</p>
+
+<div class="table-wrap">
+<table style="font-size:0.9rem;">
+<thead>
+<tr>
+<th style="width:30px;">#</th>
+<th>Location</th>
+<th style="width:100px;">Type</th>
+<th style="width:80px;">Mi</th>
+<th style="width:80px;">Elev</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+{% for s in stops %}
+<tr>
+<td style="color:var(--text-light);">{{ s.stop_order }}</td>
+<td>
+<input type="text" name="stop_location_{{ s.id }}" value="{{ s.location or '' }}"
+       style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;font-size:0.85rem;">
+</td>
+<td>
+<select name="stop_type_{{ s.id }}" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;font-size:0.85rem;">
+{% for t in ['start', 'control', 'rest', 'waypoint', 'finish'] %}
+<option value="{{ t }}" {% if s.stop_type == t %}selected{% endif %}>{{ t }}</option>
+{% endfor %}
+</select>
+</td>
+<td>
+<input type="number" name="stop_distance_{{ s.id }}" step="0.1" value="{{ s.distance_miles or '' }}"
+       style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;font-size:0.85rem;">
+</td>
+<td>
+<input type="number" name="stop_elevation_{{ s.id }}" value="{{ s.elevation_gain or '' }}"
+       style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;font-size:0.85rem;">
+</td>
+<td>
+<input type="text" name="stop_notes_{{ s.id }}" value="{{ s.notes or '' }}"
+       style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;font-size:0.85rem;">
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+
+<div style="display:flex;gap:15px;margin-top:25px;">
+<button type="submit" class="btn btn-primary">Save Changes</button>
+<a href="{{ url_for('admin.mark_status', ride_id=ride.id) }}" class="btn" style="background:var(--text-light);color:#fff;">Cancel</a>
+</div>
+</form>
+
+</div>
+{% endblock %}
