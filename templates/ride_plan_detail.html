@@ -1577,7 +1577,33 @@
 </div>
 </div>
 
-{# ===== L. BACK LINK ===== #}
+{# ===== L. COMMUNITY PLANS ===== #}
+{% if public_custom_plans %}
+<div style="margin-top:30px;padding:20px;background:white;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);border:1px solid var(--border);">
+    <h3 style="margin:0 0 4px 0;font-size:1rem;">Community Plans</h3>
+    <p style="color:var(--text-light);font-size:0.82rem;margin:0 0 16px 0;">Custom plans shared by other riders. Copy one to use as your starting point.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+    {% for cp in public_custom_plans %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+            <div>
+                <div style="font-weight:600;font-size:0.9rem;color:var(--text);">{{ cp.name }}</div>
+                <div style="font-size:0.78rem;color:var(--text-light);margin-top:2px;">
+                    by {{ cp.first_name }} {{ cp.last_name }}
+                    {% if cp.description %}&middot; {{ cp.description }}{% endif %}
+                    {% if cp.avg_moving_speed %}&middot; {{ "%.1f"|format(cp.avg_moving_speed) }} mph moving{% endif %}
+                </div>
+            </div>
+            <button class="btn" style="background:var(--primary);color:white;padding:6px 16px;font-size:0.82rem;white-space:nowrap;"
+                    onclick="clonePlan({{ cp.id }}, '{{ cp.name|replace("'", "\\'") }}')">
+                Copy Plan
+            </button>
+        </div>
+    {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{# ===== M. BACK LINK ===== #}
 <div style="margin-top:25px;">
 <a href="javascript:history.back()" class="back-link">&larr; Back</a>
 </div>
@@ -1753,5 +1779,25 @@ document.addEventListener('keydown', function(event) {
     }
 });
 {% endif %}
+
+async function clonePlan(planId, planName) {
+    if (!confirm('Copy "' + planName + '" as your custom plan?')) return;
+    try {
+        const resp = await fetch('/api/custom-plan/' + planId + '/clone', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: planName + ' (My Copy)'})
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert('Plan copied! Redirecting to your custom plan editor.');
+            window.location.href = '/ride-plan/{{ plan.slug }}/custom';
+        } else {
+            alert('Error: ' + (data.error || 'Could not copy plan'));
+        }
+    } catch (e) {
+        alert('Error copying plan: ' + e.message);
+    }
+}
 </script>
 {% endblock %}
