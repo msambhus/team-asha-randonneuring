@@ -1309,13 +1309,20 @@
             <div class="metric-label">Cumul Time</div>
         </div>
         {% endif %}
+        {% if s.arrival_time_min is defined %}
+        <div class="metric">
+            <div class="metric-value arrival-time" style="color:#7c3aed;font-weight:700;" data-cum-min="{{ (s.arrival_time_min|default(0))|int }}">--:--</div>
+            <div class="metric-label">ETA</div>
+        </div>
+        {% endif %}
         {% if s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
         <div class="metric">
-            <div class="metric-value">
+            <div class="metric-value" style="color:#92400e;">
                 {# Stop duration (time spent at this stop) #}
                 {% if s.stop_duration_min >= 60 %}{{ s.stop_duration_min // 60 }}h{{ "%02d"|format(s.stop_duration_min % 60) }}m{% else %}{{ s.stop_duration_min }}m{% endif %}
+                {% if s.stop_name %}<span style="font-size:0.7rem;font-weight:400;"> ({{ s.stop_name }})</span>{% endif %}
             </div>
-            <div class="metric-label">Stop Time</div>
+            <div class="metric-label">Break</div>
         </div>
         {% endif %}
         {# Time Bank: use this stop's time_bank #}
@@ -1466,6 +1473,8 @@
     <th style="text-align:right;">Elev. Gain</th>
     <th style="text-align:right;">Ft/Mi</th>
     <th style="text-align:right;">Seg. Time</th>
+    <th style="text-align:right;">ETA</th>
+    <th style="text-align:right;">Break</th>
     <th style="text-align:right;">Avg Speed</th>
     {% if plan.cutoff_hours %}<th style="text-align:right;">Time Bank</th>{% endif %}
     <th style="text-align:center;">Diff.</th>
@@ -1508,6 +1517,14 @@
     <td class="num-cell">
         {% if s.segment_time_min and s.segment_time_min > 0 %}
             {% if s.segment_time_min >= 60 %}{{ (s.segment_time_min // 60) }}h {{ "%02d"|format(s.segment_time_min % 60) }}m{% else %}{{ s.segment_time_min }}m{% endif %}
+        {% else %}&mdash;{% endif %}
+    </td>
+    <td class="num-cell">
+        <span class="arrival-time" style="color:#7c3aed;font-weight:600;" data-cum-min="{{ (s.arrival_time_min|default(0))|int }}">--:--</span>
+    </td>
+    <td class="num-cell">
+        {% if s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
+            <span style="color:#92400e;">{{ s.stop_duration_min }}m</span>{% if s.stop_name %} <span style="font-size:0.7rem;color:#64748b;">{{ s.stop_name }}</span>{% endif %}
         {% else %}&mdash;{% endif %}
     </td>
     <td class="num-cell">
