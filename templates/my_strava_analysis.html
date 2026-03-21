@@ -145,7 +145,7 @@
 .power-value { color: #7c3aed; }
 
 @media (max-width: 640px) {
-    .metric-grid { grid-template-columns: repeat(3, 1fr); }
+    .metric-grid { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
     .card-header { flex-direction: column; align-items: flex-start; }
     .card-actions { flex-direction: column; }
     .btn-analysis, .btn-strava-link { width: 100%; justify-content: center; }
