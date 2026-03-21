@@ -23,19 +23,11 @@
         max-width: 100%;
         word-break: break-word;
     }
-    /* PBP finishers grid */
-    .pbp-grid {
-        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)) !important;
-        gap: 12px !important;
-    }
 }
 
 @media (max-width: 480px) {
     .frozen-table {
         font-size: 0.75rem;
-    }
-    .pbp-grid {
-        grid-template-columns: 1fr !important;
     }
 }
 </style>
@@ -93,17 +85,17 @@
 <h2>Paris-Brest-Paris 2023 Finishers</h2>
 <p style="margin-bottom:20px;color:var(--text-light);">11 Team Asha riders completed the legendary 1,200 km Paris-Brest-Paris randonnée in August 2023.</p>
 
-<div class="pbp-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;">
+<div class="pbp-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 {% for f in pbp_finishers %}
-<a href="{{ url_for('riders.rider_profile', rusa_id=f.rusa_id) }}" class="card" style="display:flex;align-items:center;gap:14px;padding:16px 18px;text-decoration:none;color:inherit;transition:transform 0.15s,box-shadow 0.15s;border-left:4px solid #805ad5;">
+<a href="{{ url_for('riders.rider_profile', rusa_id=f.rusa_id) }}" class="card flex items-center gap-3 p-4" style="text-decoration:none;color:inherit;transition:transform 0.15s,box-shadow 0.15s;border-left:4px solid #805ad5;">
     {% if f.photo_filename %}
-    <img src="{{ url_for('static', filename='riders/' + f.photo_filename) }}" alt="{{ f.first_name }}" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;">
+    <img src="{{ url_for('static', filename='riders/' + f.photo_filename) }}" alt="{{ f.first_name }}" class="w-12 h-12 rounded-full object-cover flex-shrink-0">
     {% else %}
-    <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#805ad5,#b794f4);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:1.1rem;flex-shrink:0;">{{ f.first_name[0] }}</div>
+    <div class="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0" style="background:linear-gradient(135deg,#805ad5,#b794f4);">{{ f.first_name[0] }}</div>
     {% endif %}
-    <div style="flex:1;min-width:0;">
-        <div style="font-weight:700;color:var(--primary);word-break:break-word;">{{ f.first_name }} {{ f.last_name }}</div>
-        <div style="font-size:0.85rem;color:var(--text-light);">{{ f.finish_time }}h</div>
+    <div class="flex-1 min-w-0">
+        <div class="font-bold break-words" style="color:var(--primary);">{{ f.first_name }} {{ f.last_name }}</div>
+        <div class="text-sm" style="color:var(--text-light);">{{ f.finish_time }}h</div>
     </div>
     <span class="pbp-badge">PBP</span>
 </a>
