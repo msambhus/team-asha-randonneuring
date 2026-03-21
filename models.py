@@ -896,6 +896,47 @@ def update_base_plan_stop(stop_id, changes):
 
     return cur.rowcount > 0
 
+def insert_ride_plan_stop(ride_plan_id, stop_order, location, stop_type='waypoint',
+                         distance_miles=None, elevation_gain=None, notes=None):
+    """Insert a new stop into a ride plan and reorder subsequent stops."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    # Shift existing stops at or after this position
+    cur.execute(
+        "UPDATE ride_plan_stop SET stop_order = stop_order + 1 WHERE ride_plan_id = %s AND stop_order >= %s",
+        (ride_plan_id, stop_order)
+    )
+    cur.execute(
+        """INSERT INTO ride_plan_stop (ride_plan_id, stop_order, location, stop_type, distance_miles, elevation_gain, notes)
+           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+        (ride_plan_id, stop_order, location, stop_type, distance_miles, elevation_gain, notes)
+    )
+    result = cur.fetchone()
+    conn.commit()
+    cache.clear()
+    return result
+
+
+def delete_ride_plan_stop(stop_id):
+    """Delete a stop from a ride plan and reorder remaining stops."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    # Get the stop info before deleting
+    cur.execute("SELECT ride_plan_id, stop_order FROM ride_plan_stop WHERE id = %s", (stop_id,))
+    stop = cur.fetchone()
+    if not stop:
+        return False
+    cur.execute("DELETE FROM ride_plan_stop WHERE id = %s", (stop_id,))
+    # Reorder remaining stops
+    cur.execute(
+        "UPDATE ride_plan_stop SET stop_order = stop_order - 1 WHERE ride_plan_id = %s AND stop_order > %s",
+        (stop['ride_plan_id'], stop['stop_order'])
+    )
+    conn.commit()
+    cache.clear()
+    return True
+
+
 def get_ride_plan_by_rwgps_route_id(route_id):
     """Check if a ride plan already exists for a given RWGPS route ID."""
     return _execute(
