@@ -2,7 +2,7 @@
 {% block title %}Upcoming Rides - Team Asha Randonneuring{% endblock %}
 
 {% block content %}
-<div class="hero" style="padding:40px 20px;">
+<div class="hero">
 <h1>Upcoming Rides</h1>
 <p>Team rides and RUSA events in the Bay Area</p>
 </div>
@@ -19,11 +19,11 @@
 <td>{{ r.date }}</td>
 <td>
 {{ r.name }}
-{% if r.plan_slug %}<a href="{{ url_for('riders.ride_plan_detail', slug=r.plan_slug) }}" title="View ride plan" style="margin-left:6px;text-decoration:none;">&#x1F4CB;</a>{% endif %}
+{% if r.plan_slug %}<a href="{{ url_for('riders.ride_plan_detail', slug=r.plan_slug) }}" title="View ride plan" class="ml-1.5 no-underline">&#x1F4CB;</a>{% endif %}
 </td>
 <td>{{ r.distance_km }} km</td>
 <td>{{ r.club_code or '' }}</td>
-<td style="text-align:center;">{{ r.signup_count }}</td>
+<td class="text-center">{{ r.signup_count }}</td>
 <td><a href="{{ url_for('signup.ride_signup', ride_id=r.id) }}" class="rider-link">Sign Up &rarr;</a></td>
 </tr>
 {% endfor %}
@@ -33,8 +33,8 @@
 {% endif %}
 
 {% if rusa_events %}
-<h2 style="margin-top:30px;">RUSA Calendar Events</h2>
-<p style="font-size:0.85rem;color:var(--text-light);margin-bottom:15px;">Upcoming brevets from San Francisco, Davis, Santa Cruz, Santa Rosa, and San Luis Obispo regions.</p>
+<h2 class="mt-6 md:mt-8">RUSA Calendar Events</h2>
+<p class="text-xs md:text-sm text-text-light mb-3 md:mb-4">Upcoming brevets from San Francisco, Davis, Santa Cruz, Santa Rosa, and San Luis Obispo regions.</p>
 <div class="table-wrap">
 <table>
 <thead><tr><th>Date</th><th>Region</th><th>Route</th><th>Start</th><th>Time Limit</th><th>Distance</th><th>Elevation</th><th>Link</th></tr></thead>
@@ -46,7 +46,7 @@
 <td>
   <div>{% if 'DART' in e.route_name or 'Dart' in e.route_name or 'Fleche' in e.route_name or (e.rwgps_url and ('dart' in e.rwgps_url.lower() or 'fleche' in e.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in e.rwgps_url.lower())) %}[DART] {% endif %}{{ e.route_name }}</div>
   {% if e.start_location %}
-  <div style="font-size:0.75rem;color:var(--text-light);margin-top:2px;">{{ e.start_location }}</div>
+  <div class="text-[0.7rem] md:text-xs text-text-light mt-0.5">{{ e.start_location }}</div>
   {% endif %}
 </td>
 <td>{{ e.start_time or '' }}</td>

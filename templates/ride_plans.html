@@ -2,13 +2,13 @@
 {% block title %}Ride Plans - Team Asha Randonneuring{% endblock %}
 
 {% block content %}
-<div class="hero" style="padding:40px 20px;">
+<div class="hero">
 <h1>Ride Plans</h1>
 <p>Team Asha route plans with stops, timing, and elevation details</p>
 </div>
 
 <div class="container section">
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 {% for plan in plans %}
 <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug) }}" class="card" style="display:block;padding:20px;text-decoration:none;color:inherit;transition:transform 0.15s,box-shadow 0.15s;border-left:4px solid var(--accent);">
     <div style="font-weight:700;font-size:1rem;color:var(--primary);margin-bottom:8px;">{{ plan.name }}</div>
