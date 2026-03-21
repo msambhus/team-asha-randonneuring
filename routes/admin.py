@@ -19,9 +19,7 @@ from models import (get_current_season, get_rides_for_season, get_riders_for_sea
                     get_coach_assignments, upsert_coach_assignment,
                     get_all_guardrails, insert_guardrail,
                     update_guardrail, soft_delete_guardrail,
-                    update_ride_core, update_ride_details,
-                    get_ride_plan_stops, update_base_plan_stop,
-                    insert_ride_plan_stop, delete_ride_plan_stop)
+                    update_ride_core, update_ride_details)
 from auth import login_required, user_login_required, verify_password
 from services.rwgps import (extract_rwgps_route_id, fetch_route, extract_controls,
                             build_ride_plan, slugify)
@@ -219,9 +217,6 @@ def ride_edit(ride_id):
         abort(404)
 
     clubs = get_clubs()
-    stops = []
-    if ride.get('ride_plan_id'):
-        stops = get_ride_plan_stops(ride['ride_plan_id']) or []
 
     if request.method == 'POST':
         # Update core ride fields
@@ -252,84 +247,10 @@ def ride_edit(ride_id):
             time_limit_hours=float(request.form.get('time_limit_hours', '') or 0) or None,
         )
 
-        # Update waypoints
-        for stop in stops:
-            sid = stop['id']
-            changes = {}
-            loc = request.form.get(f'stop_location_{sid}', '').strip()
-            if loc and loc != (stop.get('location') or ''):
-                changes['location'] = loc
-            stype = request.form.get(f'stop_type_{sid}', '').strip()
-            if stype and stype != (stop.get('stop_type') or ''):
-                changes['stop_type'] = stype
-            dist = request.form.get(f'stop_distance_{sid}', '').strip()
-            if dist:
-                try:
-                    changes['distance_miles'] = float(dist)
-                except ValueError:
-                    pass
-            elev = request.form.get(f'stop_elevation_{sid}', '').strip()
-            if elev:
-                try:
-                    changes['elevation_gain'] = int(elev)
-                except ValueError:
-                    pass
-            notes = request.form.get(f'stop_notes_{sid}', '').strip()
-            if notes != (stop.get('notes') or ''):
-                changes['notes'] = notes
-            if changes:
-                update_base_plan_stop(sid, changes)
-
         flash(f'Ride "{request.form.get("name", ride["name"])}" updated.', 'success')
         return redirect(url_for('admin.ride_edit', ride_id=ride_id))
 
-    return render_template('admin/ride_edit.html', ride=ride, clubs=clubs, stops=stops)
-
-
-@admin_bp.route('/rides/<int:ride_id>/add-stop', methods=['POST'])
-@user_login_required
-def add_stop(ride_id):
-    """Add a new waypoint/stop to the ride's plan."""
-    _require_admin()
-    ride = get_ride_by_id(ride_id)
-    if not ride or not ride.get('ride_plan_id'):
-        abort(404)
-
-    location = request.form.get('new_stop_location', '').strip()
-    if not location:
-        flash('Location is required.', 'error')
-        return redirect(url_for('admin.ride_edit', ride_id=ride_id))
-
-    stop_type = request.form.get('new_stop_type', 'waypoint').strip()
-    stop_order = request.form.get('new_stop_order', '').strip()
-    distance_miles = request.form.get('new_stop_distance', '').strip()
-    elevation_gain = request.form.get('new_stop_elevation', '').strip()
-    notes = request.form.get('new_stop_notes', '').strip()
-
-    # Default: insert at end
-    stops = get_ride_plan_stops(ride['ride_plan_id']) or []
-    order = int(stop_order) if stop_order else (len(stops) + 1)
-
-    insert_ride_plan_stop(
-        ride['ride_plan_id'], order, location, stop_type,
-        float(distance_miles) if distance_miles else None,
-        int(elevation_gain) if elevation_gain else None,
-        notes or None
-    )
-    flash(f'Added stop "{location}".', 'success')
-    return redirect(url_for('admin.ride_edit', ride_id=ride_id))
-
-
-@admin_bp.route('/rides/<int:ride_id>/delete-stop/<int:stop_id>', methods=['POST'])
-@user_login_required
-def delete_stop(ride_id, stop_id):
-    """Delete a waypoint/stop from the ride's plan."""
-    _require_admin()
-    if delete_ride_plan_stop(stop_id):
-        flash('Stop deleted.', 'success')
-    else:
-        flash('Stop not found.', 'error')
-    return redirect(url_for('admin.ride_edit', ride_id=ride_id))
+    return render_template('admin/ride_edit.html', ride=ride, clubs=clubs)
 
 
 @admin_bp.route('/rides/<int:ride_id>/remove-rider', methods=['POST'])
