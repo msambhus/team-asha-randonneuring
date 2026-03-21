@@ -87,39 +87,6 @@
     transition: transform 0.1s ease-out;
 }
 
-/* Responsive styles */
-@media (max-width: 768px) {
-    .hero-section img {
-        width: 100% !important;
-        height: auto !important;
-        max-width: 360px;
-    }
-    .hero-content {
-        flex-direction: column;
-        text-align: center !important;
-    }
-    .hero-text {
-        text-align: center !important;
-    }
-    .hero-section h1 {
-        font-size: 1.6rem !important;
-    }
-    .hero-section p {
-        font-size: 0.9rem !important;
-    }
-    .hero-photo-glow {
-        width: 100%;
-        max-width: 380px;
-        height: auto;
-        aspect-ratio: 360 / 250;
-    }
-}
-
-@media (max-width: 480px) {
-    .hero-section h1 {
-        font-size: 1.4rem !important;
-    }
-}
 </style>
 {% endblock %}
 
@@ -128,15 +95,15 @@
     <!-- Animated gradient background -->
     <div class="hero-gradient-bg"></div>
 
-    <div class="hero-content relative z-10 flex items-center justify-center gap-8 flex-wrap max-w-[1100px] mx-auto">
+    <div class="hero-content relative z-10 flex flex-col md:flex-row items-center justify-center gap-8 flex-wrap max-w-[1100px] mx-auto">
         <!-- Team photo with overlay effects -->
         <div class="hero-photo-wrapper relative">
             <div class="hero-photo-glow"></div>
-            <img src="{{ url_for('static', filename='team_photo.jpg') }}" alt="Team Asha riders" class="hero-photo w-[360px] h-[250px] object-cover rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.3)] relative z-10">
+            <img src="{{ url_for('static', filename='team_photo.jpg') }}" alt="Team Asha riders" class="hero-photo w-full max-w-[360px] h-auto aspect-[360/250] object-cover rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.3)] relative z-10">
         </div>
 
         <!-- Hero text with animations -->
-        <div class="hero-text text-left max-w-[500px]">
+        <div class="hero-text text-center md:text-left max-w-[500px]">
             <h1 class="hero-title text-[2rem] mb-2 font-extrabold" style="text-shadow: 2px 2px 8px rgba(0,0,0,0.4);">
                 Team <span class="text-accent-light">Asha</span> Randonneuring
             </h1>
@@ -149,7 +116,7 @@
     </div>
 </div>
 
-<div class="stats-row grid grid-cols-2 md:grid-cols-5 gap-5 -mt-10 mx-auto px-5 max-w-[1200px] relative z-10">
+<div class="stats-row">
 <div class="bg-card-bg rounded-xl p-6 text-center shadow-[0_4px_15px_rgba(0,0,0,0.08)] border border-border">
     <div class="text-[2.2rem] font-extrabold text-primary stat-number" data-target="{{ stats.riders }}">0</div>
     <div class="text-[0.85rem] text-text-light uppercase tracking-wider mt-1">All-Time Riders</div>

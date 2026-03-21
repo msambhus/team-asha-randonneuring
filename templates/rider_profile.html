@@ -83,13 +83,26 @@
     align-items: center;
     gap: 2px;
 }
+
+/* Responsive adjustments for mobile */
+@media (min-width: 768px) {
+    .season-block {
+        padding: 24px !important;
+    }
+}
+@media (max-width: 639px) {
+    #eddington-detail {
+        left: auto !important;
+        right: 0 !important;
+    }
+}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="hero" style="padding:30px 20px;">
 {% if rider.photo_filename %}
-<img src="{{ url_for('static', filename='riders/' + rider.photo_filename) }}" alt="{{ rider.first_name }} {{ rider.last_name }}" style="width:150px;height:150px;border-radius:50%;object-fit:cover;border:4px solid white;margin-bottom:15px;">
+<img src="{{ url_for('static', filename='riders/' + rider.photo_filename) }}" alt="{{ rider.first_name }} {{ rider.last_name }}" class="w-[100px] h-[100px] md:w-[150px] md:h-[150px] rounded-full object-cover" style="border:4px solid white;margin-bottom:15px;">
 {% endif %}
 <h1>{{ rider.first_name }} {{ rider.last_name }}</h1>
 <p>RUSA# {{ rider.rusa_id }}</p>
@@ -113,7 +126,7 @@
 {% if eddington_data %}
 <div style="position:relative;">
 <div class="stat-card" id="eddington-toggle" style="cursor:pointer;" title="Click to expand"><div class="number" style="color:{{ eddington_data.badge.color }};">{{ eddington_data.badge.emoji }} E{{ eddington_data.miles }}</div><div class="label">Eddington Number*</div></div>
-<div id="eddington-detail" style="display:none; position:absolute; top:100%; left:0; z-index:10; width:360px; max-width:90vw; margin-top:8px; padding:16px; background:white; border-radius:12px; border:2px solid {{ eddington_data.badge.color }}40; box-shadow:0 8px 24px rgba(0,0,0,0.15);">
+<div id="eddington-detail" style="display:none; position:absolute; top:100%; left:0; z-index:10; max-width:min(360px, calc(100vw - 40px)); margin-top:8px; padding:16px; background:white; border-radius:12px; border:2px solid {{ eddington_data.badge.color }}40; box-shadow:0 8px 24px rgba(0,0,0,0.15);">
     <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
         <div style="font-size:2rem; line-height:1;">{{ eddington_data.badge.emoji }}</div>
         <div>
@@ -164,7 +177,7 @@
     <div style="margin-bottom:20px; padding-bottom:12px; border-bottom:2px solid #e2e8f0;">
         <h3 style="color:var(--primary); margin:0 0 4px 0; font-size:1.5rem; font-weight:700;">Upcoming Rides</h3>
     </div>
-    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:14px;">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
     {% for ride in upcoming_rides %}
     <div class="upcoming-ride-card" style="display:flex; flex-direction:column; padding:14px 16px; background:white; border-radius:12px; border:2px solid {% if ride.is_soon %}#f59e0b{% else %}#e2e8f0{% endif %}; border-top:5px solid {% if ride.is_soon %}#f59e0b{% elif ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}; {% if ride.is_soon %}box-shadow: 0 4px 16px rgba(245, 158, 11, 0.25);{% else %}box-shadow: 0 2px 4px rgba(0,0,0,0.05);{% endif %} transition:all 0.2s ease;">
         <div style="margin-bottom:10px;">
@@ -285,7 +298,7 @@
 
     {# Fitness Score Breakdown #}
     {% if fitness_score %}
-    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:12px; margin-bottom:24px; padding:18px; background:linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%); border-radius:12px; border:1px solid #e2e8f0; box-shadow:0 2px 4px rgba(0,0,0,0.04);">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(90px, 1fr)); gap:12px; margin-bottom:24px; padding:18px; background:linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%); border-radius:12px; border:1px solid #e2e8f0; box-shadow:0 2px 4px rgba(0,0,0,0.04);">
         <div style="text-align:center; padding:8px; background:white; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
             <div style="font-size:2.2rem; font-weight:900; background:linear-gradient(135deg, {% if fitness_score.total >= 70 %}#38a169, #48bb78{% elif fitness_score.total >= 40 %}#d69e2e, #ed8936{% else %}#e53e3e, #fc8181{% endif %}); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;">{{ fitness_score.total }}</div>
             <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin-top:2px;">Overall</div>
@@ -331,7 +344,7 @@
     {% endif %}
 
     {# Training Rides Card Grid #}
-    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:14px;">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
     {% for ride in training_rides %}
     <div class="training-card" style="padding:14px; background:white; border-radius:12px; border:1px solid #e2e8f0; border-left:5px solid {{ ride.color }}; position:relative; transition:all 0.2s ease; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
         {# Grade badge - top right #}
@@ -396,7 +409,7 @@
 
 {# ===== BREVET SEASON HISTORY ===== #}
 {% for sd in season_data %}
-<div class="season-block" style="margin-bottom:35px; background:white; border-radius:12px; padding:24px; box-shadow:0 2px 8px rgba(0,0,0,0.06); border-left:5px solid var(--primary);">
+<div class="season-block" style="margin-bottom:35px; background:white; border-radius:12px; padding:12px; box-shadow:0 2px 8px rgba(0,0,0,0.06); border-left:5px solid var(--primary);">
 <div style="margin-bottom:16px; padding-bottom:16px; border-bottom:2px solid #f1f5f9;">
     <h3 style="margin:0 0 12px 0; font-size:1.4rem; font-weight:700; color:var(--primary); display:flex; align-items:center; flex-wrap:wrap; gap:10px;">
         <span>{{ sd.season.name }} Season</span>

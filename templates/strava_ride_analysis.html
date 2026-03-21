@@ -211,7 +211,8 @@
 @media (max-width: 640px) {
     .analysis-table { font-size: 0.7rem; }
     .analysis-table thead th, .analysis-table tbody td { padding: 6px 3px; }
-    .summary-grid { grid-template-columns: repeat(2, 1fr); }
+    .summary-grid { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+    .hr-power-grid { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
 }
 </style>
 {% endblock %}
@@ -444,7 +445,7 @@
     </div>
 </div>
 
-<div style="background:white;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.08);overflow-x:auto;">
+<div class="table-wrap" style="background:white;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
 <table class="analysis-table">
 <thead>
 <tr>
