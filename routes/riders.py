@@ -2010,6 +2010,57 @@ def api_update_base_stop(stop_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@riders_bp.route('/ride-plan/<slug>/add-stop', methods=['POST'])
+@user_login_required
+def add_base_stop(slug):
+    """Admin-only: Add a new stop to a base ride plan."""
+    if not is_admin_user():
+        abort(403)
+
+    from models import get_ride_plan_by_slug, get_ride_plan_stops, insert_ride_plan_stop
+    base_plan = get_ride_plan_by_slug(slug)
+    if not base_plan:
+        abort(404)
+
+    location = request.form.get('new_stop_location', '').strip()
+    if not location:
+        flash('Location is required.', 'error')
+        return redirect(url_for('riders.base_plan_editor', slug=slug))
+
+    stop_type = request.form.get('new_stop_type', 'waypoint').strip()
+    stop_order = request.form.get('new_stop_order', '').strip()
+    distance_miles = request.form.get('new_stop_distance', '').strip()
+    elevation_gain = request.form.get('new_stop_elevation', '').strip()
+    notes = request.form.get('new_stop_notes', '').strip()
+
+    stops = get_ride_plan_stops(base_plan['id']) or []
+    order = int(stop_order) if stop_order else (len(stops) + 1)
+
+    insert_ride_plan_stop(
+        base_plan['id'], order, location, stop_type,
+        float(distance_miles) if distance_miles else None,
+        int(elevation_gain) if elevation_gain else None,
+        notes or None
+    )
+    flash(f'Added stop "{location}".', 'success')
+    return redirect(url_for('riders.base_plan_editor', slug=slug))
+
+
+@riders_bp.route('/ride-plan/<slug>/delete-stop/<int:stop_id>', methods=['POST'])
+@user_login_required
+def delete_base_stop(slug, stop_id):
+    """Admin-only: Delete a stop from a base ride plan."""
+    if not is_admin_user():
+        abort(403)
+
+    from models import delete_ride_plan_stop
+    if delete_ride_plan_stop(stop_id):
+        flash('Stop deleted.', 'success')
+    else:
+        flash('Stop not found.', 'error')
+    return redirect(url_for('riders.base_plan_editor', slug=slug))
+
+
 @riders_bp.route('/api/custom-plan/<int:custom_plan_id>/stop/<int:stop_id>', methods=['PUT'])
 @user_login_required
 def api_update_custom_stop(custom_plan_id, stop_id):

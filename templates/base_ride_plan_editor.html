@@ -370,6 +370,11 @@
                             {% if stop.stop_type == 'start' %}🚩{% elif stop.stop_type == 'finish' %}🏁{% elif stop.stop_type == 'control' %}◆{% elif stop.stop_type == 'rest' %}☕{% else %}•{% endif %}
                         </div>
                         <div class="stop-location">{{ stop.location }}</div>
+                        <form method="post" action="{{ url_for('riders.delete_base_stop', slug=base_plan.slug, stop_id=stop.id) }}"
+                              onsubmit="return confirm('Delete stop #{{ stop.stop_order }} ({{ stop.location }})? This affects all riders.');"
+                              style="margin:0;">
+                            <button type="submit" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:1rem;padding:2px 6px;opacity:0.5;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.5'" title="Delete this stop">&times;</button>
+                        </form>
                     </div>
                     <div class="stop-metrics">
                         <div class="metric-box">
@@ -467,6 +472,53 @@
                     {% endif %}
                 </div>
                 {% endfor %}
+            </div>
+
+            {# Add Stop Form #}
+            <div style="margin-top:20px;padding:16px;background:#fef2f2;border:2px solid #fca5a5;border-radius:10px;">
+                <div style="font-size:0.85rem;font-weight:700;color:#991b1b;margin-bottom:12px;">Add New Stop</div>
+                <form method="post" action="{{ url_for('riders.add_base_stop', slug=base_plan.slug) }}">
+                    <div style="display:grid;grid-template-columns:60px 2fr 1fr;gap:10px;margin-bottom:10px;">
+                        <div>
+                            <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:3px;">Order #</label>
+                            <input type="number" name="new_stop_order" placeholder="{{ (base_stops|length + 1) }}" min="1"
+                                   style="width:100%;padding:6px;border:1px solid #fca5a5;border-radius:4px;font-size:0.85rem;">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:3px;">Location *</label>
+                            <input type="text" name="new_stop_location" required placeholder="e.g. Petaluma Chevron"
+                                   style="width:100%;padding:6px;border:1px solid #fca5a5;border-radius:4px;font-size:0.85rem;">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:3px;">Type</label>
+                            <select name="new_stop_type" style="width:100%;padding:6px;border:1px solid #fca5a5;border-radius:4px;font-size:0.85rem;">
+                                <option value="control">control</option>
+                                <option value="rest">rest</option>
+                                <option value="waypoint">waypoint</option>
+                                <option value="start">start</option>
+                                <option value="finish">finish</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:10px;margin-bottom:10px;">
+                        <div>
+                            <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:3px;">Dist (mi)</label>
+                            <input type="number" name="new_stop_distance" step="0.1"
+                                   style="width:100%;padding:6px;border:1px solid #fca5a5;border-radius:4px;font-size:0.85rem;">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:3px;">Elev (ft)</label>
+                            <input type="number" name="new_stop_elevation"
+                                   style="width:100%;padding:6px;border:1px solid #fca5a5;border-radius:4px;font-size:0.85rem;">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:3px;">Notes</label>
+                            <input type="text" name="new_stop_notes" placeholder="Optional"
+                                   style="width:100%;padding:6px;border:1px solid #fca5a5;border-radius:4px;font-size:0.85rem;">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-icon" style="background:#dc2626;color:white;border-color:#dc2626;">+ Add Stop</button>
+                </form>
             </div>
 
             {# Save Button - Bottom #}
