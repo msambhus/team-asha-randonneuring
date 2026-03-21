@@ -17,19 +17,19 @@
 
 @layer components {
   .container {
-    @apply max-w-[1200px] mx-auto px-5;
+    @apply max-w-[1200px] mx-auto px-4 md:px-5;
   }
   
   .hero {
-    @apply bg-gradient-to-br from-primary via-primary-dark to-primary text-white py-10 px-5 text-center;
+    @apply bg-gradient-to-br from-primary via-primary-dark to-primary text-white py-6 px-4 text-center md:py-10 md:px-5;
   }
-  
+
   .hero h1 {
-    @apply text-[2.5rem] mb-2.5 font-extrabold;
+    @apply text-[1.6rem] mb-2.5 font-extrabold md:text-[2rem] lg:text-[2.5rem];
   }
-  
+
   .hero p {
-    @apply text-lg opacity-90;
+    @apply text-base opacity-90 md:text-lg;
   }
   
   .section {
@@ -37,27 +37,27 @@
   }
   
   .section h2 {
-    @apply text-[2rem] mb-5 text-primary pb-2.5 border-b-[3px] border-accent inline-block font-bold;
+    @apply text-[1.3rem] mb-4 text-primary pb-2.5 border-b-[3px] border-accent inline-block font-bold md:text-[1.6rem] md:mb-5 lg:text-[2rem];
   }
   
   .card {
-    @apply bg-card-bg rounded-xl p-6 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-border mb-5;
+    @apply bg-card-bg rounded-xl p-4 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-border mb-5 md:p-6;
   }
   
   .stats-row {
-    @apply grid grid-cols-2 md:grid-cols-5 gap-5 -mt-10 mx-auto px-5 max-w-[1200px] relative z-10;
+    @apply grid grid-cols-2 gap-2 -mt-8 mx-auto px-4 max-w-[1200px] relative z-10 md:grid-cols-3 md:gap-3 md:-mt-10 md:px-5 lg:grid-cols-5 lg:gap-5;
   }
-  
+
   .stat-card {
-    @apply bg-card-bg rounded-xl p-6 text-center shadow-[0_4px_15px_rgba(0,0,0,0.08)] border border-border hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] transition-all;
+    @apply bg-card-bg rounded-xl p-3 text-center shadow-[0_4px_15px_rgba(0,0,0,0.08)] border border-border hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] transition-all md:p-4 lg:p-6;
   }
-  
+
   .stat-card .number {
-    @apply text-[2.2rem] font-extrabold text-primary;
+    @apply text-[1.4rem] font-extrabold text-primary md:text-[1.8rem] lg:text-[2.2rem];
   }
-  
+
   .stat-card .label {
-    @apply text-[0.85rem] text-text-light uppercase tracking-wider mt-1;
+    @apply text-[0.7rem] text-text-light uppercase tracking-wider mt-1 md:text-[0.78rem] lg:text-[0.85rem];
   }
   
   /* Bright colored stat cards for riders page */
@@ -110,11 +110,11 @@
   }
   
   th {
-    @apply bg-primary text-white py-2.5 px-3 text-left font-semibold whitespace-nowrap sticky top-0;
+    @apply bg-primary text-white py-2 px-1.5 text-left font-semibold whitespace-nowrap sticky top-0 text-[0.8rem] md:py-2.5 md:px-3 md:text-sm;
   }
-  
+
   td {
-    @apply py-2 px-3 border-b border-border;
+    @apply py-1.5 px-1.5 border-b border-border text-[0.8rem] md:py-2 md:px-3 md:text-sm;
   }
   
   tbody tr:nth-child(odd) {
@@ -216,19 +216,19 @@
   }
   
   .frozen-table .frozen-col-1 {
-    @apply left-0 min-w-[240px] whitespace-nowrap;
+    @apply left-0 min-w-[100px] whitespace-nowrap md:min-w-[140px] lg:min-w-[240px];
   }
-  
+
   .frozen-table .frozen-col-2 {
-    @apply left-[240px] min-w-[90px] whitespace-nowrap;
+    @apply left-[100px] min-w-[50px] whitespace-nowrap md:left-[140px] md:min-w-[70px] lg:left-[240px] lg:min-w-[90px];
   }
-  
+
   .frozen-table .frozen-col-3 {
-    @apply left-[330px] min-w-[70px] whitespace-nowrap;
+    @apply left-[150px] min-w-[50px] whitespace-nowrap md:left-[210px] md:min-w-[60px] lg:left-[330px] lg:min-w-[70px];
   }
-  
+
   .frozen-table .frozen-col-4 {
-    @apply left-[400px] min-w-[70px] shadow-[2px_0_5px_rgba(0,0,0,0.1)] whitespace-nowrap;
+    @apply left-[200px] min-w-[50px] shadow-[2px_0_5px_rgba(0,0,0,0.1)] whitespace-nowrap md:left-[270px] md:min-w-[60px] lg:left-[400px] lg:min-w-[70px];
   }
   
   .frozen-table tbody tr:nth-child(odd) .frozen-col {
@@ -276,7 +276,7 @@
   .form-group input,
   .form-group select,
   .form-group textarea {
-    @apply w-full py-2.5 px-3 border border-border rounded-lg text-sm;
+    @apply w-full py-2.5 px-3 border border-border rounded-lg text-[16px] md:text-sm;
   }
   
   .form-group textarea {
