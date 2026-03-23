@@ -41,9 +41,11 @@ from auth import login_required, user_login_required
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
 from services.openai_coach import generate_openai_advice
-from services.custom_plan_service import (get_merged_plan_stops, 
+from services.custom_plan_service import (get_merged_plan_stops,
                                           recalculate_cumulative_values,
                                           apply_pace_adjustment, compare_plans)
+from services.weather import fetch_stop_wind
+from services.rwgps import fetch_route
 from cache import cache, CACHE_TIMEOUT
 from datetime import date, datetime, timedelta
 import re
@@ -1351,6 +1353,23 @@ def ride_plan_detail(slug):
     # Attach break merging metadata for timeline layout
     stops, use_timeline = _attach_break_metadata(stops)
 
+    # Wind data for table view
+    stop_wind = None
+    if weather_route_id:
+        try:
+            route_data = fetch_route(weather_route_id)
+            track_points = route_data.get('track_points') or []
+            stop_wind = fetch_stop_wind(
+                stops=stops,
+                track_points=track_points,
+                plan_slug=plan['slug'],
+                start_time_str=plan.get('start_time', '06:00'),
+                cache=cache,
+            )
+        except Exception:
+            current_app.logger.exception("Wind fetch failed for plan %s", slug)
+            stop_wind = None
+
     return render_template('ride_plan_detail.html',
                            plan=plan,
                            stops=stops,
@@ -1367,6 +1386,7 @@ def ride_plan_detail(slug):
                            rwgps_url_label=rwgps_url_label,
                            rwgps_route_id=rwgps_route_id,
                            weather_route_id=weather_route_id,
+                           stop_wind=stop_wind,
                            difficulty_colors=_DIFFICULTY_COLORS,
                            upcoming_event=upcoming_event,
                            signup_count=signup_count,
