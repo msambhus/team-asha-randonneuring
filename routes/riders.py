@@ -26,7 +26,7 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_all_rider_season_stats, detect_sr_for_all_riders_in_season,
                     get_upcoming_rusa_events, update_rider_profile, update_strava_privacy,
                     get_pbp_finishers,
-                    get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops,
+                    get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops, update_ride_plan_info,
                     get_signup_count, get_rider_signup_status, get_ride_by_id, update_ride_details,
                     get_user_by_id, _execute,
                     get_strava_connection, get_strava_activities,
@@ -1442,6 +1442,34 @@ def base_plan_editor(slug):
                            overall_ft_per_mile=overall_ft_per_mile,
                            weighted_difficulty=weighted_difficulty,
                            finish_time_bank=finish_time_bank)
+
+@riders_bp.route('/ride-plan/<slug>/edit-info', methods=['GET', 'POST'])
+@user_login_required
+def edit_ride_plan_info(slug):
+    """Admin-only editor for ride plan metadata."""
+    if not is_admin_user():
+        abort(403)
+    plan = get_ride_plan_by_slug(slug)
+    if not plan:
+        abort(404)
+    plan = dict(plan)
+
+    if request.method == 'POST':
+        update_ride_plan_info(
+            plan_id=plan['id'],
+            name=request.form.get('name', '').strip(),
+            rwgps_url=request.form.get('rwgps_url', '').strip(),
+            rwgps_url_team=request.form.get('rwgps_url_team', '').strip(),
+            start_time=request.form.get('start_time', '06:00').strip(),
+            distance_km=request.form.get('distance_km', ''),
+            cutoff_hours=request.form.get('cutoff_hours', ''),
+        )
+        from flask import flash
+        flash('Plan info updated.', 'success')
+        return redirect(url_for('riders.ride_plan_detail', slug=slug))
+
+    return render_template('edit_ride_plan_info.html', plan=plan)
+
 
 def custom_ride_plan_view(slug):
     """View custom plan with same detail as base plan, but with custom timings."""

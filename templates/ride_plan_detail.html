@@ -1055,9 +1055,13 @@
             ✏️ Edit
         </a>
         {% elif is_admin %}
-        <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}" 
+        <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}"
            class="btn-custom-plan" style="background:#16a34a;">
-            ✏️ Edit Base
+            ✏️ Edit Stops
+        </a>
+        <a href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}"
+           class="btn-custom-plan" style="background:#0369a1;">
+            ⚙️ Edit Info
         </a>
         {% endif %}
         {% else %}
@@ -1068,7 +1072,11 @@
         {% if is_admin %}
         <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}"
            class="btn-custom-plan" style="background:#16a34a;">
-            ✏️ Edit Base
+            ✏️ Edit Stops
+        </a>
+        <a href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}"
+           class="btn-custom-plan" style="background:#0369a1;">
+            ⚙️ Edit Info
         </a>
         {% endif %}
         {% endif %}
