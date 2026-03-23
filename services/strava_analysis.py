@@ -517,6 +517,18 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
     # Sort all rows by distance
     rows.sort(key=lambda r: r['distance_miles'])
 
+    # Calculate actual segment times (riding time between consecutive stops)
+    prev_actual_cum = 0
+    prev_actual_stop_dur = 0
+    for row in rows:
+        if row['actual_cum_time_min'] is not None:
+            actual_segment = row['actual_cum_time_min'] - prev_actual_cum - prev_actual_stop_dur
+            row['actual_segment_min'] = max(0, round(actual_segment))
+            prev_actual_cum = row['actual_cum_time_min']
+            prev_actual_stop_dur = row.get('actual_stop_duration_min') or 0
+        else:
+            row['actual_segment_min'] = None
+
     # Plan total time
     plan_total_time_min = plan_stops[-1].get('cum_time_min', 0) if plan_stops else 0
     plan_total_distance = float(plan_stops[-1].get('distance_miles', 0)) if plan_stops else 0
