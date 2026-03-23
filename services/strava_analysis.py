@@ -445,6 +445,25 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         vals = [stream[i] for i in range(len(dist_stream_mi))
                 if start_mi <= dist_stream_mi[i] <= end_mi and stream[i] is not None and stream[i] > 0]
         return round(sum(vals) / len(vals)) if vals else None
+
+    velocity_stream = streams.get('velocity_smooth', []) if streams else []
+    time_stream = streams.get('time', []) if streams else []
+
+    def stopped_time_in_range(start_mi, end_mi):
+        """Total stopped time (minutes) between two mile markers from velocity stream."""
+        if not velocity_stream or not dist_stream_mi or not time_stream:
+            return None
+        if len(velocity_stream) != len(dist_stream_mi) or len(time_stream) != len(dist_stream_mi):
+            return None
+        stopped = 0.0
+        for i in range(1, len(dist_stream_mi)):
+            if not (start_mi <= dist_stream_mi[i] <= end_mi):
+                continue
+            if velocity_stream[i] < VELOCITY_THRESHOLD:
+                dt = time_stream[i] - time_stream[i - 1]
+                stopped += dt
+        return round(stopped / 60, 1) if stopped > 0 else None
+
     actual_elevation_ft = (activity.get('total_elevation_gain') or 0) * 3.28084
     actual_avg_speed_mph = (activity.get('average_speed') or 0) * 2.23694
 
@@ -490,7 +509,9 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         actual_stop = matched_stops_by_name.get(location)
         actual_stop_duration = actual_stop['duration_min'] if actual_stop else None
 
-        # Actual cumulative time (seconds from ride start → minutes)
+        # Actual cumulative time — ALWAYS use interpolated time at exact mile marker.
+        # This avoids skew when a detected stop is at a slightly different distance
+        # than the planned waypoint (e.g., Taco Bell at 148mi matched to Shell at 145mi).
         actual_cum_time = None
         cum_time_delta = None
 
@@ -502,15 +523,11 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
             actual_stop_duration = 0
             if plan_cum_time:
                 cum_time_delta = round(actual_cum_time - plan_cum_time)
-        elif actual_stop and actual_stop.get('start_time_s') is not None:
-            # Matched detected stop — use its time
-            actual_cum_time = round(actual_stop['start_time_s'] / 60)
-            if plan_cum_time:
-                cum_time_delta = round(actual_cum_time - plan_cum_time)
         elif interp and distance_miles > 0:
-            # No detected stop but we can interpolate from Strava streams
+            # Use stream interpolation at exact mile marker
             actual_cum_time = round(interp(distance_miles))
-            actual_stop_duration = 0  # rider didn't stop here
+            if not actual_stop:
+                actual_stop_duration = 0
             if plan_cum_time:
                 cum_time_delta = round(actual_cum_time - plan_cum_time)
 
@@ -601,19 +618,49 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
 
         rows.append(row)
 
-    # Insert extra (unplanned) stops at their correct distance position
-    extra_stops = [ds for ds in (detected_stops or []) if ds.get('is_extra')]
+    # Insert extra (unplanned) stops — includes:
+    # 1. Stops not matched to any waypoint (is_extra=True)
+    # 2. Matched stops >10 min that are >3 mi from their matched waypoint
+    #    (e.g., Taco Bell at 148mi matched to Shell at 145mi)
+    waypoint_dists = {float(ps.get('distance_miles') or 0) for ps in plan_stops}
+    extra_stops = []
+    for ds in (detected_stops or []):
+        if ds.get('is_extra'):
+            extra_stops.append(ds)
+        elif ds.get('matched_stop_name') and ds['duration_min'] >= 4:
+            # Check if the detected stop is far from the matched waypoint
+            matched_wp_dist = None
+            for ps in plan_stops:
+                if ps.get('location') == ds['matched_stop_name']:
+                    matched_wp_dist = float(ps.get('distance_miles') or 0)
+                    break
+            if matched_wp_dist is not None and abs(ds['distance_miles'] - matched_wp_dist) > 3:
+                extra_stops.append(ds)
+
     for es in extra_stops:
-        actual_cum_time = round(es['start_time_s'] / 60) if es.get('start_time_s') is not None else None
+        es_dist = es['distance_miles']
+        # Use interpolated time at exact distance for consistency
+        if interp:
+            actual_cum_time = round(interp(es_dist))
+        elif es.get('start_time_s') is not None:
+            actual_cum_time = round(es['start_time_s'] / 60)
+        else:
+            actual_cum_time = None
 
         actual_tod = None
-        if actual_start_time and es.get('start_time_s') is not None:
-            actual_tod_dt = actual_start_time + timedelta(seconds=es['start_time_s'])
+        if actual_cum_time is not None and actual_start_time:
+            actual_tod_dt = actual_start_time + timedelta(minutes=actual_cum_time)
             actual_tod = actual_tod_dt.strftime('%H:%M')
 
         extra_arrival = max(0, round(actual_cum_time - es['duration_min'])) if actual_cum_time is not None else None
+
+        # Label: show matched name if it was a mislocated match, otherwise generic
+        label = f"Unplanned stop @ {es_dist:.1f}mi"
+        if es.get('matched_stop_name'):
+            label = f"Break near {es['matched_stop_name'][:30]}"
+
         row = {
-            'location': f"Unplanned stop",
+            'location': label,
             'stop_type': 'extra',
             'distance_miles': es['distance_miles'],
             'plan_segment_min': None,
@@ -664,25 +711,14 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         else:
             row['actual_segment_min'] = None
             row['actual_speed_mph'] = None
-        # Unplanned break time in this segment — excludes stops matched to waypoints
-        # (those are already shown in the Break column). Only counts stops like
-        # traffic lights, mechanicals, bathroom breaks between waypoints.
-        tolerance = 3.0  # miles — exclude stops within this range of any waypoint
-        waypoint_dists = [float(ps.get('distance_miles') or 0) for ps in plan_stops]
-        seg_break_total = 0
-        if cur_dist > prev_plan_dist:
-            for ds in all_detected:
-                d = ds['distance_miles']
-                if not (prev_plan_dist < d <= cur_dist):
-                    continue
-                if ds.get('matched_stop_name'):
-                    continue  # matched to a waypoint — shown in Break column
-                # Also skip if within tolerance of any waypoint
-                near_waypoint = any(abs(d - wd) < tolerance for wd in waypoint_dists)
-                if near_waypoint:
-                    continue
-                seg_break_total += ds['duration_min']
-        row['actual_seg_break_min'] = round(seg_break_total, 1) if seg_break_total > 0 else None
+        # Unplanned stopped time in this segment from velocity stream.
+        # This captures ALL stopped time (traffic lights, mechanicals, short pauses)
+        # between waypoints — not just detected stops > 2 min.
+        # Subtract the planned stop at THIS waypoint if rider stopped here.
+        raw_stopped = stopped_time_in_range(prev_plan_dist, cur_dist)
+        waypoint_stop = row.get('actual_stop_duration_min') or 0
+        unplanned = (raw_stopped - waypoint_stop) if raw_stopped else None
+        row['actual_seg_break_min'] = round(unplanned, 1) if unplanned and unplanned > 0.5 else None
 
         if not row.get('is_extra'):
             prev_plan_dist = cur_dist
