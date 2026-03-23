@@ -49,10 +49,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Historical Wind / Strava Analysis
 
-- [ ] **HIST-01**: System pulls actual wind data for completed 2026 rides that have linked ride plans with RWGPS routes
-- [ ] **HIST-02**: User sees wind conditions in Strava analysis section with same column format as ride plans
-- [ ] **HIST-03**: Historical wind uses same green/red/blue color coding with intensity and font scaling
-- [ ] **HIST-04**: Historical wind columns labeled "Actual Wind" (not "Forecast")
+- [x] **HIST-01**: System pulls actual wind data for completed 2026 rides that have linked ride plans with RWGPS routes
+- [x] **HIST-02**: User sees wind conditions in Strava analysis section with same column format as ride plans
+- [x] **HIST-03**: Historical wind uses same green/red/blue color coding with intensity and font scaling
+- [x] **HIST-04**: Historical wind columns labeled "Actual Wind" (not "Forecast")
 
 ### Ride Header Links
 
@@ -114,10 +114,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WARN-02 | Phase 4 | Complete |
 | WARN-03 | Phase 4 | Complete |
 | WARN-04 | Phase 4 | Complete |
-| HIST-01 | Phase 7 | Pending |
-| HIST-02 | Phase 7 | Pending |
-| HIST-03 | Phase 7 | Pending |
-| HIST-04 | Phase 7 | Pending |
+| HIST-01 | Phase 7 | Complete |
+| HIST-02 | Phase 7 | Complete |
+| HIST-03 | Phase 7 | Complete |
+| HIST-04 | Phase 7 | Complete |
 | LINK-01 | Phase 7 | Complete |
 | LINK-02 | Phase 7 | Complete |
 

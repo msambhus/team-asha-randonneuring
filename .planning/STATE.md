@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 07-01-PLAN.md — plan_slug in get_rider_participation, conditional ride name links in rider_profile
-last_updated: "2026-03-23T21:24:37.154Z"
+stopped_at: Completed 07-02-PLAN.md — Actual Wind column in strava analysis with historical stop wind
+last_updated: "2026-03-23T21:30:48.675Z"
 last_activity: 2026-03-23 — Roadmap created; 7 phases, 31/31 requirements mapped
 progress:
   total_phases: 7
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 11
-  completed_plans: 10
+  completed_plans: 11
   percent: 100
 ---
 
@@ -60,6 +60,7 @@ Progress: [██████████] 100%
 | Phase 06-historical-wind-archive-api-and-db-persistence P01 | 8 | 1 tasks | 3 files |
 | Phase 06-historical-wind-archive-api-and-db-persistence P02 | 2 | 2 tasks | 2 files |
 | Phase 07-historical-wind-display-and-ride-header-links P01 | 15 | 2 tasks | 3 files |
+| Phase 07 P02 | 20 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,8 @@ Recent decisions affecting current work:
 - [Phase 06-historical-wind-archive-api-and-db-persistence]: get_historical_stop_wind checks DB (STOR-02) before any network call — read-through cache pattern for ride wind data
 - [Phase 07-historical-wind-display-and-ride-header-links]: LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id preserves all rides regardless of linked plan; NULL slug for unlinked rides
 - [Phase 07-historical-wind-display-and-ride-header-links]: Ride name link conditional uses season list ['2024-2025', '2025-2026'] per LINK-01; unlinked rides stay as <strong>
+- [Phase 07]: stop_wind dict keyed by stop_name (not loop index) because comparison rows may include extra unplanned stops
+- [Phase 07]: Patch at models.get_ride_plan_stops in tests (not routes.riders.*) because ride_strava_analysis uses function-level local import
 
 ### Pending Todos
 
@@ -106,6 +109,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-23T21:24:37.152Z
-Stopped at: Completed 07-01-PLAN.md — plan_slug in get_rider_participation, conditional ride name links in rider_profile
+Last session: 2026-03-23T21:30:48.673Z
+Stopped at: Completed 07-02-PLAN.md — Actual Wind column in strava analysis with historical stop wind
 Resume file: None
