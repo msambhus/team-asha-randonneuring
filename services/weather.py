@@ -300,6 +300,128 @@ def get_cached_route_weather(route_slug, start_hour_str, sample_points, cache=No
     return data
 
 
+# ── Per-stop wind pipeline ───────────────────────────────────────────
+
+def fetch_stop_wind(stops, track_points, plan_slug, start_time_str, cache=None):
+    """Return per-stop wind data for display in the base ride plan table.
+
+    stops: list of stop dicts with 'distance_miles' key (and optionally 'arrival_time_min')
+    track_points: list of RWGPS track dicts (y=lat, x=lng, d=distance_m)
+    plan_slug: str used as part of cache key prefix "wind:{plan_slug}:{start_hour}"
+    start_time_str: "HH:MM" string for estimated ride start
+    cache: Flask-Caching cache object (passed explicitly for testability)
+
+    Returns list of dicts — same length as stops:
+        {'wind_speed_kmh': float, 'wind_type': str, 'style': dict, 'label': str}
+    None entries for stops whose coordinates could not be resolved.
+    Returns None on empty track, all-None coordinates, or API error.
+    """
+    if not track_points:
+        return None
+
+    # Step 1: interpolate stop coordinates from RWGPS track points
+    coords = get_stop_coordinates(stops, track_points)
+    valid_coords = [c for c in coords if c is not None]
+    if not valid_coords:
+        return None
+
+    # Step 2: build cache key — "wind:{plan_slug}:{YYYYMMDD}{HH}"
+    hour_str = start_time_str[:2]
+    date_str = datetime.now().strftime('%Y%m%d')
+    cache_key = f"wind:{plan_slug}:{date_str}{hour_str}"
+
+    if cache is not None:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    # Step 3: fetch forecast data for valid coordinates
+    try:
+        weather_data = fetch_route_weather(valid_coords)
+    except Exception:
+        logger.exception("fetch_stop_wind: weather API error for plan %s", plan_slug)
+        return None
+
+    if not weather_data:
+        return None
+
+    # Step 4: build index mapping — valid_index -> original stop index
+    # valid_map[i] = index in coords where coords[index] is the i-th non-None entry
+    valid_map = {}
+    valid_idx = 0
+    for orig_idx, c in enumerate(coords):
+        if c is not None:
+            valid_map[orig_idx] = valid_idx
+            valid_idx += 1
+
+    # Step 5: parse start time into a datetime for arrival estimation
+    start_hour = int(start_time_str[:2])
+    start_minute = int(start_time_str[3:5]) if len(start_time_str) >= 5 else 0
+    today = datetime.now().date()
+    start_dt = datetime(today.year, today.month, today.day, start_hour, start_minute)
+
+    # Step 6: compute per-stop wind entry
+    result = []
+    for i, coord in enumerate(coords):
+        if coord is None:
+            result.append(None)
+            continue
+
+        # Map this stop's original index to its weather_data slice
+        v_idx = valid_map.get(i)
+        if v_idx is None or v_idx >= len(weather_data):
+            result.append(None)
+            continue
+
+        forecast = weather_data[v_idx]
+        hourly = forecast.get('hourly', {})
+
+        # Use arrival_time_min if present; otherwise estimate from distance
+        arrival_time_min = stops[i].get('arrival_time_min')
+        if arrival_time_min is not None:
+            arrival_dt = start_dt + timedelta(minutes=arrival_time_min)
+        else:
+            dist_km = stops[i].get('distance_miles', 0) * 1.60934
+            hours_to_arrive = dist_km / _AVG_SPEED_KMH if _AVG_SPEED_KMH > 0 else 0
+            arrival_dt = start_dt + timedelta(hours=hours_to_arrive)
+
+        hour_index = get_hour_index(hourly.get('time', []), arrival_dt)
+
+        wind_speed = _safe_get(hourly, 'wind_speed_10m', hour_index, 0.0)
+        wind_dir = _safe_get(hourly, 'wind_direction_10m', hour_index, 0)
+
+        # Bearing: current stop -> next stop; for last stop: previous -> current
+        bearing = 0.0
+        if i + 1 < len(coords) and coords[i + 1] is not None:
+            bearing = calculate_bearing(
+                coord['lat'], coord['lng'],
+                coords[i + 1]['lat'], coords[i + 1]['lng'],
+            )
+        elif i > 0 and coords[i - 1] is not None:
+            bearing = calculate_bearing(
+                coords[i - 1]['lat'], coords[i - 1]['lng'],
+                coord['lat'], coord['lng'],
+            )
+
+        hw = headwind_component(wind_speed, wind_dir, bearing)
+        cw = crosswind_component(wind_speed, wind_dir, bearing)
+        wind_type = classify_wind(hw, cw)
+        style = wind_cell_style(wind_speed, wind_type)
+
+        result.append({
+            'wind_speed_kmh': round(float(wind_speed), 1),
+            'wind_type': wind_type,
+            'style': style,
+            'label': wind_label(hw),
+        })
+
+    # Step 7: cache and return
+    if cache is not None:
+        cache.set(cache_key, result, timeout=3600)
+
+    return result
+
+
 # ── Response formatting ─────────────────────────────────────────────
 
 def format_weather_response(sample_points, weather_data, bearings, start_dt):
