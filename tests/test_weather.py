@@ -1217,3 +1217,141 @@ class TestCustomPlanWind:
         assert isinstance(result, list), f"Expected list, got {type(result)}"
         assert len(result) == 1, f"Expected 1 element, got {len(result)}"
         assert result[0] == single_dict_response
+
+
+# ── WIND-07/08: Historical Wind Fetch (Archive & Forecast Fallback) ──
+
+def _make_archive_hourly_response():
+    """Minimal hourly response matching archive API shape."""
+    times = [f"2026-01-01T{h:02d}:00" for h in range(24)]
+    return {
+        'hourly': {
+            'time': times,
+            'wind_speed_10m': [10.0] * 24,
+            'wind_direction_10m': [270] * 24,
+            'wind_gusts_10m': [15.0] * 24,
+            'temperature_2m': [8.0] * 24,
+        }
+    }
+
+
+class TestFetchHistoricalWind:
+    def test_old_ride_uses_archive(self):
+        """Ride 10 days ago routes to archive-api.open-meteo.com."""
+        from datetime import date, timedelta
+        from services.weather import fetch_historical_wind
+
+        ride_date = date.today() - timedelta(days=10)
+        coords = [{'lat': 37.77, 'lng': -122.41}]
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = _make_archive_hourly_response()
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch('services.weather.requests.get', return_value=mock_resp) as mock_get:
+            result, source = fetch_historical_wind(coords, ride_date)
+
+        call_args = mock_get.call_args
+        url = call_args[0][0] if call_args[0] else call_args.args[0]
+        params = call_args[1].get('params') or call_args.kwargs.get('params', {})
+        assert 'archive-api.open-meteo.com' in url
+        assert params.get('start_date') == ride_date.strftime('%Y-%m-%d')
+        assert params.get('end_date') == ride_date.strftime('%Y-%m-%d')
+        assert source == 'archive'
+
+    def test_recent_ride_uses_past_days(self):
+        """Ride 3 days ago routes to forecast API with past_days param."""
+        from datetime import date, timedelta
+        from services.weather import fetch_historical_wind
+
+        ride_date = date.today() - timedelta(days=3)
+        coords = [{'lat': 37.77, 'lng': -122.41}]
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = _make_archive_hourly_response()
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch('services.weather.requests.get', return_value=mock_resp) as mock_get:
+            result, source = fetch_historical_wind(coords, ride_date)
+
+        call_args = mock_get.call_args
+        url = call_args[0][0] if call_args[0] else call_args.args[0]
+        params = call_args[1].get('params') or call_args.kwargs.get('params', {})
+        assert 'api.open-meteo.com/v1/forecast' in url
+        assert 'past_days' in params
+        assert source == 'forecast_past_days'
+
+    def test_lag_boundary_uses_archive(self):
+        """Ride exactly 5 days ago (boundary) uses archive API (ride_date <= today - 5)."""
+        from datetime import date, timedelta
+        from services.weather import fetch_historical_wind
+
+        ride_date = date.today() - timedelta(days=5)
+        coords = [{'lat': 37.77, 'lng': -122.41}]
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = _make_archive_hourly_response()
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch('services.weather.requests.get', return_value=mock_resp) as mock_get:
+            result, source = fetch_historical_wind(coords, ride_date)
+
+        assert source == 'archive'
+
+    def test_archive_single_dict_normalized(self):
+        """Single-dict response from archive API is normalized to a list."""
+        from datetime import date, timedelta
+        from services.weather import fetch_historical_wind
+
+        ride_date = date.today() - timedelta(days=10)
+        coords = [{'lat': 37.77, 'lng': -122.41}]
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = _make_archive_hourly_response()  # dict, not list
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch('services.weather.requests.get', return_value=mock_resp):
+            result, source = fetch_historical_wind(coords, ride_date)
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+
+    def test_batch_coords(self):
+        """3 coordinates send comma-separated latitude/longitude strings."""
+        from datetime import date, timedelta
+        from services.weather import fetch_historical_wind
+
+        ride_date = date.today() - timedelta(days=10)
+        coords = [
+            {'lat': 37.77, 'lng': -122.41},
+            {'lat': 37.50, 'lng': -122.10},
+            {'lat': 37.00, 'lng': -121.60},
+        ]
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = [_make_archive_hourly_response()] * 3
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch('services.weather.requests.get', return_value=mock_resp) as mock_get:
+            fetch_historical_wind(coords, ride_date)
+
+        call_args = mock_get.call_args
+        params = call_args[1].get('params') or call_args.kwargs.get('params', {})
+        lat_str = str(params.get('latitude', ''))
+        assert lat_str.count(',') == 2  # 3 values = 2 commas
+
+    def test_http_error_propagates(self):
+        """HTTPError from archive API propagates to caller."""
+        from datetime import date, timedelta
+        from requests.exceptions import HTTPError
+        from services.weather import fetch_historical_wind
+
+        ride_date = date.today() - timedelta(days=10)
+        coords = [{'lat': 37.77, 'lng': -122.41}]
+
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.side_effect = HTTPError("503 Service Unavailable")
+
+        with patch('services.weather.requests.get', return_value=mock_resp):
+            with pytest.raises(HTTPError):
+                fetch_historical_wind(coords, ride_date)

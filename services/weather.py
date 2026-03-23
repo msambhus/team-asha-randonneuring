@@ -1,7 +1,7 @@
 """Weather service — route sampling, bearing math, headwind/tailwind, Open-Meteo API, caching."""
 import math
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 import requests
 
@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 # ── Constants ────────────────────────────────────────────────────────
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+ARCHIVE_LAG_DAYS = 5
 
 ATTRIBUTION = "*Weather data: [Open-Meteo](https://open-meteo.com)*"
 
@@ -276,6 +278,82 @@ def fetch_route_weather(sample_points):
     if isinstance(data, dict):
         return [data]
     return data
+
+
+# ── Historical Wind (Archive API + forecast past_days fallback) ──────
+
+def _fetch_archive_wind(stop_coords, ride_date):
+    """Fetch wind data from Open-Meteo Archive API for a completed ride.
+
+    stop_coords: list of dicts with 'lat' and 'lng' keys
+    ride_date: datetime.date — the date of the completed ride
+
+    Returns list of per-location hourly dicts (normalized from single-dict if needed).
+    Raises requests.HTTPError on non-2xx responses.
+    """
+    lats = ",".join(str(round(c['lat'], 4)) for c in stop_coords)
+    lngs = ",".join(str(round(c['lng'], 4)) for c in stop_coords)
+    date_str = ride_date.strftime('%Y-%m-%d')
+
+    params = {
+        'latitude': lats,
+        'longitude': lngs,
+        'start_date': date_str,
+        'end_date': date_str,
+        'hourly': 'wind_speed_10m,wind_direction_10m,wind_gusts_10m,temperature_2m',
+        'timezone': 'auto',
+    }
+
+    resp = requests.get(OPEN_METEO_ARCHIVE_URL, params=params, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    return [data] if isinstance(data, dict) else data
+
+
+def _fetch_forecast_past_days_wind(stop_coords, days_ago):
+    """Fetch recent-past wind data via forecast API past_days parameter.
+
+    stop_coords: list of dicts with 'lat' and 'lng' keys
+    days_ago: int — how many days ago the ride occurred
+
+    Returns list of per-location hourly dicts (normalized from single-dict if needed).
+    Raises requests.HTTPError on non-2xx responses.
+    """
+    lats = ",".join(str(round(c['lat'], 4)) for c in stop_coords)
+    lngs = ",".join(str(round(c['lng'], 4)) for c in stop_coords)
+
+    params = {
+        'latitude': lats,
+        'longitude': lngs,
+        'past_days': max(days_ago + 1, 1),
+        'hourly': 'wind_speed_10m,wind_direction_10m,wind_gusts_10m,temperature_2m',
+        'timezone': 'auto',
+    }
+
+    resp = requests.get(OPEN_METEO_URL, params=params, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    return [data] if isinstance(data, dict) else data
+
+
+def fetch_historical_wind(stop_coords, ride_date):
+    """Route a historical wind fetch to archive API or forecast past_days fallback.
+
+    stop_coords: list of dicts with 'lat' and 'lng' keys
+    ride_date: datetime.date — the date the ride took place
+
+    Returns (weather_data_list, data_source) where data_source is
+    'archive' or 'forecast_past_days'.
+
+    The archive API (ERA5 reanalysis) is available with a ~5-day lag.
+    Rides with ride_date <= today - ARCHIVE_LAG_DAYS use the archive;
+    more recent rides fall back to the forecast API past_days parameter.
+    """
+    lag_cutoff = date.today() - timedelta(days=ARCHIVE_LAG_DAYS)
+    if ride_date <= lag_cutoff:
+        return _fetch_archive_wind(stop_coords, ride_date), 'archive'
+    days_ago = (date.today() - ride_date).days
+    return _fetch_forecast_past_days_wind(stop_coords, days_ago), 'forecast_past_days'
 
 
 # ── Caching ──────────────────────────────────────────────────────────
