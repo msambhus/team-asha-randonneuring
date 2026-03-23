@@ -450,9 +450,9 @@
 <tr>
     <th style="text-align:left;">Stop</th>
     <th style="text-align:right;">Dist</th>
-    <th style="text-align:right;">Plan Stop</th>
+    <th style="text-align:right;">{% if has_custom %}Your Plan{% else %}Plan Stop{% endif %}</th>
     {% if has_custom %}
-    <th style="text-align:right;">Custom</th>
+    <th style="text-align:right;">Base</th>
     {% endif %}
     <th style="text-align:right;">Actual Stop</th>
     <th style="text-align:right;">&Delta;</th>
