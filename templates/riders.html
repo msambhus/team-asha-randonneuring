@@ -162,7 +162,11 @@
 <th class="frozen-col frozen-col-1 sortable" data-sort="rider" data-type="text">Rider <span class="sort-icon"></span></th><th class="frozen-col frozen-col-2 sortable" data-sort="rides" data-type="number">Rides <span class="sort-icon"></span></th><th class="frozen-col frozen-col-3 sortable" data-sort="kms" data-type="number">KMs <span class="sort-icon"></span></th>
 {% for ride in past_rides %}
 <th style="min-width:70px;padding:6px 4px;line-height:1.3;">
-    <div style="font-weight:700;font-size:0.75rem;">{{ ride.name }}</div>
+    <div style="font-weight:700;font-size:0.75rem;">
+    {% if ride.plan_slug %}<a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}" style="color:inherit;text-decoration:underline;text-decoration-color:rgba(255,255,255,0.4);">{{ ride.name }}</a>
+    {% elif ride.rwgps_url %}<a href="{{ ride.rwgps_url }}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;text-decoration-color:rgba(255,255,255,0.4);">{{ ride.name }}</a>
+    {% else %}{{ ride.name }}{% endif %}
+    </div>
     <div style="font-size:0.7rem;color:rgba(255,255,255,0.7);">{{ ride.date }}</div>
     {% if ride.elevation_ft %}<div style="font-size:0.65rem;color:var(--accent-light);margin-top:2px;">{{ "{:,}".format(ride.elevation_ft) }}ft</div>{% endif %}
     {% if ride.ft_per_mile %}<div style="font-size:0.65rem;color:rgba(255,255,255,0.7);">{{ ride.ft_per_mile }}ft/mi</div>{% endif %}
