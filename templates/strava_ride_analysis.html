@@ -184,15 +184,6 @@
     margin-bottom: 12px;
     text-align: center;
 }
-.chart-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    margin-bottom: 24px;
-}
-@media (max-width: 768px) {
-    .chart-row { grid-template-columns: 1fr; }
-}
 
 /* Legend */
 .analysis-legend {
@@ -453,17 +444,11 @@
 </div>
 {% endif %}
 
-{# --- Charts --- #}
+{# --- Chart --- #}
 {% if comparison.rows %}
-<div class="chart-row">
-    <div class="chart-container">
-        <h3>Cumulative Time vs Distance</h3>
-        <canvas id="cumTimeChart" height="300"></canvas>
-    </div>
-    <div class="chart-container">
-        <h3>Segment Time &amp; Speed</h3>
-        <canvas id="segChart" height="300"></canvas>
-    </div>
+<div class="chart-container" style="margin-bottom:24px;">
+    <h3>Ride Timeline</h3>
+    <canvas id="rideChart" height="340"></canvas>
 </div>
 
 {# --- Comparison Table --- #}
@@ -567,25 +552,21 @@
 
 {# --- Chart.js --- #}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3"></script>
 <script>
 (function() {
     const rows = {{ comparison.rows|tojson }};
     const hasCustom = {{ has_custom|tojson }};
-
     const planRows = rows.filter(r => !r.is_extra);
-    const allRows = rows.filter(r => r.actual_cum_time_min !== null || r.plan_cum_time_min);
 
-    // Helper: format minutes to Hh MMm
     function fmtTime(mins) {
+        if (mins == null) return '--';
         const h = Math.floor(mins / 60);
         const m = Math.round(mins % 60);
         return h + 'h' + String(m).padStart(2, '0') + 'm';
     }
 
-    // ===== Cumulative Time Chart with break drops =====
-    // For each plan line, we create arrival + departure points at each stop
-    // to show breaks as vertical drops in the line.
-
+    // Build line with break drops (arrival→departure vertical segments)
     function buildBreakLine(dataRows, getCum, getArrival, getStopDur) {
         const points = [];
         for (const r of dataRows) {
@@ -594,10 +575,9 @@
             const stopDur = getStopDur(r);
             if (cum === null || cum === undefined) continue;
             const dist = r.distance_miles;
-            // Arrival point (before break)
             if (arrival !== null && arrival !== undefined && stopDur > 0) {
                 points.push({ x: dist, y: arrival / 60 });
-                points.push({ x: dist, y: cum / 60 }); // after break (vertical drop)
+                points.push({ x: dist, y: cum / 60 });
             } else {
                 points.push({ x: dist, y: cum / 60 });
             }
@@ -605,169 +585,165 @@
         return points;
     }
 
-    const cumCtx = document.getElementById('cumTimeChart').getContext('2d');
-    const cumDatasets = [];
+    // Build speed data points (one per segment, positioned at segment midpoint)
+    function buildSpeedLine(dataRows, getSpeed, getDist) {
+        const points = [];
+        let prevDist = 0;
+        for (const r of dataRows) {
+            const speed = getSpeed(r);
+            const dist = getDist(r);
+            if (speed !== null && speed !== undefined && speed > 0) {
+                points.push({ x: (prevDist + dist) / 2, y: speed });
+            }
+            prevDist = dist;
+        }
+        return points;
+    }
 
-    // Your Plan line with break drops
-    cumDatasets.push({
+    const ctx = document.getElementById('rideChart').getContext('2d');
+    const datasets = [];
+
+    // --- Time lines (left Y-axis) ---
+    datasets.push({
         label: hasCustom ? 'Your Plan' : 'Plan',
         data: buildBreakLine(planRows,
-            r => r.plan_cum_time_min,
-            r => r.plan_arrival_time_min,
-            r => r.plan_stop_duration_min || 0),
-        borderColor: '#2563eb',
-        borderWidth: 2,
-        tension: 0,
-        pointRadius: 0,
-        pointHitRadius: 8,
-        fill: false,
+            r => r.plan_cum_time_min, r => r.plan_arrival_time_min, r => r.plan_stop_duration_min || 0),
+        borderColor: '#2563eb', borderWidth: 2, tension: 0,
+        pointRadius: 0, pointHitRadius: 8, fill: false, yAxisID: 'y',
     });
 
-    // Base Plan line with break drops (if custom exists)
     if (hasCustom) {
-        cumDatasets.push({
+        datasets.push({
             label: 'Base Plan',
             data: buildBreakLine(planRows,
                 r => r.custom && r.custom.cum_time_min ? r.custom.cum_time_min : null,
                 r => r.custom && r.custom.arrival_time_min ? r.custom.arrival_time_min : null,
                 r => r.custom && r.custom.stop_duration_min ? r.custom.stop_duration_min : 0),
-            borderColor: '#94a3b8',
-            borderDash: [6, 3],
-            borderWidth: 1.5,
-            tension: 0,
-            pointRadius: 0,
-            pointHitRadius: 8,
-            fill: false,
+            borderColor: '#94a3b8', borderDash: [6, 3], borderWidth: 1.5, tension: 0,
+            pointRadius: 0, pointHitRadius: 8, fill: false, yAxisID: 'y',
         });
     }
 
-    // Actual line with break drops (including extra breaks)
     const actualDataRows = rows.filter(r => r.actual_cum_time_min !== null);
-    cumDatasets.push({
+    datasets.push({
         label: 'Actual',
         data: buildBreakLine(actualDataRows,
-            r => r.actual_cum_time_min,
-            r => r.actual_arrival_time_min,
-            r => r.actual_stop_duration_min || 0),
-        borderColor: '#c2410c',
-        borderWidth: 3,
-        tension: 0,
-        pointRadius: 0,
-        pointHitRadius: 8,
-        fill: false,
+            r => r.actual_cum_time_min, r => r.actual_arrival_time_min, r => r.actual_stop_duration_min || 0),
+        borderColor: '#c2410c', borderWidth: 3, tension: 0,
+        pointRadius: 0, pointHitRadius: 8, fill: false, yAxisID: 'y',
     });
 
-    new Chart(cumCtx, {
+    // --- Speed lines (right Y-axis) ---
+    datasets.push({
+        label: (hasCustom ? 'Your Plan' : 'Plan') + ' Speed',
+        data: buildSpeedLine(planRows, r => r.plan_speed_mph, r => r.distance_miles),
+        borderColor: 'rgba(37, 99, 235, 0.4)', borderWidth: 1.5, borderDash: [3, 3],
+        tension: 0.3, pointRadius: 2, pointBackgroundColor: '#2563eb',
+        fill: false, yAxisID: 'y1',
+    });
+
+    if (hasCustom) {
+        datasets.push({
+            label: 'Base Speed',
+            data: buildSpeedLine(planRows,
+                r => r.custom && r.custom.speed_mph ? r.custom.speed_mph : null, r => r.distance_miles),
+            borderColor: 'rgba(148, 163, 184, 0.4)', borderWidth: 1, borderDash: [2, 2],
+            tension: 0.3, pointRadius: 1, fill: false, yAxisID: 'y1',
+        });
+    }
+
+    datasets.push({
+        label: 'Actual Speed',
+        data: buildSpeedLine(rows.filter(r => !r.is_extra),
+            r => r.actual_speed_mph, r => r.distance_miles),
+        borderColor: 'rgba(194, 65, 12, 0.4)', borderWidth: 1.5, borderDash: [3, 3],
+        tension: 0.3, pointRadius: 2, pointBackgroundColor: '#c2410c',
+        fill: false, yAxisID: 'y1',
+    });
+
+    // --- Control annotations at bottom ---
+    const annotations = {};
+    planRows.forEach((r, i) => {
+        if (['start', 'finish', 'control', 'rest'].includes(r.stop_type)) {
+            const shortName = r.location.length > 20 ? r.location.substring(0, 19) + '…' : r.location;
+            annotations['ctrl' + i] = {
+                type: 'line',
+                xMin: r.distance_miles, xMax: r.distance_miles,
+                yMin: 0, yMax: 0.3,
+                borderColor: r.stop_type === 'control' ? '#1e40af' : (r.stop_type === 'rest' ? '#92400e' : '#64748b'),
+                borderWidth: 1.5,
+                label: {
+                    display: true,
+                    content: (r.stop_type === 'start' ? '🚩' : r.stop_type === 'finish' ? '🏁' : r.stop_type === 'control' ? '◆' : '☕') + ' ' + Math.round(r.distance_miles) + 'mi',
+                    position: 'start',
+                    font: { size: 9, weight: '600' },
+                    color: '#475569',
+                    backgroundColor: 'rgba(255,255,255,0.85)',
+                    padding: 2,
+                    rotation: -45,
+                }
+            };
+        }
+    });
+
+    // --- Build tooltip that shows segment time + break for the nearest stop ---
+    const stopLookup = {};
+    rows.forEach(r => { stopLookup[r.distance_miles] = r; });
+
+    new Chart(ctx, {
         type: 'line',
-        data: { datasets: cumDatasets },
+        data: { datasets },
         options: {
             responsive: true,
             interaction: { mode: 'nearest', intersect: false },
             scales: {
-                x: { type: 'linear', title: { display: true, text: 'Distance (mi)' } },
-                y: { title: { display: true, text: 'Elapsed Time (hrs)' },
+                x: { type: 'linear', title: { display: true, text: 'Distance (mi)' },
+                     ticks: { stepSize: 20 } },
+                y: { position: 'left',
+                     title: { display: true, text: 'Elapsed Time (hrs)' },
                      ticks: { callback: v => v.toFixed(1) + 'h' } },
+                y1: { position: 'right',
+                      title: { display: true, text: 'Speed (mph)' },
+                      grid: { drawOnChartArea: false },
+                      min: 0 },
             },
             plugins: {
+                annotation: { annotations },
                 tooltip: {
                     callbacks: {
-                        label: ctx => ctx.dataset.label + ': ' + fmtTime(ctx.parsed.y * 60)
-                    }
-                }
-            }
-        }
-    });
-
-    // ===== Segment Time & Speed Chart (dual Y-axis) =====
-    const segCtx = document.getElementById('segChart').getContext('2d');
-    const segRows = planRows.slice(1); // skip start
-    const labels = segRows.map(r => r.location.length > 12 ? r.location.substring(0, 11) + '…' : r.location);
-
-    const segDatasets = [];
-
-    // Segment time bars
-    segDatasets.push({
-        label: (hasCustom ? 'Your Plan' : 'Plan') + ' Time',
-        data: segRows.map(r => r.plan_segment_min || 0),
-        backgroundColor: 'rgba(37, 99, 235, 0.6)',
-        borderRadius: 3,
-        yAxisID: 'y',
-        order: 2,
-    });
-    if (hasCustom) {
-        segDatasets.push({
-            label: 'Base Time',
-            data: segRows.map(r => r.custom && r.custom.segment_time_min ? r.custom.segment_time_min : 0),
-            backgroundColor: 'rgba(148, 163, 184, 0.5)',
-            borderRadius: 3,
-            yAxisID: 'y',
-            order: 2,
-        });
-    }
-    segDatasets.push({
-        label: 'Actual Time',
-        data: segRows.map(r => r.actual_segment_min != null ? r.actual_segment_min : 0),
-        backgroundColor: 'rgba(194, 65, 12, 0.6)',
-        borderRadius: 3,
-        yAxisID: 'y',
-        order: 2,
-    });
-
-    // Speed lines (overlay)
-    segDatasets.push({
-        label: (hasCustom ? 'Your Plan' : 'Plan') + ' Speed',
-        data: segRows.map(r => r.plan_speed_mph || null),
-        borderColor: '#2563eb',
-        borderWidth: 2,
-        type: 'line',
-        tension: 0.3,
-        pointRadius: 3,
-        yAxisID: 'y1',
-        order: 1,
-    });
-    if (hasCustom) {
-        segDatasets.push({
-            label: 'Base Speed',
-            data: segRows.map(r => r.custom && r.custom.speed_mph ? r.custom.speed_mph : null),
-            borderColor: '#94a3b8',
-            borderDash: [4, 2],
-            borderWidth: 1.5,
-            type: 'line',
-            tension: 0.3,
-            pointRadius: 2,
-            yAxisID: 'y1',
-            order: 1,
-        });
-    }
-    segDatasets.push({
-        label: 'Actual Speed',
-        data: segRows.map(r => r.actual_speed_mph || null),
-        borderColor: '#c2410c',
-        borderWidth: 2,
-        type: 'line',
-        tension: 0.3,
-        pointRadius: 3,
-        yAxisID: 'y1',
-        order: 1,
-    });
-
-    new Chart(segCtx, {
-        type: 'bar',
-        data: { labels, datasets: segDatasets },
-        options: {
-            responsive: true,
-            scales: {
-                x: { ticks: { maxRotation: 45, font: { size: 9 } } },
-                y: { position: 'left', title: { display: true, text: 'Time (min)' } },
-                y1: { position: 'right', title: { display: true, text: 'Speed (mph)' },
-                      grid: { drawOnChartArea: false } },
-            },
-            plugins: {
-                tooltip: {
-                    callbacks: {
+                        title: ctxs => {
+                            const x = ctxs[0].parsed.x;
+                            return 'Mile ' + x.toFixed(1);
+                        },
+                        afterTitle: ctxs => {
+                            const x = ctxs[0].parsed.x;
+                            // Find nearest stop
+                            let nearest = null, minDiff = Infinity;
+                            rows.forEach(r => {
+                                const diff = Math.abs(r.distance_miles - x);
+                                if (diff < minDiff) { minDiff = diff; nearest = r; }
+                            });
+                            if (nearest && minDiff < 5) return nearest.location;
+                            return '';
+                        },
                         label: ctx => {
-                            if (ctx.dataset.yAxisID === 'y1') return ctx.dataset.label + ': ' + ctx.parsed.y + ' mph';
-                            return ctx.dataset.label + ': ' + ctx.parsed.y + 'm';
+                            const label = ctx.dataset.label;
+                            if (ctx.dataset.yAxisID === 'y1') return label + ': ' + ctx.parsed.y.toFixed(1) + ' mph';
+                            return label + ': ' + fmtTime(ctx.parsed.y * 60);
+                        },
+                        afterBody: ctxs => {
+                            const x = ctxs[0].parsed.x;
+                            let nearest = null, minDiff = Infinity;
+                            rows.forEach(r => {
+                                const diff = Math.abs(r.distance_miles - x);
+                                if (diff < minDiff) { minDiff = diff; nearest = r; }
+                            });
+                            if (!nearest || minDiff > 5) return [];
+                            const lines = [];
+                            if (nearest.plan_segment_min) lines.push('Seg time: ' + nearest.plan_segment_min + 'm plan' + (nearest.actual_segment_min != null ? ' / ' + nearest.actual_segment_min + 'm actual' : ''));
+                            if (nearest.plan_stop_duration_min) lines.push('Break: ' + nearest.plan_stop_duration_min + 'm plan' + (nearest.actual_stop_duration_min != null ? ' / ' + Math.round(nearest.actual_stop_duration_min) + 'm actual' : ''));
+                            else if (nearest.actual_stop_duration_min) lines.push('Break: ' + Math.round(nearest.actual_stop_duration_min) + 'm (unplanned)');
+                            return lines.length ? ['───────────', ...lines] : [];
                         }
                     }
                 }
