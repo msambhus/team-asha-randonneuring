@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Wind Math Foundation** - Pure Python wind classification, color/intensity helpers, and named threshold constants in services/weather.py (completed 2026-03-23)
 - [ ] **Phase 2: Stop-to-Coordinate Interpolation** - RWGPS track point interpolation that resolves lat/lng for every ride plan stop
 - [ ] **Phase 3: Forecast Wind in Base Ride Plan** - Color-coded wind columns visible in the base ride plan control sheet
-- [ ] **Phase 4: Heavy Wind Warning Banner** - "Heavy Winds" warning banner on the upcoming brevets page for rides in the next 28 days
+- [x] **Phase 4: Heavy Wind Warning Banner** - "Heavy Winds" warning banner on the upcoming brevets page for rides in the next 28 days (completed 2026-03-23)
 - [ ] **Phase 5: Forecast Wind in Custom Ride Plan** - Wind columns extended to custom ride plan views with correct merged stop resolution
 - [ ] **Phase 6: Historical Wind — Archive API and DB Persistence** - Archive API fetch with 5-day fallback, ride_wind_data table, one-time persist per completed ride
 - [ ] **Phase 7: Historical Wind Display and Ride Header Links** - Actual wind columns in Strava analysis and clickable 2025/2026 season ride headers
@@ -126,7 +126,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 1. Wind Math Foundation | 1/1 | Complete   | 2026-03-23 |
 | 2. Stop-to-Coordinate Interpolation | 0/1 | Planning | - |
 | 3. Forecast Wind in Base Ride Plan | 0/2 | Planning | - |
-| 4. Heavy Wind Warning Banner | 0/2 | Planning | - |
+| 4. Heavy Wind Warning Banner | 2/2 | Complete   | 2026-03-23 |
 | 5. Forecast Wind in Custom Ride Plan | 0/TBD | Not started | - |
 | 6. Historical Wind — Archive API and DB Persistence | 0/TBD | Not started | - |
 | 7. Historical Wind Display and Ride Header Links | 0/TBD | Not started | - |

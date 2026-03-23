@@ -43,7 +43,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Upcoming Brevets Warnings
 
 - [x] **WARN-01**: User sees "Heavy Winds" warning banner at top of upcoming brevets page when winds are significant
-- [ ] **WARN-02**: Wind warnings only calculated for rides in the next 28 days with linked ride plans
+- [x] **WARN-02**: Wind warnings only calculated for rides in the next 28 days with linked ride plans
 - [x] **WARN-03**: Warning triggers when max wind speed > 30 km/h OR average headwind > 15 km/h along route
 - [x] **WARN-04**: Warning shows ride name, date, and wind description (e.g., "Strong headwinds expected — avg 18 km/h headwind, gusts to 35 km/h")
 
@@ -111,7 +111,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CPLN-01 | Phase 5 | Pending |
 | CPLN-02 | Phase 5 | Pending |
 | WARN-01 | Phase 4 | Complete |
-| WARN-02 | Phase 4 | Pending |
+| WARN-02 | Phase 4 | Complete |
 | WARN-03 | Phase 4 | Complete |
 | WARN-04 | Phase 4 | Complete |
 | HIST-01 | Phase 7 | Pending |
