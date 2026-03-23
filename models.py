@@ -917,7 +917,7 @@ def recalculate_base_plan_cumulative(ride_plan_id, cur=None, conn=None):
         own_conn = True
 
     cur.execute(
-        "SELECT id, stop_order, segment_time_min, stop_duration_min "
+        "SELECT id, stop_order, segment_time_min, stop_duration_min, bookend_time_min "
         "FROM ride_plan_stop WHERE ride_plan_id = %s ORDER BY stop_order",
         (ride_plan_id,)
     )
@@ -932,9 +932,12 @@ def recalculate_base_plan_cumulative(ride_plan_id, cur=None, conn=None):
         cum += seg + brk
         total_moving += seg
         total_break += brk
+        arrival = cum - brk
+        bookend = s.get('bookend_time_min')
+        time_bank = (bookend - arrival) if bookend else None
         cur.execute(
-            "UPDATE ride_plan_stop SET cum_time_min = %s WHERE id = %s",
-            (cum, s['id'])
+            "UPDATE ride_plan_stop SET cum_time_min = %s, time_bank_min = %s WHERE id = %s",
+            (cum, time_bank, s['id'])
         )
 
     # Sync ride_plan summary fields from stops (single source of truth)
