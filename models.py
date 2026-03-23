@@ -248,10 +248,11 @@ def get_rider_participation(rider_id, season_id):
     return _execute("""
         SELECT rr.status, rr.finish_time, ri.id as ride_id, ri.name as ride_name,
                ri.date, ri.distance_km, ri.elevation_ft, ri.ft_per_mile, ri.rwgps_url,
-               ri.ride_plan_id, c.code as club_code
+               ri.ride_plan_id, c.code as club_code, rp.slug as plan_slug
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
         LEFT JOIN club c ON ri.club_id = c.id
+        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE rr.rider_id = %s AND ri.season_id = %s
           AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
         ORDER BY ri.date
