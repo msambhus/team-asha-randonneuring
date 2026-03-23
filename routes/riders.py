@@ -794,12 +794,15 @@ def ride_strava_analysis(rusa_id, ride_id):
             custom_stops_merged, _ = get_merged_plan_stops(custom_plan['id'])
             custom_stops = custom_stops_merged
 
+    # When a custom plan exists, use it as the primary comparison plan
+    primary_stops = custom_stops if has_custom else plan_stops
+
     # Fetch and analyze streams
     analysis = fetch_and_analyze(
         rider_id=rider['id'],
         match_id=match['id'],
         strava_activity_id=match['strava_activity_id'],
-        plan_stops=plan_stops if plan_stops else None,
+        plan_stops=primary_stops if primary_stops else None,
     )
 
     if analysis.get('error'):
@@ -815,10 +818,10 @@ def ride_strava_analysis(rusa_id, ride_id):
     actual_start_time = match.get('start_date_local')
 
     comparison = build_comparison(
-        plan_stops=plan_stops,
+        plan_stops=primary_stops,
         detected_stops=analysis['detected_stops'],
         activity=dict(match),
-        custom_stops=custom_stops,
+        custom_stops=plan_stops if has_custom else None,
         plan_start_time=plan_start_time,
         actual_start_time=actual_start_time,
     )
