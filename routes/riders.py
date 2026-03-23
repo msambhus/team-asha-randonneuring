@@ -510,20 +510,18 @@ def edit_ride(ride_id):
         # Get form data
         rwgps_url = request.form.get('rwgps_url', '').strip()
         ride_plan_id = request.form.get('ride_plan_id')
-        start_time = request.form.get('start_time', '').strip()
         start_location = request.form.get('start_location', '').strip()
         time_limit_hours = request.form.get('time_limit_hours')
-        
+
         # Convert empty strings to None
         ride_plan_id = int(ride_plan_id) if ride_plan_id and ride_plan_id != '' else None
         time_limit_hours = float(time_limit_hours) if time_limit_hours and time_limit_hours != '' else None
-        
-        # Update the ride
+
+        # Update the ride (start_time lives on ride_plan, not ride)
         update_ride_details(
             ride_id=ride_id,
             rwgps_url=rwgps_url if rwgps_url else None,
             ride_plan_id=ride_plan_id,
-            start_time=start_time if start_time else None,
             start_location=start_location if start_location else None,
             time_limit_hours=time_limit_hours
         )
@@ -814,7 +812,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                                is_own_profile=is_own_profile)
 
     # Build comparison data
-    plan_start_time = ride.get('start_time') or ride.get('plan_start_time')
+    plan_start_time = ride.get('plan_start_time')
     actual_start_time = match.get('start_date_local')
 
     comparison = build_comparison(

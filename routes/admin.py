@@ -238,11 +238,10 @@ def ride_edit(ride_id):
         core_fields['club_id'] = int(club_id) if club_id else None
         update_ride_core(ride_id, core_fields)
 
-        # Update extended ride details
+        # Update extended ride details (start_time lives on ride_plan, not ride)
         update_ride_details(
             ride_id,
             rwgps_url=request.form.get('rwgps_url', ''),
-            start_time=request.form.get('start_time', ''),
             start_location=request.form.get('start_location', ''),
             time_limit_hours=float(request.form.get('time_limit_hours', '') or 0) or None,
         )
