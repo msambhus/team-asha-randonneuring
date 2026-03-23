@@ -32,7 +32,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Given a wind speed, the system returns the correct font size (0.75rem / 0.875rem / 1.0rem) matching the three speed bands
   4. HEAVY_WIND_MAX_KMH and HEAVY_WIND_AVG_HEADWIND_KMH constants are defined once in services/weather.py and imported everywhere they are used
   5. Crosswind sine projection correctly inverts the meteorological "wind from" direction by 180 degrees before computing the projection
-**Plans**: TBD
+**Plans:** 1 plan
+
+Plans:
+- [ ] 01-01-PLAN.md -- TDD: Constants, crosswind projection, wind classification, and cell style helpers
 
 ### Phase 2: Stop-to-Coordinate Interpolation
 **Goal**: Every ride plan stop can be resolved to a lat/lng coordinate via RWGPS track point interpolation, with correct unit handling
@@ -105,11 +108,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Wind Math Foundation | 0/TBD | Not started | - |
+| 1. Wind Math Foundation | 0/1 | Planning complete | - |
 | 2. Stop-to-Coordinate Interpolation | 0/TBD | Not started | - |
 | 3. Forecast Wind in Base Ride Plan | 0/TBD | Not started | - |
 | 4. Heavy Wind Warning Banner | 0/TBD | Not started | - |
