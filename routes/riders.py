@@ -1643,6 +1643,23 @@ def custom_ride_plan_view(slug):
     # Attach break merging metadata for timeline layout
     stops, use_timeline = _attach_break_metadata(stops)
 
+    # Wind data for table view (same pattern as ride_plan_detail_view)
+    stop_wind = None
+    if weather_route_id:
+        try:
+            route_data = fetch_route(weather_route_id)
+            track_points = route_data.get('track_points') or []
+            stop_wind = fetch_stop_wind(
+                stops=stops,
+                track_points=track_points,
+                plan_slug=plan['slug'],
+                start_time_str=str(plan.get('start_time') or '07:00')[:5],
+                cache=cache,
+            )
+        except Exception:
+            current_app.logger.exception("Wind fetch failed for custom plan %s", slug)
+            stop_wind = None
+
     # Check if there's an upcoming RUSA event that matches this ride plan
     upcoming_event = None
     signup_count = 0
@@ -1692,6 +1709,7 @@ def custom_ride_plan_view(slug):
                          rwgps_url_label=rwgps_url_label,
                          rwgps_route_id=rwgps_route_id,
                          weather_route_id=weather_route_id,
+                         stop_wind=stop_wind,
                          upcoming_event=upcoming_event,
                          signup_count=signup_count,
                          user_signup_status=user_signup_status,
