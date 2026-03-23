@@ -174,16 +174,12 @@ def fetch_and_analyze(rider_id, match_id, strava_activity_id, plan_stops=None):
     from models import (get_strava_ride_analysis, upsert_strava_ride_analysis,
                         get_strava_connection)
 
-    # Check cache
+    # Check cache for detected stops
     cached = get_strava_ride_analysis(match_id)
-    if cached and not cached.get('strava_api_error'):
-        return {
-            'detected_stops': cached['detected_stops'] or [],
-            'stream_summary': cached['stream_summary'] or {},
-            'error': None,
-        }
+    cached_stops = cached['detected_stops'] if cached and not cached.get('strava_api_error') else None
 
-    # Fetch streams from Strava API
+    # Always fetch streams for interpolation (not cached — too large)
+    # If we have cached stops, we still need fresh streams for time interpolation
     connection = get_strava_connection(rider_id)
     if not connection:
         error_msg = 'No Strava connection found'
@@ -231,17 +227,20 @@ def fetch_and_analyze(rider_id, match_id, strava_activity_id, plan_stops=None):
         return {'detected_stops': [], 'stream_summary': {}, 'error': error_msg}
 
     # Detect stops
-    detected_stops = detect_stops(streams)
-
-    # Match to plan if available
-    if plan_stops and detected_stops:
-        detected_stops = match_stops_to_plan(detected_stops, plan_stops)
-
-    # Build stream summary
-    stream_summary = _build_stream_summary(streams)
-
-    # Cache results
-    upsert_strava_ride_analysis(match_id, detected_stops, stream_summary)
+    # Use cached detected stops if available, otherwise detect from streams
+    if cached_stops is not None:
+        detected_stops = cached_stops
+        # Re-match to plan (plan may have changed since cache)
+        if plan_stops and detected_stops:
+            detected_stops = match_stops_to_plan(detected_stops, plan_stops)
+        stream_summary = (cached.get('stream_summary') or {}) if cached else {}
+    else:
+        detected_stops = detect_stops(streams)
+        if plan_stops and detected_stops:
+            detected_stops = match_stops_to_plan(detected_stops, plan_stops)
+        stream_summary = _build_stream_summary(streams)
+        # Cache detected stops and summary (not streams — too large)
+        upsert_strava_ride_analysis(match_id, detected_stops, stream_summary)
 
     return {
         'detected_stops': detected_stops,
