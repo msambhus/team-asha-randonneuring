@@ -4,12 +4,12 @@ milestone: v1.0
 milestone_name: milestone
 status: planning
 stopped_at: Completed 04-02-PLAN.md — wind warning banner wired into upcoming brevets route and template
-last_updated: "2026-03-23T16:50:14.160Z"
+last_updated: "2026-03-23T20:28:57.043Z"
 last_activity: 2026-03-23 — Roadmap created; 7 phases, 31/31 requirements mapped
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 6
+  total_plans: 7
   completed_plans: 6
   percent: 100
 ---
