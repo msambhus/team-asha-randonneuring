@@ -44,7 +44,7 @@ from services.openai_coach import generate_openai_advice
 from services.custom_plan_service import (get_merged_plan_stops,
                                           recalculate_cumulative_values,
                                           apply_pace_adjustment, compare_plans)
-from services.weather import fetch_stop_wind
+from services.weather import fetch_stop_wind, detect_heavy_wind
 from services.rwgps import fetch_route
 from cache import cache, CACHE_TIMEOUT
 from datetime import date, datetime, timedelta
@@ -404,6 +404,50 @@ def upcoming_brevets(season_name):
     plans = get_all_ride_plans()
     _match_plans_to_events(rusa_events, plans)
 
+    # Build plan_slug_to_id unconditionally so it's available for wind warnings
+    # and for the user-specific custom plan lookup below
+    plan_slug_to_id = {plan['slug']: plan['id'] for plan in plans}
+
+    # Wind warning loop: check brevets within 28 days that have a linked ride plan
+    cutoff = date.today() + timedelta(days=28)
+    wind_warnings = []
+    for event in rusa_events:
+        event_date = event.get('date')
+        if not event_date or event_date > cutoff:
+            continue
+        plan_slug = event.get('plan_slug')
+        if not plan_slug:
+            continue
+        plan_id = plan_slug_to_id.get(plan_slug)
+        if not plan_id:
+            continue
+        weather_rwgps_url = event.get('plan_rwgps_url_team') or event.get('rwgps_url')
+        if not weather_rwgps_url:
+            continue
+        weather_route_id = _extract_rwgps_route_id(weather_rwgps_url)
+        if not weather_route_id:
+            continue
+        try:
+            plan_stops = get_ride_plan_stops(plan_id)
+            route_data = fetch_route(weather_route_id)
+            track_points = route_data.get('track_points') or []
+            stop_wind = fetch_stop_wind(
+                stops=plan_stops,
+                track_points=track_points,
+                plan_slug=plan_slug,
+                start_time_str=str(event.get('start_time') or '07:00')[:5],
+                cache=cache,
+            )
+            warning = detect_heavy_wind(stop_wind)
+            if warning:
+                warning['ride_name'] = event.get('route_name') or event.get('name', '')
+                warning['ride_date'] = event.get('date_str', str(event_date))
+                wind_warnings.append(warning)
+        except Exception:
+            current_app.logger.exception(
+                "Wind warning check failed for event %s", event.get('id'))
+            continue
+
     # Get current user's rider_id and signup statuses
     rider_id = None
     current_rider = None
@@ -432,10 +476,7 @@ def upcoming_brevets(season_name):
             user_signup_statuses = get_rider_signup_statuses_batch(rider_id, ride_ids)
             user_signups = {ride_id: data['status'] for ride_id, data in user_signup_statuses.items()}
             
-            # Load custom plans for this rider
-            # First, build a map of plan_slug -> plan_id
-            plan_slug_to_id = {plan['slug']: plan['id'] for plan in plans}
-            
+            # Load custom plans for this rider (plan_slug_to_id already built above)
             for event in rusa_events:
                 if event.get('plan_slug'):
                     plan_id = plan_slug_to_id.get(event['plan_slug'])
@@ -478,7 +519,8 @@ def upcoming_brevets(season_name):
                            current_rider_id=rider_id,
                            user_signups=user_signups,
                            all_ride_plans=all_ride_plans,
-                           can_edit_rides=can_edit_rides)
+                           can_edit_rides=can_edit_rides,
+                           wind_warnings=wind_warnings)
 
 
 @riders_bp.route('/ride/<int:ride_id>/edit', methods=['GET', 'POST'])
