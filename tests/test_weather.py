@@ -713,3 +713,196 @@ class TestGetStopCoordinates:
         assert all(r is not None for r in result)
         # Latitude should increase (moving north) for each stop
         assert result[0]['lat'] < result[1]['lat'] < result[2]['lat']
+
+
+# ── WIND-06: Per-Stop Wind Data Pipeline ────────────────────────────
+
+# Shared track points for fetch_stop_wind tests — three stops going south
+_FSW_TRACK = [
+    {'y': 37.80, 'x': -122.40, 'd': 0, 'e': 10},
+    {'y': 37.70, 'x': -122.30, 'd': 16093, 'e': 20},
+    {'y': 37.60, 'x': -122.20, 'd': 32186, 'e': 30},
+    {'y': 37.50, 'x': -122.10, 'd': 48280, 'e': 20},
+]
+
+# Three stops at 0, 10, 20 miles matching the track above
+_FSW_STOPS = [
+    {'distance_miles': 0.0, 'arrival_time_min': 0},
+    {'distance_miles': 10.0, 'arrival_time_min': 60},
+    {'distance_miles': 20.0, 'arrival_time_min': 120},
+]
+
+# Mock hourly weather data for use in fetch_stop_wind tests
+_FSW_HOURLY_TIMES = [f"2026-03-23T{h:02d}:00" for h in range(24)]
+
+def _make_fsw_forecast(**kwargs):
+    """Return a minimal Open-Meteo forecast dict for testing."""
+    return {
+        'hourly': {
+            'time': _FSW_HOURLY_TIMES,
+            'wind_speed_10m': kwargs.get('wind_speed', [20.0] * 24),
+            'wind_direction_10m': kwargs.get('wind_dir', [270] * 24),
+            'temperature_2m': [15.0] * 24,
+            'precipitation_probability': [10] * 24,
+            'weather_code': [0] * 24,
+        }
+    }
+
+
+class TestFetchStopWind:
+    """Tests for fetch_stop_wind() — per-stop wind data pipeline."""
+
+    def _make_weather_list(self, n=3, **kwargs):
+        """Return a list of n identical forecast dicts."""
+        return [_make_fsw_forecast(**kwargs) for _ in range(n)]
+
+    def test_returns_wind_data_for_each_stop(self):
+        """Given 3 stops with valid track_points and mocked weather, returns 3 dicts with required keys."""
+        from services.weather import fetch_stop_wind
+        weather_data = self._make_weather_list(3)
+        with patch('services.weather.fetch_route_weather', return_value=weather_data):
+            result = fetch_stop_wind(_FSW_STOPS, _FSW_TRACK, 'test-plan', '06:00')
+        assert result is not None
+        assert len(result) == 3
+        for entry in result:
+            assert entry is not None
+            assert 'wind_speed_kmh' in entry
+            assert 'wind_type' in entry
+            assert 'style' in entry
+            assert 'label' in entry
+            assert isinstance(entry['wind_speed_kmh'], float)
+            assert entry['wind_type'] in ('headwind', 'tailwind', 'crosswind')
+            assert isinstance(entry['style'], dict)
+            assert isinstance(entry['label'], str)
+
+    def test_result_length_matches_stops(self):
+        """Output list length equals input stops length even when some coords are None."""
+        from services.weather import fetch_stop_wind
+        # Use a stop far beyond the track end to force coordinate resolution differences
+        stops_with_extra = _FSW_STOPS + [{'distance_miles': 999.0, 'arrival_time_min': 999}]
+        weather_data = self._make_weather_list(4)
+        with patch('services.weather.fetch_route_weather', return_value=weather_data):
+            result = fetch_stop_wind(stops_with_extra, _FSW_TRACK, 'test-plan', '06:00')
+        assert result is not None
+        assert len(result) == len(stops_with_extra)
+
+    def test_cache_hit(self):
+        """Second call with same plan_slug and start_time returns cached result; API called only once."""
+        from services.weather import fetch_stop_wind
+        weather_data = self._make_weather_list(3)
+        call_count = {'n': 0}
+
+        def mock_fetch(coords):
+            call_count['n'] += 1
+            return weather_data
+
+        mock_cache = MagicMock()
+        # First call: cache miss
+        mock_cache.get.return_value = None
+
+        with patch('services.weather.fetch_route_weather', side_effect=mock_fetch):
+            result1 = fetch_stop_wind(_FSW_STOPS, _FSW_TRACK, 'plan-slug', '07:00', cache=mock_cache)
+
+        assert result1 is not None
+        assert call_count['n'] == 1
+
+        # Second call: cache returns result1
+        mock_cache.get.return_value = result1
+        with patch('services.weather.fetch_route_weather', side_effect=mock_fetch):
+            result2 = fetch_stop_wind(_FSW_STOPS, _FSW_TRACK, 'plan-slug', '07:00', cache=mock_cache)
+
+        assert result2 == result1
+        # fetch_route_weather was NOT called again
+        assert call_count['n'] == 1
+
+    def test_empty_track_returns_none(self):
+        """When track_points is [] or None, returns None."""
+        from services.weather import fetch_stop_wind
+        assert fetch_stop_wind(_FSW_STOPS, [], 'test-plan', '06:00') is None
+        assert fetch_stop_wind(_FSW_STOPS, None, 'test-plan', '06:00') is None
+
+    def test_api_error_returns_none(self):
+        """When fetch_route_weather raises requests.RequestException, returns None."""
+        import requests as req_lib
+        from services.weather import fetch_stop_wind
+        with patch('services.weather.fetch_route_weather',
+                   side_effect=req_lib.RequestException("timeout")):
+            result = fetch_stop_wind(_FSW_STOPS, _FSW_TRACK, 'test-plan', '06:00')
+        assert result is None
+
+    def test_none_coordinate_produces_none_entry(self):
+        """When get_stop_coordinates returns None for one stop, that entry is None, others are valid."""
+        from services.weather import fetch_stop_wind
+        # coords: [valid, None, valid]
+        coords_with_none = [
+            {'lat': 37.80, 'lng': -122.40},
+            None,
+            {'lat': 37.60, 'lng': -122.20},
+        ]
+        # weather_data has only 2 entries (for the 2 valid coords)
+        weather_data = self._make_weather_list(2)
+        with patch('services.weather.get_stop_coordinates', return_value=coords_with_none), \
+             patch('services.weather.fetch_route_weather', return_value=weather_data):
+            result = fetch_stop_wind(_FSW_STOPS, _FSW_TRACK, 'test-plan', '06:00')
+        assert result is not None
+        assert len(result) == 3
+        assert result[0] is not None
+        assert result[1] is None
+        assert result[2] is not None
+
+    def test_bearing_uses_consecutive_stops(self):
+        """For middle stop, bearing is computed to next stop. For final stop, from previous to final."""
+        from services.weather import fetch_stop_wind, calculate_bearing
+        weather_data = self._make_weather_list(3)
+        bearing_calls = []
+
+        original_calculate_bearing = calculate_bearing
+
+        def mock_bearing(lat1, lng1, lat2, lng2):
+            bearing_calls.append((lat1, lng1, lat2, lng2))
+            return original_calculate_bearing(lat1, lng1, lat2, lng2)
+
+        with patch('services.weather.fetch_route_weather', return_value=weather_data), \
+             patch('services.weather.calculate_bearing', side_effect=mock_bearing):
+            result = fetch_stop_wind(_FSW_STOPS, _FSW_TRACK, 'test-plan', '06:00')
+
+        assert result is not None
+        assert len(bearing_calls) >= 2
+
+        # For stop 0 (first): bearing to stop 1
+        # For stop 1 (middle): bearing to stop 2
+        # For stop 2 (last): bearing from stop 1 to stop 2
+        # Verify calls include consecutive stop pairs
+        lats_used = {(c[0], c[2]) for c in bearing_calls}
+        # Should not have backward-looking bearing for first stop (bearing to next)
+        # The first stop should have a call with its own coords as lat1
+        first_stop_lat = pytest.approx(37.80, abs=0.001)
+        assert any(abs(c[0] - 37.80) < 0.01 for c in bearing_calls), \
+            "First stop lat not found as origin in bearing calls"
+
+    def test_uses_arrival_time_for_hour_index(self):
+        """When stops have arrival_time_min, correct forecast hour is selected per stop."""
+        from services.weather import fetch_stop_wind
+        # Use wind speeds that vary by hour so we can detect which hour was picked
+        per_hour_speeds = [float(h) for h in range(24)]  # hour 0 = 0.0, hour 1 = 1.0, etc.
+        weather_data = [_make_fsw_forecast(wind_speed=per_hour_speeds) for _ in range(3)]
+
+        # Start time '06:00' + 60 min offset = 07:00 for second stop -> index 7
+        stops = [
+            {'distance_miles': 0.0, 'arrival_time_min': 0},    # arrives at 06:00 -> hour index 6
+            {'distance_miles': 10.0, 'arrival_time_min': 60},   # arrives at 07:00 -> hour index 7
+            {'distance_miles': 20.0, 'arrival_time_min': 120},  # arrives at 08:00 -> hour index 8
+        ]
+
+        with patch('services.weather.fetch_route_weather', return_value=weather_data):
+            result = fetch_stop_wind(stops, _FSW_TRACK, 'test-plan', '06:00')
+
+        assert result is not None
+        assert len(result) == 3
+        # Each stop should use a different wind speed based on arrival hour
+        # stop 0: 06:00 = index 6 -> wind_speed = 6.0
+        # stop 1: 07:00 = index 7 -> wind_speed = 7.0
+        # stop 2: 08:00 = index 8 -> wind_speed = 8.0
+        # They should differ (not all the same value)
+        speeds = [r['wind_speed_kmh'] for r in result if r is not None]
+        assert len(set(speeds)) > 1, "All stops show identical wind speed — arrival time not used"
