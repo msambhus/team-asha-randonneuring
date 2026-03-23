@@ -556,3 +556,160 @@ class TestGracefulDegradation:
         )
         # Should not crash, produce segments with defaults
         assert 'segments' in result
+
+
+# ── WIND-05: Stop Coordinate Interpolation ───────────────────────────
+
+class TestGetStopCoordinates:
+    """Tests for get_stop_coordinates() — interpolates lat/lng per stop from RWGPS track."""
+
+    def _make_track(self, *points):
+        """Helper: list of (lat, lng, dist_m) tuples -> RWGPS track dicts."""
+        return [{'y': lat, 'x': lng, 'd': d, 'e': 0} for lat, lng, d in points]
+
+    def test_mid_route_stop(self):
+        """Stop at 10.0 miles on track with point at exactly 16093m returns that point's coords."""
+        from services.weather import get_stop_coordinates
+        # 0 mi = 0m, 10 mi = 16093.44m (~16093m), 20 mi = 32186.88m
+        track = self._make_track(
+            (37.00, -122.00, 0),
+            (37.10, -121.90, 16093),
+            (37.20, -121.80, 32187),
+        )
+        stops = [{'distance_miles': 10.0}]
+        result = get_stop_coordinates(stops, track)
+        assert len(result) == 1
+        assert result[0] is not None
+        # Should be very close to the 16093m point
+        assert abs(result[0]['lat'] - 37.10) < 0.001
+        assert abs(result[0]['lng'] - (-121.90)) < 0.001
+
+    def test_interpolated_between_points(self):
+        """Stop at 5.0 miles (8047m) halfway between 0m and 16093m returns midpoint lat/lng."""
+        from services.weather import get_stop_coordinates
+        track = self._make_track(
+            (37.00, -122.00, 0),
+            (37.10, -121.80, 16093),
+        )
+        stops = [{'distance_miles': 5.0}]
+        result = get_stop_coordinates(stops, track)
+        assert len(result) == 1
+        assert result[0] is not None
+        # Midpoint: lat ~37.05, lng ~-121.90
+        assert abs(result[0]['lat'] - 37.05) < 0.001
+        assert abs(result[0]['lng'] - (-121.90)) < 0.001
+
+    def test_40_mile_stop_unit_conversion(self):
+        """Stop at 40.0 miles must land within 0.5 km of track position at 64374m (not 40m)."""
+        from services.weather import get_stop_coordinates, MILES_TO_METERS
+        import math
+        # Track: 0m to 80000m, evenly spaced
+        # Position at 40 miles = 64373.76m -> should interpolate near lat/lng at that distance
+        track = [
+            {'y': 37.000, 'x': -122.000, 'd': 0, 'e': 0},
+            {'y': 37.001, 'x': -122.000, 'd': 10000, 'e': 0},
+            {'y': 37.002, 'x': -122.000, 'd': 20000, 'e': 0},
+            {'y': 37.003, 'x': -122.000, 'd': 30000, 'e': 0},
+            {'y': 37.004, 'x': -122.000, 'd': 40000, 'e': 0},
+            {'y': 37.005, 'x': -122.000, 'd': 50000, 'e': 0},
+            {'y': 37.006, 'x': -122.000, 'd': 60000, 'e': 0},
+            {'y': 37.007, 'x': -122.000, 'd': 70000, 'e': 0},
+            {'y': 37.008, 'x': -122.000, 'd': 80000, 'e': 0},
+        ]
+        stops = [{'distance_miles': 40.0}]
+        result = get_stop_coordinates(stops, track)
+        assert result[0] is not None
+        # 40 miles = 64373.76m. At this track, lat increases linearly.
+        # Expected lat at 64373.76m: 37.000 + (64373.76/80000) * 0.008 = 37.000 + 0.006437376 ≈ 37.006437
+        expected_lat = 37.000 + (40 * 1609.344 / 80000) * 0.008
+        actual_lat = result[0]['lat']
+        # Convert lat difference to km (1 deg lat ≈ 111 km) and check < 0.5 km
+        diff_km = abs(actual_lat - expected_lat) * 111
+        assert diff_km < 0.5, f"Stop at 40 miles is {diff_km:.3f} km off — unit conversion may be wrong"
+
+    def test_beyond_track_end_clamped(self):
+        """Stop at 999.0 miles on track ending at 100000m returns final track point coords."""
+        from services.weather import get_stop_coordinates
+        track = self._make_track(
+            (37.00, -122.00, 0),
+            (37.50, -121.50, 50000),
+            (38.00, -121.00, 100000),
+        )
+        stops = [{'distance_miles': 999.0}]
+        result = get_stop_coordinates(stops, track)
+        assert result[0] is not None
+        assert result[0]['lat'] == 38.00
+        assert result[0]['lng'] == -121.00
+
+    def test_start_stop_returns_first_point(self):
+        """Stop at 0.0 miles returns the lat/lng of the first track point."""
+        from services.weather import get_stop_coordinates
+        track = self._make_track(
+            (37.77, -122.41, 0),
+            (37.50, -122.00, 50000),
+            (37.00, -121.60, 100000),
+        )
+        stops = [{'distance_miles': 0.0}]
+        result = get_stop_coordinates(stops, track)
+        assert result[0] is not None
+        assert result[0]['lat'] == 37.77
+        assert result[0]['lng'] == -122.41
+
+    def test_empty_track_returns_none(self):
+        """Empty track_points list returns [None] * len(stops)."""
+        from services.weather import get_stop_coordinates
+        stops = [{'distance_miles': 10.0}, {'distance_miles': 20.0}]
+        result = get_stop_coordinates(stops, [])
+        assert result == [None, None]
+
+    def test_skips_none_coordinates(self):
+        """Track points with y=None or x=None are filtered; remaining points used for interpolation."""
+        from services.weather import get_stop_coordinates
+        track = [
+            {'y': 37.00, 'x': -122.00, 'd': 0, 'e': 0},
+            {'y': None, 'x': -121.80, 'd': 5000, 'e': 0},   # should be skipped
+            {'y': 37.10, 'x': None, 'd': 10000, 'e': 0},    # should be skipped
+            {'y': 37.20, 'x': -121.60, 'd': 20000, 'e': 0},
+        ]
+        stops = [{'distance_miles': 6.2}]  # ~10000m, between 0m and 20000m after filtering
+        result = get_stop_coordinates(stops, track)
+        # Must not raise TypeError; None-coord points must be skipped
+        assert len(result) == 1
+        assert result[0] is not None
+        assert result[0]['lat'] is not None
+        assert result[0]['lng'] is not None
+
+    def test_zero_length_segment(self):
+        """Two consecutive track points with identical d values do not cause ZeroDivisionError."""
+        from services.weather import get_stop_coordinates
+        track = [
+            {'y': 37.00, 'x': -122.00, 'd': 0, 'e': 0},
+            {'y': 37.05, 'x': -121.95, 'd': 8000, 'e': 0},
+            {'y': 37.05, 'x': -121.95, 'd': 8000, 'e': 0},  # duplicate distance
+            {'y': 37.10, 'x': -121.90, 'd': 16000, 'e': 0},
+        ]
+        stops = [{'distance_miles': 4.97}]  # ~8000m
+        # Must not raise ZeroDivisionError
+        result = get_stop_coordinates(stops, track)
+        assert len(result) == 1
+        assert result[0] is not None
+
+    def test_multiple_stops_ordered(self):
+        """Three stops at different distances return three coordinates in correct order."""
+        from services.weather import get_stop_coordinates
+        track = self._make_track(
+            (37.00, -122.00, 0),
+            (37.10, -121.90, 16093),
+            (37.20, -121.80, 32187),
+            (37.30, -121.70, 48280),
+        )
+        stops = [
+            {'distance_miles': 0.0},
+            {'distance_miles': 10.0},
+            {'distance_miles': 20.0},
+        ]
+        result = get_stop_coordinates(stops, track)
+        assert len(result) == 3
+        assert all(r is not None for r in result)
+        # Latitude should increase (moving north) for each stop
+        assert result[0]['lat'] < result[1]['lat'] < result[2]['lat']
