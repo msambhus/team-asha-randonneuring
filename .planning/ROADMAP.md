@@ -12,7 +12,7 @@ Seven phases build from pure service-layer math up through full user-visible win
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Wind Math Foundation** - Pure Python wind classification, color/intensity helpers, and named threshold constants in services/weather.py
+- [x] **Phase 1: Wind Math Foundation** - Pure Python wind classification, color/intensity helpers, and named threshold constants in services/weather.py (completed 2026-03-23)
 - [ ] **Phase 2: Stop-to-Coordinate Interpolation** - RWGPS track point interpolation that resolves lat/lng for every ride plan stop
 - [ ] **Phase 3: Forecast Wind in Base Ride Plan** - Color-coded wind columns visible in the base ride plan control sheet
 - [ ] **Phase 4: Heavy Wind Warning Banner** - "Heavy Winds" warning banner on the upcoming brevets page for rides in the next 28 days
@@ -32,7 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Given a wind speed, the system returns the correct font size (0.75rem / 0.875rem / 1.0rem) matching the three speed bands
   4. HEAVY_WIND_MAX_KMH and HEAVY_WIND_AVG_HEADWIND_KMH constants are defined once in services/weather.py and imported everywhere they are used
   5. Crosswind sine projection correctly inverts the meteorological "wind from" direction by 180 degrees before computing the projection
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 01-01-PLAN.md -- TDD: Constants, crosswind projection, wind classification, and cell style helpers
@@ -112,7 +112,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Wind Math Foundation | 0/1 | Planning complete | - |
+| 1. Wind Math Foundation | 1/1 | Complete   | 2026-03-23 |
 | 2. Stop-to-Coordinate Interpolation | 0/TBD | Not started | - |
 | 3. Forecast Wind in Base Ride Plan | 0/TBD | Not started | - |
 | 4. Heavy Wind Warning Banner | 0/TBD | Not started | - |
