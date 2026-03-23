@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-03-23T15:28:46.634Z"
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-03-23T15:41:03.454Z"
 last_activity: 2026-03-23 — Roadmap created; 7 phases, 31/31 requirements mapped
 progress:
   total_phases: 7
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  completed_phases: 2
+  total_plans: 2
+  completed_plans: 2
   percent: 100
 ---
 
@@ -51,6 +51,7 @@ Progress: [██████████] 100%
 
 *Updated after each plan completion*
 | Phase 01-wind-math-foundation P01 | 1 | 2 tasks | 2 files |
+| Phase 02 P01 | 1 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -65,6 +66,8 @@ Recent decisions affecting current work:
 - No new DB tables for forecast data — forecasts are ephemeral, cache in Flask-Caching (1-hour TTL)
 - [Phase 01-wind-math-foundation]: classify_wind uses strict > so equal headwind/crosswind magnitudes go to crosswind
 - [Phase 01-wind-math-foundation]: wind_cell_style falls back to crosswind blue for unknown wind types via dict.get default
+- [Phase 02]: MILES_TO_METERS defined locally in weather.py (not imported from rwgps.py) to keep modules decoupled
+- [Phase 02]: get_stop_coordinates placed in weather.py alongside sample_track_points() since both bridge RWGPS track data to the weather pipeline
 
 ### Pending Todos
 
@@ -77,6 +80,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-23T15:25:43.189Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-03-23T15:41:03.452Z
+Stopped at: Completed 02-01-PLAN.md
 Resume file: None

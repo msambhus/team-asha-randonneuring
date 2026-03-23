@@ -13,7 +13,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **WIND-02**: System classifies wind at each stop as headwind, tailwind, or crosswind based on 45-degree threshold (|headwind| > |crosswind| → head/tailwind; else → crosswind)
 - [x] **WIND-03**: System returns wind color (green=#16A34A tailwind, red=#DC2626 headwind, blue=#2563EB crosswind) with intensity scaling based on wind speed
 - [x] **WIND-04**: System returns font size scaling based on wind speed (0-5 km/h = 0.75rem, 5-15 = 0.875rem, 15+ = 1.0rem)
-- [ ] **WIND-05**: System interpolates lat/lng coordinates for each ride plan stop by matching cumulative distance against RWGPS track points (converting miles to meters at boundary)
+- [x] **WIND-05**: System interpolates lat/lng coordinates for each ride plan stop by matching cumulative distance against RWGPS track points (converting miles to meters at boundary)
 - [ ] **WIND-06**: System fetches wind forecast for interpolated stop coordinates via Open-Meteo batch API with 1-hour cache
 - [ ] **WIND-07**: System fetches historical wind data via Open-Meteo archive API with start_date/end_date parameters
 - [ ] **WIND-08**: System falls back to forecast API `past_days` parameter when archive API returns no data for rides within 5 days (ERA5 reanalysis lag)
@@ -93,7 +93,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WIND-02 | Phase 1 | Complete |
 | WIND-03 | Phase 1 | Complete |
 | WIND-04 | Phase 1 | Complete |
-| WIND-05 | Phase 2 | Pending |
+| WIND-05 | Phase 2 | Complete |
 | WIND-06 | Phase 3 | Pending |
 | WIND-07 | Phase 6 | Pending |
 | WIND-08 | Phase 6 | Pending |
