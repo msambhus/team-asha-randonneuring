@@ -818,7 +818,8 @@ def ride_strava_analysis(rusa_id, ride_id):
                                rider=rider, ride=ride, activity=None,
                                comparison=None, error=None,
                                has_plan=False, has_custom=False, plan_slug=None,
-                               is_own_profile=is_own_profile)
+                               is_own_profile=is_own_profile,
+                               stop_wind=None)
 
     # Load plan stops if available
     plan_stops = []
@@ -852,7 +853,8 @@ def ride_strava_analysis(rusa_id, ride_id):
                                comparison=None, error=analysis['error'],
                                has_plan=has_plan, has_custom=has_custom,
                                plan_slug=plan_slug,
-                               is_own_profile=is_own_profile)
+                               is_own_profile=is_own_profile,
+                               stop_wind=None)
 
     # Build comparison data
     plan_start_time = ride.get('start_time') or ride.get('plan_start_time')
@@ -867,12 +869,50 @@ def ride_strava_analysis(rusa_id, ride_id):
         actual_start_time=actual_start_time,
     )
 
+    # Fetch historical wind for completed rides with linked plans
+    stop_wind = None
+    if has_plan and plan_stops and ride.get('date'):
+        try:
+            from services.weather import get_historical_stop_wind, wind_cell_style
+            plan = get_ride_plan_by_slug(plan_slug) if plan_slug else None
+            weather_route_id = None
+            if plan:
+                weather_rwgps_url = plan.get('rwgps_url_team') or plan.get('rwgps_url')
+                if weather_rwgps_url:
+                    weather_route_id = _extract_rwgps_route_id(weather_rwgps_url)
+            if weather_route_id:
+                route_data = fetch_route(weather_route_id)
+                track_points = route_data.get('track_points', []) if route_data else []
+                if track_points:
+                    ride_date = ride['date']
+                    if isinstance(ride_date, str):
+                        ride_date = date.fromisoformat(ride_date)
+                    wind_rows, _ = get_historical_stop_wind(
+                        stops=[dict(s) for s in plan_stops],
+                        track_points=track_points,
+                        ride_date=ride_date,
+                        ride_id=ride['id'],
+                    )
+                    if wind_rows:
+                        stop_wind = {}
+                        for row in wind_rows:
+                            row['style'] = wind_cell_style(
+                                row['wind_speed_kmh'], row['wind_type']
+                            )
+                            stop_wind[row['stop_name']] = row
+        except Exception:
+            current_app.logger.exception(
+                "ride_strava_analysis: wind fetch failed for ride %s", ride_id
+            )
+            stop_wind = None
+
     return render_template('strava_ride_analysis.html',
                            rider=rider, ride=ride, activity=dict(match),
                            comparison=comparison, error=None,
                            has_plan=has_plan, has_custom=has_custom,
                            plan_slug=plan_slug,
-                           is_own_profile=is_own_profile)
+                           is_own_profile=is_own_profile,
+                           stop_wind=stop_wind)
 
 
 @riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/strava-retry', methods=['POST'])
