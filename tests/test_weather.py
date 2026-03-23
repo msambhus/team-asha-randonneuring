@@ -435,6 +435,102 @@ class TestCrosswindComponent:
         assert abs(abs(cw) - 14.1) < 1.0  # ~14.1
 
 
+# ── Classify Wind ────────────────────────────────────────────────────
+
+class TestClassifyWind:
+    def test_headwind_dominant(self):
+        from services.weather import classify_wind
+        assert classify_wind(15, 5) == 'headwind'
+
+    def test_tailwind_dominant(self):
+        from services.weather import classify_wind
+        assert classify_wind(-15, 5) == 'tailwind'
+
+    def test_crosswind_dominant(self):
+        from services.weather import classify_wind
+        assert classify_wind(5, 15) == 'crosswind'
+
+    def test_exact_45_degree_boundary(self):
+        """Equal magnitudes -> crosswind (strict greater-than means equal goes to crosswind)."""
+        from services.weather import classify_wind
+        assert classify_wind(10, 10) == 'crosswind'
+
+    def test_zero_wind(self):
+        """Zero wind -> crosswind (0 is not > 0)."""
+        from services.weather import classify_wind
+        assert classify_wind(0, 0) == 'crosswind'
+
+    def test_negative_crosswind(self):
+        """Uses absolute values for comparison."""
+        from services.weather import classify_wind
+        assert classify_wind(15, -10) == 'headwind'
+
+
+# ── Wind Cell Style ──────────────────────────────────────────────────
+
+class TestWindCellStyle:
+    def test_headwind_color(self):
+        from services.weather import wind_cell_style
+        style = wind_cell_style(10, 'headwind')
+        assert style['color'] == '#DC2626'
+        assert 'rgba(220,38,38,' in style['background']
+
+    def test_tailwind_color(self):
+        from services.weather import wind_cell_style
+        style = wind_cell_style(10, 'tailwind')
+        assert style['color'] == '#16A34A'
+        assert 'rgba(22,163,74,' in style['background']
+
+    def test_crosswind_color(self):
+        from services.weather import wind_cell_style
+        style = wind_cell_style(10, 'crosswind')
+        assert style['color'] == '#2563EB'
+        assert 'rgba(37,99,235,' in style['background']
+
+    def test_light_wind_opacity(self):
+        from services.weather import wind_cell_style
+        style = wind_cell_style(3, 'headwind')
+        assert ',0.15)' in style['background']
+
+    def test_medium_wind_opacity(self):
+        from services.weather import wind_cell_style
+        style = wind_cell_style(10, 'headwind')
+        assert ',0.35)' in style['background']
+
+    def test_strong_wind_opacity(self):
+        from services.weather import wind_cell_style
+        style = wind_cell_style(20, 'headwind')
+        assert ',0.65)' in style['background']
+
+    def test_light_wind_font(self):
+        from services.weather import wind_cell_style
+        style = wind_cell_style(3, 'headwind')
+        assert style['font_size'] == '0.75rem'
+
+    def test_medium_wind_font(self):
+        from services.weather import wind_cell_style
+        style = wind_cell_style(10, 'headwind')
+        assert style['font_size'] == '0.875rem'
+
+    def test_strong_wind_font(self):
+        from services.weather import wind_cell_style
+        style = wind_cell_style(20, 'headwind')
+        assert style['font_size'] == '1.0rem'
+
+    def test_font_size_has_rem_unit(self):
+        from services.weather import wind_cell_style
+        for speed in [3, 10, 20]:
+            style = wind_cell_style(speed, 'headwind')
+            assert 'rem' in style['font_size']
+
+    def test_unknown_wind_type_defaults(self):
+        """Unknown wind type falls back to crosswind blue."""
+        from services.weather import wind_cell_style
+        style = wind_cell_style(10, 'unknown')
+        assert style['color'] == '#2563EB'
+        assert 'rgba(37,99,235,' in style['background']
+
+
 # ── WTHR-10: Graceful Degradation ───────────────────────────────────
 
 class TestGracefulDegradation:

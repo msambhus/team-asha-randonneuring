@@ -83,6 +83,43 @@ def crosswind_component(wind_speed, wind_from_deg, rider_bearing_deg):
     return round(wind_speed * math.sin(angle), 1)
 
 
+def classify_wind(headwind_kmh, crosswind_kmh):
+    """Classify wind type using 45-degree threshold rule.
+
+    Returns 'headwind', 'tailwind', or 'crosswind'.
+    Uses strict > so equal magnitudes go to crosswind.
+    """
+    if abs(headwind_kmh) > abs(crosswind_kmh):
+        return 'tailwind' if headwind_kmh < 0 else 'headwind'
+    return 'crosswind'
+
+
+_WIND_COLORS = {
+    'headwind': (220, 38, 38),
+    'tailwind': (22, 163, 74),
+    'crosswind': (37, 99, 235),
+}
+
+
+def wind_cell_style(wind_speed_kmh, wind_type):
+    """Return inline style dict for a wind table cell."""
+    r, g, b = _WIND_COLORS.get(wind_type, (37, 99, 235))
+    if wind_speed_kmh < 5:
+        opacity = 0.15
+        font_size = '0.75rem'
+    elif wind_speed_kmh < 15:
+        opacity = 0.35
+        font_size = '0.875rem'
+    else:
+        opacity = 0.65
+        font_size = '1.0rem'
+    return {
+        'color': f'#{r:02X}{g:02X}{b:02X}',
+        'background': f'rgba({r},{g},{b},{opacity})',
+        'font_size': font_size,
+    }
+
+
 def wind_label(headwind_kmh):
     """Human-readable wind assessment from headwind component value."""
     if headwind_kmh >= 15:
