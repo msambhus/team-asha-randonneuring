@@ -540,18 +540,18 @@
         </div>
     </td>
 
-    {# Stop duration at this waypoint — order: base / your plan / actual. Show 0 explicitly #}
+    {# Stop duration (min:sec) — order: base / your plan / actual #}
     <td>
         <div class="cell-stack">
-            {% if has_custom and row.custom and row.custom.stop_duration_min is not none %}<span class="val-base">{{ row.custom.stop_duration_min }}</span>{% endif %}
-            {% if row.plan_stop_duration_min is not none %}<span class="val-plan">{{ row.plan_stop_duration_min }}</span>{% endif %}
-            {% if row.actual_stop_duration_min is not none %}<span class="val-actual">{{ row.actual_stop_duration_min|round(0)|int }}</span>{% endif %}
+            {% if has_custom and row.custom and row.custom.stop_duration_min is not none %}<span class="val-base">{{ row.custom.stop_duration_min|int }}:00</span>{% endif %}
+            {% if row.plan_stop_duration_min is not none %}<span class="val-plan">{{ row.plan_stop_duration_min|int }}:00</span>{% endif %}
+            {% if row.actual_stop_duration_min is not none %}{% set am = row.actual_stop_duration_min %}<span class="val-actual">{{ am|int }}:{{ "%02d"|format(((am - am|int) * 60)|round|int) }}</span>{% endif %}
         </div>
     </td>
 
-    {# Unplanned breaks between waypoints (excludes stops at/near waypoints) #}
+    {# Enroute: unplanned stops between waypoints (min:sec) #}
     <td style="text-align:right;font-size:0.65rem;">
-        {% if row.actual_seg_break_min is not none %}<span class="val-actual">{{ row.actual_seg_break_min }}</span>{% endif %}
+        {% if row.actual_seg_break_min is not none %}{% set sb = row.actual_seg_break_min %}<span class="val-actual">{{ sb|int }}:{{ "%02d"|format(((sb - sb|int) * 60)|round|int) }}</span>{% endif %}
     </td>
 
     {# Cumulative — order: base / your plan / actual #}
@@ -572,13 +572,13 @@
         </div>
     </td>
 
-    {# Time bank — order: base / your plan / actual #}
+    {# Time bank (h:mm) — order: base / your plan / actual #}
     <td>
         <div class="cell-stack">
-            {% if has_custom and row.custom and row.custom.time_bank is not none %}<span class="val-base">{{ row.custom.time_bank }}</span>{% endif %}
-            {% if row.plan_time_bank is not none %}<span class="val-plan">{{ row.plan_time_bank }}</span>{% endif %}
-            {% if row.actual_time_bank is not none %}
-                <span class="{% if row.actual_time_bank >= 0 %}val-actual{% else %}delta-slower{% endif %}" style="font-weight:700;">{{ row.actual_time_bank }}</span>
+            {% if has_custom and row.custom and row.custom.time_bank is not none %}{% set tb = row.custom.time_bank %}<span class="val-base">{% if tb >= 0 %}{{ (tb // 60)|int }}:{{ "%02d"|format(tb % 60) }}{% else %}-{{ ((-tb) // 60)|int }}:{{ "%02d"|format((-tb) % 60) }}{% endif %}</span>{% endif %}
+            {% if row.plan_time_bank is not none %}{% set tb = row.plan_time_bank %}<span class="val-plan">{% if tb >= 0 %}{{ (tb // 60)|int }}:{{ "%02d"|format(tb % 60) }}{% else %}-{{ ((-tb) // 60)|int }}:{{ "%02d"|format((-tb) % 60) }}{% endif %}</span>{% endif %}
+            {% if row.actual_time_bank is not none %}{% set tb = row.actual_time_bank %}
+                <span class="{% if tb >= 0 %}val-actual{% else %}delta-slower{% endif %}" style="font-weight:700;">{% if tb >= 0 %}{{ (tb // 60)|int }}:{{ "%02d"|format(tb % 60) }}{% else %}-{{ ((-tb) // 60)|int }}:{{ "%02d"|format((-tb) % 60) }}{% endif %}</span>
             {% endif %}
         </div>
     </td>
@@ -593,13 +593,12 @@
     </td>
     {% endif %}
 
-    {# Delta (against custom/primary plan) #}
+    {# Delta (h:mm against custom/primary plan) #}
     <td style="text-align:right;font-weight:700;">
-        {% if row.cum_time_delta_min is not none %}
-            {% if row.cum_time_delta_min > 0 %}<span class="delta-slower">+{{ row.cum_time_delta_min|round(0)|int }}</span>
-            {% elif row.cum_time_delta_min < 0 %}<span class="delta-faster">{{ row.cum_time_delta_min|round(0)|int }}</span>
-            {% else %}<span class="delta-neutral">0</span>{% endif %}
-        {% elif row.is_extra and row.actual_stop_duration_min %}<span class="delta-slower">+{{ row.actual_stop_duration_min|round(0)|int }}</span>
+        {% if row.cum_time_delta_min is not none %}{% set d = row.cum_time_delta_min|round(0)|int %}
+            {% if d > 0 %}<span class="delta-slower">+{{ (d // 60)|int }}:{{ "%02d"|format(d % 60) }}</span>
+            {% elif d < 0 %}{% set ad = -d %}<span class="delta-faster">-{{ (ad // 60)|int }}:{{ "%02d"|format(ad % 60) }}</span>
+            {% else %}<span class="delta-neutral">0:00</span>{% endif %}
         {% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
     </td>
 </tr>
