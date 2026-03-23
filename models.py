@@ -891,10 +891,59 @@ def update_base_plan_stop(stop_id, changes):
     cur.execute("SELECT ride_plan_id FROM ride_plan_stop WHERE id = %s", (stop_id,))
     result = cur.fetchone()
     if result:
-        cache.delete_memoized(get_ride_plan_stops, result['ride_plan_id'])
+        plan_id = result['ride_plan_id']
+        cache.delete_memoized(get_ride_plan_stops, plan_id)
+        # Recalculate cum_time_min for all stops in this plan
+        if any(k in changes for k in ('segment_time_min', 'stop_duration_min', 'distance_miles')):
+            recalculate_base_plan_cumulative(plan_id, cur, conn)
     cache.clear()
 
     return cur.rowcount > 0
+
+
+def recalculate_base_plan_cumulative(ride_plan_id, cur=None, conn=None):
+    """Recalculate cum_time_min for all stops and sync ride_plan summary.
+
+    cum_time_min = running sum of (segment_time_min + stop_duration_min).
+    Also updates ride_plan.total_moving_time_min, total_elapsed_time_min,
+    and total_break_time_min to stay in sync with the stops.
+    """
+    own_conn = False
+    if cur is None:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        own_conn = True
+
+    cur.execute(
+        "SELECT id, stop_order, segment_time_min, stop_duration_min "
+        "FROM ride_plan_stop WHERE ride_plan_id = %s ORDER BY stop_order",
+        (ride_plan_id,)
+    )
+    stops = cur.fetchall()
+
+    cum = 0
+    total_moving = 0
+    total_break = 0
+    for s in stops:
+        seg = s['segment_time_min'] or 0
+        brk = s['stop_duration_min'] or 0
+        cum += seg + brk
+        total_moving += seg
+        total_break += brk
+        cur.execute(
+            "UPDATE ride_plan_stop SET cum_time_min = %s WHERE id = %s",
+            (cum, s['id'])
+        )
+
+    # Sync ride_plan summary fields from stops (single source of truth)
+    cur.execute(
+        "UPDATE ride_plan SET total_moving_time_min = %s, "
+        "total_elapsed_time_min = %s, total_break_time_min = %s "
+        "WHERE id = %s",
+        (total_moving, cum, total_break, ride_plan_id)
+    )
+
+    conn.commit()
 
 def insert_ride_plan_stop(ride_plan_id, stop_order, location, stop_type='waypoint',
                          distance_miles=None, elevation_gain=None, notes=None):
@@ -913,6 +962,7 @@ def insert_ride_plan_stop(ride_plan_id, stop_order, location, stop_type='waypoin
     )
     result = cur.fetchone()
     conn.commit()
+    recalculate_base_plan_cumulative(ride_plan_id)
     cache.clear()
     return result
 
@@ -933,6 +983,7 @@ def delete_ride_plan_stop(stop_id):
         (stop['ride_plan_id'], stop['stop_order'])
     )
     conn.commit()
+    recalculate_base_plan_cumulative(stop['ride_plan_id'])
     cache.clear()
     return True
 
