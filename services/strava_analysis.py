@@ -627,7 +627,7 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
     for ds in (detected_stops or []):
         if ds.get('is_extra'):
             extra_stops.append(ds)
-        elif ds.get('matched_stop_name') and ds['duration_min'] >= 10:
+        elif ds.get('matched_stop_name') and ds['duration_min'] >= 4:
             # Check if the detected stop is far from the matched waypoint
             matched_wp_dist = None
             for ps in plan_stops:
