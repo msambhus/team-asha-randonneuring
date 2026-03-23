@@ -822,6 +822,7 @@ def ride_strava_analysis(rusa_id, ride_id):
         custom_stops=plan_stops if has_custom else None,
         plan_start_time=plan_start_time,
         actual_start_time=actual_start_time,
+        streams=analysis.get('streams'),
     )
 
     return render_template('strava_ride_analysis.html',

@@ -246,6 +246,7 @@ def fetch_and_analyze(rider_id, match_id, strava_activity_id, plan_stops=None):
     return {
         'detected_stops': detected_stops,
         'stream_summary': stream_summary,
+        'streams': streams,
         'error': None,
     }
 
@@ -364,8 +365,49 @@ def match_stops_to_plan(detected_stops, plan_stops):
     return detected_stops
 
 
+def _build_stream_interpolator(streams):
+    """Build a function that interpolates elapsed time (minutes) at a given distance (miles).
+
+    Uses Strava's distance (meters) and time (seconds) streams.
+    Returns None if streams are unavailable.
+    """
+    if not streams:
+        return None
+    distance_m = streams.get('distance', [])
+    time_s = streams.get('time', [])
+    if not distance_m or not time_s or len(distance_m) != len(time_s):
+        return None
+
+    # Convert distance to miles once
+    dist_miles = [d / METERS_PER_MILE for d in distance_m]
+
+    def interpolate(target_miles):
+        """Return elapsed time in minutes at the given distance in miles."""
+        if target_miles <= 0:
+            return 0.0
+        if target_miles >= dist_miles[-1]:
+            return time_s[-1] / 60.0
+        # Binary search for bracket
+        lo, hi = 0, len(dist_miles) - 1
+        while lo < hi - 1:
+            mid = (lo + hi) // 2
+            if dist_miles[mid] <= target_miles:
+                lo = mid
+            else:
+                hi = mid
+        # Linear interpolation
+        d0, d1 = dist_miles[lo], dist_miles[hi]
+        t0, t1 = time_s[lo], time_s[hi]
+        if d1 == d0:
+            return t0 / 60.0
+        frac = (target_miles - d0) / (d1 - d0)
+        return (t0 + frac * (t1 - t0)) / 60.0
+
+    return interpolate
+
+
 def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
-                     plan_start_time=None, actual_start_time=None):
+                     plan_start_time=None, actual_start_time=None, streams=None):
     """Build comparison data structure for template rendering.
 
     Merges plan stops with detected actual stops into a unified timeline.
@@ -377,6 +419,7 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         custom_stops: optional custom plan stops
         plan_start_time: string like "07:00" from ride_plan.start_time
         actual_start_time: datetime from strava_activity.start_date_local
+        streams: optional Strava streams dict with 'distance' and 'time' arrays
 
     Returns:
         dict with 'rows' (list of comparison rows), 'summary' (metrics dict)
@@ -387,6 +430,9 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
     actual_moving_time_min = (activity.get('moving_time') or 0) / 60
     actual_elapsed_time_min = (activity.get('elapsed_time') or 0) / 60
     actual_stopped_time_min = actual_elapsed_time_min - actual_moving_time_min
+
+    # Build stream interpolator for actual time at any distance
+    interp = _build_stream_interpolator(streams)
     actual_elevation_ft = (activity.get('total_elevation_gain') or 0) * 3.28084
     actual_avg_speed_mph = (activity.get('average_speed') or 0) * 2.23694
 
@@ -437,17 +483,22 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         cum_time_delta = None
 
         if stop_type == 'start':
-            # Start: cumulative time is 0, no stop duration
             actual_cum_time = 0
             actual_stop_duration = 0
         elif stop_type == 'finish':
-            # Finish: cumulative time is total elapsed time
             actual_cum_time = round(actual_elapsed_time_min)
             actual_stop_duration = 0
             if plan_cum_time:
                 cum_time_delta = round(actual_cum_time - plan_cum_time)
         elif actual_stop and actual_stop.get('start_time_s') is not None:
+            # Matched detected stop — use its time
             actual_cum_time = round(actual_stop['start_time_s'] / 60)
+            if plan_cum_time:
+                cum_time_delta = round(actual_cum_time - plan_cum_time)
+        elif interp and distance_miles > 0:
+            # No detected stop but we can interpolate from Strava streams
+            actual_cum_time = round(interp(distance_miles))
+            actual_stop_duration = 0  # rider didn't stop here
             if plan_cum_time:
                 cum_time_delta = round(actual_cum_time - plan_cum_time)
 
@@ -460,13 +511,8 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
             plan_tod = plan_start_dt.strftime('%H:%M')
 
         actual_tod = None
-        if stop_type == 'start' and actual_start_time:
-            actual_tod = actual_start_time.strftime('%H:%M')
-        elif stop_type == 'finish' and actual_start_time:
-            actual_tod_dt = actual_start_time + timedelta(minutes=actual_elapsed_time_min)
-            actual_tod = actual_tod_dt.strftime('%H:%M')
-        elif actual_stop and actual_start_time and actual_stop.get('start_time_s') is not None:
-            actual_tod_dt = actual_start_time + timedelta(seconds=actual_stop['start_time_s'])
+        if actual_cum_time is not None and actual_start_time:
+            actual_tod_dt = actual_start_time + timedelta(minutes=actual_cum_time)
             actual_tod = actual_tod_dt.strftime('%H:%M')
 
         # Custom plan data (base plan when custom exists, via the swap)
