@@ -537,12 +537,22 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
                 cs_speed = round(cs_seg_dist / (cs_seg_time / 60), 1) if cs_seg_time and cs_seg_dist else None
                 cs_cum = cs.get('cum_time_min') or 0
                 cs_stop_dur = cs.get('stop_duration_min') or 0
+                cs_arrival = (cs_cum - cs_stop_dur) if cs_cum and cs_stop_dur else cs_cum
+                cs_tod = None
+                if plan_start_dt and cs_cum:
+                    cs_tod = (plan_start_dt + timedelta(minutes=cs_cum)).strftime('%H:%M')
+                elif stop_type == 'start' and plan_start_dt:
+                    cs_tod = plan_start_dt.strftime('%H:%M')
+                cs_bookend = cs.get('bookend_time_min')
+                cs_time_bank = cs.get('time_bank_min')
                 custom_data = {
                     'segment_time_min': cs_seg_time,
                     'stop_duration_min': cs_stop_dur,
                     'cum_time_min': cs_cum,
-                    'arrival_time_min': (cs_cum - cs_stop_dur) if cs_cum and cs_stop_dur else cs_cum,
+                    'arrival_time_min': cs_arrival,
                     'speed_mph': cs_speed,
+                    'time_of_day': cs_tod,
+                    'time_bank': cs_time_bank,
                 }
 
         # Arrival time = cumulative time before the break at this stop
@@ -628,7 +638,10 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
     # Sort all rows by distance
     rows.sort(key=lambda r: r['distance_miles'])
 
-    # Calculate actual segment times, speeds, HR, and power
+    # Build lookup of all detected stops for segment break calculation
+    all_detected = detected_stops or []
+
+    # Calculate actual segment times, speeds, HR, power, and segment breaks
     prev_actual_arrival = 0
     prev_plan_dist = 0.0
     for row in rows:
@@ -651,6 +664,13 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         else:
             row['actual_segment_min'] = None
             row['actual_speed_mph'] = None
+        # Total actual break time in this segment (from all detected stops between waypoints)
+        seg_break_total = sum(
+            ds['duration_min'] for ds in all_detected
+            if prev_plan_dist < ds['distance_miles'] <= cur_dist
+        ) if cur_dist > prev_plan_dist else 0
+        row['actual_seg_break_min'] = round(seg_break_total, 1) if seg_break_total > 0 else None
+
         if not row.get('is_extra'):
             prev_plan_dist = cur_dist
 
