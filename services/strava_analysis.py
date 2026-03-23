@@ -321,11 +321,11 @@ def match_stops_to_plan(detected_stops, plan_stops):
     total_dist = max((float(s.get('distance_miles') or 0) for s in plan_stops), default=0)
     tolerance = min(total_dist * 0.03, 3.0) if total_dist > 0 else 3.0
 
-    # Build matchable plan stops (exclude start/finish — those aren't "controls")
+    # Build matchable plan stops (exclude start — finish is a real control)
     matchable = []
     for ps in plan_stops:
         stop_type = (ps.get('stop_type') or '').lower()
-        if stop_type in ('start', 'finish'):
+        if stop_type == 'start':
             continue
         matchable.append({
             'distance_miles': float(ps.get('distance_miles') or 0),
@@ -451,16 +451,33 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
             actual_tod_dt = actual_start_time + timedelta(seconds=actual_stop['start_time_s'])
             actual_tod = actual_tod_dt.strftime('%H:%M')
 
-        # Custom plan data
+        # Custom plan data (base plan when custom exists, via the swap)
         custom_data = None
         if custom_stops:
             cs = custom_by_dist.get(distance_miles)
             if cs:
+                cs_seg_time = cs.get('segment_time_min') or 0
+                cs_seg_dist = float(cs.get('seg_dist') or 0)
+                cs_speed = round(cs_seg_dist / (cs_seg_time / 60), 1) if cs_seg_time and cs_seg_dist else None
+                cs_cum = cs.get('cum_time_min') or 0
+                cs_stop_dur = cs.get('stop_duration_min') or 0
                 custom_data = {
-                    'segment_time_min': cs.get('segment_time_min') or 0,
-                    'stop_duration_min': cs.get('stop_duration_min') or 0,
-                    'cum_time_min': cs.get('cum_time_min') or 0,
+                    'segment_time_min': cs_seg_time,
+                    'stop_duration_min': cs_stop_dur,
+                    'cum_time_min': cs_cum,
+                    'arrival_time_min': (cs_cum - cs_stop_dur) if cs_cum and cs_stop_dur else cs_cum,
+                    'speed_mph': cs_speed,
                 }
+
+        # Arrival time = cumulative time before the break at this stop
+        plan_arrival_time = (plan_cum_time - plan_stop_duration) if plan_cum_time and plan_stop_duration else plan_cum_time
+        actual_arrival_time = None
+        if actual_cum_time is not None and actual_stop_duration is not None:
+            actual_arrival_time = max(0, round(actual_cum_time - actual_stop_duration))
+
+        # Segment speed (mph) from plan
+        plan_seg_dist = ps.get('seg_dist') or 0
+        plan_speed_mph = round(float(plan_seg_dist) / (plan_segment_min / 60), 1) if plan_segment_min and plan_seg_dist else None
 
         row = {
             'location': location,
@@ -469,8 +486,11 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
             'plan_segment_min': plan_segment_min,
             'plan_stop_duration_min': plan_stop_duration,
             'plan_cum_time_min': plan_cum_time,
+            'plan_arrival_time_min': plan_arrival_time,
+            'plan_speed_mph': plan_speed_mph,
             'actual_stop_duration_min': actual_stop_duration,
             'actual_cum_time_min': actual_cum_time,
+            'actual_arrival_time_min': actual_arrival_time,
             'cum_time_delta_min': cum_time_delta,
             'plan_time_of_day': plan_tod,
             'actual_time_of_day': actual_tod,
@@ -496,6 +516,7 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
             actual_tod_dt = actual_start_time + timedelta(seconds=es['start_time_s'])
             actual_tod = actual_tod_dt.strftime('%H:%M')
 
+        extra_arrival = max(0, round(actual_cum_time - es['duration_min'])) if actual_cum_time is not None else None
         row = {
             'location': f"Unplanned stop",
             'stop_type': 'extra',
@@ -503,8 +524,11 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
             'plan_segment_min': None,
             'plan_stop_duration_min': None,
             'plan_cum_time_min': None,
+            'plan_arrival_time_min': None,
+            'plan_speed_mph': None,
             'actual_stop_duration_min': es['duration_min'],
             'actual_cum_time_min': actual_cum_time,
+            'actual_arrival_time_min': extra_arrival,
             'cum_time_delta_min': None,
             'plan_time_of_day': None,
             'actual_time_of_day': actual_tod,
@@ -517,22 +541,31 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
     # Sort all rows by distance
     rows.sort(key=lambda r: r['distance_miles'])
 
-    # Calculate actual segment times (riding time between consecutive stops)
+    # Calculate actual segment times and speeds
     prev_actual_cum = 0
     prev_actual_stop_dur = 0
+    prev_dist = 0.0
     for row in rows:
+        cur_dist = row['distance_miles']
+        seg_dist = cur_dist - prev_dist
         if row['actual_cum_time_min'] is not None:
             actual_segment = row['actual_cum_time_min'] - prev_actual_cum - prev_actual_stop_dur
             row['actual_segment_min'] = max(0, round(actual_segment))
+            row['actual_speed_mph'] = round(seg_dist / (actual_segment / 60), 1) if actual_segment > 0 and seg_dist > 0 else None
             prev_actual_cum = row['actual_cum_time_min']
             prev_actual_stop_dur = row.get('actual_stop_duration_min') or 0
         else:
             row['actual_segment_min'] = None
+            row['actual_speed_mph'] = None
+        prev_dist = cur_dist
 
     # Plan total time
     plan_total_time_min = plan_stops[-1].get('cum_time_min', 0) if plan_stops else 0
     plan_total_distance = float(plan_stops[-1].get('distance_miles', 0)) if plan_stops else 0
     plan_total_elevation = plan_stops[-1].get('elevation_gain', 0) if plan_stops else 0
+
+    # Base plan total time (when custom_stops provided, that's the base plan)
+    base_total_time_min = custom_stops[-1].get('cum_time_min', 0) if custom_stops else None
 
     # Planned avg speed
     plan_moving_time = sum(s.get('segment_time_min', 0) or 0 for s in plan_stops)
@@ -557,6 +590,7 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         'actual_avg_speed_mph': round(actual_avg_speed_mph, 1),
         'stops_planned': len([s for s in plan_stops if (s.get('stop_duration_min') or 0) > 0]),
         'stops_detected': len(detected_stops or []),
+        'base_total_time_min': base_total_time_min,
         'stops_extra': len(extra_stops),
         # Deltas (positive = over plan, negative = under plan)
         'distance_delta_miles': round(actual_distance_miles - plan_total_distance, 1) if plan_total_distance else None,
