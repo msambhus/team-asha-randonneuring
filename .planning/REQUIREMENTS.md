@@ -22,9 +22,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Wind Storage
 
-- [ ] **STOR-01**: System stores historical wind data in `ride_wind_data` table (ride_id, stop_order, stop_name, wind_speed_kmh, wind_direction_deg, headwind_kmh, crosswind_kmh, wind_type, temperature_c, conditions, data_source, fetched_at)
-- [ ] **STOR-02**: System checks `ride_wind_data` table before fetching from archive API; only fetches if no existing data for that ride
-- [ ] **STOR-03**: System stores `data_source` as 'archive' or 'forecast_past_days' to track provenance
+- [x] **STOR-01**: System stores historical wind data in `ride_wind_data` table (ride_id, stop_order, stop_name, wind_speed_kmh, wind_direction_deg, headwind_kmh, crosswind_kmh, wind_type, temperature_c, conditions, data_source, fetched_at)
+- [x] **STOR-02**: System checks `ride_wind_data` table before fetching from archive API; only fetches if no existing data for that ride
+- [x] **STOR-03**: System stores `data_source` as 'archive' or 'forecast_past_days' to track provenance
 
 ### Base Plan Wind Display
 
@@ -99,9 +99,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WIND-08 | Phase 6 | Pending |
 | WIND-09 | Phase 5 | Complete |
 | WIND-10 | Phase 1 | Complete |
-| STOR-01 | Phase 6 | Pending |
-| STOR-02 | Phase 6 | Pending |
-| STOR-03 | Phase 6 | Pending |
+| STOR-01 | Phase 6 | Complete |
+| STOR-02 | Phase 6 | Complete |
+| STOR-03 | Phase 6 | Complete |
 | BPLN-01 | Phase 3 | Complete |
 | BPLN-02 | Phase 3 | Complete |
 | BPLN-03 | Phase 3 | Complete |

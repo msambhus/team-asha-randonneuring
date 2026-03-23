@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 05-01-PLAN.md — fetch_stop_wind wired into custom_ride_plan_view
-last_updated: "2026-03-23T20:38:49.097Z"
+stopped_at: Completed 06-01-PLAN.md — ride_wind_data migration and model persistence functions
+last_updated: "2026-03-23T21:00:32.314Z"
 last_activity: 2026-03-23 — Roadmap created; 7 phases, 31/31 requirements mapped
 progress:
   total_phases: 7
   completed_phases: 5
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 9
+  completed_plans: 8
   percent: 100
 ---
 
@@ -57,6 +57,7 @@ Progress: [██████████] 100%
 | Phase 04-heavy-wind-warning-banner P01 | 3 | 1 tasks | 2 files |
 | Phase 04-heavy-wind-warning-banner P02 | 15 | 2 tasks | 2 files |
 | Phase 05-forecast-wind-in-custom-ride-plan P01 | 4 | 2 tasks | 2 files |
+| Phase 06-historical-wind-archive-api-and-db-persistence P01 | 8 | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,9 @@ Recent decisions affecting current work:
 - [Phase 04-heavy-wind-warning-banner]: Banner uses HTML entities for warning icon instead of emoji literals for cross-platform safety in Jinja2 templates
 - [Phase 05-forecast-wind-in-custom-ride-plan]: custom_ride_plan_view uses str(plan.get('start_time') or '07:00')[:5] for start_time_str to safely handle time objects
 - [Phase 05-forecast-wind-in-custom-ride-plan]: Tests patch services.custom_plan_service.get_merged_plan_stops (not routes.riders.*) because the route handler uses a local import inside the function body
+- [Phase 06-historical-wind-archive-api-and-db-persistence]: get_ride_wind_data uses _execute() helper for reads; save_ride_wind_data uses raw cursor with explicit conn.commit() — autocommit=False requires it
+- [Phase 06-historical-wind-archive-api-and-db-persistence]: ON CONFLICT (ride_id, stop_order) DO NOTHING — second save for same stop silently skipped, never errors (STOR-02 idempotency)
+- [Phase 06-historical-wind-archive-api-and-db-persistence]: data_source CHECK constraint enforces only 'archive' or 'forecast_past_days' at DB layer (STOR-03)
 
 ### Pending Todos
 
@@ -96,6 +100,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-23T20:35:41.977Z
-Stopped at: Completed 05-01-PLAN.md — fetch_stop_wind wired into custom_ride_plan_view
+Last session: 2026-03-23T21:00:32.310Z
+Stopped at: Completed 06-01-PLAN.md — ride_wind_data migration and model persistence functions
 Resume file: None
