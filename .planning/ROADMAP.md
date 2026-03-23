@@ -76,7 +76,11 @@ Plans:
   2. The banner names the affected brevet, its date, and includes a plain-language description (e.g., "Strong headwinds expected — avg 18 km/h headwind, gusts to 35 km/h")
   3. No banner appears for brevets more than 28 days away or for brevets without a linked ride plan
   4. The page renders without error when no upcoming brevets have heavy winds
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 04-01-PLAN.md -- TDD: detect_heavy_wind() pure function and fetch_stop_wind headwind_kmh augmentation
+- [ ] 04-02-PLAN.md -- Route handler wind warning loop and template banner
 
 ### Phase 5: Forecast Wind in Custom Ride Plan
 **Goal**: Riders viewing a custom ride plan see the same wind columns as the base plan, with wind correctly resolved for the merged stop list (base stops plus rider overrides)
@@ -122,7 +126,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 1. Wind Math Foundation | 1/1 | Complete   | 2026-03-23 |
 | 2. Stop-to-Coordinate Interpolation | 0/1 | Planning | - |
 | 3. Forecast Wind in Base Ride Plan | 0/2 | Planning | - |
-| 4. Heavy Wind Warning Banner | 0/TBD | Not started | - |
+| 4. Heavy Wind Warning Banner | 0/2 | Planning | - |
 | 5. Forecast Wind in Custom Ride Plan | 0/TBD | Not started | - |
 | 6. Historical Wind — Archive API and DB Persistence | 0/TBD | Not started | - |
 | 7. Historical Wind Display and Ride Header Links | 0/TBD | Not started | - |
