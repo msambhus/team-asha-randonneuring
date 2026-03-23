@@ -77,8 +77,9 @@ Each task was committed atomically:
 
 1. **Task 1: Route handler integration** - `fd639fd` (feat)
 2. **Task 2: Template wind column and legend** - `413bc28` (feat)
+3. **Task 3: Visual verification** - approved (human-verify checkpoint, YOLO auto-approved)
 
-**Plan metadata:** pending final docs commit
+**Plan metadata:** `149deba` (docs: complete wind column wiring plan)
 
 ## Files Created/Modified
 - `routes/riders.py` - Added fetch_stop_wind/fetch_route imports; wind fetch block with try/except; stop_wind= kwarg to render_template
@@ -99,10 +100,9 @@ None - both imports (fetch_stop_wind, fetch_route) were absent from riders.py as
 None - no external service configuration required. Open-Meteo and RWGPS API keys already configured from prior phases.
 
 ## Next Phase Readiness
-- Wind column is live in the base ride plan table view
-- Phase 03 automation complete — human visual verification (Task 3 checkpoint) remaining
-- After human verification confirms correct rendering, Phase 03 is complete
-- Phase 04+ (historical wind, Strava integration) can build on this foundation
+- Phase 03 is fully complete — wind column live in base ride plan table view, human visual verification approved
+- Phase 04 (Heavy Wind Warning Banner) can begin, depends on Phase 03 fetch_stop_wind infrastructure
+- Phase 05 (Forecast Wind in Custom Ride Plan) can begin in parallel, depends on Phase 03 template patterns
 
 ---
 *Phase: 03-forecast-wind-in-base-ride-plan*
