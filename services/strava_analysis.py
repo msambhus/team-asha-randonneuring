@@ -435,7 +435,18 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         # Actual cumulative time (seconds from ride start → minutes)
         actual_cum_time = None
         cum_time_delta = None
-        if actual_stop and actual_stop.get('start_time_s') is not None:
+
+        if stop_type == 'start':
+            # Start: cumulative time is 0, no stop duration
+            actual_cum_time = 0
+            actual_stop_duration = 0
+        elif stop_type == 'finish':
+            # Finish: cumulative time is total elapsed time
+            actual_cum_time = round(actual_elapsed_time_min)
+            actual_stop_duration = 0
+            if plan_cum_time:
+                cum_time_delta = round(actual_cum_time - plan_cum_time)
+        elif actual_stop and actual_stop.get('start_time_s') is not None:
             actual_cum_time = round(actual_stop['start_time_s'] / 60)
             if plan_cum_time:
                 cum_time_delta = round(actual_cum_time - plan_cum_time)
@@ -445,9 +456,16 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         if plan_start_dt and plan_cum_time:
             plan_tod_dt = plan_start_dt + timedelta(minutes=plan_cum_time)
             plan_tod = plan_tod_dt.strftime('%H:%M')
+        elif stop_type == 'start' and plan_start_dt:
+            plan_tod = plan_start_dt.strftime('%H:%M')
 
         actual_tod = None
-        if actual_stop and actual_start_time and actual_stop.get('start_time_s') is not None:
+        if stop_type == 'start' and actual_start_time:
+            actual_tod = actual_start_time.strftime('%H:%M')
+        elif stop_type == 'finish' and actual_start_time:
+            actual_tod_dt = actual_start_time + timedelta(minutes=actual_elapsed_time_min)
+            actual_tod = actual_tod_dt.strftime('%H:%M')
+        elif actual_stop and actual_start_time and actual_stop.get('start_time_s') is not None:
             actual_tod_dt = actual_start_time + timedelta(seconds=actual_stop['start_time_s'])
             actual_tod = actual_tod_dt.strftime('%H:%M')
 
