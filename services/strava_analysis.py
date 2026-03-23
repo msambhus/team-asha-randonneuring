@@ -236,7 +236,6 @@ def fetch_and_analyze(rider_id, match_id, strava_activity_id, plan_stops=None):
         stream_summary = (cached.get('stream_summary') or {}) if cached else {}
     else:
         detected_stops = detect_stops(streams)
-        detected_stops = merge_nearby_stops(detected_stops)
         if plan_stops and detected_stops:
             detected_stops = match_stops_to_plan(detected_stops, plan_stops)
         stream_summary = _build_stream_summary(streams)
@@ -302,48 +301,29 @@ def detect_stops(streams):
     return stops
 
 
-STOP_MERGE_RADIUS_MILES = 0.3  # stops within this distance are merged into one
-
-
-def merge_nearby_stops(stops):
-    """Merge detected stops that are within STOP_MERGE_RADIUS_MILES of each other.
-
-    GPS drift or brief creeping during a single real stop can produce two velocity
-    drops very close together.  Merging them before plan matching ensures only one
-    row competes for the nearby plan waypoint.
-
-    Duration of the merged stop = sum of individual durations.
-    Distance position = the earlier stop's distance.
-    """
-    if len(stops) <= 1:
-        return stops
-
-    merged = []
-    i = 0
-    while i < len(stops):
-        current = dict(stops[i])
-        # Absorb subsequent stops within the merge radius
-        j = i + 1
-        while j < len(stops):
-            if stops[j]['distance_miles'] - current['distance_miles'] <= STOP_MERGE_RADIUS_MILES:
-                current['duration_s'] += stops[j]['duration_s']
-                current['duration_min'] = round(current['duration_s'] / 60, 1)
-                j += 1
-            else:
-                break
-        merged.append(current)
-        i = j
-    return merged
+STOP_ABSORPTION_RADIUS_MILES = 0.3  # unmatched stops within this radius of a matched waypoint are absorbed
 
 
 def match_stops_to_plan(detected_stops, plan_stops):
     """Match detected Strava stops to planned control/rest points by distance.
 
-    Uses greedy matching — each plan stop matched at most once.
-    Tolerance: min(3% of total distance, 3.0 miles).
+    Uses plan-first greedy matching: each plan stop claims the nearest unmatched
+    detected stop. After matching, extra detected stops within
+    STOP_ABSORPTION_RADIUS_MILES of a matched plan waypoint are absorbed into
+    that waypoint's duration and removed from the returned list.
+
+    Absorption prevents double-subtraction in segment arithmetic: if a GPS drift
+    produces a brief velocity drop just before a real control, that extra stop
+    would otherwise appear in both `actual_stop_duration` (via merge) and
+    `stops_in_seg` (because it falls inside the segment range). By absorbing it
+    into the matched control's duration and removing it from the list entirely,
+    the segment calculation stays correct.
+
+    Tolerance for matching: min(3% of total distance, 3.0 miles).
 
     Returns:
         enriched detected_stops with matched_stop_name, matched_stop_type, is_extra
+        (absorbed stops removed from the list)
     """
     if not plan_stops or not detected_stops:
         for stop in detected_stops:
@@ -356,6 +336,14 @@ def match_stops_to_plan(detected_stops, plan_stops):
     total_dist = max((float(s.get('distance_miles') or 0) for s in plan_stops), default=0)
     tolerance = min(total_dist * 0.03, 3.0) if total_dist > 0 else 3.0
 
+    # Initialise all detected stops as unmatched extras
+    for ds in detected_stops:
+        ds['_matched'] = False
+        ds['matched_stop_name'] = None
+        ds['matched_stop_type'] = None
+        ds['planned_duration_min'] = 0
+        ds['is_extra'] = True
+
     # Build matchable plan stops (exclude start — finish is a real control)
     matchable = []
     for ps in plan_stops:
@@ -367,34 +355,51 @@ def match_stops_to_plan(detected_stops, plan_stops):
             'location': ps.get('location', ''),
             'stop_type': stop_type,
             'stop_duration_min': ps.get('stop_duration_min') or 0,
-            'matched': False,
+            'matched_ds': None,
         })
 
-    # Greedy match: for each detected stop, find nearest unmatched plan stop
-    for ds in detected_stops:
-        ds_dist = ds['distance_miles']
-        best_plan = None
+    # Plan-first matching: each plan stop claims the nearest unmatched detected stop
+    for ps in matchable:
+        best_ds = None
         best_diff = float('inf')
-
-        for ps in matchable:
-            if ps['matched']:
+        for ds in detected_stops:
+            if ds['_matched']:
                 continue
-            diff = abs(ds_dist - ps['distance_miles'])
+            diff = abs(ds['distance_miles'] - ps['distance_miles'])
             if diff <= tolerance and diff < best_diff:
                 best_diff = diff
-                best_plan = ps
+                best_ds = ds
 
-        if best_plan:
-            best_plan['matched'] = True
-            ds['matched_stop_name'] = best_plan['location']
-            ds['matched_stop_type'] = best_plan['stop_type']
-            ds['planned_duration_min'] = best_plan['stop_duration_min']
-            ds['is_extra'] = False
-        else:
-            ds['matched_stop_name'] = None
-            ds['matched_stop_type'] = None
-            ds['planned_duration_min'] = 0
-            ds['is_extra'] = True
+        if best_ds:
+            best_ds['_matched'] = True
+            best_ds['matched_stop_name'] = ps['location']
+            best_ds['matched_stop_type'] = ps['stop_type']
+            best_ds['planned_duration_min'] = ps['stop_duration_min']
+            best_ds['is_extra'] = False
+            ps['matched_ds'] = best_ds
+
+    # Absorption pass: extra stops within STOP_ABSORPTION_RADIUS_MILES of a matched
+    # waypoint are folded into that waypoint's duration and dropped from the list.
+    absorbed_indices = set()
+    for ps in matchable:
+        if ps['matched_ds'] is None:
+            continue
+        matched_ds = ps['matched_ds']
+        wp_dist = ps['distance_miles']
+        for i, ds in enumerate(detected_stops):
+            if ds['_matched']:
+                continue
+            if abs(ds['distance_miles'] - wp_dist) <= STOP_ABSORPTION_RADIUS_MILES:
+                matched_ds['duration_s'] = matched_ds.get('duration_s', 0) + ds.get('duration_s', 0)
+                matched_ds['duration_min'] = round(matched_ds['duration_s'] / 60, 1)
+                absorbed_indices.add(i)
+
+    # Clean up temp field and remove absorbed stops
+    for ds in detected_stops:
+        ds.pop('_matched', None)
+
+    if absorbed_indices:
+        detected_stops = [ds for i, ds in enumerate(detected_stops) if i not in absorbed_indices]
 
     return detected_stops
 
