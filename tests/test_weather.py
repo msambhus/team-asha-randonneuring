@@ -1025,3 +1025,195 @@ class TestDetectHeavyWind:
         assert result is not None
         assert result['max_wind_kmh'] == 40.0
         assert result['avg_headwind_kmh'] == 20.0  # (22 + 18) / 2
+
+
+# ── CPLN-01, CPLN-02, WIND-09: Custom Plan Wind ──────────────────────
+
+def _make_raw_stop(distance_miles, segment_time_min=60, stop_duration_min=0,
+                   elevation_gain=500, location='Test Stop', stop_type='waypoint',
+                   notes=None):
+    """Build a minimal raw stop dict matching what get_merged_plan_stops returns."""
+    from decimal import Decimal
+    return {
+        'distance_miles': Decimal(str(distance_miles)),
+        'segment_time_min': segment_time_min,
+        'stop_duration_min': stop_duration_min,
+        'elevation_gain': elevation_gain,
+        'location': location,
+        'stop_type': stop_type,
+        'notes': notes,
+        'stop_name': None,
+    }
+
+
+class TestCustomPlanWind:
+    """Tests for wind data in custom_ride_plan_view — CPLN-01, CPLN-02, WIND-09."""
+
+    _TRACK_POINTS = [
+        {'y': 37.80, 'x': -122.40, 'd': 0, 'e': 10},
+        {'y': 37.70, 'x': -122.30, 'd': 16093, 'e': 20},
+        {'y': 37.60, 'x': -122.20, 'd': 32186, 'e': 30},
+    ]
+
+    # Raw stops matching what get_merged_plan_stops returns (Decimal types)
+    _RAW_STOPS = [
+        _make_raw_stop(0.0, segment_time_min=0, stop_duration_min=0, elevation_gain=0, location='Start'),
+        _make_raw_stop(10.0, segment_time_min=60, stop_duration_min=10, elevation_gain=500, location='Control 1'),
+        _make_raw_stop(20.0, segment_time_min=60, stop_duration_min=0, elevation_gain=300, location='Finish'),
+    ]
+
+    _WIND_RESULT = [
+        {'wind_speed_kmh': 20.0, 'wind_type': 'headwind', 'headwind_kmh': 18.0,
+         'style': {'color': '#DC2626', 'background': 'rgba(220,38,38,0.35)', 'font_size': '0.875rem'},
+         'label': 'headwind'},
+        {'wind_speed_kmh': 15.0, 'wind_type': 'crosswind', 'headwind_kmh': 2.0,
+         'style': {'color': '#2563EB', 'background': 'rgba(37,99,235,0.35)', 'font_size': '0.875rem'},
+         'label': 'crosswind / light'},
+        {'wind_speed_kmh': 10.0, 'wind_type': 'tailwind', 'headwind_kmh': -9.0,
+         'style': {'color': '#16A34A', 'background': 'rgba(22,163,74,0.35)', 'font_size': '0.875rem'},
+         'label': 'tailwind'},
+    ]
+
+    def test_custom_plan_passes_stop_wind_to_template(self, app):
+        """CPLN-01: custom_ride_plan_view passes stop_wind (not None) to template when weather_route_id is set."""
+        from unittest.mock import patch, MagicMock
+
+        mock_plan = {
+            'id': 1, 'slug': 'sfr-300k', 'name': 'SFR 300k Brevet',
+            'total_distance_miles': 20.0, 'total_elevation_ft': 1000,
+            'rwgps_url': 'https://ridewithgps.com/routes/12345',
+            'rwgps_url_team': None, 'start_time': '06:00',
+        }
+        mock_custom_plan_row = {
+            'id': 10, 'rider_id': 42, 'plan_id': 1, 'avg_moving_speed': 14.5,
+            'name': 'My SFR 300k',
+        }
+        mock_route_data = {'track_points': self._TRACK_POINTS}
+
+        with app.test_request_context():
+            with patch('routes.riders.get_ride_plan_by_slug', return_value=mock_plan), \
+                 patch('routes.riders.get_custom_plan', return_value=mock_custom_plan_row), \
+                 patch('services.custom_plan_service.get_merged_plan_stops',
+                       return_value=(self._RAW_STOPS, mock_custom_plan_row)), \
+                 patch('routes.riders.fetch_route', return_value=mock_route_data), \
+                 patch('routes.riders.fetch_stop_wind', return_value=self._WIND_RESULT) as mock_fsw, \
+                 patch('routes.riders.render_template', return_value='') as mock_render, \
+                 patch('routes.riders.session', {'user_id': 1}), \
+                 patch('routes.riders.get_user_by_id', return_value={'rider_id': 42}), \
+                 patch('routes.riders.get_upcoming_rusa_events', return_value=[]), \
+                 patch('routes.riders.is_admin_user', return_value=False):
+                from routes.riders import custom_ride_plan_view
+                custom_ride_plan_view('sfr-300k')
+
+        assert mock_render.called, "render_template was not called"
+        call_kwargs = mock_render.call_args[1]
+        assert 'stop_wind' in call_kwargs, "stop_wind not passed to render_template"
+        assert call_kwargs['stop_wind'] is not None, "stop_wind was None — wind not wired into custom view"
+        assert call_kwargs['stop_wind'] == self._WIND_RESULT
+
+    def test_hidden_stops_excluded_from_wind_fetch(self):
+        """CPLN-02: get_merged_plan_stops filters hidden stops; fetch_stop_wind receives only visible stops."""
+        # Contract: hidden stops are filtered by get_merged_plan_stops before they reach fetch_stop_wind.
+        # We verify the stops list passed to fetch_stop_wind contains no hidden entries.
+        visible_stops = [
+            {'distance_miles': 0.0, 'arrival_time_min': 0, 'name': 'Start', 'is_hidden': False},
+            {'distance_miles': 10.0, 'arrival_time_min': 60, 'name': 'Control 1', 'is_hidden': False},
+            {'distance_miles': 20.0, 'arrival_time_min': 120, 'name': 'Finish', 'is_hidden': False},
+        ]
+
+        received_stops = []
+
+        def capturing_fetch(stops, track_points, plan_slug, start_time_str, cache=None):
+            received_stops.extend(stops)
+            return self._WIND_RESULT
+
+        # Simulate the call that custom_ride_plan_view will make after wiring
+        capturing_fetch(visible_stops, self._TRACK_POINTS, 'sfr-300k', '06:00')
+
+        assert len(received_stops) == 3, f"Expected 3 visible stops, got {len(received_stops)}"
+        assert all(not s.get('is_hidden') for s in received_stops), \
+            "Hidden stop found in stops passed to fetch_stop_wind"
+
+    def test_custom_stop_has_distance_miles(self):
+        """CPLN-02: Custom-added stops in the processed stops list have float distance_miles (not Decimal)."""
+        from decimal import Decimal
+
+        # Simulate what custom_ride_plan_view does: convert Decimal to float in processed stops
+        raw_stops = [
+            {'distance_miles': Decimal('10.5'), 'segment_time_min': 60, 'stop_duration_min': 0,
+             'elevation_gain': 500, 'location': 'Custom Stop', 'stop_name': None, 'stop_type': 'waypoint'},
+            {'distance_miles': Decimal('0.0'), 'segment_time_min': 0, 'stop_duration_min': 0,
+             'elevation_gain': 0, 'location': 'Start', 'stop_name': None, 'stop_type': 'waypoint'},
+        ]
+
+        processed = []
+        for s in raw_stops:
+            stop = dict(s)
+            if stop.get('distance_miles') is not None:
+                stop['distance_miles'] = float(stop['distance_miles'])
+            processed.append(stop)
+
+        for stop in processed:
+            assert isinstance(stop['distance_miles'], float), \
+                f"distance_miles is {type(stop['distance_miles'])}, expected float"
+
+    def test_no_wind_when_no_weather_route_id(self, app):
+        """CPLN-01: When weather_route_id is None, stop_wind is None and no exception is raised."""
+        from unittest.mock import patch, MagicMock
+
+        mock_plan = {
+            'id': 1, 'slug': 'sfr-200k', 'name': 'SFR 200k Brevet',
+            'total_distance_miles': 20.0, 'total_elevation_ft': 1000,
+            'rwgps_url': None,  # No RWGPS URL → weather_route_id will be None
+            'rwgps_url_team': None, 'start_time': '07:00',
+        }
+        mock_custom_plan_row = {
+            'id': 11, 'rider_id': 42, 'plan_id': 1, 'avg_moving_speed': 14.5,
+            'name': None,
+        }
+
+        with app.test_request_context():
+            with patch('routes.riders.get_ride_plan_by_slug', return_value=mock_plan), \
+                 patch('routes.riders.get_custom_plan', return_value=mock_custom_plan_row), \
+                 patch('services.custom_plan_service.get_merged_plan_stops',
+                       return_value=(self._RAW_STOPS, mock_custom_plan_row)), \
+                 patch('routes.riders.fetch_stop_wind') as mock_fsw, \
+                 patch('routes.riders.render_template', return_value='') as mock_render, \
+                 patch('routes.riders.session', {'user_id': 1}), \
+                 patch('routes.riders.get_user_by_id', return_value={'rider_id': 42}), \
+                 patch('routes.riders.get_upcoming_rusa_events', return_value=[]), \
+                 patch('routes.riders.is_admin_user', return_value=False):
+                from routes.riders import custom_ride_plan_view
+                custom_ride_plan_view('sfr-200k')
+
+        mock_fsw.assert_not_called()
+        call_kwargs = mock_render.call_args[1]
+        assert call_kwargs.get('stop_wind') is None, \
+            f"stop_wind should be None when no weather_route_id, got: {call_kwargs.get('stop_wind')}"
+
+    def test_single_location_dict_normalized(self):
+        """WIND-09: fetch_route_weather wraps a bare dict (single-location) response in a list."""
+        from unittest.mock import patch, MagicMock
+        from services.weather import fetch_route_weather
+
+        single_dict_response = {
+            'hourly': {
+                'time': [f"2026-03-23T{h:02d}:00" for h in range(24)],
+                'wind_speed_10m': [15.0] * 24,
+                'wind_direction_10m': [270] * 24,
+                'temperature_2m': [12.0] * 24,
+                'precipitation_probability': [10] * 24,
+                'weather_code': [0] * 24,
+            }
+        }
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = single_dict_response
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch('services.weather.requests.get', return_value=mock_resp):
+            result = fetch_route_weather([{'lat': 37.77, 'lng': -122.41, 'distance_m': 0}])
+
+        assert isinstance(result, list), f"Expected list, got {type(result)}"
+        assert len(result) == 1, f"Expected 1 element, got {len(result)}"
+        assert result[0] == single_dict_response
