@@ -560,22 +560,28 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
     rows.sort(key=lambda r: r['distance_miles'])
 
     # Calculate actual segment times and speeds
-    prev_actual_cum = 0
-    prev_actual_stop_dur = 0
-    prev_dist = 0.0
+    # Use arrival times (before break) for segment riding time
+    prev_actual_arrival = 0
+    prev_plan_dist = 0.0
     for row in rows:
         cur_dist = row['distance_miles']
-        seg_dist = cur_dist - prev_dist
+        seg_dist = cur_dist - prev_plan_dist
         if row['actual_cum_time_min'] is not None:
-            actual_segment = row['actual_cum_time_min'] - prev_actual_cum - prev_actual_stop_dur
+            actual_arrival = row.get('actual_arrival_time_min')
+            if actual_arrival is None:
+                actual_arrival = row['actual_cum_time_min']
+            actual_segment = actual_arrival - prev_actual_arrival
             row['actual_segment_min'] = max(0, round(actual_segment))
             row['actual_speed_mph'] = round(seg_dist / (actual_segment / 60), 1) if actual_segment > 0 and seg_dist > 0 else None
-            prev_actual_cum = row['actual_cum_time_min']
-            prev_actual_stop_dur = row.get('actual_stop_duration_min') or 0
+            prev_actual_arrival = row['actual_cum_time_min']  # departure time (after break)
+            if row.get('actual_stop_duration_min'):
+                pass  # prev_actual_arrival already includes break in cum_time
+            # For non-extra stops, advance prev_plan_dist
         else:
             row['actual_segment_min'] = None
             row['actual_speed_mph'] = None
-        prev_dist = cur_dist
+        if not row.get('is_extra'):
+            prev_plan_dist = cur_dist
 
     # Plan total time
     plan_total_time_min = plan_stops[-1].get('cum_time_min', 0) if plan_stops else 0
