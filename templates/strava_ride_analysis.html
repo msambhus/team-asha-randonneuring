@@ -448,7 +448,7 @@
 {% if comparison.rows %}
 <div class="chart-container" style="margin-bottom:24px;">
     <h3>Ride Timeline</h3>
-    <canvas id="rideChart" height="340"></canvas>
+    <canvas id="rideChart" height="160"></canvas>
 </div>
 
 {# --- Comparison Table --- #}
@@ -585,31 +585,16 @@
         return points;
     }
 
-    // Build speed data points (one per segment, positioned at segment midpoint)
-    function buildSpeedLine(dataRows, getSpeed, getDist) {
-        const points = [];
-        let prevDist = 0;
-        for (const r of dataRows) {
-            const speed = getSpeed(r);
-            const dist = getDist(r);
-            if (speed !== null && speed !== undefined && speed > 0) {
-                points.push({ x: (prevDist + dist) / 2, y: speed });
-            }
-            prevDist = dist;
-        }
-        return points;
-    }
-
     const ctx = document.getElementById('rideChart').getContext('2d');
     const datasets = [];
 
-    // --- Time lines (left Y-axis) ---
+    // --- Time lines (single Y-axis) ---
     datasets.push({
         label: hasCustom ? 'Your Plan' : 'Plan',
         data: buildBreakLine(planRows,
             r => r.plan_cum_time_min, r => r.plan_arrival_time_min, r => r.plan_stop_duration_min || 0),
         borderColor: '#2563eb', borderWidth: 2, tension: 0,
-        pointRadius: 0, pointHitRadius: 8, fill: false, yAxisID: 'y',
+        pointRadius: 0, pointHitRadius: 8, fill: false,
     });
 
     if (hasCustom) {
@@ -620,7 +605,7 @@
                 r => r.custom && r.custom.arrival_time_min ? r.custom.arrival_time_min : null,
                 r => r.custom && r.custom.stop_duration_min ? r.custom.stop_duration_min : 0),
             borderColor: '#94a3b8', borderDash: [6, 3], borderWidth: 1.5, tension: 0,
-            pointRadius: 0, pointHitRadius: 8, fill: false, yAxisID: 'y',
+            pointRadius: 0, pointHitRadius: 8, fill: false,
         });
     }
 
@@ -630,60 +615,63 @@
         data: buildBreakLine(actualDataRows,
             r => r.actual_cum_time_min, r => r.actual_arrival_time_min, r => r.actual_stop_duration_min || 0),
         borderColor: '#c2410c', borderWidth: 3, tension: 0,
-        pointRadius: 0, pointHitRadius: 8, fill: false, yAxisID: 'y',
+        pointRadius: 0, pointHitRadius: 8, fill: false,
     });
 
-    // --- Speed lines (right Y-axis) ---
-    datasets.push({
-        label: (hasCustom ? 'Your Plan' : 'Plan') + ' Speed',
-        data: buildSpeedLine(planRows, r => r.plan_speed_mph, r => r.distance_miles),
-        borderColor: 'rgba(37, 99, 235, 0.4)', borderWidth: 1.5, borderDash: [3, 3],
-        tension: 0.3, pointRadius: 2, pointBackgroundColor: '#2563eb',
-        fill: false, yAxisID: 'y1',
-    });
-
-    if (hasCustom) {
-        datasets.push({
-            label: 'Base Speed',
-            data: buildSpeedLine(planRows,
-                r => r.custom && r.custom.speed_mph ? r.custom.speed_mph : null, r => r.distance_miles),
-            borderColor: 'rgba(148, 163, 184, 0.4)', borderWidth: 1, borderDash: [2, 2],
-            tension: 0.3, pointRadius: 1, fill: false, yAxisID: 'y1',
-        });
-    }
-
-    datasets.push({
-        label: 'Actual Speed',
-        data: buildSpeedLine(rows.filter(r => !r.is_extra),
-            r => r.actual_speed_mph, r => r.distance_miles),
-        borderColor: 'rgba(194, 65, 12, 0.4)', borderWidth: 1.5, borderDash: [3, 3],
-        tension: 0.3, pointRadius: 2, pointBackgroundColor: '#c2410c',
-        fill: false, yAxisID: 'y1',
-    });
-
-    // --- Control annotations at bottom ---
+    // --- Annotations: control markers + speed labels along lines ---
     const annotations = {};
+
+    // Control markers at bottom
     planRows.forEach((r, i) => {
         if (['start', 'finish', 'control', 'rest'].includes(r.stop_type)) {
-            const shortName = r.location.length > 20 ? r.location.substring(0, 19) + '…' : r.location;
             annotations['ctrl' + i] = {
                 type: 'line',
                 xMin: r.distance_miles, xMax: r.distance_miles,
-                yMin: 0, yMax: 0.3,
-                borderColor: r.stop_type === 'control' ? '#1e40af' : (r.stop_type === 'rest' ? '#92400e' : '#64748b'),
-                borderWidth: 1.5,
+                borderColor: r.stop_type === 'control' ? 'rgba(30,64,175,0.3)' : (r.stop_type === 'rest' ? 'rgba(146,64,14,0.2)' : 'rgba(100,116,139,0.2)'),
+                borderWidth: 1, borderDash: [3, 3],
                 label: {
                     display: true,
-                    content: (r.stop_type === 'start' ? '🚩' : r.stop_type === 'finish' ? '🏁' : r.stop_type === 'control' ? '◆' : '☕') + ' ' + Math.round(r.distance_miles) + 'mi',
+                    content: (r.stop_type === 'start' ? '🚩' : r.stop_type === 'finish' ? '🏁' : r.stop_type === 'control' ? '◆' : '☕') + ' ' + Math.round(r.distance_miles),
                     position: 'start',
-                    font: { size: 9, weight: '600' },
-                    color: '#475569',
-                    backgroundColor: 'rgba(255,255,255,0.85)',
-                    padding: 2,
-                    rotation: -45,
+                    font: { size: 8 }, color: '#475569',
+                    backgroundColor: 'rgba(255,255,255,0.8)', padding: 2, rotation: -45,
                 }
             };
         }
+    });
+
+    // Speed labels along the plan line (at segment midpoints)
+    let prevDist = 0;
+    planRows.forEach((r, i) => {
+        if (i === 0) { prevDist = r.distance_miles; return; }
+        const midX = (prevDist + r.distance_miles) / 2;
+        // Plan speed label (above the line)
+        if (r.plan_speed_mph) {
+            const midY = r.plan_arrival_time_min ? (r.plan_arrival_time_min / 60 + (planRows[i-1].plan_cum_time_min || 0) / 60) / 2 : null;
+            if (midY !== null) {
+                annotations['spd_plan_' + i] = {
+                    type: 'label',
+                    xValue: midX, yValue: midY,
+                    content: r.plan_speed_mph + '', font: { size: 8, weight: '600' },
+                    color: '#2563eb', backgroundColor: 'rgba(255,255,255,0.7)', padding: 1,
+                };
+            }
+        }
+        // Actual speed label (below the line)
+        if (r.actual_speed_mph) {
+            const prevActual = planRows[i-1].actual_cum_time_min || 0;
+            const curActual = r.actual_arrival_time_min || r.actual_cum_time_min;
+            if (curActual != null) {
+                const midY = (prevActual / 60 + curActual / 60) / 2;
+                annotations['spd_act_' + i] = {
+                    type: 'label',
+                    xValue: midX, yValue: midY,
+                    content: r.actual_speed_mph + '', font: { size: 8, weight: '600' },
+                    color: '#c2410c', backgroundColor: 'rgba(255,255,255,0.7)', padding: 1,
+                };
+            }
+        }
+        prevDist = r.distance_miles;
     });
 
     // --- Build tooltip that shows segment time + break for the nearest stop ---
@@ -699,13 +687,8 @@
             scales: {
                 x: { type: 'linear', title: { display: true, text: 'Distance (mi)' },
                      ticks: { stepSize: 20 } },
-                y: { position: 'left',
-                     title: { display: true, text: 'Elapsed Time (hrs)' },
+                y: { title: { display: true, text: 'Elapsed Time (hrs)' },
                      ticks: { callback: v => v.toFixed(1) + 'h' } },
-                y1: { position: 'right',
-                      title: { display: true, text: 'Speed (mph)' },
-                      grid: { drawOnChartArea: false },
-                      min: 0 },
             },
             plugins: {
                 annotation: { annotations },
