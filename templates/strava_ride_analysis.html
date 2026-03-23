@@ -461,6 +461,7 @@
     <th style="text-align:right;">&Delta; Cumul</th>
     <th style="text-align:right;">Plan TOD</th>
     <th style="text-align:right;">Actual TOD</th>
+    {% if stop_wind %}<th style="text-align:center;">Actual Wind</th>{% endif %}
 </tr>
 </thead>
 <tbody>
@@ -570,10 +571,33 @@
     <td style="text-align:right;font-weight:600;color:#c2410c;">
         {% if row.actual_time_of_day %}{{ row.actual_time_of_day }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
     </td>
+
+    {# Actual Wind #}
+    {% if stop_wind %}
+    <td style="text-align:center;padding:4px 8px;">
+        {% set w = stop_wind.get(row.location) %}
+        {% if w %}
+        <span style="display:inline-block;padding:2px 6px;border-radius:4px;background:{{ w.style.background }};color:{{ w.style.color }};font-size:{{ w.style.font_size }};font-weight:600;white-space:nowrap;">
+            {{ w.wind_speed_kmh }} km/h
+        </span>
+        {% else %}
+        &mdash;
+        {% endif %}
+    </td>
+    {% endif %}
 </tr>
 {% endfor %}
 </tbody>
 </table>
+{% if stop_wind %}
+<div style="margin-top:12px;padding:8px 12px;background:var(--surface-raised,#f8fafc);border-radius:6px;font-size:0.85rem;color:var(--text-muted,#64748b);">
+    <strong>Wind Legend:</strong>
+    <span style="color:#16A34A;">&#9632;</span> Tailwind &nbsp;
+    <span style="color:#DC2626;">&#9632;</span> Headwind &nbsp;
+    <span style="color:#2563EB;">&#9632;</span> Crosswind
+    &nbsp; | Intensity: lighter = weaker, darker = stronger
+</div>
+{% endif %}
 </div>
 {% elif not has_plan %}
 {# --- No Plan State --- #}
