@@ -61,7 +61,11 @@ Plans:
   4. The wind column is absent (no empty column, no error) when wind data is unavailable for a route
   5. A wind legend below the table explains the green / red / blue color coding
   6. Viewing the same ride plan twice does not trigger a second Open-Meteo API call (1-hour cache active)
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — TDD: fetch_stop_wind() orchestration function with cache, error handling, and per-stop wind computation
+- [ ] 03-02-PLAN.md — Route handler integration and template Wind column + legend
 
 ### Phase 4: Heavy Wind Warning Banner
 **Goal**: Riders scanning the upcoming brevets page see a prominent warning when any brevet in the next 28 days has forecast heavy winds, so they can prepare before committing to a start
@@ -117,7 +121,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 |-------|----------------|--------|-----------|
 | 1. Wind Math Foundation | 1/1 | Complete   | 2026-03-23 |
 | 2. Stop-to-Coordinate Interpolation | 0/1 | Planning | - |
-| 3. Forecast Wind in Base Ride Plan | 0/TBD | Not started | - |
+| 3. Forecast Wind in Base Ride Plan | 0/2 | Planning | - |
 | 4. Heavy Wind Warning Banner | 0/TBD | Not started | - |
 | 5. Forecast Wind in Custom Ride Plan | 0/TBD | Not started | - |
 | 6. Historical Wind — Archive API and DB Persistence | 0/TBD | Not started | - |
