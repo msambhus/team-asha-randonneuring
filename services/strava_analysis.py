@@ -432,6 +432,19 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
 
     # Build stream interpolator for actual time at any distance
     interp = _build_stream_interpolator(streams)
+
+    # Build segment HR/power averager from streams
+    hr_stream = streams.get('heartrate', []) if streams else []
+    watts_stream = streams.get('watts', []) if streams else []
+    dist_stream_mi = [d / METERS_PER_MILE for d in streams.get('distance', [])] if streams else []
+
+    def avg_stream_in_range(stream, start_mi, end_mi):
+        """Average a stream array between two mile markers."""
+        if not stream or not dist_stream_mi or len(stream) != len(dist_stream_mi):
+            return None
+        vals = [stream[i] for i in range(len(dist_stream_mi))
+                if start_mi <= dist_stream_mi[i] <= end_mi and stream[i] is not None and stream[i] > 0]
+        return round(sum(vals) / len(vals)) if vals else None
     actual_elevation_ft = (activity.get('total_elevation_gain') or 0) * 3.28084
     actual_avg_speed_mph = (activity.get('average_speed') or 0) * 2.23694
 
@@ -542,6 +555,13 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         plan_seg_dist = ps.get('seg_dist') or 0
         plan_speed_mph = round(float(plan_seg_dist) / (plan_segment_min / 60), 1) if plan_segment_min and plan_seg_dist else None
 
+        # Time bank from plan
+        plan_time_bank = ps.get('time_bank_min')
+        plan_bookend = ps.get('bookend_time_min')
+        actual_time_bank = None
+        if plan_bookend and actual_arrival_time is not None:
+            actual_time_bank = round(plan_bookend - actual_arrival_time)
+
         row = {
             'location': location,
             'stop_type': stop_type,
@@ -551,9 +571,11 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
             'plan_cum_time_min': plan_cum_time,
             'plan_arrival_time_min': plan_arrival_time,
             'plan_speed_mph': plan_speed_mph,
+            'plan_time_bank': plan_time_bank,
             'actual_stop_duration_min': actual_stop_duration,
             'actual_cum_time_min': actual_cum_time,
             'actual_arrival_time_min': actual_arrival_time,
+            'actual_time_bank': actual_time_bank,
             'cum_time_delta_min': cum_time_delta,
             'plan_time_of_day': plan_tod,
             'actual_time_of_day': actual_tod,
@@ -589,9 +611,11 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
             'plan_cum_time_min': None,
             'plan_arrival_time_min': None,
             'plan_speed_mph': None,
+            'plan_time_bank': None,
             'actual_stop_duration_min': es['duration_min'],
             'actual_cum_time_min': actual_cum_time,
             'actual_arrival_time_min': extra_arrival,
+            'actual_time_bank': None,
             'cum_time_delta_min': None,
             'plan_time_of_day': None,
             'actual_time_of_day': actual_tod,
@@ -604,13 +628,15 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
     # Sort all rows by distance
     rows.sort(key=lambda r: r['distance_miles'])
 
-    # Calculate actual segment times and speeds
-    # Use arrival times (before break) for segment riding time
+    # Calculate actual segment times, speeds, HR, and power
     prev_actual_arrival = 0
     prev_plan_dist = 0.0
     for row in rows:
         cur_dist = row['distance_miles']
         seg_dist = cur_dist - prev_plan_dist
+        # Per-segment HR and power from Strava streams
+        row['actual_avg_hr'] = avg_stream_in_range(hr_stream, prev_plan_dist, cur_dist) if cur_dist > prev_plan_dist else None
+        row['actual_avg_watts'] = avg_stream_in_range(watts_stream, prev_plan_dist, cur_dist) if cur_dist > prev_plan_dist else None
         if row['actual_cum_time_min'] is not None:
             actual_arrival = row.get('actual_arrival_time_min')
             if actual_arrival is None:
