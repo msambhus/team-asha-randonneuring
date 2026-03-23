@@ -2466,3 +2466,63 @@ def touch_conversation(conversation_id):
         (conversation_id,)
     )
     conn.commit()
+
+
+# ========== WIND DATA ==========
+
+def get_ride_wind_data(ride_id):
+    """Return stored wind rows for a ride, ordered by stop_order.
+
+    Returns an empty list if no wind data has been saved for this ride.
+    Used by the route handler to avoid re-fetching from the archive API.
+    """
+    rows = _execute(
+        "SELECT * FROM ride_wind_data WHERE ride_id = %s ORDER BY stop_order",
+        (ride_id,)
+    ).fetchall()
+    return list(rows)
+
+
+def save_ride_wind_data(ride_id, wind_rows):
+    """Persist per-stop wind data for a ride.
+
+    Inserts each row with ON CONFLICT (ride_id, stop_order) DO NOTHING so
+    calling this function a second time for the same ride is safe — existing
+    rows are left unchanged and no error is raised.
+
+    Args:
+        ride_id: Integer primary key of the ride.
+        wind_rows: List of dicts, each containing stop wind data.
+                   Required keys: stop_order, data_source.
+                   Optional keys: stop_name, wind_speed_kmh, wind_direction_deg,
+                   headwind_kmh, crosswind_kmh, wind_type, temperature_c, conditions.
+    """
+    if not wind_rows:
+        return
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    sql = """
+        INSERT INTO ride_wind_data (
+            ride_id, stop_order, stop_name,
+            wind_speed_kmh, wind_direction_deg,
+            headwind_kmh, crosswind_kmh,
+            wind_type, temperature_c, conditions, data_source
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (ride_id, stop_order) DO NOTHING
+    """
+    for row in wind_rows:
+        cur.execute(sql, (
+            ride_id,
+            row.get('stop_order'),
+            row.get('stop_name'),
+            row.get('wind_speed_kmh'),
+            row.get('wind_direction_deg'),
+            row.get('headwind_kmh'),
+            row.get('crosswind_kmh'),
+            row.get('wind_type'),
+            row.get('temperature_c'),
+            row.get('conditions'),
+            row.get('data_source'),
+        ))
+    conn.commit()
