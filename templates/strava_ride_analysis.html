@@ -483,8 +483,9 @@
     <th style="text-align:right;">Seg</th>
     <th style="text-align:right;">Spd</th>
     <th style="text-align:right;">Break</th>
+    <th style="text-align:right;">Seg Brk</th>
     <th style="text-align:right;">Cumul</th>
-    <th style="text-align:right;">Time</th>
+    <th style="text-align:right;">TOD</th>
     <th style="text-align:right;">Bank</th>
     {% if comparison.hr_power %}
     <th style="text-align:right;">HR</th>
@@ -528,13 +529,18 @@
         </div>
     </td>
 
-    {# Break #}
+    {# Break (at this stop) #}
     <td>
         <div class="cell-stack">
             {% if row.plan_stop_duration_min %}<span class="val-plan">{{ row.plan_stop_duration_min }}</span>{% endif %}
             {% if has_custom and row.custom and row.custom.stop_duration_min %}<span class="val-base">{{ row.custom.stop_duration_min }}</span>{% endif %}
             {% if row.actual_stop_duration_min is not none %}<span class="val-actual">{{ row.actual_stop_duration_min|round(0)|int }}</span>{% endif %}
         </div>
+    </td>
+
+    {# Actual breaks in this segment (between prev waypoint and this one) #}
+    <td style="text-align:right;font-size:0.7rem;">
+        {% if row.actual_seg_break_min is not none %}<span class="val-actual">{{ row.actual_seg_break_min }}</span>{% endif %}
     </td>
 
     {# Cumulative #}
@@ -546,15 +552,20 @@
         </div>
     </td>
 
-    {# Strava time of day #}
-    <td style="text-align:right;font-weight:600;color:#c2410c;font-size:0.7rem;">
-        {% if row.actual_time_of_day %}{{ row.actual_time_of_day }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+    {# Time of day (all 3) #}
+    <td>
+        <div class="cell-stack">
+            {% if row.plan_time_of_day %}<span class="val-plan">{{ row.plan_time_of_day }}</span>{% endif %}
+            {% if has_custom and row.custom and row.custom.time_of_day %}<span class="val-base">{{ row.custom.time_of_day }}</span>{% endif %}
+            {% if row.actual_time_of_day %}<span class="val-actual">{{ row.actual_time_of_day }}</span>{% endif %}
+        </div>
     </td>
 
-    {# Time bank #}
-    <td style="text-align:right;font-size:0.7rem;">
+    {# Time bank (all 3) #}
+    <td>
         <div class="cell-stack">
             {% if row.plan_time_bank is not none %}<span class="val-plan">{{ row.plan_time_bank }}</span>{% endif %}
+            {% if has_custom and row.custom and row.custom.time_bank is not none %}<span class="val-base">{{ row.custom.time_bank }}</span>{% endif %}
             {% if row.actual_time_bank is not none %}
                 <span class="{% if row.actual_time_bank >= 0 %}val-actual{% else %}delta-slower{% endif %}" style="font-weight:700;">{{ row.actual_time_bank }}</span>
             {% endif %}
