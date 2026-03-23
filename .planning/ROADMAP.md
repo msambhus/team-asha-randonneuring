@@ -1,8 +1,8 @@
-# Roadmap: Team Asha Randonneuring Chatbot
+# Roadmap: Wind Forecast Integration
 
 ## Overview
 
-This roadmap adds a cycling-domain AI coaching chatbot to the existing Flask/Vercel/PostgreSQL app. The work progresses in four phases: first establishing the secure streaming infrastructure (all pitfalls addressed before any UI), then building the user-facing widget with Strava personalization, then wiring up the agentic tool-calling pipeline for data-grounded answers, and finally integrating Braintrust evals and observability. Every phase depends on the one before it — the security constraints in Phase 1 are invariants inherited by all subsequent phases.
+Seven phases build from pure service-layer math up through full user-visible wind data. Phases 1-2 lay a verified computational foundation (no UI, no new API calls) before any user-facing work begins. Phases 3-5 deliver forecast wind across all three planning surfaces (base plan, warning banner, custom plan). Phases 6-7 close the loop with historical wind persistence and the Strava analysis display. Each phase delivers one coherent, testable capability before the next begins.
 
 ## Phases
 
@@ -12,174 +12,107 @@ This roadmap adds a cycling-domain AI coaching chatbot to the existing Flask/Ver
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [x] **Phase 1: Secure Foundation** - Chat API, SSE streaming endpoint, DB schema, security controls, system prompt — all pitfalls addressed before any UI
-- [x] **Phase 2: Core Chat Experience** - Floating widget, multi-turn conversations, Strava personalization, conversation list
-- [x] **Phase 3: Agentic Tool-Calling Pipeline** - Intent classification, tool execution, agent loop, data-grounded responses
-- [x] **Phase 4: Braintrust Evals + Observability** - Eval datasets, Braintrust integration, quality metrics dashboard
-- [x] **Phase 5: WhatsApp Knowledge Base** - Import group chat exports, parse and filter cycling content, store in vector DB, integrate RAG into chatbot
-- [ ] **Phase 6: Image Preview Cards** - Show product images and bike accessory photos inline in chatbot responses via OpenGraph extraction
+- [ ] **Phase 1: Wind Math Foundation** - Pure Python wind classification, color/intensity helpers, and named threshold constants in services/weather.py
+- [ ] **Phase 2: Stop-to-Coordinate Interpolation** - RWGPS track point interpolation that resolves lat/lng for every ride plan stop
+- [ ] **Phase 3: Forecast Wind in Base Ride Plan** - Color-coded wind columns visible in the base ride plan control sheet
+- [ ] **Phase 4: Heavy Wind Warning Banner** - "Heavy Winds" warning banner on the upcoming brevets page for rides in the next 28 days
+- [ ] **Phase 5: Forecast Wind in Custom Ride Plan** - Wind columns extended to custom ride plan views with correct merged stop resolution
+- [ ] **Phase 6: Historical Wind — Archive API and DB Persistence** - Archive API fetch with 5-day fallback, ride_wind_data table, one-time persist per completed ride
+- [ ] **Phase 7: Historical Wind Display and Ride Header Links** - Actual wind columns in Strava analysis and clickable 2025/2026 season ride headers
 
 ## Phase Details
 
-### Phase 1: Secure Foundation
-**Goal**: A tested, secure `/api/chat/stream` SSE endpoint exists that accepts messages, runs them through moderation, enforces token limits, persists history to PostgreSQL, and returns streamed completions — with no UI, but validated on Vercel Preview
+### Phase 1: Wind Math Foundation
+**Goal**: Correct wind classification, color intensity, and shared threshold constants exist as unit-tested service functions before any user-facing work begins
 **Depends on**: Nothing (first phase)
-**Requirements**: INFRA-01, INFRA-02, INFRA-03, INFRA-04, INFRA-05, INFRA-06, SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, SEC-06, SEC-07, SEC-08, SEC-09, KNOW-01, KNOW-02, KNOW-03, KNOW-04, KNOW-05
+**Requirements**: WIND-01, WIND-02, WIND-03, WIND-04, WIND-10
 **Success Criteria** (what must be TRUE):
-  1. A `curl` or Postman POST to `/api/chat/stream` with a valid session returns a streaming SSE response with `data:` lines — confirmed working on Vercel Preview, not just local
-  2. An unauthenticated request to any `/api/chat/*` endpoint returns 401 — the debug-mode auth bypass does not apply
-  3. A user message containing adversarial prompt injection content is blocked by the OpenAI Moderation API and returns a friendly error before the LLM is called
-  4. The `conversation` and `chat_message` tables exist in Supabase with the required indexes; CRUD functions in `models.py` can create, read, and append messages using only parameterized queries
-  5. The system prompt covers randonneuring rules (ACP/RUSA, brevet distances, cutoffs, SR/R-12, PBP), bike maintenance, nutrition, and cycling-only guardrails — an off-topic question ("who won the World Cup?") returns a polite cycling redirect
-**Plans**: 3 plans
+  1. Given any wind speed and rider bearing, the system returns the correct wind type (headwind / tailwind / crosswind) using the 45-degree threshold rule
+  2. Given a wind speed, the system returns the correct hex color (#16A34A / #DC2626 / #2563EB) with correctly computed rgba opacity
+  3. Given a wind speed, the system returns the correct font size (0.75rem / 0.875rem / 1.0rem) matching the three speed bands
+  4. HEAVY_WIND_MAX_KMH and HEAVY_WIND_AVG_HEADWIND_KMH constants are defined once in services/weather.py and imported everywhere they are used
+  5. Crosswind sine projection correctly inverts the meteorological "wind from" direction by 180 degrees before computing the projection
+**Plans**: TBD
 
-Plans:
-- [x] 01-01-PLAN.md — DB schema, read-only role, pytest infrastructure, and models.py CRUD functions
-- [x] 01-02-PLAN.md — SSE streaming endpoint with auth gating, moderation, token limits, and error handling
-- [x] 01-03-PLAN.md — System prompt with randonneuring knowledge, SQL allowlist scaffold, and Vercel config
-
-### Phase 2: Core Chat Experience
-**Goal**: A floating chat widget accessible on every page of the app allows logged-in users to have multi-turn conversations with context drawn from their Strava data, persisted across sessions, with cross-user isolation enforced throughout
+### Phase 2: Stop-to-Coordinate Interpolation
+**Goal**: Every ride plan stop can be resolved to a lat/lng coordinate via RWGPS track point interpolation, with correct unit handling
 **Depends on**: Phase 1
-**Requirements**: SEC-10, SEC-11, CHAT-01, CHAT-02, CHAT-03, CHAT-04, CHAT-05, CHAT-06, CHAT-07, KNOW-06, PERS-01, PERS-02, PERS-03
+**Requirements**: WIND-05
 **Success Criteria** (what must be TRUE):
-  1. The floating chat widget is visible on every page after login; opening and closing it on one page and navigating to another page restores the same open/closed state via `sessionStorage`
-  2. A Strava-connected user asking "How ready am I for my next brevet?" receives a response that references their actual fitness score and upcoming brevet — not generic advice
-  3. A user without Strava connected receives a useful general cycling/randonneuring response rather than an error or empty personalization section
-  4. A user can open the conversation list, see previous sessions titled and timestamped, and click one to continue that conversation with its prior context loaded
-  5. User A cannot retrieve User B's conversations or Strava data — all context queries are scoped by `WHERE user_id = authenticated_user_id`; a user with `strava_data_private = True` has no Strava context injected
-**Plans**: 3 plans
+  1. Given a ride plan with stops at known mile markers, get_stop_coordinates() returns a lat/lng for each stop that matches the RWGPS track at that distance
+  2. A stop at 40.0 miles is placed within 0.5 km of the correct track position (not 40 meters — the miles-to-meters unit conversion is correct)
+  3. Stops beyond the end of the track (rounding) are clamped to the final track point rather than returning an error
+**Plans**: TBD
 
-Plans:
-- [x] 02-01-PLAN.md — Chat widget (Jinja partial + inline JS) with SSE client, open/close state, error display
-- [x] 02-02-PLAN.md — Strava context assembly, cross-user isolation, privacy flag enforcement
-- [x] 02-03-PLAN.md — Conversation list endpoint and UI, new conversation creation
-
-### Phase 3: Agentic Tool-Calling Pipeline
-**Goal**: The chatbot detects when a user is asking a data-seeking question, executes the appropriate pre-written SQL query via the tool registry, and synthesizes a response that cites specific numbers from the result — without ever executing free-form SQL
+### Phase 3: Forecast Wind in Base Ride Plan
+**Goal**: Riders viewing a base ride plan control sheet see a color-coded wind column at every stop, fetched from Open-Meteo via a single batched API call
 **Depends on**: Phase 2
-**Requirements**: AGENT-01, AGENT-02, AGENT-03, AGENT-04, AGENT-05, AGENT-06, AGENT-07, AGENT-08, AGENT-09, AGENT-10
+**Requirements**: WIND-06, BPLN-01, BPLN-02, BPLN-03, BPLN-04, BPLN-05, BPLN-06
 **Success Criteria** (what must be TRUE):
-  1. Asking "What is my current fitness score?" triggers an `AGENT-intent: data_query` classification and returns an answer that quotes the actual score from the DB, not a hedged estimate
-  2. Asking "Tell me about the Cascade 400 route" triggers a `route_discussion` intent and the `get_ride_plan` tool returns control stop details, distances, and elevation for that ride
-  3. Asking an off-topic question ("What's the best pizza in Seattle?") is classified as `off_topic` and no DB queries are executed — the agent loop exits after intent classification
-  4. The agent loop never exceeds 5 iterations or 3 DB queries per message; tool results are capped at 50 rows; a query that runs longer than 5 seconds is aborted
-  5. Every response in `chat_message` records `prompt_tokens` and `completion_tokens` from `response.usage` — token consumption is visible per message in the DB
-**Plans**: 3 plans
+  1. The base ride plan page shows a Wind column alongside existing stop columns, populated with wind speed text at each stop
+  2. Each wind cell has a colored background (green / red / blue) whose opacity visibly varies between light, medium, and strong wind speeds
+  3. Wind cell text is visibly smaller for light winds and larger for strong winds (three-step font scale)
+  4. The wind column is absent (no empty column, no error) when wind data is unavailable for a route
+  5. A wind legend below the table explains the green / red / blue color coding
+  6. Viewing the same ride plan twice does not trigger a second Open-Meteo API call (1-hour cache active)
+**Plans**: TBD
 
-Plans:
-- [x] 03-01-PLAN.md — Intent classification with Pydantic IntentResult model and classify_intent() via chat.completions.parse()
-- [x] 03-02-PLAN.md — Tool registry: populate ALLOWED_QUERIES with 7 named queries, add SET LOCAL timeout enforcement
-- [x] 03-03-PLAN.md — Agent loop with iteration/query guards, tool result injection, data citation, process_message() wiring
-
-### Phase 4: Braintrust Evals + Observability
-**Goal**: The chatbot's quality is measurable — intent classification accuracy, data grounding correctness, and guardrail effectiveness are tracked via Braintrust eval datasets, with every production conversation emitting trace spans to the Team Asha workspace
+### Phase 4: Heavy Wind Warning Banner
+**Goal**: Riders scanning the upcoming brevets page see a prominent warning when any brevet in the next 28 days has forecast heavy winds, so they can prepare before committing to a start
 **Depends on**: Phase 3
-**Requirements**: EVAL-01, EVAL-02, EVAL-03, EVAL-04, EVAL-05, EVAL-06
+**Requirements**: WARN-01, WARN-02, WARN-03, WARN-04
 **Success Criteria** (what must be TRUE):
-  1. The Braintrust Team Asha project is linked and a baseline eval run completes without error — results are visible at `https://www.braintrust.dev/app/setup/Team%20Asha`
-  2. The intent classification eval dataset contains at least 20 labeled messages covering all 5 intent types; running the eval produces an accuracy score
-  3. The data grounding eval dataset contains at least 10 question/answer pairs with known correct DB values; the eval flags responses that do not cite the expected numbers
-  4. The guardrail eval dataset contains at least 10 known off-topic bypass patterns; every pattern is classified as `off_topic` and produces no DB tool calls
-  5. Every production chat message stores `span_id` and `trace_id` in `chat_message.metadata` — a specific conversation can be looked up by span in the Braintrust dashboard
-**Plans**: 2 plans
+  1. A "Heavy Winds" banner appears at the top of the upcoming brevets page when at least one brevet within 28 days has max wind > 30 km/h or average headwind > 15 km/h along its route
+  2. The banner names the affected brevet, its date, and includes a plain-language description (e.g., "Strong headwinds expected — avg 18 km/h headwind, gusts to 35 km/h")
+  3. No banner appears for brevets more than 28 days away or for brevets without a linked ride plan
+  4. The page renders without error when no upcoming brevets have heavy winds
+**Plans**: TBD
 
-Plans:
-- [x] 04-01-PLAN.md — Braintrust SDK install, production span logging in chat_service.py, span_id/trace_id in chat_message metadata
-- [x] 04-02-PLAN.md — Eval datasets (intent classification, data grounding, guardrail) with custom scorers and baseline eval scripts
-
-### Phase 5: WhatsApp Knowledge Base
-**Goal**: The chatbot answers cycling questions with grounded community knowledge from real Team Asha WhatsApp group discussions — parsed, filtered (rules + LLM), embedded, stored in pgvector, and retrieved via RAG at query time
-**Depends on**: Phase 4
-**Requirements**: WA-01, WA-02, WA-03, WA-04, WA-05, WA-06, WA-07, WA-08, WA-09, WA-10
+### Phase 5: Forecast Wind in Custom Ride Plan
+**Goal**: Riders viewing a custom ride plan see the same wind columns as the base plan, with wind correctly resolved for the merged stop list (base stops plus rider overrides)
+**Depends on**: Phase 3
+**Requirements**: WIND-09, CPLN-01, CPLN-02
 **Success Criteria** (what must be TRUE):
-  1. WhatsApp export files are parsed correctly, handling U+202F timestamps and multi-line messages
-  2. Two-stage filtering (rule-based + LLM classification) retains cycling-relevant content and discards noise
-  3. Filtered chunks are embedded with text-embedding-3-small and stored in pgvector with HNSW index
-  4. Re-importing only processes new messages after the last imported timestamp (incremental append)
-  5. The chatbot retrieves relevant community knowledge for non-off-topic questions and attributes it naturally
-  6. RAG failure degrades gracefully — chatbot continues working without community knowledge
-**Plans**: 3 plans
+  1. The custom ride plan view shows a wind column with the same green / red / blue color coding as the base plan
+  2. Wind data is present for rider-added stops (not just base stops)
+  3. Hidden stops do not produce a wind cell in the custom plan table
+  4. Archive API responses with a single location (dict) and multiple locations (list) both render correctly without TypeError
+**Plans**: TBD
 
-Plans:
-- [x] 05-01-PLAN.md — WhatsApp parser, chunker, two-stage filter (rule-based + LLM), and formatter with TDD
-- [x] 05-02-PLAN.md — pgvector schema, CLI import script with incremental append and two-stage filtering
-- [x] 05-03-PLAN.md — RAG retrieval function, agent loop integration, system prompt update
-
-### Phase 6: Image Preview Cards
-**Goal**: When the chatbot mentions product URLs from allowlisted cycling/gear domains, image preview cards with product photos appear below the assistant message — extracted via server-side OpenGraph metadata fetching with SSRF defenses, rendered via safe DOM construction, with graceful degradation when previews are unavailable
-**Depends on**: Phase 5
-**Requirements**: IMG-01, IMG-02, IMG-03, IMG-04, IMG-05, IMG-06, IMG-07, IMG-08, IMG-09
+### Phase 6: Historical Wind — Archive API and DB Persistence
+**Goal**: Historical wind for completed rides is fetched once from the Open-Meteo archive API, persisted to the ride_wind_data table, and never re-fetched on subsequent page loads
+**Depends on**: Phase 2
+**Requirements**: WIND-07, WIND-08, STOR-01, STOR-02, STOR-03
 **Success Criteria** (what must be TRUE):
-  1. GET `/api/image-preview?url=<allowlisted_url>` returns JSON with `image_url`, `title`, `domain` — extracted from the page's OpenGraph metadata
-  2. Non-allowlisted domains return 403; HTTP URLs return 403; unauthenticated requests return 401
-  3. After an assistant message stream completes, HTTPS URLs in the response are detected and up to 3 image preview cards appear below the bubble
-  4. Image cards show product photo, title, and domain — clicking opens the original URL in a new tab
-  5. Failed previews degrade gracefully: no card shown, existing text link remains
-  6. All image card DOM construction uses safe methods (createElement, textContent) — no innerHTML with API response data
-**Plans**: 2 plans
+  1. The ride_wind_data table exists with all required columns including data_source; a migration script creates it idempotently
+  2. Fetching historical wind for a completed ride stores one row per stop with the correct wind values and data_source ('archive' or 'forecast_past_days')
+  3. A second request for the same ride's wind reads from the database — the archive API is not called again
+  4. For rides completed within the past 5 days, the system automatically falls back to the forecast API past_days parameter and stores data_source as 'forecast_past_days'
+  5. A ride completed 10 days ago returns archive data; a ride completed 3 days ago returns forecast_past_days data
+**Plans**: TBD
 
-Plans:
-- [ ] 06-01-PLAN.md — Backend image preview service (TDD): fetch_og_image(), domain allowlist, /api/image-preview endpoint with SSRF defenses and caching
-- [ ] 06-02-PLAN.md — Frontend image card rendering: URL extraction, DOM card builder, CSS styles, finishStream() integration, human-verify checkpoint
+### Phase 7: Historical Wind Display and Ride Header Links
+**Goal**: Riders viewing their Strava analysis see "Actual Wind" columns for completed 2026 rides, and 2025/2026 season ride names link directly to ride detail pages
+**Depends on**: Phase 6
+**Requirements**: HIST-01, HIST-02, HIST-03, HIST-04, LINK-01, LINK-02
+**Success Criteria** (what must be TRUE):
+  1. The Strava analysis section for a completed 2026 ride shows an "Actual Wind" column labeled as such (not "Forecast") with the same green / red / blue intensity format as ride plans
+  2. Rides without a linked ride plan or RWGPS route show no wind column and no error
+  3. 2025 and 2026 season ride names that have a linked ride plan appear as clickable links to the ride detail page
+  4. Ride names without a linked ride plan remain plain text (no broken links)
+**Plans**: TBD
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Secure Foundation | 3/3 | Code complete | 2026-03-15 |
-| 2. Core Chat Experience | 3/3 | Code complete | 2026-03-15 |
-| 3. Agentic Tool-Calling Pipeline | 3/3 | Code complete | 2026-03-15 |
-| 4. Braintrust Evals + Observability | 2/2 | Code complete | 2026-03-15 |
-| 5. WhatsApp Knowledge Base | 3/3 | Code complete | 2026-03-16 |
-| 6. Image Preview Cards | 2/2 | Code complete | 2026-03-17 |
-| 7. RWGPS Route Intelligence | 0/2 | Planned | — |
-| 8. Weather/Wind Forecasting | 0/2 | Planned | — |
-| 9. WhatsApp Knowledge Priority | 0/1 | Planned | — |
-
-### Phase 7: RWGPS Route Intelligence
-**Goal:** When the user asks about a route, the chatbot resolves the ride name to a RWGPS route ID, checks for a cached ride plan first, and if none exists, fetches live route data from the RWGPS API -- providing elevation profile, distance, control points, and key segments grounded in real route data, not generic advice
-**Depends on:** Phase 6
-**Requirements**: RWGPS-01, RWGPS-02, RWGPS-03, RWGPS-04, RWGPS-05, RWGPS-06, RWGPS-07
-**Success Criteria** (what must be TRUE):
-  1. Asking "Tell me about the Cascade 400" with no cached ride plan triggers a live RWGPS API fetch and returns elevation, distance, control stops, and key segment data
-  2. Asking about a route that HAS a cached ride plan returns the cached data without calling the RWGPS API
-  3. RWGPS API errors (404, 401, 429, timeout) produce user-friendly messages, not crashes
-  4. RWGPS responses are cached in-memory for 5 minutes to avoid duplicate API calls within a chat session
-  5. The intent classification prompt describes route_discussion as capable of live RWGPS data access
-**Plans**: 2 plans
-
-Plans:
-- [ ] 07-01-PLAN.md — Route data functions (TDD): get_ride_rwgps_url SQL query, summarize_route_for_chat(), fetch_and_summarize_route() with caching and error handling
-- [ ] 07-02-PLAN.md — Agent loop wiring: extend route_discussion branch with live RWGPS fallback, update intent classification prompt
-
-### Phase 8: Weather and wind forecasting for routes — use RandoPlan-style data to answer about headwinds, tailwinds, temperature, and conditions along a route
-
-**Goal:** When a user asks about weather conditions for a specific route, the chatbot fetches route geometry from RWGPS, samples coordinates along the route, makes a single batched Open-Meteo API call for hourly forecasts, computes headwind/tailwind components from bearing math, and presents a structured segment-by-segment weather summary with arrival-time-adjusted forecasts
-**Depends on:** Phase 7
-**Requirements**: WTHR-01, WTHR-02, WTHR-03, WTHR-04, WTHR-05, WTHR-06, WTHR-07, WTHR-08, WTHR-09, WTHR-10
-**Success Criteria** (what must be TRUE):
-  1. Asking "What's the weather for the Cascade 400?" triggers a `weather_query` intent and returns a segment-by-segment forecast with temperature, wind, and precipitation for each section of the route
-  2. Wind analysis includes headwind/tailwind assessment per segment using bearing math and meteorological wind direction convention
-  3. Forecasts are time-adjusted: the weather at km 300 uses the estimated arrival time (T+24h for a 400km ride), not current-hour weather
-  4. Open-Meteo is called with a single batched multi-coordinate request (not one call per point)
-  5. Weather results are cached for 1 hour using Flask-Caching SimpleCache
-  6. If Open-Meteo is unavailable or the route has no RWGPS track data, the chatbot responds with a clear explanation instead of crashing
-**Plans**: 2 plans
-
-Plans:
-- [ ] 08-01-PLAN.md — Weather service module (TDD): route sampling, bearing math, headwind computation, Open-Meteo batch fetch, caching, response formatting
-- [ ] 08-02-PLAN.md — Intent classification + agent loop integration: weather_query intent, execute_route_weather tool, RWGPS wiring
-
-### Phase 9: Prioritize WhatsApp community knowledge in chatbot responses — attribute insights to the group, then compare and contrast with web search results
-
-**Goal:** When both community knowledge (RAG) and web search results are available, the chatbot always presents community knowledge FIRST with explicit attribution ("Team member Venki mentioned..."), then compares/contrasts with web sources -- with clear source separation, contradiction framing, and named attribution throughout
-**Requirements**: WA-PRI-01, WA-PRI-02, WA-PRI-03, WA-PRI-04, WA-PRI-05, WA-PRI-06, WA-PRI-07, WA-PRI-08
-**Depends on:** Phase 8
-**Plans:** 1 plan
-
-Plans:
-- [ ] 09-01-PLAN.md — Strengthen RAG injection instruction, add web-with-community instruction variant, update CHAT_SYSTEM_PROMPT with community-first priority, bump max_tokens for web_search
+| 1. Wind Math Foundation | 0/TBD | Not started | - |
+| 2. Stop-to-Coordinate Interpolation | 0/TBD | Not started | - |
+| 3. Forecast Wind in Base Ride Plan | 0/TBD | Not started | - |
+| 4. Heavy Wind Warning Banner | 0/TBD | Not started | - |
+| 5. Forecast Wind in Custom Ride Plan | 0/TBD | Not started | - |
+| 6. Historical Wind — Archive API and DB Persistence | 0/TBD | Not started | - |
+| 7. Historical Wind Display and Ride Header Links | 0/TBD | Not started | - |
