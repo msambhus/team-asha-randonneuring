@@ -17,7 +17,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **WIND-06**: System fetches wind forecast for interpolated stop coordinates via Open-Meteo batch API with 1-hour cache
 - [ ] **WIND-07**: System fetches historical wind data via Open-Meteo archive API with start_date/end_date parameters
 - [ ] **WIND-08**: System falls back to forecast API `past_days` parameter when archive API returns no data for rides within 5 days (ERA5 reanalysis lag)
-- [ ] **WIND-09**: System normalizes single-location (dict) and multi-location (list) archive API responses identically to existing forecast normalization
+- [x] **WIND-09**: System normalizes single-location (dict) and multi-location (list) archive API responses identically to existing forecast normalization
 - [x] **WIND-10**: Wind thresholds defined as named constants in services/weather.py (HEAVY_WIND_MAX_KMH=30, HEAVY_WIND_AVG_HEADWIND_KMH=15)
 
 ### Wind Storage
@@ -37,8 +37,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Custom Plan Wind Display
 
-- [ ] **CPLN-01**: User sees wind columns in custom ride plan view with same color coding as base plan
-- [ ] **CPLN-02**: Custom stop positions correctly interpolated on route (including rider-added stops and hidden stops)
+- [x] **CPLN-01**: User sees wind columns in custom ride plan view with same color coding as base plan
+- [x] **CPLN-02**: Custom stop positions correctly interpolated on route (including rider-added stops and hidden stops)
 
 ### Upcoming Brevets Warnings
 
@@ -97,7 +97,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WIND-06 | Phase 3 | Complete |
 | WIND-07 | Phase 6 | Pending |
 | WIND-08 | Phase 6 | Pending |
-| WIND-09 | Phase 5 | Pending |
+| WIND-09 | Phase 5 | Complete |
 | WIND-10 | Phase 1 | Complete |
 | STOR-01 | Phase 6 | Pending |
 | STOR-02 | Phase 6 | Pending |
@@ -108,8 +108,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BPLN-04 | Phase 3 | Complete |
 | BPLN-05 | Phase 3 | Complete |
 | BPLN-06 | Phase 3 | Complete |
-| CPLN-01 | Phase 5 | Pending |
-| CPLN-02 | Phase 5 | Pending |
+| CPLN-01 | Phase 5 | Complete |
+| CPLN-02 | Phase 5 | Complete |
 | WARN-01 | Phase 4 | Complete |
 | WARN-02 | Phase 4 | Complete |
 | WARN-03 | Phase 4 | Complete |

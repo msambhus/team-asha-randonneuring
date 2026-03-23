@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 04-02-PLAN.md — wind warning banner wired into upcoming brevets route and template
-last_updated: "2026-03-23T20:28:57.043Z"
+stopped_at: Completed 05-01-PLAN.md — fetch_stop_wind wired into custom_ride_plan_view
+last_updated: "2026-03-23T20:35:41.980Z"
 last_activity: 2026-03-23 — Roadmap created; 7 phases, 31/31 requirements mapped
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
   percent: 100
 ---
 
@@ -56,6 +56,7 @@ Progress: [██████████] 100%
 | Phase 03 P02 | 2 | 2 tasks | 2 files |
 | Phase 04-heavy-wind-warning-banner P01 | 3 | 1 tasks | 2 files |
 | Phase 04-heavy-wind-warning-banner P02 | 15 | 2 tasks | 2 files |
+| Phase 05-forecast-wind-in-custom-ride-plan P01 | 4 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,8 @@ Recent decisions affecting current work:
 - [Phase 04-heavy-wind-warning-banner]: plan_slug_to_id moved to unconditional scope before if user_id block to prevent NameError for anonymous visitors
 - [Phase 04-heavy-wind-warning-banner]: try/except wraps each event wind fetch independently so one API failure does not suppress the entire upcoming brevets page
 - [Phase 04-heavy-wind-warning-banner]: Banner uses HTML entities for warning icon instead of emoji literals for cross-platform safety in Jinja2 templates
+- [Phase 05-forecast-wind-in-custom-ride-plan]: custom_ride_plan_view uses str(plan.get('start_time') or '07:00')[:5] for start_time_str to safely handle time objects
+- [Phase 05-forecast-wind-in-custom-ride-plan]: Tests patch services.custom_plan_service.get_merged_plan_stops (not routes.riders.*) because the route handler uses a local import inside the function body
 
 ### Pending Todos
 
@@ -93,6 +96,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-23T16:50:14.157Z
-Stopped at: Completed 04-02-PLAN.md — wind warning banner wired into upcoming brevets route and template
+Last session: 2026-03-23T20:35:41.977Z
+Stopped at: Completed 05-01-PLAN.md — fetch_stop_wind wired into custom_ride_plan_view
 Resume file: None
