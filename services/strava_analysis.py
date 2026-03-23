@@ -229,7 +229,7 @@ def fetch_and_analyze(rider_id, match_id, strava_activity_id, plan_stops=None):
     # Detect stops
     # Use cached detected stops if available, otherwise detect from streams
     if cached_stops is not None:
-        detected_stops = cached_stops
+        detected_stops = merge_nearby_stops(cached_stops)
         # Re-match to plan (plan may have changed since cache)
         if plan_stops and detected_stops:
             detected_stops = match_stops_to_plan(detected_stops, plan_stops)
