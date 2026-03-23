@@ -16,6 +16,9 @@ ATTRIBUTION = "*Weather data: [Open-Meteo](https://open-meteo.com)*"
 HEAVY_WIND_MAX_KMH = 30
 HEAVY_WIND_AVG_HEADWIND_KMH = 15
 
+# Unit conversion: ride plan stops use miles, RWGPS track points use meters
+MILES_TO_METERS = 1609.344
+
 # WMO Weather interpretation codes (subset)
 _WMO_CODES = {
     0: "clear sky",
@@ -190,6 +193,58 @@ def sample_track_points(track_points, interval_m=50000):
 
 def _track_to_sample(pt):
     return {'lat': pt['y'], 'lng': pt['x'], 'distance_m': pt['d']}
+
+
+def get_stop_coordinates(stops, track_points):
+    """Return lat/lng for each stop by interpolating RWGPS track points.
+
+    stops: list of dicts with 'distance_miles' key (from ride_plan_stop)
+    track_points: list of RWGPS track dicts with y=lat, x=lng, d=distance_meters
+
+    Returns list of {'lat': float, 'lng': float} in same order as stops.
+    Stops beyond the end of the track are clamped to the final track point.
+    Stops at or before the start are clamped to the first track point.
+    """
+    if not track_points:
+        return [None] * len(stops)
+
+    # Filter to points with valid coordinates — same pattern as sample_track_points()
+    valid = [tp for tp in track_points
+             if tp.get('y') is not None and tp.get('x') is not None]
+    if not valid:
+        return [None] * len(stops)
+
+    result = []
+    for stop in stops:
+        target_m = stop['distance_miles'] * MILES_TO_METERS
+
+        # Clamp to first point if stop is at or before track start
+        if target_m <= valid[0]['d']:
+            result.append({'lat': valid[0]['y'], 'lng': valid[0]['x']})
+            continue
+
+        # Clamp to final point if stop is beyond track end
+        if target_m >= valid[-1]['d']:
+            result.append({'lat': valid[-1]['y'], 'lng': valid[-1]['x']})
+            continue
+
+        # Find bounding segment via linear scan and interpolate
+        for i in range(1, len(valid)):
+            if valid[i]['d'] >= target_m:
+                prev, curr = valid[i - 1], valid[i]
+                seg_len = curr['d'] - prev['d']
+                if seg_len == 0:
+                    # Zero-length segment: snap to current point to avoid divide-by-zero
+                    result.append({'lat': curr['y'], 'lng': curr['x']})
+                else:
+                    t = (target_m - prev['d']) / seg_len
+                    result.append({
+                        'lat': prev['y'] + t * (curr['y'] - prev['y']),
+                        'lng': prev['x'] + t * (curr['x'] - prev['x']),
+                    })
+                break
+
+    return result
 
 
 # ── Open-Meteo API ──────────────────────────────────────────────────
