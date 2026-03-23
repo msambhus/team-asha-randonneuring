@@ -163,6 +163,17 @@
 .extra-row { background: #fffbeb; }
 .extra-row:hover { background: #fef3c7 !important; }
 
+.stop-name {
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
+    font-size: 0.7rem;
+    cursor: help;
+}
+
 /* Stacked cell values */
 .cell-stack { display: flex; flex-direction: column; gap: 1px; text-align: right; }
 .cell-stack .val-plan { font-size: 0.75rem; color: #2563eb; font-weight: 600; }
@@ -467,43 +478,48 @@
 <table class="analysis-table">
 <thead>
 <tr>
-    <th style="text-align:left;">Stop</th>
-    <th style="text-align:right;">Dist</th>
-    <th style="text-align:right;">Segment</th>
-    <th style="text-align:right;">Speed</th>
+    <th style="text-align:left;max-width:120px;">Stop</th>
+    <th style="text-align:right;">Mi</th>
+    <th style="text-align:right;">Seg</th>
+    <th style="text-align:right;">Spd</th>
     <th style="text-align:right;">Break</th>
-    <th style="text-align:right;">Cumulative</th>
-    <th style="text-align:right;">Strava Time</th>
+    <th style="text-align:right;">Cumul</th>
+    <th style="text-align:right;">Time</th>
+    <th style="text-align:right;">Bank</th>
+    {% if comparison.hr_power %}
+    <th style="text-align:right;">HR</th>
+    <th style="text-align:right;">W</th>
+    {% endif %}
     <th style="text-align:right;">&Delta;</th>
 </tr>
 </thead>
 <tbody>
 {% for row in comparison.rows %}
 <tr class="{% if row.is_extra %}extra-row{% endif %}">
-    {# Stop name #}
-    <td>
+    {# Stop name — truncated with hover #}
+    <td style="max-width:120px;">
         <div class="stop-cell">
             <div class="stop-icon {{ row.stop_type }}">
                 {% if row.stop_type == 'start' %}&#x1f6a9;{% elif row.stop_type == 'finish' %}&#x1f3c1;{% elif row.stop_type == 'control' %}&#x25c6;{% elif row.stop_type == 'rest' %}&#x2615;{% elif row.stop_type == 'extra' %}&#x26a0;{% else %}&#x2022;{% endif %}
             </div>
-            <span style="font-weight:{% if row.is_extra %}600{% else %}500{% endif %}; color:{% if row.is_extra %}#92400e{% else %}var(--text){% endif %};">{{ row.location }}</span>
-            {% if row.is_extra %}<span class="extra-badge">Extra Break</span>{% endif %}
+            <span class="stop-name" title="{{ row.location }}">{{ row.location }}</span>
+            {% if row.is_extra %}<span class="extra-badge">Extra</span>{% endif %}
         </div>
     </td>
 
     {# Distance #}
-    <td style="text-align:right;font-weight:600;color:#64748b;">{{ "%.1f"|format(row.distance_miles) }}</td>
+    <td style="text-align:right;font-weight:600;color:#64748b;font-size:0.7rem;">{{ "%.1f"|format(row.distance_miles) }}</td>
 
-    {# Segment time (stacked: plan / base / actual) #}
+    {# Segment time #}
     <td>
         <div class="cell-stack">
-            {% if row.plan_segment_min %}<span class="val-plan">{{ row.plan_segment_min }}m</span>{% endif %}
-            {% if has_custom and row.custom and row.custom.segment_time_min %}<span class="val-base">{{ row.custom.segment_time_min }}m</span>{% endif %}
-            {% if row.actual_segment_min is not none %}<span class="val-actual">{{ row.actual_segment_min }}m</span>{% endif %}
+            {% if row.plan_segment_min %}<span class="val-plan">{{ row.plan_segment_min }}</span>{% endif %}
+            {% if has_custom and row.custom and row.custom.segment_time_min %}<span class="val-base">{{ row.custom.segment_time_min }}</span>{% endif %}
+            {% if row.actual_segment_min is not none %}<span class="val-actual">{{ row.actual_segment_min }}</span>{% endif %}
         </div>
     </td>
 
-    {# Speed (stacked: plan / base / actual) #}
+    {# Speed #}
     <td>
         <div class="cell-stack">
             {% if row.plan_speed_mph %}<span class="val-plan">{{ row.plan_speed_mph }}</span>{% endif %}
@@ -512,16 +528,16 @@
         </div>
     </td>
 
-    {# Break duration (stacked: plan / base / actual) #}
+    {# Break #}
     <td>
         <div class="cell-stack">
-            {% if row.plan_stop_duration_min %}<span class="val-plan">{{ row.plan_stop_duration_min }}m</span>{% endif %}
-            {% if has_custom and row.custom and row.custom.stop_duration_min %}<span class="val-base">{{ row.custom.stop_duration_min }}m</span>{% endif %}
-            {% if row.actual_stop_duration_min is not none %}<span class="val-actual">{{ row.actual_stop_duration_min }}m</span>{% endif %}
+            {% if row.plan_stop_duration_min %}<span class="val-plan">{{ row.plan_stop_duration_min }}</span>{% endif %}
+            {% if has_custom and row.custom and row.custom.stop_duration_min %}<span class="val-base">{{ row.custom.stop_duration_min }}</span>{% endif %}
+            {% if row.actual_stop_duration_min is not none %}<span class="val-actual">{{ row.actual_stop_duration_min|round(0)|int }}</span>{% endif %}
         </div>
     </td>
 
-    {# Cumulative time (stacked: plan / base / actual) #}
+    {# Cumulative #}
     <td>
         <div class="cell-stack">
             {% if row.plan_cum_time_min %}<span class="val-plan">{{ (row.plan_cum_time_min // 60)|int }}:{{ "%02d"|format(row.plan_cum_time_min % 60) }}</span>{% endif %}
@@ -531,17 +547,37 @@
     </td>
 
     {# Strava time of day #}
-    <td style="text-align:right;font-weight:600;color:#c2410c;">
+    <td style="text-align:right;font-weight:600;color:#c2410c;font-size:0.7rem;">
         {% if row.actual_time_of_day %}{{ row.actual_time_of_day }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
     </td>
 
-    {# Cumulative delta #}
+    {# Time bank #}
+    <td style="text-align:right;font-size:0.7rem;">
+        <div class="cell-stack">
+            {% if row.plan_time_bank is not none %}<span class="val-plan">{{ row.plan_time_bank }}</span>{% endif %}
+            {% if row.actual_time_bank is not none %}
+                <span class="{% if row.actual_time_bank >= 0 %}val-actual{% else %}delta-slower{% endif %}" style="font-weight:700;">{{ row.actual_time_bank }}</span>
+            {% endif %}
+        </div>
+    </td>
+
+    {# HR & Power (if available) #}
+    {% if comparison.hr_power %}
+    <td style="text-align:right;font-size:0.7rem;color:#dc2626;">
+        {% if row.actual_avg_hr %}{{ row.actual_avg_hr }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+    </td>
+    <td style="text-align:right;font-size:0.7rem;color:#7c3aed;">
+        {% if row.actual_avg_watts %}{{ row.actual_avg_watts }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+    </td>
+    {% endif %}
+
+    {# Delta (against custom/primary plan) #}
     <td style="text-align:right;font-weight:700;">
         {% if row.cum_time_delta_min is not none %}
-            {% if row.cum_time_delta_min > 0 %}<span class="delta-slower">+{{ row.cum_time_delta_min|round(0)|int }}m</span>
-            {% elif row.cum_time_delta_min < 0 %}<span class="delta-faster">{{ row.cum_time_delta_min|round(0)|int }}m</span>
+            {% if row.cum_time_delta_min > 0 %}<span class="delta-slower">+{{ row.cum_time_delta_min|round(0)|int }}</span>
+            {% elif row.cum_time_delta_min < 0 %}<span class="delta-faster">{{ row.cum_time_delta_min|round(0)|int }}</span>
             {% else %}<span class="delta-neutral">0</span>{% endif %}
-        {% elif row.is_extra and row.actual_stop_duration_min %}<span class="delta-slower">+{{ row.actual_stop_duration_min|round(0)|int }}m</span>
+        {% elif row.is_extra and row.actual_stop_duration_min %}<span class="delta-slower">+{{ row.actual_stop_duration_min|round(0)|int }}</span>
         {% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
     </td>
 </tr>
@@ -640,34 +676,46 @@
         }
     });
 
-    // Speed labels along the plan line (at segment midpoints)
+    // Speed labels along lines (at segment midpoints)
     let prevDist = 0;
     planRows.forEach((r, i) => {
         if (i === 0) { prevDist = r.distance_miles; return; }
         const midX = (prevDist + r.distance_miles) / 2;
-        // Plan speed label (above the line)
+
+        // Your Plan speed label
         if (r.plan_speed_mph) {
             const midY = r.plan_arrival_time_min ? (r.plan_arrival_time_min / 60 + (planRows[i-1].plan_cum_time_min || 0) / 60) / 2 : null;
             if (midY !== null) {
                 annotations['spd_plan_' + i] = {
-                    type: 'label',
-                    xValue: midX, yValue: midY,
-                    content: r.plan_speed_mph + '', font: { size: 8, weight: '600' },
-                    color: '#2563eb', backgroundColor: 'rgba(255,255,255,0.7)', padding: 1,
+                    type: 'label', xValue: midX, yValue: midY,
+                    content: r.plan_speed_mph + '', font: { size: 9, weight: '700' },
+                    color: '#2563eb', backgroundColor: 'rgba(255,255,255,0.8)', padding: 2,
                 };
             }
         }
-        // Actual speed label (below the line)
+        // Base plan speed label
+        if (hasCustom && r.custom && r.custom.speed_mph) {
+            const baseCum = r.custom.arrival_time_min || r.custom.cum_time_min;
+            const prevBaseCum = planRows[i-1].custom ? (planRows[i-1].custom.cum_time_min || 0) : 0;
+            if (baseCum) {
+                const midY = (prevBaseCum / 60 + baseCum / 60) / 2;
+                annotations['spd_base_' + i] = {
+                    type: 'label', xValue: midX, yValue: midY,
+                    content: r.custom.speed_mph + '', font: { size: 8 },
+                    color: '#94a3b8', backgroundColor: 'rgba(255,255,255,0.7)', padding: 1,
+                };
+            }
+        }
+        // Actual speed label
         if (r.actual_speed_mph) {
             const prevActual = planRows[i-1].actual_cum_time_min || 0;
             const curActual = r.actual_arrival_time_min || r.actual_cum_time_min;
             if (curActual != null) {
                 const midY = (prevActual / 60 + curActual / 60) / 2;
                 annotations['spd_act_' + i] = {
-                    type: 'label',
-                    xValue: midX, yValue: midY,
-                    content: r.actual_speed_mph + '', font: { size: 8, weight: '600' },
-                    color: '#c2410c', backgroundColor: 'rgba(255,255,255,0.7)', padding: 1,
+                    type: 'label', xValue: midX, yValue: midY,
+                    content: r.actual_speed_mph + '', font: { size: 9, weight: '700' },
+                    color: '#c2410c', backgroundColor: 'rgba(255,255,255,0.8)', padding: 2,
                 };
             }
         }
@@ -723,9 +771,34 @@
                             });
                             if (!nearest || minDiff > 5) return [];
                             const lines = [];
-                            if (nearest.plan_segment_min) lines.push('Seg time: ' + nearest.plan_segment_min + 'm plan' + (nearest.actual_segment_min != null ? ' / ' + nearest.actual_segment_min + 'm actual' : ''));
-                            if (nearest.plan_stop_duration_min) lines.push('Break: ' + nearest.plan_stop_duration_min + 'm plan' + (nearest.actual_stop_duration_min != null ? ' / ' + Math.round(nearest.actual_stop_duration_min) + 'm actual' : ''));
-                            else if (nearest.actual_stop_duration_min) lines.push('Break: ' + Math.round(nearest.actual_stop_duration_min) + 'm (unplanned)');
+                            // Segment time
+                            if (nearest.plan_segment_min || nearest.actual_segment_min != null) {
+                                let seg = 'Seg: ';
+                                if (nearest.plan_segment_min) seg += nearest.plan_segment_min + 'm';
+                                if (hasCustom && nearest.custom && nearest.custom.segment_time_min) seg += ' / ' + nearest.custom.segment_time_min + 'm base';
+                                if (nearest.actual_segment_min != null) seg += ' / ' + nearest.actual_segment_min + 'm actual';
+                                lines.push(seg);
+                            }
+                            // Speed
+                            if (nearest.plan_speed_mph || nearest.actual_speed_mph) {
+                                let spd = 'Speed: ';
+                                if (nearest.plan_speed_mph) spd += nearest.plan_speed_mph + ' mph';
+                                if (hasCustom && nearest.custom && nearest.custom.speed_mph) spd += ' / ' + nearest.custom.speed_mph + ' base';
+                                if (nearest.actual_speed_mph != null) spd += ' / ' + nearest.actual_speed_mph + ' actual';
+                                lines.push(spd);
+                            }
+                            // Break
+                            if (nearest.plan_stop_duration_min || nearest.actual_stop_duration_min) {
+                                let brk = 'Break: ';
+                                if (nearest.plan_stop_duration_min) brk += nearest.plan_stop_duration_min + 'm';
+                                if (hasCustom && nearest.custom && nearest.custom.stop_duration_min) brk += ' / ' + nearest.custom.stop_duration_min + 'm base';
+                                if (nearest.actual_stop_duration_min != null) brk += ' / ' + Math.round(nearest.actual_stop_duration_min) + 'm actual';
+                                lines.push(brk);
+                            }
+                            // Time bank
+                            if (nearest.actual_time_bank != null) {
+                                lines.push('Bank: ' + (nearest.actual_time_bank >= 0 ? '+' : '') + nearest.actual_time_bank + 'm');
+                            }
                             return lines.length ? ['───────────', ...lines] : [];
                         }
                     }
