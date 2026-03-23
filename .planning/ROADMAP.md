@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3: Forecast Wind in Base Ride Plan** - Color-coded wind columns visible in the base ride plan control sheet
 - [x] **Phase 4: Heavy Wind Warning Banner** - "Heavy Winds" warning banner on the upcoming brevets page for rides in the next 28 days (completed 2026-03-23)
 - [x] **Phase 5: Forecast Wind in Custom Ride Plan** - Wind columns extended to custom ride plan views with correct merged stop resolution (completed 2026-03-23)
-- [ ] **Phase 6: Historical Wind — Archive API and DB Persistence** - Archive API fetch with 5-day fallback, ride_wind_data table, one-time persist per completed ride
+- [x] **Phase 6: Historical Wind — Archive API and DB Persistence** - Archive API fetch with 5-day fallback, ride_wind_data table, one-time persist per completed ride (completed 2026-03-23)
 - [ ] **Phase 7: Historical Wind Display and Ride Header Links** - Actual wind columns in Strava analysis and clickable 2025/2026 season ride headers
 
 ## Phase Details
@@ -135,5 +135,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 3. Forecast Wind in Base Ride Plan | 0/2 | Planning | - |
 | 4. Heavy Wind Warning Banner | 2/2 | Complete   | 2026-03-23 |
 | 5. Forecast Wind in Custom Ride Plan | 1/1 | Complete   | 2026-03-23 |
-| 6. Historical Wind — Archive API and DB Persistence | 0/2 | Planning | - |
+| 6. Historical Wind — Archive API and DB Persistence | 2/2 | Complete   | 2026-03-23 |
 | 7. Historical Wind Display and Ride Header Links | 0/TBD | Not started | - |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 06-01-PLAN.md — ride_wind_data migration and model persistence functions
-last_updated: "2026-03-23T21:00:32.314Z"
+stopped_at: Completed 06-02-PLAN.md — archive API fetch, forecast past_days fallback, get_historical_stop_wind with STOR-02
+last_updated: "2026-03-23T21:05:37.744Z"
 last_activity: 2026-03-23 — Roadmap created; 7 phases, 31/31 requirements mapped
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
   percent: 100
 ---
 
@@ -58,6 +58,7 @@ Progress: [██████████] 100%
 | Phase 04-heavy-wind-warning-banner P02 | 15 | 2 tasks | 2 files |
 | Phase 05-forecast-wind-in-custom-ride-plan P01 | 4 | 2 tasks | 2 files |
 | Phase 06-historical-wind-archive-api-and-db-persistence P01 | 8 | 1 tasks | 3 files |
+| Phase 06-historical-wind-archive-api-and-db-persistence P02 | 2 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,8 @@ Recent decisions affecting current work:
 - [Phase 06-historical-wind-archive-api-and-db-persistence]: get_ride_wind_data uses _execute() helper for reads; save_ride_wind_data uses raw cursor with explicit conn.commit() — autocommit=False requires it
 - [Phase 06-historical-wind-archive-api-and-db-persistence]: ON CONFLICT (ride_id, stop_order) DO NOTHING — second save for same stop silently skipped, never errors (STOR-02 idempotency)
 - [Phase 06-historical-wind-archive-api-and-db-persistence]: data_source CHECK constraint enforces only 'archive' or 'forecast_past_days' at DB layer (STOR-03)
+- [Phase 06-historical-wind-archive-api-and-db-persistence]: fetch_historical_wind returns (data, source) tuple so callers always know provenance
+- [Phase 06-historical-wind-archive-api-and-db-persistence]: get_historical_stop_wind checks DB (STOR-02) before any network call — read-through cache pattern for ride wind data
 
 ### Pending Todos
 
@@ -100,6 +103,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-23T21:00:32.310Z
-Stopped at: Completed 06-01-PLAN.md — ride_wind_data migration and model persistence functions
+Last session: 2026-03-23T21:05:37.742Z
+Stopped at: Completed 06-02-PLAN.md — archive API fetch, forecast past_days fallback, get_historical_stop_wind with STOR-02
 Resume file: None
