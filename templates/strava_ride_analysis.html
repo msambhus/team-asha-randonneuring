@@ -335,7 +335,10 @@
         <div class="summary-item">
             <div class="summary-label">Total Time</div>
             {% if comparison.summary.plan_total_time_min %}
-            <div class="summary-plan">Plan: {{ (comparison.summary.plan_total_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.plan_total_time_min % 60) }}m</div>
+            <div class="summary-plan">{% if has_custom %}Your Plan{% else %}Plan{% endif %}: {{ (comparison.summary.plan_total_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.plan_total_time_min % 60) }}m</div>
+            {% endif %}
+            {% if comparison.summary.base_total_time_min %}
+            <div class="summary-plan" style="color:#94a3b8;">Base: {{ (comparison.summary.base_total_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.base_total_time_min % 60) }}m</div>
             {% endif %}
             <div class="summary-actual">{{ (comparison.summary.actual_elapsed_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.actual_elapsed_time_min % 60) }}m</div>
             {% if comparison.summary.time_delta_min is not none %}
@@ -455,11 +458,11 @@
 <div class="chart-row">
     <div class="chart-container">
         <h3>Cumulative Time vs Distance</h3>
-        <canvas id="cumTimeChart" height="280"></canvas>
+        <canvas id="cumTimeChart" height="300"></canvas>
     </div>
     <div class="chart-container">
-        <h3>Segment Time by Stop</h3>
-        <canvas id="segTimeChart" height="280"></canvas>
+        <h3>Segment Time &amp; Speed</h3>
+        <canvas id="segChart" height="300"></canvas>
     </div>
 </div>
 
@@ -482,8 +485,10 @@
     <th style="text-align:left;">Stop</th>
     <th style="text-align:right;">Dist</th>
     <th style="text-align:right;">Segment</th>
+    <th style="text-align:right;">Speed</th>
     <th style="text-align:right;">Break</th>
     <th style="text-align:right;">Cumulative</th>
+    <th style="text-align:right;">Strava Time</th>
     <th style="text-align:right;">&Delta;</th>
 </tr>
 </thead>
@@ -497,7 +502,7 @@
                 {% if row.stop_type == 'start' %}&#x1f6a9;{% elif row.stop_type == 'finish' %}&#x1f3c1;{% elif row.stop_type == 'control' %}&#x25c6;{% elif row.stop_type == 'rest' %}&#x2615;{% elif row.stop_type == 'extra' %}&#x26a0;{% else %}&#x2022;{% endif %}
             </div>
             <span style="font-weight:{% if row.is_extra %}600{% else %}500{% endif %}; color:{% if row.is_extra %}#92400e{% else %}var(--text){% endif %};">{{ row.location }}</span>
-            {% if row.is_extra %}<span class="extra-badge">Unplanned</span>{% endif %}
+            {% if row.is_extra %}<span class="extra-badge">Extra Break</span>{% endif %}
         </div>
     </td>
 
@@ -509,8 +514,16 @@
         <div class="cell-stack">
             {% if row.plan_segment_min %}<span class="val-plan">{{ row.plan_segment_min }}m</span>{% endif %}
             {% if has_custom and row.custom and row.custom.segment_time_min %}<span class="val-base">{{ row.custom.segment_time_min }}m</span>{% endif %}
-            {% if row.actual_segment_min is not none %}<span class="val-actual">{{ row.actual_segment_min }}m</span>
-            {% elif row.is_extra %}<span class="val-actual">&mdash;</span>{% endif %}
+            {% if row.actual_segment_min is not none %}<span class="val-actual">{{ row.actual_segment_min }}m</span>{% endif %}
+        </div>
+    </td>
+
+    {# Speed (stacked: plan / base / actual) #}
+    <td>
+        <div class="cell-stack">
+            {% if row.plan_speed_mph %}<span class="val-plan">{{ row.plan_speed_mph }}</span>{% endif %}
+            {% if has_custom and row.custom and row.custom.speed_mph %}<span class="val-base">{{ row.custom.speed_mph }}</span>{% endif %}
+            {% if row.actual_speed_mph is not none %}<span class="val-actual">{{ row.actual_speed_mph }}</span>{% endif %}
         </div>
     </td>
 
@@ -519,8 +532,7 @@
         <div class="cell-stack">
             {% if row.plan_stop_duration_min %}<span class="val-plan">{{ row.plan_stop_duration_min }}m</span>{% endif %}
             {% if has_custom and row.custom and row.custom.stop_duration_min %}<span class="val-base">{{ row.custom.stop_duration_min }}m</span>{% endif %}
-            {% if row.actual_stop_duration_min is not none %}<span class="val-actual">{{ row.actual_stop_duration_min }}m</span>
-            {% elif not row.plan_stop_duration_min and not row.is_extra %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+            {% if row.actual_stop_duration_min is not none %}<span class="val-actual">{{ row.actual_stop_duration_min }}m</span>{% endif %}
         </div>
     </td>
 
@@ -531,6 +543,11 @@
             {% if has_custom and row.custom and row.custom.cum_time_min %}<span class="val-base">{{ (row.custom.cum_time_min // 60)|int }}:{{ "%02d"|format(row.custom.cum_time_min % 60) }}</span>{% endif %}
             {% if row.actual_cum_time_min is not none %}<span class="val-actual">{{ (row.actual_cum_time_min // 60)|int }}:{{ "%02d"|format(row.actual_cum_time_min % 60) }}</span>{% endif %}
         </div>
+    </td>
+
+    {# Strava time of day #}
+    <td style="text-align:right;font-weight:600;color:#c2410c;">
+        {% if row.actual_time_of_day %}{{ row.actual_time_of_day }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
     </td>
 
     {# Cumulative delta #}
@@ -555,111 +572,183 @@
     const rows = {{ comparison.rows|tojson }};
     const hasCustom = {{ has_custom|tojson }};
 
-    // Filter non-extra rows for plan lines
     const planRows = rows.filter(r => !r.is_extra);
-    // All rows with actual data for actual line
-    const actualRows = rows.filter(r => r.actual_cum_time_min !== null);
+    const allRows = rows.filter(r => r.actual_cum_time_min !== null || r.plan_cum_time_min);
 
-    // ---- Cumulative Time vs Distance Chart ----
+    // Helper: format minutes to Hh MMm
+    function fmtTime(mins) {
+        const h = Math.floor(mins / 60);
+        const m = Math.round(mins % 60);
+        return h + 'h' + String(m).padStart(2, '0') + 'm';
+    }
+
+    // ===== Cumulative Time Chart with break drops =====
+    // For each plan line, we create arrival + departure points at each stop
+    // to show breaks as vertical drops in the line.
+
+    function buildBreakLine(dataRows, getCum, getArrival, getStopDur) {
+        const points = [];
+        for (const r of dataRows) {
+            const cum = getCum(r);
+            const arrival = getArrival(r);
+            const stopDur = getStopDur(r);
+            if (cum === null || cum === undefined) continue;
+            const dist = r.distance_miles;
+            // Arrival point (before break)
+            if (arrival !== null && arrival !== undefined && stopDur > 0) {
+                points.push({ x: dist, y: arrival / 60 });
+                points.push({ x: dist, y: cum / 60 }); // after break (vertical drop)
+            } else {
+                points.push({ x: dist, y: cum / 60 });
+            }
+        }
+        return points;
+    }
+
     const cumCtx = document.getElementById('cumTimeChart').getContext('2d');
+    const cumDatasets = [];
 
-    const datasets = [];
-
-    // Your Plan (or just "Plan" if no custom)
-    datasets.push({
+    // Your Plan line with break drops
+    cumDatasets.push({
         label: hasCustom ? 'Your Plan' : 'Plan',
-        data: planRows.map(r => ({ x: r.distance_miles, y: r.plan_cum_time_min ? r.plan_cum_time_min / 60 : null })).filter(d => d.y !== null),
+        data: buildBreakLine(planRows,
+            r => r.plan_cum_time_min,
+            r => r.plan_arrival_time_min,
+            r => r.plan_stop_duration_min || 0),
         borderColor: '#2563eb',
-        backgroundColor: 'rgba(37, 99, 235, 0.1)',
         borderWidth: 2,
-        tension: 0.3,
-        pointRadius: 3,
+        tension: 0,
+        pointRadius: 0,
+        pointHitRadius: 8,
         fill: false,
     });
 
-    // Base Plan (only if custom exists)
+    // Base Plan line with break drops (if custom exists)
     if (hasCustom) {
-        datasets.push({
+        cumDatasets.push({
             label: 'Base Plan',
-            data: planRows.map(r => {
-                const cum = r.custom && r.custom.cum_time_min ? r.custom.cum_time_min / 60 : null;
-                return { x: r.distance_miles, y: cum };
-            }).filter(d => d.y !== null),
+            data: buildBreakLine(planRows,
+                r => r.custom && r.custom.cum_time_min ? r.custom.cum_time_min : null,
+                r => r.custom && r.custom.arrival_time_min ? r.custom.arrival_time_min : null,
+                r => r.custom && r.custom.stop_duration_min ? r.custom.stop_duration_min : 0),
             borderColor: '#94a3b8',
             borderDash: [6, 3],
             borderWidth: 1.5,
-            tension: 0.3,
-            pointRadius: 2,
+            tension: 0,
+            pointRadius: 0,
+            pointHitRadius: 8,
             fill: false,
         });
     }
 
-    // Actual
-    datasets.push({
+    // Actual line with break drops (including extra breaks)
+    const actualDataRows = rows.filter(r => r.actual_cum_time_min !== null);
+    cumDatasets.push({
         label: 'Actual',
-        data: actualRows.map(r => ({ x: r.distance_miles, y: r.actual_cum_time_min / 60 })),
+        data: buildBreakLine(actualDataRows,
+            r => r.actual_cum_time_min,
+            r => r.actual_arrival_time_min,
+            r => r.actual_stop_duration_min || 0),
         borderColor: '#c2410c',
-        backgroundColor: 'rgba(194, 65, 12, 0.1)',
         borderWidth: 3,
-        tension: 0.3,
-        pointRadius: 3,
+        tension: 0,
+        pointRadius: 0,
+        pointHitRadius: 8,
         fill: false,
     });
 
     new Chart(cumCtx, {
         type: 'line',
-        data: { datasets },
+        data: { datasets: cumDatasets },
         options: {
             responsive: true,
-            interaction: { mode: 'index', intersect: false },
+            interaction: { mode: 'nearest', intersect: false },
             scales: {
                 x: { type: 'linear', title: { display: true, text: 'Distance (mi)' } },
-                y: { title: { display: true, text: 'Cumulative Time (hrs)' },
+                y: { title: { display: true, text: 'Elapsed Time (hrs)' },
                      ticks: { callback: v => v.toFixed(1) + 'h' } },
             },
             plugins: {
                 tooltip: {
                     callbacks: {
-                        label: ctx => {
-                            const hrs = Math.floor(ctx.parsed.y);
-                            const mins = Math.round((ctx.parsed.y - hrs) * 60);
-                            return ctx.dataset.label + ': ' + hrs + 'h' + String(mins).padStart(2, '0') + 'm';
-                        }
+                        label: ctx => ctx.dataset.label + ': ' + fmtTime(ctx.parsed.y * 60)
                     }
                 }
             }
         }
     });
 
-    // ---- Segment Time Bar Chart ----
-    const segCtx = document.getElementById('segTimeChart').getContext('2d');
-    // Skip first row (start — no segment)
-    const segRows = planRows.slice(1);
-    const labels = segRows.map(r => r.location.length > 15 ? r.location.substring(0, 14) + '…' : r.location);
+    // ===== Segment Time & Speed Chart (dual Y-axis) =====
+    const segCtx = document.getElementById('segChart').getContext('2d');
+    const segRows = planRows.slice(1); // skip start
+    const labels = segRows.map(r => r.location.length > 12 ? r.location.substring(0, 11) + '…' : r.location);
 
     const segDatasets = [];
 
+    // Segment time bars
     segDatasets.push({
-        label: hasCustom ? 'Your Plan' : 'Plan',
+        label: (hasCustom ? 'Your Plan' : 'Plan') + ' Time',
         data: segRows.map(r => r.plan_segment_min || 0),
-        backgroundColor: 'rgba(37, 99, 235, 0.7)',
+        backgroundColor: 'rgba(37, 99, 235, 0.6)',
         borderRadius: 3,
+        yAxisID: 'y',
+        order: 2,
     });
-
     if (hasCustom) {
         segDatasets.push({
-            label: 'Base Plan',
+            label: 'Base Time',
             data: segRows.map(r => r.custom && r.custom.segment_time_min ? r.custom.segment_time_min : 0),
-            backgroundColor: 'rgba(148, 163, 184, 0.6)',
+            backgroundColor: 'rgba(148, 163, 184, 0.5)',
             borderRadius: 3,
+            yAxisID: 'y',
+            order: 2,
         });
     }
-
     segDatasets.push({
-        label: 'Actual',
-        data: segRows.map(r => r.actual_segment_min !== null && r.actual_segment_min !== undefined ? r.actual_segment_min : 0),
-        backgroundColor: 'rgba(194, 65, 12, 0.7)',
+        label: 'Actual Time',
+        data: segRows.map(r => r.actual_segment_min != null ? r.actual_segment_min : 0),
+        backgroundColor: 'rgba(194, 65, 12, 0.6)',
         borderRadius: 3,
+        yAxisID: 'y',
+        order: 2,
+    });
+
+    // Speed lines (overlay)
+    segDatasets.push({
+        label: (hasCustom ? 'Your Plan' : 'Plan') + ' Speed',
+        data: segRows.map(r => r.plan_speed_mph || null),
+        borderColor: '#2563eb',
+        borderWidth: 2,
+        type: 'line',
+        tension: 0.3,
+        pointRadius: 3,
+        yAxisID: 'y1',
+        order: 1,
+    });
+    if (hasCustom) {
+        segDatasets.push({
+            label: 'Base Speed',
+            data: segRows.map(r => r.custom && r.custom.speed_mph ? r.custom.speed_mph : null),
+            borderColor: '#94a3b8',
+            borderDash: [4, 2],
+            borderWidth: 1.5,
+            type: 'line',
+            tension: 0.3,
+            pointRadius: 2,
+            yAxisID: 'y1',
+            order: 1,
+        });
+    }
+    segDatasets.push({
+        label: 'Actual Speed',
+        data: segRows.map(r => r.actual_speed_mph || null),
+        borderColor: '#c2410c',
+        borderWidth: 2,
+        type: 'line',
+        tension: 0.3,
+        pointRadius: 3,
+        yAxisID: 'y1',
+        order: 1,
     });
 
     new Chart(segCtx, {
@@ -668,12 +757,19 @@
         options: {
             responsive: true,
             scales: {
-                x: { ticks: { maxRotation: 45, font: { size: 10 } } },
-                y: { title: { display: true, text: 'Segment Time (min)' } },
+                x: { ticks: { maxRotation: 45, font: { size: 9 } } },
+                y: { position: 'left', title: { display: true, text: 'Time (min)' } },
+                y1: { position: 'right', title: { display: true, text: 'Speed (mph)' },
+                      grid: { drawOnChartArea: false } },
             },
             plugins: {
                 tooltip: {
-                    callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + 'm' }
+                    callbacks: {
+                        label: ctx => {
+                            if (ctx.dataset.yAxisID === 'y1') return ctx.dataset.label + ': ' + ctx.parsed.y + ' mph';
+                            return ctx.dataset.label + ': ' + ctx.parsed.y + 'm';
+                        }
+                    }
                 }
             }
         }
