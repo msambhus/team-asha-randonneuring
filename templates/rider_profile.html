@@ -445,7 +445,14 @@
 <tr style="transition:background 0.2s;" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='white'">
 <td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; color:var(--text-light); font-weight:500;">{{ p.date }}</td>
 <td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; color:var(--text); line-height:1.5;">
+    {% if sd.season.name in ['2024-2025', '2025-2026'] and p.plan_slug %}
+    <a href="{{ url_for('riders.ride_plan_detail', slug=p.plan_slug) }}"
+       style="color:var(--primary); text-decoration:none; font-weight:700;">
+        {{ p.ride_name|clean_name }}
+    </a>
+    {% else %}
     <strong style="color:var(--primary);">{{ p.ride_name|clean_name }}</strong>
+    {% endif %}
     {% if p.rwgps_url %}
     <a href="{{ p.rwgps_url }}" target="_blank" style="display:inline-flex; align-items:center; gap:3px; margin-left:8px; font-size:0.75rem; color:#4299e1; text-decoration:none; padding:2px 6px; border-radius:4px; background:#ebf8ff; transition:all 0.2s;">
         <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:12px;height:12px;">
