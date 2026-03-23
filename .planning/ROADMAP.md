@@ -121,7 +121,11 @@ Plans:
   2. Rides without a linked ride plan or RWGPS route show no wind column and no error
   3. 2025 and 2026 season ride names that have a linked ride plan appear as clickable links to the ride detail page
   4. Ride names without a linked ride plan remain plain text (no broken links)
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 07-01-PLAN.md — Ride header links: plan_slug SQL join and conditional template links
+- [ ] 07-02-PLAN.md — Historical wind display: wire get_historical_stop_wind into Strava analysis route and template
 
 ## Progress
 
@@ -136,4 +140,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 4. Heavy Wind Warning Banner | 2/2 | Complete   | 2026-03-23 |
 | 5. Forecast Wind in Custom Ride Plan | 1/1 | Complete   | 2026-03-23 |
 | 6. Historical Wind — Archive API and DB Persistence | 2/2 | Complete   | 2026-03-23 |
-| 7. Historical Wind Display and Ride Header Links | 0/TBD | Not started | - |
+| 7. Historical Wind Display and Ride Header Links | 0/2 | Planning | - |
