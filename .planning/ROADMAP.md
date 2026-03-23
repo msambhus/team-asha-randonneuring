@@ -106,7 +106,11 @@ Plans:
   3. A second request for the same ride's wind reads from the database — the archive API is not called again
   4. For rides completed within the past 5 days, the system automatically falls back to the forecast API past_days parameter and stores data_source as 'forecast_past_days'
   5. A ride completed 10 days ago returns archive data; a ride completed 3 days ago returns forecast_past_days data
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — TDD: ride_wind_data migration, get_ride_wind_data and save_ride_wind_data model functions
+- [ ] 06-02-PLAN.md — TDD: fetch_historical_wind with archive/fallback routing and get_historical_stop_wind orchestration
 
 ### Phase 7: Historical Wind Display and Ride Header Links
 **Goal**: Riders viewing their Strava analysis see "Actual Wind" columns for completed 2026 rides, and 2025/2026 season ride names link directly to ride detail pages
@@ -131,5 +135,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 3. Forecast Wind in Base Ride Plan | 0/2 | Planning | - |
 | 4. Heavy Wind Warning Banner | 2/2 | Complete   | 2026-03-23 |
 | 5. Forecast Wind in Custom Ride Plan | 1/1 | Complete   | 2026-03-23 |
-| 6. Historical Wind — Archive API and DB Persistence | 0/TBD | Not started | - |
+| 6. Historical Wind — Archive API and DB Persistence | 0/2 | Planning | - |
 | 7. Historical Wind Display and Ride Header Links | 0/TBD | Not started | - |
