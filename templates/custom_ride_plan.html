@@ -478,11 +478,20 @@
         gap: 6px;
     }
 }
+@media (max-width: 640px) {
+    .stop-metrics {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 4px;
+        margin-left: 0 !important;
+    }
+    .stop-metrics .inline-edit { width: 100%; }
+    .stop-row { padding: 8px; }
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="hero" style="padding:40px 20px 50px;">
+<div class="hero">
     <h1>🛠️ Custom Plan Editor</h1>
     <p style="opacity:0.85;margin-top:8px;">{{ base_plan.name }}</p>
     
@@ -743,6 +752,19 @@
                                 <span class="diff-indicator diff-cum-time"></span>
                             </div>
                         </div>
+                        <div class="metric-box">
+                            <div class="metric-label">ETA</div>
+                            <div class="metric-value wall-time" style="font-weight:700;color:#7c3aed;"
+                                 data-cum-min="{{ ((stop.cum_time_min or 0) - (stop.stop_duration_min or 0))|int }}">--:--</div>
+                        </div>
+                        {% if stop.stop_duration_min and stop.stop_duration_min > 0 %}
+                        <div class="metric-box">
+                            <div class="metric-label">Break</div>
+                            <div class="metric-value" style="color:#92400e;">
+                                {{ stop.stop_duration_min }}m{% if stop.stop_name %} <span style="font-size:0.7rem;font-weight:400;">({{ stop.stop_name }})</span>{% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
                         <div class="metric-box">
                             <div class="metric-label">Time Bank</div>
                             <div style="display:flex;flex-direction:column;gap:2px;">
@@ -2169,7 +2191,14 @@ function recalculateTimes() {
         } else if (timeBankDisplay) {
             timeBankDisplay.textContent = '—';
         }
-        
+
+        // Update wall time (ETA)
+        const wallTimeEl = stop.querySelector('.wall-time');
+        if (wallTimeEl) {
+            const arrivalMin = cumulativeTime - stopDuration;
+            wallTimeEl.dataset.cumMin = arrivalMin;
+        }
+
         // Calculate difficulty score
         const difficultyDisplay = stop.querySelector('.difficulty-score');
         let difficultyScore = 0;
@@ -2206,6 +2235,27 @@ function recalculateTimes() {
     
     // Update summary panel
     updateSummaryPanel(totalMovingTime, totalElapsedTime, totalMovingDistance, totalElevation, weightedDifficultySum, finalTimeBank);
+
+    // Update wall times (ETAs)
+    recalcWallTimes();
+}
+
+function recalcWallTimes() {
+    const startTime = '{{ base_plan.start_time|default("07:00") }}';
+    const parts = startTime.split(':');
+    const startHour = parseInt(parts[0]) || 7;
+    const startMin = parseInt(parts[1]) || 0;
+
+    document.querySelectorAll('.wall-time').forEach(function(el) {
+        const cumMin = parseInt(el.dataset.cumMin, 10);
+        if (isNaN(cumMin)) { el.textContent = '--:--'; return; }
+        const totalMin = startHour * 60 + startMin + cumMin;
+        const h = Math.floor(totalMin / 60) % 24;
+        const m = totalMin % 60;
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        const displayH = h % 12 || 12;
+        el.textContent = displayH + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
+    });
 }
 
 function updateDiffIndicators(stop, distance, segMiles, segTime, avgSpeed, elevation, ftPerMi, cumTime, timeBank) {

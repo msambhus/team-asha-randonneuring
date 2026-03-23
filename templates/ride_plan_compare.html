@@ -12,7 +12,7 @@
 }
 
 .tab-link {
-    padding: 10px 24px;
+    padding: 8px 16px;
     background: white;
     color: var(--text);
     border: 2px solid var(--border);
@@ -38,9 +38,15 @@
 /* Comparison Layout */
 .comparison-container {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
+    grid-template-columns: 1fr;
+    gap: 16px;
     margin-bottom: 30px;
+}
+@media (min-width: 768px) {
+    .comparison-container {
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+    }
 }
 
 .plan-column {
@@ -94,8 +100,8 @@
 
 .summary-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
 }
 
 .summary-item {
@@ -330,7 +336,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="hero" style="padding:40px 20px 50px;">
+<div class="hero">
     <h1>📊 Plan Comparison</h1>
     <p style="opacity:0.85;margin-top:8px;">
         {{ custom_plan.name }} vs 

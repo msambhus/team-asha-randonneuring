@@ -879,7 +879,7 @@
 
 {% block content %}
 {# ===== A. ENHANCED HERO ===== #}
-<div class="hero" style="padding:50px 20px 60px;" id="hero-section">
+<div class="hero" style="padding-bottom:60px;" id="hero-section">
     <div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:10px;">
         <svg viewBox="0 0 20 20" width="24" height="24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M10 1C7.2 1 5 3.2 5 6c0 3.5 5 8 5 8s5-4.5 5-8c0-2.8-2.2-5-5-5z"/>
@@ -1055,16 +1055,30 @@
             ✏️ Edit
         </a>
         {% elif is_admin %}
-        <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}" 
+        <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}"
            class="btn-custom-plan" style="background:#16a34a;">
-            ✏️ Edit Base
+            ✏️ Edit Stops
+        </a>
+        <a href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}"
+           class="btn-custom-plan" style="background:#0369a1;">
+            ⚙️ Edit Info
         </a>
         {% endif %}
         {% else %}
-        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}" 
+        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}"
            class="btn-custom-plan create">
             ➕ Create Custom Plan
         </a>
+        {% if is_admin %}
+        <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}"
+           class="btn-custom-plan" style="background:#16a34a;">
+            ✏️ Edit Stops
+        </a>
+        <a href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}"
+           class="btn-custom-plan" style="background:#0369a1;">
+            ⚙️ Edit Info
+        </a>
+        {% endif %}
         {% endif %}
     </div>
 </div>
@@ -1309,13 +1323,20 @@
             <div class="metric-label">Cumul Time</div>
         </div>
         {% endif %}
+        {% if s.arrival_time_min is defined %}
+        <div class="metric">
+            <div class="metric-value arrival-time" style="color:#7c3aed;font-weight:700;" data-cum-min="{{ (s.arrival_time_min|default(0))|int }}">--:--</div>
+            <div class="metric-label">ETA</div>
+        </div>
+        {% endif %}
         {% if s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
         <div class="metric">
-            <div class="metric-value">
+            <div class="metric-value" style="color:#92400e;">
                 {# Stop duration (time spent at this stop) #}
                 {% if s.stop_duration_min >= 60 %}{{ s.stop_duration_min // 60 }}h{{ "%02d"|format(s.stop_duration_min % 60) }}m{% else %}{{ s.stop_duration_min }}m{% endif %}
+                {% if s.stop_name %}<span style="font-size:0.7rem;font-weight:400;"> ({{ s.stop_name }})</span>{% endif %}
             </div>
-            <div class="metric-label">Stop Time</div>
+            <div class="metric-label">Break</div>
         </div>
         {% endif %}
         {# Time Bank: use this stop's time_bank #}
@@ -1466,6 +1487,8 @@
     <th style="text-align:right;">Elev. Gain</th>
     <th style="text-align:right;">Ft/Mi</th>
     <th style="text-align:right;">Seg. Time</th>
+    <th style="text-align:right;">ETA</th>
+    <th style="text-align:right;">Break</th>
     <th style="text-align:right;">Avg Speed</th>
     {% if stop_wind %}<th style="text-align:center;">Wind</th>{% endif %}
     {% if plan.cutoff_hours %}<th style="text-align:right;">Time Bank</th>{% endif %}
@@ -1509,6 +1532,14 @@
     <td class="num-cell">
         {% if s.segment_time_min and s.segment_time_min > 0 %}
             {% if s.segment_time_min >= 60 %}{{ (s.segment_time_min // 60) }}h {{ "%02d"|format(s.segment_time_min % 60) }}m{% else %}{{ s.segment_time_min }}m{% endif %}
+        {% else %}&mdash;{% endif %}
+    </td>
+    <td class="num-cell">
+        <span class="arrival-time" style="color:#7c3aed;font-weight:600;" data-cum-min="{{ (s.arrival_time_min|default(0))|int }}">--:--</span>
+    </td>
+    <td class="num-cell">
+        {% if s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
+            <span style="color:#92400e;">{{ s.stop_duration_min }}m</span>{% if s.stop_name %} <span style="font-size:0.7rem;color:#64748b;">{{ s.stop_name }}</span>{% endif %}
         {% else %}&mdash;{% endif %}
     </td>
     <td class="num-cell">
@@ -1591,7 +1622,33 @@
 </div>
 </div>
 
-{# ===== L. BACK LINK ===== #}
+{# ===== L. COMMUNITY PLANS ===== #}
+{% if public_custom_plans %}
+<div style="margin-top:30px;padding:20px;background:white;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);border:1px solid var(--border);">
+    <h3 style="margin:0 0 4px 0;font-size:1rem;">Community Plans</h3>
+    <p style="color:var(--text-light);font-size:0.82rem;margin:0 0 16px 0;">Custom plans shared by other riders. Copy one to use as your starting point.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+    {% for cp in public_custom_plans %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+            <div>
+                <div style="font-weight:600;font-size:0.9rem;color:var(--text);">{{ cp.name }}</div>
+                <div style="font-size:0.78rem;color:var(--text-light);margin-top:2px;">
+                    by {{ cp.first_name }} {{ cp.last_name }}
+                    {% if cp.description %}&middot; {{ cp.description }}{% endif %}
+                    {% if cp.avg_moving_speed %}&middot; {{ "%.1f"|format(cp.avg_moving_speed) }} mph moving{% endif %}
+                </div>
+            </div>
+            <button class="btn" style="background:var(--primary);color:white;padding:6px 16px;font-size:0.82rem;white-space:nowrap;"
+                    onclick="clonePlan({{ cp.id }}, '{{ cp.name|replace("'", "\\'") }}')">
+                Copy Plan
+            </button>
+        </div>
+    {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{# ===== M. BACK LINK ===== #}
 <div style="margin-top:25px;">
 <a href="javascript:history.back()" class="back-link">&larr; Back</a>
 </div>
@@ -1767,5 +1824,25 @@ document.addEventListener('keydown', function(event) {
     }
 });
 {% endif %}
+
+async function clonePlan(planId, planName) {
+    if (!confirm('Copy "' + planName + '" as your custom plan?')) return;
+    try {
+        const resp = await fetch('/api/custom-plan/' + planId + '/clone', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: planName + ' (My Copy)'})
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert('Plan copied! Redirecting to your custom plan editor.');
+            window.location.href = '/ride-plan/{{ plan.slug }}/custom';
+        } else {
+            alert('Error: ' + (data.error || 'Could not copy plan'));
+        }
+    } catch (e) {
+        alert('Error copying plan: ' + e.message);
+    }
+}
 </script>
 {% endblock %}

@@ -1,6 +1,8 @@
 """Admin routes: login, dashboard, ride entry, status marking, RWGPS plan generation."""
 import json
+import os
 from datetime import date
+from pathlib import Path
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, abort
 from models import (get_current_season, get_rides_for_season, get_riders_for_season,
                     get_ride_by_id, get_participation_matrix, get_clubs,
@@ -9,12 +11,64 @@ from models import (get_current_season, get_rides_for_season, get_riders_for_sea
                     auto_finalize_past_rides, get_rides_with_signup_counts,
                     get_strava_admin_summary, get_all_active_strava_connections,
                     get_all_strava_activities_for_eddington, update_eddington_number,
-                    admin_delete_rider_ride)
+                    admin_delete_rider_ride,
+                    get_all_personality_profiles, get_personality_profile,
+                    upsert_personality_profile, get_trait_evidence,
+                    get_rider_by_id,
+                    get_gear_preference, upsert_gear_preference,
+                    get_coach_assignments, upsert_coach_assignment,
+                    get_all_guardrails, insert_guardrail,
+                    update_guardrail, soft_delete_guardrail,
+                    update_ride_core, update_ride_details)
 from auth import login_required, user_login_required, verify_password
 from services.rwgps import (extract_rwgps_route_id, fetch_route, extract_controls,
                             build_ride_plan, slugify)
 
 admin_bp = Blueprint('admin', __name__)
+
+# ── Personality & Coaching constants ─────────────────────────────────
+PERSONALITY_ENUMS = {
+    'tone': ['direct', 'warm', 'playful', 'serious', 'sarcastic'],
+    'humor_type': ['none', 'dry', 'sarcastic', 'gentle', 'self-deprecating'],
+    'directness': ['low', 'medium', 'high'],
+    'encouragement_style': ['data-driven', 'emotional', 'balanced', 'tough-love'],
+    'technical_depth': ['beginner', 'intermediate', 'expert'],
+    'response_length_tendency': ['brief', 'moderate', 'verbose'],
+    'question_asking_behavior': ['rarely', 'sometimes', 'frequently'],
+    'riding_speed': ['slow', 'moderate', 'fast', 'very-fast'],
+    'power_level': ['low', 'moderate', 'strong', 'elite'],
+    'group_category': ['A', 'B', 'C'],
+    'mind_games': ['none', 'subtle', 'moderate', 'expert'],
+    'social_style': ['quiet', 'social', 'leader', 'entertainer'],
+}
+
+# All trait fields used for display and editing
+ALL_TRAIT_FIELDS = [
+    'tone', 'humor_type', 'directness', 'signature_phrases',
+    'topic_biases', 'topics_allowed', 'response_length_tendency',
+    'question_asking_behavior', 'encouragement_style', 'technical_depth',
+    'domain_bias', 'riding_speed', 'power_level', 'group_category',
+    'mind_games', 'social_style',
+]
+
+# Legacy alias
+COACH_TRAIT_FIELDS = ALL_TRAIT_FIELDS
+
+GEAR_ENUMS = {
+    'bike_material': ['aluminum', 'steel', 'titanium', 'carbon', 'other'],
+    'value_orientation': ['budget', 'mid-range', 'premium', 'buy-once-buy-right'],
+}
+
+GEAR_FIELDS = [
+    'bike_make', 'bike_model', 'bike_year', 'bike_material',
+    'wheels_tires', 'lighting', 'bags', 'navigation', 'kit',
+    'value_orientation',
+]
+
+GUARDRAIL_ENUMS = {
+    'rule_type': ['topic_block', 'tone_limit', 'escalation', 'scope'],
+    'applies_to': ['all', 'shriram', 'venki'],
+}
 
 
 def _require_admin():
@@ -151,6 +205,51 @@ def mark_status(ride_id):
                            signed_up_riders=signed_up,
                            other_riders=others,
                            ride_statuses=ride_statuses)
+
+
+@admin_bp.route('/rides/<int:ride_id>/edit', methods=['GET', 'POST'])
+@user_login_required
+def ride_edit(ride_id):
+    """Edit ride details and waypoints."""
+    _require_admin()
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        abort(404)
+
+    clubs = get_clubs()
+
+    if request.method == 'POST':
+        # Update core ride fields
+        core_fields = {}
+        for f in ('name', 'ride_type'):
+            val = request.form.get(f, '').strip()
+            if val:
+                core_fields[f] = val
+        ride_date = request.form.get('date', '').strip()
+        if ride_date:
+            core_fields['date'] = ride_date
+        for f in ('distance_km', 'elevation_ft'):
+            val = request.form.get(f, '').strip()
+            core_fields[f] = int(val) if val else None
+        for f in ('distance_miles', 'ft_per_mile'):
+            val = request.form.get(f, '').strip()
+            core_fields[f] = float(val) if val else None
+        club_id = request.form.get('club_id', '').strip()
+        core_fields['club_id'] = int(club_id) if club_id else None
+        update_ride_core(ride_id, core_fields)
+
+        # Update extended ride details (start_time lives on ride_plan, not ride)
+        update_ride_details(
+            ride_id,
+            rwgps_url=request.form.get('rwgps_url', ''),
+            start_location=request.form.get('start_location', ''),
+            time_limit_hours=float(request.form.get('time_limit_hours', '') or 0) or None,
+        )
+
+        flash(f'Ride "{request.form.get("name", ride["name"])}" updated.', 'success')
+        return redirect(url_for('admin.ride_edit', ride_id=ride_id))
+
+    return render_template('admin/ride_edit.html', ride=ride, clubs=clubs)
 
 
 @admin_bp.route('/rides/<int:ride_id>/remove-rider', methods=['POST'])
@@ -410,3 +509,392 @@ def recalculate_eddington():
         'recalculated': len(results),
         'riders': results,
     })
+
+
+# ── Personality Admin ────────────────────────────────────────────────
+
+def compute_completeness(profile):
+    """Count non-null/non-empty trait fields. Returns (filled, total, confidence)."""
+    if not profile:
+        return (0, len(COACH_TRAIT_FIELDS), None)
+    filled = 0
+    for field in COACH_TRAIT_FIELDS:
+        val = profile.get(field)
+        if val is not None and val != '' and val != []:
+            filled += 1
+    confidence = profile.get('extraction_confidence') if profile else None
+    return (filled, len(COACH_TRAIT_FIELDS), confidence)
+
+
+@admin_bp.route('/personalities')
+@user_login_required
+def personalities():
+    """List all riders with personality profile completeness indicators."""
+    _require_admin()
+    riders = get_all_riders()
+    # Load both coach and rider profiles — show whichever exists for each person
+    all_profiles = get_all_personality_profiles(profile_type=None)
+
+    # Build profiles dict keyed by rider_id, preferring: coach > rider, then merged > manual > whatsapp
+    profiles = {}
+    type_priority = {'coach': 0, 'rider': 1}
+    source_priority = {'merged': 0, 'manual': 1, 'whatsapp': 2, 'blog': 3}
+    for p in all_profiles:
+        rid = p['rider_id']
+        existing = profiles.get(rid)
+        if existing is None:
+            profiles[rid] = p
+        else:
+            cur_type_pri = type_priority.get(existing.get('profile_type', ''), 99)
+            new_type_pri = type_priority.get(p.get('profile_type', ''), 99)
+            if new_type_pri < cur_type_pri:
+                profiles[rid] = p
+            elif new_type_pri == cur_type_pri:
+                cur_src_pri = source_priority.get(existing.get('extraction_source', ''), 99)
+                new_src_pri = source_priority.get(p.get('extraction_source', ''), 99)
+                if new_src_pri < cur_src_pri:
+                    profiles[rid] = p
+
+    completeness = {}
+    for r in riders:
+        completeness[r['id']] = compute_completeness(profiles.get(r['id']))
+
+    return render_template('admin/personalities.html',
+                           riders=riders, profiles=profiles,
+                           completeness=completeness)
+
+
+@admin_bp.route('/personalities/<int:rider_id>', methods=['GET', 'POST'])
+@user_login_required
+def personality_edit(rider_id):
+    """View or edit personality traits for a single rider."""
+    _require_admin()
+    rider = get_rider_by_id(rider_id)
+    if not rider:
+        abort(404)
+
+    if request.method == 'POST':
+        fields = {}
+        for trait in COACH_TRAIT_FIELDS:
+            val = request.form.get(trait, '').strip()
+            if trait in ('signature_phrases', 'topic_biases', 'topics_allowed'):
+                # Newline-separated textarea -> list
+                lines = [line.strip() for line in val.split('\n') if line.strip()]
+                fields[trait] = lines if lines else None
+            elif trait in PERSONALITY_ENUMS:
+                fields[trait] = val if val else None
+            else:
+                fields[trait] = val if val else None
+        fields['extraction_source'] = 'manual'
+        upsert_personality_profile(rider_id, 'coach', fields, updated_by='admin')
+        flash('Personality profile saved.', 'success')
+        return redirect(url_for('admin.personality_edit', rider_id=rider_id))
+
+    # GET: load profile preferring merged > manual > whatsapp, checking both coach and rider types
+    profile = None
+    from models import _execute
+    for ptype in ('coach', 'rider'):
+        for source in ('merged', 'manual', 'whatsapp', 'blog'):
+            row = _execute(
+                """SELECT * FROM personality_profile
+                   WHERE rider_id = %s AND profile_type = %s
+                   AND extraction_source = %s AND deleted_at IS NULL""",
+                (rider_id, ptype, source)
+            ).fetchone()
+            if row:
+                profile = row
+                break
+        if profile:
+            break
+    if not profile:
+        profile = get_personality_profile(rider_id, 'coach')
+        if not profile:
+            profile = get_personality_profile(rider_id, 'rider')
+
+    evidence = get_trait_evidence(rider_id)
+    # Group evidence by trait_name
+    evidence_by_trait = {}
+    for ev in evidence:
+        trait = ev['trait_name']
+        if trait not in evidence_by_trait:
+            evidence_by_trait[trait] = []
+        evidence_by_trait[trait].append(ev)
+
+    return render_template('admin/personality_edit.html',
+                           rider=rider, profile=profile,
+                           evidence_by_trait=evidence_by_trait,
+                           PERSONALITY_ENUMS=PERSONALITY_ENUMS,
+                           COACH_TRAIT_FIELDS=COACH_TRAIT_FIELDS)
+
+
+# ── Gear Admin ───────────────────────────────────────────────────────
+
+@admin_bp.route('/gear')
+@user_login_required
+def gear():
+    """List all riders with gear preference status."""
+    _require_admin()
+    riders = get_all_riders()
+    from models import get_all_gear_for_rider
+    gear_map = {}       # rider_id -> primary gear row
+    bike_counts = {}    # rider_id -> total bike count
+    all_bikes = {}      # rider_id -> list of all gear rows
+    for r in riders:
+        bikes = get_all_gear_for_rider(r['id'])
+        gear_map[r['id']] = bikes[0] if bikes else None
+        bike_counts[r['id']] = len(bikes)
+        all_bikes[r['id']] = bikes
+    return render_template('admin/gear.html', riders=riders, gear_map=gear_map,
+                           bike_counts=bike_counts, all_bikes=all_bikes,
+                           GEAR_FIELDS=GEAR_FIELDS)
+
+
+@admin_bp.route('/gear/<int:rider_id>', methods=['GET', 'POST'])
+@user_login_required
+def gear_edit(rider_id):
+    """View or edit gear preferences for a single rider (multiple bikes)."""
+    _require_admin()
+    rider = get_rider_by_id(rider_id)
+    if not rider:
+        abort(404)
+
+    from models import get_all_gear_for_rider
+
+    if request.method == 'POST':
+        label = request.form.get('label', 'Primary').strip() or 'Primary'
+        fields = {}
+        for field in GEAR_FIELDS:
+            val = request.form.get(field, '').strip()
+            if field == 'bike_year':
+                fields[field] = int(val) if val else None
+            elif field in GEAR_ENUMS:
+                fields[field] = val if val else None
+            else:
+                fields[field] = val if val else None
+        upsert_gear_preference(rider_id, fields, updated_by='admin', label=label)
+        flash(f'Gear saved for {label} bike.', 'success')
+        return redirect(url_for('admin.gear_edit', rider_id=rider_id, bike=label))
+
+    bikes = get_all_gear_for_rider(rider_id)
+    selected_label = request.args.get('bike', 'Primary')
+    gear = None
+    for b in bikes:
+        if b.get('label') == selected_label:
+            gear = b
+            break
+    if not gear and bikes:
+        gear = bikes[0]
+        selected_label = gear.get('label', 'Primary')
+
+    return render_template('admin/gear_edit.html', rider=rider, gear=gear,
+                           bikes=bikes, selected_label=selected_label,
+                           GEAR_ENUMS=GEAR_ENUMS, GEAR_FIELDS=GEAR_FIELDS)
+
+
+# ── Coach Admin ──────────────────────────────────────────────────────
+
+@admin_bp.route('/coaches')
+@user_login_required
+def coaches():
+    """Coach roster with domain assignments and persona status."""
+    _require_admin()
+    assignments = get_coach_assignments(active_only=False)
+    profiles = get_all_personality_profiles(profile_type='coach')
+    profile_by_rider = {p['rider_id']: p for p in profiles}
+
+    # Group assignments by coach_rider_id
+    coaches_map = {}
+    for a in assignments:
+        cid = a['coach_rider_id']
+        if cid not in coaches_map:
+            rider = get_rider_by_id(cid)
+            coaches_map[cid] = {
+                'rider': rider,
+                'has_profile': cid in profile_by_rider,
+                'is_default': False,
+                'assignments': [],
+            }
+        coaches_map[cid]['assignments'].append(a)
+        if a.get('is_default'):
+            coaches_map[cid]['is_default'] = True
+
+    return render_template('admin/coaches.html', coaches=coaches_map)
+
+
+@admin_bp.route('/coaches/add', methods=['GET', 'POST'])
+@user_login_required
+def add_coach():
+    """Add a new coach by selecting an existing rider and assigning topic domains."""
+    _require_admin()
+    if request.method == 'POST':
+        rider_id = request.form.get('rider_id', type=int)
+        domains = request.form.get('domains', '').strip()
+        is_default = request.form.get('is_default') == 'on'
+        if not rider_id or not domains:
+            flash('Rider and at least one domain are required.', 'error')
+            return redirect(url_for('admin.add_coach'))
+        # Create coach profile if needed
+        existing = get_personality_profile(rider_id, 'coach')
+        if not existing:
+            upsert_personality_profile(rider_id, 'coach', {
+                'extraction_source': 'manual',
+            }, updated_by='admin')
+        # Create assignments for each domain
+        for domain in [d.strip() for d in domains.split(',') if d.strip()]:
+            upsert_coach_assignment(rider_id, domain,
+                                    {'is_active': True, 'is_default': is_default},
+                                    updated_by='admin')
+        flash(f'Coach added with domains: {domains}', 'success')
+        return redirect(url_for('admin.coaches'))
+    # GET: show form with all riders
+    riders = get_all_riders()
+    return render_template('admin/add_coach.html', riders=riders)
+
+
+@admin_bp.route('/coaches/<int:coach_rider_id>/<topic_domain>/toggle', methods=['POST'])
+@user_login_required
+def toggle_coach(coach_rider_id, topic_domain):
+    """Toggle active/inactive on a coach assignment."""
+    _require_admin()
+    assignments = get_coach_assignments(
+        coach_rider_id=coach_rider_id, topic_domain=topic_domain, active_only=False)
+    if not assignments:
+        flash('Coach assignment not found.', 'error')
+        return redirect(url_for('admin.coaches'))
+    current_active = assignments[0].get('is_active', True)
+    upsert_coach_assignment(coach_rider_id, topic_domain,
+                            {'is_active': not current_active}, updated_by='admin')
+    flash('Coach assignment toggled.', 'success')
+    return redirect(url_for('admin.coaches'))
+
+
+# ── Guardrail Admin ──────────────────────────────────────────────────
+
+@admin_bp.route('/guardrails')
+@user_login_required
+def guardrails():
+    """List all guardrail rules (active and inactive)."""
+    _require_admin()
+    rules = get_all_guardrails()
+    return render_template('admin/guardrails.html', guardrails=rules,
+                           GUARDRAIL_ENUMS=GUARDRAIL_ENUMS)
+
+
+@admin_bp.route('/guardrails/<int:guardrail_id>/toggle', methods=['POST'])
+@user_login_required
+def toggle_guardrail(guardrail_id):
+    """Toggle a guardrail rule active/inactive."""
+    _require_admin()
+    rules = get_all_guardrails()
+    target = None
+    for r in rules:
+        if r['id'] == guardrail_id:
+            target = r
+            break
+    if not target:
+        flash('Guardrail not found.', 'error')
+        return redirect(url_for('admin.guardrails'))
+    update_guardrail(guardrail_id, {'is_active': not target['is_active']},
+                     updated_by='admin')
+    flash('Guardrail toggled.', 'success')
+    return redirect(url_for('admin.guardrails'))
+
+
+@admin_bp.route('/guardrails/new', methods=['GET', 'POST'])
+@user_login_required
+def guardrail_new():
+    """Create a new guardrail rule."""
+    _require_admin()
+    if request.method == 'POST':
+        rule_type = request.form.get('rule_type', '').strip()
+        rule_value = request.form.get('rule_value', '').strip()
+        applies_to = request.form.get('applies_to', 'all').strip()
+        if not rule_type or not rule_value:
+            flash('Rule type and value are required.', 'error')
+            return redirect(url_for('admin.guardrail_new'))
+        insert_guardrail(rule_type, rule_value, applies_to, updated_by='admin')
+        flash('Guardrail created.', 'success')
+        return redirect(url_for('admin.guardrails'))
+    return render_template('admin/guardrail_edit.html', guardrail=None,
+                           GUARDRAIL_ENUMS=GUARDRAIL_ENUMS)
+
+
+@admin_bp.route('/guardrails/<int:guardrail_id>/edit', methods=['GET', 'POST'])
+@user_login_required
+def guardrail_edit(guardrail_id):
+    """Edit an existing guardrail rule."""
+    _require_admin()
+    rules = get_all_guardrails()
+    target = None
+    for r in rules:
+        if r['id'] == guardrail_id:
+            target = r
+            break
+    if not target:
+        flash('Guardrail not found.', 'error')
+        return redirect(url_for('admin.guardrails'))
+
+    if request.method == 'POST':
+        fields = {
+            'rule_type': request.form.get('rule_type', '').strip(),
+            'rule_value': request.form.get('rule_value', '').strip(),
+            'applies_to': request.form.get('applies_to', 'all').strip(),
+        }
+        update_guardrail(guardrail_id, fields, updated_by='admin')
+        flash('Guardrail updated.', 'success')
+        return redirect(url_for('admin.guardrails'))
+
+    return render_template('admin/guardrail_edit.html', guardrail=target,
+                           GUARDRAIL_ENUMS=GUARDRAIL_ENUMS)
+
+
+@admin_bp.route('/guardrails/<int:guardrail_id>/delete', methods=['POST'])
+@user_login_required
+def guardrail_delete(guardrail_id):
+    """Soft-delete a guardrail rule."""
+    _require_admin()
+    soft_delete_guardrail(guardrail_id, updated_by='admin')
+    flash('Guardrail deleted.', 'success')
+    return redirect(url_for('admin.guardrails'))
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Base Admin (Phase 12)
+# ---------------------------------------------------------------------------
+
+@admin_bp.route('/knowledge')
+@user_login_required
+def knowledge():
+    """List all embedded web sources with chunk counts and dates."""
+    _require_admin()
+    from models import get_knowledge_sources
+    sources = get_knowledge_sources()
+    return render_template('admin/knowledge.html', sources=sources)
+
+
+@admin_bp.route('/knowledge/<path:source>/remove', methods=['POST'])
+@user_login_required
+def knowledge_remove(source):
+    """Remove all embeddings for a web source."""
+    _require_admin()
+    if not source.startswith('web_'):
+        flash('Can only remove web_ sources.', 'error')
+        return redirect(url_for('admin.knowledge'))
+    from models import delete_knowledge_source
+    count = delete_knowledge_source(source)
+    flash(f'Removed {count} chunks from {source}.', 'success')
+    return redirect(url_for('admin.knowledge'))
+
+
+@admin_bp.route('/knowledge/<path:source>/re-embed', methods=['POST'])
+@user_login_required
+def knowledge_reembed(source):
+    """Clear embeddings for a source and show CLI re-embed instruction."""
+    _require_admin()
+    if not source.startswith('web_'):
+        flash('Can only re-embed web_ sources.', 'error')
+        return redirect(url_for('admin.knowledge'))
+    from models import delete_knowledge_source
+    count = delete_knowledge_source(source)
+    flash(f'Cleared {count} chunks from {source}. Run: python scripts/embed_resources.py --source {source}', 'info')
+    return redirect(url_for('admin.knowledge'))

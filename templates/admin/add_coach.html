@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Add Coach - Admin{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Add Coach</h1>
+<p>Select a team member and assign topic domains</p>
+</div>
+<div class="container section">
+
+<div style="margin-bottom:20px;">
+<a href="{{ url_for('admin.coaches') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Coaches</a>
+</div>
+
+<form method="POST" style="max-width:500px;">
+<div style="margin-bottom:16px;">
+<label style="display:block;font-weight:600;margin-bottom:4px;">Team Member</label>
+<select name="rider_id" required style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:4px;font-size:1rem;">
+<option value="">Select a rider...</option>
+{% for rider in riders %}
+<option value="{{ rider.id }}">{{ rider.first_name }} {{ rider.last_name }}</option>
+{% endfor %}
+</select>
+</div>
+
+<div style="margin-bottom:16px;">
+<label style="display:block;font-weight:600;margin-bottom:4px;">Topic Domains</label>
+<input type="text" name="domains" placeholder="e.g. bikes, gear, maintenance" required
+       style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:4px;font-size:1rem;">
+<p style="font-size:0.8rem;color:var(--text-light);margin-top:4px;">Comma-separated list of topic domains this coach handles</p>
+</div>
+
+<div style="margin-bottom:16px;">
+<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+<input type="checkbox" name="is_default">
+<span>Fallback coach (handles all unrouted queries)</span>
+</label>
+</div>
+
+<button type="submit" class="btn" style="background:var(--primary);color:#fff;">Add Coach</button>
+</form>
+
+</div>
+{% endblock %}

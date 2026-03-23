@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Knowledge Base - Admin{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Knowledge Base</h1>
+<p>{{ sources|length }} web source{{ 's' if sources|length != 1 else '' }}</p>
+</div>
+<div class="container section">
+
+<div style="margin-bottom:20px;display:flex;gap:10px;align-items:center;">
+<a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Dashboard</a>
+</div>
+
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Chunks</th>
+<th>First Embedded</th>
+<th>Last Embedded</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody>
+{% for s in sources %}
+<tr>
+<td style="font-weight:600;">{{ s.source }}</td>
+<td>{{ s.chunk_count }}</td>
+<td>{{ s.first_embedded.strftime('%Y-%m-%d') if s.first_embedded else '—' }}</td>
+<td>{{ s.last_embedded.strftime('%Y-%m-%d') if s.last_embedded else '—' }}</td>
+<td style="display:flex;gap:6px;">
+<form method="POST" action="{{ url_for('admin.knowledge_reembed', source=s.source) }}" style="display:inline;">
+<button type="submit" style="background:#2b6cb0;color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:0.9rem;">Re-embed</button>
+</form>
+<form method="POST" action="{{ url_for('admin.knowledge_remove', source=s.source) }}" style="display:inline;" onsubmit="return confirm('Remove all chunks from {{ s.source }}?');">
+<button type="submit" style="background:none;border:none;color:#e53e3e;cursor:pointer;font-size:0.9rem;padding:0;">Remove</button>
+</form>
+</td>
+</tr>
+{% endfor %}
+{% if not sources %}
+<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:20px;">No web sources embedded yet. Run <code>scripts/embed_resources.py</code> to get started.</td></tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+
+</div>
+{% endblock %}

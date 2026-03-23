@@ -74,7 +74,7 @@
 }
 .events-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 20px;
 }
 .event-card {
@@ -602,6 +602,63 @@
     }
 }
 
+@media (max-width: 640px) {
+    .event-card {
+        padding: 16px;
+        min-height: auto;
+    }
+    .event-date {
+        top: 12px;
+        right: 12px;
+        padding: 5px 8px;
+        border-radius: 6px;
+    }
+    .event-day {
+        font-size: 1.3rem;
+    }
+    .event-month {
+        font-size: 0.6rem;
+    }
+    .event-title {
+        padding-right: 60px;
+        font-size: 0.9rem;
+    }
+    .signup-section {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    .signup-actions {
+        justify-content: flex-start;
+    }
+    .filter-section {
+        padding: 14px;
+    }
+    .filter-buttons {
+        gap: 6px;
+    }
+    .region-filter {
+        padding: 7px 12px;
+        font-size: 0.8rem;
+        gap: 6px;
+    }
+    .region-dot {
+        width: 10px;
+        height: 10px;
+    }
+    .month-header {
+        font-size: 1rem;
+        padding: 8px 14px;
+    }
+    .event-distance {
+        font-size: 1.3rem;
+    }
+    .event-link-btn {
+        padding: 5px 10px;
+        font-size: 0.7rem;
+    }
+}
+
 @media (max-width: 480px) {
     .region-filter {
         font-size: 0.8rem;
@@ -666,7 +723,7 @@
 
 <div id="events-container">
 {% for event in rusa_events %}
-<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
+<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.plan_start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
 
     <div class="event-date">
         <div class="event-day">{{ event.date_str[8:10] }}</div>
@@ -708,7 +765,7 @@
             {{ event.route_name }}{% if event.ride_type %} <span style="color:var(--text-light);font-size:0.75rem;font-weight:600;white-space:nowrap;">[{{ event.ride_type }}]</span>{% endif %}
         </span>
         {% if can_edit_rides %}
-        <button onclick="openEditModal({{ event.id }}, '{{ event.route_name|replace("'", "\\'") }}', '{{ event.rwgps_url|replace("'", "\\'")|default('', true) }}', {{ event.ride_plan_id|default('null', true) }}, '{{ event.start_time|replace("'", "\\'")|default('', true) }}', '{{ event.start_location|replace("'", "\\'")|default('', true) }}', {{ event.time_limit_hours|default('null', true) }})" 
+        <button onclick="openEditModal({{ event.id }}, '{{ event.route_name|replace("'", "\\'") }}', '{{ event.rwgps_url|replace("'", "\\'")|default('', true) }}', {{ event.ride_plan_id|default('null', true) }}, '{{ event.plan_start_time|replace("'", "\\'")|default('', true) }}', '{{ event.start_location|replace("'", "\\'")|default('', true) }}', {{ event.time_limit_hours|default('null', true) }})" 
                 style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;color:#6d28d9;font-size:0.85rem;transition:transform 0.2s,color 0.2s;"
                 onmouseover="this.style.transform='scale(1.15)';this.style.color='#5b21b6';"
                 onmouseout="this.style.transform='scale(1)';this.style.color='#6d28d9';"
@@ -746,10 +803,10 @@
         {% endif %}
     </div>
 
-    {% if event.start_time or event.time_limit_hours or event.start_location %}
+    {% if event.plan_start_time or event.time_limit_hours or event.start_location %}
     <div class="event-details-info">
-        {% if event.start_time %}
-        <div><strong>Start:</strong> {{ event.start_time }}</div>
+        {% if event.plan_start_time %}
+        <div><strong>Start:</strong> {{ event.plan_start_time }}</div>
         {% endif %}
         {% if event.time_limit_hours %}
         <div><strong>Time Limit:</strong> {{ event.time_limit_hours }}h</div>

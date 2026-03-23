@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ rider.first_name }} {{ rider.last_name }} — Personality - Admin{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>{{ rider.first_name }} {{ rider.last_name }} — Personality</h1>
+{% if profile and profile.extraction_confidence %}
+{% set conf = profile.extraction_confidence|lower %}
+{% if conf == 'high' %}
+<span style="background:#c6f6d5;color:#276749;padding:4px 12px;border-radius:4px;font-size:0.9rem;font-weight:600;">HIGH confidence</span>
+{% elif conf in ('med', 'medium') %}
+<span style="background:#fefcbf;color:#975a16;padding:4px 12px;border-radius:4px;font-size:0.9rem;font-weight:600;">MEDIUM confidence</span>
+{% elif conf == 'low' %}
+<span style="background:#fed7d7;color:#9b2c2c;padding:4px 12px;border-radius:4px;font-size:0.9rem;font-weight:600;">LOW confidence</span>
+{% endif %}
+{% endif %}
+</div>
+<div class="container section">
+
+<div style="margin-bottom:20px;">
+<a href="{{ url_for('admin.personalities') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Personalities</a>
+</div>
+
+<form method="POST" action="{{ url_for('admin.personality_edit', rider_id=rider.id) }}">
+
+{% for trait in COACH_TRAIT_FIELDS %}
+<div style="margin-bottom:24px;padding:16px;background:#f7fafc;border-radius:8px;">
+<label style="display:block;font-weight:600;margin-bottom:6px;text-transform:capitalize;">
+{{ trait.replace('_', ' ') }}
+</label>
+
+{% if trait in PERSONALITY_ENUMS %}
+<select name="{{ trait }}" style="width:100%;max-width:400px;padding:8px;border:1px solid #e2e8f0;border-radius:4px;">
+<option value="">— Select —</option>
+{% for opt in PERSONALITY_ENUMS[trait] %}
+<option value="{{ opt }}" {% if profile and profile.get(trait) == opt %}selected{% endif %}>{{ opt }}</option>
+{% endfor %}
+</select>
+
+{% elif trait in ('signature_phrases', 'topic_biases', 'topics_allowed') %}
+<textarea name="{{ trait }}" rows="4" style="width:100%;max-width:600px;padding:8px;border:1px solid #e2e8f0;border-radius:4px;font-family:inherit;" placeholder="One per line">{% if profile and profile.get(trait) %}{% if profile.get(trait) is string %}{{ profile.get(trait) }}{% else %}{{ profile.get(trait)|join('\n') }}{% endif %}{% endif %}</textarea>
+<div style="font-size:0.8rem;color:var(--text-light);margin-top:2px;">Enter one value per line</div>
+
+{% else %}
+<input type="text" name="{{ trait }}" value="{{ profile.get(trait, '') if profile else '' }}" style="width:100%;max-width:400px;padding:8px;border:1px solid #e2e8f0;border-radius:4px;">
+{% endif %}
+
+{% if evidence_by_trait.get(trait) %}
+<div style="margin-top:10px;">
+<div style="font-size:0.8rem;font-weight:600;color:var(--text-light);margin-bottom:4px;">Source evidence:</div>
+{% for ev in evidence_by_trait[trait][:3] %}
+<blockquote style="margin:4px 0;padding:6px 12px;border-left:3px solid var(--primary);background:#edf2f7;font-size:0.85rem;color:#4a5568;border-radius:0 4px 4px 0;">
+{{ ev.source_quote }}
+</blockquote>
+{% endfor %}
+</div>
+{% endif %}
+</div>
+{% endfor %}
+
+<div style="margin-top:20px;">
+<button type="submit" class="btn btn-primary" style="padding:10px 24px;">Save Profile</button>
+</div>
+
+</form>
+
+<div style="margin-top:40px;padding:20px;background:#f7fafc;border-radius:8px;border:1px solid #e2e8f0;">
+<h3 style="margin-top:0;">Re-extraction</h3>
+<p style="font-size:0.9rem;color:var(--text-light);">
+Last extracted: {{ profile.extraction_date.strftime('%Y-%m-%d %H:%M') if profile and profile.extraction_date else 'Never' }}
+</p>
+<p style="font-size:0.9rem;color:var(--text-light);">
+Source: {{ profile.extraction_source if profile else 'None' }}
+</p>
+<p style="font-size:0.85rem;margin-bottom:4px;">Run this command to re-extract personality from WhatsApp data:</p>
+<code style="display:block;padding:10px;background:#2d3748;color:#e2e8f0;border-radius:4px;font-size:0.85rem;overflow-x:auto;">python scripts/extract_personality_whatsapp.py --sender "{{ rider.first_name }}" --profile-type coach</code>
+</div>
+
+</div>
+{% endblock %}

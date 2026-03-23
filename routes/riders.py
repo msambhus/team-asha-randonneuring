@@ -26,7 +26,7 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_all_rider_season_stats, detect_sr_for_all_riders_in_season,
                     get_upcoming_rusa_events, update_rider_profile, update_strava_privacy,
                     get_pbp_finishers,
-                    get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops,
+                    get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops, update_ride_plan_info,
                     get_signup_count, get_rider_signup_status, get_ride_by_id, update_ride_details,
                     get_user_by_id, _execute,
                     get_strava_connection, get_strava_activities,
@@ -554,20 +554,18 @@ def edit_ride(ride_id):
         # Get form data
         rwgps_url = request.form.get('rwgps_url', '').strip()
         ride_plan_id = request.form.get('ride_plan_id')
-        start_time = request.form.get('start_time', '').strip()
         start_location = request.form.get('start_location', '').strip()
         time_limit_hours = request.form.get('time_limit_hours')
-        
+
         # Convert empty strings to None
         ride_plan_id = int(ride_plan_id) if ride_plan_id and ride_plan_id != '' else None
         time_limit_hours = float(time_limit_hours) if time_limit_hours and time_limit_hours != '' else None
-        
-        # Update the ride
+
+        # Update the ride (start_time lives on ride_plan, not ride)
         update_ride_details(
             ride_id=ride_id,
             rwgps_url=rwgps_url if rwgps_url else None,
             ride_plan_id=ride_plan_id,
-            start_time=start_time if start_time else None,
             start_location=start_location if start_location else None,
             time_limit_hours=time_limit_hours
         )
@@ -839,12 +837,15 @@ def ride_strava_analysis(rusa_id, ride_id):
             custom_stops_merged, _ = get_merged_plan_stops(custom_plan['id'])
             custom_stops = custom_stops_merged
 
+    # When a custom plan exists, use it as the primary comparison plan
+    primary_stops = custom_stops if has_custom else plan_stops
+
     # Fetch and analyze streams
     analysis = fetch_and_analyze(
         rider_id=rider['id'],
         match_id=match['id'],
         strava_activity_id=match['strava_activity_id'],
-        plan_stops=plan_stops if plan_stops else None,
+        plan_stops=primary_stops if primary_stops else None,
     )
 
     if analysis.get('error'):
@@ -857,16 +858,17 @@ def ride_strava_analysis(rusa_id, ride_id):
                                stop_wind=None)
 
     # Build comparison data
-    plan_start_time = ride.get('start_time') or ride.get('plan_start_time')
+    plan_start_time = ride.get('plan_start_time')
     actual_start_time = match.get('start_date_local')
 
     comparison = build_comparison(
-        plan_stops=plan_stops,
+        plan_stops=primary_stops,
         detected_stops=analysis['detected_stops'],
         activity=dict(match),
-        custom_stops=custom_stops,
+        custom_stops=plan_stops if has_custom else None,
         plan_start_time=plan_start_time,
         actual_start_time=actual_start_time,
+        streams=analysis.get('streams'),
     )
 
     # Fetch historical wind for completed rides with linked plans
@@ -1543,6 +1545,34 @@ def base_plan_editor(slug):
                            weighted_difficulty=weighted_difficulty,
                            finish_time_bank=finish_time_bank)
 
+@riders_bp.route('/ride-plan/<slug>/edit-info', methods=['GET', 'POST'])
+@user_login_required
+def edit_ride_plan_info(slug):
+    """Admin-only editor for ride plan metadata."""
+    if not is_admin_user():
+        abort(403)
+    plan = get_ride_plan_by_slug(slug)
+    if not plan:
+        abort(404)
+    plan = dict(plan)
+
+    if request.method == 'POST':
+        update_ride_plan_info(
+            plan_id=plan['id'],
+            name=request.form.get('name', '').strip(),
+            rwgps_url=request.form.get('rwgps_url', '').strip(),
+            rwgps_url_team=request.form.get('rwgps_url_team', '').strip(),
+            start_time=request.form.get('start_time', '06:00').strip(),
+            distance_km=request.form.get('distance_km', ''),
+            cutoff_hours=request.form.get('cutoff_hours', ''),
+        )
+        from flask import flash
+        flash('Plan info updated.', 'success')
+        return redirect(url_for('riders.ride_plan_detail', slug=slug))
+
+    return render_template('edit_ride_plan_info.html', plan=plan)
+
+
 def custom_ride_plan_view(slug):
     """View custom plan with same detail as base plan, but with custom timings."""
     user_id = session.get('user_id')
@@ -2128,6 +2158,57 @@ def api_update_base_stop(stop_id):
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@riders_bp.route('/ride-plan/<slug>/add-stop', methods=['POST'])
+@user_login_required
+def add_base_stop(slug):
+    """Admin-only: Add a new stop to a base ride plan."""
+    if not is_admin_user():
+        abort(403)
+
+    from models import get_ride_plan_by_slug, get_ride_plan_stops, insert_ride_plan_stop
+    base_plan = get_ride_plan_by_slug(slug)
+    if not base_plan:
+        abort(404)
+
+    location = request.form.get('new_stop_location', '').strip()
+    if not location:
+        flash('Location is required.', 'error')
+        return redirect(url_for('riders.base_plan_editor', slug=slug))
+
+    stop_type = request.form.get('new_stop_type', 'waypoint').strip()
+    stop_order = request.form.get('new_stop_order', '').strip()
+    distance_miles = request.form.get('new_stop_distance', '').strip()
+    elevation_gain = request.form.get('new_stop_elevation', '').strip()
+    notes = request.form.get('new_stop_notes', '').strip()
+
+    stops = get_ride_plan_stops(base_plan['id']) or []
+    order = int(stop_order) if stop_order else (len(stops) + 1)
+
+    insert_ride_plan_stop(
+        base_plan['id'], order, location, stop_type,
+        float(distance_miles) if distance_miles else None,
+        int(elevation_gain) if elevation_gain else None,
+        notes or None
+    )
+    flash(f'Added stop "{location}".', 'success')
+    return redirect(url_for('riders.base_plan_editor', slug=slug))
+
+
+@riders_bp.route('/ride-plan/<slug>/delete-stop/<int:stop_id>', methods=['POST'])
+@user_login_required
+def delete_base_stop(slug, stop_id):
+    """Admin-only: Delete a stop from a base ride plan."""
+    if not is_admin_user():
+        abort(403)
+
+    from models import delete_ride_plan_stop
+    if delete_ride_plan_stop(stop_id):
+        flash('Stop deleted.', 'success')
+    else:
+        flash('Stop not found.', 'error')
+    return redirect(url_for('riders.base_plan_editor', slug=slug))
 
 
 @riders_bp.route('/api/custom-plan/<int:custom_plan_id>/stop/<int:stop_id>', methods=['PUT'])

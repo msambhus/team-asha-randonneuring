@@ -1,40 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Resources - Team Asha Randonneuring{% endblock %}
 
-{% block extra_head %}
-<style>
-@media (max-width: 768px) {
-    .coach-box {
-        flex-direction: column !important;
-        text-align: center;
-    }
-    .coach-box img {
-        width: 100px !important;
-        height: 100px !important;
-    }
-    .coach-box h3 {
-        font-size: 1.1rem !important;
-    }
-    .resource-grid {
-        grid-template-columns: 1fr !important;
-    }
-    .resource-card {
-        font-size: 0.9rem;
-    }
-}
-</style>
-{% endblock %}
-
 {% block content %}
 <!-- Sticky Resources Header with Quick Links -->
-<div class="sticky top-[60px] z-50">
-<div class="bg-gradient-to-br from-primary via-primary-dark to-primary text-white py-6 px-5 text-center">
-<h1 class="text-[2rem] mb-0 font-bold">Resources</h1>
+<div class="sticky top-[52px] md:top-[60px] z-50">
+<div class="hero">
+<h1>Resources</h1>
 </div>
 
 <!-- Quick Links Navigation -->
-<div class="section-nav-bar-inner">
-<div class="section-nav-links">
+<div class="section-nav-bar-inner px-3 py-2 md:px-5 md:py-[15px]">
+<div class="section-nav-links gap-1.5 md:gap-2.5">
 <a href="#pbp-prep" class="section-nav-item">🏆 PBP Prep</a>
 <a href="#pbp-experiences" class="section-nav-item">📝 PBP Stories</a>
 <a href="#training" class="section-nav-item">💪 Training</a>
@@ -50,8 +26,8 @@
 
 <div class="container">
 
-<div class="coach-box bg-gradient-to-br from-[#faf5ff] to-[#ebf8ff] border-2 border-[#805ad5] rounded-xl p-6 my-5 flex gap-5 items-start mb-8" id="coach-mani">
-<img src="https://ta.ashanet.org/siliconvalley/marathon/images/coach_mani.jpg" alt="Coach Mani" class="w-[120px] h-[120px] object-cover rounded-[10px] flex-shrink-0">
+<div class="coach-box flex flex-col items-center text-center md:flex-row md:items-start md:text-left gap-5 mb-8" id="coach-mani">
+<img src="https://ta.ashanet.org/siliconvalley/marathon/images/coach_mani.jpg" alt="Coach Mani" class="w-[80px] h-[80px] md:w-[120px] md:h-[120px] object-cover rounded-[10px] flex-shrink-0">
 <div>
 <h3 class="text-[#553c9a] mb-2.5 text-xl font-bold">Coach Mani &mdash; Pioneer of Randonneuring</h3>
 <p class="mt-2.5">Coach Mani completed <strong>Paris-Brest-Paris in 2007</strong>, long before the current wave of Team Asha randonneurs. His experience and mentorship inspired the team we have today.</p>

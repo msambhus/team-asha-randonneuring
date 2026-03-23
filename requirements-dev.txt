@@ -7,3 +7,5 @@ autoevals
 pgvector==0.4.2
 numpy
 tqdm
+trafilatura==2.0.0
+pdfplumber==0.11.9

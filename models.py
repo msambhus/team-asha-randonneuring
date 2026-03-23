@@ -116,6 +116,15 @@ def get_rider_by_rusa(rusa_id):
         WHERE r.rusa_id = %s
     """, (rusa_id,)).fetchone()
 
+
+def get_rider_by_id(rider_id):
+    """Get rider by primary key ID. Returns dict or None."""
+    return _execute(
+        "SELECT * FROM rider WHERE id = %s",
+        (rider_id,)
+    ).fetchone()
+
+
 @cache.memoize(CACHE_TIMEOUT)
 def get_riders_for_season(season_id):
     """Get riders who have any participation record in this season."""
@@ -150,13 +159,14 @@ def get_active_riders_for_season(season_id):
 def get_rides_for_season(season_id):
     """Get all rides for a season with club info."""
     return _execute("""
-        SELECT ri.*, 
-               c.code as club_code, 
+        SELECT ri.*,
+               c.code as club_code,
                c.name as club_name,
                c.region as region,
                rp.slug as plan_slug,
+               rp.start_time as plan_start_time,
                (c.code = 'TA') as is_team_ride
-        FROM ride ri 
+        FROM ride ri
         INNER JOIN club c ON ri.club_id = c.id
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE ri.season_id = %s
@@ -568,15 +578,16 @@ def get_all_upcoming_events():
     """Get all upcoming events (Team Asha and external) with club info."""
     today = date.today()
     events = _execute("""
-        SELECT ri.*, 
-               c.code as club_code, 
+        SELECT ri.*,
+               c.code as club_code,
                c.name as club_name,
                c.region as region,
                rp.slug as plan_slug,
                rp.rwgps_url_team as plan_rwgps_url_team,
+               rp.start_time as plan_start_time,
                (c.code = 'TA') as is_team_ride,
                (SELECT COUNT(*) FROM rider_ride rr WHERE rr.ride_id = ri.id AND rr.signed_up_at IS NOT NULL) as signup_count
-        FROM ride ri 
+        FROM ride ri
         INNER JOIN club c ON ri.club_id = c.id
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE ri.date >= %s AND ri.event_status = 'UPCOMING'
@@ -858,9 +869,13 @@ def update_base_plan_stop(stop_id, changes):
         updates.append("stop_duration_min = %s")
         params.append(changes['stop_duration_min'])
 
-    if 'stop_name' in changes:
-        updates.append("stop_name = %s")
-        params.append(changes['stop_name'] or None)
+    if 'location' in changes:
+        updates.append("location = %s")
+        params.append(changes['location'] or None)
+
+    if 'stop_type' in changes:
+        updates.append("stop_type = %s")
+        params.append(changes['stop_type'] or None)
 
     if 'notes' in changes:
         updates.append("notes = %s")
@@ -876,13 +891,108 @@ def update_base_plan_stop(stop_id, changes):
     conn.commit()
 
     # Clear cache for the affected plan
-    cur.execute("SELECT plan_id FROM ride_plan_stop WHERE id = %s", (stop_id,))
+    cur.execute("SELECT ride_plan_id FROM ride_plan_stop WHERE id = %s", (stop_id,))
     result = cur.fetchone()
     if result:
-        cache.delete_memoized(get_ride_plan_stops, result['plan_id'])
+        plan_id = result['ride_plan_id']
+        cache.delete_memoized(get_ride_plan_stops, plan_id)
+        # Recalculate cum_time_min for all stops in this plan
+        if any(k in changes for k in ('segment_time_min', 'stop_duration_min', 'distance_miles')):
+            recalculate_base_plan_cumulative(plan_id, cur, conn)
     cache.clear()
 
     return cur.rowcount > 0
+
+
+def recalculate_base_plan_cumulative(ride_plan_id, cur=None, conn=None):
+    """Recalculate cum_time_min for all stops and sync ride_plan summary.
+
+    cum_time_min = running sum of (segment_time_min + stop_duration_min).
+    Also updates ride_plan.total_moving_time_min, total_elapsed_time_min,
+    and total_break_time_min to stay in sync with the stops.
+    """
+    own_conn = False
+    if cur is None:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        own_conn = True
+
+    cur.execute(
+        "SELECT id, stop_order, segment_time_min, stop_duration_min, bookend_time_min "
+        "FROM ride_plan_stop WHERE ride_plan_id = %s ORDER BY stop_order",
+        (ride_plan_id,)
+    )
+    stops = cur.fetchall()
+
+    cum = 0
+    total_moving = 0
+    total_break = 0
+    for s in stops:
+        seg = s['segment_time_min'] or 0
+        brk = s['stop_duration_min'] or 0
+        cum += seg + brk
+        total_moving += seg
+        total_break += brk
+        arrival = cum - brk
+        bookend = s.get('bookend_time_min')
+        time_bank = (bookend - arrival) if bookend else None
+        cur.execute(
+            "UPDATE ride_plan_stop SET cum_time_min = %s, time_bank_min = %s WHERE id = %s",
+            (cum, time_bank, s['id'])
+        )
+
+    # Sync ride_plan summary fields from stops (single source of truth)
+    cur.execute(
+        "UPDATE ride_plan SET total_moving_time_min = %s, "
+        "total_elapsed_time_min = %s, total_break_time_min = %s "
+        "WHERE id = %s",
+        (total_moving, cum, total_break, ride_plan_id)
+    )
+
+    conn.commit()
+
+def insert_ride_plan_stop(ride_plan_id, stop_order, location, stop_type='waypoint',
+                         distance_miles=None, elevation_gain=None, notes=None):
+    """Insert a new stop into a ride plan and reorder subsequent stops."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    # Shift existing stops at or after this position
+    cur.execute(
+        "UPDATE ride_plan_stop SET stop_order = stop_order + 1 WHERE ride_plan_id = %s AND stop_order >= %s",
+        (ride_plan_id, stop_order)
+    )
+    cur.execute(
+        """INSERT INTO ride_plan_stop (ride_plan_id, stop_order, location, stop_type, distance_miles, elevation_gain, notes)
+           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+        (ride_plan_id, stop_order, location, stop_type, distance_miles, elevation_gain, notes)
+    )
+    result = cur.fetchone()
+    conn.commit()
+    recalculate_base_plan_cumulative(ride_plan_id)
+    cache.clear()
+    return result
+
+
+def delete_ride_plan_stop(stop_id):
+    """Delete a stop from a ride plan and reorder remaining stops."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    # Get the stop info before deleting
+    cur.execute("SELECT ride_plan_id, stop_order FROM ride_plan_stop WHERE id = %s", (stop_id,))
+    stop = cur.fetchone()
+    if not stop:
+        return False
+    cur.execute("DELETE FROM ride_plan_stop WHERE id = %s", (stop_id,))
+    # Reorder remaining stops
+    cur.execute(
+        "UPDATE ride_plan_stop SET stop_order = stop_order - 1 WHERE ride_plan_id = %s AND stop_order > %s",
+        (stop['ride_plan_id'], stop['stop_order'])
+    )
+    conn.commit()
+    recalculate_base_plan_cumulative(stop['ride_plan_id'])
+    cache.clear()
+    return True
+
 
 def get_ride_plan_by_rwgps_route_id(route_id):
     """Check if a ride plan already exists for a given RWGPS route ID."""
@@ -1186,27 +1296,43 @@ def get_rides_with_signup_counts(season_id):
     """, (season_id,)).fetchall()
 
 
-def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None, start_time=None,
-                       start_location=None, time_limit_hours=None):
-    """Update ride details (route, team route, start time, location, time limit)."""
+def update_ride_core(ride_id, fields):
+    """Update core ride fields: name, date, distance_km, ride_type, club_id, elevation_ft, distance_miles, ft_per_mile."""
+    allowed = {'name', 'date', 'distance_km', 'ride_type', 'club_id', 'elevation_ft', 'distance_miles', 'ft_per_mile'}
     conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
+    cur = conn.cursor()
     updates = []
     params = []
-    
+    for col in allowed:
+        if col in fields:
+            updates.append(f"{col} = %s")
+            params.append(fields[col] if fields[col] != '' else None)
+    if updates:
+        params.append(ride_id)
+        cur.execute(f"UPDATE ride SET {', '.join(updates)} WHERE id = %s", params)
+        conn.commit()
+        cache.clear()
+        return True
+    return False
+
+
+def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None,
+                       start_location=None, time_limit_hours=None):
+    """Update ride details (route, location, time limit). Start time lives on ride_plan."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    updates = []
+    params = []
+
     if rwgps_url is not None:
         updates.append("rwgps_url = %s")
         params.append(rwgps_url if rwgps_url.strip() else None)
-    
+
     if ride_plan_id is not None:
         updates.append("ride_plan_id = %s")
         params.append(ride_plan_id if ride_plan_id else None)
-    
-    if start_time is not None:
-        updates.append("start_time = %s")
-        params.append(start_time if start_time.strip() else None)
-    
+
     if start_location is not None:
         updates.append("start_location = %s")
         params.append(start_location if start_location.strip() else None)
@@ -1224,6 +1350,19 @@ def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None, start_time=N
     return False
 
 # ========== RIDE PLANS ==========
+
+def update_ride_plan_info(plan_id, name, rwgps_url, rwgps_url_team, start_time, distance_km, cutoff_hours):
+    """Update ride plan top-level metadata."""
+    _execute("""
+        UPDATE ride_plan SET name=%s, rwgps_url=%s, rwgps_url_team=%s, start_time=%s,
+            distance_km=%s, cutoff_hours=%s
+        WHERE id=%s
+    """, (name or None, rwgps_url or None, rwgps_url_team or None, start_time or '06:00',
+          int(distance_km) if distance_km else None,
+          float(cutoff_hours) if cutoff_hours else None,
+          plan_id))
+    cache.delete_memoized(get_all_ride_plans)
+    cache.delete_memoized(get_ride_plan_by_slug)
 
 @cache.memoize(CACHE_TIMEOUT)
 def get_all_ride_plans():
@@ -2527,3 +2666,295 @@ def save_ride_wind_data(ride_id, wind_rows):
             row.get('data_source'),
         ))
     conn.commit()
+
+
+# ========== PERSONALITY & COACHING ==========
+# CRUD functions for personality_profile, gear_preference, coach_assignment, coaching_guardrail.
+# NOT cached — admin edits must be immediately visible.
+# All SELECTs include WHERE deleted_at IS NULL.
+# All writes call conn.commit().
+
+
+def get_personality_profile(rider_id, profile_type='coach'):
+    """Get active personality profile for a rider. Returns dict or None."""
+    return _execute(
+        """SELECT * FROM personality_profile
+           WHERE rider_id = %s AND profile_type = %s AND deleted_at IS NULL""",
+        (rider_id, profile_type)
+    ).fetchone()
+
+
+def get_all_personality_profiles(profile_type=None):
+    """Get all active personality profiles, optionally filtered by type."""
+    if profile_type:
+        return _execute(
+            """SELECT * FROM personality_profile
+               WHERE profile_type = %s AND deleted_at IS NULL
+               ORDER BY rider_id""",
+            (profile_type,)
+        ).fetchall()
+    return _execute(
+        """SELECT * FROM personality_profile
+           WHERE deleted_at IS NULL ORDER BY rider_id"""
+    ).fetchall()
+
+
+def upsert_personality_profile(rider_id, profile_type, fields, updated_by='system'):
+    """Insert or update personality profile. fields dict maps column names to values."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    col_names = list(fields.keys())
+    col_values = list(fields.values())
+    # Build INSERT columns and placeholders
+    all_cols = ['rider_id', 'profile_type', 'updated_by'] + col_names
+    all_placeholders = ['%s', '%s', '%s'] + ['%s'] * len(col_names)
+    all_values = [rider_id, profile_type, updated_by] + col_values
+    # Build ON CONFLICT SET clause
+    set_parts = [f"{c} = EXCLUDED.{c}" for c in col_names]
+    set_parts.append("updated_by = EXCLUDED.updated_by")
+    set_parts.append("updated_at = NOW()")
+    cur.execute(
+        f"""INSERT INTO personality_profile ({', '.join(all_cols)})
+            VALUES ({', '.join(all_placeholders)})
+            ON CONFLICT (rider_id, profile_type, extraction_source) DO UPDATE SET
+            {', '.join(set_parts)}
+            RETURNING *""",
+        all_values
+    )
+    result = cur.fetchone()
+    conn.commit()
+    return result
+
+
+def soft_delete_personality_profile(profile_id, updated_by='system'):
+    """Soft-delete a personality profile by setting deleted_at."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE personality_profile SET deleted_at = NOW(), updated_by = %s WHERE id = %s",
+        (updated_by, profile_id)
+    )
+    conn.commit()
+
+
+def get_gear_preference(rider_id, label=None):
+    """Get active gear preference for a rider. Returns primary bike or specific label."""
+    if label:
+        return _execute(
+            "SELECT * FROM gear_preference WHERE rider_id = %s AND label = %s AND deleted_at IS NULL",
+            (rider_id, label)
+        ).fetchone()
+    return _execute(
+        """SELECT * FROM gear_preference WHERE rider_id = %s AND deleted_at IS NULL
+           ORDER BY CASE WHEN label = 'Primary' THEN 0 ELSE 1 END, id LIMIT 1""",
+        (rider_id,)
+    ).fetchone()
+
+
+def get_all_gear_for_rider(rider_id):
+    """Get all active gear rows (multiple bikes) for a rider."""
+    return _execute(
+        """SELECT * FROM gear_preference WHERE rider_id = %s AND deleted_at IS NULL
+           ORDER BY CASE WHEN label = 'Primary' THEN 0 ELSE 1 END, id""",
+        (rider_id,)
+    ).fetchall()
+
+
+def upsert_gear_preference(rider_id, fields, updated_by='system', label='Primary'):
+    """Insert or update gear preference. Uses (rider_id, label) for multi-bike support."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    col_names = list(fields.keys())
+    col_values = list(fields.values())
+    all_cols = ['rider_id', 'label', 'updated_by'] + col_names
+    all_placeholders = ['%s', '%s', '%s'] + ['%s'] * len(col_names)
+    all_values = [rider_id, label, updated_by] + col_values
+    set_parts = [f"{c} = EXCLUDED.{c}" for c in col_names]
+    set_parts.append("updated_by = EXCLUDED.updated_by")
+    set_parts.append("updated_at = NOW()")
+    cur.execute(
+        f"""INSERT INTO gear_preference ({', '.join(all_cols)})
+            VALUES ({', '.join(all_placeholders)})
+            ON CONFLICT (rider_id, label) DO UPDATE SET
+            {', '.join(set_parts)}
+            RETURNING *""",
+        all_values
+    )
+    result = cur.fetchone()
+    conn.commit()
+    return result
+
+
+def get_coach_assignments(coach_rider_id=None, topic_domain=None, active_only=True):
+    """Get coach assignments with optional filters. Always excludes soft-deleted."""
+    conditions = ["deleted_at IS NULL"]
+    params = []
+    if active_only:
+        conditions.append("is_active = TRUE")
+    if coach_rider_id is not None:
+        conditions.append("coach_rider_id = %s")
+        params.append(coach_rider_id)
+    if topic_domain is not None:
+        conditions.append("topic_domain = %s")
+        params.append(topic_domain)
+    where = " AND ".join(conditions)
+    return _execute(
+        f"SELECT * FROM coach_assignment WHERE {where} ORDER BY topic_domain",
+        tuple(params)
+    ).fetchall()
+
+
+def upsert_coach_assignment(coach_rider_id, topic_domain, fields, updated_by='system'):
+    """Insert or update coach assignment. fields dict maps column names to values."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    col_names = list(fields.keys())
+    col_values = list(fields.values())
+    all_cols = ['coach_rider_id', 'topic_domain', 'updated_by'] + col_names
+    all_placeholders = ['%s', '%s', '%s'] + ['%s'] * len(col_names)
+    all_values = [coach_rider_id, topic_domain, updated_by] + col_values
+    set_parts = [f"{c} = EXCLUDED.{c}" for c in col_names]
+    set_parts.append("updated_by = EXCLUDED.updated_by")
+    set_parts.append("updated_at = NOW()")
+    cur.execute(
+        f"""INSERT INTO coach_assignment ({', '.join(all_cols)})
+            VALUES ({', '.join(all_placeholders)})
+            ON CONFLICT (coach_rider_id, topic_domain) DO UPDATE SET
+            {', '.join(set_parts)}
+            RETURNING *""",
+        all_values
+    )
+    result = cur.fetchone()
+    conn.commit()
+    return result
+
+
+def get_active_guardrails(rule_type=None, applies_to=None):
+    """Get active guardrails with optional filters. Excludes soft-deleted and inactive."""
+    conditions = ["is_active = TRUE", "deleted_at IS NULL"]
+    params = []
+    if rule_type is not None:
+        conditions.append("rule_type = %s")
+        params.append(rule_type)
+    if applies_to is not None:
+        conditions.append("applies_to = %s")
+        params.append(applies_to)
+    where = " AND ".join(conditions)
+    return _execute(
+        f"SELECT * FROM coaching_guardrail WHERE {where} ORDER BY rule_type",
+        tuple(params)
+    ).fetchall()
+
+
+def insert_guardrail(rule_type, rule_value, applies_to='all', updated_by='system'):
+    """Insert a new guardrail row. Returns the inserted row."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        """INSERT INTO coaching_guardrail (rule_type, rule_value, applies_to, updated_by)
+           VALUES (%s, %s, %s, %s)
+           RETURNING *""",
+        (rule_type, rule_value, applies_to, updated_by)
+    )
+    result = cur.fetchone()
+    conn.commit()
+    return result
+
+
+def update_guardrail(guardrail_id, fields, updated_by='system'):
+    """Update guardrail fields. DB trigger handles rule_version increment."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    set_parts = [f"{k} = %s" for k in fields.keys()]
+    set_parts.append("updated_by = %s")
+    values = list(fields.values()) + [updated_by, guardrail_id]
+    cur.execute(
+        f"""UPDATE coaching_guardrail
+            SET {', '.join(set_parts)}
+            WHERE id = %s
+            RETURNING *""",
+        values
+    )
+    result = cur.fetchone()
+    conn.commit()
+    return result
+
+
+def get_trait_evidence(rider_id, extraction_source=None):
+    """Get personality trait evidence quotes for a rider. Returns list of dicts."""
+    if extraction_source:
+        return _execute(
+            """SELECT * FROM personality_trait_evidence
+               WHERE rider_id = %s AND extraction_source = %s
+               ORDER BY trait_name, created_at DESC""",
+            (rider_id, extraction_source)
+        ).fetchall()
+    return _execute(
+        """SELECT * FROM personality_trait_evidence
+           WHERE rider_id = %s
+           ORDER BY trait_name, created_at DESC""",
+        (rider_id,)
+    ).fetchall()
+
+
+def get_all_guardrails(rule_type=None):
+    """Get all non-deleted guardrails (active AND inactive) for admin display."""
+    if rule_type:
+        return _execute(
+            """SELECT * FROM coaching_guardrail
+               WHERE deleted_at IS NULL AND rule_type = %s
+               ORDER BY rule_type, id""",
+            (rule_type,)
+        ).fetchall()
+    return _execute(
+        """SELECT * FROM coaching_guardrail
+           WHERE deleted_at IS NULL
+           ORDER BY rule_type, id"""
+    ).fetchall()
+
+
+def soft_delete_guardrail(guardrail_id, updated_by='system'):
+    """Soft-delete a guardrail by setting deleted_at."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE coaching_guardrail SET deleted_at = NOW(), updated_by = %s WHERE id = %s",
+        (updated_by, guardrail_id)
+    )
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Base (Phase 12)
+# ---------------------------------------------------------------------------
+
+def get_knowledge_sources():
+    """Return web_* sources with chunk count and embed dates from whatsapp_chunk."""
+    return _execute("""
+        SELECT source,
+               COUNT(*) AS chunk_count,
+               MIN(created_at) AS first_embedded,
+               MAX(created_at) AS last_embedded
+        FROM whatsapp_chunk
+        WHERE source LIKE 'web_%%'
+        GROUP BY source
+        ORDER BY last_embedded DESC
+    """).fetchall()
+
+
+def delete_knowledge_source(source):
+    """Delete all chunks for a web_* source. Returns deleted count.
+
+    Raises ValueError if source does not start with 'web_'.
+    """
+    if not source or not source.startswith('web_'):
+        raise ValueError("Can only delete web_ sources, got: " + repr(source))
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        "DELETE FROM whatsapp_chunk WHERE source = %s RETURNING id",
+        (source,)
+    )
+    deleted = len(cur.fetchall())
+    conn.commit()
+    return deleted

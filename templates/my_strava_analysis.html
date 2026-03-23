@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}My Strava Analysis - Team Asha Randonneuring{% endblock %}
+{% block title %}Completed Brevet Analysis - Team Asha Randonneuring{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -145,7 +145,7 @@
 .power-value { color: #7c3aed; }
 
 @media (max-width: 640px) {
-    .metric-grid { grid-template-columns: repeat(3, 1fr); }
+    .metric-grid { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
     .card-header { flex-direction: column; align-items: flex-start; }
     .card-actions { flex-direction: column; }
     .btn-analysis, .btn-strava-link { width: 100%; justify-content: center; }
@@ -155,7 +155,7 @@
 
 {% block content %}
 <div class="hero" style="padding:30px 20px;">
-    <h1 style="margin-bottom:4px;">My Strava Ride Analysis</h1>
+    <h1 style="margin-bottom:4px;">Completed Brevet Analysis</h1>
     <p style="opacity:0.85;">{{ rider.first_name }} {{ rider.last_name }} &mdash; RUSA# {{ rider.rusa_id }}</p>
 </div>
 
