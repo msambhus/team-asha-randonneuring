@@ -664,11 +664,24 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         else:
             row['actual_segment_min'] = None
             row['actual_speed_mph'] = None
-        # Total actual break time in this segment (from all detected stops between waypoints)
-        seg_break_total = sum(
-            ds['duration_min'] for ds in all_detected
-            if prev_plan_dist < ds['distance_miles'] <= cur_dist
-        ) if cur_dist > prev_plan_dist else 0
+        # Unplanned break time in this segment — excludes stops matched to waypoints
+        # (those are already shown in the Break column). Only counts stops like
+        # traffic lights, mechanicals, bathroom breaks between waypoints.
+        tolerance = 3.0  # miles — exclude stops within this range of any waypoint
+        waypoint_dists = [float(ps.get('distance_miles') or 0) for ps in plan_stops]
+        seg_break_total = 0
+        if cur_dist > prev_plan_dist:
+            for ds in all_detected:
+                d = ds['distance_miles']
+                if not (prev_plan_dist < d <= cur_dist):
+                    continue
+                if ds.get('matched_stop_name'):
+                    continue  # matched to a waypoint — shown in Break column
+                # Also skip if within tolerance of any waypoint
+                near_waypoint = any(abs(d - wd) < tolerance for wd in waypoint_dists)
+                if near_waypoint:
+                    continue
+                seg_break_total += ds['duration_min']
         row['actual_seg_break_min'] = round(seg_break_total, 1) if seg_break_total > 0 else None
 
         if not row.get('is_extra'):
