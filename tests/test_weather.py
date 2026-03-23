@@ -906,3 +906,122 @@ class TestFetchStopWind:
         # They should differ (not all the same value)
         speeds = [r['wind_speed_kmh'] for r in result if r is not None]
         assert len(set(speeds)) > 1, "All stops show identical wind speed — arrival time not used"
+
+
+# ── Phase 04: detect_heavy_wind ─────────────────────────────────────
+
+class TestDetectHeavyWind:
+    """Tests for detect_heavy_wind() — evaluates per-stop wind data against thresholds."""
+
+    def test_none_input_returns_none(self):
+        """detect_heavy_wind(None) returns None."""
+        from services.weather import detect_heavy_wind
+        assert detect_heavy_wind(None) is None
+
+    def test_empty_list_returns_none(self):
+        """detect_heavy_wind([]) returns None."""
+        from services.weather import detect_heavy_wind
+        assert detect_heavy_wind([]) is None
+
+    def test_all_none_stops_returns_none(self):
+        """detect_heavy_wind([None, None]) returns None when all stops are None."""
+        from services.weather import detect_heavy_wind
+        assert detect_heavy_wind([None, None]) is None
+
+    def test_max_wind_above_threshold_returns_warning(self):
+        """max_wind=35, avg_headwind=10 triggers warning (max_wind > 30)."""
+        from services.weather import detect_heavy_wind
+        stop_wind = [
+            {'wind_speed_kmh': 35.0, 'headwind_kmh': 10.0},
+            {'wind_speed_kmh': 20.0, 'headwind_kmh': 10.0},
+        ]
+        result = detect_heavy_wind(stop_wind)
+        assert result is not None
+        assert result['is_heavy'] is True
+
+    def test_avg_headwind_above_threshold_returns_warning(self):
+        """max_wind=20, avg_headwind=18 triggers warning (avg_headwind > 15)."""
+        from services.weather import detect_heavy_wind
+        stop_wind = [
+            {'wind_speed_kmh': 20.0, 'headwind_kmh': 18.0},
+            {'wind_speed_kmh': 15.0, 'headwind_kmh': 18.0},
+        ]
+        result = detect_heavy_wind(stop_wind)
+        assert result is not None
+        assert result['is_heavy'] is True
+
+    def test_both_below_thresholds_returns_none(self):
+        """max_wind=25, avg_headwind=10 returns None (both below thresholds)."""
+        from services.weather import detect_heavy_wind
+        stop_wind = [
+            {'wind_speed_kmh': 25.0, 'headwind_kmh': 10.0},
+            {'wind_speed_kmh': 20.0, 'headwind_kmh': 10.0},
+        ]
+        result = detect_heavy_wind(stop_wind)
+        assert result is None
+
+    def test_exactly_at_threshold_returns_none(self):
+        """max_wind=30, avg_headwind=15 returns None (strict >, not >=)."""
+        from services.weather import detect_heavy_wind
+        stop_wind = [
+            {'wind_speed_kmh': 30.0, 'headwind_kmh': 15.0},
+        ]
+        result = detect_heavy_wind(stop_wind)
+        assert result is None
+
+    def test_warning_dict_has_required_keys(self):
+        """Warning dict includes max_wind_kmh, avg_headwind_kmh, is_heavy, description."""
+        from services.weather import detect_heavy_wind
+        stop_wind = [
+            {'wind_speed_kmh': 35.0, 'headwind_kmh': 20.0},
+        ]
+        result = detect_heavy_wind(stop_wind)
+        assert result is not None
+        assert 'max_wind_kmh' in result
+        assert 'avg_headwind_kmh' in result
+        assert 'is_heavy' in result
+        assert 'description' in result
+        assert result['is_heavy'] is True
+
+    def test_description_contains_wind_values(self):
+        """description contains avg headwind and max gust values as readable text."""
+        from services.weather import detect_heavy_wind
+        stop_wind = [
+            {'wind_speed_kmh': 35.0, 'headwind_kmh': 20.0},
+        ]
+        result = detect_heavy_wind(stop_wind)
+        assert result is not None
+        desc = result['description']
+        assert isinstance(desc, str)
+        assert '20' in desc or '20.0' in desc  # avg headwind value
+        assert '35' in desc or '35.0' in desc  # max gust value
+
+    def test_mixed_list_with_none_stops_skips_none(self):
+        """Mixed list with some None stops skips None entries and still computes correctly."""
+        from services.weather import detect_heavy_wind
+        stop_wind = [
+            None,
+            {'wind_speed_kmh': 35.0, 'headwind_kmh': 20.0},
+            None,
+            {'wind_speed_kmh': 20.0, 'headwind_kmh': 10.0},
+        ]
+        result = detect_heavy_wind(stop_wind)
+        # max_wind=35 > 30, should return warning
+        assert result is not None
+        assert result['is_heavy'] is True
+        # avg_headwind = (20 + 10) / 2 = 15.0 — exactly at threshold, not above
+        # max_wind=35 > 30 triggers regardless
+        assert result['max_wind_kmh'] == 35.0
+        assert result['avg_headwind_kmh'] == 15.0
+
+    def test_warning_dict_values_are_correct(self):
+        """Warning dict values match actual computed max_wind and avg_headwind."""
+        from services.weather import detect_heavy_wind
+        stop_wind = [
+            {'wind_speed_kmh': 40.0, 'headwind_kmh': 22.0},
+            {'wind_speed_kmh': 25.0, 'headwind_kmh': 18.0},
+        ]
+        result = detect_heavy_wind(stop_wind)
+        assert result is not None
+        assert result['max_wind_kmh'] == 40.0
+        assert result['avg_headwind_kmh'] == 20.0  # (22 + 18) / 2
