@@ -263,11 +263,20 @@
         gap: 6px;
     }
 }
+@media (max-width: 640px) {
+    .stop-metrics {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 4px;
+        margin-left: 0;
+    }
+    .stop-metrics .inline-edit { width: 100%; }
+    .stop-row { padding: 8px; }
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="hero" style="padding:40px 20px 30px;">
+<div class="hero">
     <h1>Edit Base Plan</h1>
     <p style="opacity:0.85;margin-top:8px;">{{ base_plan.name }}</p>
     <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;">

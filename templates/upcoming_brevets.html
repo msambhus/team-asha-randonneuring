@@ -74,7 +74,7 @@
 }
 .events-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 20px;
 }
 .event-card {
@@ -599,6 +599,63 @@
     .month-header {
         font-size: 1.1rem;
         padding: 10px 16px;
+    }
+}
+
+@media (max-width: 640px) {
+    .event-card {
+        padding: 16px;
+        min-height: auto;
+    }
+    .event-date {
+        top: 12px;
+        right: 12px;
+        padding: 5px 8px;
+        border-radius: 6px;
+    }
+    .event-day {
+        font-size: 1.3rem;
+    }
+    .event-month {
+        font-size: 0.6rem;
+    }
+    .event-title {
+        padding-right: 60px;
+        font-size: 0.9rem;
+    }
+    .signup-section {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    .signup-actions {
+        justify-content: flex-start;
+    }
+    .filter-section {
+        padding: 14px;
+    }
+    .filter-buttons {
+        gap: 6px;
+    }
+    .region-filter {
+        padding: 7px 12px;
+        font-size: 0.8rem;
+        gap: 6px;
+    }
+    .region-dot {
+        width: 10px;
+        height: 10px;
+    }
+    .month-header {
+        font-size: 1rem;
+        padding: 8px 14px;
+    }
+    .event-distance {
+        font-size: 1.3rem;
+    }
+    .event-link-btn {
+        padding: 5px 10px;
+        font-size: 0.7rem;
     }
 }
 
