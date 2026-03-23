@@ -493,8 +493,8 @@
     <th style="text-align:right;">Mi</th>
     <th style="text-align:right;">Seg</th>
     <th style="text-align:right;">Spd</th>
-    <th style="text-align:right;">Break</th>
-    <th style="text-align:right;">Seg Brk</th>
+    <th style="text-align:right;">Stop</th>
+    <th style="text-align:right;" title="Unplanned stops between waypoints (traffic, mechanicals, etc.)">Enroute</th>
     <th style="text-align:right;">Cumul</th>
     <th style="text-align:right;">TOD</th>
     <th style="text-align:right;">Bank</th>
@@ -540,11 +540,11 @@
         </div>
     </td>
 
-    {# Break (at this stop) — order: base / your plan / actual #}
+    {# Stop duration at this waypoint — order: base / your plan / actual. Show 0 explicitly #}
     <td>
         <div class="cell-stack">
-            {% if has_custom and row.custom and row.custom.stop_duration_min %}<span class="val-base">{{ row.custom.stop_duration_min }}</span>{% endif %}
-            {% if row.plan_stop_duration_min %}<span class="val-plan">{{ row.plan_stop_duration_min }}</span>{% endif %}
+            {% if has_custom and row.custom and row.custom.stop_duration_min is not none %}<span class="val-base">{{ row.custom.stop_duration_min }}</span>{% endif %}
+            {% if row.plan_stop_duration_min is not none %}<span class="val-plan">{{ row.plan_stop_duration_min }}</span>{% endif %}
             {% if row.actual_stop_duration_min is not none %}<span class="val-actual">{{ row.actual_stop_duration_min|round(0)|int }}</span>{% endif %}
         </div>
     </td>
