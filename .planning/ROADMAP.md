@@ -91,7 +91,10 @@ Plans:
   2. Wind data is present for rider-added stops (not just base stops)
   3. Hidden stops do not produce a wind cell in the custom plan table
   4. Archive API responses with a single location (dict) and multiple locations (list) both render correctly without TypeError
-**Plans**: TBD
+**Plans:** 1 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Wire fetch_stop_wind into custom_ride_plan_view with tests for custom stops, hidden stops, and API normalization
 
 ### Phase 6: Historical Wind — Archive API and DB Persistence
 **Goal**: Historical wind for completed rides is fetched once from the Open-Meteo archive API, persisted to the ride_wind_data table, and never re-fetched on subsequent page loads
@@ -127,6 +130,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 2. Stop-to-Coordinate Interpolation | 0/1 | Planning | - |
 | 3. Forecast Wind in Base Ride Plan | 0/2 | Planning | - |
 | 4. Heavy Wind Warning Banner | 2/2 | Complete   | 2026-03-23 |
-| 5. Forecast Wind in Custom Ride Plan | 0/TBD | Not started | - |
+| 5. Forecast Wind in Custom Ride Plan | 0/1 | Planning | - |
 | 6. Historical Wind — Archive API and DB Persistence | 0/TBD | Not started | - |
 | 7. Historical Wind Display and Ride Header Links | 0/TBD | Not started | - |
