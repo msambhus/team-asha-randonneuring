@@ -236,6 +236,7 @@ def fetch_and_analyze(rider_id, match_id, strava_activity_id, plan_stops=None):
         stream_summary = (cached.get('stream_summary') or {}) if cached else {}
     else:
         detected_stops = detect_stops(streams)
+        detected_stops = merge_nearby_stops(detected_stops)
         if plan_stops and detected_stops:
             detected_stops = match_stops_to_plan(detected_stops, plan_stops)
         stream_summary = _build_stream_summary(streams)
@@ -299,6 +300,40 @@ def detect_stops(streams):
             })
 
     return stops
+
+
+STOP_MERGE_RADIUS_MILES = 0.3  # stops within this distance are merged into one
+
+
+def merge_nearby_stops(stops):
+    """Merge detected stops that are within STOP_MERGE_RADIUS_MILES of each other.
+
+    GPS drift or brief creeping during a single real stop can produce two velocity
+    drops very close together.  Merging them before plan matching ensures only one
+    row competes for the nearby plan waypoint.
+
+    Duration of the merged stop = sum of individual durations.
+    Distance position = the earlier stop's distance.
+    """
+    if len(stops) <= 1:
+        return stops
+
+    merged = []
+    i = 0
+    while i < len(stops):
+        current = dict(stops[i])
+        # Absorb subsequent stops within the merge radius
+        j = i + 1
+        while j < len(stops):
+            if stops[j]['distance_miles'] - current['distance_miles'] <= STOP_MERGE_RADIUS_MILES:
+                current['duration_s'] += stops[j]['duration_s']
+                current['duration_min'] = round(current['duration_s'] / 60, 1)
+                j += 1
+            else:
+                break
+        merged.append(current)
+        i = j
+    return merged
 
 
 def match_stops_to_plan(detected_stops, plan_stops):
