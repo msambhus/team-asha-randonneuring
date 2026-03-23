@@ -28,12 +28,12 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Base Plan Wind Display
 
-- [ ] **BPLN-01**: User sees wind column in base ride plan detail page showing wind speed at each stop
-- [ ] **BPLN-02**: Wind cells have green background for tailwind, red for headwind, blue for crosswind
-- [ ] **BPLN-03**: Wind cell background color opacity scales with wind speed (light 0-5, medium 5-15, strong 15+ km/h)
-- [ ] **BPLN-04**: Wind cell font size scales with wind speed (small for light, medium for moderate, large for strong)
-- [ ] **BPLN-05**: Wind column only renders when wind data is available (graceful degradation)
-- [ ] **BPLN-06**: Wind legend section explains green=tailwind, red=headwind, blue=crosswind color coding
+- [x] **BPLN-01**: User sees wind column in base ride plan detail page showing wind speed at each stop
+- [x] **BPLN-02**: Wind cells have green background for tailwind, red for headwind, blue for crosswind
+- [x] **BPLN-03**: Wind cell background color opacity scales with wind speed (light 0-5, medium 5-15, strong 15+ km/h)
+- [x] **BPLN-04**: Wind cell font size scales with wind speed (small for light, medium for moderate, large for strong)
+- [x] **BPLN-05**: Wind column only renders when wind data is available (graceful degradation)
+- [x] **BPLN-06**: Wind legend section explains green=tailwind, red=headwind, blue=crosswind color coding
 
 ### Custom Plan Wind Display
 
@@ -102,12 +102,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STOR-01 | Phase 6 | Pending |
 | STOR-02 | Phase 6 | Pending |
 | STOR-03 | Phase 6 | Pending |
-| BPLN-01 | Phase 3 | Pending |
-| BPLN-02 | Phase 3 | Pending |
-| BPLN-03 | Phase 3 | Pending |
-| BPLN-04 | Phase 3 | Pending |
-| BPLN-05 | Phase 3 | Pending |
-| BPLN-06 | Phase 3 | Pending |
+| BPLN-01 | Phase 3 | Complete |
+| BPLN-02 | Phase 3 | Complete |
+| BPLN-03 | Phase 3 | Complete |
+| BPLN-04 | Phase 3 | Complete |
+| BPLN-05 | Phase 3 | Complete |
+| BPLN-06 | Phase 3 | Complete |
 | CPLN-01 | Phase 5 | Pending |
 | CPLN-02 | Phase 5 | Pending |
 | WARN-01 | Phase 4 | Pending |
