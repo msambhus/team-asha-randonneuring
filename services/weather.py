@@ -410,6 +410,7 @@ def fetch_stop_wind(stops, track_points, plan_slug, start_time_str, cache=None):
 
         result.append({
             'wind_speed_kmh': round(float(wind_speed), 1),
+            'headwind_kmh': round(float(hw), 1),
             'wind_type': wind_type,
             'style': style,
             'label': wind_label(hw),
@@ -420,6 +421,42 @@ def fetch_stop_wind(stops, track_points, plan_slug, start_time_str, cache=None):
         cache.set(cache_key, result, timeout=3600)
 
     return result
+
+
+def detect_heavy_wind(stop_wind):
+    """Evaluate per-stop wind data and return a warning dict if conditions are heavy.
+
+    stop_wind: list of stop wind dicts (from fetch_stop_wind), may include None entries.
+
+    Returns a dict with max_wind_kmh, avg_headwind_kmh, is_heavy=True, and description
+    if max wind exceeds HEAVY_WIND_MAX_KMH (30) or avg headwind exceeds
+    HEAVY_WIND_AVG_HEADWIND_KMH (15). Returns None otherwise.
+    Uses strict > comparisons (not >=) — consistent with classify_wind convention.
+    """
+    if not stop_wind:
+        return None
+
+    valid = [s for s in stop_wind if s is not None]
+    if not valid:
+        return None
+
+    max_wind = max(s['wind_speed_kmh'] for s in valid)
+    avg_headwind = sum(s['headwind_kmh'] for s in valid) / len(valid)
+
+    if max_wind > HEAVY_WIND_MAX_KMH or avg_headwind > HEAVY_WIND_AVG_HEADWIND_KMH:
+        avg_hw_rounded = round(avg_headwind, 1)
+        max_wind_rounded = round(max_wind, 1)
+        return {
+            'max_wind_kmh': max_wind_rounded,
+            'avg_headwind_kmh': avg_hw_rounded,
+            'is_heavy': True,
+            'description': (
+                f"Strong headwinds expected -- avg {avg_hw_rounded} km/h headwind, "
+                f"gusts to {max_wind_rounded} km/h"
+            ),
+        }
+
+    return None
 
 
 # ── Response formatting ─────────────────────────────────────────────
