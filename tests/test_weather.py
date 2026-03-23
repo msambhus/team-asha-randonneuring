@@ -1355,3 +1355,192 @@ class TestFetchHistoricalWind:
         with patch('services.weather.requests.get', return_value=mock_resp):
             with pytest.raises(HTTPError):
                 fetch_historical_wind(coords, ride_date)
+
+
+# ── STOR-02: get_historical_stop_wind orchestration ──────────────────
+
+def _make_stops(n=2):
+    """Build minimal stop dicts for get_historical_stop_wind tests."""
+    return [
+        {'distance_miles': float(i * 50), 'stop_name': f'Stop {i}', 'arrival_time_min': i * 120}
+        for i in range(n)
+    ]
+
+
+def _make_track_points():
+    """Minimal RWGPS track with enough span for coordinate interpolation."""
+    return [
+        {'y': 37.77, 'x': -122.41, 'd': 0},
+        {'y': 37.50, 'x': -122.10, 'd': 50000},
+        {'y': 37.00, 'x': -121.60, 'd': 130000},
+    ]
+
+
+def _make_wind_hourly():
+    """Archive-style hourly response for one stop."""
+    times = [f"2026-01-01T{h:02d}:00" for h in range(24)]
+    return {
+        'hourly': {
+            'time': times,
+            'wind_speed_10m': [15.0] * 24,
+            'wind_direction_10m': [270] * 24,
+            'wind_gusts_10m': [20.0] * 24,
+            'temperature_2m': [10.0] * 24,
+        }
+    }
+
+
+def _stored_wind_rows():
+    """Pre-built DB rows mimicking get_ride_wind_data return value."""
+    return [
+        {
+            'stop_order': 0, 'stop_name': 'Stop 0',
+            'wind_speed_kmh': 12.0, 'wind_direction_deg': 270,
+            'headwind_kmh': 10.0, 'crosswind_kmh': 2.0,
+            'wind_type': 'headwind', 'temperature_c': 10.0,
+            'conditions': 'clear sky', 'data_source': 'archive',
+        },
+        {
+            'stop_order': 1, 'stop_name': 'Stop 1',
+            'wind_speed_kmh': 18.0, 'wind_direction_deg': 270,
+            'headwind_kmh': 15.0, 'crosswind_kmh': 3.0,
+            'wind_type': 'headwind', 'temperature_c': 9.0,
+            'conditions': 'clear sky', 'data_source': 'archive',
+        },
+    ]
+
+
+class TestGetHistoricalStopWind:
+    def test_empty_track_points_returns_none(self):
+        """Empty track_points -> (None, None) with no API call."""
+        from datetime import date, timedelta
+        from services.weather import get_historical_stop_wind
+
+        stops = _make_stops()
+        ride_date = date.today() - timedelta(days=10)
+
+        result = get_historical_stop_wind(stops, [], ride_date)
+        assert result == (None, None)
+
+    def test_api_error_returns_none(self):
+        """API error -> (None, None), exception not propagated."""
+        from datetime import date, timedelta
+        from services.weather import get_historical_stop_wind
+
+        stops = _make_stops()
+        track_points = _make_track_points()
+        ride_date = date.today() - timedelta(days=10)
+
+        with patch('services.weather.get_ride_wind_data', return_value=[]), \
+             patch('services.weather.fetch_historical_wind', side_effect=Exception("API down")):
+            result = get_historical_stop_wind(stops, track_points, ride_date, ride_id=99)
+
+        assert result == (None, None)
+
+    def test_returns_wind_rows_with_classification(self):
+        """Happy path: returns (wind_rows, data_source) with correct classification."""
+        from datetime import date, timedelta
+        from services.weather import get_historical_stop_wind
+
+        stops = _make_stops(2)
+        track_points = _make_track_points()
+        ride_date = date.today() - timedelta(days=10)
+
+        weather_data = [_make_wind_hourly(), _make_wind_hourly()]
+
+        with patch('services.weather.get_ride_wind_data', return_value=[]), \
+             patch('services.weather.fetch_historical_wind', return_value=(weather_data, 'archive')), \
+             patch('services.weather.save_ride_wind_data'):
+            wind_rows, source = get_historical_stop_wind(stops, track_points, ride_date, ride_id=42)
+
+        assert wind_rows is not None
+        assert source == 'archive'
+        assert len(wind_rows) == 2
+
+    def test_row_keys_complete(self):
+        """Each wind row has all required columns."""
+        from datetime import date, timedelta
+        from services.weather import get_historical_stop_wind
+
+        stops = _make_stops(2)
+        track_points = _make_track_points()
+        ride_date = date.today() - timedelta(days=10)
+
+        weather_data = [_make_wind_hourly(), _make_wind_hourly()]
+
+        with patch('services.weather.get_ride_wind_data', return_value=[]), \
+             patch('services.weather.fetch_historical_wind', return_value=(weather_data, 'archive')), \
+             patch('services.weather.save_ride_wind_data'):
+            wind_rows, _ = get_historical_stop_wind(stops, track_points, ride_date, ride_id=42)
+
+        required_keys = {
+            'stop_order', 'stop_name', 'wind_speed_kmh', 'wind_direction_deg',
+            'headwind_kmh', 'crosswind_kmh', 'wind_type', 'temperature_c',
+            'conditions', 'data_source',
+        }
+        for row in wind_rows:
+            assert required_keys.issubset(row.keys()), f"Missing keys: {required_keys - row.keys()}"
+
+    def test_bearing_from_consecutive_coords(self):
+        """Headwind/crosswind values are non-trivial with west wind and eastward route."""
+        from datetime import date, timedelta
+        from services.weather import get_historical_stop_wind
+
+        # Route goes roughly east (San Francisco -> east), wind from west (270)
+        stops = _make_stops(2)
+        track_points = [
+            {'y': 37.77, 'x': -122.41, 'd': 0},
+            {'y': 37.77, 'x': -121.00, 'd': 130000},  # due east
+        ]
+        ride_date = date.today() - timedelta(days=10)
+
+        weather_data = [_make_wind_hourly(), _make_wind_hourly()]  # wind from 270 (west)
+
+        with patch('services.weather.get_ride_wind_data', return_value=[]), \
+             patch('services.weather.fetch_historical_wind', return_value=(weather_data, 'archive')), \
+             patch('services.weather.save_ride_wind_data'):
+            wind_rows, _ = get_historical_stop_wind(stops, track_points, ride_date, ride_id=42)
+
+        # West wind on eastward route = strong headwind
+        assert any(abs(row['headwind_kmh']) > 5 for row in wind_rows), \
+            "Expected non-trivial headwind with west wind on eastward route"
+
+    def test_db_hit_skips_api_call(self):
+        """STOR-02: DB rows present -> fetch_historical_wind is NOT called."""
+        from datetime import date, timedelta
+        from services.weather import get_historical_stop_wind
+
+        stops = _make_stops(2)
+        track_points = _make_track_points()
+        ride_date = date.today() - timedelta(days=10)
+        stored = _stored_wind_rows()
+
+        with patch('services.weather.get_ride_wind_data', return_value=stored) as mock_get_db, \
+             patch('services.weather.fetch_historical_wind') as mock_fetch:
+            wind_rows, source = get_historical_stop_wind(stops, track_points, ride_date, ride_id=42)
+
+        mock_fetch.assert_not_called()
+        assert wind_rows == stored
+        assert source == 'archive'  # from stored[0]['data_source']
+
+    def test_db_miss_fetches_and_saves(self):
+        """STOR-02: DB empty -> fetch_historical_wind called; save_ride_wind_data called with ride_id and rows."""
+        from datetime import date, timedelta
+        from services.weather import get_historical_stop_wind
+
+        stops = _make_stops(2)
+        track_points = _make_track_points()
+        ride_date = date.today() - timedelta(days=10)
+
+        weather_data = [_make_wind_hourly(), _make_wind_hourly()]
+
+        with patch('services.weather.get_ride_wind_data', return_value=[]), \
+             patch('services.weather.fetch_historical_wind', return_value=(weather_data, 'archive')) as mock_fetch, \
+             patch('services.weather.save_ride_wind_data') as mock_save:
+            wind_rows, source = get_historical_stop_wind(stops, track_points, ride_date, ride_id=42)
+
+        mock_fetch.assert_called_once()
+        mock_save.assert_called_once()
+        save_args = mock_save.call_args[0]
+        assert save_args[0] == 42
+        assert save_args[1] == wind_rows  # saved rows match returned rows

@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, date
 
 import requests
 
+from models import get_ride_wind_data, save_ride_wind_data
+
 logger = logging.getLogger(__name__)
 
 # ── Constants ────────────────────────────────────────────────────────
@@ -354,6 +356,124 @@ def fetch_historical_wind(stop_coords, ride_date):
         return _fetch_archive_wind(stop_coords, ride_date), 'archive'
     days_ago = (date.today() - ride_date).days
     return _fetch_forecast_past_days_wind(stop_coords, days_ago), 'forecast_past_days'
+
+
+def get_historical_stop_wind(stops, track_points, ride_date, ride_id=None):
+    """Return per-stop wind data for a completed ride using archive or forecast past_days.
+
+    stops: list of stop dicts with 'distance_miles' (and optionally 'arrival_time_min', 'stop_name')
+    track_points: list of RWGPS track dicts (y=lat, x=lng, d=distance_m)
+    ride_date: datetime.date — date the ride took place
+    ride_id: optional int — used for DB check-before-fetch and save-after-fetch (STOR-02)
+
+    Returns (wind_rows, data_source) tuple, or (None, None) on empty track or API error.
+
+    DB-check-before-fetch (STOR-02): If ride_id is given and ride_wind_data rows exist,
+    returns stored rows immediately without any API call.
+
+    Save-after-fetch (STOR-02): If ride_id is given and fetch succeeds, persists rows to DB.
+    """
+    if not track_points:
+        return None, None
+
+    # STOR-02: DB check before API call
+    if ride_id is not None:
+        stored = get_ride_wind_data(ride_id)
+        if stored:
+            return stored, stored[0]['data_source']
+
+    # Interpolate stop coordinates from RWGPS track points
+    coords = get_stop_coordinates(stops, track_points)
+    valid_coords = [c for c in coords if c is not None]
+    if not valid_coords:
+        return None, None
+
+    # Fetch historical wind from archive or forecast past_days
+    try:
+        weather_data, data_source = fetch_historical_wind(valid_coords, ride_date)
+    except Exception:
+        logger.exception("get_historical_stop_wind: API error for ride_id=%s", ride_id)
+        return None, None
+
+    if not weather_data:
+        return None, None
+
+    # Build index mapping: original stop index -> valid_coords index
+    valid_map = {}
+    valid_idx = 0
+    for orig_idx, c in enumerate(coords):
+        if c is not None:
+            valid_map[orig_idx] = valid_idx
+            valid_idx += 1
+
+    # Estimate ride start as 07:00 on ride_date
+    start_dt = datetime(ride_date.year, ride_date.month, ride_date.day, 7, 0)
+
+    wind_rows = []
+    for i, coord in enumerate(coords):
+        if coord is None:
+            continue
+
+        v_idx = valid_map.get(i)
+        if v_idx is None or v_idx >= len(weather_data):
+            continue
+
+        forecast = weather_data[v_idx]
+        hourly = forecast.get('hourly', {})
+
+        # Arrival time: use explicit arrival_time_min if available, else estimate from distance
+        arrival_time_min = stops[i].get('arrival_time_min')
+        if arrival_time_min is not None:
+            arrival_dt = start_dt + timedelta(minutes=arrival_time_min)
+        else:
+            dist_km = stops[i].get('distance_miles', 0) * 1.60934
+            hours_to_arrive = dist_km / _AVG_SPEED_KMH if _AVG_SPEED_KMH > 0 else 0
+            arrival_dt = start_dt + timedelta(hours=hours_to_arrive)
+
+        hour_index = get_hour_index(hourly.get('time', []), arrival_dt)
+
+        wind_speed = _safe_get(hourly, 'wind_speed_10m', hour_index, 0.0)
+        wind_dir = _safe_get(hourly, 'wind_direction_10m', hour_index, 0)
+        temperature = _safe_get(hourly, 'temperature_2m', hour_index, 0.0)
+
+        # Bearing: current -> next stop; for last stop: previous -> current
+        bearing = 0.0
+        if i + 1 < len(coords) and coords[i + 1] is not None:
+            bearing = calculate_bearing(
+                coord['lat'], coord['lng'],
+                coords[i + 1]['lat'], coords[i + 1]['lng'],
+            )
+        elif i > 0 and coords[i - 1] is not None:
+            bearing = calculate_bearing(
+                coords[i - 1]['lat'], coords[i - 1]['lng'],
+                coord['lat'], coord['lng'],
+            )
+
+        hw = headwind_component(wind_speed, wind_dir, bearing)
+        cw = crosswind_component(wind_speed, wind_dir, bearing)
+        wind_type = classify_wind(hw, cw)
+
+        wind_rows.append({
+            'stop_order': i,
+            'stop_name': stops[i].get('stop_name', f'Stop {i}'),
+            'wind_speed_kmh': round(float(wind_speed), 1),
+            'wind_direction_deg': int(wind_dir),
+            'headwind_kmh': round(float(hw), 1),
+            'crosswind_kmh': round(float(cw), 1),
+            'wind_type': wind_type,
+            'temperature_c': round(float(temperature), 1),
+            'conditions': '',
+            'data_source': data_source,
+        })
+
+    if not wind_rows:
+        return None, None
+
+    # STOR-02: persist after successful fetch
+    if ride_id is not None:
+        save_ride_wind_data(ride_id, wind_rows)
+
+    return wind_rows, data_source
 
 
 # ── Caching ──────────────────────────────────────────────────────────
