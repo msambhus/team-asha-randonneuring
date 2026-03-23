@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 06-02-PLAN.md — archive API fetch, forecast past_days fallback, get_historical_stop_wind with STOR-02
-last_updated: "2026-03-23T21:08:46.107Z"
+stopped_at: Completed 07-01-PLAN.md — plan_slug in get_rider_participation, conditional ride name links in rider_profile
+last_updated: "2026-03-23T21:24:37.154Z"
 last_activity: 2026-03-23 — Roadmap created; 7 phases, 31/31 requirements mapped
 progress:
   total_phases: 7
   completed_phases: 6
-  total_plans: 9
-  completed_plans: 9
+  total_plans: 11
+  completed_plans: 10
   percent: 100
 ---
 
@@ -59,6 +59,7 @@ Progress: [██████████] 100%
 | Phase 05-forecast-wind-in-custom-ride-plan P01 | 4 | 2 tasks | 2 files |
 | Phase 06-historical-wind-archive-api-and-db-persistence P01 | 8 | 1 tasks | 3 files |
 | Phase 06-historical-wind-archive-api-and-db-persistence P02 | 2 | 2 tasks | 2 files |
+| Phase 07-historical-wind-display-and-ride-header-links P01 | 15 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,8 @@ Recent decisions affecting current work:
 - [Phase 06-historical-wind-archive-api-and-db-persistence]: data_source CHECK constraint enforces only 'archive' or 'forecast_past_days' at DB layer (STOR-03)
 - [Phase 06-historical-wind-archive-api-and-db-persistence]: fetch_historical_wind returns (data, source) tuple so callers always know provenance
 - [Phase 06-historical-wind-archive-api-and-db-persistence]: get_historical_stop_wind checks DB (STOR-02) before any network call — read-through cache pattern for ride wind data
+- [Phase 07-historical-wind-display-and-ride-header-links]: LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id preserves all rides regardless of linked plan; NULL slug for unlinked rides
+- [Phase 07-historical-wind-display-and-ride-header-links]: Ride name link conditional uses season list ['2024-2025', '2025-2026'] per LINK-01; unlinked rides stay as <strong>
 
 ### Pending Todos
 
@@ -103,6 +106,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-23T21:05:37.742Z
-Stopped at: Completed 06-02-PLAN.md — archive API fetch, forecast past_days fallback, get_historical_stop_wind with STOR-02
+Last session: 2026-03-23T21:24:37.152Z
+Stopped at: Completed 07-01-PLAN.md — plan_slug in get_rider_participation, conditional ride name links in rider_profile
 Resume file: None

@@ -56,8 +56,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Ride Header Links
 
-- [ ] **LINK-01**: 2025/2026 season ride names in rider profile link to ride detail pages
-- [ ] **LINK-02**: Only rides with linked ride plans show as clickable links; others remain plain text
+- [x] **LINK-01**: 2025/2026 season ride names in rider profile link to ride detail pages
+- [x] **LINK-02**: Only rides with linked ride plans show as clickable links; others remain plain text
 
 ## v2 Requirements
 
@@ -118,8 +118,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | HIST-02 | Phase 7 | Pending |
 | HIST-03 | Phase 7 | Pending |
 | HIST-04 | Phase 7 | Pending |
-| LINK-01 | Phase 7 | Pending |
-| LINK-02 | Phase 7 | Pending |
+| LINK-01 | Phase 7 | Complete |
+| LINK-02 | Phase 7 | Complete |
 
 **Coverage:**
 - v1 requirements: 31 total
