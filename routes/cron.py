@@ -335,3 +335,118 @@ def sync_rusa_results():
     except Exception as e:
         current_app.logger.error(f'RUSA sync failed: {e}')
         return jsonify({'error': str(e)}), 500
+
+
+@cron_bp.route('/backfill-wind', methods=['POST'])
+def backfill_wind():
+    """Backfill historical wind data for past rides missing wind records.
+
+    Processes rides from the current and previous season that have linked
+    ride plans with RWGPS routes. Skips rides that already have wind data.
+    Rate-limited to avoid overwhelming Open-Meteo API.
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    import re
+    from services.rwgps import fetch_route
+    from services.weather import (
+        get_stop_coordinates, get_historical_stop_wind, wind_cell_style,
+    )
+    from models import (
+        get_db, get_ride_wind_data, save_ride_wind_data,
+    )
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=__import__('psycopg2').extras.RealDictCursor)
+
+    # Find past rides with plans but no wind data
+    cur.execute("""
+        SELECT r.id, r.name, r.date, r.distance_km,
+               rp.id as plan_id, rp.slug as plan_slug,
+               rp.rwgps_url, rp.rwgps_url_team
+        FROM ride r
+        JOIN ride_plan rp ON r.ride_plan_id = rp.id
+        JOIN season s ON r.season_id = s.id
+        WHERE s.name IN (
+            SELECT name FROM season ORDER BY id DESC LIMIT 2
+        )
+        AND r.date < CURRENT_DATE
+        AND NOT EXISTS (
+            SELECT 1 FROM ride_wind_data rwd WHERE rwd.ride_id = r.id
+        )
+        ORDER BY r.date DESC
+        LIMIT 10
+    """)
+    rides = cur.fetchall()
+
+    if not rides:
+        return jsonify({'message': 'No rides need wind backfill', 'processed': 0}), 200
+
+    results = []
+    for ride in rides:
+        ride_result = {'ride_id': ride['id'], 'name': ride['name'], 'date': str(ride['date'])}
+        try:
+            rwgps_url = ride['rwgps_url_team'] or ride['rwgps_url']
+            match = re.search(r'/routes/(\d+)', rwgps_url) if rwgps_url else None
+            if not match:
+                ride_result['status'] = 'skip_no_route'
+                results.append(ride_result)
+                continue
+
+            route_id = int(match.group(1))
+            route_data = fetch_route(route_id)
+            track_points = route_data.get('track_points', []) if route_data else []
+
+            if not track_points:
+                ride_result['status'] = 'skip_no_track'
+                results.append(ride_result)
+                continue
+
+            # Get plan stops
+            cur.execute("""
+                SELECT stop_name, distance_miles, arrival_time_min
+                FROM ride_plan_stop
+                WHERE ride_plan_id = %s ORDER BY stop_order
+            """, (ride['plan_id'],))
+            plan_stops = [dict(row) for row in cur.fetchall()]
+
+            if not plan_stops:
+                ride_result['status'] = 'skip_no_stops'
+                results.append(ride_result)
+                continue
+
+            ride_date = ride['date']
+            if isinstance(ride_date, str):
+                ride_date = date.fromisoformat(ride_date)
+
+            wind_rows, data_source = get_historical_stop_wind(
+                stops=plan_stops,
+                track_points=track_points,
+                ride_date=ride_date,
+                ride_id=ride['id'],
+            )
+
+            if wind_rows:
+                ride_result['status'] = 'ok'
+                ride_result['stops'] = len(wind_rows)
+                ride_result['source'] = data_source
+            else:
+                ride_result['status'] = 'skip_no_data'
+
+        except Exception as e:
+            current_app.logger.exception(
+                "backfill-wind: failed for ride %s", ride['id']
+            )
+            ride_result['status'] = f'error: {str(e)[:100]}'
+
+        results.append(ride_result)
+        time.sleep(1)  # Rate limit
+
+    ok_count = sum(1 for r in results if r.get('status') == 'ok')
+    return jsonify({
+        'processed': len(results),
+        'success': ok_count,
+        'results': results,
+    }), 200
