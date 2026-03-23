@@ -1467,6 +1467,7 @@
     <th style="text-align:right;">Ft/Mi</th>
     <th style="text-align:right;">Seg. Time</th>
     <th style="text-align:right;">Avg Speed</th>
+    {% if stop_wind %}<th style="text-align:center;">Wind</th>{% endif %}
     {% if plan.cutoff_hours %}<th style="text-align:right;">Time Bank</th>{% endif %}
     <th style="text-align:center;">Diff.</th>
     <th style="text-align:left;">Notes</th>
@@ -1513,6 +1514,18 @@
     <td class="num-cell">
         {% if s.avg_speed %}{{ "%.1f"|format(s.avg_speed) }} mph{% else %}&mdash;{% endif %}
     </td>
+    {% if stop_wind %}
+    {% set w = stop_wind[loop.index0] %}
+    <td style="text-align:center;padding:4px 8px;">
+      {% if w %}
+      <span style="display:inline-block;padding:2px 6px;border-radius:4px;background:{{ w.style.background }};color:{{ w.style.color }};font-size:{{ w.style.font_size }};font-weight:600;white-space:nowrap;">
+        {{ w.wind_speed_kmh }} km/h
+      </span>
+      {% else %}
+      &mdash;
+      {% endif %}
+    </td>
+    {% endif %}
     {% if plan.cutoff_hours %}
     <td class="num-cell">
         {% if s.time_bank_min is not none %}
@@ -1551,12 +1564,30 @@
             {{ "%.1f"|format(avg_elapsed_speed) }} mph
         {% endif %}
     </td>
+    {% if stop_wind %}<td></td>{% endif %}
     {% if plan.cutoff_hours %}<td></td>{% endif %}
     <td></td>
     <td></td>
 </tr>
 </tfoot>
 </table>
+{% if stop_wind %}
+<div style="margin-top:12px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:0.75rem;color:var(--text-light);">
+  <span style="font-weight:600;color:var(--text);">Wind legend:</span>
+  <span>
+    <span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#16A34A;vertical-align:middle;margin-right:3px;"></span>
+    Tailwind
+  </span>
+  <span>
+    <span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#DC2626;vertical-align:middle;margin-right:3px;"></span>
+    Headwind
+  </span>
+  <span>
+    <span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#2563EB;vertical-align:middle;margin-right:3px;"></span>
+    Crosswind
+  </span>
+</div>
+{% endif %}
 </div>
 </div>
 
