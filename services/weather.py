@@ -13,6 +13,9 @@ OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
 ATTRIBUTION = "*Weather data: [Open-Meteo](https://open-meteo.com)*"
 
+HEAVY_WIND_MAX_KMH = 30
+HEAVY_WIND_AVG_HEADWIND_KMH = 15
+
 # WMO Weather interpretation codes (subset)
 _WMO_CODES = {
     0: "clear sky",
@@ -66,6 +69,18 @@ def headwind_component(wind_speed, wind_from_deg, rider_bearing_deg):
     # Cosine projection: positive when wind opposes rider, negative when assisting
     angle = math.radians(wind_travel_deg - rider_bearing_deg)
     return round(wind_speed * math.cos(angle), 1)
+
+
+def crosswind_component(wind_speed, wind_from_deg, rider_bearing_deg):
+    """Return crosswind component (positive=right crosswind, negative=left).
+
+    wind_from_deg is meteorological convention (direction wind blows FROM).
+    """
+    if wind_speed == 0:
+        return 0
+    wind_travel_deg = (wind_from_deg + 180) % 360
+    angle = math.radians(wind_travel_deg - rider_bearing_deg)
+    return round(wind_speed * math.sin(angle), 1)
 
 
 def wind_label(headwind_kmh):

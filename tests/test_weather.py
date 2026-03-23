@@ -381,6 +381,60 @@ class TestFormatWeatherResponse:
         assert 'open-meteo' in result['attribution'].lower()
 
 
+# ── Wind Constants ───────────────────────────────────────────────────
+
+class TestWindConstants:
+    def test_heavy_wind_max_value(self):
+        from services.weather import HEAVY_WIND_MAX_KMH
+        assert HEAVY_WIND_MAX_KMH == 30
+
+    def test_heavy_wind_avg_headwind_value(self):
+        from services.weather import HEAVY_WIND_AVG_HEADWIND_KMH
+        assert HEAVY_WIND_AVG_HEADWIND_KMH == 15
+
+    def test_constants_importable(self):
+        from services.weather import HEAVY_WIND_MAX_KMH, HEAVY_WIND_AVG_HEADWIND_KMH
+        assert HEAVY_WIND_MAX_KMH is not None
+        assert HEAVY_WIND_AVG_HEADWIND_KMH is not None
+
+
+# ── Crosswind Component ──────────────────────────────────────────────
+
+class TestCrosswindComponent:
+    def test_pure_crosswind(self):
+        """North wind (from=0 deg), rider heading east (90 deg) -> full crosswind."""
+        from services.weather import crosswind_component
+        cw = crosswind_component(20, 0, 90)
+        assert abs(cw) > 18  # close to full speed
+
+    def test_pure_headwind_direction(self):
+        """West wind (from=270 deg), rider heading east (90 deg) -> near zero crosswind."""
+        from services.weather import crosswind_component
+        cw = crosswind_component(20, 270, 90)
+        assert abs(cw) < 2  # near zero
+
+    def test_pure_tailwind_direction(self):
+        """East wind (from=90 deg), rider heading east (90 deg) -> near zero crosswind."""
+        from services.weather import crosswind_component
+        cw = crosswind_component(20, 90, 90)
+        assert abs(cw) < 2  # near zero
+
+    def test_no_wind(self):
+        from services.weather import crosswind_component
+        cw = crosswind_component(0, 270, 90)
+        assert cw == 0
+
+    def test_45_degree_angle(self):
+        """Wind at 45-degree offset -> crosswind approximately wind_speed * sin(45) ~= 14.1."""
+        from services.weather import crosswind_component
+        # Rider heading east (90 deg), wind from south-west (225 deg)
+        # wind travel = (225+180)%360 = 45 deg
+        # angle = 45 - 90 = -45 deg
+        # sin(-45) = -0.707, so crosswind ~ -14.1
+        cw = crosswind_component(20, 225, 90)
+        assert abs(abs(cw) - 14.1) < 1.0  # ~14.1
+
+
 # ── WTHR-10: Graceful Degradation ───────────────────────────────────
 
 class TestGracefulDegradation:
