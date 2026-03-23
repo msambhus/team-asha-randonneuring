@@ -13,4 +13,3 @@ ENV/
 node_modules/
 package-lock.json
 public/
-.planning/
