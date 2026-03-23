@@ -1544,3 +1544,288 @@ class TestGetHistoricalStopWind:
         save_args = mock_save.call_args[0]
         assert save_args[0] == 42
         assert save_args[1] == wind_rows  # saved rows match returned rows
+
+
+# ── HIST-01/02/03/04: Strava Analysis Route — Historical Wind Wiring ──
+
+def _make_rider_row():
+    return {'id': 7, 'rusa_id': 1234, 'name': 'Test Rider', 'strava_data_private': False}
+
+
+def _make_ride_row():
+    from datetime import date
+    return {
+        'id': 99, 'name': '300k Brevet', 'distance_km': 300.0,
+        'date': date(2026, 3, 1),
+        'ride_plan_id': 5, 'plan_slug': 'sfr-300k',
+        'start_time': '06:00',
+    }
+
+
+def _make_match_row():
+    return {
+        'id': 1, 'strava_activity_id': 111111,
+        'start_date_local': '2026-03-01T06:05:00',
+        'rider_id': 7, 'ride_id': 99,
+    }
+
+
+def _make_plan_stops_raw():
+    return [
+        {'id': 1, 'distance_miles': 0.0, 'arrival_time_min': 0,
+         'stop_name': 'Start', 'stop_type': 'start', 'location': 'Start'},
+        {'id': 2, 'distance_miles': 93.0, 'arrival_time_min': 420,
+         'stop_name': 'Finish', 'stop_type': 'finish', 'location': 'Finish'},
+    ]
+
+
+def _make_comparison_obj():
+    """Minimal comparison object with two rows."""
+    class Row:
+        def __init__(self, location, is_extra=False):
+            self.location = location
+            self.is_extra = is_extra
+            self.distance_miles = 0.0
+            self.plan_stop_duration_min = None
+            self.custom = None
+            self.actual_stop_duration_min = None
+            self.stop_delta_min = None
+            self.plan_cum_time_min = None
+            self.actual_cum_time_min = None
+            self.cum_time_delta_min = None
+            self.plan_time_of_day = None
+            self.actual_time_of_day = None
+            self.stop_type = 'control'
+
+    class Summary:
+        plan_distance_miles = 186.0
+        actual_distance_miles = 186.0
+        distance_delta_miles = 0.0
+        plan_elevation_ft = 5000
+        actual_elevation_ft = 5000
+        elevation_delta_ft = 0
+        plan_total_time_min = 840
+        actual_elapsed_time_min = 840
+        time_delta_min = 0
+        actual_moving_time_min = 780
+        plan_break_time_min = 60
+        actual_stopped_time_min = 60
+        break_delta_min = 0
+        plan_avg_speed_mph = 14.0
+        actual_avg_speed_mph = 14.0
+        speed_delta_mph = 0.0
+
+    class Comparison:
+        rows = [Row('Start'), Row('Finish')]
+        summary = Summary()
+
+    return Comparison()
+
+
+def _make_wind_rows_for_analysis():
+    return [
+        {'stop_order': 0, 'stop_name': 'Start', 'wind_speed_kmh': 20.0,
+         'wind_direction_deg': 270, 'headwind_kmh': 18.0, 'crosswind_kmh': 2.0,
+         'wind_type': 'headwind', 'temperature_c': 12.0,
+         'conditions': 'clear sky', 'data_source': 'archive'},
+        {'stop_order': 1, 'stop_name': 'Finish', 'wind_speed_kmh': 15.0,
+         'wind_direction_deg': 270, 'headwind_kmh': 12.0, 'crosswind_kmh': 3.0,
+         'wind_type': 'headwind', 'temperature_c': 10.0,
+         'conditions': 'clear sky', 'data_source': 'archive'},
+    ]
+
+
+_STRAVA_TRACK_POINTS = [
+    {'y': 37.77, 'x': -122.41, 'd': 0},
+    {'y': 37.60, 'x': -121.60, 'd': 130000},
+]
+
+
+class TestStravaAnalysisWind:
+    """HIST-01/02/03/04: ride_strava_analysis passes stop_wind dict to template."""
+
+    def _base_patches(self, app, rider, ride, match, plan_stops, analysis_result,
+                      comparison, plan_row, route_data, wind_rows):
+        """Return a dict of patch targets and return values for ride_strava_analysis."""
+        return {
+            'routes.riders.get_rider_by_rusa': rider,
+            'routes.riders.get_ride_by_id_full': ride,
+            'routes.riders.get_strava_ride_match': match,
+            'routes.riders.get_ride_plan_stops': plan_stops,
+            'routes.riders.get_custom_plan': None,
+            'routes.riders.get_ride_plan_by_slug': plan_row,
+            'routes.riders.fetch_route': route_data,
+            'routes.riders.fetch_and_analyze': analysis_result,
+            'routes.riders.build_comparison': comparison,
+            'routes.riders.get_historical_stop_wind': wind_rows,
+            'routes.riders.wind_cell_style': {'background': '#ccc', 'color': '#000', 'font_size': '0.9rem'},
+        }
+
+    def test_has_plan_passes_stop_wind_dict_to_template(self, app):
+        """HIST-01: With has_plan=True and track_points, stop_wind dict keyed by stop_name is passed."""
+        from unittest.mock import patch, MagicMock
+
+        rider = _make_rider_row()
+        ride = _make_ride_row()
+        match = _make_match_row()
+        plan_stops = _make_plan_stops_raw()
+        wind_rows = _make_wind_rows_for_analysis()
+        comparison = _make_comparison_obj()
+
+        mock_plan = {
+            'id': 5, 'slug': 'sfr-300k', 'name': 'SFR 300k',
+            'rwgps_url_team': 'https://ridewithgps.com/routes/99999',
+            'rwgps_url': None,
+        }
+        mock_route = {'track_points': _STRAVA_TRACK_POINTS}
+        mock_analysis = {
+            'error': None,
+            'detected_stops': [],
+        }
+
+        mock_style = {'background': 'rgba(220,38,38,0.35)', 'color': '#DC2626', 'font_size': '0.875rem'}
+
+        with app.test_request_context():
+            with patch('models.get_ride_by_id_full', return_value=ride), \
+                 patch('models.get_strava_ride_match', return_value=match), \
+                 patch('models.get_strava_connection', return_value=None), \
+                 patch('models.get_ride_plan_stops', return_value=plan_stops), \
+                 patch('models.get_custom_plan', return_value=None), \
+                 patch('routes.riders.get_rider_by_rusa', return_value=rider), \
+                 patch('routes.riders.get_ride_plan_by_slug', return_value=mock_plan), \
+                 patch('routes.riders.fetch_route', return_value=mock_route), \
+                 patch('services.strava_analysis.find_matching_activity', return_value=None), \
+                 patch('services.strava_analysis.fetch_and_analyze', return_value=mock_analysis), \
+                 patch('services.strava_analysis.build_comparison', return_value=comparison), \
+                 patch('services.weather.get_historical_stop_wind', return_value=(wind_rows, 'archive')), \
+                 patch('services.weather.wind_cell_style', return_value=mock_style), \
+                 patch('routes.riders.render_template', return_value='') as mock_render, \
+                 patch('routes.riders.session', {'rider_id': 999}):
+                from routes.riders import ride_strava_analysis
+                ride_strava_analysis(rusa_id=1234, ride_id=99)
+
+        assert mock_render.called, "render_template was not called"
+        call_kwargs = mock_render.call_args[1]
+        assert 'stop_wind' in call_kwargs, "stop_wind not passed to render_template"
+        stop_wind = call_kwargs['stop_wind']
+        assert stop_wind is not None, "stop_wind should be a dict, not None"
+        assert isinstance(stop_wind, dict), f"stop_wind should be dict, got {{type(stop_wind)}}"
+        assert 'Start' in stop_wind, "stop_wind dict should be keyed by stop_name"
+        assert 'Finish' in stop_wind, "stop_wind dict should contain all stop names"
+
+    def test_stop_wind_dict_has_style_key(self, app):
+        """HIST-03: Each entry in stop_wind dict has a 'style' sub-dict from wind_cell_style."""
+        from unittest.mock import patch
+
+        rider = _make_rider_row()
+        ride = _make_ride_row()
+        match = _make_match_row()
+        plan_stops = _make_plan_stops_raw()
+        wind_rows = _make_wind_rows_for_analysis()
+        comparison = _make_comparison_obj()
+
+        mock_plan = {
+            'id': 5, 'slug': 'sfr-300k', 'name': 'SFR 300k',
+            'rwgps_url_team': 'https://ridewithgps.com/routes/99999',
+            'rwgps_url': None,
+        }
+        mock_route = {'track_points': _STRAVA_TRACK_POINTS}
+        mock_analysis = {'error': None, 'detected_stops': []}
+        mock_style = {'background': 'rgba(220,38,38,0.35)', 'color': '#DC2626', 'font_size': '0.875rem'}
+
+        with app.test_request_context():
+            with patch('models.get_ride_by_id_full', return_value=ride), \
+                 patch('models.get_strava_ride_match', return_value=match), \
+                 patch('models.get_strava_connection', return_value=None), \
+                 patch('models.get_ride_plan_stops', return_value=plan_stops), \
+                 patch('models.get_custom_plan', return_value=None), \
+                 patch('routes.riders.get_rider_by_rusa', return_value=rider), \
+                 patch('routes.riders.get_ride_plan_by_slug', return_value=mock_plan), \
+                 patch('routes.riders.fetch_route', return_value=mock_route), \
+                 patch('services.strava_analysis.find_matching_activity', return_value=None), \
+                 patch('services.strava_analysis.fetch_and_analyze', return_value=mock_analysis), \
+                 patch('services.strava_analysis.build_comparison', return_value=comparison), \
+                 patch('services.weather.get_historical_stop_wind', return_value=(wind_rows, 'archive')), \
+                 patch('services.weather.wind_cell_style', return_value=mock_style) as mock_wcs, \
+                 patch('routes.riders.render_template', return_value='') as mock_render, \
+                 patch('routes.riders.session', {'rider_id': 999}):
+                from routes.riders import ride_strava_analysis
+                ride_strava_analysis(rusa_id=1234, ride_id=99)
+
+        assert mock_wcs.called, "wind_cell_style was not called"
+        call_kwargs = mock_render.call_args[1]
+        stop_wind = call_kwargs['stop_wind']
+        for stop_name, entry in stop_wind.items():
+            assert 'style' in entry, f"stop_wind['{stop_name}'] missing 'style' key"
+            assert entry['style'] == mock_style, f"stop_wind['{stop_name}']['style'] mismatch"
+
+    def test_no_plan_passes_stop_wind_none(self, app):
+        """HIST-02: has_plan=False → stop_wind=None, no error raised."""
+        from unittest.mock import patch
+
+        rider = _make_rider_row()
+        ride = dict(_make_ride_row())
+        ride['ride_plan_id'] = None  # No linked plan
+        ride['plan_slug'] = None
+        match = _make_match_row()
+        comparison = _make_comparison_obj()
+        mock_analysis = {'error': None, 'detected_stops': []}
+
+        with app.test_request_context():
+            with patch('models.get_ride_by_id_full', return_value=ride), \
+                 patch('models.get_strava_ride_match', return_value=match), \
+                 patch('models.get_strava_connection', return_value=None), \
+                 patch('models.get_custom_plan', return_value=None), \
+                 patch('routes.riders.get_rider_by_rusa', return_value=rider), \
+                 patch('services.strava_analysis.find_matching_activity', return_value=None), \
+                 patch('services.strava_analysis.fetch_and_analyze', return_value=mock_analysis), \
+                 patch('services.strava_analysis.build_comparison', return_value=comparison), \
+                 patch('services.weather.get_historical_stop_wind') as mock_hist, \
+                 patch('routes.riders.render_template', return_value='') as mock_render, \
+                 patch('routes.riders.session', {'rider_id': 999}):
+                from routes.riders import ride_strava_analysis
+                ride_strava_analysis(rusa_id=1234, ride_id=99)
+
+        mock_hist.assert_not_called()
+        call_kwargs = mock_render.call_args[1]
+        assert call_kwargs.get('stop_wind') is None, \
+            f"stop_wind should be None when no plan, got: {call_kwargs.get('stop_wind')}"
+
+    def test_has_plan_no_rwgps_route_passes_stop_wind_none(self, app):
+        """HIST-02: has_plan=True but no RWGPS route → stop_wind=None, no error."""
+        from unittest.mock import patch
+
+        rider = _make_rider_row()
+        ride = _make_ride_row()
+        match = _make_match_row()
+        plan_stops = _make_plan_stops_raw()
+        comparison = _make_comparison_obj()
+        mock_analysis = {'error': None, 'detected_stops': []}
+
+        mock_plan = {
+            'id': 5, 'slug': 'sfr-300k', 'name': 'SFR 300k',
+            'rwgps_url_team': None,  # No RWGPS URL
+            'rwgps_url': None,
+        }
+
+        with app.test_request_context():
+            with patch('models.get_ride_by_id_full', return_value=ride), \
+                 patch('models.get_strava_ride_match', return_value=match), \
+                 patch('models.get_strava_connection', return_value=None), \
+                 patch('models.get_custom_plan', return_value=None), \
+                 patch('routes.riders.get_rider_by_rusa', return_value=rider), \
+                 patch('models.get_ride_plan_stops', return_value=plan_stops), \
+                 patch('routes.riders.get_ride_plan_by_slug', return_value=mock_plan), \
+                 patch('services.strava_analysis.find_matching_activity', return_value=None), \
+                 patch('services.strava_analysis.fetch_and_analyze', return_value=mock_analysis), \
+                 patch('services.strava_analysis.build_comparison', return_value=comparison), \
+                 patch('services.weather.get_historical_stop_wind') as mock_hist, \
+                 patch('routes.riders.render_template', return_value='') as mock_render, \
+                 patch('routes.riders.session', {'rider_id': 999}):
+                from routes.riders import ride_strava_analysis
+                ride_strava_analysis(rusa_id=1234, ride_id=99)
+
+        mock_hist.assert_not_called()
+        call_kwargs = mock_render.call_args[1]
+        assert call_kwargs.get('stop_wind') is None, \
+            f"stop_wind should be None when no RWGPS route, got: {call_kwargs.get('stop_wind')}"
