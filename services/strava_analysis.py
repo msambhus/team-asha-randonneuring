@@ -535,14 +535,14 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         plan_tod = None
         if plan_start_dt and plan_cum_time:
             plan_tod_dt = plan_start_dt + timedelta(minutes=plan_cum_time)
-            plan_tod = plan_tod_dt.strftime('%H:%M')
+            plan_tod = plan_tod_dt.strftime('%-I:%M%p').lower()
         elif stop_type == 'start' and plan_start_dt:
-            plan_tod = plan_start_dt.strftime('%H:%M')
+            plan_tod = plan_start_dt.strftime('%-I:%M%p').lower()
 
         actual_tod = None
         if actual_cum_time is not None and actual_start_time:
             actual_tod_dt = actual_start_time + timedelta(minutes=actual_cum_time)
-            actual_tod = actual_tod_dt.strftime('%H:%M')
+            actual_tod = actual_tod_dt.strftime('%-I:%M%p').lower()
 
         # Custom plan data (base plan when custom exists, via the swap)
         custom_data = None
@@ -557,9 +557,9 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
                 cs_arrival = (cs_cum - cs_stop_dur) if cs_cum and cs_stop_dur else cs_cum
                 cs_tod = None
                 if plan_start_dt and cs_cum:
-                    cs_tod = (plan_start_dt + timedelta(minutes=cs_cum)).strftime('%H:%M')
+                    cs_tod = (plan_start_dt + timedelta(minutes=cs_cum)).strftime('%-I:%M%p').lower()
                 elif stop_type == 'start' and plan_start_dt:
-                    cs_tod = plan_start_dt.strftime('%H:%M')
+                    cs_tod = plan_start_dt.strftime('%-I:%M%p').lower()
                 cs_bookend = cs.get('bookend_time_min')
                 cs_time_bank = cs.get('time_bank_min')
                 custom_data = {
@@ -650,7 +650,7 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         actual_tod = None
         if actual_cum_time is not None and actual_start_time:
             actual_tod_dt = actual_start_time + timedelta(minutes=actual_cum_time)
-            actual_tod = actual_tod_dt.strftime('%H:%M')
+            actual_tod = actual_tod_dt.strftime('%-I:%M%p').lower()
 
         extra_arrival = max(0, round(actual_cum_time - es['duration_min'])) if actual_cum_time is not None else None
 
