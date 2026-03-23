@@ -159,13 +159,14 @@ def get_active_riders_for_season(season_id):
 def get_rides_for_season(season_id):
     """Get all rides for a season with club info."""
     return _execute("""
-        SELECT ri.*, 
-               c.code as club_code, 
+        SELECT ri.*,
+               c.code as club_code,
                c.name as club_name,
                c.region as region,
                rp.slug as plan_slug,
+               rp.start_time as plan_start_time,
                (c.code = 'TA') as is_team_ride
-        FROM ride ri 
+        FROM ride ri
         INNER JOIN club c ON ri.club_id = c.id
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE ri.season_id = %s
@@ -576,15 +577,16 @@ def get_all_upcoming_events():
     """Get all upcoming events (Team Asha and external) with club info."""
     today = date.today()
     events = _execute("""
-        SELECT ri.*, 
-               c.code as club_code, 
+        SELECT ri.*,
+               c.code as club_code,
                c.name as club_name,
                c.region as region,
                rp.slug as plan_slug,
                rp.rwgps_url_team as plan_rwgps_url_team,
+               rp.start_time as plan_start_time,
                (c.code = 'TA') as is_team_ride,
                (SELECT COUNT(*) FROM rider_ride rr WHERE rr.ride_id = ri.id AND rr.signed_up_at IS NOT NULL) as signup_count
-        FROM ride ri 
+        FROM ride ri
         INNER JOIN club c ON ri.club_id = c.id
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE ri.date >= %s AND ri.event_status = 'UPCOMING'
@@ -1310,27 +1312,23 @@ def update_ride_core(ride_id, fields):
     return False
 
 
-def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None, start_time=None,
+def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None,
                        start_location=None, time_limit_hours=None):
-    """Update ride details (route, team route, start time, location, time limit)."""
+    """Update ride details (route, location, time limit). Start time lives on ride_plan."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
+
     updates = []
     params = []
-    
+
     if rwgps_url is not None:
         updates.append("rwgps_url = %s")
         params.append(rwgps_url if rwgps_url.strip() else None)
-    
+
     if ride_plan_id is not None:
         updates.append("ride_plan_id = %s")
         params.append(ride_plan_id if ride_plan_id else None)
-    
-    if start_time is not None:
-        updates.append("start_time = %s")
-        params.append(start_time if start_time.strip() else None)
-    
+
     if start_location is not None:
         updates.append("start_location = %s")
         params.append(start_location if start_location.strip() else None)

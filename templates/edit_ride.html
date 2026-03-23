@@ -28,7 +28,8 @@
 
 <div style="margin-bottom:16px;">
 <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.9rem;">Start Time</label>
-<input type="text" name="start_time" value="{{ ride.start_time or '' }}" placeholder="e.g. 6:00 AM" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;">
+<input type="text" disabled value="{{ ride.plan_start_time or '' }}" placeholder="Set on ride plan" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;background:#f1f5f9;color:var(--text-light);">
+<span style="font-size:0.75rem;color:var(--text-light);">Edit start time on the ride plan</span>
 </div>
 
 <div style="margin-bottom:16px;">
