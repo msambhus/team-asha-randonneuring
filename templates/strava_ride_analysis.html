@@ -277,7 +277,7 @@
         {% if is_own_profile %}
         <a href="{{ url_for('riders.my_strava_analysis') }}"
            style="display:inline-flex; align-items:center; gap:4px; margin-left:12px; padding:8px 16px; background:rgba(255,255,255,0.2); color:white; border-radius:8px; text-decoration:none; font-size:0.85rem;">
-            &larr; Back to My Analysis
+            &larr; Back to Brevet Analysis
         </a>
         {% else %}
         <a href="{{ url_for('riders.rider_profile', rusa_id=rider.rusa_id) }}"
@@ -843,7 +843,7 @@
 {# --- Back Link --- #}
 <div style="text-align:center;margin-top:30px;">
     {% if is_own_profile %}
-    <a href="{{ url_for('riders.my_strava_analysis') }}" class="back-link">&larr; Back to My Analysis</a>
+    <a href="{{ url_for('riders.my_strava_analysis') }}" class="back-link">&larr; Back to Brevet Analysis</a>
     {% else %}
     <a href="{{ url_for('riders.rider_profile', rusa_id=rider.rusa_id) }}" class="back-link">&larr; Back to Profile</a>
     {% endif %}
