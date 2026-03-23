@@ -704,51 +704,69 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
     all_detected = detected_stops or []
 
     # Calculate actual segment times, speeds, HR, power, and enroute breaks.
-    # IMPORTANT: advance prev_dist/prev_arrival for ALL rows including extras,
-    # so segments are split at unplanned stops (not lumped together).
-    prev_actual_departure = 0  # departure time from previous row (after any break)
+    #
+    # Two "previous" pointers are maintained:
+    #   prev_dist / prev_actual_departure  — advances for every row (extras + planned)
+    #   prev_planned_dist / prev_planned_departure — advances only for planned rows
+    #
+    # For EXTRA rows: segment spans from the adjacent previous row (small sub-segment).
+    # For PLANNED rows: segment spans from the last PLANNED row, so distance/time/speed
+    #   reflect the full leg between waypoints even when an extra stop sits in between.
+    prev_actual_departure = 0   # departure after any stop, advances every row
+    prev_planned_departure = 0  # same, but only for planned rows
     prev_dist = 0.0
+    prev_planned_dist = 0.0
     for row in rows:
         cur_dist = row['distance_miles']
-        seg_dist = cur_dist - prev_dist
+        is_extra = row.get('is_extra', False)
+
+        # Choose the correct "from" anchor based on row type
+        from_dist = prev_dist if is_extra else prev_planned_dist
+        from_departure = prev_actual_departure if is_extra else prev_planned_departure
+
+        seg_dist = cur_dist - from_dist
 
         # Per-segment HR and power from Strava streams
-        row['actual_avg_hr'] = avg_stream_in_range(hr_stream, prev_dist, cur_dist) if seg_dist > 0 else None
-        row['actual_avg_watts'] = avg_stream_in_range(watts_stream, prev_dist, cur_dist) if seg_dist > 0 else None
+        row['actual_avg_hr'] = avg_stream_in_range(hr_stream, from_dist, cur_dist) if seg_dist > 0 else None
+        row['actual_avg_watts'] = avg_stream_in_range(watts_stream, from_dist, cur_dist) if seg_dist > 0 else None
 
         if row['actual_cum_time_min'] is not None:
             actual_arrival = row.get('actual_arrival_time_min')
             if actual_arrival is None:
                 actual_arrival = row['actual_cum_time_min']
-            # Segment elapsed time = arrival at this row - departure from previous row
-            seg_elapsed = actual_arrival - prev_actual_departure
-            # Subtract any detected stops within this segment to get riding time
+            # Segment elapsed = arrival at this row minus departure from the anchor row
+            seg_elapsed = actual_arrival - from_departure
+            # Subtract detected stops strictly within this range to get riding time
             stops_in_seg = sum(
                 ds['duration_min'] for ds in all_detected
-                if prev_dist < ds['distance_miles'] < cur_dist
+                if from_dist < ds['distance_miles'] < cur_dist
             )
             actual_riding = seg_elapsed - stops_in_seg
             row['actual_segment_min'] = max(0, round(actual_riding))
             row['actual_speed_mph'] = round(seg_dist / (actual_riding / 60), 1) if actual_riding > 0 and seg_dist > 0 else None
-            # Departure = cum_time (which includes any stop at this row)
+            # Always advance the every-row pointer
             prev_actual_departure = row['actual_cum_time_min']
+            # Only advance the planned pointer for planned rows
+            if not is_extra:
+                prev_planned_departure = row['actual_cum_time_min']
         else:
             row['actual_segment_min'] = None
             row['actual_speed_mph'] = None
 
-        # Enroute: unplanned stopped time in THIS sub-segment only.
-        # Subtract ALL detected stops that fall in this distance range
-        # (they're already shown as rows — either matched waypoint stops or extra rows).
-        raw_stopped = stopped_time_in_range(prev_dist, cur_dist)
+        # Enroute: unplanned stopped time in this row's range (from_dist → cur_dist).
+        # Subtract ALL detected stops in the range (they appear as their own rows).
+        raw_stopped = stopped_time_in_range(from_dist, cur_dist)
         known_stops_in_seg = sum(
             ds['duration_min'] for ds in all_detected
-            if prev_dist <= ds['distance_miles'] <= cur_dist
+            if from_dist <= ds['distance_miles'] <= cur_dist
         )
         unplanned = (raw_stopped - known_stops_in_seg) if raw_stopped else None
         row['actual_seg_break_min'] = round(unplanned, 1) if unplanned and unplanned > 0.5 else None
 
-        # Advance prev_dist for ALL rows — splits segments at extra stops
+        # Always advance prev_dist; advance prev_planned_dist only for planned rows
         prev_dist = cur_dist
+        if not is_extra:
+            prev_planned_dist = cur_dist
 
     # Plan total time
     plan_total_time_min = plan_stops[-1].get('cum_time_min', 0) if plan_stops else 0
