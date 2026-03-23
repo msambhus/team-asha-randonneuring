@@ -45,7 +45,10 @@ Plans:
   1. Given a ride plan with stops at known mile markers, get_stop_coordinates() returns a lat/lng for each stop that matches the RWGPS track at that distance
   2. A stop at 40.0 miles is placed within 0.5 km of the correct track position (not 40 meters — the miles-to-meters unit conversion is correct)
   3. Stops beyond the end of the track (rounding) are clamped to the final track point rather than returning an error
-**Plans**: TBD
+**Plans:** 1 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — TDD: MILES_TO_METERS constant and get_stop_coordinates() interpolation function
 
 ### Phase 3: Forecast Wind in Base Ride Plan
 **Goal**: Riders viewing a base ride plan control sheet see a color-coded wind column at every stop, fetched from Open-Meteo via a single batched API call
@@ -113,7 +116,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Wind Math Foundation | 1/1 | Complete   | 2026-03-23 |
-| 2. Stop-to-Coordinate Interpolation | 0/TBD | Not started | - |
+| 2. Stop-to-Coordinate Interpolation | 0/1 | Planning | - |
 | 3. Forecast Wind in Base Ride Plan | 0/TBD | Not started | - |
 | 4. Heavy Wind Warning Banner | 0/TBD | Not started | - |
 | 5. Forecast Wind in Custom Ride Plan | 0/TBD | Not started | - |
