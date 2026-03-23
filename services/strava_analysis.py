@@ -766,6 +766,12 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
 
         seg_dist = cur_dist - from_dist
 
+        # Location used to exclude this row's matched stop from stops_in_seg.
+        # A matched stop can sit slightly before cur_dist (GPS drift) and would
+        # otherwise be double-subtracted — once via actual_arrival calculation
+        # and again via stops_in_seg.
+        row_location = row.get('location') if not is_extra else None
+
         # Per-segment HR and power from Strava streams
         row['actual_avg_hr'] = avg_stream_in_range(hr_stream, from_dist, cur_dist) if seg_dist > 0 else None
         row['actual_avg_watts'] = avg_stream_in_range(watts_stream, from_dist, cur_dist) if seg_dist > 0 else None
@@ -776,10 +782,12 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
                 actual_arrival = row['actual_cum_time_min']
             # Segment elapsed = arrival at this row minus departure from the anchor row
             seg_elapsed = actual_arrival - from_departure
-            # Subtract detected stops strictly within this range to get riding time
+            # Subtract detected stops strictly within this range to get riding time.
+            # Exclude the stop matched to this waypoint (see row_location above).
             stops_in_seg = sum(
                 ds['duration_min'] for ds in all_detected
                 if from_dist < ds['distance_miles'] < cur_dist
+                and ds.get('matched_stop_name') != row_location
             )
             actual_riding = seg_elapsed - stops_in_seg
             row['actual_segment_min'] = max(0, round(actual_riding))
@@ -799,6 +807,7 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         known_stops_in_seg = sum(
             ds['duration_min'] for ds in all_detected
             if from_dist <= ds['distance_miles'] <= cur_dist
+            and ds.get('matched_stop_name') != row_location
         )
         unplanned = (raw_stopped - known_stops_in_seg) if raw_stopped else None
         row['actual_seg_break_min'] = round(unplanned, 1) if unplanned and unplanned > 0.5 else None
