@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 03-02-PLAN.md — Task 3 human-verify approved, Phase 03 fully complete
-last_updated: "2026-03-23T16:11:52.684Z"
+stopped_at: Completed 04-01-PLAN.md — detect_heavy_wind() and headwind_kmh implemented
+last_updated: "2026-03-23T16:46:38.230Z"
 last_activity: 2026-03-23 — Roadmap created; 7 phases, 31/31 requirements mapped
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 6
+  completed_plans: 5
   percent: 100
 ---
 
@@ -54,6 +54,7 @@ Progress: [██████████] 100%
 | Phase 02 P01 | 1 | 2 tasks | 2 files |
 | Phase 03 P01 | 110 | 1 tasks | 2 files |
 | Phase 03 P02 | 2 | 2 tasks | 2 files |
+| Phase 04-heavy-wind-warning-banner P01 | 3 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,8 @@ Recent decisions affecting current work:
 - [Phase 03]: Cache key wind:{plan_slug}:{YYYYMMDD}{HH} distinct from weather: prefix to prevent collision
 - [Phase 03-02]: stop_wind passed as None when weather_route_id absent — all wind markup gated on {% if stop_wind %} for graceful degradation
 - [Phase 03-02]: current_app.logger.exception used in route handler (not app.logger) — consistent with Flask proxy pattern
+- [Phase 04-heavy-wind-warning-banner]: headwind_kmh added to fetch_stop_wind() output is backward-compatible — existing callers only read keys they need
+- [Phase 04-heavy-wind-warning-banner]: detect_heavy_wind uses strict > (not >=) for both thresholds, consistent with Phase 01 classify_wind decision
 
 ### Pending Todos
 
@@ -86,6 +89,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-23T16:07:41.419Z
-Stopped at: Completed 03-02-PLAN.md — Task 3 human-verify approved, Phase 03 fully complete
+Last session: 2026-03-23T16:46:38.206Z
+Stopped at: Completed 04-01-PLAN.md — detect_heavy_wind() and headwind_kmh implemented
 Resume file: None
