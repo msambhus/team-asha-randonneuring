@@ -41,9 +41,11 @@ from auth import login_required, user_login_required
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
 from services.openai_coach import generate_openai_advice
-from services.custom_plan_service import (get_merged_plan_stops, 
+from services.custom_plan_service import (get_merged_plan_stops,
                                           recalculate_cumulative_values,
                                           apply_pace_adjustment, compare_plans)
+from services.weather import fetch_stop_wind, detect_heavy_wind
+from services.rwgps import fetch_route
 from cache import cache, CACHE_TIMEOUT
 from datetime import date, datetime, timedelta
 import re
@@ -402,6 +404,50 @@ def upcoming_brevets(season_name):
     plans = get_all_ride_plans()
     _match_plans_to_events(rusa_events, plans)
 
+    # Build plan_slug_to_id unconditionally so it's available for wind warnings
+    # and for the user-specific custom plan lookup below
+    plan_slug_to_id = {plan['slug']: plan['id'] for plan in plans}
+
+    # Wind warning loop: check brevets within 28 days that have a linked ride plan
+    cutoff = date.today() + timedelta(days=28)
+    wind_warnings = []
+    for event in rusa_events:
+        event_date = event.get('date')
+        if not event_date or event_date > cutoff:
+            continue
+        plan_slug = event.get('plan_slug')
+        if not plan_slug:
+            continue
+        plan_id = plan_slug_to_id.get(plan_slug)
+        if not plan_id:
+            continue
+        weather_rwgps_url = event.get('plan_rwgps_url_team') or event.get('rwgps_url')
+        if not weather_rwgps_url:
+            continue
+        weather_route_id = _extract_rwgps_route_id(weather_rwgps_url)
+        if not weather_route_id:
+            continue
+        try:
+            plan_stops = get_ride_plan_stops(plan_id)
+            route_data = fetch_route(weather_route_id)
+            track_points = route_data.get('track_points') or []
+            stop_wind = fetch_stop_wind(
+                stops=plan_stops,
+                track_points=track_points,
+                plan_slug=plan_slug,
+                start_time_str=str(event.get('start_time') or '07:00')[:5],
+                cache=cache,
+            )
+            warning = detect_heavy_wind(stop_wind)
+            if warning:
+                warning['ride_name'] = event.get('route_name') or event.get('name', '')
+                warning['ride_date'] = event.get('date_str', str(event_date))
+                wind_warnings.append(warning)
+        except Exception:
+            current_app.logger.exception(
+                "Wind warning check failed for event %s", event.get('id'))
+            continue
+
     # Get current user's rider_id and signup statuses
     rider_id = None
     current_rider = None
@@ -430,10 +476,7 @@ def upcoming_brevets(season_name):
             user_signup_statuses = get_rider_signup_statuses_batch(rider_id, ride_ids)
             user_signups = {ride_id: data['status'] for ride_id, data in user_signup_statuses.items()}
             
-            # Load custom plans for this rider
-            # First, build a map of plan_slug -> plan_id
-            plan_slug_to_id = {plan['slug']: plan['id'] for plan in plans}
-            
+            # Load custom plans for this rider (plan_slug_to_id already built above)
             for event in rusa_events:
                 if event.get('plan_slug'):
                     plan_id = plan_slug_to_id.get(event['plan_slug'])
@@ -476,7 +519,8 @@ def upcoming_brevets(season_name):
                            current_rider_id=rider_id,
                            user_signups=user_signups,
                            all_ride_plans=all_ride_plans,
-                           can_edit_rides=can_edit_rides)
+                           can_edit_rides=can_edit_rides,
+                           wind_warnings=wind_warnings)
 
 
 @riders_bp.route('/ride/<int:ride_id>/edit', methods=['GET', 'POST'])
@@ -772,7 +816,8 @@ def ride_strava_analysis(rusa_id, ride_id):
                                rider=rider, ride=ride, activity=None,
                                comparison=None, error=None,
                                has_plan=False, has_custom=False, plan_slug=None,
-                               is_own_profile=is_own_profile)
+                               is_own_profile=is_own_profile,
+                               stop_wind=None)
 
     # Load plan stops if available
     plan_stops = []
@@ -809,7 +854,8 @@ def ride_strava_analysis(rusa_id, ride_id):
                                comparison=None, error=analysis['error'],
                                has_plan=has_plan, has_custom=has_custom,
                                plan_slug=plan_slug,
-                               is_own_profile=is_own_profile)
+                               is_own_profile=is_own_profile,
+                               stop_wind=None)
 
     # Build comparison data
     plan_start_time = ride.get('plan_start_time')
@@ -825,12 +871,50 @@ def ride_strava_analysis(rusa_id, ride_id):
         streams=analysis.get('streams'),
     )
 
+    # Fetch historical wind for completed rides with linked plans
+    stop_wind = None
+    if has_plan and plan_stops and ride.get('date'):
+        try:
+            from services.weather import get_historical_stop_wind, wind_cell_style
+            plan = get_ride_plan_by_slug(plan_slug) if plan_slug else None
+            weather_route_id = None
+            if plan:
+                weather_rwgps_url = plan.get('rwgps_url_team') or plan.get('rwgps_url')
+                if weather_rwgps_url:
+                    weather_route_id = _extract_rwgps_route_id(weather_rwgps_url)
+            if weather_route_id:
+                route_data = fetch_route(weather_route_id)
+                track_points = route_data.get('track_points', []) if route_data else []
+                if track_points:
+                    ride_date = ride['date']
+                    if isinstance(ride_date, str):
+                        ride_date = date.fromisoformat(ride_date)
+                    wind_rows, _ = get_historical_stop_wind(
+                        stops=[dict(s) for s in plan_stops],
+                        track_points=track_points,
+                        ride_date=ride_date,
+                        ride_id=ride['id'],
+                    )
+                    if wind_rows:
+                        stop_wind = {}
+                        for row in wind_rows:
+                            row['style'] = wind_cell_style(
+                                row['wind_speed_kmh'], row['wind_type']
+                            )
+                            stop_wind[row['stop_name']] = row
+        except Exception:
+            current_app.logger.exception(
+                "ride_strava_analysis: wind fetch failed for ride %s", ride_id
+            )
+            stop_wind = None
+
     return render_template('strava_ride_analysis.html',
                            rider=rider, ride=ride, activity=dict(match),
                            comparison=comparison, error=None,
                            has_plan=has_plan, has_custom=has_custom,
                            plan_slug=plan_slug,
-                           is_own_profile=is_own_profile)
+                           is_own_profile=is_own_profile,
+                           stop_wind=stop_wind)
 
 
 @riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/strava-retry', methods=['POST'])
@@ -1353,6 +1437,23 @@ def ride_plan_detail(slug):
     # Attach break merging metadata for timeline layout
     stops, use_timeline = _attach_break_metadata(stops)
 
+    # Wind data for table view
+    stop_wind = None
+    if weather_route_id:
+        try:
+            route_data = fetch_route(weather_route_id)
+            track_points = route_data.get('track_points') or []
+            stop_wind = fetch_stop_wind(
+                stops=stops,
+                track_points=track_points,
+                plan_slug=plan['slug'],
+                start_time_str=plan.get('start_time', '06:00'),
+                cache=cache,
+            )
+        except Exception:
+            current_app.logger.exception("Wind fetch failed for plan %s", slug)
+            stop_wind = None
+
     return render_template('ride_plan_detail.html',
                            plan=plan,
                            stops=stops,
@@ -1369,6 +1470,7 @@ def ride_plan_detail(slug):
                            rwgps_url_label=rwgps_url_label,
                            rwgps_route_id=rwgps_route_id,
                            weather_route_id=weather_route_id,
+                           stop_wind=stop_wind,
                            difficulty_colors=_DIFFICULTY_COLORS,
                            upcoming_event=upcoming_event,
                            signup_count=signup_count,
@@ -1611,6 +1713,23 @@ def custom_ride_plan_view(slug):
     # Attach break merging metadata for timeline layout
     stops, use_timeline = _attach_break_metadata(stops)
 
+    # Wind data for table view (same pattern as ride_plan_detail_view)
+    stop_wind = None
+    if weather_route_id:
+        try:
+            route_data = fetch_route(weather_route_id)
+            track_points = route_data.get('track_points') or []
+            stop_wind = fetch_stop_wind(
+                stops=stops,
+                track_points=track_points,
+                plan_slug=plan['slug'],
+                start_time_str=str(plan.get('start_time') or '07:00')[:5],
+                cache=cache,
+            )
+        except Exception:
+            current_app.logger.exception("Wind fetch failed for custom plan %s", slug)
+            stop_wind = None
+
     # Check if there's an upcoming RUSA event that matches this ride plan
     upcoming_event = None
     signup_count = 0
@@ -1660,6 +1779,7 @@ def custom_ride_plan_view(slug):
                          rwgps_url_label=rwgps_url_label,
                          rwgps_route_id=rwgps_route_id,
                          weather_route_id=weather_route_id,
+                         stop_wind=stop_wind,
                          upcoming_event=upcoming_event,
                          signup_count=signup_count,
                          user_signup_status=user_signup_status,

@@ -1,483 +1,370 @@
-# Technology Stack: Personality-Driven AI Coaching (Milestone 2)
+# Stack Research
 
-**Project:** Team Asha Randonneuring — Milestone 2
-**Researched:** 2026-03-17
-**Scope:** New libraries only — does not re-document Flask 3.0, PostgreSQL/Supabase, OpenAI, pgvector, Tailwind, or Braintrust observability (already in `.planning/codebase/STACK.md`)
-
----
-
-## Context
-
-This milestone adds five capability domains to an existing Flask 3.0 / psycopg2 / OpenAI /
-Braintrust app. Each domain requires specific library choices. The existing stack is frozen — new
-libraries must slot in without requiring framework changes, background workers, or new
-infrastructure.
-
-**Hard constraints from Vercel serverless:**
-- No persistent background workers (Celery, RQ, Dramatiq are ALL disqualified)
-- Max function duration: 300s on Hobby plan (fluid compute), 800s on Pro
-- All heavy operations (extraction, embedding, crawling) must run as admin-triggered HTTP
-  requests or offline CLI scripts — not inline with user requests
-- Bundle size: 500MB uncompressed limit (heavy ML libraries like PyTorch are out)
+**Domain:** Wind forecast + historical weather visualization for a cycling randonneuring app
+**Researched:** 2026-03-23
+**Confidence:** HIGH — existing stack is verified from codebase; Open-Meteo archive API verified from official docs; Flask-Caching current version verified from PyPI
 
 ---
 
-## Domain 1: Personality Trait Extraction from Chat Logs
+## Existing Stack (Do Not Change)
 
-### Recommended: `instructor` 1.14.5 + `pydantic` 2.12.5
+This milestone extends an existing system. These are fixed constraints, not choices:
 
-**What they do:** `instructor` wraps the OpenAI client so you can pass a Pydantic model as
-`response_model` and get back a validated, typed Python object instead of raw JSON. The library
-handles retry on validation failure, schema generation, and streaming partial objects.
+| Technology | Current Version | Role |
+|------------|----------------|------|
+| Flask | 3.0.0 | Web framework |
+| Jinja2 | 3.1.2 | Server-side templating |
+| Tailwind CSS | (via npm) | Utility CSS — compiled at build time |
+| psycopg2-binary | 2.9.9 | PostgreSQL driver |
+| requests | 2.31.0 | HTTP client for all external APIs |
+| Flask-Caching | 2.1.0 | In-memory cache (SimpleCache, Vercel-compatible) |
+| Werkzeug | 3.0.1 | WSGI utilities |
+| gunicorn | 21.2.0 | WSGI server |
+| Vercel | serverless | Hosting platform |
 
-**Why this, not raw JSON mode:**
+---
 
-The existing codebase already uses raw `response_format={"type": "json_object"}` in
-`whatsapp_parser.py` and `openai_coach.py`. That pattern works for simple outputs but becomes
-brittle for nested, enumerated personality trait schemas. Instructor eliminates the manual
-`json.loads()` + key normalization pattern seen in `openai_coach.py` lines 499-512 and provides
-automatic retry when the model returns an invalid structure.
+## Recommended Stack for Wind Integration
 
-**Why not LangChain or LlamaIndex:**
+### No New Core Dependencies Required
 
-Both are multi-hundred-MB frameworks that add abstraction layers over functionality this codebase
-already has (OpenAI client, pgvector retrieval, chat loop). They would conflict with the existing
-agentic loop in `services/chat_service.py` and violate the established pattern of calling OpenAI
-directly. The Vercel bundle size limit makes them risky regardless.
+The wind integration milestone needs **zero new runtime dependencies**. All required capabilities are already present:
 
-**How it fits the existing code:**
+| Need | Covered By | Why Sufficient |
+|------|-----------|----------------|
+| Open-Meteo archive HTTP calls | `requests` 2.31.0 | Same call pattern as existing forecast fetch — just change URL and add `start_date`/`end_date` params |
+| Wind data persistence | `psycopg2-binary` 2.9.9 + PostgreSQL | New `ride_wind_data` table; JSONB column for per-stop wind arrays |
+| Forecast caching (1-hour TTL) | `Flask-Caching` 2.1.0 SimpleCache | Already used in `weather.py` with `cache.set()` / `cache.get()` pattern |
+| Color-coded wind cells | Jinja2 inline `style=` attributes | Dynamic color intensity requires computed values — Tailwind static classes cannot express this |
+| Wind classification logic | Python stdlib `math` | `math.sin()` for crosswind projection, `math.cos()` already used for headwind |
+| Template rendering | Jinja2 3.1.2 | Table column additions are Jinja2 `for` loop extensions |
+
+### New Table: `ride_wind_data`
+
+The only new "infrastructure" is a database table. No migration library needed — the project uses raw SQL migrations via `migrations/apply_migration_*.py` scripts.
+
+Recommended schema:
+
+```sql
+CREATE TABLE ride_wind_data (
+    id SERIAL PRIMARY KEY,
+    ride_id INTEGER NOT NULL,                  -- FK to ride table
+    ride_plan_id INTEGER,                      -- FK to ride_plan (nullable for Strava-only)
+    data_type TEXT NOT NULL CHECK (data_type IN ('forecast', 'historical')),
+    fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    wind_data JSONB NOT NULL,                  -- array of per-stop wind objects
+    UNIQUE (ride_id, ride_plan_id, data_type)
+);
+CREATE INDEX idx_ride_wind_data_ride_id ON ride_wind_data(ride_id);
+```
+
+Use `psycopg2.extras.Json(data)` to insert Python dicts as JSONB — this is already imported in `models.py` via `psycopg2.extras`.
+
+---
+
+## Supporting Libraries
+
+### Flask-Caching 2.1.0 → Upgrade to 2.3.1 (Optional, Low Priority)
+
+| Library | Pin | Purpose | When to Use |
+|---------|-----|---------|-------------|
+| Flask-Caching | 2.3.1 | Upgrade from 2.1.0 (current in repo) | If upgrading — latest stable as of 2025-02-23; no breaking changes from 2.1.0 |
+
+**Decision:** Do not upgrade as part of this milestone. Flask-Caching 2.1.0 already provides everything needed (SimpleCache, `cache.memoize()`, `cache.set()`/`cache.get()` with timeout). Upgrading introduces risk with no wind-feature benefit. Track for a later maintenance pass.
+
+### No New Libraries
+
+| Library | Why Rejected |
+|---------|-------------|
+| `openmeteo-requests` (official SDK) | Adds a dependency for a pattern `requests` already handles. The existing `fetch_route_weather()` pattern (comma-separated lat/lng) maps directly to the archive API. Zero value over raw requests. |
+| `retry` / `urllib3.Retry` | Only needed if Open-Meteo proves unreliable in production. The existing `requests.get(..., timeout=15)` pattern is sufficient for now. Add retry adapter in a follow-on patch if 429s appear. |
+| Celery / RQ | Background tasks for wind fetching. Rejected because Vercel serverless has no persistent worker support. Historical wind fetch happens on first page view, then persists to DB. That's the correct pattern. |
+| `numpy` | For bearing math / wind projections. Rejected — `math.sin()` / `math.cos()` from stdlib handle everything. `numpy` is in `requirements-dev.txt` for evals only; do not promote to production. |
+| Chart.js / D3 | Wind rose charts. Rejected — PROJECT.md explicitly specifies color-coded table cells, not charts. The no-JS-framework constraint is intentional. |
+
+---
+
+## Open-Meteo Archive API (Verified)
+
+**Confidence: HIGH** — Verified against official docs at `open-meteo.com/en/docs/historical-weather-api`.
+
+| Property | Value |
+|----------|-------|
+| Endpoint | `https://archive-api.open-meteo.com/v1/archive` |
+| Parameters | `latitude`, `longitude`, `start_date` (yyyy-mm-dd), `end_date` (yyyy-mm-dd), `hourly` |
+| Wind variables | `wind_speed_10m`, `wind_direction_10m`, `wind_gusts_10m`, `wind_speed_100m`, `wind_direction_100m` |
+| Batch support | Yes — comma-separated lat/lng arrays, same as forecast API: `latitude=37.77,37.81&longitude=-122.41,-122.38` |
+| Response shape | Single location → dict. Multiple locations → list of dicts. (Matches existing `fetch_route_weather()` normalization logic.) |
+| Historical range | 1940 to present, 0.1° or 0.25° resolution |
+| Free tier limit | 10,000 API calls/day, 5,000/hour, 600/minute |
+| Auth | None required for free tier |
+
+**Fetch pattern for historical wind** (matches existing code shape):
 
 ```python
-import instructor
-from pydantic import BaseModel, Field
-from typing import Literal
-from openai import OpenAI
+OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
-class PersonalityTraits(BaseModel):
-    tone_register: Literal["formal", "informal", "mixed"]
-    humor_type: Literal["dry", "sarcastic", "self_deprecating", "teasing", "none"]
-    directness: Literal["blunt", "qualifying", "verbose"]
-    encouragement_style: Literal["tough_love", "validating", "neutral", "pushes_hard"]
-    signature_phrases: list[str] = Field(max_length=5)
-    example_quotes: list[str] = Field(max_length=3, description="Direct quotes supporting traits")
-    confidence: Literal["high", "medium", "low"]
-    source_message_count: int
+def fetch_historical_wind(sample_points, date_str):
+    """Fetch historical wind for sample points on a specific date.
 
-client = instructor.from_provider("openai/gpt-4o")  # GPT-4o, not mini, for extraction quality
-traits = client.chat.completions.create(
-    response_model=PersonalityTraits,
-    messages=[{"role": "user", "content": f"Extract personality traits:\n\n{messages_text}"}],
-)
+    date_str: 'YYYY-MM-DD' — the ride date.
+    Returns list of per-location hourly dicts (same shape as forecast).
+    """
+    lats = ",".join(str(round(p['lat'], 4)) for p in sample_points)
+    lngs = ",".join(str(round(p['lng'], 4)) for p in sample_points)
+    params = {
+        'latitude': lats,
+        'longitude': lngs,
+        'start_date': date_str,
+        'end_date': date_str,
+        'hourly': 'wind_speed_10m,wind_direction_10m,wind_gusts_10m',
+        'timezone': 'auto',
+    }
+    resp = requests.get(OPEN_METEO_ARCHIVE_URL, params=params, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    return [data] if isinstance(data, dict) else data
 ```
-
-**Model choice for extraction:** GPT-4o (not GPT-4o-mini). The PROJECT.md explicitly flags this:
-"personality extraction may need GPT-4o for quality." Trait extraction from noisy WhatsApp data
-requires stronger reasoning to distinguish consistent personality signals from one-off reactions.
-GPT-4o-mini is appropriate for the admin UI interactions and guardrail evals.
-
-**Installation:**
-```bash
-pip install instructor==1.14.5
-```
-
-Pydantic 2.12.5 is already pulled in transitively by the OpenAI SDK. Confirm with
-`pip show pydantic` before pinning explicitly.
-
-**Confidence:** HIGH — instructor is the standard pattern for structured LLM extraction as of
-2025/2026; 3M+ monthly downloads; built on Pydantic which the OpenAI SDK already requires.
 
 ---
 
-## Domain 2: Blog Content Extraction
+## Wind Cell Color Rendering Pattern
 
-### 2a. WordPress Blog: `trafilatura` 2.0.0
+**Confidence: HIGH** — Verified from existing codebase patterns and Tailwind's confirmed limitation with dynamic values.
 
-**What it does:** Fetches a URL, strips navigation, ads, footers, comments, and cookie banners
-using a heuristic trained on millions of web pages, and returns clean main text content. Outputs
-Markdown, plain text, or structured JSON. Used by HuggingFace, IBM, and Microsoft Research for
-large-scale text extraction.
+Tailwind cannot handle computed color values — class names must be statically known at build time. Dynamic wind intensity colors (e.g., opacity or shade scaling with wind speed) require **inline `style=` attributes computed in Python and passed through Jinja2 templates**.
 
-**Why this, not BeautifulSoup:**
+### Color Scheme (from PROJECT.md)
 
-BeautifulSoup (already in `requirements.txt`) can parse HTML but has no concept of "main content."
-You would need to manually identify WordPress post containers (`div.entry-content`,
-`article.post`, etc.) and strip sidebars, headers, related posts widgets. This is brittle across
-WordPress themes and will break if Mihir changes themes. Trafilatura handles this automatically —
-it's specifically trained for blog-style content.
+| Wind Type | Color | Intensity Rule |
+|-----------|-------|---------------|
+| Tailwind | Green (`#22c55e` base) | Speed × opacity |
+| Headwind | Red (`#ef4444` base) | Speed × opacity |
+| Crosswind | Blue (`#3b82f6` base) | Speed × opacity |
 
-**Why not newspaper4k (0.9.5):**
-
-Newspaper4k is good for news article extraction but has a heavier dependency footprint (NLTK data
-files, spaCy optional). Trafilatura is lighter, faster, has no data file downloads, and
-produces cleaner output from long-form blog posts (which Mihir's 4000-word PBP ride report is).
-
-**Minimal usage pattern:**
+### Python helper (in `weather.py`):
 
 ```python
-import trafilatura
+def wind_cell_style(wind_type, wind_speed_kmh):
+    """Return inline CSS style string for a wind table cell.
 
-def extract_wordpress_post(url: str) -> str:
-    html = trafilatura.fetch_url(url)
-    text = trafilatura.extract(html, output_format="markdown", include_comments=False)
-    return text or ""
-```
-
-**Note on WordPress.com REST API:** WordPress.com sites (like `unexpectedathlete.wordpress.com`)
-do expose a public REST API at `https://public-api.wordpress.com/rest/v1.1/sites/{site}/posts`.
-This returns structured JSON with post content, date, and author. However, the content field
-contains raw HTML — you still need an extraction step. Trafilatura can process the HTML field
-directly. The REST API approach is more reliable than URL-based fetching (no rate limits from the
-host) but requires knowing the site slug. For a one-time extraction of a handful of posts,
-URL-based trafilatura is simpler and sufficient.
-
-**Installation:**
-```bash
-pip install trafilatura==2.0.0
-```
-
-**Confidence:** HIGH — current version verified via PyPI JSON API; widely adopted in academic
-text extraction pipelines.
-
----
-
-### 2b. Google Drive PDF: `pdfplumber` 0.11.4+
-
-**What it does:** Extracts text from PDF files with precise character-level positioning. Better
-than pypdf at handling complex layouts, multi-column text, and tables. Returns plain text
-preserving reading order.
-
-**Why pdfplumber, not pypdf 6.9.1:**
-
-pypdf is fast and handles simple PDFs well, but it struggles with PDFs that have non-standard
-character encoding, mixed fonts, or complex layout (all common in Google Docs exports to PDF).
-pdfplumber uses pdfminer.six under the hood and gives character-level control. For Venki's
-Google Drive PDF — which is almost certainly a narrative blog post exported from Google Docs —
-pdfplumber is more reliable.
-
-**Why not PyMuPDF (fitz):**
-
-PyMuPDF is fast and handles scanned PDFs with OCR (via Tesseract), but it requires a compiled C
-extension and a larger Vercel bundle. For a text-based Google Docs PDF (no scanned images),
-pdfplumber is sufficient and leaner.
-
-**Google Drive PDF download pattern:**
-
-Google Drive public links require URL transformation to get the download URL. The file ID can be
-extracted from the share link:
-
-```python
-import re
-import requests
-import pdfplumber
-import io
-
-def download_google_drive_pdf(share_url: str) -> bytes:
-    """Convert Google Drive share URL to direct download."""
-    match = re.search(r'/file/d/([a-zA-Z0-9_-]+)', share_url)
-    if not match:
-        raise ValueError("Not a valid Google Drive file URL")
-    file_id = match.group(1)
-    download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-    response = requests.get(download_url, timeout=30)
-    response.raise_for_status()
-    return response.content
-
-def extract_pdf_text(pdf_bytes: bytes) -> str:
-    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        pages = [page.extract_text() or "" for page in pdf.pages]
-    return "\n\n".join(pages)
-```
-
-**Note on Google Drive authentication:** If Venki's PDF is publicly shared ("Anyone with the
-link can view"), no authentication is needed. The `requests` library (already in
-`requirements.txt`) handles the download. If the file requires authentication (shared only with
-specific users), the `google-api-python-client` 2.193.0 + `google-auth` 2.49.1 approach is
-needed — but this introduces OAuth credentials management complexity. Confirm with Venki that the
-file is publicly accessible before building authentication support.
-
-**Installation:**
-```bash
-pip install pdfplumber==0.11.9
-```
-
-**Confidence:** MEDIUM — pdfplumber version verified via PyPI JSON API. Google Drive download
-URL pattern is stable but Google occasionally changes it; verify against the actual file before
-finalizing the implementation.
-
----
-
-## Domain 3: Structured Personality Profile Storage and Admin Interfaces
-
-### Storage: Raw psycopg2 (already in stack)
-
-**What to use:** The existing pattern in `models.py` — raw SQL via psycopg2 with
-`RealDictCursor`. No new ORM needed. Personality profiles are a new set of tables following the
-same pattern as `whatsapp_chunk` and existing rider tables.
-
-**Why not SQLAlchemy 2.0.48:**
-
-SQLAlchemy would require rewriting all existing queries (currently raw psycopg2) or maintaining
-two database access patterns. The existing codebase has made a deliberate choice to use raw SQL,
-and the personality profile tables are simple enough that ORM benefits don't justify the
-introduction of a second database pattern.
-
-**Why not Flask-Admin 2.0.2:**
-
-Flask-Admin generates generic CRUD UIs from SQLAlchemy models. It requires SQLAlchemy (ruled out
-above) and produces Bootstrap-based UI that would clash with the existing Tailwind CSS design
-system. The existing admin panel (`routes/admin.py`) uses Jinja2 templates + Tailwind, which
-gives full control over layout and UX. Custom admin pages following this established pattern are
-the right choice — and the admin views for personality traits have specific UX requirements
-(source quote display, confidence badges, per-field save) that Flask-Admin can't express without
-extensive customization.
-
-**Admin UI: Existing pattern (Flask blueprints + Jinja2 + Tailwind)**
-
-Add a new `admin_personality` blueprint following the pattern in `routes/admin.py`. All new
-admin pages (personality traits, gear preferences, coach assignment, guardrails) are standard
-Flask route handlers rendering Jinja2 templates with Tailwind styling.
-
-**For per-field AJAX saves** (recommended in FEATURES.md to avoid full-page reloads):
-
-Use `fetch()` in vanilla JavaScript — no new JS library needed. The existing codebase has no
-frontend framework (React, Vue, etc.) and the admin is a single user (Mihir). Vanilla `fetch`
-against a Flask endpoint that accepts JSON and returns `{"success": true}` is sufficient and
-consistent with the existing approach.
-
-**No new libraries required for this domain.** The existing psycopg2 + Flask + Jinja2 + Tailwind
-stack handles it completely.
-
-**Confidence:** HIGH — this is a deliberate non-recommendation based on direct analysis of the
-existing codebase patterns.
-
----
-
-## Domain 4: Coaching Guardrail Configuration and Eval Validation
-
-### Guardrail storage: Raw psycopg2 (existing pattern)
-
-Same rationale as Domain 3. Guardrails are stored as rows in a `coaching_guardrails` table,
-loaded at conversation start via `models.py`, and injected into the system prompt. No new library.
-
-### Eval validation: `braintrust` 0.9.0 + `autoevals` 0.0.130 (already in dev dependencies)
-
-**The existing eval pattern is the right pattern.** `evals/eval_guardrail.py` already shows the
-correct approach: define a `task` function, a custom scorer, and call `Eval()` from the
-`braintrust` package. The existing `Eval` + `init_dataset` pattern from `braintrust` 0.9.0 is
-what all new guardrail evals should follow.
-
-**For guardrail compliance evals specifically**, use `autoevals` LLM-as-judge:
-
-```python
-from autoevals import LLMClassifier
-
-guardrail_judge = LLMClassifier(
-    name="guardrail_compliance",
-    prompt_template="""
-You are evaluating whether a coaching response respects these guardrails:
-{guardrails}
-
-Message: {input}
-Response: {output}
-
-Did the response comply with all active guardrails? Answer YES or NO with one sentence reason.
-""",
-    choice_scores={"YES": 1, "NO": 0},
-)
-```
-
-**Why autoevals for guardrail evals, not a custom scorer:**
-
-Custom scorers (as in `eval_guardrail.py`) are appropriate when you can determine correctness
-programmatically (e.g., checking `intent == "off_topic"`). Guardrail compliance — "did the
-response respect the tone guardrail for a rider with humor_sensitivity=low?" — requires semantic
-understanding. `autoevals.LLMClassifier` is the right tool for semantic yes/no judgments. The
-`autoevals` package is already in `requirements-dev.txt` (unversioned — pin to `0.0.130`).
-
-**No new libraries required for this domain.** Both packages are already present.
-
-**Confidence:** HIGH — direct analysis of existing eval files; autoevals version verified via
-PyPI JSON API.
-
----
-
-## Domain 5: Web Scraping and Embedding External Resource Links
-
-### Crawling: `trafilatura` 2.0.0 (same as Domain 2)
-
-Trafilatura handles both single-URL extraction and crawling of site URLs via its `sitemaps` and
-`feeds` discovery features. For the resources spreadsheet use case — a list of URLs to fetch,
-extract, and embed — trafilatura's batch URL processing is sufficient.
-
-**Important: robots.txt compliance.** Trafilatura respects `robots.txt` by default in its
-crawling mode. For the admin-triggered one-time embedding of external resources, call
-`trafilatura.fetch_url()` per URL with a reasonable delay between requests (1-2 seconds). Do
-not implement parallel crawling against external sites.
-
-### Spreadsheet URL extraction: Google Sheets API via `google-api-python-client` 2.193.0
-
-The resources spreadsheet URL in PROJECT.md points to a Google Sheets document. The simplest
-extraction path:
-
-1. **If the sheet is publicly readable:** Use the Sheets API with an API key (no OAuth needed).
-   `google-api-python-client` 2.193.0 + `google-auth` 2.49.1 handles this.
-
-2. **Even simpler:** Export the sheet as CSV via the Google Sheets export URL
-   (`/export?format=csv&gid={sheet_id}`) and parse with Python's built-in `csv` module. No
-   Google API client needed for public sheets.
-
-**Recommended approach (simpler):**
-
-```python
-import csv
-import io
-import requests
-
-def fetch_sheet_urls(spreadsheet_id: str, gid: str) -> list[str]:
-    export_url = (
-        f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}"
-        f"/export?format=csv&gid={gid}"
+    Opacity scales with speed: 0 km/h → 0.15, 30+ km/h → 0.85.
+    Font size scales: < 10 km/h → 0.75rem, 30+ km/h → 0.95rem.
+    """
+    color_map = {
+        'tailwind': '34, 197, 94',    # green-500 RGB
+        'headwind': '239, 68, 68',    # red-500 RGB
+        'crosswind': '59, 130, 246',  # blue-500 RGB
+    }
+    rgb = color_map.get(wind_type, '113, 128, 150')  # gray fallback
+    opacity = min(0.85, max(0.15, wind_speed_kmh / 35.0))
+    font_size = '0.95rem' if wind_speed_kmh >= 25 else '0.80rem'
+    font_weight = '700' if wind_speed_kmh >= 25 else '500'
+    return (
+        f"background-color: rgba({rgb}, {opacity:.2f}); "
+        f"font-size: {font_size}; font-weight: {font_weight};"
     )
-    response = requests.get(export_url, timeout=30)
-    response.raise_for_status()
-    reader = csv.DictReader(io.StringIO(response.text))
-    # Extract URL column — column name TBD from actual sheet structure
-    return [row.get("URL") or row.get("Link") or "" for row in reader if row]
 ```
 
-This requires no additional libraries — `requests` is already in `requirements.txt`.
+### Jinja2 template pattern:
 
-### Embedding: Existing OpenAI `text-embedding-3-small` pattern
-
-The `scripts/import_whatsapp.py` pipeline already has the correct embedding pattern:
-`embed_texts()` calls `client.embeddings.create()` in batches of 100, returning numpy arrays
-for bulk insert into pgvector. New resource embeddings should use the identical pattern.
-
-**Store in a new `knowledge_source` table** with columns: `url`, `source_type` (community |
-authoritative), `last_crawled`, `chunk_count`. Link chunks to this table via `source_url` FK.
-This enables the admin UI controls described in FEATURES.md (list, re-embed, remove per source).
-
-### HTML parsing for content filtering: `beautifulsoup4` 4.14.3 + `lxml` 6.0.2
-
-Both are already in `requirements.txt` (older versions). For external resource crawling, upgrade
-to current versions to get bug fixes — the existing scraping in the codebase (RUSA results in
-`services/rusa.py`) uses the same libraries and the upgrade should be non-breaking.
-
-**Why not Scrapy 2.14.2:**
-
-Scrapy is a full crawling framework designed for persistent workers that traverse entire sites.
-The use case here is fetching a bounded list of URLs from an admin-provided spreadsheet — not
-open-ended spidering. Scrapy's overhead (project structure, settings, pipelines, middleware) is
-disproportionate. The `trafilatura.fetch_url()` + `beautifulsoup4` approach is already in the
-codebase and handles this use case in a dozen lines.
-
-**Why not Playwright 1.58.0:**
-
-JavaScript-rendered pages are not expected in the target resource set (RUSA rules pages,
-randonneuring guides, equipment review sites). Playwright requires a Chromium binary which would
-blow past Vercel's 500MB bundle limit. If a specific target URL requires JS rendering, it's an
-exception — fetch it manually, not in the automated pipeline.
-
-**Installation (upgrades only — not new dependencies):**
-```bash
-pip install trafilatura==2.0.0
-pip install beautifulsoup4==4.14.3 lxml==6.0.2  # upgrades from existing older versions
-pip install pdfplumber==0.11.9  # new
-pip install instructor==1.14.5  # new
+```html
+<td style="{{ stop.wind_cell_style }}" class="px-2 py-1 text-center text-white">
+    {{ stop.wind_speed_kmh }} km/h
+    <span class="block text-xs">{{ stop.wind_type }}</span>
+</td>
 ```
 
 ---
 
-## Full Additions to requirements.txt
+## Caching Strategy
 
-```
-# Milestone 2 additions
-trafilatura==2.0.0      # Blog and web content extraction (Domain 2, 5)
-pdfplumber==0.11.9      # Google Drive PDF extraction (Domain 2)
-instructor==1.14.5      # Structured LLM output extraction (Domain 1)
+**Confidence: HIGH** — Based on existing codebase analysis and Vercel serverless constraints.
 
-# Version upgrades (existing libs — verify non-breaking before deploying)
-beautifulsoup4==4.14.3  # was 4.12.3
-lxml==6.0.2             # was 5.1.0
-openai==2.29.0          # was 2.24.0 — needed for instructor compatibility
+| Data Type | Cache Layer | TTL | Rationale |
+|-----------|------------|-----|-----------|
+| Forecast wind (upcoming rides) | Flask-Caching SimpleCache | 1 hour | Forecasts change; 1hr matches existing weather cache TTL |
+| Historical wind (completed rides) | PostgreSQL `ride_wind_data` table | Permanent | Archive data doesn't change; DB lookup is faster than API call on repeat views |
+| RWGPS track points | Flask-Caching SimpleCache | 5 min (existing `CACHE_TIMEOUT`) | Track points don't change per route; existing pattern |
+
+**SimpleCache on Vercel:** SimpleCache uses per-process in-memory storage. On Vercel, each function invocation may be a different process — cache will sometimes miss. This is acceptable for forecast wind (just means an extra Open-Meteo call, within rate limits). Historical wind is in PostgreSQL, so it is never lost between invocations.
+
+Do not add Redis or Memcached. The complexity and cost are not justified for this use case and Vercel's serverless model makes persistent cache daemons impractical.
+
+---
+
+## Crosswind Calculation (New Function in `weather.py`)
+
+**Confidence: HIGH** — Pure math, no library needed.
+
+```python
+def crosswind_component(wind_speed, wind_from_deg, rider_bearing_deg):
+    """Return crosswind component (positive = wind from right, negative = from left).
+
+    Magnitude indicates how much of wind_speed acts perpendicular to rider direction.
+    """
+    if wind_speed == 0:
+        return 0
+    wind_travel_deg = (wind_from_deg + 180) % 360
+    angle = math.radians(wind_travel_deg - rider_bearing_deg)
+    return round(wind_speed * math.sin(angle), 1)
+
+
+def classify_wind(wind_speed, wind_from_deg, rider_bearing_deg):
+    """Classify wind into headwind/tailwind/crosswind with component values.
+
+    Returns dict with:
+        type: 'headwind' | 'tailwind' | 'crosswind'
+        headwind_kmh: float (positive = against rider)
+        crosswind_kmh: float (positive = from right)
+        wind_speed_kmh: float (total speed)
+    """
+    hw = headwind_component(wind_speed, wind_from_deg, rider_bearing_deg)
+    cw = crosswind_component(wind_speed, wind_from_deg, rider_bearing_deg)
+
+    # 45-degree threshold: if |headwind| > |crosswind|, classify as head/tail
+    if abs(hw) >= abs(cw):
+        wind_type = 'headwind' if hw > 0 else 'tailwind'
+    else:
+        wind_type = 'crosswind'
+
+    return {
+        'type': wind_type,
+        'headwind_kmh': hw,
+        'crosswind_kmh': cw,
+        'wind_speed_kmh': wind_speed,
+    }
 ```
 
-Dev dependencies (`requirements-dev.txt`) — pin existing unversioned entry:
-```
-autoevals==0.0.130      # was unversioned
+---
+
+## Stop Coordinate Interpolation (New Function in `weather.py`)
+
+**Confidence: HIGH** — RWGPS track point format verified from existing `sample_track_points()` code.
+
+Ride plan stops have `distance_miles` but not `lat/lng`. The track points (`y`=lat, `x`=lng, `d`=distance_m) enable interpolation.
+
+```python
+def interpolate_stop_coordinates(stop_distance_miles, track_points):
+    """Find lat/lng for a stop by linear interpolation of RWGPS track points.
+
+    stop_distance_miles: cumulative distance of the stop.
+    track_points: raw RWGPS track points with y=lat, x=lng, d=distance_m.
+    Returns {'lat': float, 'lng': float} or None if track_points empty.
+    """
+    if not track_points:
+        return None
+
+    stop_distance_m = stop_distance_miles * 1609.344
+
+    # Find surrounding track points
+    prev_pt = track_points[0]
+    for pt in track_points[1:]:
+        if pt['d'] >= stop_distance_m:
+            # Linear interpolation between prev_pt and pt
+            span = pt['d'] - prev_pt['d']
+            if span == 0:
+                return {'lat': pt['y'], 'lng': pt['x']}
+            ratio = (stop_distance_m - prev_pt['d']) / span
+            lat = prev_pt['y'] + ratio * (pt['y'] - prev_pt['y'])
+            lng = prev_pt['x'] + ratio * (pt['x'] - prev_pt['x'])
+            return {'lat': round(lat, 5), 'lng': round(lng, 5)}
+        prev_pt = pt
+
+    # Past end of track — use last point
+    last = track_points[-1]
+    return {'lat': last['y'], 'lng': last['x']}
 ```
 
 ---
 
 ## Alternatives Considered
 
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| Structured LLM extraction | instructor 1.14.5 | Raw JSON mode (existing) | Brittle for nested schemas; no retry on malformed output |
-| Structured LLM extraction | instructor 1.14.5 | LangChain | 200MB+ framework; conflicts with existing chat loop; overkill |
-| WordPress extraction | trafilatura 2.0.0 | BeautifulSoup (existing) | No concept of "main content"; breaks across themes |
-| WordPress extraction | trafilatura 2.0.0 | newspaper4k 0.9.5 | Heavier deps (NLTK); worse on long-form posts vs. news articles |
-| PDF extraction | pdfplumber 0.11.9 | pypdf 6.9.1 | Less reliable on Google Docs PDF exports; layout issues |
-| PDF extraction | pdfplumber 0.11.9 | PyMuPDF | C extension; larger Vercel bundle; OCR not needed |
-| Admin CRUD UI | Custom Flask + Jinja2 | Flask-Admin 2.0.2 | Requires SQLAlchemy; Bootstrap conflicts with Tailwind; can't express custom UX requirements |
-| Admin CRUD UI | Custom Flask + Jinja2 | SQLAlchemy 2.0.48 | Would require rewriting all existing raw psycopg2 queries |
-| Web crawling | trafilatura 2.0.0 | Scrapy 2.14.2 | Full framework for open-ended spidering; bounded URL list doesn't need it |
-| JS rendering | Not needed | Playwright 1.58.0 | Chromium binary exceeds Vercel 500MB bundle limit |
-| Background jobs | Admin-triggered HTTP | Celery 5.6.2 | Requires persistent workers; incompatible with Vercel serverless |
-| Background jobs | Admin-triggered HTTP | RQ 2.7.0 | Requires Redis + persistent workers; same Vercel incompatibility |
-| Eval scoring | autoevals LLMClassifier | Custom scorer | Semantic compliance checks require LLM judgment; custom scorers are for programmatic checks |
+| Recommended | Alternative | When to Use Alternative |
+|-------------|-------------|-------------------------|
+| Open-Meteo Archive API | Visual Crossing, Tomorrow.io | If Open-Meteo archive proves unreliable for India/Bay Area geographies. Both have free tiers but add API key management complexity. |
+| JSONB column for wind data | Separate `ride_wind_stop` rows table | If you need to query individual stop wind data in SQL (e.g., "all headwind stops > 30 km/h across all rides"). JSONB is simpler for this use case where wind data is always fetched per-ride. |
+| Flask-Caching SimpleCache | Redis | If this app moves to a persistent server or adds background workers. Redis is overkill for current Vercel serverless deployment. |
+| psycopg2.extras.Json() | `json.dumps()` with cast | Both work. `Json()` is cleaner and handles edge cases. Use `Json()`. |
 
 ---
 
-## Architecture Notes
+## What NOT to Use
 
-**Where new code lives:**
-
-| Component | Location | Pattern |
-|-----------|----------|---------|
-| Personality extraction script | `scripts/extract_personality.py` | CLI script, same pattern as `scripts/import_whatsapp.py` |
-| Blog/PDF extraction | `scripts/extract_blog.py` | CLI script |
-| Personality models (DB) | `models.py` | New functions, same raw SQL pattern |
-| Guardrail loader | `services/openai_coach.py` | Replaces hardcoded strings with DB-loaded rules |
-| Admin routes | `routes/admin_personality.py` | New blueprint, registered in `app.py` |
-| Guardrail eval | `evals/eval_guardrails_v2.py` | Follows `eval_guardrail.py` pattern + autoevals LLM judge |
-| Resource embedding script | `scripts/import_resources.py` | CLI script, extends `import_whatsapp.py` pattern |
-
-**Execution model for heavy operations:**
-
-All extraction, crawling, and embedding operations run as:
-1. CLI scripts (preferred for one-time runs: `python scripts/extract_personality.py`)
-2. Admin-triggered HTTP endpoints that stream progress as SSE (for in-browser triggering)
-
-Never inline these operations into request handlers that serve user-facing pages.
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| Tailwind dynamic color classes (e.g., `bg-green-500`) for wind intensity | Tailwind purges unused classes at build time — dynamically constructed class names like `bg-green-${intensity}` will be stripped. Wind intensity is computed at runtime, not build time. | Python-computed `style=` attributes in Jinja2 templates |
+| `openmeteo-requests` SDK | Adds a third-party dependency for a pattern `requests` already covers. The SDK wraps the same REST API. Zero benefit, extra dependency surface area. | Raw `requests.get()` matching existing `fetch_route_weather()` pattern |
+| Celery / RQ background jobs | Vercel serverless functions are stateless and terminate after response — no persistent worker process is possible. | Fetch-on-demand + persist-to-DB pattern: first request fetches and stores, subsequent requests read from DB |
+| SQLAlchemy ORM | Project uses raw psycopg2 SQL throughout — mixing in an ORM would create two query patterns in the same codebase. | Raw SQL in `models.py` following existing `_execute()` helper pattern |
+| `numpy` for wind math | `numpy` is in dev dependencies for evals only. Importing it in production code inflates Vercel function bundle size significantly. All wind math needs only `math.sin()`, `math.cos()`, `math.radians()`. | Python stdlib `math` module |
+| Real-time WebSocket wind updates | PROJECT.md explicitly marks "real-time wind updates during rides" as out of scope. Adds frontend complexity with no randonneuring planning value. | Static wind forecast fetched at page load time |
 
 ---
 
-## Vercel Deployment Constraints Summary
+## Stack Patterns by Variant
 
-| Concern | Limit | Impact |
-|---------|-------|--------|
-| Function duration (Hobby) | 300s max (fluid compute) | Extraction jobs must complete under 5 min or run as CLI scripts |
-| Bundle size | 500MB uncompressed | Playwright, PyMuPDF, PyTorch are out; all recommended libs are safe |
-| Persistent processes | None | Celery, RQ, any background worker pattern is incompatible |
-| Stateful file system | None | Extracted data must go to DB immediately; can't write temp files |
+**If stop has no RWGPS track point coverage (route_data unavailable):**
+- Skip wind cell rendering; show "—" placeholder
+- Do not block the rest of the ride plan table from rendering
+- Log a warning; do not raise an exception
 
-**On the 300s limit for extraction:** Personality extraction from a full WhatsApp export (hundreds
-of messages to an LLM) may approach this limit if triggered via HTTP. The CLI script path
-(`python scripts/extract_personality.py`) is the safe fallback — it runs outside Vercel with no
-time limit. The admin HTTP trigger is a convenience for short re-extractions.
+**If Open-Meteo archive returns no data for a date (pre-1940 or future):**
+- Show "No data" in wind column
+- This shouldn't occur for 2025/2026 rides but handle gracefully
+
+**If forecast wind is requested outside the 16-day Open-Meteo forecast window:**
+- Fall through to archive API fetch (treat as historical)
+- Log the fallback; surface it to the user if relevant
+
+**If ride_wind_data already exists in DB (historical, re-fetched):**
+- Return existing data; do not re-fetch archive API
+- Provide an admin route or parameter to force refresh if needed
+
+---
+
+## Installation
+
+No new packages needed for production. The existing `requirements.txt` is sufficient.
+
+If upgrading Flask-Caching (optional, deferred):
+
+```bash
+# Update requirements.txt pin only
+pip install Flask-Caching==2.3.1
+```
+
+For development/testing:
+
+```bash
+# Already in requirements-dev.txt — no changes needed
+pip install -r requirements-dev.txt
+```
+
+---
+
+## Version Compatibility
+
+| Package | Version | Compatibility Notes |
+|---------|---------|-------------------|
+| Flask 3.0.0 | Flask-Caching 2.1.0 | Compatible — Flask-Caching 2.x targets Flask 2.x+ |
+| psycopg2-binary 2.9.9 | PostgreSQL JSONB | `psycopg2.extras.Json()` works for all psycopg2 2.x versions |
+| requests 2.31.0 | Open-Meteo archive API | No SDK dependency — raw HTTP, no version concern |
+| Jinja2 3.1.2 | Flask 3.0.0 | Bundled together; no conflict |
 
 ---
 
 ## Sources
 
-| Source | Confidence | Used For |
-|--------|------------|----------|
-| PyPI JSON API (`/pypi/{package}/json`) | HIGH | All version numbers |
-| GitHub instructor README (instructor-ai/instructor) | HIGH | instructor usage pattern |
-| Vercel docs (`/docs/functions/runtimes/python`, `/docs/functions/configuring-functions/duration`) | HIGH | Serverless constraints |
-| Direct codebase analysis (`scripts/import_whatsapp.py`, `evals/eval_guardrail.py`, `routes/admin.py`, `services/openai_coach.py`) | HIGH | Existing patterns to follow |
-| PROJECT.md | HIGH | Requirements and constraints |
-| `.planning/codebase/STACK.md` | HIGH | Existing stack versions |
-| trafilatura readthedocs (denied) | MEDIUM (from PyPI description + GitHub README) | trafilatura capabilities |
-| LangChain/SQLAlchemy bundle sizes | MEDIUM | Rationale for exclusion — verify before dismissing if needs change |
+- [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api) — endpoint URL, wind variables, batch format, date range (HIGH confidence, official docs)
+- [Open-Meteo Pricing](https://open-meteo.com/en/pricing) — 10,000 req/day free tier limit (MEDIUM confidence, via WebSearch verified against GitHub issue #438 corroborating the limit)
+- [Flask-Caching on PyPI](https://pypi.org/project/Flask-Caching/) — latest version 2.3.1 as of 2025-02-23 (HIGH confidence, official PyPI)
+- [psycopg2.extras docs](https://www.psycopg.org/docs/extras.html) — Json() adapter pattern (HIGH confidence, official docs)
+- [Tailwind CSS dynamic styles](https://tailwindcss.com/docs/adding-custom-styles) — static class purging limitation confirmed (HIGH confidence, official docs via WebSearch)
+- [Vercel serverless function constraints](https://vercel.com/docs/limits) — stateless invocations, no persistent in-memory state (HIGH confidence, official Vercel docs)
+- Codebase analysis — `services/weather.py`, `cache.py`, `db.py`, `models.py`, `requirements.txt`, `tailwind.config.js` reviewed directly (HIGH confidence)
+
+---
+
+*Stack research for: Wind forecast integration — Team Asha Randonneuring*
+*Researched: 2026-03-23*
