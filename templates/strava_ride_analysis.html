@@ -503,7 +503,7 @@
     <th style="text-align:right;">W</th>
     {% endif %}
     <th style="text-align:right;">&Delta;</th>
-    {% if stop_wind %}<th style="text-align:center;">Actual Wind</th>{% endif %}
+    {% if stop_wind %}<th style="text-align:center;">Actual Wind</th><th style="text-align:center;">Temp</th>{% endif %}
 </tr>
 </thead>
 <tbody>
@@ -605,8 +605,8 @@
 
     {# Actual Wind #}
     {% if stop_wind %}
+    {% set w = stop_wind.get(row.location) %}
     <td style="text-align:center;padding:4px 8px;">
-        {% set w = stop_wind.get(row.location) %}
         {% if w %}
         <span style="display:inline-block;padding:2px 6px;border-radius:4px;background:{{ w.style.background }};color:{{ w.style.color }};font-size:{{ w.style.font_size }};font-weight:600;white-space:nowrap;">
             {{ w.wind_speed_kmh }} km/h
@@ -614,6 +614,12 @@
         {% else %}
         &mdash;
         {% endif %}
+    </td>
+    <td style="text-align:center;padding:4px 8px;font-size:0.7rem;color:#64748b;">
+        {% if w and w.temperature_c is defined %}
+        {% set temp_f = (w.temperature_c * 9 / 5 + 32)|round(0)|int %}
+        {{ temp_f }}&deg;F
+        {% else %}&mdash;{% endif %}
     </td>
     {% endif %}
 </tr>

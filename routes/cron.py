@@ -337,7 +337,7 @@ def sync_rusa_results():
         return jsonify({'error': str(e)}), 500
 
 
-@cron_bp.route('/backfill-wind', methods=['POST'])
+@cron_bp.route('/backfill-wind', methods=['GET', 'POST'])
 def backfill_wind():
     """Backfill historical wind data for past rides missing wind records.
 
