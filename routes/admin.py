@@ -3,7 +3,7 @@ import json
 import os
 from datetime import date
 from pathlib import Path
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash, abort
+from flask import Blueprint, render_template, request, redirect, url_for, session, flash, abort, jsonify, current_app
 from models import (get_current_season, get_rides_for_season, get_riders_for_season,
                     get_ride_by_id, get_participation_matrix, get_clubs,
                     create_ride, update_rider_ride_status, get_all_riders,
@@ -107,8 +107,31 @@ def dashboard():
     current = get_current_season()
     rides = get_rides_with_signup_counts(current['id']) if current else []
     today = date.today()
+
+    # Wind data status
+    wind_status = None
+    try:
+        from models import _execute
+        total_row = _execute(
+            "SELECT COUNT(DISTINCT ride_id) as cnt FROM ride_wind_data"
+        ).fetchone()
+        missing_row = _execute("""
+            SELECT COUNT(*) as cnt FROM ride r
+            JOIN ride_plan rp ON r.ride_plan_id = rp.id
+            JOIN season s ON r.season_id = s.id
+            WHERE s.name IN (SELECT name FROM season ORDER BY id DESC LIMIT 2)
+            AND r.date < CURRENT_DATE
+            AND NOT EXISTS (SELECT 1 FROM ride_wind_data rwd WHERE rwd.ride_id = r.id)
+        """).fetchone()
+        wind_status = {
+            'total': total_row['cnt'] if total_row else 0,
+            'missing': missing_row['cnt'] if missing_row else 0,
+        }
+    except Exception:
+        pass
+
     return render_template('admin/dashboard.html', season=current, rides=rides,
-                           today=today)
+                           today=today, wind_status=wind_status)
 
 
 @admin_bp.route('/strava')
@@ -131,6 +154,94 @@ def finalize_past_rides():
     else:
         flash('No past rides with pending signups to finalize.', 'info')
     return redirect(url_for('admin.dashboard'))
+
+
+@admin_bp.route('/run-wind-backfill', methods=['POST'])
+@user_login_required
+def run_wind_backfill():
+    """Trigger wind data backfill from admin dashboard."""
+    _require_admin()
+
+    import re
+    import time
+    from services.rwgps import fetch_route
+    from services.weather import get_historical_stop_wind, wind_cell_style
+    from models import _execute, get_db, get_ride_wind_data, get_ride_plan_stops
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=__import__('psycopg2').extras.RealDictCursor)
+
+    # Find past rides with plans but no wind data (last 2 seasons)
+    cur.execute("""
+        SELECT r.id, r.name, r.date, r.distance_km,
+               rp.id as plan_id, rp.slug as plan_slug,
+               rp.rwgps_url, rp.rwgps_url_team
+        FROM ride r
+        JOIN ride_plan rp ON r.ride_plan_id = rp.id
+        JOIN season s ON r.season_id = s.id
+        WHERE s.name IN (SELECT name FROM season ORDER BY id DESC LIMIT 2)
+        AND r.date < CURRENT_DATE
+        AND NOT EXISTS (SELECT 1 FROM ride_wind_data rwd WHERE rwd.ride_id = r.id)
+        ORDER BY r.date DESC
+        LIMIT 10
+    """)
+    rides = cur.fetchall()
+
+    if not rides:
+        return jsonify({'message': 'All rides have wind data', 'processed': 0, 'success': 0}), 200
+
+    results = []
+    for ride in rides:
+        ride_result = {'ride_id': ride['id'], 'name': ride['name'], 'date': str(ride['date'])}
+        try:
+            rwgps_url = ride['rwgps_url_team'] or ride['rwgps_url']
+            match = re.search(r'/routes/(\d+)', rwgps_url) if rwgps_url else None
+            if not match:
+                ride_result['status'] = 'skip_no_route'
+                results.append(ride_result)
+                continue
+
+            route_id = int(match.group(1))
+            route_data = fetch_route(route_id)
+            track_points = route_data.get('track_points', []) if route_data else []
+
+            if not track_points:
+                ride_result['status'] = 'skip_no_track'
+                results.append(ride_result)
+                continue
+
+            plan_stops = get_ride_plan_stops(ride['plan_id'])
+            if not plan_stops:
+                ride_result['status'] = 'skip_no_stops'
+                results.append(ride_result)
+                continue
+
+            ride_date = ride['date']
+            if isinstance(ride_date, str):
+                ride_date = date.fromisoformat(ride_date)
+
+            wind_rows, data_source = get_historical_stop_wind(
+                stops=[dict(s) for s in plan_stops],
+                track_points=track_points,
+                ride_date=ride_date,
+                ride_id=ride['id'],
+            )
+
+            if wind_rows:
+                ride_result['status'] = 'ok'
+                ride_result['stops'] = len(wind_rows)
+                ride_result['source'] = data_source
+            else:
+                ride_result['status'] = 'no_data'
+        except Exception as e:
+            current_app.logger.exception("admin wind backfill: ride %s", ride['id'])
+            ride_result['status'] = f'error: {str(e)[:80]}'
+
+        results.append(ride_result)
+        time.sleep(1)
+
+    ok_count = sum(1 for r in results if r.get('status') == 'ok')
+    return jsonify({'processed': len(results), 'success': ok_count, 'results': results}), 200
 
 
 @admin_bp.route('/rides/new', methods=['GET', 'POST'])
