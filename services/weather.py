@@ -587,6 +587,7 @@ def fetch_stop_wind(stops, track_points, plan_slug, start_time_str, cache=None):
 
         wind_speed = _safe_get(hourly, 'wind_speed_10m', hour_index, 0.0)
         wind_dir = _safe_get(hourly, 'wind_direction_10m', hour_index, 0)
+        temperature = _safe_get(hourly, 'temperature_2m', hour_index, 0.0)
 
         # Bearing: current stop -> next stop; for last stop: previous -> current
         bearing = 0.0
@@ -606,12 +607,15 @@ def fetch_stop_wind(stops, track_points, plan_slug, start_time_str, cache=None):
         wind_type = classify_wind(hw, cw)
         style = wind_cell_style(wind_speed, wind_type)
 
+        temp_f = round(float(temperature) * 9 / 5 + 32, 0)
         result.append({
             'wind_speed_kmh': round(float(wind_speed), 1),
             'headwind_kmh': round(float(hw), 1),
             'wind_type': wind_type,
             'style': style,
             'label': wind_label(hw),
+            'temperature_c': round(float(temperature), 1),
+            'temperature_f': int(temp_f),
         })
 
     # Step 7: cache and return

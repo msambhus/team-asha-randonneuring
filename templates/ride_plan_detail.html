@@ -1490,7 +1490,7 @@
     <th style="text-align:right;">ETA</th>
     <th style="text-align:right;">Break</th>
     <th style="text-align:right;">Avg Speed</th>
-    {% if stop_wind %}<th style="text-align:center;">Wind</th>{% endif %}
+    {% if stop_wind %}<th style="text-align:center;">Wind</th><th style="text-align:center;">Temp</th>{% endif %}
     {% if plan.cutoff_hours %}<th style="text-align:right;">Time Bank</th>{% endif %}
     <th style="text-align:center;">Diff.</th>
     <th style="text-align:left;">Notes</th>
@@ -1556,6 +1556,9 @@
       &mdash;
       {% endif %}
     </td>
+    <td style="text-align:center;padding:4px 8px;font-size:0.75rem;color:#64748b;">
+      {% if w and w.temperature_f is defined %}{{ w.temperature_f }}&deg;F{% else %}&mdash;{% endif %}
+    </td>
     {% endif %}
     {% if plan.cutoff_hours %}
     <td class="num-cell">
@@ -1595,7 +1598,7 @@
             {{ "%.1f"|format(avg_elapsed_speed) }} mph
         {% endif %}
     </td>
-    {% if stop_wind %}<td></td>{% endif %}
+    {% if stop_wind %}<td></td><td></td>{% endif %}
     {% if plan.cutoff_hours %}<td></td>{% endif %}
     <td></td>
     <td></td>
