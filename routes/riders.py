@@ -285,15 +285,17 @@ def _extract_rwgps_route_id(url):
 
 def _build_journey_nodes(stops):
     """Collapse stops at same distance into single nodes for the journey strip.
-    When a rest stop shares the same distance as the previous waypoint,
-    label becomes 'Rest activity @ Previous location' (e.g. 'Water refill @ Fire station')."""
+
+    Label always leads with the waypoint *location* (e.g. "Santa Rosa").
+    If there is a break activity (stop_name), it is appended after a dash
+    (e.g. "Santa Rosa — Refuel").  When a rest stop shares the same distance
+    as the previous waypoint the two are merged into a single node.
+    """
     nodes = []
     for idx, s in enumerate(stops):
         if nodes and nodes[-1]['distance_miles'] == (s.get('distance_miles') or 0):
             existing = nodes[-1]
             if s['stop_type'] in ('rest', 'control'):
-                # "Water refill @ Fire station" — rest location @ previous node's label
-                existing['label'] = "{} @ {}".format(s['location'][:18], existing['label'][:18])
                 if s['stop_type'] == 'control':
                     existing['node_type'] = 'control'
                 elif existing['node_type'] == 'waypoint':
@@ -314,13 +316,14 @@ def _build_journey_nodes(stops):
                 existing['stop_duration_min'] = s['stop_duration_min']
             if s.get('stop_name'):
                 existing['stop_name'] = s['stop_name']
+                # Re-build label: location first, break name after dash
+                existing['label'] = existing['location'][:22]
         else:
-            # Use stop_name if available, otherwise fallback to location
-            label = s.get('stop_name') or s['location'][:22]
-            if s['stop_type'] == 'rest' and not s.get('stop_name'):
-                label = "Rest @ {}".format(s['location'][:18])
+            # Location is always the primary label
+            label = s['location'][:22]
             nodes.append({
                 'label': label,
+                'location': s['location'],
                 'distance_miles': s.get('distance_miles') or 0,
                 'node_type': s['stop_type'],
                 'arrival_time_min': s.get('arrival_time_min'),
