@@ -261,6 +261,25 @@
 </style>
 {% endblock %}
 
+{# Wind arrow macro #}
+{% macro wind_arrow(w, show_speed=true) %}
+{% if w %}
+{% set color = '#dc2626' if w.wind_type == 'headwind' else '#16a34a' if w.wind_type == 'tailwind' else '#1e293b' %}
+{% set mph = (w.wind_speed_mph if w.wind_speed_mph is defined else w.wind_speed_kmh * 0.621371)|round(0)|int %}
+{% set sz = 14 if mph < 8 else 18 if mph < 15 else 22 if mph < 25 else 26 %}
+{% set sw = 1.5 if mph < 8 else 2 if mph < 15 else 2.5 if mph < 25 else 3 %}
+{% if w.wind_type == 'headwind' %}{% set rotation = 180 %}
+{% elif w.wind_type == 'tailwind' %}{% set rotation = 0 %}
+{% else %}{% set rotation = 90 %}{% endif %}
+<span class="wind-arrow" style="display:inline-block;vertical-align:middle;" title="{{ mph }} mph {{ w.wind_type }}">
+<svg width="{{ sz }}" height="{{ sz }}" viewBox="0 0 24 24" fill="none" stroke="{{ color }}" stroke-width="{{ sw }}" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate({{ rotation }}deg)">
+<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+</svg>
+</span>
+{% if show_speed %}<span style="color:{{ color }};font-size:0.7rem;font-weight:600;">{{ mph }}</span>{% endif %}
+{% endif %}
+{% endmacro %}
+
 {% block content %}
 <div class="hero" style="padding:40px 20px 50px;">
     <h1>Strava Ride Analysis</h1>
@@ -608,9 +627,7 @@
     {% set w = stop_wind.get(row.location) %}
     <td style="text-align:center;padding:4px 8px;">
         {% if w %}
-        <span style="display:inline-block;padding:2px 6px;border-radius:4px;background:{{ w.style.background }};color:{{ w.style.color }};font-size:{{ w.style.font_size }};font-weight:600;white-space:nowrap;">
-            {{ w.wind_speed_kmh }} km/h
-        </span>
+        {{ wind_arrow(w) }}
         {% else %}
         &mdash;
         {% endif %}
@@ -629,10 +646,10 @@
 {% if stop_wind %}
 <div style="margin-top:12px;padding:8px 12px;background:var(--surface-raised,#f8fafc);border-radius:6px;font-size:0.85rem;color:var(--text-muted,#64748b);">
     <strong>Wind Legend:</strong>
-    <span style="color:#16A34A;">&#9632;</span> Tailwind &nbsp;
-    <span style="color:#DC2626;">&#9632;</span> Headwind &nbsp;
-    <span style="color:#2563EB;">&#9632;</span> Crosswind
-    &nbsp; | Intensity: lighter = weaker, darker = stronger
+    <span style="color:#16a34a;">↑</span> Tailwind &nbsp;
+    <span style="color:#dc2626;">↓</span> Headwind &nbsp;
+    <span style="color:#1e293b;">→</span> Crosswind
+    &nbsp; | Arrow size = wind speed (mph)
 </div>
 {% endif %}
 </div>

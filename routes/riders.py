@@ -901,6 +901,9 @@ def ride_strava_analysis(rusa_id, ride_id):
                             row['style'] = wind_cell_style(
                                 row['wind_speed_kmh'], row['wind_type']
                             )
+                            row['wind_speed_mph'] = round(
+                                float(row['wind_speed_kmh']) * 0.621371, 1
+                            )
                             stop_wind[row['stop_name']] = row
         except Exception:
             current_app.logger.exception(

@@ -69,6 +69,27 @@
     font-weight: 600;
 }
 
+/* ===== WIND ARROWS ===== */
+.wind-arrow {
+    display: inline-block;
+    font-size: 0;
+    line-height: 1;
+    vertical-align: middle;
+}
+.wind-arrow svg {
+    display: block;
+}
+.journey-wind {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    margin-top: 3px;
+    font-size: 0.6rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
 /* ===== TERRAIN DIFFICULTY STRIP ===== */
 .terrain-strip {
     display: flex;
@@ -253,7 +274,7 @@
 /* ===== TIME-OF-DAY CHART (grid layout) ===== */
 .tod-grid {
     display: grid;
-    grid-template-columns: minmax(180px, 2.5fr) 75px 60px 70px 1fr;
+    grid-template-columns: minmax(180px, 2.5fr) 75px 60px 50px 70px 55px 1fr;
     gap: 2px 10px;
     align-items: center;
     font-size: 0.8rem;
@@ -862,7 +883,7 @@
     .segment-metrics { gap: 10px; }
     .metric { min-width: 44px; }
     .metric-value { font-size: 0.85rem; }
-    .tod-grid { grid-template-columns: minmax(100px, 2fr) 60px 50px 55px 1fr; font-size: 0.75rem; gap: 2px 6px; }
+    .tod-grid { grid-template-columns: minmax(100px, 2fr) 60px 50px 40px 55px 45px 1fr; font-size: 0.75rem; gap: 2px 6px; }
     .journey-node { min-width: 60px; }
     .modal-content {
         width: 95%;
@@ -876,6 +897,26 @@
 }
 </style>
 {% endblock %}
+
+{# Wind arrow macro: direction arrow colored by wind_type, sized by speed #}
+{% macro wind_arrow(w, show_speed=true) %}
+{% if w %}
+{% set color = '#dc2626' if w.wind_type == 'headwind' else '#16a34a' if w.wind_type == 'tailwind' else '#1e293b' %}
+{% set mph = w.wind_speed_mph|default(w.wind_speed_kmh * 0.621371)|round(0)|int %}
+{% set sz = 14 if mph < 8 else 18 if mph < 15 else 22 if mph < 25 else 26 %}
+{% set sw = 1.5 if mph < 8 else 2 if mph < 15 else 2.5 if mph < 25 else 3 %}
+{# Arrow points in the direction wind is blowing relative to rider: headwind=↓ (against), tailwind=↑ (with), crosswind=← or → #}
+{% if w.wind_type == 'headwind' %}{% set rotation = 180 %}
+{% elif w.wind_type == 'tailwind' %}{% set rotation = 0 %}
+{% else %}{% set rotation = 90 %}{% endif %}
+<span class="wind-arrow" title="{{ mph }} mph {{ w.wind_type }}">
+<svg width="{{ sz }}" height="{{ sz }}" viewBox="0 0 24 24" fill="none" stroke="{{ color }}" stroke-width="{{ sw }}" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate({{ rotation }}deg)">
+<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+</svg>
+</span>
+{% if show_speed %}<span style="color:{{ color }};font-size:0.7rem;font-weight:600;">{{ mph }}</span>{% endif %}
+{% endif %}
+{% endmacro %}
 
 {% block content %}
 {# ===== A. ENHANCED HERO ===== #}
@@ -1171,6 +1212,9 @@
     {% endif %}
     <div class="journey-dist">{{ "%.1f"|format(n.distance_miles) }} mi</div>
     <div class="journey-eta arrival-time" data-cum-min="{{ (n['arrival_time_min']|default(0))|int }}">{% if n.distance_miles > 0 %}--:--{% endif %}</div>
+    {% if stop_wind and stop_wind[loop.index0] is defined %}
+    <div class="journey-wind">{{ wind_arrow(stop_wind[loop.index0]) }}</div>
+    {% endif %}
 </div>
 {% endfor %}
 </div>
@@ -1202,7 +1246,9 @@
         <span class="tod-header">Location</span>
         <span class="tod-header" style="text-align:right;">ETA</span>
         <span class="tod-header" style="text-align:right;">Dist</span>
+        <span class="tod-header" style="text-align:right;">Ft/Mi</span>
         <span class="tod-header" style="text-align:right;">Time Bank</span>
+        <span class="tod-header" style="text-align:center;">Wind</span>
         <span class="tod-header"></span>
     </div>
     {# Data rows #}
@@ -1223,8 +1269,16 @@
             &mdash;
         </span>
         <span class="tod-dist">{{ "%.1f"|format(s.distance_miles) }} mi</span>
+        <span style="text-align:right;font-size:0.75rem;color:var(--text-light);padding:4px 0;font-variant-numeric:tabular-nums;">
+            {% if s.ft_per_mi %}{{ s.ft_per_mi }}{% else %}&mdash;{% endif %}
+        </span>
         <span class="tod-bank" style="font-weight:600;color:{% if s.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
             {% if s.time_bank_min >= 0 %}+{% endif %}{% set abs_min = s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min %}{{ (abs_min // 60)|int }}h{{ "%02d"|format(abs_min % 60) }}m
+        </span>
+        <span style="text-align:center;padding:4px 0;">
+            {% if stop_wind and stop_wind[loop.index0] is defined %}
+            {{ wind_arrow(stop_wind[loop.index0]) }}
+            {% endif %}
         </span>
     </div>
     {% endif %}
@@ -1549,9 +1603,7 @@
     {% set w = stop_wind[loop.index0] %}
     <td style="text-align:center;padding:4px 8px;">
       {% if w %}
-      <span style="display:inline-block;padding:2px 6px;border-radius:4px;background:{{ w.style.background }};color:{{ w.style.color }};font-size:{{ w.style.font_size }};font-weight:600;white-space:nowrap;">
-        {{ w.wind_speed_kmh }} km/h
-      </span>
+      {{ wind_arrow(w) }}
       {% else %}
       &mdash;
       {% endif %}
