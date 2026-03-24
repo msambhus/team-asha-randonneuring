@@ -608,10 +608,14 @@ def fetch_stop_wind(stops, track_points, plan_slug, start_time_str, cache=None):
         style = wind_cell_style(wind_speed, wind_type)
 
         temp_f = round(float(temperature) * 9 / 5 + 32, 0)
+        wind_speed_mph = round(float(wind_speed) * 0.621371, 1)
         result.append({
             'wind_speed_kmh': round(float(wind_speed), 1),
+            'wind_speed_mph': wind_speed_mph,
             'headwind_kmh': round(float(hw), 1),
             'wind_type': wind_type,
+            'wind_direction_deg': int(wind_dir),
+            'rider_bearing_deg': int(bearing),
             'style': style,
             'label': wind_label(hw),
             'temperature_c': round(float(temperature), 1),
