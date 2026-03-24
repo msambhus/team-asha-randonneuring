@@ -369,9 +369,8 @@ def backfill_wind():
         FROM ride r
         JOIN ride_plan rp ON r.ride_plan_id = rp.id
         JOIN season s ON r.season_id = s.id
-        WHERE s.name IN (
-            SELECT name FROM season ORDER BY id DESC LIMIT 2
-        )
+        WHERE (s.is_current = true
+               OR s.name IN (SELECT name FROM season WHERE is_current = false ORDER BY name DESC LIMIT 1))
         AND r.date < CURRENT_DATE
         AND NOT EXISTS (
             SELECT 1 FROM ride_wind_data rwd WHERE rwd.ride_id = r.id
