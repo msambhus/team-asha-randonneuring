@@ -220,7 +220,7 @@ def get_stop_coordinates(stops, track_points):
 
     result = []
     for stop in stops:
-        target_m = stop['distance_miles'] * MILES_TO_METERS
+        target_m = float(stop['distance_miles'] or 0) * MILES_TO_METERS
 
         # Clamp to first point if stop is at or before track start
         if target_m <= valid[0]['d']:
@@ -424,9 +424,9 @@ def get_historical_stop_wind(stops, track_points, ride_date, ride_id=None):
         # Arrival time: use explicit arrival_time_min if available, else estimate from distance
         arrival_time_min = stops[i].get('arrival_time_min')
         if arrival_time_min is not None:
-            arrival_dt = start_dt + timedelta(minutes=arrival_time_min)
+            arrival_dt = start_dt + timedelta(minutes=float(arrival_time_min))
         else:
-            dist_km = stops[i].get('distance_miles', 0) * 1.60934
+            dist_km = float(stops[i].get('distance_miles') or 0) * 1.60934
             hours_to_arrive = dist_km / _AVG_SPEED_KMH if _AVG_SPEED_KMH > 0 else 0
             arrival_dt = start_dt + timedelta(hours=hours_to_arrive)
 
@@ -579,9 +579,9 @@ def fetch_stop_wind(stops, track_points, plan_slug, start_time_str, cache=None):
         # Use arrival_time_min if present; otherwise estimate from distance
         arrival_time_min = stops[i].get('arrival_time_min')
         if arrival_time_min is not None:
-            arrival_dt = start_dt + timedelta(minutes=arrival_time_min)
+            arrival_dt = start_dt + timedelta(minutes=float(arrival_time_min))
         else:
-            dist_km = stops[i].get('distance_miles', 0) * 1.60934
+            dist_km = float(stops[i].get('distance_miles') or 0) * 1.60934
             hours_to_arrive = dist_km / _AVG_SPEED_KMH if _AVG_SPEED_KMH > 0 else 0
             arrival_dt = start_dt + timedelta(hours=hours_to_arrive)
 

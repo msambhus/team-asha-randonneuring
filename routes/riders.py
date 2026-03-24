@@ -900,6 +900,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                         ride_id=ride['id'],
                     )
                     if wind_rows:
+                        plan_stops_list = [dict(s) for s in plan_stops]
                         stop_wind = {}
                         for row in wind_rows:
                             row['style'] = wind_cell_style(
@@ -908,7 +909,13 @@ def ride_strava_analysis(rusa_id, ride_id):
                             row['wind_speed_mph'] = round(
                                 float(row['wind_speed_kmh']) * 0.621371, 1
                             )
-                            stop_wind[row['stop_name']] = row
+                            order = row.get('stop_order', -1)
+                            if isinstance(order, int) and 0 <= order < len(plan_stops_list):
+                                key = plan_stops_list[order].get('location') or row.get('stop_name', '')
+                            else:
+                                key = row.get('stop_name', '')
+                            if key:
+                                stop_wind[key] = row
         except Exception:
             current_app.logger.exception(
                 "ride_strava_analysis: wind fetch failed for ride %s", ride_id
