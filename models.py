@@ -869,6 +869,12 @@ def update_base_plan_stop(stop_id, changes):
         updates.append("stop_duration_min = %s")
         params.append(changes['stop_duration_min'])
 
+    if 'stop_name' in changes:
+        updates.append("stop_name = %s")
+        # Store None (NULL) for empty strings so the template condition
+        # `stop.stop_name and stop.stop_duration_min > 0` works correctly.
+        params.append(changes['stop_name'] or None)
+
     if 'location' in changes:
         updates.append("location = %s")
         params.append(changes['location'] or None)
@@ -888,6 +894,7 @@ def update_base_plan_stop(stop_id, changes):
     sql = f"UPDATE ride_plan_stop SET {', '.join(updates)} WHERE id = %s"
 
     cur.execute(sql, params)
+    row_count = cur.rowcount  # save before subsequent queries change it
     conn.commit()
 
     # Clear cache for the affected plan
@@ -899,9 +906,10 @@ def update_base_plan_stop(stop_id, changes):
         # Recalculate cum_time_min for all stops in this plan
         if any(k in changes for k in ('segment_time_min', 'stop_duration_min', 'distance_miles')):
             recalculate_base_plan_cumulative(plan_id, cur, conn)
+            conn.commit()  # commit the recalculated cumulative times
     cache.clear()
 
-    return cur.rowcount > 0
+    return row_count > 0
 
 
 def recalculate_base_plan_cumulative(ride_plan_id, cur=None, conn=None):
@@ -2644,17 +2652,10 @@ def save_ride_wind_data(ride_id, wind_rows):
 
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    sql = """
-        INSERT INTO ride_wind_data (
-            ride_id, stop_order, stop_name,
-            wind_speed_kmh, wind_direction_deg,
-            headwind_kmh, crosswind_kmh,
-            wind_type, temperature_c, conditions, data_source
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (ride_id, stop_order) DO NOTHING
-    """
-    for row in wind_rows:
-        cur.execute(sql, (
+
+    # Build a single multi-row INSERT to avoid N+1 round trips (one per stop).
+    values = [
+        (
             ride_id,
             row.get('stop_order'),
             row.get('stop_name'),
@@ -2666,7 +2667,32 @@ def save_ride_wind_data(ride_id, wind_rows):
             row.get('temperature_c'),
             row.get('conditions'),
             row.get('data_source'),
-        ))
+        )
+        for row in wind_rows
+    ]
+    psycopg2.extras.execute_values(
+        cur,
+        """
+        INSERT INTO ride_wind_data (
+            ride_id, stop_order, stop_name,
+            wind_speed_kmh, wind_direction_deg,
+            headwind_kmh, crosswind_kmh,
+            wind_type, temperature_c, conditions, data_source
+        ) VALUES %s
+        ON CONFLICT (ride_id, stop_order) DO UPDATE SET
+            stop_name = EXCLUDED.stop_name,
+            wind_speed_kmh = EXCLUDED.wind_speed_kmh,
+            wind_direction_deg = EXCLUDED.wind_direction_deg,
+            headwind_kmh = EXCLUDED.headwind_kmh,
+            crosswind_kmh = EXCLUDED.crosswind_kmh,
+            wind_type = EXCLUDED.wind_type,
+            temperature_c = EXCLUDED.temperature_c,
+            conditions = EXCLUDED.conditions,
+            data_source = EXCLUDED.data_source,
+            fetched_at = NOW()
+        """,
+        values,
+    )
     conn.commit()
 
 

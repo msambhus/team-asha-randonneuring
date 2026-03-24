@@ -524,9 +524,11 @@ def fetch_stop_wind(stops, track_points, plan_slug, start_time_str, cache=None):
         return None
 
     # Step 2: build cache key — "wind:{plan_slug}:{YYYYMMDD}{HH}"
+    # Use hour-level granularity so the cache doesn't miss every second.
     hour_str = start_time_str[:2]
     date_str = datetime.now().strftime('%Y%m%d')
-    cache_key = f"wind:{plan_slug}:{date_str}{hour_str}"
+    current_hour = datetime.now().strftime('%H')
+    cache_key = f"wind:{plan_slug}:{date_str}{current_hour}"
 
     if cache is not None:
         cached = cache.get(cache_key)

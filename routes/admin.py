@@ -72,13 +72,23 @@ GUARDRAIL_ENUMS = {
 
 
 def _require_admin():
-    """Check if current user is an admin. Aborts with 403 if not. Skipped on localhost (debug mode)."""
-    from flask import current_app
-    if current_app.debug:
-        return
+    """Check if current user is an admin. Aborts with 403 if not."""
     from routes.riders import is_admin_user
     if not is_admin_user():
         abort(403)
+
+
+def _safe_admin_redirect(url):
+    """Redirect to `url` only if it is a relative path on this host.
+
+    Prevents open-redirect attacks via the `?next=` parameter.
+    """
+    from urllib.parse import urlparse
+    if url:
+        parsed = urlparse(url)
+        if not parsed.scheme and not parsed.netloc:
+            return redirect(url)
+    return redirect(url_for('admin.dashboard'))
 
 
 @admin_bp.route('/login', methods=['GET', 'POST'])
@@ -87,8 +97,8 @@ def login():
         password = request.form.get('password', '')
         if verify_password(password):
             session['logged_in'] = True
-            next_url = request.args.get('next', url_for('admin.dashboard'))
-            return redirect(next_url)
+            next_url = request.args.get('next')
+            return _safe_admin_redirect(next_url)
         else:
             return render_template('admin/login.html', error='Invalid password')
     return render_template('admin/login.html')

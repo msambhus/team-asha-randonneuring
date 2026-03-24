@@ -1,5 +1,6 @@
 """Tests for ride_wind_data model functions — get_ride_wind_data and save_ride_wind_data."""
 from unittest.mock import patch, MagicMock, call
+import psycopg2.extras
 import pytest
 
 
@@ -180,55 +181,71 @@ class TestGetRideWindData:
 
 
 # ── TestSaveRideWindData ─────────────────────────────────────────────
+#
+# save_ride_wind_data uses psycopg2.extras.execute_values for a single
+# batch INSERT (instead of N individual cur.execute calls).  Tests patch
+# execute_values to avoid needing a real DB connection.
 
 class TestSaveRideWindData:
 
+    def _patch_execute_values(self):
+        """Return a context manager that patches psycopg2.extras.execute_values."""
+        return patch('psycopg2.extras.execute_values')
+
     def test_inserts_single_row(self):
-        """save_ride_wind_data executes INSERT for a single wind row."""
+        """save_ride_wind_data calls execute_values once for a single wind row."""
         mock_conn = MagicMock()
         mock_cur = MagicMock()
         mock_conn.cursor.return_value = mock_cur
 
-        with patch('models.get_db', return_value=mock_conn):
+        with patch('models.get_db', return_value=mock_conn), \
+             self._patch_execute_values() as mock_ev:
             from models import save_ride_wind_data
             save_ride_wind_data(42, [SAMPLE_WIND_ROWS_MULTI[0]])
 
-        assert mock_cur.execute.call_count == 1
+        mock_ev.assert_called_once()
 
     def test_inserts_multiple_rows(self):
-        """save_ride_wind_data executes INSERT for each wind row."""
+        """save_ride_wind_data calls execute_values once regardless of row count."""
         mock_conn = MagicMock()
         mock_cur = MagicMock()
         mock_conn.cursor.return_value = mock_cur
 
-        with patch('models.get_db', return_value=mock_conn):
+        with patch('models.get_db', return_value=mock_conn), \
+             self._patch_execute_values() as mock_ev:
             from models import save_ride_wind_data
             save_ride_wind_data(42, SAMPLE_WIND_ROWS_MULTI)
 
-        assert mock_cur.execute.call_count == len(SAMPLE_WIND_ROWS_MULTI)
+        # Single batch INSERT regardless of number of rows
+        mock_ev.assert_called_once()
+        # Values list passed as third arg matches the number of rows
+        _, args, _ = mock_ev.mock_calls[0]
+        values_list = args[2]
+        assert len(values_list) == len(SAMPLE_WIND_ROWS_MULTI)
 
-    def test_sql_contains_on_conflict_do_nothing(self):
-        """save_ride_wind_data SQL uses ON CONFLICT DO NOTHING for idempotency."""
+    def test_sql_contains_on_conflict(self):
+        """save_ride_wind_data SQL uses ON CONFLICT for idempotency."""
         mock_conn = MagicMock()
         mock_cur = MagicMock()
         mock_conn.cursor.return_value = mock_cur
 
-        with patch('models.get_db', return_value=mock_conn):
+        with patch('models.get_db', return_value=mock_conn), \
+             self._patch_execute_values() as mock_ev:
             from models import save_ride_wind_data
             save_ride_wind_data(42, [SAMPLE_WIND_ROWS_MULTI[0]])
 
-        execute_call = mock_cur.execute.call_args
-        sql = execute_call[0][0]
+        _, args, _ = mock_ev.mock_calls[0]
+        sql = args[1]
         assert 'ON CONFLICT' in sql
-        assert 'DO NOTHING' in sql
 
     def test_commits_after_inserts(self):
-        """save_ride_wind_data calls conn.commit() once after all inserts."""
+        """save_ride_wind_data calls conn.commit() once after the batch insert."""
         mock_conn = MagicMock()
         mock_cur = MagicMock()
         mock_conn.cursor.return_value = mock_cur
 
-        with patch('models.get_db', return_value=mock_conn):
+        with patch('models.get_db', return_value=mock_conn), \
+             self._patch_execute_values():
             from models import save_ride_wind_data
             save_ride_wind_data(42, SAMPLE_WIND_ROWS_MULTI)
 
@@ -240,43 +257,47 @@ class TestSaveRideWindData:
         mock_cur = MagicMock()
         mock_conn.cursor.return_value = mock_cur
 
-        with patch('models.get_db', return_value=mock_conn):
+        with patch('models.get_db', return_value=mock_conn), \
+             self._patch_execute_values():
             from models import save_ride_wind_data
             # Should not raise
             save_ride_wind_data(42, [SAMPLE_WIND_ROWS_MULTI[0]])
             save_ride_wind_data(42, [SAMPLE_WIND_ROWS_MULTI[0]])
 
     def test_data_source_archive_passed_correctly(self):
-        """save_ride_wind_data passes data_source='archive' in INSERT params."""
+        """save_ride_wind_data includes data_source='archive' in the values tuple."""
         mock_conn = MagicMock()
         mock_cur = MagicMock()
         mock_conn.cursor.return_value = mock_cur
 
         archive_row = {**SAMPLE_WIND_ROWS_MULTI[0], 'data_source': 'archive'}
 
-        with patch('models.get_db', return_value=mock_conn):
+        with patch('models.get_db', return_value=mock_conn), \
+             self._patch_execute_values() as mock_ev:
             from models import save_ride_wind_data
             save_ride_wind_data(42, [archive_row])
 
-        execute_call = mock_cur.execute.call_args
-        params = execute_call[0][1]
-        assert 'archive' in params
+        _, args, _ = mock_ev.mock_calls[0]
+        values_list = args[2]  # third arg is the list of value tuples
+        assert len(values_list) == 1
+        assert 'archive' in values_list[0]
 
     def test_data_source_forecast_past_days_passed_correctly(self):
-        """save_ride_wind_data passes data_source='forecast_past_days' in INSERT params."""
+        """save_ride_wind_data includes data_source='forecast_past_days' in values."""
         mock_conn = MagicMock()
         mock_cur = MagicMock()
         mock_conn.cursor.return_value = mock_cur
 
         forecast_row = {**SAMPLE_WIND_ROWS_MULTI[0], 'data_source': 'forecast_past_days'}
 
-        with patch('models.get_db', return_value=mock_conn):
+        with patch('models.get_db', return_value=mock_conn), \
+             self._patch_execute_values() as mock_ev:
             from models import save_ride_wind_data
             save_ride_wind_data(42, [forecast_row])
 
-        execute_call = mock_cur.execute.call_args
-        params = execute_call[0][1]
-        assert 'forecast_past_days' in params
+        _, args, _ = mock_ev.mock_calls[0]
+        values_list = args[2]
+        assert 'forecast_past_days' in values_list[0]
 
     def test_no_op_on_empty_wind_rows(self):
         """save_ride_wind_data does nothing if wind_rows is empty."""
@@ -284,11 +305,13 @@ class TestSaveRideWindData:
         mock_cur = MagicMock()
         mock_conn.cursor.return_value = mock_cur
 
-        with patch('models.get_db', return_value=mock_conn):
+        with patch('models.get_db', return_value=mock_conn), \
+             self._patch_execute_values() as mock_ev:
             from models import save_ride_wind_data
             save_ride_wind_data(42, [])
 
-        mock_cur.execute.assert_not_called()
+        mock_ev.assert_not_called()
+        mock_conn.commit.assert_not_called()
 
     def test_sql_includes_all_required_columns(self):
         """save_ride_wind_data INSERT SQL includes all required column names."""
@@ -296,12 +319,13 @@ class TestSaveRideWindData:
         mock_cur = MagicMock()
         mock_conn.cursor.return_value = mock_cur
 
-        with patch('models.get_db', return_value=mock_conn):
+        with patch('models.get_db', return_value=mock_conn), \
+             self._patch_execute_values() as mock_ev:
             from models import save_ride_wind_data
             save_ride_wind_data(42, [SAMPLE_WIND_ROWS_MULTI[0]])
 
-        execute_call = mock_cur.execute.call_args
-        sql = execute_call[0][0]
+        _, args, _ = mock_ev.mock_calls[0]
+        sql = args[1]
         required_columns = [
             'ride_id', 'stop_order', 'stop_name',
             'wind_speed_kmh', 'wind_direction_deg',
@@ -311,16 +335,17 @@ class TestSaveRideWindData:
         for col in required_columns:
             assert col in sql, f"Column '{col}' not found in INSERT SQL"
 
-    def test_inserts_ride_id_in_params(self):
-        """save_ride_wind_data passes ride_id in INSERT params."""
+    def test_inserts_ride_id_in_values(self):
+        """save_ride_wind_data passes ride_id in the INSERT values tuple."""
         mock_conn = MagicMock()
         mock_cur = MagicMock()
         mock_conn.cursor.return_value = mock_cur
 
-        with patch('models.get_db', return_value=mock_conn):
+        with patch('models.get_db', return_value=mock_conn), \
+             self._patch_execute_values() as mock_ev:
             from models import save_ride_wind_data
             save_ride_wind_data(42, [SAMPLE_WIND_ROWS_MULTI[0]])
 
-        execute_call = mock_cur.execute.call_args
-        params = execute_call[0][1]
-        assert 42 in params
+        _, args, _ = mock_ev.mock_calls[0]
+        values_list = args[2]
+        assert 42 in values_list[0]

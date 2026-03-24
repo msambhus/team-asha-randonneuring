@@ -148,7 +148,7 @@ def season_riders(season_name):
                                pbp_finishers=pbp_finishers)
     except Exception as e:
         # Return mock data for testing without database
-        print(f"Database not available for riders page, using mock data: {e}")
+        current_app.logger.warning("Database not available for riders page, using mock data: %s", e)
         mock_stats = {
             'active_riders': 25,
             'total_rides': 48,
@@ -792,10 +792,8 @@ def ride_strava_analysis(rusa_id, ride_id):
     if not ride:
         abort(404)
 
-    # Check Strava visibility
+    # Check Strava visibility — never override privacy based on debug mode
     is_own_profile = session.get('rider_id') == rider['id']
-    if current_app.debug:
-        is_own_profile = True  # Always treat as own profile in debug mode
     strava_data_private = rider.get('strava_data_private', False)
     show_strava_data = is_own_profile or not strava_data_private
     if not show_strava_data:
@@ -997,25 +995,14 @@ def my_strava_analysis():
                         get_rider_participation, _execute)
     from flask import flash
 
-    # Auth check (inline instead of decorator so we can keep it on riders_bp)
-    if current_app.debug:
-        # Debug mode: allow unauthenticated access for local testing
-        rider_id = request.args.get('rider_id', type=int)
-        if not rider_id:
-            # Fall back to first rider with a Strava connection
-            fallback = _execute("SELECT rider_id FROM strava_connection LIMIT 1").fetchone()
-            rider_id = fallback['rider_id'] if fallback else None
-        if not rider_id:
-            flash('No rider with Strava connection found (debug mode)', 'error')
-            return redirect(url_for('main.index'))
-    else:
-        if not session.get('user_id'):
-            flash('Please log in to access this page', 'warning')
-            return redirect(url_for('auth.login', next=request.path))
-        rider_id = session.get('rider_id')
-        if not rider_id:
-            flash('Please complete your profile setup', 'warning')
-            return redirect(url_for('auth.setup_profile'))
+    # Auth check — always enforce authentication; never bypass for debug mode
+    if not session.get('user_id'):
+        flash('Please log in to access this page', 'warning')
+        return redirect(url_for('auth.login', next=request.path))
+    rider_id = session.get('rider_id')
+    if not rider_id:
+        flash('Please complete your profile setup', 'warning')
+        return redirect(url_for('auth.setup_profile'))
 
     # Get rider info
     rider_row = _execute("""
@@ -2150,22 +2137,18 @@ def api_get_custom_plan(custom_plan_id):
 @user_login_required
 def api_update_base_stop(stop_id):
     """Admin-only: Update base plan stop."""
-    import sys
     if not is_admin_user():
         return jsonify({'success': False, 'error': 'Unauthorized'}), 403
-    
+
     data = request.json
-    print(f"DEBUG: Updating stop {stop_id} with data: {data}", file=sys.stderr)
-    
+    current_app.logger.debug("Updating base stop %s with fields: %s", stop_id, list(data.keys()) if data else [])
+
     try:
         from models import update_base_plan_stop
         success = update_base_plan_stop(stop_id, data)
-        print(f"DEBUG: Update result: {success}", file=sys.stderr)
         return jsonify({'success': success})
     except Exception as e:
-        print(f"DEBUG ERROR: {str(e)}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
+        current_app.logger.exception("Failed to update base stop %s", stop_id)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -2246,10 +2229,11 @@ def api_update_custom_stop(custom_plan_id, stop_id):
     elevation_gain = data.get('elevation_gain') if 'elevation_gain' in data else None
     notes = data.get('notes') if 'notes' in data else None
     
-    print(f"[DEBUG] api_update_custom_stop: custom_plan_id={custom_plan_id}, stop_id={stop_id}")
-    print(f"[DEBUG] Request data: {data}")
-    print(f"[DEBUG] Explicit fields: {set(data.keys())}")
-    
+    current_app.logger.debug(
+        "api_update_custom_stop: plan=%s stop=%s fields=%s",
+        custom_plan_id, stop_id, list(data.keys()) if data else []
+    )
+
     try:
         success = update_custom_plan_stop(
             custom_plan_id, stop_id, 
