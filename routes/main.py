@@ -107,6 +107,12 @@ def resources():
     return render_template('resources.html')
 
 
+@main_bp.route('/privacy')
+@cache.cached(timeout=CACHE_TIMEOUT, key_prefix='privacy_page')
+def privacy():
+    return render_template('privacy.html')
+
+
 @main_bp.route('/upcoming')
 @cache.cached(timeout=CACHE_TIMEOUT, key_prefix='upcoming_page')
 def upcoming():
