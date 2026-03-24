@@ -905,10 +905,9 @@
 {% set mph = w.wind_speed_mph|default(w.wind_speed_kmh * 0.621371)|round(0)|int %}
 {% set sz = 14 if mph < 8 else 18 if mph < 15 else 22 if mph < 25 else 26 %}
 {% set sw = 1.5 if mph < 8 else 2 if mph < 15 else 2.5 if mph < 25 else 3 %}
-{# Arrow points in the direction wind is blowing relative to rider: headwind=↓ (against), tailwind=↑ (with), crosswind=← or → #}
-{% if w.wind_type == 'headwind' %}{% set rotation = 180 %}
-{% elif w.wind_type == 'tailwind' %}{% set rotation = 0 %}
-{% else %}{% set rotation = 90 %}{% endif %}
+{# Arrow points where wind travels in rider's frame — exact angle from wind_arrow_deg #}
+{# headwind=↓ (from front), tailwind=↑ (from behind), diagonal/crosswind proportional #}
+{% set rotation = w.wind_arrow_deg if w.wind_arrow_deg is defined else (180 if w.wind_type == 'headwind' else 0 if w.wind_type == 'tailwind' else 90) %}
 <span class="wind-arrow" title="{{ mph }} mph {{ w.wind_type }}">
 <svg width="{{ sz }}" height="{{ sz }}" viewBox="0 0 24 24" fill="none" stroke="{{ color }}" stroke-width="{{ sw }}" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate({{ rotation }}deg)">
 <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
