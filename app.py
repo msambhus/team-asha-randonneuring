@@ -59,10 +59,17 @@ def create_app():
         import html as html_mod
         return html_mod.unescape(str(value)).replace('\xa0', ' ')
 
-    # Debug auto-login: simulate an authenticated user in local dev
+    # Debug auto-login: simulate an authenticated user in local dev.
+    # Gated on FLASK_ENV=development — never fires in production even if
+    # app.debug is True, preventing accidental auth bypass on Vercel.
+    import os as _os
+    _is_local_dev = _os.environ.get('FLASK_ENV') == 'development'
+
     @app.before_request
     def debug_auto_login():
-        if app.debug and 'user_id' not in session:
+        if not _is_local_dev:
+            return
+        if 'user_id' not in session:
             from models import _execute
             try:
                 # Pick the first app_user who has a linked rider (for Strava context)

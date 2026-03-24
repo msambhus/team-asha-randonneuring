@@ -202,8 +202,10 @@ def sync_rider_activities(rider_id, days=365, before_epoch=None, after_epoch=Non
                 get_db().rollback()
             except Exception:
                 pass
-            print(f"Warning: Failed to upsert activity {row.get('strava_activity_id')} "
-                  f"for rider {rider_id}: {e}")
+            current_app.logger.warning(
+                "Failed to upsert activity for rider %s: %s",
+                rider_id, e
+            )
 
     update_strava_last_sync(rider_id)
 
@@ -219,7 +221,7 @@ def sync_rider_activities(rider_id, days=365, before_epoch=None, after_epoch=Non
 
             update_eddington_number(rider_id, eddington_miles, eddington_km)
         except Exception as e:
-            print(f"Warning: Eddington calculation failed for rider {rider_id}: {e}")
+            current_app.logger.warning("Eddington calculation failed for rider %s: %s", rider_id, e)
 
     return {'new': new_count, 'updated': updated_count, 'failed': failed_count, 'total': len(activities)}
 

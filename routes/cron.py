@@ -1,4 +1,5 @@
 """Cron endpoints for scheduled background tasks."""
+import hmac
 import os
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -8,15 +9,19 @@ cron_bp = Blueprint('cron', __name__)
 
 
 def _verify_cron_auth():
-    """Verify CRON_SECRET authentication. Returns error response or None."""
+    """Verify CRON_SECRET authentication. Returns error response or None.
+
+    Uses hmac.compare_digest to prevent timing-attack enumeration of the secret.
+    """
     auth_header = request.headers.get('Authorization', '')
     expected_secret = current_app.config.get('CRON_SECRET')
 
     if not expected_secret:
         return jsonify({'error': 'CRON_SECRET not configured'}), 500
 
-    if not auth_header or auth_header != f'Bearer {expected_secret}':
-        current_app.logger.warning(f'Unauthorized cron request from {request.remote_addr}')
+    expected = f'Bearer {expected_secret}'
+    if not auth_header or not hmac.compare_digest(auth_header, expected):
+        current_app.logger.warning('Unauthorized cron request from %s', request.remote_addr)
         return jsonify({'error': 'Unauthorized'}), 401
 
     return None

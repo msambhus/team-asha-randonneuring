@@ -2,6 +2,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify
 from authlib.integrations.flask_client import OAuth
 from werkzeug.security import gen_salt
+from werkzeug.utils import redirect as werkzeug_redirect
 import models
 from utils.rusa_validator import validate_rusa_id, get_rusa_info
 
@@ -9,6 +10,21 @@ auth_bp = Blueprint('auth', __name__)
 
 # OAuth will be initialized in the app factory
 oauth = OAuth()
+
+
+def _safe_redirect(url, fallback='main.index'):
+    """Redirect to `url` only if it is a relative path on this host.
+
+    Prevents open-redirect attacks where an attacker sets
+    `?next=https://evil.com` and the app blindly redirects there.
+    """
+    from urllib.parse import urlparse
+    if url:
+        parsed = urlparse(url)
+        # Allow only relative paths (no scheme, no netloc)
+        if not parsed.scheme and not parsed.netloc:
+            return redirect(url)
+    return redirect(url_for(fallback))
 
 
 def init_oauth(app):
@@ -101,9 +117,7 @@ def google_callback():
         
         # Redirect to stored next URL or home
         next_url = session.pop('next_url', None)
-        if next_url:
-            return redirect(next_url)
-        return redirect(url_for('main.index'))
+        return _safe_redirect(next_url, fallback='main.index')
         
     except Exception as e:
         flash(f'Login failed: {str(e)}', 'error')
@@ -223,9 +237,7 @@ def setup_profile():
         
         # Redirect to stored next URL or home
         next_url = session.pop('next_url', None)
-        if next_url:
-            return redirect(next_url)
-        return redirect(url_for('main.index'))
+        return _safe_redirect(next_url, fallback='main.index')
     
     return render_template('setup_profile.html')
 
