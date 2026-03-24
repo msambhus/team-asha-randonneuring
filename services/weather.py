@@ -67,27 +67,45 @@ def calculate_bearing(lat1, lng1, lat2, lng2):
 def headwind_component(wind_speed, wind_from_deg, rider_bearing_deg):
     """Return headwind component (positive=headwind, negative=tailwind).
 
-    wind_from_deg is meteorological convention (direction wind blows FROM).
+    wind_from_deg: meteorological convention — direction wind blows FROM
+                   (e.g. 0°=north wind blows southward, 90°=east wind blows westward).
+    rider_bearing_deg: compass bearing the rider is traveling.
+
+    Positive means wind is opposing the rider (headwind).
+    Negative means wind is assisting the rider (tailwind).
     """
     if wind_speed == 0:
         return 0
-    # Wind travel direction = wind_from + 180
-    wind_travel_deg = (wind_from_deg + 180) % 360
-    # Cosine projection: positive when wind opposes rider, negative when assisting
-    angle = math.radians(wind_travel_deg - rider_bearing_deg)
+    # Angle of the wind's source direction relative to the rider's heading.
+    # cos > 0 when wind comes from ahead (headwind); < 0 when from behind (tailwind).
+    angle = math.radians(wind_from_deg - rider_bearing_deg)
     return round(wind_speed * math.cos(angle), 1)
 
 
 def crosswind_component(wind_speed, wind_from_deg, rider_bearing_deg):
-    """Return crosswind component (positive=right crosswind, negative=left).
+    """Return crosswind component (positive=from rider's right, negative=from rider's left).
 
-    wind_from_deg is meteorological convention (direction wind blows FROM).
+    wind_from_deg: meteorological convention — direction wind blows FROM.
+    rider_bearing_deg: compass bearing the rider is traveling.
     """
     if wind_speed == 0:
         return 0
-    wind_travel_deg = (wind_from_deg + 180) % 360
-    angle = math.radians(wind_travel_deg - rider_bearing_deg)
+    angle = math.radians(wind_from_deg - rider_bearing_deg)
     return round(wind_speed * math.sin(angle), 1)
+
+
+def wind_arrow_rotation(headwind_kmh, crosswind_kmh):
+    """Return SVG rotation degrees (0–360) for a wind arrow pointing in the wind's travel direction.
+
+    The arrow SVG default is pointing UP (↑).  The returned rotation orients it so it
+    shows where the wind is *going* in the rider's frame:
+      - Pure headwind  → 180° (↓, wind blowing into rider's face from front)
+      - Pure tailwind  → 0°  (↑, wind blowing from behind toward front)
+      - Right crosswind → 270° (←, wind from right travels left)
+      - Left crosswind  → 90° (→, wind from left travels right)
+    """
+    angle_deg = math.degrees(math.atan2(float(crosswind_kmh), float(headwind_kmh)))
+    return round((angle_deg + 180) % 360)
 
 
 def classify_wind(headwind_kmh, crosswind_kmh):
@@ -461,6 +479,7 @@ def get_historical_stop_wind(stops, track_points, ride_date, ride_id=None):
             'headwind_kmh': round(float(hw), 1),
             'crosswind_kmh': round(float(cw), 1),
             'wind_type': wind_type,
+            'wind_arrow_deg': wind_arrow_rotation(hw, cw),
             'temperature_c': round(float(temperature), 1),
             'conditions': '',
             'data_source': data_source,
@@ -615,7 +634,9 @@ def fetch_stop_wind(stops, track_points, plan_slug, start_time_str, cache=None):
             'wind_speed_kmh': round(float(wind_speed), 1),
             'wind_speed_mph': wind_speed_mph,
             'headwind_kmh': round(float(hw), 1),
+            'crosswind_kmh': round(float(cw), 1),
             'wind_type': wind_type,
+            'wind_arrow_deg': wind_arrow_rotation(hw, cw),
             'wind_direction_deg': int(wind_dir),
             'rider_bearing_deg': int(bearing),
             'style': style,

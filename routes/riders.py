@@ -1,4 +1,5 @@
 """Rider routes: season view, individual profiles, profile edit, upcoming brevets, ride plans."""
+import math
 from flask import Blueprint, render_template, abort, request, redirect, url_for, session, jsonify, current_app
 
 def is_admin_user():
@@ -900,6 +901,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                         ride_id=ride['id'],
                     )
                     if wind_rows:
+                        from services.weather import wind_arrow_rotation
                         plan_stops_list = [dict(s) for s in plan_stops]
                         stop_wind = {}
                         for row in wind_rows:
@@ -908,6 +910,11 @@ def ride_strava_analysis(rusa_id, ride_id):
                             )
                             row['wind_speed_mph'] = round(
                                 float(row['wind_speed_kmh']) * 0.621371, 1
+                            )
+                            # Compute continuous arrow angle from stored components
+                            row['wind_arrow_deg'] = wind_arrow_rotation(
+                                row.get('headwind_kmh', 0),
+                                row.get('crosswind_kmh', 0),
                             )
                             order = row.get('stop_order', -1)
                             if isinstance(order, int) and 0 <= order < len(plan_stops_list):

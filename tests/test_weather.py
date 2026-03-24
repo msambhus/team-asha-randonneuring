@@ -136,19 +136,19 @@ class TestCalculateBearing:
 
 class TestHeadwindComponent:
     def test_pure_headwind(self):
-        """West wind (270°), rider heading east (90°) = headwind."""
+        """East wind (90°) + rider heading east (90°) = headwind (wind from directly ahead)."""
         from services.weather import headwind_component
-        hw = headwind_component(20, 270, 90)
+        hw = headwind_component(20, 90, 90)
         assert hw > 18  # close to +20
 
     def test_pure_tailwind(self):
-        """East wind (90°), rider heading east (90°) = tailwind."""
+        """West wind (270°) + rider heading east (90°) = tailwind (wind from directly behind)."""
         from services.weather import headwind_component
-        hw = headwind_component(20, 90, 90)
+        hw = headwind_component(20, 270, 90)
         assert hw < -18  # close to -20
 
     def test_pure_crosswind(self):
-        """North wind (0°), rider heading east (90°) = crosswind ≈ 0."""
+        """North wind (0°), rider heading east (90°) = pure crosswind, headwind ≈ 0."""
         from services.weather import headwind_component
         hw = headwind_component(20, 0, 90)
         assert abs(hw) < 2  # near zero
@@ -408,15 +408,15 @@ class TestCrosswindComponent:
         assert abs(cw) > 18  # close to full speed
 
     def test_pure_headwind_direction(self):
-        """West wind (from=270 deg), rider heading east (90 deg) -> near zero crosswind."""
+        """East wind (from=90 deg), rider heading east (90 deg) -> near zero crosswind (pure headwind)."""
         from services.weather import crosswind_component
-        cw = crosswind_component(20, 270, 90)
+        cw = crosswind_component(20, 90, 90)
         assert abs(cw) < 2  # near zero
 
     def test_pure_tailwind_direction(self):
-        """East wind (from=90 deg), rider heading east (90 deg) -> near zero crosswind."""
+        """West wind (from=270 deg), rider heading east (90 deg) -> near zero crosswind (pure tailwind)."""
         from services.weather import crosswind_component
-        cw = crosswind_component(20, 90, 90)
+        cw = crosswind_component(20, 270, 90)
         assert abs(cw) < 2  # near zero
 
     def test_no_wind(self):
@@ -425,12 +425,10 @@ class TestCrosswindComponent:
         assert cw == 0
 
     def test_45_degree_angle(self):
-        """Wind at 45-degree offset -> crosswind approximately wind_speed * sin(45) ~= 14.1."""
+        """Wind from SW (225°), rider heading east (90°) -> crosswind ≈ wind_speed * sin(135°) ≈ 14.1."""
         from services.weather import crosswind_component
-        # Rider heading east (90 deg), wind from south-west (225 deg)
-        # wind travel = (225+180)%360 = 45 deg
-        # angle = 45 - 90 = -45 deg
-        # sin(-45) = -0.707, so crosswind ~ -14.1
+        # angle = wind_from - rider_bearing = 225 - 90 = 135 deg
+        # sin(135°) ≈ 0.707 → crosswind ≈ +14.1 (from rider's right — SW wind pushes northward)
         cw = crosswind_component(20, 225, 90)
         assert abs(abs(cw) - 14.1) < 1.0  # ~14.1
 
@@ -464,6 +462,43 @@ class TestClassifyWind:
         """Uses absolute values for comparison."""
         from services.weather import classify_wind
         assert classify_wind(15, -10) == 'headwind'
+
+
+# ── Wind Arrow Rotation ──────────────────────────────────────────────
+
+class TestWindArrowRotation:
+    """wind_arrow_rotation returns SVG rotation so arrow points in wind's travel direction."""
+
+    def test_pure_headwind_points_down(self):
+        """hw=+20, cw=0 → rotation 180° (arrow ↓, wind hitting rider's face)."""
+        from services.weather import wind_arrow_rotation
+        assert wind_arrow_rotation(20, 0) == 180
+
+    def test_pure_tailwind_points_up(self):
+        """hw=-20, cw=0 → rotation 0° (arrow ↑, wind pushing from behind)."""
+        from services.weather import wind_arrow_rotation
+        assert wind_arrow_rotation(-20, 0) == 0
+
+    def test_right_crosswind_points_left(self):
+        """hw=0, cw=+20 → rotation 270° (arrow ←, wind from right travels left)."""
+        from services.weather import wind_arrow_rotation
+        assert wind_arrow_rotation(0, 20) == 270
+
+    def test_left_crosswind_points_right(self):
+        """hw=0, cw=-20 → rotation 90° (arrow →, wind from left travels right)."""
+        from services.weather import wind_arrow_rotation
+        assert wind_arrow_rotation(0, -20) == 90
+
+    def test_diagonal_headwind_from_right(self):
+        """45° angle: hw=+14, cw=+14 → rotation 225° (arrow to lower-left)."""
+        from services.weather import wind_arrow_rotation
+        rot = wind_arrow_rotation(14, 14)
+        assert 220 <= rot <= 230  # ~225°
+
+    def test_zero_wind_returns_zero(self):
+        """Zero components → atan2(0,0) is defined as 0 in Python → rotation 180°."""
+        from services.weather import wind_arrow_rotation
+        assert wind_arrow_rotation(0, 0) == 180
 
 
 # ── Wind Cell Style ──────────────────────────────────────────────────
