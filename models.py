@@ -949,7 +949,8 @@ def recalculate_base_plan_cumulative(ride_plan_id, cur=None, conn=None):
         (total_moving, cum, total_break, ride_plan_id)
     )
 
-    conn.commit()
+    if own_conn:
+        conn.commit()
 
 def insert_ride_plan_stop(ride_plan_id, stop_order, location, stop_type='waypoint',
                          distance_miles=None, elevation_gain=None, notes=None):

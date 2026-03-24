@@ -255,9 +255,10 @@ def fetch_wind_for_ride(ride_id):
     import re
     from services.rwgps import fetch_route
     from services.weather import get_historical_stop_wind
-    from models import get_ride_plan_stops, _execute
+    import psycopg2.extras
+    from models import get_ride_plan_stops, _execute, get_db
 
-    cur = get_db().cursor(cursor_factory=__import__('psycopg2').extras.RealDictCursor)
+    cur = get_db().cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
         SELECT r.id, r.name, r.date, r.ride_plan_id,
                rp.rwgps_url, rp.rwgps_url_team, rp.id as plan_id
