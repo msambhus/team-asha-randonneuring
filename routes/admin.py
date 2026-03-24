@@ -119,7 +119,8 @@ def dashboard():
             SELECT COUNT(*) as cnt FROM ride r
             JOIN ride_plan rp ON r.ride_plan_id = rp.id
             JOIN season s ON r.season_id = s.id
-            WHERE s.name IN (SELECT name FROM season ORDER BY id DESC LIMIT 2)
+            WHERE (s.is_current = true
+                   OR s.name IN (SELECT name FROM season WHERE is_current = false ORDER BY name DESC LIMIT 1))
             AND r.date < CURRENT_DATE
             AND NOT EXISTS (SELECT 1 FROM ride_wind_data rwd WHERE rwd.ride_id = r.id)
         """).fetchone()
@@ -243,6 +244,78 @@ def run_wind_backfill():
 
     ok_count = sum(1 for r in results if r.get('status') == 'ok')
     return jsonify({'processed': len(results), 'success': ok_count, 'results': results}), 200
+
+
+@admin_bp.route('/rides/<int:ride_id>/fetch-wind', methods=['POST'])
+@user_login_required
+def fetch_wind_for_ride(ride_id):
+    """Fetch and store wind data for a specific ride from admin dashboard."""
+    _require_admin()
+
+    import re
+    from services.rwgps import fetch_route
+    from services.weather import get_historical_stop_wind
+    from models import get_ride_plan_stops, _execute
+
+    cur = get_db().cursor(cursor_factory=__import__('psycopg2').extras.RealDictCursor)
+    cur.execute("""
+        SELECT r.id, r.name, r.date, r.ride_plan_id,
+               rp.rwgps_url, rp.rwgps_url_team, rp.id as plan_id
+        FROM ride r
+        LEFT JOIN ride_plan rp ON r.ride_plan_id = rp.id
+        WHERE r.id = %s
+    """, (ride_id,))
+    ride = cur.fetchone()
+
+    if not ride:
+        return jsonify({'error': 'Ride not found'}), 404
+    if not ride['ride_plan_id']:
+        return jsonify({'error': 'Ride has no linked ride plan — cannot fetch wind'}), 400
+
+    rwgps_url = ride['rwgps_url_team'] or ride['rwgps_url']
+    match = re.search(r'/routes/(\d+)', rwgps_url) if rwgps_url else None
+    if not match:
+        return jsonify({'error': 'Ride plan has no RWGPS route URL'}), 400
+
+    try:
+        route_data = fetch_route(int(match.group(1)))
+        track_points = route_data.get('track_points', []) if route_data else []
+        if not track_points:
+            return jsonify({'error': 'No track points found in RWGPS route'}), 400
+
+        plan_stops = get_ride_plan_stops(ride['plan_id'])
+        if not plan_stops:
+            return jsonify({'error': 'No stops found in ride plan'}), 400
+
+        ride_date = ride['date']
+        if isinstance(ride_date, str):
+            ride_date = date.fromisoformat(ride_date)
+
+        # Delete existing wind data first so we get a fresh fetch
+        conn = get_db()
+        conn.cursor().execute("DELETE FROM ride_wind_data WHERE ride_id = %s", (ride_id,))
+        conn.commit()
+
+        wind_rows, data_source = get_historical_stop_wind(
+            stops=[dict(s) for s in plan_stops],
+            track_points=track_points,
+            ride_date=ride_date,
+            ride_id=ride_id,
+        )
+
+        if wind_rows:
+            return jsonify({
+                'status': 'ok',
+                'ride': ride['name'],
+                'stops': len(wind_rows),
+                'source': data_source,
+            }), 200
+        else:
+            return jsonify({'error': 'No wind data returned from API (ride may be too recent or too old)'}), 400
+
+    except Exception as e:
+        current_app.logger.exception("fetch_wind_for_ride: ride %s", ride_id)
+        return jsonify({'error': str(e)[:120]}), 500
 
 
 @admin_bp.route('/rides/new', methods=['GET', 'POST'])
