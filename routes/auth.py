@@ -112,6 +112,7 @@ def google_callback():
                                (user['rider_id'],)).fetchone()['rusa_id']
             )
             session['rider_name'] = f"{rider['first_name']} {rider['last_name']}"
+            session['rider_rusa_id'] = rider['rusa_id']
         
         flash('Successfully logged in!', 'success')
         
@@ -232,6 +233,7 @@ def setup_profile():
         # Update session
         session['rider_id'] = rider['id']
         session['rider_name'] = f"{rider['first_name']} {rider['last_name']}"
+        session['rider_rusa_id'] = rider['rusa_id']
         
         flash(f'Welcome, {rider["first_name"]}! Your profile has been set up successfully.', 'success')
         
