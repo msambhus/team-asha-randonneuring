@@ -693,9 +693,54 @@ def rider_profile(rusa_id):
                 'badge': badge,
             }
 
-    # Strava ride analysis moved to /my/strava-analysis (private page)
+    # Load Strava brevet-match data for own profile view
+    METERS_PER_MILE = 1609.34
     for sd in season_data:
-        sd['strava_matches'] = {}
+        if is_own_profile and strava_connection:
+            try:
+                from services.strava_analysis import batch_match_rides
+                strava_matches = batch_match_rides(rider['id'], sd['participation'])
+            except Exception:
+                strava_matches = {}
+
+            ride_details = {}
+            for ride_id_val, match_info in strava_matches.items():
+                try:
+                    row = _execute("""
+                        SELECT distance, moving_time, elapsed_time, total_elevation_gain,
+                               average_speed, average_heartrate, has_heartrate, average_watts,
+                               device_watts, suffer_score, strava_url
+                        FROM strava_activity
+                        WHERE strava_activity_id = %s AND rider_id = %s
+                    """, (match_info['strava_activity_id'], rider['id'])).fetchone()
+                    if row:
+                        a = dict(row)
+                        mt_min = (a.get('moving_time') or 0) / 60
+                        et_min = (a.get('elapsed_time') or 0) / 60
+                        ride_details[ride_id_val] = {
+                            'distance_miles': round((a.get('distance') or 0) / METERS_PER_MILE, 1),
+                            'moving_time_hrs': int(mt_min // 60),
+                            'moving_time_min': int(mt_min % 60),
+                            'elapsed_time_hrs': int(et_min // 60),
+                            'elapsed_time_min': int(et_min % 60),
+                            'stopped_time_min': round(et_min - mt_min),
+                            'elevation_ft': round((a.get('total_elevation_gain') or 0) * 3.28084),
+                            'avg_speed_mph': round((a.get('average_speed') or 0) * 2.23694, 1),
+                            'strava_url': a.get('strava_url'),
+                            'has_heartrate': a.get('has_heartrate'),
+                            'average_heartrate': a.get('average_heartrate'),
+                            'device_watts': a.get('device_watts'),
+                            'average_watts': a.get('average_watts'),
+                            'suffer_score': a.get('suffer_score'),
+                        }
+                except Exception:
+                    pass
+
+            sd['strava_matches'] = strava_matches
+            sd['ride_details'] = ride_details
+        else:
+            sd['strava_matches'] = {}
+            sd['ride_details'] = {}
 
     # --- Upcoming rides with readiness ---
     upcoming_rides = []

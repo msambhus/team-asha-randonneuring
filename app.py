@@ -74,7 +74,7 @@ def create_app():
             try:
                 # Pick the first app_user who has a linked rider (for Strava context)
                 row = _execute(
-                    "SELECT au.id, au.email, au.rider_id, r.first_name, r.last_name "
+                    "SELECT au.id, au.email, au.rider_id, r.first_name, r.last_name, r.rusa_id "
                     "FROM app_user au "
                     "LEFT JOIN rider r ON r.id = au.rider_id "
                     "WHERE au.rider_id IS NOT NULL "
@@ -85,6 +85,7 @@ def create_app():
                     session['email'] = row['email']
                     session['rider_id'] = row['rider_id']
                     session['rider_name'] = f"{row['first_name']} {row['last_name']}"
+                    session['rider_rusa_id'] = row['rusa_id']
             except Exception:
                 pass  # DB not available — skip
 
@@ -99,6 +100,7 @@ def create_app():
                 user_logged_in=session.get('user_id') is not None,
                 user_email=session.get('email'),
                 rider_name=session.get('rider_name'),
+                rider_rusa_id=session.get('rider_rusa_id'),
             )
         except Exception:
             # Return mock data if database is not available
@@ -112,6 +114,7 @@ def create_app():
                 user_logged_in=session.get('user_id') is not None,
                 user_email=session.get('email'),
                 rider_name=session.get('rider_name'),
+                rider_rusa_id=session.get('rider_rusa_id'),
             )
 
     return app
