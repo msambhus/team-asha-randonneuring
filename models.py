@@ -1286,7 +1286,8 @@ def get_rides_with_signup_counts(season_id):
                c.name AS club_name,
                COUNT(rr.id) FILTER (WHERE rr.status = 'GOING') AS going_count,
                COUNT(rr.id) FILTER (WHERE rr.status IN ('FINISHED','DNF','DNS','OTL')) AS result_count,
-               COUNT(rr.id) FILTER (WHERE rr.status IS NOT NULL) AS total_signups
+               COUNT(rr.id) FILTER (WHERE rr.status IS NOT NULL) AS total_signups,
+               EXISTS (SELECT 1 FROM ride_wind_data rwd WHERE rwd.ride_id = ri.id) AS has_wind
         FROM ride ri
         JOIN club c ON ri.club_id = c.id
         LEFT JOIN rider_ride rr ON rr.ride_id = ri.id
