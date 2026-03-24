@@ -1212,8 +1212,14 @@
     {% endif %}
     <div class="journey-dist">{{ "%.1f"|format(n.distance_miles) }} mi</div>
     <div class="journey-eta arrival-time" data-cum-min="{{ (n['arrival_time_min']|default(0))|int }}">{% if n.distance_miles > 0 %}--:--{% endif %}</div>
-    {% if stop_wind and stop_wind[loop.index0] is defined %}
-    <div class="journey-wind">{{ wind_arrow(stop_wind[loop.index0]) }}</div>
+    {% if stop_wind and n.stop_index is defined and stop_wind[n.stop_index] is defined %}
+    {% set jw = stop_wind[n.stop_index] %}
+    <div class="journey-wind">
+        {{ wind_arrow(jw) }}
+    </div>
+    {% if jw and jw.temperature_f is defined %}
+    <div style="font-size:0.6rem;color:#64748b;margin-top:1px;">{{ jw.temperature_f }}&deg;F</div>
+    {% endif %}
     {% endif %}
 </div>
 {% endfor %}

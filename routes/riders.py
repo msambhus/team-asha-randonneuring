@@ -287,7 +287,7 @@ def _build_journey_nodes(stops):
     When a rest stop shares the same distance as the previous waypoint,
     label becomes 'Rest activity @ Previous location' (e.g. 'Water refill @ Fire station')."""
     nodes = []
-    for s in stops:
+    for idx, s in enumerate(stops):
         if nodes and nodes[-1]['distance_miles'] == (s.get('distance_miles') or 0):
             existing = nodes[-1]
             if s['stop_type'] in ('rest', 'control'):
@@ -324,6 +324,7 @@ def _build_journey_nodes(stops):
                 'cum_time_min': s.get('cum_time_min', 0),
                 'stop_name': s.get('stop_name'),
                 'stop_duration_min': s.get('stop_duration_min', 0),
+                'stop_index': idx,
             })
     return nodes
 
