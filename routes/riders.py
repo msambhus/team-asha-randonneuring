@@ -308,6 +308,11 @@ def _build_journey_nodes(stops):
             # Keep arrival time (should be the same for co-located stops)
             if s.get('arrival_time_min') is not None:
                 existing['arrival_time_min'] = s['arrival_time_min']
+            # Merge break info: carry stop_duration_min and stop_name from rest stops
+            if s.get('stop_duration_min') and s['stop_duration_min'] > 0:
+                existing['stop_duration_min'] = s['stop_duration_min']
+            if s.get('stop_name'):
+                existing['stop_name'] = s['stop_name']
         else:
             # Use stop_name if available, otherwise fallback to location
             label = s.get('stop_name') or s['location'][:22]
