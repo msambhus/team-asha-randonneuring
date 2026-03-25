@@ -1,4 +1,4 @@
-"""Flask app factory for Team Asha Randonneuring."""
+"""Flask app factory for Team Asha Randonneuring."""  # noqa: trigger deploy
 from flask import Flask, session
 from dotenv import load_dotenv
 from werkzeug.middleware.proxy_fix import ProxyFix
