@@ -341,7 +341,15 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
     <h1>Peer Analysis</h1>
     <p style="opacity:0.85;margin-top:8px;">{{ ride.name|clean_name }} &mdash; {{ ride.date }}</p>
     <p style="opacity:0.7;margin-top:4px;font-size:0.9rem;">
-        {{ riders|length }} rider{{ 's' if riders|length != 1 else '' }} with Strava data
+        {{ breakdown.total_finished }} finisher{{ 's' if breakdown.total_finished != 1 else '' }}
+        &nbsp;&middot;&nbsp;
+        {{ breakdown.strava_linked }} Strava-linked
+        {% if breakdown.private %}
+        &nbsp;&middot;&nbsp;
+        {{ breakdown.private }} private
+        {% endif %}
+        &nbsp;&middot;&nbsp;
+        <strong style="opacity:1;">{{ breakdown.compared }} compared</strong>
     </p>
     <div style="margin-top:12px;">
         <a href="{{ url_for('riders.my_strava_analysis') }}"
@@ -354,13 +362,32 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
 <div class="container section">
 
 {% if not riders %}
-<div class="cohort-empty"><h3>No Data Available</h3><p>No finishers with Strava data were found for this brevet.</p></div>
+<div class="cohort-empty">
+    <h3>No Data Available</h3>
+    <p>No finishers with Strava data were found for this brevet.</p>
+    {% if breakdown.strava_linked == 0 %}
+    <p style="margin-top:8px;font-size:0.85rem;color:#94a3b8;">
+        {{ breakdown.total_finished }} rider{{ 's' if breakdown.total_finished != 1 else '' }} finished,
+        but none have linked a Strava activity to this ride yet.
+    </p>
+    {% elif breakdown.private %}
+    <p style="margin-top:8px;font-size:0.85rem;color:#94a3b8;">
+        {{ breakdown.strava_linked }} Strava-linked rider{{ 's' if breakdown.strava_linked != 1 else '' }}
+        found, but all have set their Strava data to private.
+    </p>
+    {% endif %}
+</div>
 
 {% elif riders|length < 2 or not cohort_stats %}
 <div class="cohort-empty">
     <h3>Not Enough Riders</h3>
     <p>At least 2 riders with Strava data are needed for a comparison.</p>
-    <p style="margin-top:8px;font-size:0.85rem;">Currently {{ riders|length }} rider has Strava data for this brevet.</p>
+    <p style="margin-top:8px;font-size:0.85rem;color:#94a3b8;">
+        {{ breakdown.total_finished }} finished &middot;
+        {{ breakdown.strava_linked }} Strava-linked &middot;
+        {% if breakdown.private %}{{ breakdown.private }} private &middot; {% endif %}
+        {{ breakdown.compared }} available for comparison.
+    </p>
 </div>
 
 {% else %}

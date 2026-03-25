@@ -38,7 +38,7 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     add_custom_stop, hide_base_stop, unhide_base_stop,
                     update_custom_plan_settings, delete_custom_plan,
                     get_public_custom_plans, clone_custom_plan, delete_custom_stop,
-                    get_ride_cohort_stats)
+                    get_ride_cohort_stats, get_ride_cohort_breakdown)
 from auth import login_required, user_login_required
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
@@ -1021,12 +1021,15 @@ def ride_cohort_comparison(ride_id):
         cohort_stats = build_cohort_stats([dict(r) for r in riders], current_rider_id,
                                           ride_distance_km=ride.get('distance_km'))
 
+    breakdown = get_ride_cohort_breakdown(ride_id)
+
     return render_template(
         'ride_cohort_comparison.html',
         ride=ride,
         riders=[dict(r) for r in riders],
         cohort_stats=cohort_stats,
         current_rider_id=current_rider_id,
+        breakdown=breakdown,
     )
 
 

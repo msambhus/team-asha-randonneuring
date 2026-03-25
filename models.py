@@ -2579,6 +2579,35 @@ def get_ride_cohort_stats(ride_id):
     """, (ride_id, RideStatus.FINISHED.value)).fetchall()
 
 
+def get_ride_cohort_breakdown(ride_id):
+    """Return finisher counts at each filter stage for display in the cohort page header.
+
+    Returns a dict with:
+        total_finished  — all riders with FINISHED status
+        strava_linked   — subset who have a matched Strava activity
+        private         — subset with a match but strava_data_private = TRUE
+        compared        — subset actually included in the comparison
+    """
+    row = _execute("""
+        SELECT
+            COUNT(*) FILTER (WHERE TRUE)                                   AS total_finished,
+            COUNT(*) FILTER (WHERE srm.strava_activity_id IS NOT NULL)     AS strava_linked,
+            COUNT(*) FILTER (WHERE srm.strava_activity_id IS NOT NULL
+                               AND rp.strava_data_private = TRUE)          AS private,
+            COUNT(*) FILTER (WHERE srm.strava_activity_id IS NOT NULL
+                               AND (rp.strava_data_private IS NULL
+                                    OR rp.strava_data_private = FALSE))    AS compared
+        FROM rider_ride rr
+        JOIN rider r ON r.id = rr.rider_id
+        LEFT JOIN rider_profile rp ON rp.rider_id = r.id
+        LEFT JOIN strava_ride_match srm
+               ON srm.rider_id = r.id AND srm.ride_id = rr.ride_id
+        WHERE rr.ride_id = %s
+          AND rr.status = %s
+    """, (ride_id, RideStatus.FINISHED.value)).fetchone()
+    return dict(row) if row else {'total_finished': 0, 'strava_linked': 0, 'private': 0, 'compared': 0}
+
+
 # ========== CHAT ==========
 
 def create_conversation(user_id, title=None):
