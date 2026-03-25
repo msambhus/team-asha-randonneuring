@@ -6,6 +6,8 @@ detects stoppages, and builds plan-vs-actual comparison data.
 
 import difflib
 import html as html_mod
+import math
+import statistics
 from datetime import timedelta
 from flask import current_app
 import requests as http_requests
@@ -876,6 +878,227 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         'summary': summary,
         'hr_power': hr_power,
     }
+
+
+def _time_range_for_distance(km):
+    """Return (min_seconds, max_seconds) elapsed/moving time display range by brevet distance."""
+    if km is None:
+        return (0, None)
+    if km <= 210:       # 200k
+        return (8 * 3600, 15 * 3600)
+    elif km <= 320:     # 300k
+        return (8 * 3600, 19 * 3600 + 15 * 60)
+    elif km <= 420:     # 400k
+        return (15 * 3600, 27 * 3600)
+    elif km <= 650:     # 600k
+        return (24 * 3600, 40 * 3600)
+    else:               # 1000k / 1200k
+        return (72 * 3600, 95 * 3600)
+
+
+def build_cohort_stats(riders, current_rider_id, ride_distance_km=None):
+    """Compute per-metric group statistics and insight callouts for cohort comparison.
+
+    Args:
+        riders: list of dicts from get_ride_cohort_stats()
+        current_rider_id: int or None (logged-in rider's DB id)
+
+    Returns:
+        dict keyed by metric name:
+        {has_data, min, max, mean, median, user_value, bar_position,
+         percentile, direction, values_sorted, insight}
+    """
+    # Fixed display ranges by metric type so charts are on a consistent, meaningful scale.
+    # HR metrics always share the same axis, speed always mph-comparable, etc.
+    # None means "compute from data" (time metrics scale per ride distance).
+    # Format: (display_min, display_max) — None for either = compute from data
+    DISPLAY_RANGES = {
+        'average_heartrate':      (80, 200),    # bpm — typical randonneuring avg HR range
+        'max_heartrate':          (120, 210),   # bpm — meaningful max HR range
+        'average_speed':          (3.576, 8.047), # m/s = 8–18 mph (randonneuring range)
+        'average_watts':          (60, 250),    # W — typical randonneuring power range
+        'weighted_average_watts': (60, 250),    # W
+        # Time metrics: floor always 0, ceiling = data-driven (rounded up to next hour)
+        'elapsed_time':           _time_range_for_distance(ride_distance_km),
+        'moving_time':            _time_range_for_distance(ride_distance_km),
+        'stopped_time':           (0, None),
+        'total_elevation_gain':   (0, None),
+        'suffer_score':           (200, None),  # floor 200: brevets always hit this
+    }
+
+    # (metric_key, better_direction) — 'lower'/'higher'/None(reference)
+    METRICS = [
+        ('elapsed_time',           'lower'),
+        ('moving_time',            'lower'),
+        ('stopped_time',           'lower'),
+        ('average_speed',          'higher'),
+        ('average_heartrate',      None),
+        ('max_heartrate',          None),
+        ('total_elevation_gain',   None),
+        ('suffer_score',           None),
+        ('average_watts',          'higher'),
+        ('weighted_average_watts', 'higher'),
+    ]
+
+    result = {}
+    for metric, direction in METRICS:
+        values = [float(r[metric]) for r in riders if r.get(metric) is not None]
+        if not values:
+            result[metric] = {'has_data': False}
+            continue
+
+        user_value = None
+        for r in riders:
+            if r['rider_id'] == current_rider_id and r.get(metric) is not None:
+                user_value = float(r[metric])
+                break
+
+        sorted_vals = sorted(values)
+        n = len(sorted_vals)
+        median_val = statistics.median(sorted_vals)
+        mean_val = statistics.mean(sorted_vals)
+        min_val = sorted_vals[0]
+        max_val = sorted_vals[-1]
+
+        # Compute display range (fixed where meaningful, data-driven for time metrics)
+        rng = DISPLAY_RANGES.get(metric, (None, None))
+        d_min = rng[0] if rng[0] is not None else min_val
+        if rng[1] is not None:
+            d_max = rng[1]
+        else:
+            # Round up to next "natural" unit: hours for time, 100s for watts/elevation
+            if metric in ('elapsed_time', 'moving_time', 'stopped_time'):
+                d_max = math.ceil(max_val / 3600) * 3600  # next whole hour
+            elif metric == 'total_elevation_gain':
+                d_max = math.ceil(max_val / 500) * 500    # next 500 m
+            else:
+                d_max = max_val * 1.1
+        # Guard: if all values identical, spread display range a little
+        if d_max <= d_min:
+            d_max = d_min + 1
+
+        # Percentile: % of cohort the user beats on this metric
+        percentile = None
+        if user_value is not None and n > 1:
+            if direction == 'lower':
+                percentile = round(sum(1 for v in sorted_vals if v > user_value) / n * 100)
+            elif direction == 'higher':
+                percentile = round(sum(1 for v in sorted_vals if v < user_value) / n * 100)
+
+        # Bar position: 0-100 along the min-max range (for the visual percentile bar)
+        bar_position = None
+        if user_value is not None and max_val > min_val:
+            bar_position = round((user_value - min_val) / (max_val - min_val) * 100)
+        elif user_value is not None:
+            bar_position = 50
+
+        result[metric] = {
+            'has_data': True,
+            'min': min_val,
+            'max': max_val,
+            'display_min': d_min,
+            'display_max': d_max,
+            'mean': round(mean_val, 1),
+            'median': median_val,
+            'user_value': user_value,
+            'bar_position': bar_position,
+            'percentile': percentile,
+            'direction': direction,
+            'values_sorted': sorted_vals,
+            'insight': _get_cohort_insight(metric, user_value, median_val),
+        }
+
+    # Add pre-formatted display strings so templates don't need format functions
+    _add_cohort_display_strings(result)
+    return result
+
+
+def _add_cohort_display_strings(cohort_stats):
+    """Mutate cohort_stats in place to add min_str/max_str/mean_str/median_str/user_str."""
+    def _fmt_time(s):
+        if s is None:
+            return '\u2014'
+        h = int(s // 3600)
+        m = int((s % 3600) // 60)
+        return f'{h}h {m:02d}m'
+
+    def _fmt_speed(ms):
+        if ms is None:
+            return '\u2014'
+        return f'{ms * 2.23694:.1f} mph'
+
+    def _fmt_bpm(v):
+        if v is None:
+            return '\u2014'
+        return f'{int(v)} bpm'
+
+    def _fmt_watts(v):
+        if v is None:
+            return '\u2014'
+        return f'{int(v)} W'
+
+    def _fmt_elev(v):
+        if v is None:
+            return '\u2014'
+        return f'{int(v * 3.28084):,} ft'
+
+    def _fmt_int(v):
+        if v is None:
+            return '\u2014'
+        return str(int(v))
+
+    formatters = {
+        'elapsed_time':           _fmt_time,
+        'moving_time':            _fmt_time,
+        'stopped_time':           _fmt_time,
+        'average_speed':          _fmt_speed,
+        'average_heartrate':      _fmt_bpm,
+        'max_heartrate':          _fmt_bpm,
+        'total_elevation_gain':   _fmt_elev,
+        'suffer_score':           _fmt_int,
+        'average_watts':          _fmt_watts,
+        'weighted_average_watts': _fmt_watts,
+    }
+
+    for metric, stat in cohort_stats.items():
+        if not stat.get('has_data'):
+            continue
+        fmt = formatters.get(metric, _fmt_int)
+        stat['min_str']         = fmt(stat['min'])
+        stat['max_str']         = fmt(stat['max'])
+        stat['display_min_str'] = fmt(stat['display_min'])
+        stat['display_max_str'] = fmt(stat['display_max'])
+        stat['mean_str']        = fmt(stat['mean'])
+        stat['median_str']      = fmt(stat['median'])
+        stat['user_str']        = fmt(stat['user_value']) if stat['user_value'] is not None else None
+
+
+def _get_cohort_insight(metric, user_value, median_val):
+    """Return an improvement insight string if user is meaningfully off the median."""
+    if user_value is None:
+        return None
+
+    diff = user_value - median_val
+
+    if metric == 'stopped_time':
+        if diff > 900:  # > 15 min more than median
+            extra_min = round(diff / 60)
+            return (f"You spent {extra_min} more minutes stopped than the average finisher. "
+                    "Faster control check-ins and pre-planned food drops can recover this time.")
+
+    elif metric == 'average_speed':
+        if diff < -0.45:  # > ~1 mph below median
+            mph_diff = round(abs(diff) * 2.23694, 1)
+            return (f"Your moving speed was {mph_diff} mph below the group average — "
+                    "a targeted base training block can close this gap over the season.")
+
+    elif metric == 'average_heartrate':
+        if diff > 10:  # > 10 bpm above median
+            bpm_diff = round(diff)
+            return (f"Your average HR was {bpm_diff} bpm above the group average. "
+                    "More base miles typically lower HR at the same effort level.")
+
+    return None
 
 
 def _build_stream_summary(streams):
