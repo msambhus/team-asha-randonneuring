@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Peer Analysis - {{ ride.name|clean_name }} - Team Asha Randonneuring{% endblock %}
+{% block title %}Cohort Analysis - {{ ride.name|clean_name }} - Team Asha Randonneuring{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -338,7 +338,7 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
 {# ── HERO ────────────────────────────────────────────────────────────────── #}
 {% block content %}
 <div class="hero" style="padding:40px 20px 50px;">
-    <h1>Peer Analysis</h1>
+    <h1>Cohort Analysis</h1>
     <p style="opacity:0.85;margin-top:8px;">{{ ride.name|clean_name }} &mdash; {{ ride.date }}</p>
     <p style="opacity:0.7;margin-top:4px;font-size:0.9rem;">
         {{ breakdown.total_finished }} finisher{{ 's' if breakdown.total_finished != 1 else '' }}
