@@ -563,6 +563,11 @@
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
                 {% if p.plan_slug %}Plan vs Actual{% else %}Full Analysis{% endif %}
             </a>
+            <a href="{{ url_for('riders.ride_cohort_comparison', ride_id=p.ride_id) }}"
+               style="display:inline-flex; align-items:center; gap:5px; padding:6px 14px; background:#4f46e5; color:white; border-radius:8px; text-decoration:none; font-weight:600; font-size:0.78rem; transition:background 0.2s;"
+               onmouseover="this.style.background='#4338ca'" onmouseout="this.style.background='#4f46e5'">
+                &#x1F465; Compare with Cohort
+            </a>
             {% if act and act.strava_url %}
             <a href="{{ act.strava_url }}" target="_blank" rel="noopener"
                style="display:inline-flex; align-items:center; gap:4px; padding:6px 12px; background:white; color:#fc4c02; border:1px solid #fc4c02; border-radius:8px; text-decoration:none; font-size:0.78rem; font-weight:600; transition:all 0.2s;"
