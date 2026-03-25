@@ -1003,6 +1003,51 @@ def retry_strava_analysis(rusa_id, ride_id):
     return redirect(url_for('riders.ride_strava_analysis', rusa_id=rusa_id, ride_id=ride_id))
 
 
+def _auto_match_cohort_riders(ride_id, ride):
+    """Match any finisher who has Strava synced but no strava_ride_match entry yet.
+
+    Queries strava_activity locally — no Strava API calls made.
+    """
+    from models import get_strava_activities_in_date_range, create_strava_ride_match
+    from services.strava_analysis import find_matching_activity
+    from datetime import date as date_type
+
+    unmatched = _execute("""
+        SELECT r.id AS rider_id
+        FROM rider_ride rr
+        JOIN rider r ON r.id = rr.rider_id
+        JOIN strava_connection sc ON sc.rider_id = r.id
+        LEFT JOIN strava_ride_match srm ON srm.rider_id = r.id AND srm.ride_id = rr.ride_id
+        WHERE rr.ride_id = %s
+          AND rr.status = 'FINISHED'
+          AND srm.id IS NULL
+    """, (ride_id,)).fetchall()
+
+    if not unmatched:
+        return
+
+    ride_date = ride.get('date')
+    ride_distance_km = ride.get('distance_km')
+    ride_name = ride.get('name', '')
+
+    for row in unmatched:
+        rid = row['rider_id']
+        try:
+            match = find_matching_activity(
+                rider_id=rid,
+                ride_date=ride_date,
+                ride_distance_km=ride_distance_km,
+                ride_name=ride_name,
+            )
+            if match:
+                create_strava_ride_match(rid, ride_id, match['strava_activity_id'])
+                current_app.logger.info(
+                    f'cohort auto-match: rider {rid} -> activity {match["strava_activity_id"]}'
+                )
+        except Exception as e:
+            current_app.logger.error(f'cohort auto-match error for rider {rid}: {e}', exc_info=True)
+
+
 @riders_bp.route('/ride/<int:ride_id>/cohort')
 @user_login_required
 def ride_cohort_comparison(ride_id):
@@ -1012,6 +1057,8 @@ def ride_cohort_comparison(ride_id):
     ride = get_ride_by_id(ride_id)
     if not ride:
         abort(404)
+
+    _auto_match_cohort_riders(ride_id, ride)
 
     riders = get_ride_cohort_stats(ride_id)
     current_rider_id = session.get('rider_id')
