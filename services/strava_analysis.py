@@ -915,7 +915,7 @@ def build_cohort_stats(riders, current_rider_id, ride_distance_km=None):
     DISPLAY_RANGES = {
         'average_heartrate':      (80, 200),    # bpm — typical randonneuring avg HR range
         'max_heartrate':          (120, 210),   # bpm — meaningful max HR range
-        'average_speed':          (3.576, 8.047), # m/s = 8–18 mph (randonneuring range)
+        'average_speed':          (4.4704, 7.5997), # m/s = 10–17 mph (randonneuring range)
         'average_watts':          (60, 250),    # W — typical randonneuring power range
         'weighted_average_watts': (60, 250),    # W
         # Time metrics: floor always 0, ceiling = data-driven (rounded up to next hour)
