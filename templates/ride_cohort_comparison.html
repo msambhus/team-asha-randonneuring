@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+{% block title %}Peer Analysis - {{ ride.name|clean_name }} - Team Asha Randonneuring{% endblock %}
+
+{% block extra_head %}
+<style>
+/* ── Sections ─────────────────────────────────────── */
+.cohort-section { margin-bottom: 36px; }
+.cohort-section-title {
+    font-size: 1rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.8px; margin-bottom: 16px; padding-bottom: 8px;
+    border-bottom: 2px solid #e2e8f0; color: #475569;
+}
+
+/* ── Metric Cards ─────────────────────────────────── */
+.metric-card {
+    background: white; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 20px; margin-bottom: 16px;
+}
+.metric-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px; flex-wrap: wrap; gap: 8px;
+}
+.metric-card-title { font-size: 0.95rem; font-weight: 700; color: #1e293b; }
+.metric-badge {
+    font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.6px; padding: 3px 8px; border-radius: 20px;
+}
+.badge-efficiency { background: #fef3c7; color: #92400e; }
+.badge-fitness    { background: #d1fae5; color: #065f46; }
+.badge-reference  { background: #f1f5f9; color: #64748b; }
+.badge-power      { background: #ede9fe; color: #5b21b6; }
+
+/* ── Percentile Bar ───────────────────────────────── */
+.pct-track {
+    height: 8px; background: #e2e8f0; border-radius: 4px;
+    position: relative; margin: 10px 0 4px;
+}
+.pct-fill {
+    height: 8px; background: linear-gradient(90deg,#94a3b8,#64748b);
+    border-radius: 4px 0 0 4px; position: absolute; top: 0; left: 0;
+}
+.pct-marker {
+    width: 14px; height: 14px; background: #1e40af;
+    border: 2px solid white; border-radius: 50%;
+    position: absolute; top: -3px; transform: translateX(-50%);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+.pct-labels {
+    display: flex; justify-content: space-between;
+    font-size: 0.72rem; color: #94a3b8;
+}
+.pct-group-stats {
+    font-size: 0.8rem; color: #64748b; text-align: center; margin-top: 8px;
+}
+.pct-group-stats strong { color: #334155; }
+.pct-percentile {
+    font-size: 0.8rem; font-weight: 600; color: #1e40af;
+    text-align: center; margin-top: 4px;
+}
+.insight-box {
+    background: #eff6ff; border-left: 3px solid #3b82f6;
+    border-radius: 0 8px 8px 0; padding: 10px 14px; margin-top: 12px;
+    font-size: 0.82rem; color: #1e40af; line-height: 1.5;
+}
+.insight-box::before { content: "💡 "; }
+
+/* ── Ranked List ──────────────────────────────────── */
+.ranked-list { display: flex; flex-direction: column; gap: 6px; }
+.ranked-row {
+    display: grid; grid-template-columns: 120px 1fr 95px;
+    align-items: center; gap: 8px; padding: 6px 8px;
+    border-radius: 6px; background: white; border: 1px solid #f1f5f9;
+}
+.ranked-row.is-you { background: #eff6ff; border-color: #bfdbfe; }
+.ranked-name {
+    font-size: 0.82rem; font-weight: 600; color: #334155;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.you-tag {
+    font-size: 0.62rem; background: #1e40af; color: white;
+    padding: 1px 5px; border-radius: 10px; margin-left: 4px;
+    vertical-align: middle;
+}
+.ranked-bar-track {
+    height: 16px; background: #f1f5f9; border-radius: 4px; overflow: hidden;
+}
+.ranked-bar-fill { height: 100%; background: #94a3b8; border-radius: 4px; }
+.ranked-row.is-you .ranked-bar-fill { background: #3b82f6; }
+.ranked-value {
+    font-size: 0.8rem; font-weight: 700; color: #334155;
+    text-align: right; font-variant-numeric: tabular-nums;
+}
+
+/* ── Own Stats Grid ───────────────────────────────── */
+.own-stats-grid {
+    display: grid; grid-template-columns: repeat(auto-fit,minmax(130px,1fr));
+    gap: 10px; margin-bottom: 28px;
+}
+.own-stat {
+    background: white; border: 1px solid #e2e8f0; border-radius: 10px;
+    padding: 14px 10px; text-align: center;
+}
+.own-stat-label {
+    font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px;
+    color: #94a3b8; margin-bottom: 6px;
+}
+.own-stat-value { font-size: 1.1rem; font-weight: 700; color: #1e293b; }
+
+/* ── Comparison Table ─────────────────────────────── */
+.comparison-table-wrap {
+    overflow-x: auto; border-radius: 0 0 10px 10px;
+    border-top: 1px solid #e2e8f0;
+}
+.comparison-table {
+    width: 100%; border-collapse: collapse; font-size: 0.82rem;
+}
+.comparison-table th {
+    background: #f8fafc; padding: 10px 12px; text-align: left;
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; color: #64748b; white-space: nowrap;
+}
+.comparison-table td {
+    padding: 9px 12px; border-top: 1px solid #f1f5f9; color: #334155;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.comparison-table tr.is-you td { background: #eff6ff; }
+.comparison-table .rank-col { color: #94a3b8; font-weight: 600; }
+
+/* ── Accordion ────────────────────────────────────── */
+details.cohort-accordion {
+    border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;
+}
+details.cohort-accordion summary {
+    padding: 14px 18px; font-weight: 600; font-size: 0.9rem; cursor: pointer;
+    background: #f8fafc; list-style: none; display: flex; align-items: center;
+    justify-content: space-between; user-select: none;
+}
+details.cohort-accordion summary::-webkit-details-marker { display: none; }
+details.cohort-accordion summary::after {
+    content: "▼"; font-size: 0.75rem; color: #94a3b8; transition: transform 0.2s;
+}
+details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
+
+/* ── Empty State ──────────────────────────────────── */
+.cohort-empty { text-align: center; padding: 48px 24px; color: #94a3b8; }
+.cohort-empty h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 8px; color: #64748b; }
+</style>
+{% endblock %}
+
+{# ── Time/speed formatters (used in ranked list) ───────────────────────── #}
+{% macro fmt_time(seconds) %}{% if seconds is not none %}{% set h = (seconds // 3600)|int %}{% set m = ((seconds % 3600) // 60)|int %}{{ h }}h {{ "%02d"|format(m) }}m{% else %}&mdash;{% endif %}{% endmacro %}
+{% macro fmt_speed(ms) %}{% if ms is not none %}{{ "%.1f"|format(ms * 2.23694) }} mph{% else %}&mdash;{% endif %}{% endmacro %}
+{% macro rider_label(r) %}{{ r.first_name }} {{ r.last_name[0] }}.{% endmacro %}
+
+{# ── Generic percentile card (uses pre-formatted stat strings) ─────────── #}
+{% macro pct_card(title, badge_class, badge_label, stat) %}
+{% if stat and stat.has_data %}
+<div class="metric-card">
+    <div class="metric-card-header">
+        <span class="metric-card-title">{{ title }}</span>
+        <span class="metric-badge {{ badge_class }}">{{ badge_label }}</span>
+    </div>
+    <div class="pct-track">
+        {% if stat.bar_position is not none %}
+        <div class="pct-fill" style="width:{{ stat.bar_position }}%;"></div>
+        <div class="pct-marker" style="left:{{ stat.bar_position }}%;"></div>
+        {% endif %}
+    </div>
+    <div class="pct-labels">
+        <span>Best: {{ stat.min_str }}</span>
+        <span>Most: {{ stat.max_str }}</span>
+    </div>
+    <div class="pct-group-stats">
+        Avg <strong>{{ stat.mean_str }}</strong>
+        &nbsp;&bull;&nbsp; Median <strong>{{ stat.median_str }}</strong>
+        {% if stat.user_str %}
+        &nbsp;&bull;&nbsp; You <strong>{{ stat.user_str }}</strong>
+        {% endif %}
+    </div>
+    {% if stat.percentile is not none %}
+    <div class="pct-percentile">{{ stat.percentile }}th percentile in this group</div>
+    {% endif %}
+    {% if stat.insight %}
+    <div class="insight-box">{{ stat.insight }}</div>
+    {% endif %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{# ── HERO ─────────────────────────────────────────────────────────────── #}
+{% block content %}
+<div class="hero" style="padding:40px 20px 50px;">
+    <h1>Peer Analysis</h1>
+    <p style="opacity:0.85;margin-top:8px;">
+        {{ ride.name|clean_name }} &mdash; {{ ride.date }}
+    </p>
+    <p style="opacity:0.7;margin-top:4px;font-size:0.9rem;">
+        {{ riders|length }} rider{{ 's' if riders|length != 1 else '' }} with Strava data
+    </p>
+    <div style="margin-top:12px;">
+        <a href="{{ url_for('riders.my_strava_analysis') }}"
+           style="display:inline-flex;align-items:center;gap:4px;padding:8px 16px;background:rgba(255,255,255,0.2);color:white;border-radius:8px;text-decoration:none;font-size:0.85rem;">
+            &larr; My Strava Analysis
+        </a>
+    </div>
+</div>
+
+<div class="container section">
+
+{# ── Not enough data states ── #}
+{% if not riders %}
+<div class="cohort-empty">
+    <h3>No Data Available</h3>
+    <p>No finishers with Strava data were found for this brevet.</p>
+</div>
+
+{% elif riders|length < 2 or not cohort_stats %}
+<div class="cohort-empty">
+    <h3>Not Enough Riders</h3>
+    <p>At least 2 riders with Strava data are needed for a comparison.</p>
+    <p style="margin-top:8px;font-size:0.85rem;">Currently {{ riders|length }} rider has Strava data for this brevet.</p>
+</div>
+
+{% else %}
+
+{# ── Own stats summary strip ── #}
+{% set me_list = riders | selectattr('rider_id', 'equalto', current_rider_id) | list %}
+{% if me_list %}
+{% set my = me_list[0] %}
+<div class="cohort-section">
+    <div class="cohort-section-title">Your Stats</div>
+    <div class="own-stats-grid">
+        <div class="own-stat">
+            <div class="own-stat-label">Elapsed Time</div>
+            <div class="own-stat-value">{{ fmt_time(my.elapsed_time) }}</div>
+        </div>
+        <div class="own-stat">
+            <div class="own-stat-label">Moving Time</div>
+            <div class="own-stat-value">{{ fmt_time(my.moving_time) }}</div>
+        </div>
+        <div class="own-stat">
+            <div class="own-stat-label">Stopped Time</div>
+            <div class="own-stat-value">{{ fmt_time(my.stopped_time) }}</div>
+        </div>
+        <div class="own-stat">
+            <div class="own-stat-label">Avg Speed</div>
+            <div class="own-stat-value">{{ fmt_speed(my.average_speed) }}</div>
+        </div>
+        {% if my.average_heartrate %}
+        <div class="own-stat">
+            <div class="own-stat-label">Avg HR</div>
+            <div class="own-stat-value">{{ my.average_heartrate | int }} bpm</div>
+        </div>
+        {% endif %}
+        {% if my.suffer_score %}
+        <div class="own-stat">
+            <div class="own-stat-label">Suffer Score</div>
+            <div class="own-stat-value">{{ my.suffer_score }}</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{# ── Section 1: Actionable ── #}
+<div class="cohort-section">
+    <div class="cohort-section-title">Actionable Metrics</div>
+    {{ pct_card("Stopped Time",         "badge-efficiency", "Efficiency", cohort_stats.stopped_time) }}
+    {{ pct_card("Average Moving Speed", "badge-fitness",    "Fitness",    cohort_stats.average_speed) }}
+</div>
+
+{# ── Section 2: Performance — ranked bar lists ── #}
+<div class="cohort-section">
+    <div class="cohort-section-title">Performance</div>
+
+    {% for metric_key, label in [('elapsed_time','Elapsed Time'), ('moving_time','Moving Time')] %}
+    {% set stat = cohort_stats[metric_key] %}
+    {% if stat and stat.has_data %}
+    <div class="metric-card">
+        <div class="metric-card-header">
+            <span class="metric-card-title">{{ label }}</span>
+            <span class="metric-badge badge-fitness">Fitness</span>
+        </div>
+        <div class="ranked-list">
+            {% set sorted_riders = riders | sort(attribute=metric_key) %}
+            {% for r in sorted_riders %}
+            {% if r[metric_key] is not none %}
+            {% set is_you = (r.rider_id == current_rider_id) %}
+            {% set bar_pct = (r[metric_key] / stat.max * 100) | round | int %}
+            <div class="ranked-row {{ 'is-you' if is_you else '' }}">
+                <div class="ranked-name">
+                    {{ rider_label(r) }}
+                    {% if is_you %}<span class="you-tag">you</span>{% endif %}
+                </div>
+                <div class="ranked-bar-track">
+                    <div class="ranked-bar-fill" style="width:{{ bar_pct }}%;"></div>
+                </div>
+                <div class="ranked-value">{{ fmt_time(r[metric_key]) }}</div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+</div>
+
+{# ── Section 3: Physiological (HR, suffer) ── #}
+{% set has_hr = cohort_stats.average_heartrate is defined and cohort_stats.average_heartrate.has_data %}
+{% if has_hr %}
+<div class="cohort-section">
+    <div class="cohort-section-title">Physiological</div>
+    {{ pct_card("Average Heart Rate", "badge-reference", "Reference", cohort_stats.average_heartrate) }}
+    {% if cohort_stats.max_heartrate.has_data %}
+    {{ pct_card("Max Heart Rate",     "badge-reference", "Reference", cohort_stats.max_heartrate) }}
+    {% endif %}
+    {% if cohort_stats.suffer_score.has_data %}
+    {{ pct_card("Suffer Score",       "badge-reference", "Reference", cohort_stats.suffer_score) }}
+    {% endif %}
+</div>
+{% endif %}
+
+{# ── Section 4: Power (conditional — ≥2 riders with device_watts) ── #}
+{% set power_riders = riders | selectattr('device_watts') | list %}
+{% if power_riders | length >= 2 %}
+<div class="cohort-section">
+    <div class="cohort-section-title">Power &mdash; {{ power_riders | length }} riders</div>
+    {% if cohort_stats.average_watts.has_data %}
+    {{ pct_card("Average Watts",     "badge-power", "Power", cohort_stats.average_watts) }}
+    {% endif %}
+    {% if cohort_stats.weighted_average_watts.has_data %}
+    {{ pct_card("Normalized Power",  "badge-power", "Power", cohort_stats.weighted_average_watts) }}
+    {% endif %}
+</div>
+{% endif %}
+
+{# ── Section 5: Full comparison table ── #}
+<details class="cohort-accordion cohort-section">
+    <summary>Full Comparison &mdash; all {{ riders | length }} riders</summary>
+    <div class="comparison-table-wrap">
+        <table class="comparison-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Rider</th>
+                    <th>Elapsed</th>
+                    <th>Moving</th>
+                    <th>Stopped</th>
+                    <th>Avg Speed</th>
+                    {% if has_hr %}<th>Avg HR</th>{% endif %}
+                    {% if cohort_stats.suffer_score.has_data %}<th>Suffer</th>{% endif %}
+                    {% if power_riders | length >= 2 %}<th>Avg W</th>{% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in riders %}
+                {% set is_you = (r.rider_id == current_rider_id) %}
+                <tr class="{{ 'is-you' if is_you else '' }}">
+                    <td class="rank-col">{{ loop.index }}</td>
+                    <td>
+                        {{ rider_label(r) }}
+                        {% if is_you %}<span class="you-tag">you</span>{% endif %}
+                    </td>
+                    <td>{{ fmt_time(r.elapsed_time) }}</td>
+                    <td>{{ fmt_time(r.moving_time) }}</td>
+                    <td>{{ fmt_time(r.stopped_time) }}</td>
+                    <td>{{ fmt_speed(r.average_speed) }}</td>
+                    {% if has_hr %}
+                    <td>{% if r.average_heartrate %}{{ r.average_heartrate | int }} bpm{% else %}&mdash;{% endif %}</td>
+                    {% endif %}
+                    {% if cohort_stats.suffer_score.has_data %}
+                    <td>{% if r.suffer_score %}{{ r.suffer_score }}{% else %}&mdash;{% endif %}</td>
+                    {% endif %}
+                    {% if power_riders | length >= 2 %}
+                    <td>{% if r.average_watts %}{{ r.average_watts | int }} W{% else %}&mdash;{% endif %}</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</details>
+
+{% endif %}{# end enough data #}
+
+<div style="text-align:center;margin-top:30px;">
+    <a href="{{ url_for('riders.my_strava_analysis') }}" class="back-link">&larr; Back to Brevet Analysis</a>
+</div>
+
+</div>
+{% endblock %}

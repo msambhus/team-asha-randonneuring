@@ -2538,6 +2538,47 @@ def get_ride_by_id_full(ride_id):
     """, (ride_id,)).fetchone()
 
 
+# ========== COHORT ANALYSIS ==========
+
+def get_ride_cohort_stats(ride_id):
+    """Get Strava stats for all riders who finished a ride and share Strava data.
+
+    Returns list of dicts ordered by elapsed_time ASC.
+    Excludes riders with strava_data_private = TRUE.
+    Uses LEFT JOIN on rider_profile so riders without a profile row are treated as public.
+    """
+    return _execute("""
+        SELECT
+            r.id AS rider_id,
+            r.first_name,
+            r.last_name,
+            r.rusa_id,
+            sa.elapsed_time,
+            sa.moving_time,
+            (sa.elapsed_time - sa.moving_time) AS stopped_time,
+            sa.average_speed,
+            sa.average_heartrate,
+            sa.max_heartrate,
+            sa.has_heartrate,
+            sa.total_elevation_gain,
+            sa.suffer_score,
+            sa.average_watts,
+            sa.weighted_average_watts,
+            sa.device_watts,
+            sa.strava_url
+        FROM rider_ride rr
+        JOIN rider r ON r.id = rr.rider_id
+        LEFT JOIN rider_profile rp ON rp.rider_id = r.id
+        JOIN strava_ride_match srm ON srm.rider_id = r.id AND srm.ride_id = rr.ride_id
+        JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
+                                AND sa.rider_id = srm.rider_id
+        WHERE rr.ride_id = %s
+          AND rr.status = %s
+          AND (rp.strava_data_private IS NULL OR rp.strava_data_private = FALSE)
+        ORDER BY sa.elapsed_time ASC
+    """, (ride_id, RideStatus.FINISHED.value)).fetchall()
+
+
 # ========== CHAT ==========
 
 def create_conversation(user_id, title=None):

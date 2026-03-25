@@ -37,7 +37,8 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_custom_plan_stops_raw, update_custom_plan_stop,
                     add_custom_stop, hide_base_stop, unhide_base_stop,
                     update_custom_plan_settings, delete_custom_plan,
-                    get_public_custom_plans, clone_custom_plan, delete_custom_stop)
+                    get_public_custom_plans, clone_custom_plan, delete_custom_stop,
+                    get_ride_cohort_stats)
 from auth import login_required, user_login_required
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
@@ -1000,6 +1001,32 @@ def retry_strava_analysis(rusa_id, ride_id):
         clear_strava_ride_analysis(match['id'])
 
     return redirect(url_for('riders.ride_strava_analysis', rusa_id=rusa_id, ride_id=ride_id))
+
+
+@riders_bp.route('/ride/<int:ride_id>/cohort')
+@user_login_required
+def ride_cohort_comparison(ride_id):
+    """Cohort comparison — compare Strava stats across all finishers of a brevet."""
+    from services.strava_analysis import build_cohort_stats
+
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        abort(404)
+
+    riders = get_ride_cohort_stats(ride_id)
+    current_rider_id = session.get('rider_id')
+
+    cohort_stats = None
+    if len(riders) >= 2:
+        cohort_stats = build_cohort_stats([dict(r) for r in riders], current_rider_id)
+
+    return render_template(
+        'ride_cohort_comparison.html',
+        ride=ride,
+        riders=[dict(r) for r in riders],
+        cohort_stats=cohort_stats,
+        current_rider_id=current_rider_id,
+    )
 
 
 @riders_bp.route('/debug/match-check/<int:rider_id>/<int:ride_id>')
