@@ -6,6 +6,8 @@ detects stoppages, and builds plan-vs-actual comparison data.
 
 import difflib
 import html as html_mod
+import math
+import statistics
 from datetime import timedelta
 from flask import current_app
 import requests as http_requests
@@ -878,7 +880,23 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
     }
 
 
-def build_cohort_stats(riders, current_rider_id):
+def _time_range_for_distance(km):
+    """Return (min_seconds, max_seconds) elapsed/moving time display range by brevet distance."""
+    if km is None:
+        return (0, None)
+    if km <= 210:       # 200k
+        return (8 * 3600, 15 * 3600)
+    elif km <= 320:     # 300k
+        return (8 * 3600, 19 * 3600 + 15 * 60)
+    elif km <= 420:     # 400k
+        return (15 * 3600, 27 * 3600)
+    elif km <= 650:     # 600k
+        return (24 * 3600, 40 * 3600)
+    else:               # 1000k / 1200k
+        return (72 * 3600, 95 * 3600)
+
+
+def build_cohort_stats(riders, current_rider_id, ride_distance_km=None):
     """Compute per-metric group statistics and insight callouts for cohort comparison.
 
     Args:
@@ -890,7 +908,23 @@ def build_cohort_stats(riders, current_rider_id):
         {has_data, min, max, mean, median, user_value, bar_position,
          percentile, direction, values_sorted, insight}
     """
-    import statistics as _stats
+    # Fixed display ranges by metric type so charts are on a consistent, meaningful scale.
+    # HR metrics always share the same axis, speed always mph-comparable, etc.
+    # None means "compute from data" (time metrics scale per ride distance).
+    # Format: (display_min, display_max) — None for either = compute from data
+    DISPLAY_RANGES = {
+        'average_heartrate':      (80, 200),    # bpm — typical randonneuring avg HR range
+        'max_heartrate':          (120, 210),   # bpm — meaningful max HR range
+        'average_speed':          (3.576, 8.047), # m/s = 8–18 mph (randonneuring range)
+        'average_watts':          (60, 250),    # W — typical randonneuring power range
+        'weighted_average_watts': (60, 250),    # W
+        # Time metrics: floor always 0, ceiling = data-driven (rounded up to next hour)
+        'elapsed_time':           _time_range_for_distance(ride_distance_km),
+        'moving_time':            _time_range_for_distance(ride_distance_km),
+        'stopped_time':           (0, None),
+        'total_elevation_gain':   (0, None),
+        'suffer_score':           (200, None),  # floor 200: brevets always hit this
+    }
 
     # (metric_key, better_direction) — 'lower'/'higher'/None(reference)
     METRICS = [
@@ -921,10 +955,27 @@ def build_cohort_stats(riders, current_rider_id):
 
         sorted_vals = sorted(values)
         n = len(sorted_vals)
-        median_val = _stats.median(sorted_vals)
-        mean_val = _stats.mean(sorted_vals)
+        median_val = statistics.median(sorted_vals)
+        mean_val = statistics.mean(sorted_vals)
         min_val = sorted_vals[0]
         max_val = sorted_vals[-1]
+
+        # Compute display range (fixed where meaningful, data-driven for time metrics)
+        rng = DISPLAY_RANGES.get(metric, (None, None))
+        d_min = rng[0] if rng[0] is not None else min_val
+        if rng[1] is not None:
+            d_max = rng[1]
+        else:
+            # Round up to next "natural" unit: hours for time, 100s for watts/elevation
+            if metric in ('elapsed_time', 'moving_time', 'stopped_time'):
+                d_max = math.ceil(max_val / 3600) * 3600  # next whole hour
+            elif metric == 'total_elevation_gain':
+                d_max = math.ceil(max_val / 500) * 500    # next 500 m
+            else:
+                d_max = max_val * 1.1
+        # Guard: if all values identical, spread display range a little
+        if d_max <= d_min:
+            d_max = d_min + 1
 
         # Percentile: % of cohort the user beats on this metric
         percentile = None
@@ -945,6 +996,8 @@ def build_cohort_stats(riders, current_rider_id):
             'has_data': True,
             'min': min_val,
             'max': max_val,
+            'display_min': d_min,
+            'display_max': d_max,
             'mean': round(mean_val, 1),
             'median': median_val,
             'user_value': user_value,
@@ -1011,11 +1064,13 @@ def _add_cohort_display_strings(cohort_stats):
         if not stat.get('has_data'):
             continue
         fmt = formatters.get(metric, _fmt_int)
-        stat['min_str']    = fmt(stat['min'])
-        stat['max_str']    = fmt(stat['max'])
-        stat['mean_str']   = fmt(stat['mean'])
-        stat['median_str'] = fmt(stat['median'])
-        stat['user_str']   = fmt(stat['user_value']) if stat['user_value'] is not None else None
+        stat['min_str']         = fmt(stat['min'])
+        stat['max_str']         = fmt(stat['max'])
+        stat['display_min_str'] = fmt(stat['display_min'])
+        stat['display_max_str'] = fmt(stat['display_max'])
+        stat['mean_str']        = fmt(stat['mean'])
+        stat['median_str']      = fmt(stat['median'])
+        stat['user_str']        = fmt(stat['user_value']) if stat['user_value'] is not None else None
 
 
 def _get_cohort_insight(metric, user_value, median_val):

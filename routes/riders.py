@@ -1018,7 +1018,8 @@ def ride_cohort_comparison(ride_id):
 
     cohort_stats = None
     if len(riders) >= 2:
-        cohort_stats = build_cohort_stats([dict(r) for r in riders], current_rider_id)
+        cohort_stats = build_cohort_stats([dict(r) for r in riders], current_rider_id,
+                                          ride_distance_km=ride.get('distance_km'))
 
     return render_template(
         'ride_cohort_comparison.html',
