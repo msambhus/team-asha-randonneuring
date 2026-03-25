@@ -102,6 +102,21 @@
     transition: all 0.2s;
 }
 .btn-strava-link:hover { background: #fff5f0; }
+.btn-cohort {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: white;
+    color: #2563eb;
+    border: 1px solid #2563eb;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+.btn-cohort:hover { background: #eff6ff; }
 .no-match-msg {
     padding: 20px;
     text-align: center;
@@ -263,6 +278,9 @@
         <a href="{{ card.activity.strava_url }}" target="_blank" rel="noopener" class="btn-strava-link">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="#fc4c02"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
             View on Strava
+        </a>
+        <a href="{{ url_for('riders.ride_cohort_comparison', ride_id=card.ride_id) }}" class="btn-cohort">
+            &#x1F465; Compare with Peers
         </a>
     </div>
     {% endif %}
