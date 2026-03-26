@@ -266,8 +266,8 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
 {# ── Color palette — indexed by rider position in sorted list ───────────── #}
 {# Alternates warm/cool so adjacent riders are always visually distinct #}
 {% set PALETTE = ['#DC2626','#2563EB','#EA580C','#059669','#D97706','#7C3AED','#DB2777','#0891B2'] %}
-{# "You" accent — bright blue, diamond shape #}
-{% set YOU_COLOR = '#1e40af' %}
+{# "You" accent — sky blue, diamond shape #}
+{% set YOU_COLOR = '#0ea5e9' %}
 
 {# ── Distribution bar card ───────────────────────────────────────────────── #}
 {% macro dist_card(title, badge_class, badge_label, stat, metric_key, riders, current_rider_id) %}
@@ -337,7 +337,7 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
 
 {# ── HERO ────────────────────────────────────────────────────────────────── #}
 {% block content %}
-<div class="hero" style="padding:40px 20px 50px;">
+<div class="hero" style="padding:40px 20px 50px; background-image: linear-gradient(135deg, #0369a1 0%, #38bdf8 100%);">
     <h1>Cohort Analysis</h1>
     <p style="opacity:0.85;margin-top:8px;">{{ ride.name|clean_name }} &mdash; {{ ride.date }}</p>
     <p style="opacity:0.7;margin-top:4px;font-size:0.9rem;">

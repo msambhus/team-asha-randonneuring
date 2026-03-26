@@ -7,7 +7,6 @@ detects stoppages, and builds plan-vs-actual comparison data.
 import difflib
 import html as html_mod
 import json
-import math
 import statistics
 import zlib
 from datetime import timedelta
@@ -910,20 +909,45 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
     }
 
 
-def _time_range_for_distance(km):
-    """Return (min_seconds, max_seconds) elapsed/moving time display range by brevet distance."""
-    if km is None:
-        return (0, None)
-    if km <= 210:       # 200k
-        return (8 * 3600, 15 * 3600)
-    elif km <= 320:     # 300k
-        return (8 * 3600, 19 * 3600 + 15 * 60)
-    elif km <= 420:     # 400k
-        return (15 * 3600, 27 * 3600)
-    elif km <= 650:     # 600k
-        return (24 * 3600, 40 * 3600)
-    else:               # 1000k / 1200k
-        return (72 * 3600, 95 * 3600)
+def _dynamic_display_range(metric, min_val, max_val):
+    """Compute a padded display range from actual data values.
+
+    Adds ~15% of the data spread as padding on each side (subject to a
+    per-metric minimum so the chart has breathing room even when all riders
+    have nearly identical values).  A floor is applied so axes never go
+    below a physically meaningful minimum.
+    """
+    spread = max_val - min_val
+    # Minimum absolute padding (used when 15% of spread would be too small)
+    MIN_PAD = {
+        'average_heartrate':      4.0,
+        'max_heartrate':          4.0,
+        'average_speed':          0.224,   # ~0.5 mph in m/s
+        'average_watts':          10.0,
+        'weighted_average_watts': 10.0,
+        'elapsed_time':           900.0,   # 15 min in seconds
+        'moving_time':            900.0,
+        'stopped_time':           300.0,   # 5 min
+        'total_elevation_gain':   200.0,
+        'suffer_score':           25.0,
+    }
+    # Axis can never go below this value
+    FLOOR = {
+        'average_heartrate':      50.0,
+        'max_heartrate':          80.0,
+        'average_speed':          1.0,
+        'average_watts':          0.0,
+        'weighted_average_watts': 0.0,
+        'elapsed_time':           0.0,
+        'moving_time':            0.0,
+        'stopped_time':           0.0,
+        'total_elevation_gain':   0.0,
+        'suffer_score':           0.0,
+    }
+    pad = max(spread * 0.15, MIN_PAD.get(metric, max(spread * 0.1, 1.0)))
+    d_min = max(FLOOR.get(metric, 0.0), min_val - pad)
+    d_max = max_val + pad
+    return d_min, d_max
 
 
 def build_cohort_stats(riders, current_rider_id, ride_distance_km=None):
@@ -938,24 +962,6 @@ def build_cohort_stats(riders, current_rider_id, ride_distance_km=None):
         {has_data, min, max, mean, median, user_value, bar_position,
          percentile, direction, values_sorted, insight}
     """
-    # Fixed display ranges by metric type so charts are on a consistent, meaningful scale.
-    # HR metrics always share the same axis, speed always mph-comparable, etc.
-    # None means "compute from data" (time metrics scale per ride distance).
-    # Format: (display_min, display_max) — None for either = compute from data
-    DISPLAY_RANGES = {
-        'average_heartrate':      (80, 200),    # bpm — typical randonneuring avg HR range
-        'max_heartrate':          (120, 210),   # bpm — meaningful max HR range
-        'average_speed':          (4.4704, 7.5997), # m/s = 10–17 mph (randonneuring range)
-        'average_watts':          (60, 250),    # W — typical randonneuring power range
-        'weighted_average_watts': (60, 250),    # W
-        # Time metrics: floor always 0, ceiling = data-driven (rounded up to next hour)
-        'elapsed_time':           _time_range_for_distance(ride_distance_km),
-        'moving_time':            _time_range_for_distance(ride_distance_km),
-        'stopped_time':           (0, None),
-        'total_elevation_gain':   (0, None),
-        'suffer_score':           (200, None),  # floor 200: brevets always hit this
-    }
-
     # (metric_key, better_direction) — 'lower'/'higher'/None(reference)
     METRICS = [
         ('elapsed_time',           'lower'),
@@ -990,22 +996,8 @@ def build_cohort_stats(riders, current_rider_id, ride_distance_km=None):
         min_val = sorted_vals[0]
         max_val = sorted_vals[-1]
 
-        # Compute display range (fixed where meaningful, data-driven for time metrics)
-        rng = DISPLAY_RANGES.get(metric, (None, None))
-        d_min = rng[0] if rng[0] is not None else min_val
-        if rng[1] is not None:
-            d_max = rng[1]
-        else:
-            # Round up to next "natural" unit: hours for time, 100s for watts/elevation
-            if metric in ('elapsed_time', 'moving_time', 'stopped_time'):
-                d_max = math.ceil(max_val / 3600) * 3600  # next whole hour
-            elif metric == 'total_elevation_gain':
-                d_max = math.ceil(max_val / 500) * 500    # next 500 m
-            else:
-                d_max = max_val * 1.1
-        # Guard: if all values identical, spread display range a little
-        if d_max <= d_min:
-            d_max = d_min + 1
+        # Compute display range dynamically from actual data values
+        d_min, d_max = _dynamic_display_range(metric, min_val, max_val)
 
         # Percentile: % of cohort the user beats on this metric
         percentile = None
@@ -1037,6 +1029,16 @@ def build_cohort_stats(riders, current_rider_id, ride_distance_km=None):
             'values_sorted': sorted_vals,
             'insight': _get_cohort_insight(metric, user_value, median_val),
         }
+
+    # Normalize HR display range so avg and max charts share the same axis,
+    # making the two distributions visually comparable.
+    hr_avg = result.get('average_heartrate', {})
+    hr_max = result.get('max_heartrate', {})
+    if hr_avg.get('has_data') and hr_max.get('has_data'):
+        shared_min = min(hr_avg['display_min'], hr_max['display_min'])
+        shared_max = max(hr_avg['display_max'], hr_max['display_max'])
+        hr_avg['display_min'] = hr_max['display_min'] = shared_min
+        hr_avg['display_max'] = hr_max['display_max'] = shared_max
 
     # Add pre-formatted display strings so templates don't need format functions
     _add_cohort_display_strings(result)
