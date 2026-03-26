@@ -6,9 +6,23 @@ detects stoppages, and builds plan-vs-actual comparison data.
 
 import difflib
 import html as html_mod
+import json
+import zlib
 from datetime import timedelta
 from flask import current_app
 import requests as http_requests
+
+
+# ── Stream compression helpers ──────────────────────────────────────
+
+def _compress_streams(streams_dict):
+    """Compress a streams dict to bytes for BYTEA storage."""
+    return zlib.compress(json.dumps(streams_dict).encode(), level=6)
+
+
+def _decompress_streams(blob):
+    """Decompress BYTEA blob back to a streams dict."""
+    return json.loads(zlib.decompress(bytes(blob)))
 
 # Stop detection constants
 VELOCITY_THRESHOLD = 0.5   # m/s (~1 mph) - below this = stopped
@@ -157,29 +171,42 @@ def batch_match_rides(rider_id, participation_list):
     return existing
 
 
+_STREAM_KEYS = 'time,distance,velocity_smooth,heartrate,watts,cadence,altitude,grade_smooth,latlng'
+
+
 def fetch_and_analyze(rider_id, match_id, strava_activity_id, plan_stops=None):
     """Fetch Strava streams and run stop detection analysis.
 
-    Returns cached results if available. Fetches from Strava API otherwise.
-
-    Args:
-        rider_id: int
-        match_id: strava_ride_match.id
-        strava_activity_id: Strava activity ID (bigint)
-        plan_stops: list of plan stop dicts (optional, for stop matching)
+    Streams are fetched from Strava once and cached as compressed BYTEA in the
+    ``strava_ride_analysis`` table.  Subsequent page loads decompress from the
+    DB and skip the Strava API entirely.
 
     Returns:
-        dict with 'detected_stops', 'stream_summary', 'error'
+        dict with 'detected_stops', 'stream_summary', 'streams', 'error'
     """
     from models import (get_strava_ride_analysis, upsert_strava_ride_analysis,
                         get_strava_connection)
 
-    # Check cache for detected stops
+    # ── 1. Check DB cache ────────────────────────────────────────────
     cached = get_strava_ride_analysis(match_id)
+
+    # If we have cached streams (and no error), serve from DB — no API call
+    if cached and cached.get('activity_streams') and not cached.get('strava_api_error'):
+        streams = _decompress_streams(cached['activity_streams'])
+        detected_stops = cached.get('detected_stops') or detect_stops(streams)
+        if plan_stops and detected_stops:
+            detected_stops = match_stops_to_plan(detected_stops, plan_stops)
+        stream_summary = cached.get('stream_summary') or _build_stream_summary(streams)
+        return {
+            'detected_stops': detected_stops,
+            'stream_summary': stream_summary,
+            'streams': streams,
+            'error': None,
+        }
+
+    # ── 2. No cached streams — fetch from Strava API ─────────────────
     cached_stops = cached['detected_stops'] if cached and not cached.get('strava_api_error') else None
 
-    # Always fetch streams for interpolation (not cached — too large)
-    # If we have cached stops, we still need fresh streams for time interpolation
     connection = get_strava_connection(rider_id)
     if not connection:
         error_msg = 'No Strava connection found'
@@ -194,7 +221,7 @@ def fetch_and_analyze(rider_id, match_id, strava_activity_id, plan_stops=None):
             f"{current_app.config['STRAVA_API_BASE']}/activities/{strava_activity_id}/streams",
             headers={'Authorization': f'Bearer {token}'},
             params={
-                'keys': 'time,distance,velocity_smooth,heartrate,watts',
+                'keys': _STREAM_KEYS,
                 'key_type': 'time',
             },
             timeout=15,
@@ -226,11 +253,9 @@ def fetch_and_analyze(rider_id, match_id, strava_activity_id, plan_stops=None):
         upsert_strava_ride_analysis(match_id, [], {}, error=error_msg)
         return {'detected_stops': [], 'stream_summary': {}, 'error': error_msg}
 
-    # Detect stops
-    # Use cached detected stops if available, otherwise detect from streams
+    # ── 3. Detect stops + build summary ──────────────────────────────
     if cached_stops is not None:
         detected_stops = cached_stops
-        # Re-match to plan (plan may have changed since cache)
         if plan_stops and detected_stops:
             detected_stops = match_stops_to_plan(detected_stops, plan_stops)
         stream_summary = (cached.get('stream_summary') or {}) if cached else {}
@@ -239,8 +264,13 @@ def fetch_and_analyze(rider_id, match_id, strava_activity_id, plan_stops=None):
         if plan_stops and detected_stops:
             detected_stops = match_stops_to_plan(detected_stops, plan_stops)
         stream_summary = _build_stream_summary(streams)
-        # Cache detected stops and summary (not streams — too large)
-        upsert_strava_ride_analysis(match_id, detected_stops, stream_summary)
+
+    # ── 4. Persist everything (stops + summary + compressed streams) ─
+    compressed = _compress_streams(streams)
+    upsert_strava_ride_analysis(
+        match_id, detected_stops, stream_summary,
+        compressed_streams=compressed,
+    )
 
     return {
         'detected_stops': detected_stops,
