@@ -1202,13 +1202,8 @@
 <div class="journey-node {{ n.node_type }}">
     <div class="journey-dot" style="background:{{ n.difficulty_color }};box-shadow:0 0 0 2px {{ n.difficulty_color }};"></div>
     <div class="journey-label">
-        {{ n.label }}
+        {{ n.label }}{% if n.stop_name and n.stop_duration_min and n.stop_duration_min > 0 %}<span style="font-weight:400;color:#64748b;font-size:0.65rem;"> — {{ n.stop_name }}</span>{% endif %}
     </div>
-    {% if n.stop_name and n.stop_duration_min and n.stop_duration_min > 0 and n.stop_duration_min != -1 %}
-    <div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:4px;padding:2px 6px;margin-top:4px;font-size:0.65rem;color:#92400e;font-weight:600;">
-        {{ n.stop_duration_min }}m
-    </div>
-    {% endif %}
     <div class="journey-dist">{{ "%.1f"|format(n.distance_miles) }} mi</div>
     <div class="journey-eta arrival-time" data-cum-min="{{ (n['arrival_time_min']|default(0))|int }}">{% if n.distance_miles > 0 %}--:--{% endif %}</div>
     {% if stop_wind and n.stop_index is defined and stop_wind[n.stop_index] is defined %}
@@ -1261,14 +1256,7 @@
     {% if s.time_bank_min is not none and (s.stop_name or s.stop_type in ['control', 'rest', 'finish', 'start', 'waypoint']) and s.distance_miles and s.distance_miles > 0 %}
     <div class="tod-grid">
         <span class="tod-label">
-            {% if s.stop_name %}
-                {{ s.stop_name }} <span style="color:#94a3b8;">({{ s.location }})</span>
-            {% else %}
-                {{ s.location }}
-            {% endif %}
-            {% if s.stop_name and s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
-            <span style="color:#92400e;background:#fef3c7;border:1px solid #fbbf24;border-radius:3px;padding:1px 5px;margin-left:4px;font-size:0.7rem;font-weight:600;">☕ {{ s.stop_duration_min }}m</span>
-            {% endif %}
+            {{ s.location }}{% if s.stop_name and s.stop_duration_min and s.stop_duration_min > 0 %} <span style="color:#64748b;font-size:0.8rem;font-weight:400;">— {{ s.stop_name }}</span>{% endif %}
         </span>
         <span class="tod-time arrival-time" data-cum-min="{{ (s['arrival_time_min']|default(0))|int }}">
             &mdash;
@@ -1322,11 +1310,7 @@
         </div>
         <div class="segment-loc">
             <div class="segment-loc-name">
-                {% if s.stop_name %}
-                    {{ s.stop_name }} <span style="color:#94a3b8;font-weight:400;font-size:0.85rem;">({{ s.location }})</span>
-                {% else %}
-                    {{ s.location }}
-                {% endif %}
+                {{ s.location }}{% if s.stop_name and s.stop_duration_min and s.stop_duration_min > 0 %} <span style="color:#64748b;font-weight:400;font-size:0.8rem;">— {{ s.stop_name }}</span>{% endif %}
             </div>
             {% if s.notes %}<div class="segment-loc-notes">{{ s.notes }}</div>{% endif %}
         </div>
@@ -1388,15 +1372,22 @@
             <div class="metric-label">ETA</div>
         </div>
         {% endif %}
-        {% if s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
+        {# Break metric removed — the break chip below already shows stop name + duration #}
+        {# Wind #}
+        {% if stop_wind and stop_wind[loop.index0] is defined %}
+        {% set cw = stop_wind[loop.index0] %}
+        {% if cw %}
         <div class="metric">
-            <div class="metric-value" style="color:#92400e;">
-                {# Stop duration (time spent at this stop) #}
-                {% if s.stop_duration_min >= 60 %}{{ s.stop_duration_min // 60 }}h{{ "%02d"|format(s.stop_duration_min % 60) }}m{% else %}{{ s.stop_duration_min }}m{% endif %}
-                {% if s.stop_name %}<span style="font-size:0.7rem;font-weight:400;"> ({{ s.stop_name }})</span>{% endif %}
-            </div>
-            <div class="metric-label">Break</div>
+            <div class="metric-value">{{ wind_arrow(cw) }}</div>
+            <div class="metric-label">Wind</div>
         </div>
+        {% if cw.temperature_f is defined %}
+        <div class="metric">
+            <div class="metric-value" style="color:#64748b;">{{ cw.temperature_f }}&deg;F</div>
+            <div class="metric-label">Temp</div>
+        </div>
+        {% endif %}
+        {% endif %}
         {% endif %}
         {# Time Bank: use this stop's time_bank #}
         {% if s.time_bank_min is not none %}
@@ -1436,11 +1427,7 @@
         </div>
         <div class="segment-loc">
             <div class="segment-loc-name">
-                {% if s.stop_name %}
-                    {{ s.stop_name }} <span style="color:#94a3b8;font-weight:400;font-size:0.85rem;">({{ s.location }})</span>
-                {% else %}
-                    {{ s.location }}
-                {% endif %}
+                {{ s.location }}{% if s.stop_name and s.stop_duration_min and s.stop_duration_min > 0 %} <span style="color:#64748b;font-weight:400;font-size:0.8rem;">— {{ s.stop_name }}</span>{% endif %}
             </div>
             {% if s.notes %}<div class="segment-loc-notes">{{ s.notes }}</div>{% endif %}
         </div>

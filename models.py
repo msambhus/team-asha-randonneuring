@@ -1796,9 +1796,10 @@ def get_rider_upcoming_signups(rider_id):
     return _execute("""
         SELECT ri.id, ri.name, ri.date, ri.distance_km, ri.distance_miles,
                ri.elevation_ft, ri.ft_per_mile, ri.time_limit_hours, ri.ride_type,
-               ri.rwgps_url, ri.event_status, ri.start_time, ri.start_location,
+               ri.rwgps_url, ri.event_status, ri.start_location,
                c.code as club_code, c.name as club_name,
                rp.slug as plan_slug, rp.name as plan_name,
+               rp.start_time as start_time,
                rp.rwgps_url as plan_rwgps_url, rp.rwgps_url_team as plan_rwgps_url_team,
                rr.status as signup_status, rr.signed_up_at
         FROM rider_ride rr
@@ -2549,6 +2550,76 @@ def get_ride_by_id_full(ride_id):
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE ri.id = %s
     """, (ride_id,)).fetchone()
+
+
+# ========== COHORT ANALYSIS ==========
+
+def get_ride_cohort_stats(ride_id):
+    """Get Strava stats for all riders who finished a ride and share Strava data.
+
+    Returns list of dicts ordered by elapsed_time ASC.
+    Excludes riders with strava_data_private = TRUE.
+    Uses LEFT JOIN on rider_profile so riders without a profile row are treated as public.
+    """
+    return _execute("""
+        SELECT
+            r.id AS rider_id,
+            r.first_name,
+            r.last_name,
+            r.rusa_id,
+            sa.elapsed_time,
+            sa.moving_time,
+            (sa.elapsed_time - sa.moving_time) AS stopped_time,
+            sa.average_speed,
+            sa.average_heartrate,
+            sa.max_heartrate,
+            sa.has_heartrate,
+            sa.total_elevation_gain,
+            sa.suffer_score,
+            sa.average_watts,
+            sa.weighted_average_watts,
+            sa.device_watts,
+            sa.strava_url
+        FROM rider_ride rr
+        JOIN rider r ON r.id = rr.rider_id
+        LEFT JOIN rider_profile rp ON rp.rider_id = r.id
+        JOIN strava_ride_match srm ON srm.rider_id = r.id AND srm.ride_id = rr.ride_id
+        JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
+                                AND sa.rider_id = srm.rider_id
+        WHERE rr.ride_id = %s
+          AND rr.status = %s
+          AND (rp.strava_data_private IS NULL OR rp.strava_data_private = FALSE)
+        ORDER BY sa.elapsed_time ASC
+    """, (ride_id, RideStatus.FINISHED.value)).fetchall()
+
+
+def get_ride_cohort_breakdown(ride_id):
+    """Return finisher counts at each filter stage for display in the cohort page header.
+
+    Returns a dict with:
+        total_finished  — all riders with FINISHED status
+        strava_linked   — subset who have a matched Strava activity
+        private         — subset with a match but strava_data_private = TRUE
+        compared        — subset actually included in the comparison
+    """
+    row = _execute("""
+        SELECT
+            COUNT(*) FILTER (WHERE TRUE)                                   AS total_finished,
+            COUNT(*) FILTER (WHERE srm.strava_activity_id IS NOT NULL)     AS strava_linked,
+            COUNT(*) FILTER (WHERE srm.strava_activity_id IS NOT NULL
+                               AND rp.strava_data_private = TRUE)          AS private,
+            COUNT(*) FILTER (WHERE srm.strava_activity_id IS NOT NULL
+                               AND (rp.strava_data_private IS NULL
+                                    OR rp.strava_data_private = FALSE))    AS compared
+        FROM rider_ride rr
+        JOIN rider r ON r.id = rr.rider_id
+        LEFT JOIN rider_profile rp ON rp.rider_id = r.id
+        LEFT JOIN strava_ride_match srm
+               ON srm.rider_id = r.id AND srm.ride_id = rr.ride_id
+        WHERE rr.ride_id = %s
+          AND rr.status = %s
+    """, (ride_id, RideStatus.FINISHED.value)).fetchone()
+    return dict(row) if row else {'total_finished': 0, 'strava_linked': 0, 'private': 0, 'compared': 0}
 
 
 # ========== CHAT ==========

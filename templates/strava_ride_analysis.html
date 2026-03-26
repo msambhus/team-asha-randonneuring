@@ -292,6 +292,10 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
             View on Strava
         </a>
+        <a href="{{ url_for('riders.ride_cohort_comparison', ride_id=ride.id) }}"
+           style="display:inline-flex; align-items:center; gap:6px; margin-left:12px; padding:8px 16px; background:rgba(255,255,255,0.15); color:white; border:1px solid rgba(255,255,255,0.4); border-radius:8px; text-decoration:none; font-size:0.85rem; font-weight:600;">
+            &#x1F465; Compare with Cohort
+        </a>
         {% if is_own_profile %}
         <a href="{{ url_for('riders.my_strava_analysis') }}"
            style="display:inline-flex; align-items:center; gap:4px; margin-left:12px; padding:8px 16px; background:rgba(255,255,255,0.2); color:white; border-radius:8px; text-decoration:none; font-size:0.85rem;">

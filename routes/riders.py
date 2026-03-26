@@ -37,7 +37,8 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_custom_plan_stops_raw, update_custom_plan_stop,
                     add_custom_stop, hide_base_stop, unhide_base_stop,
                     update_custom_plan_settings, delete_custom_plan,
-                    get_public_custom_plans, clone_custom_plan, delete_custom_stop)
+                    get_public_custom_plans, clone_custom_plan, delete_custom_stop,
+                    get_ride_cohort_stats, get_ride_cohort_breakdown)
 from auth import login_required, user_login_required
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
@@ -285,15 +286,17 @@ def _extract_rwgps_route_id(url):
 
 def _build_journey_nodes(stops):
     """Collapse stops at same distance into single nodes for the journey strip.
-    When a rest stop shares the same distance as the previous waypoint,
-    label becomes 'Rest activity @ Previous location' (e.g. 'Water refill @ Fire station')."""
+
+    Label always leads with the waypoint *location* (e.g. "Santa Rosa").
+    If there is a break activity (stop_name), it is appended after a dash
+    (e.g. "Santa Rosa — Refuel").  When a rest stop shares the same distance
+    as the previous waypoint the two are merged into a single node.
+    """
     nodes = []
     for idx, s in enumerate(stops):
         if nodes and nodes[-1]['distance_miles'] == (s.get('distance_miles') or 0):
             existing = nodes[-1]
             if s['stop_type'] in ('rest', 'control'):
-                # "Water refill @ Fire station" — rest location @ previous node's label
-                existing['label'] = "{} @ {}".format(s['location'][:18], existing['label'][:18])
                 if s['stop_type'] == 'control':
                     existing['node_type'] = 'control'
                 elif existing['node_type'] == 'waypoint':
@@ -314,13 +317,14 @@ def _build_journey_nodes(stops):
                 existing['stop_duration_min'] = s['stop_duration_min']
             if s.get('stop_name'):
                 existing['stop_name'] = s['stop_name']
+                # Re-build label: location first, break name after dash
+                existing['label'] = existing['location'][:22]
         else:
-            # Use stop_name if available, otherwise fallback to location
-            label = s.get('stop_name') or s['location'][:22]
-            if s['stop_type'] == 'rest' and not s.get('stop_name'):
-                label = "Rest @ {}".format(s['location'][:18])
+            # Location is always the primary label
+            label = s['location'][:22]
             nodes.append({
                 'label': label,
+                'location': s['location'],
                 'distance_miles': s.get('distance_miles') or 0,
                 'node_type': s['stop_type'],
                 'arrival_time_min': s.get('arrival_time_min'),
@@ -690,9 +694,54 @@ def rider_profile(rusa_id):
                 'badge': badge,
             }
 
-    # Strava ride analysis moved to /my/strava-analysis (private page)
+    # Load Strava brevet-match data for own profile view
+    METERS_PER_MILE = 1609.34
     for sd in season_data:
-        sd['strava_matches'] = {}
+        if is_own_profile and strava_connection:
+            try:
+                from services.strava_analysis import batch_match_rides
+                strava_matches = batch_match_rides(rider['id'], sd['participation'])
+            except Exception:
+                strava_matches = {}
+
+            ride_details = {}
+            for ride_id_val, match_info in strava_matches.items():
+                try:
+                    row = _execute("""
+                        SELECT distance, moving_time, elapsed_time, total_elevation_gain,
+                               average_speed, average_heartrate, has_heartrate, average_watts,
+                               device_watts, suffer_score, strava_url
+                        FROM strava_activity
+                        WHERE strava_activity_id = %s AND rider_id = %s
+                    """, (match_info['strava_activity_id'], rider['id'])).fetchone()
+                    if row:
+                        a = dict(row)
+                        mt_min = (a.get('moving_time') or 0) / 60
+                        et_min = (a.get('elapsed_time') or 0) / 60
+                        ride_details[ride_id_val] = {
+                            'distance_miles': round((a.get('distance') or 0) / METERS_PER_MILE, 1),
+                            'moving_time_hrs': int(mt_min // 60),
+                            'moving_time_min': int(mt_min % 60),
+                            'elapsed_time_hrs': int(et_min // 60),
+                            'elapsed_time_min': int(et_min % 60),
+                            'stopped_time_min': round(et_min - mt_min),
+                            'elevation_ft': round((a.get('total_elevation_gain') or 0) * 3.28084),
+                            'avg_speed_mph': round((a.get('average_speed') or 0) * 2.23694, 1),
+                            'strava_url': a.get('strava_url'),
+                            'has_heartrate': a.get('has_heartrate'),
+                            'average_heartrate': a.get('average_heartrate'),
+                            'device_watts': a.get('device_watts'),
+                            'average_watts': a.get('average_watts'),
+                            'suffer_score': a.get('suffer_score'),
+                        }
+                except Exception:
+                    pass
+
+            sd['strava_matches'] = strava_matches
+            sd['ride_details'] = ride_details
+        else:
+            sd['strava_matches'] = {}
+            sd['ride_details'] = {}
 
     # --- Upcoming rides with readiness ---
     upcoming_rides = []
@@ -952,6 +1001,83 @@ def retry_strava_analysis(rusa_id, ride_id):
         clear_strava_ride_analysis(match['id'])
 
     return redirect(url_for('riders.ride_strava_analysis', rusa_id=rusa_id, ride_id=ride_id))
+
+
+def _auto_match_cohort_riders(ride_id, ride):
+    """Match any finisher who has Strava synced but no strava_ride_match entry yet.
+
+    Queries strava_activity locally — no Strava API calls made.
+    """
+    from models import get_strava_activities_in_date_range, create_strava_ride_match
+    from services.strava_analysis import find_matching_activity
+    from datetime import date as date_type
+
+    unmatched = _execute("""
+        SELECT r.id AS rider_id
+        FROM rider_ride rr
+        JOIN rider r ON r.id = rr.rider_id
+        JOIN strava_connection sc ON sc.rider_id = r.id
+        LEFT JOIN strava_ride_match srm ON srm.rider_id = r.id AND srm.ride_id = rr.ride_id
+        WHERE rr.ride_id = %s
+          AND rr.status = 'FINISHED'
+          AND srm.id IS NULL
+    """, (ride_id,)).fetchall()
+
+    if not unmatched:
+        return
+
+    ride_date = ride.get('date')
+    ride_distance_km = ride.get('distance_km')
+    ride_name = ride.get('name', '')
+
+    for row in unmatched:
+        rid = row['rider_id']
+        try:
+            match = find_matching_activity(
+                rider_id=rid,
+                ride_date=ride_date,
+                ride_distance_km=ride_distance_km,
+                ride_name=ride_name,
+            )
+            if match:
+                create_strava_ride_match(rid, ride_id, match['strava_activity_id'])
+                current_app.logger.info(
+                    f'cohort auto-match: rider {rid} -> activity {match["strava_activity_id"]}'
+                )
+        except Exception as e:
+            current_app.logger.error(f'cohort auto-match error for rider {rid}: {e}', exc_info=True)
+
+
+@riders_bp.route('/ride/<int:ride_id>/cohort')
+@user_login_required
+def ride_cohort_comparison(ride_id):
+    """Cohort comparison — compare Strava stats across all finishers of a brevet."""
+    from services.strava_analysis import build_cohort_stats
+
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        abort(404)
+
+    _auto_match_cohort_riders(ride_id, ride)
+
+    riders = get_ride_cohort_stats(ride_id)
+    current_rider_id = session.get('rider_id')
+
+    cohort_stats = None
+    if len(riders) >= 2:
+        cohort_stats = build_cohort_stats([dict(r) for r in riders], current_rider_id,
+                                          ride_distance_km=ride.get('distance_km'))
+
+    breakdown = get_ride_cohort_breakdown(ride_id)
+
+    return render_template(
+        'ride_cohort_comparison.html',
+        ride=ride,
+        riders=[dict(r) for r in riders],
+        cohort_stats=cohort_stats,
+        current_rider_id=current_rider_id,
+        breakdown=breakdown,
+    )
 
 
 @riders_bp.route('/debug/match-check/<int:rider_id>/<int:ride_id>')
