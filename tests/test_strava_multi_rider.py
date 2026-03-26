@@ -201,7 +201,14 @@ class TestRideAllStravaAnalysisRoute:
             'error': None,
         }
         mock_build.return_value = {
-            'rows': [{'plan_name': 'Start', 'actual_name': 'Stop 1'}],
+            'rows': [{
+                'location': 'Start', 'distance_miles': 0.0, 'stop_type': 'start',
+                'is_extra': False, 'plan_stop_duration_min': None,
+                'actual_stop_duration_min': None, 'stop_delta_min': None,
+                'plan_cum_time_min': None, 'actual_cum_time_min': None,
+                'cum_time_delta_min': None, 'plan_time_of_day': None,
+                'actual_time_of_day': None,
+            }],
             'summary': {'total_stopped_min': 10},
         }
         with client.session_transaction() as sess:
