@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in-progress
-stopped_at: Completed 06-01-PLAN.md (Image preview service with SSRF defenses)
-last_updated: "2026-03-17T03:03:17.631Z"
-last_activity: 2026-03-17 — Executed 06-01-PLAN.md (Image preview service). 25 new tests, 144 total pass.
+stopped_at: Completed 10-01-PLAN.md (Multi-rider Strava analysis backend)
+last_updated: "2026-03-26T02:48:27Z"
+last_activity: 2026-03-25 — Executed 10-01-PLAN.md (Multi-rider Strava analysis). 11 new tests, 240 total pass.
 progress:
   total_phases: 6
   completed_phases: 1
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-14)
 
 **Core value:** Personalized, data-grounded cycling coaching and randonneuring information — answering "Am I ready for my next brevet?" with actual training data, not generic advice.
-**Current focus:** Phase 6 (Image Preview) in progress. Plan 01 complete (backend service + endpoint). Plan 02 (frontend cards) next.
+**Current focus:** Phase 10 (Multi-rider Strava Analysis) in progress. Plan 01 complete (backend model + route). Plan 02 (template) next.
 
 ## Current Position
 
-Phase: 6 of 6 (Image Preview)
+Phase: 10 of 10 (Multi-rider Strava Analysis)
 Plan: 1 of 2 in current phase (plan 01 complete)
-Status: Phase 6 Plan 01 complete. Image preview service and endpoint with SSRF defenses, 25 new tests.
-Last activity: 2026-03-17 — Executed 06-01-PLAN.md (Image preview service). 25 new tests, 144 total pass.
+Status: Phase 10 Plan 01 complete. Multi-rider Strava analysis model function and route, 11 new tests.
+Last activity: 2026-03-25 — Executed 10-01-PLAN.md (Multi-rider Strava analysis). 11 new tests, 240 total pass.
 
 Progress: [████░░░░░░] 44% (7/16 plans complete with summaries)
 Phase 1: Code complete — 3 plans executed (01-01 DB/CRUD, 01-02 SSE endpoint, 01-03 system prompt)
@@ -37,6 +37,7 @@ Phase 3: Code complete — 3 plans executed (03-01 intent, 03-02 tools, 03-03 ag
 Phase 4: Code complete — 2 plans executed (04-01 SDK+spans, 04-02 eval datasets+scorers)
 Phase 5: Code complete — 3 plans executed (05-01 parser/chunker/filter, 05-02 pgvector/import, 05-03 RAG integration)
 Phase 6: In progress — 1 of 2 plans executed (06-01 image preview service)
+Phase 10: In progress — 1 of 2 plans executed (10-01 multi-rider analysis backend)
 
 ## Performance Metrics
 
@@ -60,6 +61,7 @@ Phase 6: In progress — 1 of 2 plans executed (06-01 image preview service)
 | Phase 05 P02 | 4min | 2 tasks | 3 files |
 | Phase 05 P03 | 5min | 2 tasks | 3 files |
 | Phase 06 P01 | 4min | 2 tasks | 3 files |
+| Phase 10 P01 | 2min | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -83,6 +85,8 @@ Recent decisions affecting current work:
 - [Phase 05]: RAG retrieval before tool execution loop so both community knowledge and tool results available to final completion
 - [Phase 06]: Excluded amazon.com and rei.com from allowlist -- these sites block server-side OG fetches
 - [Phase 06]: No CSP header change needed (IMG-08) -- no CSP set in vercel.json or Flask, browser default permits HTTPS images
+- [Phase 10]: Cached-only analysis policy -- multi-rider route never triggers live Strava API calls to avoid rate limits
+- [Phase 10]: Privacy filtering in route logic, not SQL -- private riders included in query but marked as error='private'
 
 ### Pending Todos
 
@@ -92,6 +96,7 @@ None yet.
 
 - Phase 5 added: WhatsApp knowledge base — import group chat exports, parse and filter cycling content, store in vector DB, integrate RAG into chatbot
 - Phase 6 added: Show product images and bike accessory photos in chatbot responses when available instead of just links
+- Phase 10 added: Multi-rider Strava ride analysis — show all riders per ride, move plan toggle to admin
 - Phase 7 added: RWGPS route intelligence — access route data via API for elevation, distance, control points, key segments
 - Phase 8 added: Weather and wind forecasting for routes — RandoPlan-style headwind/tailwind/conditions analysis
 - Phase 9 added: WhatsApp community knowledge prioritization — attribute to group, compare/contrast with web results
@@ -104,9 +109,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T03:03:17.626Z
-Stopped at: Completed 06-01-PLAN.md
-- Phase 5 Plan 03 complete: RAG retrieval integration with 10 new tests, 100 total pass
-- Phase 5 all plans complete: parser/chunker/filter, pgvector schema/import, RAG integration
-- All 5 phases: code complete on `feature/web-search-bike-specs`
-- PR #115: https://github.com/msambhus/team-asha-randonneuring/pull/115
+Last session: 2026-03-26T02:48:27Z
+Stopped at: Completed 10-01-PLAN.md
+- Phase 10 Plan 01 complete: multi-rider Strava analysis model function and route
+- 11 new tests, 240 total pass (6 skipped)
+- Branch: feature/multi-rider-strava-analysis

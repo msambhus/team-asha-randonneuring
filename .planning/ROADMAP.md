@@ -126,7 +126,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -139,6 +139,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. RWGPS Route Intelligence | 0/2 | Planned | — |
 | 8. Weather/Wind Forecasting | 0/2 | Planned | — |
 | 9. WhatsApp Knowledge Priority | 0/1 | Planned | — |
+| 10. Multi-Rider Strava Analysis | 1/2 | In progress | — |
 
 ### Phase 7: RWGPS Route Intelligence
 **Goal:** When the user asks about a route, the chatbot resolves the ride name to a RWGPS route ID, checks for a cached ride plan first, and if none exists, fetches live route data from the RWGPS API -- providing elevation profile, distance, control points, and key segments grounded in real route data, not generic advice
@@ -183,3 +184,21 @@ Plans:
 
 Plans:
 - [ ] 09-01-PLAN.md — Strengthen RAG injection instruction, add web-with-community instruction variant, update CHAT_SYSTEM_PROMPT with community-first priority, bump max_tokens for web_search
+
+### Phase 10: Multi-rider Strava ride analysis — show all riders per ride, move plan toggle to admin
+
+**Goal:** The Strava ride analysis page expands from single-rider to multi-rider -- a new page at `/ride/<ride_id>/all-strava` shows every FINISHED rider's cached analysis for a ride event with summary table and per-rider accordion, honoring privacy flags and using only cached data (no live Strava API calls). The base/custom plan toggle in ride_plan_detail.html becomes admin-only.
+**Requirements**: MULTI-01, MULTI-02, MULTI-03, MULTI-04
+**Depends on:** Phase 9
+**Success Criteria** (what must be TRUE):
+  1. GET `/ride/<ride_id>/all-strava` returns a page showing all FINISHED riders for that ride with their Strava analysis summaries
+  2. Riders with `strava_data_private = True` are shown as "Analysis Private" -- no Strava data exposed
+  3. Riders without cached `strava_ride_analysis` are shown as "Not Yet Analyzed" with a link to their individual page -- no live Strava API calls triggered
+  4. Riders with cached analysis display comparison data (plan vs actual stops, summary metrics)
+  5. The "Base Plan" toggle in `ride_plan_detail.html` is only visible to admin users; "View My Custom Plan" remains visible to all users with a custom plan
+  6. The ride detail page links to the multi-rider analysis view
+**Plans:** 2 plans
+
+Plans:
+- [x] 10-01-PLAN.md — Backend model function (get_finished_riders_for_ride), route handler (/ride/<ride_id>/all-strava), and tests
+- [ ] 10-02-PLAN.md — Multi-rider template (summary table + per-rider accordion), admin-gate plan toggle, navigation links, human-verify checkpoint
