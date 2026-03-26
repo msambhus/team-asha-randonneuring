@@ -728,6 +728,90 @@ def rider_profile(rusa_id):
                            show_strava_data=show_strava_data)
 
 
+@riders_bp.route('/ride/<int:ride_id>/all-strava')
+def ride_all_strava_analysis(ride_id):
+    """Multi-rider Strava analysis for a completed ride.
+
+    Shows all FINISHED riders' cached analysis for a single ride event.
+    Privacy enforcement: riders with strava_data_private=True shown as 'private'.
+    No live Strava API calls: only riders with existing cached analysis get comparison data.
+    """
+    from models import (get_ride_by_id_full, get_finished_riders_for_ride,
+                        get_ride_plan_stops)
+    from services.strava_analysis import build_comparison, fetch_and_analyze
+
+    if not session.get('user_id'):
+        return redirect(url_for('auth.login'))
+
+    ride = get_ride_by_id_full(ride_id)
+    if not ride:
+        abort(404)
+
+    plan_stops = []
+    has_plan = bool(ride.get('ride_plan_id'))
+    if has_plan:
+        plan_stops = list(get_ride_plan_stops(ride['ride_plan_id']))
+
+    riders_raw = get_finished_riders_for_ride(ride_id)
+
+    rider_analyses = []
+    for r in riders_raw:
+        entry = {
+            'rider': dict(r),
+            'activity': None,
+            'comparison': None,
+            'error': None,
+            'has_plan': has_plan,
+            'is_private': r.get('strava_data_private', False),
+            'has_match': r.get('match_id') is not None,
+            'has_analysis': r.get('has_analysis', False),
+        }
+
+        if r.get('strava_data_private'):
+            entry['error'] = 'private'
+            rider_analyses.append(entry)
+            continue
+
+        if not r.get('match_id'):
+            rider_analyses.append(entry)
+            continue
+
+        # Only process riders with existing cached analysis -- no live API calls
+        if not r.get('has_analysis'):
+            rider_analyses.append(entry)
+            continue
+
+        analysis = fetch_and_analyze(
+            rider_id=r['rider_id'],
+            match_id=r['match_id'],
+            strava_activity_id=r['strava_activity_id'],
+            plan_stops=plan_stops if plan_stops else None,
+        )
+
+        if analysis.get('error'):
+            entry['error'] = analysis['error']
+        else:
+            plan_start_time = ride.get('start_time') or ride.get('plan_start_time')
+            actual_start = r.get('start_date_local')
+            entry['comparison'] = build_comparison(
+                plan_stops=plan_stops,
+                detected_stops=analysis['detected_stops'],
+                activity=dict(r),
+                plan_start_time=plan_start_time,
+                actual_start_time=actual_start,
+            )
+            entry['activity'] = dict(r)
+
+        rider_analyses.append(entry)
+
+    return render_template('ride_all_strava_analysis.html',
+                           ride=ride,
+                           rider_analyses=rider_analyses,
+                           has_plan=has_plan,
+                           plan_slug=ride.get('plan_slug'),
+                           is_admin=is_admin_user())
+
+
 @riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/strava-analysis')
 def ride_strava_analysis(rusa_id, ride_id):
     """Show Strava performance analysis for a specific ride."""

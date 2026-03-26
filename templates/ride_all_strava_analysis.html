@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}All Riders Strava Analysis - {{ ride.name|clean_name }}{% endblock %}
+{% block content %}
+<div class="container mx-auto px-4 py-6">
+  <h1 class="text-2xl font-bold mb-4">Strava Analysis: {{ ride.name|clean_name }}</h1>
+  <p class="text-gray-600 mb-6">All finished riders' analysis for this ride.</p>
+  {# Full template created in Plan 02 #}
+  {% for entry in rider_analyses %}
+  <div class="mb-4 p-4 border rounded">
+    <h2 class="font-semibold">{{ entry.rider.first_name }} {{ entry.rider.last_name }}</h2>
+    {% if entry.error == 'private' %}
+      <p class="text-gray-500 italic">Analysis private</p>
+    {% elif not entry.has_match %}
+      <p class="text-gray-500 italic">No Strava match</p>
+    {% elif not entry.has_analysis %}
+      <p class="text-gray-500 italic">Not yet analyzed</p>
+    {% elif entry.comparison %}
+      <p class="text-green-600">Analysis available</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
