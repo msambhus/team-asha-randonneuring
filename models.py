@@ -2489,20 +2489,34 @@ def get_strava_ride_analysis(match_id):
     """, (match_id,)).fetchone()
 
 
-def upsert_strava_ride_analysis(match_id, detected_stops, stream_summary, error=None):
-    """Insert or update analysis results."""
+def upsert_strava_ride_analysis(match_id, detected_stops, stream_summary,
+                                error=None, compressed_streams=None):
+    """Insert or update analysis results.
+
+    compressed_streams: optional zlib-compressed bytes of the full Strava
+    streams dict.  When provided, stored as BYTEA; when None the existing
+    cached streams are preserved (COALESCE).
+    """
     conn = get_db()
     cur = conn.cursor()
     import json
+    streams_param = psycopg2.Binary(compressed_streams) if compressed_streams else None
     cur.execute("""
-        INSERT INTO strava_ride_analysis (match_id, detected_stops, stream_summary, strava_api_error)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO strava_ride_analysis
+            (match_id, detected_stops, stream_summary, strava_api_error,
+             activity_streams, streams_fetched_at)
+        VALUES (%s, %s, %s, %s, %s, CASE WHEN %s IS NOT NULL THEN CURRENT_TIMESTAMP END)
         ON CONFLICT (match_id) DO UPDATE SET
             detected_stops = EXCLUDED.detected_stops,
             stream_summary = EXCLUDED.stream_summary,
             strava_api_error = EXCLUDED.strava_api_error,
-            analyzed_at = CURRENT_TIMESTAMP
-    """, (match_id, json.dumps(detected_stops), json.dumps(stream_summary), error))
+            analyzed_at = CURRENT_TIMESTAMP,
+            activity_streams = COALESCE(EXCLUDED.activity_streams,
+                                        strava_ride_analysis.activity_streams),
+            streams_fetched_at = COALESCE(EXCLUDED.streams_fetched_at,
+                                          strava_ride_analysis.streams_fetched_at)
+    """, (match_id, json.dumps(detected_stops), json.dumps(stream_summary),
+          error, streams_param, streams_param))
     conn.commit()
 
 
