@@ -1,0 +1,436 @@
+{% extends "base.html" %}
+{% block title %}All Riders - Strava Analysis - {{ ride.name|clean_name }}{% endblock %}
+
+{% block extra_head %}
+<style>
+/* Strava orange gradient header */
+.strava-hero {
+    background: linear-gradient(135deg, #fc4c02, #e64500);
+    color: white;
+    padding: 40px 20px 50px;
+    text-align: center;
+}
+.strava-hero h1 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.strava-hero .ride-meta {
+    opacity: 0.85;
+    font-size: 0.95rem;
+}
+
+/* Summary table */
+.riders-summary-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.85rem;
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.riders-summary-table thead th {
+    background: #1e293b;
+    color: white;
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding: 10px 8px;
+    white-space: nowrap;
+}
+.riders-summary-table thead th:first-child { border-radius: 8px 0 0 0; }
+.riders-summary-table thead th:last-child { border-radius: 0 8px 0 0; }
+.riders-summary-table tbody td {
+    padding: 10px 8px;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: middle;
+}
+.riders-summary-table tbody tr:hover { background: #f8fafc; }
+.riders-summary-table tbody tr:last-child td { border-bottom: none; }
+
+/* Status badges */
+.status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.badge-private { background: #fef3c7; color: #92400e; }
+.badge-no-match { background: #f1f5f9; color: #64748b; }
+.badge-not-analyzed { background: #dbeafe; color: #1e40af; }
+.badge-analyzed { background: #dcfce7; color: #166534; }
+
+/* Per-rider accordion */
+.rider-accordion {
+    margin-top: 24px;
+}
+.rider-accordion details {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    margin-bottom: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.rider-accordion details[open] {
+    border-color: #fc4c02;
+}
+.rider-accordion summary {
+    padding: 14px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 600;
+    color: var(--text);
+    list-style: none;
+}
+.rider-accordion summary::-webkit-details-marker { display: none; }
+.rider-accordion summary::before {
+    content: '\25B6';
+    font-size: 0.65rem;
+    color: #94a3b8;
+    transition: transform 0.2s;
+}
+.rider-accordion details[open] summary::before {
+    transform: rotate(90deg);
+}
+.rider-accordion .rider-detail-content {
+    padding: 0 16px 16px;
+    border-top: 1px solid #e2e8f0;
+}
+.rider-metrics-badges {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.metric-badge {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #64748b;
+    background: #f1f5f9;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+/* Comparison table (reused from single-rider) */
+.analysis-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.8rem;
+}
+.analysis-table thead th {
+    background: #1e293b;
+    color: white;
+    font-weight: 600;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding: 10px 6px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    white-space: nowrap;
+}
+.analysis-table thead th:first-child { border-radius: 8px 0 0 0; }
+.analysis-table thead th:last-child { border-radius: 0 8px 0 0; }
+.analysis-table tbody td {
+    padding: 8px 6px;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: middle;
+    font-variant-numeric: tabular-nums;
+}
+.analysis-table tbody tr:hover { background: #f8fafc; }
+
+.stop-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.stop-icon {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    flex-shrink: 0;
+}
+.stop-icon.start { background: #dcfce7; color: #166534; }
+.stop-icon.finish { background: #fee2e2; color: #991b1b; }
+.stop-icon.control { background: #dbeafe; color: #1e40af; }
+.stop-icon.rest { background: #fef3c7; color: #92400e; }
+.stop-icon.waypoint { background: #f1f5f9; color: #64748b; }
+.stop-icon.extra { background: #fef3c7; color: #92400e; border: 2px dashed #f59e0b; }
+
+.extra-badge {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: #f59e0b;
+    color: white;
+    margin-left: 4px;
+}
+.extra-row { background: #fffbeb; }
+.extra-row:hover { background: #fef3c7 !important; }
+
+.delta-faster { color: #16a34a; }
+.delta-slower { color: #dc2626; }
+.delta-neutral { color: #64748b; }
+
+/* Private/info messages */
+.rider-message {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-light);
+    font-style: italic;
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    background: white;
+    border-radius: 12px;
+    border: 2px dashed #e2e8f0;
+}
+.empty-state h3 { color: var(--text-light); margin-bottom: 10px; }
+.empty-state p { color: var(--text-light); font-size: 0.9rem; }
+
+/* Responsive */
+@media (max-width: 640px) {
+    .riders-summary-table { font-size: 0.75rem; }
+    .riders-summary-table thead th, .riders-summary-table tbody td { padding: 6px 4px; }
+    .analysis-table { font-size: 0.7rem; }
+    .analysis-table thead th, .analysis-table tbody td { padding: 6px 3px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="strava-hero">
+    <h1>All Riders - Strava Analysis</h1>
+    <p class="ride-meta">
+        {{ ride.name|clean_name }} &mdash; {{ ride.date }}
+        {% if ride.distance_km %} &mdash; {{ ride.distance_km }} km{% endif %}
+    </p>
+    <div style="margin-top:12px;">
+        {% if has_plan and plan_slug %}
+        <a href="{{ url_for('riders.ride_plan_detail', slug=plan_slug) }}"
+           style="display:inline-flex; align-items:center; gap:4px; padding:8px 16px; background:rgba(255,255,255,0.2); color:white; border-radius:8px; text-decoration:none; font-size:0.85rem;">
+            &larr; Back to Ride Plan
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="container section">
+
+{% if not rider_analyses %}
+{# ===== EMPTY STATE ===== #}
+<div class="empty-state">
+    <h3>No Riders Yet</h3>
+    <p>No riders have finished this ride yet.</p>
+</div>
+
+{% else %}
+{# ===== SUMMARY TABLE ===== #}
+<div style="overflow-x:auto; margin-bottom:30px;">
+<table class="riders-summary-table">
+<thead>
+<tr>
+    <th style="text-align:left;">Rider</th>
+    <th style="text-align:right;">Distance (mi)</th>
+    <th style="text-align:right;">Elapsed Time</th>
+    <th style="text-align:right;">Avg Speed (mph)</th>
+    <th style="text-align:center;">Status</th>
+</tr>
+</thead>
+<tbody>
+{% for entry in rider_analyses %}
+<tr>
+    <td style="font-weight:600;">{{ entry.rider.first_name }} {{ entry.rider.last_name }}</td>
+    {% if entry.is_private %}
+    <td style="text-align:right;" colspan="3">&mdash;</td>
+    <td style="text-align:center;"><span class="status-badge badge-private">Private</span></td>
+    {% elif not entry.has_match %}
+    <td style="text-align:right;" colspan="3">&mdash;</td>
+    <td style="text-align:center;"><span class="status-badge badge-no-match">No Strava Match</span></td>
+    {% elif not entry.has_analysis %}
+    <td style="text-align:right;" colspan="3">&mdash;</td>
+    <td style="text-align:center;">
+        <a href="{{ url_for('riders.ride_strava_analysis', rusa_id=entry.rider.rusa_id, ride_id=ride.id) }}"
+           class="status-badge badge-not-analyzed" style="text-decoration:none;">
+            Not Yet Analyzed
+        </a>
+    </td>
+    {% elif entry.activity %}
+    <td style="text-align:right; font-variant-numeric:tabular-nums;">
+        {% if entry.activity.distance %}{{ "%.1f"|format(entry.activity.distance / 1609.34) }}{% else %}&mdash;{% endif %}
+    </td>
+    <td style="text-align:right; font-variant-numeric:tabular-nums;">
+        {% if entry.activity.elapsed_time %}
+        {{ (entry.activity.elapsed_time // 3600) }}h{{ "%02d"|format((entry.activity.elapsed_time % 3600) // 60) }}m
+        {% else %}&mdash;{% endif %}
+    </td>
+    <td style="text-align:right; font-variant-numeric:tabular-nums;">
+        {% if entry.activity.average_speed %}{{ "%.1f"|format(entry.activity.average_speed * 2.23694) }}{% else %}&mdash;{% endif %}
+    </td>
+    <td style="text-align:center;"><span class="status-badge badge-analyzed">Analyzed</span></td>
+    {% else %}
+    <td style="text-align:right;" colspan="3">&mdash;</td>
+    <td style="text-align:center;"><span class="status-badge badge-analyzed">Analyzed</span></td>
+    {% endif %}
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+
+{# ===== PER-RIDER ACCORDION ===== #}
+<div class="rider-accordion">
+{% for entry in rider_analyses %}
+<details>
+    <summary>
+        <span>{{ entry.rider.first_name }} {{ entry.rider.last_name }}</span>
+        {% if entry.activity and not entry.is_private %}
+        <span class="rider-metrics-badges">
+            {% if entry.activity.distance %}
+            <span class="metric-badge">{{ "%.1f"|format(entry.activity.distance / 1609.34) }} mi</span>
+            {% endif %}
+            {% if entry.activity.elapsed_time %}
+            <span class="metric-badge">{{ (entry.activity.elapsed_time // 3600) }}h{{ "%02d"|format((entry.activity.elapsed_time % 3600) // 60) }}m</span>
+            {% endif %}
+        </span>
+        {% endif %}
+    </summary>
+    <div class="rider-detail-content">
+        {% if entry.is_private %}
+        <div class="rider-message">
+            This rider's Strava analysis is private.
+        </div>
+
+        {% elif not entry.has_match %}
+        <div class="rider-message">
+            No Strava activity matched for this ride.
+        </div>
+
+        {% elif not entry.has_analysis %}
+        <div class="rider-message">
+            Analysis not yet run.
+            <a href="{{ url_for('riders.ride_strava_analysis', rusa_id=entry.rider.rusa_id, ride_id=ride.id) }}"
+               style="color:#fc4c02; text-decoration:underline; font-style:normal;">
+                View Individual Analysis
+            </a>
+        </div>
+
+        {% elif entry.comparison and entry.comparison.rows %}
+        {# --- Stop Comparison Table --- #}
+        <div style="overflow-x:auto; margin-top:12px;">
+        <table class="analysis-table">
+        <thead>
+        <tr>
+            <th style="text-align:left;">Stop</th>
+            <th style="text-align:right;">Dist</th>
+            <th style="text-align:right;">Plan Stop</th>
+            <th style="text-align:right;">Actual Stop</th>
+            <th style="text-align:right;">&Delta;</th>
+            <th style="text-align:right;">Plan Cumul</th>
+            <th style="text-align:right;">Actual Cumul</th>
+            <th style="text-align:right;">&Delta; Cumul</th>
+            <th style="text-align:right;">Plan TOD</th>
+            <th style="text-align:right;">Actual TOD</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for row in entry.comparison.rows %}
+        <tr class="{% if row.is_extra %}extra-row{% endif %}">
+            <td>
+                <div class="stop-cell">
+                    <div class="stop-icon {{ row.stop_type }}">
+                        {% if row.stop_type == 'start' %}&#x1f6a9;{% elif row.stop_type == 'finish' %}&#x1f3c1;{% elif row.stop_type == 'control' %}&#x25c6;{% elif row.stop_type == 'rest' %}&#x2615;{% elif row.stop_type == 'extra' %}&#x26a0;{% else %}&#x2022;{% endif %}
+                    </div>
+                    <span style="font-weight:{% if row.is_extra %}600{% else %}500{% endif %};">{{ row.location }}</span>
+                    {% if row.is_extra %}
+                    <span class="extra-badge">Unplanned</span>
+                    {% endif %}
+                </div>
+            </td>
+            <td style="text-align:right;font-weight:600;color:#64748b;">{{ "%.1f"|format(row.distance_miles) }}</td>
+            <td style="text-align:right;">
+                {% if row.plan_stop_duration_min %}<span style="font-weight:600;">{{ row.plan_stop_duration_min }}m</span>{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+            </td>
+            <td style="text-align:right;">
+                {% if row.actual_stop_duration_min is not none %}<span style="font-weight:700;color:#c2410c;">{{ row.actual_stop_duration_min }}m</span>{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+            </td>
+            <td style="text-align:right;font-weight:700;">
+                {% if row.stop_delta_min is not none %}
+                    {% if row.stop_delta_min > 0 %}<span class="delta-slower">+{{ row.stop_delta_min|round(0)|int }}</span>
+                    {% elif row.stop_delta_min < 0 %}<span class="delta-faster">{{ row.stop_delta_min|round(0)|int }}</span>
+                    {% else %}<span class="delta-neutral">0</span>{% endif %}
+                {% elif row.is_extra and row.actual_stop_duration_min %}<span class="delta-slower">+{{ row.actual_stop_duration_min|round(0)|int }}</span>
+                {% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+            </td>
+            <td style="text-align:right;">
+                {% if row.plan_cum_time_min %}{{ (row.plan_cum_time_min // 60)|int }}:{{ "%02d"|format(row.plan_cum_time_min % 60) }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+            </td>
+            <td style="text-align:right;">
+                {% if row.actual_cum_time_min is not none %}<span style="font-weight:600;color:#c2410c;">{{ (row.actual_cum_time_min // 60)|int }}:{{ "%02d"|format(row.actual_cum_time_min % 60) }}</span>{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+            </td>
+            <td style="text-align:right;font-weight:700;">
+                {% if row.cum_time_delta_min is not none %}
+                    {% if row.cum_time_delta_min > 0 %}<span class="delta-slower">+{{ row.cum_time_delta_min|round(0)|int }}</span>
+                    {% elif row.cum_time_delta_min < 0 %}<span class="delta-faster">{{ row.cum_time_delta_min|round(0)|int }}</span>
+                    {% else %}<span class="delta-neutral">0</span>{% endif %}
+                {% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+            </td>
+            <td style="text-align:right;color:#64748b;">
+                {% if row.plan_time_of_day %}{{ row.plan_time_of_day }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+            </td>
+            <td style="text-align:right;font-weight:600;color:#c2410c;">
+                {% if row.actual_time_of_day %}{{ row.actual_time_of_day }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+        </table>
+        </div>
+
+        {% elif entry.comparison and entry.comparison.summary %}
+        {# Has comparison data but no rows (summary only) #}
+        <div class="rider-message" style="font-style:normal;">
+            Analysis available &mdash; no plan stops to compare against.
+        </div>
+
+        {% else %}
+        <div class="rider-message">
+            Analysis data not available.
+        </div>
+        {% endif %}
+    </div>
+</details>
+{% endfor %}
+</div>
+
+{% endif %}
+
+{# --- Back Link --- #}
+<div style="text-align:center; margin-top:30px;">
+    {% if has_plan and plan_slug %}
+    <a href="{{ url_for('riders.ride_plan_detail', slug=plan_slug) }}" class="back-link">&larr; Back to Ride Plan</a>
+    {% endif %}
+</div>
+
+</div>
+{% endblock %}

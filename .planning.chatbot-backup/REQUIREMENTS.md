@@ -136,6 +136,13 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **WA-PRI-07**: Source cards SSE event still emitted after web search responses (no regression from existing behavior)
 - [ ] **WA-PRI-08**: All existing tests pass after prompt/instruction changes (regression safety)
 
+### Multi-Rider Strava Analysis
+
+- [x] **MULTI-01**: Multi-rider Strava analysis page at `/ride/<ride_id>/all-strava` shows all FINISHED riders for a ride with summary table and per-rider accordion sections
+- [x] **MULTI-02**: Riders with `strava_data_private = True` shown as "Analysis Private" in multi-rider view -- no Strava data exposed
+- [x] **MULTI-03**: Multi-rider view only displays riders with existing cached `strava_ride_analysis` data -- no live Strava API calls triggered for other riders
+- [ ] **MULTI-04**: Base/custom plan toggle in `ride_plan_detail.html` restricted to admin-only visibility -- non-admin users retain "View My Custom Plan" access
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -267,12 +274,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WA-PRI-06 | Phase 9 | Planned |
 | WA-PRI-07 | Phase 9 | Planned |
 | WA-PRI-08 | Phase 9 | Planned |
+| MULTI-01 | Phase 10 | Complete |
+| MULTI-02 | Phase 10 | Complete |
+| MULTI-03 | Phase 10 | Complete |
+| MULTI-04 | Phase 10 | Planned |
 
 **Coverage:**
-- v1 requirements: 87 total (62 complete + 25 planned)
-- Mapped to phases: 87
+- v1 requirements: 91 total (62 complete + 29 planned)
+- Mapped to phases: 91
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-14*
-*Last updated: 2026-03-17 -- Phases 7-9 requirements added (RWGPS-01-07, WTHR-01-10, WA-PRI-01-08).*
+*Last updated: 2026-03-25 -- Phase 10 requirements added (MULTI-01-04).*

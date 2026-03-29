@@ -2552,6 +2552,51 @@ def get_ride_by_id_full(ride_id):
     """, (ride_id,)).fetchone()
 
 
+def get_finished_riders_for_ride(ride_id):
+    """Get all FINISHED riders for a ride with their strava match and analysis status.
+
+    Returns list of dicts with rider info, match details, activity summary,
+    and a boolean has_analysis flag indicating cached analysis availability.
+    Privacy-sensitive riders included (caller handles filtering).
+    """
+    return _execute("""
+        SELECT
+            r.id as rider_id,
+            r.first_name,
+            r.last_name,
+            r.rusa_id,
+            COALESCE(r.strava_data_private, FALSE) as strava_data_private,
+            srm.id as match_id,
+            srm.strava_activity_id,
+            sa.strava_url,
+            sa.start_date_local,
+            sa.distance,
+            sa.moving_time,
+            sa.elapsed_time,
+            sa.total_elevation_gain,
+            sa.average_speed,
+            sa.average_heartrate,
+            sa.max_heartrate,
+            sa.has_heartrate,
+            sa.average_watts,
+            sa.max_watts,
+            sa.weighted_average_watts,
+            sa.kilojoules,
+            sa.device_watts,
+            sa.suffer_score,
+            CASE WHEN sra.id IS NOT NULL THEN TRUE ELSE FALSE END as has_analysis,
+            sra.strava_api_error
+        FROM rider_ride rr
+        JOIN rider r ON r.id = rr.rider_id
+        LEFT JOIN strava_ride_match srm ON srm.rider_id = r.id AND srm.ride_id = rr.ride_id
+        LEFT JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
+        LEFT JOIN strava_ride_analysis sra ON sra.match_id = srm.id
+        WHERE rr.ride_id = %s
+          AND rr.status = %s
+        ORDER BY r.first_name, r.last_name
+    """, (ride_id, RideStatus.FINISHED.value)).fetchall()
+
+
 # ========== COHORT ANALYSIS ==========
 
 def get_ride_cohort_stats(ride_id):
@@ -2620,6 +2665,7 @@ def get_ride_cohort_breakdown(ride_id):
           AND rr.status = %s
     """, (ride_id, RideStatus.FINISHED.value)).fetchone()
     return dict(row) if row else {'total_finished': 0, 'strava_linked': 0, 'private': 0, 'compared': 0}
+
 
 
 # ========== CHAT ==========

@@ -1061,6 +1061,13 @@
         <span>🗺️</span>
         <span>Journey</span>
     </a>
+    {% if session.user_id and upcoming_event %}
+    <a href="{{ url_for('riders.ride_all_strava_analysis', ride_id=upcoming_event.id) }}" class="quick-action-btn"
+       style="background:linear-gradient(135deg,#fff5f0,#fed7aa);border-color:#fc4c02;color:#9a3412;">
+        <span>📊</span>
+        <span>All Riders' Strava Analysis</span>
+    </a>
+    {% endif %}
 </div>
 
 {# ===== CUSTOM PLAN BANNER ===== #}
@@ -1081,10 +1088,12 @@
            class="btn-custom-plan {% if is_custom_view %}active{% endif %}">
             📋 View My Custom Plan
         </a>
-        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='base') }}" 
+        {% if is_admin %}
+        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='base') }}"
            class="btn-custom-plan {% if not is_custom_view %}active{% endif %}" style="background:#6366f1;">
             📄 Base Plan
         </a>
+        {% endif %}
         <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}" 
            class="btn-custom-plan" style="background:#f59e0b;">
             📊 Compare Plans
