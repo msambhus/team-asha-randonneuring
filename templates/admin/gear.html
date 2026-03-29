@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Gear Preferences - Admin{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Gear Preferences</h1>
+<p>{{ riders|length }} riders</p>
+</div>
+<div class="container section">
+
+<div style="margin-bottom:20px;">
+<a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Dashboard</a>
+</div>
+
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Rider</th>
+<th>Bikes</th>
+<th>Value Orientation</th>
+</tr>
+</thead>
+<tbody>
+{% for r in riders %}
+{% set bikes = all_bikes.get(r.id, []) %}
+{% set g = gear_map.get(r.id) %}
+<tr>
+<td>
+<a href="{{ url_for('admin.gear_edit', rider_id=r.id) }}" style="color:var(--primary);text-decoration:none;font-weight:600;">
+{{ r.first_name }} {{ r.last_name }}
+</a>
+</td>
+<td>
+{% if bikes %}
+{% for b in bikes %}
+<a href="{{ url_for('admin.gear_edit', rider_id=r.id, bike=b.label) }}"
+   style="display:inline-block;margin:2px 4px 2px 0;padding:3px 10px;border-radius:4px;font-size:0.85rem;text-decoration:none;
+   {% if b.bike_make or b.bike_model %}background:#e6fffa;color:#234e52;border:1px solid #b2f5ea;{% else %}background:#f7fafc;color:var(--text-light);border:1px solid #e2e8f0;{% endif %}">
+<strong>{{ b.label }}</strong>{% if b.bike_make %}: {{ b.bike_make }}{% endif %}{% if b.bike_model %} {{ b.bike_model }}{% endif %}{% if b.bike_material %} <span style="font-size:0.75rem;opacity:0.7;">({{ b.bike_material }})</span>{% endif %}
+</a>
+{% endfor %}
+{% else %}
+<span style="color:var(--text-light);font-size:0.85rem;">No bikes</span>
+{% endif %}
+</td>
+<td>{{ g.value_orientation if g and g.value_orientation else '—' }}</td>
+</tr>
+{% endfor %}
+{% if not riders %}
+<tr><td colspan="3" style="text-align:center;color:var(--text-light);padding:20px;">No riders found.</td></tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+
+</div>
+{% endblock %}

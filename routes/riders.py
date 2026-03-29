@@ -1,4 +1,5 @@
 """Rider routes: season view, individual profiles, profile edit, upcoming brevets, ride plans."""
+import math
 from flask import Blueprint, render_template, abort, request, redirect, url_for, session, jsonify, current_app
 
 def is_admin_user():
@@ -26,7 +27,7 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_all_rider_season_stats, detect_sr_for_all_riders_in_season,
                     get_upcoming_rusa_events, update_rider_profile, update_strava_privacy,
                     get_pbp_finishers,
-                    get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops,
+                    get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops, update_ride_plan_info,
                     get_signup_count, get_rider_signup_status, get_ride_by_id, update_ride_details,
                     get_user_by_id, _execute,
                     get_strava_connection, get_strava_activities,
@@ -36,14 +37,17 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_custom_plan_stops_raw, update_custom_plan_stop,
                     add_custom_stop, hide_base_stop, unhide_base_stop,
                     update_custom_plan_settings, delete_custom_plan,
-                    get_public_custom_plans, clone_custom_plan, delete_custom_stop)
+                    get_public_custom_plans, clone_custom_plan, delete_custom_stop,
+                    get_ride_cohort_stats, get_ride_cohort_breakdown)
 from auth import login_required, user_login_required
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
 from services.openai_coach import generate_openai_advice
-from services.custom_plan_service import (get_merged_plan_stops, 
+from services.custom_plan_service import (get_merged_plan_stops,
                                           recalculate_cumulative_values,
                                           apply_pace_adjustment, compare_plans)
+from services.weather import fetch_stop_wind, detect_heavy_wind
+from services.rwgps import fetch_route
 from cache import cache, CACHE_TIMEOUT
 from datetime import date, datetime, timedelta
 import re
@@ -146,7 +150,7 @@ def season_riders(season_name):
                                pbp_finishers=pbp_finishers)
     except Exception as e:
         # Return mock data for testing without database
-        print(f"Database not available for riders page, using mock data: {e}")
+        current_app.logger.warning("Database not available for riders page, using mock data: %s", e)
         mock_stats = {
             'active_riders': 25,
             'total_rides': 48,
@@ -282,15 +286,17 @@ def _extract_rwgps_route_id(url):
 
 def _build_journey_nodes(stops):
     """Collapse stops at same distance into single nodes for the journey strip.
-    When a rest stop shares the same distance as the previous waypoint,
-    label becomes 'Rest activity @ Previous location' (e.g. 'Water refill @ Fire station')."""
+
+    Label always leads with the waypoint *location* (e.g. "Santa Rosa").
+    If there is a break activity (stop_name), it is appended after a dash
+    (e.g. "Santa Rosa — Refuel").  When a rest stop shares the same distance
+    as the previous waypoint the two are merged into a single node.
+    """
     nodes = []
-    for s in stops:
+    for idx, s in enumerate(stops):
         if nodes and nodes[-1]['distance_miles'] == (s.get('distance_miles') or 0):
             existing = nodes[-1]
             if s['stop_type'] in ('rest', 'control'):
-                # "Water refill @ Fire station" — rest location @ previous node's label
-                existing['label'] = "{} @ {}".format(s['location'][:18], existing['label'][:18])
                 if s['stop_type'] == 'control':
                     existing['node_type'] = 'control'
                 elif existing['node_type'] == 'waypoint':
@@ -306,13 +312,19 @@ def _build_journey_nodes(stops):
             # Keep arrival time (should be the same for co-located stops)
             if s.get('arrival_time_min') is not None:
                 existing['arrival_time_min'] = s['arrival_time_min']
+            # Merge break info: carry stop_duration_min and stop_name from rest stops
+            if s.get('stop_duration_min') and s['stop_duration_min'] > 0:
+                existing['stop_duration_min'] = s['stop_duration_min']
+            if s.get('stop_name'):
+                existing['stop_name'] = s['stop_name']
+                # Re-build label: location first, break name after dash
+                existing['label'] = existing['location'][:22]
         else:
-            # Use stop_name if available, otherwise fallback to location
-            label = s.get('stop_name') or s['location'][:22]
-            if s['stop_type'] == 'rest' and not s.get('stop_name'):
-                label = "Rest @ {}".format(s['location'][:18])
+            # Location is always the primary label
+            label = s['location'][:22]
             nodes.append({
                 'label': label,
+                'location': s['location'],
                 'distance_miles': s.get('distance_miles') or 0,
                 'node_type': s['stop_type'],
                 'arrival_time_min': s.get('arrival_time_min'),
@@ -322,6 +334,7 @@ def _build_journey_nodes(stops):
                 'cum_time_min': s.get('cum_time_min', 0),
                 'stop_name': s.get('stop_name'),
                 'stop_duration_min': s.get('stop_duration_min', 0),
+                'stop_index': idx,
             })
     return nodes
 
@@ -402,6 +415,50 @@ def upcoming_brevets(season_name):
     plans = get_all_ride_plans()
     _match_plans_to_events(rusa_events, plans)
 
+    # Build plan_slug_to_id unconditionally so it's available for wind warnings
+    # and for the user-specific custom plan lookup below
+    plan_slug_to_id = {plan['slug']: plan['id'] for plan in plans}
+
+    # Wind warning loop: check brevets within 28 days that have a linked ride plan
+    cutoff = date.today() + timedelta(days=28)
+    wind_warnings = []
+    for event in rusa_events:
+        event_date = event.get('date')
+        if not event_date or event_date > cutoff:
+            continue
+        plan_slug = event.get('plan_slug')
+        if not plan_slug:
+            continue
+        plan_id = plan_slug_to_id.get(plan_slug)
+        if not plan_id:
+            continue
+        weather_rwgps_url = event.get('plan_rwgps_url_team') or event.get('rwgps_url')
+        if not weather_rwgps_url:
+            continue
+        weather_route_id = _extract_rwgps_route_id(weather_rwgps_url)
+        if not weather_route_id:
+            continue
+        try:
+            plan_stops = get_ride_plan_stops(plan_id)
+            route_data = fetch_route(weather_route_id)
+            track_points = route_data.get('track_points') or []
+            stop_wind = fetch_stop_wind(
+                stops=plan_stops,
+                track_points=track_points,
+                plan_slug=plan_slug,
+                start_time_str=str(event.get('start_time') or '07:00')[:5],
+                cache=cache,
+            )
+            warning = detect_heavy_wind(stop_wind)
+            if warning:
+                warning['ride_name'] = event.get('route_name') or event.get('name', '')
+                warning['ride_date'] = event.get('date_str', str(event_date))
+                wind_warnings.append(warning)
+        except Exception:
+            current_app.logger.exception(
+                "Wind warning check failed for event %s", event.get('id'))
+            continue
+
     # Get current user's rider_id and signup statuses
     rider_id = None
     current_rider = None
@@ -430,10 +487,7 @@ def upcoming_brevets(season_name):
             user_signup_statuses = get_rider_signup_statuses_batch(rider_id, ride_ids)
             user_signups = {ride_id: data['status'] for ride_id, data in user_signup_statuses.items()}
             
-            # Load custom plans for this rider
-            # First, build a map of plan_slug -> plan_id
-            plan_slug_to_id = {plan['slug']: plan['id'] for plan in plans}
-            
+            # Load custom plans for this rider (plan_slug_to_id already built above)
             for event in rusa_events:
                 if event.get('plan_slug'):
                     plan_id = plan_slug_to_id.get(event['plan_slug'])
@@ -476,7 +530,8 @@ def upcoming_brevets(season_name):
                            current_rider_id=rider_id,
                            user_signups=user_signups,
                            all_ride_plans=all_ride_plans,
-                           can_edit_rides=can_edit_rides)
+                           can_edit_rides=can_edit_rides,
+                           wind_warnings=wind_warnings)
 
 
 @riders_bp.route('/ride/<int:ride_id>/edit', methods=['GET', 'POST'])
@@ -510,20 +565,18 @@ def edit_ride(ride_id):
         # Get form data
         rwgps_url = request.form.get('rwgps_url', '').strip()
         ride_plan_id = request.form.get('ride_plan_id')
-        start_time = request.form.get('start_time', '').strip()
         start_location = request.form.get('start_location', '').strip()
         time_limit_hours = request.form.get('time_limit_hours')
-        
+
         # Convert empty strings to None
         ride_plan_id = int(ride_plan_id) if ride_plan_id and ride_plan_id != '' else None
         time_limit_hours = float(time_limit_hours) if time_limit_hours and time_limit_hours != '' else None
-        
-        # Update the ride
+
+        # Update the ride (start_time lives on ride_plan, not ride)
         update_ride_details(
             ride_id=ride_id,
             rwgps_url=rwgps_url if rwgps_url else None,
             ride_plan_id=ride_plan_id,
-            start_time=start_time if start_time else None,
             start_location=start_location if start_location else None,
             time_limit_hours=time_limit_hours
         )
@@ -641,9 +694,54 @@ def rider_profile(rusa_id):
                 'badge': badge,
             }
 
-    # Strava ride analysis moved to /my/strava-analysis (private page)
+    # Load Strava brevet-match data for own profile view
+    METERS_PER_MILE = 1609.34
     for sd in season_data:
-        sd['strava_matches'] = {}
+        if is_own_profile and strava_connection:
+            try:
+                from services.strava_analysis import batch_match_rides
+                strava_matches = batch_match_rides(rider['id'], sd['participation'])
+            except Exception:
+                strava_matches = {}
+
+            ride_details = {}
+            for ride_id_val, match_info in strava_matches.items():
+                try:
+                    row = _execute("""
+                        SELECT distance, moving_time, elapsed_time, total_elevation_gain,
+                               average_speed, average_heartrate, has_heartrate, average_watts,
+                               device_watts, suffer_score, strava_url
+                        FROM strava_activity
+                        WHERE strava_activity_id = %s AND rider_id = %s
+                    """, (match_info['strava_activity_id'], rider['id'])).fetchone()
+                    if row:
+                        a = dict(row)
+                        mt_min = (a.get('moving_time') or 0) / 60
+                        et_min = (a.get('elapsed_time') or 0) / 60
+                        ride_details[ride_id_val] = {
+                            'distance_miles': round((a.get('distance') or 0) / METERS_PER_MILE, 1),
+                            'moving_time_hrs': int(mt_min // 60),
+                            'moving_time_min': int(mt_min % 60),
+                            'elapsed_time_hrs': int(et_min // 60),
+                            'elapsed_time_min': int(et_min % 60),
+                            'stopped_time_min': round(et_min - mt_min),
+                            'elevation_ft': round((a.get('total_elevation_gain') or 0) * 3.28084),
+                            'avg_speed_mph': round((a.get('average_speed') or 0) * 2.23694, 1),
+                            'strava_url': a.get('strava_url'),
+                            'has_heartrate': a.get('has_heartrate'),
+                            'average_heartrate': a.get('average_heartrate'),
+                            'device_watts': a.get('device_watts'),
+                            'average_watts': a.get('average_watts'),
+                            'suffer_score': a.get('suffer_score'),
+                        }
+                except Exception:
+                    pass
+
+            sd['strava_matches'] = strava_matches
+            sd['ride_details'] = ride_details
+        else:
+            sd['strava_matches'] = {}
+            sd['ride_details'] = {}
 
     # --- Upcoming rides with readiness ---
     upcoming_rides = []
@@ -828,10 +926,8 @@ def ride_strava_analysis(rusa_id, ride_id):
     if not ride:
         abort(404)
 
-    # Check Strava visibility
+    # Check Strava visibility — never override privacy based on debug mode
     is_own_profile = session.get('rider_id') == rider['id']
-    if current_app.debug:
-        is_own_profile = True  # Always treat as own profile in debug mode
     strava_data_private = rider.get('strava_data_private', False)
     show_strava_data = is_own_profile or not strava_data_private
     if not show_strava_data:
@@ -858,7 +954,8 @@ def ride_strava_analysis(rusa_id, ride_id):
                                rider=rider, ride=ride, activity=None,
                                comparison=None, error=None,
                                has_plan=False, has_custom=False, plan_slug=None,
-                               is_own_profile=is_own_profile)
+                               is_own_profile=is_own_profile,
+                               stop_wind=None)
 
     # Load plan stops if available
     plan_stops = []
@@ -878,12 +975,15 @@ def ride_strava_analysis(rusa_id, ride_id):
             custom_stops_merged, _ = get_merged_plan_stops(custom_plan['id'])
             custom_stops = custom_stops_merged
 
+    # When a custom plan exists, use it as the primary comparison plan
+    primary_stops = custom_stops if has_custom else plan_stops
+
     # Fetch and analyze streams
     analysis = fetch_and_analyze(
         rider_id=rider['id'],
         match_id=match['id'],
         strava_activity_id=match['strava_activity_id'],
-        plan_stops=plan_stops if plan_stops else None,
+        plan_stops=primary_stops if primary_stops else None,
     )
 
     if analysis.get('error'):
@@ -892,27 +992,83 @@ def ride_strava_analysis(rusa_id, ride_id):
                                comparison=None, error=analysis['error'],
                                has_plan=has_plan, has_custom=has_custom,
                                plan_slug=plan_slug,
-                               is_own_profile=is_own_profile)
+                               is_own_profile=is_own_profile,
+                               stop_wind=None)
 
     # Build comparison data
-    plan_start_time = ride.get('start_time') or ride.get('plan_start_time')
+    plan_start_time = ride.get('plan_start_time')
     actual_start_time = match.get('start_date_local')
 
     comparison = build_comparison(
-        plan_stops=plan_stops,
+        plan_stops=primary_stops,
         detected_stops=analysis['detected_stops'],
         activity=dict(match),
-        custom_stops=custom_stops,
+        custom_stops=plan_stops if has_custom else None,
         plan_start_time=plan_start_time,
         actual_start_time=actual_start_time,
+        streams=analysis.get('streams'),
     )
+
+    # Fetch historical wind for completed rides with linked plans
+    stop_wind = None
+    if has_plan and plan_stops and ride.get('date'):
+        try:
+            from services.weather import get_historical_stop_wind, wind_cell_style
+            plan = get_ride_plan_by_slug(plan_slug) if plan_slug else None
+            weather_route_id = None
+            if plan:
+                weather_rwgps_url = plan.get('rwgps_url_team') or plan.get('rwgps_url')
+                if weather_rwgps_url:
+                    weather_route_id = _extract_rwgps_route_id(weather_rwgps_url)
+            if weather_route_id:
+                route_data = fetch_route(weather_route_id)
+                track_points = route_data.get('track_points', []) if route_data else []
+                if track_points:
+                    ride_date = ride['date']
+                    if isinstance(ride_date, str):
+                        ride_date = date.fromisoformat(ride_date)
+                    wind_rows, _ = get_historical_stop_wind(
+                        stops=[dict(s) for s in plan_stops],
+                        track_points=track_points,
+                        ride_date=ride_date,
+                        ride_id=ride['id'],
+                    )
+                    if wind_rows:
+                        from services.weather import wind_arrow_rotation
+                        plan_stops_list = [dict(s) for s in plan_stops]
+                        stop_wind = {}
+                        for row in wind_rows:
+                            row['style'] = wind_cell_style(
+                                row['wind_speed_kmh'], row['wind_type']
+                            )
+                            row['wind_speed_mph'] = round(
+                                float(row['wind_speed_kmh']) * 0.621371, 1
+                            )
+                            # Compute continuous arrow angle from stored components
+                            row['wind_arrow_deg'] = wind_arrow_rotation(
+                                row.get('headwind_kmh', 0),
+                                row.get('crosswind_kmh', 0),
+                            )
+                            order = row.get('stop_order', -1)
+                            if isinstance(order, int) and 0 <= order < len(plan_stops_list):
+                                key = plan_stops_list[order].get('location') or row.get('stop_name', '')
+                            else:
+                                key = row.get('stop_name', '')
+                            if key:
+                                stop_wind[key] = row
+        except Exception:
+            current_app.logger.exception(
+                "ride_strava_analysis: wind fetch failed for ride %s", ride_id
+            )
+            stop_wind = None
 
     return render_template('strava_ride_analysis.html',
                            rider=rider, ride=ride, activity=dict(match),
                            comparison=comparison, error=None,
                            has_plan=has_plan, has_custom=has_custom,
                            plan_slug=plan_slug,
-                           is_own_profile=is_own_profile)
+                           is_own_profile=is_own_profile,
+                           stop_wind=stop_wind)
 
 
 @riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/strava-retry', methods=['POST'])
@@ -929,6 +1085,83 @@ def retry_strava_analysis(rusa_id, ride_id):
         clear_strava_ride_analysis(match['id'])
 
     return redirect(url_for('riders.ride_strava_analysis', rusa_id=rusa_id, ride_id=ride_id))
+
+
+def _auto_match_cohort_riders(ride_id, ride):
+    """Match any finisher who has Strava synced but no strava_ride_match entry yet.
+
+    Queries strava_activity locally — no Strava API calls made.
+    """
+    from models import get_strava_activities_in_date_range, create_strava_ride_match
+    from services.strava_analysis import find_matching_activity
+    from datetime import date as date_type
+
+    unmatched = _execute("""
+        SELECT r.id AS rider_id
+        FROM rider_ride rr
+        JOIN rider r ON r.id = rr.rider_id
+        JOIN strava_connection sc ON sc.rider_id = r.id
+        LEFT JOIN strava_ride_match srm ON srm.rider_id = r.id AND srm.ride_id = rr.ride_id
+        WHERE rr.ride_id = %s
+          AND rr.status = 'FINISHED'
+          AND srm.id IS NULL
+    """, (ride_id,)).fetchall()
+
+    if not unmatched:
+        return
+
+    ride_date = ride.get('date')
+    ride_distance_km = ride.get('distance_km')
+    ride_name = ride.get('name', '')
+
+    for row in unmatched:
+        rid = row['rider_id']
+        try:
+            match = find_matching_activity(
+                rider_id=rid,
+                ride_date=ride_date,
+                ride_distance_km=ride_distance_km,
+                ride_name=ride_name,
+            )
+            if match:
+                create_strava_ride_match(rid, ride_id, match['strava_activity_id'])
+                current_app.logger.info(
+                    f'cohort auto-match: rider {rid} -> activity {match["strava_activity_id"]}'
+                )
+        except Exception as e:
+            current_app.logger.error(f'cohort auto-match error for rider {rid}: {e}', exc_info=True)
+
+
+@riders_bp.route('/ride/<int:ride_id>/cohort')
+@user_login_required
+def ride_cohort_comparison(ride_id):
+    """Cohort comparison — compare Strava stats across all finishers of a brevet."""
+    from services.strava_analysis import build_cohort_stats
+
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        abort(404)
+
+    _auto_match_cohort_riders(ride_id, ride)
+
+    riders = get_ride_cohort_stats(ride_id)
+    current_rider_id = session.get('rider_id')
+
+    cohort_stats = None
+    if len(riders) >= 2:
+        cohort_stats = build_cohort_stats([dict(r) for r in riders], current_rider_id,
+                                          ride_distance_km=ride.get('distance_km'))
+
+    breakdown = get_ride_cohort_breakdown(ride_id)
+
+    return render_template(
+        'ride_cohort_comparison.html',
+        ride=ride,
+        riders=[dict(r) for r in riders],
+        cohort_stats=cohort_stats,
+        current_rider_id=current_rider_id,
+        breakdown=breakdown,
+    )
 
 
 @riders_bp.route('/debug/match-check/<int:rider_id>/<int:ride_id>')
@@ -986,25 +1219,14 @@ def my_strava_analysis():
                         get_rider_participation, _execute)
     from flask import flash
 
-    # Auth check (inline instead of decorator so we can keep it on riders_bp)
-    if current_app.debug:
-        # Debug mode: allow unauthenticated access for local testing
-        rider_id = request.args.get('rider_id', type=int)
-        if not rider_id:
-            # Fall back to first rider with a Strava connection
-            fallback = _execute("SELECT rider_id FROM strava_connection LIMIT 1").fetchone()
-            rider_id = fallback['rider_id'] if fallback else None
-        if not rider_id:
-            flash('No rider with Strava connection found (debug mode)', 'error')
-            return redirect(url_for('main.index'))
-    else:
-        if not session.get('user_id'):
-            flash('Please log in to access this page', 'warning')
-            return redirect(url_for('auth.login', next=request.path))
-        rider_id = session.get('rider_id')
-        if not rider_id:
-            flash('Please complete your profile setup', 'warning')
-            return redirect(url_for('auth.setup_profile'))
+    # Auth check — always enforce authentication; never bypass for debug mode
+    if not session.get('user_id'):
+        flash('Please log in to access this page', 'warning')
+        return redirect(url_for('auth.login', next=request.path))
+    rider_id = session.get('rider_id')
+    if not rider_id:
+        flash('Please complete your profile setup', 'warning')
+        return redirect(url_for('auth.setup_profile'))
 
     # Get rider info
     rider_row = _execute("""
@@ -1435,6 +1657,23 @@ def ride_plan_detail(slug):
     # Attach break merging metadata for timeline layout
     stops, use_timeline = _attach_break_metadata(stops)
 
+    # Wind data for table view
+    stop_wind = None
+    if weather_route_id:
+        try:
+            route_data = fetch_route(weather_route_id)
+            track_points = route_data.get('track_points') or []
+            stop_wind = fetch_stop_wind(
+                stops=stops,
+                track_points=track_points,
+                plan_slug=plan['slug'],
+                start_time_str=plan.get('start_time', '06:00'),
+                cache=cache,
+            )
+        except Exception:
+            current_app.logger.exception("Wind fetch failed for plan %s", slug)
+            stop_wind = None
+
     return render_template('ride_plan_detail.html',
                            plan=plan,
                            stops=stops,
@@ -1451,6 +1690,7 @@ def ride_plan_detail(slug):
                            rwgps_url_label=rwgps_url_label,
                            rwgps_route_id=rwgps_route_id,
                            weather_route_id=weather_route_id,
+                           stop_wind=stop_wind,
                            difficulty_colors=_DIFFICULTY_COLORS,
                            upcoming_event=upcoming_event,
                            signup_count=signup_count,
@@ -1524,6 +1764,34 @@ def base_plan_editor(slug):
                            overall_ft_per_mile=overall_ft_per_mile,
                            weighted_difficulty=weighted_difficulty,
                            finish_time_bank=finish_time_bank)
+
+@riders_bp.route('/ride-plan/<slug>/edit-info', methods=['GET', 'POST'])
+@user_login_required
+def edit_ride_plan_info(slug):
+    """Admin-only editor for ride plan metadata."""
+    if not is_admin_user():
+        abort(403)
+    plan = get_ride_plan_by_slug(slug)
+    if not plan:
+        abort(404)
+    plan = dict(plan)
+
+    if request.method == 'POST':
+        update_ride_plan_info(
+            plan_id=plan['id'],
+            name=request.form.get('name', '').strip(),
+            rwgps_url=request.form.get('rwgps_url', '').strip(),
+            rwgps_url_team=request.form.get('rwgps_url_team', '').strip(),
+            start_time=request.form.get('start_time', '06:00').strip(),
+            distance_km=request.form.get('distance_km', ''),
+            cutoff_hours=request.form.get('cutoff_hours', ''),
+        )
+        from flask import flash
+        flash('Plan info updated.', 'success')
+        return redirect(url_for('riders.ride_plan_detail', slug=slug))
+
+    return render_template('edit_ride_plan_info.html', plan=plan)
+
 
 def custom_ride_plan_view(slug):
     """View custom plan with same detail as base plan, but with custom timings."""
@@ -1665,6 +1933,23 @@ def custom_ride_plan_view(slug):
     # Attach break merging metadata for timeline layout
     stops, use_timeline = _attach_break_metadata(stops)
 
+    # Wind data for table view (same pattern as ride_plan_detail_view)
+    stop_wind = None
+    if weather_route_id:
+        try:
+            route_data = fetch_route(weather_route_id)
+            track_points = route_data.get('track_points') or []
+            stop_wind = fetch_stop_wind(
+                stops=stops,
+                track_points=track_points,
+                plan_slug=plan['slug'],
+                start_time_str=str(plan.get('start_time') or '07:00')[:5],
+                cache=cache,
+            )
+        except Exception:
+            current_app.logger.exception("Wind fetch failed for custom plan %s", slug)
+            stop_wind = None
+
     # Check if there's an upcoming RUSA event that matches this ride plan
     upcoming_event = None
     signup_count = 0
@@ -1714,6 +1999,7 @@ def custom_ride_plan_view(slug):
                          rwgps_url_label=rwgps_url_label,
                          rwgps_route_id=rwgps_route_id,
                          weather_route_id=weather_route_id,
+                         stop_wind=stop_wind,
                          upcoming_event=upcoming_event,
                          signup_count=signup_count,
                          user_signup_status=user_signup_status,
@@ -2075,23 +2361,70 @@ def api_get_custom_plan(custom_plan_id):
 @user_login_required
 def api_update_base_stop(stop_id):
     """Admin-only: Update base plan stop."""
-    import sys
     if not is_admin_user():
         return jsonify({'success': False, 'error': 'Unauthorized'}), 403
-    
+
     data = request.json
-    print(f"DEBUG: Updating stop {stop_id} with data: {data}", file=sys.stderr)
-    
+    current_app.logger.debug("Updating base stop %s with fields: %s", stop_id, list(data.keys()) if data else [])
+
     try:
         from models import update_base_plan_stop
         success = update_base_plan_stop(stop_id, data)
-        print(f"DEBUG: Update result: {success}", file=sys.stderr)
         return jsonify({'success': success})
     except Exception as e:
-        print(f"DEBUG ERROR: {str(e)}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
+        current_app.logger.exception("Failed to update base stop %s", stop_id)
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@riders_bp.route('/ride-plan/<slug>/add-stop', methods=['POST'])
+@user_login_required
+def add_base_stop(slug):
+    """Admin-only: Add a new stop to a base ride plan."""
+    if not is_admin_user():
+        abort(403)
+
+    from models import get_ride_plan_by_slug, get_ride_plan_stops, insert_ride_plan_stop
+    base_plan = get_ride_plan_by_slug(slug)
+    if not base_plan:
+        abort(404)
+
+    location = request.form.get('new_stop_location', '').strip()
+    if not location:
+        flash('Location is required.', 'error')
+        return redirect(url_for('riders.base_plan_editor', slug=slug))
+
+    stop_type = request.form.get('new_stop_type', 'waypoint').strip()
+    stop_order = request.form.get('new_stop_order', '').strip()
+    distance_miles = request.form.get('new_stop_distance', '').strip()
+    elevation_gain = request.form.get('new_stop_elevation', '').strip()
+    notes = request.form.get('new_stop_notes', '').strip()
+
+    stops = get_ride_plan_stops(base_plan['id']) or []
+    order = int(stop_order) if stop_order else (len(stops) + 1)
+
+    insert_ride_plan_stop(
+        base_plan['id'], order, location, stop_type,
+        float(distance_miles) if distance_miles else None,
+        int(elevation_gain) if elevation_gain else None,
+        notes or None
+    )
+    flash(f'Added stop "{location}".', 'success')
+    return redirect(url_for('riders.base_plan_editor', slug=slug))
+
+
+@riders_bp.route('/ride-plan/<slug>/delete-stop/<int:stop_id>', methods=['POST'])
+@user_login_required
+def delete_base_stop(slug, stop_id):
+    """Admin-only: Delete a stop from a base ride plan."""
+    if not is_admin_user():
+        abort(403)
+
+    from models import delete_ride_plan_stop
+    if delete_ride_plan_stop(stop_id):
+        flash('Stop deleted.', 'success')
+    else:
+        flash('Stop not found.', 'error')
+    return redirect(url_for('riders.base_plan_editor', slug=slug))
 
 
 @riders_bp.route('/api/custom-plan/<int:custom_plan_id>/stop/<int:stop_id>', methods=['PUT'])
@@ -2120,10 +2453,11 @@ def api_update_custom_stop(custom_plan_id, stop_id):
     elevation_gain = data.get('elevation_gain') if 'elevation_gain' in data else None
     notes = data.get('notes') if 'notes' in data else None
     
-    print(f"[DEBUG] api_update_custom_stop: custom_plan_id={custom_plan_id}, stop_id={stop_id}")
-    print(f"[DEBUG] Request data: {data}")
-    print(f"[DEBUG] Explicit fields: {set(data.keys())}")
-    
+    current_app.logger.debug(
+        "api_update_custom_stop: plan=%s stop=%s fields=%s",
+        custom_plan_id, stop_id, list(data.keys()) if data else []
+    )
+
     try:
         success = update_custom_plan_stop(
             custom_plan_id, stop_id, 

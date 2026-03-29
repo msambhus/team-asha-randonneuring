@@ -1,4 +1,4 @@
-"""Flask app factory for Team Asha Randonneuring."""
+"""Flask app factory for Team Asha Randonneuring."""  # noqa: trigger deploy
 from flask import Flask, session
 from dotenv import load_dotenv
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -59,15 +59,22 @@ def create_app():
         import html as html_mod
         return html_mod.unescape(str(value)).replace('\xa0', ' ')
 
-    # Debug auto-login: simulate an authenticated user in local dev
+    # Debug auto-login: simulate an authenticated user in local dev.
+    # Gated on FLASK_ENV=development — never fires in production even if
+    # app.debug is True, preventing accidental auth bypass on Vercel.
+    import os as _os
+    _is_local_dev = _os.environ.get('FLASK_ENV') == 'development'
+
     @app.before_request
     def debug_auto_login():
-        if app.debug and 'user_id' not in session:
+        if not _is_local_dev:
+            return
+        if 'user_id' not in session:
             from models import _execute
             try:
                 # Pick the first app_user who has a linked rider (for Strava context)
                 row = _execute(
-                    "SELECT au.id, au.email, au.rider_id, r.first_name, r.last_name "
+                    "SELECT au.id, au.email, au.rider_id, r.first_name, r.last_name, r.rusa_id "
                     "FROM app_user au "
                     "LEFT JOIN rider r ON r.id = au.rider_id "
                     "WHERE au.rider_id IS NOT NULL "
@@ -78,6 +85,7 @@ def create_app():
                     session['email'] = row['email']
                     session['rider_id'] = row['rider_id']
                     session['rider_name'] = f"{row['first_name']} {row['last_name']}"
+                    session['rider_rusa_id'] = row['rusa_id']
             except Exception:
                 pass  # DB not available — skip
 
@@ -92,6 +100,7 @@ def create_app():
                 user_logged_in=session.get('user_id') is not None,
                 user_email=session.get('email'),
                 rider_name=session.get('rider_name'),
+                rider_rusa_id=session.get('rider_rusa_id'),
             )
         except Exception:
             # Return mock data if database is not available
@@ -105,6 +114,7 @@ def create_app():
                 user_logged_in=session.get('user_id') is not None,
                 user_email=session.get('email'),
                 rider_name=session.get('rider_name'),
+                rider_rusa_id=session.get('rider_rusa_id'),
             )
 
     return app

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Edit Ride - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Edit Ride</h1>
+<p>{{ ride.name }}</p>
+</div>
+<div class="container section" style="max-width:700px;">
+
+<div style="margin-bottom:20px;display:flex;gap:12px;">
+<a href="{{ url_for('admin.mark_status', ride_id=ride.id) }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Status</a>
+<a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Dashboard</a>
+</div>
+
+<form method="post">
+
+<div class="form-group">
+<label for="name">Ride Name *</label>
+<input type="text" id="name" name="name" required value="{{ ride.name }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+<div class="form-group">
+<label for="date">Date *</label>
+<input type="date" id="date" name="date" required value="{{ ride.date }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+<div class="form-group">
+<label for="distance_km">Distance (km) *</label>
+<input type="number" id="distance_km" name="distance_km" required value="{{ ride.distance_km or '' }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+<div class="form-group">
+<label for="ride_type">Type</label>
+<select id="ride_type" name="ride_type"
+        style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+{% for t in ['BRM', 'Permanent', 'Populaire', 'Fleche', 'Other'] %}
+<option value="{{ t }}" {% if ride.ride_type == t %}selected{% endif %}>{{ t }}</option>
+{% endfor %}
+</select>
+</div>
+<div class="form-group">
+<label for="club_id">Club</label>
+<select id="club_id" name="club_id"
+        style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+<option value="">-- Select --</option>
+{% for c in clubs %}
+<option value="{{ c.id }}" {% if ride.club_id == c.id %}selected{% endif %}>{{ c.code }} - {{ c.name }}</option>
+{% endfor %}
+</select>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px;">
+<div class="form-group">
+<label for="elevation_ft">Elevation (ft)</label>
+<input type="number" id="elevation_ft" name="elevation_ft" value="{{ ride.elevation_ft or '' }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+<div class="form-group">
+<label for="distance_miles">Distance (mi)</label>
+<input type="number" id="distance_miles" name="distance_miles" step="0.1" value="{{ ride.distance_miles or '' }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+<div class="form-group">
+<label for="ft_per_mile">Ft/Mile</label>
+<input type="number" id="ft_per_mile" name="ft_per_mile" step="0.1" value="{{ ride.ft_per_mile or '' }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+</div>
+
+<div class="form-group">
+<label for="rwgps_url">RideWithGPS URL</label>
+<input type="url" id="rwgps_url" name="rwgps_url" value="{{ ride.rwgps_url or '' }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px;">
+<div class="form-group">
+<label for="start_location">Start Location</label>
+<input type="text" id="start_location" name="start_location" value="{{ ride.start_location or '' }}"
+       placeholder="e.g. Peet's Coffee, Mill Valley"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+<div class="form-group">
+<label for="start_time">Start Time</label>
+<input type="text" id="start_time" disabled value="{{ ride.plan_start_time or '' }}"
+       placeholder="Set on ride plan"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;background:#f1f5f9;color:var(--text-light);">
+<span style="font-size:0.75rem;color:var(--text-light);">Edit start time on the ride plan</span>
+</div>
+<div class="form-group">
+<label for="time_limit_hours">Time Limit (hrs)</label>
+<input type="number" id="time_limit_hours" name="time_limit_hours" step="0.5" value="{{ ride.time_limit_hours or '' }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+</div>
+
+<div style="display:flex;gap:15px;margin-top:25px;">
+<button type="submit" class="btn btn-primary">Save Changes</button>
+<a href="{{ url_for('admin.mark_status', ride_id=ride.id) }}" class="btn" style="background:var(--text-light);color:#fff;">Cancel</a>
+</div>
+</form>
+
+</div>
+{% endblock %}

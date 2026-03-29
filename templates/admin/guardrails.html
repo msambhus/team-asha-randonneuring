@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Coaching Guardrails - Admin{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Coaching Guardrails</h1>
+<p>{{ guardrails|length }} rule{{ 's' if guardrails|length != 1 else '' }}</p>
+</div>
+<div class="container section">
+
+<div style="margin-bottom:20px;display:flex;gap:10px;align-items:center;">
+<a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Dashboard</a>
+<a href="{{ url_for('admin.guardrail_new') }}" class="btn btn-primary">+ Add Guardrail</a>
+</div>
+
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Rule Value</th>
+<th>Applies To</th>
+<th>Version</th>
+<th>Active</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody>
+{% for g in guardrails %}
+<tr{% if not g.is_active %} style="opacity:0.5;"{% endif %}>
+<td style="font-weight:600;">{{ g.rule_type }}</td>
+<td>
+<span title="{{ g.rule_value }}">{{ g.rule_value[:80] }}{% if g.rule_value|length > 80 %}...{% endif %}</span>
+</td>
+<td>{{ g.applies_to }}</td>
+<td>v{{ g.rule_version }}</td>
+<td>
+<form method="POST" action="{{ url_for('admin.toggle_guardrail', guardrail_id=g.id) }}" style="display:inline;">
+{% if g.is_active %}
+<button type="submit" style="background:#38a169;color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-weight:600;">ON</button>
+{% else %}
+<button type="submit" style="background:#a0aec0;color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;">OFF</button>
+{% endif %}
+</form>
+</td>
+<td style="display:flex;gap:6px;">
+<a href="{{ url_for('admin.guardrail_edit', guardrail_id=g.id) }}" style="color:var(--primary);text-decoration:none;font-size:0.9rem;">Edit</a>
+<form method="POST" action="{{ url_for('admin.guardrail_delete', guardrail_id=g.id) }}" style="display:inline;" onsubmit="return confirm('Delete this guardrail?');">
+<button type="submit" style="background:none;border:none;color:#e53e3e;cursor:pointer;font-size:0.9rem;padding:0;">Delete</button>
+</form>
+</td>
+</tr>
+{% endfor %}
+{% if not guardrails %}
+<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:20px;">No guardrail rules configured.</td></tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+
+</div>
+{% endblock %}

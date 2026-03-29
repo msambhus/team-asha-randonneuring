@@ -263,11 +263,20 @@
         gap: 6px;
     }
 }
+@media (max-width: 640px) {
+    .stop-metrics {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 4px;
+        margin-left: 0;
+    }
+    .stop-metrics .inline-edit { width: 100%; }
+    .stop-row { padding: 8px; }
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="hero" style="padding:40px 20px 30px;">
+<div class="hero">
     <h1>Edit Base Plan</h1>
     <p style="opacity:0.85;margin-top:8px;">{{ base_plan.name }}</p>
     <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;">
@@ -369,7 +378,22 @@
                         <div class="stop-icon {{ stop.stop_type }}">
                             {% if stop.stop_type == 'start' %}🚩{% elif stop.stop_type == 'finish' %}🏁{% elif stop.stop_type == 'control' %}◆{% elif stop.stop_type == 'rest' %}☕{% else %}•{% endif %}
                         </div>
-                        <div class="stop-location">{{ stop.location }}</div>
+                        <input type="text" class="stop-location inline-edit" style="flex:1;font-weight:600;font-size:0.9rem;width:auto;border-color:#e2e8f0;color:var(--text);"
+                               value="{{ stop.location }}"
+                               data-field="location"
+                               onchange="trackChange(this)">
+                        <select class="inline-edit" style="width:90px;font-size:0.75rem;padding:3px 6px;border-color:#e2e8f0;color:var(--text);"
+                                data-field="stop_type"
+                                onchange="trackChange(this)">
+                            {% for t in ['start', 'control', 'rest', 'waypoint', 'finish'] %}
+                            <option value="{{ t }}" {% if stop.stop_type == t %}selected{% endif %}>{{ t }}</option>
+                            {% endfor %}
+                        </select>
+                        <form method="post" action="{{ url_for('riders.delete_base_stop', slug=base_plan.slug, stop_id=stop.id) }}"
+                              onsubmit="return confirm('Delete stop #{{ stop.stop_order }} ({{ stop.location }})? This affects all riders.');"
+                              style="margin:0;">
+                            <button type="submit" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:1rem;padding:2px 6px;opacity:0.5;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.5'" title="Delete this stop">&times;</button>
+                        </form>
                     </div>
                     <div class="stop-metrics">
                         <div class="metric-box">
@@ -466,7 +490,60 @@
                     </div>
                     {% endif %}
                 </div>
+                {# Insert stop button between rows #}
+                <div class="insert-stop-row" style="text-align:center;margin:2px 0;">
+                    <button type="button" class="add-break-btn" style="font-size:0.7rem;padding:2px 10px;opacity:0.3;"
+                            onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='0.3'"
+                            onclick="showInsertForm(this, {{ stop.stop_order + 1 }})" title="Insert a stop here">+ insert stop</button>
+                </div>
                 {% endfor %}
+            </div>
+
+            {# Add Stop Form #}
+            <div style="margin-top:20px;padding:16px;background:#fef2f2;border:2px solid #fca5a5;border-radius:10px;">
+                <div style="font-size:0.85rem;font-weight:700;color:#991b1b;margin-bottom:12px;">Add New Stop</div>
+                <form method="post" action="{{ url_for('riders.add_base_stop', slug=base_plan.slug) }}">
+                    <div style="display:grid;grid-template-columns:60px 2fr 1fr;gap:10px;margin-bottom:10px;">
+                        <div>
+                            <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:3px;">Order #</label>
+                            <input type="number" name="new_stop_order" placeholder="{{ (base_stops|length + 1) }}" min="1"
+                                   style="width:100%;padding:6px;border:1px solid #fca5a5;border-radius:4px;font-size:0.85rem;">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:3px;">Location *</label>
+                            <input type="text" name="new_stop_location" required placeholder="e.g. Petaluma Chevron"
+                                   style="width:100%;padding:6px;border:1px solid #fca5a5;border-radius:4px;font-size:0.85rem;">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:3px;">Type</label>
+                            <select name="new_stop_type" style="width:100%;padding:6px;border:1px solid #fca5a5;border-radius:4px;font-size:0.85rem;">
+                                <option value="control">control</option>
+                                <option value="rest">rest</option>
+                                <option value="waypoint">waypoint</option>
+                                <option value="start">start</option>
+                                <option value="finish">finish</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:10px;margin-bottom:10px;">
+                        <div>
+                            <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:3px;">Dist (mi)</label>
+                            <input type="number" name="new_stop_distance" step="0.1"
+                                   style="width:100%;padding:6px;border:1px solid #fca5a5;border-radius:4px;font-size:0.85rem;">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:3px;">Elev (ft)</label>
+                            <input type="number" name="new_stop_elevation"
+                                   style="width:100%;padding:6px;border:1px solid #fca5a5;border-radius:4px;font-size:0.85rem;">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:3px;">Notes</label>
+                            <input type="text" name="new_stop_notes" placeholder="Optional"
+                                   style="width:100%;padding:6px;border:1px solid #fca5a5;border-radius:4px;font-size:0.85rem;">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-icon" style="background:#dc2626;color:white;border-color:#dc2626;">+ Add Stop</button>
+                </form>
             </div>
 
             {# Save Button - Bottom #}
@@ -523,7 +600,7 @@ function trackChange(input) {
 
     if (field === 'distance_miles') {
         value = parseFloat(input.value);
-    } else if (field === 'stop_name' || field === 'notes') {
+    } else if (field === 'stop_name' || field === 'notes' || field === 'location' || field === 'stop_type') {
         value = input.value;
     } else {
         value = parseInt(input.value);
@@ -806,6 +883,49 @@ async function saveBasePlan() {
             if (text) text.textContent = 'Save';
         });
     }
+}
+
+function showInsertForm(btn, order) {
+    // Remove any existing inline insert forms
+    document.querySelectorAll('.inline-insert-form').forEach(f => f.remove());
+
+    const form = document.createElement('div');
+    form.className = 'inline-insert-form';
+    form.style.cssText = 'background:#fef2f2;border:2px solid #fca5a5;border-radius:8px;padding:12px;margin:6px 0;';
+    form.innerHTML = `
+        <form method="post" action="/ride-plan/{{ base_plan.slug }}/add-stop" style="margin:0;">
+            <input type="hidden" name="new_stop_order" value="${order}">
+            <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;">
+                <div style="flex:2;min-width:150px;">
+                    <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:2px;">Location *</label>
+                    <input type="text" name="new_stop_location" required placeholder="e.g. Petaluma Chevron"
+                           style="width:100%;padding:5px 8px;border:1px solid #fca5a5;border-radius:4px;font-size:0.82rem;" autofocus>
+                </div>
+                <div style="min-width:90px;">
+                    <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:2px;">Type</label>
+                    <select name="new_stop_type" style="width:100%;padding:5px;border:1px solid #fca5a5;border-radius:4px;font-size:0.82rem;">
+                        <option value="control">control</option>
+                        <option value="rest">rest</option>
+                        <option value="waypoint">waypoint</option>
+                    </select>
+                </div>
+                <div style="min-width:70px;">
+                    <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:2px;">Dist (mi)</label>
+                    <input type="number" name="new_stop_distance" step="0.1"
+                           style="width:100%;padding:5px 8px;border:1px solid #fca5a5;border-radius:4px;font-size:0.82rem;">
+                </div>
+                <div style="min-width:70px;">
+                    <label style="display:block;font-size:0.7rem;font-weight:600;color:#64748b;margin-bottom:2px;">Elev (ft)</label>
+                    <input type="number" name="new_stop_elevation"
+                           style="width:100%;padding:5px 8px;border:1px solid #fca5a5;border-radius:4px;font-size:0.82rem;">
+                </div>
+                <button type="submit" class="btn-icon" style="background:#dc2626;color:white;border-color:#dc2626;padding:5px 12px;font-size:0.8rem;">Insert</button>
+                <button type="button" class="btn-icon" style="padding:5px 12px;font-size:0.8rem;" onclick="this.closest('.inline-insert-form').remove()">Cancel</button>
+            </div>
+        </form>
+    `;
+    btn.closest('.insert-stop-row').after(form);
+    form.querySelector('input[name="new_stop_location"]').focus();
 }
 </script>
 {% endblock %}

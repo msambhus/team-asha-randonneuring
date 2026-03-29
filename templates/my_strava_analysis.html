@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}My Strava Analysis - Team Asha Randonneuring{% endblock %}
+{% block title %}Completed Brevet Analysis - Team Asha Randonneuring{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -102,6 +102,21 @@
     transition: all 0.2s;
 }
 .btn-strava-link:hover { background: #fff5f0; }
+.btn-cohort {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: white;
+    color: #0ea5e9;
+    border: 1px solid #bae6fd;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+.btn-cohort:hover { background: #f0f9ff; border-color: #7dd3fc; }
 .no-match-msg {
     padding: 20px;
     text-align: center;
@@ -145,7 +160,7 @@
 .power-value { color: #7c3aed; }
 
 @media (max-width: 640px) {
-    .metric-grid { grid-template-columns: repeat(3, 1fr); }
+    .metric-grid { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
     .card-header { flex-direction: column; align-items: flex-start; }
     .card-actions { flex-direction: column; }
     .btn-analysis, .btn-strava-link { width: 100%; justify-content: center; }
@@ -155,7 +170,7 @@
 
 {% block content %}
 <div class="hero" style="padding:30px 20px;">
-    <h1 style="margin-bottom:4px;">My Strava Ride Analysis</h1>
+    <h1 style="margin-bottom:4px;">Completed Brevet Analysis</h1>
     <p style="opacity:0.85;">{{ rider.first_name }} {{ rider.last_name }} &mdash; RUSA# {{ rider.rusa_id }}</p>
 </div>
 
@@ -263,6 +278,9 @@
         <a href="{{ card.activity.strava_url }}" target="_blank" rel="noopener" class="btn-strava-link">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="#fc4c02"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
             View on Strava
+        </a>
+        <a href="{{ url_for('riders.ride_cohort_comparison', ride_id=card.ride_id) }}" class="btn-cohort">
+            &#x1F465; Compare with Cohort
         </a>
     </div>
     {% endif %}

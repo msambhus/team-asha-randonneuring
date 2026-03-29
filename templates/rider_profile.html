@@ -83,13 +83,26 @@
     align-items: center;
     gap: 2px;
 }
+
+/* Responsive adjustments for mobile */
+@media (min-width: 768px) {
+    .season-block {
+        padding: 24px !important;
+    }
+}
+@media (max-width: 639px) {
+    #eddington-detail {
+        left: auto !important;
+        right: 0 !important;
+    }
+}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="hero" style="padding:30px 20px;">
 {% if rider.photo_filename %}
-<img src="{{ url_for('static', filename='riders/' + rider.photo_filename) }}" alt="{{ rider.first_name }} {{ rider.last_name }}" style="width:150px;height:150px;border-radius:50%;object-fit:cover;border:4px solid white;margin-bottom:15px;">
+<img src="{{ url_for('static', filename='riders/' + rider.photo_filename) }}" alt="{{ rider.first_name }} {{ rider.last_name }}" class="w-[100px] h-[100px] md:w-[150px] md:h-[150px] rounded-full object-cover" style="border:4px solid white;margin-bottom:15px;">
 {% endif %}
 <h1>{{ rider.first_name }} {{ rider.last_name }}</h1>
 <p>RUSA# {{ rider.rusa_id }}</p>
@@ -113,7 +126,7 @@
 {% if eddington_data %}
 <div style="position:relative;">
 <div class="stat-card" id="eddington-toggle" style="cursor:pointer;" title="Click to expand"><div class="number" style="color:{{ eddington_data.badge.color }};">{{ eddington_data.badge.emoji }} E{{ eddington_data.miles }}</div><div class="label">Eddington Number*</div></div>
-<div id="eddington-detail" style="display:none; position:absolute; top:100%; left:0; z-index:10; width:360px; max-width:90vw; margin-top:8px; padding:16px; background:white; border-radius:12px; border:2px solid {{ eddington_data.badge.color }}40; box-shadow:0 8px 24px rgba(0,0,0,0.15);">
+<div id="eddington-detail" style="display:none; position:absolute; top:100%; left:0; z-index:10; max-width:min(360px, calc(100vw - 40px)); margin-top:8px; padding:16px; background:white; border-radius:12px; border:2px solid {{ eddington_data.badge.color }}40; box-shadow:0 8px 24px rgba(0,0,0,0.15);">
     <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
         <div style="font-size:2rem; line-height:1;">{{ eddington_data.badge.emoji }}</div>
         <div>
@@ -164,7 +177,7 @@
     <div style="margin-bottom:20px; padding-bottom:12px; border-bottom:2px solid #e2e8f0;">
         <h3 style="color:var(--primary); margin:0 0 4px 0; font-size:1.5rem; font-weight:700;">Upcoming Rides</h3>
     </div>
-    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:14px;">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
     {% for ride in upcoming_rides %}
     <div class="upcoming-ride-card" style="display:flex; flex-direction:column; padding:14px 16px; background:white; border-radius:12px; border:2px solid {% if ride.is_soon %}#f59e0b{% else %}#e2e8f0{% endif %}; border-top:5px solid {% if ride.is_soon %}#f59e0b{% elif ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}; {% if ride.is_soon %}box-shadow: 0 4px 16px rgba(245, 158, 11, 0.25);{% else %}box-shadow: 0 2px 4px rgba(0,0,0,0.05);{% endif %} transition:all 0.2s ease;">
         <div style="margin-bottom:10px;">
@@ -182,7 +195,7 @@
             {% endif %}
             <div style="display:flex; flex-wrap:wrap; gap:8px; font-size:0.75rem; color:var(--text-light); margin-bottom:4px;">
                 <span style="display:inline-flex; align-items:center; gap:3px; font-weight:600;">
-                    📅 {{ ride.date }}{% if ride.start_time %} {{ ride.start_time }}{% endif %}
+                    📅 {{ ride.date }}{% if ride.plan_start_time %} {{ ride.plan_start_time }}{% endif %}
                 </span>
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:10px; font-size:0.75rem; color:var(--text-light);">
@@ -285,7 +298,7 @@
 
     {# Fitness Score Breakdown #}
     {% if fitness_score %}
-    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:12px; margin-bottom:24px; padding:18px; background:linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%); border-radius:12px; border:1px solid #e2e8f0; box-shadow:0 2px 4px rgba(0,0,0,0.04);">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(90px, 1fr)); gap:12px; margin-bottom:24px; padding:18px; background:linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%); border-radius:12px; border:1px solid #e2e8f0; box-shadow:0 2px 4px rgba(0,0,0,0.04);">
         <div style="text-align:center; padding:8px; background:white; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
             <div style="font-size:2.2rem; font-weight:900; background:linear-gradient(135deg, {% if fitness_score.total >= 70 %}#38a169, #48bb78{% elif fitness_score.total >= 40 %}#d69e2e, #ed8936{% else %}#e53e3e, #fc8181{% endif %}); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;">{{ fitness_score.total }}</div>
             <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin-top:2px;">Overall</div>
@@ -331,7 +344,7 @@
     {% endif %}
 
     {# Training Rides Card Grid #}
-    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:14px;">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
     {% for ride in training_rides %}
     <div class="training-card" style="padding:14px; background:white; border-radius:12px; border:1px solid #e2e8f0; border-left:5px solid {{ ride.color }}; position:relative; transition:all 0.2s ease; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
         {# Grade badge - top right #}
@@ -396,7 +409,7 @@
 
 {# ===== BREVET SEASON HISTORY ===== #}
 {% for sd in season_data %}
-<div class="season-block" style="margin-bottom:35px; background:white; border-radius:12px; padding:24px; box-shadow:0 2px 8px rgba(0,0,0,0.06); border-left:5px solid var(--primary);">
+<div class="season-block" style="margin-bottom:35px; background:white; border-radius:12px; padding:12px; box-shadow:0 2px 8px rgba(0,0,0,0.06); border-left:5px solid var(--primary);">
 <div style="margin-bottom:16px; padding-bottom:16px; border-bottom:2px solid #f1f5f9;">
     <h3 style="margin:0 0 12px 0; font-size:1.4rem; font-weight:700; color:var(--primary); display:flex; align-items:center; flex-wrap:wrap; gap:10px;">
         <span>{{ sd.season.name }} Season</span>
@@ -437,6 +450,18 @@
     <th style="padding:12px 16px; text-align:left; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text); border-bottom:2px solid #e2e8f0;">Distance</th>
     <th style="padding:12px 16px; text-align:left; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text); border-bottom:2px solid #e2e8f0;">Elevation</th>
     <th style="padding:12px 16px; text-align:center; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text); border-bottom:2px solid #e2e8f0;">Time</th>
+    {% if is_own_profile %}<th style="padding:12px 16px; text-align:center; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:#fc4c02; border-bottom:2px solid #e2e8f0; border-top-right-radius:8px;">
+        <span style="display:inline-flex; align-items:center; gap:8px;">
+            Strava
+            {% if sd.strava_matches %}
+            <button onclick="toggleAllRideStats('{{ sd.season.id }}')" id="showall-{{ sd.season.id }}"
+                style="font-size:0.65rem; font-weight:600; color:#fc4c02; background:transparent; border:1px solid #fc4c02; padding:2px 7px; border-radius:4px; cursor:pointer; text-transform:none; letter-spacing:0; transition:all 0.2s; white-space:nowrap;"
+                onmouseover="this.style.background='#fff5f0'" onmouseout="this.style.background='transparent'">
+                Show all
+            </button>
+            {% endif %}
+        </span>
+    </th>{% endif %}
 </tr>
 </thead>
 <tbody>
@@ -445,7 +470,14 @@
 <tr style="transition:background 0.2s;" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='white'">
 <td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; color:var(--text-light); font-weight:500;">{{ p.date }}</td>
 <td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; color:var(--text); line-height:1.5;">
+    {% if sd.season.name in ['2024-2025', '2025-2026'] and p.plan_slug %}
+    <a href="{{ url_for('riders.ride_plan_detail', slug=p.plan_slug) }}"
+       style="color:var(--primary); text-decoration:none; font-weight:700;">
+        {{ p.ride_name|clean_name }}
+    </a>
+    {% else %}
     <strong style="color:var(--primary);">{{ p.ride_name|clean_name }}</strong>
+    {% endif %}
     {% if p.rwgps_url %}
     <a href="{{ p.rwgps_url }}" target="_blank" style="display:inline-flex; align-items:center; gap:3px; margin-left:8px; font-size:0.75rem; color:#4299e1; text-decoration:none; padding:2px 6px; border-radius:4px; background:#ebf8ff; transition:all 0.2s;">
         <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:12px;height:12px;">
@@ -459,21 +491,95 @@
 <td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; font-weight:600; color:var(--text);">{{ p.distance_km }} km</td>
 <td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; color:var(--text-light);">{% if p.elevation_ft %}<span style="font-weight:600; color:var(--text);">{{ "{:,}".format(p.elevation_ft) }}</span> ft{% endif %}</td>
 <td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; text-align:center; font-size:0.85rem; color:#718096; font-weight:600; font-family:monospace;">{{ p.finish_time or '—' }}</td>
-{% if sd.strava_matches %}
+{% if is_own_profile %}
 <td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; text-align:center;">
-    {% if p.ride_id and p.ride_id in sd.strava_matches %}
-    <a href="{{ url_for('riders.ride_strava_analysis', rusa_id=rider.rusa_id, ride_id=p.ride_id) }}"
-       style="display:inline-flex; align-items:center; gap:3px; font-size:0.75rem; color:#fc4c02; text-decoration:none; padding:2px 6px; border-radius:4px; background:#fff5f0; transition:all 0.2s;"
-       onmouseover="this.style.background='#fed7aa'" onmouseout="this.style.background='#fff5f0'">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="#fc4c02"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
-        analysis
-    </a>
+    {% if p.status|lower == 'finished' and p.ride_id and sd.strava_matches and p.ride_id in sd.strava_matches %}
+    <button onclick="toggleRideAnalysis({{ p.ride_id }})" id="btn-{{ p.ride_id }}"
+        style="display:inline-flex; align-items:center; gap:4px; font-size:0.72rem; font-weight:600; color:#fc4c02; background:#fff5f0; border:1px solid #fed7aa; padding:4px 10px; border-radius:6px; cursor:pointer; transition:all 0.2s;"
+        onmouseover="this.style.background='#fed7aa'" onmouseout="this.style.background='#fff5f0'">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="#fc4c02"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+        Stats
+    </button>
     {% else %}
-    <span style="color:var(--text-light); font-size:0.75rem;">—</span>
+    <span style="color:#cbd5e0; font-size:0.75rem;">—</span>
     {% endif %}
 </td>
 {% endif %}
 </tr>
+{% if is_own_profile and p.status|lower == 'finished' and p.ride_id and sd.strava_matches and p.ride_id in sd.strava_matches %}
+<tr id="strava-row-{{ p.ride_id }}" data-season="{{ sd.season.id }}" style="display:none;">
+    <td colspan="6" style="padding:0 8px 12px; background:#fffaf8; border-bottom:1px solid #f1f5f9;">
+        {% set act = sd.ride_details.get(p.ride_id) %}
+        {% if act %}
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(95px, 1fr)); gap:1px; background:#fee2d5; border-radius:10px; overflow:hidden; border:1px solid #fed7aa; margin-bottom:10px;">
+            <div style="text-align:center; padding:12px 6px; background:white;">
+                <div style="font-size:1.1rem; font-weight:700; color:#1e293b;">{{ act.distance_miles }} mi</div>
+                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Distance</div>
+            </div>
+            <div style="text-align:center; padding:12px 6px; background:white;">
+                <div style="font-size:1.1rem; font-weight:700; color:#1e293b;">{{ act.elapsed_time_hrs }}h{{ "%02d"|format(act.elapsed_time_min) }}m</div>
+                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Total Time</div>
+            </div>
+            <div style="text-align:center; padding:12px 6px; background:white;">
+                <div style="font-size:1.1rem; font-weight:700; color:#1e293b;">{{ act.moving_time_hrs }}h{{ "%02d"|format(act.moving_time_min) }}m</div>
+                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Moving</div>
+            </div>
+            <div style="text-align:center; padding:12px 6px; background:white;">
+                <div style="font-size:1.1rem; font-weight:700; color:#1e293b;">{{ act.stopped_time_min }} min</div>
+                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Stopped</div>
+            </div>
+            <div style="text-align:center; padding:12px 6px; background:white;">
+                <div style="font-size:1.1rem; font-weight:700; color:#1e293b;">{{ act.avg_speed_mph }} mph</div>
+                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Avg Speed</div>
+            </div>
+            <div style="text-align:center; padding:12px 6px; background:white;">
+                <div style="font-size:1.1rem; font-weight:700; color:#1e293b;">{{ "{:,}".format(act.elevation_ft) }} ft</div>
+                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Elevation</div>
+            </div>
+            {% if act.has_heartrate and act.average_heartrate %}
+            <div style="text-align:center; padding:12px 6px; background:white;">
+                <div style="font-size:1.1rem; font-weight:700; color:#dc2626;">{{ act.average_heartrate|round(0)|int }} bpm</div>
+                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Avg HR</div>
+            </div>
+            {% endif %}
+            {% if act.device_watts and act.average_watts %}
+            <div style="text-align:center; padding:12px 6px; background:white;">
+                <div style="font-size:1.1rem; font-weight:700; color:#7c3aed;">{{ act.average_watts|round(0)|int }} W</div>
+                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Avg Power</div>
+            </div>
+            {% endif %}
+            {% if act.suffer_score %}
+            <div style="text-align:center; padding:12px 6px; background:white;">
+                <div style="font-size:1.1rem; font-weight:700; color:#ea580c;">{{ act.suffer_score }}</div>
+                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Suffer Score</div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+        <div style="display:flex; gap:8px; flex-wrap:wrap; padding:0 4px;">
+            <a href="{{ url_for('riders.ride_strava_analysis', rusa_id=rider.rusa_id, ride_id=p.ride_id) }}"
+               style="display:inline-flex; align-items:center; gap:5px; padding:6px 14px; background:#fc4c02; color:white; border-radius:8px; text-decoration:none; font-weight:600; font-size:0.78rem; transition:background 0.2s;"
+               onmouseover="this.style.background='#e04302'" onmouseout="this.style.background='#fc4c02'">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+                {% if p.plan_slug %}Plan vs Actual{% else %}Full Analysis{% endif %}
+            </a>
+            <a href="{{ url_for('riders.ride_cohort_comparison', ride_id=p.ride_id) }}"
+               style="display:inline-flex; align-items:center; gap:5px; padding:6px 14px; background:#0ea5e9; color:white; border-radius:8px; text-decoration:none; font-weight:600; font-size:0.78rem; transition:background 0.2s;"
+               onmouseover="this.style.background='#38bdf8'" onmouseout="this.style.background='#0ea5e9'">
+                &#x1F465; Compare with Cohort
+            </a>
+            {% if act and act.strava_url %}
+            <a href="{{ act.strava_url }}" target="_blank" rel="noopener"
+               style="display:inline-flex; align-items:center; gap:4px; padding:6px 12px; background:white; color:#fc4c02; border:1px solid #fc4c02; border-radius:8px; text-decoration:none; font-size:0.78rem; font-weight:600; transition:all 0.2s;"
+               onmouseover="this.style.background='#fff5f0'" onmouseout="this.style.background='white'">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="#fc4c02"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+                View on Strava
+            </a>
+            {% endif %}
+        </div>
+    </td>
+</tr>
+{% endif %}
 {% endif %}
 {% endfor %}
 </tbody>
@@ -488,6 +594,39 @@
 {% endif %}
 
 </div>
+
+<script>
+var STRAVA_SVG = '<svg width="10" height="10" viewBox="0 0 24 24" fill="#fc4c02"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg> ';
+
+function toggleRideAnalysis(rideId) {
+    var row = document.getElementById('strava-row-' + rideId);
+    var btn = document.getElementById('btn-' + rideId);
+    if (!row) return;
+    var isOpen = row.style.display !== 'none';
+    row.style.display = isOpen ? 'none' : 'table-row';
+    if (btn) {
+        btn.style.background = isOpen ? '#fff5f0' : '#fed7aa';
+        btn.innerHTML = STRAVA_SVG + (isOpen ? 'Stats' : 'Hide');
+    }
+}
+
+function toggleAllRideStats(seasonId) {
+    var rows = document.querySelectorAll('tr[data-season="' + seasonId + '"]');
+    var btn = document.getElementById('showall-' + seasonId);
+    if (!rows.length) return;
+    var anyHidden = Array.from(rows).some(function(r) { return r.style.display === 'none'; });
+    rows.forEach(function(row) {
+        var rideId = row.id.replace('strava-row-', '');
+        var indBtn = document.getElementById('btn-' + rideId);
+        row.style.display = anyHidden ? 'table-row' : 'none';
+        if (indBtn) {
+            indBtn.style.background = anyHidden ? '#fed7aa' : '#fff5f0';
+            indBtn.innerHTML = STRAVA_SVG + (anyHidden ? 'Hide' : 'Stats');
+        }
+    });
+    if (btn) btn.textContent = anyHidden ? 'Hide all' : 'Show all';
+}
+</script>
 
 {% if upcoming_rides %}
 <script>

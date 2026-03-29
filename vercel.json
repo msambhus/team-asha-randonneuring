@@ -16,6 +16,12 @@
       "use": "@vercel/static"
     }
   ],
+  "crons": [
+    {
+      "path": "/backfill-wind",
+      "schedule": "0 8 * * *"
+    }
+  ],
   "routes": [
     {
       "src": "/static/(.*)",

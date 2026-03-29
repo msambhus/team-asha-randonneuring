@@ -17,6 +17,14 @@ import json
 # Allow imports from project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Safety gate: evals make real OpenAI API calls and incur cost.
+# Block execution when running on Vercel (VERCEL_ENV is set only in Vercel deployments).
+if os.environ.get('VERCEL_ENV'):
+    raise RuntimeError(
+        "Eval files must not run in a Vercel deployment. "
+        "Run evals locally with: braintrust eval evals/eval_e2e.py"
+    )
+
 from braintrust import Eval, init_dataset
 from openai import OpenAI
 
