@@ -2565,7 +2565,7 @@ def get_finished_riders_for_ride(ride_id):
             r.first_name,
             r.last_name,
             r.rusa_id,
-            COALESCE(r.strava_data_private, FALSE) as strava_data_private,
+            COALESCE(rp.strava_data_private, FALSE) as strava_data_private,
             srm.id as match_id,
             srm.strava_activity_id,
             sa.strava_url,
@@ -2588,6 +2588,7 @@ def get_finished_riders_for_ride(ride_id):
             sra.strava_api_error
         FROM rider_ride rr
         JOIN rider r ON r.id = rr.rider_id
+        LEFT JOIN rider_profile rp ON rp.rider_id = r.id
         LEFT JOIN strava_ride_match srm ON srm.rider_id = r.id AND srm.ride_id = rr.ride_id
         LEFT JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
         LEFT JOIN strava_ride_analysis sra ON sra.match_id = srm.id
