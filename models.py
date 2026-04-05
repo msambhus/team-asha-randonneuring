@@ -1690,14 +1690,21 @@ def upsert_strava_activity(row):
             moving_time, elapsed_time, total_elevation_gain, start_date,
             start_date_local, average_heartrate, max_heartrate, has_heartrate,
             average_watts, max_watts, weighted_average_watts, kilojoules,
-            device_watts, average_speed, max_speed, suffer_score, strava_url
+            device_watts, average_speed, max_speed, suffer_score, strava_url,
+            average_cadence, average_temp, calories, pr_count, achievement_count,
+            gear_id, elev_high, elev_low, trainer, commute, workout_type,
+            map_summary_polyline, start_latlng, end_latlng
         ) VALUES (
             %(rider_id)s, %(strava_activity_id)s, %(name)s, %(activity_type)s,
             %(distance)s, %(moving_time)s, %(elapsed_time)s, %(total_elevation_gain)s,
             %(start_date)s, %(start_date_local)s, %(average_heartrate)s,
             %(max_heartrate)s, %(has_heartrate)s, %(average_watts)s, %(max_watts)s,
             %(weighted_average_watts)s, %(kilojoules)s, %(device_watts)s,
-            %(average_speed)s, %(max_speed)s, %(suffer_score)s, %(strava_url)s
+            %(average_speed)s, %(max_speed)s, %(suffer_score)s, %(strava_url)s,
+            %(average_cadence)s, %(average_temp)s, %(calories)s, %(pr_count)s,
+            %(achievement_count)s, %(gear_id)s, %(elev_high)s, %(elev_low)s,
+            %(trainer)s, %(commute)s, %(workout_type)s,
+            %(map_summary_polyline)s, %(start_latlng)s, %(end_latlng)s
         )
         ON CONFLICT (strava_activity_id) DO UPDATE SET
             name = EXCLUDED.name,
@@ -1716,6 +1723,20 @@ def upsert_strava_activity(row):
             average_speed = EXCLUDED.average_speed,
             max_speed = EXCLUDED.max_speed,
             suffer_score = EXCLUDED.suffer_score,
+            average_cadence = EXCLUDED.average_cadence,
+            average_temp = EXCLUDED.average_temp,
+            calories = EXCLUDED.calories,
+            pr_count = EXCLUDED.pr_count,
+            achievement_count = EXCLUDED.achievement_count,
+            gear_id = EXCLUDED.gear_id,
+            elev_high = EXCLUDED.elev_high,
+            elev_low = EXCLUDED.elev_low,
+            trainer = EXCLUDED.trainer,
+            commute = EXCLUDED.commute,
+            workout_type = EXCLUDED.workout_type,
+            map_summary_polyline = EXCLUDED.map_summary_polyline,
+            start_latlng = EXCLUDED.start_latlng,
+            end_latlng = EXCLUDED.end_latlng,
             fetched_at = CURRENT_TIMESTAMP
         RETURNING (xmax = 0) AS is_new
     """, row)
@@ -2579,6 +2600,7 @@ def get_ride_cohort_stats(ride_id):
             sa.average_watts,
             sa.weighted_average_watts,
             sa.device_watts,
+            sa.average_cadence,
             sa.strava_url
         FROM rider_ride rr
         JOIN rider r ON r.id = rr.rider_id

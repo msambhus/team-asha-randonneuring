@@ -1,4 +1,5 @@
 """Strava API service — OAuth token exchange, refresh, and activity fetching."""
+import json
 import time
 import requests as http_requests
 from flask import current_app
@@ -157,6 +158,20 @@ def transform_activity(activity, rider_id):
         'max_speed': activity.get('max_speed'),
         'suffer_score': activity.get('suffer_score'),
         'strava_url': f'https://www.strava.com/activities/{strava_id}',
+        'average_cadence':      activity.get('average_cadence'),
+        'average_temp':         activity.get('average_temp'),
+        'calories':             activity.get('calories'),
+        'pr_count':             activity.get('pr_count'),
+        'achievement_count':    activity.get('achievement_count'),
+        'gear_id':              activity.get('gear_id'),
+        'elev_high':            activity.get('elev_high'),
+        'elev_low':             activity.get('elev_low'),
+        'trainer':              activity.get('trainer', False),
+        'commute':              activity.get('commute', False),
+        'workout_type':         activity.get('workout_type'),
+        'map_summary_polyline': (activity.get('map') or {}).get('summary_polyline'),
+        'start_latlng':         json.dumps(activity['start_latlng']) if activity.get('start_latlng') else None,
+        'end_latlng':           json.dumps(activity['end_latlng']) if activity.get('end_latlng') else None,
     }
 
 

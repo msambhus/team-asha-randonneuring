@@ -349,6 +349,21 @@ CREATE TABLE strava_activity (
     max_speed REAL,                    -- m/s
     suffer_score INTEGER,
     strava_url TEXT,                   -- "View on Strava" link (compliance requirement)
+    -- Fields added in migration 017 (TA-87): previously available from Strava but not stored
+    average_cadence REAL,              -- avg pedaling cadence in RPM (displayed on cohort comparison)
+    average_temp REAL,                 -- avg temperature in Celsius
+    calories REAL,                     -- calories burned
+    pr_count INTEGER,                  -- personal records set
+    achievement_count INTEGER,         -- achievements earned
+    gear_id TEXT,                      -- Strava gear ID (e.g. b1234567)
+    elev_high REAL,                    -- max elevation reached in meters
+    elev_low REAL,                     -- min elevation reached in meters
+    trainer BOOLEAN DEFAULT FALSE,     -- TRUE if recorded on a trainer (indoor)
+    commute BOOLEAN DEFAULT FALSE,     -- TRUE if marked as a commute
+    workout_type INTEGER,              -- Strava enum: 10=race, 12=long ride, etc.
+    map_summary_polyline TEXT,         -- encoded polyline from map.summary_polyline
+    start_latlng TEXT,                 -- JSON-encoded [lat, lng] of activity start
+    end_latlng TEXT,                   -- JSON-encoded [lat, lng] of activity end
     fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -358,6 +373,10 @@ CREATE INDEX idx_strava_activity_strava_id ON strava_activity(strava_activity_id
 COMMENT ON TABLE strava_activity IS 'Cached Strava activities for calendar view and fitness scoring';
 COMMENT ON COLUMN strava_activity.distance IS 'Distance in meters (divide by 1000 for km)';
 COMMENT ON COLUMN strava_activity.strava_url IS 'Direct link to activity on Strava (required for compliance)';
+COMMENT ON COLUMN strava_activity.average_cadence IS 'Avg pedaling cadence in RPM';
+COMMENT ON COLUMN strava_activity.map_summary_polyline IS 'Encoded polyline from map.summary_polyline';
+COMMENT ON COLUMN strava_activity.start_latlng IS 'JSON-encoded [lat, lng] of activity start';
+COMMENT ON COLUMN strava_activity.end_latlng IS 'JSON-encoded [lat, lng] of activity end';
 
 -- ============================================================
 -- STRAVA RIDE ANALYSIS
