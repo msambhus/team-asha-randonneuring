@@ -1,0 +1,550 @@
+{% extends "base.html" %}
+{% block title %}Route Weather - Team Asha Randonneuring{% endblock %}
+
+{% block extra_head %}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<style>
+.weather-container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+.input-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+}
+.input-card h2 { margin: 0 0 16px; font-size: 1.25rem; color: var(--text); }
+.form-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-group label { font-size: 0.8rem; font-weight: 600; color: var(--text-light); }
+.form-group input {
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    background: var(--bg);
+    color: var(--text);
+}
+.form-group input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+.btn-fetch {
+    padding: 10px 24px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+}
+.btn-fetch:hover { background: var(--primary-dark); }
+.btn-fetch:disabled { background: #94a3b8; cursor: not-allowed; }
+
+/* Loading & Error */
+.loading { text-align: center; padding: 40px; display: none; }
+.loading .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.error-alert {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    display: none;
+}
+
+/* Summary bar */
+.summary-bar {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    display: none;
+}
+.summary-bar h3 { margin: 0 0 8px; font-size: 1.1rem; }
+.summary-chips { display: flex; gap: 12px; flex-wrap: wrap; }
+.chip {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: #f1f5f9;
+    color: var(--text);
+}
+.chip.headwind { background: #fef2f2; color: #991b1b; }
+.chip.tailwind { background: #f0fdf4; color: #166534; }
+.chip.crosswind { background: #fffbeb; color: #92400e; }
+
+/* Weather table */
+.weather-table-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 24px;
+    display: none;
+}
+.weather-table-wrap h3 {
+    margin: 0;
+    padding: 14px 20px;
+    font-size: 1rem;
+    border-bottom: 1px solid var(--border);
+    background: #f8fafc;
+}
+.weather-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.weather-table th {
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-light);
+    border-bottom: 1px solid var(--border);
+    background: #f8fafc;
+}
+.weather-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+.weather-table tr:last-child td { border-bottom: none; }
+.row-headwind { background: #fef2f2; }
+.row-tailwind { background: #f0fdf4; }
+.row-crosswind { background: #fffbeb; }
+.wind-arrow-inline {
+    display: inline-block;
+    font-size: 1.1rem;
+    line-height: 1;
+}
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+.badge-headwind { background: #fee2e2; color: #991b1b; }
+.badge-tailwind { background: #dcfce7; color: #166534; }
+.badge-crosswind { background: #fef3c7; color: #92400e; }
+
+/* Map */
+.map-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 24px;
+    display: none;
+}
+.map-section h3 {
+    margin: 0;
+    padding: 14px 20px;
+    font-size: 1rem;
+    border-bottom: 1px solid var(--border);
+    background: #f8fafc;
+}
+#wind-map { height: 500px; width: 100%; }
+
+/* Legend */
+.map-legend {
+    display: flex;
+    gap: 16px;
+    padding: 10px 20px;
+    background: #f8fafc;
+    border-top: 1px solid var(--border);
+    font-size: 0.8rem;
+    flex-wrap: wrap;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.attribution {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-light);
+    padding: 8px;
+    display: none;
+}
+
+@media (max-width: 640px) {
+    .form-row { flex-direction: column; }
+    .form-group input { width: 100%; }
+    .weather-table { font-size: 0.75rem; }
+    .weather-table th, .weather-table td { padding: 8px 10px; }
+    #wind-map { height: 350px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="weather-container">
+    <div class="input-card">
+        <h2>Route Weather Forecast</h2>
+        <form id="weather-form">
+            <div class="form-row">
+                <div class="form-group" style="flex:1; min-width: 280px;">
+                    <label for="rwgps-url">RideWithGPS Route URL</label>
+                    <input type="text" id="rwgps-url" placeholder="https://ridewithgps.com/routes/12345" required>
+                </div>
+                <div class="form-group">
+                    <label for="start-datetime">Start Date/Time (optional)</label>
+                    <input type="datetime-local" id="start-datetime">
+                </div>
+                <button type="submit" class="btn-fetch" id="btn-fetch">Get Weather</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="error-alert" id="error-alert"></div>
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <div style="color:var(--text-light); font-size:0.9rem;">Fetching route & weather data...</div>
+    </div>
+
+    <div class="summary-bar" id="summary-bar">
+        <h3 id="route-name"></h3>
+        <div class="summary-chips" id="summary-chips"></div>
+    </div>
+
+    <div class="weather-table-wrap" id="weather-table-wrap">
+        <h3>Weather Along Route</h3>
+        <div style="overflow-x:auto;">
+            <table class="weather-table">
+                <thead>
+                    <tr>
+                        <th>Distance</th>
+                        <th>Temp</th>
+                        <th>Wind</th>
+                        <th>Direction</th>
+                        <th>Head/Tail</th>
+                        <th>Conditions</th>
+                        <th>Precip</th>
+                    </tr>
+                </thead>
+                <tbody id="weather-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="map-section" id="map-section">
+        <h3>Wind Map</h3>
+        <div id="wind-map"></div>
+        <div class="map-legend">
+            <div class="legend-item"><div class="legend-dot" style="background:#ef4444;"></div> Headwind</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#22c55e;"></div> Tailwind</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;"></div> Crosswind / Light</div>
+            <div class="legend-item" style="margin-left:auto; color:var(--text-light);">Arrow size = wind speed</div>
+        </div>
+    </div>
+
+    <div class="attribution" id="attribution"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    var MAPBOX_TOKEN = '{{ mapbox_token }}';
+    var map = null;
+
+    // ── Form submit ────────────────────────────────────────
+    document.getElementById('weather-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var url = document.getElementById('rwgps-url').value.trim();
+        var dt = document.getElementById('start-datetime').value;
+        if (!url) return;
+
+        showLoading(true);
+        hideResults();
+
+        fetch('/api/weather-map', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ rwgps_url: url, start_datetime: dt || null })
+        })
+        .then(function(resp) { return resp.json().then(function(d) { return {ok: resp.ok, data: d}; }); })
+        .then(function(result) {
+            showLoading(false);
+            if (!result.ok) {
+                showError(result.data.error || 'An error occurred.');
+                return;
+            }
+            renderResults(result.data);
+        })
+        .catch(function() {
+            showLoading(false);
+            showError('Network error. Please try again.');
+        });
+    });
+
+    // ── Helpers ────────────────────────────────────────────
+    function showLoading(on) {
+        document.getElementById('loading').style.display = on ? 'block' : 'none';
+        document.getElementById('btn-fetch').disabled = on;
+    }
+    function showError(msg) {
+        var el = document.getElementById('error-alert');
+        el.textContent = msg;
+        el.style.display = 'block';
+    }
+    function hideResults() {
+        document.getElementById('error-alert').style.display = 'none';
+        document.getElementById('summary-bar').style.display = 'none';
+        document.getElementById('weather-table-wrap').style.display = 'none';
+        document.getElementById('map-section').style.display = 'none';
+        document.getElementById('attribution').style.display = 'none';
+    }
+
+    // ── Render ─────────────────────────────────────────────
+    function renderResults(data) {
+        renderSummary(data);
+        renderTable(data);
+        renderMap(data);
+        if (data.attribution) {
+            var el = document.getElementById('attribution');
+            el.textContent = data.attribution;
+            el.style.display = 'block';
+        }
+    }
+
+    function renderSummary(data) {
+        document.getElementById('route-name').textContent = data.route_name;
+        var chips = document.getElementById('summary-chips');
+        chips.innerHTML = '';
+
+        addChip(chips, data.total_distance_km + ' km', '');
+        if (data.temp_range) {
+            addChip(chips, data.temp_range.min_c + ' - ' + data.temp_range.max_c + ' °C', '');
+        }
+        var windClass = assessmentClass(data.overall_assessment);
+        addChip(chips, data.overall_assessment, windClass);
+
+        document.getElementById('summary-bar').style.display = 'block';
+    }
+
+    function addChip(parent, text, cls) {
+        var span = document.createElement('span');
+        span.className = 'chip' + (cls ? ' ' + cls : '');
+        span.textContent = text;
+        parent.appendChild(span);
+    }
+
+    function assessmentClass(label) {
+        if (!label) return '';
+        var l = label.toLowerCase();
+        if (l.indexOf('headwind') >= 0) return 'headwind';
+        if (l.indexOf('tailwind') >= 0) return 'tailwind';
+        return 'crosswind';
+    }
+
+    // ── Table ──────────────────────────────────────────────
+    function renderTable(data) {
+        var tbody = document.getElementById('weather-tbody');
+        tbody.innerHTML = '';
+
+        data.segments.forEach(function(seg) {
+            var tr = document.createElement('tr');
+            var hw = seg.headwind_kmh || 0;
+            if (hw > 5) tr.className = 'row-headwind';
+            else if (hw < -5) tr.className = 'row-tailwind';
+            else tr.className = 'row-crosswind';
+
+            // Wind direction arrow (rotate to show where wind blows FROM)
+            var arrowDeg = seg.wind_direction_deg || 0;
+            var arrowHtml = '<span class="wind-arrow-inline" style="transform:rotate(' + arrowDeg + 'deg);">&#x2193;</span>';
+
+            var badgeClass = hw > 5 ? 'badge-headwind' : (hw < -5 ? 'badge-tailwind' : 'badge-crosswind');
+
+            tr.innerHTML =
+                '<td>' + seg.distance_km + ' km</td>' +
+                '<td>' + seg.temperature_c + '°C</td>' +
+                '<td>' + seg.wind_speed_kmh + ' km/h</td>' +
+                '<td>' + arrowHtml + ' ' + seg.wind_direction_deg + '°</td>' +
+                '<td><span class="badge ' + badgeClass + '">' + seg.wind_label + '</span><br><small>' + Math.abs(hw) + ' km/h</small></td>' +
+                '<td>' + seg.conditions + '</td>' +
+                '<td>' + seg.precip_percent + '%</td>';
+
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('weather-table-wrap').style.display = 'block';
+    }
+
+    // ── Map ────────────────────────────────────────────────
+    function renderMap(data) {
+        if (!MAPBOX_TOKEN || !data.polyline || data.polyline.length === 0) {
+            document.getElementById('map-section').style.display = 'none';
+            return;
+        }
+
+        document.getElementById('map-section').style.display = 'block';
+
+        mapboxgl.accessToken = MAPBOX_TOKEN;
+
+        // Remove existing map if re-fetching
+        if (map) {
+            map.remove();
+            map = null;
+        }
+
+        map = new mapboxgl.Map({
+            container: 'wind-map',
+            style: 'mapbox://styles/mapbox/outdoors-v12',
+            center: [data.polyline[0][1], data.polyline[0][0]],
+            zoom: 9,
+        });
+        map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+        map.on('load', function() {
+            addRouteLayer(data);
+            addWindArrows(data);
+            fitBounds(data.polyline);
+        });
+    }
+
+    function addRouteLayer(data) {
+        var coords = data.polyline.map(function(p) { return [p[1], p[0]]; });
+        map.addSource('route', {
+            type: 'geojson',
+            data: {
+                type: 'Feature',
+                geometry: { type: 'LineString', coordinates: coords }
+            }
+        });
+        map.addLayer({
+            id: 'route-line',
+            type: 'line',
+            source: 'route',
+            paint: {
+                'line-color': '#3b82f6',
+                'line-width': 3,
+                'line-opacity': 0.8
+            }
+        });
+    }
+
+    function addWindArrows(data) {
+        // Create arrow images for each color
+        createArrowImage('wind-arrow-red', '#ef4444');
+        createArrowImage('wind-arrow-green', '#22c55e');
+        createArrowImage('wind-arrow-amber', '#f59e0b');
+
+        var features = data.segments.map(function(seg) {
+            var hw = seg.headwind_kmh || 0;
+            var color;
+            if (hw > 5) color = 'red';
+            else if (hw < -5) color = 'green';
+            else color = 'amber';
+
+            return {
+                type: 'Feature',
+                geometry: {
+                    type: 'Point',
+                    coordinates: [seg.lng, seg.lat]
+                },
+                properties: {
+                    wind_direction: seg.wind_direction_deg || 0,
+                    wind_speed: seg.wind_speed_kmh || 0,
+                    headwind: hw,
+                    color: color,
+                    label: seg.wind_speed_kmh + ' km/h ' + seg.wind_label,
+                    detail: seg.temperature_c + '°C | ' + seg.conditions + ' | Precip: ' + seg.precip_percent + '%'
+                }
+            };
+        });
+
+        map.addSource('wind-points', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: features }
+        });
+
+        map.addLayer({
+            id: 'wind-arrows',
+            type: 'symbol',
+            source: 'wind-points',
+            layout: {
+                'icon-image': ['match', ['get', 'color'],
+                    'red', 'wind-arrow-red',
+                    'green', 'wind-arrow-green',
+                    'wind-arrow-amber'
+                ],
+                'icon-rotate': ['get', 'wind_direction'],
+                'icon-size': ['interpolate', ['linear'], ['get', 'wind_speed'],
+                    0, 0.4,
+                    10, 0.7,
+                    20, 1.0,
+                    40, 1.4
+                ],
+                'icon-allow-overlap': true,
+                'icon-rotation-alignment': 'map',
+                'icon-anchor': 'center',
+            }
+        });
+
+        // Tooltip on hover
+        var popup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 15 });
+
+        map.on('mouseenter', 'wind-arrows', function(e) {
+            map.getCanvas().style.cursor = 'pointer';
+            var props = e.features[0].properties;
+            var coords = e.features[0].geometry.coordinates.slice();
+            popup.setLngLat(coords)
+                .setHTML('<strong>' + props.label + '</strong><br>' + props.detail)
+                .addTo(map);
+        });
+
+        map.on('mouseleave', 'wind-arrows', function() {
+            map.getCanvas().style.cursor = '';
+            popup.remove();
+        });
+    }
+
+    function createArrowImage(name, color) {
+        var size = 48;
+        var canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        var ctx = canvas.getContext('2d');
+
+        // Draw arrow pointing DOWN (0° in Mapbox = north, and wind_direction is "from" direction,
+        // so a 0° wind blows FROM the north = arrow points down showing wind coming from above)
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(size / 2, size - 4);      // bottom center (tip)
+        ctx.lineTo(size - 8, 8);              // top right
+        ctx.lineTo(size / 2, 16);             // notch
+        ctx.lineTo(8, 8);                     // top left
+        ctx.closePath();
+        ctx.fill();
+
+        // Add outline for visibility
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        map.addImage(name, { width: size, height: size, data: ctx.getImageData(0, 0, size, size).data });
+    }
+
+    function fitBounds(polyline) {
+        var bounds = new mapboxgl.LngLatBounds();
+        polyline.forEach(function(p) { bounds.extend([p[1], p[0]]); });
+        map.fitBounds(bounds, { padding: 50, maxZoom: 12 });
+    }
+})();
+</script>
+{% endblock %}
