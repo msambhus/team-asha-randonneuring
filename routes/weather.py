@@ -1,4 +1,5 @@
 """Weather routes: standalone weather + wind map page."""
+import math
 import logging
 from datetime import datetime, timedelta
 
@@ -8,6 +9,7 @@ from services.rwgps import fetch_route, extract_controls, extract_rwgps_route_id
 from services.weather import (
     sample_track_points, calculate_bearing, headwind_component,
     get_cached_route_weather, format_weather_response,
+    wind_label, wmo_to_text, get_hour_index, _safe_get,
 )
 from cache import cache
 
@@ -17,6 +19,72 @@ weather_bp = Blueprint('weather', __name__)
 
 # Polyline decimation: keep every Nth track point for map rendering
 _POLYLINE_DECIMATION = 20
+
+# Sampling intervals
+_TABLE_INTERVAL_M = 50000   # 50km between table rows
+_MAP_INTERVAL_M = 10000     # 10km between map arrows
+
+# Unit conversion
+_KMH_TO_MPH = 0.621371
+_AVG_SPEED_KMH = 22  # for arrival-time estimation
+
+
+def _c_to_f(c):
+    """Celsius to Fahrenheit."""
+    return round(c * 9 / 5 + 32, 1)
+
+
+def _kmh_to_mph(kmh):
+    """km/h to mph."""
+    return round(kmh * _KMH_TO_MPH, 1)
+
+
+def _km_to_mi(km):
+    """Kilometers to miles."""
+    return round(km * 0.621371, 1)
+
+
+def _build_weather_segments(sample_points, weather_data, bearings, start_dt):
+    """Build weather segments with imperial units and lat/lng for map rendering."""
+    segments = []
+    for i in range(len(weather_data)):
+        if i >= len(sample_points):
+            break
+
+        pt = sample_points[i]
+        forecast = weather_data[i]
+        hourly = forecast.get('hourly', {})
+        times = hourly.get('time', [])
+
+        dist_km = pt['distance_m'] / 1000
+        hours_to_arrive = dist_km / _AVG_SPEED_KMH if _AVG_SPEED_KMH > 0 else 0
+        arrival = start_dt + timedelta(hours=hours_to_arrive)
+        idx = get_hour_index(times, arrival)
+
+        temp_c = _safe_get(hourly, 'temperature_2m', idx, 0.0)
+        wind_speed_kmh = _safe_get(hourly, 'wind_speed_10m', idx, 0.0)
+        wind_dir = _safe_get(hourly, 'wind_direction_10m', idx, 0)
+        precip = _safe_get(hourly, 'precipitation_probability', idx, 0)
+        wmo_code = _safe_get(hourly, 'weather_code', idx, 0)
+
+        bearing = bearings[i] if i < len(bearings) else (bearings[-1] if bearings else 0)
+        hw_kmh = headwind_component(wind_speed_kmh, wind_dir, bearing)
+
+        segments.append({
+            'distance_mi': _km_to_mi(dist_km),
+            'temperature_f': _c_to_f(temp_c),
+            'wind_speed_mph': _kmh_to_mph(wind_speed_kmh),
+            'wind_direction_deg': wind_dir,
+            'headwind_mph': _kmh_to_mph(hw_kmh),
+            'wind_label': wind_label(hw_kmh),
+            'precip_percent': precip,
+            'conditions': wmo_to_text(wmo_code),
+            'lat': pt['lat'],
+            'lng': pt['lng'],
+            'rider_bearing_deg': bearing,
+        })
+
+    return segments
 
 
 @weather_bp.route('/weather')
@@ -66,38 +134,45 @@ def weather_map_api():
     if not track_points:
         return jsonify({'error': 'This route has no GPS track data.'}), 400
 
-    # Sample track points at 50km intervals for weather queries
-    sample_points = sample_track_points(track_points, interval_m=50000)
-    if not sample_points:
+    # Sample at two intervals: sparse for table, dense for map
+    table_sample = sample_track_points(track_points, interval_m=_TABLE_INTERVAL_M)
+    map_sample = sample_track_points(track_points, interval_m=_MAP_INTERVAL_M)
+
+    if not table_sample:
         return jsonify({'error': 'Could not sample points from this route.'}), 400
 
-    # Fetch weather (cached)
+    # Fetch weather for both sample sets (map is superset, fetch once)
     start_hour_str = start_dt.strftime("%Y-%m-%dT%H:00")
     slug = f"route-{route_id}"
     try:
-        weather_data = get_cached_route_weather(slug, start_hour_str, sample_points, cache=cache)
+        map_weather = get_cached_route_weather(
+            f"{slug}-map", start_hour_str, map_sample, cache=cache)
+        table_weather = get_cached_route_weather(
+            f"{slug}-table", start_hour_str, table_sample, cache=cache)
     except Exception:
         return jsonify({'error': 'Weather data is temporarily unavailable. Please try again.'}), 503
 
-    # Compute bearings between consecutive sample points
-    bearings = []
-    for i in range(len(sample_points) - 1):
-        b = calculate_bearing(
-            sample_points[i]['lat'], sample_points[i]['lng'],
-            sample_points[i + 1]['lat'], sample_points[i + 1]['lng'],
-        )
-        bearings.append(b)
+    # Compute bearings for both sample sets
+    def compute_bearings(points):
+        bearings = []
+        for i in range(len(points) - 1):
+            bearings.append(calculate_bearing(
+                points[i]['lat'], points[i]['lng'],
+                points[i + 1]['lat'], points[i + 1]['lng'],
+            ))
+        return bearings
 
-    # Format weather response (reuse existing logic)
-    formatted = format_weather_response(sample_points, weather_data, bearings, start_dt)
+    table_bearings = compute_bearings(table_sample)
+    map_bearings = compute_bearings(map_sample)
 
-    # Augment segments with lat/lng/bearing for map rendering
-    segments = formatted.get('segments', [])
-    for i, seg in enumerate(segments):
-        if i < len(sample_points):
-            seg['lat'] = sample_points[i]['lat']
-            seg['lng'] = sample_points[i]['lng']
-        seg['rider_bearing_deg'] = bearings[i] if i < len(bearings) else (bearings[-1] if bearings else 0)
+    # Build segments in imperial units
+    table_segments = _build_weather_segments(table_sample, table_weather, table_bearings, start_dt)
+    map_segments = _build_weather_segments(map_sample, map_weather, map_bearings, start_dt)
+
+    # Overall assessment from table segments
+    headwinds = [s['headwind_mph'] for s in table_segments]
+    avg_hw_mph = sum(headwinds) / len(headwinds) if headwinds else 0
+    temps_f = [s['temperature_f'] for s in table_segments]
 
     # Decimate track points for map polyline
     polyline = []
@@ -107,7 +182,6 @@ def weather_map_api():
             lng = pt.get('x')
             if lat is not None and lng is not None:
                 polyline.append([lat, lng])
-    # Always include last point
     last = track_points[-1]
     if last.get('y') is not None and last.get('x') is not None:
         polyline.append([last['y'], last['x']])
@@ -118,7 +192,7 @@ def weather_map_api():
         cue_points = [
             {
                 'name': c['name'],
-                'distance_km': round(c['distance_m'] / 1000, 1),
+                'distance_mi': _km_to_mi(c['distance_m'] / 1000),
                 'stop_type': c['stop_type'],
             }
             for c in controls
@@ -132,13 +206,17 @@ def weather_map_api():
 
     return jsonify({
         'route_name': route_name,
-        'total_distance_km': round(total_dist_m / 1000, 1),
+        'total_distance_mi': _km_to_mi(total_dist_m / 1000),
         'polyline': polyline,
-        'segments': segments,
+        'table_segments': table_segments,
+        'map_segments': map_segments,
         'cue_points': cue_points,
-        'overall_assessment': formatted.get('overall_assessment', ''),
-        'temp_range': formatted.get('temp_range', {}),
-        'attribution': formatted.get('attribution', ''),
+        'overall_assessment': wind_label(avg_hw_mph / _KMH_TO_MPH) if headwinds else '',
+        'temp_range': {
+            'min_f': min(temps_f) if temps_f else 0,
+            'max_f': max(temps_f) if temps_f else 0,
+        },
+        'attribution': '*Weather data: Open-Meteo*',
     })
 
 

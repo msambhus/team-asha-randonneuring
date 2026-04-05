@@ -58,11 +58,6 @@ SAMPLE_WEATHER_DATA = [
 ]
 
 
-def _mock_weather(**kwargs):
-    """Build multi-point weather data."""
-    return SAMPLE_WEATHER_DATA
-
-
 # ── Endpoint tests ──────────────────────────────────────────────────
 
 class TestWeatherMapPage:
@@ -97,7 +92,7 @@ class TestWeatherMapAPI:
 
     @patch('routes.weather.get_cached_route_weather')
     @patch('routes.weather.fetch_route')
-    def test_happy_path_returns_segments(self, mock_fetch, mock_weather, client):
+    def test_happy_path_returns_imperial_units(self, mock_fetch, mock_weather, client):
         mock_fetch.return_value = SAMPLE_ROUTE_DATA
         mock_weather.return_value = SAMPLE_WEATHER_DATA
 
@@ -108,15 +103,18 @@ class TestWeatherMapAPI:
         data = resp.get_json()
 
         assert data['route_name'] == 'SFR 300K'
-        assert data['total_distance_km'] == 310.0
-        assert 'segments' in data
+        assert 'total_distance_mi' in data
+        assert 'table_segments' in data
+        assert 'map_segments' in data
         assert 'polyline' in data
         assert 'overall_assessment' in data
         assert 'temp_range' in data
+        assert 'min_f' in data['temp_range']
+        assert 'max_f' in data['temp_range']
 
     @patch('routes.weather.get_cached_route_weather')
     @patch('routes.weather.fetch_route')
-    def test_segments_have_lat_lng_bearing(self, mock_fetch, mock_weather, client):
+    def test_table_segments_have_imperial_fields(self, mock_fetch, mock_weather, client):
         mock_fetch.return_value = SAMPLE_ROUTE_DATA
         mock_weather.return_value = SAMPLE_WEATHER_DATA
 
@@ -125,17 +123,48 @@ class TestWeatherMapAPI:
                            content_type='application/json')
         data = resp.get_json()
 
-        for seg in data['segments']:
+        for seg in data['table_segments']:
+            assert 'distance_mi' in seg, 'segment missing distance_mi'
+            assert 'temperature_f' in seg, 'segment missing temperature_f'
+            assert 'wind_speed_mph' in seg, 'segment missing wind_speed_mph'
+            assert 'headwind_mph' in seg, 'segment missing headwind_mph'
+            assert 'wind_label' in seg
+            assert 'wind_direction_deg' in seg
+
+    @patch('routes.weather.get_cached_route_weather')
+    @patch('routes.weather.fetch_route')
+    def test_map_segments_have_lat_lng_bearing(self, mock_fetch, mock_weather, client):
+        mock_fetch.return_value = SAMPLE_ROUTE_DATA
+        mock_weather.return_value = SAMPLE_WEATHER_DATA
+
+        resp = client.post('/api/weather-map',
+                           json={'rwgps_url': 'https://ridewithgps.com/routes/12345'},
+                           content_type='application/json')
+        data = resp.get_json()
+
+        for seg in data['map_segments']:
             assert 'lat' in seg, 'segment missing lat'
             assert 'lng' in seg, 'segment missing lng'
             assert 'rider_bearing_deg' in seg, 'segment missing rider_bearing_deg'
-            assert 'headwind_kmh' in seg
-            assert 'wind_label' in seg
+            assert 'wind_speed_mph' in seg
+
+    @patch('routes.weather.get_cached_route_weather')
+    @patch('routes.weather.fetch_route')
+    def test_map_segments_denser_than_table(self, mock_fetch, mock_weather, client):
+        """Map segments use 10km interval vs 50km for table — should have more points."""
+        mock_fetch.return_value = SAMPLE_ROUTE_DATA
+        mock_weather.return_value = SAMPLE_WEATHER_DATA
+
+        resp = client.post('/api/weather-map',
+                           json={'rwgps_url': 'https://ridewithgps.com/routes/12345'},
+                           content_type='application/json')
+        data = resp.get_json()
+
+        assert len(data['map_segments']) >= len(data['table_segments'])
 
     @patch('routes.weather.get_cached_route_weather')
     @patch('routes.weather.fetch_route')
     def test_polyline_is_decimated(self, mock_fetch, mock_weather, client):
-        """Polyline should have fewer points than raw track_points."""
         mock_fetch.return_value = SAMPLE_ROUTE_DATA
         mock_weather.return_value = SAMPLE_WEATHER_DATA
 
@@ -144,13 +173,12 @@ class TestWeatherMapAPI:
                            content_type='application/json')
         data = resp.get_json()
 
-        # With 10 track points and decimation=20, we get ~1 point + last = 2
         assert len(data['polyline']) <= len(SAMPLE_TRACK_POINTS)
-        assert len(data['polyline']) >= 2  # at least start and end
+        assert len(data['polyline']) >= 2
 
     @patch('routes.weather.get_cached_route_weather')
     @patch('routes.weather.fetch_route')
-    def test_cue_points_included(self, mock_fetch, mock_weather, client):
+    def test_cue_points_in_miles(self, mock_fetch, mock_weather, client):
         mock_fetch.return_value = SAMPLE_ROUTE_DATA
         mock_weather.return_value = SAMPLE_WEATHER_DATA
 
@@ -160,7 +188,9 @@ class TestWeatherMapAPI:
         data = resp.get_json()
 
         assert 'cue_points' in data
-        assert len(data['cue_points']) >= 2  # at least start and finish
+        assert len(data['cue_points']) >= 2
+        for cp in data['cue_points']:
+            assert 'distance_mi' in cp
 
     @patch('routes.weather.fetch_route')
     def test_rwgps_404_returns_error(self, mock_fetch, client):
@@ -221,3 +251,18 @@ class TestWeatherMapAPI:
                            content_type='application/json')
         assert resp.status_code == 503
         assert 'unavailable' in resp.get_json()['error'].lower()
+
+
+class TestUnitConversions:
+    def test_c_to_f(self):
+        from routes.weather import _c_to_f
+        assert _c_to_f(0) == 32.0
+        assert _c_to_f(100) == 212.0
+
+    def test_kmh_to_mph(self):
+        from routes.weather import _kmh_to_mph
+        assert abs(_kmh_to_mph(10) - 6.2) < 0.2
+
+    def test_km_to_mi(self):
+        from routes.weather import _km_to_mi
+        assert abs(_km_to_mi(100) - 62.1) < 0.2
