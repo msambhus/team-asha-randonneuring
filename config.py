@@ -34,6 +34,9 @@ class Config:
     # Cron Job Authentication
     CRON_SECRET = os.environ.get('CRON_SECRET')
 
+    # Mapbox Configuration (for weather wind map)
+    MAPBOX_ACCESS_TOKEN = os.environ.get('MAPBOX_ACCESS_TOKEN')
+
     # OpenAI Configuration (optional — AI coaching falls back to rule-based if not set)
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
