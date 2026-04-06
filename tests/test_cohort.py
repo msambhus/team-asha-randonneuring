@@ -17,6 +17,7 @@ def _make_riders(overrides_per_rider=None):
             'elapsed_time': 36000, 'moving_time': 34200, 'stopped_time': 1800,
             'average_speed': 5.5, 'average_heartrate': 148.0, 'max_heartrate': 172.0,
             'total_elevation_gain': 1200.0, 'suffer_score': 280.0,
+            'average_cadence': 85.0,
             'average_watts': None, 'weighted_average_watts': None, 'device_watts': False,
         },
         {
@@ -24,6 +25,7 @@ def _make_riders(overrides_per_rider=None):
             'elapsed_time': 38000, 'moving_time': 35500, 'stopped_time': 2500,
             'average_speed': 5.2, 'average_heartrate': 155.0, 'max_heartrate': 179.0,
             'total_elevation_gain': 1250.0, 'suffer_score': 310.0,
+            'average_cadence': 78.0,
             'average_watts': None, 'weighted_average_watts': None, 'device_watts': False,
         },
         {
@@ -31,6 +33,7 @@ def _make_riders(overrides_per_rider=None):
             'elapsed_time': 40000, 'moving_time': 37000, 'stopped_time': 3000,
             'average_speed': 5.0, 'average_heartrate': 162.0, 'max_heartrate': 185.0,
             'total_elevation_gain': 1300.0, 'suffer_score': 340.0,
+            'average_cadence': 72.0,
             'average_watts': None, 'weighted_average_watts': None, 'device_watts': False,
         },
     ]
@@ -75,11 +78,12 @@ class TestDynamicDisplayRange:
 
 class TestBuildCohortStats:
     def test_all_metrics_present(self):
-        """Result contains entries for all 10 tracked metrics."""
+        """Result contains entries for all 11 tracked metrics."""
         from services.strava_analysis import build_cohort_stats
         stats = build_cohort_stats(_make_riders(), current_rider_id=1)
         expected = {
             'elapsed_time', 'moving_time', 'stopped_time', 'average_speed',
+            'average_cadence',
             'average_heartrate', 'max_heartrate', 'total_elevation_gain',
             'suffer_score', 'average_watts', 'weighted_average_watts',
         }
@@ -187,12 +191,47 @@ class TestCohortInsights:
         stats = build_cohort_stats(riders, current_rider_id=3)
         assert stats['stopped_time']['insight'] is None
 
+    def test_cadence_insight_fires_when_below_median(self):
+        """Insight fires when user cadence is more than 5 rpm below the median."""
+        from services.strava_analysis import build_cohort_stats
+        riders = _make_riders([
+            {'average_cadence': 95.0},
+            {'average_cadence': 90.0},
+            {'average_cadence': 70.0},  # rider 3: 22.5 rpm below median (91) — triggers insight
+        ])
+        stats = build_cohort_stats(riders, current_rider_id=3)
+        assert stats['average_cadence']['insight'] is not None
+        assert 'cadence' in stats['average_cadence']['insight'].lower()
+
+    def test_cadence_insight_suppressed_when_near_median(self):
+        """No insight when user cadence is within 5 rpm of the median."""
+        from services.strava_analysis import build_cohort_stats
+        riders = _make_riders([
+            {'average_cadence': 88.0},
+            {'average_cadence': 85.0},
+            {'average_cadence': 83.0},  # rider 3: 2 rpm below median — under threshold
+        ])
+        stats = build_cohort_stats(riders, current_rider_id=3)
+        assert stats['average_cadence']['insight'] is None
+
+    def test_cadence_card_hidden_when_no_cadence_data(self):
+        """Metric shows has_data=False when all riders have None cadence."""
+        from services.strava_analysis import build_cohort_stats
+        riders = _make_riders([
+            {'average_cadence': None},
+            {'average_cadence': None},
+            {'average_cadence': None},
+        ])
+        stats = build_cohort_stats(riders, current_rider_id=1)
+        assert stats['average_cadence']['has_data'] is False
+
     def test_no_insight_when_user_not_in_cohort(self):
         """Insights are all None when current_rider_id is absent."""
         from services.strava_analysis import build_cohort_stats
         stats = build_cohort_stats(_make_riders(), current_rider_id=99)
         assert stats['stopped_time']['insight'] is None
         assert stats['average_speed']['insight'] is None
+        assert stats['average_cadence']['insight'] is None
         assert stats['average_heartrate']['insight'] is None
 
 

@@ -930,6 +930,7 @@ def _dynamic_display_range(metric, min_val, max_val):
         'stopped_time':           300.0,   # 5 min
         'total_elevation_gain':   200.0,
         'suffer_score':           25.0,
+        'average_cadence':        5.0,     # 5 rpm
     }
     # Axis can never go below this value
     FLOOR = {
@@ -943,6 +944,7 @@ def _dynamic_display_range(metric, min_val, max_val):
         'stopped_time':           0.0,
         'total_elevation_gain':   0.0,
         'suffer_score':           0.0,
+        'average_cadence':        40.0,    # below 40 rpm is physiologically implausible
     }
     pad = max(spread * 0.15, MIN_PAD.get(metric, max(spread * 0.1, 1.0)))
     d_min = max(FLOOR.get(metric, 0.0), min_val - pad)
@@ -968,6 +970,7 @@ def build_cohort_stats(riders, current_rider_id, ride_distance_km=None):
         ('moving_time',            'lower'),
         ('stopped_time',           'lower'),
         ('average_speed',          'higher'),
+        ('average_cadence',        'higher'),
         ('average_heartrate',      None),
         ('max_heartrate',          None),
         ('total_elevation_gain',   None),
@@ -1079,11 +1082,17 @@ def _add_cohort_display_strings(cohort_stats):
             return '\u2014'
         return str(int(v))
 
+    def _fmt_cadence(v):
+        if v is None:
+            return '\u2014'
+        return f'{int(round(v))} rpm'
+
     formatters = {
         'elapsed_time':           _fmt_time,
         'moving_time':            _fmt_time,
         'stopped_time':           _fmt_time,
         'average_speed':          _fmt_speed,
+        'average_cadence':        _fmt_cadence,
         'average_heartrate':      _fmt_bpm,
         'max_heartrate':          _fmt_bpm,
         'total_elevation_gain':   _fmt_elev,
@@ -1123,6 +1132,13 @@ def _get_cohort_insight(metric, user_value, median_val):
             mph_diff = round(abs(diff) * 2.23694, 1)
             return (f"Your moving speed was {mph_diff} mph below the group average — "
                     "a targeted base training block can close this gap over the season.")
+
+    elif metric == 'average_cadence':
+        if diff < -5:  # > 5 rpm below median
+            rpm_diff = round(abs(diff))
+            return (f"Your cadence was {rpm_diff} rpm below the group average. "
+                    "Spinning at 90+ rpm reduces quad muscle fatigue on sustained climbs "
+                    "and helps maintain power in the final hours of a brevet.")
 
     elif metric == 'average_heartrate':
         if diff > 10:  # > 10 bpm above median
