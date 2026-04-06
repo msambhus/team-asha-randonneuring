@@ -76,6 +76,7 @@ def _build_weather_segments(sample_points, weather_data, bearings, start_dt, spe
 
         segments.append({
             'distance_mi': _km_to_mi(dist_km),
+            'arrival_time': arrival.strftime('%-I:%M %p'),
             'temperature_f': _c_to_f(temp_c),
             'wind_speed_mph': _kmh_to_mph(wind_speed_kmh),
             'wind_direction_deg': wind_dir,
