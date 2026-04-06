@@ -220,6 +220,34 @@ def get_eddington_progress(activities, current_eddington, unit='miles', activity
     }
 
 
+def get_eddington_targets(activities, current_eddington, unit='miles', activity_types=None, max_targets=25):
+    """Get targets showing how many more days needed for each future Eddington number.
+
+    Args:
+        activities: List of activity dicts
+        current_eddington: Current Eddington number
+        unit: 'miles' or 'km'
+        activity_types: Set of types to include, or 'all' for no filter.
+        max_targets: Maximum number of targets to return
+
+    Returns:
+        list of dicts with 'target', 'days_needed', 'days_completed'
+    """
+    daily_distances = _get_daily_distances(activities, unit, activity_types)
+
+    targets = []
+    for target in range(current_eddington + 1, current_eddington + max_targets + 1):
+        days_completed = sum(1 for dist in daily_distances.values() if dist >= target)
+        days_needed = max(0, target - days_completed)
+        if days_needed > 0:
+            targets.append({
+                'target': target,
+                'days_needed': days_needed,
+                'days_completed': days_completed,
+            })
+    return targets
+
+
 def get_eddington_badge_level(eddington):
     """Get badge level for Eddington number.
 

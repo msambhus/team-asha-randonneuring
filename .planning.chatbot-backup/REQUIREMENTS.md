@@ -141,7 +141,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **MULTI-01**: Multi-rider Strava analysis page at `/ride/<ride_id>/all-strava` shows all FINISHED riders for a ride with summary table and per-rider accordion sections
 - [x] **MULTI-02**: Riders with `strava_data_private = True` shown as "Analysis Private" in multi-rider view -- no Strava data exposed
 - [x] **MULTI-03**: Multi-rider view only displays riders with existing cached `strava_ride_analysis` data -- no live Strava API calls triggered for other riders
-- [ ] **MULTI-04**: Base/custom plan toggle in `ride_plan_detail.html` restricted to admin-only visibility -- non-admin users retain "View My Custom Plan" access
+- [x] **MULTI-04**: Base/custom plan toggle in `ride_plan_detail.html` restricted to admin-only visibility -- non-admin users retain "View My Custom Plan" access
 
 ## v2 Requirements
 

@@ -1,70 +1,68 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: Wind Forecast Integration
+milestone_name: milestone
 status: in-progress
-stopped_at: Completed 10-01-PLAN.md (Multi-rider Strava analysis backend)
-last_updated: "2026-03-26T02:48:27Z"
-last_activity: 2026-03-25 — Executed 10-01-PLAN.md (Multi-rider Strava analysis). 11 new tests, 240 total pass.
+stopped_at: Completed 10-02-PLAN.md (Multi-rider Strava analysis template + admin toggle)
+last_updated: "2026-03-26T02:58:16Z"
+last_activity: 2026-03-25 — Executed 10-02-PLAN.md (Multi-rider template + admin toggle). 8 new tests, human-verify approved.
 progress:
-  total_phases: 7
-  completed_phases: 7
+  total_phases: 6
+  completed_phases: 2
   total_plans: 11
-  completed_plans: 11
-  percent: 100
+  completed_plans: 5
+  percent: 50
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-23)
+See: .planning/PROJECT.md (updated 2026-03-14)
 
 **Core value:** Personalized, data-grounded cycling coaching and randonneuring information — answering "Am I ready for my next brevet?" with actual training data, not generic advice.
-**v1.0 milestone:** Wind Forecast Integration — SHIPPED 2026-03-23. All 7 phases complete, 11 plans executed, 31/31 requirements validated.
-**Current focus:** Phase 10 (Multi-rider Strava Analysis) in progress. Plan 01 complete (backend model + route). Plan 02 (template) next.
+**Current focus:** Phase 10 (Multi-rider Strava Analysis) complete. Both plans executed (backend + template).
 
 ## Current Position
 
 Phase: 10 of 10 (Multi-rider Strava Analysis)
-Plan: 1 of 2 in current phase (plan 01 complete)
-Status: Phase 10 Plan 01 complete. Multi-rider Strava analysis model function and route, 11 new tests.
-Last activity: 2026-03-25 — Executed 10-01-PLAN.md (Multi-rider Strava analysis). 11 new tests, 240 total pass.
+Plan: 2 of 2 in current phase (phase complete)
+Status: Phase 10 complete. Multi-rider Strava analysis template, admin-gated plan toggle, 8 new tests, human-verify approved.
+Last activity: 2026-03-25 — Executed 10-02-PLAN.md (Multi-rider template + admin toggle). 8 new tests, human-verify approved.
 
-Progress: [████░░░░░░] 44% (7/16 plans complete with summaries)
+Progress: [█████░░░░░] 50% (8/16 plans complete with summaries)
 Phase 1: Code complete — 3 plans executed (01-01 DB/CRUD, 01-02 SSE endpoint, 01-03 system prompt)
 Phase 2: Code complete — 3 plans executed (02-01 widget, 02-02 context, 02-03 conversations)
 Phase 3: Code complete — 3 plans executed (03-01 intent, 03-02 tools, 03-03 agent loop)
 Phase 4: Code complete — 2 plans executed (04-01 SDK+spans, 04-02 eval datasets+scorers)
 Phase 5: Code complete — 3 plans executed (05-01 parser/chunker/filter, 05-02 pgvector/import, 05-03 RAG integration)
 Phase 6: In progress — 1 of 2 plans executed (06-01 image preview service)
-Phase 10: In progress — 1 of 2 plans executed (10-01 multi-rider analysis backend)
+Phase 10: Code complete — 2 plans executed (10-01 multi-rider backend, 10-02 template + admin toggle)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
-- Timeline: Single day (2026-03-23)
-- Total execution time: ~14 hours
+- Total plans completed: 1
+- Average duration: 3min
+- Total execution time: 0.05 hours
 
 **By Phase:**
 
-| Phase | Plans | Tasks | Files |
-|-------|-------|-------|-------|
-| Phase 01-wind-math-foundation P01 | 1 | 2 tasks | 2 files |
-| Phase 02 P01 | 1 | 2 tasks | 2 files |
-| Phase 03 P01 | 1 | 1 tasks | 2 files |
-| Phase 03 P02 | 1 | 2 tasks | 2 files |
-| Phase 04 P01 | 1 | 1 tasks | 2 files |
-| Phase 04 P02 | 1 | 2 tasks | 2 files |
-| Phase 05 P01 | 1 | 2 tasks | 2 files |
-| Phase 05 P02 | 1 | 2 tasks | 3 files |
-| Phase 05 P03 | 1 | 2 tasks | 3 files |
-| Phase 06 P01 | 1 | 1 tasks | 3 files |
-| Phase 06 P02 | 1 | 2 tasks | 2 files |
-| Phase 07 P01 | 1 | 2 tasks | 3 files |
-| Phase 07 P02 | 1 | 2 tasks | 3 files |
-| Phase 10 P01 | 1 | 1 tasks | 4 files |
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| 5 | 1 | 3min | 3min |
+
+**Recent Trend:**
+- Last 5 plans: 05-01 (3min)
+- Trend: starting
+
+*Updated after each plan completion*
+| Phase 05 P01 | 3min | 1 tasks | 3 files |
+| Phase 05 P02 | 4min | 2 tasks | 3 files |
+| Phase 05 P03 | 5min | 2 tasks | 3 files |
+| Phase 06 P01 | 4min | 2 tasks | 3 files |
+| Phase 10 P01 | 2min | 1 tasks | 4 files |
+| Phase 10 P02 | 4min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -90,6 +88,8 @@ Recent decisions affecting current work:
 - [Phase 06]: No CSP header change needed (IMG-08) -- no CSP set in vercel.json or Flask, browser default permits HTTPS images
 - [Phase 10]: Cached-only analysis policy -- multi-rider route never triggers live Strava API calls to avoid rate limits
 - [Phase 10]: Privacy filtering in route logic, not SQL -- private riders included in query but marked as error='private'
+- [Phase 10]: HTML details/summary for accordion -- no JavaScript required
+- [Phase 10]: Admin-gated only Base Plan button, kept View My Custom Plan and Compare Plans visible to all users
 
 ### Pending Todos
 
@@ -106,12 +106,14 @@ None yet.
 
 ### Blockers/Concerns
 
-None — all v1.0 blockers resolved.
+- [Phase 2]: Verify Vercel Python WSGI streaming is not buffered on the target plan tier before committing to full widget build — ARCHITECTURE.md and PITFALLS.md flag this as MEDIUM confidence. Build a streaming smoke test at end of Phase 1 or start of Phase 2.
+- [Phase 3]: Confirm `previous_response_id` threading works correctly when tool calls are interleaved with streaming in `openai.responses.create()` — verified from SDK source only, not live API behavior. Fallback: client-managed message arrays (Chat Completions pattern).
+- [Phase 4]: Braintrust integration pattern not covered in current research — run `/gsd:research-phase` for Phase 4 before planning it.
 
 ## Session Continuity
 
-Last session: 2026-03-26T02:48:27Z
-Stopped at: Completed 10-01-PLAN.md
-- Phase 10 Plan 01 complete: multi-rider Strava analysis model function and route
-- 11 new tests, 240 total pass (6 skipped)
+Last session: 2026-03-26T02:58:16Z
+Stopped at: Completed 10-02-PLAN.md
+- Phase 10 complete: both plans executed (backend + template)
+- Plan 02: multi-rider template, admin-gated plan toggle, 8 new tests, human-verify approved
 - Branch: feature/multi-rider-strava-analysis

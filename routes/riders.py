@@ -664,7 +664,8 @@ def rider_profile(rusa_id):
         # Get Eddington number and progress
         if strava_connection.get('eddington_number_miles'):
             from services.eddington import (
-                calculate_eddington_number, get_eddington_progress,
+                calculate_eddington_number, calculate_eddington_by_year,
+                get_eddington_progress, get_eddington_targets,
                 get_eddington_badge_level,
             )
             from models import get_all_strava_activities_for_eddington
@@ -687,11 +688,17 @@ def rider_profile(rusa_id):
             progress_miles = get_eddington_progress(all_activities, eddington_miles, unit='miles')
             badge = get_eddington_badge_level(eddington_miles)
 
+            # Year-by-year breakdown and targets
+            by_year = calculate_eddington_by_year(all_activities, unit='miles')
+            targets = get_eddington_targets(all_activities, eddington_miles, unit='miles')
+
             eddington_data = {
                 'miles': eddington_miles,
                 'km': eddington_km,
                 'progress': progress_miles,
                 'badge': badge,
+                'by_year': by_year,
+                'targets': targets,
             }
 
     # Load Strava brevet-match data for own profile view
