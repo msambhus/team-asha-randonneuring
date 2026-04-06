@@ -585,6 +585,7 @@ def get_all_upcoming_events():
                rp.slug as plan_slug,
                rp.rwgps_url_team as plan_rwgps_url_team,
                rp.start_time as plan_start_time,
+               rp.avg_elapsed_speed as plan_avg_speed,
                (c.code = 'TA') as is_team_ride,
                (SELECT COUNT(*) FROM rider_ride rr WHERE rr.ride_id = ri.id AND rr.signed_up_at IS NOT NULL) as signup_count
         FROM ride ri

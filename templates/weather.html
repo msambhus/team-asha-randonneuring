@@ -199,11 +199,15 @@
             <div class="form-row">
                 <div class="form-group" style="flex:1; min-width: 280px;">
                     <label for="rwgps-url">RideWithGPS Route URL</label>
-                    <input type="text" id="rwgps-url" placeholder="https://ridewithgps.com/routes/12345" required>
+                    <input type="text" id="rwgps-url" placeholder="https://ridewithgps.com/routes/12345" value="{{ prefill_url }}" required>
                 </div>
                 <div class="form-group">
-                    <label for="start-datetime">Start Date/Time (optional)</label>
-                    <input type="datetime-local" id="start-datetime">
+                    <label for="start-datetime">Start Date/Time</label>
+                    <input type="datetime-local" id="start-datetime" value="{{ prefill_datetime }}">
+                </div>
+                <div class="form-group" style="width:100px;">
+                    <label for="speed-mph">Speed (mph)</label>
+                    <input type="number" id="speed-mph" placeholder="14" step="0.5" min="5" max="25" value="{{ prefill_speed }}">
                 </div>
                 <button type="submit" class="btn-fetch" id="btn-fetch">Get Weather</button>
             </div>
@@ -261,15 +265,26 @@
 (function() {
     var MAPBOX_TOKEN = '{{ mapbox_token }}';
     var map = null;
+    var AUTO_FETCH = '{{ auto_fetch }}';
 
     // Offset distance in degrees (~0.003 deg ≈ 300m at mid-latitudes)
     var ARROW_OFFSET_DEG = 0.003;
 
-    // ── Form submit ────────────────────────────────────────
-    document.getElementById('weather-form').addEventListener('submit', function(e) {
-        e.preventDefault();
+    // Set default start time to tomorrow 6 AM if not pre-filled
+    (function setDefaultStartTime() {
+        var dtInput = document.getElementById('start-datetime');
+        if (!dtInput.value) {
+            var tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            tomorrow.setHours(6, 0, 0, 0);
+            dtInput.value = tomorrow.toISOString().slice(0, 16);
+        }
+    })();
+
+    function doFetch() {
         var url = document.getElementById('rwgps-url').value.trim();
         var dt = document.getElementById('start-datetime').value;
+        var speed = document.getElementById('speed-mph').value;
         if (!url) return;
 
         showLoading(true);
@@ -278,7 +293,7 @@
         fetch('/api/weather-map', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ rwgps_url: url, start_datetime: dt || null })
+            body: JSON.stringify({ rwgps_url: url, start_datetime: dt || null, speed_mph: speed ? parseFloat(speed) : null })
         })
         .then(function(resp) { return resp.json().then(function(d) { return {ok: resp.ok, data: d}; }); })
         .then(function(result) {
@@ -293,7 +308,17 @@
             showLoading(false);
             showError('Network error. Please try again.');
         });
+    }
+
+    document.getElementById('weather-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        doFetch();
     });
+
+    // Auto-fetch when linked from brevet page with ?auto=1
+    if (AUTO_FETCH === '1' && document.getElementById('rwgps-url').value.trim()) {
+        doFetch();
+    }
 
     // ── Helpers ────────────────────────────────────────────
     function showLoading(on) {
