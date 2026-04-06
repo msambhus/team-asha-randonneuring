@@ -1059,12 +1059,6 @@
     </a>
     {% endif %}
 
-    {# Randoplan Weather (external) — small subtext link #}
-    {% if upcoming_event and weather_route_id %}
-    <a href="#" id="auto-weather-link" target="_blank" style="color:var(--text-light);font-size:0.7rem;text-decoration:underline;align-self:center;">
-        Randoplan
-    </a>
-    {% endif %}
     
     <a href="#time-bank-section" class="quick-action-btn" onclick="document.getElementById('time-bank-section').classList.add('expanded'); return true;">
         <span>⏱️</span>
@@ -1792,32 +1786,6 @@ recalcArrivalTimes('{{ plan.start_time }}');
         });
     }
 
-    // Auto weather link for upcoming events (using Team Asha route)
-    // SAFETY: Only run if upcoming_event exists AND has a date attribute
-    {% if upcoming_event and upcoming_event.date is defined %}
-    var autoWeatherLink = document.getElementById('auto-weather-link');
-    if (autoWeatherLink) {
-        var routeId = '{{ weather_route_id or "" }}';
-        var planName = '{{ plan.name|replace("'", "\\'") }}';
-        var eventDate = '{{ upcoming_event.date if upcoming_event.date is defined else "" }}';
-        var eventTime = '{{ upcoming_event.start_time if upcoming_event.start_time is defined else "07:00" }}';
-
-        if (routeId && eventDate) {
-            var parts = eventTime.split(':');
-            var startHour = parseInt(parts[0]) || 7;
-            var startMin = parseInt(parts[1]) || 0;
-            var dt = new Date(eventDate + 'T' + (startHour < 10 ? '0' : '') + startHour + ':' + (startMin < 10 ? '0' : '') + startMin + ':00');
-            var ts = Math.floor(dt.getTime() / 1000);
-            var url = 'https://www.randoplan.com/?pace=B%2B&interval=1&metric=false'
-                + '&rwgpsRoute=' + routeId
-                + '&provider=weatherapi'
-                + '&name=' + encodeURIComponent(planName)
-                + '&startTimestamp=' + ts
-                + '&zone=America%2FLos_Angeles';
-            autoWeatherLink.href = url;
-        }
-    }
-    {% endif %}
 })();
 
 // Toggle collapsible sections

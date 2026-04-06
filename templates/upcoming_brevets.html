@@ -789,11 +789,6 @@
             </a>
         </span>
 
-        <span class="weather-forecast-link" style="display:none;">
-            <a href="#" target="_blank" style="color:var(--text-light);font-size:0.7rem;text-decoration:underline;vertical-align:middle;">
-                Randoplan
-            </a>
-        </span>
 
         {% if event.plan_rwgps_url_team %}
         <a href="{{ event.plan_rwgps_url_team }}" target="_blank" class="event-link-btn" style="background:linear-gradient(135deg,#fff7ed,#ffedd5);border-color:#ff6b00;color:#c2410c;">
@@ -1687,17 +1682,7 @@ document.addEventListener('keydown', function(event) {
             const startTimestamp = Math.floor(eventDateTime.getTime() / 1000);
             const encodedName = encodeURIComponent(routeName);
 
-            // Randoplan Weather link (external)
-            const weatherUrl = `https://www.randoplan.com/?pace=B%2B&interval=1&metric=false&rwgpsRoute=${routeId}&provider=weatherapi&name=${encodedName}&startTimestamp=${startTimestamp}&zone=America%2FLos_Angeles`;
-
-            const weatherLinkContainer = eventItem.querySelector('.weather-forecast-link');
-            if (weatherLinkContainer) {
-                const weatherLink = weatherLinkContainer.querySelector('a');
-                weatherLink.href = weatherUrl;
-                weatherLinkContainer.style.display = 'inline-block';
-            }
-
-            // Weather Map link (our page) — use plan speed if available
+            // Weather link (our page) — use plan speed if available
             const planAvgSpeed = eventItem.dataset.planAvgSpeed;
             const startDt = eventDate + 'T' + eventTime;
             let weatherMapUrl = '/weather?rwgps_url=' + encodeURIComponent(weatherRwgpsUrl) + '&start_datetime=' + encodeURIComponent(startDt) + '&auto=1';
