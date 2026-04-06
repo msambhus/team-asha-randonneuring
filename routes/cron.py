@@ -464,7 +464,7 @@ def backfill_strava_streams():
     Run with ?phase= to control which step executes:
 
       ?phase=sync   — Sync Strava activities for ONE rider (use &rider_id=N).
-                       Goes back to their earliest finished ride.
+                       Syncs 90 days per call. Run repeatedly until done=true.
       ?phase=match   — Auto-match unmatched finished rides to Strava activities.
                        No Strava API calls — pure DB lookups.
       ?phase=streams — Fetch and cache streams for matched rides (default).
@@ -486,15 +486,17 @@ def backfill_strava_streams():
     phase = request.args.get('phase', '')
     results = {}
 
-    # ── Phase: sync — sync one rider's Strava activities ────────────────
+    # ── Phase: sync — sync one rider's Strava activities in 90-day chunks ─
     if phase == 'sync':
         from services.strava import sync_rider_activities
+        from models import get_strava_connection
 
         rider_id = request.args.get('rider_id')
         if not rider_id:
             return jsonify({'error': 'rider_id required for phase=sync'}), 400
 
         rider_id = int(rider_id)
+
         # Find earliest finished ride for this rider
         earliest_row = _execute("""
             SELECT MIN(ri.date) as earliest
@@ -509,14 +511,54 @@ def backfill_strava_streams():
 
         if isinstance(earliest, str):
             earliest = date.fromisoformat(earliest)
-        days_back = (date.today() - earliest).days + 7
+
+        # Find how far back we've already synced (most recent activity after epoch)
+        connection = get_strava_connection(rider_id)
+        if not connection:
+            return jsonify({'error': 'No Strava connection for this rider'}), 400
+
+        # Check earliest synced activity to know where to resume
+        earliest_synced = _execute("""
+            SELECT MIN(start_date) as earliest_synced
+            FROM strava_activity
+            WHERE rider_id = %s
+        """, (rider_id,)).fetchone()
+
+        if earliest_synced and earliest_synced['earliest_synced']:
+            sync_from = earliest_synced['earliest_synced']
+            if isinstance(sync_from, str):
+                sync_from = datetime.fromisoformat(sync_from).date()
+            elif hasattr(sync_from, 'date'):
+                sync_from = sync_from.date()
+        else:
+            sync_from = date.today()
+
+        # If already synced past earliest ride, we're done
+        if sync_from <= earliest:
+            return jsonify({
+                'phase': 'sync', 'rider_id': rider_id,
+                'message': f'Already synced back to {sync_from}, earliest ride is {earliest}',
+                'done': True,
+            }), 200
+
+        # Sync 90-day chunk ending at our earliest synced activity
+        chunk_end = sync_from
+        chunk_start = chunk_end - timedelta(days=90)
+        after_epoch = int(datetime.combine(chunk_start, datetime.min.time()).timestamp())
+        before_epoch = int(datetime.combine(chunk_end, datetime.min.time()).timestamp())
 
         try:
-            sync_result = sync_rider_activities(rider_id, days=days_back, calculate_eddington=False)
+            sync_result = sync_rider_activities(
+                rider_id, after_epoch=after_epoch, before_epoch=before_epoch,
+                calculate_eddington=False,
+            )
+            done = chunk_start <= earliest
             return jsonify({
                 'phase': 'sync',
                 'rider_id': rider_id,
-                'days_back': days_back,
+                'chunk': f'{chunk_start} to {chunk_end}',
+                'target': str(earliest),
+                'done': done,
                 **sync_result,
             }), 200
         except Exception as e:
