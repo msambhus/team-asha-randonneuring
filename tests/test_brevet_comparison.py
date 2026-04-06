@@ -186,6 +186,100 @@ class TestGetRiderRidesWithCachedStreams:
 
 
 # ---------------------------------------------------------------------------
+# Service tests: build_cohort_chart_data
+# ---------------------------------------------------------------------------
+
+class TestBuildCohortChartData:
+
+    def test_empty_list(self, app):
+        from services.strava_analysis import build_cohort_chart_data
+        with app.app_context():
+            result = build_cohort_chart_data([])
+        assert result == []
+
+    def test_builds_rider_lines(self, app):
+        from services.strava_analysis import build_cohort_chart_data
+        streams = _make_streams(n_points=50)
+        riders = [
+            {'rider_id': 1, 'first_name': 'Alice', 'last_name': 'Smith',
+             'elapsed_time': 43200, 'moving_time': 36000, 'average_speed': 4.5,
+             'activity_streams': _compress(streams)},
+            {'rider_id': 2, 'first_name': 'Bob', 'last_name': 'Jones',
+             'elapsed_time': 45000, 'moving_time': 38000, 'average_speed': 4.2,
+             'activity_streams': _compress(streams)},
+        ]
+        with app.app_context():
+            result = build_cohort_chart_data(riders)
+        assert len(result) == 2
+        assert result[0]['label'] == 'Alice S.'
+        assert result[1]['label'] == 'Bob J.'
+        assert len(result[0]['points']) > 0
+
+    def test_skips_missing_streams(self, app):
+        from services.strava_analysis import build_cohort_chart_data
+        riders = [
+            {'rider_id': 1, 'first_name': 'Alice', 'last_name': 'Smith',
+             'elapsed_time': 43200, 'moving_time': 36000, 'average_speed': 4.5,
+             'activity_streams': None},
+        ]
+        with app.app_context():
+            result = build_cohort_chart_data(riders)
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Model tests: get_cohort_cached_streams
+# ---------------------------------------------------------------------------
+
+class TestGetCohortCachedStreams:
+
+    @patch('models._execute')
+    def test_returns_results(self, mock_execute):
+        from models import get_cohort_cached_streams
+        mock_execute.return_value.fetchall.return_value = [
+            {'rider_id': 1, 'first_name': 'Alice', 'last_name': 'Smith'},
+        ]
+        result = get_cohort_cached_streams(ride_id=10)
+        assert len(result) == 1
+
+    @patch('models._execute')
+    def test_passes_ride_id_and_finished_status(self, mock_execute):
+        from models import get_cohort_cached_streams, RideStatus
+        mock_execute.return_value.fetchall.return_value = []
+        get_cohort_cached_streams(ride_id=10)
+        args = mock_execute.call_args[0]
+        assert args[1] == (10, RideStatus.FINISHED.value)
+
+
+# ---------------------------------------------------------------------------
+# Service tests: stats in build_brevet_comparison_data
+# ---------------------------------------------------------------------------
+
+class TestBrevetComparisonStats:
+
+    def test_includes_activity_stats(self, app):
+        from services.strava_analysis import build_brevet_comparison_data
+        ride = _make_ride_row(ride_id=1)
+        ride['average_speed'] = 4.5
+        ride['average_heartrate'] = 145
+        ride['max_heartrate'] = 175
+        ride['average_watts'] = 180
+        ride['suffer_score'] = 85
+        ride['strava_url'] = 'https://strava.com/activities/123'
+        with app.app_context():
+            result = build_brevet_comparison_data([ride])
+        r = result[0]
+        assert r['avg_speed_mph'] is not None
+        assert r['avg_hr'] == 145
+        assert r['max_hr'] == 175
+        assert r['avg_watts'] == 180
+        assert r['suffer_score'] == 85
+        assert r['elapsed_time_str'] is not None
+        assert r['moving_time_str'] is not None
+        assert r['stopped_time_str'] is not None
+
+
+# ---------------------------------------------------------------------------
 # Route tests: /my/brevet-comparison
 # ---------------------------------------------------------------------------
 
