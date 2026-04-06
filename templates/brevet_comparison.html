@@ -43,6 +43,20 @@
     cursor: pointer;
 }
 .selector-actions button:hover { background: #e2e8f0; }
+.selector-filters {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+.selector-filters select {
+    flex: 1;
+    font-size: 0.72rem;
+    padding: 4px 6px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #f8fafc;
+    color: #475569;
+}
 .season-group { margin-bottom: 14px; }
 .season-label {
     font-size: 0.75rem;
@@ -260,6 +274,14 @@
             <button onclick="selectAll()">Select All</button>
             <button onclick="selectNone()">Clear All</button>
         </div>
+        <div class="selector-filters">
+            <select id="filterDistance" onchange="applyFilters()">
+                <option value="">All Distances</option>
+            </select>
+            <select id="filterYear" onchange="applyFilters()">
+                <option value="">All Years</option>
+            </select>
+        </div>
         <div id="rideSelector">
         {% set ns = namespace(current_season='') %}
         {% for ride in rides_data %}
@@ -268,7 +290,7 @@
                 <div class="season-group">
                 <div class="season-label">{{ ride.season_name }}</div>
             {% endif %}
-            <label class="ride-check">
+            <label class="ride-check" data-distance="{{ ride.distance_km }}" data-year="{{ ride.date[:4] }}">
                 <input type="checkbox" value="{{ ride.ride_id }}" onchange="updateChart()">
                 <div>
                     <div class="ride-check-label">{{ ride.ride_name|clean_name }}</div>
@@ -323,6 +345,50 @@
 <script>
 (function() {
     const allRides = {{ rides_data|tojson }};
+
+    // Populate filter dropdowns from ride data
+    (function populateFilters() {
+        var distances = new Set();
+        var years = new Set();
+        document.querySelectorAll('#rideSelector .ride-check').forEach(function(el) {
+            distances.add(el.dataset.distance);
+            years.add(el.dataset.year);
+        });
+
+        var distSelect = document.getElementById('filterDistance');
+        Array.from(distances).sort(function(a, b) { return parseInt(a) - parseInt(b); }).forEach(function(d) {
+            var opt = document.createElement('option');
+            opt.value = d;
+            opt.textContent = d + ' km';
+            distSelect.appendChild(opt);
+        });
+
+        var yearSelect = document.getElementById('filterYear');
+        Array.from(years).sort().reverse().forEach(function(y) {
+            var opt = document.createElement('option');
+            opt.value = y;
+            opt.textContent = y;
+            yearSelect.appendChild(opt);
+        });
+    })();
+
+    window.applyFilters = function() {
+        var distVal = document.getElementById('filterDistance').value;
+        var yearVal = document.getElementById('filterYear').value;
+
+        document.querySelectorAll('#rideSelector .ride-check').forEach(function(el) {
+            var matchDist = !distVal || el.dataset.distance === distVal;
+            var matchYear = !yearVal || el.dataset.year === yearVal;
+            el.style.display = (matchDist && matchYear) ? '' : 'none';
+        });
+
+        // Also show/hide season group headers
+        document.querySelectorAll('#rideSelector .season-group').forEach(function(group) {
+            var visibleRides = group.querySelectorAll('.ride-check:not([style*="display: none"])');
+            group.style.display = visibleRides.length > 0 ? '' : 'none';
+        });
+    };
+
     const COLORS = [
         '#c2410c', '#2563eb', '#16a34a', '#7c3aed', '#db2777',
         '#ca8a04', '#0891b2', '#4f46e5', '#059669', '#e11d48'
@@ -344,7 +410,7 @@
     }
 
     window.selectAll = function() {
-        document.querySelectorAll('#rideSelector input[type="checkbox"]').forEach(c => c.checked = true);
+        document.querySelectorAll('#rideSelector .ride-check:not([style*="display: none"]) input[type="checkbox"]').forEach(c => c.checked = true);
         updateChart();
     };
     window.selectNone = function() {
