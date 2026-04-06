@@ -707,6 +707,40 @@ def recalculate_eddington():
     })
 
 
+@admin_bp.route('/resync-strava-range/<int:rider_id>')
+@user_login_required
+def resync_strava_range(rider_id):
+    """Re-sync Strava activities for a specific date range.
+
+    Query params:
+        after: ISO date (e.g. 2013-01-01)
+        before: ISO date (e.g. 2018-01-01)
+    """
+    _require_admin()
+    from flask import jsonify
+    from datetime import datetime
+    from services.strava import sync_rider_activities
+
+    after_str = request.args.get('after', '2013-01-01')
+    before_str = request.args.get('before', '2018-01-01')
+
+    after_epoch = int(datetime.fromisoformat(after_str).timestamp())
+    before_epoch = int(datetime.fromisoformat(before_str).timestamp())
+
+    counts = sync_rider_activities(
+        rider_id=rider_id,
+        after_epoch=after_epoch,
+        before_epoch=before_epoch,
+        calculate_eddington=True,
+    )
+
+    return jsonify({
+        'rider_id': rider_id,
+        'range': {'after': after_str, 'before': before_str},
+        'results': counts,
+    })
+
+
 # ── Personality Admin ────────────────────────────────────────────────
 
 def compute_completeness(profile):
