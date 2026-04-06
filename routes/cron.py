@@ -458,124 +458,127 @@ def backfill_wind():
 
 @cron_bp.route('/backfill-strava-streams', methods=['POST'])
 def backfill_strava_streams():
-    """Backfill Strava stream data for all finished rides.
+    """Backfill Strava stream data for finished rides.
 
-    Three-phase pipeline:
-      1. Sync Strava activities for riders who have finished rides but may be
-         missing activity data (goes back 2 years by default).
-      2. Auto-match finished rides to Strava activities (no API calls — local DB).
-      3. Fetch and cache streams for matched rides missing stream data.
+    Lightweight endpoint designed for Vercel's timeout limits.
+    Run with ?phase= to control which step executes:
 
-    Rate-limited: stops after hitting Strava's 100 req/15 min limit.
-    Idempotent: skips rides that already have cached streams.
+      ?phase=sync   — Sync Strava activities for ONE rider (use &rider_id=N).
+                       Goes back to their earliest finished ride.
+      ?phase=match   — Auto-match unmatched finished rides to Strava activities.
+                       No Strava API calls — pure DB lookups.
+      ?phase=streams — Fetch and cache streams for matched rides (default).
+                       Stops on rate limit. Use &limit=N (default 5, max 20).
+      (no phase)     — Runs match + streams (the fast path).
 
-    Query params:
-      ?limit=N  — max stream fetches per run (default 20, max 50)
+    All phases are idempotent — safe to run repeatedly.
     """
     auth_error = _verify_cron_auth()
     if auth_error:
         return auth_error
 
     from models import (
-        _execute, get_strava_connection, create_strava_ride_match,
+        _execute, create_strava_ride_match,
         RideStatus,
     )
     from services.strava_analysis import find_matching_activity, fetch_and_analyze
-    from services.strava import sync_rider_activities
 
-    fetch_limit = min(int(request.args.get('limit', 20)), 50)
-    results = {
-        'phase1_activity_sync': [],
-        'phase2_matching': [],
-        'phase3_stream_fetch': [],
-    }
+    phase = request.args.get('phase', '')
+    results = {}
 
-    # ── Phase 1: Sync Strava activities for riders with finished rides ──
-    # Find riders who have Strava connected and finished rides, but may
-    # not have activities synced far enough back.
-    riders_with_finished = _execute("""
-        SELECT DISTINCT sc.rider_id, r.first_name,
-               MIN(ri.date) as earliest_ride_date
-        FROM strava_connection sc
-        JOIN rider r ON r.id = sc.rider_id
-        JOIN rider_ride rr ON rr.rider_id = sc.rider_id
-        JOIN ride ri ON ri.id = rr.ride_id
-        WHERE rr.status = %s
-          AND sc.access_token IS NOT NULL
-        GROUP BY sc.rider_id, r.first_name
-    """, (RideStatus.FINISHED.value,)).fetchall()
+    # ── Phase: sync — sync one rider's Strava activities ────────────────
+    if phase == 'sync':
+        from services.strava import sync_rider_activities
 
-    for rider_row in riders_with_finished:
-        rid = rider_row['rider_id']
-        earliest = rider_row['earliest_ride_date']
+        rider_id = request.args.get('rider_id')
+        if not rider_id:
+            return jsonify({'error': 'rider_id required for phase=sync'}), 400
+
+        rider_id = int(rider_id)
+        # Find earliest finished ride for this rider
+        earliest_row = _execute("""
+            SELECT MIN(ri.date) as earliest
+            FROM rider_ride rr
+            JOIN ride ri ON ri.id = rr.ride_id
+            WHERE rr.rider_id = %s AND rr.status = %s
+        """, (rider_id, RideStatus.FINISHED.value)).fetchone()
+
+        earliest = earliest_row['earliest'] if earliest_row else None
+        if not earliest:
+            return jsonify({'message': 'No finished rides for this rider', 'rider_id': rider_id}), 200
+
         if isinstance(earliest, str):
             earliest = date.fromisoformat(earliest)
+        days_back = (date.today() - earliest).days + 7
 
-        # Sync activities going back to their earliest finished ride
-        days_back = (date.today() - earliest).days + 7  # +7 day buffer
         try:
-            sync_result = sync_rider_activities(rid, days=days_back, calculate_eddington=False)
-            results['phase1_activity_sync'].append({
-                'rider_id': rid,
-                'name': rider_row['first_name'],
+            sync_result = sync_rider_activities(rider_id, days=days_back, calculate_eddington=False)
+            return jsonify({
+                'phase': 'sync',
+                'rider_id': rider_id,
                 'days_back': days_back,
-                'new': sync_result.get('new', 0),
-                'updated': sync_result.get('updated', 0),
-            })
+                **sync_result,
+            }), 200
         except Exception as e:
-            current_app.logger.warning(f'Phase 1 sync failed for rider {rid}: {e}')
-            results['phase1_activity_sync'].append({
-                'rider_id': rid,
-                'name': rider_row['first_name'],
-                'error': str(e)[:100],
-            })
+            return jsonify({'phase': 'sync', 'rider_id': rider_id, 'error': str(e)[:200]}), 500
 
-    # ── Phase 2: Auto-match unmatched finished rides ────────────────────
-    unmatched_rides = _execute("""
-        SELECT rr.rider_id, rr.ride_id,
-               ri.date, ri.distance_km, ri.name as ride_name,
-               r.first_name
-        FROM rider_ride rr
-        JOIN ride ri ON ri.id = rr.ride_id
-        JOIN rider r ON r.id = rr.rider_id
-        JOIN strava_connection sc ON sc.rider_id = rr.rider_id
-        LEFT JOIN strava_ride_match srm ON srm.rider_id = rr.rider_id AND srm.ride_id = rr.ride_id
-        WHERE rr.status = %s
-          AND srm.id IS NULL
-        ORDER BY ri.date DESC
-    """, (RideStatus.FINISHED.value,)).fetchall()
+    # ── Phase: match — auto-match unmatched finished rides ──────────────
+    if phase in ('match', ''):
+        unmatched_rides = _execute("""
+            SELECT rr.rider_id, rr.ride_id,
+                   ri.date, ri.distance_km, ri.name as ride_name,
+                   r.first_name
+            FROM rider_ride rr
+            JOIN ride ri ON ri.id = rr.ride_id
+            JOIN rider r ON r.id = rr.rider_id
+            JOIN strava_connection sc ON sc.rider_id = rr.rider_id
+            LEFT JOIN strava_ride_match srm ON srm.rider_id = rr.rider_id AND srm.ride_id = rr.ride_id
+            WHERE rr.status = %s
+              AND srm.id IS NULL
+            ORDER BY ri.date DESC
+        """, (RideStatus.FINISHED.value,)).fetchall()
 
-    for row in unmatched_rides:
-        ride_date = row['date']
-        if isinstance(ride_date, str):
-            ride_date = date.fromisoformat(ride_date)
+        matching_results = []
+        for row in unmatched_rides:
+            ride_date = row['date']
+            if isinstance(ride_date, str):
+                ride_date = date.fromisoformat(ride_date)
+            try:
+                match = find_matching_activity(
+                    rider_id=row['rider_id'],
+                    ride_date=ride_date,
+                    ride_distance_km=row['distance_km'],
+                    ride_name=row['ride_name'] or '',
+                )
+                if match:
+                    create_strava_ride_match(row['rider_id'], row['ride_id'], match['strava_activity_id'])
+                    matching_results.append({
+                        'rider': row['first_name'], 'ride': row['ride_name'],
+                        'date': str(row['date']), 'status': 'matched',
+                    })
+                else:
+                    matching_results.append({
+                        'rider': row['first_name'], 'ride': row['ride_name'],
+                        'date': str(row['date']), 'status': 'no_match',
+                    })
+            except Exception as e:
+                current_app.logger.warning(f'Match failed: rider={row["rider_id"]} ride={row["ride_id"]}: {e}')
 
-        try:
-            match = find_matching_activity(
-                rider_id=row['rider_id'],
-                ride_date=ride_date,
-                ride_distance_km=row['distance_km'],
-                ride_name=row['ride_name'] or '',
-            )
-            if match:
-                create_strava_ride_match(row['rider_id'], row['ride_id'], match['strava_activity_id'])
-                results['phase2_matching'].append({
-                    'rider': row['first_name'],
-                    'ride': row['ride_name'],
-                    'date': str(row['date']),
-                    'status': 'matched',
-                })
-            else:
-                results['phase2_matching'].append({
-                    'rider': row['first_name'],
-                    'ride': row['ride_name'],
-                    'date': str(row['date']),
-                    'status': 'no_match',
-                })
-        except Exception as e:
-            current_app.logger.warning(f'Phase 2 match failed: rider={row["rider_id"]} ride={row["ride_id"]}: {e}')
+        results['matching'] = matching_results
 
-    # ── Phase 3: Fetch streams for matches missing cached data ──────────
+        # If only match phase requested, return now
+        if phase == 'match':
+            matched = sum(1 for r in matching_results if r.get('status') == 'matched')
+            return jsonify({
+                'phase': 'match',
+                'matched': matched,
+                'unmatched': len(matching_results) - matched,
+                'details': matching_results,
+            }), 200
+
+    # ── Phase: streams — fetch and cache missing stream data ────────────
+    fetch_limit = min(int(request.args.get('limit', 5)), 20)
+
     missing_streams = _execute("""
         SELECT srm.id AS match_id, srm.rider_id, srm.strava_activity_id,
                ri.name as ride_name, ri.date, r.first_name
@@ -590,6 +593,7 @@ def backfill_strava_streams():
         LIMIT %s
     """, (RideStatus.FINISHED.value, fetch_limit)).fetchall()
 
+    stream_results = []
     rate_limited = False
     for row in missing_streams:
         if rate_limited:
@@ -603,43 +607,37 @@ def backfill_strava_streams():
             error = result.get('error', '')
             if error and 'rate limit' in error.lower():
                 rate_limited = True
-                results['phase3_stream_fetch'].append({
-                    'rider': row['first_name'],
-                    'ride': row['ride_name'],
-                    'date': str(row['date']),
-                    'status': 'rate_limited',
+                stream_results.append({
+                    'rider': row['first_name'], 'ride': row['ride_name'],
+                    'date': str(row['date']), 'status': 'rate_limited',
                 })
             elif error:
-                results['phase3_stream_fetch'].append({
-                    'rider': row['first_name'],
-                    'ride': row['ride_name'],
-                    'date': str(row['date']),
-                    'status': 'error',
-                    'error': error[:100],
+                stream_results.append({
+                    'rider': row['first_name'], 'ride': row['ride_name'],
+                    'date': str(row['date']), 'status': 'error', 'error': error[:100],
                 })
             else:
-                results['phase3_stream_fetch'].append({
-                    'rider': row['first_name'],
-                    'ride': row['ride_name'],
-                    'date': str(row['date']),
-                    'status': 'cached',
+                stream_results.append({
+                    'rider': row['first_name'], 'ride': row['ride_name'],
+                    'date': str(row['date']), 'status': 'cached',
                 })
         except Exception as e:
-            current_app.logger.warning(f'Phase 3 stream fetch failed: match={row["match_id"]}: {e}')
-            results['phase3_stream_fetch'].append({
-                'rider': row['first_name'],
-                'ride': row['ride_name'],
-                'status': 'error',
-                'error': str(e)[:100],
+            current_app.logger.warning(f'Stream fetch failed: match={row["match_id"]}: {e}')
+            stream_results.append({
+                'rider': row['first_name'], 'ride': row['ride_name'],
+                'status': 'error', 'error': str(e)[:100],
             })
 
-    summary = {
-        'activities_synced': sum(r.get('new', 0) for r in results['phase1_activity_sync']),
-        'rides_matched': sum(1 for r in results['phase2_matching'] if r.get('status') == 'matched'),
-        'rides_unmatched': sum(1 for r in results['phase2_matching'] if r.get('status') == 'no_match'),
-        'streams_cached': sum(1 for r in results['phase3_stream_fetch'] if r.get('status') == 'cached'),
-        'streams_errors': sum(1 for r in results['phase3_stream_fetch'] if r.get('status') == 'error'),
-        'rate_limited': rate_limited,
-    }
+    results['streams'] = stream_results
 
-    return jsonify({'summary': summary, 'details': results}), 200
+    matching_results = results.get('matching', [])
+    return jsonify({
+        'summary': {
+            'rides_matched': sum(1 for r in matching_results if r.get('status') == 'matched'),
+            'rides_unmatched': sum(1 for r in matching_results if r.get('status') == 'no_match'),
+            'streams_cached': sum(1 for r in stream_results if r.get('status') == 'cached'),
+            'streams_errors': sum(1 for r in stream_results if r.get('status') == 'error'),
+            'rate_limited': rate_limited,
+        },
+        'details': results,
+    }), 200
