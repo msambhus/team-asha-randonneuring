@@ -1028,28 +1028,42 @@
 <div class="container section">
 
 {# ===== QUICK ACTION BUTTONS ===== #}
+{% set weather_rwgps = plan.rwgps_url_team or plan.rwgps_url %}
 <div class="quick-actions">
-    {# Team Asha Route (if available) - shown first #}
-    {% if plan.rwgps_url_team %}
-    <a href="{{ plan.rwgps_url_team }}" target="_blank" class="quick-action-btn">
+    {# Route (official RWGPS) #}
+    {% if plan.rwgps_url %}
+    <a href="{{ plan.rwgps_url }}" target="_blank" class="quick-action-btn" style="background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border-color:#7dd3fc;color:#0369a1;">
+        <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:20px;height:20px;">
+        <span>Route</span>
+    </a>
+    {% endif %}
+
+    {# Team Asha Route (if different from official) #}
+    {% if plan.rwgps_url_team and plan.rwgps_url_team != plan.rwgps_url %}
+    <a href="{{ plan.rwgps_url_team }}" target="_blank" class="quick-action-btn" style="background:linear-gradient(135deg,#fff7ed,#ffedd5);border-color:#ff6b00;color:#c2410c;">
         <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:20px;height:20px;">
         <span>Team Asha Route</span>
     </a>
     {% endif %}
-    
-    {# Weather using Team Asha route #}
+
+    {# Randoplan Weather (external) — only for upcoming events #}
     {% if upcoming_event and weather_route_id %}
     <a href="#" id="auto-weather-link" target="_blank" class="quick-action-btn" style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-color:#fbbf24;color:#92400e;">
         <span>🌤️</span>
-        <span>Weather</span>
+        <span>Randoplan Weather</span>
     </a>
     {% endif %}
-    
-    {# Official Route (if different from team route) - shown last and grayed if team route exists #}
-    {% if plan.rwgps_url and plan.rwgps_url != plan.rwgps_url_team %}
-    <a href="{{ plan.rwgps_url }}" target="_blank" class="quick-action-btn" style="{% if plan.rwgps_url_team %}background:#f1f5f9;border-color:#cbd5e1;color:#94a3b8;{% endif %}">
-        <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:20px;height:20px;{% if plan.rwgps_url_team %}opacity:0.6;{% endif %}">
-        <span>Official Route</span>
+
+    {# Weather Map (our page) — same style/behavior as upcoming brevets #}
+    {% if upcoming_event and weather_rwgps %}
+    <a href="{{ url_for('weather.weather_page', rwgps_url=weather_rwgps, start_datetime=upcoming_event.date|string + 'T' + (plan.start_time or '06:00'), speed_mph=avg_elapsed_speed or '', auto='1') }}" class="quick-action-btn" style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);border-color:#6ee7b7;color:#065f46;">
+        <span>🗺️</span>
+        <span>Weather Map</span>
+    </a>
+    {% elif weather_rwgps %}
+    <a href="{{ url_for('weather.weather_page', rwgps_url=weather_rwgps, speed_mph=avg_elapsed_speed or '') }}" class="quick-action-btn" style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);border-color:#6ee7b7;color:#065f46;">
+        <span>🗺️</span>
+        <span>Weather Map</span>
     </a>
     {% endif %}
     

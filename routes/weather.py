@@ -44,8 +44,12 @@ def _km_to_mi(km):
     return round(km * 0.621371, 1)
 
 
-def _build_weather_segments(sample_points, weather_data, bearings, start_dt):
-    """Build weather segments with imperial units and lat/lng for map rendering."""
+def _build_weather_segments(sample_points, weather_data, bearings, start_dt, speed_mph=None):
+    """Build weather segments with imperial units and lat/lng for map rendering.
+
+    speed_mph: rider speed for arrival time estimation. Defaults to ~14 mph (22 km/h).
+    """
+    speed_kmh = (speed_mph / _KMH_TO_MPH) if speed_mph else _AVG_SPEED_KMH
     segments = []
     for i in range(len(weather_data)):
         if i >= len(sample_points):
@@ -57,7 +61,7 @@ def _build_weather_segments(sample_points, weather_data, bearings, start_dt):
         times = hourly.get('time', [])
 
         dist_km = pt['distance_m'] / 1000
-        hours_to_arrive = dist_km / _AVG_SPEED_KMH if _AVG_SPEED_KMH > 0 else 0
+        hours_to_arrive = dist_km / speed_kmh if speed_kmh > 0 else 0
         arrival = start_dt + timedelta(hours=hours_to_arrive)
         idx = get_hour_index(times, arrival)
 
@@ -89,9 +93,18 @@ def _build_weather_segments(sample_points, weather_data, bearings, start_dt):
 
 @weather_bp.route('/weather')
 def weather_page():
-    """Render the weather + wind map page with input form."""
+    """Render the weather + wind map page with input form.
+
+    Supports query params for pre-filling from brevet/ride plan pages:
+      ?rwgps_url=...&start_datetime=...&speed_mph=...&auto=1
+    """
     mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
-    return render_template('weather.html', mapbox_token=mapbox_token)
+    return render_template('weather.html',
+                           mapbox_token=mapbox_token,
+                           prefill_url=request.args.get('rwgps_url', ''),
+                           prefill_datetime=request.args.get('start_datetime', ''),
+                           prefill_speed=request.args.get('speed_mph', ''),
+                           auto_fetch=request.args.get('auto', ''))
 
 
 @weather_bp.route('/api/weather-map', methods=['POST'])
@@ -100,6 +113,7 @@ def weather_map_api():
     data = request.get_json(silent=True) or {}
     rwgps_url = (data.get('rwgps_url') or '').strip()
     start_datetime_str = data.get('start_datetime')
+    speed_mph = data.get('speed_mph')
 
     # Validate URL
     if not rwgps_url:
@@ -165,9 +179,15 @@ def weather_map_api():
     table_bearings = compute_bearings(table_sample)
     map_bearings = compute_bearings(map_sample)
 
+    # Parse speed (mph) — default ~14 mph if not provided
+    try:
+        rider_speed = float(speed_mph) if speed_mph else None
+    except (ValueError, TypeError):
+        rider_speed = None
+
     # Build segments in imperial units
-    table_segments = _build_weather_segments(table_sample, table_weather, table_bearings, start_dt)
-    map_segments = _build_weather_segments(map_sample, map_weather, map_bearings, start_dt)
+    table_segments = _build_weather_segments(table_sample, table_weather, table_bearings, start_dt, rider_speed)
+    map_segments = _build_weather_segments(map_sample, map_weather, map_bearings, start_dt, rider_speed)
 
     # Overall assessment from table segments
     headwinds = [s['headwind_mph'] for s in table_segments]

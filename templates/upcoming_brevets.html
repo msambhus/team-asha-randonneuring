@@ -723,7 +723,7 @@
 
 <div id="events-container">
 {% for event in rusa_events %}
-<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.plan_start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
+<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.plan_start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-plan-avg-speed="{{ event.plan_avg_speed or '' }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
 
     <div class="event-date">
         <div class="event-day">{{ event.date_str[8:10] }}</div>
@@ -785,7 +785,13 @@
 
         <span class="weather-forecast-link" style="display:none;">
             <a href="#" target="_blank" class="event-link-btn" style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-color:#fbbf24;color:#92400e;">
-                🌤️ Weather
+                🌤️ Randoplan Weather
+            </a>
+        </span>
+
+        <span class="weather-map-link" style="display:none;">
+            <a href="#" class="event-link-btn" style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);border-color:#6ee7b7;color:#065f46;">
+                🗺️ Weather Map
             </a>
         </span>
 
@@ -1671,25 +1677,39 @@ document.addEventListener('keydown', function(event) {
             }
         }
         
-        // Add weather forecast link for events within 10 days (use Team Asha route if available)
+        // Add weather forecast links for events within 10 days (use Team Asha route if available)
         if (weatherRwgpsUrl && eventDateTime <= tenDaysFromNow && eventDateTime >= now) {
             // Extract route ID from rwgps URL (prefer Team Asha route)
             const routeIdMatch = weatherRwgpsUrl.match(/\/routes\/(\d+)/);
             if (!routeIdMatch) return;
-            
+
             const routeId = routeIdMatch[1];
             const startTimestamp = Math.floor(eventDateTime.getTime() / 1000);
             const encodedName = encodeURIComponent(routeName);
-            
-            // Build weather forecast URL
+
+            // Randoplan Weather link (external)
             const weatherUrl = `https://www.randoplan.com/?pace=B%2B&interval=1&metric=false&rwgpsRoute=${routeId}&provider=weatherapi&name=${encodedName}&startTimestamp=${startTimestamp}&zone=America%2FLos_Angeles`;
-            
-            // Show and update the weather forecast link
+
             const weatherLinkContainer = eventItem.querySelector('.weather-forecast-link');
             if (weatherLinkContainer) {
                 const weatherLink = weatherLinkContainer.querySelector('a');
                 weatherLink.href = weatherUrl;
                 weatherLinkContainer.style.display = 'inline-block';
+            }
+
+            // Weather Map link (our page) — use plan speed if available
+            const planAvgSpeed = eventItem.dataset.planAvgSpeed;
+            const startDt = eventDate + 'T' + eventTime;
+            let weatherMapUrl = '/weather?rwgps_url=' + encodeURIComponent(weatherRwgpsUrl) + '&start_datetime=' + encodeURIComponent(startDt) + '&auto=1';
+            if (planAvgSpeed) {
+                weatherMapUrl += '&speed_mph=' + planAvgSpeed;
+            }
+
+            const weatherMapContainer = eventItem.querySelector('.weather-map-link');
+            if (weatherMapContainer) {
+                const weatherMapLink = weatherMapContainer.querySelector('a');
+                weatherMapLink.href = weatherMapUrl;
+                weatherMapContainer.style.display = 'inline-block';
             }
         }
     });
