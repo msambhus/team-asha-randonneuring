@@ -261,7 +261,7 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
 {% macro fmt_time(s) %}{% if s is not none %}{% set h=(s//3600)|int %}{% set m=((s%3600)//60)|int %}{{ h }}h {{ "%02d"|format(m) }}m{% else %}&mdash;{% endif %}{% endmacro %}
 {% macro fmt_speed(ms) %}{% if ms is not none %}{{ "%.1f"|format(ms*2.23694) }} mph{% else %}&mdash;{% endif %}{% endmacro %}
 {% macro rider_label(r) %}{{ r.first_name }} {{ r.last_name[0] }}.{% endmacro %}
-{% macro fmt_metric_val(key, val) %}{% if val is none %}&mdash;{% elif key in ['elapsed_time','moving_time','stopped_time'] %}{{ fmt_time(val) }}{% elif key == 'average_speed' %}{{ fmt_speed(val) }}{% elif key in ['average_heartrate','max_heartrate'] %}{{ val|int }} bpm{% elif key in ['average_watts','weighted_average_watts'] %}{{ val|int }}W{% else %}{{ val }}{% endif %}{% endmacro %}
+{% macro fmt_metric_val(key, val) %}{% if val is none %}&mdash;{% elif key in ['elapsed_time','moving_time','stopped_time'] %}{{ fmt_time(val) }}{% elif key == 'average_speed' %}{{ fmt_speed(val) }}{% elif key == 'average_cadence' %}{{ val|int }} rpm{% elif key in ['average_heartrate','max_heartrate'] %}{{ val|int }} bpm{% elif key in ['average_watts','weighted_average_watts'] %}{{ val|int }}W{% else %}{{ val }}{% endif %}{% endmacro %}
 
 {# ── Color palette — indexed by rider position in sorted list ───────────── #}
 {# Alternates warm/cool so adjacent riders are always visually distinct #}
@@ -424,6 +424,7 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
         <div class="own-stat"><div class="own-stat-label">Moving Time</div><div class="own-stat-value">{{ fmt_time(my.moving_time) }}</div></div>
         <div class="own-stat"><div class="own-stat-label">Stopped Time</div><div class="own-stat-value">{{ fmt_time(my.stopped_time) }}</div></div>
         <div class="own-stat"><div class="own-stat-label">Avg Speed</div><div class="own-stat-value">{{ fmt_speed(my.average_speed) }}</div></div>
+        {% if my.average_cadence %}<div class="own-stat"><div class="own-stat-label">Avg Cadence</div><div class="own-stat-value">{{ my.average_cadence|int }} rpm</div></div>{% endif %}
         {% if my.average_heartrate %}<div class="own-stat"><div class="own-stat-label">Avg HR</div><div class="own-stat-value">{{ my.average_heartrate|int }} bpm</div></div>{% endif %}
         {% if my.suffer_score %}<div class="own-stat"><div class="own-stat-label">Suffer Score</div><div class="own-stat-value">{{ my.suffer_score }}</div></div>{% endif %}
     </div>
@@ -433,6 +434,9 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
 {# ── Section 1: Actionable ── #}
 <details class="cohort-section section-actionable" open>
     <summary class="cohort-section-title" style="border-bottom:2px solid #fcd34d;color:#92400e;">⚡ Actionable Metrics</summary>
+    {% if cohort_stats.average_cadence is defined and cohort_stats.average_cadence.has_data %}
+    {{ dist_card("Average Cadence",      "badge-efficiency", "Technique",  cohort_stats.average_cadence, "average_cadence", riders, current_rider_id) }}
+    {% endif %}
     {{ dist_card("Stopped Time",         "badge-efficiency", "Efficiency", cohort_stats.stopped_time,  "stopped_time",  riders, current_rider_id) }}
     {{ dist_card("Average Moving Speed", "badge-fitness",    "Fitness",    cohort_stats.average_speed, "average_speed", riders, current_rider_id) }}
 </details>
@@ -486,6 +490,7 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
                     <th>Moving</th>
                     <th>Stopped</th>
                     <th>Avg Speed</th>
+                    {% if cohort_stats.average_cadence is defined and cohort_stats.average_cadence.has_data %}<th>Cadence</th>{% endif %}
                     {% if has_hr %}<th>Avg HR</th>{% endif %}
                     {% if cohort_stats.suffer_score.has_data %}<th>Suffer</th>{% endif %}
                     {% if power_riders|length >= 2 %}<th>Avg W</th>{% endif %}
@@ -508,6 +513,7 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
                     <td>{{ fmt_time(r.moving_time) }}</td>
                     <td>{{ fmt_time(r.stopped_time) }}</td>
                     <td>{{ fmt_speed(r.average_speed) }}</td>
+                    {% if cohort_stats.average_cadence is defined and cohort_stats.average_cadence.has_data %}<td>{% if r.average_cadence %}{{ r.average_cadence|int }} rpm{% else %}&mdash;{% endif %}</td>{% endif %}
                     {% if has_hr %}<td>{% if r.average_heartrate %}{{ r.average_heartrate|int }} bpm{% else %}&mdash;{% endif %}</td>{% endif %}
                     {% if cohort_stats.suffer_score.has_data %}<td>{% if r.suffer_score %}{{ r.suffer_score }}{% else %}&mdash;{% endif %}</td>{% endif %}
                     {% if power_riders|length >= 2 %}<td>{% if r.average_watts %}{{ r.average_watts|int }} W{% else %}&mdash;{% endif %}</td>{% endif %}
