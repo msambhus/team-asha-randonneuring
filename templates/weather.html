@@ -262,6 +262,9 @@
     var MAPBOX_TOKEN = '{{ mapbox_token }}';
     var map = null;
 
+    // Offset distance in degrees (~0.003 deg ≈ 300m at mid-latitudes)
+    var ARROW_OFFSET_DEG = 0.003;
+
     // ── Form submit ────────────────────────────────────────
     document.getElementById('weather-form').addEventListener('submit', function(e) {
         e.preventDefault();
@@ -327,9 +330,9 @@
         var chips = document.getElementById('summary-chips');
         chips.innerHTML = '';
 
-        addChip(chips, data.total_distance_km + ' km', '');
+        addChip(chips, data.total_distance_mi + ' mi', '');
         if (data.temp_range) {
-            addChip(chips, data.temp_range.min_c + ' - ' + data.temp_range.max_c + ' °C', '');
+            addChip(chips, data.temp_range.min_f + ' - ' + data.temp_range.max_f + ' °F', '');
         }
         var windClass = assessmentClass(data.overall_assessment);
         addChip(chips, data.overall_assessment, windClass);
@@ -352,30 +355,31 @@
         return 'crosswind';
     }
 
-    // ── Table ──────────────────────────────────────────────
+    // ── Table (uses table_segments — imperial units) ──────
     function renderTable(data) {
         var tbody = document.getElementById('weather-tbody');
         tbody.innerHTML = '';
+        var segments = data.table_segments || [];
 
-        data.segments.forEach(function(seg) {
+        segments.forEach(function(seg) {
             var tr = document.createElement('tr');
-            var hw = seg.headwind_kmh || 0;
-            if (hw > 5) tr.className = 'row-headwind';
-            else if (hw < -5) tr.className = 'row-tailwind';
+            var hw = seg.headwind_mph || 0;
+            // Thresholds in mph: 3 mph ≈ 5 km/h
+            if (hw > 3) tr.className = 'row-headwind';
+            else if (hw < -3) tr.className = 'row-tailwind';
             else tr.className = 'row-crosswind';
 
-            // Wind direction arrow (rotate to show where wind blows FROM)
             var arrowDeg = seg.wind_direction_deg || 0;
             var arrowHtml = '<span class="wind-arrow-inline" style="transform:rotate(' + arrowDeg + 'deg);">&#x2193;</span>';
 
-            var badgeClass = hw > 5 ? 'badge-headwind' : (hw < -5 ? 'badge-tailwind' : 'badge-crosswind');
+            var badgeClass = hw > 3 ? 'badge-headwind' : (hw < -3 ? 'badge-tailwind' : 'badge-crosswind');
 
             tr.innerHTML =
-                '<td>' + seg.distance_km + ' km</td>' +
-                '<td>' + seg.temperature_c + '°C</td>' +
-                '<td>' + seg.wind_speed_kmh + ' km/h</td>' +
+                '<td>' + seg.distance_mi + ' mi</td>' +
+                '<td>' + seg.temperature_f + '°F</td>' +
+                '<td>' + seg.wind_speed_mph + ' mph</td>' +
                 '<td>' + arrowHtml + ' ' + seg.wind_direction_deg + '°</td>' +
-                '<td><span class="badge ' + badgeClass + '">' + seg.wind_label + '</span><br><small>' + Math.abs(hw) + ' km/h</small></td>' +
+                '<td><span class="badge ' + badgeClass + '">' + seg.wind_label + '</span><br><small>' + Math.abs(hw) + ' mph</small></td>' +
                 '<td>' + seg.conditions + '</td>' +
                 '<td>' + seg.precip_percent + '%</td>';
 
@@ -385,7 +389,7 @@
         document.getElementById('weather-table-wrap').style.display = 'block';
     }
 
-    // ── Map ────────────────────────────────────────────────
+    // ── Map (uses map_segments — dense points, imperial) ──
     function renderMap(data) {
         if (!MAPBOX_TOKEN || !data.polyline || data.polyline.length === 0) {
             document.getElementById('map-section').style.display = 'none';
@@ -438,32 +442,49 @@
         });
     }
 
+    /**
+     * Offset a point perpendicular to the rider's bearing.
+     * Shifts the arrow to the right side of the route so it doesn't sit on the line.
+     */
+    function offsetPoint(lat, lng, bearingDeg) {
+        // Perpendicular = bearing + 90° (right side of direction of travel)
+        var perpRad = (bearingDeg + 90) * Math.PI / 180;
+        var offsetLat = lat + ARROW_OFFSET_DEG * Math.cos(perpRad);
+        var offsetLng = lng + ARROW_OFFSET_DEG * Math.sin(perpRad) / Math.cos(lat * Math.PI / 180);
+        return [offsetLng, offsetLat];
+    }
+
     function addWindArrows(data) {
         // Create arrow images for each color
         createArrowImage('wind-arrow-red', '#ef4444');
         createArrowImage('wind-arrow-green', '#22c55e');
         createArrowImage('wind-arrow-amber', '#f59e0b');
 
-        var features = data.segments.map(function(seg) {
-            var hw = seg.headwind_kmh || 0;
+        var segments = data.map_segments || [];
+
+        var features = segments.map(function(seg) {
+            var hw = seg.headwind_mph || 0;
             var color;
-            if (hw > 5) color = 'red';
-            else if (hw < -5) color = 'green';
+            if (hw > 3) color = 'red';
+            else if (hw < -3) color = 'green';
             else color = 'amber';
+
+            // Offset arrow position to the side of the route
+            var offsetCoords = offsetPoint(seg.lat, seg.lng, seg.rider_bearing_deg);
 
             return {
                 type: 'Feature',
                 geometry: {
                     type: 'Point',
-                    coordinates: [seg.lng, seg.lat]
+                    coordinates: offsetCoords
                 },
                 properties: {
                     wind_direction: seg.wind_direction_deg || 0,
-                    wind_speed: seg.wind_speed_kmh || 0,
+                    wind_speed: seg.wind_speed_mph || 0,
                     headwind: hw,
                     color: color,
-                    label: seg.wind_speed_kmh + ' km/h ' + seg.wind_label,
-                    detail: seg.temperature_c + '°C | ' + seg.conditions + ' | Precip: ' + seg.precip_percent + '%'
+                    label: seg.wind_speed_mph + ' mph ' + seg.wind_label,
+                    detail: seg.temperature_f + '°F | ' + seg.conditions + ' | Precip: ' + seg.precip_percent + '%'
                 }
             };
         });
@@ -486,9 +507,9 @@
                 'icon-rotate': ['get', 'wind_direction'],
                 'icon-size': ['interpolate', ['linear'], ['get', 'wind_speed'],
                     0, 0.4,
-                    10, 0.7,
-                    20, 1.0,
-                    40, 1.4
+                    5, 0.6,
+                    12, 0.9,
+                    25, 1.3
                 ],
                 'icon-allow-overlap': true,
                 'icon-rotation-alignment': 'map',
