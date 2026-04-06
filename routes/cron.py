@@ -464,7 +464,7 @@ def backfill_strava_streams():
     Run with ?phase= to control which step executes:
 
       ?phase=sync   — Sync Strava activities for ONE rider (use &rider_id=N).
-                       Syncs 90 days per call. Run repeatedly until done=true.
+                       Syncs 30 days per call. Run repeatedly until done=true.
       ?phase=match   — Auto-match unmatched finished rides to Strava activities.
                        No Strava API calls — pure DB lookups.
       ?phase=streams — Fetch and cache streams for matched rides (default).
@@ -541,9 +541,9 @@ def backfill_strava_streams():
                 'done': True,
             }), 200
 
-        # Sync 90-day chunk ending at our earliest synced activity
+        # Sync 30-day chunk ending at our earliest synced activity
         chunk_end = sync_from
-        chunk_start = chunk_end - timedelta(days=90)
+        chunk_start = chunk_end - timedelta(days=30)
         after_epoch = int(datetime.combine(chunk_start, datetime.min.time()).timestamp())
         before_epoch = int(datetime.combine(chunk_end, datetime.min.time()).timestamp())
 
