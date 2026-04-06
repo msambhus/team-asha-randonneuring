@@ -1359,6 +1359,49 @@ def my_strava_analysis():
                            season_analysis=season_analysis)
 
 
+@riders_bp.route('/my/brevet-comparison')
+def brevet_comparison():
+    """Compare your own brevet rides on a distance-vs-time chart."""
+    from models import (get_strava_connection, get_rider_rides_with_cached_streams,
+                        _execute)
+    from services.strava_analysis import build_brevet_comparison_data
+    from flask import flash
+
+    # Auth check — same pattern as my_strava_analysis
+    if not session.get('user_id'):
+        flash('Please log in to access this page', 'warning')
+        return redirect(url_for('auth.login', next=request.path))
+    rider_id = session.get('rider_id')
+    if not rider_id:
+        flash('Please complete your profile setup', 'warning')
+        return redirect(url_for('auth.setup_profile'))
+
+    # Get rider info
+    rider_row = _execute("""
+        SELECT r.*, rp.photo_filename
+        FROM rider r LEFT JOIN rider_profile rp ON r.id = rp.rider_id
+        WHERE r.id = %s
+    """, (rider_id,)).fetchone()
+    if not rider_row:
+        flash('Rider not found.', 'error')
+        return redirect(url_for('main.index'))
+    rider = dict(rider_row)
+
+    # Check Strava connection
+    strava_connection = get_strava_connection(rider_id)
+    if not strava_connection:
+        flash('Connect your Strava account first to compare rides.', 'info')
+        return redirect(url_for('auth.my_profile'))
+
+    # Fetch all finished rides with cached streams
+    rides_raw = get_rider_rides_with_cached_streams(rider_id)
+    rides_data = build_brevet_comparison_data([dict(r) for r in rides_raw])
+
+    return render_template('brevet_comparison.html',
+                           rider=rider,
+                           rides_data=rides_data)
+
+
 @riders_bp.route('/rider/<int:rusa_id>/advice')
 def rider_advice_api(rusa_id):
     """Async API endpoint: returns AI coaching advice as JSON."""

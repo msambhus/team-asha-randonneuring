@@ -1166,3 +1166,97 @@ def _build_stream_summary(streams):
             summary['max_watts'] = max(non_zero)
 
     return summary
+
+
+# ── Brevet comparison ───────────��─────────────────────────────────────
+
+def build_brevet_comparison_data(rides_with_streams, max_points=500):
+    """Build chart-ready comparison data for multiple rides.
+
+    Decompresses cached Strava streams for each ride, downsamples to
+    *max_points* for chart performance, and detects stops.
+
+    Args:
+        rides_with_streams: list of dicts from get_rider_rides_with_cached_streams()
+        max_points: max data points per ride line (downsampled if longer)
+
+    Returns:
+        list of dicts each containing:
+        {ride_id, ride_name, date, distance_km, season_name,
+         elapsed_time_hrs, distance_miles, points: [{x, y}],
+         stops: [{distance_miles, duration_min}]}
+    """
+    import math
+
+    results = []
+
+    for ride in rides_with_streams:
+        blob = ride.get('activity_streams')
+        if not blob:
+            continue
+
+        try:
+            streams = _decompress_streams(blob)
+        except Exception:
+            continue
+
+        distance_m = streams.get('distance', [])
+        time_s = streams.get('time', [])
+        if not distance_m or not time_s or len(distance_m) != len(time_s):
+            continue
+
+        n = len(distance_m)
+        velocity = streams.get('velocity_smooth', [])
+
+        # Build set of stop-boundary indices to preserve during downsampling
+        preserve = set()
+        if velocity and len(velocity) == n:
+            for i in range(1, n):
+                was_stopped = velocity[i - 1] < VELOCITY_THRESHOLD
+                is_stopped = velocity[i] < VELOCITY_THRESHOLD
+                if was_stopped != is_stopped:
+                    preserve.add(i)
+                    preserve.add(i - 1)
+
+        # Downsample: pick every Nth point plus preserved stop boundaries
+        if n > max_points:
+            step = math.ceil(n / max_points)
+            indices = set(range(0, n, step))
+            indices.add(n - 1)  # always include last point
+            indices |= preserve
+            indices = sorted(indices)
+        else:
+            indices = list(range(n))
+
+        points = []
+        for i in indices:
+            points.append({
+                'x': round(distance_m[i] / METERS_PER_MILE, 2),
+                'y': round(time_s[i] / 3600, 4),
+            })
+
+        # Detect stops for annotation
+        stops_raw = detect_stops(streams)
+        stops = [{'distance_miles': s['distance_miles'], 'duration_min': s['duration_min']}
+                 for s in stops_raw]
+
+        total_distance_miles = round(distance_m[-1] / METERS_PER_MILE, 1) if distance_m else 0
+        total_time_hrs = round(time_s[-1] / 3600, 2) if time_s else 0
+
+        ride_date = ride.get('date')
+        if hasattr(ride_date, 'isoformat'):
+            ride_date = ride_date.isoformat()
+
+        results.append({
+            'ride_id': ride['ride_id'],
+            'ride_name': ride['ride_name'],
+            'date': str(ride_date),
+            'distance_km': ride.get('distance_km'),
+            'season_name': ride.get('season_name', ''),
+            'elapsed_time_hrs': total_time_hrs,
+            'distance_miles': total_distance_miles,
+            'points': points,
+            'stops': stops,
+        })
+
+    return results

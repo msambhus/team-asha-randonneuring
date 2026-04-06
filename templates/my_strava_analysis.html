@@ -176,8 +176,9 @@
 
 <div class="container section">
 
-<div style="margin-bottom:20px;">
+<div style="margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
     <a href="{{ url_for('auth.my_profile') }}" style="color:var(--primary); text-decoration:none; font-size:0.9rem;">&larr; Back to My Profile</a>
+    <a href="{{ url_for('riders.brevet_comparison') }}" style="display:inline-flex; align-items:center; gap:6px; padding:6px 14px; background:#fff5f0; border:1px solid #fed7aa; border-radius:8px; color:#c2410c; text-decoration:none; font-size:0.85rem; font-weight:600;">Compare My Brevets</a>
 </div>
 
 {% if not season_analysis %}
