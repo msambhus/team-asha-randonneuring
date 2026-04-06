@@ -153,40 +153,11 @@
             {% endif %}
         </div>
     </div>
-    {% if eddington_data.by_year %}
-    <div style="margin-bottom:8px;">
-        <div style="font-size:0.7rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin-bottom:4px;">Year-by-Year</div>
-        <div style="max-height:200px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px;">
-        <table style="width:100%; font-size:0.7rem; border-collapse:collapse;">
-            <thead>
-                <tr style="background:#f7fafc; position:sticky; top:0;">
-                    <th style="padding:3px 6px; text-align:left; font-weight:600; border-bottom:1px solid #e2e8f0;">Year</th>
-                    <th style="padding:3px 4px; text-align:right; font-weight:600; border-bottom:1px solid #e2e8f0;">E#</th>
-                    <th style="padding:3px 4px; text-align:right; font-weight:600; border-bottom:1px solid #e2e8f0;">Cum</th>
-                    <th style="padding:3px 4px; text-align:right; font-weight:600; border-bottom:1px solid #e2e8f0;">Days</th>
-                    <th style="padding:3px 4px; text-align:right; font-weight:600; border-bottom:1px solid #e2e8f0;">Rides</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for year, stats in eddington_data.by_year.items() %}
-                <tr style="border-bottom:1px solid #f0f0f0;">
-                    <td style="padding:2px 6px; font-weight:500;">{{ year }}</td>
-                    <td style="padding:2px 4px; text-align:right; font-weight:700;">{{ stats.eddington }}</td>
-                    <td style="padding:2px 4px; text-align:right; font-weight:700; color:{{ eddington_data.badge.color }};">{{ stats.eddington_cumulative }}</td>
-                    <td style="padding:2px 4px; text-align:right;">{{ stats.ride_days }}</td>
-                    <td style="padding:2px 4px; text-align:right;">{{ stats.rides }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        </div>
-    </div>
-    {% endif %}
     {% if eddington_data.targets %}
     <div style="margin-bottom:8px;">
         <div style="font-size:0.7rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin-bottom:4px;">Targets</div>
-        <div style="max-height:150px; overflow-y:auto; font-size:0.7rem; color:var(--text); line-height:1.6; padding:6px 8px; background:#f7fafc; border-radius:6px; border:1px solid #e2e8f0;">
-            {% for t in eddington_data.targets[:15] %}
+        <div style="max-height:250px; overflow-y:auto; font-size:0.7rem; color:var(--text); line-height:1.6; padding:6px 8px; background:#f7fafc; border-radius:6px; border:1px solid #e2e8f0;">
+            {% for t in eddington_data.targets %}
             <div>{{ t.days_needed }} more day{{ 's' if t.days_needed != 1 else '' }} of {{ t.target }}+ mi for <strong>E{{ t.target }}</strong></div>
             {% endfor %}
         </div>
