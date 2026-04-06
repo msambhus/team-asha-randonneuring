@@ -418,6 +418,22 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
 <div class="cohort-section">
     <div class="cohort-section-title">Ride Overlay</div>
     <div style="background:white; border:1px solid #e2e8f0; border-radius:12px; padding:16px;">
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; align-items:center;">
+            <span style="font-size:0.75rem; color:#64748b; font-weight:600; margin-right:4px;">Show:</span>
+            {% for rd in cohort_chart_data %}
+            {% set is_you = (rd.rider_id == current_rider_id) %}
+            {% set color = YOU_COLOR if is_you else PALETTE[loop.index0 % PALETTE|length] %}
+            <label style="display:inline-flex; align-items:center; gap:4px; font-size:0.78rem; cursor:pointer; {% if is_you %}font-weight:700; color:{{ color }};{% else %}color:#334155;{% endif %}">
+                <input type="checkbox" class="cohort-rider-check" value="{{ rd.rider_id }}" checked
+                       style="accent-color:{{ color }};">
+                {{ rd.label }}
+            </label>
+            {% endfor %}
+            <span style="margin-left:auto; display:flex; gap:6px;">
+                <button onclick="cohortSelectAll()" style="font-size:0.7rem; padding:2px 8px; border:1px solid #cbd5e1; border-radius:4px; background:#f8fafc; color:#475569; cursor:pointer;">All</button>
+                <button onclick="cohortSelectNone()" style="font-size:0.7rem; padding:2px 8px; border:1px solid #cbd5e1; border-radius:4px; background:#f8fafc; color:#475569; cursor:pointer;">None</button>
+            </span>
+        </div>
         <canvas id="cohortOverlayChart"></canvas>
     </div>
 </div>
@@ -545,6 +561,7 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
     const currentRiderId = {{ current_rider_id|tojson }};
     const COLORS = {{ PALETTE|tojson }};
     const YOU_COLOR = {{ YOU_COLOR|tojson }};
+    let cohortChart = null;
 
     function fmtTime(hrs) {
         const h = Math.floor(hrs);
@@ -552,60 +569,82 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
         return h + 'h' + String(m).padStart(2, '0') + 'm';
     }
 
-    const datasets = chartData.map((rider, idx) => {
-        const isYou = rider.rider_id === currentRiderId;
-        const color = isYou ? YOU_COLOR : COLORS[idx % COLORS.length];
-        return {
-            label: rider.label + (isYou ? ' (you)' : ''),
-            data: rider.points,
-            borderColor: color,
-            borderWidth: isYou ? 3 : 1.5,
-            tension: 0,
-            pointRadius: 0,
-            pointHitRadius: 8,
-            fill: false,
-            order: isYou ? 0 : 1,
-        };
-    });
+    function getColor(rider, origIdx) {
+        return rider.rider_id === currentRiderId ? YOU_COLOR : COLORS[origIdx % COLORS.length];
+    }
 
-    const ctx = document.getElementById('cohortOverlayChart').getContext('2d');
-    new Chart(ctx, {
-        type: 'line',
-        data: { datasets },
-        options: {
-            responsive: true,
-            interaction: { mode: 'nearest', intersect: false },
-            scales: {
-                x: { type: 'linear', title: { display: true, text: 'Distance (mi)' }, ticks: { stepSize: 20 } },
-                y: { title: { display: true, text: 'Elapsed Time (hrs)' }, ticks: { callback: v => v.toFixed(1) + 'h' } },
-            },
-            plugins: {
-                legend: {
-                    display: true, position: 'bottom',
-                    labels: { boxWidth: 12, font: { size: 11 } },
-                    onHover: function(e, item, legend) {
-                        legend.chart.data.datasets.forEach((ds, i) => {
-                            ds.borderWidth = i === item.datasetIndex ? 4 : 1;
-                        });
-                        legend.chart.update('none');
+    function updateCohortChart() {
+        const checked = new Set(
+            Array.from(document.querySelectorAll('.cohort-rider-check:checked'))
+                .map(c => parseInt(c.value))
+        );
+
+        const datasets = [];
+        chartData.forEach((rider, idx) => {
+            if (!checked.has(rider.rider_id)) return;
+            const isYou = rider.rider_id === currentRiderId;
+            const color = getColor(rider, idx);
+            datasets.push({
+                label: rider.label + (isYou ? ' (you)' : ''),
+                data: rider.points,
+                borderColor: color,
+                borderWidth: isYou ? 3 : 1.5,
+                tension: 0,
+                pointRadius: 0,
+                pointHitRadius: 8,
+                fill: false,
+                order: isYou ? 0 : 1,
+            });
+        });
+
+        if (cohortChart) {
+            cohortChart.data.datasets = datasets;
+            cohortChart.update();
+        } else if (datasets.length > 0) {
+            const ctx = document.getElementById('cohortOverlayChart').getContext('2d');
+            cohortChart = new Chart(ctx, {
+                type: 'line',
+                data: { datasets },
+                options: {
+                    responsive: true,
+                    interaction: { mode: 'nearest', intersect: false },
+                    scales: {
+                        x: { type: 'linear', title: { display: true, text: 'Distance (mi)' }, ticks: { stepSize: 20 } },
+                        y: { title: { display: true, text: 'Elapsed Time (hrs)' }, ticks: { callback: v => v.toFixed(1) + 'h' } },
                     },
-                    onLeave: function(e, item, legend) {
-                        legend.chart.data.datasets.forEach((ds, i) => {
-                            const rid = chartData[i] ? chartData[i].rider_id : null;
-                            ds.borderWidth = rid === currentRiderId ? 3 : 1.5;
-                        });
-                        legend.chart.update('none');
+                    plugins: {
+                        legend: {
+                            display: true, position: 'bottom',
+                            labels: { boxWidth: 12, font: { size: 11 } },
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: ctxs => 'Mile ' + ctxs[0].parsed.x.toFixed(1),
+                                label: ctx => ctx.dataset.label + ': ' + fmtTime(ctx.parsed.y),
+                            },
+                        },
                     },
                 },
-                tooltip: {
-                    callbacks: {
-                        title: ctxs => 'Mile ' + ctxs[0].parsed.x.toFixed(1),
-                        label: ctx => ctx.dataset.label + ': ' + fmtTime(ctx.parsed.y),
-                    },
-                },
-            },
-        },
-    });
+            });
+        }
+    }
+
+    window.cohortSelectAll = function() {
+        document.querySelectorAll('.cohort-rider-check').forEach(c => c.checked = true);
+        updateCohortChart();
+    };
+    window.cohortSelectNone = function() {
+        document.querySelectorAll('.cohort-rider-check').forEach(c => c.checked = false);
+        updateCohortChart();
+    };
+
+    // Listen for checkbox changes
+    document.querySelectorAll('.cohort-rider-check').forEach(c =>
+        c.addEventListener('change', updateCohortChart)
+    );
+
+    // Initial render with all selected
+    updateCohortChart();
 })();
 </script>
 {% endif %}

@@ -263,6 +263,7 @@ class TestCohortRoute:
         breakdown = {'total_finished': 3, 'strava_linked': 1, 'private': 0, 'compared': 1}
         with patch('routes.riders.get_ride_by_id', return_value=ride), \
              patch('routes.riders._auto_match_cohort_riders'), \
+             patch('routes.riders._fetch_missing_cohort_streams'), \
              patch('routes.riders.get_ride_cohort_stats', return_value=[_make_riders()[0]]), \
              patch('routes.riders.get_ride_cohort_breakdown', return_value=breakdown):
             resp = client.get('/ride/1/cohort')
@@ -276,6 +277,7 @@ class TestCohortRoute:
         breakdown = {'total_finished': 3, 'strava_linked': 3, 'private': 0, 'compared': 3}
         with patch('routes.riders.get_ride_by_id', return_value=ride), \
              patch('routes.riders._auto_match_cohort_riders'), \
+             patch('routes.riders._fetch_missing_cohort_streams'), \
              patch('routes.riders.get_ride_cohort_stats', return_value=_make_riders()), \
              patch('routes.riders.get_ride_cohort_breakdown', return_value=breakdown):
             resp = client.get('/ride/1/cohort')
