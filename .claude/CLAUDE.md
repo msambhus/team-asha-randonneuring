@@ -34,6 +34,7 @@ Every PR must follow this sequence:
 - Title: Under 70 characters, type-prefixed (`feat:`, `fix:`)
 - Body: Summary bullets, test plan checklist, Linear ticket links
 - Always link to relevant Linear tickets (TA-XX)
+- **Before pushing to a branch, always check if its PR is already merged/closed** (`gh pr list --head <branch> --state all`). If merged, create a new branch from `origin/main` and a new PR — never push to a branch whose PR was already closed.
 
 ### Dangerous Operations (Never Do Without Explicit User Approval)
 - `git push --force` (especially to main)
