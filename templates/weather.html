@@ -232,6 +232,7 @@
                 <thead>
                     <tr>
                         <th>Distance</th>
+                        <th>Time</th>
                         <th>Temp</th>
                         <th>Wind</th>
                         <th>Direction</th>
@@ -401,6 +402,7 @@
 
             tr.innerHTML =
                 '<td>' + seg.distance_mi + ' mi</td>' +
+                '<td>' + (seg.arrival_time || '') + '</td>' +
                 '<td>' + seg.temperature_f + '°F</td>' +
                 '<td>' + seg.wind_speed_mph + ' mph</td>' +
                 '<td>' + arrowHtml + ' ' + seg.wind_direction_deg + '°</td>' +
