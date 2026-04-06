@@ -129,6 +129,29 @@
     color: #64748b;
 }
 
+/* Stats comparison table */
+.stats-table-wrap { overflow-x: auto; margin-top: 24px; }
+.stats-table {
+    width: 100%; border-collapse: collapse; font-size: 0.82rem;
+}
+.stats-table th {
+    background: #f8fafc; padding: 10px 14px; text-align: left;
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; color: #64748b; white-space: nowrap;
+    border-bottom: 2px solid #e2e8f0;
+}
+.stats-table td {
+    padding: 10px 14px; border-bottom: 1px solid #f1f5f9; color: #334155;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.stats-table .ride-color-dot {
+    width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+    margin-right: 6px; vertical-align: middle;
+}
+.stats-table-empty {
+    text-align: center; padding: 24px; color: #94a3b8; font-size: 0.85rem;
+}
+
 /* Empty state */
 .empty-state {
     text-align: center;
@@ -204,6 +227,31 @@
     </div>
 </div>
 
+{# Stats comparison table #}
+<div id="statsSection" style="display:none; margin-top:24px;">
+    <h3 style="font-size:1rem; font-weight:700; color:#1e293b; margin-bottom:12px;">Ride Stats Comparison</h3>
+    <div class="stats-table-wrap">
+        <table class="stats-table" id="statsTable">
+            <thead>
+                <tr>
+                    <th>Ride</th>
+                    <th>Date</th>
+                    <th>Distance</th>
+                    <th>Elapsed</th>
+                    <th>Moving</th>
+                    <th>Stopped</th>
+                    <th>Avg Speed</th>
+                    <th>Elevation</th>
+                    <th>Avg HR</th>
+                    <th>Avg W</th>
+                    <th>Suffer</th>
+                </tr>
+            </thead>
+            <tbody id="statsBody"></tbody>
+        </table>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>
 (function() {
@@ -237,24 +285,31 @@
         updateChart();
     };
 
+    function val(v, suffix) { return v != null ? v + (suffix || '') : '\u2014'; }
+
     window.updateChart = function() {
         const selectedIds = getSelectedRideIds();
         const emptyEl = document.getElementById('chartEmpty');
         const summaryEl = document.getElementById('compareSummary');
+        const statsSection = document.getElementById('statsSection');
+        const statsBody = document.getElementById('statsBody');
 
         if (selectedIds.length < 2) {
             canvas.style.display = 'none';
             emptyEl.style.display = 'flex';
             summaryEl.innerHTML = '';
+            statsSection.style.display = 'none';
             if (chart) { chart.destroy(); chart = null; }
             return;
         }
 
         canvas.style.display = 'block';
         emptyEl.style.display = 'none';
+        statsSection.style.display = 'block';
 
         const datasets = [];
         const chips = [];
+        const tableRows = [];
 
         selectedIds.forEach((rideId, idx) => {
             const ride = allRides.find(r => r.ride_id === rideId);
@@ -279,9 +334,26 @@
                 '<span class="chip-detail">' + ride.distance_miles + ' mi, ' + fmtTime(ride.elapsed_time_hrs) + '</span>' +
                 '</span>'
             );
+
+            tableRows.push(
+                '<tr>' +
+                '<td><span class="ride-color-dot" style="background:' + color + ';"></span>' + ride.ride_name + '</td>' +
+                '<td>' + ride.date + '</td>' +
+                '<td>' + ride.distance_miles + ' mi</td>' +
+                '<td>' + val(ride.elapsed_time_str) + '</td>' +
+                '<td>' + val(ride.moving_time_str) + '</td>' +
+                '<td>' + val(ride.stopped_time_str) + '</td>' +
+                '<td>' + val(ride.avg_speed_mph, ' mph') + '</td>' +
+                '<td>' + (ride.elevation_ft != null ? ride.elevation_ft.toLocaleString() + ' ft' : '\u2014') + '</td>' +
+                '<td>' + val(ride.avg_hr, ' bpm') + '</td>' +
+                '<td>' + val(ride.avg_watts, ' W') + '</td>' +
+                '<td>' + val(ride.suffer_score) + '</td>' +
+                '</tr>'
+            );
         });
 
         summaryEl.innerHTML = chips.join('');
+        statsBody.innerHTML = tableRows.join('');
 
         if (chart) {
             chart.data.datasets = datasets;

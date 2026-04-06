@@ -413,6 +413,16 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
     </div>
 </div>
 
+{# ── Overlay Chart ── #}
+{% if cohort_chart_data and cohort_chart_data|length >= 2 %}
+<div class="cohort-section">
+    <div class="cohort-section-title">Ride Overlay</div>
+    <div style="background:white; border:1px solid #e2e8f0; border-radius:12px; padding:16px;">
+        <canvas id="cohortOverlayChart"></canvas>
+    </div>
+</div>
+{% endif %}
+
 {# ── Own stats strip (when logged in) ── #}
 {% set me_list = riders | selectattr('rider_id', 'equalto', current_rider_id) | list %}
 {% if me_list %}
@@ -518,6 +528,80 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
     </div>
 </details>
 
+{% endif %}
+
+{# ── Overlay chart JS ── #}
+{% if cohort_chart_data and cohort_chart_data|length >= 2 %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+(function() {
+    const chartData = {{ cohort_chart_data|tojson }};
+    const currentRiderId = {{ current_rider_id|tojson }};
+    const COLORS = {{ PALETTE|tojson }};
+    const YOU_COLOR = {{ YOU_COLOR|tojson }};
+
+    function fmtTime(hrs) {
+        const h = Math.floor(hrs);
+        const m = Math.round((hrs - h) * 60);
+        return h + 'h' + String(m).padStart(2, '0') + 'm';
+    }
+
+    const datasets = chartData.map((rider, idx) => {
+        const isYou = rider.rider_id === currentRiderId;
+        const color = isYou ? YOU_COLOR : COLORS[idx % COLORS.length];
+        return {
+            label: rider.label + (isYou ? ' (you)' : ''),
+            data: rider.points,
+            borderColor: color,
+            borderWidth: isYou ? 3 : 1.5,
+            tension: 0,
+            pointRadius: 0,
+            pointHitRadius: 8,
+            fill: false,
+            order: isYou ? 0 : 1,
+        };
+    });
+
+    const ctx = document.getElementById('cohortOverlayChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        options: {
+            responsive: true,
+            interaction: { mode: 'nearest', intersect: false },
+            scales: {
+                x: { type: 'linear', title: { display: true, text: 'Distance (mi)' }, ticks: { stepSize: 20 } },
+                y: { title: { display: true, text: 'Elapsed Time (hrs)' }, ticks: { callback: v => v.toFixed(1) + 'h' } },
+            },
+            plugins: {
+                legend: {
+                    display: true, position: 'bottom',
+                    labels: { boxWidth: 12, font: { size: 11 } },
+                    onHover: function(e, item, legend) {
+                        legend.chart.data.datasets.forEach((ds, i) => {
+                            ds.borderWidth = i === item.datasetIndex ? 4 : 1;
+                        });
+                        legend.chart.update('none');
+                    },
+                    onLeave: function(e, item, legend) {
+                        legend.chart.data.datasets.forEach((ds, i) => {
+                            const rid = chartData[i] ? chartData[i].rider_id : null;
+                            ds.borderWidth = rid === currentRiderId ? 3 : 1.5;
+                        });
+                        legend.chart.update('none');
+                    },
+                },
+                tooltip: {
+                    callbacks: {
+                        title: ctxs => 'Mile ' + ctxs[0].parsed.x.toFixed(1),
+                        label: ctx => ctx.dataset.label + ': ' + fmtTime(ctx.parsed.y),
+                    },
+                },
+            },
+        },
+    });
+})();
+</script>
 {% endif %}
 
 <div style="text-align:center;margin-top:30px;">

@@ -1152,7 +1152,8 @@ def _auto_match_cohort_riders(ride_id, ride):
 @user_login_required
 def ride_cohort_comparison(ride_id):
     """Cohort comparison — compare Strava stats across all finishers of a brevet."""
-    from services.strava_analysis import build_cohort_stats
+    from services.strava_analysis import build_cohort_stats, build_cohort_chart_data
+    from models import get_cohort_cached_streams
 
     ride = get_ride_by_id(ride_id)
     if not ride:
@@ -1170,6 +1171,15 @@ def ride_cohort_comparison(ride_id):
 
     breakdown = get_ride_cohort_breakdown(ride_id)
 
+    # Build overlay chart data from cached streams
+    cohort_chart_data = []
+    try:
+        streams_rows = get_cohort_cached_streams(ride_id)
+        if streams_rows:
+            cohort_chart_data = build_cohort_chart_data([dict(r) for r in streams_rows])
+    except Exception:
+        current_app.logger.exception("ride_cohort_comparison: chart data build failed")
+
     return render_template(
         'ride_cohort_comparison.html',
         ride=ride,
@@ -1177,6 +1187,7 @@ def ride_cohort_comparison(ride_id):
         cohort_stats=cohort_stats,
         current_rider_id=current_rider_id,
         breakdown=breakdown,
+        cohort_chart_data=cohort_chart_data,
     )
 
 

@@ -1168,7 +1168,16 @@ def _build_stream_summary(streams):
     return summary
 
 
-# ── Brevet comparison ───────────��─────────────────────────────────────
+def _fmt_seconds(s):
+    """Format seconds as 'Xh YYm' string."""
+    if not s:
+        return None
+    h = int(s // 3600)
+    m = int((s % 3600) // 60)
+    return f'{h}h {m:02d}m'
+
+
+# ── Brevet comparison ──────────────────────────────────────────────────
 
 def build_brevet_comparison_data(rides_with_streams, max_points=500):
     """Build chart-ready comparison data for multiple rides.
@@ -1247,6 +1256,13 @@ def build_brevet_comparison_data(rides_with_streams, max_points=500):
         if hasattr(ride_date, 'isoformat'):
             ride_date = ride_date.isoformat()
 
+        # Activity summary stats (from strava_activity table)
+        elapsed_s = ride.get('elapsed_time') or 0
+        moving_s = ride.get('moving_time') or 0
+        stopped_s = elapsed_s - moving_s
+        avg_speed_ms = ride.get('average_speed') or 0
+        elevation_m = ride.get('total_elevation_gain') or 0
+
         results.append({
             'ride_id': ride['ride_id'],
             'ride_name': ride['ride_name'],
@@ -1257,6 +1273,77 @@ def build_brevet_comparison_data(rides_with_streams, max_points=500):
             'distance_miles': total_distance_miles,
             'points': points,
             'stops': stops,
+            # Summary stats for comparison table
+            'moving_time_str': _fmt_seconds(moving_s),
+            'elapsed_time_str': _fmt_seconds(elapsed_s),
+            'stopped_time_str': _fmt_seconds(stopped_s),
+            'avg_speed_mph': round(avg_speed_ms * 2.23694, 1) if avg_speed_ms else None,
+            'elevation_ft': round(elevation_m * 3.28084) if elevation_m else None,
+            'avg_hr': round(ride['average_heartrate']) if ride.get('average_heartrate') else None,
+            'max_hr': round(ride['max_heartrate']) if ride.get('max_heartrate') else None,
+            'avg_watts': round(ride['average_watts']) if ride.get('average_watts') else None,
+            'suffer_score': ride.get('suffer_score'),
+            'strava_url': ride.get('strava_url'),
+        })
+
+    return results
+
+
+def build_cohort_chart_data(riders_with_streams, max_points=500):
+    """Build chart-ready overlay data for all riders in a cohort.
+
+    Similar to build_brevet_comparison_data but keyed by rider instead of ride.
+
+    Returns:
+        list of dicts: {rider_id, label, points: [{x, y}]}
+    """
+    import math
+
+    results = []
+    for rider in riders_with_streams:
+        blob = rider.get('activity_streams')
+        if not blob:
+            continue
+        try:
+            streams = _decompress_streams(blob)
+        except Exception:
+            continue
+
+        distance_m = streams.get('distance', [])
+        time_s = streams.get('time', [])
+        if not distance_m or not time_s or len(distance_m) != len(time_s):
+            continue
+
+        n = len(distance_m)
+        velocity = streams.get('velocity_smooth', [])
+
+        # Preserve stop-boundary indices
+        preserve = set()
+        if velocity and len(velocity) == n:
+            for i in range(1, n):
+                was_stopped = velocity[i - 1] < VELOCITY_THRESHOLD
+                is_stopped = velocity[i] < VELOCITY_THRESHOLD
+                if was_stopped != is_stopped:
+                    preserve.add(i)
+                    preserve.add(i - 1)
+
+        if n > max_points:
+            step = math.ceil(n / max_points)
+            indices = set(range(0, n, step))
+            indices.add(n - 1)
+            indices |= preserve
+            indices = sorted(indices)
+        else:
+            indices = list(range(n))
+
+        points = [{'x': round(distance_m[i] / METERS_PER_MILE, 2),
+                    'y': round(time_s[i] / 3600, 4)} for i in indices]
+
+        label = f"{rider['first_name']} {rider['last_name'][0]}."
+        results.append({
+            'rider_id': rider['rider_id'],
+            'label': label,
+            'points': points,
         })
 
     return results
