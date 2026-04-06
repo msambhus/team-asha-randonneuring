@@ -1148,6 +1148,41 @@ def _auto_match_cohort_riders(ride_id, ride):
             current_app.logger.error(f'cohort auto-match error for rider {rid}: {e}', exc_info=True)
 
 
+def _fetch_missing_cohort_streams(ride_id):
+    """Fetch and cache Strava streams for cohort riders who have matches but no cached streams.
+
+    Only processes public riders. Skips riders who already have cached streams or API errors.
+    """
+    from services.strava_analysis import fetch_and_analyze
+
+    missing = _execute("""
+        SELECT srm.id AS match_id, srm.rider_id, srm.strava_activity_id
+        FROM rider_ride rr
+        JOIN rider r ON r.id = rr.rider_id
+        LEFT JOIN rider_profile rp ON rp.rider_id = r.id
+        JOIN strava_ride_match srm ON srm.rider_id = r.id AND srm.ride_id = rr.ride_id
+        LEFT JOIN strava_ride_analysis sra ON sra.match_id = srm.id
+        WHERE rr.ride_id = %s
+          AND rr.status = 'FINISHED'
+          AND (rp.strava_data_private IS NULL OR rp.strava_data_private = FALSE)
+          AND (sra.activity_streams IS NULL OR sra.id IS NULL)
+          AND (sra.strava_api_error IS NULL)
+    """, (ride_id,)).fetchall()
+
+    for row in missing:
+        try:
+            fetch_and_analyze(
+                rider_id=row['rider_id'],
+                match_id=row['match_id'],
+                strava_activity_id=row['strava_activity_id'],
+            )
+        except Exception:
+            current_app.logger.exception(
+                "cohort stream fetch failed for rider %s match %s",
+                row['rider_id'], row['match_id']
+            )
+
+
 @riders_bp.route('/ride/<int:ride_id>/cohort')
 @user_login_required
 def ride_cohort_comparison(ride_id):
@@ -1170,6 +1205,9 @@ def ride_cohort_comparison(ride_id):
                                           ride_distance_km=ride.get('distance_km'))
 
     breakdown = get_ride_cohort_breakdown(ride_id)
+
+    # Fetch streams for riders who have matches but no cached streams yet
+    _fetch_missing_cohort_streams(ride_id)
 
     # Build overlay chart data from cached streams
     cohort_chart_data = []
