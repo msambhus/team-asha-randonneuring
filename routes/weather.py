@@ -1,5 +1,6 @@
 """Weather routes: standalone weather + wind map page."""
 import math
+import time
 import logging
 from datetime import datetime, timedelta
 
@@ -12,6 +13,9 @@ from services.weather import (
     wind_label, wmo_to_text, get_hour_index, _safe_get,
 )
 from cache import cache
+
+# Cache TTL for RWGPS route data (route geometry doesn't change often)
+_ROUTE_CACHE_TTL = 3600  # 1 hour
 
 logger = logging.getLogger(__name__)
 
@@ -138,12 +142,22 @@ def weather_map_api():
     if start_dt > max_forecast:
         return jsonify({'error': 'Weather forecasts are only available up to 16 days ahead.'}), 400
 
-    try:
-        # Fetch route from RWGPS
-        route_data = fetch_route(route_id)
-    except Exception:
-        logger.exception("Failed to fetch RWGPS route %s", route_id)
-        return jsonify({'error': 'Could not fetch route data from RideWithGPS. The route may not exist or the service may be temporarily unavailable.'}), 502
+    t0 = time.time()
+
+    # Fetch route from RWGPS (cached 1 hour — route geometry rarely changes)
+    route_cache_key = f"rwgps-route:{route_id}"
+    route_data = cache.get(route_cache_key) if cache else None
+    if route_data:
+        logger.info("RWGPS cache hit for route %s", route_id)
+    else:
+        try:
+            route_data = fetch_route(route_id)
+            if cache:
+                cache.set(route_cache_key, route_data, timeout=_ROUTE_CACHE_TTL)
+            logger.info("RWGPS fetch for route %s took %.1fs", route_id, time.time() - t0)
+        except Exception:
+            logger.exception("Failed to fetch RWGPS route %s", route_id)
+            return jsonify({'error': 'Could not fetch route data from RideWithGPS. The route may not exist or the service may be temporarily unavailable.'}), 502
 
     track_points = route_data.get('track_points', [])
     if not track_points:
@@ -155,13 +169,14 @@ def weather_map_api():
     if not map_sample:
         return jsonify({'error': 'Could not sample points from this route.'}), 400
 
-    # Single weather fetch for all map points (one API call)
+    # Single weather fetch for all map points (one API call, cached 1 hour)
     start_hour_str = start_dt.strftime("%Y-%m-%dT%H:00")
     slug = f"route-{route_id}"
+    t1 = time.time()
     try:
         logger.info("Fetching weather for %d sample points, route %s", len(map_sample), route_id)
         weather_data = get_cached_route_weather(slug, start_hour_str, map_sample, cache=cache)
-        logger.info("Weather fetch complete: %d forecasts returned", len(weather_data))
+        logger.info("Weather fetch took %.1fs, %d forecasts", time.time() - t1, len(weather_data))
     except Exception:
         logger.exception("Weather fetch failed for route %s with %d points", route_id, len(map_sample))
         return jsonify({'error': 'Weather data is temporarily unavailable. Please try again.'}), 503
@@ -228,6 +243,9 @@ def weather_map_api():
 
     route_name = route_data.get('name', 'Unknown Route')
     total_dist_m = route_data.get('distance', 0) or 0
+
+    logger.info("Weather map total time: %.1fs for route %s (%d map points, %d table points)",
+                time.time() - t0, route_id, len(map_segments), len(table_segments))
 
     return jsonify({
         'route_name': route_name,
