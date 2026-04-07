@@ -271,14 +271,51 @@ def get_stop_coordinates(stops, track_points):
 
 # ── Open-Meteo API ──────────────────────────────────────────────────
 
-_BATCH_SIZE = 10  # Max locations per Open-Meteo request to avoid URL length limits
+_BATCH_SIZE = 5   # Locations per Open-Meteo request (small to avoid 504s)
+_MAX_RETRIES = 2  # Retry count per batch on transient errors
+
+
+def _fetch_batch(batch_points):
+    """Fetch weather for a small batch of points with retry on transient errors."""
+    lats = ",".join(str(round(p['lat'], 4)) for p in batch_points)
+    lngs = ",".join(str(round(p['lng'], 4)) for p in batch_points)
+
+    params = {
+        'latitude': lats,
+        'longitude': lngs,
+        'hourly': 'temperature_2m,wind_speed_10m,wind_direction_10m,precipitation_probability,weather_code',
+        'timezone': 'auto',
+    }
+
+    last_error = None
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            resp = requests.get(OPEN_METEO_URL, params=params, timeout=20)
+            if resp.status_code in (502, 503, 504) and attempt < _MAX_RETRIES:
+                import time
+                time.sleep(1)
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, dict):
+                return [data]
+            return data
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            last_error = e
+            if attempt < _MAX_RETRIES:
+                import time
+                time.sleep(1)
+                continue
+            raise
+
+    raise last_error
 
 
 def fetch_route_weather(sample_points):
     """Fetch weather forecasts for sample points via Open-Meteo API.
 
-    Splits into batches of 10 points to avoid URL length limits that cause
-    connection resets on Vercel. Returns list of per-location forecast dicts.
+    Splits into small batches with retry to handle transient 504/connection errors.
+    Returns list of per-location forecast dicts.
     """
     if not sample_points:
         return []
@@ -286,26 +323,7 @@ def fetch_route_weather(sample_points):
     all_results = []
     for i in range(0, len(sample_points), _BATCH_SIZE):
         batch = sample_points[i:i + _BATCH_SIZE]
-
-        lats = ",".join(str(round(p['lat'], 4)) for p in batch)
-        lngs = ",".join(str(round(p['lng'], 4)) for p in batch)
-
-        params = {
-            'latitude': lats,
-            'longitude': lngs,
-            'hourly': 'temperature_2m,wind_speed_10m,wind_direction_10m,precipitation_probability,weather_code',
-            'timezone': 'auto',
-        }
-
-        resp = requests.get(OPEN_METEO_URL, params=params, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-
-        # Normalize: single-location returns dict, multi returns list
-        if isinstance(data, dict):
-            all_results.append(data)
-        else:
-            all_results.extend(data)
+        all_results.extend(_fetch_batch(batch))
 
     return all_results
 
