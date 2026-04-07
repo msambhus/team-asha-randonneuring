@@ -276,7 +276,7 @@ class TestFetchRouteWeather:
 
         fetch_route_weather([{'lat': 37.0, 'lng': -122.0, 'distance_m': 0}])
         call_kwargs = mock_get.call_args
-        assert call_kwargs[1].get('timeout') == 15 or call_kwargs.kwargs.get('timeout') == 15
+        assert call_kwargs[1].get('timeout') == 20 or call_kwargs.kwargs.get('timeout') == 20
 
 
 # ── WTHR-08: Caching ────────────────────────────────────────────────
