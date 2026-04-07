@@ -9,21 +9,13 @@
   "builds": [
     {
       "src": "api/index.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "50mb"
-      }
+      "use": "@vercel/python"
     },
     {
       "src": "static/**",
       "use": "@vercel/static"
     }
   ],
-  "functions": {
-    "api/**": {
-      "maxDuration": 60
-    }
-  },
   "crons": [
     {
       "path": "/backfill-wind",
