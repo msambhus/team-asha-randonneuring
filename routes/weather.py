@@ -149,25 +149,21 @@ def weather_map_api():
     if not track_points:
         return jsonify({'error': 'This route has no GPS track data.'}), 400
 
-    # Sample at two intervals: sparse for table, dense for map
-    table_sample = sample_track_points(track_points, interval_m=_TABLE_INTERVAL_M)
+    # Sample at dense interval for map; table picks every Nth from the same data
     map_sample = sample_track_points(track_points, interval_m=_MAP_INTERVAL_M)
 
-    if not table_sample:
+    if not map_sample:
         return jsonify({'error': 'Could not sample points from this route.'}), 400
 
-    # Fetch weather for both sample sets (map is superset, fetch once)
+    # Single weather fetch for all map points (one API call)
     start_hour_str = start_dt.strftime("%Y-%m-%dT%H:00")
     slug = f"route-{route_id}"
     try:
-        map_weather = get_cached_route_weather(
-            f"{slug}-map", start_hour_str, map_sample, cache=cache)
-        table_weather = get_cached_route_weather(
-            f"{slug}-table", start_hour_str, table_sample, cache=cache)
+        weather_data = get_cached_route_weather(slug, start_hour_str, map_sample, cache=cache)
     except Exception:
         return jsonify({'error': 'Weather data is temporarily unavailable. Please try again.'}), 503
 
-    # Compute bearings for both sample sets
+    # Compute bearings for map points
     def compute_bearings(points):
         bearings = []
         for i in range(len(points) - 1):
@@ -177,7 +173,6 @@ def weather_map_api():
             ))
         return bearings
 
-    table_bearings = compute_bearings(table_sample)
     map_bearings = compute_bearings(map_sample)
 
     # Parse speed (mph) — default ~14 mph if not provided
@@ -186,9 +181,15 @@ def weather_map_api():
     except (ValueError, TypeError):
         rider_speed = None
 
-    # Build segments in imperial units
-    table_segments = _build_weather_segments(table_sample, table_weather, table_bearings, start_dt, rider_speed)
-    map_segments = _build_weather_segments(map_sample, map_weather, map_bearings, start_dt, rider_speed)
+    # Build all segments from map data, then derive table by picking every Nth
+    map_segments = _build_weather_segments(map_sample, weather_data, map_bearings, start_dt, rider_speed)
+
+    # Table: pick every Nth segment to approximate TABLE_INTERVAL spacing
+    table_step = max(1, _TABLE_INTERVAL_M // _MAP_INTERVAL_M)
+    table_segments = [map_segments[i] for i in range(0, len(map_segments), table_step)]
+    # Always include last segment
+    if table_segments and map_segments and table_segments[-1] is not map_segments[-1]:
+        table_segments.append(map_segments[-1])
 
     # Overall assessment from table segments
     headwinds = [s['headwind_mph'] for s in table_segments]
