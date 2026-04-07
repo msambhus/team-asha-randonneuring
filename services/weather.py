@@ -271,33 +271,43 @@ def get_stop_coordinates(stops, track_points):
 
 # ── Open-Meteo API ──────────────────────────────────────────────────
 
-def fetch_route_weather(sample_points):
-    """Fetch weather forecasts for sample points via Open-Meteo batch API.
+_BATCH_SIZE = 10  # Max locations per Open-Meteo request to avoid URL length limits
 
-    Sends a single GET with comma-separated lat/lng arrays.
-    Returns list of per-location forecast dicts.
+
+def fetch_route_weather(sample_points):
+    """Fetch weather forecasts for sample points via Open-Meteo API.
+
+    Splits into batches of 10 points to avoid URL length limits that cause
+    connection resets on Vercel. Returns list of per-location forecast dicts.
     """
     if not sample_points:
         return []
 
-    lats = ",".join(str(round(p['lat'], 4)) for p in sample_points)
-    lngs = ",".join(str(round(p['lng'], 4)) for p in sample_points)
+    all_results = []
+    for i in range(0, len(sample_points), _BATCH_SIZE):
+        batch = sample_points[i:i + _BATCH_SIZE]
 
-    params = {
-        'latitude': lats,
-        'longitude': lngs,
-        'hourly': 'temperature_2m,wind_speed_10m,wind_direction_10m,precipitation_probability,weather_code',
-        'timezone': 'auto',
-    }
+        lats = ",".join(str(round(p['lat'], 4)) for p in batch)
+        lngs = ",".join(str(round(p['lng'], 4)) for p in batch)
 
-    resp = requests.get(OPEN_METEO_URL, params=params, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
+        params = {
+            'latitude': lats,
+            'longitude': lngs,
+            'hourly': 'temperature_2m,wind_speed_10m,wind_direction_10m,precipitation_probability,weather_code',
+            'timezone': 'auto',
+        }
 
-    # Normalize: single-location returns dict, multi returns list
-    if isinstance(data, dict):
-        return [data]
-    return data
+        resp = requests.get(OPEN_METEO_URL, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Normalize: single-location returns dict, multi returns list
+        if isinstance(data, dict):
+            all_results.append(data)
+        else:
+            all_results.extend(data)
+
+    return all_results
 
 
 # ── Historical Wind (Archive API + forecast past_days fallback) ──────
