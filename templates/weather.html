@@ -435,11 +435,12 @@
 
         map = new mapboxgl.Map({
             container: 'wind-map',
-            style: 'mapbox://styles/mapbox/outdoors-v12',
+            style: 'mapbox://styles/mapbox/light-v11',
             center: [data.polyline[0][1], data.polyline[0][0]],
             zoom: 9,
         });
         map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+        map.addControl(new mapboxgl.FullscreenControl(), 'top-right');
 
         map.on('load', function() {
             addRouteLayer(data);
@@ -457,6 +458,17 @@
                 geometry: { type: 'LineString', coordinates: coords }
             }
         });
+        // Dark casing for contrast
+        map.addLayer({
+            id: 'route-casing',
+            type: 'line',
+            source: 'route',
+            paint: {
+                'line-color': '#1e3a5f',
+                'line-width': 5,
+                'line-opacity': 0.4
+            }
+        });
         map.addLayer({
             id: 'route-line',
             type: 'line',
@@ -464,7 +476,7 @@
             paint: {
                 'line-color': '#3b82f6',
                 'line-width': 3,
-                'line-opacity': 0.8
+                'line-opacity': 0.9
             }
         });
     }
@@ -482,10 +494,10 @@
     }
 
     function addWindArrows(data) {
-        // Create arrow images for each color
-        createArrowImage('wind-arrow-red', '#ef4444');
-        createArrowImage('wind-arrow-green', '#22c55e');
-        createArrowImage('wind-arrow-amber', '#f59e0b');
+        // Create arrow badge images: circle background + arrow
+        createWindBadge('wind-badge-red', '#ef4444', '#fef2f2');
+        createWindBadge('wind-badge-green', '#16a34a', '#f0fdf4');
+        createWindBadge('wind-badge-amber', '#d97706', '#fffbeb');
 
         var segments = data.map_segments || [];
 
@@ -508,6 +520,7 @@
                 properties: {
                     wind_direction: seg.wind_direction_deg || 0,
                     wind_speed: seg.wind_speed_mph || 0,
+                    speed_label: Math.round(seg.wind_speed_mph || 0) + '',
                     headwind: hw,
                     color: color,
                     label: seg.wind_speed_mph + ' mph ' + seg.wind_label,
@@ -521,26 +534,52 @@
             data: { type: 'FeatureCollection', features: features }
         });
 
+        // Arrow icon layer
         map.addLayer({
             id: 'wind-arrows',
             type: 'symbol',
             source: 'wind-points',
             layout: {
                 'icon-image': ['match', ['get', 'color'],
-                    'red', 'wind-arrow-red',
-                    'green', 'wind-arrow-green',
-                    'wind-arrow-amber'
+                    'red', 'wind-badge-red',
+                    'green', 'wind-badge-green',
+                    'wind-badge-amber'
                 ],
                 'icon-rotate': ['get', 'wind_direction'],
                 'icon-size': ['interpolate', ['linear'], ['get', 'wind_speed'],
-                    0, 0.4,
-                    5, 0.6,
-                    12, 0.9,
-                    25, 1.3
+                    0, 0.35,
+                    5, 0.45,
+                    12, 0.6,
+                    25, 0.8
                 ],
                 'icon-allow-overlap': true,
                 'icon-rotation-alignment': 'map',
                 'icon-anchor': 'center',
+            }
+        });
+
+        // Speed text label layer (stays upright, doesn't rotate)
+        map.addLayer({
+            id: 'wind-speed-labels',
+            type: 'symbol',
+            source: 'wind-points',
+            minzoom: 10,
+            layout: {
+                'text-field': ['concat', ['get', 'speed_label'], ' mph'],
+                'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
+                'text-size': 10,
+                'text-offset': [0, 2.2],
+                'text-anchor': 'top',
+                'text-allow-overlap': false,
+            },
+            paint: {
+                'text-color': ['match', ['get', 'color'],
+                    'red', '#991b1b',
+                    'green', '#166534',
+                    '#92400e'
+                ],
+                'text-halo-color': 'rgba(255,255,255,0.9)',
+                'text-halo-width': 1.5,
             }
         });
 
@@ -562,28 +601,41 @@
         });
     }
 
-    function createArrowImage(name, color) {
-        var size = 48;
+    function createWindBadge(name, arrowColor, bgColor) {
+        var size = 64;
         var canvas = document.createElement('canvas');
         canvas.width = size;
         canvas.height = size;
         var ctx = canvas.getContext('2d');
+        var cx = size / 2, cy = size / 2, r = size / 2 - 2;
 
-        // Draw arrow pointing DOWN (0° in Mapbox = north, and wind_direction is "from" direction,
-        // so a 0° wind blows FROM the north = arrow points down showing wind coming from above)
-        ctx.fillStyle = color;
+        // Circle background with shadow
+        ctx.shadowColor = 'rgba(0,0,0,0.25)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetY = 1;
         ctx.beginPath();
-        ctx.moveTo(size / 2, size - 4);      // bottom center (tip)
-        ctx.lineTo(size - 8, 8);              // top right
-        ctx.lineTo(size / 2, 16);             // notch
-        ctx.lineTo(8, 8);                     // top left
+        ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+        ctx.fillStyle = bgColor;
+        ctx.fill();
+        ctx.shadowColor = 'transparent';
+
+        // Circle border
+        ctx.strokeStyle = arrowColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Arrow pointing DOWN (wind "from" direction — 0° = from north = arrow points south)
+        ctx.fillStyle = arrowColor;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + 14);         // tip (bottom)
+        ctx.lineTo(cx + 11, cy - 10);    // top right
+        ctx.lineTo(cx + 3, cy - 4);      // inner right
+        ctx.lineTo(cx + 3, cy - 14);     // stem top right
+        ctx.lineTo(cx - 3, cy - 14);     // stem top left
+        ctx.lineTo(cx - 3, cy - 4);      // inner left
+        ctx.lineTo(cx - 11, cy - 10);    // top left
         ctx.closePath();
         ctx.fill();
-
-        // Add outline for visibility
-        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
 
         map.addImage(name, { width: size, height: size, data: ctx.getImageData(0, 0, size, size).data });
     }
@@ -591,7 +643,7 @@
     function fitBounds(polyline) {
         var bounds = new mapboxgl.LngLatBounds();
         polyline.forEach(function(p) { bounds.extend([p[1], p[0]]); });
-        map.fitBounds(bounds, { padding: 50, maxZoom: 12 });
+        map.fitBounds(bounds, { padding: 60 });
     }
 })();
 </script>
