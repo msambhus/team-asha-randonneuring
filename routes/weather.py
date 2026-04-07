@@ -22,7 +22,7 @@ _POLYLINE_DECIMATION = 20
 
 # Sampling intervals
 _TABLE_INTERVAL_M = 50000   # 50km between table rows
-_MAP_INTERVAL_M = 10000     # 10km between map arrows
+_MAP_INTERVAL_M = 15000     # 15km between map arrows
 
 # Unit conversion
 _KMH_TO_MPH = 0.621371
@@ -159,8 +159,11 @@ def weather_map_api():
     start_hour_str = start_dt.strftime("%Y-%m-%dT%H:00")
     slug = f"route-{route_id}"
     try:
+        logger.info("Fetching weather for %d sample points, route %s", len(map_sample), route_id)
         weather_data = get_cached_route_weather(slug, start_hour_str, map_sample, cache=cache)
+        logger.info("Weather fetch complete: %d forecasts returned", len(weather_data))
     except Exception:
+        logger.exception("Weather fetch failed for route %s with %d points", route_id, len(map_sample))
         return jsonify({'error': 'Weather data is temporarily unavailable. Please try again.'}), 503
 
     # Compute bearings for map points
