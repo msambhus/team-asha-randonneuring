@@ -6,21 +6,24 @@
     }
   },
   "buildCommand": "npm install && npm run build:css",
-  "functions": {
-    "api/index.py": {
-      "maxDuration": 60
-    }
-  },
   "builds": [
     {
       "src": "api/index.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
     },
     {
       "src": "static/**",
       "use": "@vercel/static"
     }
   ],
+  "functions": {
+    "api/**": {
+      "maxDuration": 60
+    }
+  },
   "crons": [
     {
       "path": "/backfill-wind",
