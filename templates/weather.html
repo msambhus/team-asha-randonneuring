@@ -257,8 +257,8 @@
         <h3>Wind Map</h3>
         <div id="wind-map">
             <div class="map-style-switcher" id="styleSwitcher">
-                <button class="map-style-btn" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
-                <button class="map-style-btn active" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
+                <button class="map-style-btn active" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
+                <button class="map-style-btn" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
                 <button class="map-style-btn" data-style="mapbox://styles/mapbox/light-v11">Light</button>
                 <button class="map-style-btn" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite</button>
             </div>
@@ -478,9 +478,13 @@
 
         map = new mapboxgl.Map({
             container: 'wind-map',
-            style: 'mapbox://styles/mapbox/outdoors-v12',
-            center: [data.polyline[0][1], data.polyline[0][0]],
-            zoom: 9,
+            style: 'mapbox://styles/mapbox/streets-v12',
+            bounds: (function() {
+                var b = new mapboxgl.LngLatBounds();
+                data.polyline.forEach(function(p) { b.extend([p[1], p[0]]); });
+                return b;
+            })(),
+            fitBoundsOptions: { padding: 60 },
         });
         map.addControl(new mapboxgl.NavigationControl(), 'top-right');
         map.addControl(new mapboxgl.FullscreenControl(), 'top-right');
