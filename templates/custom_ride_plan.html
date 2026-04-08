@@ -2423,30 +2423,37 @@ async function saveAllChanges() {
         updateSaveButtons('disabled', '⏳', 'Saving changes...');
         const promises = [];
         
+        // Helper: fetch that rejects on non-ok responses
+        function checkedFetch(url, opts) {
+            return fetch(url, opts).then(r => {
+                if (!r.ok) throw new Error(`${opts.method || 'GET'} ${url} failed (${r.status})`);
+                return r;
+            });
+        }
+
         // Save settings (name, description, public)
         const settingsPayload = {name, description, is_public: isPublic};
-        
+
         // Only update pace in settings if we didn't already apply it above
         if (!isCreateMode && pendingChanges.settings.avg_moving_speed === undefined) {
-            // If user changed settings but didn't apply pace
             const currentPace = parseFloat(document.getElementById('pace-slider').value);
             settingsPayload.avg_moving_speed = currentPace;
         }
-        
+
         if (!isCreateMode) {
             promises.push(
-                fetch(`/api/custom-plan/${customPlanId}/settings`, {
+                checkedFetch(`/api/custom-plan/${customPlanId}/settings`, {
                     method: 'PUT',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(settingsPayload)
                 })
             );
         }
-        
+
         // Save added stops
         pendingChanges.addedStops.forEach(stop => {
             promises.push(
-                fetch(`/api/custom-plan/${customPlanId}/stop/add`, {
+                checkedFetch(`/api/custom-plan/${customPlanId}/stop/add`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
@@ -2461,12 +2468,12 @@ async function saveAllChanges() {
                 })
             );
         });
-        
+
         // Save deleted stops (only if not in create mode, as they were already deleted above)
         if (!isCreateMode) {
             pendingChanges.deletedStops.forEach(del => {
                 promises.push(
-                    fetch(`/api/custom-plan/${customPlanId}/stop/${del.stopId}/delete`, {
+                    checkedFetch(`/api/custom-plan/${customPlanId}/stop/${del.stopId}/delete`, {
                         method: 'DELETE',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({is_custom_stop: del.isCustomStop})
@@ -2474,13 +2481,12 @@ async function saveAllChanges() {
                 );
             });
         }
-        
+
         // Save manually edited stop times (only in edit mode)
-        // In create mode, times are set via apply-pace
         if (!isCreateMode && Object.keys(pendingChanges.stopTimes).length > 0 && pendingChanges.settings.avg_moving_speed === undefined) {
             Object.entries(pendingChanges.stopTimes).forEach(([stopId, time]) => {
                 promises.push(
-                    fetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
+                    checkedFetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
                         method: 'PUT',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({segment_time_min: time})
@@ -2488,12 +2494,12 @@ async function saveAllChanges() {
                 );
             });
         }
-        
+
         // Save manually edited stop distances
         if (!isCreateMode && Object.keys(pendingChanges.stopDistances).length > 0) {
             Object.entries(pendingChanges.stopDistances).forEach(([stopId, distance]) => {
                 promises.push(
-                    fetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
+                    checkedFetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
                         method: 'PUT',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({distance_miles: distance})
@@ -2501,12 +2507,12 @@ async function saveAllChanges() {
                 );
             });
         }
-        
+
         // Save manually edited stop elevations
         if (!isCreateMode && Object.keys(pendingChanges.stopElevations).length > 0) {
             Object.entries(pendingChanges.stopElevations).forEach(([stopId, elevation]) => {
                 promises.push(
-                    fetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
+                    checkedFetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
                         method: 'PUT',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({elevation_gain: elevation})
@@ -2514,55 +2520,49 @@ async function saveAllChanges() {
                 );
             });
         }
-        
+
         // Save stop durations and names (combined to avoid duplicate API calls)
         if (!isCreateMode) {
             const allStopUpdates = new Set([
                 ...Object.keys(pendingChanges.stopDurations || {}),
                 ...Object.keys(pendingChanges.stopNames || {})
             ]);
-            
+
             allStopUpdates.forEach(stopId => {
                 const payload = {};
-                
+
                 if (pendingChanges.stopDurations && stopId in pendingChanges.stopDurations) {
                     payload.stop_duration_min = pendingChanges.stopDurations[stopId];
                 }
-                
+
                 if (pendingChanges.stopNames && stopId in pendingChanges.stopNames) {
                     payload.stop_name = pendingChanges.stopNames[stopId];
                 }
-                
+
                 if (Object.keys(payload).length > 0) {
-                    console.log(`Saving stop break info for stopId=${stopId}:`, payload);
                     promises.push(
-                        fetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
+                        checkedFetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
                             method: 'PUT',
                             headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify(payload)
                         })
-                        .then(r => {
-                            console.log(`API response status for stopId=${stopId}:`, r.status);
-                            return r.json();
-                        })
-                        .then(d => {
-                            console.log(`Break save response for stopId=${stopId}:`, d);
-                            if (!d.success) {
-                                console.error(`Failed to save stopId=${stopId}:`, d);
-                            }
-                        })
-                        .catch(err => console.error(`Error saving stopId=${stopId}:`, err))
                     );
                 }
             });
         }
-        
-        await Promise.all(promises);
-        
+
+        const results = await Promise.allSettled(promises);
+        const failures = results.filter(r => r.status === 'rejected');
+
+        if (failures.length > 0) {
+            console.error('Save failures:', failures.map(f => f.reason?.message));
+            throw new Error(`${failures.length} save(s) failed. Please retry.`);
+        }
+
         // Success!
         updateSaveButtons('saved', '✓', 'Saved!');
         hasUnsavedChanges = false;
-        
+
         // Auto-reload to show updated calculations
         setTimeout(() => window.location.reload(), 800);
         
