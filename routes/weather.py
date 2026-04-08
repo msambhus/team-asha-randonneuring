@@ -10,7 +10,7 @@ from services.rwgps import fetch_route, extract_controls, extract_rwgps_route_id
 from services.weather import (
     sample_track_points, calculate_bearing, headwind_component,
     get_cached_route_weather, format_weather_response,
-    wind_label, wmo_to_text, get_hour_index, _safe_get,
+    wind_label, wmo_to_text, wmo_to_icon, get_hour_index, _safe_get,
 )
 from cache import cache
 
@@ -88,6 +88,7 @@ def _build_weather_segments(sample_points, weather_data, bearings, start_dt, spe
             'wind_label': wind_label(hw_kmh),
             'precip_percent': precip,
             'conditions': wmo_to_text(wmo_code),
+            'conditions_icon': wmo_to_icon(wmo_code),
             'lat': pt['lat'],
             'lng': pt['lng'],
             'rider_bearing_deg': bearing,

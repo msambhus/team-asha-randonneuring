@@ -48,6 +48,30 @@ _WMO_CODES = {
     99: "thunderstorm with heavy hail",
 }
 
+_WMO_ICONS = {
+    0: "\u2600\ufe0f",       # clear sky — sunny
+    1: "\U0001f324\ufe0f",   # mainly clear
+    2: "\u26c5",             # partly cloudy
+    3: "\u2601\ufe0f",       # overcast
+    45: "\U0001f32b\ufe0f",  # fog
+    48: "\U0001f32b\ufe0f",  # rime fog
+    51: "\U0001f326\ufe0f",  # light drizzle
+    53: "\U0001f326\ufe0f",  # drizzle
+    55: "\U0001f327\ufe0f",  # dense drizzle
+    61: "\U0001f326\ufe0f",  # light rain
+    63: "\U0001f327\ufe0f",  # rain
+    65: "\U0001f327\ufe0f",  # heavy rain
+    71: "\U0001f328\ufe0f",  # light snow
+    73: "\u2744\ufe0f",      # snow
+    75: "\u2744\ufe0f",      # heavy snow
+    80: "\U0001f326\ufe0f",  # light showers
+    81: "\U0001f327\ufe0f",  # showers
+    82: "\U0001f327\ufe0f",  # heavy showers
+    95: "\u26c8\ufe0f",      # thunderstorm
+    96: "\u26c8\ufe0f",      # thunderstorm with hail
+    99: "\u26c8\ufe0f",      # thunderstorm with heavy hail
+}
+
 # Average brevet speed for arrival-time estimation (km/h)
 _AVG_SPEED_KMH = 22
 
@@ -162,6 +186,11 @@ def wind_label(headwind_kmh):
 def wmo_to_text(code):
     """Convert WMO weather code to human-readable text."""
     return _WMO_CODES.get(code, f"code {code}")
+
+
+def wmo_to_icon(code):
+    """Convert WMO weather code to emoji icon."""
+    return _WMO_ICONS.get(code, "")
 
 
 def get_hour_index(hourly_times, arrival_dt):

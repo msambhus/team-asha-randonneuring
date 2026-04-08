@@ -442,7 +442,7 @@
                 '<td>' + seg.wind_speed_mph + ' mph</td>' +
                 '<td>' + arrowHtml + ' ' + seg.wind_direction_deg + '°</td>' +
                 '<td><span class="badge ' + badgeClass + '">' + seg.wind_label + '</span><br><small>' + Math.abs(hw) + ' mph</small></td>' +
-                '<td>' + seg.conditions + '</td>' +
+                '<td>' + (seg.conditions_icon || '') + ' ' + seg.conditions + '</td>' +
                 '<td>' + seg.precip_percent + '%</td>';
 
             tbody.appendChild(tr);
@@ -580,7 +580,7 @@
                     headwind: hw,
                     color: color,
                     label: seg.wind_speed_mph + ' mph ' + seg.wind_label,
-                    detail: seg.temperature_f + '°F | ' + seg.conditions + ' | Precip: ' + seg.precip_percent + '%'
+                    detail: seg.temperature_f + '°F | ' + (seg.conditions_icon || '') + ' ' + seg.conditions + ' | Precip: ' + seg.precip_percent + '%'
                 }
             };
         });
