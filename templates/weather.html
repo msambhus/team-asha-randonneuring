@@ -154,7 +154,35 @@
     border-bottom: 1px solid var(--border);
     background: #f8fafc;
 }
-#wind-map { height: 700px; width: 100%; }
+#wind-map { height: 700px; width: 100%; position: relative; }
+
+/* Style switcher */
+.map-style-switcher {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 1;
+    display: flex;
+    background: white;
+    border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    overflow: hidden;
+    font-size: 0.72rem;
+}
+.map-style-btn {
+    padding: 6px 10px;
+    border: none;
+    background: white;
+    color: #475569;
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-weight: 500;
+    border-right: 1px solid #e2e8f0;
+    transition: background 0.15s;
+}
+.map-style-btn:last-child { border-right: none; }
+.map-style-btn:hover { background: #f1f5f9; }
+.map-style-btn.active { background: #1e293b; color: white; }
 
 /* Legend */
 .map-legend {
@@ -227,7 +255,14 @@
 
     <div class="map-section" id="map-section">
         <h3>Wind Map</h3>
-        <div id="wind-map"></div>
+        <div id="wind-map">
+            <div class="map-style-switcher" id="styleSwitcher">
+                <button class="map-style-btn" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
+                <button class="map-style-btn active" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
+                <button class="map-style-btn" data-style="mapbox://styles/mapbox/light-v11">Light</button>
+                <button class="map-style-btn" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite</button>
+            </div>
+        </div>
         <div class="map-legend">
             <div class="legend-item"><div class="legend-dot" style="background:#ef4444;"></div> Headwind</div>
             <div class="legend-item"><div class="legend-dot" style="background:#22c55e;"></div> Tailwind</div>
@@ -417,6 +452,13 @@
     }
 
     // ── Map (uses map_segments — dense points, imperial) ──
+    var currentMapData = null;
+
+    function addAllLayers(data) {
+        addRouteLayer(data);
+        addWindArrows(data);
+    }
+
     function renderMap(data) {
         if (!MAPBOX_TOKEN || !data.polyline || data.polyline.length === 0) {
             document.getElementById('map-section').style.display = 'none';
@@ -424,6 +466,7 @@
         }
 
         document.getElementById('map-section').style.display = 'block';
+        currentMapData = data;
 
         mapboxgl.accessToken = MAPBOX_TOKEN;
 
@@ -435,7 +478,7 @@
 
         map = new mapboxgl.Map({
             container: 'wind-map',
-            style: 'mapbox://styles/mapbox/light-v11',
+            style: 'mapbox://styles/mapbox/outdoors-v12',
             center: [data.polyline[0][1], data.polyline[0][0]],
             zoom: 9,
         });
@@ -443,10 +486,19 @@
         map.addControl(new mapboxgl.FullscreenControl(), 'top-right');
 
         map.on('load', function() {
-            addRouteLayer(data);
-            addWindArrows(data);
+            addAllLayers(data);
             fitBounds(data.polyline);
         });
+
+        // Re-add layers after style change
+        map.on('style.load', function() {
+            if (currentMapData) {
+                addAllLayers(currentMapData);
+            }
+        });
+
+        // Style switcher
+        initStyleSwitcher();
     }
 
     function addRouteLayer(data) {
@@ -644,6 +696,25 @@
         var bounds = new mapboxgl.LngLatBounds();
         polyline.forEach(function(p) { bounds.extend([p[1], p[0]]); });
         map.fitBounds(bounds, { padding: 60 });
+    }
+
+    function initStyleSwitcher() {
+        var switcher = document.getElementById('styleSwitcher');
+        if (!switcher) return;
+
+        switcher.querySelectorAll('.map-style-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var style = this.dataset.style;
+                if (!map || !style) return;
+
+                // Update active button
+                switcher.querySelectorAll('.map-style-btn').forEach(function(b) { b.classList.remove('active'); });
+                this.classList.add('active');
+
+                // Change map style — style.load event will re-add layers
+                map.setStyle(style);
+            });
+        });
     }
 })();
 </script>
