@@ -765,7 +765,7 @@
             {{ event.route_name }}{% if event.ride_type %} <span style="color:var(--text-light);font-size:0.75rem;font-weight:600;white-space:nowrap;">[{{ event.ride_type }}]</span>{% endif %}
         </span>
         {% if can_edit_rides %}
-        <button onclick="openEditModal({{ event.id }}, '{{ event.route_name|replace("'", "\\'") }}', '{{ event.rwgps_url|replace("'", "\\'")|default('', true) }}', {{ event.ride_plan_id|default('null', true) }}, '{{ event.plan_start_time|replace("'", "\\'")|default('', true) }}', '{{ event.start_location|replace("'", "\\'")|default('', true) }}', {{ event.time_limit_hours|default('null', true) }})" 
+        <button onclick="openEditModal({{ event.id }}, '{{ event.route_name|replace("'", "\\'") }}', '{{ event.rwgps_url|replace("'", "\\'")|default('', true) }}', {{ event.ride_plan_id|default('null', true) }}, '{{ event.plan_start_time|replace("'", "\\'")|default('', true) }}', '{{ event.start_location|replace("'", "\\'")|default('', true) }}', {{ event.time_limit_hours|default('null', true) }}, '{{ event.plan_rwgps_url_team|replace("'", "\\'")|default('', true) }}')" 
                 style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;color:#6d28d9;font-size:0.85rem;transition:transform 0.2s,color 0.2s;"
                 onmouseover="this.style.transform='scale(1.15)';this.style.color='#5b21b6';"
                 onmouseout="this.style.transform='scale(1)';this.style.color='#6d28d9';"
@@ -945,7 +945,15 @@
                     </select>
                     <small style="color:var(--text-light);font-size:0.8rem;">Select from available ride plans</small>
                 </div>
-                
+
+                <div style="margin-bottom:20px;">
+                    <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Team Asha Route URL</label>
+                    <input type="url" id="edit-rwgps-url-team" name="rwgps_url_team"
+                           style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;"
+                           placeholder="https://ridewithgps.com/routes/...">
+                    <small style="color:var(--text-light);font-size:0.8rem;">Custom Team Asha route (saved on ride plan). Leave empty to remove.</small>
+                </div>
+
                 <div style="margin-bottom:20px;">
                     <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Start Time</label>
                     <input type="time" id="edit-start-time" name="start_time" 
@@ -986,7 +994,7 @@ var activeRegion = 'all';
 var activeDistance = 'all';
 
 // Edit Modal Functions
-function openEditModal(rideId, rideName, rwgpsUrl, ridePlanId, startTime, startLocation, timeLimit) {
+function openEditModal(rideId, rideName, rwgpsUrl, ridePlanId, startTime, startLocation, timeLimit, rwgpsUrlTeam) {
     document.getElementById('edit-modal-title').textContent = 'Edit: ' + rideName;
     document.getElementById('edit-ride-id').value = rideId;
     
@@ -1009,7 +1017,8 @@ function openEditModal(rideId, rideName, rwgpsUrl, ridePlanId, startTime, startL
     
     document.getElementById('edit-start-location').value = startLocation && startLocation !== 'null' ? startLocation : '';
     document.getElementById('edit-time-limit').value = timeLimit && timeLimit !== 'null' && timeLimit !== null ? timeLimit : '';
-    
+    document.getElementById('edit-rwgps-url-team').value = rwgpsUrlTeam && rwgpsUrlTeam !== 'null' ? rwgpsUrlTeam : '';
+
     document.getElementById('edit-modal').style.display = 'flex';
 }
 
