@@ -578,8 +578,21 @@
 
     function makeChart(canvasId, config) {
         if (weatherCharts[canvasId]) { weatherCharts[canvasId].destroy(); }
-        var ctx = document.getElementById(canvasId).getContext('2d');
+        var canvas = document.getElementById(canvasId);
+        var ctx = canvas.getContext('2d');
         weatherCharts[canvasId] = new Chart(ctx, config);
+
+        // Clear all synced tooltips when mouse leaves the canvas
+        canvas.addEventListener('mouseleave', function() {
+            syncAllCharts(-1, null);
+            // Also clear tooltip on the source chart itself
+            var c = weatherCharts[canvasId];
+            if (c) {
+                c.setActiveElements([]);
+                c.tooltip.setActiveElements([], {});
+                c.update('none');
+            }
+        });
     }
 
     function chartLabels(cd) {
