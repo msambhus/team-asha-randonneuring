@@ -397,16 +397,23 @@
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ rwgps_url: url, start_datetime: dt || null, speed_mph: speed ? parseFloat(speed) : null, plan_slug: PLAN_SLUG || null })
         })
-        .then(function(resp) { return resp.json().then(function(d) { return {ok: resp.ok, data: d}; }); })
-        .then(function(result) {
-            showLoading(false);
-            if (!result.ok) {
-                showError(result.data.error || 'An error occurred.');
-                return;
+        .then(function(resp) {
+            if (!resp.ok) {
+                return resp.text().then(function(text) {
+                    try { var d = JSON.parse(text); showError(d.error || 'Server error (' + resp.status + ')'); }
+                    catch(e) { showError('Server error (' + resp.status + '). Please try again.'); }
+                    showLoading(false);
+                    throw new Error('handled');
+                });
             }
-            renderResults(result.data);
+            return resp.json();
         })
-        .catch(function() {
+        .then(function(data) {
+            showLoading(false);
+            renderResults(data);
+        })
+        .catch(function(err) {
+            if (err && err.message === 'handled') return;
             showLoading(false);
             showError('Network error. Please try again.');
         });
@@ -432,7 +439,8 @@
     // ── Helpers ────────────────────────────────────────────
     function showLoading(on) {
         document.getElementById('loading').style.display = on ? 'block' : 'none';
-        document.getElementById('btn-fetch').disabled = on;
+        var btn = document.getElementById('btn-fetch');
+        if (btn) btn.disabled = on;
     }
     function showError(msg) {
         var el = document.getElementById('error-alert');
