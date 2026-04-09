@@ -313,6 +313,10 @@
     <div class="charts-section" id="charts-section" style="display:none;">
         <div class="charts-grid">
             <div class="chart-card">
+                <h4>Wind</h4>
+                <canvas id="chartWind"></canvas>
+            </div>
+            <div class="chart-card">
                 <h4>Temperature</h4>
                 <canvas id="chartTemp"></canvas>
             </div>
@@ -321,13 +325,13 @@
                 <canvas id="chartPrecip"></canvas>
             </div>
             <div class="chart-card">
-                <h4>Wind</h4>
-                <canvas id="chartWind"></canvas>
-            </div>
-            <div class="chart-card">
                 <h4>Elevation</h4>
                 <canvas id="chartElev"></canvas>
             </div>
+        </div>
+        <div class="chart-card" style="margin-top:16px;">
+            <h4>Headwind / Tailwind</h4>
+            <canvas id="chartHeadwind" style="max-height:180px;"></canvas>
         </div>
     </div>
 
@@ -487,8 +491,10 @@
         return 'crosswind';
     }
 
-    // ── Charts ─────────────────────────────────────────────
+    // ── Charts (synchronized hover across all charts + map) ─
     var weatherCharts = {};
+    var chartMapSegments = null;  // store for map sync
+    var syncingHover = false;     // prevent infinite recursion
 
     var CHART_DEFAULTS = {
         responsive: true,
@@ -508,7 +514,59 @@
                 grid: { color: 'rgba(226,232,240,0.6)' },
             },
         },
+        onHover: function(event, elements, chart) {
+            if (syncingHover) return;
+            if (!elements || elements.length === 0) {
+                syncAllCharts(-1, chart);
+                return;
+            }
+            syncAllCharts(elements[0].index, chart);
+        },
     };
+
+    function syncAllCharts(dataIndex, sourceChart) {
+        syncingHover = true;
+        var chartIds = ['chartWind', 'chartTemp', 'chartPrecip', 'chartElev', 'chartHeadwind'];
+        chartIds.forEach(function(id) {
+            var c = weatherCharts[id];
+            if (!c || c === sourceChart) return;
+            if (dataIndex < 0) {
+                c.setActiveElements([]);
+                c.tooltip.setActiveElements([], {});
+                c.update('none');
+                return;
+            }
+            var activeEls = [];
+            c.data.datasets.forEach(function(ds, dsIdx) {
+                activeEls.push({ datasetIndex: dsIdx, index: dataIndex });
+            });
+            c.setActiveElements(activeEls);
+            c.tooltip.setActiveElements(activeEls, { x: 0, y: 0 });
+            c.update('none');
+        });
+        // Sync map popup
+        syncMapPopup(dataIndex);
+        syncingHover = false;
+    }
+
+    function syncMapPopup(dataIndex) {
+        if (!map || !chartMapSegments || dataIndex < 0 || dataIndex >= chartMapSegments.length) {
+            if (syncPopup) syncPopup.remove();
+            return;
+        }
+        var seg = chartMapSegments[dataIndex];
+        if (!seg) return;
+        var coords = offsetPoint(seg.lat, seg.lng, seg.rider_bearing_deg);
+        if (!syncPopup) {
+            syncPopup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 15 });
+        }
+        syncPopup.setLngLat(coords)
+            .setHTML('<strong>' + seg.wind_speed_mph + ' mph ' + seg.wind_label + '</strong><br>' +
+                     seg.temperature_f + '°F (feels ' + seg.feels_like_f + '°F) | ' +
+                     (seg.conditions_icon || '') + ' ' + seg.conditions)
+            .addTo(map);
+    }
+    var syncPopup = null;
 
     function makeChart(canvasId, config) {
         if (weatherCharts[canvasId]) { weatherCharts[canvasId].destroy(); }
@@ -517,7 +575,6 @@
     }
 
     function chartLabels(cd) {
-        // Alternate distance + time labels
         return cd.labels.map(function(mi, i) { return cd.times[i]; });
     }
 
@@ -539,6 +596,7 @@
         if (!data.chart_data) return;
         var cd = data.chart_data;
         var labels = chartLabels(cd);
+        chartMapSegments = data.map_segments || [];
 
         document.getElementById('charts-section').style.display = 'block';
 
@@ -630,6 +688,43 @@
                         color: '#64748b',
                         font: { size: 10 },
                         padding: { bottom: 4 },
+                    },
+                },
+            },
+        });
+
+        // Headwind / Tailwind — positive = headwind (red), negative = tailwind (green)
+        var hwColors = cd.headwind_mph.map(function(v) { return v > 3 ? 'rgba(239,68,68,0.5)' : (v < -3 ? 'rgba(34,197,94,0.5)' : 'rgba(245,158,11,0.3)'); });
+        var hwBorders = cd.headwind_mph.map(function(v) { return v > 3 ? '#ef4444' : (v < -3 ? '#22c55e' : '#f59e0b'); });
+        makeChart('chartHeadwind', {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Headwind (+) / Tailwind (-) mph',
+                    data: cd.headwind_mph,
+                    backgroundColor: hwColors,
+                    borderColor: hwBorders,
+                    borderWidth: 1,
+                }],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, title: { display: true, text: 'mph', color: '#64748b', font: { size: 10 } } },
+                },
+                plugins: {
+                    ...CHART_DEFAULTS.plugins,
+                    legend: { display: false },
+                    tooltip: {
+                        ...CHART_DEFAULTS.plugins.tooltip,
+                        callbacks: {
+                            label: function(ctx) {
+                                var v = ctx.parsed.y;
+                                return (v > 0 ? 'Headwind: ' : 'Tailwind: ') + Math.abs(v) + ' mph';
+                            },
+                        },
                     },
                 },
             },

@@ -25,7 +25,7 @@ weather_bp = Blueprint('weather', __name__)
 _POLYLINE_DECIMATION = 20
 
 # Sampling intervals
-_TABLE_INTERVAL_M = 50000   # 50km between table rows
+_TABLE_INTERVAL_M = 25000   # 25km (~16 mi) between table rows
 _MAP_INTERVAL_M = 15000     # 15km between map arrows
 
 # Unit conversion
