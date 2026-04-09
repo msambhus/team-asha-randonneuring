@@ -565,6 +565,7 @@ def edit_ride(ride_id):
         # Get form data
         rwgps_url = request.form.get('rwgps_url', '').strip()
         ride_plan_id = request.form.get('ride_plan_id')
+        rwgps_url_team = request.form.get('rwgps_url_team', '').strip()
         start_location = request.form.get('start_location', '').strip()
         time_limit_hours = request.form.get('time_limit_hours')
 
@@ -580,6 +581,16 @@ def edit_ride(ride_id):
             start_location=start_location if start_location else None,
             time_limit_hours=time_limit_hours
         )
+
+        # Update Team Asha route URL on the linked ride plan
+        if ride_plan_id and rwgps_url_team is not None:
+            _execute(
+                "UPDATE ride_plan SET rwgps_url_team = %s WHERE id = %s",
+                (rwgps_url_team if rwgps_url_team else None, ride_plan_id),
+            )
+            from models import get_db
+            get_db().commit()
+
         cache.clear()  # Clear cache after ride update
         
         # Return JSON for AJAX requests
