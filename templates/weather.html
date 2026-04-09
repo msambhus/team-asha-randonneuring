@@ -325,8 +325,8 @@
                 <canvas id="chartPrecip"></canvas>
             </div>
             <div class="chart-card">
-                <h4>Elevation</h4>
-                <canvas id="chartElev"></canvas>
+                <h4>Rain Intensity</h4>
+                <canvas id="chartRain"></canvas>
             </div>
         </div>
         <div class="chart-card" style="margin-top:16px;">
@@ -534,7 +534,7 @@
 
     function syncAllCharts(dataIndex, sourceChart) {
         syncingHover = true;
-        var chartIds = ['chartWind', 'chartTemp', 'chartPrecip', 'chartElev', 'chartHeadwind'];
+        var chartIds = ['chartWind', 'chartTemp', 'chartPrecip', 'chartRain', 'chartHeadwind'];
         chartIds.forEach(function(id) {
             var c = weatherCharts[id];
             if (!c || c === sourceChart) return;
@@ -685,30 +685,43 @@
             },
         });
 
-        // Elevation
-        makeChart('chartElev', {
-            type: 'line',
+        // Rain Intensity (mm per hour)
+        var rainColors = cd.precipitation_mm.map(function(v) {
+            if (v >= 4) return 'rgba(30,58,138,0.7)';     // heavy — dark blue
+            if (v >= 1) return 'rgba(37,99,235,0.6)';      // moderate — blue
+            if (v > 0) return 'rgba(96,165,250,0.5)';      // light — light blue
+            return 'rgba(226,232,240,0.3)';                 // none — faint
+        });
+        makeChart('chartRain', {
+            type: 'bar',
             data: {
                 labels: labels,
-                datasets: [
-                    areaDataset('Elevation (ft)', cd.elevation_ft, '#94a3b8', 'rgba(148,163,184,0.25)'),
-                ],
+                datasets: [{
+                    label: 'Precipitation (mm)',
+                    data: cd.precipitation_mm,
+                    backgroundColor: rainColors,
+                    borderColor: 'rgba(37,99,235,0.6)',
+                    borderWidth: 1,
+                }],
             },
             options: {
                 ...CHART_DEFAULTS,
                 scales: {
                     ...CHART_DEFAULTS.scales,
-                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'ft', color: '#64748b', font: { size: 10 } } },
+                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'mm', color: '#64748b', font: { size: 10 } } },
                 },
                 plugins: {
                     ...CHART_DEFAULTS.plugins,
                     legend: { display: false },
-                    subtitle: {
-                        display: true,
-                        text: data.total_elevation_ft ? 'Elevation Gain: ' + data.total_elevation_ft.toLocaleString() + ' ft | Distance: ' + data.total_distance_mi + ' mi' : '',
-                        color: '#64748b',
-                        font: { size: 10 },
-                        padding: { bottom: 4 },
+                    tooltip: {
+                        ...CHART_DEFAULTS.plugins.tooltip,
+                        callbacks: {
+                            label: function(ctx) {
+                                var v = ctx.parsed.y;
+                                var intensity = v >= 4 ? 'Heavy' : (v >= 1 ? 'Moderate' : (v > 0 ? 'Light' : 'None'));
+                                return v + ' mm — ' + intensity;
+                            },
+                        },
                     },
                 },
             },
