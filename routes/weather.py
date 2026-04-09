@@ -141,8 +141,8 @@ def _load_plan_stops(plan_slug, rider_id=None):
         custom = get_custom_plan(rider_id, plan['id'])
         if custom:
             from services.custom_plan_service import get_merged_plan_stops, recalculate_cumulative_values
-            custom_stops_raw, _ = get_merged_plan_stops(custom['id'])
-            custom_stops = recalculate_cumulative_values(custom_stops_raw)
+            custom_stops_raw, custom_plan_data = get_merged_plan_stops(custom['id'])
+            custom_stops = recalculate_cumulative_values(custom_stops_raw, custom_plan_data or custom)
             return custom_stops, plan.get('name', '')
 
     # Use base plan stops
@@ -351,13 +351,16 @@ def weather_map_api():
     arrival_fn = None
     plan_source = None
     if plan_slug:
-        rider_id = session.get('rider_id')
-        plan_stops, plan_name = _load_plan_stops(plan_slug, rider_id)
-        if plan_stops:
-            arrival_fn = _build_arrival_interpolator(plan_stops, start_dt)
-            plan_source = 'custom' if rider_id and plan_name else 'base'
-            logger.info("Using %s plan '%s' timing (%d stops) for route %s",
-                        plan_source, plan_name, len(plan_stops), route_id)
+        try:
+            rider_id = session.get('rider_id')
+            plan_stops, plan_name = _load_plan_stops(plan_slug, rider_id)
+            if plan_stops:
+                arrival_fn = _build_arrival_interpolator(plan_stops, start_dt)
+                plan_source = 'custom' if rider_id and plan_name else 'base'
+                logger.info("Using %s plan '%s' timing (%d stops) for route %s",
+                            plan_source, plan_name, len(plan_stops), route_id)
+        except Exception:
+            logger.exception("Failed to load plan %s, falling back to speed-based timing", plan_slug)
 
     # Parse speed (mph) — used as fallback if no plan timing
     try:
