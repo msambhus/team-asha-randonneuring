@@ -1048,12 +1048,12 @@
 
     {# Weather Map (our page) — primary weather action #}
     {% if upcoming_event and weather_rwgps %}
-    <a href="{{ url_for('weather.weather_page', rwgps_url=weather_rwgps, start_datetime=upcoming_event.date|string + 'T' + (plan.start_time or '06:00'), speed_mph=avg_elapsed_speed or '', auto='1') }}" class="quick-action-btn" style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);border-color:#6ee7b7;color:#065f46;">
+    <a href="{{ url_for('weather.weather_page', rwgps_url=weather_rwgps, start_datetime=upcoming_event.date|string + 'T' + (plan.start_time or '06:00'), plan_slug=plan.slug, auto='1') }}" class="quick-action-btn" style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);border-color:#6ee7b7;color:#065f46;">
         <span>🗺️</span>
         <span>Weather</span>
     </a>
     {% elif weather_rwgps %}
-    <a href="{{ url_for('weather.weather_page', rwgps_url=weather_rwgps, speed_mph=avg_elapsed_speed or '') }}" class="quick-action-btn" style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);border-color:#6ee7b7;color:#065f46;">
+    <a href="{{ url_for('weather.weather_page', rwgps_url=weather_rwgps, plan_slug=plan.slug) }}" class="quick-action-btn" style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);border-color:#6ee7b7;color:#065f46;">
         <span>🗺️</span>
         <span>Weather</span>
     </a>

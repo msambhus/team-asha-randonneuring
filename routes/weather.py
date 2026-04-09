@@ -4,7 +4,7 @@ import time
 import logging
 from datetime import datetime, timedelta
 
-from flask import Blueprint, render_template, request, jsonify, current_app
+from flask import Blueprint, render_template, request, jsonify, current_app, session
 
 from services.rwgps import fetch_route, extract_controls, extract_rwgps_route_id
 from services.weather import (
@@ -30,6 +30,7 @@ _MAP_INTERVAL_M = 15000     # 15km between map arrows
 
 # Unit conversion
 _KMH_TO_MPH = 0.621371
+_MI_TO_M = 1609.344
 _M_TO_FT = 3.28084
 _AVG_SPEED_KMH = 22  # for arrival-time estimation
 
@@ -68,16 +69,102 @@ def _interpolate_elevation(track_points, distance_m):
                 elev_m = cur_e
             return round(elev_m * _M_TO_FT)
         prev = pt
-    # Past end — use last point
     last_e = track_points[-1].get('e', 0) or 0
     return round(last_e * _M_TO_FT)
 
 
+def _build_arrival_interpolator(plan_stops, start_dt):
+    """Build a function that returns arrival datetime for a given distance_m.
+
+    Uses the plan's cumulative stop times (segment speeds + break durations)
+    to interpolate arrival time at any point along the route, rather than
+    assuming a flat speed.
+
+    plan_stops: list of dicts with 'distance_miles' and 'cum_time_min'
+    start_dt: datetime of ride start
+    """
+    # Build sorted list of (distance_m, cum_time_min) pairs
+    points = []
+    for s in plan_stops:
+        dist_mi = float(s.get('distance_miles') or 0)
+        cum_min = float(s.get('cum_time_min') or 0)
+        points.append((dist_mi * _MI_TO_M, cum_min))
+
+    if not points:
+        return None
+
+    # Sort by distance (should already be sorted, but be safe)
+    points.sort(key=lambda p: p[0])
+
+    def interpolate(distance_m):
+        """Return estimated arrival datetime at this distance."""
+        # Before first stop
+        if distance_m <= points[0][0]:
+            return start_dt + timedelta(minutes=points[0][1])
+
+        # After last stop — extrapolate using last segment speed
+        if distance_m >= points[-1][0]:
+            return start_dt + timedelta(minutes=points[-1][1])
+
+        # Interpolate between stops
+        for j in range(1, len(points)):
+            if points[j][0] >= distance_m:
+                d0, t0 = points[j - 1]
+                d1, t1 = points[j]
+                seg_len = d1 - d0
+                if seg_len > 0:
+                    frac = (distance_m - d0) / seg_len
+                    cum_min = t0 + frac * (t1 - t0)
+                else:
+                    cum_min = t1
+                return start_dt + timedelta(minutes=cum_min)
+
+        return start_dt + timedelta(minutes=points[-1][1])
+
+    return interpolate
+
+
+def _load_plan_stops(plan_slug, rider_id=None):
+    """Load plan stops for arrival time interpolation.
+
+    If rider_id is provided and they have a custom plan, use that instead.
+    Returns (stops_list, plan_name) or (None, None) if not found.
+    """
+    from models import get_ride_plan_by_slug, get_ride_plan_stops, get_custom_plan
+
+    plan = get_ride_plan_by_slug(plan_slug)
+    if not plan:
+        return None, None
+
+    # Check for custom plan
+    if rider_id:
+        custom = get_custom_plan(rider_id, plan['id'])
+        if custom:
+            from services.custom_plan_service import get_merged_plan_stops, recalculate_cumulative_values
+            custom_stops_raw, _ = get_merged_plan_stops(custom['id'])
+            custom_stops = recalculate_cumulative_values(custom_stops_raw)
+            return custom_stops, plan.get('name', '')
+
+    # Use base plan stops
+    raw_stops = get_ride_plan_stops(plan['id'])
+    # Recalculate cumulative times (same as ride_plan_detail does)
+    stops = []
+    cum_time = 0
+    for s in raw_stops:
+        d = dict(s)
+        seg_time = int(d.get('segment_time_min') or 0)
+        cum_time += seg_time
+        d['cum_time_min'] = cum_time
+        stops.append(d)
+    return stops, plan.get('name', '')
+
+
 def _build_weather_segments(sample_points, weather_data, bearings, start_dt,
-                            speed_mph=None, track_points=None):
+                            speed_mph=None, track_points=None, arrival_fn=None):
     """Build weather segments with imperial units, chart-ready fields, and elevation.
 
-    speed_mph: rider speed for arrival time estimation. Defaults to ~14 mph (22 km/h).
+    arrival_fn: function(distance_m) -> datetime. If provided, uses plan-aware
+                arrival times instead of flat speed. Falls back to flat speed if None.
     track_points: RWGPS track points for elevation interpolation (optional).
     """
     speed_kmh = (speed_mph / _KMH_TO_MPH) if speed_mph else _AVG_SPEED_KMH
@@ -91,9 +178,14 @@ def _build_weather_segments(sample_points, weather_data, bearings, start_dt,
         hourly = forecast.get('hourly', {})
         times = hourly.get('time', [])
 
-        dist_km = pt['distance_m'] / 1000
-        hours_to_arrive = dist_km / speed_kmh if speed_kmh > 0 else 0
-        arrival = start_dt + timedelta(hours=hours_to_arrive)
+        # Use plan-aware arrival time if available, else flat speed
+        if arrival_fn:
+            arrival = arrival_fn(pt['distance_m'])
+        else:
+            dist_km = pt['distance_m'] / 1000
+            hours_to_arrive = dist_km / speed_kmh if speed_kmh > 0 else 0
+            arrival = start_dt + timedelta(hours=hours_to_arrive)
+
         idx = get_hour_index(times, arrival)
 
         temp_c = _safe_get(hourly, 'temperature_2m', idx, 0.0)
@@ -112,7 +204,7 @@ def _build_weather_segments(sample_points, weather_data, bearings, start_dt,
         elev_ft = _interpolate_elevation(track_points, pt['distance_m']) if track_points else 0
 
         segments.append({
-            'distance_mi': _km_to_mi(dist_km),
+            'distance_mi': _km_to_mi(pt['distance_m'] / 1000),
             'arrival_time': arrival.strftime('%-I:%M %p'),
             'temperature_f': _c_to_f(temp_c),
             'feels_like_f': _c_to_f(feels_c),
@@ -157,7 +249,7 @@ def weather_page():
     """Render the weather + wind map page with input form.
 
     Supports query params for pre-filling from brevet/ride plan pages:
-      ?rwgps_url=...&start_datetime=...&speed_mph=...&auto=1
+      ?rwgps_url=...&start_datetime=...&speed_mph=...&plan_slug=...&auto=1
     """
     mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
     return render_template('weather.html',
@@ -165,6 +257,7 @@ def weather_page():
                            prefill_url=request.args.get('rwgps_url', ''),
                            prefill_datetime=request.args.get('start_datetime', ''),
                            prefill_speed=request.args.get('speed_mph', ''),
+                           prefill_plan_slug=request.args.get('plan_slug', ''),
                            auto_fetch=request.args.get('auto', ''))
 
 
@@ -175,6 +268,7 @@ def weather_map_api():
     rwgps_url = (data.get('rwgps_url') or '').strip()
     start_datetime_str = data.get('start_datetime')
     speed_mph = data.get('speed_mph')
+    plan_slug = data.get('plan_slug')
 
     # Validate URL
     if not rwgps_url:
@@ -245,7 +339,19 @@ def weather_map_api():
             map_sample[i + 1]['lat'], map_sample[i + 1]['lng'],
         ))
 
-    # Parse speed (mph) — default ~14 mph if not provided
+    # Build arrival time interpolator from ride plan if available
+    arrival_fn = None
+    plan_source = None
+    if plan_slug:
+        rider_id = session.get('rider_id')
+        plan_stops, plan_name = _load_plan_stops(plan_slug, rider_id)
+        if plan_stops:
+            arrival_fn = _build_arrival_interpolator(plan_stops, start_dt)
+            plan_source = 'custom' if rider_id and plan_name else 'base'
+            logger.info("Using %s plan '%s' timing (%d stops) for route %s",
+                        plan_source, plan_name, len(plan_stops), route_id)
+
+    # Parse speed (mph) — used as fallback if no plan timing
     try:
         rider_speed = float(speed_mph) if speed_mph else None
     except (ValueError, TypeError):
@@ -253,7 +359,8 @@ def weather_map_api():
 
     # Build all segments with elevation and expanded weather fields
     map_segments = _build_weather_segments(
-        map_sample, weather_data, map_bearings, start_dt, rider_speed, track_points)
+        map_sample, weather_data, map_bearings, start_dt,
+        rider_speed, track_points, arrival_fn)
 
     # Table: pick every Nth segment to approximate TABLE_INTERVAL spacing
     table_step = max(1, _TABLE_INTERVAL_M // _MAP_INTERVAL_M)
@@ -300,13 +407,14 @@ def weather_map_api():
     total_dist_m = route_data.get('distance', 0) or 0
     total_elev_m = route_data.get('elevation_gain', 0) or 0
 
-    logger.info("Weather map total time: %.1fs for route %s (%d map points, %d table points)",
-                time.time() - t0, route_id, len(map_segments), len(table_segments))
+    logger.info("Weather map total time: %.1fs for route %s (%d map points, %d table points, plan=%s)",
+                time.time() - t0, route_id, len(map_segments), len(table_segments), plan_source or 'none')
 
     return jsonify({
         'route_name': route_name,
         'total_distance_mi': _km_to_mi(total_dist_m / 1000),
         'total_elevation_ft': round(total_elev_m * _M_TO_FT),
+        'plan_source': plan_source,
         'polyline': polyline,
         'table_segments': table_segments,
         'map_segments': map_segments,

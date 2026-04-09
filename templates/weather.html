@@ -195,8 +195,8 @@
     .charts-grid { grid-template-columns: 1fr; }
 }
 .chart-card {
-    background: #1e293b;
-    border: 1px solid #334155;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
     border-radius: 12px;
     padding: 16px;
 }
@@ -204,7 +204,7 @@
     margin: 0 0 8px;
     font-size: 0.9rem;
     font-weight: 700;
-    color: #f1f5f9;
+    color: var(--text);
 }
 .chart-card canvas { max-height: 220px; }
 
@@ -348,6 +348,7 @@
     var MAPBOX_TOKEN = '{{ mapbox_token }}';
     var map = null;
     var AUTO_FETCH = '{{ auto_fetch }}';
+    var PLAN_SLUG = '{{ prefill_plan_slug }}';
 
     // Offset distance in degrees (~0.003 deg ≈ 300m at mid-latitudes)
     var ARROW_OFFSET_DEG = 0.003;
@@ -375,7 +376,7 @@
         fetch('/api/weather-map', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ rwgps_url: url, start_datetime: dt || null, speed_mph: speed ? parseFloat(speed) : null })
+            body: JSON.stringify({ rwgps_url: url, start_datetime: dt || null, speed_mph: speed ? parseFloat(speed) : null, plan_slug: PLAN_SLUG || null })
         })
         .then(function(resp) { return resp.json().then(function(d) { return {ok: resp.ok, data: d}; }); })
         .then(function(result) {
@@ -472,17 +473,17 @@
         maintainAspectRatio: true,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-            legend: { display: true, position: 'bottom', labels: { color: '#94a3b8', boxWidth: 12, font: { size: 10 } } },
-            tooltip: { backgroundColor: '#1e293b', borderColor: '#475569', borderWidth: 1 },
+            legend: { display: true, position: 'bottom', labels: { color: '#64748b', boxWidth: 12, font: { size: 10 } } },
+            tooltip: { backgroundColor: 'white', titleColor: '#1e293b', bodyColor: '#475569', borderColor: '#e2e8f0', borderWidth: 1 },
         },
         scales: {
             x: {
-                ticks: { color: '#94a3b8', font: { size: 9 }, maxTicksLimit: 8 },
-                grid: { color: 'rgba(148,163,184,0.15)' },
+                ticks: { color: '#64748b', font: { size: 9 }, maxTicksLimit: 8 },
+                grid: { color: 'rgba(226,232,240,0.6)' },
             },
             y: {
-                ticks: { color: '#94a3b8', font: { size: 9 } },
-                grid: { color: 'rgba(148,163,184,0.15)' },
+                ticks: { color: '#64748b', font: { size: 9 } },
+                grid: { color: 'rgba(226,232,240,0.6)' },
             },
         },
     };
@@ -533,7 +534,7 @@
                 ...CHART_DEFAULTS,
                 scales: {
                     ...CHART_DEFAULTS.scales,
-                    y: { ...CHART_DEFAULTS.scales.y, title: { display: true, text: '°F', color: '#94a3b8', font: { size: 10 } } },
+                    y: { ...CHART_DEFAULTS.scales.y, title: { display: true, text: '°F', color: '#64748b', font: { size: 10 } } },
                 },
                 plugins: {
                     ...CHART_DEFAULTS.plugins,
@@ -559,7 +560,7 @@
                 ...CHART_DEFAULTS,
                 scales: {
                     ...CHART_DEFAULTS.scales,
-                    y: { ...CHART_DEFAULTS.scales.y, min: 0, max: 100, title: { display: true, text: '%', color: '#94a3b8', font: { size: 10 } } },
+                    y: { ...CHART_DEFAULTS.scales.y, min: 0, max: 100, title: { display: true, text: '%', color: '#64748b', font: { size: 10 } } },
                 },
             },
         });
@@ -578,7 +579,7 @@
                 ...CHART_DEFAULTS,
                 scales: {
                     ...CHART_DEFAULTS.scales,
-                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'mph', color: '#94a3b8', font: { size: 10 } } },
+                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'mph', color: '#64748b', font: { size: 10 } } },
                 },
             },
         });
@@ -596,7 +597,7 @@
                 ...CHART_DEFAULTS,
                 scales: {
                     ...CHART_DEFAULTS.scales,
-                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'ft', color: '#94a3b8', font: { size: 10 } } },
+                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'ft', color: '#64748b', font: { size: 10 } } },
                 },
                 plugins: {
                     ...CHART_DEFAULTS.plugins,
@@ -777,7 +778,7 @@
                     headwind: hw,
                     color: color,
                     label: seg.wind_speed_mph + ' mph ' + seg.wind_label,
-                    detail: seg.temperature_f + '°F | ' + (seg.conditions_icon || '') + ' ' + seg.conditions + ' | Precip: ' + seg.precip_percent + '%'
+                    detail: seg.temperature_f + '°F (feels ' + seg.feels_like_f + '°F) | ' + (seg.conditions_icon || '') + ' ' + seg.conditions + ' | ' + seg.wind_label + ' ' + Math.abs(seg.headwind_mph) + ' mph | Precip: ' + seg.precip_percent + '% | Gusts: ' + seg.wind_gust_mph + ' mph'
                 }
             };
         });
