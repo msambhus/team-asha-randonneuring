@@ -565,7 +565,6 @@ def edit_ride(ride_id):
         # Get form data
         rwgps_url = request.form.get('rwgps_url', '').strip()
         ride_plan_id = request.form.get('ride_plan_id')
-        rwgps_url_team = request.form.get('rwgps_url_team', '').strip()
         start_location = request.form.get('start_location', '').strip()
         time_limit_hours = request.form.get('time_limit_hours')
 
@@ -581,16 +580,6 @@ def edit_ride(ride_id):
             start_location=start_location if start_location else None,
             time_limit_hours=time_limit_hours
         )
-
-        # Update Team Asha route URL on the linked ride plan
-        if ride_plan_id and rwgps_url_team is not None:
-            _execute(
-                "UPDATE ride_plan SET rwgps_url_team = %s WHERE id = %s",
-                (rwgps_url_team if rwgps_url_team else None, ride_plan_id),
-            )
-            from models import get_db
-            get_db().commit()
-
         cache.clear()  # Clear cache after ride update
         
         # Return JSON for AJAX requests
@@ -2732,69 +2721,78 @@ def api_apply_pace_to_all_segments(custom_plan_id):
     if not avg_moving_speed or avg_moving_speed <= 0:
         return jsonify({'success': False, 'error': 'Invalid speed'}), 400
     
+    conn = None
     try:
         # Get current merged stops
         custom_stops, _ = get_merged_plan_stops(custom_plan_id)
-        
+
         # Apply pace adjustment
         adjusted_stops = apply_pace_adjustment(custom_stops, avg_moving_speed)
-        
-        # Update each stop's timing in the database
+
+        # Collect all modified base stops
+        modified = []
+        for stop in adjusted_stops:
+            if stop.get('is_modified') and not stop.get('is_custom_stop'):
+                base_stop_id = stop.get('id')
+                new_time = stop.get('segment_time_min')
+                if base_stop_id and new_time:
+                    modified.append((base_stop_id, new_time))
+
         from db import get_db
         import psycopg2.extras
         conn = get_db()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        
-        for stop in adjusted_stops:
-            if stop.get('is_modified') and not stop.get('is_custom_stop'):
-                # This is a base stop with adjusted timing
-                base_stop_id = stop.get('id')
-                new_time = stop.get('segment_time_min')
-                
-                if base_stop_id and new_time:
-                    # Check if override exists
-                    cur.execute("""
-                        SELECT id FROM custom_ride_plan_stop
-                        WHERE custom_plan_id = %s AND base_stop_id = %s
-                    """, (custom_plan_id, base_stop_id))
-                    existing = cur.fetchone()
-                    
-                    if existing:
-                        # Update existing override
-                        cur.execute("""
-                            UPDATE custom_ride_plan_stop
-                            SET segment_time_min = %s
-                            WHERE id = %s
-                        """, (new_time, existing['id']))
-                    else:
-                        # Create new override
-                        cur.execute("""
-                            INSERT INTO custom_ride_plan_stop
-                            (custom_plan_id, base_stop_id, stop_order, location, stop_type,
-                             distance_miles, elevation_gain, segment_time_min)
-                            SELECT %s, id, stop_order, location, stop_type,
-                                   distance_miles, elevation_gain, %s
-                            FROM ride_plan_stop
-                            WHERE id = %s
-                        """, (custom_plan_id, new_time, base_stop_id))
-        
+
+        if modified:
+            # Batch update existing overrides in one query
+            cur.execute("""
+                SELECT id, base_stop_id FROM custom_ride_plan_stop
+                WHERE custom_plan_id = %s AND base_stop_id = ANY(%s)
+            """, (custom_plan_id, [m[0] for m in modified]))
+            existing_map = {row['base_stop_id']: row['id'] for row in cur.fetchall()}
+
+            # Split into updates vs inserts
+            to_update = [(new_time, existing_map[bsid])
+                         for bsid, new_time in modified if bsid in existing_map]
+            to_insert = [(bsid, new_time)
+                         for bsid, new_time in modified if bsid not in existing_map]
+
+            # Batch update
+            if to_update:
+                psycopg2.extras.execute_batch(cur, """
+                    UPDATE custom_ride_plan_stop SET segment_time_min = %s WHERE id = %s
+                """, to_update)
+
+            # Batch insert from base stops
+            if to_insert:
+                psycopg2.extras.execute_batch(cur, """
+                    INSERT INTO custom_ride_plan_stop
+                    (custom_plan_id, base_stop_id, stop_order, location, stop_type,
+                     distance_miles, elevation_gain, segment_time_min)
+                    SELECT %s, id, stop_order, location, stop_type,
+                           distance_miles, elevation_gain, %s
+                    FROM ride_plan_stop WHERE id = %s
+                """, [(custom_plan_id, new_time, bsid) for bsid, new_time in to_insert])
+
         # Save the avg_moving_speed setting
         cur.execute("""
             UPDATE custom_ride_plan
             SET avg_moving_speed = %s
             WHERE id = %s
         """, (avg_moving_speed, custom_plan_id))
-        
+
         conn.commit()
-        
+
         # Clear caches
         cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
         cache.delete_memoized(get_custom_plan_by_id, custom_plan_id)
         cache.delete_memoized(get_custom_plan, custom_plan['rider_id'], custom_plan['base_plan_id'])
-        
+
         return jsonify({'success': True})
     except Exception as e:
-        conn.rollback()
+        if conn:
+            conn.rollback()
+        current_app.logger.exception("apply-pace failed for plan %s", custom_plan_id)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
