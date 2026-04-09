@@ -246,6 +246,20 @@
 {% block content %}
 <div class="weather-container">
     <div class="input-card">
+        {% if prefill_plan_name %}
+        <h2>{{ prefill_plan_name }} — Weather Forecast</h2>
+        <p style="font-size:0.85rem; color:var(--text-light); margin:0 0 12px;">Using ride plan timing for arrival estimates</p>
+        <form id="weather-form">
+            <input type="hidden" id="rwgps-url" value="{{ prefill_url }}">
+            <input type="hidden" id="speed-mph" value="">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="start-datetime">Start Date/Time</label>
+                    <input type="datetime-local" id="start-datetime" value="{{ prefill_datetime }}">
+                </div>
+            </div>
+        </form>
+        {% else %}
         <h2>Route Weather Forecast</h2>
         <form id="weather-form">
             <div class="form-row">
@@ -264,6 +278,7 @@
                 <button type="submit" class="btn-fetch" id="btn-fetch">Get Weather</button>
             </div>
         </form>
+        {% endif %}
     </div>
 
     <div class="error-alert" id="error-alert"></div>
@@ -398,8 +413,15 @@
         doFetch();
     });
 
-    // Auto-fetch when linked from brevet page with ?auto=1
-    if (AUTO_FETCH === '1' && document.getElementById('rwgps-url').value.trim()) {
+    // In plan mode, re-fetch when datetime changes
+    if (PLAN_SLUG) {
+        document.getElementById('start-datetime').addEventListener('change', function() {
+            doFetch();
+        });
+    }
+
+    // Auto-fetch when linked from brevet page with ?auto=1 or in plan mode
+    if ((AUTO_FETCH === '1' || PLAN_SLUG) && document.getElementById('rwgps-url').value.trim()) {
         doFetch();
     }
 

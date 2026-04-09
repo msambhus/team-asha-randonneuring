@@ -252,12 +252,20 @@ def weather_page():
       ?rwgps_url=...&start_datetime=...&speed_mph=...&plan_slug=...&auto=1
     """
     mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
+    plan_slug = request.args.get('plan_slug', '')
+    plan_name = ''
+    if plan_slug:
+        from models import get_ride_plan_by_slug
+        plan = get_ride_plan_by_slug(plan_slug)
+        if plan:
+            plan_name = plan.get('name', '')
     return render_template('weather.html',
                            mapbox_token=mapbox_token,
                            prefill_url=request.args.get('rwgps_url', ''),
                            prefill_datetime=request.args.get('start_datetime', ''),
                            prefill_speed=request.args.get('speed_mph', ''),
-                           prefill_plan_slug=request.args.get('plan_slug', ''),
+                           prefill_plan_slug=plan_slug,
+                           prefill_plan_name=plan_name,
                            auto_fetch=request.args.get('auto', ''))
 
 
