@@ -195,8 +195,8 @@
     .charts-grid { grid-template-columns: 1fr; }
 }
 .chart-card {
-    background: #1e293b;
-    border: 1px solid #334155;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
     border-radius: 12px;
     padding: 16px;
 }
@@ -204,7 +204,7 @@
     margin: 0 0 8px;
     font-size: 0.9rem;
     font-weight: 700;
-    color: #f1f5f9;
+    color: var(--text);
 }
 .chart-card canvas { max-height: 220px; }
 
@@ -246,6 +246,20 @@
 {% block content %}
 <div class="weather-container">
     <div class="input-card">
+        {% if prefill_plan_name %}
+        <h2>{{ prefill_plan_name }} — Weather Forecast</h2>
+        <p style="font-size:0.85rem; color:var(--text-light); margin:0 0 12px;">Using ride plan timing for arrival estimates</p>
+        <form id="weather-form">
+            <input type="hidden" id="rwgps-url" value="{{ prefill_url }}">
+            <input type="hidden" id="speed-mph" value="">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="start-datetime">Start Date/Time</label>
+                    <input type="datetime-local" id="start-datetime" value="{{ prefill_datetime }}">
+                </div>
+            </div>
+        </form>
+        {% else %}
         <h2>Route Weather Forecast</h2>
         <form id="weather-form">
             <div class="form-row">
@@ -264,6 +278,7 @@
                 <button type="submit" class="btn-fetch" id="btn-fetch">Get Weather</button>
             </div>
         </form>
+        {% endif %}
     </div>
 
     <div class="error-alert" id="error-alert"></div>
@@ -298,6 +313,10 @@
     <div class="charts-section" id="charts-section" style="display:none;">
         <div class="charts-grid">
             <div class="chart-card">
+                <h4>Wind</h4>
+                <canvas id="chartWind"></canvas>
+            </div>
+            <div class="chart-card">
                 <h4>Temperature</h4>
                 <canvas id="chartTemp"></canvas>
             </div>
@@ -306,13 +325,13 @@
                 <canvas id="chartPrecip"></canvas>
             </div>
             <div class="chart-card">
-                <h4>Wind</h4>
-                <canvas id="chartWind"></canvas>
-            </div>
-            <div class="chart-card">
                 <h4>Elevation</h4>
                 <canvas id="chartElev"></canvas>
             </div>
+        </div>
+        <div class="chart-card" style="margin-top:16px;">
+            <h4>Headwind / Tailwind</h4>
+            <canvas id="chartHeadwind" style="max-height:180px;"></canvas>
         </div>
     </div>
 
@@ -348,6 +367,7 @@
     var MAPBOX_TOKEN = '{{ mapbox_token }}';
     var map = null;
     var AUTO_FETCH = '{{ auto_fetch }}';
+    var PLAN_SLUG = '{{ prefill_plan_slug }}';
 
     // Offset distance in degrees (~0.003 deg ≈ 300m at mid-latitudes)
     var ARROW_OFFSET_DEG = 0.003;
@@ -375,7 +395,7 @@
         fetch('/api/weather-map', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ rwgps_url: url, start_datetime: dt || null, speed_mph: speed ? parseFloat(speed) : null })
+            body: JSON.stringify({ rwgps_url: url, start_datetime: dt || null, speed_mph: speed ? parseFloat(speed) : null, plan_slug: PLAN_SLUG || null })
         })
         .then(function(resp) { return resp.json().then(function(d) { return {ok: resp.ok, data: d}; }); })
         .then(function(result) {
@@ -397,8 +417,15 @@
         doFetch();
     });
 
-    // Auto-fetch when linked from brevet page with ?auto=1
-    if (AUTO_FETCH === '1' && document.getElementById('rwgps-url').value.trim()) {
+    // In plan mode, re-fetch when datetime changes
+    if (PLAN_SLUG) {
+        document.getElementById('start-datetime').addEventListener('change', function() {
+            doFetch();
+        });
+    }
+
+    // Auto-fetch when linked from brevet page with ?auto=1 or in plan mode
+    if ((AUTO_FETCH === '1' || PLAN_SLUG) && document.getElementById('rwgps-url').value.trim()) {
         doFetch();
     }
 
@@ -464,28 +491,82 @@
         return 'crosswind';
     }
 
-    // ── Charts ─────────────────────────────────────────────
+    // ── Charts (synchronized hover across all charts + map) ─
     var weatherCharts = {};
+    var chartMapSegments = null;  // store for map sync
+    var syncingHover = false;     // prevent infinite recursion
 
     var CHART_DEFAULTS = {
         responsive: true,
         maintainAspectRatio: true,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-            legend: { display: true, position: 'bottom', labels: { color: '#94a3b8', boxWidth: 12, font: { size: 10 } } },
-            tooltip: { backgroundColor: '#1e293b', borderColor: '#475569', borderWidth: 1 },
+            legend: { display: true, position: 'bottom', labels: { color: '#64748b', boxWidth: 12, font: { size: 10 } } },
+            tooltip: { backgroundColor: 'white', titleColor: '#1e293b', bodyColor: '#475569', borderColor: '#e2e8f0', borderWidth: 1 },
         },
         scales: {
             x: {
-                ticks: { color: '#94a3b8', font: { size: 9 }, maxTicksLimit: 8 },
-                grid: { color: 'rgba(148,163,184,0.15)' },
+                ticks: { color: '#64748b', font: { size: 9 }, maxTicksLimit: 8 },
+                grid: { color: 'rgba(226,232,240,0.6)' },
             },
             y: {
-                ticks: { color: '#94a3b8', font: { size: 9 } },
-                grid: { color: 'rgba(148,163,184,0.15)' },
+                ticks: { color: '#64748b', font: { size: 9 } },
+                grid: { color: 'rgba(226,232,240,0.6)' },
             },
         },
+        onHover: function(event, elements, chart) {
+            if (syncingHover) return;
+            if (!elements || elements.length === 0) {
+                syncAllCharts(-1, chart);
+                return;
+            }
+            syncAllCharts(elements[0].index, chart);
+        },
     };
+
+    function syncAllCharts(dataIndex, sourceChart) {
+        syncingHover = true;
+        var chartIds = ['chartWind', 'chartTemp', 'chartPrecip', 'chartElev', 'chartHeadwind'];
+        chartIds.forEach(function(id) {
+            var c = weatherCharts[id];
+            if (!c || c === sourceChart) return;
+            if (dataIndex < 0) {
+                c.setActiveElements([]);
+                c.tooltip.setActiveElements([], {});
+                c.update('none');
+                return;
+            }
+            var activeEls = [];
+            c.data.datasets.forEach(function(ds, dsIdx) {
+                activeEls.push({ datasetIndex: dsIdx, index: dataIndex });
+            });
+            c.setActiveElements(activeEls);
+            c.tooltip.setActiveElements(activeEls, { x: 0, y: 0 });
+            c.update('none');
+        });
+        // Sync map popup
+        syncMapPopup(dataIndex);
+        syncingHover = false;
+    }
+
+    function syncMapPopup(dataIndex) {
+        if (!map || !chartMapSegments || dataIndex < 0 || dataIndex >= chartMapSegments.length) {
+            if (syncPopup) syncPopup.remove();
+            return;
+        }
+        var seg = chartMapSegments[dataIndex];
+        if (!seg) return;
+        var coords = offsetPoint(seg.lat, seg.lng, seg.rider_bearing_deg);
+        if (!syncPopup) {
+            syncPopup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 15 });
+        }
+        syncPopup.setLngLat(coords)
+            .setHTML('<strong>' + seg.wind_speed_mph + ' mph ' + seg.wind_label + '</strong><br>' +
+                     seg.temperature_f + '°F (feels ' + seg.feels_like_f + '°F) | ' +
+                     (seg.conditions_icon || '') + ' ' + seg.conditions)
+            .addTo(map);
+    }
+    var syncPopup = null;
 
     function makeChart(canvasId, config) {
         if (weatherCharts[canvasId]) { weatherCharts[canvasId].destroy(); }
@@ -494,7 +575,6 @@
     }
 
     function chartLabels(cd) {
-        // Alternate distance + time labels
         return cd.labels.map(function(mi, i) { return cd.times[i]; });
     }
 
@@ -516,6 +596,7 @@
         if (!data.chart_data) return;
         var cd = data.chart_data;
         var labels = chartLabels(cd);
+        chartMapSegments = data.map_segments || [];
 
         document.getElementById('charts-section').style.display = 'block';
 
@@ -533,7 +614,7 @@
                 ...CHART_DEFAULTS,
                 scales: {
                     ...CHART_DEFAULTS.scales,
-                    y: { ...CHART_DEFAULTS.scales.y, title: { display: true, text: '°F', color: '#94a3b8', font: { size: 10 } } },
+                    y: { ...CHART_DEFAULTS.scales.y, title: { display: true, text: '°F', color: '#64748b', font: { size: 10 } } },
                 },
                 plugins: {
                     ...CHART_DEFAULTS.plugins,
@@ -559,7 +640,7 @@
                 ...CHART_DEFAULTS,
                 scales: {
                     ...CHART_DEFAULTS.scales,
-                    y: { ...CHART_DEFAULTS.scales.y, min: 0, max: 100, title: { display: true, text: '%', color: '#94a3b8', font: { size: 10 } } },
+                    y: { ...CHART_DEFAULTS.scales.y, min: 0, max: 100, title: { display: true, text: '%', color: '#64748b', font: { size: 10 } } },
                 },
             },
         });
@@ -578,7 +659,7 @@
                 ...CHART_DEFAULTS,
                 scales: {
                     ...CHART_DEFAULTS.scales,
-                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'mph', color: '#94a3b8', font: { size: 10 } } },
+                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'mph', color: '#64748b', font: { size: 10 } } },
                 },
             },
         });
@@ -596,7 +677,7 @@
                 ...CHART_DEFAULTS,
                 scales: {
                     ...CHART_DEFAULTS.scales,
-                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'ft', color: '#94a3b8', font: { size: 10 } } },
+                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'ft', color: '#64748b', font: { size: 10 } } },
                 },
                 plugins: {
                     ...CHART_DEFAULTS.plugins,
@@ -607,6 +688,43 @@
                         color: '#64748b',
                         font: { size: 10 },
                         padding: { bottom: 4 },
+                    },
+                },
+            },
+        });
+
+        // Headwind / Tailwind — positive = headwind (red), negative = tailwind (green)
+        var hwColors = cd.headwind_mph.map(function(v) { return v > 3 ? 'rgba(239,68,68,0.5)' : (v < -3 ? 'rgba(34,197,94,0.5)' : 'rgba(245,158,11,0.3)'); });
+        var hwBorders = cd.headwind_mph.map(function(v) { return v > 3 ? '#ef4444' : (v < -3 ? '#22c55e' : '#f59e0b'); });
+        makeChart('chartHeadwind', {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Headwind (+) / Tailwind (-) mph',
+                    data: cd.headwind_mph,
+                    backgroundColor: hwColors,
+                    borderColor: hwBorders,
+                    borderWidth: 1,
+                }],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, title: { display: true, text: 'mph', color: '#64748b', font: { size: 10 } } },
+                },
+                plugins: {
+                    ...CHART_DEFAULTS.plugins,
+                    legend: { display: false },
+                    tooltip: {
+                        ...CHART_DEFAULTS.plugins.tooltip,
+                        callbacks: {
+                            label: function(ctx) {
+                                var v = ctx.parsed.y;
+                                return (v > 0 ? 'Headwind: ' : 'Tailwind: ') + Math.abs(v) + ' mph';
+                            },
+                        },
                     },
                 },
             },
@@ -777,7 +895,7 @@
                     headwind: hw,
                     color: color,
                     label: seg.wind_speed_mph + ' mph ' + seg.wind_label,
-                    detail: seg.temperature_f + '°F | ' + (seg.conditions_icon || '') + ' ' + seg.conditions + ' | Precip: ' + seg.precip_percent + '%'
+                    detail: seg.temperature_f + '°F (feels ' + seg.feels_like_f + '°F) | ' + (seg.conditions_icon || '') + ' ' + seg.conditions + ' | ' + seg.wind_label + ' ' + Math.abs(seg.headwind_mph) + ' mph | Precip: ' + seg.precip_percent + '% | Gusts: ' + seg.wind_gust_mph + ' mph'
                 }
             };
         });
