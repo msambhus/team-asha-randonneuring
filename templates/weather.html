@@ -184,6 +184,30 @@
 .map-style-btn:hover { background: #f1f5f9; }
 .map-style-btn.active { background: #1e293b; color: white; }
 
+/* Charts */
+.charts-section { margin-bottom: 24px; }
+.charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+@media (max-width: 768px) {
+    .charts-grid { grid-template-columns: 1fr; }
+}
+.chart-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 16px;
+}
+.chart-card h4 {
+    margin: 0 0 8px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+.chart-card canvas { max-height: 220px; }
+
 /* Legend */
 .map-legend {
     display: flex;
@@ -271,6 +295,27 @@
         </div>
     </div>
 
+    <div class="charts-section" id="charts-section" style="display:none;">
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h4>Temperature</h4>
+                <canvas id="chartTemp"></canvas>
+            </div>
+            <div class="chart-card">
+                <h4>Precipitation & Cloud Cover</h4>
+                <canvas id="chartPrecip"></canvas>
+            </div>
+            <div class="chart-card">
+                <h4>Wind</h4>
+                <canvas id="chartWind"></canvas>
+            </div>
+            <div class="chart-card">
+                <h4>Elevation</h4>
+                <canvas id="chartElev"></canvas>
+            </div>
+        </div>
+    </div>
+
     <div class="weather-table-wrap" id="weather-table-wrap">
         <h3>Weather Along Route</h3>
         <div style="overflow-x:auto;">
@@ -297,6 +342,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>
 (function() {
     var MAPBOX_TOKEN = '{{ mapbox_token }}';
@@ -371,14 +417,16 @@
         document.getElementById('summary-bar').style.display = 'none';
         document.getElementById('weather-table-wrap').style.display = 'none';
         document.getElementById('map-section').style.display = 'none';
+        document.getElementById('charts-section').style.display = 'none';
         document.getElementById('attribution').style.display = 'none';
     }
 
     // ── Render ─────────────────────────────────────────────
     function renderResults(data) {
         renderSummary(data);
-        renderTable(data);
         renderMap(data);
+        renderCharts(data);
+        renderTable(data);
         if (data.attribution) {
             var el = document.getElementById('attribution');
             el.textContent = data.attribution;
@@ -414,6 +462,155 @@
         if (l.indexOf('headwind') >= 0) return 'headwind';
         if (l.indexOf('tailwind') >= 0) return 'tailwind';
         return 'crosswind';
+    }
+
+    // ── Charts ─────────────────────────────────────────────
+    var weatherCharts = {};
+
+    var CHART_DEFAULTS = {
+        responsive: true,
+        maintainAspectRatio: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: { display: true, position: 'bottom', labels: { color: '#94a3b8', boxWidth: 12, font: { size: 10 } } },
+            tooltip: { backgroundColor: '#1e293b', borderColor: '#475569', borderWidth: 1 },
+        },
+        scales: {
+            x: {
+                ticks: { color: '#94a3b8', font: { size: 9 }, maxTicksLimit: 8 },
+                grid: { color: 'rgba(148,163,184,0.15)' },
+            },
+            y: {
+                ticks: { color: '#94a3b8', font: { size: 9 } },
+                grid: { color: 'rgba(148,163,184,0.15)' },
+            },
+        },
+    };
+
+    function makeChart(canvasId, config) {
+        if (weatherCharts[canvasId]) { weatherCharts[canvasId].destroy(); }
+        var ctx = document.getElementById(canvasId).getContext('2d');
+        weatherCharts[canvasId] = new Chart(ctx, config);
+    }
+
+    function chartLabels(cd) {
+        // Alternate distance + time labels
+        return cd.labels.map(function(mi, i) { return cd.times[i]; });
+    }
+
+    function areaDataset(label, data, borderColor, bgColor) {
+        return {
+            label: label,
+            data: data,
+            borderColor: borderColor,
+            backgroundColor: bgColor,
+            borderWidth: 1.5,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+            pointHitRadius: 8,
+        };
+    }
+
+    function renderCharts(data) {
+        if (!data.chart_data) return;
+        var cd = data.chart_data;
+        var labels = chartLabels(cd);
+
+        document.getElementById('charts-section').style.display = 'block';
+
+        // Temperature
+        makeChart('chartTemp', {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    areaDataset('Temperature (°F)', cd.temperature_f, '#60a5fa', 'rgba(96,165,250,0.25)'),
+                    areaDataset('Feels Like (°F)', cd.feels_like_f, '#fb923c', 'rgba(251,146,60,0.2)'),
+                ],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, title: { display: true, text: '°F', color: '#94a3b8', font: { size: 10 } } },
+                },
+                plugins: {
+                    ...CHART_DEFAULTS.plugins,
+                    tooltip: {
+                        ...CHART_DEFAULTS.plugins.tooltip,
+                        callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y + '°F'; } },
+                    },
+                },
+            },
+        });
+
+        // Precipitation & Cloud Cover
+        makeChart('chartPrecip', {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    areaDataset('Probability (%)', cd.precip_probability, '#60a5fa', 'rgba(96,165,250,0.3)'),
+                    areaDataset('Cloud Cover (%)', cd.cloud_cover, '#94a3b8', 'rgba(148,163,184,0.15)'),
+                ],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, min: 0, max: 100, title: { display: true, text: '%', color: '#94a3b8', font: { size: 10 } } },
+                },
+            },
+        });
+
+        // Wind
+        makeChart('chartWind', {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    areaDataset('Wind (mph)', cd.wind_speed_mph, '#60a5fa', 'rgba(96,165,250,0.25)'),
+                    areaDataset('Wind Gust (mph)', cd.wind_gust_mph, '#fb923c', 'rgba(251,146,60,0.2)'),
+                ],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'mph', color: '#94a3b8', font: { size: 10 } } },
+                },
+            },
+        });
+
+        // Elevation
+        makeChart('chartElev', {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    areaDataset('Elevation (ft)', cd.elevation_ft, '#94a3b8', 'rgba(148,163,184,0.25)'),
+                ],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'ft', color: '#94a3b8', font: { size: 10 } } },
+                },
+                plugins: {
+                    ...CHART_DEFAULTS.plugins,
+                    legend: { display: false },
+                    subtitle: {
+                        display: true,
+                        text: data.total_elevation_ft ? 'Elevation Gain: ' + data.total_elevation_ft.toLocaleString() + ' ft | Distance: ' + data.total_distance_mi + ' mi' : '',
+                        color: '#64748b',
+                        font: { size: 10 },
+                        padding: { bottom: 4 },
+                    },
+                },
+            },
+        });
     }
 
     // ── Table (uses table_segments — imperial units) ──────
