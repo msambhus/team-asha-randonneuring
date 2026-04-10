@@ -196,6 +196,7 @@ def _build_weather_segments(sample_points, weather_data, bearings, start_dt,
         precip = _safe_get(hourly, 'precipitation_probability', idx, 0)
         precip_mm = _safe_get(hourly, 'precipitation', idx, 0.0)
         cloud = _safe_get(hourly, 'cloud_cover', idx, 0)
+        humidity = _safe_get(hourly, 'relative_humidity_2m', idx, 0)
         wmo_code = _safe_get(hourly, 'weather_code', idx, 0)
 
         bearing = bearings[i] if i < len(bearings) else (bearings[-1] if bearings else 0)
@@ -216,6 +217,7 @@ def _build_weather_segments(sample_points, weather_data, bearings, start_dt,
             'precip_percent': precip,
             'precipitation_mm': round(precip_mm, 1),
             'cloud_cover': cloud,
+            'humidity': humidity,
             'conditions': wmo_to_text(wmo_code),
             'conditions_icon': wmo_to_icon(wmo_code),
             'elevation_ft': elev_ft,
@@ -241,6 +243,7 @@ def _build_chart_data(segments):
         'precipitation_mm': [s['precipitation_mm'] for s in segments],
         'cloud_cover': [s['cloud_cover'] for s in segments],
         'elevation_ft': [s['elevation_ft'] for s in segments],
+        'humidity': [s['humidity'] for s in segments],
     }
 
 
