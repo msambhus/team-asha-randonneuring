@@ -1717,34 +1717,48 @@ def ride_plan_detail(slug):
     # Build collapsed journey nodes
     journey_nodes = _build_journey_nodes(stops)
 
-    # Check if there's an upcoming RUSA event that matches this ride plan
+    # Check if there's a matching event (upcoming within 30 days or recent past 14 days)
     upcoming_event = None
+    recent_past_event = None
     signup_count = 0
     user_signup_status = None
     from datetime import datetime, timedelta, date as date_type
-    from models import get_upcoming_rusa_events, get_user_by_id
+    from models import get_upcoming_rusa_events, get_user_by_id, _execute
     from flask import session
-    
+
+    # Get upcoming + recent events
     rusa_events = get_upcoming_rusa_events()
+    # Also check recent past events (last 14 days) for post-ride Strava analysis
     today = date_type.today()
+    fourteen_days_ago = today - timedelta(days=14)
+    recent_events = _execute("""
+        SELECT ri.*, c.code as club_code, c.name as club_name, c.region as region,
+               rp.slug as plan_slug, rp.rwgps_url_team as plan_rwgps_url_team,
+               rp.start_time as plan_start_time
+        FROM ride ri
+        INNER JOIN club c ON ri.club_id = c.id
+        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
+        WHERE ri.date >= %s AND ri.date < %s
+        ORDER BY ri.date DESC
+    """, (fourteen_days_ago, today)).fetchall()
+    all_events = list(rusa_events) + [dict(e) for e in recent_events]
+
     thirty_days_later = today + timedelta(days=30)
-    
-    for event in rusa_events:
-        e_words = _normalize_route(event.get('route_name', ''))
+
+    for event in all_events:
+        e_words = _normalize_route(event.get('route_name') or event.get('name', ''))
         p_words = _normalize_route(plan['name'])
         common = e_words & p_words
         distinctive = common - _GENERIC_WORDS
         if len(distinctive) >= 1 and len(common) >= 2:
-            # Check if event is within 30 days
-            event_date = event['date']
-            # Convert to date object if it's a string
+            event_date = event.get('date')
             if isinstance(event_date, str):
                 event_date = datetime.strptime(event_date, '%Y-%m-%d').date()
-            
+
             if event_date >= today and event_date <= thirty_days_later:
                 upcoming_event = event
                 signup_count = get_signup_count(event['id'])
-                
+
                 # Check current user's signup status
                 user_id = session.get('user_id')
                 if user_id:
@@ -1754,6 +1768,8 @@ def ride_plan_detail(slug):
                         if status:
                             user_signup_status = status['status']
                 break
+            elif event_date >= fourteen_days_ago and event_date < today and not recent_past_event:
+                recent_past_event = event
     
     # Check if user has custom plan for this base plan
     user_custom_plan = None
@@ -1787,6 +1803,22 @@ def ride_plan_detail(slug):
             current_app.logger.exception("Wind fetch failed for plan %s", slug)
             stop_wind = None
 
+    # Weather-adjusted difficulty modifier
+    weather_difficulty_mod = 0.0
+    if stop_wind:
+        valid_wind = [w for w in stop_wind if w is not None]
+        if valid_wind:
+            avg_hw = sum(abs(float(w.get('headwind_kmh', 0))) for w in valid_wind) / len(valid_wind)
+            max_wind = max(float(w.get('wind_speed_kmh', 0)) for w in valid_wind)
+            if max_wind > 40:   # > 25 mph
+                weather_difficulty_mod += 1.5
+            elif max_wind > 25: # > 15 mph
+                weather_difficulty_mod += 0.5
+            if avg_hw > 15:     # strong headwind average
+                weather_difficulty_mod += 1.0
+            elif avg_hw > 8:
+                weather_difficulty_mod += 0.5
+
     return render_template('ride_plan_detail.html',
                            plan=plan,
                            stops=stops,
@@ -1804,8 +1836,10 @@ def ride_plan_detail(slug):
                            rwgps_route_id=rwgps_route_id,
                            weather_route_id=weather_route_id,
                            stop_wind=stop_wind,
+                           weather_difficulty_mod=weather_difficulty_mod,
                            difficulty_colors=_DIFFICULTY_COLORS,
                            upcoming_event=upcoming_event,
+                           recent_past_event=recent_past_event,
                            signup_count=signup_count,
                            user_signup_status=user_signup_status,
                            user_custom_plan=user_custom_plan,
@@ -2918,7 +2952,7 @@ def compare_ride_plans(slug):
             })
     
     # Sort all stops by distance
-    all_stops_for_comparison.sort(key=lambda x: float(x['distance_miles']))
+    all_stops_for_comparison.sort(key=lambda x: float(x['distance_miles'] or 0))
     
     # Calculate cumulative times for removed stops by tracking custom plan cumulative at each distance
     prev_custom_cumulative = 0

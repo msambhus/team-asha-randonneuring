@@ -980,21 +980,20 @@
     <div class="label" style="color:{% if banked_min >= 0 %}#065f46{% else %}#7f1d1d{% endif %};">Time Bank</div>
 </div>
 {% endif %}
-{% if avg_elapsed_speed %}
+{% if avg_elapsed_speed or avg_moving_speed %}
 <div class="stat-card" style="background:linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);border-color:#a7f3d0;">
-    <div class="number" style="color:#059669;">{{ "%.1f"|format(avg_elapsed_speed) }}</div>
-    <div class="label" style="color:#047857;">Elapsed Speed</div>
-</div>
-{% endif %}
-{% if avg_moving_speed %}
-<div class="stat-card" style="background:linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);border-color:#bbf7d0;">
-    <div class="number" style="color:#16a34a;">{{ "%.1f"|format(avg_moving_speed) }}</div>
-    <div class="label" style="color:#166534;">Moving Speed</div>
+    <div class="number" style="color:#059669;">
+        {% if avg_elapsed_speed %}{{ "%.1f"|format(avg_elapsed_speed) }}{% endif %}
+        {% if avg_elapsed_speed and avg_moving_speed %}<span style="color:#94a3b8;font-size:0.6em;"> / </span>{% endif %}
+        {% if avg_moving_speed %}<span style="font-size:0.75em;color:#16a34a;">{{ "%.1f"|format(avg_moving_speed) }}</span>{% endif %}
+    </div>
+    <div class="label" style="color:#047857;">Speed (elapsed / moving) mph</div>
 </div>
 {% endif %}
 {% if weighted_difficulty %}
+{% set diff_base = weighted_difficulty %}
+{% set diff_val = [weighted_difficulty + (weather_difficulty_mod or 0), 10] | min %}
 <div class="stat-card" style="background:linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);border-color:#fed7aa;">
-    {% set diff_val = weighted_difficulty %}
     {% if diff_val >= 7 %}
         {% set diff_num_color = '#991b1b' %}
         {% set diff_label_color = '#7f1d1d' %}
@@ -1009,7 +1008,7 @@
         {% set diff_label_color = '#334155' %}
     {% endif %}
     <div class="number" style="color:{{ diff_num_color }};">{{ "%.1f"|format(diff_val) }}</div>
-    <div class="label" style="color:{{ diff_label_color }};">Difficulty</div>
+    <div class="label" style="color:{{ diff_label_color }};">Difficulty{% if weather_difficulty_mod and weather_difficulty_mod > 0 %} <span style="font-size:0.7rem;color:#dc2626;">(+{{ "%.1f"|format(weather_difficulty_mod) }} weather)</span>{% endif %}</div>
 </div>
 {% endif %}
 {% if upcoming_event %}
@@ -1081,8 +1080,9 @@
         <span>🗺️</span>
         <span>Journey</span>
     </a>
-    {% if session.user_id and upcoming_event %}
-    <a href="{{ url_for('riders.ride_all_strava_analysis', ride_id=upcoming_event.id) }}" class="quick-action-btn"
+    {% set strava_event = upcoming_event or recent_past_event %}
+    {% if session.user_id and strava_event %}
+    <a href="{{ url_for('riders.ride_all_strava_analysis', ride_id=strava_event.id) }}" class="quick-action-btn"
        style="background:linear-gradient(135deg,#fff5f0,#fed7aa);border-color:#fc4c02;color:#9a3412;">
         <span>📊</span>
         <span>All Riders' Strava Analysis</span>
