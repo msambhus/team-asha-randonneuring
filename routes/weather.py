@@ -424,7 +424,7 @@ def weather_map_api():
     total_elev_ft = round(total_elev_m * _M_TO_FT)
 
     # Generate ride weather summary (LLM or rule-based fallback)
-    ride_summary = _generate_ride_summary(route_name, total_dist_mi, total_elev_ft, map_segments)
+    ride_summary = generate_ride_summary(route_name, total_dist_mi, total_elev_ft, map_segments)
 
     logger.info("Weather map total time: %.1fs for route %s (%d map points, %d table points, plan=%s)",
                 time.time() - t0, route_id, len(map_segments), len(table_segments), plan_source or 'none')
@@ -448,7 +448,7 @@ def weather_map_api():
     })
 
 
-def _generate_ride_summary(route_name, total_distance_mi, total_elevation_ft, map_segments):
+def generate_ride_summary(route_name, total_distance_mi, total_elevation_ft, map_segments):
     """Generate a concise ride weather summary using OpenAI.
 
     Falls back to a rule-based summary if OpenAI is unavailable.
@@ -538,6 +538,34 @@ def _generate_ride_summary(route_name, total_distance_mi, total_elevation_ft, ma
         parts.append("mild conditions")
 
     return '; '.join(parts).capitalize()
+
+
+def generate_summary_from_stop_wind(route_name, total_distance_mi, total_elevation_ft, stop_wind):
+    """Generate ride summary from stop_wind data (used by ride plan detail page).
+
+    Converts stop_wind format to the segment format expected by generate_ride_summary.
+    """
+    if not stop_wind:
+        return ''
+
+    segments = []
+    for w in stop_wind:
+        if w is None:
+            continue
+        segments.append({
+            'wind_speed_mph': w.get('wind_speed_mph', 0),
+            'wind_gust_mph': 0,  # not available in stop_wind
+            'headwind_mph': round(float(w.get('headwind_kmh', 0)) * _KMH_TO_MPH, 1),
+            'temperature_f': w.get('temperature_f', 0),
+            'precip_percent': 0,  # not available in stop_wind
+            'precipitation_mm': 0,
+            'humidity': 0,
+        })
+
+    if not segments:
+        return ''
+
+    return generate_ride_summary(route_name, total_distance_mi, total_elevation_ft, segments)
 
 
 def _default_start_time():
