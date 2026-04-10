@@ -235,5 +235,15 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+// Pretext.js — measure stat labels for responsive sizing
+if (typeof PretextUtils !== 'undefined' && PretextUtils.balanceCardGrid) {
+    document.addEventListener('DOMContentLoaded', function() {
+        // Balance stat card label heights
+        PretextUtils.balanceCardGrid('.stats-row > div', '.text-\\[0\\.85rem\\]');
+        // Balance season summary card heights
+        PretextUtils.balanceCardGrid('.stagger-item', 'h3');
+    });
+}
 </script>
 {% endblock %}

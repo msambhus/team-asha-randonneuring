@@ -342,4 +342,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 })();
 </script>
+<script>
+// Pretext.js — smart truncate rider names in frozen table columns
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof PretextUtils !== 'undefined' && PretextUtils.truncateTableCells) {
+        // Truncate rider names in frozen first column at 120px
+        PretextUtils.truncateTableCells('.frozen-col-1', 120);
+    }
+});
+</script>
 {% endblock %}

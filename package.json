@@ -5,7 +5,8 @@
   "scripts": {
     "build:css": "npx tailwindcss -i ./static/input.css -o ./static/output.css --minify",
     "watch:css": "npx tailwindcss -i ./static/input.css -o ./static/output.css --watch",
-    "dev": "npm run watch:css"
+    "dev": "npm run watch:css",
+    "vendor:pretext": "curl -sL 'https://cdn.jsdelivr.net/npm/@chenglou/pretext/+esm' -o static/js/pretext-esm-raw.js && echo 'Downloaded. Run the IIFE wrapper script to finalize.'"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.1"

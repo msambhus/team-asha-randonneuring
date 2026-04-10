@@ -510,6 +510,45 @@
     var isStreaming = false;
     var streamRawText = '';
 
+    /* ── Pretext.js integration — pre-compute message heights ── */
+    var _pretextAvailable = (typeof Pretext !== 'undefined' && typeof PretextUtils !== 'undefined');
+    var _pretextTimer = null;
+    var _pretextDirty = false;
+    var _userHasScrolledUp = false;
+
+    // Constants for chat bubble layout
+    var CHAT_PANEL_NORMAL = 440;
+    var CHAT_PANEL_EXPANDED = 680;
+    var CHAT_BUBBLE_MAX_RATIO = 0.88;
+    var CHAT_MESSAGES_PADDING = 28;  // 14px each side
+    var CHAT_BUBBLE_PADDING_H = 28;  // 14px each side
+    var CHAT_BUBBLE_PADDING_V = 20;  // 10px each side
+
+    function getChatBubbleMaxWidth() {
+        var panel = document.getElementById('chat-panel');
+        var panelW = panel && panel.classList.contains('expanded') ? CHAT_PANEL_EXPANDED : CHAT_PANEL_NORMAL;
+        return (panelW - CHAT_MESSAGES_PADDING) * CHAT_BUBBLE_MAX_RATIO - CHAT_BUBBLE_PADDING_H;
+    }
+
+    // Throttled height updater during streaming (120ms)
+    function updatePretextHeight(bubble) {
+        if (!_pretextAvailable) return;
+        _pretextDirty = true;
+        if (_pretextTimer) return;
+        _pretextTimer = setTimeout(function() {
+            _pretextTimer = null;
+            if (_pretextDirty && streamRawText) {
+                _pretextDirty = false;
+                var msgEl = bubble;
+                var font = PretextUtils.getFontString(msgEl);
+                var lineHeight = PretextUtils.getLineHeightPx(msgEl);
+                var handle = Pretext.prepare(streamRawText, font);
+                var result = Pretext.layout(handle, getChatBubbleMaxWidth(), lineHeight);
+                bubble.style.minHeight = Math.ceil(result.height + CHAT_BUBBLE_PADDING_V) + 'px';
+            }
+        }, 120);
+    }
+
     var COACHES = {
         venki:  { name: 'Coach Venki',   sub: 'Rides, Training & Nutrition' },
         shriram: { name: 'Coach Shriram', sub: 'Bikes & Maintenance' }
@@ -773,6 +812,7 @@
                                 // Token chunk — accumulate and render markdown
                                 streamRawText += parsed;
                                 assistantBubble.innerHTML = renderMarkdown(streamRawText);
+                                updatePretextHeight(assistantBubble);
                                 scrollMessages();
                             } else if (parsed.conversation_id) {
                                 currentConversationId = parsed.conversation_id;
@@ -917,10 +957,13 @@
 
     function finishStream(bubble) {
         isStreaming = false;
+        _userHasScrolledUp = false;
         document.getElementById('chat-send').disabled = false;
         // Final markdown render to clean up any trailing formatting
         if (streamRawText) {
             bubble.innerHTML = renderMarkdown(streamRawText);
+            // Reconcile: let DOM take over actual height now that streaming is done
+            bubble.style.minHeight = '';
             // Post-stream: extract URLs and fetch image previews (IMG-09)
             var urls = extractUrls(streamRawText);
             if (urls.length > 0) {
@@ -1006,6 +1049,14 @@
         var div = document.createElement('div');
         div.className = 'chat-msg ' + role;
         if (role === 'assistant' && text) {
+            // Pre-compute height via Pretext before DOM insertion
+            if (_pretextAvailable) {
+                var tempFont = '0.9rem system-ui, -apple-system, sans-serif';
+                var tempLineHeight = 0.9 * 16 * 1.6; // 23.04px
+                var handle = Pretext.prepare(text, tempFont);
+                var result = Pretext.layout(handle, getChatBubbleMaxWidth(), tempLineHeight);
+                div.style.minHeight = Math.ceil(result.height + CHAT_BUBBLE_PADDING_V) + 'px';
+            }
             div.innerHTML = renderMarkdown(text);
         } else {
             div.textContent = text;
@@ -1032,7 +1083,24 @@
 
     function scrollMessages() {
         var el = document.getElementById('chat-messages');
-        el.scrollTop = el.scrollHeight;
+        // Smart scroll: only auto-scroll when user is near the bottom
+        var atBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 80;
+        if (atBottom || !_userHasScrolledUp) {
+            requestAnimationFrame(function() {
+                el.scrollTop = el.scrollHeight;
+            });
+        }
     }
+
+    // Track manual scroll-up in chat messages
+    document.addEventListener('DOMContentLoaded', function() {
+        var el = document.getElementById('chat-messages');
+        if (el) {
+            el.addEventListener('scroll', function() {
+                var atBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 80;
+                _userHasScrolledUp = !atBottom;
+            });
+        }
+    });
 })();
 </script>
