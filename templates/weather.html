@@ -479,11 +479,20 @@
         chips.innerHTML = '';
 
         addChip(chips, data.total_distance_mi + ' mi', '');
+        if (data.total_elevation_ft) {
+            addChip(chips, data.total_elevation_ft.toLocaleString() + ' ft', '');
+        }
         if (data.temp_range) {
             addChip(chips, data.temp_range.min_f + ' - ' + data.temp_range.max_f + ' °F', '');
         }
-        var windClass = assessmentClass(data.overall_assessment);
-        addChip(chips, data.overall_assessment, windClass);
+
+        // LLM ride summary
+        if (data.ride_summary) {
+            var summaryEl = document.createElement('p');
+            summaryEl.style.cssText = 'margin:8px 0 0;font-size:0.85rem;color:var(--text);line-height:1.4;';
+            summaryEl.textContent = data.ride_summary;
+            chips.parentNode.appendChild(summaryEl);
+        }
 
         document.getElementById('summary-bar').style.display = 'block';
     }

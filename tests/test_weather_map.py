@@ -107,7 +107,7 @@ class TestWeatherMapAPI:
         assert 'table_segments' in data
         assert 'map_segments' in data
         assert 'polyline' in data
-        assert 'overall_assessment' in data
+        assert 'ride_summary' in data
         assert 'temp_range' in data
         assert 'min_f' in data['temp_range']
         assert 'max_f' in data['temp_range']

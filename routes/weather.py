@@ -420,27 +420,152 @@ def weather_map_api():
     route_name = route_data.get('name', 'Unknown Route')
     total_dist_m = route_data.get('distance', 0) or 0
     total_elev_m = route_data.get('elevation_gain', 0) or 0
+    total_dist_mi = _km_to_mi(total_dist_m / 1000)
+    total_elev_ft = round(total_elev_m * _M_TO_FT)
+
+    # Generate ride weather summary (LLM or rule-based fallback)
+    ride_summary = generate_ride_summary(route_name, total_dist_mi, total_elev_ft, map_segments)
 
     logger.info("Weather map total time: %.1fs for route %s (%d map points, %d table points, plan=%s)",
                 time.time() - t0, route_id, len(map_segments), len(table_segments), plan_source or 'none')
 
     return jsonify({
         'route_name': route_name,
-        'total_distance_mi': _km_to_mi(total_dist_m / 1000),
-        'total_elevation_ft': round(total_elev_m * _M_TO_FT),
+        'total_distance_mi': total_dist_mi,
+        'total_elevation_ft': total_elev_ft,
         'plan_source': plan_source,
         'polyline': polyline,
         'table_segments': table_segments,
         'map_segments': map_segments,
         'chart_data': chart_data,
         'cue_points': cue_points,
-        'overall_assessment': wind_label(avg_hw_mph / _KMH_TO_MPH) if headwinds else '',
+        'ride_summary': ride_summary,
         'temp_range': {
             'min_f': min(temps_f) if temps_f else 0,
             'max_f': max(temps_f) if temps_f else 0,
         },
         'attribution': '*Weather data: Open-Meteo*',
     })
+
+
+def generate_ride_summary(route_name, total_distance_mi, total_elevation_ft, map_segments):
+    """Generate a concise ride weather summary using OpenAI.
+
+    Falls back to a rule-based summary if OpenAI is unavailable.
+    """
+    if not map_segments:
+        return ''
+
+    # Compute stats for the prompt
+    winds = [s['wind_speed_mph'] for s in map_segments]
+    gusts = [s['wind_gust_mph'] for s in map_segments]
+    headwinds = [s['headwind_mph'] for s in map_segments]
+    temps = [s['temperature_f'] for s in map_segments]
+    precip = [s['precip_percent'] for s in map_segments]
+    rain_mm = [s['precipitation_mm'] for s in map_segments]
+    humidity = [s.get('humidity', 0) for s in map_segments]
+
+    max_wind = max(winds) if winds else 0
+    max_gust = max(gusts) if gusts else 0
+    avg_wind = sum(winds) / len(winds) if winds else 0
+    headwind_pct = sum(1 for h in headwinds if h > 3) / len(headwinds) * 100 if headwinds else 0
+    tailwind_pct = sum(1 for h in headwinds if h < -3) / len(headwinds) * 100 if headwinds else 0
+    rain_hours = sum(1 for r in rain_mm if r > 0)
+    heavy_rain = sum(1 for r in rain_mm if r >= 1)
+    max_rain = max(rain_mm) if rain_mm else 0
+    high_precip_pct = sum(1 for p in precip if p > 50) / len(precip) * 100 if precip else 0
+
+    ft_per_mi = round(total_elevation_ft / total_distance_mi) if total_distance_mi > 0 else 0
+
+    stats = (
+        f"Route: {route_name}, {total_distance_mi} mi, {total_elevation_ft:,} ft gain ({ft_per_mi} ft/mi). "
+        f"Temp: {min(temps):.0f}-{max(temps):.0f}°F. "
+        f"Wind: avg {avg_wind:.0f} mph, max {max_wind:.0f} mph, gusts to {max_gust:.0f} mph. "
+        f"Headwind {headwind_pct:.0f}% of route, tailwind {tailwind_pct:.0f}%. "
+        f"Rain: {rain_hours} segments with rain, {heavy_rain} with >1mm. Max {max_rain:.1f}mm. "
+        f"High precip probability (>50%): {high_precip_pct:.0f}% of route. "
+        f"Humidity: {min(humidity):.0f}-{max(humidity):.0f}%."
+    )
+
+    # Try OpenAI
+    import os
+    api_key = os.environ.get('OPENAI_API_KEY')
+    if api_key:
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content":
+                     "You summarize cycling ride weather forecasts in 1-2 sentences. "
+                     "Be direct and practical — mention the most important conditions "
+                     "(rain, strong winds, temperature extremes, headwinds). "
+                     "Use a tone like a weather briefing for experienced cyclists. "
+                     "Include specific numbers. Don't sugarcoat bad conditions."},
+                    {"role": "user", "content": stats},
+                ],
+                temperature=0.5,
+                max_tokens=100,
+                timeout=8,
+            )
+            summary = response.choices[0].message.content.strip()
+            logger.info("LLM ride summary: %s", summary)
+            return summary
+        except Exception:
+            logger.warning("LLM summary failed, using rule-based fallback")
+
+    # Rule-based fallback
+    parts = []
+    if max_gust >= 25:
+        parts.append(f"strong gusts to {max_gust:.0f} mph")
+    elif max_wind >= 15:
+        parts.append(f"windy ({max_wind:.0f} mph)")
+    if headwind_pct > 40:
+        parts.append(f"headwind {headwind_pct:.0f}% of route")
+    if heavy_rain > 0:
+        parts.append(f"rain expected ({heavy_rain} segments >1mm)")
+    elif high_precip_pct > 30:
+        parts.append(f"rain likely ({high_precip_pct:.0f}% chance)")
+    if min(temps) < 40:
+        parts.append(f"cold ({min(temps):.0f}°F low)")
+    if max(temps) > 90:
+        parts.append(f"hot ({max(temps):.0f}°F)")
+    if ft_per_mi >= 60:
+        parts.append("hilly")
+
+    if not parts:
+        parts.append("mild conditions")
+
+    return '; '.join(parts).capitalize()
+
+
+def generate_summary_from_stop_wind(route_name, total_distance_mi, total_elevation_ft, stop_wind):
+    """Generate ride summary from stop_wind data (used by ride plan detail page).
+
+    Converts stop_wind format to the segment format expected by generate_ride_summary.
+    """
+    if not stop_wind:
+        return ''
+
+    segments = []
+    for w in stop_wind:
+        if w is None:
+            continue
+        segments.append({
+            'wind_speed_mph': w.get('wind_speed_mph', 0),
+            'wind_gust_mph': 0,  # not available in stop_wind
+            'headwind_mph': round(float(w.get('headwind_kmh', 0)) * _KMH_TO_MPH, 1),
+            'temperature_f': w.get('temperature_f', 0),
+            'precip_percent': 0,  # not available in stop_wind
+            'precipitation_mm': 0,
+            'humidity': 0,
+        })
+
+    if not segments:
+        return ''
+
+    return generate_ride_summary(route_name, total_distance_mi, total_elevation_ft, segments)
 
 
 def _default_start_time():
