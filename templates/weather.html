@@ -154,7 +154,7 @@
     border-bottom: 1px solid var(--border);
     background: #f8fafc;
 }
-#wind-map { height: 700px; width: 100%; position: relative; }
+#wind-map { height: 500px; width: 100%; position: relative; }
 
 /* Style switcher */
 .map-style-switcher {
@@ -238,7 +238,7 @@
     .form-group input { width: 100%; }
     .weather-table { font-size: 0.75rem; }
     .weather-table th, .weather-table td { padding: 8px 10px; }
-    #wind-map { height: 450px; }
+    #wind-map { height: 350px; }
 }
 </style>
 {% endblock %}
@@ -317,16 +317,12 @@
                 <canvas id="chartWind"></canvas>
             </div>
             <div class="chart-card">
-                <h4>Precipitation & Cloud Cover</h4>
+                <h4>Precipitation, Cloud Cover & Rain</h4>
                 <canvas id="chartPrecip"></canvas>
             </div>
             <div class="chart-card">
                 <h4>Headwind / Tailwind</h4>
                 <canvas id="chartHeadwind"></canvas>
-            </div>
-            <div class="chart-card">
-                <h4>Rain Intensity</h4>
-                <canvas id="chartRain"></canvas>
             </div>
             <div class="chart-card">
                 <h4>Temperature</h4>
@@ -335,6 +331,10 @@
             <div class="chart-card">
                 <h4>Elevation</h4>
                 <canvas id="chartElev"></canvas>
+            </div>
+            <div class="chart-card">
+                <h4>Humidity</h4>
+                <canvas id="chartHumidity"></canvas>
             </div>
         </div>
     </div>
@@ -538,7 +538,7 @@
 
     function syncAllCharts(dataIndex, sourceChart) {
         syncingHover = true;
-        var chartIds = ['chartWind', 'chartPrecip', 'chartHeadwind', 'chartRain', 'chartTemp', 'chartElev'];
+        var chartIds = ['chartWind', 'chartPrecip', 'chartHeadwind', 'chartTemp', 'chartElev', 'chartHumidity'];
         chartIds.forEach(function(id) {
             var c = weatherCharts[id];
             if (!c || c === sourceChart) return;
@@ -651,25 +651,6 @@
             },
         });
 
-        // Precipitation & Cloud Cover
-        makeChart('chartPrecip', {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [
-                    areaDataset('Probability (%)', cd.precip_probability, '#60a5fa', 'rgba(96,165,250,0.3)'),
-                    areaDataset('Cloud Cover (%)', cd.cloud_cover, '#94a3b8', 'rgba(148,163,184,0.15)'),
-                ],
-            },
-            options: {
-                ...CHART_DEFAULTS,
-                scales: {
-                    ...CHART_DEFAULTS.scales,
-                    y: { ...CHART_DEFAULTS.scales.y, min: 0, max: 100, title: { display: true, text: '%', color: '#64748b', font: { size: 10 } } },
-                },
-            },
-        });
-
         // Wind
         makeChart('chartWind', {
             type: 'line',
@@ -689,8 +670,36 @@
             },
         });
 
-        // Headwind / Tailwind — area chart, red above 0 (headwind), green below (tailwind)
-        // Split into two datasets: headwind (positive clipped) and tailwind (negative clipped)
+        // Precipitation, Cloud Cover & Rain Intensity (dual y-axis)
+        var rainDataset = areaDataset('Rain (mm)', cd.precipitation_mm, '#ea580c', 'rgba(234,88,12,0.2)');
+        rainDataset.yAxisID = 'yRain';
+        makeChart('chartPrecip', {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    areaDataset('Probability (%)', cd.precip_probability, '#60a5fa', 'rgba(96,165,250,0.3)'),
+                    areaDataset('Cloud Cover (%)', cd.cloud_cover, '#94a3b8', 'rgba(148,163,184,0.15)'),
+                    rainDataset,
+                ],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, position: 'left', min: 0, max: 100, title: { display: true, text: '%', color: '#64748b', font: { size: 10 } } },
+                    yRain: {
+                        position: 'right',
+                        min: 0,
+                        ticks: { color: '#ea580c', font: { size: 9 } },
+                        grid: { display: false },
+                        title: { display: true, text: 'mm', color: '#ea580c', font: { size: 10 } },
+                    },
+                },
+            },
+        });
+
+        // Headwind / Tailwind
         var hwPositive = cd.headwind_mph.map(function(v) { return v > 0 ? v : 0; });
         var hwNegative = cd.headwind_mph.map(function(v) { return v < 0 ? v : 0; });
         makeChart('chartHeadwind', {
@@ -724,33 +733,27 @@
             },
         });
 
-        // Rain Intensity (mm per hour) — area chart
-        makeChart('chartRain', {
+        // Temperature
+        makeChart('chartTemp', {
             type: 'line',
             data: {
                 labels: labels,
                 datasets: [
-                    areaDataset('Precipitation (mm)', cd.precipitation_mm, '#2563eb', 'rgba(37,99,235,0.3)'),
+                    areaDataset('Temperature (°F)', cd.temperature_f, '#60a5fa', 'rgba(96,165,250,0.25)'),
+                    areaDataset('Feels Like (°F)', cd.feels_like_f, '#fb923c', 'rgba(251,146,60,0.2)'),
                 ],
             },
             options: {
                 ...CHART_DEFAULTS,
                 scales: {
                     ...CHART_DEFAULTS.scales,
-                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'mm', color: '#64748b', font: { size: 10 } } },
+                    y: { ...CHART_DEFAULTS.scales.y, title: { display: true, text: '°F', color: '#64748b', font: { size: 10 } } },
                 },
                 plugins: {
                     ...CHART_DEFAULTS.plugins,
-                    legend: { display: false },
                     tooltip: {
                         ...CHART_DEFAULTS.plugins.tooltip,
-                        callbacks: {
-                            label: function(ctx) {
-                                var v = ctx.parsed.y;
-                                var intensity = v >= 4 ? 'Heavy' : (v >= 1 ? 'Moderate' : (v > 0 ? 'Light' : 'None'));
-                                return v + ' mm — ' + intensity;
-                            },
-                        },
+                        callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y + '°F'; } },
                     },
                 },
             },
@@ -781,6 +784,28 @@
                         font: { size: 10 },
                         padding: { bottom: 4 },
                     },
+                },
+            },
+        });
+
+        // Humidity
+        makeChart('chartHumidity', {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    areaDataset('Humidity (%)', cd.humidity, '#8b5cf6', 'rgba(139,92,246,0.2)'),
+                ],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, min: 0, max: 100, title: { display: true, text: '%', color: '#64748b', font: { size: 10 } } },
+                },
+                plugins: {
+                    ...CHART_DEFAULTS.plugins,
+                    legend: { display: false },
                 },
             },
         });
