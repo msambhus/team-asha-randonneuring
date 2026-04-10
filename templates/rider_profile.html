@@ -705,3 +705,14 @@ function toggleAllRideStats(seasonId) {
 </script>
 {% endif %}
 {% endblock %}
+
+{% block extra_js %}
+<script>
+// Pretext.js — auto-fit rider name heading if it overflows
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof PretextUtils !== 'undefined' && PretextUtils.autoFitHeading) {
+        PretextUtils.autoFitHeading('.hero h1', 0.7);
+    }
+});
+</script>
+{% endblock %}

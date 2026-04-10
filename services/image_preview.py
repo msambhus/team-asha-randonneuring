@@ -7,6 +7,8 @@ SSRF defenses:
 - No redirect following (allow_redirects=False)
 - 100KB max body read (streaming with iter_content)
 """
+from __future__ import annotations
+
 import requests
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup

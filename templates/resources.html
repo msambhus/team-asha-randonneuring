@@ -329,3 +329,14 @@
 
 </div>
 {% endblock %}
+
+{% block extra_js %}
+<script>
+// Pretext.js — balance resource card grid heights
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof PretextUtils !== 'undefined' && PretextUtils.balanceCardGrid) {
+        PretextUtils.balanceCardGrid('.resource-card', '.resource-link');
+    }
+});
+</script>
+{% endblock %}

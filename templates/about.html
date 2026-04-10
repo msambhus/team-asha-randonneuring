@@ -192,3 +192,14 @@
 
 </div>
 {% endblock %}
+
+{% block extra_js %}
+<script>
+// Pretext.js — balance BRM card grid heights
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof PretextUtils !== 'undefined' && PretextUtils.balanceCardGrid) {
+        PretextUtils.balanceCardGrid('.brm-card', '.brm-label');
+    }
+});
+</script>
+{% endblock %}

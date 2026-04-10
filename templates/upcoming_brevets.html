@@ -1712,5 +1712,13 @@ document.addEventListener('keydown', function(event) {
     });
 })();
 </script>
+<script>
+// Pretext.js — balance event card grid heights
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof PretextUtils !== 'undefined' && PretextUtils.balanceCardGrid) {
+        PretextUtils.balanceCardGrid('.event-card', '.event-card');
+    }
+});
+</script>
 {% endblock %}
 {% endblock %}

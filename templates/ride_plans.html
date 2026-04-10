@@ -31,3 +31,14 @@
 </div>
 </div>
 {% endblock %}
+
+{% block extra_js %}
+<script>
+// Pretext.js — balance ride plan card grid heights
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof PretextUtils !== 'undefined' && PretextUtils.balanceCardGrid) {
+        PretextUtils.balanceCardGrid('.card', 'div[style*="font-weight:700"]');
+    }
+});
+</script>
+{% endblock %}

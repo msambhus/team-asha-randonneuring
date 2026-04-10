@@ -163,6 +163,9 @@ function submitFeedback(e) {
     });
 }
 </script>
+<!-- Pretext.js — text measurement library (global) -->
+<script src="{{ url_for('static', filename='js/pretext.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pretext-utils.js') }}"></script>
 {% if user_logged_in %}{% include 'chat_widget.html' %}{% endif %}
 {% block extra_js %}{% endblock %}
 
@@ -254,6 +257,17 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+});
+
+// Pretext.js — global integrations (flash messages, nav overflow)
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof PretextUtils === 'undefined' || !PretextUtils.measureFlashMessages) return;
+
+    // Measure flash messages for explicit heights (smooth entrance animation)
+    PretextUtils.measureFlashMessages('.py-3.px-5.rounded-lg');
+
+    // Fit nav items — flag overflow on season/rider name labels
+    PretextUtils.fitNavItems('nav a, #mobile-nav a');
 });
 </script>
 
