@@ -284,42 +284,44 @@
         </div>
     </div>
 
-    {# Chart panel #}
-    <div class="chart-panel">
-        <div class="chart-title">Distance vs Elapsed Time</div>
-        <div id="chartEmpty" class="chart-empty">Select 2 or more rides to compare</div>
-        <canvas id="compareChart" style="display:none;"></canvas>
-        <div id="compareSummary" class="compare-summary"></div>
+    {# Right column: chart + stats + distribution #}
+    <div>
+        <div class="chart-panel">
+            <div class="chart-title">Distance vs Elapsed Time</div>
+            <div id="chartEmpty" class="chart-empty">Select 2 or more rides to compare</div>
+            <canvas id="compareChart" style="display:none;"></canvas>
+            <div id="compareSummary" class="compare-summary"></div>
+        </div>
+
+        {# Stats comparison table #}
+        <div id="statsSection" style="display:none; margin-top:24px;">
+            <h3 style="font-size:1rem; font-weight:700; color:#1e293b; margin-bottom:12px;">Ride Stats Comparison</h3>
+            <div class="stats-table-wrap">
+                <table class="stats-table" id="statsTable">
+                    <thead>
+                        <tr>
+                            <th>Ride</th>
+                            <th>Date</th>
+                            <th>Distance</th>
+                            <th>Elapsed</th>
+                            <th>Moving</th>
+                            <th>Stopped</th>
+                            <th>Avg Speed</th>
+                            <th>Elevation</th>
+                            <th>Avg HR</th>
+                            <th>Avg W</th>
+                            <th>Suffer</th>
+                        </tr>
+                    </thead>
+                    <tbody id="statsBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        {# Distribution bar cards #}
+        <div id="distSection" class="dist-cards" style="display:none;"></div>
     </div>
 </div>
-
-{# Stats comparison table #}
-<div id="statsSection" style="display:none; margin-top:24px;">
-    <h3 style="font-size:1rem; font-weight:700; color:#1e293b; margin-bottom:12px;">Ride Stats Comparison</h3>
-    <div class="stats-table-wrap">
-        <table class="stats-table" id="statsTable">
-            <thead>
-                <tr>
-                    <th>Ride</th>
-                    <th>Date</th>
-                    <th>Distance</th>
-                    <th>Elapsed</th>
-                    <th>Moving</th>
-                    <th>Stopped</th>
-                    <th>Avg Speed</th>
-                    <th>Elevation</th>
-                    <th>Avg HR</th>
-                    <th>Avg W</th>
-                    <th>Suffer</th>
-                </tr>
-            </thead>
-            <tbody id="statsBody"></tbody>
-        </table>
-    </div>
-</div>
-
-{# Distribution bar cards #}
-<div id="distSection" class="dist-cards" style="display:none;"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>
