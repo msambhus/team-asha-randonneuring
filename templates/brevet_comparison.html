@@ -21,6 +21,8 @@
     padding: 16px;
     position: sticky;
     top: 80px;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
 }
 .selector-title {
     font-size: 0.9rem;
@@ -43,20 +45,6 @@
     cursor: pointer;
 }
 .selector-actions button:hover { background: #e2e8f0; }
-.selector-filters {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 10px;
-}
-.selector-filters select {
-    flex: 1;
-    font-size: 0.72rem;
-    padding: 4px 6px;
-    border: 1px solid #cbd5e1;
-    border-radius: 4px;
-    background: #f8fafc;
-    color: #475569;
-}
 .season-group { margin-bottom: 14px; }
 .season-label {
     font-size: 0.75rem;
@@ -255,7 +243,7 @@
     <a href="{{ url_for('riders.my_strava_analysis') }}" style="color:var(--primary); text-decoration:none; font-size:0.9rem;">&larr; Back to Brevet Analysis</a>
 </div>
 
-{% if rides_data|length < 2 %}
+{% if rides_meta|length < 2 %}
 <div class="empty-state">
     <h3>Not Enough Rides to Compare</h3>
     <p>You need at least 2 finished brevets with Strava data to use this page.</p>
@@ -274,30 +262,22 @@
             <button onclick="selectAll()">Select All</button>
             <button onclick="selectNone()">Clear All</button>
         </div>
-        <div class="selector-filters">
-            <select id="filterDistance" onchange="applyFilters()">
-                <option value="">All Distances</option>
-            </select>
-            <select id="filterYear" onchange="applyFilters()">
-                <option value="">All Years</option>
-            </select>
-        </div>
         <div id="rideSelector">
         {% set ns = namespace(current_season='') %}
-        {% for ride in rides_data %}
+        {% for ride in rides_meta %}
             {% if ride.season_name != ns.current_season %}
                 {% set ns.current_season = ride.season_name %}
                 <div class="season-group">
                 <div class="season-label">{{ ride.season_name }}</div>
             {% endif %}
-            <label class="ride-check" data-distance="{{ ride.distance_km }}" data-year="{{ ride.date[:4] }}">
+            <label class="ride-check">
                 <input type="checkbox" value="{{ ride.ride_id }}" onchange="updateChart()">
                 <div>
                     <div class="ride-check-label">{{ ride.ride_name|clean_name }}</div>
-                    <div class="ride-check-meta">{{ ride.date }} &mdash; {{ ride.distance_km }} km &mdash; {{ ride.distance_miles }} mi, {{ ride.elapsed_time_hrs }}h</div>
+                    <div class="ride-check-meta">{{ ride.date }} &mdash; {{ ride.distance_km }} km &mdash; {{ (ride.strava_distance_m / 1609.34)|round(1) }} mi, {{ (ride.elapsed_time / 3600)|round(2) }}h</div>
                 </div>
             </label>
-            {% if loop.last or rides_data[loop.index0 + 1].season_name != ns.current_season %}
+            {% if loop.last or rides_meta[loop.index0 + 1].season_name != ns.current_season %}
                 </div>
             {% endif %}
         {% endfor %}
@@ -344,51 +324,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>
 (function() {
-    const allRides = {{ rides_data|tojson }};
-
-    // Populate filter dropdowns from ride data
-    (function populateFilters() {
-        var distances = new Set();
-        var years = new Set();
-        document.querySelectorAll('#rideSelector .ride-check').forEach(function(el) {
-            distances.add(el.dataset.distance);
-            years.add(el.dataset.year);
-        });
-
-        var distSelect = document.getElementById('filterDistance');
-        Array.from(distances).sort(function(a, b) { return parseInt(a) - parseInt(b); }).forEach(function(d) {
-            var opt = document.createElement('option');
-            opt.value = d;
-            opt.textContent = d + ' km';
-            distSelect.appendChild(opt);
-        });
-
-        var yearSelect = document.getElementById('filterYear');
-        Array.from(years).sort().reverse().forEach(function(y) {
-            var opt = document.createElement('option');
-            opt.value = y;
-            opt.textContent = y;
-            yearSelect.appendChild(opt);
-        });
-    })();
-
-    window.applyFilters = function() {
-        var distVal = document.getElementById('filterDistance').value;
-        var yearVal = document.getElementById('filterYear').value;
-
-        document.querySelectorAll('#rideSelector .ride-check').forEach(function(el) {
-            var matchDist = !distVal || el.dataset.distance === distVal;
-            var matchYear = !yearVal || el.dataset.year === yearVal;
-            el.style.display = (matchDist && matchYear) ? '' : 'none';
-        });
-
-        // Also show/hide season group headers
-        document.querySelectorAll('#rideSelector .season-group').forEach(function(group) {
-            var visibleRides = group.querySelectorAll('.ride-check:not([style*="display: none"])');
-            group.style.display = visibleRides.length > 0 ? '' : 'none';
-        });
-    };
-
+    const rideCache = {};  // Cache fetched ride data by ID
     const COLORS = [
         '#c2410c', '#2563eb', '#16a34a', '#7c3aed', '#db2777',
         '#ca8a04', '#0891b2', '#4f46e5', '#059669', '#e11d48'
@@ -410,7 +346,7 @@
     }
 
     window.selectAll = function() {
-        document.querySelectorAll('#rideSelector .ride-check:not([style*="display: none"]) input[type="checkbox"]').forEach(c => c.checked = true);
+        document.querySelectorAll('#rideSelector input[type="checkbox"]').forEach(c => c.checked = true);
         updateChart();
     };
     window.selectNone = function() {
@@ -520,7 +456,14 @@
         distEl.innerHTML = html;
     }
 
+    let fetchTimeout = null;
     window.updateChart = function() {
+        // Debounce rapid checkbox changes
+        clearTimeout(fetchTimeout);
+        fetchTimeout = setTimeout(_doUpdateChart, 150);
+    };
+
+    async function _doUpdateChart() {
         const selectedIds = getSelectedRideIds();
         const emptyEl = document.getElementById('chartEmpty');
         const summaryEl = document.getElementById('compareSummary');
@@ -538,6 +481,25 @@
             return;
         }
 
+        // Check which IDs need fetching
+        const needFetch = selectedIds.filter(id => !rideCache[id]);
+        if (needFetch.length > 0) {
+            emptyEl.textContent = 'Loading ride data...';
+            emptyEl.style.display = 'flex';
+            canvas.style.display = 'none';
+            try {
+                const params = needFetch.map(id => 'ids=' + id).join('&');
+                const resp = await fetch('/api/brevet-comparison/rides?' + params);
+                const data = await resp.json();
+                if (Array.isArray(data)) {
+                    data.forEach(ride => { rideCache[ride.ride_id] = ride; });
+                }
+            } catch (e) {
+                emptyEl.textContent = 'Failed to load ride data. Please retry.';
+                return;
+            }
+        }
+
         canvas.style.display = 'block';
         emptyEl.style.display = 'none';
         statsSection.style.display = 'block';
@@ -549,7 +511,7 @@
         const colorMap = {};
 
         selectedIds.forEach((rideId, idx) => {
-            const ride = allRides.find(r => r.ride_id === rideId);
+            const ride = rideCache[rideId];
             if (!ride) return;
             const color = COLORS[idx % COLORS.length];
             selectedRides.push(ride);
