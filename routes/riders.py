@@ -28,7 +28,7 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_upcoming_rusa_events, update_rider_profile, update_strava_privacy,
                     get_pbp_finishers,
                     get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops, update_ride_plan_info,
-                    get_signup_count, get_rider_signup_status, get_ride_by_id, update_ride_details,
+                    get_signup_count, get_rider_signup_status, get_ride_by_id, update_ride_details, update_ride_core,
                     get_user_by_id, _execute,
                     get_strava_connection, get_strava_activities,
                     get_rider_upcoming_signups, detect_r12_awards,
@@ -567,10 +567,15 @@ def edit_ride(ride_id):
         ride_plan_id = request.form.get('ride_plan_id')
         start_location = request.form.get('start_location', '').strip()
         time_limit_hours = request.form.get('time_limit_hours')
+        ride_date = request.form.get('ride_date', '').strip()
 
         # Convert empty strings to None
         ride_plan_id = int(ride_plan_id) if ride_plan_id and ride_plan_id != '' else None
         time_limit_hours = float(time_limit_hours) if time_limit_hours and time_limit_hours != '' else None
+
+        # Update ride date if provided
+        if ride_date:
+            update_ride_core(ride_id, {'date': ride_date})
 
         # Update the ride (start_time lives on ride_plan, not ride)
         update_ride_details(
@@ -1717,48 +1722,34 @@ def ride_plan_detail(slug):
     # Build collapsed journey nodes
     journey_nodes = _build_journey_nodes(stops)
 
-    # Check if there's a matching event (upcoming within 30 days or recent past 14 days)
+    # Check if there's an upcoming RUSA event that matches this ride plan
     upcoming_event = None
-    recent_past_event = None
     signup_count = 0
     user_signup_status = None
     from datetime import datetime, timedelta, date as date_type
-    from models import get_upcoming_rusa_events, get_user_by_id, _execute
+    from models import get_upcoming_rusa_events, get_user_by_id
     from flask import session
-
-    # Get upcoming + recent events
+    
     rusa_events = get_upcoming_rusa_events()
-    # Also check recent past events (last 14 days) for post-ride Strava analysis
     today = date_type.today()
-    fourteen_days_ago = today - timedelta(days=14)
-    recent_events = _execute("""
-        SELECT ri.*, c.code as club_code, c.name as club_name, c.region as region,
-               rp.slug as plan_slug, rp.rwgps_url_team as plan_rwgps_url_team,
-               rp.start_time as plan_start_time
-        FROM ride ri
-        INNER JOIN club c ON ri.club_id = c.id
-        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
-        WHERE ri.date >= %s AND ri.date < %s
-        ORDER BY ri.date DESC
-    """, (fourteen_days_ago, today)).fetchall()
-    all_events = list(rusa_events) + [dict(e) for e in recent_events]
-
     thirty_days_later = today + timedelta(days=30)
-
-    for event in all_events:
-        e_words = _normalize_route(event.get('route_name') or event.get('name', ''))
+    
+    for event in rusa_events:
+        e_words = _normalize_route(event.get('route_name', ''))
         p_words = _normalize_route(plan['name'])
         common = e_words & p_words
         distinctive = common - _GENERIC_WORDS
         if len(distinctive) >= 1 and len(common) >= 2:
-            event_date = event.get('date')
+            # Check if event is within 30 days
+            event_date = event['date']
+            # Convert to date object if it's a string
             if isinstance(event_date, str):
                 event_date = datetime.strptime(event_date, '%Y-%m-%d').date()
-
+            
             if event_date >= today and event_date <= thirty_days_later:
                 upcoming_event = event
                 signup_count = get_signup_count(event['id'])
-
+                
                 # Check current user's signup status
                 user_id = session.get('user_id')
                 if user_id:
@@ -1768,8 +1759,6 @@ def ride_plan_detail(slug):
                         if status:
                             user_signup_status = status['status']
                 break
-            elif event_date >= fourteen_days_ago and event_date < today and not recent_past_event:
-                recent_past_event = event
     
     # Check if user has custom plan for this base plan
     user_custom_plan = None
@@ -1803,22 +1792,6 @@ def ride_plan_detail(slug):
             current_app.logger.exception("Wind fetch failed for plan %s", slug)
             stop_wind = None
 
-    # Weather-adjusted difficulty modifier
-    weather_difficulty_mod = 0.0
-    if stop_wind:
-        valid_wind = [w for w in stop_wind if w is not None]
-        if valid_wind:
-            avg_hw = sum(abs(float(w.get('headwind_kmh', 0))) for w in valid_wind) / len(valid_wind)
-            max_wind = max(float(w.get('wind_speed_kmh', 0)) for w in valid_wind)
-            if max_wind > 40:   # > 25 mph
-                weather_difficulty_mod += 1.5
-            elif max_wind > 25: # > 15 mph
-                weather_difficulty_mod += 0.5
-            if avg_hw > 15:     # strong headwind average
-                weather_difficulty_mod += 1.0
-            elif avg_hw > 8:
-                weather_difficulty_mod += 0.5
-
     return render_template('ride_plan_detail.html',
                            plan=plan,
                            stops=stops,
@@ -1836,10 +1809,8 @@ def ride_plan_detail(slug):
                            rwgps_route_id=rwgps_route_id,
                            weather_route_id=weather_route_id,
                            stop_wind=stop_wind,
-                           weather_difficulty_mod=weather_difficulty_mod,
                            difficulty_colors=_DIFFICULTY_COLORS,
                            upcoming_event=upcoming_event,
-                           recent_past_event=recent_past_event,
                            signup_count=signup_count,
                            user_signup_status=user_signup_status,
                            user_custom_plan=user_custom_plan,
@@ -2952,7 +2923,7 @@ def compare_ride_plans(slug):
             })
     
     # Sort all stops by distance
-    all_stops_for_comparison.sort(key=lambda x: float(x['distance_miles'] or 0))
+    all_stops_for_comparison.sort(key=lambda x: float(x['distance_miles']))
     
     # Calculate cumulative times for removed stops by tracking custom plan cumulative at each distance
     prev_custom_cumulative = 0
