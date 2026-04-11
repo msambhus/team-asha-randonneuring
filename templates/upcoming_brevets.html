@@ -677,21 +677,6 @@
 <p>{{ season_label }} &mdash; Upcoming RUSA-sanctioned brevets in the Bay Area</p>
 </div>
 
-{% if wind_warnings %}
-<div style="background:linear-gradient(135deg,#fef3c7,#fde68a);border:2px solid #f59e0b;
-            border-radius:12px;padding:16px 20px;margin:16px auto;max-width:1200px;
-            box-shadow:0 4px 12px rgba(245,158,11,0.2);">
-  <div style="font-weight:800;color:#92400e;font-size:1.05rem;margin-bottom:10px;">
-    &#9888;&#65039; Heavy Winds Forecast
-  </div>
-  {% for w in wind_warnings %}
-  <div style="margin-bottom:6px;color:#78350f;font-size:0.9rem;">
-    <strong>{{ w.ride_name }}</strong> &mdash; {{ w.ride_date }}:
-    {{ w.description }}
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
 
 <div class="container section">
 <h2 style="margin-bottom:25px;">Ride Calendar</h2>
