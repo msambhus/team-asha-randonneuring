@@ -77,6 +77,11 @@
     color: #94a3b8;
 }
 
+/* Right column — prevent grid blowout */
+.compare-right {
+    min-width: 0;
+}
+
 /* Chart area */
 .chart-panel {
     background: white;
@@ -285,7 +290,7 @@
     </div>
 
     {# Right column: chart + stats + distribution #}
-    <div>
+    <div class="compare-right">
         <div class="chart-panel">
             <div class="chart-title">Distance vs Elapsed Time</div>
             <div id="chartEmpty" class="chart-empty">Select 2 or more rides to compare</div>
