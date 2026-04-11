@@ -385,10 +385,14 @@ def _match_plans_to_events(events, plans):
                     best_score = score
                     best_slug = plan['slug']
                     best_plan = plan
-        event['plan_slug'] = best_slug
+        # Only update plan fields if fuzzy match found OR no DB-linked plan exists
+        if best_slug:
+            event['plan_slug'] = best_slug
         if best_plan:
-            event['plan_rwgps_url'] = best_plan.get('rwgps_url')
-            event['plan_rwgps_url_team'] = best_plan.get('rwgps_url_team')
+            if not event.get('plan_rwgps_url'):
+                event['plan_rwgps_url'] = best_plan.get('rwgps_url')
+            if not event.get('plan_rwgps_url_team'):
+                event['plan_rwgps_url_team'] = best_plan.get('rwgps_url_team')
 
 
 @riders_bp.route('/riders/<season_name>/upcoming')
