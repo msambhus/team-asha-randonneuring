@@ -1128,3 +1128,44 @@ def knowledge_reembed(source):
     count = delete_knowledge_source(source)
     flash(f'Cleared {count} chunks from {source}. Run: python scripts/embed_resources.py --source {source}', 'info')
     return redirect(url_for('admin.knowledge'))
+
+
+@admin_bp.route('/refresh-rusa-events', methods=['POST'])
+@user_login_required
+def refresh_rusa_events():
+    """Trigger RUSA event calendar refresh from admin dashboard."""
+    _require_admin()
+    import subprocess
+    import sys
+
+    script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'scripts', 'update_rusa_events.py')
+
+    try:
+        result = subprocess.run(
+            [sys.executable, script_path],
+            capture_output=True, text=True, timeout=120,
+            env={**os.environ}
+        )
+        output = result.stdout + result.stderr
+
+        # Parse stats from output
+        import re
+        stats_match = re.search(r'(\d+) inserted, (\d+) updated, (\d+) skipped', output)
+        if stats_match:
+            inserted, updated, skipped = stats_match.groups()
+            return jsonify({
+                'success': True,
+                'inserted': int(inserted),
+                'updated': int(updated),
+                'skipped': int(skipped),
+                'output': output,
+            })
+        elif result.returncode != 0:
+            return jsonify({'error': f'Script failed: {output}'}), 500
+        else:
+            return jsonify({'success': True, 'output': output})
+
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Script timed out after 120s'}), 504
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

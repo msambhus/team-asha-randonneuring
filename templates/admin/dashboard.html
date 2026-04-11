@@ -21,6 +21,7 @@
 <a href="{{ url_for('admin.guardrails') }}" class="btn" style="background:#c05621;color:#fff;">Guardrails</a>
 <a href="{{ url_for('admin.knowledge') }}" class="btn" style="background:#319795;color:#fff;">Knowledge Base</a>
 <button onclick="runWindBackfill(this)" class="btn" style="background:#0ea5e9;color:#fff;">Backfill Wind Data</button>
+<button onclick="refreshRusaEvents(this)" class="btn" style="background:#e53e3e;color:#fff;">Refresh RUSA Calendar</button>
 </div>
 
 {% if wind_status %}
@@ -125,6 +126,29 @@ async function runWindBackfill(btn) {
     } finally {
         btn.disabled = false;
         btn.textContent = 'Backfill Wind Data';
+        btn.style.opacity = '1';
+    }
+}
+
+async function refreshRusaEvents(btn) {
+    if (!confirm('Refresh RUSA calendar from all sources (SFR, Davis, SCR, SRR, SLO)? This may take a minute.')) return;
+    btn.disabled = true;
+    btn.textContent = 'Refreshing...';
+    btn.style.opacity = '0.6';
+    try {
+        const resp = await fetch('{{ url_for("admin.refresh_rusa_events") }}', {method: 'POST'});
+        const data = await resp.json();
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            alert('RUSA refresh: ' + (data.inserted || 0) + ' new, ' + (data.updated || 0) + ' updated, ' + (data.skipped || 0) + ' skipped');
+            window.location.reload();
+        }
+    } catch(e) {
+        alert('Failed: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Refresh RUSA Calendar';
         btn.style.opacity = '1';
     }
 }
