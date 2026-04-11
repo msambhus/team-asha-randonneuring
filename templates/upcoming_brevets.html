@@ -723,7 +723,7 @@
 
 <div id="events-container">
 {% for event in rusa_events %}
-<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.plan_start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-plan-avg-speed="{{ event.plan_avg_speed or '' }}" data-plan-slug="{{ event.plan_slug or '' }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
+<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.plan_start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-plan-avg-speed="{{ event.plan_avg_speed or '' }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
 
     <div class="event-date">
         <div class="event-day">{{ event.date_str[8:10] }}</div>
@@ -765,7 +765,7 @@
             {{ event.route_name }}{% if event.ride_type %} <span style="color:var(--text-light);font-size:0.75rem;font-weight:600;white-space:nowrap;">[{{ event.ride_type }}]</span>{% endif %}
         </span>
         {% if can_edit_rides %}
-        <button onclick="openEditModal({{ event.id }}, '{{ event.route_name|replace("'", "\\'") }}', '{{ event.rwgps_url|replace("'", "\\'")|default('', true) }}', {{ event.ride_plan_id|default('null', true) }}, '{{ event.plan_start_time|replace("'", "\\'")|default('', true) }}', '{{ event.start_location|replace("'", "\\'")|default('', true) }}', {{ event.time_limit_hours|default('null', true) }}, '{{ event.plan_rwgps_url_team|replace("'", "\\'")|default('', true) }}')" 
+        <button onclick="openEditModal({{ event.id }}, '{{ event.route_name|replace("'", "\\'") }}', '{{ event.rwgps_url|replace("'", "\\'")|default('', true) }}', {{ event.ride_plan_id|default('null', true) }}, '{{ event.plan_start_time|replace("'", "\\'")|default('', true) }}', '{{ event.start_location|replace("'", "\\'")|default('', true) }}', {{ event.time_limit_hours|default('null', true) }}, '{{ event.date }}')" 
                 style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;color:#6d28d9;font-size:0.85rem;transition:transform 0.2s,color 0.2s;"
                 onmouseover="this.style.transform='scale(1.15)';this.style.color='#5b21b6';"
                 onmouseout="this.style.transform='scale(1)';this.style.color='#6d28d9';"
@@ -925,6 +925,12 @@
                 <input type="hidden" id="edit-ride-id" name="ride_id">
                 
                 <div style="margin-bottom:20px;">
+                    <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Ride Date</label>
+                    <input type="date" id="edit-ride-date" name="ride_date"
+                           style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;">
+                </div>
+
+                <div style="margin-bottom:20px;">
                     <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Route URL (RideWithGPS)</label>
                     <input type="url" id="edit-rwgps-url" name="rwgps_url" 
                            style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;"
@@ -945,15 +951,7 @@
                     </select>
                     <small style="color:var(--text-light);font-size:0.8rem;">Select from available ride plans</small>
                 </div>
-
-                <div style="margin-bottom:20px;">
-                    <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Team Asha Route URL</label>
-                    <input type="url" id="edit-rwgps-url-team" name="rwgps_url_team"
-                           style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;"
-                           placeholder="https://ridewithgps.com/routes/...">
-                    <small style="color:var(--text-light);font-size:0.8rem;">Custom Team Asha route (saved on ride plan). Leave empty to remove.</small>
-                </div>
-
+                
                 <div style="margin-bottom:20px;">
                     <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Start Time</label>
                     <input type="time" id="edit-start-time" name="start_time" 
@@ -994,10 +992,13 @@ var activeRegion = 'all';
 var activeDistance = 'all';
 
 // Edit Modal Functions
-function openEditModal(rideId, rideName, rwgpsUrl, ridePlanId, startTime, startLocation, timeLimit, rwgpsUrlTeam) {
+function openEditModal(rideId, rideName, rwgpsUrl, ridePlanId, startTime, startLocation, timeLimit, rideDate) {
     document.getElementById('edit-modal-title').textContent = 'Edit: ' + rideName;
     document.getElementById('edit-ride-id').value = rideId;
-    
+
+    // Set date
+    document.getElementById('edit-ride-date').value = rideDate && rideDate !== 'null' ? rideDate : '';
+
     // Set all current values with proper null handling
     document.getElementById('edit-rwgps-url').value = rwgpsUrl && rwgpsUrl !== 'null' ? rwgpsUrl : '';
     document.getElementById('edit-ride-plan').value = ridePlanId && ridePlanId !== 'null' && ridePlanId !== null ? ridePlanId : '';
@@ -1017,8 +1018,7 @@ function openEditModal(rideId, rideName, rwgpsUrl, ridePlanId, startTime, startL
     
     document.getElementById('edit-start-location').value = startLocation && startLocation !== 'null' ? startLocation : '';
     document.getElementById('edit-time-limit').value = timeLimit && timeLimit !== 'null' && timeLimit !== null ? timeLimit : '';
-    document.getElementById('edit-rwgps-url-team').value = rwgpsUrlTeam && rwgpsUrlTeam !== 'null' ? rwgpsUrlTeam : '';
-
+    
     document.getElementById('edit-modal').style.display = 'flex';
 }
 
@@ -1691,14 +1691,11 @@ document.addEventListener('keydown', function(event) {
             const startTimestamp = Math.floor(eventDateTime.getTime() / 1000);
             const encodedName = encodeURIComponent(routeName);
 
-            // Weather link (our page) — use plan timing if available
+            // Weather link (our page) — use plan speed if available
             const planAvgSpeed = eventItem.dataset.planAvgSpeed;
-            const planSlug = eventItem.dataset.planSlug;
             const startDt = eventDate + 'T' + eventTime;
             let weatherMapUrl = '/weather?rwgps_url=' + encodeURIComponent(weatherRwgpsUrl) + '&start_datetime=' + encodeURIComponent(startDt) + '&auto=1';
-            if (planSlug) {
-                weatherMapUrl += '&plan_slug=' + encodeURIComponent(planSlug);
-            } else if (planAvgSpeed) {
+            if (planAvgSpeed) {
                 weatherMapUrl += '&speed_mph=' + planAvgSpeed;
             }
 
@@ -1711,14 +1708,6 @@ document.addEventListener('keydown', function(event) {
         }
     });
 })();
-</script>
-<script>
-// Pretext.js — balance event card grid heights
-document.addEventListener('DOMContentLoaded', function() {
-    if (typeof PretextUtils !== 'undefined' && PretextUtils.balanceCardGrid) {
-        PretextUtils.balanceCardGrid('.event-card', '.event-card');
-    }
-});
 </script>
 {% endblock %}
 {% endblock %}
