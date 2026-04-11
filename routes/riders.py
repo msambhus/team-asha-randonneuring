@@ -385,14 +385,10 @@ def _match_plans_to_events(events, plans):
                     best_score = score
                     best_slug = plan['slug']
                     best_plan = plan
-        # Only update plan fields if fuzzy match found OR no DB-linked plan exists
-        if best_slug:
-            event['plan_slug'] = best_slug
+        event['plan_slug'] = best_slug
         if best_plan:
-            if not event.get('plan_rwgps_url'):
-                event['plan_rwgps_url'] = best_plan.get('rwgps_url')
-            if not event.get('plan_rwgps_url_team'):
-                event['plan_rwgps_url_team'] = best_plan.get('rwgps_url_team')
+            event['plan_rwgps_url'] = best_plan.get('rwgps_url')
+            event['plan_rwgps_url_team'] = best_plan.get('rwgps_url_team')
 
 
 @riders_bp.route('/riders/<season_name>/upcoming')
@@ -1456,13 +1452,35 @@ def brevet_comparison():
         flash('Connect your Strava account first to compare rides.', 'info')
         return redirect(url_for('auth.my_profile'))
 
-    # Fetch all finished rides with cached streams
-    rides_raw = get_rider_rides_with_cached_streams(rider_id)
-    rides_data = build_brevet_comparison_data([dict(r) for r in rides_raw])
+    # Fetch ride metadata only (no streams) for the selector list
+    from models import get_rider_rides_metadata_for_comparison
+    rides_meta = get_rider_rides_metadata_for_comparison(rider_id)
 
     return render_template('brevet_comparison.html',
                            rider=rider,
-                           rides_data=rides_data)
+                           rides_meta=rides_meta)
+
+
+@riders_bp.route('/api/brevet-comparison/rides')
+def api_brevet_comparison_rides():
+    """Fetch chart data for specific ride IDs (on-demand)."""
+    if not session.get('user_id'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    rider_id = session.get('rider_id')
+    if not rider_id:
+        return jsonify({'error': 'No rider'}), 403
+
+    ride_ids = request.args.getlist('ids', type=int)
+    if not ride_ids or len(ride_ids) > 10:
+        return jsonify({'error': 'Provide 1-10 ride IDs'}), 400
+
+    from models import get_rider_rides_with_cached_streams_by_ids
+    from services.strava_analysis import build_brevet_comparison_data
+
+    rides_raw = get_rider_rides_with_cached_streams_by_ids(rider_id, ride_ids)
+    rides_data = build_brevet_comparison_data([dict(r) for r in rides_raw])
+
+    return jsonify(rides_data)
 
 
 @riders_bp.route('/rider/<int:rusa_id>/advice')

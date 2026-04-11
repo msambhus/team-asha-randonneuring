@@ -2582,6 +2582,61 @@ def get_rider_rides_with_cached_streams(rider_id):
     """, (rider_id, RideStatus.FINISHED.value)).fetchall()
 
 
+def get_rider_rides_metadata_for_comparison(rider_id):
+    """Get ride metadata (no streams) for the brevet comparison selector list."""
+    return _execute("""
+        SELECT r.id AS ride_id, r.name AS ride_name, r.date, r.distance_km,
+               r.elevation_ft,
+               s.name AS season_name,
+               sa.elapsed_time, sa.moving_time, sa.distance AS strava_distance_m,
+               sa.total_elevation_gain, sa.average_speed,
+               sa.average_heartrate, sa.max_heartrate, sa.has_heartrate,
+               sa.average_watts, sa.weighted_average_watts, sa.device_watts,
+               sa.suffer_score, sa.strava_url
+        FROM rider_ride rr
+        JOIN ride r ON r.id = rr.ride_id
+        JOIN season s ON s.id = r.season_id
+        JOIN strava_ride_match srm ON srm.rider_id = rr.rider_id AND srm.ride_id = rr.ride_id
+        JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
+                                AND sa.rider_id = srm.rider_id
+        JOIN strava_ride_analysis sra ON sra.match_id = srm.id
+        WHERE rr.rider_id = %s
+          AND rr.status = %s
+          AND sra.activity_streams IS NOT NULL
+          AND sra.strava_api_error IS NULL
+        ORDER BY r.date DESC
+    """, (rider_id, RideStatus.FINISHED.value)).fetchall()
+
+
+def get_rider_rides_with_cached_streams_by_ids(rider_id, ride_ids):
+    """Get finished rides with cached streams for specific ride IDs."""
+    return _execute("""
+        SELECT r.id AS ride_id, r.name AS ride_name, r.date, r.distance_km,
+               r.elevation_ft,
+               s.name AS season_name,
+               srm.id AS match_id,
+               sa.elapsed_time, sa.moving_time, sa.distance AS strava_distance_m,
+               sa.total_elevation_gain, sa.average_speed,
+               sa.average_heartrate, sa.max_heartrate, sa.has_heartrate,
+               sa.average_watts, sa.weighted_average_watts, sa.device_watts,
+               sa.suffer_score, sa.strava_url,
+               sra.activity_streams
+        FROM rider_ride rr
+        JOIN ride r ON r.id = rr.ride_id
+        JOIN season s ON s.id = r.season_id
+        JOIN strava_ride_match srm ON srm.rider_id = rr.rider_id AND srm.ride_id = rr.ride_id
+        JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
+                                AND sa.rider_id = srm.rider_id
+        JOIN strava_ride_analysis sra ON sra.match_id = srm.id
+        WHERE rr.rider_id = %s
+          AND rr.status = %s
+          AND r.id = ANY(%s)
+          AND sra.activity_streams IS NOT NULL
+          AND sra.strava_api_error IS NULL
+        ORDER BY r.date DESC
+    """, (rider_id, RideStatus.FINISHED.value, ride_ids)).fetchall()
+
+
 def get_cohort_cached_streams(ride_id):
     """Get cached Strava streams for all public finishers of a ride.
 
