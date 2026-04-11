@@ -1,6 +1,6 @@
 """Rider routes: season view, individual profiles, profile edit, upcoming brevets, ride plans."""
 import math
-from flask import Blueprint, render_template, abort, request, redirect, url_for, session, jsonify, current_app
+from flask import Blueprint, render_template, abort, request, redirect, url_for, session, jsonify, current_app, flash
 
 def is_admin_user():
     """Check if current logged-in user is an admin."""

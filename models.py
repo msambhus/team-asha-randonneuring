@@ -966,10 +966,14 @@ def insert_ride_plan_stop(ride_plan_id, stop_order, location, stop_type='waypoin
     """Insert a new stop into a ride plan and reorder subsequent stops."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    # Shift existing stops at or after this position
+    # Shift existing stops: negate first to avoid unique constraint, then set final values
     cur.execute(
-        "UPDATE ride_plan_stop SET stop_order = stop_order + 1 WHERE ride_plan_id = %s AND stop_order >= %s",
+        "UPDATE ride_plan_stop SET stop_order = -stop_order WHERE ride_plan_id = %s AND stop_order >= %s",
         (ride_plan_id, stop_order)
+    )
+    cur.execute(
+        "UPDATE ride_plan_stop SET stop_order = -stop_order + 1 WHERE ride_plan_id = %s AND stop_order < 0",
+        (ride_plan_id,)
     )
     cur.execute(
         """INSERT INTO ride_plan_stop (ride_plan_id, stop_order, location, stop_type, distance_miles, elevation_gain, notes)
@@ -993,10 +997,14 @@ def delete_ride_plan_stop(stop_id):
     if not stop:
         return False
     cur.execute("DELETE FROM ride_plan_stop WHERE id = %s", (stop_id,))
-    # Reorder remaining stops
+    # Reorder remaining stops: negate first to avoid unique constraint, then set final values
     cur.execute(
-        "UPDATE ride_plan_stop SET stop_order = stop_order - 1 WHERE ride_plan_id = %s AND stop_order > %s",
+        "UPDATE ride_plan_stop SET stop_order = -stop_order WHERE ride_plan_id = %s AND stop_order > %s",
         (stop['ride_plan_id'], stop['stop_order'])
+    )
+    cur.execute(
+        "UPDATE ride_plan_stop SET stop_order = -stop_order - 1 WHERE ride_plan_id = %s AND stop_order < 0",
+        (stop['ride_plan_id'],)
     )
     conn.commit()
     recalculate_base_plan_cumulative(stop['ride_plan_id'])
