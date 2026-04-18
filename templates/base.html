@@ -3,6 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Google Analytics (GA4) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LVJ9R7K2Z3"></script>
+<script>
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', 'G-LVJ9R7K2Z3');
+
+// Track all link and button clicks
+document.addEventListener('click', function(e) {
+    var el = e.target.closest('a, button, [onclick]');
+    if (!el) return;
+    var label = el.textContent.trim().substring(0, 50);
+    var href = el.getAttribute('href') || '';
+    var category = el.tagName === 'A' ? 'link_click' : 'button_click';
+    if (el.classList.contains('quick-action-btn')) category = 'quick_action';
+    else if (el.classList.contains('event-link-btn')) category = 'event_link';
+    else if (el.classList.contains('btn-fetch')) category = 'weather_fetch';
+    gtag('event', category, {
+        event_label: label,
+        link_url: href,
+        page_path: window.location.pathname
+    });
+});
+</script>
 <title>{% block title %}Team Asha Randonneuring{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='output.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
