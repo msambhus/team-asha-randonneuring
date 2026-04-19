@@ -138,14 +138,22 @@
 .badge-tailwind { background: #dcfce7; color: #166534; }
 .badge-crosswind { background: #fef3c7; color: #92400e; }
 
-/* Map */
+/* Map + charts top row */
+.map-charts-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+    display: none;
+}
+@media (max-width: 768px) {
+    .map-charts-row { grid-template-columns: 1fr; }
+}
 .map-section {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 12px;
     overflow: hidden;
-    margin-bottom: 24px;
-    display: none;
 }
 .map-section h3 {
     margin: 0;
@@ -154,7 +162,7 @@
     border-bottom: 1px solid var(--border);
     background: #f8fafc;
 }
-#wind-map { height: 500px; width: 100%; position: relative; }
+#wind-map { height: 520px; width: 100%; position: relative; }
 
 /* Style switcher */
 .map-style-switcher {
@@ -292,41 +300,43 @@
         <div class="summary-chips" id="summary-chips"></div>
     </div>
 
-    <div class="map-section" id="map-section">
-        <h3>Wind Map</h3>
-        <div id="wind-map">
-            <div class="map-style-switcher" id="styleSwitcher">
-                <button class="map-style-btn active" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
-                <button class="map-style-btn" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
-                <button class="map-style-btn" data-style="mapbox://styles/mapbox/light-v11">Light</button>
-                <button class="map-style-btn" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite</button>
+    {# Row 1: Map (left) + Wind & Headwind charts (right) #}
+    <div class="map-charts-row" id="map-charts-row">
+        <div class="map-section" id="map-section">
+            <h3>Wind Map</h3>
+            <div id="wind-map">
+                <div class="map-style-switcher" id="styleSwitcher">
+                    <button class="map-style-btn active" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
+                    <button class="map-style-btn" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
+                    <button class="map-style-btn" data-style="mapbox://styles/mapbox/light-v11">Light</button>
+                    <button class="map-style-btn" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite</button>
+                </div>
+            </div>
+            <div class="map-legend">
+                <div class="legend-item"><div class="legend-dot" style="background:#ef4444;"></div> Headwind</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#22c55e;"></div> Tailwind</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;"></div> Crosswind / Light</div>
+                <div class="legend-item" style="margin-left:auto; color:var(--text-light);">Arrow size = wind speed</div>
             </div>
         </div>
-        <div class="map-legend">
-            <div class="legend-item"><div class="legend-dot" style="background:#ef4444;"></div> Headwind</div>
-            <div class="legend-item"><div class="legend-dot" style="background:#22c55e;"></div> Tailwind</div>
-            <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;"></div> Crosswind / Light</div>
-            <div class="legend-item" style="margin-left:auto; color:var(--text-light);">Arrow size = wind speed</div>
-        </div>
-    </div>
-
-    <div class="charts-section" id="charts-section" style="display:none;">
-        <div class="charts-grid">
+        <div style="display:flex;flex-direction:column;gap:16px;">
             <div class="chart-card">
-                <h4>Wind <span style="font-weight:400;font-size:0.7rem;color:var(--text-light);">— total wind speed regardless of direction</span></h4>
+                <h4>Wind <span style="font-weight:400;font-size:0.7rem;color:var(--text-light);">— total wind speed</span></h4>
                 <canvas id="chartWind"></canvas>
             </div>
             <div class="chart-card">
-                <h4>Precipitation, Cloud Cover & Rain</h4>
-                <canvas id="chartPrecip"></canvas>
-            </div>
-            <div class="chart-card">
-                <h4>Headwind / Tailwind <span style="font-weight:400;font-size:0.7rem;color:var(--text-light);">— wind component along your riding direction</span></h4>
+                <h4>Headwind / Tailwind <span style="font-weight:400;font-size:0.7rem;color:var(--text-light);">— along riding direction</span></h4>
                 <canvas id="chartHeadwind"></canvas>
             </div>
+        </div>
+    </div>
+
+    {# Row 2: Precip+Humidity (left) | Elevation+Temperature (right) #}
+    <div class="charts-section" id="charts-section" style="display:none;">
+        <div class="charts-grid">
             <div class="chart-card">
-                <h4>Temperature</h4>
-                <canvas id="chartTemp"></canvas>
+                <h4>Precipitation, Cloud Cover & Rain</h4>
+                <canvas id="chartPrecip"></canvas>
             </div>
             <div class="chart-card">
                 <h4>Elevation</h4>
@@ -335,6 +345,10 @@
             <div class="chart-card">
                 <h4>Humidity</h4>
                 <canvas id="chartHumidity"></canvas>
+            </div>
+            <div class="chart-card">
+                <h4>Temperature</h4>
+                <canvas id="chartTemp"></canvas>
             </div>
         </div>
     </div>
@@ -455,7 +469,7 @@
         document.getElementById('error-alert').style.display = 'none';
         document.getElementById('summary-bar').style.display = 'none';
         document.getElementById('weather-table-wrap').style.display = 'none';
-        document.getElementById('map-section').style.display = 'none';
+        document.getElementById('map-charts-row').style.display = 'none';
         document.getElementById('charts-section').style.display = 'none';
         document.getElementById('attribution').style.display = 'none';
     }
@@ -632,6 +646,7 @@
         var labels = chartLabels(cd);
         chartMapSegments = data.map_segments || [];
 
+        document.getElementById('map-charts-row').style.display = 'grid';
         document.getElementById('charts-section').style.display = 'block';
 
         // Temperature
