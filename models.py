@@ -1436,7 +1436,9 @@ def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None,
 
 def update_ride_plan_info(plan_id, name, rwgps_url, rwgps_url_team, start_time, distance_km, cutoff_hours):
     """Update ride plan top-level metadata."""
-    _execute("""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
         UPDATE ride_plan SET name=%s, rwgps_url=%s, rwgps_url_team=%s, start_time=%s,
             distance_km=%s, cutoff_hours=%s
         WHERE id=%s
@@ -1444,6 +1446,7 @@ def update_ride_plan_info(plan_id, name, rwgps_url, rwgps_url_team, start_time, 
           int(distance_km) if distance_km else None,
           float(cutoff_hours) if cutoff_hours else None,
           plan_id))
+    conn.commit()
     cache.delete_memoized(get_all_ride_plans)
     cache.delete_memoized(get_ride_plan_by_slug)
 
