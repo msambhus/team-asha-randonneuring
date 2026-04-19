@@ -1,6 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Riders - Team Asha Randonneuring{% endblock %}
 
+{% block extra_head %}
+<style>
+.sortable-th { cursor:pointer; user-select:none; }
+.sortable-th:hover { color:#1e293b; }
+.sortable-th::after { content:''; display:inline-block; width:0; }
+.sortable-th.asc::after { content:' \25B2'; font-size:0.6rem; }
+.sortable-th.desc::after { content:' \25BC'; font-size:0.6rem; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="hero" style="padding:40px 20px;">
 <h1>Riders</h1>
@@ -9,25 +19,12 @@
 
 <div class="container section">
 
-{% if riders %}
-<div style="overflow-x:auto;">
-<table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
-<thead>
-<tr style="border-bottom:2px solid #e2e8f0;text-align:left;">
-    <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;">Rider</th>
-    <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">Career Brevets</th>
-    <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">Career KMs</th>
-    <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">Eddington</th>
-    {% if season %}
-    <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">{{ season.name[:4] }} Rides</th>
-    <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">SR Progress</th>
-    {% endif %}
-    <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;">Last Brevet</th>
-</tr>
-</thead>
-<tbody>
-{% for r in riders %}
-<tr style="border-bottom:1px solid #f1f5f9;transition:background 0.15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+{% set active_riders = riders|selectattr('season_rides', 'gt', 0)|list %}
+{% set past_riders = riders|rejectattr('season_rides', 'gt', 0)|list %}
+
+{% macro rider_row(r, show_season) %}
+<tr style="border-bottom:1px solid #f1f5f9;transition:background 0.15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''"
+    data-name="{{ r.first_name }} {{ r.last_name }}" data-brevets="{{ r.total_rides }}" data-kms="{{ r.total_kms|int }}" data-eddington="{{ r.eddington_number_miles or 0 }}" data-season-rides="{{ r.season_rides or 0 }}" data-last="{{ r.last_brevet_date or '' }}">
     <td style="padding:10px 12px;">
         <a href="{{ url_for('riders.rider_profile', rusa_id=r.rusa_id) }}" style="text-decoration:none;color:#1e293b;display:flex;align-items:center;gap:10px;">
             <div style="width:32px;height:32px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:0.75rem;font-weight:700;flex-shrink:0;">{{ r.first_name[0] }}{{ r.last_name[0] }}</div>
@@ -46,7 +43,7 @@
         <span style="color:#cbd5e1;">-</span>
         {% endif %}
     </td>
-    {% if season %}
+    {% if show_season %}
     <td style="padding:10px 12px;text-align:right;">
         {% if r.season_rides > 0 %}
         <span style="font-weight:600;">{{ r.season_rides }}</span>
@@ -73,15 +70,78 @@
     {% endif %}
     <td style="padding:10px 12px;color:#64748b;">{{ r.last_brevet_date or '-' }}</td>
 </tr>
+{% endmacro %}
+
+{% macro rider_table(table_id, rider_list, show_season) %}
+<div style="overflow-x:auto;">
+<table id="{{ table_id }}" style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+<thead>
+<tr style="border-bottom:2px solid #e2e8f0;text-align:left;">
+    <th class="sortable-th asc" data-sort="name" data-type="string" onclick="sortTable('{{ table_id }}', this)" style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;">Rider</th>
+    <th class="sortable-th" data-sort="brevets" data-type="number" onclick="sortTable('{{ table_id }}', this)" style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">Career Brevets</th>
+    <th class="sortable-th" data-sort="kms" data-type="number" onclick="sortTable('{{ table_id }}', this)" style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">Career KMs</th>
+    <th class="sortable-th" data-sort="eddington" data-type="number" onclick="sortTable('{{ table_id }}', this)" style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">Eddington</th>
+    {% if show_season %}
+    <th class="sortable-th" data-sort="season-rides" data-type="number" onclick="sortTable('{{ table_id }}', this)" style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">{{ season.name[:4] }}/{{ season.name[-2:] }} Rides</th>
+    <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">SR Progress</th>
+    {% endif %}
+    <th class="sortable-th" data-sort="last" data-type="string" onclick="sortTable('{{ table_id }}', this)" style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;">Last Brevet</th>
+</tr>
+</thead>
+<tbody>
+{% for r in rider_list %}
+{{ rider_row(r, show_season) }}
 {% endfor %}
 </tbody>
 </table>
 </div>
+{% endmacro %}
 
-<p style="margin-top:20px;color:#94a3b8;font-size:0.8rem;">{{ riders|length }} riders</p>
-{% else %}
+{% if active_riders %}
+<h2 style="font-size:1.1rem;color:#1e293b;margin-bottom:12px;">Active {{ season.name[:4] }}/{{ season.name[-2:] }} Season <span style="color:#94a3b8;font-weight:400;font-size:0.9rem;">({{ active_riders|length }})</span></h2>
+<div style="margin-bottom:32px;">
+{{ rider_table('active-table', active_riders, true) }}
+</div>
+{% endif %}
+
+{% if past_riders %}
+<h2 style="font-size:1.1rem;color:#1e293b;margin-bottom:12px;">Past Brevet Riders <span style="color:#94a3b8;font-weight:400;font-size:0.9rem;">({{ past_riders|length }})</span></h2>
+{{ rider_table('past-table', past_riders, false) }}
+{% endif %}
+
+{% if not riders %}
 <p style="color:var(--text-light);text-align:center;padding:40px;">No riders found.</p>
+{% else %}
+<p style="margin-top:20px;color:#94a3b8;font-size:0.8rem;">{{ riders|length }} riders total</p>
 {% endif %}
 
 </div>
+
+<script>
+function sortTable(tableId, th) {
+    var table = document.getElementById(tableId);
+    var tbody = table.querySelector('tbody');
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    var key = th.dataset.sort;
+    var type = th.dataset.type;
+
+    // Toggle direction
+    var asc = !th.classList.contains('asc');
+    table.querySelectorAll('.sortable-th').forEach(function(h) { h.classList.remove('asc', 'desc'); });
+    th.classList.add(asc ? 'asc' : 'desc');
+
+    rows.sort(function(a, b) {
+        var va = a.dataset[key] || '';
+        var vb = b.dataset[key] || '';
+        if (type === 'number') {
+            va = parseFloat(va) || 0;
+            vb = parseFloat(vb) || 0;
+            return asc ? va - vb : vb - va;
+        }
+        return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+    });
+
+    rows.forEach(function(row) { tbody.appendChild(row); });
+}
+</script>
 {% endblock %}
