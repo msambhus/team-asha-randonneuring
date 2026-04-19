@@ -307,18 +307,27 @@ def get_all_rider_season_stats(season_id):
 
 
 @cache.memoize(CACHE_TIMEOUT)
-def get_all_riders_with_career_stats():
-    """Get all riders with career summary stats for the riders directory page."""
+def get_all_riders_with_career_stats(current_season_id=None):
+    """Get all riders with career and current season stats for the riders directory page."""
     return _execute("""
         SELECT r.id, r.first_name, r.last_name, r.rusa_id,
                rp.photo_filename,
                sc.eddington_number_miles,
                COUNT(DISTINCT rr.ride_id) FILTER (WHERE rr.status = %s) as total_rides,
                COALESCE(SUM(ri.distance_km) FILTER (WHERE rr.status = %s), 0) as total_kms,
-               MAX(ri.date) FILTER (WHERE rr.status = %s) as last_ride_date,
-               COUNT(DISTINCT ri.distance_km) FILTER (
-                   WHERE rr.status = %s AND ri.distance_km IN (200, 300, 400, 600)
-               ) as sr_distances
+               MAX(ri.date) FILTER (WHERE rr.status = %s) as last_brevet_date,
+               -- Current season stats
+               COUNT(DISTINCT rr.ride_id) FILTER (
+                   WHERE rr.status = %s AND ri.season_id = %s
+               ) as season_rides,
+               COALESCE(SUM(ri.distance_km) FILTER (
+                   WHERE rr.status = %s AND ri.season_id = %s
+               ), 0) as season_kms,
+               -- SR progress: which distances completed this season
+               BOOL_OR(ri.distance_km = 200 AND rr.status = %s AND ri.season_id = %s) as sr_200,
+               BOOL_OR(ri.distance_km = 300 AND rr.status = %s AND ri.season_id = %s) as sr_300,
+               BOOL_OR(ri.distance_km = 400 AND rr.status = %s AND ri.season_id = %s) as sr_400,
+               BOOL_OR(ri.distance_km = 600 AND rr.status = %s AND ri.season_id = %s) as sr_600
         FROM rider r
         LEFT JOIN rider_profile rp ON r.id = rp.rider_id
         LEFT JOIN strava_connection sc ON r.id = sc.rider_id
@@ -327,8 +336,19 @@ def get_all_riders_with_career_stats():
         GROUP BY r.id, r.first_name, r.last_name, r.rusa_id,
                  rp.photo_filename, sc.eddington_number_miles
         HAVING COUNT(DISTINCT rr.ride_id) FILTER (WHERE rr.status = %s) > 0
-        ORDER BY total_kms DESC
-    """, (RideStatus.FINISHED.value,) * 5).fetchall()
+        ORDER BY r.first_name, r.last_name
+    """, (
+        RideStatus.FINISHED.value,  # total_rides
+        RideStatus.FINISHED.value,  # total_kms
+        RideStatus.FINISHED.value,  # last_brevet_date
+        RideStatus.FINISHED.value, current_season_id,  # season_rides
+        RideStatus.FINISHED.value, current_season_id,  # season_kms
+        RideStatus.FINISHED.value, current_season_id,  # sr_200
+        RideStatus.FINISHED.value, current_season_id,  # sr_300
+        RideStatus.FINISHED.value, current_season_id,  # sr_400
+        RideStatus.FINISHED.value, current_season_id,  # sr_600
+        RideStatus.FINISHED.value,  # HAVING
+    )).fetchall()
 
 
 @cache.memoize(CACHE_TIMEOUT)
