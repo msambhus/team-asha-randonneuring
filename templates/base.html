@@ -21,19 +21,13 @@
     {% if current_season %}
     <a href="{{ url_for('riders.upcoming_brevets', season_name=current_season.name) }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'riders.upcoming_brevets' %}bg-white/15 text-white{% endif %}">Brevet Calendar</a>
     {% endif %}
-    <a href="{{ url_for('riders.riders_directory') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'riders.riders_directory' %}bg-white/15 text-white{% endif %}">Riders</a>
-    {% for s in seasons %}
-    {% if s.is_current %}
-    {% set is_active = request.view_args.get('season_name') == s.name and request.endpoint == 'riders.season_riders' %}
-    <a href="{{ url_for('riders.season_riders', season_name=s.name) }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if is_active %}bg-white/15 text-white{% endif %}">{{ s.name[:4] }}/{{ s.name[5:] }}</a>
-    {% endif %}
-    {% endfor %}
     <div class="relative inline-block group">
-        <a class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs">Past Seasons</a>
+        <a href="{{ url_for('riders.riders_directory') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs {% if request.endpoint in ('riders.riders_directory', 'riders.season_riders') %}bg-white/15 text-white{% endif %}">Riders</a>
         <div class="hidden group-hover:block absolute top-full left-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[180px] z-[200] overflow-hidden pt-0">
+            <a href="{{ url_for('riders.riders_directory') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">All Riders</a>
             {% for s in seasons %}
-            {% if not s.is_current and s.name >= '2021' %}
-            <a href="{{ url_for('riders.season_riders', season_name=s.name) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">{{ s.name[:4] }}/{{ s.name[5:] }}</a>
+            {% if s.name >= '2021' %}
+            <a href="{{ url_for('riders.season_riders', season_name=s.name) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">{{ s.name[:4] }}-{{ s.name[-2:] }} Season</a>
             {% endif %}
             {% endfor %}
         </div>

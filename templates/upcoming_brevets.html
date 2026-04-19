@@ -891,6 +891,7 @@
     <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">Distance</th>
     <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">Finishers</th>
     <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;">Ride Plan</th>
+    {% if can_edit_rides %}<th style="padding:10px 12px;"></th>{% endif %}
 </tr>
 </thead>
 <tbody>
@@ -914,6 +915,11 @@
         <span style="color:#cbd5e1;">-</span>
         {% endif %}
     </td>
+    {% if can_edit_rides %}
+    <td style="padding:8px 12px;">
+        <a href="{{ url_for('admin.mark_status', ride_id=event.id) }}" style="color:#6d28d9;font-size:0.8rem;text-decoration:none;">Edit</a>
+    </td>
+    {% endif %}
 </tr>
 {% endfor %}
 </tbody>
