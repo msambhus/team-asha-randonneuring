@@ -519,11 +519,16 @@ def upcoming_brevets(season_name):
     # Get all ride plans for the edit modal
     all_ride_plans = get_all_ride_plans()
     
+    # Get completed events for the "Completed" tab
+    from models import get_completed_events_for_season
+    completed_events = get_completed_events_for_season(season['id'])
+
     return render_template('upcoming_brevets.html',
                            season=season,
                            season_label=label,
                            rusa_events=rusa_events,
                            future_rides=future_rides,
+                           completed_events=completed_events,
                            is_current=is_current,
                            region_colors=region_colors,
                            distances=distances,
@@ -532,6 +537,14 @@ def upcoming_brevets(season_name):
                            all_ride_plans=all_ride_plans,
                            can_edit_rides=can_edit_rides,
                            wind_warnings=wind_warnings)
+
+
+@riders_bp.route('/riders/directory')
+def riders_directory():
+    """All riders with career stats summary."""
+    from models import get_all_riders_with_career_stats
+    riders = get_all_riders_with_career_stats()
+    return render_template('riders_directory.html', riders=riders)
 
 
 @riders_bp.route('/ride/<int:ride_id>/edit', methods=['GET', 'POST'])
@@ -565,7 +578,6 @@ def edit_ride(ride_id):
         # Get form data
         rwgps_url = request.form.get('rwgps_url', '').strip()
         ride_plan_id = request.form.get('ride_plan_id')
-        rwgps_url_team = request.form.get('rwgps_url_team', '').strip()
         start_location = request.form.get('start_location', '').strip()
         time_limit_hours = request.form.get('time_limit_hours')
         ride_date = request.form.get('ride_date', '').strip()
@@ -586,16 +598,6 @@ def edit_ride(ride_id):
             start_location=start_location if start_location else None,
             time_limit_hours=time_limit_hours
         )
-
-        # Update Team Asha route URL on the linked ride plan
-        if ride_plan_id and rwgps_url_team is not None:
-            _execute(
-                "UPDATE ride_plan SET rwgps_url_team = %s WHERE id = %s",
-                (rwgps_url_team if rwgps_url_team else None, ride_plan_id),
-            )
-            from models import get_db
-            get_db().commit()
-
         cache.clear()  # Clear cache after ride update
         
         # Return JSON for AJAX requests
@@ -2158,143 +2160,6 @@ def custom_ride_plan_view(slug):
                          public_custom_plans=[],
                          is_custom_view=True,
                          is_admin=is_admin_user())
-
-
-@riders_bp.route('/ride-plan/<slug>/community/<int:plan_id>')
-def view_public_custom_plan(slug, plan_id):
-    """View a public custom plan shared by another rider (read-only)."""
-    from services.custom_plan_service import get_merged_plan_stops
-
-    base_plan = get_ride_plan_by_slug(slug)
-    if not base_plan:
-        abort(404)
-
-    custom_plan = get_custom_plan_by_id(plan_id)
-    if not custom_plan or not custom_plan.get('is_public'):
-        abort(404)
-    if custom_plan['base_plan_id'] != base_plan['id']:
-        abort(404)
-
-    # Get the rider who owns this plan
-    owner = _execute("SELECT first_name, last_name FROM rider WHERE id = %s",
-                     (custom_plan['rider_id'],)).fetchone()
-    owner_name = f"{owner['first_name']} {owner['last_name']}" if owner else "Unknown"
-
-    # Load and process stops (same as custom_ride_plan_view)
-    custom_stops_raw, custom_plan_data = get_merged_plan_stops(custom_plan['id'])
-
-    plan = dict(base_plan)
-    plan['total_distance_miles'] = float(base_plan.get('total_distance_miles') or 0)
-    plan['total_elevation_ft'] = int(base_plan.get('total_elevation_ft') or 0)
-    plan['custom_name'] = f"{custom_plan_data.get('name') or base_plan['name']} (by {owner_name})"
-
-    distance_km = _extract_distance_km(plan['name'])
-    cutoff_hours = _get_cutoff_hours(distance_km)
-    plan['distance_km'] = distance_km
-    plan['cutoff_hours'] = cutoff_hours
-    plan['start_time'] = plan.get('start_time') or '06:00'
-
-    rwgps_url_display = plan.get('rwgps_url_team') or plan.get('rwgps_url')
-    rwgps_url_label = 'Team Asha Route' if plan.get('rwgps_url_team') else 'Official Route'
-    rwgps_route_id = _extract_rwgps_route_id(rwgps_url_display)
-    weather_route_id = _extract_rwgps_route_id(plan.get('rwgps_url_team')) if plan.get('rwgps_url_team') else rwgps_route_id
-
-    stops = []
-    cum_time_min = 0
-    prev_dist = 0.0
-    total_moving_time = 0
-    total_break_time = 0
-
-    for s in custom_stops_raw:
-        d = dict(s)
-        d['distance_miles'] = float(d['distance_miles']) if d.get('distance_miles') is not None else None
-        d['elevation_gain'] = int(d['elevation_gain']) if d.get('elevation_gain') is not None else None
-        d['segment_time_min'] = int(d['segment_time_min']) if d.get('segment_time_min') is not None else None
-        d['stop_duration_min'] = int(d['stop_duration_min']) if d.get('stop_duration_min') is not None else 0
-
-        cur_dist = d['distance_miles'] or 0.0
-        seg_dist = round(cur_dist - prev_dist, 1)
-        d['seg_dist'] = seg_dist
-        d['ft_per_mi'] = int(round(d['elevation_gain'] / seg_dist)) if d.get('elevation_gain') and seg_dist > 0 else None
-        d['avg_speed'] = round(seg_dist / (d['segment_time_min'] / 60.0), 1) if d.get('segment_time_min') and d['segment_time_min'] > 0 and seg_dist > 0 else None
-
-        if d['segment_time_min']:
-            cum_time_min += d['segment_time_min']
-            total_moving_time += d['segment_time_min']
-        if d['stop_duration_min']:
-            cum_time_min += d['stop_duration_min']
-            total_break_time += d['stop_duration_min']
-
-        d['cum_time_min'] = cum_time_min
-        d['arrival_time_min'] = cum_time_min - (d['stop_duration_min'] or 0)
-
-        if cutoff_hours and plan['total_distance_miles'] > 0 and d['distance_miles']:
-            fraction = d['distance_miles'] / plan['total_distance_miles']
-            d['bookend_time_min'] = round(fraction * cutoff_hours * 60)
-            d['time_bank_min'] = d['bookend_time_min'] - d['arrival_time_min']
-        else:
-            d['bookend_time_min'] = None
-            d['time_bank_min'] = None
-
-        d['difficulty_score'] = _compute_difficulty_score(d['ft_per_mi'], d.get('notes'))
-        d['difficulty_label'] = _difficulty_label(d['difficulty_score'])
-        d['difficulty_color'] = _difficulty_color(d['ft_per_mi'])
-
-        if d['ft_per_mi']:
-            if d['ft_per_mi'] >= 80: d['terrain_label'] = 'steep'
-            elif d['ft_per_mi'] >= 50: d['terrain_label'] = 'rolling'
-            elif d['ft_per_mi'] >= 25: d['terrain_label'] = 'moderate'
-            else: d['terrain_label'] = 'flat'
-        else:
-            d['terrain_label'] = None
-
-        prev_dist = cur_dist
-        stops.append(d)
-
-    total_time = cum_time_min
-    avg_moving_speed = round(plan['total_distance_miles'] / (total_moving_time / 60.0), 1) if total_moving_time > 0 else None
-    avg_elapsed_speed = round(plan['total_distance_miles'] / (total_time / 60.0), 1) if total_time > 0 else None
-    overall_ft_per_mile = round(plan['total_elevation_ft'] / plan['total_distance_miles'], 0) if plan['total_distance_miles'] > 0 else 0
-
-    weighted_difficulty = None
-    total_moving_distance = 0
-    weighted_difficulty_sum = 0
-    for s in stops:
-        if s.get('seg_dist') and s['seg_dist'] > 0 and s.get('difficulty_score'):
-            total_moving_distance += s['seg_dist']
-            weighted_difficulty_sum += s['difficulty_score'] * s['seg_dist']
-    if total_moving_distance > 0:
-        weighted_difficulty = round(weighted_difficulty_sum / total_moving_distance, 1)
-
-    journey_nodes = _build_journey_nodes(stops)
-    stops, use_timeline = _attach_break_metadata(stops)
-
-    return render_template('ride_plan_detail.html',
-                         plan=plan,
-                         stops=stops,
-                         use_timeline=use_timeline,
-                         journey_nodes=journey_nodes,
-                         total_time=total_time,
-                         total_moving_time=total_moving_time,
-                         total_break_time=total_break_time,
-                         avg_moving_speed=avg_moving_speed,
-                         avg_elapsed_speed=avg_elapsed_speed,
-                         overall_ft_per_mile=overall_ft_per_mile,
-                         weighted_difficulty=weighted_difficulty,
-                         rwgps_url_display=rwgps_url_display,
-                         rwgps_url_label=rwgps_url_label,
-                         rwgps_route_id=rwgps_route_id,
-                         weather_route_id=weather_route_id,
-                         stop_wind=None,
-                         upcoming_event=None,
-                         recent_past_event=None,
-                         weather_difficulty_mod=0,
-                         signup_count=0,
-                         user_signup_status=None,
-                         user_custom_plan=None,
-                         public_custom_plans=[],
-                         is_custom_view=True,
-                         is_admin=False)
 
 
 @riders_bp.route('/ride-plan/<slug>/custom')

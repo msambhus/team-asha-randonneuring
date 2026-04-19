@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Riders - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Riders</h1>
+<p>Team Asha Randonneuring community</p>
+</div>
+
+<div class="container section">
+
+{% if riders %}
+<div style="overflow-x:auto;">
+<table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+<thead>
+<tr style="border-bottom:2px solid #e2e8f0;text-align:left;">
+    <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;">Rider</th>
+    <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">Brevets</th>
+    <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">Career KMs</th>
+    <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">Eddington</th>
+    <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;">Last Ride</th>
+</tr>
+</thead>
+<tbody>
+{% for r in riders %}
+<tr style="border-bottom:1px solid #f1f5f9;transition:background 0.15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+    <td style="padding:10px 12px;">
+        <a href="{{ url_for('riders.rider_profile', rusa_id=r.rusa_id) }}" style="text-decoration:none;color:#1e293b;display:flex;align-items:center;gap:10px;">
+            {% if r.photo_filename %}
+            <img src="/static/photos/{{ r.photo_filename }}" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
+            {% else %}
+            <div style="width:32px;height:32px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:0.75rem;font-weight:700;">{{ r.first_name[0] }}{{ r.last_name[0] }}</div>
+            {% endif %}
+            <div>
+                <div style="font-weight:600;">{{ r.first_name }} {{ r.last_name }}</div>
+                {% if r.rusa_id %}<div style="font-size:0.75rem;color:#94a3b8;">RUSA #{{ r.rusa_id }}</div>{% endif %}
+            </div>
+        </a>
+    </td>
+    <td style="padding:10px 12px;text-align:right;font-weight:600;">{{ r.total_rides }}</td>
+    <td style="padding:10px 12px;text-align:right;">{{ r.total_kms|int|commafy }}</td>
+    <td style="padding:10px 12px;text-align:right;">
+        {% if r.eddington_number_miles %}
+        <span style="font-weight:600;color:#c2410c;">E{{ r.eddington_number_miles }}</span>
+        {% else %}
+        <span style="color:#cbd5e1;">-</span>
+        {% endif %}
+    </td>
+    <td style="padding:10px 12px;color:#64748b;">{{ r.last_ride_date or '-' }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+
+<p style="margin-top:20px;color:#94a3b8;font-size:0.8rem;">{{ riders|length }} riders &middot; Sorted by career kilometers</p>
+{% else %}
+<p style="color:var(--text-light);text-align:center;padding:40px;">No riders found.</p>
+{% endif %}
+
+</div>
+{% endblock %}
