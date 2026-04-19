@@ -4,7 +4,17 @@
 {% block content %}
 <div class="hero" style="padding:40px 20px;">
 <h1>Admin Dashboard</h1>
-<p>{{ season.name if season else 'No active season' }}</p>
+<div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:8px;">
+    {% if all_seasons %}
+    <select onchange="if(this.value) window.location.href=this.value;" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.15);color:white;font-size:0.9rem;cursor:pointer;">
+        {% for s in all_seasons %}
+        <option value="{{ url_for('admin.dashboard', season_id=s.id) }}" {% if season and s.id == season.id %}selected{% endif %} style="color:#1e293b;">{{ s.name[:4] }}-{{ s.name[-2:] }} Season</option>
+        {% endfor %}
+    </select>
+    {% else %}
+    <p>{{ season.name if season else 'No active season' }}</p>
+    {% endif %}
+</div>
 </div>
 <div class="container section">
 

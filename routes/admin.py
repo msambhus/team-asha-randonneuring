@@ -111,17 +111,26 @@ def logout():
 
 
 @admin_bp.route('/')
+@admin_bp.route('/season/<int:season_id>')
 @user_login_required
-def dashboard():
+def dashboard(season_id=None):
     _require_admin()
+    from models import get_all_seasons, _execute
+
+    all_seasons = get_all_seasons()
     current = get_current_season()
-    rides = get_rides_with_signup_counts(current['id']) if current else []
+
+    if season_id:
+        season = next((s for s in all_seasons if s['id'] == season_id), current)
+    else:
+        season = current
+
+    rides = get_rides_with_signup_counts(season['id']) if season else []
     today = date.today()
 
     # Wind data status
     wind_status = None
     try:
-        from models import _execute
         total_row = _execute(
             "SELECT COUNT(DISTINCT ride_id) as cnt FROM ride_wind_data"
         ).fetchone()
@@ -141,8 +150,9 @@ def dashboard():
     except Exception:
         pass
 
-    return render_template('admin/dashboard.html', season=current, rides=rides,
-                           today=today, wind_status=wind_status)
+    return render_template('admin/dashboard.html', season=season, rides=rides,
+                           today=today, wind_status=wind_status,
+                           all_seasons=all_seasons)
 
 
 @admin_bp.route('/strava')
