@@ -1001,16 +1001,18 @@
                 
                 <div style="margin-bottom:20px;">
                     <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Team Asha Route (Ride Plan)</label>
-                    <select id="edit-ride-plan" name="ride_plan_id" 
+                    <select id="edit-ride-plan" name="ride_plan_id" onchange="updatePlanEditLink()"
                             style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;">
-                        <option value="">-- None --</option>
+                        <option value="" data-slug="">-- None --</option>
                         {% for plan in all_ride_plans %}
-                        <option value="{{ plan.id }}">
+                        <option value="{{ plan.id }}" data-slug="{{ plan.slug }}">
                             {{ plan.name }} ({{ plan.distance_km }}km)
                         </option>
                         {% endfor %}
                     </select>
-                    <small style="color:var(--text-light);font-size:0.8rem;">Select from available ride plans</small>
+                    <div id="edit-plan-link" style="margin-top:6px;display:none;">
+                        <a id="edit-plan-info-link" href="#" target="_blank" style="color:var(--accent);font-size:0.8rem;">Edit plan details (start time, RWGPS URLs, stops) &rarr;</a>
+                    </div>
                 </div>
                 
                 <div style="margin-bottom:20px;">
@@ -1081,7 +1083,8 @@ function openEditModal(rideId, rideName, rwgpsUrl, ridePlanId, startTime, startL
     // Set all current values with proper null handling
     document.getElementById('edit-rwgps-url').value = rwgpsUrl && rwgpsUrl !== 'null' ? rwgpsUrl : '';
     document.getElementById('edit-ride-plan').value = ridePlanId && ridePlanId !== 'null' && ridePlanId !== null ? ridePlanId : '';
-    
+    updatePlanEditLink();
+
     // Format start time to HH:MM format (HTML5 time input requires leading zeros)
     let formattedTime = '';
     if (startTime && startTime !== 'null' && startTime.trim() !== '') {
@@ -1099,6 +1102,19 @@ function openEditModal(rideId, rideName, rwgpsUrl, ridePlanId, startTime, startL
     document.getElementById('edit-time-limit').value = timeLimit && timeLimit !== 'null' && timeLimit !== null ? timeLimit : '';
     
     document.getElementById('edit-modal').style.display = 'flex';
+}
+
+function updatePlanEditLink() {
+    var sel = document.getElementById('edit-ride-plan');
+    var opt = sel.options[sel.selectedIndex];
+    var slug = opt ? opt.dataset.slug : '';
+    var linkDiv = document.getElementById('edit-plan-link');
+    if (slug) {
+        document.getElementById('edit-plan-info-link').href = '/ride-plan/' + slug + '/edit-info';
+        linkDiv.style.display = 'block';
+    } else {
+        linkDiv.style.display = 'none';
+    }
 }
 
 function closeEditModal(event) {
