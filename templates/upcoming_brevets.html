@@ -732,7 +732,7 @@
 
 <div id="events-container">
 {% for event in rusa_events %}
-<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.plan_start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-plan-avg-speed="{{ event.plan_avg_speed or '' }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
+<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.plan_start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-plan-avg-speed="{{ event.plan_avg_speed or '' }}" data-plan-slug="{{ event.plan_slug or '' }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
 
     <div class="event-date">
         <div class="event-day">{{ event.date_str[8:10] }}</div>
@@ -1770,12 +1770,16 @@ document.addEventListener('keydown', function(event) {
             const startTimestamp = Math.floor(eventDateTime.getTime() / 1000);
             const encodedName = encodeURIComponent(routeName);
 
-            // Weather link (our page) — use plan speed if available
+            // Weather link (our page) — use plan speed and plan slug if available
             const planAvgSpeed = eventItem.dataset.planAvgSpeed;
+            const planSlug = eventItem.dataset.planSlug;
             const startDt = eventDate + 'T' + eventTime;
             let weatherMapUrl = '/weather?rwgps_url=' + encodeURIComponent(weatherRwgpsUrl) + '&start_datetime=' + encodeURIComponent(startDt) + '&auto=1';
             if (planAvgSpeed) {
                 weatherMapUrl += '&speed_mph=' + planAvgSpeed;
+            }
+            if (planSlug) {
+                weatherMapUrl += '&plan_slug=' + encodeURIComponent(planSlug);
             }
 
             const weatherMapContainer = eventItem.querySelector('.weather-map-link');
