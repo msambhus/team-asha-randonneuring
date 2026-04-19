@@ -306,6 +306,50 @@ def get_all_rider_season_stats(season_id):
     return {r['rider_id']: {'rides': r['rides'], 'kms': r['kms']} for r in rows}
 
 
+@cache.memoize(CACHE_TIMEOUT)
+def get_all_riders_with_career_stats():
+    """Get all riders with career summary stats for the riders directory page."""
+    return _execute("""
+        SELECT r.id, r.first_name, r.last_name, r.rusa_id,
+               rp.photo_filename,
+               sc.eddington_number_miles,
+               COUNT(DISTINCT rr.ride_id) FILTER (WHERE rr.status = %s) as total_rides,
+               COALESCE(SUM(ri.distance_km) FILTER (WHERE rr.status = %s), 0) as total_kms,
+               MAX(ri.date) FILTER (WHERE rr.status = %s) as last_ride_date,
+               COUNT(DISTINCT ri.distance_km) FILTER (
+                   WHERE rr.status = %s AND ri.distance_km IN (200, 300, 400, 600)
+               ) as sr_distances
+        FROM rider r
+        LEFT JOIN rider_profile rp ON r.id = rp.rider_id
+        LEFT JOIN strava_connection sc ON r.id = sc.rider_id
+        LEFT JOIN rider_ride rr ON r.id = rr.rider_id
+        LEFT JOIN ride ri ON rr.ride_id = ri.id
+        GROUP BY r.id, r.first_name, r.last_name, r.rusa_id,
+                 rp.photo_filename, sc.eddington_number_miles
+        HAVING COUNT(DISTINCT rr.ride_id) FILTER (WHERE rr.status = %s) > 0
+        ORDER BY total_kms DESC
+    """, (RideStatus.FINISHED.value,) * 5).fetchall()
+
+
+@cache.memoize(CACHE_TIMEOUT)
+def get_completed_events_for_season(season_id):
+    """Get completed/past events (Team Asha + external) for a season."""
+    today = date.today()
+    return _execute("""
+        SELECT ri.*, c.code as club_code, c.name as club_name, c.region,
+               rp.slug as plan_slug,
+               COUNT(rr.id) FILTER (WHERE rr.status = %s) as finisher_count,
+               COUNT(rr.id) FILTER (WHERE rr.status IS NOT NULL) as signup_count
+        FROM ride ri
+        JOIN club c ON ri.club_id = c.id
+        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
+        LEFT JOIN rider_ride rr ON rr.ride_id = ri.id
+        WHERE ri.season_id = %s AND ri.date < %s
+        GROUP BY ri.id, c.code, c.name, c.region, rp.slug
+        ORDER BY ri.date DESC
+    """, (RideStatus.FINISHED.value, season_id, today)).fetchall()
+
+
 # ========== SR DETECTION ==========
 
 @cache.memoize(CACHE_TIMEOUT)

@@ -3,31 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- Google Analytics (GA4) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-LVJ9R7K2Z3"></script>
-<script>
-window.dataLayer = window.dataLayer || [];
-function gtag(){dataLayer.push(arguments);}
-gtag('js', new Date());
-gtag('config', 'G-LVJ9R7K2Z3');
-
-// Track all link and button clicks
-document.addEventListener('click', function(e) {
-    var el = e.target.closest('a, button, [onclick]');
-    if (!el) return;
-    var label = el.textContent.trim().substring(0, 50);
-    var href = el.getAttribute('href') || '';
-    var category = el.tagName === 'A' ? 'link_click' : 'button_click';
-    if (el.classList.contains('quick-action-btn')) category = 'quick_action';
-    else if (el.classList.contains('event-link-btn')) category = 'event_link';
-    else if (el.classList.contains('btn-fetch')) category = 'weather_fetch';
-    gtag('event', category, {
-        event_label: label,
-        link_url: href,
-        page_path: window.location.pathname
-    });
-});
-</script>
 <title>{% block title %}Team Asha Randonneuring{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='output.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
@@ -44,8 +19,9 @@ document.addEventListener('click', function(e) {
     <a href="{{ url_for('main.index') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'main.index' %}bg-white/15 text-white{% endif %}">Home</a>
     <a href="{{ url_for('main.about') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'main.about' %}bg-white/15 text-white{% endif %}">About</a>
     {% if current_season %}
-    <a href="{{ url_for('riders.upcoming_brevets', season_name=current_season.name) }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'riders.upcoming_brevets' %}bg-white/15 text-white{% endif %}">Upcoming Brevets</a>
+    <a href="{{ url_for('riders.upcoming_brevets', season_name=current_season.name) }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'riders.upcoming_brevets' %}bg-white/15 text-white{% endif %}">Brevet Calendar</a>
     {% endif %}
+    <a href="{{ url_for('riders.riders_directory') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'riders.riders_directory' %}bg-white/15 text-white{% endif %}">Riders</a>
     {% for s in seasons %}
     {% if s.is_current %}
     {% set is_active = request.view_args.get('season_name') == s.name and request.endpoint == 'riders.season_riders' %}
@@ -188,9 +164,6 @@ function submitFeedback(e) {
     });
 }
 </script>
-<!-- Pretext.js — text measurement library (global) -->
-<script src="{{ url_for('static', filename='js/pretext.js') }}"></script>
-<script src="{{ url_for('static', filename='js/pretext-utils.js') }}"></script>
 {% if user_logged_in %}{% include 'chat_widget.html' %}{% endif %}
 {% block extra_js %}{% endblock %}
 
@@ -282,17 +255,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
-});
-
-// Pretext.js — global integrations (flash messages, nav overflow)
-document.addEventListener('DOMContentLoaded', function() {
-    if (typeof PretextUtils === 'undefined' || !PretextUtils.measureFlashMessages) return;
-
-    // Measure flash messages for explicit heights (smooth entrance animation)
-    PretextUtils.measureFlashMessages('.py-3.px-5.rounded-lg');
-
-    // Fit nav items — flag overflow on season/rider name labels
-    PretextUtils.fitNavItems('nav a, #mobile-nav a');
 });
 </script>
 
