@@ -382,9 +382,8 @@ def mark_status(ride_id):
     if not ride:
         abort(404)
 
-    current = get_current_season()
     riders = get_all_riders()
-    matrix = get_participation_matrix(current['id']) if current else {}
+    matrix = get_participation_matrix(ride['season_id']) if ride.get('season_id') else {}
 
     if request.method == 'POST':
         statuses = {}
