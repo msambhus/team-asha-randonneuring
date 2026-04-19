@@ -542,9 +542,13 @@ def upcoming_brevets(season_name):
 @riders_bp.route('/riders/directory')
 def riders_directory():
     """All riders with career stats summary."""
-    from models import get_all_riders_with_career_stats
-    riders = get_all_riders_with_career_stats()
-    return render_template('riders_directory.html', riders=riders)
+    from models import get_all_riders_with_career_stats, get_current_season
+    current_season = get_current_season()
+    season_id = current_season['id'] if current_season else None
+    riders = get_all_riders_with_career_stats(current_season_id=season_id)
+    return render_template('riders_directory.html',
+                           riders=riders,
+                           season=current_season)
 
 
 @riders_bp.route('/ride/<int:ride_id>/edit', methods=['GET', 'POST'])
