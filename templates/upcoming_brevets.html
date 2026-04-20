@@ -1022,7 +1022,7 @@
                     <div style="font-size:0.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;">Ride Plan</div>
                     <div style="margin-bottom:12px;">
                         <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Team Asha Route</label>
-                        <select id="edit-ride-plan" name="ride_plan_id" onchange="updatePlanFields()"
+                        <select id="edit-ride-plan" name="ride_plan_id" onchange="updatePlanEditLink()"
                                 style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;">
                             <option value="" data-slug="">-- None --</option>
                             {% for plan in all_ride_plans %}
@@ -1037,8 +1037,8 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div id="plan-fields" style="display:none;">
-                        <a id="edit-stops-link" href="#" target="_blank" style="color:var(--accent);font-size:0.8rem;">Edit stops &rarr;</a>
+                    <div id="edit-plan-link" style="margin-top:6px;display:none;">
+                        <a id="edit-plan-info-link" href="#" target="_blank" style="color:var(--accent);font-size:0.8rem;">Edit plan details &rarr;</a>
                     </div>
                 </div>
 
@@ -1124,16 +1124,6 @@ function openEditModal(rideId, rideName, rwgpsUrl, ridePlanId, startTime, startL
 }
 
 function updatePlanFields() {
-    var sel = document.getElementById('edit-ride-plan');
-    var opt = sel.options[sel.selectedIndex];
-    var slug = opt ? opt.dataset.slug : '';
-    var planFieldsDiv = document.getElementById('plan-fields');
-    if (slug) {
-        document.getElementById('edit-stops-link').href = '/ride-plan/' + slug + '/edit';
-        planFieldsDiv.style.display = 'block';
-    } else {
-        planFieldsDiv.style.display = 'none';
-    }
     updatePlanEditLink();
 }
 
@@ -1142,8 +1132,10 @@ function updatePlanEditLink() {
     var opt = sel.options[sel.selectedIndex];
     var slug = opt ? opt.dataset.slug : '';
     var linkDiv = document.getElementById('edit-plan-link');
+    if (!linkDiv) return;
     if (slug) {
-        document.getElementById('edit-plan-info-link').href = '/ride-plan/' + slug + '/edit-info';
+        var link = document.getElementById('edit-plan-info-link');
+        if (link) link.href = '/ride-plan/' + slug + '/edit-info';
         linkDiv.style.display = 'block';
     } else {
         linkDiv.style.display = 'none';
