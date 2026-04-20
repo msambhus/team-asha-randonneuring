@@ -196,7 +196,7 @@ def run_wind_backfill():
     cur.execute("""
         SELECT r.id, r.name, r.date, r.distance_km,
                rp.id as plan_id, rp.slug as plan_slug,
-               rp.rwgps_url, rp.rwgps_url_team
+               r.rwgps_url, r.rwgps_url_team
         FROM ride r
         JOIN ride_plan rp ON r.ride_plan_id = rp.id
         JOIN season s ON r.season_id = s.id
@@ -281,7 +281,7 @@ def fetch_wind_for_ride(ride_id):
     cur = get_db().cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
         SELECT r.id, r.name, r.date, r.ride_plan_id,
-               rp.rwgps_url, rp.rwgps_url_team, rp.id as plan_id
+               r.rwgps_url, r.rwgps_url_team, rp.id as plan_id
         FROM ride r
         LEFT JOIN ride_plan rp ON r.ride_plan_id = rp.id
         WHERE r.id = %s
@@ -443,12 +443,16 @@ def ride_edit(ride_id):
         core_fields['club_id'] = int(club_id) if club_id else None
         update_ride_core(ride_id, core_fields)
 
-        # Update extended ride details (start_time lives on ride_plan, not ride)
+        # Update extended ride details
+        start_time = request.form.get('start_time', '').strip()
+        rwgps_url_team = request.form.get('rwgps_url_team', '').strip()
         update_ride_details(
             ride_id,
             rwgps_url=request.form.get('rwgps_url', ''),
             start_location=request.form.get('start_location', ''),
             time_limit_hours=float(request.form.get('time_limit_hours', '') or 0) or None,
+            start_time=start_time if start_time else None,
+            rwgps_url_team=rwgps_url_team if rwgps_url_team else None,
         )
 
         flash(f'Ride "{request.form.get("name", ride["name"])}" updated.', 'success')

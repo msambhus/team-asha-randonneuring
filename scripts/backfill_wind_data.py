@@ -354,7 +354,7 @@ def main():
         cur.execute("""
             SELECT r.id, r.name, r.date, r.distance_km,
                    rp.id as plan_id, rp.slug as plan_slug,
-                   rp.rwgps_url, rp.rwgps_url_team
+                   r.rwgps_url, r.rwgps_url_team
             FROM ride r
             JOIN ride_plan rp ON r.ride_plan_id = rp.id
             WHERE r.id = %s AND r.date < CURRENT_DATE
@@ -364,7 +364,7 @@ def main():
         cur.execute("""
             SELECT r.id, r.name, r.date, r.distance_km,
                    rp.id as plan_id, rp.slug as plan_slug,
-                   rp.rwgps_url, rp.rwgps_url_team
+                   r.rwgps_url, r.rwgps_url_team
             FROM ride r
             JOIN ride_plan rp ON r.ride_plan_id = rp.id
             JOIN season s ON r.season_id = s.id

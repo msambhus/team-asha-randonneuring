@@ -233,7 +233,7 @@ SELECT
     c.region as region,
     (c.code = 'TA') as is_team_ride,
     rp.slug as plan_slug,
-    rp.rwgps_url_team as plan_rwgps_url_team
+    ri.rwgps_url_team as plan_rwgps_url_team
 FROM ride ri
 INNER JOIN club c ON ri.club_id = c.id
 LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id

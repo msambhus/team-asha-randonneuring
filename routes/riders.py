@@ -590,17 +590,22 @@ def edit_ride(ride_id):
         ride_plan_id = int(ride_plan_id) if ride_plan_id and ride_plan_id != '' else None
         time_limit_hours = float(time_limit_hours) if time_limit_hours and time_limit_hours != '' else None
 
+        start_time = request.form.get('start_time', '').strip()
+        rwgps_url_team = request.form.get('rwgps_url_team', '').strip()
+
         # Update ride date if provided
         if ride_date:
             update_ride_core(ride_id, {'date': ride_date})
 
-        # Update the ride (start_time lives on ride_plan, not ride)
+        # Update the ride details
         update_ride_details(
             ride_id=ride_id,
             rwgps_url=rwgps_url if rwgps_url else None,
             ride_plan_id=ride_plan_id,
             start_location=start_location if start_location else None,
-            time_limit_hours=time_limit_hours
+            time_limit_hours=time_limit_hours,
+            start_time=start_time if start_time else None,
+            rwgps_url_team=rwgps_url_team if rwgps_url_team else None,
         )
         cache.clear()  # Clear cache after ride update
         
@@ -1661,13 +1666,21 @@ def ride_plan_detail(slug):
     cutoff_hours = _get_cutoff_hours(distance_km)
     plan['distance_km'] = distance_km
     plan['cutoff_hours'] = cutoff_hours
-    plan['start_time'] = plan.get('start_time') or '06:00'
+
+    # Derive start_time and rwgps_url_team from the most recent linked ride
+    from models import get_latest_ride_for_plan
+    linked_ride = get_latest_ride_for_plan(plan['id'])
+    plan['start_time'] = (linked_ride.get('start_time') if linked_ride else None) or '06:00'
+    plan['rwgps_url_team'] = linked_ride.get('rwgps_url_team') if linked_ride else None
+    # If plan has no rwgps_url, try from linked ride
+    if not plan.get('rwgps_url') and linked_ride:
+        plan['rwgps_url'] = linked_ride.get('rwgps_url')
 
     # Determine which RWGPS link to show (team preferred, else official)
     rwgps_url_display = plan.get('rwgps_url_team') or plan.get('rwgps_url')
     rwgps_url_label = 'Team Asha Route' if plan.get('rwgps_url_team') else 'Official Route'
     rwgps_route_id = _extract_rwgps_route_id(rwgps_url_display)
-    
+
     # For weather forecast, always prefer Team Asha route if available
     weather_route_id = _extract_rwgps_route_id(plan.get('rwgps_url_team')) if plan.get('rwgps_url_team') else rwgps_route_id
 
@@ -1938,10 +1951,6 @@ def edit_ride_plan_info(slug):
             plan_id=plan['id'],
             name=request.form.get('name', '').strip(),
             rwgps_url=request.form.get('rwgps_url', '').strip(),
-            rwgps_url_team=request.form.get('rwgps_url_team', '').strip(),
-            start_time=request.form.get('start_time', '06:00').strip(),
-            distance_km=request.form.get('distance_km', ''),
-            cutoff_hours=request.form.get('cutoff_hours', ''),
         )
         from flask import flash
         flash('Plan info updated.', 'success')
@@ -1988,14 +1997,21 @@ def custom_ride_plan_view(slug):
     cutoff_hours = _get_cutoff_hours(distance_km)
     plan['distance_km'] = distance_km
     plan['cutoff_hours'] = cutoff_hours
-    plan['start_time'] = plan.get('start_time') or '06:00'
-    
+
+    # Derive start_time and rwgps_url_team from the most recent linked ride
+    from models import get_latest_ride_for_plan
+    linked_ride = get_latest_ride_for_plan(plan['id'])
+    plan['start_time'] = (linked_ride.get('start_time') if linked_ride else None) or '06:00'
+    plan['rwgps_url_team'] = linked_ride.get('rwgps_url_team') if linked_ride else None
+    if not plan.get('rwgps_url') and linked_ride:
+        plan['rwgps_url'] = linked_ride.get('rwgps_url')
+
     # Determine which RWGPS link to show
     rwgps_url_display = plan.get('rwgps_url_team') or plan.get('rwgps_url')
     rwgps_url_label = 'Team Asha Route' if plan.get('rwgps_url_team') else 'Official Route'
     rwgps_route_id = _extract_rwgps_route_id(rwgps_url_display)
     weather_route_id = _extract_rwgps_route_id(plan.get('rwgps_url_team')) if plan.get('rwgps_url_team') else rwgps_route_id
-    
+
     # Process stops with full detail (same as base plan view)
     stops = []
     cum_time_min = 0

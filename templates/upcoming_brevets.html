@@ -732,7 +732,7 @@
 
 <div id="events-container">
 {% for event in rusa_events %}
-<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.plan_start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.plan_rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-plan-avg-speed="{{ event.plan_avg_speed or '' }}" data-plan-slug="{{ event.plan_slug or '' }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
+<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-plan-avg-speed="{{ event.plan_avg_speed or '' }}" data-plan-slug="{{ event.plan_slug or '' }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
 
     <div class="event-date">
         <div class="event-day">{{ event.date_str[8:10] }}</div>
@@ -774,7 +774,7 @@
             {{ event.route_name }}{% if event.ride_type %} <span style="color:var(--text-light);font-size:0.75rem;font-weight:600;white-space:nowrap;">[{{ event.ride_type }}]</span>{% endif %}
         </span>
         {% if can_edit_rides %}
-        <button onclick="openEditModal({{ event.id }}, '{{ event.route_name|replace("'", "\\'") }}', '{{ event.rwgps_url|replace("'", "\\'")|default('', true) }}', {{ event.ride_plan_id|default('null', true) }}, '{{ event.plan_start_time|replace("'", "\\'")|default('', true) }}', '{{ event.start_location|replace("'", "\\'")|default('', true) }}', {{ event.time_limit_hours|default('null', true) }}, '{{ event.date }}')" 
+        <button onclick="openEditModal({{ event.id }}, '{{ event.route_name|replace("'", "\\'") }}', '{{ event.rwgps_url|replace("'", "\\'")|default('', true) }}', {{ event.ride_plan_id|default('null', true) }}, '{{ event.start_time|replace("'", "\\'")|default('', true) }}', '{{ event.start_location|replace("'", "\\'")|default('', true) }}', {{ event.time_limit_hours|default('null', true) }}, '{{ event.date }}', '{{ event.rwgps_url_team|replace("'", "\\'")|default('', true) }}')"
                 style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;color:#6d28d9;font-size:0.85rem;transition:transform 0.2s,color 0.2s;"
                 onmouseover="this.style.transform='scale(1.15)';this.style.color='#5b21b6';"
                 onmouseout="this.style.transform='scale(1)';this.style.color='#6d28d9';"
@@ -799,8 +799,8 @@
         </span>
 
 
-        {% if event.plan_rwgps_url_team %}
-        <a href="{{ event.plan_rwgps_url_team }}" target="_blank" class="event-link-btn" style="background:linear-gradient(135deg,#fff7ed,#ffedd5);border-color:#ff6b00;color:#c2410c;">
+        {% if event.rwgps_url_team %}
+        <a href="{{ event.rwgps_url_team }}" target="_blank" class="event-link-btn" style="background:linear-gradient(135deg,#fff7ed,#ffedd5);border-color:#ff6b00;color:#c2410c;">
             <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:16px;height:16px;">
             Team Asha Route
         </a>
@@ -813,10 +813,10 @@
         {% endif %}
     </div>
 
-    {% if event.plan_start_time or event.time_limit_hours or event.start_location %}
+    {% if event.start_time or event.time_limit_hours or event.start_location %}
     <div class="event-details-info">
-        {% if event.plan_start_time %}
-        <div><strong>Start:</strong> {{ event.plan_start_time }}</div>
+        {% if event.start_time %}
+        <div><strong>Start:</strong> {{ event.start_time }}</div>
         {% endif %}
         {% if event.time_limit_hours %}
         <div><strong>Time Limit:</strong> {{ event.time_limit_hours }}h</div>
@@ -984,65 +984,83 @@
         <div class="modal-body">
             <form id="edit-ride-form" onsubmit="submitEditForm(event)">
                 <input type="hidden" id="edit-ride-id" name="ride_id">
-                
-                <div style="margin-bottom:20px;">
-                    <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Ride Date</label>
-                    <input type="date" id="edit-ride-date" name="ride_date"
-                           style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;">
-                </div>
+                <input type="hidden" id="edit-plan-slug" name="plan_slug" value="">
 
-                <div style="margin-bottom:20px;">
-                    <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Route URL (RideWithGPS)</label>
-                    <input type="url" id="edit-rwgps-url" name="rwgps_url" 
-                           style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;"
-                           placeholder="https://ridewithgps.com/routes/...">
-                    <small style="color:var(--text-light);font-size:0.8rem;">Leave empty to remove</small>
-                </div>
-                
-                <div style="margin-bottom:20px;">
-                    <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Team Asha Route (Ride Plan)</label>
-                    <select id="edit-ride-plan" name="ride_plan_id" onchange="updatePlanEditLink()"
-                            style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;">
-                        <option value="" data-slug="">-- None --</option>
-                        {% for plan in all_ride_plans %}
-                        <option value="{{ plan.id }}" data-slug="{{ plan.slug }}">
-                            {{ plan.name }} ({{ plan.distance_km }}km)
-                        </option>
-                        {% endfor %}
-                    </select>
-                    <div id="edit-plan-link" style="margin-top:6px;display:none;">
-                        <a id="edit-plan-info-link" href="#" target="_blank" style="color:var(--accent);font-size:0.8rem;">Edit plan details (start time, RWGPS URLs, stops) &rarr;</a>
+                {# Ride fields #}
+                <div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #e2e8f0;">
+                    <div style="font-size:0.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;">Ride Details</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                        <div>
+                            <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Ride Date</label>
+                            <input type="date" id="edit-ride-date" name="ride_date"
+                                   style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;">
+                        </div>
+                        <div>
+                            <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Start Time</label>
+                            <input type="time" id="edit-start-time" name="start_time"
+                                   style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;">
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                        <div>
+                            <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Start Location</label>
+                            <input type="text" id="edit-start-location" name="start_location"
+                                   style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;"
+                                   placeholder="e.g., Golden Gate Park">
+                        </div>
+                        <div>
+                            <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Time Limit (hours)</label>
+                            <input type="number" id="edit-time-limit" name="time_limit_hours" step="0.5" min="0"
+                                   style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;"
+                                   placeholder="e.g., 13.5">
+                        </div>
                     </div>
                 </div>
-                
-                <div style="margin-bottom:20px;">
-                    <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Start Time</label>
-                    <input type="time" id="edit-start-time" name="start_time" 
-                           style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;">
-                    <small style="color:var(--text-light);font-size:0.8rem;">24-hour format (e.g., 07:00)</small>
+
+                {# Ride Plan selection + plan fields #}
+                <div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #e2e8f0;">
+                    <div style="font-size:0.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;">Ride Plan</div>
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Team Asha Route</label>
+                        <select id="edit-ride-plan" name="ride_plan_id" onchange="updatePlanFields()"
+                                style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;">
+                            <option value="" data-slug="">-- None --</option>
+                            {% for plan in all_ride_plans %}
+                            <option value="{{ plan.id }}" data-slug="{{ plan.slug }}"
+                                    data-rwgps="{{ plan.rwgps_url or '' }}"
+                                    data-rwgps-team="{{ plan.rwgps_url_team or '' }}"
+                                    data-start-time="{{ plan.start_time or '' }}"
+                                    data-distance-km="{{ plan.distance_km or '' }}"
+                                    data-cutoff="{{ plan.cutoff_hours or '' }}">
+                                {{ plan.name }} ({{ plan.distance_km }}km)
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div id="plan-fields" style="display:none;">
+                        <a id="edit-stops-link" href="#" target="_blank" style="color:var(--accent);font-size:0.8rem;">Edit stops &rarr;</a>
+                    </div>
                 </div>
-                
-                <div style="margin-bottom:20px;">
-                    <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Start Location</label>
-                    <input type="text" id="edit-start-location" name="start_location" 
-                           style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;"
-                           placeholder="e.g., Golden Gate Park">
+
+                {# Route URLs (ride-level) #}
+                <div style="margin-bottom:16px;">
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Route URL</label>
+                        <input type="url" id="edit-rwgps-url" name="rwgps_url"
+                               style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;"
+                               placeholder="https://ridewithgps.com/routes/...">
+                    </div>
+                    <div>
+                        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Team Asha Route URL</label>
+                        <input type="url" id="edit-rwgps-url-team" name="rwgps_url_team"
+                               style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;"
+                               placeholder="https://ridewithgps.com/routes/...">
+                    </div>
                 </div>
-                
-                <div style="margin-bottom:20px;">
-                    <label style="display:block;font-weight:600;margin-bottom:8px;color:var(--primary);">Time Limit (hours)</label>
-                    <input type="number" id="edit-time-limit" name="time_limit_hours" step="0.5" min="0"
-                           style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:0.9rem;"
-                           placeholder="e.g., 13.5">
-                </div>
-                
-                <div style="display:flex;gap:12px;margin-top:24px;">
-                    <button type="submit" class="btn btn-primary" style="flex:1;">
-                        Save Changes
-                    </button>
-                    <button type="button" onclick="closeEditModal()" class="btn" style="flex:1;background:var(--text-light);color:white;">
-                        Cancel
-                    </button>
+
+                <div style="display:flex;gap:12px;margin-top:20px;">
+                    <button type="submit" class="btn btn-primary" style="flex:1;">Save Changes</button>
+                    <button type="button" onclick="closeEditModal()" class="btn" style="flex:1;background:var(--text-light);color:white;">Cancel</button>
                 </div>
             </form>
         </div>
@@ -1073,7 +1091,7 @@ var activeRegion = 'all';
 var activeDistance = 'all';
 
 // Edit Modal Functions
-function openEditModal(rideId, rideName, rwgpsUrl, ridePlanId, startTime, startLocation, timeLimit, rideDate) {
+function openEditModal(rideId, rideName, rwgpsUrl, ridePlanId, startTime, startLocation, timeLimit, rideDate, rwgpsUrlTeam) {
     document.getElementById('edit-modal-title').textContent = 'Edit: ' + rideName;
     document.getElementById('edit-ride-id').value = rideId;
 
@@ -1100,8 +1118,23 @@ function openEditModal(rideId, rideName, rwgpsUrl, ridePlanId, startTime, startL
     
     document.getElementById('edit-start-location').value = startLocation && startLocation !== 'null' ? startLocation : '';
     document.getElementById('edit-time-limit').value = timeLimit && timeLimit !== 'null' && timeLimit !== null ? timeLimit : '';
-    
+    document.getElementById('edit-rwgps-url-team').value = rwgpsUrlTeam && rwgpsUrlTeam !== 'null' ? rwgpsUrlTeam : '';
+
     document.getElementById('edit-modal').style.display = 'flex';
+}
+
+function updatePlanFields() {
+    var sel = document.getElementById('edit-ride-plan');
+    var opt = sel.options[sel.selectedIndex];
+    var slug = opt ? opt.dataset.slug : '';
+    var planFieldsDiv = document.getElementById('plan-fields');
+    if (slug) {
+        document.getElementById('edit-stops-link').href = '/ride-plan/' + slug + '/edit';
+        planFieldsDiv.style.display = 'block';
+    } else {
+        planFieldsDiv.style.display = 'none';
+    }
+    updatePlanEditLink();
 }
 
 function updatePlanEditLink() {

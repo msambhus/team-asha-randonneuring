@@ -164,7 +164,7 @@ def get_rides_for_season(season_id):
                c.name as club_name,
                c.region as region,
                rp.slug as plan_slug,
-               rp.start_time as plan_start_time,
+               ri.start_time as plan_start_time,
                (c.code = 'TA') as is_team_ride
         FROM ride ri
         INNER JOIN club c ON ri.club_id = c.id
@@ -647,8 +647,8 @@ def get_all_upcoming_events():
                c.name as club_name,
                c.region as region,
                rp.slug as plan_slug,
-               rp.rwgps_url_team as plan_rwgps_url_team,
-               rp.start_time as plan_start_time,
+               ri.rwgps_url_team as plan_rwgps_url_team,
+               ri.start_time as plan_start_time,
                rp.avg_elapsed_speed as plan_avg_speed,
                (c.code = 'TA') as is_team_ride,
                (SELECT COUNT(*) FROM rider_ride rr WHERE rr.ride_id = ri.id AND rr.signed_up_at IS NOT NULL) as signup_count
@@ -1400,8 +1400,9 @@ def update_ride_core(ride_id, fields):
 
 
 def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None,
-                       start_location=None, time_limit_hours=None):
-    """Update ride details (route, location, time limit). Start time lives on ride_plan."""
+                       start_location=None, time_limit_hours=None,
+                       start_time=None, rwgps_url_team=None):
+    """Update ride details (route, location, time limit, start time, team route)."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
@@ -1423,7 +1424,15 @@ def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None,
     if time_limit_hours is not None:
         updates.append("time_limit_hours = %s")
         params.append(time_limit_hours if time_limit_hours else None)
-    
+
+    if start_time is not None:
+        updates.append("start_time = %s")
+        params.append(start_time if start_time.strip() else None)
+
+    if rwgps_url_team is not None:
+        updates.append("rwgps_url_team = %s")
+        params.append(rwgps_url_team if rwgps_url_team.strip() else None)
+
     if updates:
         params.append(ride_id)
         sql = f"UPDATE ride SET {', '.join(updates)} WHERE id = %s"
@@ -1434,18 +1443,14 @@ def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None,
 
 # ========== RIDE PLANS ==========
 
-def update_ride_plan_info(plan_id, name, rwgps_url, rwgps_url_team, start_time, distance_km, cutoff_hours):
-    """Update ride plan top-level metadata."""
+def update_ride_plan_info(plan_id, name, rwgps_url):
+    """Update ride plan template metadata (name and canonical route URL only)."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
-        UPDATE ride_plan SET name=%s, rwgps_url=%s, rwgps_url_team=%s, start_time=%s,
-            distance_km=%s, cutoff_hours=%s
+        UPDATE ride_plan SET name=%s, rwgps_url=%s
         WHERE id=%s
-    """, (name or None, rwgps_url or None, rwgps_url_team or None, start_time or '06:00',
-          int(distance_km) if distance_km else None,
-          float(cutoff_hours) if cutoff_hours else None,
-          plan_id))
+    """, (name or None, rwgps_url or None, plan_id))
     conn.commit()
     cache.delete_memoized(get_all_ride_plans)
     cache.delete_memoized(get_ride_plan_by_slug)
@@ -1469,6 +1474,17 @@ def get_ride_plan_stops(ride_plan_id):
         WHERE ride_plan_id = %s
         ORDER BY stop_order
     """, (ride_plan_id,)).fetchall()
+
+def get_latest_ride_for_plan(plan_id):
+    """Get the most recent ride linked to a plan, for deriving defaults."""
+    return _execute("""
+        SELECT start_time, rwgps_url_team, rwgps_url, time_limit_hours, date
+        FROM ride
+        WHERE ride_plan_id = %s
+        ORDER BY date DESC
+        LIMIT 1
+    """, (plan_id,)).fetchone()
+
 
 @cache.memoize(CACHE_TIMEOUT)
 def find_ride_plan_for_ride(ride_name):
@@ -1896,8 +1912,8 @@ def get_rider_upcoming_signups(rider_id):
                ri.rwgps_url, ri.event_status, ri.start_location,
                c.code as club_code, c.name as club_name,
                rp.slug as plan_slug, rp.name as plan_name,
-               rp.start_time as start_time,
-               rp.rwgps_url as plan_rwgps_url, rp.rwgps_url_team as plan_rwgps_url_team,
+               ri.start_time as start_time,
+               rp.rwgps_url as plan_rwgps_url, ri.rwgps_url_team as plan_rwgps_url_team,
                rr.status as signup_status, rr.signed_up_at
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
@@ -2758,7 +2774,7 @@ def get_ride_by_id_full(ride_id):
     """Get ride with plan info."""
     return _execute("""
         SELECT ri.*, rp.slug as plan_slug, rp.id as plan_id,
-               rp.start_time as plan_start_time
+               ri.start_time as plan_start_time
         FROM ride ri
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE ri.id = %s

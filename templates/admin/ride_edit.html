@@ -80,6 +80,12 @@
        style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
 </div>
 
+<div class="form-group">
+<label for="rwgps_url_team">Team Asha RWGPS URL</label>
+<input type="url" id="rwgps_url_team" name="rwgps_url_team" value="{{ ride.rwgps_url_team or '' }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+</div>
+
 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px;">
 <div class="form-group">
 <label for="start_location">Start Location</label>
@@ -89,10 +95,8 @@
 </div>
 <div class="form-group">
 <label for="start_time">Start Time</label>
-<input type="text" id="start_time" disabled value="{{ ride.plan_start_time or '' }}"
-       placeholder="Set on ride plan"
-       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;background:#f1f5f9;color:var(--text-light);">
-<span style="font-size:0.75rem;color:var(--text-light);">Edit start time on the ride plan</span>
+<input type="time" id="start_time" name="start_time" value="{{ ride.start_time or '' }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
 </div>
 <div class="form-group">
 <label for="time_limit_hours">Time Limit (hrs)</label>
