@@ -912,6 +912,8 @@
         map.on('load', function() {
             addAllLayers(data);
             fitBounds(data.polyline);
+            // Resize after flex layout computes the container height
+            setTimeout(function() { map.resize(); fitBounds(data.polyline); }, 100);
         });
 
         // Re-add layers after style change
