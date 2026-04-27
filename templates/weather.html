@@ -162,7 +162,7 @@
     border-bottom: 1px solid var(--border);
     background: #f8fafc;
 }
-#wind-map { height: 500px; width: 100%; position: relative; }
+#wind-map { flex: 1; min-height: 400px; width: 100%; position: relative; }
 .map-section { display: flex; flex-direction: column; }
 
 /* Style switcher */
@@ -912,19 +912,8 @@
         map.on('load', function() {
             addAllLayers(data);
             fitBounds(data.polyline);
-            // Set map height to match the right column, then resize canvas
-            setTimeout(function() {
-                var rightCol = document.getElementById('map-right-col');
-                var mapEl = document.getElementById('wind-map');
-                var h3El = document.querySelector('#map-section h3');
-                var legendEl = document.querySelector('.map-legend');
-                if (rightCol && mapEl) {
-                    var chrome = (h3El ? h3El.offsetHeight : 0) + (legendEl ? legendEl.offsetHeight : 0);
-                    mapEl.style.height = Math.max(450, rightCol.offsetHeight - chrome) + 'px';
-                }
-                map.resize();
-                fitBounds(data.polyline);
-            }, 200);
+            // Resize after flex layout settles so mapbox canvas fills container
+            setTimeout(function() { map.resize(); fitBounds(data.polyline); }, 300);
         });
 
         // Re-add layers after style change
