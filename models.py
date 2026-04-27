@@ -341,11 +341,11 @@ def get_all_riders_with_career_stats(current_season_id=None):
                COALESCE(SUM(ri.distance_km) FILTER (
                    WHERE rr.status = %s AND ri.season_id = %s
                ), 0) as season_kms,
-               -- SR progress: which distances completed this season
-               BOOL_OR(ri.distance_km = 200 AND rr.status = %s AND ri.season_id = %s) as sr_200,
-               BOOL_OR(ri.distance_km = 300 AND rr.status = %s AND ri.season_id = %s) as sr_300,
-               BOOL_OR(ri.distance_km = 400 AND rr.status = %s AND ri.season_id = %s) as sr_400,
-               BOOL_OR(ri.distance_km = 600 AND rr.status = %s AND ri.season_id = %s) as sr_600
+               -- SR progress: count of each distance completed this season
+               COUNT(DISTINCT rr.ride_id) FILTER (WHERE ri.distance_km >= 200 AND ri.distance_km < 300 AND rr.status = %s AND ri.season_id = %s) as sr_200,
+               COUNT(DISTINCT rr.ride_id) FILTER (WHERE ri.distance_km >= 300 AND ri.distance_km < 400 AND rr.status = %s AND ri.season_id = %s) as sr_300,
+               COUNT(DISTINCT rr.ride_id) FILTER (WHERE ri.distance_km >= 400 AND ri.distance_km < 600 AND rr.status = %s AND ri.season_id = %s) as sr_400,
+               COUNT(DISTINCT rr.ride_id) FILTER (WHERE ri.distance_km >= 600 AND rr.status = %s AND ri.season_id = %s) as sr_600
         FROM rider r
         LEFT JOIN rider_profile rp ON r.id = rp.rider_id
         LEFT JOIN strava_connection sc ON r.id = sc.rider_id
