@@ -774,7 +774,7 @@
             {{ event.route_name }}{% if event.ride_type %} <span style="color:var(--text-light);font-size:0.75rem;font-weight:600;white-space:nowrap;">[{{ event.ride_type }}]</span>{% endif %}
         </span>
         {% if can_edit_rides %}
-        <button onclick="openEditModal({{ event.id }}, '{{ event.route_name|replace("'", "\\'") }}', '{{ event.rwgps_url|replace("'", "\\'")|default('', true) }}', {{ event.ride_plan_id|default('null', true) }}, '{{ event.start_time|replace("'", "\\'")|default('', true) }}', '{{ event.start_location|replace("'", "\\'")|default('', true) }}', {{ event.time_limit_hours|default('null', true) }}, '{{ event.date }}', '{{ event.rwgps_url_team|replace("'", "\\'")|default('', true) }}')"
+        <button onclick="openEditModal({{ event.id }}, '{{ event.route_name|replace("'", "\\'") }}', '{{ event.rwgps_url|replace("'", "\\'")|default('', true) }}', {{ event.ride_plan_id|default('null', true) }}, '{{ (event.plan_start_time or event.start_time or '')|replace("'", "\\'") }}', '{{ event.start_location|replace("'", "\\'")|default('', true) }}', {{ event.time_limit_hours|default('null', true) }}, '{{ event.date }}', '{{ (event.plan_rwgps_url_team or '')|replace("'", "\\'") }}')"
                 style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;color:#6d28d9;font-size:0.85rem;transition:transform 0.2s,color 0.2s;"
                 onmouseover="this.style.transform='scale(1.15)';this.style.color='#5b21b6';"
                 onmouseout="this.style.transform='scale(1)';this.style.color='#6d28d9';"
@@ -997,7 +997,7 @@
                         </div>
                         <div>
                             <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.85rem;">Start Time</label>
-                            <input type="time" id="edit-start-time" name="start_time"
+                            <input type="text" id="edit-start-time" name="start_time" placeholder="06:00" pattern="[0-2]?[0-9]:[0-5][0-9]"
                                    style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;">
                         </div>
                     </div>
