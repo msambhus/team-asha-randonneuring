@@ -167,7 +167,7 @@ def get_rides_for_season(season_id):
                COALESCE(rp.name, ri.name) as name,
                COALESCE(rp.distance_km, ri.distance_km) as distance_km,
                COALESCE(rp.total_elevation_ft, ri.elevation_ft) as elevation_ft,
-               COALESCE(ROUND(rp.total_distance_miles::numeric, 1), ri.distance_miles) as distance_miles,
+               COALESCE(rp.total_distance_miles, ri.distance_miles) as distance_miles,
                c.code as club_code,
                c.name as club_name,
                c.region as region,
@@ -192,7 +192,7 @@ def get_ride_by_id(ride_id):
                COALESCE(rp.name, ri.name) as name,
                COALESCE(rp.distance_km, ri.distance_km) as distance_km,
                COALESCE(rp.total_elevation_ft, ri.elevation_ft) as elevation_ft,
-               COALESCE(ROUND(rp.total_distance_miles::numeric, 1), ri.distance_miles) as distance_miles,
+               COALESCE(rp.total_distance_miles, ri.distance_miles) as distance_miles,
                c.code as club_code,
                c.name as club_name,
                c.region as region,
@@ -664,7 +664,7 @@ def get_all_upcoming_events():
                COALESCE(rp.name, ri.name) as route_name,
                COALESCE(rp.distance_km, ri.distance_km) as distance_km,
                COALESCE(rp.total_elevation_ft, ri.elevation_ft) as elevation_ft,
-               COALESCE(ROUND(rp.total_distance_miles::numeric, 1), ri.distance_miles) as distance_miles,
+               COALESCE(rp.total_distance_miles, ri.distance_miles) as distance_miles,
                c.code as club_code,
                c.name as club_name,
                c.region as region,
@@ -1195,9 +1195,9 @@ def create_ride(season_id, club_id, name, ride_type, ride_date, distance_km,
     plan_id = matched_plan['id'] if matched_plan else None
 
     cur.execute("""INSERT INTO ride (season_id, club_id, name, ride_type, date, distance_km,
-                  elevation_ft, distance_miles, ft_per_mile, rwgps_url, is_team_ride,
+                  elevation_ft, distance_miles, ft_per_mile, rwgps_url,
                   ride_plan_id)
-                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s)
+                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                   RETURNING id""",
                (season_id, club_id, name, ride_type, ride_date, distance_km,
                 elevation_ft, distance_miles, ft_per_mile, rwgps_url, plan_id))
