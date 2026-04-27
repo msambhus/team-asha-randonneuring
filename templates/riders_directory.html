@@ -55,10 +55,9 @@
     <td style="padding:10px 12px;text-align:center;">
         {% if r.season_rides > 0 %}
         <div style="display:flex;gap:3px;justify-content:center;">
-            <span style="display:inline-block;width:28px;text-align:center;font-size:0.7rem;font-weight:600;padding:2px 0;border-radius:3px;{% if r.sr_200 %}background:#dcfce7;color:#16a34a;{% else %}background:#f1f5f9;color:#cbd5e1;{% endif %}">2</span>
-            <span style="display:inline-block;width:28px;text-align:center;font-size:0.7rem;font-weight:600;padding:2px 0;border-radius:3px;{% if r.sr_300 %}background:#dcfce7;color:#16a34a;{% else %}background:#f1f5f9;color:#cbd5e1;{% endif %}">3</span>
-            <span style="display:inline-block;width:28px;text-align:center;font-size:0.7rem;font-weight:600;padding:2px 0;border-radius:3px;{% if r.sr_400 %}background:#dcfce7;color:#16a34a;{% else %}background:#f1f5f9;color:#cbd5e1;{% endif %}">4</span>
-            <span style="display:inline-block;width:28px;text-align:center;font-size:0.7rem;font-weight:600;padding:2px 0;border-radius:3px;{% if r.sr_600 %}background:#dcfce7;color:#16a34a;{% else %}background:#f1f5f9;color:#cbd5e1;{% endif %}">6</span>
+            {% for dist, label in [(r.sr_200, '2'), (r.sr_300, '3'), (r.sr_400, '4'), (r.sr_600, '6')] %}
+            <span style="display:inline-block;width:28px;text-align:center;font-size:0.7rem;font-weight:600;padding:2px 0;border-radius:3px;position:relative;{% if dist %}background:#dcfce7;color:#16a34a;{% else %}background:#f1f5f9;color:#cbd5e1;{% endif %}">{{ label }}{% if dist > 1 %}<sup style="position:absolute;top:-4px;right:1px;font-size:0.5rem;font-weight:700;">{{ dist }}</sup>{% endif %}</span>
+            {% endfor %}
         </div>
         {% if r.sr_200 and r.sr_300 and r.sr_400 and r.sr_600 %}
         <div style="font-size:0.65rem;color:#16a34a;font-weight:700;margin-top:2px;">SR</div>
