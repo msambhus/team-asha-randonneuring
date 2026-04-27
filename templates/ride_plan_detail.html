@@ -1022,9 +1022,8 @@
         <span>🗺️</span>
         <span>Journey</span>
     </a>
-    {% set strava_event = upcoming_event or recent_past_event %}
-    {% if session.user_id and strava_event %}
-    <a href="{{ url_for('riders.ride_all_strava_analysis', ride_id=strava_event.id) }}" class="quick-action-btn"
+    {% if session.user_id and recent_past_event %}
+    <a href="{{ url_for('riders.ride_all_strava_analysis', ride_id=recent_past_event.id) }}" class="quick-action-btn"
        style="background:linear-gradient(135deg,#fff5f0,#fed7aa);border-color:#fc4c02;color:#9a3412;">
         <span>📊</span>
         <span>All Riders' Strava Analysis</span>
