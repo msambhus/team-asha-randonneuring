@@ -162,7 +162,7 @@
     border-bottom: 1px solid var(--border);
     background: #f8fafc;
 }
-#wind-map { flex: 1; min-height: 500px; width: 100%; position: relative; }
+#wind-map { width: 100%; position: relative; }
 .map-section { display: flex; flex-direction: column; }
 
 /* Style switcher */
@@ -320,7 +320,7 @@
                 <div class="legend-item" style="margin-left:auto; color:var(--text-light);">Arrow size = wind speed</div>
             </div>
         </div>
-        <div style="display:flex;flex-direction:column;gap:16px;">
+        <div id="map-right-col" style="display:flex;flex-direction:column;gap:16px;">
             <div class="chart-card">
                 <h4>Wind <span style="font-weight:400;font-size:0.7rem;color:var(--text-light);">— total wind speed</span></h4>
                 <canvas id="chartWind"></canvas>
@@ -912,8 +912,19 @@
         map.on('load', function() {
             addAllLayers(data);
             fitBounds(data.polyline);
-            // Resize after flex layout computes the container height
-            setTimeout(function() { map.resize(); fitBounds(data.polyline); }, 100);
+            // Set map height to match the right column, then resize canvas
+            setTimeout(function() {
+                var rightCol = document.getElementById('map-right-col');
+                var mapEl = document.getElementById('wind-map');
+                var h3El = document.querySelector('#map-section h3');
+                var legendEl = document.querySelector('.map-legend');
+                if (rightCol && mapEl) {
+                    var chrome = (h3El ? h3El.offsetHeight : 0) + (legendEl ? legendEl.offsetHeight : 0);
+                    mapEl.style.height = Math.max(450, rightCol.offsetHeight - chrome) + 'px';
+                }
+                map.resize();
+                fitBounds(data.polyline);
+            }, 200);
         });
 
         // Re-add layers after style change
