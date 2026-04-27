@@ -157,9 +157,17 @@ def get_active_riders_for_season(season_id):
 
 @cache.memoize(CACHE_TIMEOUT)
 def get_rides_for_season(season_id):
-    """Get all rides for a season with club info."""
+    """Get all rides for a season with club info.
+
+    When a ride is linked to a ride_plan, prefers plan name/distance/elevation
+    over ride-level values (avoids stale RUSA-scraped data).
+    """
     return _execute("""
         SELECT ri.*,
+               COALESCE(rp.name, ri.name) as name,
+               COALESCE(rp.distance_km, ri.distance_km) as distance_km,
+               COALESCE(rp.total_elevation_ft, ri.elevation_ft) as elevation_ft,
+               COALESCE(ROUND(rp.total_distance_miles::numeric, 1), ri.distance_miles) as distance_miles,
                c.code as club_code,
                c.name as club_name,
                c.region as region,
@@ -175,15 +183,25 @@ def get_rides_for_season(season_id):
 
 @cache.memoize(CACHE_TIMEOUT)
 def get_ride_by_id(ride_id):
-    """Get a single ride by ID with club info."""
+    """Get a single ride by ID with club info.
+
+    Prefers ride_plan name/distance/elevation when linked.
+    """
     return _execute("""
-        SELECT ri.*, 
-               c.code as club_code, 
+        SELECT ri.*,
+               COALESCE(rp.name, ri.name) as name,
+               COALESCE(rp.distance_km, ri.distance_km) as distance_km,
+               COALESCE(rp.total_elevation_ft, ri.elevation_ft) as elevation_ft,
+               COALESCE(ROUND(rp.total_distance_miles::numeric, 1), ri.distance_miles) as distance_miles,
+               c.code as club_code,
                c.name as club_name,
                c.region as region,
+               rp.slug as plan_slug,
+               rp.start_time as plan_start_time,
                (c.code = 'TA') as is_team_ride
-        FROM ride ri 
+        FROM ride ri
         INNER JOIN club c ON ri.club_id = c.id
+        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE ri.id = %s
     """, (ride_id,)).fetchone()
 
@@ -643,12 +661,16 @@ def get_all_upcoming_events():
     today = date.today()
     events = _execute("""
         SELECT ri.*,
+               COALESCE(rp.name, ri.name) as route_name,
+               COALESCE(rp.distance_km, ri.distance_km) as distance_km,
+               COALESCE(rp.total_elevation_ft, ri.elevation_ft) as elevation_ft,
+               COALESCE(ROUND(rp.total_distance_miles::numeric, 1), ri.distance_miles) as distance_miles,
                c.code as club_code,
                c.name as club_name,
                c.region as region,
                rp.slug as plan_slug,
-               ri.rwgps_url_team as plan_rwgps_url_team,
-               ri.start_time as plan_start_time,
+               rp.rwgps_url_team as plan_rwgps_url_team,
+               rp.start_time as plan_start_time,
                rp.avg_elapsed_speed as plan_avg_speed,
                (c.code = 'TA') as is_team_ride,
                (SELECT COUNT(*) FROM rider_ride rr WHERE rr.ride_id = ri.id AND rr.signed_up_at IS NOT NULL) as signup_count
