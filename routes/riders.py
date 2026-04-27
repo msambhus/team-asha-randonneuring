@@ -1047,11 +1047,25 @@ def ride_strava_analysis(rusa_id, ride_id):
     plan_start_time = ride.get('plan_start_time')
     actual_start_time = match.get('start_date_local')
 
+    # Ensure base plan stops have cumulative times (recalculate if missing)
+    base_for_comparison = None
+    if has_custom and plan_stops:
+        base_for_comparison = []
+        cum = 0
+        for s in plan_stops:
+            sd = dict(s)
+            seg = int(sd.get('segment_time_min') or 0)
+            stop_dur = int(sd.get('stop_duration_min') or 0)
+            cum += seg + stop_dur
+            if not sd.get('cum_time_min'):
+                sd['cum_time_min'] = cum
+            base_for_comparison.append(sd)
+
     comparison = build_comparison(
         plan_stops=primary_stops,
         detected_stops=analysis['detected_stops'],
         activity=dict(match),
-        custom_stops=plan_stops if has_custom else None,
+        custom_stops=base_for_comparison,
         plan_start_time=plan_start_time,
         actual_start_time=actual_start_time,
         streams=analysis.get('streams'),

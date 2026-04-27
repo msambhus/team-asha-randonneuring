@@ -558,11 +558,12 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         if ds.get('matched_stop_name'):
             matched_stops_by_name[ds['matched_stop_name']] = ds
 
-    # Build custom stop lookup if available
+    # Build custom stop lookup if available (keyed by rounded distance for fuzzy match)
     custom_by_dist = {}
-    if custom_stops:
-        for cs in custom_stops:
-            dist = float(cs.get('distance_miles') or 0)
+    custom_stops_list = list(custom_stops) if custom_stops else []
+    if custom_stops_list:
+        for cs in custom_stops_list:
+            dist = round(float(cs.get('distance_miles') or 0), 1)
             custom_by_dist[dist] = cs
 
     # Build comparison rows from plan stops
@@ -617,8 +618,8 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
 
         # Custom plan data (base plan when custom exists, via the swap)
         custom_data = None
-        if custom_stops:
-            cs = custom_by_dist.get(distance_miles)
+        if custom_stops_list:
+            cs = custom_by_dist.get(round(distance_miles, 1))
             if cs:
                 cs_seg_time = cs.get('segment_time_min') or 0
                 cs_seg_dist = float(cs.get('seg_dist') or 0)
