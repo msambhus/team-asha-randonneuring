@@ -1047,18 +1047,25 @@ def ride_strava_analysis(rusa_id, ride_id):
     plan_start_time = ride.get('plan_start_time')
     actual_start_time = match.get('start_date_local')
 
-    # Ensure base plan stops have cumulative times (recalculate if missing)
+    # Always recalculate base plan cumulative times (DB values may be stale
+    # or may not include stop_duration_min). Same logic as ride_plan_detail.
     base_for_comparison = None
     if has_custom and plan_stops:
         base_for_comparison = []
         cum = 0
+        prev_dist = 0.0
         for s in plan_stops:
             sd = dict(s)
-            seg = int(sd.get('segment_time_min') or 0)
-            stop_dur = int(sd.get('stop_duration_min') or 0)
-            cum += seg + stop_dur
-            if not sd.get('cum_time_min'):
-                sd['cum_time_min'] = cum
+            sd['distance_miles'] = float(sd['distance_miles']) if sd.get('distance_miles') is not None else 0
+            sd['segment_time_min'] = int(sd.get('segment_time_min') or 0)
+            sd['stop_duration_min'] = int(sd.get('stop_duration_min') or 0)
+            sd['seg_dist'] = round(sd['distance_miles'] - prev_dist, 1)
+
+            cum += sd['segment_time_min'] + sd['stop_duration_min']
+            sd['cum_time_min'] = cum
+            sd['arrival_time_min'] = cum - sd['stop_duration_min']
+
+            prev_dist = sd['distance_miles']
             base_for_comparison.append(sd)
 
     comparison = build_comparison(
