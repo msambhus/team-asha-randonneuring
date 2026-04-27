@@ -149,13 +149,21 @@
 @media (max-width: 768px) {
     .map-charts-row { grid-template-columns: 1fr; }
 }
-#wind-map {
-    width: 100%;
-    position: relative;
+.map-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
     border-radius: 12px;
     overflow: hidden;
-    border: 1px solid var(--border);
 }
+.map-section h3 {
+    margin: 0;
+    padding: 14px 20px;
+    font-size: 1rem;
+    border-bottom: 1px solid var(--border);
+    background: #f8fafc;
+}
+#wind-map { flex: 1; min-height: 400px; width: 100%; position: relative; }
+.map-section { display: flex; flex-direction: column; }
 
 /* Style switcher */
 .map-style-switcher {
@@ -295,12 +303,21 @@
 
     {# Row 1: Map (left) + Wind & Headwind charts (right) #}
     <div class="map-charts-row" id="map-charts-row">
-        <div id="wind-map">
-            <div class="map-style-switcher" id="styleSwitcher">
-                <button class="map-style-btn active" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
-                <button class="map-style-btn" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
-                <button class="map-style-btn" data-style="mapbox://styles/mapbox/light-v11">Light</button>
-                <button class="map-style-btn" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite</button>
+        <div class="map-section" id="map-section">
+            <h3>Wind Map</h3>
+            <div id="wind-map">
+                <div class="map-style-switcher" id="styleSwitcher">
+                    <button class="map-style-btn active" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
+                    <button class="map-style-btn" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
+                    <button class="map-style-btn" data-style="mapbox://styles/mapbox/light-v11">Light</button>
+                    <button class="map-style-btn" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite</button>
+                </div>
+            </div>
+            <div class="map-legend">
+                <div class="legend-item"><div class="legend-dot" style="background:#ef4444;"></div> Headwind</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#22c55e;"></div> Tailwind</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;"></div> Crosswind / Light</div>
+                <div class="legend-item" style="margin-left:auto; color:var(--text-light);">Arrow size = wind speed</div>
             </div>
         </div>
         <div id="map-right-col" style="display:flex;flex-direction:column;gap:16px;">
@@ -313,12 +330,6 @@
                 <canvas id="chartHeadwind"></canvas>
             </div>
         </div>
-    </div>
-    <div class="map-legend" id="map-legend" style="display:none;">
-        <div class="legend-item"><div class="legend-dot" style="background:#ef4444;"></div> Headwind</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#22c55e;"></div> Tailwind</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;"></div> Crosswind / Light</div>
-        <div class="legend-item" style="margin-left:auto; color:var(--text-light);">Arrow size = wind speed</div>
     </div>
 
     {# Row 2: Precip+Humidity (left) | Elevation+Temperature (right) #}
@@ -467,8 +478,8 @@
     // ── Render ─────────────────────────────────────────────
     function renderResults(data) {
         renderSummary(data);
-        renderMap(data);
         renderCharts(data);
+        renderMap(data);
         renderTable(data);
         if (data.attribution) {
             var el = document.getElementById('attribution');
@@ -874,18 +885,8 @@
             return;
         }
 
+        document.getElementById('map-section').style.display = 'block';
         currentMapData = data;
-
-        // Set map height to match the right column BEFORE creating mapbox
-        var rightCol = document.getElementById('map-right-col');
-        var mapEl = document.getElementById('wind-map');
-        if (rightCol && mapEl) {
-            mapEl.style.height = Math.max(500, rightCol.offsetHeight) + 'px';
-        } else {
-            mapEl.style.height = '500px';
-        }
-
-        document.getElementById('map-legend').style.display = 'flex';
 
         mapboxgl.accessToken = MAPBOX_TOKEN;
 
@@ -903,7 +904,7 @@
                 data.polyline.forEach(function(p) { b.extend([p[1], p[0]]); });
                 return b;
             })(),
-            fitBoundsOptions: { padding: 40 },
+            fitBoundsOptions: { padding: 60 },
         });
         map.addControl(new mapboxgl.NavigationControl(), 'top-right');
         map.addControl(new mapboxgl.FullscreenControl(), 'top-right');
@@ -911,6 +912,8 @@
         map.on('load', function() {
             addAllLayers(data);
             fitBounds(data.polyline);
+            // Resize after flex layout settles so mapbox canvas fills container
+            setTimeout(function() { map.resize(); fitBounds(data.polyline); }, 300);
         });
 
         // Re-add layers after style change
