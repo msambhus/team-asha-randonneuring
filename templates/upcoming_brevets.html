@@ -732,7 +732,7 @@
 
 <div id="events-container">
 {% for event in rusa_events %}
-<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.start_time or '07:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-plan-avg-speed="{{ event.plan_avg_speed or '' }}" data-plan-slug="{{ event.plan_slug or '' }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
+<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.plan_start_time or event.start_time or '06:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-plan-avg-speed="{{ event.plan_avg_speed or '' }}" data-plan-slug="{{ event.plan_slug or '' }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
 
     <div class="event-date">
         <div class="event-day">{{ event.date_str[8:10] }}</div>
@@ -813,10 +813,11 @@
         {% endif %}
     </div>
 
-    {% if event.start_time or event.time_limit_hours or event.start_location %}
+    {% set display_start_time = event.plan_start_time or event.start_time %}
+    {% if display_start_time or event.time_limit_hours or event.start_location %}
     <div class="event-details-info">
-        {% if event.start_time %}
-        <div><strong>Start:</strong> {{ event.start_time }}</div>
+        {% if display_start_time %}
+        <div><strong>Start:</strong> {{ display_start_time }}</div>
         {% endif %}
         {% if event.time_limit_hours %}
         <div><strong>Time Limit:</strong> {{ event.time_limit_hours }}h</div>
