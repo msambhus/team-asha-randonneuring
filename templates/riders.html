@@ -124,6 +124,18 @@
   border-left: 2px solid var(--ta-primary-dark);
   box-shadow: -2px 0 4px rgba(0,0,0,0.04);
 }
+
+/* Sortable header affordance — applies to .mx-h-rider and .mx-h-totals */
+.mx-sortable { cursor: pointer; user-select: none; }
+.mx-sortable:hover { background: var(--ta-primary-dark); }
+.mx-sortable:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }
+.mx-sort-ind {
+  display: inline-block; margin-left: 4px;
+  font-size: 0.7em; opacity: 0.45; transition: opacity 0.1s;
+}
+.mx-sortable.sort-active .mx-sort-ind { opacity: 1; }
+.mx-sort-ind::before { content: '\25B2\FE0E'; }
+.mx-sortable.sort-desc .mx-sort-ind::before { content: '\25BC\FE0E'; }
 .mx-h-accent {
   position: absolute; top: 0; left: 0; right: 0; height: 3px;
 }
@@ -583,7 +595,7 @@
            data-totals-w="{{ totals_w }}" data-km-w="{{ km_w }}">
 
         {# ---- Header row ---- #}
-        <div class="mx-h-rider">Rider</div>
+        <div class="mx-h-rider mx-sortable" data-sort-key="name" tabindex="0" role="button" aria-label="Sort by rider name">Rider <span class="mx-sort-ind"></span></div>
         {% set ride_idx = namespace(i=0) %}
         {% for g in ns.groups %}
           {% if not loop.first %}<div class="mx-h-gap"></div>{% endif %}
@@ -605,13 +617,17 @@
           {% set ride_idx.i = ride_idx.i + 1 %}
           {% endfor %}
         {% endfor %}
-        <div class="mx-h-totals rides" style="right: {{ km_w }}px;">Rides</div>
-        <div class="mx-h-totals" style="right:0;">KM</div>
+        <div class="mx-h-totals rides mx-sortable" data-sort-key="rides" tabindex="0" role="button" aria-label="Sort by rides" style="right: {{ km_w }}px;">Rides <span class="mx-sort-ind"></span></div>
+        <div class="mx-h-totals mx-sortable" data-sort-key="kms" tabindex="0" role="button" aria-label="Sort by kilometers" style="right:0;">KM <span class="mx-sort-ind"></span></div>
 
         {# ---- Data rows ---- #}
         {% for rd in riders %}
         {% set row_bg = '#fafbfc' if loop.index0 % 2 else '#fff' %}
-        <div class="mx-row" data-row="{{ loop.index0 }}" data-name="{{ rd.rider.first_name|lower }} {{ rd.rider.last_name|lower }} {{ rd.rider.rusa_id }}" style="display:contents;">
+        <div class="mx-row" data-row="{{ loop.index0 }}"
+             data-name="{{ rd.rider.first_name|lower }} {{ rd.rider.last_name|lower }} {{ rd.rider.rusa_id }}"
+             data-sort-name="{{ rd.rider.first_name|lower }} {{ rd.rider.last_name|lower }}"
+             data-sort-rides="{{ rd.rides }}" data-sort-kms="{{ rd.kms }}"
+             style="display:contents;">
           <div class="mx-rider" style="background:{{ row_bg }};">
             {# avatar tint hash #}
             {% set hue = (rd.rider.first_name + rd.rider.last_name)|hash if false else range(0, 360)|random %}
@@ -876,6 +892,59 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (searchInput) {
     searchInput.addEventListener('input', (e) => applyFilter(e.target.value));
+  }
+
+  /* ---- Matrix sort (Rider name, Rides, KM) ---- */
+  if (grid) {
+    const sortHeaders = grid.querySelectorAll('.mx-sortable');
+    let sortState = { key: 'name', dir: 'asc' };
+
+    function applySort() {
+      const rows = Array.from(grid.querySelectorAll('.mx-row'));
+      const dataKey = 'sort' + sortState.key.charAt(0).toUpperCase() + sortState.key.slice(1);
+      const isNumeric = sortState.key !== 'name';
+      rows.sort((a, b) => {
+        let av = a.dataset[dataKey] || '';
+        let bv = b.dataset[dataKey] || '';
+        if (isNumeric) { av = parseFloat(av) || 0; bv = parseFloat(bv) || 0; return sortState.dir === 'asc' ? av - bv : bv - av; }
+        if (av < bv) return sortState.dir === 'asc' ? -1 : 1;
+        if (av > bv) return sortState.dir === 'asc' ? 1 : -1;
+        return 0;
+      });
+      // Reattach in new order. Background stripe is row-index based, so we need
+      // to recompute it after sort.
+      rows.forEach((row, i) => {
+        grid.appendChild(row);
+        const bg = (i % 2) ? '#fafbfc' : '#fff';
+        row.querySelectorAll('.mx-rider, .mx-cell:not(.mx-cell-gap), .mx-totals').forEach(el => {
+          el.style.background = bg;
+        });
+      });
+      sortHeaders.forEach(h => {
+        const active = h.dataset.sortKey === sortState.key;
+        h.classList.toggle('sort-active', active);
+        h.classList.toggle('sort-desc', active && sortState.dir === 'desc');
+      });
+    }
+
+    sortHeaders.forEach(h => {
+      const handler = () => {
+        const k = h.dataset.sortKey;
+        if (sortState.key === k) {
+          sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortState.key = k;
+          sortState.dir = (k === 'name') ? 'asc' : 'desc';
+        }
+        applySort();
+      };
+      h.addEventListener('click', handler);
+      h.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); }
+      });
+    });
+
+    applySort();
   }
 
   /* ---- Times toggle (hide finish-time text in matrix) ---- */
