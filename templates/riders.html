@@ -83,7 +83,7 @@
 .matrix-wrap {
   background: #fff; border: 1px solid var(--ta-border);
   border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-  overflow: auto; max-height: calc(100vh - 80px); position: relative;
+  overflow-x: auto; overflow-y: visible; position: relative;
 }
 .matrix-grid {
   display: grid; min-width: max-content;
@@ -195,7 +195,7 @@
 }
 .mx-pill {
   padding: 4px 7px; border-radius: 6px;
-  font-size: 0.84rem; font-weight: 700;
+  font-size: 0.84rem; font-weight: 500;
   font-variant-numeric: tabular-nums; line-height: 1;
 }
 .mx-pill.t { font-size: 0.78rem; }
@@ -241,7 +241,7 @@
   position: sticky; z-index: 11;
   height: 48px; display: flex; align-items: center; justify-content: center;
   border-bottom: 1px solid #edf0f4;
-  font-size: 0.95rem; font-weight: 800; color: var(--ta-primary);
+  font-size: 0.95rem; font-weight: 500; color: var(--ta-primary);
   font-variant-numeric: tabular-nums;
   transition: background 0.1s;
 }
@@ -550,8 +550,8 @@
     {% else %}
 
     {% set rider_col_w = 220 %}
-    {% set totals_w = 72 %}
-    {% set km_w = 88 %}
+    {% set totals_w = 52 %}
+    {% set km_w = 64 %}
     {% set cell_w = 64 %}
     {% set group_gap = 8 %}
 
@@ -599,7 +599,7 @@
             {% else %}
             <span class="mx-h-name">{{ ride.name }}</span>
             {% endif %}
-            <div class="mx-h-date">{{ ride.date }}</div>
+            <div class="mx-h-date">{{ ride.date.strftime('%m-%d-%y') if ride.date.strftime is defined else ride.date }}</div>
             <span class="mx-h-chip {{ dc }}">{{ g.km }}K</span>
           </div>
           {% set ride_idx.i = ride_idx.i + 1 %}
