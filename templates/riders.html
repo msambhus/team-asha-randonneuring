@@ -719,8 +719,8 @@
             {% set _ = dnfs.append({'rd': rd, 'status': status}) %}
           {% endif %}
         {% endfor %}
-        {# Sort finishers by time string (good enough for HH:MM ordering) #}
-        {% set finishers_sorted = finishers|sort(attribute='time') %}
+        {# Sort finishers by time string (HH:MM); riders without a recorded time go last #}
+        {% set finishers_sorted = (finishers|selectattr('time')|sort(attribute='time')|list) + (finishers|rejectattr('time')|list) %}
 
         <article class="brevet-card">
           <header class="brevet-card-head {{ dc }}">
