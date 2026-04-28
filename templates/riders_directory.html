@@ -150,22 +150,20 @@
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   margin-left: auto; flex-shrink: 0;
 }
-.rd-sr-bars { display: flex; gap: 3px; padding-top: 10px; }
+.rd-sr-bars { display: flex; gap: 4px; }
 .rd-sr-bar {
-  width: 8px; height: 20px; border-radius: 2px;
-  background: #edf2f7; position: relative;
+  width: 16px; height: 22px; border-radius: 3px;
+  background: #edf2f7;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.62rem; font-weight: 800;
+  color: transparent;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
-.rd-sr-bar.is-200 { background: #48bb78; }
-.rd-sr-bar.is-300 { background: #4299e1; }
-.rd-sr-bar.is-400 { background: #ed8936; }
-.rd-sr-bar.is-600 { background: #e53e3e; }
-.rd-sr-mult {
-  position: absolute; top: -10px; right: -5px;
-  font-size: 0.58rem; font-weight: 800; color: var(--rd-text);
-  background: var(--rd-card); border: 1px solid var(--rd-border);
-  border-radius: 3px; padding: 1px 3px; line-height: 1;
-  white-space: nowrap;
-}
+.rd-sr-bar.is-200 { background: #48bb78; color: rgba(255,255,255,0.95); }
+.rd-sr-bar.is-300 { background: #4299e1; color: rgba(255,255,255,0.95); }
+.rd-sr-bar.is-400 { background: #ed8936; color: rgba(255,255,255,0.95); }
+.rd-sr-bar.is-600 { background: #e53e3e; color: rgba(255,255,255,0.95); }
 .rd-sr-label {
   font-size: 0.55rem; font-weight: 800; letter-spacing: 0.08em;
   color: var(--rd-muted);
@@ -354,7 +352,7 @@
     <header class="rd-hero">
       <div class="rd-eyebrow">Team Asha · Roster</div>
       <h1 class="rd-h1">Who&rsquo;s riding what</h1>
-      <p class="rd-sub">{{ riders|length }} riders &middot; tracking SR {{ sr_year_eff }} &amp; PBP {{ pbp_year_eff }} qualification</p>
+      <p class="rd-sub">{{ riders|length }} riders &middot; tracking SR {{ sr_year_eff }} &amp; PBP {{ pbp_year_eff }} qualification &middot; <a href="{{ url_for('riders.career_leaderboard') }}" style="color:var(--rd-primary);font-weight:600;text-decoration:underline;">Career leaderboard &rarr;</a></p>
     </header>
 
     {# ===== TOOLBAR ===== #}
@@ -410,9 +408,8 @@
             <div class="rd-sr-bars">
               {% for d, key in [(200,'sr_200'),(300,'sr_300'),(400,'sr_400'),(600,'sr_600')] %}
                 {% set n = r[key] or 0 %}
-                <span class="rd-sr-bar {% if n %}is-{{ d }}{% endif %}">
-                  {% if n > 1 %}<span class="rd-sr-mult">&times;{{ n }}</span>{% endif %}
-                </span>
+                <span class="rd-sr-bar {% if n %}is-{{ d }}{% endif %}"
+                      title="{{ d }}K {% if n %}× {{ n }} completed{% else %}— not yet{% endif %}">{% if n > 1 %}{{ n }}{% endif %}</span>
               {% endfor %}
             </div>
             <span class="rd-sr-label {% if sr_complete %}is-sr{% endif %}">
