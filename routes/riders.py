@@ -150,8 +150,13 @@ def season_riders(season_name):
                                upcoming_count=upcoming_count,
                                pbp_finishers=pbp_finishers)
     except Exception as e:
-        # Return mock data for testing without database
-        current_app.logger.warning("Database not available for riders page, using mock data: %s", e)
+        # Return mock data for testing without database. Log full traceback so
+        # production errors aren't silently swallowed.
+        current_app.logger.error(
+            "season_riders(%r) failed (%s: %s) — falling back to mock data",
+            season_name, type(e).__name__, e,
+            exc_info=True,
+        )
         mock_stats = {
             'active_riders': 25,
             'total_rides': 48,
