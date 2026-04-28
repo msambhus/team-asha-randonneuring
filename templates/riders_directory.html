@@ -10,8 +10,6 @@
         total_rides, total_kms, eddington_number_miles
         season_rides, season_kms
         sr_200, sr_300, sr_400, sr_600           (counts, not booleans)
-        r12_months : list of 12 ints (count of >=200k rides each rolling
-                     month going BACKWARDS — index 0 = current month, 11 = 11 months ago)
         upcoming   : list of {ride_id, name, date, distance_km, status, plan_slug}
                      ordered by date asc
     - season   : current season dict (.name, e.g. '2025-2026')
@@ -73,19 +71,6 @@
   background: var(--rd-bg); color: var(--rd-text);
 }
 .rd-search:focus { outline: 2px solid var(--rd-primary); outline-offset: -1px; background: #fff; }
-.rd-segment {
-  display: inline-flex; background: var(--rd-bg);
-  border-radius: 10px; padding: 3px;
-}
-.rd-seg-btn {
-  border: 0; background: transparent; padding: 7px 12px;
-  font-size: 0.8rem; font-weight: 600; color: var(--rd-muted);
-  border-radius: 7px; cursor: pointer; font-family: inherit;
-  transition: all 0.15s;
-}
-.rd-seg-btn:hover { color: var(--rd-text); }
-.rd-seg-btn.is-on { background: var(--rd-primary); color: #fff;
-  box-shadow: 0 1px 3px rgba(26,54,93,0.2); }
 
 /* Section header */
 .rd-section-h {
@@ -234,35 +219,6 @@
   font-weight: 600; font-size: 0.7rem;
 }
 
-/* R-12 strip */
-.rd-r12 {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 10px; background: var(--rd-bg);
-  border-radius: 8px; margin-bottom: 10px;
-  border: 1px solid #edf0f4;
-}
-.rd-r12-label {
-  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--rd-muted);
-  flex-shrink: 0;
-}
-.rd-r12-cells { display: flex; gap: 2px; flex: 1; }
-.rd-r12-cell {
-  flex: 1; height: 14px; border-radius: 2px;
-  background: #e2e8f0; position: relative;
-}
-.rd-r12-cell.is-done { background: var(--rd-primary); }
-.rd-r12-cell.is-current { box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 3px var(--rd-primary); }
-.rd-r12-count {
-  font-size: 0.7rem; font-weight: 800; color: var(--rd-primary);
-  font-variant-numeric: tabular-nums; flex-shrink: 0;
-  min-width: 28px; text-align: right;
-}
-.rd-r12-count.is-r12 {
-  color: #fff; background: linear-gradient(135deg,#d69e2e,#f6ad55);
-  padding: 2px 6px; border-radius: 4px; font-size: 0.62rem;
-  letter-spacing: 0.04em;
-}
 
 /* Upcoming pills */
 .rd-upcoming { display: flex; flex-direction: column; gap: 5px; }
@@ -377,18 +333,11 @@
     <header class="rd-hero">
       <div class="rd-eyebrow">Team Asha · Roster</div>
       <h1 class="rd-h1">Who&rsquo;s riding what</h1>
-      <p class="rd-sub">{{ riders|length }} riders &middot; tracking SR {{ sr_year_eff }}, R-12, &amp; PBP {{ pbp_year_eff }} qualification</p>
+      <p class="rd-sub">{{ riders|length }} riders &middot; tracking SR {{ sr_year_eff }} &amp; PBP {{ pbp_year_eff }} qualification</p>
     </header>
 
     {# ===== TOOLBAR ===== #}
-    <div class="rd-toolbar" role="toolbar" aria-label="Filter and sort riders">
-      <span class="rd-tlabel">Sort</span>
-      <div class="rd-segment" data-rd-sort>
-        <button type="button" class="rd-seg-btn is-on" data-sort="name">By name</button>
-        <button type="button" class="rd-seg-btn" data-sort="upcoming">Most upcoming</button>
-        <button type="button" class="rd-seg-btn" data-sort="seasonKms">Most season km</button>
-        <button type="button" class="rd-seg-btn" data-sort="careerKms">Most career km</button>
-      </div>
+    <div class="rd-toolbar" role="toolbar" aria-label="Filter riders">
       <input type="search" class="rd-search" data-rd-search
              placeholder="Search rider, RUSA #, brevet…" aria-label="Search riders" />
     </div>
@@ -409,19 +358,13 @@
       {% set going_count = (r.upcoming or [])|selectattr('status', 'equalto', 'GOING')|list|length %}
       {% set sr_done = ([r.sr_200, r.sr_300, r.sr_400, r.sr_600]|select|list|length) %}
       {% set sr_complete = (r.sr_200 and r.sr_300 and r.sr_400 and r.sr_600) %}
-      {% set r12_list = r.r12_months or [] %}
-      {% set r12_done = r12_list|select|list|length %}
       {% set hue = ((r.rusa_id or 0)|int) % 360 %}
 
       <a class="rd-card"
          href="{{ url_for('riders.rider_profile', rusa_id=r.rusa_id) }}"
          data-name="{{ (r.first_name ~ ' ' ~ r.last_name)|lower }}"
          data-rusa="{{ r.rusa_id or '' }}"
-         data-search="{{ (r.upcoming or [])|map(attribute='name')|join(' ')|lower }}"
-         data-sort-name="{{ (r.first_name or '')|lower }} {{ (r.last_name or '')|lower }}"
-         data-sort-upcoming="{{ going_count }}"
-         data-sort-season-kms="{{ r.season_kms or 0 }}"
-         data-sort-career-kms="{{ r.total_kms or 0 }}">
+         data-search="{{ (r.upcoming or [])|map(attribute='name')|join(' ')|lower }}">
 
         {# ----- Head: avatar / name+meta / SR ----- #}
         <div class="rd-head">
@@ -455,48 +398,33 @@
               {%- if sr_complete %}SR{% else %}SR {{ sr_done }}/4{% endif -%}
             </span>
           </div>
-          {% if r.eddington_number_miles %}
-          {% set e = r.eddington_number_miles %}
-          {% set next_e = e + 1 %}
-          {% set rides_at_next = r.eddington_next_count or 0 %}
-          {% set rides_needed = next_e - rides_at_next if next_e > rides_at_next else 0 %}
+          {% if r.eddington and r.eddington.miles %}
+          {% set edd = r.eddington %}
+          {% set e = edd.miles %}
+          {% set next_e = edd.next_target or (e + 1) %}
+          {% set days_completed = edd.days_completed %}
+          {% set days_needed = edd.days_needed %}
           <div class="rd-edd-head" tabindex="0">
             <span class="rd-edd-head-num">{{ e }}</span>
             <span class="rd-edd-head-lbl">Eddington</span>
             <div class="rd-edd-tip" role="tooltip">
               <div class="rd-edd-tip-h">Eddington Number</div>
-              You&rsquo;ve ridden <span class="rd-edd-tip-num">{{ e }}</span> rides of at least <span class="rd-edd-tip-num">{{ e }}&nbsp;mi</span> each.
+              {{ e }}+ miles on <span class="rd-edd-tip-num">{{ e }}+</span> different days.
+              {% if days_completed is not none %}
               <div class="rd-edd-tip-next">
                 Next milestone: <strong>E{{ next_e }}</strong> &mdash;
-                {% if rides_needed > 0 -%}
-                  <strong>{{ rides_needed }}</strong> more ride{{ '' if rides_needed == 1 else 's' }} of <strong>{{ next_e }}+&nbsp;mi</strong>
-                  ({{ rides_at_next }} of {{ next_e }} so far)
+                {% if days_needed and days_needed > 0 -%}
+                  <strong>{{ days_completed }}</strong> / {{ next_e }} days &middot;
+                  <strong>{{ days_needed }}</strong> more day{{ '' if days_needed == 1 else 's' }} of <strong>{{ next_e }}+&nbsp;mi</strong> needed
                 {%- else -%}
                   ready to advance once recorded
                 {%- endif -%}
               </div>
+              {% endif %}
             </div>
           </div>
           {% endif %}
         </div>
-
-        {# ----- R-12 strip (only for riders with 4+ months active) ----- #}
-        {% if r12_done >= 4 %}
-        <div class="rd-r12" title="R-12: at least one 200k brevet per rolling month for 12 months">
-          <span class="rd-r12-label">R-12</span>
-          <div class="rd-r12-cells">
-            {# r12_months[0] = current month, [11] = oldest. Render oldest -> newest left to right. #}
-            {% for i in range(11, -1, -1) %}
-              {% set v = r12_list[i] if i < r12_list|length else 0 %}
-              <span class="rd-r12-cell {% if v %}is-done{% endif %}{% if i == 0 %} is-current{% endif %}"
-                    title="{{ v }} ride{{ '' if v == 1 else 's' }} {{ i }} month{{ '' if i == 1 else 's' }} ago"></span>
-            {% endfor %}
-          </div>
-          <span class="rd-r12-count {% if r12_done >= 12 %}is-r12{% endif %}">
-            {%- if r12_done >= 12 %}R-12{% else %}{{ r12_done }}/12{% endif -%}
-          </span>
-        </div>
-        {% endif %}
 
         {# ----- Upcoming brevets ----- #}
         <div class="rd-track-h">
@@ -593,9 +521,8 @@
 {% block extra_js %}
 <script>
 (function () {
-  var search  = document.querySelector('[data-rd-search]');
-  var segment = document.querySelector('[data-rd-sort]');
-  var grids   = document.querySelectorAll('[data-rd-grid]');
+  var search = document.querySelector('[data-rd-search]');
+  var grids  = document.querySelectorAll('[data-rd-grid]');
 
   /* ---- Search filter ---- */
   function applyFilter() {
@@ -617,39 +544,6 @@
     });
   }
   if (search) search.addEventListener('input', applyFilter);
-
-  /* ---- Sort ---- */
-  function applySort(key) {
-    grids.forEach(function (grid) {
-      var cards = Array.prototype.slice.call(grid.querySelectorAll('.rd-card'));
-      cards.sort(function (a, b) {
-        if (key === 'name') {
-          return (a.dataset.sortName || '').localeCompare(b.dataset.sortName || '');
-        }
-        var propMap = { upcoming: 'sortUpcoming', seasonKms: 'sortSeasonKms', careerKms: 'sortCareerKms' };
-        var prop = propMap[key] || 'sortUpcoming';
-        var av = parseFloat(a.dataset[prop] || 0);
-        var bv = parseFloat(b.dataset[prop] || 0);
-        if (bv !== av) return bv - av;
-        return (a.dataset.sortName || '').localeCompare(b.dataset.sortName || '');
-      });
-      cards.forEach(function (c) { grid.appendChild(c); });
-    });
-  }
-
-  if (segment) {
-    segment.addEventListener('click', function (e) {
-      var btn = e.target.closest('.rd-seg-btn');
-      if (!btn) return;
-      segment.querySelectorAll('.rd-seg-btn').forEach(function (b) { b.classList.remove('is-on'); });
-      btn.classList.add('is-on');
-      applySort(btn.dataset.sort);
-    });
-  }
-
-  // Default: by first name (matches what the server-side already produced,
-  // but re-running keeps things deterministic if anyone tweaks the order).
-  applySort('name');
 
   /* ---- "+ N more" expand toggle (also stop it bubbling to the card link) ---- */
   document.addEventListener('click', function (e) {
