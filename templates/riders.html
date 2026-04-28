@@ -619,7 +619,7 @@
             {% set hue = (rd.rider.rusa_id|int) % 360 %}
             <div class="avatar" style="background:hsl({{ hue }},45%,88%);color:hsl({{ hue }},50%,28%);">{{ rd.rider.first_name[0] }}{{ rd.rider.last_name[0] }}</div>
             <a href="{{ url_for('riders.rider_profile', rusa_id=rd.rider.rusa_id) }}">{{ rd.rider.first_name }} {{ rd.rider.last_name }}</a>
-            {% if rd.sr_count > 0 %}<span class="sr-star" title="Super Randonneur{% if rd.sr_count > 1 %} &times; {{ rd.sr_count }}{% endif %}">&#9733;</span>{% endif %}
+            {% if rd.sr_count > 0 %}<span class="sr-star" title="Super Randonneur{% if rd.sr_count > 1 %} &times; {{ rd.sr_count }}{% endif %}">{% if rd.sr_count > 1 %}SR&times;{{ rd.sr_count }}{% else %}SR{% endif %}</span>{% endif %}
           </div>
 
           {% set ride_idx2 = namespace(i=0) %}
@@ -789,46 +789,6 @@
 
 </div>
 
-{# ===== PER-SEASON RIDER SUMMARY (past seasons only — kept from original) ===== #}
-{% if not is_current %}
-<div class="container section" style="padding-top:0;">
-  <h2>Rider Summary</h2>
-  <div class="table-wrap" style="margin-top:15px;">
-    <table id="summary-table">
-      <thead>
-        <tr>
-          <th class="sortable" data-sort="rider" data-type="text" style="min-width:200px;">Rider <span class="sort-icon"></span></th>
-          <th class="sortable" data-sort="rides" data-type="number" style="min-width:70px;text-align:center;">Rides <span class="sort-icon"></span></th>
-          <th class="sortable" data-sort="kms" data-type="number" style="min-width:90px;text-align:center;">Kilometers <span class="sort-icon"></span></th>
-          <th style="min-width:80px;text-align:center;">SR</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for rd in riders %}
-        <tr>
-          <td data-sort-value="{{ rd.rider.first_name }} {{ rd.rider.last_name }}">
-            <a href="{{ url_for('riders.rider_profile', rusa_id=rd.rider.rusa_id) }}" class="rider-link">{{ rd.rider.first_name }} {{ rd.rider.last_name }}</a>
-            <div style="font-size:0.75rem;color:var(--text-light);">RUSA# {{ rd.rider.rusa_id }}</div>
-          </td>
-          <td data-sort-value="{{ rd.rides }}" style="text-align:center;font-weight:700;">{{ rd.rides }}</td>
-          <td data-sort-value="{{ rd.kms }}" style="text-align:center;font-weight:700;">{{ rd.kms|commafy }}</td>
-          <td style="text-align:center;">
-            {% if rd.sr_count > 0 %}<span class="sr-badge">{% if rd.sr_count > 1 %}SR*{{ rd.sr_count }}{% else %}SR{% endif %}</span>{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-        <tr style="background:var(--primary);color:white;font-weight:700;">
-          <td style="border-bottom:none;">Total ({{ riders|length }} riders)</td>
-          <td style="text-align:center;border-bottom:none;">{{ stats.total_rides }}</td>
-          <td style="text-align:center;border-bottom:none;">{{ stats.total_kms|commafy }}</td>
-          <td style="text-align:center;border-bottom:none;">{% if stats.sr_rider_count > 0 %}{{ stats.sr_rider_count }}{% endif %}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
-
 {% endblock %}
 
 {% block extra_js %}
@@ -969,70 +929,4 @@ document.addEventListener('DOMContentLoaded', () => {
 })();
 </script>
 
-<script>
-/* ============================================================
-   Sortable Rider Summary table (kept for past seasons)
-   ============================================================ */
-(function() {
-  function initSortable(tableId) {
-    const table = document.getElementById(tableId);
-    if (!table) return;
-    const tbody = table.querySelector('tbody');
-    const headers = table.querySelectorAll('th.sortable');
-    let cur = { column: null, direction: 'asc' };
-
-    headers.forEach(h => {
-      h.style.cursor = 'pointer';
-      h.addEventListener('click', function () {
-        const sortKey = this.getAttribute('data-sort');
-        const sortType = this.getAttribute('data-type');
-        cur.direction = (cur.column === sortKey && cur.direction === 'asc') ? 'desc' : 'asc';
-        cur.column = sortKey;
-
-        headers.forEach(hh => {
-          const ic = hh.querySelector('.sort-icon');
-          if (hh === this) { ic.textContent = cur.direction === 'asc' ? ' \u25B2' : ' \u25BC'; ic.style.opacity = '1'; }
-          else { ic.textContent = ' \u25B2'; ic.style.opacity = '0.3'; }
-        });
-
-        const rows = Array.from(tbody.querySelectorAll('tr'));
-        const dataRows = rows.filter(r => !r.querySelector('td[colspan]') && !r.querySelector('td[style*="border-bottom:none"]'));
-        const totalRow = rows.find(r => r.querySelector('td[style*="border-bottom:none"]'));
-
-        dataRows.sort((a, b) => {
-          const aCells = a.querySelectorAll('[data-sort-value]');
-          const bCells = b.querySelectorAll('[data-sort-value]');
-          let aV, bV;
-          if (sortKey === 'rider') {
-            aV = (aCells[0]?.getAttribute('data-sort-value') || '').toLowerCase();
-            bV = (bCells[0]?.getAttribute('data-sort-value') || '').toLowerCase();
-          } else if (sortKey === 'rides') {
-            aV = parseInt(aCells[1]?.getAttribute('data-sort-value') || 0);
-            bV = parseInt(bCells[1]?.getAttribute('data-sort-value') || 0);
-          } else if (sortKey === 'kms') {
-            aV = parseInt(aCells[2]?.getAttribute('data-sort-value') || 0);
-            bV = parseInt(bCells[2]?.getAttribute('data-sort-value') || 0);
-          }
-          if (sortType === 'number') return cur.direction === 'asc' ? aV - bV : bV - aV;
-          if (aV < bV) return cur.direction === 'asc' ? -1 : 1;
-          if (aV > bV) return cur.direction === 'asc' ? 1 : -1;
-          return 0;
-        });
-        dataRows.forEach(r => tbody.appendChild(r));
-        if (totalRow) tbody.appendChild(totalRow);
-      });
-    });
-
-    headers.forEach(h => {
-      const ic = h.querySelector('.sort-icon');
-      if (ic) { ic.textContent = ' \u25B2'; ic.style.opacity = '0.3'; }
-    });
-  }
-  initSortable('summary-table');
-  document.querySelectorAll('#summary-table th.sortable[data-sort="rider"]').forEach(th => {
-    const ic = th.querySelector('.sort-icon');
-    if (ic) { ic.textContent = ' \u25B2'; ic.style.opacity = '1'; }
-  });
-})();
-</script>
 {% endblock %}
