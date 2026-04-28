@@ -8,6 +8,17 @@
    Drop-in replacement for the old wide horizontal-scroll table.
    ============================================================ */
 
+/* Break the participation section out of the 1200px container so the
+   matrix fills the viewport. Stats/PBP grid above stay inside the
+   default container width. */
+.season-wide {
+  max-width: none;
+  width: calc(100vw - 16px);
+  margin-left: calc(50% - 50vw + 8px);
+  margin-right: calc(50% - 50vw + 8px);
+  padding: 0 24px;
+}
+
 :root {
   --ta-primary: #1a365d;
   --ta-primary-dark: #2a4a7f;
@@ -75,7 +86,7 @@
 /* ===== Status row (count + scroll hint) ===== */
 .matrix-status {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 0 4px 8px; font-size: 0.72rem; color: var(--ta-text-light);
+  padding: 0 4px 8px; font-size: 0.85rem; color: var(--ta-text-light);
 }
 .matrix-status strong { color: var(--ta-text); font-variant-numeric: tabular-nums; }
 
@@ -94,10 +105,10 @@
 .mx-h {
   position: sticky; top: 0; z-index: 20;
   background: var(--ta-primary); color: #fff;
-  height: 110px; display: flex; flex-direction: column;
+  height: 124px; display: flex; flex-direction: column;
   align-items: center; justify-content: flex-end;
   padding: 8px 2px 6px;
-  border-right: 1px solid rgba(255,255,255,0.06);
+  border-right: 1px solid rgba(255,255,255,0.22);
   cursor: help; transition: background 0.15s;
   overflow: hidden;
 }
@@ -105,19 +116,19 @@
 .mx-h-rider {
   position: sticky; top: 0; left: 0; z-index: 30;
   background: var(--ta-primary); color: #fff;
-  height: 110px; padding: 0 14px;
+  height: 124px; padding: 0 14px;
   display: flex; align-items: flex-end; padding-bottom: 12px;
-  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.06em;
+  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em;
   text-transform: uppercase;
   border-right: 2px solid var(--ta-primary-dark);
   box-shadow: 2px 0 4px rgba(0,0,0,0.04);
 }
 .mx-h-totals {
-  position: sticky; top: 0; z-index: 21;
+  position: sticky; top: 0; z-index: 22;
   background: var(--ta-primary); color: #fff;
-  height: 110px; display: flex; align-items: flex-end;
+  height: 124px; display: flex; align-items: flex-end;
   justify-content: center; padding-bottom: 12px;
-  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.06em;
+  font-size: 0.74rem; font-weight: 700; letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 .mx-h-totals.rides {
@@ -129,34 +140,34 @@
 }
 .mx-h-name {
   writing-mode: vertical-rl; transform: rotate(180deg);
-  font-size: 0.65rem; font-weight: 600; color: #fff;
+  font-size: 0.78rem; font-weight: 600; color: #fff;
   text-decoration: none; line-height: 1.1;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-height: 60px; margin-bottom: 4px;
+  max-height: 72px; margin-bottom: 4px;
 }
 .mx-h-name:hover { text-decoration: underline; }
 .mx-h-date {
-  font-size: 0.56rem; color: rgba(255,255,255,0.6);
+  font-size: 0.66rem; color: rgba(255,255,255,0.7);
   font-weight: 600; letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums; margin-top: 4px;
   white-space: nowrap;
 }
 .mx-h-chip {
-  margin-top: 3px; color: #fff;
-  padding: 1px 5px; border-radius: 7px;
-  font-size: 0.53rem; font-weight: 800; letter-spacing: 0.03em;
+  margin-top: 4px; color: #fff;
+  padding: 2px 7px; border-radius: 8px;
+  font-size: 0.65rem; font-weight: 800; letter-spacing: 0.03em;
 }
 .mx-h-gap {
   position: sticky; top: 0; z-index: 19;
-  background: var(--ta-bg); height: 110px;
+  background: var(--ta-bg); height: 124px;
   border-bottom: 1px solid var(--ta-border);
 }
 
 /* Rider name cell (pinned left) */
 .mx-rider {
   position: sticky; left: 0; z-index: 10;
-  height: 40px; display: flex; align-items: center;
-  gap: 8px; padding: 0 12px;
+  height: 48px; display: flex; align-items: center;
+  gap: 10px; padding: 0 14px;
   border-bottom: 1px solid #edf0f4;
   border-right: 2px solid var(--ta-border);
   box-shadow: 2px 0 4px rgba(0,0,0,0.03);
@@ -164,27 +175,27 @@
   min-width: 0;
 }
 .mx-rider .avatar {
-  width: 26px; height: 26px; border-radius: 50%;
+  width: 30px; height: 30px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 0.62rem; flex-shrink: 0;
+  font-weight: 700; font-size: 0.72rem; flex-shrink: 0;
   letter-spacing: 0.02em;
 }
 .mx-rider a {
-  font-size: 0.78rem; font-weight: 600; color: var(--ta-primary);
+  font-size: 0.92rem; font-weight: 600; color: var(--ta-primary);
   text-decoration: none; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
 }
 .mx-rider a:hover { color: var(--ta-accent); text-decoration: underline; }
 .mx-rider .sr-star {
   background: linear-gradient(135deg,#d69e2e,#f6ad55);
-  color: #fff; padding: 0 5px; border-radius: 6px;
-  font-size: 0.56rem; font-weight: 800; letter-spacing: 0.04em;
+  color: #fff; padding: 1px 6px; border-radius: 6px;
+  font-size: 0.66rem; font-weight: 800; letter-spacing: 0.04em;
   flex-shrink: 0;
 }
 
 /* Result cells */
 .mx-cell {
-  height: 40px; display: flex; align-items: center; justify-content: center;
+  height: 48px; display: flex; align-items: center; justify-content: center;
   border-bottom: 1px solid #edf0f4;
   border-right: 1px solid #f1f4f7;
   transition: background 0.1s;
@@ -194,12 +205,12 @@
   border-bottom: 1px solid #edf0f4;
 }
 .mx-pill {
-  padding: 3px 5px; border-radius: 5px;
-  font-size: 0.72rem; font-weight: 700;
+  padding: 4px 7px; border-radius: 6px;
+  font-size: 0.84rem; font-weight: 700;
   font-variant-numeric: tabular-nums; line-height: 1;
 }
-.mx-pill.t { font-size: 0.66rem; }
-.mx-pill.dnf { background: #fefcbf; color: #744210; padding: 2px 5px; }
+.mx-pill.t { font-size: 0.78rem; }
+.mx-pill.dnf { background: #fefcbf; color: #744210; padding: 3px 6px; }
 .mx-dot-signup {
   width: 8px; height: 8px; border-radius: 50%;
   background: #dbeafe; border: 2px solid #1d4ed8;
@@ -239,9 +250,9 @@
 /* Totals cells (pinned right) */
 .mx-totals {
   position: sticky; z-index: 11;
-  height: 40px; display: flex; align-items: center; justify-content: center;
+  height: 48px; display: flex; align-items: center; justify-content: center;
   border-bottom: 1px solid #edf0f4;
-  font-size: 0.82rem; font-weight: 800; color: var(--ta-primary);
+  font-size: 0.95rem; font-weight: 800; color: var(--ta-primary);
   font-variant-numeric: tabular-nums;
   transition: background 0.1s;
 }
@@ -250,16 +261,13 @@
   box-shadow: -2px 0 4px rgba(0,0,0,0.03);
 }
 
-/* Compact density */
-.matrix-grid.compact .mx-h,
-.matrix-grid.compact .mx-h-rider,
-.matrix-grid.compact .mx-h-totals,
-.matrix-grid.compact .mx-h-gap { height: 96px; }
-.matrix-grid.compact .mx-rider,
-.matrix-grid.compact .mx-cell,
-.matrix-grid.compact .mx-totals { height: 32px; }
-.matrix-grid.compact .mx-rider .avatar { width: 20px; height: 20px; font-size: 0.55rem; }
-.matrix-grid.compact .mx-rider a { font-size: 0.74rem; }
+/* Empty state */
+.matrix-empty {
+  padding: 48px 24px; text-align: center;
+  color: var(--ta-text-light); background: #fff;
+  border: 1px dashed var(--ta-border); border-radius: 12px;
+}
+.matrix-empty strong { display: block; color: var(--ta-text); font-size: 1.05rem; margin-bottom: 6px; }
 
 /* ===== BY RIDER cards ===== */
 .rider-grid {
@@ -509,7 +517,7 @@
 {% endif %}
 
 {# ===== MAIN PARTICIPATION SECTION ===== #}
-<div class="container section">
+<div class="section season-wide">
   <h2>{% if is_current %}Rider Participation{% else %}Ride Details{% endif %}</h2>
 
   {# ===== TOOLBAR ===== #}
@@ -521,7 +529,6 @@
       <button type="button" class="view-pill" data-view="brevets">By Brevet</button>
     </div>
     <input type="search" class="season-search" placeholder="Search riders…" aria-label="Search riders">
-    <label class="toolbar-toggle" title="Compact density"><input type="checkbox" id="density-toggle"> Compact</label>
     <label class="toolbar-toggle" title="Show finish times in matrix"><input type="checkbox" id="times-toggle" checked> Times</label>
   </div>
 
@@ -529,14 +536,25 @@
   <section data-view-panel="matrix">
     <div class="matrix-status">
       <span><strong>{{ riders|length }}</strong> riders &times; <strong>{{ past_rides|length }}</strong> brevets</span>
-      <span style="font-style:italic;font-size:0.66rem;">Scroll horizontally if needed — rider column &amp; totals stay pinned</span>
+      <span style="font-style:italic;font-size:0.78rem;">Scroll horizontally if needed — rider column &amp; totals stay pinned</span>
     </div>
 
-    {% set rider_col_w = 180 %}
-    {% set totals_w = 56 %}
-    {% set km_w = 68 %}
-    {% set cell_w = 48 %}
-    {% set group_gap = 6 %}
+    {% if riders|length == 0 or past_rides|length == 0 %}
+    <div class="matrix-empty">
+      <strong>No participation data to display</strong>
+      {% if riders|length == 0 %}
+      No riders have participation records for this season yet.
+      {% else %}
+      Riders are recorded for this season, but no brevets show finishers or OTL results yet.
+      {% endif %}
+    </div>
+    {% else %}
+
+    {% set rider_col_w = 220 %}
+    {% set totals_w = 72 %}
+    {% set km_w = 88 %}
+    {% set cell_w = 64 %}
+    {% set group_gap = 8 %}
 
     {# Compute groups by adjacent equal distance_km (preserve date order from server) #}
     {% set ns = namespace(prev=-1, groups=[]) %}
@@ -588,7 +606,7 @@
           {% set ride_idx.i = ride_idx.i + 1 %}
           {% endfor %}
         {% endfor %}
-        <div class="mx-h-totals rides">Rides</div>
+        <div class="mx-h-totals rides" style="right: {{ km_w }}px;">Rides</div>
         <div class="mx-h-totals" style="right:0;">KM</div>
 
         {# ---- Data rows ---- #}
@@ -638,6 +656,7 @@
         {% endfor %}
       </div>
     </div>
+    {% endif %}
   </section>
 
   {# ===== BY RIDER VIEW ===== #}
@@ -841,7 +860,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 <script>
 /* ============================================================
-   View toggle, search, density, hover cross-hair
+   View toggle, search, hover cross-hair
    ============================================================ */
 (function () {
   const pills = document.querySelectorAll('.view-pill');
@@ -851,7 +870,6 @@ document.addEventListener('DOMContentLoaded', () => {
     brevets: document.querySelector('[data-view-panel="brevets"]'),
   };
   const searchInput = document.querySelector('.season-search');
-  const densityToggle = document.getElementById('density-toggle');
   const timesToggle = document.getElementById('times-toggle');
   const grid = document.getElementById('matrix-grid');
 
@@ -888,17 +906,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (searchInput) {
     searchInput.addEventListener('input', (e) => applyFilter(e.target.value));
-  }
-
-  /* ---- Density toggle ---- */
-  if (densityToggle && grid) {
-    const saved = localStorage.getItem('ta_riders_density') === 'compact';
-    densityToggle.checked = saved;
-    grid.classList.toggle('compact', saved);
-    densityToggle.addEventListener('change', () => {
-      grid.classList.toggle('compact', densityToggle.checked);
-      localStorage.setItem('ta_riders_density', densityToggle.checked ? 'compact' : 'comfortable');
-    });
   }
 
   /* ---- Times toggle (hide finish-time text in matrix) ---- */
