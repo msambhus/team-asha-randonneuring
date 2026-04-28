@@ -38,7 +38,8 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     add_custom_stop, hide_base_stop, unhide_base_stop,
                     update_custom_plan_settings, delete_custom_plan,
                     get_public_custom_plans, clone_custom_plan, delete_custom_stop,
-                    get_ride_cohort_stats, get_ride_cohort_breakdown)
+                    get_ride_cohort_stats, get_ride_cohort_breakdown,
+                    RideStatus)
 from auth import login_required, user_login_required
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
@@ -547,14 +548,93 @@ def upcoming_brevets(season_name):
 
 @riders_bp.route('/riders/directory')
 def riders_directory():
-    """All riders with career stats summary."""
-    from models import get_all_riders_with_career_stats, get_current_season
+    """All riders with career stats + upcoming brevets + R-12 progress."""
+    from models import get_all_riders_with_career_stats, get_current_season, _execute
+    from collections import defaultdict
+    from datetime import date as _date
+
     current_season = get_current_season()
     season_id = current_season['id'] if current_season else None
     riders = get_all_riders_with_career_stats(current_season_id=season_id)
+
+    rider_ids = [r['id'] for r in riders]
+
+    upcoming_by_rider = defaultdict(list)
+    r12_by_rider = defaultdict(lambda: [0] * 12)
+    edd_next_by_rider = {}
+
+    if rider_ids:
+        placeholders = ','.join(['%s'] * len(rider_ids))
+
+        for row in _execute(f"""
+            SELECT rr.rider_id, rr.status,
+                   ri.id AS ride_id,
+                   COALESCE(rp.name, ri.name) AS name,
+                   ri.date,
+                   COALESCE(rp.distance_km, ri.distance_km) AS distance_km,
+                   rp.slug AS plan_slug
+            FROM rider_ride rr
+            JOIN ride ri ON ri.id = rr.ride_id
+            LEFT JOIN ride_plan rp ON rp.id = ri.ride_plan_id
+            WHERE rr.rider_id IN ({placeholders})
+              AND rr.status IN ('GOING','MAYBE','INTERESTED')
+              AND ri.date >= CURRENT_DATE
+            ORDER BY ri.date ASC
+        """, tuple(rider_ids)).fetchall():
+            upcoming_by_rider[row['rider_id']].append(dict(row))
+
+        today = _date.today()
+        cur_y, cur_m = today.year, today.month
+        for row in _execute(f"""
+            SELECT rr.rider_id, ri.date,
+                   COALESCE(rp.distance_km, ri.distance_km) AS distance_km
+            FROM rider_ride rr
+            JOIN ride ri ON ri.id = rr.ride_id
+            LEFT JOIN ride_plan rp ON rp.id = ri.ride_plan_id
+            WHERE rr.rider_id IN ({placeholders})
+              AND rr.status = %s
+              AND COALESCE(rp.distance_km, ri.distance_km) >= 200
+              AND ri.date >= (CURRENT_DATE - INTERVAL '13 months')
+        """, tuple(rider_ids) + (RideStatus.FINISHED.value,)).fetchall():
+            d = row['date']
+            idx = (cur_y - d.year) * 12 + (cur_m - d.month)
+            if 0 <= idx < 12:
+                r12_by_rider[row['rider_id']][idx] += 1
+
+        # Eddington next-milestone: count of career FINISHED rides whose
+        # distance in miles is >= (rider's E + 1). Batched per-rider.
+        for r in riders:
+            e = r.get('eddington_number_miles')
+            if not e:
+                edd_next_by_rider[r['id']] = 0
+                continue
+            row = _execute("""
+                SELECT COUNT(*) AS n
+                FROM rider_ride rr
+                JOIN ride ri ON ri.id = rr.ride_id
+                LEFT JOIN ride_plan rp ON rp.id = ri.ride_plan_id
+                WHERE rr.rider_id = %s
+                  AND rr.status = %s
+                  AND COALESCE(rp.distance_km, ri.distance_km) * 0.621371 >= %s
+            """, (r['id'], RideStatus.FINISHED.value, e + 1)).fetchone()
+            edd_next_by_rider[r['id']] = (row['n'] if row else 0) or 0
+
+    riders_out = []
+    for r in riders:
+        d = dict(r)
+        d['upcoming'] = upcoming_by_rider.get(d['id'], [])
+        d['r12_months'] = r12_by_rider.get(d['id'], [0] * 12)
+        d['eddington_next_count'] = edd_next_by_rider.get(d['id'], 0)
+        riders_out.append(d)
+
+    riders_out.sort(key=lambda x: ((x.get('first_name') or '').lower(),
+                                   (x.get('last_name') or '').lower()))
+
     return render_template('riders_directory.html',
-                           riders=riders,
-                           season=current_season)
+                           riders=riders_out,
+                           season=current_season,
+                           sr_year=2026,
+                           pbp_year=2027)
 
 
 @riders_bp.route('/ride/<int:ride_id>/edit', methods=['GET', 'POST'])
