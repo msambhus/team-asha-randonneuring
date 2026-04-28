@@ -152,11 +152,17 @@ def season_riders(season_name):
     except Exception as e:
         # Return mock data for testing without database. Log full traceback so
         # production errors aren't silently swallowed.
+        import traceback as _tb
+        tb_text = _tb.format_exc()
         current_app.logger.error(
             "season_riders(%r) failed (%s: %s) — falling back to mock data",
             season_name, type(e).__name__, e,
             exc_info=True,
         )
+        # Temporary: surface the traceback inline as an HTML comment so it can
+        # be retrieved via curl/View Source while diagnosing prod-only failures.
+        # Remove once the underlying issue is resolved.
+        from flask import Response
         mock_stats = {
             'active_riders': 25,
             'total_rides': 48,
@@ -164,7 +170,7 @@ def season_riders(season_name):
             'sr_count': 5,
             'sr_rider_count': 8
         }
-        return render_template('riders.html',
+        html = render_template('riders.html',
                                season={'id': 3, 'name': season_name},
                                season_label=SEASON_LABELS.get(season_name, f'{season_name} Season'),
                                riders=[],
@@ -173,6 +179,12 @@ def season_riders(season_name):
                                is_current=True,
                                upcoming_count=12,
                                pbp_finishers=[])
+        debug_block = (
+            "\n<!-- season_riders error (debug, will be removed):\n"
+            + tb_text.replace('--', '-_-')
+            + "\n-->\n"
+        )
+        return Response(html + debug_block, mimetype='text/html')
 
 
 def _normalize_route(name):
