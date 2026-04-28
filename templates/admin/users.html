@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Admin Users - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Admin Users</h1>
+<p>Manage who has admin access</p>
+</div>
+<div class="container section" style="max-width:700px;">
+
+<a href="{{ url_for('admin.dashboard') }}" style="color:var(--primary);text-decoration:none;font-size:0.9rem;">&larr; Back to Dashboard</a>
+
+<div style="overflow-x:auto;margin-top:20px;">
+<table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+<thead>
+<tr style="border-bottom:2px solid #e2e8f0;">
+    <th style="padding:10px 12px;text-align:left;color:#64748b;font-size:0.75rem;text-transform:uppercase;">User</th>
+    <th style="padding:10px 12px;text-align:left;color:#64748b;font-size:0.75rem;text-transform:uppercase;">Email</th>
+    <th style="padding:10px 12px;text-align:center;color:#64748b;font-size:0.75rem;text-transform:uppercase;">Admin</th>
+    <th style="padding:10px 12px;text-align:right;color:#64748b;font-size:0.75rem;text-transform:uppercase;">Action</th>
+</tr>
+</thead>
+<tbody>
+{% for u in users %}
+<tr style="border-bottom:1px solid #f1f5f9;">
+    <td style="padding:10px 12px;font-weight:500;">
+        {% if u.first_name %}{{ u.first_name }} {{ u.last_name }}{% else %}<span style="color:#94a3b8;">No rider linked</span>{% endif %}
+    </td>
+    <td style="padding:10px 12px;color:#64748b;font-size:0.85rem;">{{ u.email }}</td>
+    <td style="padding:10px 12px;text-align:center;">
+        {% if u.is_admin %}
+        <span style="background:#dcfce7;color:#16a34a;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:600;">Admin</span>
+        {% else %}
+        <span style="color:#cbd5e1;">-</span>
+        {% endif %}
+    </td>
+    <td style="padding:10px 12px;text-align:right;">
+        <form method="post" action="{{ url_for('admin.toggle_admin', user_id=u.id) }}" style="display:inline;">
+            {% if u.is_admin %}
+            <button type="submit" onclick="return confirm('Remove admin access for {{ u.first_name or u.email }}?')" style="padding:4px 12px;border:1px solid #fecaca;background:#fef2f2;color:#dc2626;border-radius:6px;font-size:0.8rem;cursor:pointer;">Remove Admin</button>
+            {% else %}
+            <button type="submit" style="padding:4px 12px;border:1px solid #bbf7d0;background:#f0fdf4;color:#16a34a;border-radius:6px;font-size:0.8rem;cursor:pointer;">Make Admin</button>
+            {% endif %}
+        </form>
+    </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+
+</div>
+{% endblock %}

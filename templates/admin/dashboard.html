@@ -33,6 +33,7 @@
 <button onclick="runWindBackfill(this)" class="btn" style="background:#0ea5e9;color:#fff;">Backfill Wind Data</button>
 <button onclick="refreshRusaEvents(this)" class="btn" style="background:#e53e3e;color:#fff;">Refresh RUSA Calendar</button>
 <button onclick="syncFinishTimes(this)" class="btn" style="background:#7c3aed;color:#fff;">Sync Finish Times</button>
+<a href="{{ url_for('admin.admin_users') }}" class="btn" style="background:#475569;color:#fff;">Admin Users</a>
 </div>
 
 {% if wind_status %}
