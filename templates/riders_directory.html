@@ -1,146 +1,785 @@
 {% extends "base.html" %}
 {% block title %}Riders - Team Asha Randonneuring{% endblock %}
 
+{#
+  Drop-in replacement for /riders/directory.
+
+  Required context (added by routes/riders.py — see notes at bottom):
+    - riders : list of rider dicts. Each rider dict needs:
+        id, first_name, last_name, rusa_id, photo_filename
+        total_rides, total_kms, eddington_number_miles
+        season_rides, season_kms
+        sr_200, sr_300, sr_400, sr_600           (counts, not booleans)
+        r12_months : list of 12 ints (count of >=200k rides each rolling
+                     month going BACKWARDS — index 0 = current month, 11 = 11 months ago)
+        upcoming   : list of {ride_id, name, date, distance_km, status, plan_slug}
+                     ordered by date asc
+    - season   : current season dict (.name, e.g. '2025-2026')
+    - sr_year  : 2026
+    - pbp_year : 2027
+#}
+
 {% block extra_head %}
 <style>
-.sortable-th { cursor:pointer; user-select:none; }
-.sortable-th:hover { color:#1e293b; }
-.sortable-th::after { content:''; display:inline-block; width:0; }
-.sortable-th.asc::after { content:' \25B2'; font-size:0.6rem; }
-.sortable-th.desc::after { content:' \25BC'; font-size:0.6rem; }
+/* ============================================================
+   Riders Directory — light, matches base.html visual vocabulary.
+   Same tokens as season-riders cards: --primary #1a365d, --accent #e53e3e,
+   --bg #f7fafc, --border #e2e8f0, --text #2d3748, --text-light #718096
+   ============================================================ */
+.rd {
+  --rd-primary:    #1a365d;
+  --rd-primary-d:  #2a4a7f;
+  --rd-accent:     #e53e3e;
+  --rd-text:       #2d3748;
+  --rd-muted:      #718096;
+  --rd-border:     #e2e8f0;
+  --rd-card:       #ffffff;
+  --rd-bg:         #f7fafc;
+
+  /* Distance tokens (from season-riders) */
+  --d200-soft:#c6f6d5; --d200-deep:#22543d; --d200-grad:linear-gradient(90deg,#48bb78,#68d391);
+  --d300-soft:#dbeafe; --d300-deep:#1d4ed8; --d300-grad:linear-gradient(90deg,#4299e1,#63b3ed);
+  --d400-soft:#feebc8; --d400-deep:#7b341e; --d400-grad:linear-gradient(90deg,#ed8936,#f6ad55);
+  --d600-soft:#fed7d7; --d600-deep:#742a2a; --d600-grad:linear-gradient(90deg,#e53e3e,#fc8181);
+  --d1000-soft:#e9d8fd;--d1000-deep:#553c9a;--d1000-grad:linear-gradient(90deg,#805ad5,#b794f4);
+  --d1200-soft:#fbb6ce;--d1200-deep:#702459;--d1200-grad:linear-gradient(90deg,#d53f8c,#f687b3);
+}
+.rd-page { background: var(--rd-bg); padding: 28px 0 48px; }
+.rd-wrap { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+
+/* Hero */
+.rd-hero { padding: 8px 0 16px; }
+.rd-eyebrow { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--rd-muted); }
+.rd-h1 { font-size: 1.75rem; font-weight: 800; letter-spacing: -0.01em;
+  margin: 4px 0 0; color: var(--rd-primary); line-height: 1.15; }
+.rd-sub { margin: 6px 0 0; font-size: 0.92rem; color: var(--rd-muted); }
+
+/* Toolbar */
+.rd-toolbar {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  padding: 12px 14px; margin: 16px 0 18px;
+  background: var(--rd-card); border: 1px solid var(--rd-border);
+  border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+.rd-toolbar .rd-tlabel {
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--rd-muted);
+}
+.rd-search {
+  flex: 1; min-width: 200px; max-width: 320px;
+  padding: 8px 12px; border: 1px solid var(--rd-border);
+  border-radius: 8px; font-size: 0.88rem; font-family: inherit;
+  background: var(--rd-bg); color: var(--rd-text);
+}
+.rd-search:focus { outline: 2px solid var(--rd-primary); outline-offset: -1px; background: #fff; }
+.rd-segment {
+  display: inline-flex; background: var(--rd-bg);
+  border-radius: 10px; padding: 3px;
+}
+.rd-seg-btn {
+  border: 0; background: transparent; padding: 7px 12px;
+  font-size: 0.8rem; font-weight: 600; color: var(--rd-muted);
+  border-radius: 7px; cursor: pointer; font-family: inherit;
+  transition: all 0.15s;
+}
+.rd-seg-btn:hover { color: var(--rd-text); }
+.rd-seg-btn.is-on { background: var(--rd-primary); color: #fff;
+  box-shadow: 0 1px 3px rgba(26,54,93,0.2); }
+
+/* Section header */
+.rd-section-h {
+  display: flex; align-items: baseline; gap: 10px;
+  margin: 22px 0 10px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--rd-border);
+}
+.rd-section-title {
+  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--rd-text);
+}
+.rd-section-count { font-size: 0.78rem; color: var(--rd-muted); font-weight: 600; }
+
+/* Grid */
+.rd-grid {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+}
+
+/* Card */
+.rd-card {
+  background: var(--rd-card); border: 1px solid var(--rd-border);
+  border-radius: 12px; padding: 16px;
+  display: flex; flex-direction: column;
+  text-decoration: none; color: inherit;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.rd-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+  border-color: #cbd5e0;
+}
+.rd-card.is-hidden { display: none; }
+
+/* Card head */
+.rd-head { display: flex; align-items: center; gap: 11px; margin-bottom: 12px; }
+.rd-avatar {
+  width: 44px; height: 44px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.92rem; font-weight: 700; flex-shrink: 0;
+  background-size: cover; background-position: center;
+}
+.rd-name {
+  font-size: 1.0rem; font-weight: 700; color: var(--rd-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.2;
+}
+.rd-card:hover .rd-name { color: var(--rd-accent); }
+.rd-sub-meta {
+  font-size: 0.7rem; color: var(--rd-muted); font-weight: 600;
+  margin-top: 3px;
+}
+
+/* SR cluster */
+.rd-sr {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  margin-left: auto; flex-shrink: 0;
+}
+.rd-sr-bars { display: flex; gap: 3px; }
+.rd-sr-bar {
+  width: 8px; height: 20px; border-radius: 2px;
+  background: #edf2f7; position: relative;
+}
+.rd-sr-bar.is-200 { background: #48bb78; }
+.rd-sr-bar.is-300 { background: #4299e1; }
+.rd-sr-bar.is-400 { background: #ed8936; }
+.rd-sr-bar.is-600 { background: #e53e3e; }
+.rd-sr-mult {
+  position: absolute; top: -7px; right: -4px;
+  font-size: 0.55rem; font-weight: 800; color: var(--rd-text);
+  background: var(--rd-card); border: 1px solid var(--rd-border);
+  border-radius: 3px; padding: 0 2px; line-height: 1.1;
+}
+.rd-sr-label {
+  font-size: 0.55rem; font-weight: 800; letter-spacing: 0.08em;
+  color: var(--rd-muted);
+}
+.rd-sr-label.is-sr {
+  background: linear-gradient(135deg,#d69e2e,#f6ad55);
+  color: #fff; padding: 1px 6px; border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+/* Eddington stat in head */
+.rd-edd-head {
+  display: flex; flex-direction: column; align-items: center;
+  flex-shrink: 0; padding: 4px 8px;
+  background: linear-gradient(135deg,#fb923c,#f97316);
+  color: #fff; border-radius: 8px;
+  min-width: 38px; text-align: center;
+  box-shadow: 0 1px 2px rgba(249,115,22,0.25);
+  position: relative; cursor: help;
+}
+.rd-edd-head-num {
+  font-size: 0.95rem; font-weight: 800; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.rd-edd-head-lbl {
+  font-size: 0.5rem; font-weight: 800; letter-spacing: 0.04em;
+  margin-top: 2px; opacity: 0.95;
+}
+/* Eddington tooltip */
+.rd-edd-tip {
+  position: absolute; top: calc(100% + 8px); right: 0;
+  width: 240px;
+  background: #1a202c; color: #fff;
+  border-radius: 8px; padding: 10px 12px;
+  font-size: 0.72rem; line-height: 1.45;
+  font-weight: 500; letter-spacing: 0;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  opacity: 0; visibility: hidden; transform: translateY(-4px);
+  transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
+  z-index: 30; text-align: left; pointer-events: none;
+  white-space: normal;
+}
+.rd-edd-tip::before {
+  content: ''; position: absolute; top: -5px; right: 14px;
+  border: 5px solid transparent; border-top: 0;
+  border-bottom-color: #1a202c;
+}
+.rd-edd-head:hover .rd-edd-tip,
+.rd-edd-head:focus .rd-edd-tip { opacity: 1; visibility: visible; transform: translateY(0); }
+.rd-edd-tip-h {
+  font-size: 0.7rem; font-weight: 800; letter-spacing: 0.05em;
+  text-transform: uppercase; color: #f6ad55; margin-bottom: 5px;
+}
+.rd-edd-tip-num {
+  font-size: 1rem; font-weight: 800; color: #fff;
+}
+.rd-edd-tip-next {
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.85); font-weight: 600;
+}
+.rd-edd-tip-next strong { color: #f6ad55; font-weight: 800; }
+
+/* Track header */
+.rd-track-h {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--rd-muted); margin: 4px 0 6px;
+}
+.rd-track-h-r {
+  color: var(--rd-text); letter-spacing: 0; text-transform: none;
+  font-weight: 600; font-size: 0.7rem;
+}
+
+/* R-12 strip */
+.rd-r12 {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; background: var(--rd-bg);
+  border-radius: 8px; margin-bottom: 10px;
+  border: 1px solid #edf0f4;
+}
+.rd-r12-label {
+  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--rd-muted);
+  flex-shrink: 0;
+}
+.rd-r12-cells { display: flex; gap: 2px; flex: 1; }
+.rd-r12-cell {
+  flex: 1; height: 14px; border-radius: 2px;
+  background: #e2e8f0; position: relative;
+}
+.rd-r12-cell.is-done { background: var(--rd-primary); }
+.rd-r12-cell.is-current { box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 3px var(--rd-primary); }
+.rd-r12-count {
+  font-size: 0.7rem; font-weight: 800; color: var(--rd-primary);
+  font-variant-numeric: tabular-nums; flex-shrink: 0;
+  min-width: 28px; text-align: right;
+}
+.rd-r12-count.is-r12 {
+  color: #fff; background: linear-gradient(135deg,#d69e2e,#f6ad55);
+  padding: 2px 6px; border-radius: 4px; font-size: 0.62rem;
+  letter-spacing: 0.04em;
+}
+
+/* Upcoming pills */
+.rd-upcoming { display: flex; flex-direction: column; gap: 5px; }
+.rd-pill {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 9px; border-radius: 6px;
+  border-left: 3px solid var(--rd-border);
+  background: var(--rd-bg); font-size: 0.8rem;
+}
+.rd-pill.is-going.d200  { background: var(--d200-soft);  border-left-color:#48bb78; }
+.rd-pill.is-going.d300  { background: var(--d300-soft);  border-left-color:#4299e1; }
+.rd-pill.is-going.d400  { background: var(--d400-soft);  border-left-color:#ed8936; }
+.rd-pill.is-going.d600  { background: var(--d600-soft);  border-left-color:#e53e3e; }
+.rd-pill.is-going.d1000 { background: var(--d1000-soft); border-left-color:#805ad5; }
+.rd-pill.is-going.d1200 { background: var(--d1200-soft); border-left-color:#d53f8c; }
+.rd-pill.is-maybe { background: #fef3c7; border-left-color: #d69e2e; }
+.rd-pill.is-interested {
+  background: #fff; border: 1px dashed var(--rd-border); border-left: 3px dashed #cbd5e0;
+}
+.rd-km {
+  font-size: 0.66rem; font-weight: 800; min-width: 34px;
+  letter-spacing: 0.02em;
+  padding: 2px 5px; border-radius: 4px; text-align: center;
+}
+.rd-km.d200  { background:#48bb78; color:#fff; }
+.rd-km.d300  { background:#4299e1; color:#fff; }
+.rd-km.d400  { background:#ed8936; color:#fff; }
+.rd-km.d600  { background:#e53e3e; color:#fff; }
+.rd-km.d1000 { background:#805ad5; color:#fff; }
+.rd-km.d1200 { background:#d53f8c; color:#fff; }
+.rd-pill.is-interested .rd-km,
+.rd-pill.is-maybe .rd-km { background: transparent; color: var(--rd-text); border: 1px solid currentColor; }
+.rd-rname {
+  flex: 1; font-weight: 600; color: var(--rd-text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rd-rdate {
+  font-size: 0.7rem; font-weight: 700; color: var(--rd-muted);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.rd-pill-more {
+  font-size: 0.7rem; font-weight: 700; color: var(--rd-primary);
+  text-align: center; padding: 6px 0; cursor: pointer;
+  background: transparent; border: 0; font-family: inherit;
+  border-radius: 4px;
+}
+.rd-pill-more:hover { background: var(--rd-bg); color: var(--rd-accent); }
+.rd-pill.is-hidden-more { display: none; }
+.rd-empty {
+  font-size: 0.75rem; font-style: italic; color: var(--rd-muted);
+  text-align: center; padding: 10px;
+  border: 1px dashed var(--rd-border); border-radius: 6px;
+}
+
+/* Footer with km stats */
+.rd-foot {
+  margin-top: 12px; padding-top: 10px;
+  border-top: 1px solid var(--rd-border);
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 8px; align-items: center;
+}
+.rd-stat-block { min-width: 0; }
+.rd-stat-num {
+  font-size: 1.05rem; font-weight: 800; color: var(--rd-primary);
+  line-height: 1; font-variant-numeric: tabular-nums;
+}
+.rd-stat-num .rd-stat-unit {
+  font-size: 0.62rem; color: var(--rd-muted); font-weight: 700;
+  margin-left: 2px;
+}
+.rd-stat-lbl {
+  font-size: 0.58rem; font-weight: 700; color: var(--rd-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin-top: 3px;
+}
+.rd-edd {
+  background: linear-gradient(135deg,#fb923c,#f97316);
+  color: #fff; padding: 4px 8px; border-radius: 6px;
+  font-size: 0.7rem; font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.rd-edd-label {
+  display: block; font-size: 0.5rem; font-weight: 700;
+  letter-spacing: 0.08em; opacity: 0.85; margin-top: 1px;
+}
+
+.rd-empty-state {
+  padding: 60px 20px; text-align: center; color: var(--rd-muted);
+  background: var(--rd-card); border: 1px dashed var(--rd-border);
+  border-radius: 12px;
+}
+
+@media (max-width: 600px) {
+  .rd-page { padding: 16px 0 28px; }
+  .rd-wrap { padding: 0 14px; }
+  .rd-grid { grid-template-columns: 1fr; }
+  .rd-card { padding: 14px; }
+  .rd-toolbar { padding: 10px; gap: 8px; }
+  .rd-search { max-width: none; flex-basis: 100%; order: 99; }
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="hero" style="padding:40px 20px;">
-<h1>Riders</h1>
-<p>Team Asha Randonneuring community</p>
-</div>
+<div class="rd-page rd">
+  <div class="rd-wrap">
 
-<div class="container section">
+    {% set sr_year_eff   = sr_year or (season.name[:4]|int + 1) %}
+    {% set pbp_year_eff  = pbp_year or (sr_year_eff + 1) %}
 
-{% set active_riders = riders|selectattr('season_rides', 'gt', 0)|list %}
-{% set past_riders = riders|rejectattr('season_rides', 'gt', 0)|list %}
+    {# ===== HERO ===== #}
+    <header class="rd-hero">
+      <div class="rd-eyebrow">Team Asha · Roster</div>
+      <h1 class="rd-h1">Who&rsquo;s riding what</h1>
+      <p class="rd-sub">{{ riders|length }} riders &middot; tracking SR {{ sr_year_eff }}, R-12, &amp; PBP {{ pbp_year_eff }} qualification</p>
+    </header>
 
-{% macro rider_row(r, show_season) %}
-<tr style="border-bottom:1px solid #f1f5f9;transition:background 0.15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''"
-    data-name="{{ r.first_name }} {{ r.last_name }}" data-brevets="{{ r.total_rides }}" data-kms="{{ r.total_kms|int }}" data-eddington="{{ r.eddington_number_miles or 0 }}" data-season-rides="{{ r.season_rides or 0 }}" data-last="{{ r.last_brevet_date or '' }}">
-    <td style="padding:10px 12px;">
-        <a href="{{ url_for('riders.rider_profile', rusa_id=r.rusa_id) }}" style="text-decoration:none;color:#1e293b;display:flex;align-items:center;gap:10px;">
-            <div style="width:32px;height:32px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:0.75rem;font-weight:700;flex-shrink:0;">{{ r.first_name[0] }}{{ r.last_name[0] }}</div>
-            <div>
-                <div style="font-weight:600;">{{ r.first_name }} {{ r.last_name }}</div>
-                {% if r.rusa_id %}<div style="font-size:0.75rem;color:#94a3b8;">RUSA #{{ r.rusa_id }}</div>{% endif %}
+    {# ===== TOOLBAR ===== #}
+    <div class="rd-toolbar" role="toolbar" aria-label="Filter and sort riders">
+      <span class="rd-tlabel">Sort</span>
+      <div class="rd-segment" data-rd-sort>
+        <button type="button" class="rd-seg-btn is-on" data-sort="name">By name</button>
+        <button type="button" class="rd-seg-btn" data-sort="upcoming">Most upcoming</button>
+        <button type="button" class="rd-seg-btn" data-sort="seasonKms">Most season km</button>
+        <button type="button" class="rd-seg-btn" data-sort="careerKms">Most career km</button>
+      </div>
+      <input type="search" class="rd-search" data-rd-search
+             placeholder="Search rider, RUSA #, brevet…" aria-label="Search riders" />
+    </div>
+
+    {# ===== Helper macros ===== #}
+    {% macro dist_class(km) -%}
+      {%- if km is none -%}d200
+      {%- elif km <= 220 -%}d200
+      {%- elif km <= 320 -%}d300
+      {%- elif km <= 450 -%}d400
+      {%- elif km <= 700 -%}d600
+      {%- elif km <= 1100 -%}d1000
+      {%- else -%}d1200
+      {%- endif -%}
+    {%- endmacro %}
+
+    {% macro rider_card(r) %}
+      {% set going_count = (r.upcoming or [])|selectattr('status', 'equalto', 'GOING')|list|length %}
+      {% set sr_done = ([r.sr_200, r.sr_300, r.sr_400, r.sr_600]|select|list|length) %}
+      {% set sr_complete = (r.sr_200 and r.sr_300 and r.sr_400 and r.sr_600) %}
+      {% set r12_list = r.r12_months or [] %}
+      {% set r12_done = r12_list|select|list|length %}
+      {% set hue = ((r.rusa_id or 0)|int) % 360 %}
+
+      <a class="rd-card"
+         href="{{ url_for('riders.rider_profile', rusa_id=r.rusa_id) }}"
+         data-name="{{ (r.first_name ~ ' ' ~ r.last_name)|lower }}"
+         data-rusa="{{ r.rusa_id or '' }}"
+         data-search="{{ (r.upcoming or [])|map(attribute='name')|join(' ')|lower }}"
+         data-sort-name="{{ (r.first_name or '')|lower }} {{ (r.last_name or '')|lower }}"
+         data-sort-upcoming="{{ going_count }}"
+         data-sort-season-kms="{{ r.season_kms or 0 }}"
+         data-sort-career-kms="{{ r.total_kms or 0 }}">
+
+        {# ----- Head: avatar / name+meta / SR ----- #}
+        <div class="rd-head">
+          {% if r.photo_filename %}
+            <span class="rd-avatar"
+                  style="background-image:url('{{ url_for('static', filename='riders/' ~ r.photo_filename) }}');"></span>
+          {% else %}
+            <span class="rd-avatar"
+                  style="background:hsl({{ hue }},45%,88%);color:hsl({{ hue }},50%,28%);">
+              {{ (r.first_name or '?')[0] }}{{ (r.last_name or '')[0] }}
+            </span>
+          {% endif %}
+          <div style="flex:1;min-width:0;">
+            <div class="rd-name">{{ r.first_name }} {{ r.last_name }}</div>
+            <div class="rd-sub-meta">
+              {{ r.season_rides or 0 }} done &middot;
+              {{ going_count }} planned
+              {% if r.rusa_id %}&middot; RUSA #{{ r.rusa_id }}{% endif %}
             </div>
-        </a>
-    </td>
-    <td style="padding:10px 12px;text-align:right;font-weight:600;">{{ r.total_rides }}</td>
-    <td style="padding:10px 12px;text-align:right;">{{ r.total_kms|int|commafy }}</td>
-    <td style="padding:10px 12px;text-align:right;">
-        {% if r.eddington_number_miles %}
-        <span style="font-weight:600;color:#c2410c;">E{{ r.eddington_number_miles }}</span>
-        {% else %}
-        <span style="color:#cbd5e1;">-</span>
-        {% endif %}
-    </td>
-    {% if show_season %}
-    <td style="padding:10px 12px;text-align:right;">
-        {% if r.season_rides > 0 %}
-        <span style="font-weight:600;">{{ r.season_rides }}</span>
-        <span style="color:#94a3b8;font-size:0.8rem;">({{ r.season_kms|int }}km)</span>
-        {% else %}
-        <span style="color:#cbd5e1;">-</span>
-        {% endif %}
-    </td>
-    <td style="padding:10px 12px;text-align:center;">
-        {% if r.season_rides > 0 %}
-        <div style="display:flex;gap:3px;justify-content:center;">
-            {% for dist, label in [(r.sr_200, '2'), (r.sr_300, '3'), (r.sr_400, '4'), (r.sr_600, '6')] %}
-            <span style="display:inline-block;width:28px;text-align:center;font-size:0.7rem;font-weight:600;padding:2px 0;border-radius:3px;position:relative;{% if dist %}background:#dcfce7;color:#16a34a;{% else %}background:#f1f5f9;color:#cbd5e1;{% endif %}">{{ label }}{% if dist > 1 %}<sup style="position:absolute;top:-4px;right:1px;font-size:0.5rem;font-weight:700;">{{ dist }}</sup>{% endif %}</span>
-            {% endfor %}
+          </div>
+          <div class="rd-sr" title="SR series 200/300/400/600">
+            <div class="rd-sr-bars">
+              {% for d, key in [(200,'sr_200'),(300,'sr_300'),(400,'sr_400'),(600,'sr_600')] %}
+                {% set n = r[key] or 0 %}
+                <span class="rd-sr-bar {% if n %}is-{{ d }}{% endif %}">
+                  {% if n > 1 %}<span class="rd-sr-mult">&times;{{ n }}</span>{% endif %}
+                </span>
+              {% endfor %}
+            </div>
+            <span class="rd-sr-label {% if sr_complete %}is-sr{% endif %}">
+              {%- if sr_complete %}SR{% else %}SR {{ sr_done }}/4{% endif -%}
+            </span>
+          </div>
+          {% if r.eddington_number_miles %}
+          {% set e = r.eddington_number_miles %}
+          {% set next_e = e + 1 %}
+          {% set rides_at_next = r.eddington_next_count or 0 %}
+          {% set rides_needed = next_e - rides_at_next if next_e > rides_at_next else 0 %}
+          <div class="rd-edd-head" tabindex="0">
+            <span class="rd-edd-head-num">{{ e }}</span>
+            <span class="rd-edd-head-lbl">Eddington</span>
+            <div class="rd-edd-tip" role="tooltip">
+              <div class="rd-edd-tip-h">Eddington Number</div>
+              You&rsquo;ve ridden <span class="rd-edd-tip-num">{{ e }}</span> rides of at least <span class="rd-edd-tip-num">{{ e }}&nbsp;mi</span> each.
+              <div class="rd-edd-tip-next">
+                Next milestone: <strong>E{{ next_e }}</strong> &mdash;
+                {% if rides_needed > 0 -%}
+                  <strong>{{ rides_needed }}</strong> more ride{{ '' if rides_needed == 1 else 's' }} of <strong>{{ next_e }}+&nbsp;mi</strong>
+                  ({{ rides_at_next }} of {{ next_e }} so far)
+                {%- else -%}
+                  ready to advance once recorded
+                {%- endif -%}
+              </div>
+            </div>
+          </div>
+          {% endif %}
         </div>
-        {% if r.sr_200 and r.sr_300 and r.sr_400 and r.sr_600 %}
-        <div style="font-size:0.65rem;color:#16a34a;font-weight:700;margin-top:2px;">SR</div>
+
+        {# ----- R-12 strip (only for riders with 4+ months active) ----- #}
+        {% if r12_done >= 4 %}
+        <div class="rd-r12" title="R-12: at least one 200k brevet per rolling month for 12 months">
+          <span class="rd-r12-label">R-12</span>
+          <div class="rd-r12-cells">
+            {# r12_months[0] = current month, [11] = oldest. Render oldest -> newest left to right. #}
+            {% for i in range(11, -1, -1) %}
+              {% set v = r12_list[i] if i < r12_list|length else 0 %}
+              <span class="rd-r12-cell {% if v %}is-done{% endif %}{% if i == 0 %} is-current{% endif %}"
+                    title="{{ v }} ride{{ '' if v == 1 else 's' }} {{ i }} month{{ '' if i == 1 else 's' }} ago"></span>
+            {% endfor %}
+          </div>
+          <span class="rd-r12-count {% if r12_done >= 12 %}is-r12{% endif %}">
+            {%- if r12_done >= 12 %}R-12{% else %}{{ r12_done }}/12{% endif -%}
+          </span>
+        </div>
         {% endif %}
+
+        {# ----- Upcoming brevets ----- #}
+        <div class="rd-track-h">
+          <span>Upcoming &middot; {{ pbp_year_eff }} PBP track</span>
+          <span class="rd-track-h-r">
+            {%- if r.upcoming %}{{ r.upcoming|length }} signed up{% else %}&mdash;{% endif -%}
+          </span>
+        </div>
+        {% if r.upcoming %}
+          <div class="rd-upcoming" data-rd-upcoming>
+            {% for s in r.upcoming %}
+              {% set km = s.distance_km or 0 %}
+              {% set st = (s.status or '')|upper %}
+              {% set dc = dist_class(km) %}
+              <span class="rd-pill {% if loop.index0 >= 5 %}is-hidden-more{% endif %}
+                           {%- if st == 'GOING' %} is-going {{ dc }}
+                           {%- elif st == 'MAYBE' %} is-maybe
+                           {%- else %} is-interested{% endif %}"
+                    title="{{ s.name }}{% if st %} — {{ st|capitalize }}{% endif %}">
+                <span class="rd-km {{ dc }}">{{ km }}k</span>
+                <span class="rd-rname">{{ s.name }}</span>
+                <span class="rd-rdate">
+                  {%- if s.date %}{{ s.date.strftime('%b %d') if s.date.strftime is defined else s.date }}{% endif -%}
+                </span>
+              </span>
+            {% endfor %}
+            {% if r.upcoming|length > 5 %}
+              <button type="button" class="rd-pill-more" data-rd-more="{{ r.upcoming|length - 5 }}">
+                + {{ r.upcoming|length - 5 }} more
+              </button>
+            {% endif %}
+          </div>
         {% else %}
-        <span style="color:#cbd5e1;">-</span>
+          <div class="rd-empty">No upcoming brevets signed up</div>
         {% endif %}
-    </td>
+
+        {# ----- Footer: season km / career km ----- #}
+        <div class="rd-foot">
+          <div class="rd-stat-block">
+            <div class="rd-stat-num">{{ (r.season_kms or 0)|int|commafy }}<span class="rd-stat-unit">km</span></div>
+            <div class="rd-stat-lbl">Season &middot; {{ r.season_rides or 0 }} ride{{ '' if r.season_rides == 1 else 's' }}</div>
+          </div>
+          <div class="rd-stat-block">
+            <div class="rd-stat-num">{{ (r.total_kms or 0)|int|commafy }}<span class="rd-stat-unit">km</span></div>
+            <div class="rd-stat-lbl">Career &middot; {{ r.total_rides or 0 }} ride{{ '' if r.total_rides == 1 else 's' }}</div>
+          </div>
+        </div>
+      </a>
+    {% endmacro %}
+
+    {# ===== Sectioning ===== #}
+    {% set active_riders   = riders|selectattr('season_rides', 'gt', 0)|list %}
+    {% set planning_riders = riders|rejectattr('season_rides', 'gt', 0)|selectattr('upcoming')|list %}
+    {% set past_riders     = riders|rejectattr('season_rides', 'gt', 0)|rejectattr('upcoming')|list %}
+
+    {% if active_riders %}
+      <div class="rd-section-h">
+        <span class="rd-section-title">Active &middot; {{ sr_year_eff }} season</span>
+        <span class="rd-section-count">({{ active_riders|length }})</span>
+      </div>
+      <div class="rd-grid" data-rd-grid>
+        {% for r in active_riders|sort(attribute='first_name') %}{{ rider_card(r) }}{% endfor %}
+      </div>
     {% endif %}
-    <td style="padding:10px 12px;color:#64748b;">{{ r.last_brevet_date or '-' }}</td>
-</tr>
-{% endmacro %}
 
-{% macro rider_table(table_id, rider_list, show_season) %}
-<div style="overflow-x:auto;">
-<table id="{{ table_id }}" style="width:100%;border-collapse:collapse;font-size:0.9rem;">
-<thead>
-<tr style="border-bottom:2px solid #e2e8f0;text-align:left;">
-    <th class="sortable-th asc" data-sort="name" data-type="string" onclick="sortTable('{{ table_id }}', this)" style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;">Rider</th>
-    <th class="sortable-th" data-sort="brevets" data-type="number" onclick="sortTable('{{ table_id }}', this)" style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">Career Brevets</th>
-    <th class="sortable-th" data-sort="kms" data-type="number" onclick="sortTable('{{ table_id }}', this)" style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">Career KMs</th>
-    <th class="sortable-th" data-sort="eddington" data-type="number" onclick="sortTable('{{ table_id }}', this)" style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">Eddington</th>
-    {% if show_season %}
-    <th class="sortable-th" data-sort="season-rides" data-type="number" onclick="sortTable('{{ table_id }}', this)" style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:right;">{{ season.name[:4] }}/{{ season.name[-2:] }} Rides</th>
-    <th style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">SR Progress</th>
+    {% if planning_riders %}
+      <div class="rd-section-h">
+        <span class="rd-section-title">Signed up &middot; not yet ridden this season</span>
+        <span class="rd-section-count">({{ planning_riders|length }})</span>
+      </div>
+      <div class="rd-grid" data-rd-grid>
+        {% for r in planning_riders|sort(attribute='first_name') %}{{ rider_card(r) }}{% endfor %}
+      </div>
     {% endif %}
-    <th class="sortable-th" data-sort="last" data-type="string" onclick="sortTable('{{ table_id }}', this)" style="padding:10px 12px;color:#64748b;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;">Last Brevet</th>
-</tr>
-</thead>
-<tbody>
-{% for r in rider_list %}
-{{ rider_row(r, show_season) }}
-{% endfor %}
-</tbody>
-</table>
+
+    {% if past_riders %}
+      <div class="rd-section-h">
+        <span class="rd-section-title">Past brevet riders</span>
+        <span class="rd-section-count">({{ past_riders|length }})</span>
+      </div>
+      <div class="rd-grid" data-rd-grid>
+        {% for r in past_riders|sort(attribute='first_name') %}{{ rider_card(r) }}{% endfor %}
+      </div>
+    {% endif %}
+
+    {% if not riders %}
+      <div class="rd-empty-state">No riders found.</div>
+    {% endif %}
+
+  </div>
 </div>
-{% endmacro %}
+{% endblock %}
 
-{% if active_riders %}
-<h2 style="font-size:1.1rem;color:#1e293b;margin-bottom:12px;">Active {{ season.name[:4] }}/{{ season.name[-2:] }} Season <span style="color:#94a3b8;font-weight:400;font-size:0.9rem;">({{ active_riders|length }})</span></h2>
-<div style="margin-bottom:32px;">
-{{ rider_table('active-table', active_riders, true) }}
-</div>
-{% endif %}
-
-{% if past_riders %}
-<h2 style="font-size:1.1rem;color:#1e293b;margin-bottom:12px;">Past Brevet Riders <span style="color:#94a3b8;font-weight:400;font-size:0.9rem;">({{ past_riders|length }})</span></h2>
-{{ rider_table('past-table', past_riders, false) }}
-{% endif %}
-
-{% if not riders %}
-<p style="color:var(--text-light);text-align:center;padding:40px;">No riders found.</p>
-{% else %}
-<p style="margin-top:20px;color:#94a3b8;font-size:0.8rem;">{{ riders|length }} riders total</p>
-{% endif %}
-
-</div>
-
+{% block extra_js %}
 <script>
-function sortTable(tableId, th) {
-    var table = document.getElementById(tableId);
-    var tbody = table.querySelector('tbody');
-    var rows = Array.from(tbody.querySelectorAll('tr'));
-    var key = th.dataset.sort;
-    var type = th.dataset.type;
+(function () {
+  var search  = document.querySelector('[data-rd-search]');
+  var segment = document.querySelector('[data-rd-sort]');
+  var grids   = document.querySelectorAll('[data-rd-grid]');
 
-    // Toggle direction
-    var asc = !th.classList.contains('asc');
-    table.querySelectorAll('.sortable-th').forEach(function(h) { h.classList.remove('asc', 'desc'); });
-    th.classList.add(asc ? 'asc' : 'desc');
-
-    rows.sort(function(a, b) {
-        var va = a.dataset[key] || '';
-        var vb = b.dataset[key] || '';
-        if (type === 'number') {
-            va = parseFloat(va) || 0;
-            vb = parseFloat(vb) || 0;
-            return asc ? va - vb : vb - va;
-        }
-        return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+  /* ---- Search filter ---- */
+  function applyFilter() {
+    var q = (search.value || '').trim().toLowerCase();
+    grids.forEach(function (grid) {
+      var visible = 0;
+      grid.querySelectorAll('.rd-card').forEach(function (c) {
+        var hay = (c.dataset.name || '') + ' ' +
+                  (c.dataset.rusa || '') + ' ' +
+                  (c.dataset.search || '');
+        var ok = !q || hay.indexOf(q) !== -1;
+        c.classList.toggle('is-hidden', !ok);
+        if (ok) visible++;
+      });
+      var header = grid.previousElementSibling;
+      if (header && header.classList.contains('rd-section-h')) {
+        header.style.display = visible ? '' : 'none';
+      }
     });
+  }
+  if (search) search.addEventListener('input', applyFilter);
 
-    rows.forEach(function(row) { tbody.appendChild(row); });
-}
+  /* ---- Sort ---- */
+  function applySort(key) {
+    grids.forEach(function (grid) {
+      var cards = Array.prototype.slice.call(grid.querySelectorAll('.rd-card'));
+      cards.sort(function (a, b) {
+        if (key === 'name') {
+          return (a.dataset.sortName || '').localeCompare(b.dataset.sortName || '');
+        }
+        var propMap = { upcoming: 'sortUpcoming', seasonKms: 'sortSeasonKms', careerKms: 'sortCareerKms' };
+        var prop = propMap[key] || 'sortUpcoming';
+        var av = parseFloat(a.dataset[prop] || 0);
+        var bv = parseFloat(b.dataset[prop] || 0);
+        if (bv !== av) return bv - av;
+        return (a.dataset.sortName || '').localeCompare(b.dataset.sortName || '');
+      });
+      cards.forEach(function (c) { grid.appendChild(c); });
+    });
+  }
+
+  if (segment) {
+    segment.addEventListener('click', function (e) {
+      var btn = e.target.closest('.rd-seg-btn');
+      if (!btn) return;
+      segment.querySelectorAll('.rd-seg-btn').forEach(function (b) { b.classList.remove('is-on'); });
+      btn.classList.add('is-on');
+      applySort(btn.dataset.sort);
+    });
+  }
+
+  // Default: by first name (matches what the server-side already produced,
+  // but re-running keeps things deterministic if anyone tweaks the order).
+  applySort('name');
+
+  /* ---- "+ N more" expand toggle (also stop it bubbling to the card link) ---- */
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-rd-more]');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var box = btn.closest('[data-rd-upcoming]');
+    if (!box) return;
+    var hidden = box.querySelectorAll('.rd-pill.is-hidden-more');
+    if (hidden.length) {
+      hidden.forEach(function (p) { p.classList.remove('is-hidden-more'); });
+      btn.style.display = 'none';
+    }
+  });
+})();
 </script>
 {% endblock %}
+
+{#
+═══════════════════════════════════════════════════════════════════════════════
+  REQUIRED CHANGES TO routes/riders.py
+═══════════════════════════════════════════════════════════════════════════════
+
+  Replace the existing riders_directory() route. It augments each rider with
+  (a) upcoming signups (GOING / MAYBE / INTERESTED, future-dated), and (b) a
+  12-element r12_months array — count of >=200 km finished brevets in each of
+  the last 12 rolling months, index 0 = current month, 11 = 11 months ago.
+
+    @riders_bp.route('/riders/directory')
+    def riders_directory():
+        from models import (
+            get_all_riders_with_career_stats, get_current_season, _execute,
+        )
+        from collections import defaultdict
+        from datetime import date as _date
+
+        current_season = get_current_season()
+        season_id = current_season['id'] if current_season else None
+        riders = get_all_riders_with_career_stats(current_season_id=season_id)
+
+        rider_ids = [r['id'] for r in riders]
+
+        # ---- Upcoming signups (one batched query) ----
+        upcoming_by_rider = defaultdict(list)
+        if rider_ids:
+            placeholders = ','.join(['%s'] * len(rider_ids))
+            rows = _execute(f"""
+                SELECT rr.rider_id, rr.status,
+                       ri.id AS ride_id,
+                       COALESCE(rp.name, ri.name) AS name,
+                       ri.date,
+                       COALESCE(rp.distance_km, ri.distance_km) AS distance_km,
+                       rp.slug AS plan_slug
+                FROM rider_ride rr
+                JOIN ride ri ON ri.id = rr.ride_id
+                LEFT JOIN ride_plan rp ON rp.id = ri.ride_plan_id
+                WHERE rr.rider_id IN ({placeholders})
+                  AND rr.status IN ('GOING','MAYBE','INTERESTED')
+                  AND ri.date >= CURRENT_DATE
+                ORDER BY ri.date ASC
+            """, tuple(rider_ids)).fetchall()
+            for row in rows:
+                upcoming_by_rider[row['rider_id']].append(dict(row))
+
+        # ---- R-12: count of >=200k finished brevets per rolling month ----
+        # We pull all FINISHED rides >= 200km in the past 12 months, then
+        # bucket them by (year, month) per rider on the Python side.
+        r12_by_rider = defaultdict(lambda: [0]*12)
+        if rider_ids:
+            placeholders = ','.join(['%s'] * len(rider_ids))
+            rows = _execute(f"""
+                SELECT rr.rider_id, ri.date,
+                       COALESCE(rp.distance_km, ri.distance_km) AS distance_km
+                FROM rider_ride rr
+                JOIN ride ri ON ri.id = rr.ride_id
+                LEFT JOIN ride_plan rp ON rp.id = ri.ride_plan_id
+                WHERE rr.rider_id IN ({placeholders})
+                  AND rr.status = 'FINISHED'
+                  AND COALESCE(rp.distance_km, ri.distance_km) >= 200
+                  AND ri.date >= (CURRENT_DATE - INTERVAL '13 months')
+            """, tuple(rider_ids)).fetchall()
+
+            today = _date.today()
+            cur_y, cur_m = today.year, today.month
+            for row in rows:
+                d = row['date']
+                # months ago (0 = current month)
+                idx = (cur_y - d.year) * 12 + (cur_m - d.month)
+                if 0 <= idx < 12:
+                    r12_by_rider[row['rider_id']][idx] += 1
+
+        # ---- Stitch together ----
+        riders_out = []
+        for r in riders:
+            d = dict(r)
+            d['upcoming']   = upcoming_by_rider.get(d['id'], [])
+            d['r12_months'] = r12_by_rider.get(d['id'], [0]*12)
+            # Eddington next-milestone progress: how many of the rider's career
+            # rides are already at or above (E+1) miles. The template uses this
+            # to render "X more rides of (E+1)+ mi to advance".
+            # If `total_rides_by_distance` (a list/dict of mile-counts) isn't
+            # available, compute it server-side once. Cheapest path:
+            #
+            #   SELECT COUNT(*) FROM rider_ride rr JOIN ride ri ON ri.id=rr.ride_id
+            #   WHERE rr.rider_id=%s AND rr.status='FINISHED'
+            #     AND COALESCE(rp.distance_km, ri.distance_km) * 0.621371 >= %s
+            #
+            # ...with %s = (eddington_number_miles + 1). Or run one batched
+            # query that returns (rider_id, count_at_e_plus_1) and merge.
+            d['eddington_next_count'] = r.get('eddington_next_count', 0)
+            riders_out.append(d)
+
+        # Default sort by first name; the template re-sorts client-side too.
+        riders_out.sort(key=lambda x: ((x.get('first_name') or '').lower(),
+                                       (x.get('last_name')  or '').lower()))
+
+        return render_template(
+            'riders_directory.html',
+            riders=riders_out,
+            season=current_season,
+            sr_year=2026,
+            pbp_year=2027,
+        )
+
+  ─── ALSO INCLUDE PLANNING-ONLY RIDERS (optional but recommended) ───────────────
+
+  get_all_riders_with_career_stats() uses a HAVING clause that excludes anyone
+  who has never finished a brevet. To show riders who have signed up for 2026
+  but haven't finished anything yet, drop that HAVING clause OR fetch signed-
+  up-only riders separately and merge with the main list.
+═══════════════════════════════════════════════════════════════════════════════
+#}
