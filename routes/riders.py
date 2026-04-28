@@ -612,6 +612,18 @@ def riders_directory():
                            pbp_year=2027)
 
 
+@riders_bp.route('/riders/leaderboard')
+def career_leaderboard():
+    """Simple career-stats table: rider, rides, kms, last brevet, eddington."""
+    from models import get_all_riders_with_career_stats, get_current_season
+    current_season = get_current_season()
+    season_id = current_season['id'] if current_season else None
+    riders = get_all_riders_with_career_stats(current_season_id=season_id)
+    return render_template('career_leaderboard.html',
+                           riders=riders,
+                           season=current_season)
+
+
 @riders_bp.route('/ride/<int:ride_id>/edit', methods=['GET', 'POST'])
 @user_login_required
 def edit_ride(ride_id):
