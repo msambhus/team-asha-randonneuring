@@ -121,15 +121,13 @@ def season_riders(season_name):
         # Sort by first name ascending (default), then last name
         rider_data.sort(key=lambda x: (x['rider']['first_name'].lower(), x['rider']['last_name'].lower()))
 
-        # For current season, hide ride columns where no displayed rider has finished/OTL'd
-        # (avoids cluttering with rides nobody participated in). For non-current
-        # (historical) seasons, show all past rides so the full brevet calendar is visible.
-        if is_current:
-            displayed_rider_ids = {rd['rider']['id'] for rd in rider_data}
-            past_rides = [r for r in past_rides if any(
-                (matrix.get(rid, {}).get(r['id'], {}).get('status') or '').upper() in ('FINISHED', 'OTL')
-                for rid in displayed_rider_ids
-            )]
+        # Hide ride columns where no displayed rider has finished/OTL'd —
+        # avoids cluttering the matrix with rides nobody on the team participated in.
+        displayed_rider_ids = {rd['rider']['id'] for rd in rider_data}
+        past_rides = [r for r in past_rides if any(
+            (matrix.get(rid, {}).get(r['id'], {}).get('status') or '').upper() in ('FINISHED', 'OTL')
+            for rid in displayed_rider_ids
+        )]
 
         label = SEASON_LABELS.get(season_name, f'{season_name} Season')
 
