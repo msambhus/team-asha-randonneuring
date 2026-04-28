@@ -1293,7 +1293,7 @@ def sync_rusa_finish_times():
     """Fetch official finish times from RUSA for FINISHED rides missing them.
 
     Groups by rider to minimize RUSA page fetches (one per rider).
-    Matches RUSA results to rides using date ±5 days and distance ±20km.
+    Matches RUSA results to rides using date ±10 days and distance ±20km.
 
     Returns:
         list of dicts with per-rider sync details
@@ -1354,7 +1354,7 @@ def sync_rusa_finish_times():
             for rr in rusa_results:
                 date_diff = abs((ride_date - rr['date']).days)
                 dist_diff = abs(distance_km - rr['distance_km'])
-                if date_diff <= 5 and (dist_diff <= 20 or (distance_km >= 1000 and rr['distance_km'] >= 1000)):
+                if date_diff <= 10 and (dist_diff <= 20 or (distance_km >= 1000 and rr['distance_km'] >= 1000)):
                     cur.execute(
                         "UPDATE rider_ride SET finish_time = %s WHERE id = %s",
                         (rr['finish_time'], ride_row['rr_id'])
