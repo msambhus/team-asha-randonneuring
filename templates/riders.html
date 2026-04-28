@@ -8,17 +8,6 @@
    Drop-in replacement for the old wide horizontal-scroll table.
    ============================================================ */
 
-/* Break the participation section out of the 1200px container so the
-   matrix fills the viewport. Stats/PBP grid above stay inside the
-   default container width. */
-.season-wide {
-  max-width: none;
-  width: calc(100vw - 16px);
-  margin-left: calc(50% - 50vw + 8px);
-  margin-right: calc(50% - 50vw + 8px);
-  padding: 0 24px;
-}
-
 :root {
   --ta-primary: #1a365d;
   --ta-primary-dark: #2a4a7f;
@@ -517,7 +506,7 @@
 {% endif %}
 
 {# ===== MAIN PARTICIPATION SECTION ===== #}
-<div class="section season-wide">
+<div class="container section">
   <h2>{% if is_current %}Rider Participation{% else %}Ride Details{% endif %}</h2>
 
   {# ===== TOOLBAR ===== #}
@@ -536,7 +525,6 @@
   <section data-view-panel="matrix">
     <div class="matrix-status">
       <span><strong>{{ riders|length }}</strong> riders &times; <strong>{{ past_rides|length }}</strong> brevets</span>
-      <span style="font-style:italic;font-size:0.78rem;">Scroll horizontally if needed — rider column &amp; totals stay pinned</span>
     </div>
 
     {% if riders|length == 0 or past_rides|length == 0 %}
