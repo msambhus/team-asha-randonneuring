@@ -42,7 +42,7 @@
   --d1000-soft:#e9d8fd;--d1000-deep:#553c9a;--d1000-grad:linear-gradient(90deg,#805ad5,#b794f4);
   --d1200-soft:#fbb6ce;--d1200-deep:#702459;--d1200-grad:linear-gradient(90deg,#d53f8c,#f687b3);
 }
-.rd-page { background: var(--rd-bg); padding: 28px 0 48px; }
+.rd-page { background: #eef2f7; padding: 28px 0 48px; }
 .rd-wrap { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
 
 /* Hero */
@@ -84,6 +84,26 @@
 }
 .rd-section-count { font-size: 0.78rem; color: var(--rd-muted); font-weight: 600; }
 
+/* Collapsible past-riders section */
+.rd-collapsible { margin-top: 0; }
+.rd-collapsible > .rd-section-summary {
+  cursor: pointer; list-style: none; user-select: none;
+  margin-bottom: 0;
+}
+.rd-collapsible > .rd-section-summary::-webkit-details-marker { display: none; }
+.rd-collapsible > .rd-section-summary:hover .rd-section-title,
+.rd-collapsible > .rd-section-summary:focus-visible .rd-section-title { color: var(--rd-primary); }
+.rd-section-chevron {
+  margin-left: auto; color: var(--rd-muted);
+  font-size: 0.85rem; transition: transform 0.15s ease;
+  display: inline-block;
+}
+.rd-collapsible[open] > .rd-section-summary .rd-section-chevron {
+  transform: rotate(180deg);
+}
+.rd-collapsible[open] > .rd-section-summary { margin-bottom: 10px; }
+.rd-collapsible > .rd-grid { margin-top: 10px; }
+
 /* Grid */
 .rd-grid {
   display: grid; gap: 14px;
@@ -92,17 +112,17 @@
 
 /* Card */
 .rd-card {
-  background: var(--rd-card); border: 1px solid var(--rd-border);
+  background: var(--rd-card); border: 1px solid #cbd5e0;
   border-radius: 12px; padding: 16px;
   display: flex; flex-direction: column;
   text-decoration: none; color: inherit;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.05);
   transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
 }
 .rd-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
-  border-color: #cbd5e0;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12), 0 2px 4px rgba(15, 23, 42, 0.06);
+  border-color: #94a3b8;
 }
 .rd-card.is-hidden { display: none; }
 
@@ -130,7 +150,7 @@
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   margin-left: auto; flex-shrink: 0;
 }
-.rd-sr-bars { display: flex; gap: 3px; }
+.rd-sr-bars { display: flex; gap: 3px; padding-top: 10px; }
 .rd-sr-bar {
   width: 8px; height: 20px; border-radius: 2px;
   background: #edf2f7; position: relative;
@@ -140,10 +160,11 @@
 .rd-sr-bar.is-400 { background: #ed8936; }
 .rd-sr-bar.is-600 { background: #e53e3e; }
 .rd-sr-mult {
-  position: absolute; top: -7px; right: -4px;
-  font-size: 0.55rem; font-weight: 800; color: var(--rd-text);
+  position: absolute; top: -10px; right: -5px;
+  font-size: 0.58rem; font-weight: 800; color: var(--rd-text);
   background: var(--rd-card); border: 1px solid var(--rd-border);
-  border-radius: 3px; padding: 0 2px; line-height: 1.1;
+  border-radius: 3px; padding: 1px 3px; line-height: 1;
+  white-space: nowrap;
 }
 .rd-sr-label {
   font-size: 0.55rem; font-weight: 800; letter-spacing: 0.08em;
@@ -428,7 +449,7 @@
 
         {# ----- Upcoming brevets ----- #}
         <div class="rd-track-h">
-          <span>Upcoming &middot; {{ pbp_year_eff }} PBP track</span>
+          <span>Upcoming</span>
           <span class="rd-track-h-r">
             {%- if r.upcoming %}{{ r.upcoming|length }} signed up{% else %}&mdash;{% endif -%}
           </span>
@@ -501,13 +522,16 @@
     {% endif %}
 
     {% if past_riders %}
-      <div class="rd-section-h">
-        <span class="rd-section-title">Past brevet riders</span>
-        <span class="rd-section-count">({{ past_riders|length }})</span>
-      </div>
-      <div class="rd-grid" data-rd-grid>
-        {% for r in past_riders|sort(attribute='first_name') %}{{ rider_card(r) }}{% endfor %}
-      </div>
+      <details class="rd-collapsible">
+        <summary class="rd-section-h rd-section-summary">
+          <span class="rd-section-title">Past brevet riders</span>
+          <span class="rd-section-count">({{ past_riders|length }})</span>
+          <span class="rd-section-chevron" aria-hidden="true">&#x25BE;</span>
+        </summary>
+        <div class="rd-grid" data-rd-grid>
+          {% for r in past_riders|sort(attribute='first_name') %}{{ rider_card(r) }}{% endfor %}
+        </div>
+      </details>
     {% endif %}
 
     {% if not riders %}
@@ -537,9 +561,17 @@
         c.classList.toggle('is-hidden', !ok);
         if (ok) visible++;
       });
-      var header = grid.previousElementSibling;
-      if (header && header.classList.contains('rd-section-h')) {
-        header.style.display = visible ? '' : 'none';
+      // Past-riders section is wrapped in <details> so we toggle the
+      // whole element. For other sections, toggle just the header.
+      var details = grid.closest('details.rd-collapsible');
+      if (details) {
+        details.style.display = visible ? '' : 'none';
+        if (q) details.open = visible > 0;
+      } else {
+        var header = grid.previousElementSibling;
+        if (header && header.classList.contains('rd-section-h')) {
+          header.style.display = visible ? '' : 'none';
+        }
       }
     });
   }
