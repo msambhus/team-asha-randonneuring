@@ -1238,9 +1238,8 @@ def _fetch_missing_cohort_streams(ride_id):
 
 
 @riders_bp.route('/ride/<int:ride_id>/cohort')
-@user_login_required
 def ride_cohort_comparison(ride_id):
-    """Cohort comparison — compare Strava stats across all finishers of a brevet."""
+    """Cohort comparison — publicly accessible; compare Strava stats across all finishers."""
     from services.strava_analysis import build_cohort_stats, build_cohort_chart_data
     from models import get_cohort_cached_streams
 
@@ -1248,10 +1247,12 @@ def ride_cohort_comparison(ride_id):
     if not ride:
         abort(404)
 
-    _auto_match_cohort_riders(ride_id, ride)
+    current_rider_id = session.get('rider_id')
+    # Only attempt auto-matching when a logged-in user visits; avoids DB writes on anonymous crawls
+    if current_rider_id:
+        _auto_match_cohort_riders(ride_id, ride)
 
     riders = get_ride_cohort_stats(ride_id)
-    current_rider_id = session.get('rider_id')
 
     cohort_stats = None
     if len(riders) >= 2:
@@ -1272,6 +1273,9 @@ def ride_cohort_comparison(ride_id):
     except Exception:
         current_app.logger.exception("ride_cohort_comparison: chart data build failed")
 
+    # Optional ?back=<season_name> lets the caller inject a "back to riders" link
+    back_season = request.args.get('back')
+
     return render_template(
         'ride_cohort_comparison.html',
         ride=ride,
@@ -1280,6 +1284,7 @@ def ride_cohort_comparison(ride_id):
         current_rider_id=current_rider_id,
         breakdown=breakdown,
         cohort_chart_data=cohort_chart_data,
+        back_season=back_season,
     )
 
 

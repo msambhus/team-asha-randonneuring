@@ -352,10 +352,17 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
         <strong style="opacity:1;">{{ breakdown.compared }} compared</strong>
     </p>
     <div style="margin-top:12px;">
+        {% if back_season %}
+        <a href="{{ url_for('riders.season_riders', season_name=back_season) }}"
+           style="display:inline-flex;align-items:center;gap:4px;padding:8px 16px;background:rgba(255,255,255,0.2);color:white;border-radius:8px;text-decoration:none;font-size:0.85rem;">
+            &larr; Back to Riders
+        </a>
+        {% else %}
         <a href="{{ url_for('riders.my_strava_analysis') }}"
            style="display:inline-flex;align-items:center;gap:4px;padding:8px 16px;background:rgba(255,255,255,0.2);color:white;border-radius:8px;text-decoration:none;font-size:0.85rem;">
             &larr; My Strava Analysis
         </a>
+        {% endif %}
     </div>
 </div>
 
@@ -650,7 +657,11 @@ details.cohort-accordion[open] summary::after { transform: rotate(180deg); }
 {% endif %}
 
 <div style="text-align:center;margin-top:30px;">
+    {% if back_season %}
+    <a href="{{ url_for('riders.season_riders', season_name=back_season) }}" class="back-link">&larr; Back to Riders</a>
+    {% else %}
     <a href="{{ url_for('riders.my_strava_analysis') }}" class="back-link">&larr; Back to Brevet Analysis</a>
+    {% endif %}
 </div>
 </div>
 {% endblock %}

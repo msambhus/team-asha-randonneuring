@@ -251,10 +251,31 @@ class TestCohortRoute:
             resp = client.get('/ride/9999/cohort')
         assert resp.status_code == 404
 
-    def test_login_required(self, client):
-        """Unauthenticated request (no session) redirects to login."""
-        resp = client.get('/ride/1/cohort')
-        assert resp.status_code == 302
+    def test_public_access_without_login(self, client):
+        """Unauthenticated request renders the page (route is now public)."""
+        ride = {'id': 1, 'name': 'Test 200k', 'date': '2025-06-01', 'distance_km': 200}
+        breakdown = {'total_finished': 3, 'strava_linked': 3, 'private': 0, 'compared': 3}
+        with patch('routes.riders.get_ride_by_id', return_value=ride), \
+             patch('routes.riders._auto_match_cohort_riders'), \
+             patch('routes.riders._fetch_missing_cohort_streams'), \
+             patch('routes.riders.get_ride_cohort_stats', return_value=_make_riders()), \
+             patch('routes.riders.get_ride_cohort_breakdown', return_value=breakdown):
+            resp = client.get('/ride/1/cohort')
+        assert resp.status_code == 200
+        assert b'Cohort Analysis' in resp.data
+
+    def test_back_link_uses_season_param(self, client):
+        """When ?back=<season> is passed, the hero back link points to the riders page."""
+        ride = {'id': 1, 'name': 'Test 200k', 'date': '2025-06-01', 'distance_km': 200}
+        breakdown = {'total_finished': 3, 'strava_linked': 3, 'private': 0, 'compared': 3}
+        with patch('routes.riders.get_ride_by_id', return_value=ride), \
+             patch('routes.riders._auto_match_cohort_riders'), \
+             patch('routes.riders._fetch_missing_cohort_streams'), \
+             patch('routes.riders.get_ride_cohort_stats', return_value=_make_riders()), \
+             patch('routes.riders.get_ride_cohort_breakdown', return_value=breakdown):
+            resp = client.get('/ride/1/cohort?back=2025-2026')
+        assert resp.status_code == 200
+        assert b'Back to Riders' in resp.data
 
     def test_renders_with_insufficient_riders(self, client):
         """Page renders without error when only 1 rider has Strava data."""
