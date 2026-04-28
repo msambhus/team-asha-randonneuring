@@ -84,25 +84,48 @@
 }
 .rd-section-count { font-size: 0.78rem; color: var(--rd-muted); font-weight: 600; }
 
-/* Collapsible past-riders section */
-.rd-collapsible { margin-top: 0; }
+/* Collapsible past-riders section — styled as a clickable bar so it
+   reads as an action, not just a section header. */
+.rd-collapsible { margin: 22px 0 0; }
 .rd-collapsible > .rd-section-summary {
   cursor: pointer; list-style: none; user-select: none;
-  margin-bottom: 0;
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 18px;
+  margin: 0;
+  background: #fff;
+  border: 1px solid #cbd5e0;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(15,23,42,0.08), 0 1px 2px rgba(15,23,42,0.05);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .rd-collapsible > .rd-section-summary::-webkit-details-marker { display: none; }
-.rd-collapsible > .rd-section-summary:hover .rd-section-title,
-.rd-collapsible > .rd-section-summary:focus-visible .rd-section-title { color: var(--rd-primary); }
+.rd-collapsible > .rd-section-summary:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  box-shadow: 0 4px 12px rgba(15,23,42,0.10);
+}
+.rd-collapsible > .rd-section-summary:focus-visible {
+  outline: 2px solid var(--rd-primary); outline-offset: 2px;
+}
+.rd-collapsible > .rd-section-summary .rd-section-title {
+  font-size: 0.85rem; color: var(--rd-primary);
+}
+.rd-collapsible > .rd-section-summary .rd-section-count {
+  font-size: 0.85rem; font-weight: 700;
+}
 .rd-section-chevron {
-  margin-left: auto; color: var(--rd-muted);
-  font-size: 0.85rem; transition: transform 0.15s ease;
-  display: inline-block;
+  margin-left: auto; color: var(--rd-primary);
+  font-size: 1rem; transition: transform 0.15s ease;
+  display: inline-block; line-height: 1;
+}
+.rd-collapsible[open] > .rd-section-summary {
+  margin-bottom: 12px;
+  border-bottom-left-radius: 0; border-bottom-right-radius: 0;
 }
 .rd-collapsible[open] > .rd-section-summary .rd-section-chevron {
   transform: rotate(180deg);
 }
-.rd-collapsible[open] > .rd-section-summary { margin-bottom: 10px; }
-.rd-collapsible > .rd-grid { margin-top: 10px; }
+.rd-collapsible > .rd-grid { margin-top: 0; }
 
 /* Grid */
 .rd-grid {
@@ -134,12 +157,26 @@
   font-size: 0.92rem; font-weight: 700; flex-shrink: 0;
   background-size: cover; background-position: center;
 }
+.rd-name-row {
+  display: flex; align-items: center; gap: 8px;
+  min-width: 0;
+}
 .rd-name {
   font-size: 1.0rem; font-weight: 700; color: var(--rd-primary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  line-height: 1.2;
+  line-height: 1.2; min-width: 0;
 }
 .rd-card:hover .rd-name { color: var(--rd-accent); }
+.rd-pbp-tag {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center;
+  padding: 2px 7px; border-radius: 10px;
+  background: linear-gradient(135deg,#553c9a,#805ad5);
+  color: #fff;
+  font-size: 0.58rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 0 1px 2px rgba(85,60,154,0.25);
+}
 .rd-sub-meta {
   font-size: 0.7rem; color: var(--rd-muted); font-weight: 600;
   margin-top: 3px;
@@ -178,19 +215,21 @@
 .rd-edd-head {
   display: flex; flex-direction: column; align-items: center;
   flex-shrink: 0; padding: 4px 8px;
-  background: linear-gradient(135deg,#fb923c,#f97316);
-  color: #fff; border-radius: 8px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: var(--rd-text); border-radius: 8px;
   min-width: 38px; text-align: center;
-  box-shadow: 0 1px 2px rgba(249,115,22,0.25);
   position: relative; cursor: help;
 }
 .rd-edd-head-num {
   font-size: 0.95rem; font-weight: 800; line-height: 1;
   font-variant-numeric: tabular-nums;
+  color: var(--rd-primary);
 }
 .rd-edd-head-lbl {
   font-size: 0.5rem; font-weight: 800; letter-spacing: 0.04em;
-  margin-top: 2px; opacity: 0.95;
+  margin-top: 2px; color: var(--rd-muted);
+  text-transform: uppercase;
 }
 /* Eddington tooltip */
 .rd-edd-tip {
@@ -313,17 +352,6 @@
   text-transform: uppercase; letter-spacing: 0.06em;
   margin-top: 3px;
 }
-.rd-edd {
-  background: linear-gradient(135deg,#fb923c,#f97316);
-  color: #fff; padding: 4px 8px; border-radius: 6px;
-  font-size: 0.7rem; font-weight: 800;
-  letter-spacing: 0.02em;
-}
-.rd-edd-label {
-  display: block; font-size: 0.5rem; font-weight: 700;
-  letter-spacing: 0.08em; opacity: 0.85; margin-top: 1px;
-}
-
 .rd-empty-state {
   padding: 60px 20px; text-align: center; color: var(--rd-muted);
   background: var(--rd-card); border: 1px dashed var(--rd-border);
@@ -397,7 +425,10 @@
             </span>
           {% endif %}
           <div style="flex:1;min-width:0;">
-            <div class="rd-name">{{ r.first_name }} {{ r.last_name }}</div>
+            <div class="rd-name-row">
+              <span class="rd-name">{{ r.first_name }} {{ r.last_name }}</span>
+              {% if r.is_pbp_ancien %}<span class="rd-pbp-tag" title="PBP Ancien — finished Paris-Brest-Paris">PBP Ancien</span>{% endif %}
+            </div>
             <div class="rd-sub-meta">
               {{ r.season_rides or 0 }} done &middot;
               {{ going_count }} planned

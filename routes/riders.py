@@ -552,6 +552,7 @@ def riders_directory():
 
     upcoming_by_rider = defaultdict(list)
     edd_by_rider = {}
+    pbp_anciens = set()
 
     if rider_ids:
         placeholders = ','.join(['%s'] * len(rider_ids))
@@ -572,6 +573,17 @@ def riders_directory():
             ORDER BY ri.date ASC
         """, tuple(rider_ids)).fetchall():
             upcoming_by_rider[row['rider_id']].append(dict(row))
+
+        # PBP Anciens — anyone who has finished any PBP ride (any year).
+        for row in _execute(f"""
+            SELECT DISTINCT rr.rider_id
+            FROM rider_ride rr
+            JOIN ride ri ON ri.id = rr.ride_id
+            WHERE rr.rider_id IN ({placeholders})
+              AND rr.status = %s
+              AND ri.ride_type = 'PBP'
+        """, tuple(rider_ids) + (RideStatus.FINISHED.value,)).fetchall():
+            pbp_anciens.add(row['rider_id'])
 
         # Eddington progress per rider — same logic as the rider profile
         # page: pull cycling Strava activities, recompute the number live
@@ -600,6 +612,7 @@ def riders_directory():
         d = dict(r)
         d['upcoming'] = upcoming_by_rider.get(d['id'], [])
         d['eddington'] = edd_by_rider.get(d['id'])
+        d['is_pbp_ancien'] = d['id'] in pbp_anciens
         riders_out.append(d)
 
     riders_out.sort(key=lambda x: ((x.get('first_name') or '').lower(),
