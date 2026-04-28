@@ -118,93 +118,129 @@
 
 </div>
 
+<!-- Status Modal -->
+<div id="status-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:none;align-items:center;justify-content:center;" onclick="if(event.target===this&&document.getElementById('status-close').style.display!=='none')this.style.display='none'">
+    <div style="background:white;border-radius:12px;max-width:500px;width:90%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);" onclick="event.stopPropagation()">
+        <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
+            <h3 id="status-title" style="margin:0;font-size:1rem;"></h3>
+            <button id="status-close" onclick="document.getElementById('status-modal').style.display='none'" style="display:none;background:none;border:none;font-size:1.3rem;cursor:pointer;color:#94a3b8;">&times;</button>
+        </div>
+        <div id="status-body" style="padding:20px;overflow-y:auto;flex:1;">
+            <div id="status-spinner" style="text-align:center;padding:20px;">
+                <div style="width:32px;height:32px;border:3px solid #e2e8f0;border-top-color:#3b82f6;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 12px;"></div>
+                <div id="status-message" style="color:#64748b;font-size:0.9rem;">Running...</div>
+            </div>
+            <div id="status-result" style="display:none;"></div>
+        </div>
+    </div>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+
 <script>
-async function runWindBackfill(btn) {
+function showStatusModal(title, message) {
+    document.getElementById('status-title').textContent = title;
+    document.getElementById('status-message').textContent = message || 'Running...';
+    document.getElementById('status-spinner').style.display = 'block';
+    document.getElementById('status-result').style.display = 'none';
+    document.getElementById('status-close').style.display = 'none';
+    document.getElementById('status-modal').style.display = 'flex';
+}
+
+function showStatusResult(html, isError) {
+    document.getElementById('status-spinner').style.display = 'none';
+    var resultEl = document.getElementById('status-result');
+    resultEl.innerHTML = html;
+    resultEl.style.display = 'block';
+    document.getElementById('status-close').style.display = 'block';
+    if (!isError) {
+        var reloadBtn = document.createElement('button');
+        reloadBtn.textContent = 'Reload Page';
+        reloadBtn.className = 'btn btn-primary';
+        reloadBtn.style.cssText = 'margin-top:16px;width:100%;';
+        reloadBtn.onclick = function() { window.location.reload(); };
+        resultEl.appendChild(reloadBtn);
+    }
+}
+
+async function runAdminAction(btn, url, title, statusMsg, formatResult) {
+    var originalText = btn.textContent;
     btn.disabled = true;
-    btn.textContent = 'Running...';
     btn.style.opacity = '0.6';
+    showStatusModal(title, statusMsg);
     try {
-        const resp = await fetch('{{ url_for("admin.run_wind_backfill") }}', {method: 'POST'});
-        const data = await resp.json();
+        var resp = await fetch(url, {method: 'POST'});
+        var data = await resp.json();
         if (data.error) {
-            alert('Error: ' + data.error);
+            showStatusResult('<div style="color:#dc2626;font-weight:600;">Error</div><p style="margin-top:8px;color:#64748b;">' + data.error + '</p>', true);
         } else {
-            alert('Wind backfill: ' + data.success + ' of ' + data.processed + ' rides updated');
-            window.location.reload();
+            showStatusResult(formatResult(data));
         }
     } catch(e) {
-        alert('Failed: ' + e.message);
+        showStatusResult('<div style="color:#dc2626;font-weight:600;">Failed</div><p style="margin-top:8px;color:#64748b;">' + e.message + '</p>', true);
     } finally {
         btn.disabled = false;
-        btn.textContent = 'Backfill Wind Data';
         btn.style.opacity = '1';
     }
 }
 
-async function refreshRusaEvents(btn) {
-    if (!confirm('Refresh RUSA calendar from all sources (SFR, Davis, SCR, SRR, SLO)? This may take a minute.')) return;
-    btn.disabled = true;
-    btn.textContent = 'Refreshing...';
-    btn.style.opacity = '0.6';
-    try {
-        const resp = await fetch('{{ url_for("admin.refresh_rusa_events") }}', {method: 'POST'});
-        const data = await resp.json();
-        if (data.error) {
-            alert('Error: ' + data.error);
-        } else {
-            alert('RUSA refresh: ' + (data.inserted || 0) + ' new, ' + (data.updated || 0) + ' updated, ' + (data.skipped || 0) + ' skipped');
-            window.location.reload();
-        }
-    } catch(e) {
-        alert('Failed: ' + e.message);
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'Refresh RUSA Calendar';
-        btn.style.opacity = '1';
-    }
+function runWindBackfill(btn) {
+    runAdminAction(btn, '{{ url_for("admin.run_wind_backfill") }}', 'Backfill Wind Data', 'Fetching wind data for past rides...', function(d) {
+        return '<div style="color:#16a34a;font-weight:600;font-size:1.1rem;">Complete</div>' +
+            '<p style="margin-top:8px;"><strong>' + d.success + '</strong> of ' + d.processed + ' rides updated with wind data.</p>';
+    });
 }
 
-async function syncFinishTimes(btn) {
-    btn.disabled = true;
-    btn.textContent = 'Syncing...';
-    btn.style.opacity = '0.6';
-    try {
-        const resp = await fetch('{{ url_for("admin.sync_finish_times") }}', {method: 'POST'});
-        const data = await resp.json();
-        if (data.error) {
-            alert('Error: ' + data.error);
-        } else {
-            alert('Finish times: ' + data.synced + ' updated across ' + data.riders_checked + ' riders');
-            window.location.reload();
+function refreshRusaEvents(btn) {
+    runAdminAction(btn, '{{ url_for("admin.refresh_rusa_events") }}', 'Refresh RUSA Calendar', 'Scraping SFR, Davis, SCR, SRR, SLO...', function(d) {
+        var html = '<div style="color:#16a34a;font-weight:600;font-size:1.1rem;">Complete</div>';
+        html += '<div style="display:flex;gap:16px;margin-top:12px;">';
+        html += '<div style="text-align:center;flex:1;padding:12px;background:#f0fdf4;border-radius:8px;"><div style="font-size:1.5rem;font-weight:700;color:#16a34a;">' + (d.inserted || 0) + '</div><div style="font-size:0.75rem;color:#64748b;">New</div></div>';
+        html += '<div style="text-align:center;flex:1;padding:12px;background:#eff6ff;border-radius:8px;"><div style="font-size:1.5rem;font-weight:700;color:#2563eb;">' + (d.updated || 0) + '</div><div style="font-size:0.75rem;color:#64748b;">Updated</div></div>';
+        html += '<div style="text-align:center;flex:1;padding:12px;background:#f1f5f9;border-radius:8px;"><div style="font-size:1.5rem;font-weight:700;color:#64748b;">' + (d.skipped || 0) + '</div><div style="font-size:0.75rem;color:#64748b;">Skipped</div></div>';
+        html += '</div>';
+        if (d.output) {
+            html += '<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:0.8rem;color:#64748b;">Show details</summary><pre style="margin-top:8px;font-size:0.7rem;background:#f8fafc;padding:10px;border-radius:6px;overflow-x:auto;max-height:300px;overflow-y:auto;">' + d.output.replace(/</g,'&lt;') + '</pre></details>';
         }
-    } catch(e) {
-        alert('Failed: ' + e.message);
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'Sync Finish Times';
-        btn.style.opacity = '1';
-    }
+        return html;
+    });
+}
+
+function syncFinishTimes(btn) {
+    runAdminAction(btn, '{{ url_for("admin.sync_finish_times") }}', 'Sync Finish Times', 'Fetching official times from RUSA...', function(d) {
+        var html = '<div style="color:#16a34a;font-weight:600;font-size:1.1rem;">Complete</div>';
+        html += '<p style="margin-top:8px;"><strong>' + d.synced + '</strong> finish times updated across <strong>' + d.riders_checked + '</strong> riders.</p>';
+        if (d.details && d.details.length > 0) {
+            html += '<div style="margin-top:12px;font-size:0.8rem;">';
+            d.details.forEach(function(r) {
+                if (r.results_found > 0) {
+                    html += '<div style="padding:4px 0;border-bottom:1px solid #f1f5f9;">' + r.name + ': <strong>' + r.results_found + '</strong> times synced</div>';
+                }
+            });
+            html += '</div>';
+        }
+        return html;
+    });
 }
 
 async function fetchWindForRide(rideId, rideName, btn) {
-    const original = btn.textContent;
+    var originalText = btn.textContent;
     btn.disabled = true;
     btn.textContent = '...';
     btn.style.opacity = '0.6';
+    showStatusModal('Fetch Wind: ' + rideName, 'Fetching wind forecast data...');
     try {
-        const resp = await fetch(`/admin/rides/${rideId}/fetch-wind`, {method: 'POST'});
-        const data = await resp.json();
+        var resp = await fetch('/admin/rides/' + rideId + '/fetch-wind', {method: 'POST'});
+        var data = await resp.json();
         if (data.error) {
-            alert(rideName + ': ' + data.error);
+            showStatusResult('<div style="color:#dc2626;font-weight:600;">Error</div><p style="margin-top:8px;color:#64748b;">' + data.error + '</p>', true);
         } else {
-            alert('✓ ' + rideName + ': ' + data.stops + ' stops fetched (' + data.source + ')');
-            window.location.reload();
+            showStatusResult('<div style="color:#16a34a;font-weight:600;font-size:1.1rem;">Complete</div><p style="margin-top:8px;"><strong>' + data.stops + '</strong> stops fetched (' + data.source + ')</p>');
         }
     } catch(e) {
-        alert('Failed: ' + e.message);
+        showStatusResult('<div style="color:#dc2626;font-weight:600;">Failed</div><p style="margin-top:8px;color:#64748b;">' + e.message + '</p>', true);
     } finally {
         btn.disabled = false;
-        btn.textContent = original;
+        btn.textContent = originalText;
         btn.style.opacity = '1';
     }
 }
