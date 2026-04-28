@@ -32,6 +32,7 @@
 <a href="{{ url_for('admin.knowledge') }}" class="btn" style="background:#319795;color:#fff;">Knowledge Base</a>
 <button onclick="runWindBackfill(this)" class="btn" style="background:#0ea5e9;color:#fff;">Backfill Wind Data</button>
 <button onclick="refreshRusaEvents(this)" class="btn" style="background:#e53e3e;color:#fff;">Refresh RUSA Calendar</button>
+<button onclick="syncFinishTimes(this)" class="btn" style="background:#7c3aed;color:#fff;">Sync Finish Times</button>
 </div>
 
 {% if wind_status %}
@@ -159,6 +160,28 @@ async function refreshRusaEvents(btn) {
     } finally {
         btn.disabled = false;
         btn.textContent = 'Refresh RUSA Calendar';
+        btn.style.opacity = '1';
+    }
+}
+
+async function syncFinishTimes(btn) {
+    btn.disabled = true;
+    btn.textContent = 'Syncing...';
+    btn.style.opacity = '0.6';
+    try {
+        const resp = await fetch('{{ url_for("admin.sync_finish_times") }}', {method: 'POST'});
+        const data = await resp.json();
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            alert('Finish times: ' + data.synced + ' updated across ' + data.riders_checked + ' riders');
+            window.location.reload();
+        }
+    } catch(e) {
+        alert('Failed: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sync Finish Times';
         btn.style.opacity = '1';
     }
 }

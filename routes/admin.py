@@ -163,6 +163,24 @@ def strava_status():
     return render_template('admin/strava_status.html', riders=riders)
 
 
+@admin_bp.route('/sync-finish-times', methods=['POST'])
+@user_login_required
+def sync_finish_times():
+    """Sync official finish times from RUSA for completed rides."""
+    _require_admin()
+    from models import sync_rusa_finish_times
+    try:
+        results = sync_rusa_finish_times()
+        total_synced = sum(r.get('results_found', 0) for r in results)
+        return jsonify({
+            'synced': total_synced,
+            'riders_checked': len(results),
+            'details': results,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @admin_bp.route('/finalize-past-rides', methods=['POST'])
 @user_login_required
 def finalize_past_rides():
