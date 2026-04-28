@@ -157,24 +157,20 @@
   font-size: 0.92rem; font-weight: 700; flex-shrink: 0;
   background-size: cover; background-position: center;
 }
-.rd-name-row {
-  display: flex; align-items: center; gap: 8px;
-  min-width: 0;
-}
 .rd-name {
   font-size: 1.0rem; font-weight: 700; color: var(--rd-primary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  line-height: 1.2; min-width: 0;
+  line-height: 1.2;
 }
 .rd-card:hover .rd-name { color: var(--rd-accent); }
 .rd-pbp-tag {
-  flex-shrink: 0;
-  display: inline-flex; align-items: center;
-  padding: 2px 7px; border-radius: 10px;
+  display: inline-block; vertical-align: middle;
+  padding: 1px 6px; border-radius: 8px;
   background: linear-gradient(135deg,#553c9a,#805ad5);
   color: #fff;
-  font-size: 0.58rem; font-weight: 800; letter-spacing: 0.06em;
+  font-size: 0.56rem; font-weight: 800; letter-spacing: 0.06em;
   text-transform: uppercase;
+  margin-right: 4px;
   box-shadow: 0 1px 2px rgba(85,60,154,0.25);
 }
 .rd-sub-meta {
@@ -425,11 +421,9 @@
             </span>
           {% endif %}
           <div style="flex:1;min-width:0;">
-            <div class="rd-name-row">
-              <span class="rd-name">{{ r.first_name }} {{ r.last_name }}</span>
-              {% if r.is_pbp_ancien %}<span class="rd-pbp-tag" title="PBP Ancien — finished Paris-Brest-Paris">PBP Ancien</span>{% endif %}
-            </div>
+            <div class="rd-name">{{ r.first_name }} {{ r.last_name }}</div>
             <div class="rd-sub-meta">
+              {% if r.is_pbp_ancien %}<span class="rd-pbp-tag" title="PBP Ancien — finished Paris-Brest-Paris">PBP Ancien</span>{% endif %}
               {{ r.season_rides or 0 }} done &middot;
               {{ going_count }} planned
               {% if r.rusa_id %}&middot; RUSA #{{ r.rusa_id }}{% endif %}
