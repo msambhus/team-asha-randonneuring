@@ -548,10 +548,13 @@ def upcoming_brevets(season_name):
 
 @riders_bp.route('/riders/directory')
 def riders_directory():
-    """All riders with career stats + upcoming brevets + R-12 progress."""
-    from models import get_all_riders_with_career_stats, get_current_season, _execute
+    """All riders with career stats + upcoming brevets + Eddington progress."""
+    from models import (
+        get_all_riders_with_career_stats, get_current_season, _execute,
+        get_all_strava_activities_for_eddington,
+    )
+    from services.eddington import calculate_eddington_number, get_eddington_progress
     from collections import defaultdict
-    from datetime import date as _date
 
     current_season = get_current_season()
     season_id = current_season['id'] if current_season else None
@@ -560,8 +563,7 @@ def riders_directory():
     rider_ids = [r['id'] for r in riders]
 
     upcoming_by_rider = defaultdict(list)
-    r12_by_rider = defaultdict(lambda: [0] * 12)
-    edd_next_by_rider = {}
+    edd_by_rider = {}
 
     if rider_ids:
         placeholders = ','.join(['%s'] * len(rider_ids))
@@ -583,48 +585,33 @@ def riders_directory():
         """, tuple(rider_ids)).fetchall():
             upcoming_by_rider[row['rider_id']].append(dict(row))
 
-        today = _date.today()
-        cur_y, cur_m = today.year, today.month
-        for row in _execute(f"""
-            SELECT rr.rider_id, ri.date,
-                   COALESCE(rp.distance_km, ri.distance_km) AS distance_km
-            FROM rider_ride rr
-            JOIN ride ri ON ri.id = rr.ride_id
-            LEFT JOIN ride_plan rp ON rp.id = ri.ride_plan_id
-            WHERE rr.rider_id IN ({placeholders})
-              AND rr.status = %s
-              AND COALESCE(rp.distance_km, ri.distance_km) >= 200
-              AND ri.date >= (CURRENT_DATE - INTERVAL '13 months')
-        """, tuple(rider_ids) + (RideStatus.FINISHED.value,)).fetchall():
-            d = row['date']
-            idx = (cur_y - d.year) * 12 + (cur_m - d.month)
-            if 0 <= idx < 12:
-                r12_by_rider[row['rider_id']][idx] += 1
-
-        # Eddington next-milestone: count of career FINISHED rides whose
-        # distance in miles is >= (rider's E + 1). Batched per-rider.
+        # Eddington progress per rider — same logic as the rider profile
+        # page: pull cycling Strava activities, recompute the number live
+        # (in case the stored value is stale), then count unique days at
+        # the next milestone.
         for r in riders:
-            e = r.get('eddington_number_miles')
-            if not e:
-                edd_next_by_rider[r['id']] = 0
+            stored_e = r.get('eddington_number_miles') or 0
+            if not stored_e:
                 continue
-            row = _execute("""
-                SELECT COUNT(*) AS n
-                FROM rider_ride rr
-                JOIN ride ri ON ri.id = rr.ride_id
-                LEFT JOIN ride_plan rp ON rp.id = ri.ride_plan_id
-                WHERE rr.rider_id = %s
-                  AND rr.status = %s
-                  AND COALESCE(rp.distance_km, ri.distance_km) * 0.621371 >= %s
-            """, (r['id'], RideStatus.FINISHED.value, e + 1)).fetchone()
-            edd_next_by_rider[r['id']] = (row['n'] if row else 0) or 0
+            activities = get_all_strava_activities_for_eddington(r['id'])
+            if not activities:
+                edd_by_rider[r['id']] = {'miles': stored_e}
+                continue
+            live_e = calculate_eddington_number(activities, unit='miles')
+            e = max(stored_e, live_e)
+            progress = get_eddington_progress(activities, e, unit='miles')
+            edd_by_rider[r['id']] = {
+                'miles': e,
+                'next_target': progress['next_target'],
+                'days_completed': progress['days_completed'],
+                'days_needed': progress['days_needed'],
+            }
 
     riders_out = []
     for r in riders:
         d = dict(r)
         d['upcoming'] = upcoming_by_rider.get(d['id'], [])
-        d['r12_months'] = r12_by_rider.get(d['id'], [0] * 12)
-        d['eddington_next_count'] = edd_next_by_rider.get(d['id'], 0)
+        d['eddington'] = edd_by_rider.get(d['id'])
         riders_out.append(d)
 
     riders_out.sort(key=lambda x: ((x.get('first_name') or '').lower(),
