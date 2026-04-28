@@ -1308,7 +1308,7 @@ def sync_rusa_finish_times():
     cur.execute("""
         SELECT rr.id AS rr_id, rr.rider_id, rr.ride_id,
                r.rusa_id, r.first_name, r.last_name,
-               ri.date AS ride_date, ri.distance_km
+               ri.date AS ride_date, ri.distance_km, ri.name AS ride_name
         FROM rider_ride rr
         JOIN rider r ON rr.rider_id = r.id
         JOIN ride ri ON rr.ride_id = ri.id
@@ -1340,18 +1340,17 @@ def sync_rusa_finish_times():
     for i, (rider_id, info) in enumerate(riders.items()):
         rusa_results = fetch_rider_results(info['rusa_id'])
         matched = 0
+        matched_rides = []
 
         for ride_row in info['rides']:
             ride_date = ride_row['ride_date']
             if not ride_date:
                 continue
-            # Ensure ride_date is a date object
             if hasattr(ride_date, 'date'):
                 ride_date = ride_date.date()
 
             distance_km = ride_row['distance_km'] or 0
 
-            # Find matching RUSA result
             for rr in rusa_results:
                 date_diff = abs((ride_date - rr['date']).days)
                 dist_diff = abs(distance_km - rr['distance_km'])
@@ -1361,6 +1360,10 @@ def sync_rusa_finish_times():
                         (rr['finish_time'], ride_row['rr_id'])
                     )
                     matched += 1
+                    matched_rides.append({
+                        'ride': ride_row.get('ride_name', ''),
+                        'time': rr['finish_time'],
+                    })
                     break
 
         results.append({
@@ -1368,6 +1371,7 @@ def sync_rusa_finish_times():
             'rusa_id': info['rusa_id'],
             'rides_checked': len(info['rides']),
             'results_found': matched,
+            'matched_rides': matched_rides,
         })
         total_updated += matched
 

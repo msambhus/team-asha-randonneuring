@@ -166,88 +166,19 @@ def strava_status():
 @admin_bp.route('/sync-finish-times', methods=['POST'])
 @user_login_required
 def sync_finish_times():
-    """Sync official finish times from RUSA — streams progress via SSE."""
+    """Sync official finish times from RUSA for completed rides."""
     _require_admin()
-    from flask import Response
-    import time as _time
-
-    def generate():
-        import json as _json
-        from services.rusa import fetch_rider_results
-        from models import get_db
-        import psycopg2.extras
-
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-        cur.execute("""
-            SELECT rr.id AS rr_id, rr.rider_id, rr.ride_id,
-                   r.rusa_id, r.first_name, r.last_name,
-                   ri.date AS ride_date, ri.distance_km, ri.name AS ride_name
-            FROM rider_ride rr
-            JOIN rider r ON rr.rider_id = r.id
-            JOIN ride ri ON rr.ride_id = ri.id
-            WHERE rr.status = 'FINISHED'
-              AND (rr.finish_time IS NULL OR rr.finish_time = '')
-              AND r.rusa_id IS NOT NULL
-            ORDER BY r.id, ri.date
-        """)
-        rows = cur.fetchall()
-
-        if not rows:
-            yield f"data: {_json.dumps({'type': 'done', 'synced': 0, 'riders_checked': 0, 'details': []})}\n\n"
-            return
-
-        # Group by rider
-        riders = {}
-        for row in rows:
-            rid = row['rider_id']
-            if rid not in riders:
-                riders[rid] = {'rusa_id': row['rusa_id'], 'name': f"{row['first_name']} {row['last_name']}", 'rides': []}
-            riders[rid]['rides'].append(row)
-
-        yield f"data: {_json.dumps({'type': 'start', 'total_riders': len(riders), 'total_rides': len(rows)})}\n\n"
-
-        results = []
-        for i, (rider_id, info) in enumerate(riders.items()):
-            yield f"data: {_json.dumps({'type': 'progress', 'rider': info['name'], 'rusa_id': info['rusa_id'], 'index': i + 1, 'total': len(riders)})}\n\n"
-
-            try:
-                rusa_results = fetch_rider_results(info['rusa_id'])
-            except Exception:
-                rusa_results = []
-            matched = 0
-            matched_rides = []
-
-            for ride_row in info['rides']:
-                ride_date = ride_row['ride_date']
-                if not ride_date:
-                    continue
-                if hasattr(ride_date, 'date'):
-                    ride_date = ride_date.date()
-                distance_km = ride_row['distance_km'] or 0
-
-                for rr in rusa_results:
-                    date_diff = abs((ride_date - rr['date']).days)
-                    dist_diff = abs(distance_km - rr['distance_km'])
-                    if date_diff <= 5 and (dist_diff <= 20 or (distance_km >= 1000 and rr['distance_km'] >= 1000)):
-                        cur.execute("UPDATE rider_ride SET finish_time = %s WHERE id = %s", (rr['finish_time'], ride_row['rr_id']))
-                        matched += 1
-                        matched_rides.append({'ride': ride_row['ride_name'], 'time': rr['finish_time']})
-                        break
-
-            rider_result = {'rider_name': info['name'], 'rusa_id': info['rusa_id'], 'rides_checked': len(info['rides']), 'results_found': matched, 'matched_rides': matched_rides}
-            results.append(rider_result)
-            yield f"data: {_json.dumps({'type': 'rider_done', 'rider': info['name'], 'found': matched, 'checked': len(info['rides']), 'matched_rides': matched_rides})}\n\n"
-
-        conn.commit()
-        from models import cache
-        cache.clear()
-
-        total_synced = sum(r['results_found'] for r in results)
-        yield f"data: {_json.dumps({'type': 'done', 'synced': total_synced, 'riders_checked': len(results), 'details': results})}\n\n"
-
-    return Response(generate(), content_type='text/event-stream', headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+    from models import sync_rusa_finish_times
+    try:
+        results = sync_rusa_finish_times()
+        total_synced = sum(r.get('results_found', 0) for r in results)
+        return jsonify({
+            'synced': total_synced,
+            'riders_checked': len(results),
+            'details': results,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @admin_bp.route('/finalize-past-rides', methods=['POST'])
