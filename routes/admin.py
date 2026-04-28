@@ -1200,3 +1200,32 @@ def refresh_rusa_events():
         return jsonify({'error': 'Script timed out after 120s'}), 504
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/users')
+@user_login_required
+def admin_users():
+    """Manage admin users."""
+    _require_admin()
+    from models import _execute
+    users = _execute("""
+        SELECT au.id, au.email, au.is_admin, au.last_login,
+               r.first_name, r.last_name, r.rusa_id
+        FROM app_user au
+        LEFT JOIN rider r ON au.rider_id = r.id
+        ORDER BY au.is_admin DESC, r.first_name NULLS LAST
+    """).fetchall()
+    return render_template('admin/users.html', users=users)
+
+
+@admin_bp.route('/users/<int:user_id>/toggle-admin', methods=['POST'])
+@user_login_required
+def toggle_admin(user_id):
+    """Toggle admin status for a user."""
+    _require_admin()
+    from models import get_db
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE app_user SET is_admin = NOT is_admin WHERE id = %s", (user_id,))
+    conn.commit()
+    return redirect(url_for('admin.admin_users'))

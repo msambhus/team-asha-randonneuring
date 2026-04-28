@@ -3,22 +3,13 @@ import math
 from flask import Blueprint, render_template, abort, request, redirect, url_for, session, jsonify, current_app, flash
 
 def is_admin_user():
-    """Check if current logged-in user is an admin."""
+    """Check if current logged-in user is an admin via app_user.is_admin flag."""
     user_id = session.get('user_id')
     if not user_id:
         return False
-    
-    from models import get_user_by_id, _execute
+    from models import get_user_by_id
     user = get_user_by_id(user_id)
-    if not user or not user.get('rider_id'):
-        return False
-    
-    rider = _execute("SELECT first_name FROM rider WHERE id = %s", (user['rider_id'],)).fetchone()
-    if not rider:
-        return False
-    
-    allowed_names = ['sriharsha', 'venkatesh', 'mihir']
-    return rider.get('first_name', '').lower() in allowed_names
+    return bool(user and user.get('is_admin'))
 from models import (get_season_by_name, get_riders_for_season, get_active_riders_for_season,
                     get_rides_for_season, get_participation_matrix, get_season_stats,
                     get_rider_by_rusa, get_rider_participation, get_rider_career_stats,
@@ -485,10 +476,7 @@ def upcoming_brevets(season_name):
             # Fetch rider details using rider_id
             current_rider = _execute("SELECT * FROM rider WHERE id = %s", (rider_id,)).fetchone()
             
-            # Check if user can edit rides (only Sriharsha, Venkatesh, Mihir)
-            if current_rider:
-                allowed_names = ['sriharsha', 'venkatesh', 'mihir']
-                can_edit_rides = current_rider.get('first_name', '').lower() in allowed_names
+            can_edit_rides = is_admin_user()
             
             # Batch load signup statuses for all events (1 query instead of N queries)
             user_signup_statuses = get_rider_signup_statuses_batch(rider_id, ride_ids)
@@ -647,15 +635,7 @@ def edit_ride(ride_id):
     user_id = session.get('user_id')
     if user_id:
         user = get_user_by_id(user_id)
-        if user and user.get('rider_id'):
-            current_rider = _execute("SELECT * FROM rider WHERE id = %s", (user['rider_id'],)).fetchone()
-            if current_rider:
-                allowed_names = ['sriharsha', 'venkatesh', 'mihir']
-                if current_rider.get('first_name', '').lower() not in allowed_names:
-                    abort(403)
-            else:
-                abort(403)
-        else:
+        if not is_admin_user():
             abort(403)
     else:
         abort(403)
