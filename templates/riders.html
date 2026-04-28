@@ -402,6 +402,19 @@
   padding: 1px 6px; border-radius: 5px;
   font-size: 0.62rem; font-weight: 700;
 }
+.brevet-card-footer {
+  padding: 10px 16px;
+  border-top: 1px solid var(--ta-border);
+  display: flex; justify-content: flex-end;
+}
+.cohort-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 14px; border-radius: 6px;
+  background: var(--ta-primary); color: white;
+  font-size: 0.76rem; font-weight: 700; text-decoration: none;
+  transition: opacity 0.15s;
+}
+.cohort-btn:hover { opacity: 0.85; }
 
 /* Mobile tuning */
 @media (max-width: 768px) {
@@ -760,6 +773,12 @@
               {% endfor %}
             {% endif %}
           </div>
+          {% if finishers|length >= 2 %}
+          <footer class="brevet-card-footer">
+            <a href="{{ url_for('riders.ride_cohort_comparison', ride_id=ride.id, back=season.name) }}"
+               class="cohort-btn">Compare&nbsp;Cohort</a>
+          </footer>
+          {% endif %}
         </article>
       {% endfor %}
     </div>
