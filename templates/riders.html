@@ -402,19 +402,17 @@
   padding: 1px 6px; border-radius: 5px;
   font-size: 0.62rem; font-weight: 700;
 }
-.brevet-card-footer {
-  padding: 10px 16px;
-  border-top: 1px solid var(--ta-border);
-  display: flex; justify-content: flex-end;
+.cohort-icon-btn {
+  margin-left: auto; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 6px;
+  background: #93c5fd; color: #1d4ed8; text-decoration: none;
+  transition: background 0.15s, color 0.15s;
 }
-.cohort-btn {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 6px 14px; border-radius: 6px;
+.cohort-icon-btn:hover {
   background: var(--ta-primary); color: white;
-  font-size: 0.76rem; font-weight: 700; text-decoration: none;
-  transition: opacity 0.15s;
 }
-.cohort-btn:hover { opacity: 0.85; }
+.cohort-icon-btn svg { display: block; }
 
 /* Mobile tuning */
 @media (max-width: 768px) {
@@ -735,6 +733,17 @@
                   <a href="{{ ride.rwgps_url }}" target="_blank" rel="noopener">{{ ride.name }}</a>
                 {% else %}{{ ride.name }}{% endif %}
               </h3>
+              {% if finishers|length >= 2 %}
+              <a href="{{ url_for('riders.ride_cohort_comparison', ride_id=ride.id, back=season.name) }}"
+                 class="cohort-icon-btn"
+                 title="Compare cohort — {{ finishers|length }} finishers">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="9" cy="7" r="3"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+                  <circle cx="17" cy="7" r="3"/><path d="M21 21v-2a4 4 0 0 0-2-3.46"/>
+                </svg>
+              </a>
+              {% endif %}
             </div>
             <div class="brevet-card-meta">
               <span>{{ ride.date }}</span>
@@ -773,12 +782,6 @@
               {% endfor %}
             {% endif %}
           </div>
-          {% if finishers|length >= 2 %}
-          <footer class="brevet-card-footer">
-            <a href="{{ url_for('riders.ride_cohort_comparison', ride_id=ride.id, back=season.name) }}"
-               class="cohort-btn">Compare&nbsp;Cohort</a>
-          </footer>
-          {% endif %}
         </article>
       {% endfor %}
     </div>
