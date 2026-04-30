@@ -3062,99 +3062,125 @@ def api_delete_custom_plan(custom_plan_id):
 @riders_bp.route('/ride-plan/<slug>/compare')
 @user_login_required
 def compare_ride_plans(slug):
-    """Side-by-side comparison of base plan vs custom plan."""
+    """Multi-plan comparison: base, my custom, and any community plans the
+    user selects via the toolbar checkboxes."""
+    from services.custom_plan_service import recalculate_cumulative_values
+
     user_id = session.get('user_id')
     user = get_user_by_id(user_id)
-    
     if not user or not user.get('rider_id'):
         return redirect(url_for('auth.complete_profile'))
-    
     rider_id = user['rider_id']
-    
-    # Get base plan
+
     base_plan = get_ride_plan_by_slug(slug)
     if not base_plan:
         abort(404)
-    
-    # Get custom plan
-    custom_plan = get_custom_plan(rider_id, base_plan['id'])
-    if not custom_plan:
-        return redirect(url_for('riders.ride_plan_detail', slug=slug))
-    
-    # Load base stops and calculate cumulative times
-    base_stops_raw = get_ride_plan_stops(base_plan['id'])
-    
-    # Calculate cumulative times for base stops
-    from services.custom_plan_service import recalculate_cumulative_values
-    base_stops = recalculate_cumulative_values(list(base_stops_raw), base_plan)
-    
-    # Load custom stops (merged, which excludes hidden stops)
-    custom_stops_merged, custom_plan_data = get_merged_plan_stops(custom_plan['id'])
-    
-    # Recalculate cumulative times for custom stops
-    custom_stops_merged = recalculate_cumulative_values(list(custom_stops_merged), custom_plan_data)
-    
-    # Get raw overrides to identify hidden stops
-    custom_stops_raw = get_custom_plan_stops_raw(custom_plan['id'])
-    hidden_stop_ids = {cs['base_stop_id'] for cs in custom_stops_raw 
-                       if cs.get('is_hidden') and cs.get('base_stop_id')}
-    
-    # Build a comprehensive comparison list with all stops in order
-    all_stops_for_comparison = []
-    
-    # Add all base stops (including hidden ones)
-    for base_stop in base_stops:
-        is_hidden = base_stop['id'] in hidden_stop_ids
-        custom_stop = None
-        if not is_hidden:
-            custom_stop = next((s for s in custom_stops_merged if s.get('id') == base_stop['id']), None)
-        
-        all_stops_for_comparison.append({
-            'base_stop': base_stop,
-            'custom_stop': custom_stop,
-            'is_hidden': is_hidden,
-            'is_custom_only': False,
-            'distance_miles': base_stop.get('distance_miles', 0)
+
+    my_custom = get_custom_plan(rider_id, base_plan['id'])
+    community_plans = get_public_custom_plans(base_plan['id'])
+
+    # Build the catalog of available plans
+    available = [{'token': 'base', 'label': 'Base Plan', 'kind': 'base'}]
+    if my_custom:
+        available.append({'token': 'my', 'label': 'My Custom Plan', 'kind': 'my'})
+    for cp in community_plans:
+        if my_custom and cp['id'] == my_custom['id']:
+            continue
+        available.append({
+            'token': str(cp['id']),
+            'label': f"{cp['first_name']}'s {cp.get('name') or base_plan['name']}",
+            'kind': 'community',
+            'rider_first': cp['first_name'],
         })
-    
-    # Add custom-only stops (new stops not in base plan)
-    for custom_stop in custom_stops_merged:
-        if custom_stop.get('is_custom_stop'):
-            all_stops_for_comparison.append({
-                'base_stop': None,
-                'custom_stop': custom_stop,
-                'is_hidden': False,
-                'is_custom_only': True,
-                'distance_miles': custom_stop.get('distance_miles', 0)
+
+    # Resolve selection
+    plans_param = request.args.get('plans', '').strip()
+    if plans_param:
+        selected_tokens = [t.strip() for t in plans_param.split(',') if t.strip()]
+    else:
+        selected_tokens = ['base'] + (['my'] if my_custom else [])
+
+    # Mark selection state on the catalog
+    for opt in available:
+        opt['selected'] = opt['token'] in selected_tokens
+
+    # Load each selected plan's stops with cumulative times
+    selected_plans = []
+    for token in selected_tokens:
+        if token == 'base':
+            stops = recalculate_cumulative_values(list(get_ride_plan_stops(base_plan['id'])), base_plan)
+            selected_plans.append({
+                'token': 'base',
+                'label': 'Base',
+                'stops': stops,
+                'is_base': True,
             })
-    
-    # Sort all stops by distance
-    all_stops_for_comparison.sort(key=lambda x: float(x['distance_miles']))
-    
-    # Calculate cumulative times for removed stops by tracking custom plan cumulative at each distance
-    prev_custom_cumulative = 0
-    for i, item in enumerate(all_stops_for_comparison):
-        if item['is_hidden']:
-            # For removed stops, use the previous stop's cumulative (no time added since we're not stopping)
-            item['custom_cumulative_at_distance'] = prev_custom_cumulative
-        elif item['custom_stop'] and item['custom_stop'].get('cum_time_min'):
-            # For existing/modified/new stops, use the actual cumulative time
-            item['custom_cumulative_at_distance'] = item['custom_stop']['cum_time_min']
-            prev_custom_cumulative = item['custom_stop']['cum_time_min']
+        elif token == 'my':
+            if not my_custom:
+                continue
+            merged, plan_data = get_merged_plan_stops(my_custom['id'])
+            stops = recalculate_cumulative_values(list(merged), plan_data)
+            selected_plans.append({
+                'token': 'my',
+                'label': plan_data.get('name') or 'My Custom',
+                'stops': stops,
+                'is_base': False,
+            })
         else:
-            item['custom_cumulative_at_distance'] = None
-    
-    # Generate comparison
-    comparison = compare_plans(base_stops, custom_stops_merged)
-    
+            try:
+                pid = int(token)
+            except (ValueError, TypeError):
+                continue
+            cp = get_custom_plan_by_id(pid)
+            if not cp or cp['base_plan_id'] != base_plan['id']:
+                continue
+            if not cp.get('is_public') and cp['rider_id'] != rider_id:
+                continue
+            merged, plan_data = get_merged_plan_stops(cp['id'])
+            stops = recalculate_cumulative_values(list(merged), plan_data)
+            owner = _execute("SELECT first_name FROM rider WHERE id = %s", (cp['rider_id'],)).fetchone()
+            owner_first = owner['first_name'] if owner else 'Rider'
+            selected_plans.append({
+                'token': token,
+                'label': plan_data.get('name') or f"{owner_first}'s plan",
+                'stops': stops,
+                'is_base': False,
+                'rider_first': owner_first,
+            })
+
+    # Build the row union: one row per unique stop distance across all selected plans.
+    distance_to_name = {}
+    for p in selected_plans:
+        for s in p['stops']:
+            d = round(float(s.get('distance_miles') or 0), 1)
+            if d not in distance_to_name and s.get('name'):
+                distance_to_name[d] = s['name']
+    distances = sorted(distance_to_name.keys())
+
+    rows = []
+    for d in distances:
+        cells = []
+        for p in selected_plans:
+            stop = next((s for s in p['stops']
+                         if round(float(s.get('distance_miles') or 0), 1) == d), None)
+            cells.append({
+                'present': stop is not None,
+                'stop_name': stop.get('name') if stop else None,
+                'cum_time_min': stop.get('cum_time_min') if stop else None,
+                'stop_duration_min': stop.get('stop_duration_min') if stop else None,
+                'segment_time_min': stop.get('segment_time_min') if stop else None,
+            })
+        rows.append({
+            'distance': d,
+            'name': distance_to_name.get(d, ''),
+            'cells': cells,
+        })
+
     return render_template('ride_plan_compare.html',
                            base_plan=base_plan,
-                           base_stops=base_stops,
-                           custom_plan=custom_plan_data,
-                           custom_stops=custom_stops_merged,
-                           hidden_stop_ids=hidden_stop_ids,
-                           comparison=comparison,
-                           all_stops_for_comparison=all_stops_for_comparison)
+                           selected_plans=selected_plans,
+                           available_plans=available,
+                           rows=rows)
 
 
 @riders_bp.route('/api/custom-plan/<int:source_plan_id>/clone', methods=['POST'])
