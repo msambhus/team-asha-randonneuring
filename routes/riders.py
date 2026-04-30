@@ -3180,13 +3180,32 @@ def compare_ride_plans(slug):
         cells = []
         for p in selected_plans:
             stop = next((s for s in (p.get('stops') or []) if _miles(s) == d), None)
+            cum = stop.get('cum_time_min') if stop else None
             cells.append({
                 'present': stop is not None,
                 'stop_name': (_stop_label(stop) if stop else None),
-                'cum_time_min': (stop.get('cum_time_min') if stop else None),
+                'cum_time_min': cum,
                 'stop_duration_min': (stop.get('stop_duration_min') if stop else None),
                 'segment_time_min': (stop.get('segment_time_min') if stop else None),
+                'delta_min': None,  # filled in below
+                'is_fastest': False,
+                'is_slowest': False,
             })
+
+        # Faster/slower visual marker: compare cumulative time across cells
+        # in this row. Only meaningful when 2+ cells have cum_time set.
+        cum_values = [(i, c['cum_time_min']) for i, c in enumerate(cells)
+                      if c['present'] and c['cum_time_min'] is not None]
+        if len(cum_values) >= 2:
+            fastest_t = min(t for _, t in cum_values)
+            slowest_t = max(t for _, t in cum_values)
+            for i, t in cum_values:
+                cells[i]['delta_min'] = t - fastest_t
+                if t == fastest_t:
+                    cells[i]['is_fastest'] = True
+                elif t == slowest_t and slowest_t != fastest_t:
+                    cells[i]['is_slowest'] = True
+
         rows.append({
             'distance': d,
             'name': distance_to_name.get(d, ''),

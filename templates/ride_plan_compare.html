@@ -72,19 +72,28 @@
 }
 .cmp-table {
   width: 100%; border-collapse: collapse;
-  font-size: 0.85rem; min-width: 600px;
+  font-size: 0.82rem;
+  table-layout: fixed;
 }
 .cmp-table thead th {
   background: #1a365d; color: #fff;
-  text-align: left; padding: 12px 14px;
-  font-size: 0.72rem; font-weight: 700;
-  letter-spacing: 0.05em; text-transform: uppercase;
-  white-space: nowrap;
+  text-align: left; padding: 9px 10px;
+  font-size: 0.7rem; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
   border-right: 1px solid rgba(255,255,255,0.12);
 }
 .cmp-table thead th:last-child { border-right: 0; }
-.cmp-table thead th .cmp-th-sub {
-  display: block; font-size: 0.62rem; opacity: 0.75;
+.cmp-table thead th.th-stop { width: 28%; }
+.cmp-table thead th.th-plan {
+  /* equal share among the plan columns; truncate long names */
+  max-width: 0;            /* let the column compute its share */
+}
+.cmp-th-name {
+  display: block;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cmp-th-sub {
+  display: block; font-size: 0.6rem; opacity: 0.75;
   letter-spacing: 0.04em; font-weight: 500;
   text-transform: none;
   margin-top: 2px;
@@ -93,28 +102,51 @@
 .cmp-table tbody tr:nth-child(even) { background: #fafbfc; }
 .cmp-table tbody tr:hover { background: #f1f5f9; }
 .cmp-table td {
-  padding: 9px 14px;
+  padding: 8px 10px;
   font-variant-numeric: tabular-nums;
   vertical-align: top;
 }
-.cmp-stop-name { font-weight: 600; color: #1a365d; }
+.cmp-stop-name {
+  font-weight: 600; color: #1a365d;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .cmp-distance {
   display: inline-block;
-  font-size: 0.7rem; color: #64748b;
+  font-size: 0.68rem; color: #64748b;
   margin-top: 2px;
 }
 .cmp-cell {
-  font-size: 0.86rem;
+  font-size: 0.84rem;
   color: #334155;
+  border-left: 3px solid transparent;
+  padding-left: 8px;
 }
 .cmp-cell .cmp-time {
   font-weight: 700; color: #1a365d;
 }
 .cmp-cell .cmp-meta {
-  font-size: 0.7rem; color: #94a3b8;
+  font-size: 0.68rem; color: #94a3b8;
   margin-top: 2px;
 }
+.cmp-cell .cmp-delta {
+  font-size: 0.68rem; font-weight: 700;
+  margin-left: 4px;
+}
 .cmp-cell.is-missing { color: #cbd5e0; font-style: italic; }
+/* Fastest cell — green; slowest — red. Border on the left so the
+   color is unambiguous even on alternating-row stripes. */
+.cmp-cell.is-fastest {
+  background: #dcfce7;
+  border-left-color: #16a34a;
+}
+.cmp-cell.is-fastest .cmp-time { color: #14532d; }
+.cmp-cell.is-fastest .cmp-delta { color: #16a34a; }
+.cmp-cell.is-slowest {
+  background: #fee2e2;
+  border-left-color: #dc2626;
+}
+.cmp-cell.is-slowest .cmp-time { color: #7f1d1d; }
+.cmp-cell.is-slowest .cmp-delta { color: #dc2626; }
 </style>
 {% endblock %}
 
@@ -152,11 +184,11 @@
       <table class="cmp-table">
         <thead>
           <tr>
-            <th style="min-width:200px;">Stop</th>
+            <th class="th-stop">Stop</th>
             {% for p in selected_plans %}
-            <th>
-              {{ p.label }}
-              <span class="cmp-th-sub">cum · break</span>
+            <th class="th-plan" title="{{ p.label }}">
+              <span class="cmp-th-name">{{ p.label }}</span>
+              <span class="cmp-th-sub">cum · seg · break</span>
             </th>
             {% endfor %}
           </tr>
@@ -165,18 +197,27 @@
           {% for row in rows %}
           <tr>
             <td>
-              <div class="cmp-stop-name">{{ row.name or '—' }}</div>
+              <div class="cmp-stop-name" title="{{ row.name or '' }}">{{ row.name or '—' }}</div>
               <span class="cmp-distance">{{ "%.1f"|format(row.distance) }} mi</span>
             </td>
             {% for cell in row.cells %}
-            <td class="cmp-cell {% if not cell.present %}is-missing{% endif %}">
+            <td class="cmp-cell{% if not cell.present %} is-missing{% endif %}{% if cell.is_fastest %} is-fastest{% endif %}{% if cell.is_slowest %} is-slowest{% endif %}">
               {% if cell.present %}
                 {% set h = (cell.cum_time_min or 0) // 60 %}
                 {% set m = (cell.cum_time_min or 0) % 60 %}
-                <span class="cmp-time">{{ h }}h {{ "%02d"|format(m) }}m</span>
-                {% if cell.stop_duration_min %}
-                <div class="cmp-meta">+{{ cell.stop_duration_min }}m break</div>
-                {% endif %}
+                <div>
+                  <span class="cmp-time">{{ h }}h {{ "%02d"|format(m) }}m</span>
+                  {% if cell.delta_min is not none and cell.delta_min > 0 %}
+                  <span class="cmp-delta">+{{ cell.delta_min }}m</span>
+                  {% elif cell.is_fastest and cell.delta_min == 0 %}
+                  <span class="cmp-delta">⚡</span>
+                  {% endif %}
+                </div>
+                <div class="cmp-meta">
+                  {% if cell.segment_time_min %}seg {{ cell.segment_time_min }}m{% endif %}
+                  {% if cell.segment_time_min and cell.stop_duration_min %} &middot; {% endif %}
+                  {% if cell.stop_duration_min %}break {{ cell.stop_duration_min }}m{% endif %}
+                </div>
               {% else %}
                 —
               {% endif %}
