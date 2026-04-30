@@ -728,31 +728,71 @@
     to { transform: translateY(0); opacity: 1; }
 }
 
-/* ===== CUSTOM PLAN BANNER ===== */
+/* ===== CUSTOM PLAN BANNER (clean text-link style) ===== */
 .custom-plan-banner {
-    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
-    border: 2px solid #0ea5e9;
+    background: #f8fafc;
+    border: 1px solid #cbd5e0;
     border-radius: 12px;
-    padding: 16px 20px;
+    padding: 14px 18px;
     margin-bottom: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 12px;
 }
 
 .custom-plan-banner h3 {
     margin: 0;
-    color: #0369a1;
-    font-size: 1rem;
+    color: #0f172a;
+    font-size: 0.95rem;
     font-weight: 700;
 }
 
 .custom-plan-banner p {
-    margin: 4px 0 0 0;
-    color: #0284c7;
+    margin: 3px 0 0 0;
+    color: #64748b;
+    font-size: 0.82rem;
+}
+
+.cp-banner-row {
+    display: flex; flex-wrap: wrap; gap: 16px;
+    align-items: flex-start; justify-content: space-between;
+}
+
+.cp-links {
+    display: flex; flex-wrap: wrap; gap: 6px 14px;
+    align-items: center;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.cp-link {
+    display: inline-flex; align-items: center; gap: 4px;
+    color: #1a365d;
+    text-decoration: none;
+    font-weight: 600;
     font-size: 0.85rem;
+}
+.cp-link:hover { color: #e53e3e; text-decoration: underline; }
+
+.cp-link.cp-action {
+    padding: 4px 10px;
+    background: #1a365d;
+    color: #fff;
+    border-radius: 6px;
+    border: 0; cursor: pointer; font-family: inherit;
+}
+.cp-link.cp-action:hover { background: #142a4d; color: #fff; text-decoration: none; }
+.cp-link.cp-action.cp-copy { background: #16a34a; }
+.cp-link.cp-action.cp-copy:hover { background: #15803d; }
+
+.cp-section-label {
+    font-size: 0.7rem; font-weight: 700;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    color: #94a3b8;
+    margin-right: 2px;
+}
+
+.cp-sep {
+    color: #cbd5e0;
+    margin: 0 2px;
 }
 
 .btn-custom-plan {
@@ -893,89 +933,64 @@
 {% if session.user_id %}
 <div class="container" style="padding-top:20px;">
 <div class="custom-plan-banner">
-    <div>
+    <div class="cp-banner-row">
+        <div>
         {% if viewed_plan_owner %}
-        <h3>👀 Viewing {{ viewed_plan_owner.first_name }} {{ viewed_plan_owner.last_name }}'s plan</h3>
-        <p>Shared by {{ viewed_plan_owner.first_name }}. Copy it to start your own from this.</p>
+            <h3>👀 Viewing {{ viewed_plan_owner.first_name }} {{ viewed_plan_owner.last_name }}'s plan</h3>
+            <p>Shared by {{ viewed_plan_owner.first_name }}. Copy it to start your own from this.</p>
         {% elif is_custom_view %}
-        <h3>📋 You're viewing your custom plan</h3>
-        <p>Your personalized version of this brevet</p>
+            <h3>📋 You're viewing your custom plan</h3>
+            <p>Your personalized version of this brevet</p>
         {% elif user_custom_plan %}
-        <h3>✏️ You have a custom plan for this ride</h3>
-        <p>Switch to your custom version, compare, or edit it</p>
+            <h3>✏️ You have a custom plan for this ride</h3>
+            <p>Switch to your custom version, compare, or edit it</p>
         {% else %}
-        <h3>🛠️ Create Your Own Plan</h3>
-        <p>Personalize this ride plan with your own pace, timing, and stops</p>
+            <h3>🛠️ Create Your Own Plan</h3>
+            <p>Personalize this ride plan with your own pace, timing, and stops</p>
+        {% endif %}
+        </div>
+        {% if viewed_plan_owner and viewed_plan_id %}
+        <button type="button"
+                onclick="clonePlan({{ viewed_plan_id }}, {{ (plan.custom_name or plan.name)|tojson }})"
+                class="cp-link cp-action cp-copy">
+            📥 Copy This Plan
+        </button>
         {% endif %}
     </div>
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        {% if viewed_plan_owner %}
-            {# viewing community plan: offer my plan, base, copy #}
-            {% if user_custom_plan %}
-            <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}" class="btn-custom-plan">
-                📋 View My Custom Plan
-            </a>
+
+    <div class="cp-links">
+        {# Plan view links — hide the one you're already on #}
+        {% if not (is_custom_view and not viewed_plan_owner) and user_custom_plan %}
+        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}" class="cp-link">📋 My Plan</a>
+        {% endif %}
+        {% if viewed_plan_owner or is_custom_view %}
+        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='base') }}" class="cp-link">📄 Base Plan</a>
+        {% endif %}
+        {% if user_custom_plan and not viewed_plan_owner %}
+        <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}" class="cp-link">📊 Compare</a>
+        {% endif %}
+        {% if is_custom_view and not viewed_plan_owner %}
+        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}" class="cp-link">✏️ Edit</a>
+        {% endif %}
+        {% if not user_custom_plan and not viewed_plan_owner and not is_custom_view %}
+        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}" class="cp-link cp-action">➕ Create Custom Plan</a>
+        {% endif %}
+        {% if is_admin and not is_custom_view and not viewed_plan_owner %}
+        <span class="cp-sep">·</span>
+        <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}" class="cp-link">✏️ Edit Stops</a>
+        <a href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}" class="cp-link">⚙️ Edit Info</a>
+        {% endif %}
+
+        {# Community plans — inline links to others' plans for this brevet #}
+        {% set _community = public_custom_plans|rejectattr('rider_id', 'equalto', session.rider_id|default(None))|list if public_custom_plans else [] %}
+        {% if public_custom_plans %}
+        <span class="cp-sep">·</span>
+        <span class="cp-section-label">Community:</span>
+        {% for cp in public_custom_plans %}
+            {% if not viewed_plan_id or cp.id != viewed_plan_id %}
+            <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom', plan=cp.id) }}" class="cp-link">{{ cp.first_name }}'s</a>
             {% endif %}
-            <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='base') }}" class="btn-custom-plan" style="background:#6366f1;">
-                📄 Base Plan
-            </a>
-            {% if viewed_plan_id %}
-            <button type="button"
-                    onclick="clonePlan({{ viewed_plan_id }}, {{ (plan.custom_name or plan.name)|tojson }})"
-                    class="btn-custom-plan" style="background:#16a34a;border:0;cursor:pointer;font-family:inherit;">
-                📥 Copy This Plan
-            </button>
-            {% endif %}
-        {% elif is_custom_view %}
-            {# viewing my custom: offer base + compare + edit (hide "View My") #}
-            <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='base') }}"
-               class="btn-custom-plan" style="background:#6366f1;">
-                📄 Base Plan
-            </a>
-            <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}"
-               class="btn-custom-plan" style="background:#f59e0b;">
-                📊 Compare Plans
-            </a>
-            <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}"
-               class="btn-custom-plan" style="background:#16a34a;">
-                ✏️ Edit
-            </a>
-        {% elif user_custom_plan %}
-            {# viewing base, has custom plan: offer my plan + compare (hide "Base") + admin edit #}
-            <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}"
-               class="btn-custom-plan">
-                📋 View My Custom Plan
-            </a>
-            <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}"
-               class="btn-custom-plan" style="background:#f59e0b;">
-                📊 Compare Plans
-            </a>
-            {% if is_admin %}
-            <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}"
-               class="btn-custom-plan" style="background:#16a34a;">
-                ✏️ Edit Stops
-            </a>
-            <a href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}"
-               class="btn-custom-plan" style="background:#0369a1;">
-                ⚙️ Edit Info
-            </a>
-            {% endif %}
-        {% else %}
-            {# viewing base, no custom plan yet #}
-            <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}"
-               class="btn-custom-plan create">
-                ➕ Create Custom Plan
-            </a>
-            {% if is_admin %}
-            <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}"
-               class="btn-custom-plan" style="background:#16a34a;">
-                ✏️ Edit Stops
-            </a>
-            <a href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}"
-               class="btn-custom-plan" style="background:#0369a1;">
-                ⚙️ Edit Info
-            </a>
-            {% endif %}
+        {% endfor %}
         {% endif %}
     </div>
 </div>
