@@ -1035,7 +1035,10 @@
 {% if session.user_id %}
 <div class="custom-plan-banner">
     <div>
-        {% if user_custom_plan %}
+        {% if viewed_plan_owner %}
+        <h3>👀 Viewing {{ viewed_plan_owner.first_name }}'s plan</h3>
+        <p>This is a community plan shared by {{ viewed_plan_owner.first_name }} {{ viewed_plan_owner.last_name }}. Use "Copy" on the base plan page to start your own from this.</p>
+        {% elif user_custom_plan %}
         <h3>✏️ You have a custom plan for this ride</h3>
         <p>{% if is_custom_view %}Viewing your personalized version · {% endif %}Switch between views or edit your plan</p>
         {% else %}
@@ -1044,8 +1047,8 @@
         {% endif %}
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        {% if user_custom_plan %}
-        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}" 
+        {% if user_custom_plan and not viewed_plan_owner %}
+        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}"
            class="btn-custom-plan {% if is_custom_view %}active{% endif %}">
             📋 View My Custom Plan
         </a>
@@ -1055,12 +1058,12 @@
             📄 Base Plan
         </a>
         {% endif %}
-        <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}" 
+        <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}"
            class="btn-custom-plan" style="background:#f59e0b;">
             📊 Compare Plans
         </a>
         {% if is_custom_view %}
-        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}" 
+        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}"
            class="btn-custom-plan" style="background:#16a34a;">
             ✏️ Edit
         </a>
@@ -1074,6 +1077,11 @@
             ⚙️ Edit Info
         </a>
         {% endif %}
+        {% elif viewed_plan_owner %}
+        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='base') }}"
+           class="btn-custom-plan" style="background:#6366f1;">
+            📄 Back to Base Plan
+        </a>
         {% else %}
         <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}"
            class="btn-custom-plan create">
@@ -1622,7 +1630,7 @@
                 </div>
             </div>
             <div style="display:flex;gap:8px;">
-                <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}" class="btn" style="background:#f1f5f9;color:var(--text);padding:6px 16px;font-size:0.82rem;white-space:nowrap;text-decoration:none;border:1px solid #e2e8f0;">
+                <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom', plan=cp.id) }}" class="btn" style="background:#f1f5f9;color:var(--text);padding:6px 16px;font-size:0.82rem;white-space:nowrap;text-decoration:none;border:1px solid #e2e8f0;">
                     View
                 </a>
                 <button class="btn" style="background:var(--primary);color:white;padding:6px 16px;font-size:0.82rem;white-space:nowrap;"

@@ -1749,10 +1749,12 @@ def ride_plans_index():
 def ride_plan_detail(slug):
     # Check if user wants to view their custom plan
     view = request.args.get('view', 'base')
-    
+
     if view == 'custom':
-        # Redirect to custom plan view function
-        return custom_ride_plan_view(slug)
+        # `?plan=<id>` = view a specific public custom plan (someone else's),
+        # otherwise the current user's own custom plan.
+        plan_id_arg = request.args.get('plan', type=int)
+        return custom_ride_plan_view(slug, custom_plan_id=plan_id_arg)
     
     # Otherwise show base plan
     plan = get_ride_plan_by_slug(slug)
@@ -1972,6 +1974,7 @@ def ride_plan_detail(slug):
                            user_custom_plan=user_custom_plan,
                            public_custom_plans=public_custom_plans,
                            is_custom_view=False,
+                           viewed_plan_owner=None,
                            is_admin=is_admin_user())
 
 
@@ -2063,26 +2066,37 @@ def edit_ride_plan_info(slug):
     return render_template('edit_ride_plan_info.html', plan=plan)
 
 
-def custom_ride_plan_view(slug):
-    """View custom plan with same detail as base plan, but with custom timings."""
+def custom_ride_plan_view(slug, custom_plan_id=None):
+    """View custom plan with same detail as base plan, but with custom timings.
+
+    If `custom_plan_id` is provided, render that specific custom plan
+    (used when viewing another rider's public plan from Community Plans).
+    Otherwise, render the current user's own custom plan.
+    """
     user_id = session.get('user_id')
-    user = get_user_by_id(user_id)
-    
-    if not user or not user.get('rider_id'):
-        return redirect(url_for('riders.ride_plan_detail', slug=slug))
-    
-    rider_id = user['rider_id']
-    
+    user = get_user_by_id(user_id) if user_id else None
+    rider_id = user.get('rider_id') if user else None
+
     # Get base plan
     base_plan = get_ride_plan_by_slug(slug)
     if not base_plan:
         abort(404)
-    
-    # Get custom plan
-    custom_plan = get_custom_plan(rider_id, base_plan['id'])
-    if not custom_plan:
-        # No custom plan, redirect to base plan
-        return redirect(url_for('riders.ride_plan_detail', slug=slug))
+
+    if custom_plan_id:
+        # Viewing a specific custom plan (someone else's, or your own from a deep link)
+        custom_plan = get_custom_plan_by_id(custom_plan_id)
+        if not custom_plan or custom_plan['base_plan_id'] != base_plan['id']:
+            abort(404)
+        # Must be public, OR the viewer must be the owner.
+        if not custom_plan.get('is_public') and custom_plan['rider_id'] != rider_id:
+            abort(404)
+    else:
+        # Current user's own plan
+        if not rider_id:
+            return redirect(url_for('riders.ride_plan_detail', slug=slug))
+        custom_plan = get_custom_plan(rider_id, base_plan['id'])
+        if not custom_plan:
+            return redirect(url_for('riders.ride_plan_detail', slug=slug))
     
     # Get custom stops (merged with overrides)
     from services.custom_plan_service import get_merged_plan_stops, recalculate_cumulative_values
@@ -2093,8 +2107,18 @@ def custom_ride_plan_view(slug):
     plan['total_distance_miles'] = float(base_plan.get('total_distance_miles') or 0)
     plan['total_elevation_ft'] = int(base_plan.get('total_elevation_ft') or 0)
     
-    # Override name with custom plan name for display
-    plan['custom_name'] = custom_plan_data.get('name') or f"My {base_plan['name']}"
+    # Override name with custom plan name for display. When viewing someone
+    # else's plan from Community Plans, fall back to "<First>'s <Plan>" so
+    # the title doesn't read "My ..." for a plan that isn't yours.
+    if custom_plan_data.get('name'):
+        plan['custom_name'] = custom_plan_data['name']
+    elif custom_plan_id and custom_plan.get('rider_id') != rider_id:
+        owner = _execute("SELECT first_name FROM rider WHERE id = %s",
+                         (custom_plan['rider_id'],)).fetchone()
+        owner_first = owner['first_name'] if owner else 'Custom'
+        plan['custom_name'] = f"{owner_first}'s {base_plan['name']}"
+    else:
+        plan['custom_name'] = f"My {base_plan['name']}"
     
     # Extract distance class for bookend time calculation
     distance_km = _extract_distance_km(plan['name'])
@@ -2280,9 +2304,19 @@ def custom_ride_plan_view(slug):
                          upcoming_event=upcoming_event,
                          signup_count=signup_count,
                          user_signup_status=user_signup_status,
-                         user_custom_plan=custom_plan_data,
+                         user_custom_plan=(
+                             get_custom_plan(rider_id, base_plan['id'])
+                             if (custom_plan_id and rider_id and custom_plan.get('rider_id') != rider_id)
+                             else custom_plan_data
+                         ),
                          public_custom_plans=[],
                          is_custom_view=True,
+                         viewed_plan_owner=(
+                             _execute("SELECT first_name, last_name FROM rider WHERE id = %s",
+                                      (custom_plan['rider_id'],)).fetchone()
+                             if (custom_plan_id and custom_plan.get('rider_id') != rider_id)
+                             else None
+                         ),
                          is_admin=is_admin_user())
 
 
@@ -2302,7 +2336,15 @@ def custom_ride_plan_editor(slug):
     base_plan = get_ride_plan_by_slug(slug)
     if not base_plan:
         abort(404)
-    
+
+    # Derive start_time from the most recent linked ride (matches the
+    # detail-view behavior). The template uses base_plan.start_time to
+    # compute wall-clock times; without this it falls back to 07:00.
+    base_plan = dict(base_plan)
+    from models import get_latest_ride_for_plan
+    linked_ride = get_latest_ride_for_plan(base_plan['id'])
+    base_plan['start_time'] = (linked_ride.get('start_time') if linked_ride else None) or '06:00'
+
     # Check if user has custom plan
     custom_plan = get_custom_plan(rider_id, base_plan['id'])
     
