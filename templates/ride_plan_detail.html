@@ -728,25 +728,30 @@
     to { transform: translateY(0); opacity: 1; }
 }
 
-/* ===== CUSTOM PLAN BANNER (clean text-link style) ===== */
+/* ===== CUSTOM PLAN BANNER (clean text-link style on light blue card) ===== */
+.cp-banner-wrap {
+    /* Counter-balance the stats-row's -40px margin-top so the banner
+       doesn't get clipped by the cards underneath. */
+    padding-bottom: 50px;
+}
 .custom-plan-banner {
-    background: #f8fafc;
-    border: 1px solid #cbd5e0;
+    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+    border: 1px solid #7dd3fc;
     border-radius: 12px;
     padding: 14px 18px;
-    margin-bottom: 24px;
+    box-shadow: 0 1px 3px rgba(14,165,233,0.08);
 }
 
 .custom-plan-banner h3 {
     margin: 0;
-    color: #0f172a;
+    color: #0c4a6e;
     font-size: 0.95rem;
     font-weight: 700;
 }
 
 .custom-plan-banner p {
     margin: 3px 0 0 0;
-    color: #64748b;
+    color: #0369a1;
     font-size: 0.82rem;
 }
 
@@ -760,12 +765,12 @@
     align-items: center;
     margin-top: 10px;
     padding-top: 10px;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid rgba(14,165,233,0.25);
 }
 
 .cp-link {
     display: inline-flex; align-items: center; gap: 4px;
-    color: #1a365d;
+    color: #0c4a6e;
     text-decoration: none;
     font-weight: 600;
     font-size: 0.85rem;
@@ -774,24 +779,24 @@
 
 .cp-link.cp-action {
     padding: 4px 10px;
-    background: #1a365d;
+    background: #0c4a6e;
     color: #fff;
     border-radius: 6px;
     border: 0; cursor: pointer; font-family: inherit;
 }
-.cp-link.cp-action:hover { background: #142a4d; color: #fff; text-decoration: none; }
+.cp-link.cp-action:hover { background: #082f49; color: #fff; text-decoration: none; }
 .cp-link.cp-action.cp-copy { background: #16a34a; }
 .cp-link.cp-action.cp-copy:hover { background: #15803d; }
 
 .cp-section-label {
     font-size: 0.7rem; font-weight: 700;
     letter-spacing: 0.04em; text-transform: uppercase;
-    color: #94a3b8;
+    color: #0369a1; opacity: 0.8;
     margin-right: 2px;
 }
 
 .cp-sep {
-    color: #cbd5e0;
+    color: rgba(14,165,233,0.35);
     margin: 0 2px;
 }
 
@@ -931,7 +936,7 @@
 
 {# ===== PLAN NAVIGATION BANNER (right under hero) ===== #}
 {% if session.user_id %}
-<div class="container" style="padding-top:20px;">
+<div class="container cp-banner-wrap" style="padding-top:20px;">
 <div class="custom-plan-banner">
     <div class="cp-banner-row">
         <div>
@@ -985,7 +990,7 @@
         {% set _community = public_custom_plans|rejectattr('rider_id', 'equalto', session.rider_id|default(None))|list if public_custom_plans else [] %}
         {% if public_custom_plans %}
         <span class="cp-sep">·</span>
-        <span class="cp-section-label">Community:</span>
+        <span class="cp-section-label">Community Plans:</span>
         {% for cp in public_custom_plans %}
             {% if not viewed_plan_id or cp.id != viewed_plan_id %}
             <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom', plan=cp.id) }}" class="cp-link">{{ cp.first_name }}'s</a>

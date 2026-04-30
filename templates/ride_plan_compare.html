@@ -3,539 +3,202 @@
 
 {% block extra_head %}
 <style>
-/* View Tabs */
-.view-tabs {
-    display: flex;
-    gap: 12px;
-    justify-content: center;
-    margin-top: 20px;
+.cmp-page { background: #eef2f7; padding: 28px 0 48px; }
+.cmp-wrap { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+.cmp-eyebrow {
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: #718096;
+}
+.cmp-h1 {
+  font-size: 1.6rem; font-weight: 800; letter-spacing: -0.01em;
+  margin: 4px 0 0; color: #1a365d; line-height: 1.2;
+}
+.cmp-sub { margin: 6px 0 0; font-size: 0.9rem; color: #64748b; }
+.cmp-back {
+  display: inline-block; margin-top: 6px;
+  font-size: 0.82rem; color: #1a365d; text-decoration: none;
+  font-weight: 600;
+}
+.cmp-back:hover { color: #e53e3e; }
+
+.cmp-toolbar {
+  margin-top: 20px;
+  background: #fff; border: 1px solid #cbd5e0;
+  border-radius: 12px; padding: 14px 18px;
+  box-shadow: 0 2px 6px rgba(15,23,42,0.06);
+}
+.cmp-toolbar-label {
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: #94a3b8;
+  margin-bottom: 8px; display: block;
+}
+.cmp-options {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  align-items: center;
+}
+.cmp-opt {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 8px;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  font-size: 0.85rem; color: #334155;
+  cursor: pointer; user-select: none;
+  transition: background 0.1s, border-color 0.1s;
+}
+.cmp-opt input { margin: 0; }
+.cmp-opt:hover { background: #f1f5f9; border-color: #cbd5e0; }
+.cmp-opt.is-selected {
+  background: #1a365d; color: #fff; border-color: #1a365d;
+}
+.cmp-submit {
+  padding: 7px 16px; border-radius: 8px;
+  border: 0; cursor: pointer;
+  background: #1a365d; color: #fff;
+  font-weight: 700; font-size: 0.85rem;
+  margin-left: auto;
+}
+.cmp-submit:hover { background: #142a4d; }
+
+.cmp-empty {
+  margin-top: 24px; padding: 48px 24px; text-align: center;
+  background: #fff; border: 1px dashed #cbd5e0; border-radius: 12px;
+  color: #64748b;
 }
 
-.tab-link {
-    padding: 8px 16px;
-    background: white;
-    color: var(--text);
-    border: 2px solid var(--border);
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 0.9rem;
-    transition: all 0.2s;
+.cmp-table-wrap {
+  margin-top: 20px;
+  background: #fff; border: 1px solid #cbd5e0;
+  border-radius: 12px; overflow-x: auto;
+  box-shadow: 0 2px 6px rgba(15,23,42,0.08);
 }
-
-.tab-link:hover {
-    border-color: var(--primary);
-    background: #f0f9ff;
-    transform: translateY(-2px);
+.cmp-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 0.85rem; min-width: 600px;
 }
-
-.tab-link.active {
-    background: var(--primary);
-    color: white;
-    border-color: var(--primary);
+.cmp-table thead th {
+  background: #1a365d; color: #fff;
+  text-align: left; padding: 12px 14px;
+  font-size: 0.72rem; font-weight: 700;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  white-space: nowrap;
+  border-right: 1px solid rgba(255,255,255,0.12);
 }
-
-/* Comparison Layout */
-.comparison-container {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 16px;
-    margin-bottom: 30px;
+.cmp-table thead th:last-child { border-right: 0; }
+.cmp-table thead th .cmp-th-sub {
+  display: block; font-size: 0.62rem; opacity: 0.75;
+  letter-spacing: 0.04em; font-weight: 500;
+  text-transform: none;
+  margin-top: 2px;
 }
-@media (min-width: 768px) {
-    .comparison-container {
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-    }
+.cmp-table tbody tr { border-top: 1px solid #edf0f4; }
+.cmp-table tbody tr:nth-child(even) { background: #fafbfc; }
+.cmp-table tbody tr:hover { background: #f1f5f9; }
+.cmp-table td {
+  padding: 9px 14px;
+  font-variant-numeric: tabular-nums;
+  vertical-align: top;
 }
-
-.plan-column {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    border: 2px solid var(--border);
+.cmp-stop-name { font-weight: 600; color: #1a365d; }
+.cmp-distance {
+  display: inline-block;
+  font-size: 0.7rem; color: #64748b;
+  margin-top: 2px;
 }
-
-.plan-column.base {
-    border-color: #94a3b8;
+.cmp-cell {
+  font-size: 0.86rem;
+  color: #334155;
 }
-
-.plan-column.custom {
-    border-color: var(--primary);
+.cmp-cell .cmp-time {
+  font-weight: 700; color: #1a365d;
 }
-
-.column-header {
-    font-size: 1.2rem;
-    font-weight: 700;
-    margin-bottom: 16px;
-    padding-bottom: 10px;
-    border-bottom: 2px solid var(--border);
+.cmp-cell .cmp-meta {
+  font-size: 0.7rem; color: #94a3b8;
+  margin-top: 2px;
 }
-
-.column-header.base {
-    color: #64748b;
-}
-
-.column-header.custom {
-    color: var(--primary);
-}
-
-/* Summary Stats */
-.summary-card {
-    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
-    border: 2px solid #0ea5e9;
-    border-radius: 12px;
-    padding: 24px;
-    margin-bottom: 30px;
-}
-
-.summary-title {
-    font-size: 1.3rem;
-    font-weight: 700;
-    color: #0369a1;
-    margin-bottom: 16px;
-    text-align: center;
-}
-
-.summary-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 12px;
-}
-
-.summary-item {
-    text-align: center;
-    padding: 12px;
-    background: white;
-    border-radius: 8px;
-    border: 1px solid #bae6fd;
-}
-
-.summary-label {
-    font-size: 0.75rem;
-    color: #0284c7;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 6px;
-}
-
-.summary-value {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #0369a1;
-}
-
-.summary-value.positive {
-    color: #16a34a;
-}
-
-.summary-value.negative {
-    color: #dc2626;
-}
-
-.summary-value.neutral {
-    color: #64748b;
-}
-
-/* Comparison Table */
-.comparison-table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-    font-size: 0.85rem;
-}
-
-.comparison-table thead th {
-    background: var(--primary);
-    color: white;
-    font-weight: 600;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    padding: 8px 6px;
-    position: sticky;
-    top: 0;
-    z-index: 2;
-}
-
-.comparison-table thead th:first-child { border-radius: 8px 0 0 0; }
-.comparison-table thead th:last-child { border-radius: 0 8px 0 0; }
-
-.comparison-table tbody td {
-    padding: 8px 6px;
-    border-bottom: 1px solid #e2e8f0;
-    vertical-align: middle;
-    font-variant-numeric: tabular-nums;
-}
-
-.comparison-table tbody tr:last-child td {
-    border-bottom: none;
-}
-
-.comparison-table tbody tr:hover {
-    background: #f8fafc;
-}
-
-/* Stop Comparison Rows */
-.stop-cell {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.stop-icon {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.65rem;
-    flex-shrink: 0;
-}
-
-.stop-icon.start { background: #dcfce7; color: #166534; }
-.stop-icon.finish { background: #fee2e2; color: #991b1b; }
-.stop-icon.control { background: #dbeafe; color: #1e40af; }
-.stop-icon.rest { background: #fef3c7; color: #92400e; }
-.stop-icon.waypoint { background: #f1f5f9; color: #64748b; }
-
-.stop-name {
-    font-weight: 500;
-    color: var(--text);
-    font-size: 0.9rem;
-}
-
-/* Difference Highlights */
-.diff-cell {
-    position: relative;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-}
-
-.diff-cell.faster {
-    background: #dcfce7;
-    color: #166534;
-}
-
-.diff-cell.slower {
-    background: #fee2e2;
-    color: #991b1b;
-}
-
-.diff-cell.modified {
-    background: #fef3c7;
-    color: #92400e;
-}
-
-.diff-cell.added {
-    background: #dcfce7;
-    color: #166534;
-    font-weight: 700;
-}
-
-.diff-cell.hidden {
-    background: #f1f5f9;
-    color: #94a3b8;
-    text-decoration: line-through;
-    opacity: 0.5;
-}
-
-.diff-badge {
-    display: inline-block;
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-size: 0.6rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    margin-left: 6px;
-}
-
-.diff-badge.added {
-    background: #22c55e;
-    color: white;
-}
-
-.diff-badge.hidden {
-    background: #94a3b8;
-    color: white;
-}
-
-.diff-badge.modified {
-    background: #f59e0b;
-    color: white;
-}
-
-/* Delta Indicator */
-.delta {
-    font-size: 0.75rem;
-    font-weight: 600;
-    margin-left: 6px;
-}
-
-.delta.positive {
-    color: #16a34a;
-}
-
-.delta.negative {
-    color: #dc2626;
-}
-
-/* Legend */
-.comparison-legend {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    padding: 12px;
-    background: #f8fafc;
-    border-radius: 8px;
-    font-size: 0.75rem;
-    margin-bottom: 20px;
-}
-
-.legend-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.legend-color {
-    width: 16px;
-    height: 16px;
-    border-radius: 3px;
-}
-
-/* Responsive */
-@media (max-width: 968px) {
-    .comparison-container {
-        grid-template-columns: 1fr;
-    }
-    
-    .summary-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-}
-
-@media (max-width: 640px) {
-    .comparison-table {
-        font-size: 0.75rem;
-    }
-    
-    .comparison-table thead th,
-    .comparison-table tbody td {
-        padding: 6px 4px;
-    }
-    
-    .stop-name {
-        font-size: 0.8rem;
-    }
-}
+.cmp-cell.is-missing { color: #cbd5e0; font-style: italic; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="hero">
-    <h1>📊 Plan Comparison</h1>
-    <p style="opacity:0.85;margin-top:8px;">
-        {{ custom_plan.name }} vs 
-        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug) }}" style="color:white;text-decoration:underline;">{{ base_plan.name }}</a>
-    </p>
-    
-    {# View Tabs #}
-    <div class="view-tabs">
-        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug, view='custom') }}" class="tab-link">
-            My Custom Plan
-        </a>
-        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug, view='base') }}" class="tab-link">
-            Base Plan
-        </a>
-        <a href="{{ url_for('riders.compare_ride_plans', slug=base_plan.slug) }}" class="tab-link active">
-            Compare
-        </a>
-        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=base_plan.slug) }}" class="tab-link">
-            ✏️ Edit
-        </a>
-    </div>
-</div>
+<div class="cmp-page">
+  <div class="cmp-wrap">
+    <div class="cmp-eyebrow">{{ base_plan.name }}</div>
+    <h1 class="cmp-h1">📊 Compare Plans</h1>
+    <p class="cmp-sub">Pick which plans to lay side-by-side. Cumulative times reflect each plan's pace, breaks, and stop choices.</p>
+    <a class="cmp-back" href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug) }}">&larr; Back to ride plan</a>
 
-<div class="container section">
-    {# Summary Card #}
-    <div class="summary-card">
-        <div class="summary-title">Comparison Summary</div>
-        <div class="summary-grid">
-            <div class="summary-item">
-                <div class="summary-label">Total Time Diff</div>
-                <div class="summary-value {% if comparison.total_time_diff < 0 %}positive{% elif comparison.total_time_diff > 0 %}negative{% else %}neutral{% endif %}">
-                    {% if comparison.total_time_diff > 0 %}+{% endif %}{{ (comparison.total_time_diff // 60)|int }}h{{ "%02d"|format(comparison.total_time_diff % 60) }}m
-                </div>
-            </div>
-            <div class="summary-item">
-                <div class="summary-label">Stops Added</div>
-                <div class="summary-value {% if comparison.stops_added > 0 %}positive{% else %}neutral{% endif %}">
-                    {{ comparison.stops_added }}
-                </div>
-            </div>
-            <div class="summary-item">
-                <div class="summary-label">Stops Removed</div>
-                <div class="summary-value {% if comparison.stops_hidden > 0 %}negative{% else %}neutral{% endif %}">
-                    {{ comparison.stops_hidden }}
-                </div>
-            </div>
-            <div class="summary-item">
-                <div class="summary-label">Stops Modified</div>
-                <div class="summary-value {% if comparison.stops_modified > 0 %}positive{% else %}neutral{% endif %}">
-                    {{ comparison.stops_modified }}
-                </div>
-            </div>
-        </div>
+    {# ===== Plan picker ===== #}
+    <form method="get" class="cmp-toolbar">
+      <span class="cmp-toolbar-label">Plans to compare</span>
+      <div class="cmp-options">
+        {% for opt in available_plans %}
+        <label class="cmp-opt {% if opt.selected %}is-selected{% endif %}">
+          <input type="checkbox" name="plans" value="{{ opt.token }}" {% if opt.selected %}checked{% endif %}>
+          {{ opt.label }}
+        </label>
+        {% endfor %}
+        <button type="submit" class="cmp-submit">Update</button>
+      </div>
+    </form>
+
+    {% if not selected_plans %}
+    <div class="cmp-empty">
+      <strong>No plans selected.</strong>
+      <p style="margin-top:6px;font-size:0.88rem;">Tick at least one box above and click Update.</p>
     </div>
-    
-    {# Legend #}
-    <div class="comparison-legend">
-        <span style="font-weight:600;color:var(--text);">Legend:</span>
-        <div class="legend-item">
-            <div class="legend-color" style="background:#dcfce7;"></div>
-            <span>Faster / Added</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-color" style="background:#fee2e2;"></div>
-            <span>Slower</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-color" style="background:#fef3c7;"></div>
-            <span>Modified</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-color" style="background:#f1f5f9;"></div>
-            <span>Hidden</span>
-        </div>
+    {% elif rows|length == 0 %}
+    <div class="cmp-empty">No stops to compare in the selected plans.</div>
+    {% else %}
+    <div class="cmp-table-wrap">
+      <table class="cmp-table">
+        <thead>
+          <tr>
+            <th style="min-width:200px;">Stop</th>
+            {% for p in selected_plans %}
+            <th>
+              {{ p.label }}
+              <span class="cmp-th-sub">cum · break</span>
+            </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td>
+              <div class="cmp-stop-name">{{ row.name or '—' }}</div>
+              <span class="cmp-distance">{{ "%.1f"|format(row.distance) }} mi</span>
+            </td>
+            {% for cell in row.cells %}
+            <td class="cmp-cell {% if not cell.present %}is-missing{% endif %}">
+              {% if cell.present %}
+                {% set h = (cell.cum_time_min or 0) // 60 %}
+                {% set m = (cell.cum_time_min or 0) % 60 %}
+                <span class="cmp-time">{{ h }}h {{ "%02d"|format(m) }}m</span>
+                {% if cell.stop_duration_min %}
+                <div class="cmp-meta">+{{ cell.stop_duration_min }}m break</div>
+                {% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
-    
-    {# Side-by-Side Comparison Table #}
-    <div style="background:white;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.08);overflow-x:auto;">
-        <table class="comparison-table">
-            <thead>
-                <tr>
-                    <th style="text-align:left;width:30%;">Stop</th>
-                    <th style="text-align:right;width:10%;">Distance</th>
-                    <th style="text-align:right;width:12%;">Base Plan</th>
-                    <th style="text-align:right;width:12%;">Custom Plan</th>
-                    <th style="text-align:right;width:8%;">Δ</th>
-                    <th style="text-align:right;width:14%;">Cumul (Base)</th>
-                    <th style="text-align:right;width:14%;">Cumul (Custom)</th>
-                </tr>
-            </thead>
-            <tbody>
-                {# Show all stops in order by distance #}
-                {% for item in all_stops_for_comparison %}
-                {% set base_stop = item.base_stop %}
-                {% set custom_stop = item.custom_stop %}
-                {% set is_hidden = item.is_hidden %}
-                {% set is_custom_only = item.is_custom_only %}
-                
-                <tr {% if is_hidden %}class="hidden-row"{% endif %}>
-                    {# Stop name #}
-                    <td>
-                        <div class="stop-cell">
-                            {% set display_stop = custom_stop if is_custom_only else base_stop %}
-                            <div class="stop-icon {{ display_stop.stop_type }}">
-                                {% if display_stop.stop_type == 'start' %}🚩{% elif display_stop.stop_type == 'finish' %}🏁{% elif display_stop.stop_type == 'control' %}◆{% elif display_stop.stop_type == 'rest' %}☕{% else %}•{% endif %}
-                            </div>
-                            <div class="stop-name" {% if is_hidden %}style="opacity:0.6;"{% endif %}>{{ display_stop.location }}</div>
-                            {% if is_hidden %}
-                            <span class="diff-badge" style="background:#ef4444;color:white;">Removed</span>
-                            {% elif is_custom_only %}
-                            <span class="diff-badge added">+New</span>
-                            {% endif %}
-                        </div>
-                    </td>
-                    
-                    {# Distance #}
-                    <td style="text-align:right;font-weight:600;color:#64748b;font-size:0.9rem;">
-                        {{ "%.1f"|format(item.distance_miles or 0) }}
-                    </td>
-                    
-                    {# Base time + speed #}
-                    <td style="text-align:right;">
-                        {% if base_stop and base_stop.segment_time_min %}
-                        <div style="font-weight:600;">{{ base_stop.segment_time_min }} min</div>
-                        {% if base_stop.avg_speed %}
-                        <div style="font-size:0.75rem;color:#94a3b8;margin-top:2px;">{{ base_stop.avg_speed }} mph</div>
-                        {% endif %}
-                        {% if base_stop.stop_name and base_stop.stop_duration_min and base_stop.stop_duration_min > 0 and base_stop.stop_duration_min != -1 %}
-                        <div style="font-size:0.75rem;color:#92400e;background:#fef3c7;border:1px solid #fbbf24;border-radius:3px;padding:2px 4px;margin-top:4px;display:inline-block;">☕ {{ base_stop.stop_duration_min }}m</div>
-                        {% endif %}
-                        {% else %}
-                        -
-                        {% endif %}
-                    </td>
-                    
-                    {# Custom time + speed #}
-                    <td style="text-align:right;" class="{% if is_custom_only %}diff-cell added{% elif custom_stop and custom_stop.is_modified %}diff-cell modified{% endif %}">
-                        {% if is_hidden %}
-                        <span style="color:#64748b;">-</span>
-                        {% elif custom_stop and custom_stop.segment_time_min %}
-                        <div style="font-weight:600;">{{ custom_stop.segment_time_min }} min</div>
-                        {% if custom_stop.avg_speed %}
-                        <div style="font-size:0.75rem;color:#64748b;margin-top:2px;">{{ custom_stop.avg_speed }} mph</div>
-                        {% endif %}
-                        {% if custom_stop.stop_name and custom_stop.stop_duration_min and custom_stop.stop_duration_min > 0 and custom_stop.stop_duration_min != -1 %}
-                        <div style="font-size:0.75rem;color:#92400e;background:#fef3c7;border:1px solid #fbbf24;border-radius:3px;padding:2px 4px;margin-top:4px;display:inline-block;">☕ {{ custom_stop.stop_duration_min }}m</div>
-                        {% endif %}
-                        {% else %}
-                        -
-                        {% endif %}
-                    </td>
-                    
-                    {# Time delta #}
-                    <td style="text-align:right;font-weight:700;">
-                        {% if is_hidden %}
-                        <span style="color:#dc2626;font-size:1.2rem;font-weight:900;">-</span>
-                        {% elif is_custom_only %}
-                        <span style="color:#16a34a;font-weight:700;">+{{ custom_stop.segment_time_min or 0 }}</span>
-                        {% elif custom_stop and custom_stop.is_modified and base_stop %}
-                        {% set delta = (custom_stop.segment_time_min or 0) - (base_stop.segment_time_min or 0) %}
-                        <span style="color:{% if delta < 0 %}#16a34a{% elif delta > 0 %}#dc2626{% else %}#64748b{% endif %};font-weight:700;">
-                            {% if delta > 0 %}+{% endif %}{{ delta }}
-                        </span>
-                        {% else %}
-                        <span style="color:#64748b;">-</span>
-                        {% endif %}
-                    </td>
-                    
-                    {# Base cumulative #}
-                    <td style="text-align:right;font-size:0.9rem;">
-                        {% if base_stop and base_stop.cum_time_min %}
-                        {{ (base_stop.cum_time_min // 60)|int }}:{{ "%02d"|format(base_stop.cum_time_min % 60) }}
-                        {% else %}
-                        -
-                        {% endif %}
-                    </td>
-                    
-                    {# Custom cumulative #}
-                    <td style="text-align:right;font-weight:600;font-size:0.9rem;">
-                        {% if is_hidden %}
-                        <span style="color:#64748b;">-</span>
-                        {% elif item.custom_cumulative_at_distance is not none %}
-                        <span style="color:var(--primary);">{{ (item.custom_cumulative_at_distance // 60)|int }}:{{ "%02d"|format(item.custom_cumulative_at_distance % 60) }}</span>
-                        {% else %}
-                        <span style="color:#64748b;">-</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    
-    {# Action Buttons #}
-    <div style="text-align:center;margin-top:30px;">
-        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug, view='custom') }}" 
-           class="back-link" style="margin-right:20px;">← Back to My Custom Plan</a>
-        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug, view='base') }}" 
-           class="back-link">← Back to Base Plan</a>
-    </div>
+    {% endif %}
+  </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Toggle the .is-selected style on the label as the checkbox state changes
+document.querySelectorAll('.cmp-opt input[type="checkbox"]').forEach(function (cb) {
+  cb.addEventListener('change', function () {
+    cb.closest('.cmp-opt').classList.toggle('is-selected', cb.checked);
+  });
+});
+</script>
 {% endblock %}
