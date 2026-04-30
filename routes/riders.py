@@ -1975,6 +1975,7 @@ def ride_plan_detail(slug):
                            public_custom_plans=public_custom_plans,
                            is_custom_view=False,
                            viewed_plan_owner=None,
+                           viewed_plan_id=None,
                            is_admin=is_admin_user())
 
 
@@ -2320,6 +2321,7 @@ def custom_ride_plan_view(slug, custom_plan_id=None):
                              if (custom_plan_id and custom_plan.get('rider_id') != rider_id)
                              else None
                          ),
+                         viewed_plan_id=(custom_plan['id'] if custom_plan_id and custom_plan.get('rider_id') != rider_id else None),
                          is_admin=is_admin_user())
 
 

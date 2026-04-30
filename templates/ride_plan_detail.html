@@ -772,7 +772,8 @@
 }
 
 .btn-custom-plan:hover {
-    background: var(--primary-dark);
+    background: #142a4d;
+    color: #fff;
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
@@ -862,7 +863,7 @@
 {% block content %}
 {# ===== A. ENHANCED HERO ===== #}
 <div class="hero" style="padding-bottom:60px;" id="hero-section">
-    <div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:10px;">
+    <div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
         <svg viewBox="0 0 20 20" width="24" height="24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M10 1C7.2 1 5 3.2 5 6c0 3.5 5 8 5 8s5-4.5 5-8c0-2.8-2.2-5-5-5z"/>
           <circle cx="10" cy="6" r="1.5" fill="white"/>
@@ -873,6 +874,13 @@
         {% if plan.distance_km %}
         <span style="background:rgba(255,255,255,0.2);padding:4px 14px;border-radius:20px;font-size:0.85rem;font-weight:600;">{{ plan.distance_km }}K Brevet</span>
         {% endif %}
+        {% if viewed_plan_owner %}
+        <span style="background:linear-gradient(135deg,#553c9a,#805ad5);padding:4px 14px;border-radius:20px;font-size:0.78rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">{{ viewed_plan_owner.first_name }}'s Plan &middot; Community</span>
+        {% elif is_custom_view %}
+        <span style="background:#16a34a;padding:4px 14px;border-radius:20px;font-size:0.78rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">My Custom Plan</span>
+        {% else %}
+        <span style="background:rgba(255,255,255,0.18);padding:4px 14px;border-radius:20px;font-size:0.78rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">Base Plan</span>
+        {% endif %}
     </div>
     <h1>{% if is_custom_view and plan.custom_name %}{{ plan.custom_name }}{% else %}{{ plan.name }}{% endif %}</h1>
     <p style="opacity:0.85;margin-top:8px;">{{ stops|length }} stops &middot; {{ "%.1f"|format(plan.total_distance_miles) }} miles &middot; {{ "{:,}".format(plan.total_elevation_ft) }} ft of climbing</p>
@@ -880,6 +888,99 @@
     <p style="opacity:0.65;font-size:0.88rem;margin-top:4px;">ACP time limit: {{ plan.cutoff_hours }}h &middot; Start: <span id="hero-start-time">{{ plan.start_time }}</span></p>
     {% endif %}
 </div>
+
+{# ===== PLAN NAVIGATION BANNER (right under hero) ===== #}
+{% if session.user_id %}
+<div class="container" style="padding-top:20px;">
+<div class="custom-plan-banner">
+    <div>
+        {% if viewed_plan_owner %}
+        <h3>👀 Viewing {{ viewed_plan_owner.first_name }} {{ viewed_plan_owner.last_name }}'s plan</h3>
+        <p>Shared by {{ viewed_plan_owner.first_name }}. Copy it to start your own from this.</p>
+        {% elif is_custom_view %}
+        <h3>📋 You're viewing your custom plan</h3>
+        <p>Your personalized version of this brevet</p>
+        {% elif user_custom_plan %}
+        <h3>✏️ You have a custom plan for this ride</h3>
+        <p>Switch to your custom version, compare, or edit it</p>
+        {% else %}
+        <h3>🛠️ Create Your Own Plan</h3>
+        <p>Personalize this ride plan with your own pace, timing, and stops</p>
+        {% endif %}
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        {% if viewed_plan_owner %}
+            {# viewing community plan: offer my plan, base, copy #}
+            {% if user_custom_plan %}
+            <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}" class="btn-custom-plan">
+                📋 View My Custom Plan
+            </a>
+            {% endif %}
+            <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='base') }}" class="btn-custom-plan" style="background:#6366f1;">
+                📄 Base Plan
+            </a>
+            {% if viewed_plan_id %}
+            <button type="button"
+                    onclick="clonePlan({{ viewed_plan_id }}, {{ (plan.custom_name or plan.name)|tojson }})"
+                    class="btn-custom-plan" style="background:#16a34a;border:0;cursor:pointer;font-family:inherit;">
+                📥 Copy This Plan
+            </button>
+            {% endif %}
+        {% elif is_custom_view %}
+            {# viewing my custom: offer base + compare + edit (hide "View My") #}
+            <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='base') }}"
+               class="btn-custom-plan" style="background:#6366f1;">
+                📄 Base Plan
+            </a>
+            <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}"
+               class="btn-custom-plan" style="background:#f59e0b;">
+                📊 Compare Plans
+            </a>
+            <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}"
+               class="btn-custom-plan" style="background:#16a34a;">
+                ✏️ Edit
+            </a>
+        {% elif user_custom_plan %}
+            {# viewing base, has custom plan: offer my plan + compare (hide "Base") + admin edit #}
+            <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}"
+               class="btn-custom-plan">
+                📋 View My Custom Plan
+            </a>
+            <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}"
+               class="btn-custom-plan" style="background:#f59e0b;">
+                📊 Compare Plans
+            </a>
+            {% if is_admin %}
+            <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}"
+               class="btn-custom-plan" style="background:#16a34a;">
+                ✏️ Edit Stops
+            </a>
+            <a href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}"
+               class="btn-custom-plan" style="background:#0369a1;">
+                ⚙️ Edit Info
+            </a>
+            {% endif %}
+        {% else %}
+            {# viewing base, no custom plan yet #}
+            <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}"
+               class="btn-custom-plan create">
+                ➕ Create Custom Plan
+            </a>
+            {% if is_admin %}
+            <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}"
+               class="btn-custom-plan" style="background:#16a34a;">
+                ✏️ Edit Stops
+            </a>
+            <a href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}"
+               class="btn-custom-plan" style="background:#0369a1;">
+                ⚙️ Edit Info
+            </a>
+            {% endif %}
+        {% endif %}
+    </div>
+</div>
+</div>
+{% endif %}
 
 {# ===== B. STATS ROW - Plan Summary ===== #}
 <div class="stats-row">
@@ -1030,83 +1131,6 @@
     </a>
     {% endif %}
 </div>
-
-{# ===== CUSTOM PLAN BANNER ===== #}
-{% if session.user_id %}
-<div class="custom-plan-banner">
-    <div>
-        {% if viewed_plan_owner %}
-        <h3>👀 Viewing {{ viewed_plan_owner.first_name }}'s plan</h3>
-        <p>This is a community plan shared by {{ viewed_plan_owner.first_name }} {{ viewed_plan_owner.last_name }}. Use "Copy" on the base plan page to start your own from this.</p>
-        {% elif user_custom_plan %}
-        <h3>✏️ You have a custom plan for this ride</h3>
-        <p>{% if is_custom_view %}Viewing your personalized version · {% endif %}Switch between views or edit your plan</p>
-        {% else %}
-        <h3>🛠️ Create Your Own Plan</h3>
-        <p>Personalize this ride plan with your own pace, timing, and stops</p>
-        {% endif %}
-    </div>
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        {% if user_custom_plan and not viewed_plan_owner %}
-        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}"
-           class="btn-custom-plan {% if is_custom_view %}active{% endif %}">
-            📋 View My Custom Plan
-        </a>
-        {% if is_admin %}
-        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='base') }}"
-           class="btn-custom-plan {% if not is_custom_view %}active{% endif %}" style="background:#6366f1;">
-            📄 Base Plan
-        </a>
-        {% endif %}
-        <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}"
-           class="btn-custom-plan" style="background:#f59e0b;">
-            📊 Compare Plans
-        </a>
-        {% if is_custom_view %}
-        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}"
-           class="btn-custom-plan" style="background:#16a34a;">
-            ✏️ Edit
-        </a>
-        {% elif is_admin %}
-        <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}"
-           class="btn-custom-plan" style="background:#16a34a;">
-            ✏️ Edit Stops
-        </a>
-        <a href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}"
-           class="btn-custom-plan" style="background:#0369a1;">
-            ⚙️ Edit Info
-        </a>
-        {% endif %}
-        {% elif viewed_plan_owner %}
-        {% if user_custom_plan %}
-        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}"
-           class="btn-custom-plan">
-            📋 View My Custom Plan
-        </a>
-        {% endif %}
-        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='base') }}"
-           class="btn-custom-plan" style="background:#6366f1;">
-            📄 Back to Base Plan
-        </a>
-        {% else %}
-        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}"
-           class="btn-custom-plan create">
-            ➕ Create Custom Plan
-        </a>
-        {% if is_admin %}
-        <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}"
-           class="btn-custom-plan" style="background:#16a34a;">
-            ✏️ Edit Stops
-        </a>
-        <a href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}"
-           class="btn-custom-plan" style="background:#0369a1;">
-            ⚙️ Edit Info
-        </a>
-        {% endif %}
-        {% endif %}
-    </div>
-</div>
-{% endif %}
 
 
 
