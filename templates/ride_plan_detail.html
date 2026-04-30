@@ -971,7 +971,7 @@
         {% if viewed_plan_owner or is_custom_view %}
         <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='base') }}" class="cp-link">📄 Base Plan</a>
         {% endif %}
-        {% if user_custom_plan and not viewed_plan_owner %}
+        {% if user_custom_plan or viewed_plan_owner %}
         <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}" class="cp-link">📊 Compare</a>
         {% endif %}
         {% if is_custom_view and not viewed_plan_owner %}

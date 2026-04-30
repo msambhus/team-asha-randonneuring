@@ -3093,11 +3093,14 @@ def compare_ride_plans(slug):
             'rider_first': cp['first_name'],
         })
 
-    # Resolve selection
-    plans_param = request.args.get('plans', '').strip()
-    if plans_param:
-        selected_tokens = [t.strip() for t in plans_param.split(',') if t.strip()]
-    else:
+    # Resolve selection. The form posts each checkbox as a separate
+    # `plans=<token>` query param, so use getlist. Fall back to a
+    # comma-split for hand-crafted URLs.
+    selected_tokens = request.args.getlist('plans')
+    if len(selected_tokens) == 1 and ',' in selected_tokens[0]:
+        selected_tokens = [t.strip() for t in selected_tokens[0].split(',') if t.strip()]
+    selected_tokens = [t.strip() for t in selected_tokens if t and t.strip()]
+    if not selected_tokens:
         selected_tokens = ['base'] + (['my'] if my_custom else [])
 
     # Mark selection state on the catalog
