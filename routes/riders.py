@@ -3151,27 +3151,41 @@ def compare_ride_plans(slug):
                 'rider_first': owner_first,
             })
 
-    # Build the row union: one row per unique stop distance across all selected plans.
+    # Build the row union: one row per unique stop distance across all
+    # selected plans. Distance is the join key so stops at the same
+    # mile-marker line up across plans even if their names differ.
+    def _miles(s):
+        try:
+            return round(float(s.get('distance_miles') or 0), 1)
+        except (ValueError, TypeError):
+            return 0.0
+
+    def _stop_label(s):
+        # Prefer the location (control name); fall back to stop_name (e.g. "Lunch")
+        return (s.get('location') or s.get('stop_name') or s.get('name') or '').strip()
+
     distance_to_name = {}
     for p in selected_plans:
-        for s in p['stops']:
-            d = round(float(s.get('distance_miles') or 0), 1)
-            if d not in distance_to_name and s.get('name'):
-                distance_to_name[d] = s['name']
+        for s in (p.get('stops') or []):
+            d = _miles(s)
+            nm = _stop_label(s)
+            if d not in distance_to_name:
+                distance_to_name[d] = nm
+            elif not distance_to_name[d] and nm:
+                distance_to_name[d] = nm
     distances = sorted(distance_to_name.keys())
 
     rows = []
     for d in distances:
         cells = []
         for p in selected_plans:
-            stop = next((s for s in p['stops']
-                         if round(float(s.get('distance_miles') or 0), 1) == d), None)
+            stop = next((s for s in (p.get('stops') or []) if _miles(s) == d), None)
             cells.append({
                 'present': stop is not None,
-                'stop_name': stop.get('name') if stop else None,
-                'cum_time_min': stop.get('cum_time_min') if stop else None,
-                'stop_duration_min': stop.get('stop_duration_min') if stop else None,
-                'segment_time_min': stop.get('segment_time_min') if stop else None,
+                'stop_name': (_stop_label(stop) if stop else None),
+                'cum_time_min': (stop.get('cum_time_min') if stop else None),
+                'stop_duration_min': (stop.get('stop_duration_min') if stop else None),
+                'segment_time_min': (stop.get('segment_time_min') if stop else None),
             })
         rows.append({
             'distance': d,
