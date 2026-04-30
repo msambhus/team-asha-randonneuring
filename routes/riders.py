@@ -2309,7 +2309,10 @@ def custom_ride_plan_view(slug, custom_plan_id=None):
                              if (custom_plan_id and rider_id and custom_plan.get('rider_id') != rider_id)
                              else custom_plan_data
                          ),
-                         public_custom_plans=[],
+                         public_custom_plans=[
+                             p for p in get_public_custom_plans(base_plan['id'])
+                             if p['id'] != custom_plan['id']
+                         ],
                          is_custom_view=True,
                          viewed_plan_owner=(
                              _execute("SELECT first_name, last_name FROM rider WHERE id = %s",

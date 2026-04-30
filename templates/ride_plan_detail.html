@@ -1078,6 +1078,12 @@
         </a>
         {% endif %}
         {% elif viewed_plan_owner %}
+        {% if user_custom_plan %}
+        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}"
+           class="btn-custom-plan">
+            📋 View My Custom Plan
+        </a>
+        {% endif %}
         <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='base') }}"
            class="btn-custom-plan" style="background:#6366f1;">
             📄 Back to Base Plan
