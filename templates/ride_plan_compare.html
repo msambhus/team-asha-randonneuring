@@ -118,7 +118,7 @@
 .cmp-cell {
   font-size: 0.84rem;
   color: #334155;
-  border-left: 3px solid transparent;
+  border-left: 4px solid transparent;
   padding-left: 8px;
 }
 .cmp-cell .cmp-time {
@@ -130,22 +130,14 @@
 }
 .cmp-cell .cmp-delta {
   font-size: 0.68rem; font-weight: 700;
-  margin-left: 4px;
+  margin-left: 4px; color: #94a3b8;
 }
 .cmp-cell.is-missing { color: #cbd5e0; font-style: italic; }
-/* Fastest cell — green; slowest — red. Border on the left so the
-   color is unambiguous even on alternating-row stripes. */
-.cmp-cell.is-fastest {
-  background: #dcfce7;
-  border-left-color: #16a34a;
-}
-.cmp-cell.is-fastest .cmp-time { color: #14532d; }
+/* Fastest cell — green left border only; slowest — red left border.
+   No background fill so it stays subtle on top of striped rows. */
+.cmp-cell.is-fastest { border-left-color: #16a34a; }
 .cmp-cell.is-fastest .cmp-delta { color: #16a34a; }
-.cmp-cell.is-slowest {
-  background: #fee2e2;
-  border-left-color: #dc2626;
-}
-.cmp-cell.is-slowest .cmp-time { color: #7f1d1d; }
+.cmp-cell.is-slowest { border-left-color: #dc2626; }
 .cmp-cell.is-slowest .cmp-delta { color: #dc2626; }
 </style>
 {% endblock %}
