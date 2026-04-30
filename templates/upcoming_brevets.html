@@ -807,9 +807,18 @@
         {% endif %}
 
         {% if event.plan_slug %}
-        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug, view='custom' if event.has_custom_plan else 'base') }}" class="event-link-btn" style="background:linear-gradient(135deg,#f0f4ff,#e8f0fe);border-color:#c7d2fe;color:#4338ca;">
-            📍 Ride Plan{% if event.has_custom_plan %} (Custom){% endif %}
+        {% if event.has_custom_plan %}
+        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug, view='custom') }}" class="event-link-btn" style="background:linear-gradient(135deg,#f0f4ff,#e8f0fe);border-color:#c7d2fe;color:#4338ca;">
+            📍 My Ride Plan
         </a>
+        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug, view='base') }}" class="event-link-btn" style="background:#f8fafc;border-color:#cbd5e0;color:#334155;">
+            📄 Base Plan
+        </a>
+        {% else %}
+        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug, view='base') }}" class="event-link-btn" style="background:linear-gradient(135deg,#f0f4ff,#e8f0fe);border-color:#c7d2fe;color:#4338ca;">
+            📍 Ride Plan
+        </a>
+        {% endif %}
         {% endif %}
     </div>
 
