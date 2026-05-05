@@ -14,14 +14,16 @@
     {% if plan %}
     <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug) }}" class="btn" style="background:#f0f4ff;color:#4338ca;border:1px solid #c7d2fe;">Ride Plan</a>
     {% endif %}
-    {% if ride.rwgps_url %}
-    <a href="{{ ride.rwgps_url }}" target="_blank" class="btn" style="background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;">Route (RWGPS)</a>
+    {% set rwgps = ride.rwgps_url or (plan.rwgps_url if plan else none) %}
+    {% set rwgps_team = ride.rwgps_url_team or (plan.rwgps_url_team if plan else none) %}
+    {% if rwgps %}
+    <a href="{{ rwgps }}" target="_blank" class="btn" style="background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;">Route (RWGPS)</a>
     {% endif %}
-    {% if ride.rwgps_url_team %}
-    <a href="{{ ride.rwgps_url_team }}" target="_blank" class="btn" style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;">Team Asha Route</a>
+    {% if rwgps_team %}
+    <a href="{{ rwgps_team }}" target="_blank" class="btn" style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;">Team Asha Route</a>
     {% endif %}
-    {% if ride.rwgps_url_team or ride.rwgps_url %}
-    {% set weather_rwgps = ride.rwgps_url_team or ride.rwgps_url %}
+    {% if rwgps_team or rwgps %}
+    {% set weather_rwgps = rwgps_team or rwgps %}
     <a href="{{ url_for('weather.weather_page', rwgps_url=weather_rwgps, start_datetime=ride.date|string + 'T' + (ride.start_time or '06:00'), plan_slug=plan.slug if plan else '', auto='1') }}" class="btn" style="background:#ecfdf5;color:#065f46;border:1px solid #6ee7b7;">Weather</a>
     {% endif %}
     {% if can_edit %}
