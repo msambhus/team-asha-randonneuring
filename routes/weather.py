@@ -147,13 +147,18 @@ def _load_plan_stops(plan_slug, rider_id=None):
 
     # Use base plan stops
     raw_stops = get_ride_plan_stops(plan['id'])
-    # Recalculate cumulative times (same as ride_plan_detail does)
+    # Recalculate cumulative times (same as ride_plan_detail does):
+    # cum time includes BOTH the riding segment time AND the break duration
+    # at each control. Without the break time, the last stop's cum_time
+    # under-counts the actual finish by hours, which compresses the whole
+    # weather schedule into too-early hours.
     stops = []
     cum_time = 0
     for s in raw_stops:
         d = dict(s)
         seg_time = int(d.get('segment_time_min') or 0)
-        cum_time += seg_time
+        stop_duration = int(d.get('stop_duration_min') or 0)
+        cum_time += seg_time + stop_duration
         d['cum_time_min'] = cum_time
         stops.append(d)
     return stops, plan.get('name', '')
