@@ -1202,6 +1202,40 @@ def refresh_rusa_events():
         return jsonify({'error': str(e)}), 500
 
 
+@admin_bp.route('/rides/<int:ride_id>/detail')
+def ride_detail(ride_id):
+    """Ride detail page — finishers, finish times, plan links, weather. Public."""
+    from models import get_ride_by_id, _execute
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        abort(404)
+
+    participants = _execute("""
+        SELECT r.id as rider_id, r.first_name, r.last_name, r.rusa_id,
+               rr.status, rr.finish_time
+        FROM rider_ride rr
+        JOIN rider r ON r.id = rr.rider_id
+        WHERE rr.ride_id = %s
+        ORDER BY
+            CASE rr.status
+                WHEN 'FINISHED' THEN 1 WHEN 'DNF' THEN 2
+                WHEN 'DNS' THEN 3 WHEN 'OTL' THEN 4 ELSE 5
+            END,
+            rr.finish_time NULLS LAST, r.first_name
+    """, (ride_id,)).fetchall()
+
+    plan = None
+    if ride.get('ride_plan_id'):
+        plan = _execute("SELECT * FROM ride_plan WHERE id = %s", (ride['ride_plan_id'],)).fetchone()
+
+    from routes.riders import is_admin_user
+    can_edit = is_admin_user()
+
+    return render_template('admin/ride_detail.html',
+                           ride=ride, participants=participants,
+                           plan=plan, can_edit=can_edit)
+
+
 @admin_bp.route('/users')
 @user_login_required
 def admin_users():
