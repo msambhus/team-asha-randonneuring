@@ -918,9 +918,14 @@
         {% endif %}
     </td>
     <td style="padding:8px 12px;">
+        {% set evt_rwgps = event.rwgps_url or event.plan_rwgps_url %}
         {% if event.plan_slug %}
-        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug) }}" style="color:var(--accent);font-size:0.85rem;">View Plan</a>
-        {% else %}
+        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug) }}" style="color:var(--accent);font-size:0.85rem;margin-right:8px;">Plan</a>
+        {% endif %}
+        {% if evt_rwgps %}
+        <a href="{{ evt_rwgps }}" target="_blank" style="color:#c2410c;font-size:0.85rem;margin-right:8px;">Route</a>
+        {% endif %}
+        {% if not event.plan_slug and not evt_rwgps %}
         <span style="color:#cbd5e1;">-</span>
         {% endif %}
     </td>

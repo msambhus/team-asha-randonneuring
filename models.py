@@ -376,6 +376,7 @@ def get_completed_events_for_season(season_id):
     return _execute("""
         SELECT ri.*, c.code as club_code, c.name as club_name, c.region,
                rp.slug as plan_slug,
+               rp.rwgps_url as plan_rwgps_url, rp.rwgps_url_team as plan_rwgps_url_team,
                COUNT(rr.id) FILTER (WHERE rr.status = %s) as finisher_count,
                COUNT(rr.id) FILTER (WHERE rr.status IS NOT NULL) as signup_count
         FROM ride ri
@@ -383,7 +384,7 @@ def get_completed_events_for_season(season_id):
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         LEFT JOIN rider_ride rr ON rr.ride_id = ri.id
         WHERE ri.season_id = %s AND ri.date < %s
-        GROUP BY ri.id, c.code, c.name, c.region, rp.slug
+        GROUP BY ri.id, c.code, c.name, c.region, rp.slug, rp.rwgps_url, rp.rwgps_url_team
         ORDER BY ri.date DESC
     """, (RideStatus.FINISHED.value, season_id, today)).fetchall()
 
