@@ -907,7 +907,7 @@
 {% for event in completed_events %}
 <tr style="border-bottom:1px solid #f1f5f9;">
     <td style="padding:8px 12px;white-space:nowrap;">{{ event.date }}</td>
-    <td style="padding:8px 12px;font-weight:500;">{{ event.name|clean_name }}</td>
+    <td style="padding:8px 12px;font-weight:500;"><a href="{{ url_for('admin.ride_detail', ride_id=event.id) }}" style="text-decoration:none;color:#1e293b;">{{ event.name|clean_name }}</a></td>
     <td style="padding:8px 12px;"><span style="color:{{ region_colors.get(event.region, '#999') }};font-weight:500;">{{ event.club_code }}</span></td>
     <td style="padding:8px 12px;text-align:right;">{{ event.distance_km }}k</td>
     <td style="padding:8px 12px;text-align:right;">
