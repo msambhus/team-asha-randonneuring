@@ -2210,6 +2210,20 @@ def _to_v2_stops(stops, plan, stop_wind):
         else:
             fpm_class = 't4'
 
+        # ACP cutoff ETA: linear over total distance × cutoff_hours.
+        # cutoff_eta = start_time + (cumul_mi / total_mi) * cutoff_h
+        cutoff_eta = ''
+        total_mi = plan.get('total_distance_miles') or 0
+        cutoff_h = plan.get('cutoff_hours')
+        cumul_mi = s.get('distance_miles') or 0
+        if cutoff_h and total_mi > 0 and cumul_mi >= 0:
+            cutoff_total_min = start_minutes + round((cumul_mi / total_mi) * cutoff_h * 60)
+            cd, cinday = divmod(cutoff_total_min, 24 * 60)
+            ch, cm = divmod(cinday, 60)
+            cutoff_eta = f"{ch:02d}:{cm:02d}"
+            if cd >= 1:
+                cutoff_eta = f"{cutoff_eta}+{cd}"
+
         out.append({
             'i': i,
             'type': v2_type,
@@ -2223,6 +2237,7 @@ def _to_v2_stops(stops, plan, stop_wind):
             'eta': eta,
             'bank': bank,
             'bank_min': bank_min if bank_min is not None else 0,
+            'cutoff_eta': cutoff_eta,
             'wind_mph': wind_speed_mph if wind_speed_mph is not None else 0,
             'wind_label': wind_label or '',
             'wind_arrow_deg': wind_arrow_deg if wind_arrow_deg is not None else 0,

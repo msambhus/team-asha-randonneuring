@@ -45,7 +45,7 @@
             ('strategies', 'Strategies', ''),
             ('risks', 'Risks', ''),
             ('fatigue', 'Fatigue', 'soon'),
-            ('print', 'Print briefing', 'soon'),
+            ('print', 'Print briefing', ''),
         ] %}
         {% for key, label, pill in tabs %}
         <button type="button" class="rpv2-tab {% if (active_tab or 'plan') == key %}is-active{% endif %}"
@@ -372,17 +372,126 @@
         {% endif %}
     </section>
 
-    {# ===== Stub tabs (Phase 3) ===== #}
-    {% for key, label in [('fatigue', 'Fatigue'), ('print', 'Print briefing')] %}
-    <section class="rpv2-panel {% if active_tab == key %}is-active{% endif %}"
-             id="rpv2-panel-{{ key }}" role="tabpanel" aria-labelledby="rpv2-tab-{{ key }}" data-panel="{{ key }}">
+    {# ===== Print briefing tab ===== #}
+    <section class="rpv2-panel {% if active_tab == 'print' %}is-active{% endif %}"
+             id="rpv2-panel-print" role="tabpanel" aria-labelledby="rpv2-tab-print" data-panel="print">
+        <div class="rpv2-pb-controls">
+            <span>Print briefing — fits on one A5 sheet</span>
+            <button type="button" id="rpv2-pb-print">🖨 Print</button>
+        </div>
+        <div class="rpv2-pb-paper">
+            <div class="rpv2-pb-h1">
+                <div>
+                    <div class="rpv2-pb-h-eyebrow">
+                        {%- if plan.distance_km %}{{ plan.distance_km }}K Brevet{% endif -%}
+                        {%- if plan.linked_ride_date %} · {{ plan.linked_ride_date.isoformat() }}{% endif -%}
+                    </div>
+                    <div class="rpv2-pb-h-title">{{ plan.name }}</div>
+                </div>
+                <div class="rpv2-pb-h-stats">
+                    <div><b>{{ "%.0f"|format(plan.total_distance_miles or 0) }}</b><small>mi</small></div>
+                    <div><b>{{ "%.1f"|format((plan.total_elevation_ft or 0) / 1000) }}</b><small>k ft</small></div>
+                    <div><b>{{ plan.cutoff_hours or '—' }}h</b><small>cutoff</small></div>
+                    <div><b>{{ plan.start_time or '—' }}</b><small>start</small></div>
+                </div>
+            </div>
+
+            <div class="rpv2-pb-section">
+                <div class="rpv2-pb-section-h">Itinerary</div>
+                <table class="rpv2-pb-tbl">
+                    <thead>
+                        <tr>
+                            <th>#</th><th>Stop</th>
+                            <th class="r">Mi</th><th class="r">ETA</th>
+                            <th class="r">Cutoff</th><th>Note</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% set ns_pb = namespace(idx=0) %}
+                        {% for s in stops_v2 if s.type != 'waypoint' %}
+                            {% set ns_pb.idx = ns_pb.idx + 1 %}
+                            <tr class="{{ 'rpv2-pb-tr-halt' if s.is_halt else '' }}">
+                                <td>{{ ns_pb.idx }}</td>
+                                <td class="rpv2-pb-tbl-name">
+                                    {{ s.name|replace('Open Control #', 'OC#')|replace(', CA', '') }}
+                                    {% if s.type == 'control' %}<span class="rpv2-pb-tag">OC</span>{% endif %}
+                                </td>
+                                <td class="r mono">{{ "%.1f"|format(s.cumul_mi) }}</td>
+                                <td class="r mono"><b>{{ s.eta }}</b></td>
+                                <td class="r mono rpv2-pb-cutoff">{{ s.cutoff_eta or '—' }}</td>
+                                <td class="rpv2-pb-tbl-note">
+                                    {{ s.note }}{% if s.break_min %} · {{ s.break_min }}m{% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="rpv2-pb-2col">
+                <div class="rpv2-pb-section">
+                    <div class="rpv2-pb-section-h">Conditions</div>
+                    <table class="rpv2-pb-tbl rpv2-pb-tbl-sm">
+                        <tbody>
+                            <tr><td>Temperature</td>
+                                <td>{% if weather_summary.temp_low is not none and weather_summary.temp_high is not none %}{{ weather_summary.temp_low }}–{{ weather_summary.temp_high }}°F{% else %}—{% endif %}</td></tr>
+                            <tr><td>Wind</td>
+                                <td>{% if weather_summary.wind_max %}to {{ weather_summary.wind_max }} mph{% else %}—{% endif %}</td></tr>
+                            <tr><td>Sunrise / sunset</td>
+                                <td>{{ risks.sunrise_str or '—' }} / {{ risks.sunset_str or '—' }}</td></tr>
+                            {% set halt_stop = (stops_v2 | selectattr('is_halt', 'equalto', true) | first) %}
+                            {% if halt_stop %}
+                            <tr><td>Night halt</td>
+                                <td>{{ halt_stop.name|truncate(28, true, '…') }} · {{ halt_stop.eta }}</td></tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="rpv2-pb-section">
+                    <div class="rpv2-pb-section-h">Emergency contacts</div>
+                    <table class="rpv2-pb-tbl rpv2-pb-tbl-sm">
+                        <tbody>
+                            <tr><td>RBA</td><td class="mono">—</td></tr>
+                            <tr><td>Drop bag</td><td class="mono">—</td></tr>
+                            <tr><td>Buddy</td><td class="mono">—</td></tr>
+                            <tr><td>Roadside (CHP)</td><td class="mono">800-835-5247</td></tr>
+                        </tbody>
+                    </table>
+                    <div class="rpv2-pb-fill-note">Fill in by hand before the ride.</div>
+                </div>
+            </div>
+
+            <div class="rpv2-pb-section">
+                <div class="rpv2-pb-section-h">Top-tube tear-off · cut and tape</div>
+                <div class="rpv2-pb-toptube">
+                    {% for s in stops_v2 if s.type in ('control', 'finish') %}
+                    <div class="rpv2-pb-tt-cell">
+                        <div class="rpv2-pb-tt-mi">{{ "%.0f"|format(s.cumul_mi) }}</div>
+                        <div class="rpv2-pb-tt-name">{{ s.name|replace('Open Control #', 'OC#')|replace(', CA', '')|truncate(14, true, '…') }}</div>
+                        <div class="rpv2-pb-tt-times">
+                            <span>{{ s.eta }}</span>
+                            <small>{{ s.cutoff_eta or '—' }}</small>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="rpv2-pb-footer">
+                Team Asha Randonneuring · /ride-plan/{{ plan.slug }}
+            </div>
+        </div>
+    </section>
+
+    {# ===== Stub tab (Fatigue) ===== #}
+    <section class="rpv2-panel {% if active_tab == 'fatigue' %}is-active{% endif %}"
+             id="rpv2-panel-fatigue" role="tabpanel" aria-labelledby="rpv2-tab-fatigue" data-panel="fatigue">
         <div class="rpv2-coming">
-            <b>{{ label }}</b> — coming soon. <br>
+            <b>Fatigue</b> — coming soon. <br>
             This tab will ship in the next phase. For now the
             <a href="?tab=plan">Plan tab</a> has everything.
         </div>
     </section>
-    {% endfor %}
 
 </div>
 {% endblock %}
@@ -810,6 +919,16 @@
     });
     // Initialise default selection (standard) if it exists
     if (document.querySelector('[data-pace-id="standard"]')) applyPick('standard');
+
+    // Print button (Print briefing tab)
+    var printBtn = document.getElementById('rpv2-pb-print');
+    if (printBtn) {
+        printBtn.addEventListener('click', function() {
+            // Ensure the print panel is active first
+            activate('print', true);
+            window.print();
+        });
+    }
 
     // Share button — copies current URL
     var shareBtn = document.getElementById('rpv2-share');
