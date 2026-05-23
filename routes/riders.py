@@ -2110,6 +2110,10 @@ def ride_plan_detail_v2(slug):
     # Pace strategies (3 variants)
     paces = compute_pace_strategies(stops, plan, plan.get('start_time', '06:00'), cutoff_hours)
 
+    # Risk overlay (wind / dark / bank)
+    risks = compute_risk_zones(stops, v2_stops, plan, plan.get('start_time', '06:00'),
+                               plan.get('linked_ride_date'))
+
     active_tab = request.args.get('tab', 'plan')
 
     return render_template('ride_plan_detail_v2.html',
@@ -2117,6 +2121,7 @@ def ride_plan_detail_v2(slug):
                            stops_v2=v2_stops,
                            fuel_stops_v2=fuel_stops_v2,
                            paces=paces,
+                           risks=risks,
                            total_time=total_time,
                            total_moving_time=total_moving_time,
                            total_break_time=total_break_time,
@@ -2366,6 +2371,194 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours):
             'stops': psh_stops,
         },
     ]
+
+
+# Bay Area sunrise/sunset by month — rough approximation. The v2 risk overlay
+# uses these as a heuristic when we don't have a precise computation per
+# lat/lon. Times are PST/PDT-naive (matches local wall-clock display).
+_BAY_AREA_SUN = {
+    1: ('07:25', '17:20'), 2: ('06:55', '17:50'), 3: ('06:20', '18:20'),
+    4: ('06:30', '19:45'), 5: ('05:55', '20:15'), 6: ('05:45', '20:30'),
+    7: ('05:55', '20:30'), 8: ('06:20', '20:05'), 9: ('06:45', '19:25'),
+    10: ('07:15', '18:35'), 11: ('06:45', '17:00'), 12: ('07:15', '16:45'),
+}
+
+
+def _hm_to_min(s):
+    try:
+        h, m = (int(x) for x in s.split(':')[:2])
+        return h * 60 + m
+    except (ValueError, AttributeError):
+        return 0
+
+
+def compute_risk_zones(stops, v2_stops, plan, start_time_str, ride_date):
+    """Build risk-overlay data for the v2 Risks tab.
+
+    Returns a dict the template iterates over to draw the 4-lane SVG.
+    """
+    try:
+        start_hr, start_min = (int(x) for x in start_time_str.split(':')[:2])
+    except (ValueError, AttributeError):
+        start_hr, start_min = 6, 0
+    start_minutes = start_hr * 60 + start_min
+
+    month = ride_date.month if ride_date else 5
+    sunrise_str, sunset_str = _BAY_AREA_SUN.get(month, _BAY_AREA_SUN[5])
+    sunrise_min = _hm_to_min(sunrise_str)
+    sunset_min = _hm_to_min(sunset_str)
+
+    total_mi = plan.get('total_distance_miles') or 0
+    if not total_mi or len(stops) < 2:
+        return {
+            'has_data': False, 'sunrise_str': sunrise_str, 'sunset_str': sunset_str,
+            'segments': [], 'callouts': [],
+            'night_mi_from': None, 'night_mi_to': None,
+            'max_elev_ft': 0,
+        }
+
+    def find_transition_mi(target_minutes_in_day, day_offset):
+        """Mile at which arrival_time crosses target (linear interp between stops)."""
+        target_total = day_offset * 24 * 60 + target_minutes_in_day
+        prev_total = None
+        prev_mi = 0
+        for s in stops:
+            arr = start_minutes + (s.get('arrival_time_min') or 0)
+            cur_mi = float(s.get('distance_miles') or 0)
+            if prev_total is not None and prev_total <= target_total <= arr:
+                if arr == prev_total:
+                    return cur_mi
+                t = (target_total - prev_total) / (arr - prev_total)
+                return prev_mi + t * (cur_mi - prev_mi)
+            prev_total = arr
+            prev_mi = cur_mi
+        return None
+
+    # Build segments — one per gap between adjacent stops
+    segments = []
+    cum_elev = 0
+    max_elev = 0
+    for i in range(1, len(stops)):
+        prev = stops[i - 1]
+        cur = stops[i]
+        mi_from = float(prev.get('distance_miles') or 0)
+        mi_to = float(cur.get('distance_miles') or 0)
+        cum_elev += int(cur.get('elevation_gain') or 0)
+        max_elev = max(max_elev, cum_elev)
+        # Wind for this segment: use v2_stops[i].wind_mph + label
+        vs = v2_stops[i] if i < len(v2_stops) else {}
+        wmph = vs.get('wind_mph') or 0
+        wlabel = vs.get('wind_label') or ''
+        if not vs.get('wind_known'):
+            wind_color, wind_intense = '#cbd5e1', False
+        elif wlabel == 'Head' and wmph >= 15:
+            wind_color, wind_intense = '#dc2626', True
+        elif wlabel == 'Head' and wmph >= 10:
+            wind_color, wind_intense = '#ea580c', True
+        elif wlabel == 'Cross' and wmph >= 15:
+            wind_color, wind_intense = '#ca8a04', False
+        elif wmph >= 10:
+            wind_color, wind_intense = '#84cc16', False
+        else:
+            wind_color, wind_intense = '#16a34a', False
+        # Bank for this segment
+        bank_min = cur.get('time_bank_min')
+        if bank_min is None:
+            bank_color, bank_intense = '#cbd5e1', False
+        elif bank_min < 30:
+            bank_color, bank_intense = '#dc2626', True
+        elif bank_min < 60:
+            bank_color, bank_intense = '#ea580c', True
+        elif bank_min < 90:
+            bank_color, bank_intense = '#ca8a04', False
+        else:
+            bank_color, bank_intense = '#16a34a', False
+        segments.append({
+            'mi_from': mi_from, 'mi_to': mi_to,
+            'cum_elev': cum_elev,
+            'wind_color': wind_color, 'wind_intense': wind_intense,
+            'wind_mph': wmph, 'wind_label': wlabel,
+            'bank_color': bank_color, 'bank_intense': bank_intense,
+            'bank_min': bank_min if bank_min is not None else 0,
+        })
+
+    # Elevation polyline points (cumulative)
+    elev_pts = [{'mi': 0, 'cum': 0}]
+    running = 0
+    for s in stops[1:]:
+        running += int(s.get('elevation_gain') or 0)
+        elev_pts.append({'mi': float(s.get('distance_miles') or 0), 'cum': running})
+    max_elev_ft = max(p['cum'] for p in elev_pts) or 1
+
+    # Light transitions — find sunset (day 0) and sunrise (day 1) crossing miles
+    night_mi_from = find_transition_mi(sunset_min, 0)
+    night_mi_to = find_transition_mi(sunrise_min, 1)
+
+    # Callouts — pick the most dangerous range in each category
+    callouts = []
+
+    # Wind callout: longest run of high-wind (head ≥10 or any ≥15 mph) segments
+    hot_runs = []
+    cur_run = None
+    for seg in segments:
+        is_hot = seg['wind_intense'] or (seg['wind_label'] == 'Head' and seg['wind_mph'] >= 10) or seg['wind_mph'] >= 15
+        if is_hot:
+            if cur_run is None:
+                cur_run = {'from': seg['mi_from'], 'to': seg['mi_to'], 'max_mph': seg['wind_mph']}
+            else:
+                cur_run['to'] = seg['mi_to']
+                cur_run['max_mph'] = max(cur_run['max_mph'], seg['wind_mph'])
+        elif cur_run is not None:
+            hot_runs.append(cur_run)
+            cur_run = None
+    if cur_run is not None:
+        hot_runs.append(cur_run)
+    if hot_runs:
+        longest = max(hot_runs, key=lambda r: r['to'] - r['from'])
+        callouts.append({
+            'tag': 'WIND', 'color': '#dc2626',
+            'lead': f"Mile {longest['from']:.0f}–{longest['to']:.0f}:",
+            'body': f"sustained wind to {longest['max_mph']} mph. Pack a vest and hydrate.",
+        })
+
+    # Dark callout: number of dark hours
+    if night_mi_from is not None and night_mi_to is not None and night_mi_to > night_mi_from:
+        dark_hours = ((night_mi_to - night_mi_from) / total_mi) * 100 if total_mi else 0
+        # More useful — derive actual hours from the time difference
+        dark_min = (24 * 60 - sunset_min) + sunrise_min  # sunset → sunrise spanning midnight
+        dark_h = dark_min / 60
+        callouts.append({
+            'tag': 'DARK', 'color': '#312e81',
+            'lead': f"{sunset_str} → {sunrise_str}:",
+            'body': f"~{dark_h:.1f} hours of night riding. Charge lights, layer up before sundown.",
+        })
+
+    # Bank callout: tightest stop
+    tightest = min((s for s in stops if s.get('time_bank_min') is not None),
+                   key=lambda s: s['time_bank_min'], default=None)
+    if tightest is not None and tightest.get('time_bank_min', 0) < 90:
+        tb = tightest['time_bank_min']
+        sign = '+' if tb >= 0 else '-'
+        tb_str = f"{sign}{abs(tb)//60}:{abs(tb)%60:02d}"
+        loc = tightest.get('location') or tightest.get('name') or 'a control'
+        loc_short = loc.split('—')[0].strip()[:42]
+        callouts.append({
+            'tag': 'BANK', 'color': '#ea580c' if tb < 60 else '#ca8a04',
+            'lead': f"Tightest at {loc_short}:",
+            'body': f"only {tb_str} cushion against the ACP cutoff. Keep stops short here.",
+        })
+
+    return {
+        'has_data': True,
+        'sunrise_str': sunrise_str, 'sunset_str': sunset_str,
+        'sunrise_min': sunrise_min, 'sunset_min': sunset_min,
+        'segments': segments,
+        'elev_pts': elev_pts,
+        'max_elev_ft': max_elev_ft,
+        'night_mi_from': night_mi_from,
+        'night_mi_to': night_mi_to,
+        'callouts': callouts,
+    }
 
 
 def _weather_summary_from_stop_wind(stop_wind, stops):

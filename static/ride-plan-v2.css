@@ -663,6 +663,47 @@
     border-color: var(--pc-color);
 }
 
+/* ===== Risks overlay ===== */
+.rpv2-ro-intro {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+}
+.rpv2-ro-svg {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+.rpv2-ro-callouts {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin-top: 12px;
+}
+.rpv2-ro-callout {
+    font-size: 0.78rem;
+    color: #2d3748;
+    line-height: 1.4;
+    padding: 10px 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    display: flex;
+    gap: 10px;
+}
+.rpv2-ro-callout-tag {
+    font: 800 0.55rem inherit;
+    letter-spacing: 0.08em;
+    padding: 4px 7px;
+    border-radius: 4px;
+    color: #fff;
+    flex-shrink: 0;
+    height: fit-content;
+}
+.rpv2-ro-callout b { color: #1a365d; }
+
 /* ===== Mobile ===== */
 @media (max-width: 880px) {
     .rpv2-hero { grid-template-columns: 1fr; }
@@ -672,4 +713,5 @@
     .rpv2-aside { position: static; }
     .rpv2-aside-h { margin-top: 14px; }
     .rpv2-pc-grid { grid-template-columns: 1fr; }
+    .rpv2-ro-callouts { grid-template-columns: 1fr; }
 }
