@@ -93,6 +93,20 @@
     color: #1a365d;
     margin-bottom: 4px;
 }
+.rpv2-admin-edit {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 8px;
+    font: 700 0.6rem -apple-system, 'Segoe UI', system-ui, sans-serif;
+    letter-spacing: 0.04em;
+    background: #fef3c7;
+    color: #78350f;
+    border-radius: 4px;
+    text-decoration: none;
+    vertical-align: middle;
+    border: 1px solid #fcd34d;
+}
+.rpv2-admin-edit:hover { background: #fde68a; }
 .rpv2-sub { font-size: 0.78rem; color: #64748b; }
 .rpv2-gauges {
     display: flex;
@@ -502,9 +516,12 @@
 }
 .rpv2-snap-stop-bank {
     font-size: 0.6rem;
-    color: #16a34a;
+    color: #94a3b8;
     font-weight: 700;
 }
+.rpv2-snap-stop-bank .rpv2-snap-stop-mi { color: #64748b; }
+.rpv2-snap-stop-bank .good { color: #16a34a; }
+.rpv2-snap-stop-bank .bad { color: #dc2626; }
 .rpv2-snap-weather {
     padding: 8px 0;
     border-top: 1px solid #e2e8f0;
@@ -657,10 +674,46 @@
     transition: background 0.12s, border-color 0.12s;
 }
 .rpv2-pc-btn:hover { background: #f1f5f9; }
+.rpv2-pc-btn:disabled { opacity: 0.6; cursor: wait; }
+.rpv2-pc-btn-link {
+    display: block;
+    text-align: center;
+    text-decoration: none;
+}
+.rpv2-pc-btn.rpv2-pc-btn-saved {
+    background: #16a34a;
+    color: #fff;
+    border-color: #16a34a;
+}
 .rpv2-pc-col.is-on .rpv2-pc-btn {
     background: var(--pc-color);
     color: #fff;
     border-color: var(--pc-color);
+}
+.rpv2-pc-col.is-on .rpv2-pc-btn.rpv2-pc-btn-saved {
+    background: #16a34a;
+    border-color: #16a34a;
+}
+.rpv2-pc-feedback {
+    font-size: 0.7rem;
+    line-height: 1.4;
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin-top: 4px;
+}
+.rpv2-pc-feedback.ok {
+    background: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+}
+.rpv2-pc-feedback.ok a {
+    color: #166534;
+    font-weight: 700;
+}
+.rpv2-pc-feedback.err {
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
 }
 
 /* ===== Risks overlay ===== */
@@ -921,6 +974,19 @@
     .rpv2-pb-section { break-inside: avoid; }
     /* Keep the weather link URL visible in print (it's already shown inline) */
     .rpv2-pb-weather-link a { color: #1d4ed8; }
+}
+
+/* ===== Weather tab iframe embed ===== */
+.rpv2-wx-embed { padding: 0; overflow: hidden; }
+.rpv2-wx-embed iframe {
+    width: 100%;
+    min-height: 1600px;
+    height: 100vh;
+    border: 0;
+    display: block;
+}
+@media (max-width: 880px) {
+    .rpv2-wx-embed iframe { min-height: 2200px; }
 }
 
 /* ===== Race-day companion (/ride-plan/<slug>/live) ===== */
