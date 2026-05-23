@@ -1979,6 +1979,263 @@ def ride_plan_detail(slug):
                            is_admin=is_admin_user())
 
 
+# ========== RIDE PLAN v2 (preview) ==========
+
+@riders_bp.route('/ride-plan/<slug>/v2')
+def ride_plan_detail_v2(slug):
+    """Preview of the redesigned ride plan page. Original /ride-plan/<slug> is unaffected."""
+    plan = get_ride_plan_by_slug(slug)
+    if not plan:
+        abort(404)
+    raw_stops = get_ride_plan_stops(plan['id'])
+
+    plan = dict(plan)
+    plan['total_distance_miles'] = float(plan.get('total_distance_miles') or 0)
+    plan['total_elevation_ft'] = int(plan.get('total_elevation_ft') or 0)
+
+    distance_km = _extract_distance_km(plan['name'])
+    cutoff_hours = _get_cutoff_hours(distance_km)
+    plan['distance_km'] = distance_km
+    plan['cutoff_hours'] = cutoff_hours
+
+    from models import get_latest_ride_for_plan
+    linked_ride = get_latest_ride_for_plan(plan['id'])
+    plan['start_time'] = (linked_ride.get('start_time') if linked_ride else None) or '06:00'
+    plan['linked_ride_date'] = linked_ride.get('date') if linked_ride else None
+
+    weather_route_id = _extract_rwgps_route_id(plan.get('rwgps_url_team')) if (linked_ride and linked_ride.get('rwgps_url_team')) else _extract_rwgps_route_id(plan.get('rwgps_url'))
+
+    # Derive per-stop fields (same logic as v1)
+    stops = []
+    cum_time_min = 0
+    prev_dist = 0.0
+    total_moving_time = 0
+    total_break_time = 0
+    for s in raw_stops:
+        d = dict(s)
+        d['distance_miles'] = float(d['distance_miles']) if d.get('distance_miles') is not None else 0.0
+        d['elevation_gain'] = int(d['elevation_gain']) if d.get('elevation_gain') is not None else 0
+        d['segment_time_min'] = int(d['segment_time_min']) if d.get('segment_time_min') is not None else 0
+        d['stop_duration_min'] = int(d['stop_duration_min']) if d.get('stop_duration_min') is not None else 0
+        seg_dist = round(d['distance_miles'] - prev_dist, 1)
+        d['seg_dist'] = seg_dist
+        d['ft_per_mi'] = int(round(d['elevation_gain'] / seg_dist)) if d['elevation_gain'] and seg_dist > 0 else 0
+        if d['segment_time_min']:
+            cum_time_min += d['segment_time_min']
+            total_moving_time += d['segment_time_min']
+        if d['stop_duration_min']:
+            cum_time_min += d['stop_duration_min']
+            total_break_time += d['stop_duration_min']
+        d['cum_time_min'] = cum_time_min
+        d['arrival_time_min'] = cum_time_min - d['stop_duration_min']
+        if cutoff_hours and plan['total_distance_miles'] > 0 and d['distance_miles']:
+            d['bookend_time_min'] = round((d['distance_miles'] / plan['total_distance_miles']) * cutoff_hours * 60)
+            d['time_bank_min'] = d['bookend_time_min'] - d['arrival_time_min']
+        else:
+            d['time_bank_min'] = None
+        prev_dist = d['distance_miles']
+        stops.append(d)
+
+    total_time = cum_time_min
+    overall_ft_per_mile = round(plan['total_elevation_ft'] / plan['total_distance_miles']) if plan['total_distance_miles'] > 0 else 0
+    avg_elapsed_speed = round(plan['total_distance_miles'] / (total_time / 60.0), 1) if total_time > 0 else 0
+    # Weighted difficulty (same as v1)
+    weighted_difficulty = None
+    total_moving_dist, weighted_sum = 0, 0.0
+    for s in stops:
+        score = _compute_difficulty_score(s.get('ft_per_mi'), s.get('notes'))
+        if s.get('seg_dist') and s['seg_dist'] > 0 and score:
+            total_moving_dist += s['seg_dist']
+            weighted_sum += score * s['seg_dist']
+    if total_moving_dist > 0:
+        weighted_difficulty = round(weighted_sum / total_moving_dist, 1)
+
+    # Wind data (same as v1)
+    stop_wind = None
+    if weather_route_id:
+        try:
+            route_data = fetch_route(weather_route_id)
+            track_points = route_data.get('track_points') or []
+            stop_wind = fetch_stop_wind(
+                stops=stops,
+                track_points=track_points,
+                plan_slug=plan['slug'],
+                start_time_str=plan.get('start_time', '06:00'),
+                cache=cache,
+            )
+        except Exception:
+            current_app.logger.exception("v2 wind fetch failed for plan %s", slug)
+            stop_wind = None
+
+    # Map stops into the design shape
+    v2_stops = _to_v2_stops(stops, plan, stop_wind)
+
+    # Fuel/food stops — notes mention any of these keywords
+    fuel_keywords = ('lunch', 'dinner', 'breakfast', 'safeway', 'holland', 'holiday',
+                     'eddy', 'subway', 'taco', 'cafe', 'coffee', 'grocery', 'store',
+                     'market', 'food', 'snack')
+    fuel_stops_v2 = [s for s in v2_stops
+                     if s['note'] and any(k in s['note'].lower() for k in fuel_keywords)]
+
+    # Riders & signups for the matched upcoming event (same matching logic as v1)
+    from models import get_upcoming_rusa_events, get_user_by_id
+    from datetime import date as date_type
+    upcoming_event = None
+    signups = []
+    rusa_events = get_upcoming_rusa_events()
+    today = date_type.today()
+    thirty_days_later = today + timedelta(days=30)
+    for event in rusa_events:
+        e_words = _normalize_route(event.get('route_name', ''))
+        p_words = _normalize_route(plan['name'])
+        common = e_words & p_words
+        distinctive = common - _GENERIC_WORDS
+        if len(distinctive) >= 1 and len(common) >= 2:
+            event_date = event['date']
+            if isinstance(event_date, str):
+                event_date = datetime.strptime(event_date, '%Y-%m-%d').date()
+            if today <= event_date <= thirty_days_later:
+                upcoming_event = event
+                from models import get_signups_for_ride
+                signups = [dict(r) for r in (get_signups_for_ride(event['id']) or [])]
+                break
+
+    # Weather aggregates from stop_wind
+    weather_summary = _weather_summary_from_stop_wind(stop_wind, stops)
+
+    active_tab = request.args.get('tab', 'plan')
+
+    return render_template('ride_plan_detail_v2.html',
+                           plan=plan,
+                           stops_v2=v2_stops,
+                           fuel_stops_v2=fuel_stops_v2,
+                           total_time=total_time,
+                           total_moving_time=total_moving_time,
+                           total_break_time=total_break_time,
+                           overall_ft_per_mile=overall_ft_per_mile,
+                           avg_elapsed_speed=avg_elapsed_speed,
+                           weighted_difficulty=weighted_difficulty,
+                           weather_summary=weather_summary,
+                           upcoming_event=upcoming_event,
+                           signups=signups,
+                           active_tab=active_tab)
+
+
+def _to_v2_stops(stops, plan, stop_wind):
+    """Map the v1 stop dicts into the design's expected shape."""
+    start_time_str = plan.get('start_time') or '06:00'
+    try:
+        start_hr, start_min = (int(x) for x in start_time_str.split(':')[:2])
+    except (ValueError, AttributeError):
+        start_hr, start_min = 6, 0
+    start_minutes = start_hr * 60 + start_min
+
+    n = len(stops)
+    out = []
+    for i, s in enumerate(stops):
+        is_start = i == 0
+        is_finish = i == n - 1
+        # Map DB stop_type → design type. Fallback by name conventions.
+        db_type = (s.get('stop_type') or '').lower().strip()
+        if is_start:
+            v2_type = 'start'
+        elif is_finish:
+            v2_type = 'finish'
+        elif db_type in ('control', 'rest', 'waypoint'):
+            v2_type = db_type
+        elif 'control' in (s.get('name') or '').lower():
+            v2_type = 'control'
+        elif s.get('stop_duration_min', 0) >= 15:
+            v2_type = 'rest'
+        else:
+            v2_type = 'waypoint'
+
+        # Arrival ETA from arrival_time_min
+        arrive = start_minutes + (s.get('arrival_time_min') or 0)
+        day_offset, arrive_in_day = divmod(arrive, 24 * 60)
+        eta_h, eta_m = divmod(arrive_in_day, 60)
+        eta = f"{eta_h:02d}:{eta_m:02d}"
+        if day_offset >= 1:
+            eta = f"{eta}+{day_offset}"
+
+        # Bank like "+1:35" / "-0:25"
+        bank_min = s.get('time_bank_min')
+        if bank_min is None:
+            bank = ''
+        else:
+            sign = '+' if bank_min >= 0 else '-'
+            am = abs(bank_min)
+            bank = f"{sign}{am // 60}:{am % 60:02d}"
+
+        # Wind 0–10 from stop_wind if available, else placeholder
+        wind_level = None
+        if stop_wind and i < len(stop_wind) and stop_wind[i]:
+            sw = stop_wind[i]
+            label = (sw.get('wind_label') or '').lower()
+            speed = sw.get('wind_speed_kmh') or 0
+            if 'tail' in label:
+                wind_level = max(0, min(3, int(speed / 6)))
+            elif 'head' in label:
+                wind_level = max(7, min(10, 7 + int(speed / 8)))
+            else:
+                wind_level = max(4, min(6, 4 + int(speed / 10)))
+
+        # Difficulty class for ft/mi (matches design fpm bucketing)
+        fpm = s.get('ft_per_mi') or 0
+        if fpm < 25:
+            fpm_class = 't1'
+        elif fpm < 50:
+            fpm_class = 't2'
+        elif fpm < 75:
+            fpm_class = 't3'
+        else:
+            fpm_class = 't4'
+
+        out.append({
+            'i': i,
+            'type': v2_type,
+            'name': s.get('name') or '',
+            'note': s.get('notes') or '',
+            'cumul_mi': round(s.get('distance_miles') or 0, 1),
+            'seg_mi': round(s.get('seg_dist') or 0, 1),
+            'elev': int(s.get('elevation_gain') or 0),
+            'fpm': fpm,
+            'fpm_class': fpm_class,
+            'eta': eta,
+            'bank': bank,
+            'bank_min': bank_min if bank_min is not None else 0,
+            'wind': wind_level if wind_level is not None else 4,
+            'wind_known': wind_level is not None,
+            'break_min': int(s.get('stop_duration_min') or 0),
+            'is_halt': (s.get('stop_duration_min') or 0) >= 120,
+        })
+    return out
+
+
+def _weather_summary_from_stop_wind(stop_wind, stops):
+    """Build a small weather summary dict the v2 template consumes."""
+    if not stop_wind:
+        return {
+            'temp_low': None, 'temp_high': None,
+            'wind_max': None, 'sunrise': None, 'sunset': None,
+            'headwind_segs': 0,
+        }
+    temps = [sw.get('temp_c') for sw in stop_wind if sw and sw.get('temp_c') is not None]
+    speeds = [sw.get('wind_speed_kmh') or 0 for sw in stop_wind if sw]
+    head_count = sum(1 for sw in stop_wind if sw and 'head' in (sw.get('wind_label') or '').lower())
+    def c_to_f(c): return round(c * 9 / 5 + 32) if c is not None else None
+    def kmh_to_mph(k): return round(k * 0.621371) if k else None
+    sun = next((sw for sw in stop_wind if sw and (sw.get('sunrise') or sw.get('sunset'))), None) or {}
+    return {
+        'temp_low': c_to_f(min(temps)) if temps else None,
+        'temp_high': c_to_f(max(temps)) if temps else None,
+        'wind_max': kmh_to_mph(max(speeds)) if speeds else None,
+        'sunrise': sun.get('sunrise'),
+        'sunset': sun.get('sunset'),
+        'headwind_segs': head_count,
+    }
+
+
 # ========== CUSTOM RIDE PLANS ==========
 
 @riders_bp.route('/ride-plan/<slug>/edit-base')
