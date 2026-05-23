@@ -2070,16 +2070,19 @@ def ride_plan_detail_v2(slug):
     # Map stops into the design shape
     v2_stops = _to_v2_stops(stops, plan, stop_wind)
 
-    # Fuel/food stops — match against both note and stop name (location).
-    # Lunch/dinner/etc. is often embedded in the location string itself ("Mines Rd — Lunch").
+    # Fuel/food and break list — include any stop with a meaningful break
+    # (>= 5 min) OR a food/water keyword in the note/name. Surfaces planned
+    # rest stops even if the rider didn't tag them with a food keyword.
     fuel_keywords = ('lunch', 'dinner', 'breakfast', 'safeway', 'holland', 'holiday',
                      'subway', 'taco', 'cafe', 'coffee', 'grocery', 'market',
                      'food', 'snack', 'deli', 'pizza', 'burger', 'mcdonald',
-                     'starbucks', 'restaurant')
-    def _has_fuel(s):
+                     'starbucks', 'restaurant', 'water', 'refill', 'refuel')
+    def _is_break_or_fuel(s):
+        if s.get('break_min', 0) >= 5:
+            return True
         haystack = ((s.get('note') or '') + ' ' + (s.get('name') or '')).lower()
         return any(k in haystack for k in fuel_keywords)
-    fuel_stops_v2 = [s for s in v2_stops if _has_fuel(s)]
+    fuel_stops_v2 = [s for s in v2_stops if _is_break_or_fuel(s)]
 
     # Riders & signups for the matched upcoming event (same matching logic as v1)
     from models import get_upcoming_rusa_events, get_user_by_id
@@ -2119,8 +2122,16 @@ def ride_plan_detail_v2(slug):
     weather_summary['sunrise'] = risks.get('sunrise_str')
     weather_summary['sunset'] = risks.get('sunset_str')
 
-    # Fatigue model — predicted alertness across the ride
-    fatigue = compute_fatigue_model(stops, total_time)
+    # Save-strategy state for the Strategies tab UI (controls the button label).
+    save_state = 'logged_out'
+    user_id = session.get('user_id')
+    if user_id:
+        from models import get_user_by_id
+        user = get_user_by_id(user_id)
+        if user and user.get('rider_id'):
+            save_state = 'ready'
+        else:
+            save_state = 'no_rider'
 
     # Weather forecast share URL — link the print briefing to the full forecast.
     weather_share_url = None
@@ -2140,7 +2151,6 @@ def ride_plan_detail_v2(slug):
                            fuel_stops_v2=fuel_stops_v2,
                            paces=paces,
                            risks=risks,
-                           fatigue=fatigue,
                            total_time=total_time,
                            total_moving_time=total_moving_time,
                            total_break_time=total_break_time,
@@ -2149,6 +2159,8 @@ def ride_plan_detail_v2(slug):
                            weighted_difficulty=weighted_difficulty,
                            weather_summary=weather_summary,
                            weather_share_url=weather_share_url,
+                           save_state=save_state,
+                           is_admin=is_admin_user(),
                            upcoming_event=upcoming_event,
                            signups=signups,
                            active_tab=active_tab)
@@ -2268,6 +2280,16 @@ def _to_v2_stops(stops, plan, stop_wind):
     return out
 
 
+# Pace variants shared between compute_pace_strategies() and the
+# /ride-plan/<slug>/v2/strategy POST endpoint. Each entry is
+# (factor, sleep_minutes_override_for_night_halt_or_None).
+_PACE_VARIANTS = {
+    'comfort':  {'factor': 1.06, 'sleep_min': 300, 'name': 'Comfort'},
+    'standard': {'factor': 1.0,  'sleep_min': None, 'name': 'Standard'},
+    'push':     {'factor': 0.94, 'sleep_min': 90,  'name': 'Push'},
+}
+
+
 def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours):
     """Three pace strategies (comfort/standard/push) with recomputed ETAs.
 
@@ -2359,9 +2381,9 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours):
         0,
     )
 
-    std_stops, std_total, std_sleep, std_bank = compute_variant(1.0, standard_halt or 0)
-    com_stops, com_total, com_sleep, com_bank = compute_variant(1.06, 300)
-    psh_stops, psh_total, psh_sleep, psh_bank = compute_variant(0.94, 90)
+    std_stops, std_total, std_sleep, std_bank = compute_variant(_PACE_VARIANTS['standard']['factor'], standard_halt or 0)
+    com_stops, com_total, com_sleep, com_bank = compute_variant(_PACE_VARIANTS['comfort']['factor'], _PACE_VARIANTS['comfort']['sleep_min'])
+    psh_stops, psh_total, psh_sleep, psh_bank = compute_variant(_PACE_VARIANTS['push']['factor'], _PACE_VARIANTS['push']['sleep_min'])
 
     has_halt = bool(standard_halt)
 
@@ -2596,131 +2618,6 @@ def compute_risk_zones(stops, v2_stops, plan, start_time_str, ride_date):
     }
 
 
-def compute_fatigue_model(stops, total_time_min):
-    """Predicted alertness curve across the ride.
-
-    Heuristic (per design README, labeled as "for guidance only"):
-      0 → halt_start:  linear decay 100% → 50%
-      halt_start → halt_end:  recovery 50% → 85%
-      halt_end → end:  linear decay 85% → 30%
-
-    For rides without a night halt, falls back to a single linear decay
-    from 100% to 40% across the whole ride.
-    """
-    if not stops or not total_time_min:
-        return {'has_data': False, 'total_h': 0, 'samples': [], 'insights': [],
-                'halt_start_h': None, 'halt_end_h': None, 'min_alertness': 100,
-                'stop_dots': []}
-
-    total_h = total_time_min / 60.0
-
-    # Find the night halt and its start/end hours (cumulative time from start)
-    halt_start_h = None
-    halt_end_h = None
-    cum_h = 0
-    for s in stops:
-        seg_h = (s.get('segment_time_min') or 0) / 60.0
-        cum_h += seg_h
-        if (s.get('stop_duration_min') or 0) >= 120:
-            halt_start_h = cum_h
-            halt_end_h = cum_h + (s['stop_duration_min'] / 60.0)
-            break
-        cum_h += (s.get('stop_duration_min') or 0) / 60.0
-
-    def alertness(h):
-        if halt_start_h is not None and halt_end_h is not None:
-            if h <= halt_start_h:
-                # Linear decay 100 → 50
-                return max(40.0, 100.0 - (h / halt_start_h) * 50.0) if halt_start_h > 0 else 100.0
-            if h <= halt_end_h:
-                # Recovery 50 → 85
-                t = (h - halt_start_h) / (halt_end_h - halt_start_h) if halt_end_h > halt_start_h else 1.0
-                return 50.0 + t * 35.0
-            # Post-sleep decay 85 → 30
-            remaining = max(total_h - halt_end_h, 0.01)
-            return max(30.0, 85.0 - ((h - halt_end_h) / remaining) * 55.0)
-        # No halt — single linear decay
-        if total_h <= 0:
-            return 100.0
-        return max(40.0, 100.0 - (h / total_h) * 60.0)
-
-    # Sample every 15 minutes
-    samples = []
-    h = 0.0
-    while h <= total_h + 0.001:
-        samples.append({'h': round(h, 2), 'a': round(alertness(h), 1)})
-        h += 0.25
-    if samples and samples[-1]['h'] < total_h:
-        samples.append({'h': round(total_h, 2), 'a': round(alertness(total_h), 1)})
-
-    min_alertness = min(s['a'] for s in samples) if samples else 100.0
-
-    # Stop dots — plot non-waypoint, non-rest stops on the curve
-    stop_dots = []
-    cum_h = 0
-    for i, s in enumerate(stops):
-        seg_h = (s.get('segment_time_min') or 0) / 60.0
-        cum_h_at_stop = cum_h + seg_h
-        cum_h = cum_h_at_stop + (s.get('stop_duration_min') or 0) / 60.0
-        # Use arrival time (cum_h_at_stop) for plotting
-        st_type = (s.get('stop_type') or '').lower()
-        if i == 0:
-            kind = 'start'
-        elif i == len(stops) - 1:
-            kind = 'finish'
-        elif st_type == 'control' or 'control' in (s.get('location') or '').lower():
-            kind = 'control'
-        else:
-            continue  # skip waypoint/rest in fatigue dot plot
-        stop_dots.append({
-            'kind': kind,
-            'h': round(cum_h_at_stop, 2),
-            'a': round(alertness(cum_h_at_stop), 1),
-            'name': (s.get('location') or '')[:36],
-        })
-
-    # Insights — derive from the actual halt schedule
-    insights = []
-    if halt_start_h is not None:
-        insights.append({
-            'tag': 'Risk', 'color': '#dc2626',
-            'lead': f'Hour {halt_start_h:.0f} — pre-halt low.',
-            'body': f'Alertness near 50% when you reach the night halt after {halt_start_h:.1f} h awake. Avoid hard climbs in the last 2-3 hours before.',
-        })
-        insights.append({
-            'tag': 'Window', 'color': '#16a34a',
-            'lead': f'Hours {halt_end_h:.0f}–{(halt_end_h + 3):.0f}: post-sleep peak.',
-            'body': 'Best window for windy / technical sections. Schedule the hardest efforts here.',
-        })
-        final_h = max(halt_end_h + 3, total_h - 4)
-        insights.append({
-            'tag': 'Watch', 'color': '#ea580c',
-            'lead': f'Hour {final_h:.0f}+: final stretch.',
-            'body': 'Alertness drifts back to ~40%. Buddy up; bonk + sleep risk peaks here.',
-        })
-    else:
-        insights.append({
-            'tag': 'Note', 'color': '#64748b',
-            'lead': 'No night halt scheduled.',
-            'body': 'Single linear decay across the ride. For brevets under 600 km this is normal.',
-        })
-        insights.append({
-            'tag': 'Watch', 'color': '#ea580c',
-            'lead': f'Last quarter (hour {total_h * 0.75:.1f}+).',
-            'body': 'Alertness drops below 60% — fuel often and keep stops short.',
-        })
-
-    return {
-        'has_data': True,
-        'total_h': round(total_h, 2),
-        'samples': samples,
-        'halt_start_h': halt_start_h, 'halt_end_h': halt_end_h,
-        'min_alertness': min_alertness,
-        'stop_dots': stop_dots,
-        'insights': insights,
-    }
-
-
 def _weather_summary_from_stop_wind(stop_wind, stops):
     """Build a small weather summary dict the v2 template consumes.
 
@@ -2753,6 +2650,103 @@ def _weather_summary_from_stop_wind(stop_wind, stops):
         'headwind_segs': head_count,
         'crosswind_segs': cross_count,
     }
+
+
+# ========== RIDE PLAN v2 — SAVE STRATEGY AS CUSTOM PLAN ==========
+
+@riders_bp.route('/ride-plan/<slug>/v2/strategy', methods=['POST'])
+def ride_plan_v2_save_strategy(slug):
+    """Persist a chosen pace strategy (comfort/standard/push) as the user's
+    custom plan. Creates the custom plan record if it doesn't exist yet, and
+    writes per-stop overrides for segment_time_min + stop_duration_min.
+
+    Returns JSON.
+    Auth:
+      401 — not logged in
+      403 — logged in but no rider linked to the user account
+    """
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'not_logged_in',
+                        'message': 'Sign in to save a custom plan',
+                        'login_url': url_for('auth.login')}), 401
+
+    user = get_user_by_id(user_id)
+    if not user or not user.get('rider_id'):
+        return jsonify({'error': 'no_rider',
+                        'message': 'Link your rider profile from your account page first'}), 403
+    rider_id = user['rider_id']
+
+    payload = request.get_json(silent=True) or {}
+    pace_id = (payload.get('pace_id') or '').strip().lower()
+    if pace_id not in _PACE_VARIANTS:
+        return jsonify({'error': 'bad_pace_id',
+                        'message': f"Unknown pace '{pace_id}'"}), 400
+    variant = _PACE_VARIANTS[pace_id]
+
+    plan = get_ride_plan_by_slug(slug)
+    if not plan:
+        return jsonify({'error': 'plan_not_found'}), 404
+    plan_id = plan['id']
+
+    base_stops = get_ride_plan_stops(plan_id)
+    if not base_stops:
+        return jsonify({'error': 'no_stops',
+                        'message': 'Base plan has no stops to copy'}), 400
+
+    factor = variant['factor']
+    sleep_override = variant['sleep_min']  # None for Standard
+
+    existing = get_custom_plan(rider_id, plan_id)
+    if existing:
+        custom_plan_id = existing['id']
+        new_name = f"{variant['name']} pace"
+        try:
+            update_custom_plan_settings(custom_plan_id, rider_id, name=new_name)
+        except Exception:
+            current_app.logger.exception("update_custom_plan_settings failed")
+    else:
+        new_name = f"{variant['name']} pace"
+        try:
+            custom_plan_id = create_custom_plan(rider_id, plan_id, new_name,
+                                                description=f"Generated from '{variant['name']}' strategy")
+        except Exception:
+            current_app.logger.exception("create_custom_plan failed for slug %s", slug)
+            return jsonify({'error': 'create_failed',
+                            'message': 'Could not create custom plan'}), 500
+        if not custom_plan_id:
+            return jsonify({'error': 'create_failed'}), 500
+
+    # Write per-stop overrides matching the variant's scaling
+    written = 0
+    for s in base_stops:
+        base_seg = s.get('segment_time_min')
+        base_break = s.get('stop_duration_min') or 0
+        if base_seg is None:
+            continue  # nothing to scale
+        new_seg = int(round(base_seg * factor))
+        if sleep_override is not None and base_break >= 120:
+            new_break = sleep_override
+        else:
+            new_break = base_break
+        try:
+            update_custom_plan_stop(
+                custom_plan_id, s['id'],
+                segment_time_min=new_seg,
+                stop_duration_min=new_break,
+                explicit_fields=['segment_time_min', 'stop_duration_min'],
+            )
+            written += 1
+        except Exception:
+            current_app.logger.exception("update_custom_plan_stop failed for stop %s", s.get('id'))
+
+    return jsonify({
+        'ok': True,
+        'custom_plan_id': custom_plan_id,
+        'name': new_name,
+        'stops_written': written,
+        'view_url': url_for('riders.ride_plan_detail', slug=slug, view='custom'),
+    })
 
 
 # ========== RIDE PLAN v2 RACE-DAY COMPANION ==========
