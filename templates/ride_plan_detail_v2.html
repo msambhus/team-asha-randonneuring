@@ -349,7 +349,12 @@
         {% if risks.has_data %}
         <div class="rpv2-ro-intro">
             <div class="rpv2-pc-eyebrow">Risk overlay</div>
-            <div class="rpv2-pc-sub">Where the dangers cluster: wind, dark, and time pressure across the route.</div>
+            <div class="rpv2-pc-sub">
+                Where the dangers cluster: wind, dark, and time pressure across the route.
+                Wind data is the same Open-Meteo forecast used by the
+                {% if weather_share_url %}<a href="{{ weather_share_url }}">Weather page</a>{% else %}Weather page{% endif %}.
+                Light is a Bay Area sunrise/sunset heuristic by month.
+            </div>
         </div>
         <div class="rpv2-card">
             {{ risk_svg(risks, plan) }}
@@ -403,7 +408,7 @@
                         <tr>
                             <th>#</th><th>Stop</th>
                             <th class="r">Mi</th><th class="r">ETA</th>
-                            <th class="r">Cutoff</th><th>Note</th>
+                            <th class="r">Bank</th><th>Note</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -418,7 +423,7 @@
                                 </td>
                                 <td class="r mono">{{ "%.1f"|format(s.cumul_mi) }}</td>
                                 <td class="r mono"><b>{{ s.eta }}</b></td>
-                                <td class="r mono rpv2-pb-cutoff">{{ s.cutoff_eta or '—' }}</td>
+                                <td class="r mono rpv2-pb-bank {{ 'good' if s.bank_min >= 0 else 'bad' }}">{{ s.bank or '—' }}</td>
                                 <td class="rpv2-pb-tbl-note">
                                     {{ s.note }}{% if s.break_min %} · {{ s.break_min }}m{% endif %}
                                 </td>
@@ -428,37 +433,28 @@
                 </table>
             </div>
 
-            <div class="rpv2-pb-2col">
-                <div class="rpv2-pb-section">
-                    <div class="rpv2-pb-section-h">Conditions</div>
-                    <table class="rpv2-pb-tbl rpv2-pb-tbl-sm">
-                        <tbody>
-                            <tr><td>Temperature</td>
-                                <td>{% if weather_summary.temp_low is not none and weather_summary.temp_high is not none %}{{ weather_summary.temp_low }}–{{ weather_summary.temp_high }}°F{% else %}—{% endif %}</td></tr>
-                            <tr><td>Wind</td>
-                                <td>{% if weather_summary.wind_max %}to {{ weather_summary.wind_max }} mph{% else %}—{% endif %}</td></tr>
-                            <tr><td>Sunrise / sunset</td>
-                                <td>{{ risks.sunrise_str or '—' }} / {{ risks.sunset_str or '—' }}</td></tr>
-                            {% set halt_stop = (stops_v2 | selectattr('is_halt', 'equalto', true) | first) %}
-                            {% if halt_stop %}
-                            <tr><td>Night halt</td>
-                                <td>{{ halt_stop.name|truncate(28, true, '…') }} · {{ halt_stop.eta }}</td></tr>
-                            {% endif %}
-                        </tbody>
-                    </table>
+            <div class="rpv2-pb-section">
+                <div class="rpv2-pb-section-h">Conditions</div>
+                <table class="rpv2-pb-tbl rpv2-pb-tbl-sm">
+                    <tbody>
+                        <tr><td>Temperature</td>
+                            <td>{% if weather_summary.temp_low is not none and weather_summary.temp_high is not none %}{{ weather_summary.temp_low }}–{{ weather_summary.temp_high }}°F{% else %}—{% endif %}</td></tr>
+                        <tr><td>Wind</td>
+                            <td>{% if weather_summary.wind_max %}to {{ weather_summary.wind_max }} mph{% if weather_summary.headwind_segs %} · {{ weather_summary.headwind_segs }} headwind seg{{ '' if weather_summary.headwind_segs == 1 else 's' }}{% endif %}{% else %}—{% endif %}</td></tr>
+                        <tr><td>Sunrise / sunset</td>
+                            <td>{{ risks.sunrise_str or '—' }} / {{ risks.sunset_str or '—' }}</td></tr>
+                        {% set halt_stop = (stops_v2 | selectattr('is_halt', 'equalto', true) | first) %}
+                        {% if halt_stop %}
+                        <tr><td>Night halt</td>
+                            <td>{{ halt_stop.name|truncate(48, true, '…') }} · arrive {{ halt_stop.eta }} · {{ (halt_stop.break_min // 60) }}h sleep</td></tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+                {% if weather_share_url %}
+                <div class="rpv2-pb-weather-link">
+                    🌤 Full hour-by-hour forecast: <a href="{{ weather_share_url }}">{{ weather_share_url }}</a>
                 </div>
-                <div class="rpv2-pb-section">
-                    <div class="rpv2-pb-section-h">Emergency contacts</div>
-                    <table class="rpv2-pb-tbl rpv2-pb-tbl-sm">
-                        <tbody>
-                            <tr><td>RBA</td><td class="mono">—</td></tr>
-                            <tr><td>Drop bag</td><td class="mono">—</td></tr>
-                            <tr><td>Buddy</td><td class="mono">—</td></tr>
-                            <tr><td>Roadside (CHP)</td><td class="mono">800-835-5247</td></tr>
-                        </tbody>
-                    </table>
-                    <div class="rpv2-pb-fill-note">Fill in by hand before the ride.</div>
-                </div>
+                {% endif %}
             </div>
 
             <div class="rpv2-pb-section">
@@ -470,7 +466,7 @@
                         <div class="rpv2-pb-tt-name">{{ s.name|replace('Open Control #', 'OC#')|replace(', CA', '')|truncate(14, true, '…') }}</div>
                         <div class="rpv2-pb-tt-times">
                             <span>{{ s.eta }}</span>
-                            <small>{{ s.cutoff_eta or '—' }}</small>
+                            <small class="{{ 'good' if s.bank_min >= 0 else 'bad' }}">{{ s.bank or '—' }}</small>
                         </div>
                     </div>
                     {% endfor %}
@@ -816,10 +812,23 @@
     {% for seg in risks.segments %}
         {% set x1 = PADL + (seg.mi_from / total) * INNER_W %}
         {% set x2 = PADL + (seg.mi_to / total) * INNER_W %}
-        <rect x="{{ x1|round(2) }}" y="{{ wind_y }}" width="{{ (x2 - x1)|round(2) }}" height="{{ LANE_H }}"
+        {% set seg_w = x2 - x1 %}
+        <rect x="{{ x1|round(2) }}" y="{{ wind_y }}" width="{{ seg_w|round(2) }}" height="{{ LANE_H }}"
               fill="{{ seg.wind_color }}" opacity="{{ '0.85' if seg.wind_intense else '0.5' }}">
             <title>{{ "%.0f"|format(seg.mi_from) }}-{{ "%.0f"|format(seg.mi_to) }}mi · {{ seg.wind_label or '—' }} {{ seg.wind_mph }}mph</title>
         </rect>
+        {# Only render mph label if the segment is wide enough to fit it (≥22px) #}
+        {% if seg_w >= 22 and seg.wind_mph %}
+        {% set text_color = '#fff' if seg.wind_intense else '#1a365d' %}
+        <text x="{{ ((x1 + x2) / 2)|round(2) }}" y="{{ wind_y + 12 }}"
+              text-anchor="middle" font-size="8" font-weight="700" fill="{{ text_color }}"
+              style="pointer-events:none;">{{ seg.wind_mph }}</text>
+        {% if seg_w >= 32 %}
+        <text x="{{ ((x1 + x2) / 2)|round(2) }}" y="{{ wind_y + 22 }}"
+              text-anchor="middle" font-size="7" font-weight="600" fill="{{ text_color }}"
+              opacity="0.85" style="pointer-events:none;">{{ (seg.wind_label or '')[:1] }}</text>
+        {% endif %}
+        {% endif %}
     {% endfor %}
 
     {# Light lane #}

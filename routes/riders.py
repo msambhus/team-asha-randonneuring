@@ -2114,8 +2114,23 @@ def ride_plan_detail_v2(slug):
     risks = compute_risk_zones(stops, v2_stops, plan, plan.get('start_time', '06:00'),
                                plan.get('linked_ride_date'))
 
+    # Surface sunrise/sunset on weather_summary too — fetch_stop_wind doesn't
+    # provide them, but the risks heuristic does (Bay Area monthly lookup).
+    weather_summary['sunrise'] = risks.get('sunrise_str')
+    weather_summary['sunset'] = risks.get('sunset_str')
+
     # Fatigue model — predicted alertness across the ride
     fatigue = compute_fatigue_model(stops, total_time)
+
+    # Weather forecast share URL — link the print briefing to the full forecast.
+    weather_share_url = None
+    weather_rwgps = plan.get('rwgps_url_team') or plan.get('rwgps_url')
+    if weather_rwgps:
+        from urllib.parse import urlencode
+        params = {'rwgps_url': weather_rwgps, 'plan_slug': plan['slug'], 'auto': '1'}
+        if plan.get('linked_ride_date') and plan.get('start_time'):
+            params['start_datetime'] = f"{plan['linked_ride_date'].isoformat()}T{plan['start_time']}"
+        weather_share_url = url_for('weather.weather_page') + '?' + urlencode(params)
 
     active_tab = request.args.get('tab', 'plan')
 
@@ -2133,6 +2148,7 @@ def ride_plan_detail_v2(slug):
                            avg_elapsed_speed=avg_elapsed_speed,
                            weighted_difficulty=weighted_difficulty,
                            weather_summary=weather_summary,
+                           weather_share_url=weather_share_url,
                            upcoming_event=upcoming_event,
                            signups=signups,
                            active_tab=active_tab)
