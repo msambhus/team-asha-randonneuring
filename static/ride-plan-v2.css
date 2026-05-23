@@ -818,6 +818,22 @@
     vertical-align: middle;
 }
 .rpv2-pb-cutoff { color: #dc2626; font-weight: 700; }
+.rpv2-pb-bank { font-weight: 700; }
+.rpv2-pb-bank.good { color: #16a34a; }
+.rpv2-pb-bank.bad { color: #dc2626; }
+.rpv2-pb-weather-link {
+    margin-top: 8px;
+    font-size: 0.7rem;
+    color: #4b5563;
+    line-height: 1.4;
+    word-break: break-all;
+}
+.rpv2-pb-weather-link a {
+    color: #1d4ed8;
+    text-decoration: none;
+    font-weight: 600;
+}
+.rpv2-pb-weather-link a:hover { text-decoration: underline; }
 .rpv2-pb-tr-halt { background: #f5f3ff; }
 .rpv2-pb-tbl-sm td {
     font-size: 0.72rem;
@@ -867,12 +883,14 @@
 }
 .rpv2-pb-tt-times span {
     font: 800 0.72rem inherit;
-    color: #16a34a;
+    color: #1a365d;
 }
 .rpv2-pb-tt-times small {
     font: 700 0.58rem inherit;
-    color: #dc2626;
+    color: #94a3b8;
 }
+.rpv2-pb-tt-times small.good { color: #16a34a; }
+.rpv2-pb-tt-times small.bad { color: #dc2626; }
 .rpv2-pb-footer {
     font-size: 0.6rem;
     color: #9ca3af;
@@ -901,6 +919,8 @@
         padding: 0;
     }
     .rpv2-pb-section { break-inside: avoid; }
+    /* Keep the weather link URL visible in print (it's already shown inline) */
+    .rpv2-pb-weather-link a { color: #1d4ed8; }
 }
 
 /* ===== Race-day companion (/ride-plan/<slug>/live) ===== */
