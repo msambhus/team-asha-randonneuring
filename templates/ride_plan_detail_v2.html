@@ -3,6 +3,8 @@
 
 {% block extra_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='ride-plan-v2.css') }}">
+{# Weather tab embeds the /weather page UI — pull in its CSS + Mapbox assets #}
+{% include 'partials/_weather_head.html' %}
 {% endblock %}
 
 {# ===== Macros ===== #}
@@ -405,56 +407,11 @@
         {% endif %}
     </section>
 
-    {# ===== Weather tab ===== #}
+    {# ===== Weather tab — inlines the same content/scripts as /weather ===== #}
     <section class="rpv2-panel {% if active_tab == 'weather' %}is-active{% endif %}"
              id="rpv2-panel-weather" role="tabpanel" aria-labelledby="rpv2-tab-weather" data-panel="weather">
-        <div class="rpv2-ro-intro">
-            <div class="rpv2-pc-eyebrow">Weather along route</div>
-            <div class="rpv2-pc-sub">
-                Hour-by-hour forecast keyed to your planned start time. Same data the Risks tab uses.
-                {% if weather_share_url %}
-                <a href="{{ weather_share_url }}" target="_blank" rel="noopener">Open in full page ↗</a>
-                {% endif %}
-            </div>
-        </div>
-        <div class="rpv2-card">
-            <div class="rpv2-wx-grid">
-                <div class="rpv2-wx-cell">
-                    <div class="rpv2-wx-lbl">Temp</div>
-                    <div class="rpv2-wx-val">
-                        {% if weather_summary.temp_low is not none and weather_summary.temp_high is not none %}
-                            {{ weather_summary.temp_low }}–{{ weather_summary.temp_high }}°F
-                        {% else %}—{% endif %}
-                    </div>
-                </div>
-                <div class="rpv2-wx-cell">
-                    <div class="rpv2-wx-lbl">Wind</div>
-                    <div class="rpv2-wx-val">
-                        {% if weather_summary.wind_max %}to {{ weather_summary.wind_max }} mph{% else %}—{% endif %}
-                    </div>
-                    {% if weather_summary.headwind_segs or weather_summary.crosswind_segs %}
-                    <div class="rpv2-wx-sub">
-                        {%- if weather_summary.headwind_segs %}{{ weather_summary.headwind_segs }} head{% endif -%}
-                        {%- if weather_summary.headwind_segs and weather_summary.crosswind_segs %} · {% endif -%}
-                        {%- if weather_summary.crosswind_segs %}{{ weather_summary.crosswind_segs }} cross{% endif -%}
-                    </div>
-                    {% endif %}
-                </div>
-                <div class="rpv2-wx-cell">
-                    <div class="rpv2-wx-lbl">Sunrise</div>
-                    <div class="rpv2-wx-val">{{ weather_summary.sunrise or '—' }}</div>
-                </div>
-                <div class="rpv2-wx-cell">
-                    <div class="rpv2-wx-lbl">Sunset</div>
-                    <div class="rpv2-wx-val">{{ weather_summary.sunset or '—' }}</div>
-                </div>
-            </div>
-        </div>
-        {% if weather_share_url %}
-        <div class="rpv2-card rpv2-wx-embed">
-            <iframe src="{{ weather_share_url }}" title="Hour-by-hour route weather"
-                    loading="lazy" referrerpolicy="no-referrer"></iframe>
-        </div>
+        {% if prefill_url %}
+        {% include 'partials/_weather_content.html' %}
         {% else %}
         <div class="rpv2-coming">
             <b>Forecast unavailable</b> — this plan has no RWGPS route attached.
@@ -1042,4 +999,8 @@
     }
 })();
 </script>
+{# Weather-tab JS (Chart.js + Mapbox + fetch flow) — same partial /weather uses #}
+{% if prefill_url %}
+{% include 'partials/_weather_scripts.html' %}
+{% endif %}
 {% endblock %}

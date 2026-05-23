@@ -2133,15 +2133,21 @@ def ride_plan_detail_v2(slug):
         else:
             save_state = 'no_rider'
 
-    # Weather forecast share URL — link the print briefing to the full forecast.
-    weather_share_url = None
+    # Weather forecast — vars consumed by the embedded weather partials in
+    # the v2 Weather tab. Mirrors what routes.weather.weather_page() passes.
     weather_rwgps = plan.get('rwgps_url_team') or plan.get('rwgps_url')
+    weather_prefill_url = weather_rwgps or ''
+    weather_prefill_datetime = ''
+    if plan.get('linked_ride_date') and plan.get('start_time'):
+        weather_prefill_datetime = f"{plan['linked_ride_date'].isoformat()}T{plan['start_time']}"
+    weather_share_url = None
     if weather_rwgps:
         from urllib.parse import urlencode
         params = {'rwgps_url': weather_rwgps, 'plan_slug': plan['slug'], 'auto': '1'}
-        if plan.get('linked_ride_date') and plan.get('start_time'):
-            params['start_datetime'] = f"{plan['linked_ride_date'].isoformat()}T{plan['start_time']}"
+        if weather_prefill_datetime:
+            params['start_datetime'] = weather_prefill_datetime
         weather_share_url = url_for('weather.weather_page') + '?' + urlencode(params)
+    mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
 
     active_tab = request.args.get('tab', 'plan')
 
@@ -2159,6 +2165,15 @@ def ride_plan_detail_v2(slug):
                            weighted_difficulty=weighted_difficulty,
                            weather_summary=weather_summary,
                            weather_share_url=weather_share_url,
+                           # Prefill vars consumed by partials/_weather_*.html
+                           # so the embedded weather UI auto-fetches.
+                           prefill_url=weather_prefill_url,
+                           prefill_datetime=weather_prefill_datetime,
+                           prefill_speed='',
+                           prefill_plan_slug=plan['slug'],
+                           prefill_plan_name=plan['name'],
+                           auto_fetch='1' if weather_rwgps else '',
+                           mapbox_token=mapbox_token,
                            save_state=save_state,
                            is_admin=is_admin_user(),
                            upcoming_event=upcoming_event,
