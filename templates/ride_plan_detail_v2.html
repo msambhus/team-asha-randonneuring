@@ -44,7 +44,7 @@
             ('plan', 'Plan', ''),
             ('strategies', 'Strategies', ''),
             ('risks', 'Risks', ''),
-            ('fatigue', 'Fatigue', 'soon'),
+            ('fatigue', 'Fatigue', ''),
             ('print', 'Print briefing', ''),
         ] %}
         {% for key, label, pill in tabs %}
@@ -483,14 +483,34 @@
         </div>
     </section>
 
-    {# ===== Stub tab (Fatigue) ===== #}
+    {# ===== Fatigue tab ===== #}
     <section class="rpv2-panel {% if active_tab == 'fatigue' %}is-active{% endif %}"
              id="rpv2-panel-fatigue" role="tabpanel" aria-labelledby="rpv2-tab-fatigue" data-panel="fatigue">
-        <div class="rpv2-coming">
-            <b>Fatigue</b> — coming soon. <br>
-            This tab will ship in the next phase. For now the
-            <a href="?tab=plan">Plan tab</a> has everything.
+        {% if fatigue.has_data %}
+        <div class="rpv2-ro-intro">
+            <div class="rpv2-pc-eyebrow">Fatigue model — predicted alertness</div>
+            <div class="rpv2-pc-sub">
+                Predicted alertness across the {{ fatigue.total_h|round(1) }} h ride
+                {%- if fatigue.halt_start_h %} · {{ ((fatigue.halt_end_h - fatigue.halt_start_h) * 60)|int }}m sleep at the night halt{% endif %}.
+                <em>For guidance only — heuristic, not science.</em>
+            </div>
         </div>
+        <div class="rpv2-card">
+            {{ fatigue_svg(fatigue) }}
+            <div class="rpv2-ro-callouts">
+                {% for ins in fatigue.insights %}
+                <div class="rpv2-ro-callout">
+                    <div class="rpv2-ro-callout-tag" style="background:{{ ins.color }};">{{ ins.tag }}</div>
+                    <div><b>{{ ins.lead }}</b> {{ ins.body }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div class="rpv2-coming">
+            <b>Fatigue model unavailable</b> — this plan needs at least one stop with timing data.
+        </div>
+        {% endif %}
     </section>
 
 </div>
@@ -845,6 +865,81 @@
     {% for m in [0, 100, 200, 300, total] %}
         {% set mx = PADL + (m / total) * INNER_W %}
         <text x="{{ mx|round(2) }}" y="{{ H - 6 }}" text-anchor="middle" font-size="9" fill="#94a3b8">{{ m|int }}mi</text>
+    {% endfor %}
+</svg>
+{% endmacro %}
+
+{# ===== Fatigue model SVG ===== #}
+{% macro fatigue_svg(fatigue) %}
+{% set W = 1100 %}{% set H = 280 %}
+{% set PADL = 44 %}{% set PADR = 60 %}{% set PADT = 30 %}{% set PADB = 36 %}
+{% set INNER_W = W - PADL - PADR %}
+{% set INNER_H = H - PADT - PADB %}
+{% set total = fatigue.total_h or 1 %}
+
+{# Pre-compute key y positions inline #}
+{% set y_100 = PADT %}
+{% set y_50 = PADT + INNER_H - ((50 - 20) / 80) * INNER_H %}
+{% set y_35 = PADT + INNER_H - ((35 - 20) / 80) * INNER_H %}
+{% set y_20 = PADT + INNER_H - ((20 - 20) / 80) * INNER_H %}
+
+<svg viewBox="0 0 {{ W }} {{ H }}" class="rpv2-fm-svg" preserveAspectRatio="xMidYMid meet">
+    {# Danger band (alertness < 50%) #}
+    <rect x="{{ PADL }}" y="{{ y_50|round(2) }}" width="{{ INNER_W }}" height="{{ (y_20 - y_50)|round(2) }}"
+          fill="#fee2e2" opacity="0.5"></rect>
+    <text x="{{ PADL + 6 }}" y="{{ y_35|round(2) }}" font-size="10" font-weight="700" fill="#dc2626">FATIGUE DANGER ZONE</text>
+
+    {# Y-axis gridlines + labels #}
+    {% for a in [100, 75, 50, 25] %}
+    {% set ya = PADT + INNER_H - ((a - 20) / 80) * INNER_H %}
+    <line x1="{{ PADL }}" x2="{{ PADL + INNER_W }}" y1="{{ ya|round(2) }}" y2="{{ ya|round(2) }}"
+          stroke="#e2e8f0" stroke-dasharray="2 3"></line>
+    <text x="{{ PADL - 6 }}" y="{{ (ya + 3)|round(2) }}" font-size="9" fill="#94a3b8" text-anchor="end">{{ a }}%</text>
+    {% endfor %}
+
+    {# Night halt band #}
+    {% if fatigue.halt_start_h is not none and fatigue.halt_end_h is not none %}
+    {% set hsx = PADL + (fatigue.halt_start_h / total) * INNER_W %}
+    {% set hex = PADL + (fatigue.halt_end_h / total) * INNER_W %}
+    <rect x="{{ hsx|round(2) }}" y="{{ PADT }}" width="{{ (hex - hsx)|round(2) }}" height="{{ INNER_H }}"
+          fill="#4c1d95" opacity="0.12"></rect>
+    {% set sleep_min = ((fatigue.halt_end_h - fatigue.halt_start_h) * 60)|round|int %}
+    <text x="{{ ((hsx + hex) / 2)|round(2) }}" y="{{ PADT + 12 }}" font-size="10" font-weight="700" fill="#4c1d95" text-anchor="middle">
+        🌙 SLEEP {{ sleep_min }}m
+    </text>
+    {% endif %}
+
+    {# Alertness curve #}
+    {% set ns = namespace(d='') %}
+    {% for p in fatigue.samples %}
+        {% set px = PADL + (p.h / total) * INNER_W %}
+        {% set py = PADT + INNER_H - ((p.a - 20) / 80) * INNER_H %}
+        {% if loop.first %}
+            {% set ns.d = 'M ' ~ (px|round(2)|string) ~ ' ' ~ (py|round(2)|string) %}
+        {% else %}
+            {% set ns.d = ns.d ~ ' L ' ~ (px|round(2)|string) ~ ' ' ~ (py|round(2)|string) %}
+        {% endif %}
+    {% endfor %}
+    <path d="{{ ns.d }}" fill="none" stroke="#1a365d" stroke-width="2.4"></path>
+
+    {# Stop dots #}
+    {% for d in fatigue.stop_dots %}
+        {% set color = '#16a34a' if d.kind == 'start' else ('#dc2626' if d.kind == 'finish' else '#1d4ed8') %}
+        {% set dx = PADL + (d.h / total) * INNER_W %}
+        {% set dy = PADT + INNER_H - ((d.a - 20) / 80) * INNER_H %}
+        <circle cx="{{ dx|round(2) }}" cy="{{ dy|round(2) }}" r="4" fill="{{ color }}" stroke="#fff" stroke-width="1.5">
+            <title>{{ d.name }} · hour {{ d.h }} · {{ d.a }}%</title>
+        </circle>
+    {% endfor %}
+
+    {# X-axis hour labels (every 6h) #}
+    {% set max_lbl = (total // 6)|int %}
+    {% for i in range(max_lbl + 2) %}
+        {% set hh = i * 6 %}
+        {% if hh <= total %}
+        {% set xx = PADL + (hh / total) * INNER_W %}
+        <text x="{{ xx|round(2) }}" y="{{ H - 8 }}" text-anchor="middle" font-size="9" fill="#94a3b8">{{ hh }}h</text>
+        {% endif %}
     {% endfor %}
 </svg>
 {% endmacro %}
