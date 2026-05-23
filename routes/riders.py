@@ -2739,6 +2739,79 @@ def _weather_summary_from_stop_wind(stop_wind, stops):
     }
 
 
+# ========== RIDE PLAN v2 RACE-DAY COMPANION ==========
+
+@riders_bp.route('/ride-plan/<slug>/live')
+def ride_plan_live(slug):
+    """Race-day mobile companion view. Position from ?at=<stop_index> for v1
+    (no DB persistence yet — see design README Phase 3).
+    """
+    plan = get_ride_plan_by_slug(slug)
+    if not plan:
+        abort(404)
+    raw_stops = get_ride_plan_stops(plan['id'])
+
+    plan = dict(plan)
+    plan['total_distance_miles'] = float(plan.get('total_distance_miles') or 0)
+    plan['total_elevation_ft'] = int(plan.get('total_elevation_ft') or 0)
+    distance_km = _extract_distance_km(plan['name'])
+    cutoff_hours = _get_cutoff_hours(distance_km)
+    plan['distance_km'] = distance_km
+    plan['cutoff_hours'] = cutoff_hours
+
+    from models import get_latest_ride_for_plan
+    linked_ride = get_latest_ride_for_plan(plan['id'])
+    plan['start_time'] = (linked_ride.get('start_time') if linked_ride else None) or '06:00'
+    plan['linked_ride_date'] = linked_ride.get('date') if linked_ride else None
+
+    # Reuse v2 derived-stops logic
+    stops = []
+    cum_time_min = 0
+    prev_dist = 0.0
+    for s in raw_stops:
+        d = dict(s)
+        d['distance_miles'] = float(d['distance_miles']) if d.get('distance_miles') is not None else 0.0
+        d['elevation_gain'] = int(d['elevation_gain']) if d.get('elevation_gain') is not None else 0
+        d['segment_time_min'] = int(d['segment_time_min']) if d.get('segment_time_min') is not None else 0
+        d['stop_duration_min'] = int(d['stop_duration_min']) if d.get('stop_duration_min') is not None else 0
+        seg_dist = round(d['distance_miles'] - prev_dist, 1)
+        d['seg_dist'] = seg_dist
+        d['ft_per_mi'] = int(round(d['elevation_gain'] / seg_dist)) if d['elevation_gain'] and seg_dist > 0 else 0
+        if d['segment_time_min']:
+            cum_time_min += d['segment_time_min']
+        if d['stop_duration_min']:
+            cum_time_min += d['stop_duration_min']
+        d['cum_time_min'] = cum_time_min
+        d['arrival_time_min'] = cum_time_min - d['stop_duration_min']
+        if cutoff_hours and plan['total_distance_miles'] > 0 and d['distance_miles']:
+            d['bookend_time_min'] = round((d['distance_miles'] / plan['total_distance_miles']) * cutoff_hours * 60)
+            d['time_bank_min'] = d['bookend_time_min'] - d['arrival_time_min']
+        else:
+            d['time_bank_min'] = None
+        prev_dist = d['distance_miles']
+        stops.append(d)
+
+    v2_stops = _to_v2_stops(stops, plan, None)
+
+    at = max(0, min(len(v2_stops) - 1, request.args.get('at', default=0, type=int)))
+    cur = v2_stops[at] if v2_stops else None
+    next_stop = v2_stops[at + 1] if at + 1 < len(v2_stops) else None
+    upcoming = v2_stops[at + 1:at + 5] if at + 1 < len(v2_stops) else []
+
+    progress = 0
+    if cur and plan['total_distance_miles']:
+        progress = (cur['cumul_mi'] / plan['total_distance_miles']) * 100
+
+    return render_template('ride_plan_live.html',
+                           plan=plan,
+                           cur=cur,
+                           next_stop=next_stop,
+                           upcoming=upcoming,
+                           at_index=at,
+                           total_stops=len(v2_stops),
+                           progress=progress)
+
+
 # ========== CUSTOM RIDE PLANS ==========
 
 @riders_bp.route('/ride-plan/<slug>/edit-base')
