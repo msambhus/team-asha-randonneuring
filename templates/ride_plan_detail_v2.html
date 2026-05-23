@@ -42,7 +42,7 @@
     <nav class="rpv2-tabs" role="tablist" aria-label="Ride plan sections">
         {% set tabs = [
             ('plan', 'Plan', ''),
-            ('strategies', 'Strategies', 'soon'),
+            ('strategies', 'Strategies', ''),
             ('risks', 'Risks', 'soon'),
             ('fatigue', 'Fatigue', 'soon'),
             ('print', 'Print briefing', 'soon'),
@@ -155,9 +155,11 @@
                                 <td class="r mono {{ 'good' if bank_good else 'bad' }}">{{ s.bank }}</td>
                                 <td class="r">
                                     {% if s.wind_known %}
-                                    {% set wlabel = 'Tail' if s.wind <= 3 else ('Cross' if s.wind <= 6 else 'Head') %}
-                                    {% set wcolor = '#16a34a' if s.wind <= 3 else ('#ca8a04' if s.wind <= 6 else '#dc2626') %}
-                                    <span class="rpv2-wind" style="color:{{ wcolor }};">{{ wlabel }} {{ s.wind }}</span>
+                                    {% set wcolor = '#16a34a' if s.wind_label == 'Tail' else ('#dc2626' if s.wind_label == 'Head' else '#ca8a04') %}
+                                    <span class="rpv2-wind" style="color:{{ wcolor }};" title="{{ s.wind_arrow_deg }}° wind">
+                                        <span class="rpv2-wind-arrow" style="transform:rotate({{ s.wind_arrow_deg }}deg);">↑</span>
+                                        {{ s.wind_label }} {{ s.wind_mph }}
+                                    </span>
                                     {% else %}
                                     <span class="rpv2-wind unknown">—</span>
                                     {% endif %}
@@ -190,8 +192,16 @@
                                 <div class="rpv2-wx-val">
                                     {% if weather_summary.wind_max %}to {{ weather_summary.wind_max }} mph{% else %}—{% endif %}
                                 </div>
-                                {% if weather_summary.headwind_segs %}
-                                <div class="rpv2-wx-sub">{{ weather_summary.headwind_segs }} headwind seg{{ '' if weather_summary.headwind_segs == 1 else 's' }}</div>
+                                {% if weather_summary.headwind_segs or weather_summary.crosswind_segs %}
+                                <div class="rpv2-wx-sub">
+                                    {%- if weather_summary.headwind_segs -%}
+                                        {{ weather_summary.headwind_segs }} head
+                                    {%- endif -%}
+                                    {%- if weather_summary.headwind_segs and weather_summary.crosswind_segs %} · {% endif -%}
+                                    {%- if weather_summary.crosswind_segs -%}
+                                        {{ weather_summary.crosswind_segs }} cross
+                                    {%- endif -%}
+                                </div>
                                 {% endif %}
                             </div>
                             <div class="rpv2-wx-cell">
@@ -279,8 +289,62 @@
         </div>
     </section>
 
-    {# ===== Other tabs (stubs) ===== #}
-    {% for key, label, _ in [('strategies', 'Strategies', ''), ('risks', 'Risks', ''), ('fatigue', 'Fatigue', ''), ('print', 'Print briefing', '')] %}
+    {# ===== Strategies tab ===== #}
+    <section class="rpv2-panel {% if active_tab == 'strategies' %}is-active{% endif %}"
+             id="rpv2-panel-strategies" role="tabpanel" aria-labelledby="rpv2-tab-strategies" data-panel="strategies">
+        {% if paces %}
+        <div class="rpv2-pc-intro">
+            <div class="rpv2-pc-eyebrow">3 ways to ride it</div>
+            <div class="rpv2-pc-sub">Pick the strategy that fits your goal — the times below are derived from the base plan with adjusted segment speed and night halt.</div>
+        </div>
+        <div class="rpv2-pc-grid">
+            {% for p in paces %}
+            <div class="rpv2-pc-col" data-pace-id="{{ p.id }}"
+                 style="--pc-color:{{ p.color }};">
+                <div class="rpv2-pc-col-h">
+                    {% if p.recommended %}<span class="rpv2-pc-rec">★ TEAM PLAN</span>{% endif %}
+                    <div class="rpv2-pc-name">{{ p.name }}</div>
+                    <div class="rpv2-pc-summary">{{ p.summary }}</div>
+                </div>
+                <div class="rpv2-pc-stats">
+                    <div class="rpv2-pc-stat">
+                        <div class="rpv2-pc-stat-num">{{ p.total }}</div>
+                        <div class="rpv2-pc-stat-lbl">Total elapsed</div>
+                    </div>
+                    <div class="rpv2-pc-stat">
+                        <div class="rpv2-pc-stat-num">{{ p.sleep }}</div>
+                        <div class="rpv2-pc-stat-lbl">Sleep</div>
+                    </div>
+                    <div class="rpv2-pc-stat">
+                        <div class="rpv2-pc-stat-num {{ 'good' if p.bank_good else 'bad' }}">{{ p.bank or '—' }}</div>
+                        <div class="rpv2-pc-stat-lbl">Time bank</div>
+                    </div>
+                </div>
+                <div class="rpv2-pc-stops">
+                    {% for s in p.stops if s.is_key %}
+                    <div class="rpv2-pc-stop">
+                        <span class="rpv2-pc-stop-name">{{ s.name|replace('Open Control #', 'OC#')|replace(', CA', '')|truncate(24, true, '…') }}</span>
+                        <span class="rpv2-pc-stop-mi">{{ "%.0f"|format(s.cumul_mi) }}mi</span>
+                        <span class="rpv2-pc-stop-eta">{{ s.eta }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="rpv2-pc-risk">⚠ {{ p.risk }}</div>
+                <button type="button" class="rpv2-pc-btn" data-pace-pick="{{ p.id }}">Choose this plan</button>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="rpv2-coming">
+            <b>Strategies unavailable</b> — this plan doesn't have enough segment timing data.
+            Add segment times in the
+            <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}">base plan editor</a> first.
+        </div>
+        {% endif %}
+    </section>
+
+    {# ===== Stub tabs (Phases 2 cont'd / 3) ===== #}
+    {% for key, label in [('risks', 'Risks'), ('fatigue', 'Fatigue'), ('print', 'Print briefing')] %}
     <section class="rpv2-panel {% if active_tab == key %}is-active{% endif %}"
              id="rpv2-panel-{{ key }}" role="tabpanel" aria-labelledby="rpv2-tab-{{ key }}" data-panel="{{ key }}">
         <div class="rpv2-coming">
@@ -386,10 +450,14 @@
         </div>
         <div class="rpv2-snap-wx-spark">
             {% for s in stops %}
-                {% set wc = '#16a34a' if s.wind <= 3 else ('#ca8a04' if s.wind <= 6 else '#dc2626') %}
-                {% set wo = 0.3 + (s.wind / 10) * 0.7 %}
+                {% if s.wind_known %}
+                    {% set wc = '#16a34a' if s.wind_label == 'Tail' else ('#dc2626' if s.wind_label == 'Head' else '#ca8a04') %}
+                    {% set wo = 0.35 + ((s.wind_mph if s.wind_mph < 25 else 25) / 25) * 0.65 %}
+                {% else %}
+                    {% set wc = '#cbd5e1' %}{% set wo = 0.4 %}
+                {% endif %}
                 <span class="rpv2-snap-wx-bar" style="background:{{ wc }};opacity:{{ wo|round(2) }};"
-                      title="{{ '%.0f'|format(s.cumul_mi) }}mi · {{ s.wind }}"></span>
+                      title="{{ '%.0f'|format(s.cumul_mi) }}mi · {% if s.wind_known %}{{ s.wind_label }} {{ s.wind_mph }}mph{% else %}—{% endif %}"></span>
             {% endfor %}
         </div>
     </div>
@@ -488,12 +556,15 @@
             <circle cx="{{ px|round(2) }}" cy="{{ py|round(2) }}" r="{{ r }}"
                     fill="{{ t.color }}" stroke="#fff" stroke-width="2"></circle>
             <g class="stop-tip">
-                <rect x="{{ (px - 95)|round(2) }}" y="{{ (py - 56)|round(2) }}" width="190" height="42" rx="6" fill="#0f172a" opacity="0.95"></rect>
-                <text x="{{ px|round(2) }}" y="{{ (py - 40)|round(2) }}" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">
-                    {{ s.name[:28] }}{% if s.name|length > 28 %}…{% endif %}
+                <rect x="{{ (px - 110)|round(2) }}" y="{{ (py - 72)|round(2) }}" width="220" height="58" rx="6" fill="#0f172a" opacity="0.95"></rect>
+                <text x="{{ px|round(2) }}" y="{{ (py - 56)|round(2) }}" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">
+                    {{ s.name[:32] }}{% if s.name|length > 32 %}…{% endif %}
                 </text>
-                <text x="{{ px|round(2) }}" y="{{ (py - 26)|round(2) }}" text-anchor="middle" font-size="9" fill="#cbd5e1">
-                    {{ "%.0f"|format(s.cumul_mi) }}mi · ETA {{ s.eta }} · bank {{ s.bank }}
+                <text x="{{ px|round(2) }}" y="{{ (py - 42)|round(2) }}" text-anchor="middle" font-size="9" fill="#cbd5e1">
+                    {{ "%.0f"|format(s.cumul_mi) }}mi · ETA {{ s.eta }}{% if s.bank %} · bank {{ s.bank }}{% endif %}
+                </text>
+                <text x="{{ px|round(2) }}" y="{{ (py - 28)|round(2) }}" text-anchor="middle" font-size="9" fill="#cbd5e1">
+                    +{{ "%.1f"|format(s.seg_mi) }}mi seg · {{ "{:,}".format(s.elev) }}ft climb{% if s.fpm %} · {{ s.fpm }}/mi{% endif %}
                 </text>
             </g>
         </g>
@@ -587,6 +658,28 @@
             row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         });
     });
+
+    // Pace strategy "Choose this plan" — client-only selection (per design README)
+    var paceCols = document.querySelectorAll('.rpv2-pc-col');
+    var pickedPace = 'standard';
+    function applyPick(id) {
+        pickedPace = id;
+        paceCols.forEach(function(col) {
+            var on = col.dataset.paceId === id;
+            col.classList.toggle('is-on', on);
+            var btn = col.querySelector('.rpv2-pc-btn');
+            if (btn) btn.textContent = on ? '✓ Selected' : 'Choose this plan';
+        });
+    }
+    paceCols.forEach(function(col) {
+        col.addEventListener('click', function(e) {
+            // Only react to clicks on the column itself or the button
+            if (e.target.closest('a')) return;
+            applyPick(col.dataset.paceId);
+        });
+    });
+    // Initialise default selection (standard) if it exists
+    if (document.querySelector('[data-pace-id="standard"]')) applyPick('standard');
 
     // Share button — copies current URL
     var shareBtn = document.getElementById('rpv2-share');

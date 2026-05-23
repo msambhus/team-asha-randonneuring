@@ -2070,12 +2070,16 @@ def ride_plan_detail_v2(slug):
     # Map stops into the design shape
     v2_stops = _to_v2_stops(stops, plan, stop_wind)
 
-    # Fuel/food stops — notes mention any of these keywords
+    # Fuel/food stops — match against both note and stop name (location).
+    # Lunch/dinner/etc. is often embedded in the location string itself ("Mines Rd — Lunch").
     fuel_keywords = ('lunch', 'dinner', 'breakfast', 'safeway', 'holland', 'holiday',
-                     'eddy', 'subway', 'taco', 'cafe', 'coffee', 'grocery', 'store',
-                     'market', 'food', 'snack')
-    fuel_stops_v2 = [s for s in v2_stops
-                     if s['note'] and any(k in s['note'].lower() for k in fuel_keywords)]
+                     'subway', 'taco', 'cafe', 'coffee', 'grocery', 'market',
+                     'food', 'snack', 'deli', 'pizza', 'burger', 'mcdonald',
+                     'starbucks', 'restaurant')
+    def _has_fuel(s):
+        haystack = ((s.get('note') or '') + ' ' + (s.get('name') or '')).lower()
+        return any(k in haystack for k in fuel_keywords)
+    fuel_stops_v2 = [s for s in v2_stops if _has_fuel(s)]
 
     # Riders & signups for the matched upcoming event (same matching logic as v1)
     from models import get_upcoming_rusa_events, get_user_by_id
@@ -2103,12 +2107,16 @@ def ride_plan_detail_v2(slug):
     # Weather aggregates from stop_wind
     weather_summary = _weather_summary_from_stop_wind(stop_wind, stops)
 
+    # Pace strategies (3 variants)
+    paces = compute_pace_strategies(stops, plan, plan.get('start_time', '06:00'), cutoff_hours)
+
     active_tab = request.args.get('tab', 'plan')
 
     return render_template('ride_plan_detail_v2.html',
                            plan=plan,
                            stops_v2=v2_stops,
                            fuel_stops_v2=fuel_stops_v2,
+                           paces=paces,
                            total_time=total_time,
                            total_moving_time=total_moving_time,
                            total_break_time=total_break_time,
@@ -2135,6 +2143,8 @@ def _to_v2_stops(stops, plan, stop_wind):
     for i, s in enumerate(stops):
         is_start = i == 0
         is_finish = i == n - 1
+        # The display name lives in the `location` column on ride_plan_stop.
+        loc = s.get('location') or s.get('name') or ''
         # Map DB stop_type → design type. Fallback by name conventions.
         db_type = (s.get('stop_type') or '').lower().strip()
         if is_start:
@@ -2143,7 +2153,7 @@ def _to_v2_stops(stops, plan, stop_wind):
             v2_type = 'finish'
         elif db_type in ('control', 'rest', 'waypoint'):
             v2_type = db_type
-        elif 'control' in (s.get('name') or '').lower():
+        elif 'control' in loc.lower():
             v2_type = 'control'
         elif s.get('stop_duration_min', 0) >= 15:
             v2_type = 'rest'
@@ -2167,20 +2177,24 @@ def _to_v2_stops(stops, plan, stop_wind):
             am = abs(bank_min)
             bank = f"{sign}{am // 60}:{am % 60:02d}"
 
-        # Wind 0–10 from stop_wind if available, else placeholder
-        wind_level = None
+        # Wind data from stop_wind (fetch_stop_wind returns 'label', 'wind_speed_mph',
+        # 'wind_arrow_deg', 'temperature_f' — see services/weather.py:690).
+        wind_speed_mph = None
+        wind_label = None
+        wind_arrow_deg = None
         if stop_wind and i < len(stop_wind) and stop_wind[i]:
             sw = stop_wind[i]
-            label = (sw.get('wind_label') or '').lower()
-            speed = sw.get('wind_speed_kmh') or 0
-            if 'tail' in label:
-                wind_level = max(0, min(3, int(speed / 6)))
-            elif 'head' in label:
-                wind_level = max(7, min(10, 7 + int(speed / 8)))
-            else:
-                wind_level = max(4, min(6, 4 + int(speed / 10)))
+            wind_speed_mph = sw.get('wind_speed_mph')
+            wind_arrow_deg = sw.get('wind_arrow_deg')
+            wind_type = (sw.get('wind_type') or sw.get('label') or '').lower()
+            if 'tail' in wind_type:
+                wind_label = 'Tail'
+            elif 'head' in wind_type:
+                wind_label = 'Head'
+            elif 'cross' in wind_type:
+                wind_label = 'Cross'
 
-        # Difficulty class for ft/mi (matches design fpm bucketing)
+        # Difficulty class for ft/mi
         fpm = s.get('ft_per_mi') or 0
         if fpm < 25:
             fpm_class = 't1'
@@ -2194,7 +2208,7 @@ def _to_v2_stops(stops, plan, stop_wind):
         out.append({
             'i': i,
             'type': v2_type,
-            'name': s.get('name') or '',
+            'name': loc,
             'note': s.get('notes') or '',
             'cumul_mi': round(s.get('distance_miles') or 0, 1),
             'seg_mi': round(s.get('seg_dist') or 0, 1),
@@ -2204,35 +2218,187 @@ def _to_v2_stops(stops, plan, stop_wind):
             'eta': eta,
             'bank': bank,
             'bank_min': bank_min if bank_min is not None else 0,
-            'wind': wind_level if wind_level is not None else 4,
-            'wind_known': wind_level is not None,
+            'wind_mph': wind_speed_mph if wind_speed_mph is not None else 0,
+            'wind_label': wind_label or '',
+            'wind_arrow_deg': wind_arrow_deg if wind_arrow_deg is not None else 0,
+            'wind_known': wind_label is not None,
             'break_min': int(s.get('stop_duration_min') or 0),
             'is_halt': (s.get('stop_duration_min') or 0) >= 120,
         })
     return out
 
 
+def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours):
+    """Three pace strategies (comfort/standard/push) with recomputed ETAs.
+
+    Comfort: +6% slower riding, 5h sleep.
+    Standard: baseline (existing stops as-is).
+    Push: -6% faster riding, 1.5h sleep.
+
+    Returns a list of three dicts the v2 template can iterate over.
+    """
+    try:
+        start_hr, start_min = (int(x) for x in start_time_str.split(':')[:2])
+    except (ValueError, AttributeError):
+        start_hr, start_min = 6, 0
+    start_minutes = start_hr * 60 + start_min
+
+    total_mi = plan.get('total_distance_miles') or 0
+
+    def fmt_eta(arrive_min):
+        d, t = divmod(int(arrive_min), 24 * 60)
+        hh, mm = divmod(t, 60)
+        out = f"{hh:02d}:{mm:02d}"
+        return f"{out}+{d}" if d >= 1 else out
+
+    def fmt_bank(bank_min):
+        if bank_min is None:
+            return ''
+        sign = '+' if bank_min >= 0 else '-'
+        am = abs(int(bank_min))
+        return f"{sign}{am // 60}:{am % 60:02d}"
+
+    def fmt_hm(min_total):
+        if min_total is None:
+            return '—'
+        h, m = divmod(int(min_total), 60)
+        return f"{h}:{m:02d}"
+
+    def stop_design_type(s, idx, total):
+        if idx == 0:
+            return 'start'
+        if idx == total - 1:
+            return 'finish'
+        db_type = (s.get('stop_type') or '').lower().strip()
+        if db_type in ('control', 'rest', 'waypoint'):
+            return db_type
+        loc = s.get('location') or s.get('name') or ''
+        if 'control' in loc.lower():
+            return 'control'
+        if (s.get('stop_duration_min') or 0) >= 15:
+            return 'rest'
+        return 'waypoint'
+
+    def compute_variant(factor, sleep_min_override):
+        cum = 0
+        halt_min_used = 0
+        out_stops = []
+        last_bank = None  # preserve None when cutoff is missing
+        for i, s in enumerate(stops):
+            seg = int(round((s.get('segment_time_min') or 0) * factor))
+            break_m = s.get('stop_duration_min') or 0
+            if break_m >= 120:
+                break_m = sleep_min_override
+                halt_min_used = break_m
+            cum += seg
+            arrival = cum
+            cum += break_m
+            mi = s.get('distance_miles') or 0
+            if cutoff_hours and total_mi > 0 and mi:
+                bookend = round((mi / total_mi) * cutoff_hours * 60)
+                bank = bookend - arrival
+            else:
+                bank = None
+            last_bank = bank
+            stype = stop_design_type(s, i, len(stops))
+            out_stops.append({
+                'i': i,
+                'type': stype,
+                'name': s.get('location') or s.get('name') or '',
+                'cumul_mi': round(mi, 1),
+                'eta': fmt_eta(start_minutes + arrival),
+                'bank': fmt_bank(bank),
+                'bank_min': bank if bank is not None else 0,
+                'is_key': stype in ('start', 'control', 'finish'),
+            })
+        total_elapsed = cum
+        return out_stops, total_elapsed, halt_min_used, last_bank
+
+    standard_halt = next(
+        (s.get('stop_duration_min') for s in stops if (s.get('stop_duration_min') or 0) >= 120),
+        0,
+    )
+
+    std_stops, std_total, std_sleep, std_bank = compute_variant(1.0, standard_halt or 0)
+    com_stops, com_total, com_sleep, com_bank = compute_variant(1.06, 300)
+    psh_stops, psh_total, psh_sleep, psh_bank = compute_variant(0.94, 90)
+
+    has_halt = bool(standard_halt)
+
+    def bank_is_good(b):
+        return b is not None and b >= 0
+
+    def comfort_risk(b):
+        if b is None:
+            return 'Comfortable pace — safety buffer.'
+        return ('Tight cutoff if conditions sour at the final controls.'
+                if b < 60 else 'Comfortable margin — easiest finish.')
+
+    return [
+        {
+            'id': 'comfort', 'name': 'Comfort', 'color': '#16a34a',
+            'summary': ('5 h sleep · safety margin' if has_halt else '+6% margin · safety buffer'),
+            'total': fmt_hm(com_total),
+            'sleep': fmt_hm(com_sleep) if has_halt else '—',
+            'bank': fmt_bank(com_bank), 'bank_good': bank_is_good(com_bank),
+            'risk': comfort_risk(com_bank),
+            'recommended': False,
+            'stops': com_stops,
+        },
+        {
+            'id': 'standard', 'name': 'Standard', 'color': '#1a365d',
+            'summary': (f'{(standard_halt or 0)//60} h sleep · team plan' if has_halt else 'Team plan'),
+            'total': fmt_hm(std_total),
+            'sleep': fmt_hm(std_sleep) if has_halt else '—',
+            'bank': fmt_bank(std_bank), 'bank_good': bank_is_good(std_bank),
+            'risk': 'Most riders pick this pace.',
+            'recommended': True,
+            'stops': std_stops,
+        },
+        {
+            'id': 'push', 'name': 'Push', 'color': '#dc2626',
+            'summary': ('1.5 h sleep · faster pace' if has_halt else '-6% time · faster pace'),
+            'total': fmt_hm(psh_total),
+            'sleep': fmt_hm(psh_sleep) if has_halt else '—',
+            'bank': fmt_bank(psh_bank), 'bank_good': bank_is_good(psh_bank),
+            'risk': 'High fatigue risk in the final stretch.',
+            'recommended': False,
+            'stops': psh_stops,
+        },
+    ]
+
+
 def _weather_summary_from_stop_wind(stop_wind, stops):
-    """Build a small weather summary dict the v2 template consumes."""
+    """Build a small weather summary dict the v2 template consumes.
+
+    fetch_stop_wind returns dicts with `temperature_f`, `wind_speed_mph`,
+    `wind_type`, and `label` keys (services/weather.py:690).
+    """
     if not stop_wind:
         return {
             'temp_low': None, 'temp_high': None,
             'wind_max': None, 'sunrise': None, 'sunset': None,
-            'headwind_segs': 0,
+            'headwind_segs': 0, 'crosswind_segs': 0,
         }
-    temps = [sw.get('temp_c') for sw in stop_wind if sw and sw.get('temp_c') is not None]
-    speeds = [sw.get('wind_speed_kmh') or 0 for sw in stop_wind if sw]
-    head_count = sum(1 for sw in stop_wind if sw and 'head' in (sw.get('wind_label') or '').lower())
-    def c_to_f(c): return round(c * 9 / 5 + 32) if c is not None else None
-    def kmh_to_mph(k): return round(k * 0.621371) if k else None
-    sun = next((sw for sw in stop_wind if sw and (sw.get('sunrise') or sw.get('sunset'))), None) or {}
+    temps_f = [sw.get('temperature_f') for sw in stop_wind
+               if sw and sw.get('temperature_f') is not None]
+    speeds_mph = [sw.get('wind_speed_mph') or 0 for sw in stop_wind if sw]
+
+    def is_kind(sw, kind):
+        wt = (sw.get('wind_type') or sw.get('label') or '').lower()
+        return kind in wt
+
+    head_count = sum(1 for sw in stop_wind if sw and is_kind(sw, 'head'))
+    cross_count = sum(1 for sw in stop_wind if sw and is_kind(sw, 'cross'))
+
     return {
-        'temp_low': c_to_f(min(temps)) if temps else None,
-        'temp_high': c_to_f(max(temps)) if temps else None,
-        'wind_max': kmh_to_mph(max(speeds)) if speeds else None,
-        'sunrise': sun.get('sunrise'),
-        'sunset': sun.get('sunset'),
+        'temp_low': int(min(temps_f)) if temps_f else None,
+        'temp_high': int(max(temps_f)) if temps_f else None,
+        'wind_max': int(round(max(speeds_mph))) if speeds_mph else None,
+        'sunrise': None,  # not currently surfaced by fetch_stop_wind
+        'sunset': None,
         'headwind_segs': head_count,
+        'crosswind_segs': cross_count,
     }
 
 
