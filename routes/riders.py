@@ -2114,6 +2114,9 @@ def ride_plan_detail_v2(slug):
     risks = compute_risk_zones(stops, v2_stops, plan, plan.get('start_time', '06:00'),
                                plan.get('linked_ride_date'))
 
+    # Fatigue model — predicted alertness across the ride
+    fatigue = compute_fatigue_model(stops, total_time)
+
     active_tab = request.args.get('tab', 'plan')
 
     return render_template('ride_plan_detail_v2.html',
@@ -2122,6 +2125,7 @@ def ride_plan_detail_v2(slug):
                            fuel_stops_v2=fuel_stops_v2,
                            paces=paces,
                            risks=risks,
+                           fatigue=fatigue,
                            total_time=total_time,
                            total_moving_time=total_moving_time,
                            total_break_time=total_break_time,
@@ -2573,6 +2577,131 @@ def compute_risk_zones(stops, v2_stops, plan, start_time_str, ride_date):
         'night_mi_from': night_mi_from,
         'night_mi_to': night_mi_to,
         'callouts': callouts,
+    }
+
+
+def compute_fatigue_model(stops, total_time_min):
+    """Predicted alertness curve across the ride.
+
+    Heuristic (per design README, labeled as "for guidance only"):
+      0 → halt_start:  linear decay 100% → 50%
+      halt_start → halt_end:  recovery 50% → 85%
+      halt_end → end:  linear decay 85% → 30%
+
+    For rides without a night halt, falls back to a single linear decay
+    from 100% to 40% across the whole ride.
+    """
+    if not stops or not total_time_min:
+        return {'has_data': False, 'total_h': 0, 'samples': [], 'insights': [],
+                'halt_start_h': None, 'halt_end_h': None, 'min_alertness': 100,
+                'stop_dots': []}
+
+    total_h = total_time_min / 60.0
+
+    # Find the night halt and its start/end hours (cumulative time from start)
+    halt_start_h = None
+    halt_end_h = None
+    cum_h = 0
+    for s in stops:
+        seg_h = (s.get('segment_time_min') or 0) / 60.0
+        cum_h += seg_h
+        if (s.get('stop_duration_min') or 0) >= 120:
+            halt_start_h = cum_h
+            halt_end_h = cum_h + (s['stop_duration_min'] / 60.0)
+            break
+        cum_h += (s.get('stop_duration_min') or 0) / 60.0
+
+    def alertness(h):
+        if halt_start_h is not None and halt_end_h is not None:
+            if h <= halt_start_h:
+                # Linear decay 100 → 50
+                return max(40.0, 100.0 - (h / halt_start_h) * 50.0) if halt_start_h > 0 else 100.0
+            if h <= halt_end_h:
+                # Recovery 50 → 85
+                t = (h - halt_start_h) / (halt_end_h - halt_start_h) if halt_end_h > halt_start_h else 1.0
+                return 50.0 + t * 35.0
+            # Post-sleep decay 85 → 30
+            remaining = max(total_h - halt_end_h, 0.01)
+            return max(30.0, 85.0 - ((h - halt_end_h) / remaining) * 55.0)
+        # No halt — single linear decay
+        if total_h <= 0:
+            return 100.0
+        return max(40.0, 100.0 - (h / total_h) * 60.0)
+
+    # Sample every 15 minutes
+    samples = []
+    h = 0.0
+    while h <= total_h + 0.001:
+        samples.append({'h': round(h, 2), 'a': round(alertness(h), 1)})
+        h += 0.25
+    if samples and samples[-1]['h'] < total_h:
+        samples.append({'h': round(total_h, 2), 'a': round(alertness(total_h), 1)})
+
+    min_alertness = min(s['a'] for s in samples) if samples else 100.0
+
+    # Stop dots — plot non-waypoint, non-rest stops on the curve
+    stop_dots = []
+    cum_h = 0
+    for i, s in enumerate(stops):
+        seg_h = (s.get('segment_time_min') or 0) / 60.0
+        cum_h_at_stop = cum_h + seg_h
+        cum_h = cum_h_at_stop + (s.get('stop_duration_min') or 0) / 60.0
+        # Use arrival time (cum_h_at_stop) for plotting
+        st_type = (s.get('stop_type') or '').lower()
+        if i == 0:
+            kind = 'start'
+        elif i == len(stops) - 1:
+            kind = 'finish'
+        elif st_type == 'control' or 'control' in (s.get('location') or '').lower():
+            kind = 'control'
+        else:
+            continue  # skip waypoint/rest in fatigue dot plot
+        stop_dots.append({
+            'kind': kind,
+            'h': round(cum_h_at_stop, 2),
+            'a': round(alertness(cum_h_at_stop), 1),
+            'name': (s.get('location') or '')[:36],
+        })
+
+    # Insights — derive from the actual halt schedule
+    insights = []
+    if halt_start_h is not None:
+        insights.append({
+            'tag': 'Risk', 'color': '#dc2626',
+            'lead': f'Hour {halt_start_h:.0f} — pre-halt low.',
+            'body': f'Alertness near 50% when you reach the night halt after {halt_start_h:.1f} h awake. Avoid hard climbs in the last 2-3 hours before.',
+        })
+        insights.append({
+            'tag': 'Window', 'color': '#16a34a',
+            'lead': f'Hours {halt_end_h:.0f}–{(halt_end_h + 3):.0f}: post-sleep peak.',
+            'body': 'Best window for windy / technical sections. Schedule the hardest efforts here.',
+        })
+        final_h = max(halt_end_h + 3, total_h - 4)
+        insights.append({
+            'tag': 'Watch', 'color': '#ea580c',
+            'lead': f'Hour {final_h:.0f}+: final stretch.',
+            'body': 'Alertness drifts back to ~40%. Buddy up; bonk + sleep risk peaks here.',
+        })
+    else:
+        insights.append({
+            'tag': 'Note', 'color': '#64748b',
+            'lead': 'No night halt scheduled.',
+            'body': 'Single linear decay across the ride. For brevets under 600 km this is normal.',
+        })
+        insights.append({
+            'tag': 'Watch', 'color': '#ea580c',
+            'lead': f'Last quarter (hour {total_h * 0.75:.1f}+).',
+            'body': 'Alertness drops below 60% — fuel often and keep stops short.',
+        })
+
+    return {
+        'has_data': True,
+        'total_h': round(total_h, 2),
+        'samples': samples,
+        'halt_start_h': halt_start_h, 'halt_end_h': halt_end_h,
+        'min_alertness': min_alertness,
+        'stop_dots': stop_dots,
+        'insights': insights,
     }
 
 
