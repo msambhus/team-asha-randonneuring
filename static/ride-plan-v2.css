@@ -903,6 +903,181 @@
     .rpv2-pb-section { break-inside: avoid; }
 }
 
+/* ===== Race-day companion (/ride-plan/<slug>/live) ===== */
+.rpv2-rd {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #f7fafc;
+    min-height: 100vh;
+    padding: 8px;
+    color: #2d3748;
+}
+.rpv2-rd-shell {
+    max-width: 480px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.rpv2-rd-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 8px;
+    font-size: 0.7rem;
+}
+.rpv2-rd-back { color: #1a365d; font-weight: 700; text-decoration: none; }
+.rpv2-rd-back:hover { text-decoration: underline; }
+.rpv2-rd-eyebrow {
+    font: 700 0.62rem inherit;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
+}
+
+.rpv2-rd-progress { background: #fff; border-radius: 12px; padding: 10px 12px; }
+.rpv2-rd-progress-bar {
+    background: #e2e8f0;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.rpv2-rd-progress-bar > div {
+    background: linear-gradient(90deg, #1a365d, #1d4ed8);
+    height: 100%;
+    transition: width 0.3s;
+}
+.rpv2-rd-progress-text {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-top: 6px;
+    font-size: 0.72rem;
+    color: #64748b;
+}
+.rpv2-rd-progress-text b { color: #1a365d; font-weight: 800; }
+.rpv2-rd-progress-bank { font-weight: 800; }
+.rpv2-rd-progress-bank.good { color: #16a34a; }
+.rpv2-rd-progress-bank.bad { color: #dc2626; }
+
+.rpv2-rd-here {
+    background: #1a365d;
+    color: #fff;
+    border-radius: 14px;
+    padding: 18px;
+    text-align: center;
+}
+.rpv2-rd-here-lbl { font: 800 0.6rem inherit; letter-spacing: 0.12em; opacity: 0.7; }
+.rpv2-rd-here-name { font: 800 1.25rem/1.2 inherit; margin: 6px 0 4px; }
+.rpv2-rd-here-meta { font-size: 0.74rem; opacity: 0.8; margin-bottom: 14px; }
+.rpv2-rd-checkin {
+    display: block;
+    background: #fff;
+    color: #1a365d;
+    border: 0;
+    padding: 12px 22px;
+    border-radius: 999px;
+    font: 700 0.85rem inherit;
+    cursor: pointer;
+    width: 100%;
+    text-decoration: none;
+    box-sizing: border-box;
+}
+.rpv2-rd-checkin:hover { background: #f1f5f9; }
+.rpv2-rd-finished {
+    background: #16a34a;
+    color: #fff;
+    padding: 12px;
+    border-radius: 999px;
+    font: 700 0.85rem inherit;
+}
+
+.rpv2-rd-card { background: #fff; border-radius: 14px; padding: 14px; }
+.rpv2-rd-card-lbl {
+    font: 800 0.58rem inherit;
+    letter-spacing: 0.1em;
+    color: #94a3b8;
+    margin-bottom: 8px;
+}
+.rpv2-rd-next-name { font: 800 1.05rem/1.2 inherit; color: #1a365d; margin-bottom: 10px; }
+.rpv2-rd-next-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; text-align: center; }
+.rpv2-rd-next-grid > div { font-size: 0.62rem; color: #64748b; }
+.rpv2-rd-next-grid b {
+    display: block;
+    font: 800 1.15rem inherit;
+    color: #1a365d;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 2px;
+}
+.rpv2-rd-next-grid b.good { color: #16a34a; }
+.rpv2-rd-next-grid b.bad { color: #dc2626; }
+.rpv2-rd-next-grid span { display: block; font-size: 0.6rem; }
+.rpv2-rd-next-note {
+    background: #fef3c7;
+    color: #78350f;
+    font-size: 0.72rem;
+    padding: 7px 9px;
+    border-radius: 6px;
+    margin-top: 10px;
+    line-height: 1.35;
+}
+
+.rpv2-rd-now-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.rpv2-rd-now-cell { text-align: center; }
+.rpv2-rd-now-icon { font-size: 1.4rem; }
+.rpv2-rd-now-cell b {
+    display: block;
+    font: 800 0.9rem inherit;
+    color: #1a365d;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+}
+.rpv2-rd-now-cell span { font-size: 0.6rem; color: #94a3b8; }
+
+.rpv2-rd-upcoming-row {
+    display: grid;
+    grid-template-columns: 44px 1fr auto;
+    gap: 8px;
+    padding: 7px 0;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 0.74rem;
+    align-items: center;
+}
+.rpv2-rd-upcoming-row:last-child { border-bottom: 0; }
+.rpv2-rd-upcoming-mi { font: 800 0.7rem inherit; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.rpv2-rd-upcoming-name {
+    color: #2d3748;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.rpv2-rd-upcoming-eta { font: 800 0.78rem inherit; color: #1a365d; font-variant-numeric: tabular-nums; }
+
+.rpv2-rd-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rpv2-rd-act {
+    border: 0;
+    padding: 14px;
+    border-radius: 12px;
+    font: 800 0.85rem inherit;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    display: block;
+}
+.rpv2-rd-act-emer { background: #dc2626; color: #fff; }
+.rpv2-rd-act-grp { background: #1d4ed8; color: #fff; }
+
+.rpv2-rd-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.72rem;
+    padding: 4px 8px;
+    color: #94a3b8;
+}
+.rpv2-rd-nav a { color: #1a365d; font-weight: 700; text-decoration: none; }
+.rpv2-rd-nav-count { font-variant-numeric: tabular-nums; }
+
 /* ===== Mobile ===== */
 @media (max-width: 880px) {
     .rpv2-hero { grid-template-columns: 1fr; }
