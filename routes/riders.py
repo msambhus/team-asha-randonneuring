@@ -24,7 +24,8 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_strava_connection, get_strava_activities,
                     get_rider_upcoming_signups, detect_r12_awards,
                     get_signup_counts_batch, get_rider_signup_statuses_batch,
-                    get_custom_plan, get_custom_plan_by_id, create_custom_plan,
+                    get_custom_plan, get_custom_plan_by_id, get_custom_plan_with_rider_info,
+                    create_custom_plan,
                     get_custom_plan_stops_raw, update_custom_plan_stop,
                     add_custom_stop, hide_base_stop, unhide_base_stop,
                     update_custom_plan_settings, delete_custom_plan,
@@ -1985,16 +1986,47 @@ def ride_plan_detail_v1(slug):
 @riders_bp.route('/ride-plan/<slug>/v2')
 def ride_plan_detail(slug):
     """Default ride plan page (formerly /v2). Original v1 page lives at /v1."""
-    # Custom view delegates to the same handler v1 uses (still renders the
-    # v1 custom template until that gets its own v2 redesign).
-    if request.args.get('view') == 'custom':
-        plan_id_arg = request.args.get('plan', type=int)
-        return custom_ride_plan_view(slug, custom_plan_id=plan_id_arg)
-
     plan = get_ride_plan_by_slug(slug)
     if not plan:
         abort(404)
-    raw_stops = get_ride_plan_stops(plan['id'])
+
+    # If viewing a custom plan, substitute its merged stops for the base
+    # stops and stamp a banner. Falls back to base view when the request
+    # is malformed (not logged in / no plan / not authorized).
+    viewing_custom = False
+    custom_plan_for_view = None
+    custom_plan_owner_name = None
+    is_custom_owner = False
+    if request.args.get('view') == 'custom':
+        custom_plan_id_arg = request.args.get('plan', type=int)
+        viewer_user_id = session.get('user_id')
+        viewer = get_user_by_id(viewer_user_id) if viewer_user_id else None
+        viewer_rider_id = viewer.get('rider_id') if viewer else None
+        if custom_plan_id_arg:
+            cp = get_custom_plan_with_rider_info(custom_plan_id_arg)
+            if not cp or cp['base_plan_id'] != plan['id']:
+                abort(404)
+            if not cp.get('is_public') and cp['rider_id'] != viewer_rider_id:
+                abort(404)
+            custom_plan_for_view = cp
+            custom_plan_owner_name = cp.get('first_name')
+        elif viewer_rider_id:
+            cp = get_custom_plan(viewer_rider_id, plan['id'])
+            if cp:
+                custom_plan_for_view = get_custom_plan_with_rider_info(cp['id'])
+                custom_plan_owner_name = custom_plan_for_view.get('first_name') if custom_plan_for_view else None
+        if custom_plan_for_view:
+            viewing_custom = True
+            is_custom_owner = (
+                viewer_rider_id is not None
+                and custom_plan_for_view['rider_id'] == viewer_rider_id
+            )
+        # else: silently fall back to base view (no custom plan exists yet).
+
+    if viewing_custom:
+        raw_stops, _custom_meta = get_merged_plan_stops(custom_plan_for_view['id'])
+    else:
+        raw_stops = get_ride_plan_stops(plan['id'])
 
     plan = dict(plan)
     plan['total_distance_miles'] = float(plan.get('total_distance_miles') or 0)
@@ -2084,7 +2116,7 @@ def ride_plan_detail(slug):
                      if s.get('break_min', 0) >= 5 or s.get('is_fuel')]
 
     # Riders & signups for the matched upcoming event (same matching logic as v1)
-    from models import get_upcoming_rusa_events, get_user_by_id
+    from models import get_upcoming_rusa_events
     from datetime import date as date_type
     upcoming_event = None
     signups = []
@@ -2143,7 +2175,6 @@ def ride_plan_detail(slug):
     user_custom_plan_v2 = None
     user_id = session.get('user_id')
     if user_id:
-        from models import get_user_by_id
         user = get_user_by_id(user_id)
         if user and user.get('rider_id'):
             save_state = 'ready'
@@ -2216,7 +2247,11 @@ def ride_plan_detail(slug):
                            is_admin=is_admin_user(),
                            upcoming_event=upcoming_event,
                            signups=signups,
-                           active_tab=active_tab)
+                           active_tab=active_tab,
+                           viewing_custom=viewing_custom,
+                           custom_plan_for_view=custom_plan_for_view,
+                           custom_plan_owner_name=custom_plan_owner_name,
+                           is_custom_owner=is_custom_owner)
 
 
 def _to_v2_stops(stops, plan, stop_wind):

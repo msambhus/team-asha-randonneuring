@@ -107,6 +107,47 @@
     border: 1px solid #fcd34d;
 }
 .rpv2-admin-edit:hover { background: #fde68a; }
+.rpv2-custom-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1e3a8a;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 12px 0;
+    font-size: 0.85rem;
+}
+.rpv2-custom-banner-sub {
+    font-size: 0.72rem;
+    color: #475569;
+    margin-top: 2px;
+}
+.rpv2-custom-banner-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+.rpv2-custom-banner-link {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: #fff;
+    border: 1px solid #bfdbfe;
+    color: #1d4ed8;
+    text-decoration: none;
+    font: 600 0.75rem inherit;
+}
+.rpv2-custom-banner-link:hover { background: #dbeafe; }
+.rpv2-custom-banner-link.primary {
+    background: #1d4ed8;
+    color: #fff;
+    border-color: #1d4ed8;
+}
+.rpv2-custom-banner-link.primary:hover { background: #1e40af; }
 .rpv2-sub { font-size: 0.78rem; color: #64748b; }
 .rpv2-gauges {
     display: flex;
