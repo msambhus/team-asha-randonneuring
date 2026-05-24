@@ -2136,15 +2136,30 @@ def ride_plan_detail_v2(slug):
     weather_summary['sunset'] = risks.get('sunset_str')
 
     # Save-strategy state for the Strategies tab UI (controls the button label).
+    # If a custom plan already exists for this rider+plan, detect which pace
+    # variant generated it (by matching name to "{Variant} pace") so the UI
+    # can show "✓ Saved" only on that card and "Choose this plan" on the others.
     save_state = 'logged_out'
+    saved_pace_id = None
+    user_custom_plan_v2 = None
     user_id = session.get('user_id')
     if user_id:
         from models import get_user_by_id
         user = get_user_by_id(user_id)
         if user and user.get('rider_id'):
             save_state = 'ready'
+            user_custom_plan_v2 = get_custom_plan(user['rider_id'], plan['id'])
+            if user_custom_plan_v2:
+                cp_name = (user_custom_plan_v2.get('name') or '').strip().lower()
+                for pid in _PACE_VARIANTS:
+                    if cp_name == f"{pid} pace":
+                        saved_pace_id = pid
+                        break
         else:
             save_state = 'no_rider'
+
+    # Community: public custom plans from other riders for this base plan.
+    public_custom_plans_v2 = get_public_custom_plans(plan['id'])
 
     # Weather forecast — vars consumed by the embedded weather partials in
     # the v2 Weather tab. Mirrors what routes.weather.weather_page() passes.
@@ -2196,6 +2211,9 @@ def ride_plan_detail_v2(slug):
                            auto_fetch='1' if weather_rwgps else '',
                            mapbox_token=mapbox_token,
                            save_state=save_state,
+                           saved_pace_id=saved_pace_id,
+                           user_custom_plan_v2=user_custom_plan_v2,
+                           public_custom_plans_v2=public_custom_plans_v2,
                            is_admin=is_admin_user(),
                            upcoming_event=upcoming_event,
                            signups=signups,
