@@ -45,7 +45,6 @@
         {% set tabs = [
             ('plan', 'Plan', ''),
             ('strategies', 'Strategies', ''),
-            ('risks', 'Risks', ''),
             ('weather', 'Weather', ''),
         ] %}
         {% for key, label, pill in tabs %}
@@ -294,6 +293,28 @@
                         {% endif %}
                     </div>
                 </div>
+
+                {# Risk callouts — wind/dark/bank derived from the ride's
+                   weather + cutoff data. Inline here so riders see them
+                   without needing a separate tab. #}
+                {% if risks.has_data and risks.callouts %}
+                <div class="rpv2-card">
+                    <div class="rpv2-card-h">
+                        <div class="rpv2-card-title">Risks to watch</div>
+                        <div class="rpv2-card-sub">
+                            {% if weather_share_url %}wind from <a href="{{ weather_share_url }}">forecast</a>{% else %}wind from forecast{% endif %} · light from seasonal heuristic · bank from cutoff
+                        </div>
+                    </div>
+                    <div class="rpv2-ro-callouts">
+                        {% for c in risks.callouts %}
+                        <div class="rpv2-ro-callout">
+                            <div class="rpv2-ro-callout-tag" style="background:{{ c.color }};">{{ c.tag }}</div>
+                            <div><b>{{ c.lead }}</b> {{ c.body }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
             </div>
 
             {# Snapshot card #}
@@ -324,15 +345,17 @@
                     <div class="rpv2-pc-name">{{ p.name }}</div>
                     <div class="rpv2-pc-summary">{{ p.summary }}</div>
                 </div>
-                <div class="rpv2-pc-stats">
+                <div class="rpv2-pc-stats {{ 'rpv2-pc-stats-2' if not p.has_sleep else '' }}">
                     <div class="rpv2-pc-stat">
                         <div class="rpv2-pc-stat-num">{{ p.total }}</div>
                         <div class="rpv2-pc-stat-lbl">Total elapsed</div>
                     </div>
+                    {% if p.has_sleep %}
                     <div class="rpv2-pc-stat">
                         <div class="rpv2-pc-stat-num">{{ p.sleep }}</div>
                         <div class="rpv2-pc-stat-lbl">Sleep</div>
                     </div>
+                    {% endif %}
                     <div class="rpv2-pc-stat">
                         <div class="rpv2-pc-stat-num {{ 'good' if p.bank_good else 'bad' }}">{{ p.bank or '—' }}</div>
                         <div class="rpv2-pc-stat-lbl">Time bank</div>
@@ -340,8 +363,8 @@
                 </div>
                 <div class="rpv2-pc-stops">
                     {% for s in p.stops if s.is_key %}
-                    <div class="rpv2-pc-stop">
-                        <span class="rpv2-pc-stop-name">{{ s.name|replace('Open Control #', 'OC#')|replace(', CA', '')|truncate(24, true, '…') }}</span>
+                    <div class="rpv2-pc-stop" title="{{ s.name }}">
+                        <span class="rpv2-pc-stop-name">{{ s.name|replace('Open Control #', 'OC#')|replace(', CA', '') }}</span>
                         <span class="rpv2-pc-stop-mi">{{ "%.0f"|format(s.cumul_mi) }}mi</span>
                         <span class="rpv2-pc-stop-eta">{{ s.eta }}</span>
                     </div>
@@ -369,40 +392,6 @@
             <b>Strategies unavailable</b> — this plan doesn't have enough segment timing data.
             Add segment times in the
             <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}">base plan editor</a> first.
-        </div>
-        {% endif %}
-    </section>
-
-    {# ===== Risks tab ===== #}
-    <section class="rpv2-panel {% if active_tab == 'risks' %}is-active{% endif %}"
-             id="rpv2-panel-risks" role="tabpanel" aria-labelledby="rpv2-tab-risks" data-panel="risks">
-        {% if risks.has_data %}
-        <div class="rpv2-ro-intro">
-            <div class="rpv2-pc-eyebrow">Risk overlay</div>
-            <div class="rpv2-pc-sub">
-                Where the dangers cluster: wind, dark, and time pressure across the route.
-                Wind data is the same Open-Meteo forecast used by the
-                {% if weather_share_url %}<a href="{{ weather_share_url }}">Weather page</a>{% else %}Weather page{% endif %}.
-                Light is a Bay Area sunrise/sunset heuristic by month.
-            </div>
-        </div>
-        <div class="rpv2-card">
-            {{ risk_svg(risks, plan) }}
-            <div class="rpv2-ro-callouts">
-                {% for c in risks.callouts %}
-                <div class="rpv2-ro-callout">
-                    <div class="rpv2-ro-callout-tag" style="background:{{ c.color }};">{{ c.tag }}</div>
-                    <div><b>{{ c.lead }}</b> {{ c.body }}</div>
-                </div>
-                {% endfor %}
-                {% if not risks.callouts %}
-                <div class="rpv2-empty" style="grid-column:1 / -1;">No notable risks detected.</div>
-                {% endif %}
-            </div>
-        </div>
-        {% else %}
-        <div class="rpv2-coming">
-            <b>Risk overlay unavailable</b> — this plan needs at least two stops with distance + time data.
         </div>
         {% endif %}
     </section>
@@ -499,6 +488,7 @@
                 <div class="rpv2-snap-stop-eta">{{ s.eta }}</div>
                 <div class="rpv2-snap-stop-bank">
                     <span class="rpv2-snap-stop-mi">{{ "%.0f"|format(s.cumul_mi) }}mi</span>
+                    {% if s.fpm %} · <span class="rpv2-snap-stop-mi">{{ s.fpm }}/mi</span>{% endif %}
                     {% if s.bank %}
                     · <span class="{{ 'good' if s.bank_min >= 0 else 'bad' }}">{{ s.bank }}</span>
                     {% endif %}
@@ -681,119 +671,6 @@
 </svg>
 {% endmacro %}
 
-{# ===== Risk overlay SVG ===== #}
-{% macro risk_svg(risks, plan) %}
-{% set W = 1100 %}{% set H = 360 %}
-{% set PADL = 44 %}{% set PADR = 16 %}{% set PADT = 18 %}{% set PADB = 32 %}
-{% set ELEV_H = 180 %}
-{% set LANE_H = 28 %}{% set LANE_GAP = 6 %}
-{% set INNER_W = W - PADL - PADR %}
-{% set total = plan.total_distance_miles or 1 %}
-{% set max_y = risks.max_elev_ft or 1 %}
-{% set wind_y = PADT + ELEV_H + 14 %}
-{% set light_y = wind_y + LANE_H + LANE_GAP %}
-{% set bank_y = light_y + LANE_H + LANE_GAP %}
-
-<svg viewBox="0 0 {{ W }} {{ H }}" class="rpv2-ro-svg" preserveAspectRatio="xMidYMid meet">
-    <defs>
-        <linearGradient id="rpv2-ro-elev" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#1a365d" stop-opacity="0.32"></stop>
-            <stop offset="1" stop-color="#1a365d" stop-opacity="0.04"></stop>
-        </linearGradient>
-    </defs>
-
-    {# Elevation axis labels #}
-    {% for f in [0, 0.5, 1.0] %}
-        {% set y = PADT + ELEV_H - f * (ELEV_H - 8) %}
-        <text x="4" y="{{ (y + 3)|round(2) }}" font-size="9" fill="#94a3b8">{{ (max_y * f / 1000)|round(1) }}k</text>
-    {% endfor %}
-
-    {# Elevation polyline + area #}
-    {% set ns = namespace(d='') %}
-    {% for p in risks.elev_pts %}
-        {% set px = PADL + (p.mi / total) * INNER_W %}
-        {% set py = PADT + ELEV_H - (p.cum / max_y) * (ELEV_H - 8) %}
-        {% if loop.first %}
-            {% set ns.d = 'M ' ~ (px|round(2)|string) ~ ' ' ~ (py|round(2)|string) %}
-        {% else %}
-            {% set ns.d = ns.d ~ ' L ' ~ (px|round(2)|string) ~ ' ' ~ (py|round(2)|string) %}
-        {% endif %}
-    {% endfor %}
-    {% set baseline_y = PADT + ELEV_H %}
-    {% set area_d = ns.d ~ ' L ' ~ ((PADL + INNER_W)|round(2)|string) ~ ' ' ~ baseline_y|string ~ ' L ' ~ PADL|string ~ ' ' ~ baseline_y|string ~ ' Z' %}
-    <path d="{{ area_d }}" fill="url(#rpv2-ro-elev)"></path>
-    <path d="{{ ns.d }}" fill="none" stroke="#1a365d" stroke-width="1.6"></path>
-
-    {# Wind lane #}
-    <text x="4" y="{{ wind_y + 18 }}" font-size="9" font-weight="700" fill="#64748b">WIND</text>
-    {% for seg in risks.segments %}
-        {% set x1 = PADL + (seg.mi_from / total) * INNER_W %}
-        {% set x2 = PADL + (seg.mi_to / total) * INNER_W %}
-        {% set seg_w = x2 - x1 %}
-        <rect x="{{ x1|round(2) }}" y="{{ wind_y }}" width="{{ seg_w|round(2) }}" height="{{ LANE_H }}"
-              fill="{{ seg.wind_color }}" opacity="{{ '0.85' if seg.wind_intense else '0.5' }}">
-            <title>{{ "%.0f"|format(seg.mi_from) }}-{{ "%.0f"|format(seg.mi_to) }}mi · {{ seg.wind_label or '—' }} {{ seg.wind_mph }}mph</title>
-        </rect>
-        {# Only render mph label if the segment is wide enough to fit it (≥22px) #}
-        {% if seg_w >= 22 and seg.wind_mph %}
-        {% set text_color = '#fff' if seg.wind_intense else '#1a365d' %}
-        <text x="{{ ((x1 + x2) / 2)|round(2) }}" y="{{ wind_y + 12 }}"
-              text-anchor="middle" font-size="8" font-weight="700" fill="{{ text_color }}"
-              style="pointer-events:none;">{{ seg.wind_mph }}</text>
-        {% if seg_w >= 32 %}
-        <text x="{{ ((x1 + x2) / 2)|round(2) }}" y="{{ wind_y + 22 }}"
-              text-anchor="middle" font-size="7" font-weight="600" fill="{{ text_color }}"
-              opacity="0.85" style="pointer-events:none;">{{ (seg.wind_label or '')[:1] }}</text>
-        {% endif %}
-        {% endif %}
-    {% endfor %}
-
-    {# Light lane #}
-    <text x="4" y="{{ light_y + 18 }}" font-size="9" font-weight="700" fill="#64748b">LIGHT</text>
-    {% if risks.night_mi_from is not none and risks.night_mi_to is not none and risks.night_mi_to > risks.night_mi_from %}
-        {% set xnf = PADL + (risks.night_mi_from / total) * INNER_W %}
-        {% set xnt = PADL + (risks.night_mi_to / total) * INNER_W %}
-        <rect x="{{ PADL }}" y="{{ light_y }}" width="{{ (xnf - PADL)|round(2) }}" height="{{ LANE_H }}" fill="#fef3c7"></rect>
-        <rect x="{{ xnf|round(2) }}" y="{{ light_y }}" width="{{ (xnt - xnf)|round(2) }}" height="{{ LANE_H }}" fill="#312e81" opacity="0.85"></rect>
-        <rect x="{{ xnt|round(2) }}" y="{{ light_y }}" width="{{ (PADL + INNER_W - xnt)|round(2) }}" height="{{ LANE_H }}" fill="#fef3c7"></rect>
-        <text x="{{ ((xnf + xnt) / 2)|round(2) }}" y="{{ light_y + 18 }}" font-size="11" text-anchor="middle">🌙</text>
-    {% else %}
-        <rect x="{{ PADL }}" y="{{ light_y }}" width="{{ INNER_W }}" height="{{ LANE_H }}" fill="#fef3c7"></rect>
-    {% endif %}
-
-    {# Bank lane #}
-    <text x="4" y="{{ bank_y + 18 }}" font-size="9" font-weight="700" fill="#64748b">BANK</text>
-    {% for seg in risks.segments %}
-        {% set x1 = PADL + (seg.mi_from / total) * INNER_W %}
-        {% set x2 = PADL + (seg.mi_to / total) * INNER_W %}
-        <rect x="{{ x1|round(2) }}" y="{{ bank_y }}" width="{{ (x2 - x1)|round(2) }}" height="{{ LANE_H }}"
-              fill="{{ seg.bank_color }}" opacity="{{ '0.85' if seg.bank_intense else '0.55' }}">
-            <title>{{ "%.0f"|format(seg.mi_from) }}-{{ "%.0f"|format(seg.mi_to) }}mi · bank {{ (seg.bank_min // 60) }}h{{ '%02d'|format(seg.bank_min % 60) }}</title>
-        </rect>
-    {% endfor %}
-
-    {# Stop markers on the elevation curve #}
-    {% set running = namespace(cum=0) %}
-    {% for s in stops_v2 %}
-        {% if loop.first %}
-            {% set running.cum = 0 %}
-        {% else %}
-            {% set running.cum = running.cum + s.elev %}
-        {% endif %}
-        {% set sx = PADL + (s.cumul_mi / total) * INNER_W %}
-        {% set sy = PADT + ELEV_H - (running.cum / max_y) * (ELEV_H - 8) %}
-        {% set r = 5 if s.type in ('start', 'finish') else (4 if s.type == 'control' else 3) %}
-        {% set sc = '#16a34a' if s.type == 'start' else ('#dc2626' if s.type == 'finish' else ('#1d4ed8' if s.type == 'control' else ('#ea580c' if s.type == 'rest' else '#64748b'))) %}
-        <circle cx="{{ sx|round(2) }}" cy="{{ sy|round(2) }}" r="{{ r }}" fill="{{ sc }}" stroke="#fff" stroke-width="1.5"></circle>
-    {% endfor %}
-
-    {# X axis labels #}
-    {% for m in [0, 100, 200, 300, total] %}
-        {% set mx = PADL + (m / total) * INNER_W %}
-        <text x="{{ mx|round(2) }}" y="{{ H - 6 }}" text-anchor="middle" font-size="9" fill="#94a3b8">{{ m|int }}mi</text>
-    {% endfor %}
-</svg>
-{% endmacro %}
 
 {% block extra_js %}
 <script>
