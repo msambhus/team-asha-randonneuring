@@ -1745,8 +1745,8 @@ def ride_plans_index():
     return render_template('ride_plans.html', plans=plans)
 
 
-@riders_bp.route('/ride-plan/<slug>')
-def ride_plan_detail(slug):
+@riders_bp.route('/ride-plan/<slug>/v1')
+def ride_plan_detail_v1(slug):
     # Check if user wants to view their custom plan
     view = request.args.get('view', 'base')
 
@@ -1981,9 +1981,16 @@ def ride_plan_detail(slug):
 
 # ========== RIDE PLAN v2 (preview) ==========
 
+@riders_bp.route('/ride-plan/<slug>')
 @riders_bp.route('/ride-plan/<slug>/v2')
-def ride_plan_detail_v2(slug):
-    """Preview of the redesigned ride plan page. Original /ride-plan/<slug> is unaffected."""
+def ride_plan_detail(slug):
+    """Default ride plan page (formerly /v2). Original v1 page lives at /v1."""
+    # Custom view delegates to the same handler v1 uses (still renders the
+    # v1 custom template until that gets its own v2 redesign).
+    if request.args.get('view') == 'custom':
+        plan_id_arg = request.args.get('plan', type=int)
+        return custom_ride_plan_view(slug, custom_plan_id=plan_id_arg)
+
     plan = get_ride_plan_by_slug(slug)
     if not plan:
         abort(404)
