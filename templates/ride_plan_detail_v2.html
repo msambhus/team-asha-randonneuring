@@ -338,7 +338,8 @@
         </div>
         <div class="rpv2-pc-grid">
             {% for p in paces %}
-            <div class="rpv2-pc-col" data-pace-id="{{ p.id }}"
+            {% set is_saved = saved_pace_id == p.id %}
+            <div class="rpv2-pc-col {{ 'is-on' if is_saved else '' }}" data-pace-id="{{ p.id }}"
                  style="--pc-color:{{ p.color }};">
                 <div class="rpv2-pc-col-h">
                     {% if p.recommended %}<span class="rpv2-pc-rec">★ TEAM PLAN</span>{% endif %}
@@ -381,12 +382,51 @@
                     Link rider profile to save
                 </a>
                 {% else %}
-                <button type="button" class="rpv2-pc-btn" data-pace-pick="{{ p.id }}">Choose this plan</button>
+                {% if is_saved %}
+                <button type="button" class="rpv2-pc-btn rpv2-pc-btn-saved" data-pace-pick="{{ p.id }}" disabled>
+                    ✓ Saved as your custom plan
+                </button>
+                {% else %}
+                <button type="button" class="rpv2-pc-btn" data-pace-pick="{{ p.id }}">
+                    {% if saved_pace_id %}Switch to this plan{% else %}Choose this plan{% endif %}
+                </button>
                 {% endif %}
-                <div class="rpv2-pc-feedback" data-pace-feedback="{{ p.id }}" hidden></div>
+                {% endif %}
+                <div class="rpv2-pc-feedback {{ 'ok' if is_saved else '' }}" data-pace-feedback="{{ p.id }}" {% if not is_saved %}hidden{% endif %}>
+                    {% if is_saved %}
+                    Saved. <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}">View</a>
+                    · <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}">Edit</a>
+                    {% endif %}
+                </div>
             </div>
             {% endfor %}
         </div>
+
+        {# Community: public custom plans from other riders for this base. #}
+        {% if public_custom_plans_v2 %}
+        <div class="rpv2-card" style="margin-top:14px;">
+            <div class="rpv2-card-h">
+                <div class="rpv2-card-title">Community plans · {{ public_custom_plans_v2|length }}</div>
+                <div class="rpv2-card-sub">Public custom plans from other riders</div>
+            </div>
+            <div class="rpv2-community">
+                {% for cp in public_custom_plans_v2 %}
+                <a class="rpv2-community-row"
+                   href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom', plan=cp.id) }}">
+                    <div>
+                        <div class="rpv2-community-name">{{ cp.name or 'Custom plan' }}</div>
+                        <div class="rpv2-community-meta">
+                            by {{ cp.first_name or 'Anonymous' }}
+                            {%- if cp.last_name %} {{ cp.last_name[0] }}.{% endif %}
+                            {%- if cp.avg_moving_speed %} · {{ "%.1f"|format(cp.avg_moving_speed) }} mph{% endif %}
+                        </div>
+                    </div>
+                    <span class="rpv2-community-arrow">→</span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
         {% else %}
         <div class="rpv2-coming">
             <b>Strategies unavailable</b> — this plan doesn't have enough segment timing data.
@@ -721,8 +761,7 @@
         });
     });
 
-    // Pace strategy — visually highlight the picked column. The actual save
-    // only happens when the "Choose this plan" button is clicked.
+    // Pace strategy — visually highlight the picked column. Doesn't save.
     var paceCols = document.querySelectorAll('.rpv2-pc-col');
     function highlightPick(id) {
         paceCols.forEach(function(col) {
@@ -735,22 +774,56 @@
             highlightPick(col.dataset.paceId);
         });
     });
-    if (document.querySelector('[data-pace-id="standard"]')) highlightPick('standard');
 
-    // "Choose this plan" — POST to save endpoint (only present when logged-in
-    // user has a linked rider; otherwise the slot renders as a sign-in link).
+    // "Choose this plan" — POST to save endpoint. There is one custom plan
+    // per rider per base, so saving a new pace REPLACES whatever was there
+    // before. Reset OTHER cards' UI back to the "Switch to this plan" state
+    // and clear their feedback so only the new pick shows as saved.
     var saveUrl = '{{ url_for("riders.ride_plan_v2_save_strategy", slug=plan.slug) }}';
+    var customEditUrl = '{{ url_for("riders.custom_ride_plan_editor", slug=plan.slug) }}';
+
+    function resetCard(col) {
+        var btn = col.querySelector('button.rpv2-pc-btn[data-pace-pick]');
+        if (btn) {
+            btn.textContent = 'Switch to this plan';
+            btn.disabled = false;
+            btn.classList.remove('rpv2-pc-btn-saved');
+        }
+        var fb = col.querySelector('.rpv2-pc-feedback');
+        if (fb) {
+            fb.hidden = true;
+            fb.className = 'rpv2-pc-feedback';
+            fb.innerHTML = '';
+        }
+    }
+
+    function markSaved(col, viewUrl) {
+        var btn = col.querySelector('button.rpv2-pc-btn[data-pace-pick]');
+        if (btn) {
+            btn.textContent = '✓ Saved as your custom plan';
+            btn.disabled = true;
+            btn.classList.add('rpv2-pc-btn-saved');
+        }
+        var fb = col.querySelector('.rpv2-pc-feedback');
+        if (fb) {
+            fb.hidden = false;
+            fb.className = 'rpv2-pc-feedback ok';
+            fb.innerHTML = 'Saved. <a href="' + viewUrl + '">View</a> · <a href="' + customEditUrl + '">Edit</a>';
+        }
+    }
+
     document.querySelectorAll('button.rpv2-pc-btn[data-pace-pick]').forEach(function(btn) {
         btn.addEventListener('click', function(e) {
             e.stopPropagation();
+            if (btn.disabled) return;
             var paceId = btn.dataset.pacePick;
             var col = btn.closest('.rpv2-pc-col');
-            var feedback = col.querySelector('[data-pace-feedback="' + paceId + '"]');
+            var fb = col.querySelector('.rpv2-pc-feedback');
             highlightPick(paceId);
             btn.disabled = true;
             var origText = btn.textContent;
             btn.textContent = 'Saving…';
-            if (feedback) { feedback.hidden = true; feedback.className = 'rpv2-pc-feedback'; }
+            if (fb) { fb.hidden = true; fb.className = 'rpv2-pc-feedback'; fb.innerHTML = ''; }
             fetch(saveUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -759,29 +832,27 @@
                 return resp.json().then(function(body) { return { status: resp.status, body: body }; });
             }).then(function(r) {
                 if (r.status === 200 && r.body.ok) {
-                    btn.textContent = '✓ Saved as your custom plan';
-                    btn.classList.add('rpv2-pc-btn-saved');
-                    if (feedback) {
-                        feedback.hidden = false;
-                        feedback.className = 'rpv2-pc-feedback ok';
-                        feedback.innerHTML = 'Saved. <a href="' + r.body.view_url + '">View your custom plan →</a>';
-                    }
+                    // Reset every other card, then mark this one as saved.
+                    paceCols.forEach(function(other) {
+                        if (other !== col) resetCard(other);
+                    });
+                    markSaved(col, r.body.view_url);
                 } else {
                     btn.textContent = origText;
                     btn.disabled = false;
-                    if (feedback) {
-                        feedback.hidden = false;
-                        feedback.className = 'rpv2-pc-feedback err';
-                        feedback.textContent = r.body.message || 'Could not save. Try again.';
+                    if (fb) {
+                        fb.hidden = false;
+                        fb.className = 'rpv2-pc-feedback err';
+                        fb.textContent = r.body.message || 'Could not save. Try again.';
                     }
                 }
             }).catch(function() {
                 btn.textContent = origText;
                 btn.disabled = false;
-                if (feedback) {
-                    feedback.hidden = false;
-                    feedback.className = 'rpv2-pc-feedback err';
-                    feedback.textContent = 'Network error. Try again.';
+                if (fb) {
+                    fb.hidden = false;
+                    fb.className = 'rpv2-pc-feedback err';
+                    fb.textContent = 'Network error. Try again.';
                 }
             });
         });

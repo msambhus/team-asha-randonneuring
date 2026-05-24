@@ -721,6 +721,41 @@
     border: 1px solid #fecaca;
 }
 
+/* ===== Community plans (Strategies tab) ===== */
+.rpv2-community {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+.rpv2-community-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 4px;
+    border-bottom: 1px dashed #e2e8f0;
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.1s;
+}
+.rpv2-community-row:last-child { border-bottom: 0; }
+.rpv2-community-row:hover { background: #f8fafc; }
+.rpv2-community-name {
+    font-weight: 700;
+    color: #1a365d;
+    font-size: 0.82rem;
+}
+.rpv2-community-meta {
+    font-size: 0.7rem;
+    color: #64748b;
+    margin-top: 2px;
+}
+.rpv2-community-arrow {
+    color: #94a3b8;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
 /* ===== Risks overlay ===== */
 .rpv2-ro-intro {
     background: #fff;
