@@ -2,7 +2,9 @@
     <div class="input-card">
         {% if prefill_plan_name %}
         <h2>{{ prefill_plan_name }} — Weather Forecast</h2>
-        <p style="font-size:0.85rem; color:var(--text-light); margin:0 0 12px;">Using ride plan timing for arrival estimates</p>
+        <p style="font-size:0.85rem; color:var(--text-light); margin:0 0 12px;">
+            Using ride plan timing for arrival estimates. Adjust the start to recompute.
+        </p>
         <form id="weather-form">
             <input type="hidden" id="rwgps-url" value="{{ prefill_url }}">
             <input type="hidden" id="speed-mph" value="">

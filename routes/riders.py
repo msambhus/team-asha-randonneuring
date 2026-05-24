@@ -2107,6 +2107,19 @@ def ride_plan_detail_v2(slug):
                 signups = [dict(r) for r in (get_signups_for_ride(event['id']) or [])]
                 break
 
+    # Promote upcoming_event.date into plan.linked_ride_date when the plan
+    # doesn't have its own. Has to happen BEFORE risks / weather so the
+    # Bay Area sunrise heuristic and the weather datetime pick the right month.
+    if not plan.get('linked_ride_date') and upcoming_event:
+        ev_date = upcoming_event.get('date')
+        if isinstance(ev_date, str):
+            try:
+                ev_date = datetime.strptime(ev_date, '%Y-%m-%d').date()
+            except ValueError:
+                ev_date = None
+        if ev_date:
+            plan['linked_ride_date'] = ev_date
+
     # Weather aggregates from stop_wind
     weather_summary = _weather_summary_from_stop_wind(stop_wind, stops)
 
@@ -2135,17 +2148,25 @@ def ride_plan_detail_v2(slug):
 
     # Weather forecast — vars consumed by the embedded weather partials in
     # the v2 Weather tab. Mirrors what routes.weather.weather_page() passes.
+    # Always populate the datetime so /api/weather-map doesn't fall back
+    # to "now". Date precedence: linked_ride_date (possibly promoted just
+    # above) → today. Time precedence: plan.start_time → '06:00'.
     weather_rwgps = plan.get('rwgps_url_team') or plan.get('rwgps_url')
     weather_prefill_url = weather_rwgps or ''
-    weather_prefill_datetime = ''
-    if plan.get('linked_ride_date') and plan.get('start_time'):
-        weather_prefill_datetime = f"{plan['linked_ride_date'].isoformat()}T{plan['start_time']}"
+    ride_date = plan.get('linked_ride_date') or today  # 'today' from the upcoming-event loop
+    ride_time = plan.get('start_time') or '06:00'
+    # HTML datetime-local needs `YYYY-MM-DDTHH:MM` (no seconds)
+    ride_time_short = ride_time[:5] if isinstance(ride_time, str) else '06:00'
+    weather_prefill_datetime = f"{ride_date.isoformat()}T{ride_time_short}"
     weather_share_url = None
     if weather_rwgps:
         from urllib.parse import urlencode
-        params = {'rwgps_url': weather_rwgps, 'plan_slug': plan['slug'], 'auto': '1'}
-        if weather_prefill_datetime:
-            params['start_datetime'] = weather_prefill_datetime
+        params = {
+            'rwgps_url': weather_rwgps,
+            'plan_slug': plan['slug'],
+            'start_datetime': weather_prefill_datetime,
+            'auto': '1',
+        }
         weather_share_url = url_for('weather.weather_page') + '?' + urlencode(params)
     mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
 
