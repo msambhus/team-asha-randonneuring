@@ -670,15 +670,21 @@
                   stroke="{{ t.color }}" stroke-width="0.8" opacity="0.22"></line>
             <circle cx="{{ px|round(2) }}" cy="{{ py|round(2) }}" r="{{ r }}"
                     fill="{{ t.color }}" stroke="#fff" stroke-width="2"></circle>
+            {# Clamp tooltip x so it stays inside the SVG viewBox (W) for
+               stops near the left/right edges. #}
+            {% set tip_w = 220 %}
+            {% set tip_x_raw = px - tip_w / 2 %}
+            {% set tip_x = 4 if tip_x_raw < 4 else (W - 4 - tip_w if (tip_x_raw + tip_w) > (W - 4) else tip_x_raw) %}
+            {% set tip_cx = tip_x + tip_w / 2 %}
             <g class="stop-tip">
-                <rect x="{{ (px - 110)|round(2) }}" y="{{ (py - 72)|round(2) }}" width="220" height="58" rx="6" fill="#0f172a" opacity="0.95"></rect>
-                <text x="{{ px|round(2) }}" y="{{ (py - 56)|round(2) }}" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">
+                <rect x="{{ tip_x|round(2) }}" y="{{ (py - 72)|round(2) }}" width="{{ tip_w }}" height="58" rx="6" fill="#0f172a" opacity="0.95"></rect>
+                <text x="{{ tip_cx|round(2) }}" y="{{ (py - 56)|round(2) }}" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">
                     {{ s.name[:32] }}{% if s.name|length > 32 %}…{% endif %}
                 </text>
-                <text x="{{ px|round(2) }}" y="{{ (py - 42)|round(2) }}" text-anchor="middle" font-size="9" fill="#cbd5e1">
+                <text x="{{ tip_cx|round(2) }}" y="{{ (py - 42)|round(2) }}" text-anchor="middle" font-size="9" fill="#cbd5e1">
                     {{ "%.0f"|format(s.cumul_mi) }}mi · ETA {{ s.eta }}{% if s.bank %} · bank {{ s.bank }}{% endif %}
                 </text>
-                <text x="{{ px|round(2) }}" y="{{ (py - 28)|round(2) }}" text-anchor="middle" font-size="9" fill="#cbd5e1">
+                <text x="{{ tip_cx|round(2) }}" y="{{ (py - 28)|round(2) }}" text-anchor="middle" font-size="9" fill="#cbd5e1">
                     +{{ "%.1f"|format(s.seg_mi) }}mi seg · {{ "{:,}".format(s.elev) }}ft climb{% if s.fpm %} · {{ s.fpm }}/mi{% endif %}
                 </text>
             </g>
