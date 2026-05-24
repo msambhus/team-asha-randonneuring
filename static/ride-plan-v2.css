@@ -502,6 +502,18 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
 }
+.rpv2-snap-break-badge {
+    display: inline-block;
+    background: #fef3c7;
+    color: #78350f;
+    font-size: 0.55rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 5px;
+    letter-spacing: 0.04em;
+    vertical-align: 1px;
+}
 .rpv2-snap-stop-name {
     font-size: 0.74rem;
     font-weight: 700;

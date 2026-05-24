@@ -473,7 +473,8 @@
 
     <div class="rpv2-snap-stops">
         <div class="rpv2-snap-stops-lbl">Itinerary</div>
-        {% for s in stops if s.type not in ('start', 'waypoint') %}
+        {# Include controls, rest, finish — plus any waypoint with a planned break. #}
+        {% for s in stops if s.type not in ('start', 'waypoint') or s.break_min > 0 %}
         {% set t = types[s.type] %}
         <div class="rpv2-snap-stop {% if s.is_halt %}is-halt{% endif %}">
             <span class="rpv2-snap-stop-dot" style="background:{{ t.color }};">{{ t.glyph }}</span>
@@ -481,6 +482,9 @@
                 <div class="rpv2-snap-stop-name">
                     {% if s.is_halt %}<span class="rpv2-snap-halt-badge">🌙 Sleep</span>{% endif %}
                     {{ s.name|replace('Open Control #', 'OC#')|replace(', CA', '') }}
+                    {% if s.break_min and not s.is_halt %}
+                    <span class="rpv2-snap-break-badge">{{ s.break_min }}m break</span>
+                    {% endif %}
                 </div>
                 {% if s.note %}<div class="rpv2-snap-stop-note">{{ s.note }}</div>{% endif %}
             </div>
