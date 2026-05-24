@@ -144,9 +144,12 @@
                             {% for s in stops_v2 %}
                             {% set t = STOP_TYPES[s.type] %}
                             {% set bank_good = s.bank_min >= 0 %}
+                            {% set is_fuel_override = s.is_fuel and s.type not in ('start', 'finish') %}
+                            {% set dot_color = '#ea580c' if is_fuel_override else t.color %}
+                            {% set dot_glyph = '☕' if is_fuel_override else t.glyph %}
                             <tr data-stop-i="{{ s.i }}" class="{{ 'is-halt' if s.is_halt else '' }}">
                                 <td>
-                                    <span class="rpv2-stopdot" style="background:{{ t.color }};">{{ t.glyph }}</span>
+                                    <span class="rpv2-stopdot" style="background:{{ dot_color }};">{{ dot_glyph }}</span>
                                 </td>
                                 <td>
                                     <div class="rpv2-name">{{ s.name }}</div>
