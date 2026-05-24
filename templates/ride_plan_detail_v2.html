@@ -377,7 +377,7 @@
                 <div class="rpv2-pc-risk">⚠ {{ p.risk }}</div>
                 {% if save_state == 'logged_out' %}
                 <a class="rpv2-pc-btn rpv2-pc-btn-link"
-                   href="{{ url_for('auth.login') }}?next={{ url_for('riders.ride_plan_detail_v2', slug=plan.slug, tab='strategies') }}">
+                   href="{{ url_for('auth.login') }}?next={{ url_for('riders.ride_plan_detail', slug=plan.slug, tab='strategies') }}">
                     Sign in to save
                 </a>
                 {% elif save_state == 'no_rider' %}

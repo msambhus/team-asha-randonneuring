@@ -12,7 +12,7 @@
     <div class="rpv2-rd-shell">
         {# Tiny header — links back to the plan #}
         <div class="rpv2-rd-topbar">
-            <a href="{{ url_for('riders.ride_plan_detail_v2', slug=plan.slug) }}" class="rpv2-rd-back">← Plan</a>
+            <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug) }}" class="rpv2-rd-back">← Plan</a>
             <span class="rpv2-rd-eyebrow">Race day · {{ plan.name|truncate(28, true, '…') }}</span>
         </div>
 
