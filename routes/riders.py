@@ -2071,18 +2071,10 @@ def ride_plan_detail_v2(slug):
     v2_stops = _to_v2_stops(stops, plan, stop_wind)
 
     # Fuel/food and break list — include any stop with a meaningful break
-    # (>= 5 min) OR a food/water keyword in the note/name. Surfaces planned
-    # rest stops even if the rider didn't tag them with a food keyword.
-    fuel_keywords = ('lunch', 'dinner', 'breakfast', 'safeway', 'holland', 'holiday',
-                     'subway', 'taco', 'cafe', 'coffee', 'grocery', 'market',
-                     'food', 'snack', 'deli', 'pizza', 'burger', 'mcdonald',
-                     'starbucks', 'restaurant', 'water', 'refill', 'refuel')
-    def _is_break_or_fuel(s):
-        if s.get('break_min', 0) >= 5:
-            return True
-        haystack = ((s.get('note') or '') + ' ' + (s.get('name') or '')).lower()
-        return any(k in haystack for k in fuel_keywords)
-    fuel_stops_v2 = [s for s in v2_stops if _is_break_or_fuel(s)]
+    # (>= 5 min) OR a food/water keyword in the note/name. is_fuel is also
+    # stamped on each v2 stop above so the snapshot card can swap its icon.
+    fuel_stops_v2 = [s for s in v2_stops
+                     if s.get('break_min', 0) >= 5 or s.get('is_fuel')]
 
     # Riders & signups for the matched upcoming event (same matching logic as v1)
     from models import get_upcoming_rusa_events, get_user_by_id
@@ -2330,8 +2322,28 @@ def _to_v2_stops(stops, plan, stop_wind):
             'wind_known': wind_label is not None,
             'break_min': int(s.get('stop_duration_min') or 0),
             'is_halt': (s.get('stop_duration_min') or 0) >= 120,
+            'is_fuel': _stop_is_fuel({'note': s.get('notes'), 'name': loc}),
         })
     return out
+
+
+# Food / refuel keywords used to flag stops as fuel stops. Matched against
+# the stop's combined note + location string (case-insensitive). Surfaces
+# stops where the rider plans to eat or refill water even if no explicit
+# break duration was entered.
+_FUEL_KEYWORDS = ('lunch', 'dinner', 'breakfast', 'safeway', 'holland', 'holiday',
+                  'subway', 'taco', 'cafe', 'coffee', 'grocery', 'market',
+                  'food', 'snack', 'deli', 'pizza', 'burger', 'mcdonald',
+                  'starbucks', 'restaurant', 'water', 'refill', 'refuel',
+                  'eat', 'meal')
+
+
+def _stop_is_fuel(stop_or_v2):
+    """True if the stop has a food/refuel keyword in note or name."""
+    haystack = ((stop_or_v2.get('note') or stop_or_v2.get('notes') or '')
+                + ' '
+                + (stop_or_v2.get('name') or stop_or_v2.get('location') or '')).lower()
+    return any(k in haystack for k in _FUEL_KEYWORDS)
 
 
 # Pace variants shared between compute_pace_strategies() and the

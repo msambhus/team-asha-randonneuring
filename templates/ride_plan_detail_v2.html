@@ -513,14 +513,25 @@
 
     <div class="rpv2-snap-stops">
         <div class="rpv2-snap-stops-lbl">Itinerary</div>
-        {% for s in stops if s.type not in ('start', 'waypoint') %}
+        {# Include controls, rest, finish — plus any waypoint with a planned
+           break OR a food/refuel note. #}
+        {% for s in stops if s.type not in ('start', 'waypoint') or s.break_min > 0 or s.is_fuel %}
         {% set t = types[s.type] %}
+        {# Fuel-stop visual override: ☕ icon + orange dot for any control
+           or waypoint with a food keyword. Start/finish keep their own
+           identity even if their note mentions food. #}
+        {% set is_fuel_override = s.is_fuel and s.type not in ('start', 'finish') %}
+        {% set dot_color = '#ea580c' if is_fuel_override else t.color %}
+        {% set dot_glyph = '☕' if is_fuel_override else t.glyph %}
         <div class="rpv2-snap-stop {% if s.is_halt %}is-halt{% endif %}">
-            <span class="rpv2-snap-stop-dot" style="background:{{ t.color }};">{{ t.glyph }}</span>
+            <span class="rpv2-snap-stop-dot" style="background:{{ dot_color }};">{{ dot_glyph }}</span>
             <div>
                 <div class="rpv2-snap-stop-name">
                     {% if s.is_halt %}<span class="rpv2-snap-halt-badge">🌙 Sleep</span>{% endif %}
                     {{ s.name|replace('Open Control #', 'OC#')|replace(', CA', '') }}
+                    {% if s.break_min and not s.is_halt %}
+                    <span class="rpv2-snap-break-badge">{{ s.break_min }}m break</span>
+                    {% endif %}
                 </div>
                 {% if s.note %}<div class="rpv2-snap-stop-note">{{ s.note }}</div>{% endif %}
             </div>
