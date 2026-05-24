@@ -176,6 +176,10 @@ def _normalize_route(name):
     s = re.sub(r'\b(plan|route|brevet|k|km|mi)\b', '', s)
     s = re.sub(r'\b(20\d{2})\b', '', s)  # remove years
     s = re.sub(r'#\d+', '', s)  # remove brevet numbers
+    # Strip standalone short numbers (e.g. "Day 2", "Stage 3"); these are too
+    # generic to count as matching tokens and produce false positives like
+    # "200K Mostly SLO Day 2" → "Del Peurto 200K plan #2".
+    s = re.sub(r'\b\d{1,2}\b', '', s)
     return set(s.split()) - {'', 'the', 'a', 'and', 'of', 'in', 'to', 'scr', 'sfr', 'dbc', 'sr', 'ta'}
 
 
@@ -364,12 +368,20 @@ def _attach_break_metadata(stops):
     return stops, True
 
 
-def _match_plans_to_events(events, plans):
-    """Attach plan_slug and Team Asha route URLs to RUSA events by matching route names.
+def _match_plans_to_events(events, plans, name_field='route_name', only_if_missing=False):
+    """Attach plan_slug and Team Asha route URLs to events by matching route names.
     Requires at least 2 meaningful keyword matches to avoid false positives,
-    unless there's a distinctive word match (e.g. 'healdsburg', 'hopland')."""
+    unless there's a distinctive word match (e.g. 'healdsburg', 'hopland').
+
+    `name_field` controls which event column holds the route name (RUSA events
+    use 'route_name'; ride rows use 'name'). `only_if_missing=True` skips
+    events that already have plan_slug set — used when augmenting rows that
+    already came from a LEFT JOIN on the FK.
+    """
     for event in events:
-        e_words = _normalize_route(event.get('route_name', ''))
+        if only_if_missing and event.get('plan_slug'):
+            continue
+        e_words = _normalize_route(event.get(name_field) or event.get('route_name') or event.get('name') or '')
         best_slug = None
         best_plan = None
         best_score = 0
@@ -384,10 +396,16 @@ def _match_plans_to_events(events, plans):
                     best_score = score
                     best_slug = plan['slug']
                     best_plan = plan
-        event['plan_slug'] = best_slug
+        # When we're filling gaps on rows that already carry plan_slug from
+        # the SQL JOIN, only overwrite when the JOIN gave us nothing.
+        if not (only_if_missing and event.get('plan_slug')):
+            event['plan_slug'] = best_slug
         if best_plan:
-            event['plan_rwgps_url'] = best_plan.get('rwgps_url')
-            event['plan_rwgps_url_team'] = best_plan.get('rwgps_url_team')
+            # Don't clobber team URL from the JOIN, but fill missing ones.
+            if not event.get('plan_rwgps_url'):
+                event['plan_rwgps_url'] = best_plan.get('rwgps_url')
+            if not event.get('plan_rwgps_url_team'):
+                event['plan_rwgps_url_team'] = best_plan.get('rwgps_url_team')
 
 
 @riders_bp.route('/riders/<season_name>/upcoming')
@@ -515,9 +533,14 @@ def upcoming_brevets(season_name):
     # Get all ride plans for the edit modal
     all_ride_plans = get_all_ride_plans()
     
-    # Get completed events for the "Completed" tab
+    # Get completed events for the "Completed" tab. Augment any row whose
+    # ride.ride_plan_id FK is NULL by fuzzy-matching the event name against
+    # known plans — most older rides were never explicitly linked, so the
+    # JOIN comes back empty for them even when a matching plan exists.
     from models import get_completed_events_for_season
-    completed_events = get_completed_events_for_season(season['id'])
+    completed_events = [dict(r) for r in get_completed_events_for_season(season['id'])]
+    _match_plans_to_events(completed_events, all_ride_plans,
+                           name_field='name', only_if_missing=True)
 
     return render_template('upcoming_brevets.html',
                            season=season,
