@@ -2512,9 +2512,40 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours):
         0,
     )
 
-    std_stops, std_total, std_sleep, std_bank = compute_variant(_PACE_VARIANTS['standard']['factor'], standard_halt or 0)
-    com_stops, com_total, com_sleep, com_bank = compute_variant(_PACE_VARIANTS['comfort']['factor'], _PACE_VARIANTS['comfort']['sleep_min'])
-    psh_stops, psh_total, psh_sleep, psh_bank = compute_variant(_PACE_VARIANTS['push']['factor'], _PACE_VARIANTS['push']['sleep_min'])
+    cutoff_min = int(cutoff_hours * 60) if cutoff_hours else None
+
+    def compute_fitted_variant(factor, sleep_min_override):
+        """Compute a variant, trimming sleep (then tightening pace) so the
+        total never exceeds the brevet cutoff. Returns the same tuple as
+        compute_variant plus the (possibly-reduced) factor actually used.
+        """
+        stops_out, total, sleep_used, bank = compute_variant(factor, sleep_min_override or 0)
+        if cutoff_min is None or total <= cutoff_min:
+            return stops_out, total, sleep_used, bank, factor
+        # First reduce sleep to absorb the overshoot.
+        overshoot = total - cutoff_min
+        if (sleep_min_override or 0) > 0:
+            trimmed_sleep = max(0, (sleep_min_override or 0) - overshoot)
+            stops_out, total, sleep_used, bank = compute_variant(factor, trimmed_sleep)
+            if total <= cutoff_min:
+                return stops_out, total, sleep_used, bank, factor
+        # Still overshooting with zero sleep: tighten the pace factor so the
+        # riding portion exactly hits cutoff. ride_min = total - sleep_used;
+        # we want ride_min * (target/ride_min) == cutoff_min - sleep_used.
+        ride_min = total - sleep_used
+        if ride_min > 0:
+            scaled_factor = factor * max(0.0, (cutoff_min - sleep_used)) / ride_min
+            scaled_factor = max(0.5, scaled_factor)  # don't go absurdly fast
+            stops_out, total, sleep_used, bank = compute_variant(scaled_factor, sleep_used)
+            return stops_out, total, sleep_used, bank, scaled_factor
+        return stops_out, total, sleep_used, bank, factor
+
+    std_stops, std_total, std_sleep, std_bank, _std_f = compute_fitted_variant(
+        _PACE_VARIANTS['standard']['factor'], standard_halt or 0)
+    com_stops, com_total, com_sleep, com_bank, _com_f = compute_fitted_variant(
+        _PACE_VARIANTS['comfort']['factor'], _PACE_VARIANTS['comfort']['sleep_min'])
+    psh_stops, psh_total, psh_sleep, psh_bank, _psh_f = compute_fitted_variant(
+        _PACE_VARIANTS['push']['factor'], _PACE_VARIANTS['push']['sleep_min'])
 
     has_halt = bool(standard_halt)
 
@@ -2527,10 +2558,27 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours):
         return ('Tight cutoff if conditions sour at the final controls.'
                 if b < 60 else 'Comfortable margin — easiest finish.')
 
+    def sleep_summary(actual_min, nominal_min, suffix):
+        """Build the per-variant summary text from the *actual* sleep used,
+        flagging when we trimmed below the nominal to fit the cutoff."""
+        if not has_halt:
+            return suffix
+        actual_min = int(actual_min or 0)
+        h = actual_min // 60
+        m = actual_min % 60
+        if m == 0:
+            label = f'{h} h sleep'
+        else:
+            label = f'{h}h {m:02d}m sleep'
+        if nominal_min and actual_min < nominal_min:
+            return f'{label} · trimmed to fit cutoff'
+        return f'{label} · {suffix}'
+
     return [
         {
             'id': 'comfort', 'name': 'Comfort', 'color': '#16a34a',
-            'summary': ('5 h sleep · safety margin' if has_halt else '+6% margin · safety buffer'),
+            'summary': sleep_summary(com_sleep, _PACE_VARIANTS['comfort']['sleep_min'], 'safety margin')
+                       if has_halt else '+6% margin · safety buffer',
             'total': fmt_hm(com_total),
             'sleep': fmt_hm(com_sleep) if has_halt else '',
             'has_sleep': has_halt,
@@ -2541,7 +2589,8 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours):
         },
         {
             'id': 'standard', 'name': 'Standard', 'color': '#1a365d',
-            'summary': (f'{(standard_halt or 0)//60} h sleep · team plan' if has_halt else 'Team plan'),
+            'summary': sleep_summary(std_sleep, standard_halt, 'team plan')
+                       if has_halt else 'Team plan',
             'total': fmt_hm(std_total),
             'sleep': fmt_hm(std_sleep) if has_halt else '',
             'has_sleep': has_halt,
@@ -2552,7 +2601,8 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours):
         },
         {
             'id': 'push', 'name': 'Push', 'color': '#dc2626',
-            'summary': ('1.5 h sleep · faster pace' if has_halt else '-6% time · faster pace'),
+            'summary': sleep_summary(psh_sleep, _PACE_VARIANTS['push']['sleep_min'], 'faster pace')
+                       if has_halt else '-6% time · faster pace',
             'total': fmt_hm(psh_total),
             'sleep': fmt_hm(psh_sleep) if has_halt else '',
             'has_sleep': has_halt,
