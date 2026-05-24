@@ -58,6 +58,24 @@
         {% endfor %}
     </nav>
 
+    {# ===== Custom plan banner ===== #}
+    {% if viewing_custom and custom_plan_for_view %}
+    <div class="rpv2-custom-banner">
+        <div>
+            <strong>
+                {% if is_custom_owner %}Viewing your custom plan{% else %}Viewing {{ custom_plan_owner_name or 'another rider' }}'s plan{% endif %}{% if custom_plan_for_view.name %}: {{ custom_plan_for_view.name }}{% endif %}
+            </strong>
+            <div class="rpv2-custom-banner-sub">Times and breaks reflect this plan's overrides.</div>
+        </div>
+        <div class="rpv2-custom-banner-actions">
+            <a class="rpv2-custom-banner-link" href="{{ url_for('riders.ride_plan_detail', slug=plan.slug) }}">← Base plan</a>
+            {% if is_custom_owner %}
+            <a class="rpv2-custom-banner-link primary" href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}">Edit</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     {# ===== Hero ===== #}
     {% set going_count = signups | selectattr('status', 'equalto', 'GOING') | list | length if signups else 0 %}
     {% set start_dt_str = (plan.linked_ride_date.isoformat() if plan.linked_ride_date else '') %}
@@ -69,8 +87,8 @@
                 {%- if plan.start_time %} · Start {{ plan.start_time }}{% endif %}
             </div>
             <h1 class="rpv2-title">
-                {{ plan.name }}
-                {% if is_admin %}
+                {% if viewing_custom and custom_plan_for_view and custom_plan_for_view.name %}{{ custom_plan_for_view.name }}{% else %}{{ plan.name }}{% endif %}
+                {% if is_admin and not viewing_custom %}
                 <a class="rpv2-admin-edit" href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}" title="Edit base plan (admin)">✎ Edit</a>
                 <a class="rpv2-admin-edit" href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}" title="Edit plan info (admin)">⚙ Info</a>
                 {% endif %}
