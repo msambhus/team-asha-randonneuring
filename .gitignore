@@ -13,3 +13,8 @@ ENV/
 node_modules/
 package-lock.json
 public/
+
+# Playwright
+test-results/
+playwright-report/
+/playwright/.cache/
