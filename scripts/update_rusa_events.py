@@ -21,10 +21,8 @@ from html.parser import HTMLParser
 # Add parent directory to path to import from project
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Resolved lazily in main() so importing this module's functions never exits.
 DATABASE_URL = os.environ.get('DATABASE_URL')
-if not DATABASE_URL:
-    print("❌ DATABASE_URL environment variable not set")
-    sys.exit(1)
 
 # Google Sheets URL - convert to CSV export URL
 SFR_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1LO6FfMJeMP_cvnEUtCfBvpmVudLNzWH-dRVv_PWqLqQ/export?format=csv&gid=0'
@@ -819,7 +817,11 @@ def main():
     print("=" * 60)
     print("Updating RUSA Calendar Events")
     print("=" * 60)
-    
+
+    if not DATABASE_URL:
+        print("❌ DATABASE_URL environment variable not set")
+        sys.exit(1)
+
     conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
     
