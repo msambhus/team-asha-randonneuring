@@ -189,7 +189,13 @@
                                 <th class="r rpv2-grp">Climb</th><th class="r">Pace</th>
                                 <th class="r">Elapsed</th><th class="r rpv2-grp">ETA</th>
                                 <th class="r">Bank</th><th class="r rpv2-grp">Wind</th>
-                                <th class="r rpv2-col-tough">Tuf</th>
+                                <th class="r rpv2-col-tough">Tuf<span class="rpv2-help" tabindex="0" role="img" aria-label="What the toughness score means" title="Toughness 0–10: climbing + headwind (counted as the climb it physically equals) + a heat/cold penalty.">?<span class="rpv2-help-bub">
+                                    <b>Toughness (0–10)</b> — how hard each segment is, combining:
+                                    <br>• <b>Climbing</b> (ft per mile)
+                                    <br>• <b>Headwind</b> — counted as the climb it physically equals (≈12 ft/mi per mph), ×1.25 for the mental drain of a relentless headwind (≈15 ft/mi per mph applied)
+                                    <br>• <b>Temperature</b> — 0 in a ~50–68°F comfort band; rising penalty in heat (the bigger effect) and a smaller one in cold
+                                    <span class="rpv2-help-tiers"><i style="background:#16a34a;"></i>0–3 easy <i style="background:#ca8a04;"></i>3–5 moderate <i style="background:#ea580c;"></i>5–7 hard <i style="background:#dc2626;"></i>7+ brutal</span>
+                                </span></span></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -244,7 +250,7 @@
                                 </td>
                                 {# Toughness: headwind (weighted higher) + climbing, 0-10, colored #}
                                 <td class="r rpv2-col-tough">
-                                    {% if s.tough_known %}<span class="rpv2-tough {{ s.tough_class }}" title="Toughness {{ "%.1f"|format(s.tough) }}/10 — headwind + climbing">{{ "%.1f"|format(s.tough) }}</span>{% else %}<span class="rpv2-tough unknown">—</span>{% endif %}
+                                    {% if s.tough_known %}<span class="rpv2-tough {{ s.tough_class }}" title="Toughness {{ "%.1f"|format(s.tough) }}/10 — climbing + headwind + temperature">{{ "%.1f"|format(s.tough) }}</span>{% else %}<span class="rpv2-tough unknown">—</span>{% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
