@@ -242,20 +242,49 @@
    instead of slack pooling in the numeric columns. */
 .rpv2-table-fixed { table-layout: fixed; }
 .rpv2-table-fixed td.r, .rpv2-table-fixed th.r { white-space: nowrap; }
-/* Widths are border-box (Tailwind's global reset) so they INCLUDE the 16px of
-   cell padding — content room is width − 16. Budgeted for the widest value in
-   each column (e.g. Pace "4h40 · 15.0", Bank "-12:34"). */
-.rpv2-cg-num { width: 32px; }
-.rpv2-cg-stop { width: auto; }      /* absorbs the remainder */
-.rpv2-cg-n { width: 52px; }          /* Seg, Cumul, Elapsed, ETA */
-.rpv2-cg-climb { width: 60px; }
-.rpv2-cg-pace { width: 92px; }
-.rpv2-cg-bank { width: 64px; }
-.rpv2-cg-wind { width: 56px; }
-.rpv2-cg-tuf { width: 44px; }
-/* On screens too narrow for the fixed widths, scroll the table horizontally
-   instead of clipping columns under .rpv2-card-tight's overflow:hidden. */
+/* Proportional widths so every column scales with the table: Stop stays ~31%
+   and the numeric columns "breathe" on wide screens instead of all the slack
+   pooling in one auto column. A table min-width keeps numbers readable; below
+   it the table scrolls horizontally (handled on mobile below). */
+.rpv2-table-fixed { min-width: 720px; }
+.rpv2-cg-num   { width: 30px; }      /* just the stop dot (fixed) */
+.rpv2-cg-stop  { width: 29%; }
+.rpv2-cg-n     { width: 6.8%; }       /* Seg, Cumul, Elapsed, ETA */
+.rpv2-cg-climb { width: 8%; }
+.rpv2-cg-pace  { width: 12%; }        /* widest: "4h40 · 15.0" */
+.rpv2-cg-bank  { width: 8.4%; }       /* widest: "-12:34" */
+.rpv2-cg-wind  { width: 7%; }
+.rpv2-cg-tuf   { width: 5.8%; }
+/* Thin vertical rules between the 4 logical column groups
+   (Distance | Effort | Schedule | Conditions). */
+.rpv2-table-fixed .rpv2-grp { border-left: 1px solid #e2e8f0; }
+/* Scroll horizontally instead of clipping under .rpv2-card-tight on narrow screens. */
 .rpv2-table-scroll { overflow-x: auto; }
+
+/* Mobile: pin the # + Stop columns while the numeric columns scroll sideways,
+   so a number is never read without knowing which stop it belongs to. */
+@media (max-width: 880px) {
+    .rpv2-table-fixed td.rpv2-col-num,
+    .rpv2-table-fixed th.rpv2-col-num {
+        position: sticky; left: 0; z-index: 2;
+    }
+    .rpv2-table-fixed thead th.rpv2-stophead,
+    .rpv2-table-fixed tbody td.rpv2-stopcell {
+        position: sticky; left: 30px; z-index: 2;
+        box-shadow: 1px 0 0 #e2e8f0;   /* seam between pinned + scrolling area */
+    }
+    /* Opaque backgrounds so scrolling cells pass UNDER the pinned columns. */
+    .rpv2-table-fixed tbody td.rpv2-col-num,
+    .rpv2-table-fixed tbody td.rpv2-stopcell { background: #fff; }
+    .rpv2-table-fixed thead th.rpv2-col-num,
+    .rpv2-table-fixed thead th.rpv2-stophead { background: #f8fafc; }
+    .rpv2-table-fixed tbody tr.is-halt td.rpv2-col-num,
+    .rpv2-table-fixed tbody tr.is-halt td.rpv2-stopcell { background: #f5f3ff; }
+    .rpv2-table-fixed tbody tr.is-sel td.rpv2-col-num,
+    .rpv2-table-fixed tbody tr.is-sel td.rpv2-stopcell { background: #eff6ff; }
+    .rpv2-table-fixed tbody tr.is-halt.is-sel td.rpv2-col-num,
+    .rpv2-table-fixed tbody tr.is-halt.is-sel td.rpv2-stopcell { background: #ede9fe; }
+}
 .rpv2-table tbody tr {
     border-bottom: 1px solid #f1f5f9;
     cursor: pointer;

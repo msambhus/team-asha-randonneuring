@@ -184,11 +184,11 @@
                         </colgroup>
                         <thead>
                             <tr>
-                                <th class="rpv2-col-num">#</th><th>Stop</th>
-                                <th class="r">Seg</th><th class="r">Cumul</th>
-                                <th class="r">Climb</th><th class="r">Pace</th>
-                                <th class="r">Elapsed</th><th class="r">ETA</th>
-                                <th class="r">Bank</th><th class="r">Wind</th>
+                                <th class="rpv2-col-num">#</th><th class="rpv2-stophead">Stop</th>
+                                <th class="r rpv2-grp">Seg</th><th class="r">Cumul</th>
+                                <th class="r rpv2-grp">Climb</th><th class="r">Pace</th>
+                                <th class="r">Elapsed</th><th class="r rpv2-grp">ETA</th>
+                                <th class="r">Bank</th><th class="r rpv2-grp">Wind</th>
                                 <th class="r rpv2-col-tough">Tuf</th>
                             </tr>
                         </thead>
@@ -212,11 +212,11 @@
                                     </div>
                                     {% if s.note %}<div class="rpv2-note">{{ s.note|clean_name }}</div>{% endif %}
                                 </td>
-                                {# Seg / Cumul distance (miles) #}
-                                <td class="r mono">{% if s.seg_mi > 0 %}{{ "%.1f"|format(s.seg_mi) }}{% else %}—{% endif %}</td>
+                                {# Seg / Cumul distance (miles) — Distance group #}
+                                <td class="r mono rpv2-grp">{% if s.seg_mi > 0 %}{{ "%.1f"|format(s.seg_mi) }}{% else %}—{% endif %}</td>
                                 <td class="r mono">{{ "%.0f"|format(s.cumul_mi) }}</td>
-                                {# Climb: ft/mile, colored by gradient tier #}
-                                <td class="r mono">
+                                {# Climb: ft/mile, colored by gradient tier — Effort group #}
+                                <td class="r mono rpv2-grp">
                                     {% if s.seg_mi > 0 %}<span class="rpv2-fpm {{ s.fpm_class }}">{{ s.fpm }}</span><small>/mi</small>{% else %}—{% endif %}
                                 </td>
                                 {# Pace: segment moving time · implied speed #}
@@ -228,10 +228,11 @@
                                 </td>
                                 {# Elapsed: cumulative time since start (Hh MM) #}
                                 <td class="r mono">{{ s.elapsed }}</td>
-                                <td class="r mono">{{ s.eta }}</td>
+                                {# ETA / Bank — Schedule group #}
+                                <td class="r mono rpv2-grp">{{ s.eta }}</td>
                                 <td class="r mono {{ 'good' if bank_good else 'bad' }}">{{ s.bank }}</td>
-                                {# Wind: colored direction arrow + mph (no Head/Tail/Cross word — on hover) #}
-                                <td class="r">
+                                {# Wind: colored direction arrow + mph (no word) — Conditions group #}
+                                <td class="r rpv2-grp">
                                     {% if s.wind_known %}
                                     {% set wcolor = '#16a34a' if s.wind_label == 'Tail' else ('#dc2626' if s.wind_label == 'Head' else '#ca8a04') %}
                                     <span class="rpv2-wind" style="color:{{ wcolor }};" title="{{ s.wind_label }} · {{ s.wind_mph }} mph" aria-label="{{ s.wind_label }}wind {{ s.wind_mph }} mph">
