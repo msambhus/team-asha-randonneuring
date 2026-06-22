@@ -153,9 +153,10 @@
                         <thead>
                             <tr>
                                 <th>#</th><th>Stop</th>
-                                <th class="r">Cumul</th><th class="r">Climb</th>
-                                <th class="r">ETA</th><th class="r">Bank</th>
-                                <th class="r">Wind</th><th class="r">Break</th>
+                                <th class="r">Dist</th><th class="r">Climb</th>
+                                <th class="r">Pace</th><th class="r">ETA</th>
+                                <th class="r">Bank</th><th class="r">Wind</th>
+                                <th class="r">Tough</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -169,30 +170,46 @@
                                 <td>
                                     <span class="rpv2-stopdot" style="background:{{ dot_color }};">{{ dot_glyph }}</span>
                                 </td>
-                                <td>
-                                    <div class="rpv2-name">{{ s.name }}</div>
-                                    {% if s.note %}<div class="rpv2-note">{{ s.note }}</div>{% endif %}
+                                <td class="rpv2-stopcell">
+                                    <div class="rpv2-stoptop">
+                                        <span class="rpv2-name" title="{{ s.name|clean_name }}">{{ s.name|clean_name }}</span>
+                                        {% if s.is_halt %}<span class="rpv2-break rpv2-break-sm rpv2-halt-pill">🌙 {{ (s.break_min // 60) }}h</span>
+                                        {% elif s.break_min > 0 %}<span class="rpv2-break rpv2-break-sm">{{ s.break_min }}m</span>{% endif %}
+                                    </div>
+                                    {% if s.note %}<div class="rpv2-note" title="{{ s.note|clean_name }}">{{ s.note|clean_name }}</div>{% endif %}
                                 </td>
-                                <td class="r mono">{{ "%.1f"|format(s.cumul_mi) }}</td>
+                                {# Dist: segment miles (primary) with cumulative below #}
+                                <td class="r mono rpv2-distcell">
+                                    <div class="rpv2-seg">{% if s.seg_mi > 0 %}{{ "%.1f"|format(s.seg_mi) }}{% else %}—{% endif %}</div>
+                                    <div class="rpv2-cumul">{{ "%.0f"|format(s.cumul_mi) }} mi</div>
+                                </td>
+                                {# Climb: ft/mile, colored by gradient tier #}
                                 <td class="r mono">
-                                    <span class="rpv2-fpm {{ s.fpm_class }}">{{ "{:,}".format(s.elev) }}</span>
-                                    <small>({{ s.fpm }}/mi)</small>
+                                    {% if s.seg_mi > 0 %}<span class="rpv2-fpm {{ s.fpm_class }}">{{ s.fpm }}</span><small>/mi</small>{% else %}—{% endif %}
+                                </td>
+                                {# Pace: segment moving time · implied speed #}
+                                <td class="r mono rpv2-pace">
+                                    {% if s.seg_time_min > 0 %}
+                                        {%- if s.seg_time_min >= 60 -%}{{ s.seg_time_min // 60 }}h{{ '%02d'|format(s.seg_time_min % 60) }}{%- else -%}{{ s.seg_time_min }}m{%- endif -%}
+                                        {%- if s.seg_speed_known %}<small>· {{ "%.1f"|format(s.seg_speed) }}</small>{% endif %}
+                                    {% else %}—{% endif %}
                                 </td>
                                 <td class="r mono">{{ s.eta }}</td>
                                 <td class="r mono {{ 'good' if bank_good else 'bad' }}">{{ s.bank }}</td>
+                                {# Wind: colored direction arrow + mph (no Head/Tail/Cross word — on hover) #}
                                 <td class="r">
                                     {% if s.wind_known %}
                                     {% set wcolor = '#16a34a' if s.wind_label == 'Tail' else ('#dc2626' if s.wind_label == 'Head' else '#ca8a04') %}
-                                    <span class="rpv2-wind" style="color:{{ wcolor }};" title="{{ s.wind_arrow_deg }}° wind">
-                                        <span class="rpv2-wind-arrow" style="transform:rotate({{ s.wind_arrow_deg }}deg);">↑</span>
-                                        {{ s.wind_label }} {{ s.wind_mph }}
+                                    <span class="rpv2-wind" style="color:{{ wcolor }};" title="{{ s.wind_label }} · {{ s.wind_mph }} mph" aria-label="{{ s.wind_label }}wind {{ s.wind_mph }} mph">
+                                        <span class="rpv2-wind-arrow" style="transform:rotate({{ s.wind_arrow_deg }}deg);">↑</span>{{ s.wind_mph }}
                                     </span>
                                     {% else %}
                                     <span class="rpv2-wind unknown">—</span>
                                     {% endif %}
                                 </td>
+                                {# Toughness: climbing + real headwind, 0-10, colored #}
                                 <td class="r">
-                                    {% if s.break_min > 0 %}<span class="rpv2-break">{{ s.break_min }}m</span>{% else %}—{% endif %}
+                                    {% if s.tough_known %}<span class="rpv2-tough {{ s.tough_class }}" title="Toughness {{ "%.1f"|format(s.tough) }}/10 — climbing + headwind">{{ "%.1f"|format(s.tough) }}</span>{% else %}<span class="rpv2-tough unknown">—</span>{% endif %}
                                 </td>
                             </tr>
                             {% endfor %}

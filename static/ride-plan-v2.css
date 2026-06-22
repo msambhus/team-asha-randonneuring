@@ -253,8 +253,27 @@
 .rpv2-table .mono { font-variant-numeric: tabular-nums; }
 .rpv2-table .good { color: #16a34a; font-weight: 700; }
 .rpv2-table .bad { color: #dc2626; font-weight: 700; }
-.rpv2-name { font-weight: 600; color: #1a365d; }
-.rpv2-note { font-size: 0.66rem; color: #64748b; margin-top: 2px; }
+/* Stop cell: name + optional break badge, then note. Name and note ellipsize
+   when they overflow the column; full text is exposed via the title attr. */
+.rpv2-stopcell { max-width: 180px; }
+.rpv2-stoptop { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.rpv2-name {
+    font-weight: 600;
+    color: #1a365d;
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.rpv2-note {
+    font-size: 0.66rem;
+    color: #64748b;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .rpv2-stopdot {
     display: inline-flex;
     align-items: center;
@@ -280,6 +299,9 @@
     font-weight: 700;
     font-size: 0.68rem;
 }
+/* Compact break badge folded into the Stop cell (replaces the old Break col). */
+.rpv2-break-sm { flex: 0 0 auto; padding: 0 5px; font-size: 0.6rem; white-space: nowrap; }
+.rpv2-halt-pill { background: #ede9fe; color: #4c1d95; }
 .rpv2-wind { font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; }
 .rpv2-wind.unknown { color: #94a3b8; font-weight: 500; font-style: italic; }
 .rpv2-wind-arrow {
@@ -289,6 +311,30 @@
     transform-origin: center;
     transition: transform 0.15s;
 }
+
+/* Dist cell: segment miles (primary) over cumulative miles (subtext). */
+.rpv2-distcell { line-height: 1.15; }
+.rpv2-seg { font-weight: 700; color: #1a365d; }
+.rpv2-cumul { font-size: 0.6rem; color: #94a3b8; }
+/* Pace cell: segment time · speed, never wraps. */
+.rpv2-pace { white-space: nowrap; }
+.rpv2-pace small { margin-left: 1px; }
+/* Toughness pill: 0-10, colored by tier (mirrors the fpm tiers). */
+.rpv2-tough {
+    display: inline-block;
+    min-width: 30px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-weight: 800;
+    font-size: 0.7rem;
+    color: #fff;
+    text-align: center;
+}
+.rpv2-tough.t1 { background: #16a34a; }
+.rpv2-tough.t2 { background: #ca8a04; }
+.rpv2-tough.t3 { background: #ea580c; }
+.rpv2-tough.t4 { background: #dc2626; }
+.rpv2-tough.unknown { background: none; color: #94a3b8; font-weight: 500; font-style: italic; padding: 0; }
 
 /* ===== 3-up info row ===== */
 .rpv2-trio {
