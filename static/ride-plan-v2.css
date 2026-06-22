@@ -121,6 +121,21 @@
     margin: 12px 0;
     font-size: 0.85rem;
 }
+/* Base-view banner pointing back to the rider's own custom plan. */
+.rpv2-custom-banner-base { background: #f5f3ff; border-color: #ddd6fe; color: #4c1d95; }
+/* "View your saved custom plan" link at the top of the Strategies tab. */
+.rpv2-pc-yours-link {
+    display: block;
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: #f5f3ff;
+    border: 1px solid #ddd6fe;
+    color: #4c1d95;
+    font: 700 0.8rem inherit;
+    text-decoration: none;
+}
+.rpv2-pc-yours-link:hover { background: #ede9fe; }
 .rpv2-custom-banner-sub {
     font-size: 0.72rem;
     color: #475569;

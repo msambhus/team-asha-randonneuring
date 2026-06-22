@@ -81,6 +81,19 @@
             {% endif %}
         </div>
     </div>
+    {% elif user_custom_plan_v2 %}
+    {# Viewing the base plan but the rider has their own custom plan — give them
+       a way back to it. #}
+    <div class="rpv2-custom-banner rpv2-custom-banner-base">
+        <div>
+            <strong>You have a custom plan for this route{% if user_custom_plan_v2.name %}: {{ user_custom_plan_v2.name|clean_name }}{% endif %}</strong>
+            <div class="rpv2-custom-banner-sub">You're viewing the base team plan.</div>
+        </div>
+        <div class="rpv2-custom-banner-actions">
+            <a class="rpv2-custom-banner-link primary" href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}">View your plan →</a>
+            <a class="rpv2-custom-banner-link" href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}">Edit</a>
+        </div>
+    </div>
     {% endif %}
 
     {# ===== Hero ===== #}
@@ -419,6 +432,11 @@
     <section class="rpv2-panel {% if active_tab == 'strategies' %}is-active{% endif %}"
              id="rpv2-panel-strategies" role="tabpanel" aria-labelledby="rpv2-tab-strategies" data-panel="strategies">
         {% if paces %}
+        {% if user_custom_plan_v2 and not viewing_custom %}
+        <a class="rpv2-pc-yours-link" href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom', tab='strategies') }}">
+            ★ You've saved a custom plan{% if user_custom_plan_v2.name %} — {{ user_custom_plan_v2.name|clean_name }}{% endif %} · View it →
+        </a>
+        {% endif %}
         <div class="rpv2-pc-intro">
             <div class="rpv2-pc-eyebrow">{% if viewing_custom %}Your plan vs the team{% else %}3 ways to ride it{% endif %}</div>
             <div class="rpv2-pc-sub">
