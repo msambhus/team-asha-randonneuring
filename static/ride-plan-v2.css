@@ -237,6 +237,25 @@
     border-bottom: 1px solid #e2e8f0;
 }
 .rpv2-table th.r, .rpv2-table td.r { text-align: right; }
+/* Fixed layout so numeric columns stay at their tight content widths and the
+   Stop column (the auto-width col) absorbs all remaining horizontal space,
+   instead of slack pooling in the numeric columns. */
+.rpv2-table-fixed { table-layout: fixed; }
+.rpv2-table-fixed td.r, .rpv2-table-fixed th.r { white-space: nowrap; }
+/* Widths are border-box (Tailwind's global reset) so they INCLUDE the 16px of
+   cell padding — content room is width − 16. Budgeted for the widest value in
+   each column (e.g. Pace "4h40 · 15.0", Bank "-12:34"). */
+.rpv2-cg-num { width: 32px; }
+.rpv2-cg-stop { width: auto; }      /* absorbs the remainder */
+.rpv2-cg-n { width: 52px; }          /* Seg, Cumul, Elapsed, ETA */
+.rpv2-cg-climb { width: 60px; }
+.rpv2-cg-pace { width: 92px; }
+.rpv2-cg-bank { width: 64px; }
+.rpv2-cg-wind { width: 56px; }
+.rpv2-cg-tuf { width: 44px; }
+/* On screens too narrow for the fixed widths, scroll the table horizontally
+   instead of clipping columns under .rpv2-card-tight's overflow:hidden. */
+.rpv2-table-scroll { overflow-x: auto; }
 .rpv2-table tbody tr {
     border-bottom: 1px solid #f1f5f9;
     cursor: pointer;
@@ -253,9 +272,10 @@
 .rpv2-table .mono { font-variant-numeric: tabular-nums; }
 .rpv2-table .good { color: #16a34a; font-weight: 700; }
 .rpv2-table .bad { color: #dc2626; font-weight: 700; }
-/* Stop cell: name + optional break badge, then note. Name and note ellipsize
-   when they overflow the column; full text is exposed via the title attr. */
-.rpv2-stopcell { max-width: 180px; }
+/* Stop cell: name + optional break badge, then note. The Stop column width is
+   set by the fixed-layout colgroup (it takes all space the numeric columns
+   don't); name and note ellipsize within it, full text via the cell title. */
+.rpv2-stopcell { overflow: hidden; }
 .rpv2-stoptop { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .rpv2-name {
     font-weight: 600;
@@ -315,7 +335,6 @@
 /* Dist cell: segment miles (primary) over cumulative miles (subtext). */
 /* Narrow # column — holds only the stop dot. */
 .rpv2-table th.rpv2-col-num, .rpv2-table td.rpv2-col-num {
-    width: 1%;
     padding-left: 6px;
     padding-right: 2px;
     text-align: center;
