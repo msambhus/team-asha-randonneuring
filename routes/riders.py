@@ -229,6 +229,35 @@ def _compute_difficulty_score(ft_per_mi, notes):
     return round(min(max(base, 0), 10), 1)
 
 
+def _compute_segment_toughness(ft_per_mi, headwind_mph):
+    """Per-segment toughness 0-10 from climbing (ft/mile) + real headwind.
+
+    Climbing contributes up to 7 points (70 ft/mile -> 7), matching the base
+    of _compute_difficulty_score. Forecast headwind (positive mph = opposing)
+    adds up to 3 more points (~1 point per 5 mph); a tailwind (negative) eases
+    the score by up to 1 point. Falls back to climbing-only when no wind
+    forecast is available (headwind_mph defaults to 0).
+    """
+    climb = min((ft_per_mi or 0) / 10.0, 7.0)
+    hw = headwind_mph or 0
+    if hw >= 0:
+        wind = min(hw / 5.0, 3.0)
+    else:
+        wind = max(hw / 10.0, -1.0)
+    return round(min(max(climb + wind, 0.0), 10.0), 1)
+
+
+def _toughness_class(score):
+    """Map a 0-10 toughness score to a t1-t4 color tier (mirrors fpm tiers)."""
+    if score < 3:
+        return 't1'
+    if score < 5:
+        return 't2'
+    if score < 7:
+        return 't3'
+    return 't4'
+
+
 def _difficulty_label(score):
     """Convert numeric difficulty score to label."""
     if score >= 7:
@@ -2330,10 +2359,16 @@ def _to_v2_stops(stops, plan, stop_wind):
         wind_speed_mph = None
         wind_label = None
         wind_arrow_deg = None
+        headwind_mph = 0.0
         if stop_wind and i < len(stop_wind) and stop_wind[i]:
             sw = stop_wind[i]
             wind_speed_mph = sw.get('wind_speed_mph')
             wind_arrow_deg = sw.get('wind_arrow_deg')
+            # Signed headwind component (positive = headwind) feeds the per-
+            # segment toughness score. fetch_stop_wind returns it in km/h.
+            hw_kmh = sw.get('headwind_kmh')
+            if hw_kmh is not None:
+                headwind_mph = round(float(hw_kmh) * 0.621371, 1)
             wind_type = (sw.get('wind_type') or sw.get('label') or '').lower()
             if 'tail' in wind_type:
                 wind_label = 'Tail'
@@ -2367,13 +2402,32 @@ def _to_v2_stops(stops, plan, stop_wind):
             if cd >= 1:
                 cutoff_eta = f"{cutoff_eta}+{cd}"
 
+        # Segment metrics: distance (mi), moving time (min) carried from the
+        # route loop, and the implied moving speed. The start row has a 0-length
+        # segment, so speed/toughness are left unknown (rendered as "—").
+        seg_mi = round(s.get('seg_dist') or 0, 1)
+        seg_time_min = int(s.get('segment_time_min') or 0)
+        seg_speed = (round(seg_mi / (seg_time_min / 60.0), 1)
+                     if seg_mi > 0 and seg_time_min > 0 else None)
+
+        # Per-segment toughness from climbing (ft/mile) + real forecast headwind.
+        if seg_mi > 0:
+            tough = _compute_segment_toughness(fpm, headwind_mph)
+            tough_class = _toughness_class(tough)
+        else:
+            tough = None
+            tough_class = ''
+
         out.append({
             'i': i,
             'type': v2_type,
             'name': loc,
             'note': s.get('notes') or '',
             'cumul_mi': round(s.get('distance_miles') or 0, 1),
-            'seg_mi': round(s.get('seg_dist') or 0, 1),
+            'seg_mi': seg_mi,
+            'seg_time_min': seg_time_min,
+            'seg_speed': seg_speed if seg_speed is not None else 0,
+            'seg_speed_known': seg_speed is not None,
             'elev': int(s.get('elevation_gain') or 0),
             'fpm': fpm,
             'fpm_class': fpm_class,
@@ -2385,6 +2439,10 @@ def _to_v2_stops(stops, plan, stop_wind):
             'wind_label': wind_label or '',
             'wind_arrow_deg': wind_arrow_deg if wind_arrow_deg is not None else 0,
             'wind_known': wind_label is not None,
+            'headwind_mph': headwind_mph,
+            'tough': tough if tough is not None else 0,
+            'tough_class': tough_class,
+            'tough_known': tough is not None,
             'break_min': int(s.get('stop_duration_min') or 0),
             'is_halt': (s.get('stop_duration_min') or 0) >= 120,
             'is_fuel': _stop_is_fuel({'note': s.get('notes'), 'name': loc}),
