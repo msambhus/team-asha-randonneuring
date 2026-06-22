@@ -229,24 +229,69 @@ def _compute_difficulty_score(ft_per_mi, notes):
     return round(min(max(base, 0), 10), 1)
 
 
-def _compute_segment_toughness(ft_per_mi, headwind_mph):
-    """Per-segment toughness 0-10 from climbing (ft/mile) + real headwind.
+# Headwind expressed as equivalent climbing (ft/mile). The standard cycling
+# power model gives ~12 ft/mile of climb per 1 mph of headwind at a ~15 mph
+# flat cruising speed (reproduced from the Gribble/Kreuzotter equations). We
+# add a 1.25x "morale" multiplier for the disproportionate mental drain of a
+# relentless, unrewarded headwind (anecdotal but consistent: the "invisible
+# hill" with no summit) -> ~15 ft/mile per mph. Tailwind helps, but less than
+# a headwind hurts (the drag term is squared), so it eases at a lower rate.
+_HEADWIND_FT_PER_MPH = 15.0
+_TAILWIND_FT_PER_MPH = 7.0
 
-    Headwind is weighted *higher* than gradient: a stiff headwind makes a
-    segment harder than an equivalent climb. Climbing contributes up to 5
-    points (80 ft/mile -> 5). Forecast headwind (positive mph = opposing)
-    contributes up to 6 points (~1 point per 3 mph, so an ~18 mph headwind
-    alone outscores the steepest climb); a tailwind (negative) eases the score
-    by up to 1.5 points. Falls back to climbing-only when no wind forecast is
-    available (headwind_mph defaults to 0).
+
+def _temp_penalty(temp_f):
+    """Heat/cold penalty (0-2.5 points) added to a segment's toughness.
+
+    Endurance cycling performance follows an inverted-U vs ambient temperature,
+    optimal ~50-68F. Heat dominates (~6.5% power loss by 90F, double-digit
+    >95F); cold is smaller and later-onset. Anchored to that research:
+    +1.0 @ 90F, +2.0 @ 100F, +0.5 at/below freezing; flat 0 in the comfort band.
+    Returns 0.0 when no temperature is available.
     """
-    climb = min((ft_per_mi or 0) / 16.0, 5.0)
+    if temp_f is None:
+        return 0.0
+    t = temp_f
+    if t <= 32:
+        return 0.5
+    if t < 40:
+        return 0.25
+    if t < 50:
+        return 0.1
+    if t <= 68:
+        return 0.0
+    if t < 80:
+        return 0.25
+    if t < 85:
+        return 0.5
+    if t < 90:
+        return 0.75
+    if t < 95:
+        return 1.0
+    if t < 100:
+        return 1.5
+    if t < 105:
+        return 2.0
+    return 2.5
+
+
+def _compute_segment_toughness(ft_per_mi, headwind_mph, temp_f=None):
+    """Per-segment toughness 0-10 from climbing + headwind + temperature.
+
+    Headwind and climbing are unified into an "effective ft/mile" using the
+    physical headwind<->grade equivalence (see _HEADWIND_FT_PER_MPH), so a
+    stiff headwind is weighted as hard as the equivalent sustained climb it
+    actually is — far higher than the old ad-hoc term. The combined climb+wind
+    load maps to a 0-8.5 base (~16 ft/mile per point), then a heat/cold penalty
+    can push the worst segments to 10. Degrades gracefully: no wind forecast ->
+    climbing only; no temperature -> no heat/cold penalty.
+    """
     hw = headwind_mph or 0
-    if hw >= 0:
-        wind = min(hw / 3.0, 6.0)
-    else:
-        wind = max(hw / 8.0, -1.5)
-    return round(min(max(climb + wind, 0.0), 10.0), 1)
+    wind_equiv = hw * _HEADWIND_FT_PER_MPH if hw >= 0 else hw * _TAILWIND_FT_PER_MPH
+    eff_ft_per_mi = max((ft_per_mi or 0) + wind_equiv, 0.0)
+    base = min(eff_ft_per_mi / 16.0, 8.5)
+    score = base + _temp_penalty(temp_f)
+    return round(min(max(score, 0.0), 10.0), 1)
 
 
 def _toughness_class(score):
@@ -2362,10 +2407,12 @@ def _to_v2_stops(stops, plan, stop_wind):
         wind_label = None
         wind_arrow_deg = None
         headwind_mph = 0.0
+        temp_f = None
         if stop_wind and i < len(stop_wind) and stop_wind[i]:
             sw = stop_wind[i]
             wind_speed_mph = sw.get('wind_speed_mph')
             wind_arrow_deg = sw.get('wind_arrow_deg')
+            temp_f = sw.get('temperature_f')
             # Signed headwind component (positive = headwind) feeds the per-
             # segment toughness score. fetch_stop_wind returns it in km/h.
             hw_kmh = sw.get('headwind_kmh')
@@ -2412,9 +2459,10 @@ def _to_v2_stops(stops, plan, stop_wind):
         seg_speed = (round(seg_mi / (seg_time_min / 60.0), 1)
                      if seg_mi > 0 and seg_time_min > 0 else None)
 
-        # Per-segment toughness from climbing (ft/mile) + real forecast headwind.
+        # Per-segment toughness from climbing (ft/mile) + real forecast headwind
+        # (weighted as equivalent climbing) + heat/cold penalty.
         if seg_mi > 0:
-            tough = _compute_segment_toughness(fpm, headwind_mph)
+            tough = _compute_segment_toughness(fpm, headwind_mph, temp_f)
             tough_class = _toughness_class(tough)
         else:
             tough = None

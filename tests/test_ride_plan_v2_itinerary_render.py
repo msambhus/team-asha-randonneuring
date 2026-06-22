@@ -35,13 +35,13 @@ _STOPS = [
      'notes': None, 'stop_order': 3},
 ]
 
-# Index-aligned per-stop wind; control has a headwind, finish a tailwind.
+# Index-aligned per-stop wind; control has a headwind (hot), finish a tailwind.
 _WIND = [
     None,
     {'wind_speed_mph': 12.0, 'wind_arrow_deg': 170, 'wind_type': 'headwind',
-     'headwind_kmh': 16.1, 'label': 'headwind'},
+     'headwind_kmh': 16.1, 'temperature_f': 100, 'label': 'headwind'},
     {'wind_speed_mph': 8.0, 'wind_arrow_deg': 10, 'wind_type': 'tailwind',
-     'headwind_kmh': -12.9, 'label': 'tailwind'},
+     'headwind_kmh': -12.9, 'temperature_f': 60, 'label': 'tailwind'},
 ]
 
 
@@ -85,7 +85,7 @@ def test_itinerary_renders_new_columns(client):
     html = resp.data.decode()
     # Seg + Cumul distance, Climb, Pace, Elapsed time, and Tuf columns present.
     for header in ('>Seg</th>', '>Cumul</th>', '>Climb</th>', '>Pace</th>',
-                   '>Elapsed</th>', '>Tuf</th>'):
+                   '>Elapsed</th>', '>Tuf<'):
         assert header in html, f"missing header {header}"
     # Old combined Dist column and the Break column are gone.
     assert '>Dist</th>' not in html
@@ -122,11 +122,20 @@ def test_stop_cell_has_whole_cell_hover_tooltip(client):
     assert 'class="rpv2-stopcell" title=' in table
 
 
-def test_toughness_column_reflects_climb_and_headwind(client):
+def test_toughness_column_reflects_climb_headwind_temp(client):
     table = _itinerary_table(_render(client).data.decode())
-    # Control: climb(67 ft/mi)=4.19 + ~10mph headwind(+3.33) = 7.5, red tier t4.
+    # Control: 67 ft/mi + 10mph headwind (150 equiv) -> base capped 8.5,
+    # + 100F heat (+2.0) -> clamped to 10.0, red tier t4.
     assert 'rpv2-tough t4' in table
-    assert '7.5' in table
+    assert '10.0' in table
+
+
+def test_tuf_header_has_help_bubble(client):
+    html = _render(client).data.decode()
+    # The "?" info bubble explaining the toughness score is present in the header.
+    assert 'rpv2-help' in html
+    assert 'rpv2-help-bub' in html
+    assert 'Toughness' in html
 
 
 def test_start_row_renders_dashes_for_segment_metrics(client):
