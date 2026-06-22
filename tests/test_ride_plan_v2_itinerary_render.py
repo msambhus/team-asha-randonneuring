@@ -83,19 +83,26 @@ def test_itinerary_renders_new_columns(client):
     resp = _render(client)
     assert resp.status_code == 200
     html = resp.data.decode()
-    # New headers present; old Cumul/Break headers gone.
-    for header in ('>Dist</th>', '>Climb</th>', '>Pace</th>', '>Tough</th>'):
+    # Seg + Cumul distance, Climb, Pace, Elapsed time, and Tuf columns present.
+    for header in ('>Seg</th>', '>Cumul</th>', '>Climb</th>', '>Pace</th>',
+                   '>Elapsed</th>', '>Tuf</th>'):
         assert header in html, f"missing header {header}"
-    assert '>Cumul</th>' not in html
+    # Old combined Dist column and the Break column are gone.
+    assert '>Dist</th>' not in html
     assert '>Break</th>' not in html
 
 
 def test_segment_distance_time_speed_surfaced(client):
     table = _itinerary_table(_render(client).data.decode())
-    assert 'rpv2-seg' in table          # segment-distance cell
     assert 'rpv2-pace' in table         # segment time · speed cell
     # 60 mi over 4h -> 15.0 mph implied speed shown in the Pace cell.
     assert '15.0' in table
+
+
+def test_cumulative_time_column_present(client):
+    table = _itinerary_table(_render(client).data.decode())
+    # Finish cumulative elapsed = 535 min arrival -> "8h55".
+    assert '8h55' in table
 
 
 def test_wind_cell_has_arrow_no_classification_word(client):
@@ -108,24 +115,25 @@ def test_wind_cell_has_arrow_no_classification_word(client):
     assert 'title="Head' in table or 'title="Tail' in table
 
 
-def test_stop_name_has_hover_tooltip(client):
-    html = _render(client).data.decode()
-    # Ellipsis truncation pairs with a title attr exposing the full name.
-    assert 'class="rpv2-name" title=' in html
+def test_stop_cell_has_whole_cell_hover_tooltip(client):
+    table = _itinerary_table(_render(client).data.decode())
+    # Tooltip is on the whole Stop <td> so hovering anywhere in the cell
+    # (not only the text) reveals the full name (+ note).
+    assert 'class="rpv2-stopcell" title=' in table
 
 
 def test_toughness_column_reflects_climb_and_headwind(client):
     table = _itinerary_table(_render(client).data.decode())
-    # Control: climb(67 ft/mi)=6.7 + ~10mph headwind(+2.0) = 8.7, red tier t4.
+    # Control: climb(67 ft/mi)=4.19 + ~10mph headwind(+3.33) = 7.5, red tier t4.
     assert 'rpv2-tough t4' in table
-    assert '8.7' in table
+    assert '7.5' in table
 
 
 def test_start_row_renders_dashes_for_segment_metrics(client):
     table = _itinerary_table(_render(client).data.decode())
     # The 0-length start segment has no speed/toughness -> the guarded
-    # template branches render the "unknown" placeholders.
+    # template branches render the "unknown" placeholders + em dashes.
     start_row = table[table.index('data-stop-i="0"'):table.index('data-stop-i="1"')]
     assert 'rpv2-tough unknown' in start_row
     assert 'rpv2-wind unknown' in start_row
-    assert '<div class="rpv2-seg">—</div>' in start_row
+    assert '—' in start_row

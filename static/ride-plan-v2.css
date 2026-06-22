@@ -313,20 +313,30 @@
 }
 
 /* Dist cell: segment miles (primary) over cumulative miles (subtext). */
-.rpv2-distcell { line-height: 1.15; }
-.rpv2-seg { font-weight: 700; color: #1a365d; }
-.rpv2-cumul { font-size: 0.6rem; color: #94a3b8; }
+/* Narrow # column — holds only the stop dot. */
+.rpv2-table th.rpv2-col-num, .rpv2-table td.rpv2-col-num {
+    width: 1%;
+    padding-left: 6px;
+    padding-right: 2px;
+    text-align: center;
+    white-space: nowrap;
+}
 /* Pace cell: segment time · speed, never wraps. */
 .rpv2-pace { white-space: nowrap; }
 .rpv2-pace small { margin-left: 1px; }
-/* Toughness pill: 0-10, colored by tier (mirrors the fpm tiers). */
+/* Narrow Tough column. */
+.rpv2-table th.rpv2-col-tough, .rpv2-table td.rpv2-col-tough {
+    padding-left: 3px;
+    padding-right: 6px;
+}
+/* Toughness pill: 0-10, colored by tier (mirrors the fpm tiers). Compact. */
 .rpv2-tough {
     display: inline-block;
-    min-width: 30px;
-    padding: 1px 6px;
-    border-radius: 10px;
+    min-width: 22px;
+    padding: 1px 4px;
+    border-radius: 9px;
     font-weight: 800;
-    font-size: 0.7rem;
+    font-size: 0.66rem;
     color: #fff;
     text-align: center;
 }
@@ -334,7 +344,7 @@
 .rpv2-tough.t2 { background: #ca8a04; }
 .rpv2-tough.t3 { background: #ea580c; }
 .rpv2-tough.t4 { background: #dc2626; }
-.rpv2-tough.unknown { background: none; color: #94a3b8; font-weight: 500; font-style: italic; padding: 0; }
+.rpv2-tough.unknown { background: none; color: #94a3b8; font-weight: 500; font-style: italic; padding: 0; min-width: 0; }
 
 /* ===== 3-up info row ===== */
 .rpv2-trio {
@@ -621,6 +631,25 @@
 .rpv2-snap-stop-bank .rpv2-snap-stop-mi { color: #64748b; }
 .rpv2-snap-stop-bank .good { color: #16a34a; }
 .rpv2-snap-stop-bank .bad { color: #dc2626; }
+.rpv2-snap-stop-elapsed { color: #94a3b8; font-weight: 600; font-size: 0.66rem; }
+/* Snapshot per-stop detail: seg time · ft/mi · toughness · headwind. */
+.rpv2-snap-stop-meta {
+    margin-top: 2px;
+    font-size: 0.58rem;
+    color: #64748b;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px 4px;
+    justify-content: flex-end;
+    align-items: center;
+}
+.rpv2-snap-tough { color: #fff; padding: 0 4px; border-radius: 7px; font-weight: 800; }
+.rpv2-snap-tough.t1 { background: #16a34a; }
+.rpv2-snap-tough.t2 { background: #ca8a04; }
+.rpv2-snap-tough.t3 { background: #ea580c; }
+.rpv2-snap-tough.t4 { background: #dc2626; }
+.rpv2-snap-wind { font-weight: 700; display: inline-flex; align-items: center; gap: 1px; }
+.rpv2-snap-wind-arrow { display: inline-block; transform-origin: center; }
 .rpv2-snap-weather {
     padding: 8px 0;
     border-top: 1px solid #e2e8f0;

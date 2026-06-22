@@ -18,23 +18,31 @@ def test_toughness_zero_when_flat_and_calm():
     assert _compute_segment_toughness(0, 0) == 0.0
 
 
-def test_toughness_climbing_only_caps_at_7():
-    # 70 ft/mi -> 7.0 (the climbing ceiling); steeper does not exceed it.
-    assert _compute_segment_toughness(70, 0) == 7.0
-    assert _compute_segment_toughness(120, 0) == 7.0
+def test_toughness_climbing_only_caps_at_5():
+    # 80 ft/mi -> 5.0 (the climbing ceiling); steeper does not exceed it.
+    assert _compute_segment_toughness(80, 0) == 5.0
+    assert _compute_segment_toughness(128, 0) == 5.0
 
 
-def test_toughness_headwind_adds_up_to_3():
-    # 50 ft/mi -> climb 5.0. +10 mph headwind -> +2.0. +25 mph -> +3.0 cap.
-    assert _compute_segment_toughness(50, 10) == 7.0
-    assert _compute_segment_toughness(50, 25) == 8.0
-    assert _compute_segment_toughness(50, 40) == 8.0  # wind term capped at +3
+def test_toughness_headwind_adds_up_to_6():
+    # 48 ft/mi -> climb 3.0. +9 mph headwind -> +3.0. +18 mph -> +6.0 cap.
+    assert _compute_segment_toughness(48, 9) == 6.0
+    assert _compute_segment_toughness(48, 18) == 9.0
+    assert _compute_segment_toughness(48, 40) == 9.0  # wind term capped at +6
 
 
-def test_toughness_tailwind_eases_up_to_1():
-    # Negative headwind = tailwind, eases the score, floored at -1.0.
-    assert _compute_segment_toughness(50, -20) == 4.0
-    assert _compute_segment_toughness(50, -100) == 4.0  # tailwind term floored
+def test_toughness_headwind_weighted_higher_than_gradient():
+    # A stiff headwind alone outscores even the steepest possible climb
+    # (headwind cap 6.0 > climbing cap 5.0).
+    assert _compute_segment_toughness(0, 18) > _compute_segment_toughness(300, 0)
+    # And a stiff 15 mph headwind outranks a moderate 60 ft/mi climb.
+    assert _compute_segment_toughness(0, 15) > _compute_segment_toughness(60, 0)
+
+
+def test_toughness_tailwind_eases_up_to_1_5():
+    # Negative headwind = tailwind, eases the score, floored at -1.5.
+    assert _compute_segment_toughness(48, -12) == 1.5   # 3.0 - 1.5
+    assert _compute_segment_toughness(48, -100) == 1.5  # tailwind term floored
 
 
 def test_toughness_headwind_raises_vs_calm():
@@ -119,13 +127,13 @@ def test_to_v2_stops_headwind_converted_to_mph():
 def test_to_v2_stops_toughness_reflects_climb_plus_headwind():
     out = _to_v2_stops(_STOPS, _PLAN, _STOP_WIND)
     mid = out[1]
-    # climb(67 ft/mi)=6.7 + headwind(10 mph -> +2.0) = 8.7, tier t4.
-    assert mid['tough'] == 8.7
+    # climb(67 ft/mi)=4.19 + headwind(10 mph -> +3.33) = 7.5, tier t4.
+    assert mid['tough'] == 7.5
     assert mid['tough_class'] == 't4'
     assert mid['tough_known'] is True
     finish = out[2]
-    # climb(29 ft/mi)=2.9 + tailwind(-8 mph -> -0.8) = 2.1, tier t1.
-    assert finish['tough'] == 2.1
+    # climb(29 ft/mi)=1.81 + tailwind(-8 mph -> -1.0) = 0.8, tier t1.
+    assert finish['tough'] == 0.8
     assert finish['tough_class'] == 't1'
 
 
@@ -134,8 +142,17 @@ def test_to_v2_stops_toughness_degrades_without_wind():
     out = _to_v2_stops(_STOPS, _PLAN, None)
     mid = out[1]
     assert mid['headwind_mph'] == 0.0
-    assert mid['tough'] == 6.7   # climb only
-    assert mid['tough_class'] == 't3'
+    assert mid['tough'] == 4.2   # climb only (67 ft/mi / 16)
+    assert mid['tough_class'] == 't2'
+
+
+def test_to_v2_stops_surfaces_cumulative_elapsed_time():
+    out = _to_v2_stops(_STOPS, _PLAN, _STOP_WIND)
+    # arrival_time_min carried from the route -> "Hh MM" elapsed string.
+    assert out[0]['elapsed'] == '0h00'
+    assert out[1]['elapsed'] == '4h00'   # 240 min
+    assert out[2]['elapsed'] == '8h40'   # 520 min
+    assert out[1]['cumul_time_min'] == 240
 
 
 def test_to_v2_stops_keeps_wind_label_for_snapshot():
