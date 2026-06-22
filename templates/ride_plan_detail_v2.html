@@ -189,7 +189,7 @@
                                 <th class="r rpv2-grp">Climb</th><th class="r">Pace</th>
                                 <th class="r">Elapsed</th><th class="r rpv2-grp">ETA</th>
                                 <th class="r">Bank</th><th class="r rpv2-grp">Wind</th>
-                                <th class="r rpv2-col-tough">Tuf<span class="rpv2-help" tabindex="0" role="img" aria-label="What the toughness score means" title="Toughness 0–10: climbing + headwind (counted as the climb it physically equals) + a heat/cold penalty.">?<span class="rpv2-help-bub">
+                                <th class="r rpv2-col-tough">Tuf<span class="rpv2-help" tabindex="0" role="img" aria-label="What the toughness score means">?<span class="rpv2-help-bub">
                                     <b>Toughness (0–10)</b> — how hard each segment is, combining:
                                     <br>• <b>Climbing</b> (ft per mile)
                                     <br>• <b>Headwind</b> — counted as the climb it physically equals (≈12 ft/mi per mph), ×1.25 for the mental drain of a relentless headwind (≈15 ft/mi per mph applied)
@@ -1049,6 +1049,34 @@
             });
         });
     }
+
+    // Toughness "?" help bubble. The bubble lives inside the itinerary table,
+    // whose .rpv2-table-scroll (overflow-x:auto) and .rpv2-card-tight
+    // (overflow:hidden) ancestors clip an absolutely-positioned child. Switch
+    // it to position:fixed and anchor it to the "?" on open so it escapes those
+    // clipping contexts and is fully visible.
+    document.querySelectorAll('.rpv2-help').forEach(function(help) {
+        var bub = help.querySelector('.rpv2-help-bub');
+        if (!bub) return;
+        function place() {
+            var r = help.getBoundingClientRect();
+            var w = bub.offsetWidth || 250;
+            var h = bub.offsetHeight || 160;
+            var left = Math.min(r.right - w, window.innerWidth - w - 8);
+            // Open below the "?", but flip above it if that would run off the
+            // bottom of the viewport (the "?" lives in the table header, which
+            // can sit low on a scrolled page).
+            var top = r.bottom + 6;
+            if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+            bub.style.position = 'fixed';
+            bub.style.top = top + 'px';
+            bub.style.left = Math.max(8, left) + 'px';
+            bub.style.right = 'auto';
+        }
+        help.addEventListener('mouseenter', place);
+        help.addEventListener('focus', place);
+        help.addEventListener('touchstart', place, { passive: true });
+    });
 })();
 </script>
 {# Weather-tab JS (Chart.js + Mapbox + fetch flow) — same partial /weather uses #}

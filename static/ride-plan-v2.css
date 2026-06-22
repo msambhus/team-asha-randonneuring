@@ -415,10 +415,10 @@
 }
 .rpv2-help-bub {
     display: none;
-    position: absolute;
+    position: absolute;   /* JS upgrades to position:fixed on open (escapes table overflow) */
     top: 150%;
     right: 0;
-    z-index: 20;
+    z-index: 1000;
     width: 250px;
     padding: 9px 11px;
     background: #0f172a;
