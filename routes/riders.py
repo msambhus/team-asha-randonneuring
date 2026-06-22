@@ -2253,8 +2253,37 @@ def ride_plan_detail(slug):
     # Weather aggregates from stop_wind
     weather_summary = _weather_summary_from_stop_wind(stop_wind, stops)
 
-    # Pace strategies (3 variants)
-    paces = compute_pace_strategies(stops, plan, plan.get('start_time', '06:00'), cutoff_hours)
+    # Pace strategies (3 variants). Per-segment wind/toughness from the enriched
+    # v2 stops so the cards can flag the tough sections. Keyed by rounded
+    # cumulative distance (route-constant) so it lines up across the custom and
+    # team stop sets even when the custom plan hid or added stops.
+    seg_meta = {round(vs.get('cumul_mi') or 0, 1): {
+        'headwind_mph': vs.get('headwind_mph', 0),
+        'wind_label': vs.get('wind_label', ''),
+        'wind_arrow_deg': vs.get('wind_arrow_deg', 0),
+        'wind_known': vs.get('wind_known', False),
+        'tough_class': vs.get('tough_class', ''),
+        'tough_known': vs.get('tough_known', False),
+    } for vs in v2_stops}
+    # When viewing a custom plan, rebaseline the cards to it and show the real
+    # team/base plan as a card on the correct side.
+    base_stops_for_strategies = None
+    your_plan_name = None
+    if viewing_custom:
+        your_plan_name = (custom_plan_for_view.get('name') or 'Your plan') if custom_plan_for_view else 'Your plan'
+        base_raw = get_ride_plan_stops(plan['id'])
+        base_stops_for_strategies = [{
+            'location': bs.get('location'),
+            'stop_type': bs.get('stop_type'),
+            'distance_miles': float(bs['distance_miles']) if bs.get('distance_miles') is not None else 0.0,
+            'elevation_gain': int(bs['elevation_gain']) if bs.get('elevation_gain') is not None else 0,
+            'segment_time_min': int(bs['segment_time_min']) if bs.get('segment_time_min') is not None else 0,
+            'stop_duration_min': int(bs['stop_duration_min']) if bs.get('stop_duration_min') is not None else 0,
+        } for bs in base_raw]
+    paces = compute_pace_strategies(
+        stops, plan, plan.get('start_time', '06:00'), cutoff_hours,
+        base_stops=base_stops_for_strategies, your_plan_name=your_plan_name,
+        seg_meta=seg_meta)
 
     # Risk overlay (wind / dark / bank)
     risks = compute_risk_zones(stops, v2_stops, plan, plan.get('start_time', '06:00'),
@@ -2537,15 +2566,30 @@ _PACE_VARIANTS = {
 }
 
 
-def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours):
+def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours,
+                            base_stops=None, your_plan_name=None, seg_meta=None):
     """Three pace strategies (comfort/standard/push) with recomputed ETAs.
 
     Comfort: +6% slower riding, 5h sleep.
     Standard: baseline (existing stops as-is).
     Push: -6% faster riding, 1.5h sleep.
 
+    When `base_stops` is provided (i.e. the rider is viewing their own custom
+    plan), the cards are REBASELINED to the custom plan: the middle card is
+    "your plan" (the custom baseline), the real team/base plan is shown as a
+    card on the correct side (slower→Comfort side, faster→Push side based on
+    which direction the custom plan moved), and one derived variant fills the
+    opposite side. `your_plan_name` labels the baseline card.
+
+    `seg_meta` (index-aligned with stops) carries per-segment wind/toughness
+    from the enriched v2 stops so the cards can flag the tough sections.
+
     Returns a list of three dicts the v2 template can iterate over.
     """
+    # seg_meta is keyed by rounded cumulative distance (route-constant), NOT by
+    # list index — so the team card (built from base_stops) and the custom cards
+    # line up even when the custom plan hid or added stops.
+    seg_meta = seg_meta or {}
     try:
         start_hr, start_min = (int(x) for x in start_time_str.split(':')[:2])
     except (ValueError, AttributeError):
@@ -2588,12 +2632,17 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours):
             return 'rest'
         return 'waypoint'
 
-    def compute_variant(factor, sleep_min_override):
+    def meta_for(mi):
+        return seg_meta.get(round(mi or 0, 1), {})
+
+    def compute_variant(factor, sleep_min_override, src_stops=None):
+        src = src_stops if src_stops is not None else stops
         cum = 0
         halt_min_used = 0
         out_stops = []
         last_bank = None  # preserve None when cutoff is missing
-        for i, s in enumerate(stops):
+        prev_mi = 0.0
+        for i, s in enumerate(src):
             seg = int(round((s.get('segment_time_min') or 0) * factor))
             break_m = s.get('stop_duration_min') or 0
             if break_m >= 120:
@@ -2609,7 +2658,15 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours):
             else:
                 bank = None
             last_bank = bank
-            stype = stop_design_type(s, i, len(stops))
+            stype = stop_design_type(s, i, len(src))
+            # Per-segment signals: distance / climb / implied speed (vary with
+            # pace) + wind & toughness (route-constant, from seg_meta by index).
+            seg_dist = round(mi - prev_mi, 1)
+            prev_mi = mi
+            elev = s.get('elevation_gain') or 0
+            fpm = int(round(elev / seg_dist)) if elev and seg_dist > 0 else 0
+            seg_speed = round(seg_dist / (seg / 60.0), 1) if seg_dist > 0 and seg > 0 else None
+            m = meta_for(mi)
             out_stops.append({
                 'i': i,
                 'type': stype,
@@ -2619,6 +2676,16 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours):
                 'bank': fmt_bank(bank),
                 'bank_min': bank if bank is not None else 0,
                 'is_key': stype in ('start', 'control', 'finish'),
+                'seg_mi': seg_dist,
+                'fpm': fpm,
+                'seg_speed': seg_speed if seg_speed is not None else 0,
+                'seg_speed_known': seg_speed is not None,
+                'headwind_mph': m.get('headwind_mph', 0),
+                'wind_label': m.get('wind_label', ''),
+                'wind_arrow_deg': m.get('wind_arrow_deg', 0),
+                'wind_known': m.get('wind_known', False),
+                'tough_class': m.get('tough_class', ''),
+                'tough_known': m.get('tough_known', False),
             })
         total_elapsed = cum
         return out_stops, total_elapsed, halt_min_used, last_bank
@@ -2667,6 +2734,57 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours):
 
     def bank_is_good(b):
         return b is not None and b >= 0
+
+    # ── Rebaselined cards when viewing a custom plan ──
+    # Middle card = the custom plan (baseline). The real team/base plan is a
+    # card on the correct side based on which way the custom plan moved, and a
+    # derived variant fills the opposite side.
+    if base_stops is not None:
+        def _halt_of(src):
+            return next((s.get('stop_duration_min') for s in src
+                         if (s.get('stop_duration_min') or 0) >= 120), 0) or 0
+
+        def _card(stop_set, factor, sleep_override, cid, name, color,
+                  summary, recommended, risk):
+            cstops, total, sleep_used, bank = compute_variant(
+                factor, sleep_override, stop_set)
+            has_s = bool(_halt_of(stop_set))
+            return {
+                'id': cid, 'name': name, 'color': color, 'summary': summary,
+                'total': fmt_hm(total),
+                'sleep': fmt_hm(sleep_used) if has_s else '',
+                'has_sleep': has_s,
+                'bank': fmt_bank(bank), 'bank_good': bank_is_good(bank),
+                'risk': risk, 'recommended': recommended, 'stops': cstops,
+                '_total': total,
+            }
+
+        your_card = _card(stops, 1.0, _halt_of(stops), 'yours',
+                          your_plan_name or 'Your plan', '#1a365d',
+                          'Your saved custom plan', False,
+                          'Your own pacing and breaks.')
+        team_card = _card(base_stops, 1.0, _halt_of(base_stops), 'team',
+                          'Team plan', '#1d4ed8', 'The base team plan', True,
+                          'The route owner’s recommended pacing.')
+        if your_card['_total'] <= team_card['_total']:
+            # Your plan is quicker → team is the slower (Comfort-side) option;
+            # the extra card is an even-faster Push of your plan.
+            extra = _card(stops, _PACE_VARIANTS['push']['factor'],
+                          _PACE_VARIANTS['push']['sleep_min'] or 0, 'push',
+                          'Push', '#dc2626', '−6% time · faster than your plan',
+                          False, 'High fatigue risk in the final stretch.')
+            cards = [team_card, your_card, extra]
+        else:
+            # Your plan is slower → team is the faster (Push-side) option; the
+            # extra card is an even-slower Comfort of your plan.
+            extra = _card(stops, _PACE_VARIANTS['comfort']['factor'],
+                          _PACE_VARIANTS['comfort']['sleep_min'] or 0, 'comfort',
+                          'Comfort', '#16a34a', '+6% margin · slower than your plan',
+                          False, 'Comfortable margin — easiest finish.')
+            cards = [extra, your_card, team_card]
+        for c in cards:
+            c.pop('_total', None)
+        return cards
 
     def comfort_risk(b):
         if b is None:
@@ -3047,6 +3165,49 @@ def ride_plan_v2_save_strategy(slug):
         'stops_written': written,
         'view_url': url_for('riders.ride_plan_detail', slug=slug, view='custom'),
     })
+
+
+@riders_bp.route('/ride-plan/<slug>/v2/custom/public', methods=['POST'])
+def ride_plan_v2_toggle_public(slug):
+    """Publish/unpublish the signed-in rider's own custom plan to the Community
+    list (sets custom_ride_plan.is_public). Owner-only: the update is scoped to
+    the rider's plan, so a non-owner cannot flip another rider's flag.
+
+    JSON body: {"is_public": bool}. Returns JSON.
+    """
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'ok': False, 'error': 'not_logged_in',
+                        'message': 'Sign in to publish your plan'}), 401
+    user = get_user_by_id(user_id)
+    if not user or not user.get('rider_id'):
+        return jsonify({'ok': False, 'error': 'no_rider',
+                        'message': 'Link your rider profile first'}), 403
+    rider_id = user['rider_id']
+
+    plan = get_ride_plan_by_slug(slug)
+    if not plan:
+        return jsonify({'ok': False, 'error': 'plan_not_found'}), 404
+
+    cp = get_custom_plan(rider_id, plan['id'])
+    if not cp:
+        return jsonify({'ok': False, 'error': 'no_custom_plan',
+                        'message': 'You have no custom plan for this route yet'}), 404
+
+    make_public = bool((request.get_json(silent=True) or {}).get('is_public'))
+    try:
+        # Owner-scoped: update runs WHERE id=%s AND rider_id=%s, so a non-owner
+        # cannot flip another rider's flag even though we looked the plan up by
+        # the session rider above.
+        updated = update_custom_plan_settings(cp['id'], rider_id, is_public=make_public)
+    except Exception:
+        current_app.logger.exception("toggle is_public failed for custom plan %s", cp['id'])
+        return jsonify({'ok': False, 'error': 'update_failed',
+                        'message': 'Could not update visibility'}), 500
+    if not updated:
+        return jsonify({'ok': False, 'error': 'not_updated',
+                        'message': 'Could not update visibility (not found)'}), 404
+    return jsonify({'ok': True, 'is_public': make_public})
 
 
 # ========== RIDE PLAN v2 RACE-DAY COMPANION ==========

@@ -70,6 +70,13 @@
         <div class="rpv2-custom-banner-actions">
             <a class="rpv2-custom-banner-link" href="{{ url_for('riders.ride_plan_detail', slug=plan.slug) }}">← Base plan</a>
             {% if is_custom_owner %}
+            {# Publish toggle: share this plan to the Community list. #}
+            <button type="button" class="rpv2-custom-banner-link rpv2-public-toggle {{ 'is-public' if custom_plan_for_view.is_public else '' }}"
+                    id="rpv2-public-toggle"
+                    data-public="{{ '1' if custom_plan_for_view.is_public else '0' }}"
+                    aria-pressed="{{ 'true' if custom_plan_for_view.is_public else 'false' }}">
+                {% if custom_plan_for_view.is_public %}● Public{% else %}○ Make public{% endif %}
+            </button>
             <a class="rpv2-custom-banner-link primary" href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}">Edit</a>
             {% endif %}
         </div>
@@ -413,13 +420,16 @@
              id="rpv2-panel-strategies" role="tabpanel" aria-labelledby="rpv2-tab-strategies" data-panel="strategies">
         {% if paces %}
         <div class="rpv2-pc-intro">
-            <div class="rpv2-pc-eyebrow">3 ways to ride it</div>
-            <div class="rpv2-pc-sub">Pick the strategy that fits your goal — the times below are derived from the base plan with adjusted segment speed and night halt.</div>
+            <div class="rpv2-pc-eyebrow">{% if viewing_custom %}Your plan vs the team{% else %}3 ways to ride it{% endif %}</div>
+            <div class="rpv2-pc-sub">
+                {% if viewing_custom %}Rebaselined to <b>your</b> plan (centre). The real team plan and a {% if paces and paces[0].id == 'team' %}faster{% else %}slower{% endif %} variant are shown for comparison.{% else %}Pick the strategy that fits your goal — the times below are derived from the base plan with adjusted segment speed and night halt.{% endif %}
+            </div>
         </div>
         <div class="rpv2-pc-grid">
             {% for p in paces %}
-            {% set is_saved = saved_pace_id == p.id %}
-            <div class="rpv2-pc-col {{ 'is-on' if is_saved else '' }}" data-pace-id="{{ p.id }}"
+            {% set is_saved = (saved_pace_id == p.id) and not viewing_custom %}
+            {% set is_yours = viewing_custom and p.id == 'yours' %}
+            <div class="rpv2-pc-col {{ 'is-on' if (is_saved or is_yours) else '' }}" data-pace-id="{{ p.id }}"
                  style="--pc-color:{{ p.color }};">
                 <div class="rpv2-pc-col-h">
                     {% if p.recommended %}<span class="rpv2-pc-rec">★ TEAM PLAN</span>{% endif %}
@@ -444,15 +454,31 @@
                 </div>
                 <div class="rpv2-pc-stops">
                     {% for s in p.stops if s.is_key %}
+                    {% set wc = '#16a34a' if s.wind_label == 'Tail' else ('#dc2626' if s.wind_label == 'Head' else '#ca8a04') %}
                     <div class="rpv2-pc-stop" title="{{ s.name }}">
-                        <span class="rpv2-pc-stop-name">{{ s.name|replace('Open Control #', 'OC#')|replace(', CA', '') }}</span>
-                        <span class="rpv2-pc-stop-mi">{{ "%.0f"|format(s.cumul_mi) }}mi</span>
-                        <span class="rpv2-pc-stop-eta">{{ s.eta }}</span>
+                        <span class="rpv2-pc-stop-top">
+                            <span class="rpv2-pc-tough {{ s.tough_class if s.tough_known else 'unknown' }}"
+                                  title="{% if s.tough_known %}Toughness tier{% else %}No forecast{% endif %}"></span>
+                            <span class="rpv2-pc-stop-name">{{ s.name|replace('Open Control #', 'OC#')|replace(', CA', '') }}</span>
+                            <span class="rpv2-pc-stop-mi">{{ "%.0f"|format(s.cumul_mi) }}mi</span>
+                            <span class="rpv2-pc-stop-eta">{{ s.eta }}</span>
+                        </span>
+                        {# Per-segment signals so riders can see which sections are tough. #}
+                        <span class="rpv2-pc-stop-meta">
+                            {%- if s.seg_speed_known %}{{ "%.1f"|format(s.seg_speed) }} mph{% endif -%}
+                            {%- if s.fpm %} · {{ s.fpm }}/mi{% endif -%}
+                            {%- if s.wind_known %} · <span class="rpv2-pc-wind" style="color:{{ wc }};"><span class="rpv2-pc-wind-arrow" style="transform:rotate({{ s.wind_arrow_deg }}deg);">↑</span>{{ s.headwind_mph|round|int if s.headwind_mph and s.headwind_mph > 0 else s.wind_label }}</span>{% endif -%}
+                        </span>
                     </div>
                     {% endfor %}
                 </div>
                 <div class="rpv2-pc-risk">⚠ {{ p.risk }}</div>
-                {% if save_state == 'logged_out' %}
+                {# Save flow is for the base view only. When viewing a custom
+                   plan the cards (team / your plan / variant) are comparison-
+                   only — the centre card is already the saved custom plan. #}
+                {% if viewing_custom %}
+                {% if is_yours %}<div class="rpv2-pc-btn rpv2-pc-btn-saved" aria-disabled="true">✓ Your custom plan</div>{% endif %}
+                {% elif save_state == 'logged_out' %}
                 <a class="rpv2-pc-btn rpv2-pc-btn-link"
                    href="{{ url_for('auth.login') }}?next={{ url_for('riders.ride_plan_detail', slug=plan.slug, tab='strategies') }}">
                     Sign in to save
@@ -1077,6 +1103,39 @@
         help.addEventListener('focus', place);
         help.addEventListener('touchstart', place, { passive: true });
     });
+
+    // "Make public" toggle in the custom-plan banner — publishes/unpublishes
+    // the rider's own custom plan to the Community list.
+    var publicToggle = document.getElementById('rpv2-public-toggle');
+    if (publicToggle) {
+        var publicUrl = '{{ url_for("riders.ride_plan_v2_toggle_public", slug=plan.slug) }}';
+        publicToggle.addEventListener('click', function() {
+            if (publicToggle.disabled) return;
+            var makePublic = publicToggle.dataset.public !== '1';
+            publicToggle.disabled = true;
+            var orig = publicToggle.textContent;
+            publicToggle.textContent = '…';
+            fetch(publicUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_public: makePublic })
+            }).then(function(r) { return r.json().then(function(b) { return { ok: r.ok, body: b }; }); })
+              .then(function(res) {
+                if (res.ok && res.body.ok) {
+                    publicToggle.dataset.public = makePublic ? '1' : '0';
+                    publicToggle.setAttribute('aria-pressed', makePublic ? 'true' : 'false');
+                    publicToggle.classList.toggle('is-public', makePublic);
+                    publicToggle.textContent = makePublic ? '● Public' : '○ Make public';
+                } else {
+                    publicToggle.textContent = orig;
+                    alert((res.body && res.body.message) || 'Could not update visibility.');
+                }
+            }).catch(function() {
+                publicToggle.textContent = orig;
+                alert('Network error. Try again.');
+            }).finally(function() { publicToggle.disabled = false; });
+        });
+    }
 })();
 </script>
 {# Weather-tab JS (Chart.js + Mapbox + fetch flow) — same partial /weather uses #}

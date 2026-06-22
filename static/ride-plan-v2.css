@@ -148,6 +148,15 @@
     border-color: #1d4ed8;
 }
 .rpv2-custom-banner-link.primary:hover { background: #1e40af; }
+/* Publish toggle (button styled like a banner link). */
+.rpv2-public-toggle { cursor: pointer; font-family: inherit; }
+.rpv2-public-toggle.is-public {
+    background: #16a34a;
+    border-color: #16a34a;
+    color: #fff;
+}
+.rpv2-public-toggle.is-public:hover { background: #15803d; }
+.rpv2-public-toggle[disabled] { opacity: 0.6; cursor: default; }
 .rpv2-sub { font-size: 0.78rem; color: #64748b; }
 .rpv2-gauges {
     display: flex;
@@ -857,14 +866,39 @@
 }
 .rpv2-pc-stops { font-size: 0.74rem; }
 .rpv2-pc-stop {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 8px;
     padding: 5px 0;
     border-bottom: 1px dashed #f1f5f9;
-    align-items: baseline;
 }
 .rpv2-pc-stop:last-child { border-bottom: 0; }
+.rpv2-pc-stop-top {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    gap: 6px;
+    align-items: baseline;
+}
+/* Color-coded segment toughness dot (no number — just the tier color). */
+.rpv2-pc-tough {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    align-self: center;
+    background: #cbd5e1;
+}
+.rpv2-pc-tough.t1 { background: #16a34a; }
+.rpv2-pc-tough.t2 { background: #ca8a04; }
+.rpv2-pc-tough.t3 { background: #ea580c; }
+.rpv2-pc-tough.t4 { background: #dc2626; }
+.rpv2-pc-tough.unknown { background: #e2e8f0; }
+/* Per-segment signals line: implied speed · climb ft/mi · headwind. */
+.rpv2-pc-stop-meta {
+    margin-top: 2px;
+    padding-left: 14px;
+    font-size: 0.62rem;
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+}
+.rpv2-pc-wind { font-weight: 700; display: inline-flex; align-items: center; gap: 1px; }
+.rpv2-pc-wind-arrow { display: inline-block; transform-origin: center; }
 .rpv2-pc-stop-name {
     color: #2d3748;
     font-weight: 600;
