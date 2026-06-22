@@ -170,7 +170,18 @@
                             {{ control_count }} control{{ '' if control_count == 1 else 's' }}{% if halt_stop %} · 1 night halt{% endif %}
                         </div>
                     </div>
-                    <table class="rpv2-table" id="rpv2-itinerary">
+                    <div class="rpv2-table-scroll">
+                    <table class="rpv2-table rpv2-table-fixed" id="rpv2-itinerary">
+                        {# Fixed layout: numeric columns get tight content widths;
+                           the Stop column (no width) absorbs all remaining space. #}
+                        <colgroup>
+                            <col class="rpv2-cg-num"><col class="rpv2-cg-stop">
+                            <col class="rpv2-cg-n"><col class="rpv2-cg-n">
+                            <col class="rpv2-cg-climb"><col class="rpv2-cg-pace">
+                            <col class="rpv2-cg-n"><col class="rpv2-cg-n">
+                            <col class="rpv2-cg-bank"><col class="rpv2-cg-wind">
+                            <col class="rpv2-cg-tuf">
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th class="rpv2-col-num">#</th><th>Stop</th>
@@ -238,6 +249,7 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                    </div>
                 </div>
 
                 {# 3-up info row #}
