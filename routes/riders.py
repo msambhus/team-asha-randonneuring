@@ -232,18 +232,20 @@ def _compute_difficulty_score(ft_per_mi, notes):
 def _compute_segment_toughness(ft_per_mi, headwind_mph):
     """Per-segment toughness 0-10 from climbing (ft/mile) + real headwind.
 
-    Climbing contributes up to 7 points (70 ft/mile -> 7), matching the base
-    of _compute_difficulty_score. Forecast headwind (positive mph = opposing)
-    adds up to 3 more points (~1 point per 5 mph); a tailwind (negative) eases
-    the score by up to 1 point. Falls back to climbing-only when no wind
-    forecast is available (headwind_mph defaults to 0).
+    Headwind is weighted *higher* than gradient: a stiff headwind makes a
+    segment harder than an equivalent climb. Climbing contributes up to 5
+    points (80 ft/mile -> 5). Forecast headwind (positive mph = opposing)
+    contributes up to 6 points (~1 point per 3 mph, so an ~18 mph headwind
+    alone outscores the steepest climb); a tailwind (negative) eases the score
+    by up to 1.5 points. Falls back to climbing-only when no wind forecast is
+    available (headwind_mph defaults to 0).
     """
-    climb = min((ft_per_mi or 0) / 10.0, 7.0)
+    climb = min((ft_per_mi or 0) / 16.0, 5.0)
     hw = headwind_mph or 0
     if hw >= 0:
-        wind = min(hw / 5.0, 3.0)
+        wind = min(hw / 3.0, 6.0)
     else:
-        wind = max(hw / 10.0, -1.0)
+        wind = max(hw / 8.0, -1.5)
     return round(min(max(climb + wind, 0.0), 10.0), 1)
 
 
@@ -2418,12 +2420,20 @@ def _to_v2_stops(stops, plan, stop_wind):
             tough = None
             tough_class = ''
 
+        # Cumulative elapsed time at arrival (moving + prior breaks), formatted
+        # "Hh MM". Mirrors the ETA clock time: ETA = start_time + elapsed.
+        elapsed_min = int(s.get('arrival_time_min') or 0)
+        el_h, el_m = divmod(elapsed_min, 60)
+        elapsed = f"{el_h}h{el_m:02d}"
+
         out.append({
             'i': i,
             'type': v2_type,
             'name': loc,
             'note': s.get('notes') or '',
             'cumul_mi': round(s.get('distance_miles') or 0, 1),
+            'cumul_time_min': elapsed_min,
+            'elapsed': elapsed,
             'seg_mi': seg_mi,
             'seg_time_min': seg_time_min,
             'seg_speed': seg_speed if seg_speed is not None else 0,
