@@ -14,7 +14,8 @@ from flask import (Blueprint, render_template, request, redirect, url_for,
 
 from auth import profile_required, api_login_required
 from models import (get_ride_by_id, get_live_tracking, set_live_tracking,
-                    get_latest_positions_for_ride, insert_live_position)
+                    get_latest_positions_for_ride, insert_live_position,
+                    get_rider_upcoming_signups)
 from services.garmin_livetrack import parse_session
 from services.rwgps import extract_rwgps_route_id, fetch_route
 
@@ -72,6 +73,21 @@ def _build_route_polyline(ride):
             downsampled.append(coords[-1])
         coords = downsampled
     return coords
+
+
+@live_bp.route('/live')
+@profile_required
+def live_hub():
+    """Live tracking hub: share from this phone, set up Garmin, or open a ride's map."""
+    rider_id = session['rider_id']
+    tracking = get_live_tracking(rider_id)
+    upcoming = get_rider_upcoming_signups(rider_id)
+    return render_template(
+        'live_hub.html',
+        opted_in=bool(tracking and tracking.get('enabled')),
+        has_garmin=bool(tracking and tracking.get('garmin_session_token')),
+        upcoming=upcoming,
+    )
 
 
 @live_bp.route('/live/settings', methods=['GET', 'POST'])
