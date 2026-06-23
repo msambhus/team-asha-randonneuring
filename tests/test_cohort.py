@@ -277,6 +277,34 @@ class TestCohortRoute:
         assert resp.status_code == 200
         assert b'Back to Riders' in resp.data
 
+    def test_live_map_link_shown_for_logged_in_rider(self, client):
+        """Logged-in profile riders see a 'Live map' link to /ride/<id>/live."""
+        self._login(client)
+        ride = {'id': 1, 'name': 'Test 200k', 'date': '2025-06-01', 'distance_km': 200}
+        breakdown = {'total_finished': 3, 'strava_linked': 3, 'private': 0, 'compared': 3}
+        with patch('routes.riders.get_ride_by_id', return_value=ride), \
+             patch('routes.riders._auto_match_cohort_riders'), \
+             patch('routes.riders._fetch_missing_cohort_streams'), \
+             patch('routes.riders.get_ride_cohort_stats', return_value=_make_riders()), \
+             patch('routes.riders.get_ride_cohort_breakdown', return_value=breakdown):
+            resp = client.get('/ride/1/cohort')
+        assert resp.status_code == 200
+        assert b'Live map' in resp.data
+        assert b'/ride/1/live' in resp.data
+
+    def test_live_map_link_hidden_for_anonymous(self, client):
+        """Anonymous visitors do not see the club-only 'Live map' link."""
+        ride = {'id': 1, 'name': 'Test 200k', 'date': '2025-06-01', 'distance_km': 200}
+        breakdown = {'total_finished': 3, 'strava_linked': 3, 'private': 0, 'compared': 3}
+        with patch('routes.riders.get_ride_by_id', return_value=ride), \
+             patch('routes.riders._auto_match_cohort_riders'), \
+             patch('routes.riders._fetch_missing_cohort_streams'), \
+             patch('routes.riders.get_ride_cohort_stats', return_value=_make_riders()), \
+             patch('routes.riders.get_ride_cohort_breakdown', return_value=breakdown):
+            resp = client.get('/ride/1/cohort')
+        assert resp.status_code == 200
+        assert b'/ride/1/live' not in resp.data
+
     def test_renders_with_insufficient_riders(self, client):
         """Page renders without error when only 1 rider has Strava data."""
         self._login(client)
