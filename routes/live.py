@@ -14,7 +14,7 @@ from flask import (Blueprint, render_template, request, redirect, url_for,
 
 from auth import profile_required, api_login_required
 from models import (get_ride_by_id, get_live_tracking, set_live_tracking,
-                    get_latest_positions_for_ride)
+                    get_latest_positions_for_ride, insert_live_position)
 from services.garmin_livetrack import parse_session
 from services.rwgps import extract_rwgps_route_id, fetch_route
 
@@ -92,11 +92,9 @@ def live_settings():
                 tracking = get_live_tracking(rider_id)
                 return render_template('live_settings.html', tracking=tracking)
             token = parsed['token']
-        elif enabled:
-            flash('Add your Garmin LiveTrack link to enable live tracking.', 'warning')
-            tracking = get_live_tracking(rider_id)
-            return render_template('live_settings.html', tracking=tracking)
 
+        # A Garmin link is optional — riders can opt in for the browser
+        # beacon (Share my location) without registering a Garmin session.
         ok = set_live_tracking(rider_id, enabled, session_url or None, token)
         if ok:
             flash('Live tracking ' + ('enabled.' if enabled else 'disabled.'), 'success')
@@ -172,3 +170,49 @@ def live_positions():
         'stale_after_minutes': STALE_AFTER_MINUTES,
         'server_time': now.isoformat(),
     })
+
+
+@live_bp.route('/live/share')
+@profile_required
+def live_share():
+    """Mobile page: stream this device's location to the club (browser beacon)."""
+    rider_id = session['rider_id']
+    tracking = get_live_tracking(rider_id)
+    opted_in = bool(tracking and tracking.get('enabled'))
+    return render_template('live_share.html', opted_in=opted_in)
+
+
+@live_bp.route('/api/live/beacon', methods=['POST'])
+@api_login_required
+def live_beacon():
+    """Accept a browser-geolocation position for the CURRENT rider only.
+
+    Club-only (completed profile) and opt-in (rider must have enabled tracking).
+    The rider is always taken from the session — any client-supplied rider id is
+    ignored — and coordinates are validated/clamped before insert.
+    """
+    rider_id = session.get('rider_id')
+    if not rider_id:
+        return jsonify({'error': 'Complete your profile to share your location'}), 403
+
+    tracking = get_live_tracking(rider_id)
+    if not (tracking and tracking.get('enabled')):
+        return jsonify({'error': 'Live tracking is off — enable it in settings first'}), 403
+
+    data = request.get_json(silent=True) or {}
+    lat = data.get('lat')
+    lng = data.get('lng')
+    accuracy = data.get('accuracy')
+    if lat is None or lng is None:
+        return jsonify({'error': 'lat and lng are required'}), 400
+
+    now = datetime.now(timezone.utc)
+    ok = insert_live_position(
+        rider_id=rider_id,          # session only — client value never trusted
+        lat=lat, lng=lng, accuracy=accuracy,
+        recorded_at=now, source='beacon',
+    )
+    if not ok:
+        return jsonify({'error': 'Invalid coordinates'}), 400
+
+    return jsonify({'ok': True, 'recorded_at': now.isoformat()})
