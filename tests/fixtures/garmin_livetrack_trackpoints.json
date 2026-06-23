@@ -1,0 +1,26 @@
+{
+  "trackPoints": [
+    {
+      "position": { "lat": 37.8044, "lon": -122.2712 },
+      "dateTime": "2026-06-23T14:00:00.000Z",
+      "speed": 6.2,
+      "altitude": 12.0
+    },
+    {
+      "position": { "lat": 37.8100, "lon": -122.2650 },
+      "dateTime": "2026-06-23T14:03:00.000Z",
+      "speed": 6.8,
+      "altitude": 18.0
+    },
+    {
+      "position": { "lat": 37.8201, "lon": -122.2501 },
+      "dateTime": "2026-06-23T14:06:00.000Z",
+      "speed": 7.1,
+      "altitude": 30.0
+    },
+    {
+      "dateTime": "2026-06-23T14:09:00.000Z",
+      "speed": 0.0
+    }
+  ]
+}

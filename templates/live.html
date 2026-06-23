@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}Live Map — {{ ride.name | clean_name }}{% endblock %}
+
+{% block extra_head %}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<style>
+.live-container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+.live-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.live-header h1 { font-size: 1.4rem; margin: 0; }
+.live-sub { color: var(--text-light); font-size: 0.85rem; }
+#live-map { height: 560px; width: 100%; border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
+.live-status { font-size: 0.8rem; color: var(--text-light); margin-top: 8px; min-height: 1.2em; }
+.live-empty {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; margin-top: 8px; font-size: 0.85rem; color: var(--text-light);
+}
+.rider-dot {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.25);
+    cursor: pointer; transition: opacity 0.2s;
+}
+.rider-dot.stale { opacity: 0.4; filter: grayscale(0.8); }
+.live-popup { font-size: 0.85rem; line-height: 1.3; }
+.live-popup .name { font-weight: 600; }
+.live-popup .ago { color: #6b7280; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="live-container">
+  <div class="live-header">
+    <div>
+      <h1>Live Map</h1>
+      <div class="live-sub">{{ ride.name | clean_name }}{% if ride.date %} &middot; {{ ride.date }}{% endif %}</div>
+    </div>
+  </div>
+  <div id="live-map"></div>
+  <div id="live-status" class="live-status"></div>
+  <div id="live-empty" class="live-empty" style="display:none;">
+    No riders are sharing their location right now. Riders can opt in from
+    <a href="{{ url_for('live.live_settings') }}">Live tracking settings</a>.
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  var MAPBOX_TOKEN = {{ mapbox_token | tojson }};
+  var RIDE_ID = {{ ride.id | tojson }};
+  var ROUTE_POLYLINE = {{ route_polyline | tojson }};   // [[lng,lat],...] or null
+  var STALE_AFTER_MIN = {{ stale_after_minutes | tojson }};
+  var POLL_MS = 30000;
+
+  (function () {
+    var statusEl = document.getElementById('live-status');
+    var emptyEl = document.getElementById('live-empty');
+
+    if (!MAPBOX_TOKEN) {
+      statusEl.textContent = 'Map unavailable: Mapbox token is not configured.';
+      return;
+    }
+
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+    var map = new mapboxgl.Map({
+      container: 'live-map',
+      style: 'mapbox://styles/mapbox/outdoors-v12',
+      center: [-122.27, 37.80],
+      zoom: 9
+    });
+    map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    map.addControl(new mapboxgl.FullscreenControl(), 'top-right');
+
+    var markers = {};   // rider_id -> { marker, el }
+
+    map.on('load', function () {
+      if (ROUTE_POLYLINE && ROUTE_POLYLINE.length > 1) {
+        map.addSource('ride-route', {
+          type: 'geojson',
+          data: { type: 'Feature', geometry: { type: 'LineString', coordinates: ROUTE_POLYLINE } }
+        });
+        map.addLayer({
+          id: 'ride-route-line', type: 'line', source: 'ride-route',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: { 'line-color': '#2563eb', 'line-width': 4, 'line-opacity': 0.7 }
+        });
+        var bounds = new mapboxgl.LngLatBounds();
+        ROUTE_POLYLINE.forEach(function (c) { bounds.extend(c); });
+        map.fitBounds(bounds, { padding: 40, duration: 0 });
+      }
+      poll();
+      setInterval(poll, POLL_MS);
+    });
+
+    function buildPopup(p) {
+      // Build DOM nodes (textContent) so rider names can never inject HTML.
+      var wrap = document.createElement('div');
+      wrap.className = 'live-popup';
+      var name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = p.name || 'Rider';
+      var ago = document.createElement('div');
+      ago.className = 'ago';
+      ago.textContent = p.minutes_ago <= 0 ? 'updated just now'
+        : 'updated ' + p.minutes_ago + ' min ago';
+      wrap.appendChild(name);
+      wrap.appendChild(ago);
+      return wrap;
+    }
+
+    function upsertMarker(p) {
+      var existing = markers[p.rider_id];
+      if (existing) {
+        existing.marker.setLngLat([p.lng, p.lat]);
+        existing.el.style.background = p.color;
+        existing.el.className = 'rider-dot' + (p.stale ? ' stale' : '');
+        existing.marker.getPopup().setDOMContent(buildPopup(p));
+      } else {
+        var el = document.createElement('div');
+        el.className = 'rider-dot' + (p.stale ? ' stale' : '');
+        el.style.background = p.color;
+        var popup = new mapboxgl.Popup({ offset: 14, closeButton: false })
+          .setDOMContent(buildPopup(p));
+        var marker = new mapboxgl.Marker(el).setLngLat([p.lng, p.lat]).setPopup(popup).addTo(map);
+        markers[p.rider_id] = { marker: marker, el: el };
+      }
+    }
+
+    function poll() {
+      fetch('/api/live/positions?ride_id=' + encodeURIComponent(RIDE_ID), { credentials: 'same-origin' })
+        .then(function (r) {
+          if (!r.ok) { throw new Error('status ' + r.status); }
+          return r.json();
+        })
+        .then(function (data) {
+          var positions = data.positions || [];
+          var seen = {};
+          positions.forEach(function (p) { seen[p.rider_id] = true; upsertMarker(p); });
+          // Remove markers for riders no longer in the window.
+          Object.keys(markers).forEach(function (rid) {
+            if (!seen[rid]) { markers[rid].marker.remove(); delete markers[rid]; }
+          });
+          emptyEl.style.display = positions.length ? 'none' : 'block';
+          var now = new Date();
+          statusEl.textContent = positions.length
+            ? positions.length + ' rider' + (positions.length === 1 ? '' : 's') +
+              ' sharing · refreshed ' + now.toLocaleTimeString()
+            : '';
+        })
+        .catch(function (err) {
+          statusEl.textContent = 'Could not refresh live positions (' + err.message + ').';
+        });
+    }
+  })();
+</script>
+{% endblock %}

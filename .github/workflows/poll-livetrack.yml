@@ -1,0 +1,47 @@
+name: Poll Garmin LiveTrack
+
+on:
+  schedule:
+    # Aspirational ~3-minute cadence. NOTE: GitHub Actions cron is best-effort
+    # and in practice has a ~5-minute floor and can be delayed under load — this
+    # is fine here (inserts are idempotent, the map shows latest-per-rider).
+    - cron: '*/3 * * * *'
+
+  workflow_dispatch:
+
+jobs:
+  poll-livetrack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Poll Garmin LiveTrack and store positions
+        run: |
+          echo "Polling Garmin LiveTrack..."
+
+          response=$(curl -X POST https://team-asha-randonneuring.vercel.app/api/cron/poll-garmin-livetrack \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -w "\n%{http_code}" \
+            --max-time 60 \
+            -s)
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+
+          if ! [[ "$http_code" =~ ^2 ]]; then
+            echo "::error::poll-garmin-livetrack failed with status $http_code"
+            exit 1
+          fi
+
+      - name: Report Failure
+        if: failure()
+        run: |
+          echo "::error::Garmin LiveTrack poll failed - check the logs above"
+          echo "Possible causes:"
+          echo "- CRON_SECRET not set or incorrect"
+          echo "- Vercel deployment issue"
+          echo "- Database connection error"
