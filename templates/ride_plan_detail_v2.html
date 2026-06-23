@@ -804,15 +804,21 @@
             {% set tip_x_raw = px - tip_w / 2 %}
             {% set tip_x = 4 if tip_x_raw < 4 else (W - 4 - tip_w if (tip_x_raw + tip_w) > (W - 4) else tip_x_raw) %}
             {% set tip_cx = tip_x + tip_w / 2 %}
+            {# Place the tooltip above the marker, but flip it below when sitting
+               above would push its top past the chart edge (high-elevation
+               stops have a small py and would otherwise be clipped). #}
+            {% set tip_h = 58 %}
+            {% set tip_gap = 14 %}
+            {% set tip_y = (py + tip_gap) if (py - tip_h - tip_gap) < PADT else (py - tip_h - tip_gap) %}
             <g class="stop-tip">
-                <rect x="{{ tip_x|round(2) }}" y="{{ (py - 72)|round(2) }}" width="{{ tip_w }}" height="58" rx="6" fill="#0f172a" opacity="0.95"></rect>
-                <text x="{{ tip_cx|round(2) }}" y="{{ (py - 56)|round(2) }}" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">
+                <rect x="{{ tip_x|round(2) }}" y="{{ tip_y|round(2) }}" width="{{ tip_w }}" height="{{ tip_h }}" rx="6" fill="#0f172a" opacity="0.95"></rect>
+                <text x="{{ tip_cx|round(2) }}" y="{{ (tip_y + 16)|round(2) }}" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">
                     {{ s.name[:32] }}{% if s.name|length > 32 %}…{% endif %}
                 </text>
-                <text x="{{ tip_cx|round(2) }}" y="{{ (py - 42)|round(2) }}" text-anchor="middle" font-size="9" fill="#cbd5e1">
+                <text x="{{ tip_cx|round(2) }}" y="{{ (tip_y + 30)|round(2) }}" text-anchor="middle" font-size="9" fill="#cbd5e1">
                     {{ "%.0f"|format(s.cumul_mi) }}mi · ETA {{ s.eta }}{% if s.bank %} · bank {{ s.bank }}{% endif %}
                 </text>
-                <text x="{{ tip_cx|round(2) }}" y="{{ (py - 28)|round(2) }}" text-anchor="middle" font-size="9" fill="#cbd5e1">
+                <text x="{{ tip_cx|round(2) }}" y="{{ (tip_y + 44)|round(2) }}" text-anchor="middle" font-size="9" fill="#cbd5e1">
                     +{{ "%.1f"|format(s.seg_mi) }}mi seg · {{ "{:,}".format(s.elev) }}ft climb{% if s.fpm %} · {{ s.fpm }}/mi{% endif %}
                 </text>
             </g>
@@ -1103,19 +1109,26 @@
         var bub = help.querySelector('.rpv2-help-bub');
         if (!bub) return;
         function place() {
+            // Switch to fixed first, then measure — the bubble must be laid out
+            // (display:block via :hover) for offsetHeight to be accurate.
+            bub.style.position = 'fixed';
+            bub.style.right = 'auto';
             var r = help.getBoundingClientRect();
             var w = bub.offsetWidth || 250;
             var h = bub.offsetHeight || 160;
-            var left = Math.min(r.right - w, window.innerWidth - w - 8);
-            // Open below the "?", but flip above it if that would run off the
-            // bottom of the viewport (the "?" lives in the table header, which
-            // can sit low on a scrolled page).
-            var top = r.bottom + 6;
-            if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
-            bub.style.position = 'fixed';
-            bub.style.top = top + 'px';
-            bub.style.left = Math.max(8, left) + 'px';
-            bub.style.right = 'auto';
+            var left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8));
+            // Prefer opening below the "?"; only flip above when below lacks room
+            // AND above has more. Always clamp so the bubble stays fully on-screen
+            // — never pinned to the very top where it looks cut off.
+            var spaceBelow = window.innerHeight - r.bottom;
+            var top;
+            if (spaceBelow >= h + 8 || spaceBelow >= r.top) {
+                top = Math.min(r.bottom + 6, window.innerHeight - h - 8);
+            } else {
+                top = r.top - h - 6;
+            }
+            bub.style.top = Math.max(8, top) + 'px';
+            bub.style.left = left + 'px';
         }
         help.addEventListener('mouseenter', place);
         help.addEventListener('focus', place);
