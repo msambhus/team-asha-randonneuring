@@ -35,6 +35,7 @@ def create_app():
     from routes.cron import cron_bp
     from routes.chat import chat_bp
     from routes.weather import weather_bp
+    from routes.live import live_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(riders_bp)
@@ -45,6 +46,7 @@ def create_app():
     app.register_blueprint(cron_bp, url_prefix='/api/cron')
     app.register_blueprint(chat_bp)
     app.register_blueprint(weather_bp)
+    app.register_blueprint(live_bp)
 
     # Template helpers
     @app.template_filter('commafy')

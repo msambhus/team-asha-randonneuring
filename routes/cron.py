@@ -683,3 +683,87 @@ def backfill_strava_streams():
         },
         'details': results,
     }), 200
+
+
+@cron_bp.route('/poll-garmin-livetrack', methods=['POST'])
+def poll_garmin_livetrack():
+    """Poll Garmin LiveTrack for opted-in riders, store positions, purge old data.
+
+    Called ~every 3 min by GitHub Actions (Vercel crons have a 24h minimum).
+    Fail-soft per rider: one bad/expired session never breaks the batch.
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    from models import (get_enabled_live_tracking, insert_live_position,
+                        purge_old_positions)
+    from services.garmin_livetrack import parse_session, fetch_positions
+
+    RETENTION_DAYS = 7
+
+    try:
+        tracked = get_enabled_live_tracking()
+    except Exception as e:
+        current_app.logger.error('poll-garmin-livetrack: failed to load riders: %s', e)
+        return jsonify({'error': 'Database error'}), 500
+
+    polled = 0
+    inserted = 0
+    errors = []
+    for row in tracked:
+        rider_id = row['rider_id']
+        token = row.get('garmin_session_token')
+        session_url = row.get('garmin_session_url')
+        # Prefer the stored token; re-derive session_id from the saved URL.
+        parsed = parse_session(session_url) if session_url else None
+        session_id = parsed['session_id'] if parsed else None
+        if not token or not session_id:
+            errors.append({'rider_id': rider_id, 'error': 'missing token/session_id'})
+            continue
+
+        polled += 1
+        try:
+            points = fetch_positions(token, session_id)
+        except Exception as e:
+            current_app.logger.warning('poll-garmin-livetrack: rider %s fetch failed: %s', rider_id, e)
+            errors.append({'rider_id': rider_id, 'error': str(e)[:200]})
+            continue
+
+        # Insert only the most recent point — the map shows latest-per-rider.
+        latest = None
+        for p in points:
+            if p.get('recorded_at') is None:
+                continue
+            if latest is None or p['recorded_at'] > latest['recorded_at']:
+                latest = p
+        if latest is None:
+            continue
+
+        if insert_live_position(
+            rider_id=rider_id,
+            lat=latest['lat'],
+            lng=latest['lng'],
+            recorded_at=latest['recorded_at'],
+            source='garmin',
+        ):
+            inserted += 1
+        else:
+            errors.append({'rider_id': rider_id, 'error': 'invalid coordinates'})
+
+    try:
+        purged = purge_old_positions(RETENTION_DAYS)
+    except Exception as e:
+        current_app.logger.error('poll-garmin-livetrack: purge failed: %s', e)
+        purged = None
+
+    current_app.logger.info(
+        'poll-garmin-livetrack: polled=%d inserted=%d errors=%d purged=%s',
+        polled, inserted, len(errors), purged,
+    )
+    return jsonify({
+        'polled': polled,
+        'inserted': inserted,
+        'errors': errors,
+        'purged': purged,
+    }), 200
