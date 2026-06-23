@@ -59,9 +59,20 @@
     </form>
 
     <div class="status-line">
-      {% if tracking and tracking.enabled and tracking.garmin_session_token %}
+      {% if tracking and tracking.enabled %}
         <span class="status-on">● Live tracking is ON.</span>
-        You'll appear on the live map of any ride you're going on.
+        You'll appear on the live map of any ride you're going on
+        {% if tracking.garmin_session_token %}via Garmin LiveTrack{% endif %}.
+        <div style="margin-top:14px;">
+          <a href="{{ url_for('live.live_share') }}"
+             style="display:inline-flex;align-items:center;gap:6px;padding:10px 18px;background:#16a34a;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+            </svg>
+            Share my location from this device
+          </a>
+        </div>
       {% else %}
         <span class="status-off">○ Live tracking is off.</span>
       {% endif %}
