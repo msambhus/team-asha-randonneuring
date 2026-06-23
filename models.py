@@ -3375,3 +3375,119 @@ def delete_knowledge_source(source):
     deleted = len(cur.fetchall())
     conn.commit()
     return deleted
+
+
+# ========== LIVE TRACKING (rider location) ==========
+
+def get_live_tracking(rider_id):
+    """Get a rider's live-tracking prefs row, or None if never set."""
+    return _execute(
+        "SELECT * FROM rider_live_tracking WHERE rider_id = %s",
+        (rider_id,)
+    ).fetchone()
+
+
+def set_live_tracking(rider_id, enabled, session_url, session_token):
+    """Upsert a rider's live-tracking prefs. Returns True on success."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""
+            INSERT INTO rider_live_tracking
+                (rider_id, enabled, garmin_session_url, garmin_session_token, updated_at)
+            VALUES (%s, %s, %s, %s, now())
+            ON CONFLICT (rider_id) DO UPDATE
+              SET enabled = EXCLUDED.enabled,
+                  garmin_session_url = EXCLUDED.garmin_session_url,
+                  garmin_session_token = EXCLUDED.garmin_session_token,
+                  updated_at = now()
+        """, (rider_id, bool(enabled), session_url, session_token))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+
+
+def get_enabled_live_tracking():
+    """All riders who have opted in AND registered a Garmin session token.
+
+    The poll cron iterates these.
+    """
+    return _execute("""
+        SELECT rider_id, garmin_session_url, garmin_session_token
+        FROM rider_live_tracking
+        WHERE enabled = TRUE AND garmin_session_token IS NOT NULL
+    """).fetchall()
+
+
+def insert_live_position(rider_id, lat, lng, recorded_at, source, accuracy=None):
+    """Insert one position point. Validates/clamps coordinates.
+
+    Returns True on success, False if coordinates are invalid (out of range).
+    """
+    try:
+        lat = float(lat)
+        lng = float(lng)
+    except (TypeError, ValueError):
+        return False
+    if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lng <= 180.0):
+        return False
+    if accuracy is not None:
+        try:
+            accuracy = float(accuracy)
+        except (TypeError, ValueError):
+            accuracy = None
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""
+            INSERT INTO rider_live_position
+                (rider_id, lat, lng, accuracy, recorded_at, source)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (rider_id, lat, lng, accuracy, recorded_at, source))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+
+
+def get_latest_positions_for_ride(ride_id, since):
+    """Latest position per opted-in GOING rider for a ride, newer than `since`.
+
+    Joins rider_ride (status GOING) → rider → opted-in tracking → latest point.
+    `since` is the display-window cutoff (a datetime). Returns rows with
+    rider_id, name, lat, lng, recorded_at, status.
+    """
+    return _execute("""
+        SELECT DISTINCT ON (p.rider_id)
+               p.rider_id,
+               r.first_name || ' ' || COALESCE(r.last_name, '') AS name,
+               p.lat, p.lng, p.recorded_at,
+               rr.status
+        FROM rider_live_position p
+        JOIN rider_ride rr ON rr.rider_id = p.rider_id
+        JOIN rider r ON r.id = p.rider_id
+        JOIN rider_live_tracking t ON t.rider_id = p.rider_id
+        WHERE rr.ride_id = %s
+          AND rr.status = %s
+          AND t.enabled = TRUE
+          AND p.recorded_at >= %s
+        ORDER BY p.rider_id, p.recorded_at DESC
+    """, (ride_id, RideStatus.GOING.value, since)).fetchall()
+
+
+def purge_old_positions(retention_days=7):
+    """Delete position points older than the retention window. Returns count."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        DELETE FROM rider_live_position
+        WHERE created_at < now() - (%s || ' days')::interval
+        RETURNING id
+    """, (str(int(retention_days)),))
+    deleted = len(cur.fetchall())
+    conn.commit()
+    return deleted
