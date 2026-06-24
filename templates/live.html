@@ -66,6 +66,8 @@
 .share-btn.stop:hover { background: #b91c1c; }
 .share-state { font-size: 0.78rem; color: var(--text-light); }
 .share-state.live { color: #166534; font-weight: 600; }
+.lowpower { display: inline-flex; align-items: center; gap: 5px; font-size: 0.78rem; color: var(--text-light); cursor: pointer; }
+.share-note { font-size: 0.72rem; color: var(--text-light); margin-top: 6px; }
 </style>
 {% endblock %}
 
@@ -85,6 +87,7 @@
         </svg>
         <span id="share-btn-label">Share my location</span>
       </button>
+      <label class="lowpower"><input type="checkbox" id="share-lowpower"> Low power</label>
       <div id="share-state" class="share-state"></div>
       {% else %}
       <a class="share-btn start" href="{{ url_for('live.live_settings') }}"
@@ -342,10 +345,11 @@
     // ── Share my own location from this page (opted-in riders only) ──
     var shareBtn = document.getElementById('share-btn');
     if (shareBtn) {
-      var SHARE_INTERVAL = 25000;
+      var SHARE_INTERVAL = 25000;   // set per-session in startShare()
       var sharing = false, watchId = null, wakeLock = null, lastSent = 0;
       var shareLabel = document.getElementById('share-btn-label');
       var shareState = document.getElementById('share-state');
+      var lowPowerEl = document.getElementById('share-lowpower');
 
       function acquireWake() {
         try { if ('wakeLock' in navigator) { navigator.wakeLock.request('screen').then(function (w) { wakeLock = w; }).catch(function () {}); } } catch (e) {}
@@ -376,13 +380,18 @@
       }
       function startShare() {
         if (!('geolocation' in navigator)) { shareState.textContent = 'Geolocation not supported.'; return; }
+        var lowPower = lowPowerEl && lowPowerEl.checked;
+        SHARE_INTERVAL = lowPower ? 60000 : 25000;   // fewer pings in low power
         sharing = true; lastSent = 0;
         shareBtn.className = 'share-btn stop';
         if (shareLabel) { shareLabel.textContent = 'Stop sharing'; }
         shareState.className = 'share-state live'; shareState.textContent = 'Starting…';
-        acquireWake();
-        watchId = navigator.geolocation.watchPosition(sendShare, onShareErr,
-          { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
+        acquireWake();   // screen must stay on — web pages can't share in the background
+        watchId = navigator.geolocation.watchPosition(sendShare, onShareErr, {
+          enableHighAccuracy: !lowPower,
+          maximumAge: lowPower ? 30000 : 10000,
+          timeout: 20000
+        });
       }
       function stopShare() {
         sharing = false;
