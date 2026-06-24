@@ -35,6 +35,14 @@
       <h1>Live Map</h1>
       <div class="live-sub">{{ ride.name | clean_name }}{% if ride.date %} &middot; {{ ride.date }}{% endif %}</div>
     </div>
+    <a href="{{ url_for('live.live_share') }}"
+       style="display:inline-flex;align-items:center;gap:6px;padding:9px 16px;background:#16a34a;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+      </svg>
+      Share my location
+    </a>
   </div>
   <div id="live-map"></div>
   <div id="live-status" class="live-status"></div>

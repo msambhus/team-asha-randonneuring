@@ -85,6 +85,49 @@ def test_beacon_ignores_client_supplied_rider_id(client):
     assert captured['rider_id'] == 7   # session rider, NOT 999
 
 
+# ── /live hub ─────────────────────────────────────────────────────────────
+
+def test_hub_renders_actions(client):
+    _login(client)
+    with patch('routes.live.get_live_tracking', return_value={'enabled': True, 'garmin_session_token': None}), \
+         patch('routes.live.get_rider_upcoming_signups', return_value=[]):
+        resp = client.get('/live')
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert 'Share from this phone' in html
+    assert 'Set up Garmin LiveTrack' in html
+    assert '/live/share' in html
+    assert '/live/settings' in html
+
+
+def test_hub_lists_upcoming_rides_with_live_links(client):
+    _login(client)
+    rides = [{'id': 131, 'name': 'Surf City 600k', 'date': '2026-06-27', 'signup_status': 'GOING'}]
+    with patch('routes.live.get_live_tracking', return_value=None), \
+         patch('routes.live.get_rider_upcoming_signups', return_value=rides):
+        resp = client.get('/live')
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert '/ride/131/live' in html
+    assert 'Surf City 600k' in html
+
+
+def test_hub_empty_when_no_upcoming(client):
+    _login(client)
+    with patch('routes.live.get_live_tracking', return_value=None), \
+         patch('routes.live.get_rider_upcoming_signups', return_value=[]):
+        resp = client.get('/live')
+    assert resp.status_code == 200
+    assert 'no upcoming rides' in resp.data.decode().lower()
+
+
+def test_hub_requires_profile(client):
+    with client.session_transaction() as s:
+        s['user_id'] = 1   # no rider_id
+    resp = client.get('/live')
+    assert resp.status_code in (301, 302)
+
+
 # ── /live/share page ──────────────────────────────────────────────────────
 
 def test_share_page_shows_controls_when_opted_in(client):
