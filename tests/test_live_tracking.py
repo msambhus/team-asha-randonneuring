@@ -197,7 +197,8 @@ def test_map_page_renders_for_profile_rider(client):
     with client.session_transaction() as s:
         s['user_id'] = 1
         s['rider_id'] = 1
-    with patch('routes.live.get_ride_by_id', return_value=dict(_RIDE)):
+    with patch('routes.live.get_ride_by_id', return_value=dict(_RIDE)), \
+         patch('routes.live.get_live_tracking', return_value=None):
         resp = client.get('/ride/5/live')
     assert resp.status_code == 200
     html = resp.data.decode()
@@ -217,7 +218,8 @@ def test_map_page_draws_rwgps_route(client):
         s['user_id'] = 1
         s['rider_id'] = 1
     with patch('routes.live.get_ride_by_id', return_value=ride), \
-         patch('routes.live.fetch_route', return_value=route_data):
+         patch('routes.live.fetch_route', return_value=route_data), \
+         patch('routes.live.get_live_tracking', return_value=None):
         resp = client.get('/ride/5/live')
     assert resp.status_code == 200
     html = resp.data.decode()
@@ -232,7 +234,8 @@ def test_map_page_route_fetch_failsoft(client):
         s['user_id'] = 1
         s['rider_id'] = 1
     with patch('routes.live.get_ride_by_id', return_value=ride), \
-         patch('routes.live.fetch_route', side_effect=Exception('RWGPS down')):
+         patch('routes.live.fetch_route', side_effect=Exception('RWGPS down')), \
+         patch('routes.live.get_live_tracking', return_value=None):
         resp = client.get('/ride/5/live')
     # Fail-soft: page still renders, just without the route line.
     assert resp.status_code == 200

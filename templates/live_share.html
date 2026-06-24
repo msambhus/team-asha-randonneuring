@@ -29,6 +29,8 @@
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 .share-meta { color: var(--text-light); font-size: 0.8rem; margin-top: 10px; line-height: 1.5; }
 .share-err { color: #991b1b; font-size: 0.85rem; margin-top: 12px; }
+.lp-toggle { display: flex; align-items: center; gap: 8px; justify-content: center;
+    font-size: 0.82rem; color: var(--text-light); margin-bottom: 16px; cursor: pointer; }
 .btn-link {
     display: inline-block; margin-top: 16px; padding: 10px 20px;
     background: var(--primary); color: #fff; border-radius: 8px;
@@ -51,10 +53,16 @@
     <a class="btn-link" href="{{ url_for('live.live_settings') }}">Enable live tracking in settings</a>
     {% else %}
     <p class="help">
-      Tap start to share your live location with the club. Keep this page open and
-      your screen on during the ride. Stop any time — your location history is
-      deleted after 7 days.
+      Tap start to share your live location with the club. <strong>Keep this page open
+      with your screen on</strong> — phone browsers can't share location in the
+      background. For hands-off tracking, set up
+      <a href="{{ url_for('live.live_settings') }}">Garmin LiveTrack</a> instead.
+      Stop any time — your location history is deleted after 7 days.
     </p>
+    <label class="lp-toggle">
+      <input type="checkbox" id="lowpower">
+      Low-power mode — coarser GPS, updates every 60s (saves battery)
+    </label>
     <button id="share-toggle" class="big-btn start">
       <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -136,12 +144,17 @@
 
   function start() {
     if (!('geolocation' in navigator)) { errEl.textContent = 'Geolocation is not supported on this device.'; return; }
+    var lowPower = document.getElementById('lowpower');
+    lowPower = lowPower && lowPower.checked;
+    POST_INTERVAL_MS = lowPower ? 60000 : 25000;
     sharing = true; lastSent = 0;
     toggle.className = 'big-btn stop'; label.textContent = 'Stop sharing';
     statusEl.className = 'share-status live'; statusText.textContent = 'Sharing your location…';
     acquireWakeLock();
     watchId = navigator.geolocation.watchPosition(sendPosition, onError, {
-      enableHighAccuracy: true, maximumAge: 10000, timeout: 20000
+      enableHighAccuracy: !lowPower,
+      maximumAge: lowPower ? 30000 : 10000,
+      timeout: 20000
     });
   }
 
