@@ -10,9 +10,9 @@ The poll cron that writes positions lives in routes/cron.py.
 from datetime import datetime, timedelta, timezone
 
 from flask import (Blueprint, render_template, request, redirect, url_for,
-                   session, jsonify, current_app, flash, abort)
+                   session, jsonify, current_app, flash, abort, g)
 
-from auth import profile_required, api_login_required
+from auth import profile_required, token_or_session_required
 from cache import cache, CACHE_TIMEOUT
 from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled,
                     set_ride_garmin, clear_ride_garmin,
@@ -394,15 +394,16 @@ def _rider_telemetry(row, ctx, now, history):
 
 
 @live_bp.route('/api/live/positions')
-@api_login_required
+@token_or_session_required
 def live_positions():
     """JSON: latest position + live telemetry per opted-in GOING rider for ?ride_id=.
 
-    Club-only: requires a completed profile (session['rider_id']). The heavy
+    Club-only: requires a completed profile. Auth is a web session OR a mobile
+    Bearer token (g.rider_id, set by token_or_session_required). The heavy
     route/weather context is cached per ride; only per-rider numbers are
     recomputed each poll.
     """
-    if not session.get('rider_id'):
+    if not g.rider_id:
         return jsonify({'error': 'Complete your profile to view live tracking'}), 403
 
     ride_id = request.args.get('ride_id', type=int)
@@ -478,15 +479,16 @@ def live_share():
 
 
 @live_bp.route('/api/live/sharing', methods=['POST'])
-@api_login_required
+@token_or_session_required
 def live_sharing_toggle():
     """Turn the current rider's live tracking on/off (the opt-in flag).
 
     Lets the rider start sharing from the beacon UI in one tap — no detour to the
     Garmin settings page. Preserves any registered Garmin session. The act of
     tapping "Start sharing" (with the on-page privacy note) is the consent.
+    Auth: web session OR mobile Bearer token.
     """
-    rider_id = session.get('rider_id')
+    rider_id = g.rider_id
     if not rider_id:
         return jsonify({'error': 'Complete your profile to share your location'}), 403
     enabled = bool((request.get_json(silent=True) or {}).get('enabled'))
@@ -495,15 +497,16 @@ def live_sharing_toggle():
 
 
 @live_bp.route('/api/live/beacon', methods=['POST'])
-@api_login_required
+@token_or_session_required
 def live_beacon():
-    """Accept a browser-geolocation position for the CURRENT rider only.
+    """Accept a geolocation position for the CURRENT rider only.
 
     Club-only (completed profile) and opt-in (rider must have enabled tracking).
-    The rider is always taken from the session — any client-supplied rider id is
+    Auth is a web session OR a mobile Bearer token; the rider is always taken
+    from that trusted identity (g.rider_id) — any client-supplied rider id is
     ignored — and coordinates are validated/clamped before insert.
     """
-    rider_id = session.get('rider_id')
+    rider_id = g.rider_id
     if not rider_id:
         return jsonify({'error': 'Complete your profile to share your location'}), 403
 

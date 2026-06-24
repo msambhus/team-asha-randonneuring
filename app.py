@@ -36,6 +36,7 @@ def create_app():
     from routes.chat import chat_bp
     from routes.weather import weather_bp
     from routes.live import live_bp
+    from routes.api_auth import api_auth_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(riders_bp)
@@ -47,6 +48,7 @@ def create_app():
     app.register_blueprint(chat_bp)
     app.register_blueprint(weather_bp)
     app.register_blueprint(live_bp)
+    app.register_blueprint(api_auth_bp, url_prefix='/api/auth')
 
     # Template helpers
     @app.template_filter('commafy')
