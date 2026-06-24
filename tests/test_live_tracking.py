@@ -267,6 +267,26 @@ def test_positions_shape_color_and_stale(client):
     assert stale['source'] == 'beacon'      # defaulted when the row has no source
 
 
+def test_positions_includes_sharer_without_signup(client):
+    """A rider sharing for this ride shows even with no signup (status None)."""
+    rows = [
+        {'rider_id': 7, 'name': 'Walk-up Rider', 'lat': 37.8, 'lng': -122.2,
+         'recorded_at': _now() - timedelta(minutes=1), 'status': None,
+         'source': 'garmin'},
+    ]
+    with client.session_transaction() as s:
+        s['user_id'] = 1
+        s['rider_id'] = 1
+    with patch('routes.live.get_latest_positions_for_ride', return_value=rows), \
+         patch('routes.live._ride_live_context', return_value={'has_route': False}), \
+         patch('routes.live.get_positions_for_rider_since', return_value=[]):
+        resp = client.get('/api/live/positions?ride_id=5')
+    assert resp.status_code == 200
+    pos = resp.get_json()['positions']
+    assert len(pos) == 1                      # shown despite no signup status
+    assert pos[0]['color'] == '#16a34a'       # falls back to the default colour
+
+
 # ── cross-ride isolation: the latest-positions query is ride-scoped ────────
 
 def test_latest_positions_query_filters_by_ride_id():
@@ -296,11 +316,13 @@ def test_latest_positions_query_filters_by_ride_id():
 
     # The position row must be constrained to THIS ride, not just the rider.
     assert 'p.ride_id = %s' in captured['sql']
-    # ride_id is bound twice (rr.ride_id and p.ride_id); GOING + since follow.
-    assert captured['params'][0] == 42
-    assert captured['params'][1] == 42
-    assert captured['params'][2] == models.RideStatus.GOING.value
-    assert captured['params'][3] == since
+    # Signup status no longer gates the map — rider_ride is a LEFT JOIN used only
+    # for the dot colour, and GOING is not required.
+    assert 'LEFT JOIN rider_ride' in captured['sql']
+    assert 'rr.status = %s' not in captured['sql']
+    # ride_id is bound twice (LEFT JOIN rr.ride_id + p.ride_id), then since.
+    assert captured['params'] == (42, 42, since)
+    assert models.RideStatus.GOING.value not in captured['params']
 
 
 # ── /ride/<id>/live map page ──────────────────────────────────────────────

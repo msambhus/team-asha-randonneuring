@@ -17,10 +17,11 @@ ways to appear — pick one:
 
 1. **Log in** to the club site — only logged-in club members can see the live map.
 2. **Complete your rider profile** (needed to share or view).
-3. **Mark yourself "Going"** on the ride. *Only riders who are Going show up on that
-   ride's map.*
-4. Make sure **live tracking is enabled** once (your master switch): **Live → Live
+3. Make sure **live tracking is enabled** once (your master switch): **Live → Live
    tracking settings → Enable**. You can turn it off there any time.
+
+*(You do **not** need to be marked "Going" — setting up sharing on the ride's own map is
+all it takes to appear there.)*
 
 Then open the ride you're riding: **Live** (top menu) → under *"Set up & view a ride's
 live map"*, tap your ride → its **Live Map**. At the top you'll see
@@ -85,7 +86,8 @@ No setup — but your phone has to stay awake, and you start it from the ride's 
   ⏸ stopped · 🚶 walking · 🚴 riding · 🚗 driving. ⏸ just means you're not moving right now.
 - **Off-route riders still show:** if you're more than ~800 m from the route line, your dot
   still appears, but route-specific stats (distance-to-go, climb left, headwind) are hidden.
-- **You must be "Going"** on the ride to appear.
+- **No signup required:** you don't have to be marked "Going" — sharing on the ride's map is
+  enough to appear there.
 - **Garmin link is per-ride** (see the warning above) — the #1 reason someone "isn't showing."
 
 ---
@@ -95,6 +97,6 @@ No setup — but your phone has to stay awake, and you start it from the ride's 
 |---|---|
 | I enabled Garmin but don't appear | Link is stale — start the activity, copy a **fresh** LiveTrack link, re-save it on the ride's map. |
 | I appeared, then went stale | Garmin session ended, or (beacon) the screen slept. |
-| I'm not on the map at all | Not marked **Going** on that ride, master tracking off, or profile incomplete. |
+| I'm not on the map at all | Master tracking off, profile incomplete, or you set up sharing on a different ride's map. |
 | Beacon keeps pausing | Screen turned off / app backgrounded — keep the page open, screen on. |
 | My old points vanished after the update | Tracking is now per-ride — re-link Garmin (or re-share) on the ride's own map. |
