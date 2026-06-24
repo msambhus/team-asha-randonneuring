@@ -189,19 +189,25 @@ def test_positions_without_route_still_shows_source_metrics(client):
     assert t['now']['activity'] == 'cycling'   # 5 m/s
 
 
-def test_positions_off_route_rider_is_hidden(client):
-    """A rider far from the route is omitted from the live map entirely."""
+def test_positions_off_route_rider_shown_without_route_metrics(client):
+    """A rider far from the route is still shown (marker), but with no course telemetry."""
     _login(client)
     # _FAKE_CTX track is around lat 37.0; put the rider ~22 km north.
     row = {'rider_id': 7, 'name': 'Off Route', 'lat': 37.2, 'lng': -121.99,
            'recorded_at': _now(), 'status': 'GOING',
-           'speed': 0.0, 'heart_rate': None, 'power': None, 'cadence': None}
+           'speed': 5.0, 'heart_rate': None, 'power': None, 'cadence': None}
     with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
          patch('routes.live._ride_live_context', return_value=_FAKE_CTX), \
          patch('routes.live.get_positions_for_rider_since', return_value=[]):
         resp = client.get('/api/live/positions?ride_id=5')
     assert resp.status_code == 200
-    assert resp.get_json()['positions'] == []   # off-route session not shown
+    positions = resp.get_json()['positions']
+    assert len(positions) == 1                       # shown, not hidden
+    t = positions[0]['telemetry']
+    assert t['on_route'] is False
+    assert t['remaining'] is None                    # course telemetry suppressed
+    assert 'distance_mi' not in t['now']
+    assert t['now']['activity'] == 'cycling'         # speed/activity still shown
 
 
 def test_positions_off_route_bounce_with_history_stays_shown(client):
