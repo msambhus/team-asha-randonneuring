@@ -19,6 +19,15 @@ METERS_TO_FEET = 3.28084
 # Below this ground speed (m/s) a rider is considered stopped (~1.8 km/h).
 STOPPED_SPEED_MS = 0.5
 
+# A rider farther than this (m) from the nearest route point is "off route" —
+# we then suppress route-relative metrics rather than snap to a bogus distance.
+ON_ROUTE_MAX_M = 800
+
+# Gaps longer than this (s) between consecutive points are NOT counted toward
+# moving/stopped time — they mean we simply had no data, not that the rider was
+# riding for that whole span (prevents a stale point from inflating moving time).
+MAX_GAP_SECONDS = 600
+
 
 def haversine_m(lat1, lng1, lat2, lng2):
     """Great-circle distance between two points, in meters."""
@@ -34,16 +43,31 @@ def project_to_route(lat, lng, track):
     """Nearest point on the route to (lat,lng).
 
     `track` is a list of {lat,lng,dist_m} (ascending dist_m). Returns
-    (dist_m, index) of the closest track point, or (None, None) if empty.
+    (dist_m, index, off_by_m) for the closest track point, where off_by_m is how
+    far the rider is from that point — callers use it to detect off-route. Returns
+    (None, None, None) if the track is empty.
     """
     if not track:
-        return None, None
+        return None, None, None
     best_i, best_d = 0, float('inf')
     for i, tp in enumerate(track):
         d = haversine_m(lat, lng, tp['lat'], tp['lng'])
         if d < best_d:
             best_d, best_i = d, i
-    return track[best_i]['dist_m'], best_i
+    return track[best_i]['dist_m'], best_i, best_d
+
+
+def activity_from_speed(speed_ms):
+    """Classify movement from ground speed (m/s): paused/walking/cycling/driving."""
+    if speed_ms is None:
+        return None
+    if speed_ms < STOPPED_SPEED_MS:
+        return 'paused'
+    if speed_ms < 2.5:        # < ~9 km/h
+        return 'walking'
+    if speed_ms < 12.0:       # < ~43 km/h
+        return 'cycling'
+    return 'driving'
 
 
 def remaining_distance_m(total_dist_m, current_dist_m):
@@ -132,8 +156,8 @@ def moving_stopped(points):
     moving_s = stopped_s = 0.0
     for a, b in zip(points, points[1:]):
         dt = (b['recorded_at'] - a['recorded_at']).total_seconds()
-        if dt <= 0:
-            continue
+        if dt <= 0 or dt > MAX_GAP_SECONDS:
+            continue   # ignore non-positive and large data gaps
         speed = b.get('speed')
         if speed is None:
             dist = haversine_m(float(a['lat']), float(a['lng']),

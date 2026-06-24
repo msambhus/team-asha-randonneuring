@@ -26,13 +26,38 @@ def test_haversine_known_distance():
 
 
 def test_project_to_route_picks_nearest():
-    dist_m, idx = tlm.project_to_route(37.0, -121.975, _TRACK)
+    dist_m, idx, off_by_m = tlm.project_to_route(37.0, -121.975, _TRACK)
     assert idx == 3
     assert dist_m == 2667.0
+    assert off_by_m is not None and off_by_m < 600   # close to the line
+
+
+def test_project_to_route_reports_off_route_distance():
+    # ~0.2 deg north of the track (~22 km away) → large off_by_m
+    dist_m, idx, off_by_m = tlm.project_to_route(37.2, -121.99, _TRACK)
+    assert off_by_m > tlm.ON_ROUTE_MAX_M
 
 
 def test_project_to_route_empty():
-    assert tlm.project_to_route(1, 2, []) == (None, None)
+    assert tlm.project_to_route(1, 2, []) == (None, None, None)
+
+
+def test_activity_from_speed():
+    assert tlm.activity_from_speed(None) is None
+    assert tlm.activity_from_speed(0.0) == 'paused'
+    assert tlm.activity_from_speed(1.5) == 'walking'
+    assert tlm.activity_from_speed(6.0) == 'cycling'
+    assert tlm.activity_from_speed(20.0) == 'driving'
+
+
+def test_moving_stopped_ignores_large_gaps():
+    # A 2-hour gap between two points must NOT count as moving/stopped time.
+    pts = [
+        {'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(0), 'speed': 5.0},
+        {'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(7200), 'speed': 5.0},  # +2h gap
+    ]
+    moving, stopped = tlm.moving_stopped(pts)
+    assert moving == 0.0 and stopped == 0.0
 
 
 def test_remaining_distance():
