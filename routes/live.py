@@ -406,11 +406,9 @@ def live_positions():
 
         trail = tlm.build_trail(history, track)   # on-route breadcrumb of where they rode
 
-        # Hide a rider only when they're off-route AND have no on-route history
-        # — so an off-route session (e.g. testing from home) is hidden, but a
-        # momentary GPS bounce on a real ride doesn't make the rider vanish.
-        if has_route and telemetry and telemetry.get('on_route') is False and not trail:
-            continue
+        # Off-route riders are still shown on the map (you can see where everyone
+        # is) — only the route-relative telemetry is suppressed (on_route=False),
+        # handled in _rider_telemetry.
         positions.append({
             'rider_id': row['rider_id'],
             'name': (row['name'] or '').strip(),
