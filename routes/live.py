@@ -419,6 +419,10 @@ def live_positions():
             'recorded_at': recorded_at.isoformat(),
             'minutes_ago': minutes_ago,
             'stale': minutes_ago > STALE_AFTER_MINUTES,
+            # How this rider's latest point was reported: 'garmin' (LiveTrack
+            # device, works screen-off) or 'beacon' (this phone's browser,
+            # needs the screen on). Drives the map's source badge/popup.
+            'source': row.get('source') or 'beacon',
             'telemetry': telemetry,
             'trail': trail,
         })

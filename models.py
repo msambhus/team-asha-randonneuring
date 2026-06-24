@@ -3497,14 +3497,14 @@ def get_latest_positions_for_ride(ride_id, since):
 
     Joins rider_ride (status GOING) → rider → opted-in tracking → latest point.
     `since` is the display-window cutoff (a datetime). Returns rows with
-    rider_id, name, lat, lng, recorded_at, status.
+    rider_id, name, lat, lng, recorded_at, source, status.
     """
     return _execute("""
         SELECT DISTINCT ON (p.rider_id)
                p.rider_id,
                r.first_name || ' ' || COALESCE(r.last_name, '') AS name,
                p.lat, p.lng, p.recorded_at,
-               p.speed, p.heart_rate, p.power, p.cadence,
+               p.speed, p.heart_rate, p.power, p.cadence, p.source,
                rr.status
         FROM rider_live_position p
         JOIN rider_ride rr ON rr.rider_id = p.rider_id

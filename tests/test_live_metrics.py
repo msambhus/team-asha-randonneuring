@@ -2,6 +2,7 @@
 cron, beacon speed, and the /api/live/positions telemetry block + caching.
 All external HTTP mocked; models patched so no DB is needed.
 """
+import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock
 
@@ -43,13 +44,19 @@ def test_extract_point_missing_fitness_is_none():
     assert p['heart_rate'] is None and p['power'] is None and p['cadence'] is None
 
 
+def _share_html(points):
+    """Embed points the way Garmin server-renders them (escaped RSC payload)."""
+    esc = json.dumps(points).replace('\\', '\\\\').replace('"', '\\"')
+    return ('<html><body><script>self.__next_f.push([1,"a:{\\"trackPoints\\":'
+            + esc + '}"])</script></body></html>')
+
+
 def test_fetch_positions_carries_fields(app):
-    data = {'trackPoints': [
+    points = [
         {'position': {'lat': 37.8, 'lon': -122.2}, 'dateTime': '2026-06-23T14:00:00Z',
          'fitnessPointData': {'heartRate': 150}, 'speed': 6.0},
-    ]}
-    resp = MagicMock(status_code=200, ok=True)
-    resp.json.return_value = data
+    ]
+    resp = MagicMock(status_code=200, ok=True, text=_share_html(points))
     with app.app_context():
         with patch.object(requests, 'get', return_value=resp):
             pts = garmin_livetrack.fetch_positions('tok', 'sess')
