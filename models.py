@@ -3566,13 +3566,16 @@ def get_last_position_recorded_at(rider_id, ride_id=None):
 
 
 def get_latest_positions_for_ride(ride_id, since):
-    """Latest position per opted-in GOING rider for a ride, newer than `since`.
+    """Latest position per opted-in rider sharing for a ride, newer than `since`.
 
-    Joins rider_ride (status GOING) → rider → opted-in tracking → latest point.
-    Only points tagged with THIS ride (p.ride_id) count, so a rider Going on
-    several rides shows up on each ride's map only when actually tracking it.
+    A rider shows up purely because they opted in (tracking enabled) AND have
+    points tagged to THIS ride (p.ride_id) — i.e. they set up Garmin or started
+    the beacon FROM this ride's map. That per-ride share is the opt-in, so signup
+    status is irrelevant: riders appear whether or not they're marked Going, or
+    even signed up at all. rider_ride is LEFT-joined only to colour the dot by
+    signup status when one happens to exist (NULL → default colour).
     `since` is the display-window cutoff (a datetime). Returns rows with
-    rider_id, name, lat, lng, recorded_at, source, status.
+    rider_id, name, lat, lng, recorded_at, source, status (status may be NULL).
     """
     return _execute("""
         SELECT DISTINCT ON (p.rider_id)
@@ -3582,19 +3585,16 @@ def get_latest_positions_for_ride(ride_id, since):
                p.speed, p.heart_rate, p.power, p.cadence, p.source,
                rr.status
         FROM rider_live_position p
-        JOIN rider_ride rr ON rr.rider_id = p.rider_id
         JOIN rider r ON r.id = p.rider_id
         JOIN rider_live_tracking t ON t.rider_id = p.rider_id
-        WHERE rr.ride_id = %s
-          AND p.ride_id = %s
-          AND rr.status = %s
+        LEFT JOIN rider_ride rr ON rr.rider_id = p.rider_id AND rr.ride_id = %s
+        WHERE p.ride_id = %s
           AND t.enabled = TRUE
           AND p.recorded_at >= %s
         ORDER BY p.rider_id, p.recorded_at DESC
-    -- params: rr.ride_id, p.ride_id (both = ride_id), GOING gate (load-bearing:
-    -- beacon does not check GOING on write, so this read-side filter is what
-    -- keeps non-participant points off the map), recency cutoff.
-    """, (ride_id, ride_id, RideStatus.GOING.value, since)).fetchall()
+    -- params: rr.ride_id (LEFT JOIN, for the status colour), p.ride_id (the ride
+    -- gate — points are tagged to this ride only), recency cutoff.
+    """, (ride_id, ride_id, since)).fetchall()
 
 
 def purge_old_positions(retention_days=7):
