@@ -167,6 +167,26 @@ def test_beacon_accepts_bearer_token_without_session(client, app):
     assert captured['ride_id'] == 5
 
 
+def test_rides_endpoint_token_authed(client, app):
+    rides = [
+        {'id': 5, 'name': 'Mt Hamilton 200K', 'date': '2026-07-04',
+         'distance_km': 200, 'signup_status': 'GOING'},
+        {'id': 6, 'name': 'Coast 300K', 'date': '2026-07-18',
+         'distance_km': 300, 'signup_status': 'INTERESTED'},
+    ]
+    with patch('models.get_rider_upcoming_signups', return_value=rides):
+        resp = client.get('/api/live/rides', headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 200
+    data = resp.get_json()['rides']
+    assert [r['id'] for r in data] == [5, 6]
+    assert data[0]['name'] == 'Mt Hamilton 200K'
+    assert data[0]['signup_status'] == 'GOING'
+
+
+def test_rides_endpoint_requires_auth(client):
+    assert client.get('/api/live/rides').status_code == 401
+
+
 def test_beacon_still_works_with_session_and_no_token(client, app):
     """No regression: the web session path is unchanged."""
     captured = {}

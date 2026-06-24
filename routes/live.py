@@ -468,6 +468,29 @@ def live_positions():
     })
 
 
+@live_bp.route('/api/live/rides')
+@token_or_session_required
+def live_rides():
+    """JSON: the current rider's upcoming rides — for the mobile app's ride picker.
+
+    Auth: web session OR mobile Bearer token. Returns a slim list so the app can
+    choose which ride's live map to open / share on. (The full brevet calendar is
+    a later milestone; this is just enough to make live tracking reachable.)
+    """
+    if not g.rider_id:
+        return jsonify({'error': 'Complete your profile to view rides'}), 403
+    from models import get_rider_upcoming_signups
+    rides = get_rider_upcoming_signups(g.rider_id)
+    out = [{
+        'id': r['id'],
+        'name': (r['name'] or '').strip(),
+        'date': str(r['date']) if r.get('date') else None,
+        'distance_km': r.get('distance_km'),
+        'signup_status': r.get('signup_status'),
+    } for r in rides]
+    return jsonify({'rides': out})
+
+
 @live_bp.route('/live/share')
 @profile_required
 def live_share():
