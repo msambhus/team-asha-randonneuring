@@ -106,7 +106,8 @@
     var body = {
       lat: pos.coords.latitude,
       lng: pos.coords.longitude,
-      accuracy: pos.coords.accuracy
+      accuracy: pos.coords.accuracy,
+      speed: pos.coords.speed   // m/s or null
     };
     fetch('/api/live/beacon', {
       method: 'POST',

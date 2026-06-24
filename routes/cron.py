@@ -697,10 +697,11 @@ def poll_garmin_livetrack():
         return auth_error
 
     from models import (get_enabled_live_tracking, insert_live_position,
-                        purge_old_positions)
+                        purge_old_positions, get_last_position_recorded_at)
     from services.garmin_livetrack import parse_session, fetch_positions
 
     RETENTION_DAYS = 7
+    MIN_GAP_SECONDS = 30   # downsample: keep at most one stored point per 30s
 
     try:
         tracked = get_enabled_live_tracking()
@@ -730,26 +731,30 @@ def poll_garmin_livetrack():
             errors.append({'rider_id': rider_id, 'error': str(e)[:200]})
             continue
 
-        # Insert only the most recent point — the map shows latest-per-rider.
-        latest = None
-        for p in points:
-            if p.get('recorded_at') is None:
+        # Append NEW trackpoints (since the last stored one), downsampled to
+        # at most one per MIN_GAP_SECONDS, so we accumulate a real position
+        # history for elapsed/moving/stopped — not just the latest point.
+        last_at = get_last_position_recorded_at(rider_id)
+        fresh = sorted(
+            (p for p in points if p.get('recorded_at') is not None
+             and (last_at is None or p['recorded_at'] > last_at)),
+            key=lambda p: p['recorded_at'],
+        )
+        kept_at = None
+        rider_inserted = 0
+        for p in fresh:
+            if kept_at is not None and (p['recorded_at'] - kept_at).total_seconds() < MIN_GAP_SECONDS:
                 continue
-            if latest is None or p['recorded_at'] > latest['recorded_at']:
-                latest = p
-        if latest is None:
-            continue
-
-        if insert_live_position(
-            rider_id=rider_id,
-            lat=latest['lat'],
-            lng=latest['lng'],
-            recorded_at=latest['recorded_at'],
-            source='garmin',
-        ):
-            inserted += 1
-        else:
-            errors.append({'rider_id': rider_id, 'error': 'invalid coordinates'})
+            if insert_live_position(
+                rider_id=rider_id,
+                lat=p['lat'], lng=p['lng'],
+                recorded_at=p['recorded_at'], source='garmin',
+                speed=p.get('speed'), heart_rate=p.get('heart_rate'),
+                power=p.get('power'), cadence=p.get('cadence'),
+            ):
+                kept_at = p['recorded_at']
+                rider_inserted += 1
+        inserted += rider_inserted
 
     try:
         purged = purge_old_positions(RETENTION_DAYS)

@@ -87,10 +87,23 @@ def _parse_timestamp(raw):
     return None
 
 
-def _extract_point(raw_point):
-    """Normalize one raw Garmin trackpoint into {lat, lng, recorded_at} or None.
+def _num(value, cast):
+    """Best-effort cast; None on failure."""
+    if value is None:
+        return None
+    try:
+        return cast(value)
+    except (TypeError, ValueError):
+        return None
 
-    Tolerates the several shapes Garmin's JSON has used over time.
+
+def _extract_point(raw_point):
+    """Normalize one raw Garmin trackpoint into a dict or None.
+
+    Returns {lat, lng, recorded_at, speed, heart_rate, power, cadence}; the
+    fitness fields are None when Garmin doesn't include them (common — they
+    depend on paired sensors). Tolerates the several shapes Garmin's JSON has
+    used over time.
     """
     if not isinstance(raw_point, dict):
         return None
@@ -123,7 +136,24 @@ def _extract_point(raw_point):
         or raw_point.get('recorded_at')
     )
 
-    return {'lat': lat, 'lng': lng, 'recorded_at': recorded_at}
+    # Fitness data may sit at the top level or nested under fitnessPointData.
+    fit = raw_point.get('fitnessPointData')
+    fit = fit if isinstance(fit, dict) else {}
+
+    def pick(*keys):
+        for src in (raw_point, fit):
+            for k in keys:
+                if src.get(k) is not None:
+                    return src[k]
+        return None
+
+    return {
+        'lat': lat, 'lng': lng, 'recorded_at': recorded_at,
+        'speed': _num(pick('speed', 'speedMetersPerSecond'), float),
+        'heart_rate': _num(pick('heartRate', 'heartRateBeatsPerMin', 'heart_rate'), int),
+        'power': _num(pick('power', 'powerWatts'), int),
+        'cadence': _num(pick('cadence', 'cadenceCyclesPerMin'), int),
+    }
 
 
 def fetch_positions(token, session_id):
