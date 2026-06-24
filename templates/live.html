@@ -16,9 +16,16 @@
     background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
     padding: 10px 14px; margin-top: 8px; font-size: 0.85rem; color: var(--text-light);
 }
-.rider-marker { position: relative; cursor: pointer; transition: opacity 0.2s; }
+/* Fixed 30×30 box so Mapbox's center anchor lands the PIN on the rider's
+   coordinate. Without an explicit size this block div stretches to the marker
+   container's width, pushing the pin to the left edge and the corner badges to
+   the right edge (and making the dot appear to drift as you zoom). */
+.rider-marker {
+    position: relative; width: 30px; height: 30px;
+    cursor: pointer; transition: opacity 0.2s;
+}
 .rider-marker .pin {
-    width: 30px; height: 30px; border-radius: 50%;
+    width: 30px; height: 30px; box-sizing: border-box; border-radius: 50%;
     border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
     color: #fff; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em;
     display: flex; align-items: center; justify-content: center;
