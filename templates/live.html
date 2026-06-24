@@ -25,6 +25,26 @@
 .live-popup { font-size: 0.85rem; line-height: 1.3; }
 .live-popup .name { font-weight: 600; }
 .live-popup .ago { color: #6b7280; }
+
+#live-riders { margin-top: 16px; display: grid; gap: 12px; }
+.rider-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px;
+}
+.rider-card.stale { opacity: 0.6; }
+.rider-card .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.rider-card .head .nm { font-weight: 700; }
+.rider-card .head .ago { color: var(--text-light); font-size: 0.8rem; }
+.plan-badge { font-size: 0.72rem; font-weight: 700; padding: 3px 9px; border-radius: 20px; }
+.plan-badge.ahead { background: #dcfce7; color: #166534; }
+.plan-badge.behind { background: #fee2e2; color: #991b1b; }
+.plan-badge.on { background: #e0e7ff; color: #3730a3; }
+.tg { margin-top: 10px; }
+.tg .grp-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-light); margin-bottom: 4px; }
+.tg .metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 6px 12px; }
+.metric .v { font-weight: 700; font-size: 0.95rem; }
+.metric .l { font-size: 0.72rem; color: var(--text-light); }
+.after-ride { margin-top: 10px; font-size: 0.75rem; color: var(--text-light); font-style: italic; }
 </style>
 {% endblock %}
 
@@ -50,6 +70,7 @@
     No riders are sharing their location right now. Riders can opt in from
     <a href="{{ url_for('live.live_settings') }}">Live tracking settings</a>.
   </div>
+  <div id="live-riders"></div>
 </div>
 {% endblock %}
 
@@ -135,6 +156,92 @@
       }
     }
 
+    function metric(label, value, unit) {
+      // Build a metric cell with textContent only (no HTML injection).
+      var wrap = document.createElement('div');
+      wrap.className = 'metric';
+      var v = document.createElement('div');
+      v.className = 'v';
+      v.textContent = (value === null || value === undefined || value === '')
+        ? '—' : (unit ? value + unit : '' + value);
+      var l = document.createElement('div');
+      l.className = 'l';
+      l.textContent = label;
+      wrap.appendChild(v); wrap.appendChild(l);
+      return wrap;
+    }
+
+    function group(label, cells) {
+      var g = document.createElement('div');
+      g.className = 'tg';
+      var gl = document.createElement('div');
+      gl.className = 'grp-label';
+      gl.textContent = label;
+      var m = document.createElement('div');
+      m.className = 'metrics';
+      cells.filter(Boolean).forEach(function (c) { m.appendChild(c); });
+      g.appendChild(gl); g.appendChild(m);
+      return g;
+    }
+
+    function renderRiders(positions) {
+      var wrap = document.getElementById('live-riders');
+      wrap.textContent = '';
+      positions.forEach(function (p) {
+        var card = document.createElement('div');
+        card.className = 'rider-card' + (p.stale ? ' stale' : '');
+
+        var head = document.createElement('div');
+        head.className = 'head';
+        var nm = document.createElement('span');
+        nm.className = 'nm'; nm.textContent = p.name || 'Rider';
+        var ago = document.createElement('span');
+        ago.className = 'ago';
+        ago.textContent = p.minutes_ago <= 0 ? 'updated just now' : 'updated ' + p.minutes_ago + ' min ago';
+        head.appendChild(nm); head.appendChild(ago);
+        card.appendChild(head);
+
+        var t = p.telemetry;
+        if (t) {
+          if (t.plan) {
+            var badge = document.createElement('span');
+            badge.className = 'plan-badge ' + t.plan.status;
+            var d = t.plan.delta_min;
+            badge.textContent = t.plan.status === 'on' ? 'On plan'
+              : (t.plan.status === 'ahead' ? d + ' min ahead of plan' : (-d) + ' min behind plan');
+            head.appendChild(badge);
+          }
+          var n = t.now || {};
+          card.appendChild(group('Now', [
+            metric('done', n.distance_mi, ' mi'),
+            metric('speed', n.speed_mph, ' mph'),
+            metric('elapsed', n.elapsed_min, ' min'),
+            metric('moving', n.moving_min, ' min'),
+            metric('stopped', n.stopped_min, ' min'),
+            metric('climb done', n.ascent_done_ft, ' ft'),
+            (n.headwind_done_label ? metric('wind', n.headwind_done_label) : null),
+            (n.heart_rate != null ? metric('HR', n.heart_rate, ' bpm') : null),
+            (n.power != null ? metric('power', n.power, ' W') : null)
+          ]));
+          var r = t.remaining || {};
+          card.appendChild(group('Remaining', [
+            metric('to go', r.distance_mi, ' mi'),
+            metric('climb left', r.ascent_left_ft, ' ft'),
+            metric('time left', r.time_left_min, ' min'),
+            metric('toughness', r.toughness),
+            (r.headwind_ahead_label ? metric('wind ahead', r.headwind_ahead_label) : null)
+          ]));
+          if (t.detailed_after_ride) {
+            var note = document.createElement('div');
+            note.className = 'after-ride';
+            note.textContent = 'Power, pedaling & coasting time available after the ride.';
+            card.appendChild(note);
+          }
+        }
+        wrap.appendChild(card);
+      });
+    }
+
     function poll() {
       fetch('/api/live/positions?ride_id=' + encodeURIComponent(RIDE_ID), { credentials: 'same-origin' })
         .then(function (r) {
@@ -149,6 +256,7 @@
           Object.keys(markers).forEach(function (rid) {
             if (!seen[rid]) { markers[rid].marker.remove(); delete markers[rid]; }
           });
+          renderRiders(positions);
           emptyEl.style.display = positions.length ? 'none' : 'block';
           var now = new Date();
           statusEl.textContent = positions.length

@@ -172,7 +172,9 @@ def test_positions_shape_color_and_stale(client):
     with client.session_transaction() as s:
         s['user_id'] = 1
         s['rider_id'] = 1
-    with patch('routes.live.get_latest_positions_for_ride', return_value=rows):
+    # No route context here — telemetry is exercised in test_live_metrics.py.
+    with patch('routes.live.get_latest_positions_for_ride', return_value=rows), \
+         patch('routes.live._ride_live_context', return_value={'has_route': False}):
         resp = client.get('/api/live/positions?ride_id=5')
     assert resp.status_code == 200
     data = resp.get_json()
@@ -315,12 +317,14 @@ def test_cron_polls_inserts_and_purges(client, app):
         'garmin_session_url': 'https://livetrack.garmin.com/session/s1/token/t1',
         'garmin_session_token': 't1',
     }]
+    # Two points 4 min apart → both kept (history-append, downsample ≥30s).
     points = [
         {'lat': 37.8, 'lng': -122.2, 'recorded_at': _now() - timedelta(minutes=5)},
         {'lat': 37.9, 'lng': -122.3, 'recorded_at': _now() - timedelta(minutes=1)},
     ]
     inserts = []
     with patch('models.get_enabled_live_tracking', return_value=tracked), \
+         patch('models.get_last_position_recorded_at', return_value=None), \
          patch('services.garmin_livetrack.fetch_positions', return_value=points), \
          patch('models.insert_live_position', side_effect=lambda **kw: inserts.append(kw) or True), \
          patch('models.purge_old_positions', return_value=3) as mock_purge:
@@ -329,12 +333,11 @@ def test_cron_polls_inserts_and_purges(client, app):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data['polled'] == 1
-    assert data['inserted'] == 1
+    assert data['inserted'] == 2          # full history appended, not latest-only
     assert data['purged'] == 3
     mock_purge.assert_called_once_with(7)
-    # Only the newest point is inserted.
-    assert len(inserts) == 1
-    assert inserts[0]['recorded_at'] == points[1]['recorded_at']
+    assert len(inserts) == 2
+    assert {i['recorded_at'] for i in inserts} == {p['recorded_at'] for p in points}
     assert inserts[0]['source'] == 'garmin'
 
 
@@ -359,21 +362,20 @@ def test_cron_failsoft_on_fetch_error(client, app):
     mock_insert.assert_not_called()
 
 
-def test_cron_reports_invalid_coordinates(client, app):
+def test_cron_skips_points_that_fail_to_insert(client, app):
     app.config['CRON_SECRET'] = 'testsecret'
     tracked = [{
         'rider_id': 7,
         'garmin_session_url': 'https://livetrack.garmin.com/session/s1/token/t1',
         'garmin_session_token': 't1',
     }]
-    points = [{'lat': 999.0, 'lng': 0.0, 'recorded_at': _now()}]
+    points = [{'lat': 999.0, 'lng': 0.0, 'recorded_at': _now()}]   # bad coords → insert returns False
     with patch('models.get_enabled_live_tracking', return_value=tracked), \
+         patch('models.get_last_position_recorded_at', return_value=None), \
          patch('services.garmin_livetrack.fetch_positions', return_value=points), \
          patch('models.insert_live_position', return_value=False), \
          patch('models.purge_old_positions', return_value=0):
         resp = client.post('/api/cron/poll-garmin-livetrack',
                            headers={'Authorization': 'Bearer testsecret'})
     assert resp.status_code == 200
-    data = resp.get_json()
-    assert data['inserted'] == 0
-    assert any('invalid coordinates' in e['error'] for e in data['errors'])
+    assert resp.get_json()['inserted'] == 0   # failed inserts are not counted

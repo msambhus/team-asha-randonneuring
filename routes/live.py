@@ -13,13 +13,23 @@ from flask import (Blueprint, render_template, request, redirect, url_for,
                    session, jsonify, current_app, flash, abort)
 
 from auth import profile_required, api_login_required
+from cache import cache, CACHE_TIMEOUT
 from models import (get_ride_by_id, get_live_tracking, set_live_tracking,
                     get_latest_positions_for_ride, insert_live_position,
-                    get_rider_upcoming_signups)
+                    get_rider_upcoming_signups, get_ride_plan_stops,
+                    get_positions_for_rider_since)
 from services.garmin_livetrack import parse_session
 from services.rwgps import extract_rwgps_route_id, fetch_route
+from services import live_telemetry as tlm
+from services.weather import (sample_track_points, fetch_route_weather,
+                              calculate_bearing, headwind_component, wind_label)
 
 live_bp = Blueprint('live', __name__)
+
+M_TO_MI = 1 / 1609.344
+KMH_TO_MPH = 0.621371
+MS_TO_MPH = 2.236936
+_MAX_CONTEXT_TRACK_POINTS = 2000
 
 # Display tuning (see plan): show points from the last 24h; grey/fade dots
 # whose latest point is older than 10 minutes.
@@ -142,12 +152,202 @@ def ride_live_map(ride_id):
     )
 
 
+def _build_wind_by_dist(track_points):
+    """Best-effort [{dist_m, headwind_kmh}] using CURRENT wind sampled along the
+    route. Returns None on any failure (headwinds then degrade gracefully)."""
+    try:
+        samples = sample_track_points(track_points)
+        if len(samples) < 2:
+            return None
+        forecasts = fetch_route_weather(samples)
+        if not forecasts or len(forecasts) != len(samples):
+            return None
+        out = []
+        for i, (s, fc) in enumerate(zip(samples, forecasts)):
+            hourly = (fc or {}).get('hourly') or {}
+            times = hourly.get('time') or []
+            ws = hourly.get('wind_speed_10m') or []
+            wd = hourly.get('wind_direction_10m') or []
+            if not times or not ws or not wd:
+                continue
+            offset = (fc or {}).get('utc_offset_seconds') or 0
+            now_local = datetime.now(timezone.utc) + timedelta(seconds=offset)
+            idx, best = 0, None
+            for j, t in enumerate(times):
+                try:
+                    dt = datetime.fromisoformat(t)
+                except ValueError:
+                    continue
+                diff = abs((dt.replace(tzinfo=None) - now_local.replace(tzinfo=None)).total_seconds())
+                if best is None or diff < best:
+                    best, idx = diff, j
+            if idx >= len(ws) or idx >= len(wd):
+                continue   # partial hourly payload — skip this sample
+            nxt = samples[i + 1] if i + 1 < len(samples) else samples[i - 1]
+            bearing = calculate_bearing(s['lat'], s['lng'], nxt['lat'], nxt['lng'])
+            if i + 1 >= len(samples):
+                bearing = (bearing + 180) % 360
+            hw = headwind_component(ws[idx], wd[idx], bearing)
+            out.append({'dist_m': s['distance_m'], 'headwind_kmh': hw})
+        return out or None
+    except Exception:
+        return None
+
+
+@cache.memoize(CACHE_TIMEOUT)
+def _ride_live_context(ride_id):
+    """Per-ride context for telemetry, computed ONCE and cached (~5 min) so the
+    per-poll path never re-fetches RWGPS / weather. Returns a plain dict.
+
+    Keys: track [{lat,lng,dist_m}], cum_ascent_ft[], total_dist_m,
+    total_ascent_ft, plan_stops [{distance_miles,cum_time_min}], wind_by_dist,
+    ride_start_iso, has_route, has_plan.
+    """
+    ride = get_ride_by_id(ride_id)
+    ctx = {'track': [], 'cum_ascent_ft': [], 'total_dist_m': None,
+           'total_ascent_ft': None, 'plan_stops': [], 'wind_by_dist': None,
+           'ride_start_iso': None, 'has_route': False, 'has_plan': False}
+    if not ride:
+        return ctx
+
+    # Ride start = ride date + plan start_time (for elapsed/plan comparison).
+    try:
+        start_t = ride.get('plan_start_time') or ride.get('start_time') or '07:00'
+        hh, mm = str(start_t).split(':')[:2]
+        d = ride['date']
+        if isinstance(d, str):
+            d = date.fromisoformat(d)
+        ctx['ride_start_iso'] = datetime(d.year, d.month, d.day, int(hh), int(mm),
+                                         tzinfo=timezone.utc).isoformat()
+    except Exception:
+        ctx['ride_start_iso'] = None
+
+    # Plan stops for on/behind-plan comparison.
+    try:
+        if ride.get('ride_plan_id'):
+            ctx['plan_stops'] = [
+                {'distance_miles': float(s['distance_miles']),
+                 'cum_time_min': float(s['cum_time_min'])}
+                for s in get_ride_plan_stops(ride['ride_plan_id'])
+                if s.get('distance_miles') is not None and s.get('cum_time_min') is not None
+            ]
+            ctx['has_plan'] = len(ctx['plan_stops']) >= 2
+    except Exception:
+        ctx['plan_stops'] = []
+
+    # Route geometry: track + cumulative ascent (downsampled for the cache).
+    rwgps_url = ride.get('rwgps_url_team') or ride.get('rwgps_url')
+    route_id = extract_rwgps_route_id(rwgps_url)
+    if route_id:
+        try:
+            route = fetch_route(route_id)
+            tps = [tp for tp in (route.get('track_points') or [])
+                   if tp.get('x') is not None and tp.get('y') is not None]
+            if tps:
+                step = max(1, len(tps) // _MAX_CONTEXT_TRACK_POINTS)
+                track, cum_ascent, prev_e, cum = [], [], None, 0.0
+                for tp in tps[::step]:
+                    e_ft = (tp.get('e') or 0) * tlm.METERS_TO_FEET
+                    if prev_e is not None and e_ft > prev_e:
+                        cum += e_ft - prev_e
+                    prev_e = e_ft
+                    track.append({'lat': float(tp['y']), 'lng': float(tp['x']),
+                                  'dist_m': float(tp.get('d') or 0)})
+                    cum_ascent.append(round(cum))
+                ctx['track'] = track
+                ctx['cum_ascent_ft'] = cum_ascent
+                ctx['total_dist_m'] = track[-1]['dist_m'] if track else None
+                ctx['total_ascent_ft'] = cum_ascent[-1] if cum_ascent else None
+                ctx['has_route'] = True
+                ctx['wind_by_dist'] = _build_wind_by_dist(tps)
+        except Exception as exc:  # noqa: BLE001 — telemetry is best-effort
+            current_app.logger.warning('live ctx: route %s failed: %s', route_id, exc)
+    return ctx
+
+
+def _rider_telemetry(row, ctx, now):
+    """Assemble the telemetry block for one rider. Returns dict or None."""
+    if not ctx.get('has_route'):
+        return None
+    lat, lng = float(row['lat']), float(row['lng'])
+    dist_m, idx = tlm.project_to_route(lat, lng, ctx['track'])
+    if dist_m is None:
+        return None
+
+    remaining_m = tlm.remaining_distance_m(ctx['total_dist_m'], dist_m)
+    ascent_done, ascent_left = tlm.ascent_split(ctx['cum_ascent_ft'], idx, ctx['total_ascent_ft'])
+    hw_done, hw_ahead = tlm.headwinds_split(ctx.get('wind_by_dist'), dist_m)
+    tuf = tlm.toughness_remaining(ascent_left, remaining_m)
+
+    history = get_positions_for_rider_since(row['rider_id'], now - timedelta(hours=DISPLAY_WINDOW_HOURS))
+    moving_min, stopped_min = tlm.moving_stopped(history)
+    speed_ms = tlm.latest_speed_ms(history)
+
+    # Elapsed from the ride start when known, else from the first stored point.
+    elapsed_min = None
+    if ctx.get('ride_start_iso'):
+        try:
+            start = datetime.fromisoformat(ctx['ride_start_iso'])
+            elapsed_min = max(0, round((now - start).total_seconds() / 60))
+        except ValueError:
+            elapsed_min = None
+    if elapsed_min is None and history:
+        first = history[0]['recorded_at']
+        if first.tzinfo is None:
+            first = first.replace(tzinfo=timezone.utc)
+        elapsed_min = max(0, round((now - first).total_seconds() / 60))
+
+    dist_mi = dist_m * M_TO_MI
+    remaining_mi = (remaining_m or 0) * M_TO_MI
+
+    # Time-left estimate from the rider's own moving average, else plan pace.
+    time_left_min = None
+    avg_mph = (dist_mi / (moving_min / 60.0)) if moving_min else None
+    if avg_mph and avg_mph > 1:
+        time_left_min = round(remaining_mi / avg_mph * 60)
+
+    delta = tlm.plan_delta(dist_mi, elapsed_min, ctx.get('plan_stops'))
+
+    def mph(kmh):
+        return round(kmh * KMH_TO_MPH, 1) if kmh is not None else None
+
+    return {
+        'now': {
+            'distance_mi': round(dist_mi, 1),
+            'speed_mph': round(speed_ms * MS_TO_MPH, 1) if speed_ms is not None else None,
+            'elapsed_min': elapsed_min,
+            'moving_min': moving_min,
+            'stopped_min': stopped_min,
+            'ascent_done_ft': ascent_done,
+            'headwind_done_mph': mph(hw_done),
+            'headwind_done_label': wind_label(hw_done) if hw_done is not None else None,
+            'heart_rate': row.get('heart_rate'),
+            'power': row.get('power'),
+            'cadence': row.get('cadence'),
+        },
+        'remaining': {
+            'distance_mi': round(remaining_mi, 1),
+            'ascent_left_ft': ascent_left,
+            'headwind_ahead_mph': mph(hw_ahead),
+            'headwind_ahead_label': wind_label(hw_ahead) if hw_ahead is not None else None,
+            'time_left_min': time_left_min,
+            'toughness': tuf,
+        },
+        'plan': ({'delta_min': delta,
+                  'status': 'ahead' if delta > 2 else ('behind' if delta < -2 else 'on')}
+                 if delta is not None else None),
+        'detailed_after_ride': True,   # power / pedaling-vs-coasting come from Strava post-ride
+    }
+
+
 @live_bp.route('/api/live/positions')
 @api_login_required
 def live_positions():
-    """JSON: latest position per opted-in GOING rider for ?ride_id=.
+    """JSON: latest position + live telemetry per opted-in GOING rider for ?ride_id=.
 
-    Club-only: requires a completed profile (session['rider_id']).
+    Club-only: requires a completed profile (session['rider_id']). The heavy
+    route/weather context is cached per ride; only per-rider numbers are
+    recomputed each poll.
     """
     if not session.get('rider_id'):
         return jsonify({'error': 'Complete your profile to view live tracking'}), 403
@@ -160,6 +360,8 @@ def live_positions():
     since = now - timedelta(hours=DISPLAY_WINDOW_HOURS)
     rows = get_latest_positions_for_ride(ride_id, since)
 
+    ctx = _ride_live_context(ride_id) if rows else None
+
     positions = []
     for row in rows:
         recorded_at = row['recorded_at']
@@ -168,6 +370,11 @@ def live_positions():
             recorded_at = recorded_at.replace(tzinfo=timezone.utc)
         minutes_ago = max(0, int((now - recorded_at).total_seconds() // 60))
         status = row['status']
+        telemetry = None
+        try:
+            telemetry = _rider_telemetry(row, ctx, now)
+        except Exception:
+            current_app.logger.exception('live telemetry failed for rider %s', row['rider_id'])
         positions.append({
             'rider_id': row['rider_id'],
             'name': (row['name'] or '').strip(),
@@ -178,6 +385,7 @@ def live_positions():
             'recorded_at': recorded_at.isoformat(),
             'minutes_ago': minutes_ago,
             'stale': minutes_ago > STALE_AFTER_MINUTES,
+            'telemetry': telemetry,
         })
 
     return jsonify({
@@ -219,13 +427,14 @@ def live_beacon():
     lat = data.get('lat')
     lng = data.get('lng')
     accuracy = data.get('accuracy')
+    speed = data.get('speed')   # m/s from the Geolocation API, when available
     if lat is None or lng is None:
         return jsonify({'error': 'lat and lng are required'}), 400
 
     now = datetime.now(timezone.utc)
     ok = insert_live_position(
         rider_id=rider_id,          # session only — client value never trusted
-        lat=lat, lng=lng, accuracy=accuracy,
+        lat=lat, lng=lng, accuracy=accuracy, speed=speed,
         recorded_at=now, source='beacon',
     )
     if not ok:

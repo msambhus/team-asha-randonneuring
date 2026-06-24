@@ -3421,9 +3421,22 @@ def get_enabled_live_tracking():
     """).fetchall()
 
 
-def insert_live_position(rider_id, lat, lng, recorded_at, source, accuracy=None):
+def _coerce_num(value, cast):
+    """Best-effort cast to int/float; None on failure."""
+    if value is None:
+        return None
+    try:
+        return cast(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def insert_live_position(rider_id, lat, lng, recorded_at, source, accuracy=None,
+                         speed=None, heart_rate=None, power=None, cadence=None):
     """Insert one position point. Validates/clamps coordinates.
 
+    Optional telemetry fields (speed m/s, heart_rate bpm, power W, cadence rpm)
+    are stored when the source provides them; bad values are coerced to NULL.
     Returns True on success, False if coordinates are invalid (out of range).
     """
     try:
@@ -3433,25 +3446,50 @@ def insert_live_position(rider_id, lat, lng, recorded_at, source, accuracy=None)
         return False
     if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lng <= 180.0):
         return False
-    if accuracy is not None:
-        try:
-            accuracy = float(accuracy)
-        except (TypeError, ValueError):
-            accuracy = None
+
+    accuracy = _coerce_num(accuracy, float)
+    speed = _coerce_num(speed, float)
+    heart_rate = _coerce_num(heart_rate, int)
+    power = _coerce_num(power, int)
+    cadence = _coerce_num(cadence, int)
 
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         cur.execute("""
             INSERT INTO rider_live_position
-                (rider_id, lat, lng, accuracy, recorded_at, source)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (rider_id, lat, lng, accuracy, recorded_at, source))
+                (rider_id, lat, lng, accuracy, recorded_at, source,
+                 speed, heart_rate, power, cadence)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (rider_id, lat, lng, accuracy, recorded_at, source,
+              speed, heart_rate, power, cadence))
         conn.commit()
         return True
     except Exception:
         conn.rollback()
         return False
+
+
+def get_positions_for_rider_since(rider_id, since):
+    """Ordered position history for a rider since `since` (oldest → newest).
+
+    Used to derive elapsed/moving/stopped time and recent speed.
+    """
+    return _execute("""
+        SELECT lat, lng, accuracy, recorded_at, source, speed, heart_rate, power, cadence
+        FROM rider_live_position
+        WHERE rider_id = %s AND recorded_at >= %s
+        ORDER BY recorded_at ASC
+    """, (rider_id, since)).fetchall()
+
+
+def get_last_position_recorded_at(rider_id):
+    """Most recent stored position timestamp for a rider, or None."""
+    row = _execute("""
+        SELECT MAX(recorded_at) AS last_at
+        FROM rider_live_position WHERE rider_id = %s
+    """, (rider_id,)).fetchone()
+    return row['last_at'] if row else None
 
 
 def get_latest_positions_for_ride(ride_id, since):
@@ -3466,6 +3504,7 @@ def get_latest_positions_for_ride(ride_id, since):
                p.rider_id,
                r.first_name || ' ' || COALESCE(r.last_name, '') AS name,
                p.lat, p.lng, p.recorded_at,
+               p.speed, p.heart_rate, p.power, p.cadence,
                rr.status
         FROM rider_live_position p
         JOIN rider_ride rr ON rr.rider_id = p.rider_id
