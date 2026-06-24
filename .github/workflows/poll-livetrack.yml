@@ -1,11 +1,13 @@
 name: Poll Garmin LiveTrack
 
 on:
-  schedule:
-    # Aspirational ~3-minute cadence. NOTE: GitHub Actions cron is best-effort
-    # and in practice has a ~5-minute floor and can be delayed under load — this
-    # is fine here (inserts are idempotent, the map shows latest-per-rider).
-    - cron: '*/3 * * * *'
+  # Polling now runs on Railway (worker/poll_loop.py) at ~60s — see
+  # docs/railway-poller.md. GitHub Actions' scheduled cron was throttled to
+  # ~45 min in practice, far too slow for live tracking, so the schedule is
+  # disabled. The manual trigger stays as a fallback if Railway is ever down.
+  # To revert to GitHub-only polling, uncomment the schedule block below.
+  # schedule:
+  #   - cron: '*/3 * * * *'
 
   workflow_dispatch:
 
