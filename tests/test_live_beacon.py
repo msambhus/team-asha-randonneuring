@@ -63,13 +63,37 @@ def test_beacon_happy_path_inserts_beacon_source(client):
     with patch('routes.live.get_live_tracking', return_value={'enabled': True}), \
          patch('routes.live.insert_live_position', side_effect=_insert):
         resp = client.post('/api/live/beacon',
-                           json={'lat': 37.8044, 'lng': -122.2712, 'accuracy': 4.5})
+                           json={'ride_id': 5, 'lat': 37.8044, 'lng': -122.2712, 'accuracy': 4.5})
     assert resp.status_code == 200
     assert resp.get_json()['ok'] is True
     assert captured['rider_id'] == 7
     assert captured['source'] == 'beacon'
     assert captured['lat'] == 37.8044
     assert captured['accuracy'] == 4.5
+    assert captured['ride_id'] == 5      # beacon points are tagged to the ride
+
+
+def test_beacon_requires_a_ride(client):
+    """A beacon with no ride (and no active Garmin ride) can't be placed on a map."""
+    _login(client)
+    with patch('routes.live.get_live_tracking', return_value={'enabled': True}), \
+         patch('routes.live.insert_live_position') as mock_insert:
+        resp = client.post('/api/live/beacon', json={'lat': 37.8, 'lng': -122.2})
+    assert resp.status_code == 400
+    mock_insert.assert_not_called()
+
+
+def test_beacon_falls_back_to_active_ride(client):
+    """Without an explicit ride_id, the beacon uses the rider's active Garmin ride."""
+    captured = {}
+    _login(client, rider_id=7)
+    with patch('routes.live.get_live_tracking',
+               return_value={'enabled': True, 'active_ride_id': 42}), \
+         patch('routes.live.insert_live_position',
+               side_effect=lambda **kw: captured.update(kw) or True):
+        resp = client.post('/api/live/beacon', json={'lat': 37.8, 'lng': -122.2})
+    assert resp.status_code == 200
+    assert captured['ride_id'] == 42
 
 
 def test_beacon_ignores_client_supplied_rider_id(client):
@@ -80,7 +104,7 @@ def test_beacon_ignores_client_supplied_rider_id(client):
          patch('routes.live.insert_live_position',
                side_effect=lambda **kw: captured.update(kw) or True):
         resp = client.post('/api/live/beacon',
-                           json={'lat': 37.8, 'lng': -122.2, 'rider_id': 999})
+                           json={'ride_id': 5, 'lat': 37.8, 'lng': -122.2, 'rider_id': 999})
     assert resp.status_code == 200
     assert captured['rider_id'] == 7   # session rider, NOT 999
 
@@ -95,7 +119,7 @@ def test_hub_renders_actions(client):
     assert resp.status_code == 200
     html = resp.data.decode()
     assert 'Share from this phone' in html
-    assert 'Set up Garmin LiveTrack' in html
+    assert 'Live tracking settings' in html
     assert '/live/share' in html
     assert '/live/settings' in html
 
@@ -169,15 +193,14 @@ def test_sharing_toggle_requires_profile(client):
 def test_sharing_toggle_enables_preserving_garmin(client):
     captured = {}
     _login(client, rider_id=7)
-    existing = {'enabled': False, 'garmin_session_url': 'u', 'garmin_session_token': 't'}
-    with patch('routes.live.get_live_tracking', return_value=existing), \
-         patch('routes.live.set_live_tracking',
-               side_effect=lambda rid, en, url, tok: captured.update(rid=rid, en=en, url=url, tok=tok) or True):
+    # set_live_tracking_enabled only touches the enabled flag — the per-ride
+    # Garmin link/active ride are preserved by construction.
+    with patch('routes.live.set_live_tracking_enabled',
+               side_effect=lambda rid, en: captured.update(rid=rid, en=en) or True):
         resp = client.post('/api/live/sharing', json={'enabled': True})
     assert resp.status_code == 200
     assert resp.get_json()['enabled'] is True
     assert captured['rid'] == 7 and captured['en'] is True
-    assert captured['url'] == 'u' and captured['tok'] == 't'   # Garmin session preserved
 
 
 def test_share_page_requires_profile(client):
@@ -187,21 +210,20 @@ def test_share_page_requires_profile(client):
     assert resp.status_code in (301, 302)
 
 
-# ── /live/settings beacon-only opt-in (no Garmin link required) ────────────
+# ── /live/settings master on/off (Garmin link is now per-ride) ─────────────
 
-def test_settings_can_enable_without_garmin_link(client):
+def test_settings_toggles_master_enable(client):
     captured = {}
 
-    def _set(rider_id, enabled, url, token):
-        captured.update(rider_id=rider_id, enabled=enabled, url=url, token=token)
+    def _set(rider_id, enabled):
+        captured.update(rider_id=rider_id, enabled=enabled)
         return True
 
     _login(client, rider_id=7)
-    with patch('routes.live.set_live_tracking', side_effect=_set), \
+    with patch('routes.live.set_live_tracking_enabled', side_effect=_set), \
          patch('routes.live.get_live_tracking', return_value=None):
         resp = client.post('/live/settings', data={'enabled': 'on'},
                            follow_redirects=False)
     assert resp.status_code in (301, 302)
+    assert captured['rider_id'] == 7
     assert captured['enabled'] is True
-    assert captured['url'] is None
-    assert captured['token'] is None

@@ -71,6 +71,7 @@ def test_cron_appends_downsampled_history(client, app):
         'rider_id': 7,
         'garmin_session_url': 'https://livetrack.garmin.com/session/s1/token/t1',
         'garmin_session_token': 't1',
+        'active_ride_id': 5,
     }]
     base = _now() - timedelta(minutes=10)
     points = [
@@ -99,7 +100,7 @@ def test_cron_skips_already_stored_points(client, app):
     app.config['CRON_SECRET'] = 'testsecret'
     tracked = [{'rider_id': 7,
                 'garmin_session_url': 'https://livetrack.garmin.com/session/s1/token/t1',
-                'garmin_session_token': 't1'}]
+                'garmin_session_token': 't1', 'active_ride_id': 5}]
     base = _now() - timedelta(minutes=10)
     points = [
         {'lat': 37.0, 'lng': -122.0, 'recorded_at': base},
@@ -125,10 +126,12 @@ def test_beacon_captures_speed(client):
     _login(client, rider_id=7)
     with patch('routes.live.get_live_tracking', return_value={'enabled': True}), \
          patch('routes.live.insert_live_position', side_effect=lambda **kw: captured.update(kw) or True):
-        resp = client.post('/api/live/beacon', json={'lat': 37.8, 'lng': -122.2, 'speed': 6.1})
+        resp = client.post('/api/live/beacon',
+                           json={'ride_id': 5, 'lat': 37.8, 'lng': -122.2, 'speed': 6.1})
     assert resp.status_code == 200
     assert captured['speed'] == 6.1
     assert captured['source'] == 'beacon'
+    assert captured['ride_id'] == 5
 
 
 # ── /api/live/positions telemetry block ────────────────────────────────────

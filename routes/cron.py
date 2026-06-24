@@ -714,6 +714,7 @@ def poll_garmin_livetrack():
     errors = []
     for row in tracked:
         rider_id = row['rider_id']
+        ride_id = row.get('active_ride_id')
         token = row.get('garmin_session_token')
         session_url = row.get('garmin_session_url')
         # Prefer the stored token; re-derive session_id from the saved URL.
@@ -721,6 +722,10 @@ def poll_garmin_livetrack():
         session_id = parsed['session_id'] if parsed else None
         if not token or not session_id:
             errors.append({'rider_id': rider_id, 'error': 'missing token/session_id'})
+            continue
+        if not ride_id:
+            # No ride to attribute points to — nothing would show on a map.
+            errors.append({'rider_id': rider_id, 'error': 'no active ride'})
             continue
 
         polled += 1
@@ -731,10 +736,10 @@ def poll_garmin_livetrack():
             errors.append({'rider_id': rider_id, 'error': str(e)[:200]})
             continue
 
-        # Append NEW trackpoints (since the last stored one), downsampled to
-        # at most one per MIN_GAP_SECONDS, so we accumulate a real position
-        # history for elapsed/moving/stopped — not just the latest point.
-        last_at = get_last_position_recorded_at(rider_id)
+        # Append NEW trackpoints (since the last stored one FOR THIS RIDE),
+        # downsampled to at most one per MIN_GAP_SECONDS, so we accumulate a real
+        # position history for elapsed/moving/stopped — not just the latest point.
+        last_at = get_last_position_recorded_at(rider_id, ride_id)
         fresh = sorted(
             (p for p in points if p.get('recorded_at') is not None
              and (last_at is None or p['recorded_at'] > last_at)),
@@ -751,6 +756,7 @@ def poll_garmin_livetrack():
                 recorded_at=p['recorded_at'], source='garmin',
                 speed=p.get('speed'), heart_rate=p.get('heart_rate'),
                 power=p.get('power'), cadence=p.get('cadence'),
+                ride_id=ride_id,
             ):
                 kept_at = p['recorded_at']
                 rider_inserted += 1
