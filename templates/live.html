@@ -67,6 +67,8 @@
 .share-state { font-size: 0.78rem; color: var(--text-light); }
 .share-state.live { color: #166534; font-weight: 600; }
 .lowpower { display: inline-flex; align-items: center; gap: 5px; font-size: 0.78rem; color: var(--text-light); cursor: pointer; }
+.garmin-link { font-size: 0.78rem; color: #2563eb; text-decoration: none; }
+.garmin-link:hover { text-decoration: underline; }
 .share-note { font-size: 0.72rem; color: var(--text-light); margin-top: 6px; }
 </style>
 {% endblock %}
@@ -87,6 +89,7 @@
         <span id="share-btn-label">Share my location</span>
       </button>
       <label class="lowpower"><input type="checkbox" id="share-lowpower"> Low power</label>
+      <a class="garmin-link" href="{{ url_for('live.live_settings') }}">Set up Garmin</a>
       <div id="share-state" class="share-state"></div>
     </div>
   </div>
