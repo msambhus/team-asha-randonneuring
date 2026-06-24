@@ -44,18 +44,10 @@
   <div class="share-card">
     <h1>Share My Location</h1>
 
-    {% if not opted_in %}
     <p class="help">
-      Live tracking is currently off. Turn it on to share your location with the
-      club while you ride. Your location history is deleted after 7 days, and only
-      logged-in club members can see the live map.
-    </p>
-    <a class="btn-link" href="{{ url_for('live.live_settings') }}">Enable live tracking in settings</a>
-    {% else %}
-    <p class="help">
-      Tap start to share your live location with the club. <strong>Keep this page open
-      with your screen on</strong> — phone browsers can't share location in the
-      background. For hands-off tracking, set up
+      Tap start to share your live location with the club — no setup needed.
+      <strong>Keep this page open with your screen on</strong> — phone browsers
+      can't share location in the background. For hands-off tracking, set up
       <a href="{{ url_for('live.live_settings') }}">Garmin LiveTrack</a> instead.
       Stop any time — your location history is deleted after 7 days.
     </p>
@@ -73,13 +65,11 @@
     <div id="share-status" class="share-status"><span class="dot"></span><span id="share-status-text">Not sharing</span></div>
     <div id="share-meta" class="share-meta"></div>
     <div id="share-err" class="share-err"></div>
-    {% endif %}
   </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
-{% if opted_in %}
 <script>
 (function () {
   var POST_INTERVAL_MS = 25000;   // throttle: at most one beacon per 25s
@@ -142,11 +132,7 @@
       : 'Location error: ' + err.message;
   }
 
-  function start() {
-    if (!('geolocation' in navigator)) { errEl.textContent = 'Geolocation is not supported on this device.'; return; }
-    var lowPower = document.getElementById('lowpower');
-    lowPower = lowPower && lowPower.checked;
-    POST_INTERVAL_MS = lowPower ? 60000 : 25000;
+  function beginWatch(lowPower) {
     sharing = true; lastSent = 0;
     toggle.className = 'big-btn stop'; label.textContent = 'Stop sharing';
     statusEl.className = 'share-status live'; statusText.textContent = 'Sharing your location…';
@@ -155,6 +141,25 @@
       enableHighAccuracy: !lowPower,
       maximumAge: lowPower ? 30000 : 10000,
       timeout: 20000
+    });
+  }
+
+  function start() {
+    if (!('geolocation' in navigator)) { errEl.textContent = 'Geolocation is not supported on this device.'; return; }
+    var lp = document.getElementById('lowpower');
+    var lowPower = lp && lp.checked;
+    POST_INTERVAL_MS = lowPower ? 60000 : 25000;
+    statusEl.className = 'share-status live'; statusText.textContent = 'Starting…';
+    // Opt in (one tap = consent) before sending — no detour to the settings page.
+    fetch('/api/live/sharing', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin', body: JSON.stringify({ enabled: true })
+    }).then(function (r) {
+      if (!r.ok) { throw new Error('status ' + r.status); }
+      beginWatch(lowPower);
+    }).catch(function (e) {
+      errEl.textContent = 'Could not start sharing (' + e.message + ').';
+      statusEl.className = 'share-status'; statusText.textContent = 'Not sharing';
     });
   }
 
@@ -170,5 +175,4 @@
   window.addEventListener('pagehide', function () { if (sharing) { releaseWakeLock(); } });
 })();
 </script>
-{% endif %}
 {% endblock %}

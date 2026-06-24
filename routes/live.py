@@ -443,6 +443,26 @@ def live_share():
     return render_template('live_share.html', opted_in=opted_in)
 
 
+@live_bp.route('/api/live/sharing', methods=['POST'])
+@api_login_required
+def live_sharing_toggle():
+    """Turn the current rider's live tracking on/off (the opt-in flag).
+
+    Lets the rider start sharing from the beacon UI in one tap — no detour to the
+    Garmin settings page. Preserves any registered Garmin session. The act of
+    tapping "Start sharing" (with the on-page privacy note) is the consent.
+    """
+    rider_id = session.get('rider_id')
+    if not rider_id:
+        return jsonify({'error': 'Complete your profile to share your location'}), 403
+    enabled = bool((request.get_json(silent=True) or {}).get('enabled'))
+    existing = get_live_tracking(rider_id)
+    url = existing.get('garmin_session_url') if existing else None
+    token = existing.get('garmin_session_token') if existing else None
+    ok = set_live_tracking(rider_id, enabled, url, token)
+    return jsonify({'ok': ok, 'enabled': enabled})
+
+
 @live_bp.route('/api/live/beacon', methods=['POST'])
 @api_login_required
 def live_beacon():

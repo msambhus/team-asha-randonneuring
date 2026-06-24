@@ -140,14 +140,44 @@ def test_share_page_shows_controls_when_opted_in(client):
     assert '/api/live/beacon' in html   # the beacon JS is wired up
 
 
-def test_share_page_prompts_opt_in_when_off(client):
+def test_share_page_always_shows_controls(client):
+    """No opt-in detour: /live/share shows Start even when tracking is off."""
     _login(client)
     with patch('routes.live.get_live_tracking', return_value=None):
         resp = client.get('/live/share')
     assert resp.status_code == 200
     html = resp.data.decode()
-    assert 'Enable live tracking in settings' in html
-    assert 'Start sharing' not in html
+    assert 'Start sharing' in html
+    assert '/api/live/sharing' in html              # Start auto-enables
+    assert 'Enable live tracking in settings' not in html
+
+
+# ── POST /api/live/sharing (one-tap opt-in toggle) ─────────────────────────
+
+def test_sharing_toggle_requires_login(client):
+    resp = client.post('/api/live/sharing', json={'enabled': True})
+    assert resp.status_code == 401
+
+
+def test_sharing_toggle_requires_profile(client):
+    with client.session_transaction() as s:
+        s['user_id'] = 1   # no rider_id
+    resp = client.post('/api/live/sharing', json={'enabled': True})
+    assert resp.status_code == 403
+
+
+def test_sharing_toggle_enables_preserving_garmin(client):
+    captured = {}
+    _login(client, rider_id=7)
+    existing = {'enabled': False, 'garmin_session_url': 'u', 'garmin_session_token': 't'}
+    with patch('routes.live.get_live_tracking', return_value=existing), \
+         patch('routes.live.set_live_tracking',
+               side_effect=lambda rid, en, url, tok: captured.update(rid=rid, en=en, url=url, tok=tok) or True):
+        resp = client.post('/api/live/sharing', json={'enabled': True})
+    assert resp.status_code == 200
+    assert resp.get_json()['enabled'] is True
+    assert captured['rid'] == 7 and captured['en'] is True
+    assert captured['url'] == 'u' and captured['tok'] == 't'   # Garmin session preserved
 
 
 def test_share_page_requires_profile(client):
