@@ -321,8 +321,10 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'Live Map' in html
     assert 'live-map' in html
     assert 'ROUTE_POLYLINE = null' in html   # no RWGPS route on this ride
+    # Two ways to appear on the map: Garmin (screen-off) + phone beacon (screen-on)
+    assert 'Garmin LiveTrack' in html
+    assert 'Share from this phone' in html
     assert 'Share my location' in html       # beacon Start control on the map
-    assert 'Track this ride with Garmin' in html   # per-ride Garmin panel on the map
     assert '/ride/5/live/garmin' in html     # form posts to the per-ride link endpoint
 
 
