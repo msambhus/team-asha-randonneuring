@@ -167,18 +167,59 @@ def test_positions_includes_telemetry(client):
     assert 'status' in (t['plan'] or {})
 
 
-def test_positions_telemetry_null_without_route(client):
+def test_positions_without_route_still_shows_source_metrics(client):
     _login(client)
     row = {'rider_id': 7, 'name': 'R', 'lat': 37.0, 'lng': -122.0,
            'recorded_at': _now(), 'status': 'GOING',
-           'speed': None, 'heart_rate': None, 'power': None, 'cadence': None}
+           'speed': 5.0, 'heart_rate': None, 'power': None, 'cadence': None}
     no_route_ctx = dict(_FAKE_CTX, has_route=False)
     with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
          patch('routes.live._ride_live_context', return_value=no_route_ctx), \
          patch('routes.live.get_positions_for_rider_since', return_value=[]):
         resp = client.get('/api/live/positions?ride_id=5')
     assert resp.status_code == 200
-    assert resp.get_json()['positions'][0]['telemetry'] is None
+    t = resp.get_json()['positions'][0]['telemetry']
+    assert t['on_route'] is None          # no route to compare against
+    assert t['remaining'] is None          # route-relative metrics omitted
+    assert t['now']['speed_mph'] is not None
+    assert t['now']['activity'] == 'cycling'   # 5 m/s
+
+
+def test_positions_off_route_suppresses_route_metrics(client):
+    """A rider far from the route gets on_route=False and NO bogus mileage."""
+    _login(client)
+    # _FAKE_CTX track is around lat 37.0; put the rider ~22 km north.
+    row = {'rider_id': 7, 'name': 'Off Route', 'lat': 37.2, 'lng': -121.99,
+           'recorded_at': _now(), 'status': 'GOING',
+           'speed': 0.0, 'heart_rate': None, 'power': None, 'cadence': None}
+    with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
+         patch('routes.live._ride_live_context', return_value=_FAKE_CTX), \
+         patch('routes.live.get_positions_for_rider_since', return_value=[]):
+        resp = client.get('/api/live/positions?ride_id=5')
+    assert resp.status_code == 200
+    t = resp.get_json()['positions'][0]['telemetry']
+    assert t['on_route'] is False
+    assert t['remaining'] is None
+    assert 'distance_mi' not in t['now']      # no snapped mileage
+    assert t['now']['activity'] == 'paused'
+
+
+def test_positions_future_ride_elapsed_is_none(client):
+    """For a ride that hasn't started, elapsed (and plan) are not computed."""
+    _login(client)
+    future = dict(_FAKE_CTX,
+                  ride_start_iso=(_now() + timedelta(days=3)).isoformat())
+    row = {'rider_id': 7, 'name': 'R', 'lat': 37.0, 'lng': -121.99,
+           'recorded_at': _now(), 'status': 'GOING',
+           'speed': None, 'heart_rate': None, 'power': None, 'cadence': None}
+    with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
+         patch('routes.live._ride_live_context', return_value=future), \
+         patch('routes.live.get_positions_for_rider_since', return_value=[]):
+        resp = client.get('/api/live/positions?ride_id=5')
+    assert resp.status_code == 200
+    t = resp.get_json()['positions'][0]['telemetry']
+    assert t['now']['elapsed_min'] is None
+    assert t['plan'] is None        # plan delta needs elapsed
 
 
 def _telemetry_with_start(client, ride_start_dt):

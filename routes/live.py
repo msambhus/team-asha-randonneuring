@@ -142,6 +142,8 @@ def ride_live_map(ride_id):
 
     mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
     route_polyline = _build_route_polyline(ride)
+    tracking = get_live_tracking(session['rider_id'])
+    opted_in = bool(tracking and tracking.get('enabled'))
 
     return render_template(
         'live.html',
@@ -149,6 +151,7 @@ def ride_live_map(ride_id):
         mapbox_token=mapbox_token,
         route_polyline=route_polyline,
         stale_after_minutes=STALE_AFTER_MINUTES,
+        opted_in=opted_in,
     )
 
 
@@ -266,41 +269,68 @@ def _ride_live_context(ride_id):
 
 
 def _rider_telemetry(row, ctx, now):
-    """Assemble the telemetry block for one rider. Returns dict or None."""
-    if not ctx.get('has_route'):
-        return None
+    """Assemble the telemetry block for one rider.
+
+    Source-agnostic fields (speed, activity, moving/stopped, elapsed, HR/power)
+    are always included. Route-relative fields (distance done/left, ascent,
+    headwinds, toughness, plan delta) are only included when the rider is
+    actually ON the route — otherwise `on_route` is False and they are omitted
+    so we never report a bogus mileage from snapping to the nearest line.
+    """
     lat, lng = float(row['lat']), float(row['lng'])
-    dist_m, idx = tlm.project_to_route(lat, lng, ctx['track'])
-    if dist_m is None:
-        return None
+
+    history = get_positions_for_rider_since(
+        row['rider_id'], now - timedelta(hours=DISPLAY_WINDOW_HOURS))
+    moving_min, stopped_min = tlm.moving_stopped(history)
+    speed_ms = tlm.latest_speed_ms(history)
+    if speed_ms is None and row.get('speed') is not None:
+        try:
+            speed_ms = float(row['speed'])
+        except (TypeError, ValueError):
+            speed_ms = None
+
+    # Elapsed is only meaningful once the ride has actually started.
+    elapsed_min = None
+    start = None
+    if ctx.get('ride_start_iso'):
+        try:
+            start = datetime.fromisoformat(ctx['ride_start_iso'])
+        except ValueError:
+            start = None
+    if start is not None and start <= now:
+        elapsed_min = round((now - start).total_seconds() / 60)
+
+    now_block = {
+        'speed_mph': round(speed_ms * MS_TO_MPH, 1) if speed_ms is not None else None,
+        'activity': tlm.activity_from_speed(speed_ms),
+        'elapsed_min': elapsed_min,
+        'moving_min': moving_min,
+        'stopped_min': stopped_min,
+        'heart_rate': row.get('heart_rate'),
+        'power': row.get('power'),
+        'cadence': row.get('cadence'),
+    }
+    base = {'on_route': None, 'now': now_block, 'remaining': None,
+            'plan': None, 'detailed_after_ride': True}
+
+    if not ctx.get('has_route'):
+        return base
+
+    dist_m, idx, off_by_m = tlm.project_to_route(lat, lng, ctx['track'])
+    on_route = (dist_m is not None and off_by_m is not None
+                and off_by_m <= tlm.ON_ROUTE_MAX_M)
+    if not on_route:
+        base['on_route'] = False
+        return base
 
     remaining_m = tlm.remaining_distance_m(ctx['total_dist_m'], dist_m)
     ascent_done, ascent_left = tlm.ascent_split(ctx['cum_ascent_ft'], idx, ctx['total_ascent_ft'])
     hw_done, hw_ahead = tlm.headwinds_split(ctx.get('wind_by_dist'), dist_m)
     tuf = tlm.toughness_remaining(ascent_left, remaining_m)
-
-    history = get_positions_for_rider_since(row['rider_id'], now - timedelta(hours=DISPLAY_WINDOW_HOURS))
-    moving_min, stopped_min = tlm.moving_stopped(history)
-    speed_ms = tlm.latest_speed_ms(history)
-
-    # Elapsed from the ride start when known, else from the first stored point.
-    elapsed_min = None
-    if ctx.get('ride_start_iso'):
-        try:
-            start = datetime.fromisoformat(ctx['ride_start_iso'])
-            elapsed_min = max(0, round((now - start).total_seconds() / 60))
-        except ValueError:
-            elapsed_min = None
-    if elapsed_min is None and history:
-        first = history[0]['recorded_at']
-        if first.tzinfo is None:
-            first = first.replace(tzinfo=timezone.utc)
-        elapsed_min = max(0, round((now - first).total_seconds() / 60))
-
     dist_mi = dist_m * M_TO_MI
     remaining_mi = (remaining_m or 0) * M_TO_MI
 
-    # Time-left estimate from the rider's own moving average, else plan pace.
+    # Time-left estimate from the rider's own moving average.
     time_left_min = None
     avg_mph = (dist_mi / (moving_min / 60.0)) if moving_min else None
     if avg_mph and avg_mph > 1:
@@ -311,20 +341,14 @@ def _rider_telemetry(row, ctx, now):
     def mph(kmh):
         return round(kmh * KMH_TO_MPH, 1) if kmh is not None else None
 
+    now_block['distance_mi'] = round(dist_mi, 1)
+    now_block['ascent_done_ft'] = ascent_done
+    now_block['headwind_done_mph'] = mph(hw_done)
+    now_block['headwind_done_label'] = wind_label(hw_done) if hw_done is not None else None
+
     return {
-        'now': {
-            'distance_mi': round(dist_mi, 1),
-            'speed_mph': round(speed_ms * MS_TO_MPH, 1) if speed_ms is not None else None,
-            'elapsed_min': elapsed_min,
-            'moving_min': moving_min,
-            'stopped_min': stopped_min,
-            'ascent_done_ft': ascent_done,
-            'headwind_done_mph': mph(hw_done),
-            'headwind_done_label': wind_label(hw_done) if hw_done is not None else None,
-            'heart_rate': row.get('heart_rate'),
-            'power': row.get('power'),
-            'cadence': row.get('cadence'),
-        },
+        'on_route': True,
+        'now': now_block,
         'remaining': {
             'distance_mi': round(remaining_mi, 1),
             'ascent_left_ft': ascent_left,

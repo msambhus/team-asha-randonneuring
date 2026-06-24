@@ -16,12 +16,20 @@
     background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
     padding: 10px 14px; margin-top: 8px; font-size: 0.85rem; color: var(--text-light);
 }
-.rider-dot {
-    width: 16px; height: 16px; border-radius: 50%;
-    border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.25);
-    cursor: pointer; transition: opacity 0.2s;
+.rider-marker { position: relative; cursor: pointer; transition: opacity 0.2s; }
+.rider-marker .pin {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    color: #fff; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em;
+    display: flex; align-items: center; justify-content: center;
 }
-.rider-dot.stale { opacity: 0.4; filter: grayscale(0.8); }
+.rider-marker .act {
+    position: absolute; top: -6px; right: -6px;
+    width: 16px; height: 16px; border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    font-size: 10px; line-height: 16px; text-align: center;
+}
+.rider-marker.stale { opacity: 0.45; filter: grayscale(0.7); }
 .live-popup { font-size: 0.85rem; line-height: 1.3; }
 .live-popup .name { font-weight: 600; }
 .live-popup .ago { color: #6b7280; }
@@ -45,6 +53,19 @@
 .metric .v { font-weight: 700; font-size: 0.95rem; }
 .metric .l { font-size: 0.72rem; color: var(--text-light); }
 .after-ride { margin-top: 10px; font-size: 0.75rem; color: var(--text-light); font-style: italic; }
+
+.share-control { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.share-btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px;
+    border: none; border-radius: 8px; font-weight: 600; font-size: 0.85rem;
+    color: #fff; cursor: pointer;
+}
+.share-btn.start { background: #16a34a; }
+.share-btn.start:hover { background: #15803d; }
+.share-btn.stop { background: #dc2626; }
+.share-btn.stop:hover { background: #b91c1c; }
+.share-state { font-size: 0.78rem; color: var(--text-light); }
+.share-state.live { color: #166534; font-weight: 600; }
 </style>
 {% endblock %}
 
@@ -55,14 +76,21 @@
       <h1>Live Map</h1>
       <div class="live-sub">{{ ride.name | clean_name }}{% if ride.date %} &middot; {{ ride.date }}{% endif %}</div>
     </div>
-    <a href="{{ url_for('live.live_share') }}"
-       style="display:inline-flex;align-items:center;gap:6px;padding:9px 16px;background:#16a34a;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">
-      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
-      </svg>
-      Share my location
-    </a>
+    <div class="share-control">
+      {% if opted_in %}
+      <button id="share-btn" class="share-btn start">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+        </svg>
+        <span id="share-btn-label">Share my location</span>
+      </button>
+      <div id="share-state" class="share-state"></div>
+      {% else %}
+      <a class="share-btn start" href="{{ url_for('live.live_settings') }}"
+         style="text-decoration:none;">Enable sharing</a>
+      {% endif %}
+    </div>
   </div>
   <div id="live-map"></div>
   <div id="live-status" class="live-status"></div>
@@ -138,18 +166,51 @@
       return wrap;
     }
 
+    var ACTIVITY_ICON = { paused: '⏸', walking: '🚶', cycling: '🚴', driving: '🚗' };
+
+    function initials(name) {
+      var parts = (name || '').trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return '?';
+      if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+
+    function applyMarker(el, p) {
+      // Mutate the marker element in place (Mapbox keeps tracking the same node).
+      el.className = 'rider-marker' + (p.stale ? ' stale' : '');
+      var pin = el.querySelector('.pin');
+      pin.style.background = p.color;
+      pin.textContent = initials(p.name);           // textContent — no HTML injection
+      var oldBadge = el.querySelector('.act');
+      if (oldBadge) { oldBadge.remove(); }
+      var act = p.telemetry && p.telemetry.now && p.telemetry.now.activity;
+      if (act && ACTIVITY_ICON[act]) {
+        var badge = document.createElement('div');
+        badge.className = 'act';
+        badge.textContent = ACTIVITY_ICON[act];
+        badge.title = act;
+        el.appendChild(badge);
+      }
+    }
+
+    function buildMarkerEl(p) {
+      var el = document.createElement('div');
+      var pin = document.createElement('div');
+      pin.className = 'pin';
+      el.appendChild(pin);
+      applyMarker(el, p);
+      return el;
+    }
+
     function upsertMarker(p) {
       var existing = markers[p.rider_id];
       if (existing) {
         existing.marker.setLngLat([p.lng, p.lat]);
-        existing.el.style.background = p.color;
-        existing.el.className = 'rider-dot' + (p.stale ? ' stale' : '');
+        applyMarker(existing.el, p);
         existing.marker.getPopup().setDOMContent(buildPopup(p));
       } else {
-        var el = document.createElement('div');
-        el.className = 'rider-dot' + (p.stale ? ' stale' : '');
-        el.style.background = p.color;
-        var popup = new mapboxgl.Popup({ offset: 14, closeButton: false })
+        var el = buildMarkerEl(p);
+        var popup = new mapboxgl.Popup({ offset: 18, closeButton: false })
           .setDOMContent(buildPopup(p));
         var marker = new mapboxgl.Marker(el).setLngLat([p.lng, p.lat]).setPopup(popup).addTo(map);
         markers[p.rider_id] = { marker: marker, el: el };
@@ -203,7 +264,13 @@
 
         var t = p.telemetry;
         if (t) {
-          if (t.plan) {
+          var n = t.now || {};
+          if (t.on_route === false) {
+            var off = document.createElement('span');
+            off.className = 'plan-badge behind';
+            off.textContent = 'Off route';
+            head.appendChild(off);
+          } else if (t.plan) {
             var badge = document.createElement('span');
             badge.className = 'plan-badge ' + t.plan.status;
             var d = t.plan.delta_min;
@@ -211,26 +278,29 @@
               : (t.plan.status === 'ahead' ? d + ' min ahead of plan' : (-d) + ' min behind plan');
             head.appendChild(badge);
           }
-          var n = t.now || {};
+          // Source-agnostic metrics always shown; route-relative ones only when on route.
           card.appendChild(group('Now', [
-            metric('done', n.distance_mi, ' mi'),
+            (n.distance_mi != null ? metric('done', n.distance_mi, ' mi') : null),
             metric('speed', n.speed_mph, ' mph'),
+            (n.activity ? metric('state', n.activity) : null),
             metric('elapsed', n.elapsed_min, ' min'),
             metric('moving', n.moving_min, ' min'),
             metric('stopped', n.stopped_min, ' min'),
-            metric('climb done', n.ascent_done_ft, ' ft'),
+            (n.ascent_done_ft != null ? metric('climb done', n.ascent_done_ft, ' ft') : null),
             (n.headwind_done_label ? metric('wind', n.headwind_done_label) : null),
             (n.heart_rate != null ? metric('HR', n.heart_rate, ' bpm') : null),
             (n.power != null ? metric('power', n.power, ' W') : null)
           ]));
-          var r = t.remaining || {};
-          card.appendChild(group('Remaining', [
-            metric('to go', r.distance_mi, ' mi'),
-            metric('climb left', r.ascent_left_ft, ' ft'),
-            metric('time left', r.time_left_min, ' min'),
-            metric('toughness', r.toughness),
-            (r.headwind_ahead_label ? metric('wind ahead', r.headwind_ahead_label) : null)
-          ]));
+          if (t.remaining) {
+            var r = t.remaining;
+            card.appendChild(group('Remaining', [
+              metric('to go', r.distance_mi, ' mi'),
+              metric('climb left', r.ascent_left_ft, ' ft'),
+              metric('time left', r.time_left_min, ' min'),
+              metric('toughness', r.toughness),
+              (r.headwind_ahead_label ? metric('wind ahead', r.headwind_ahead_label) : null)
+            ]));
+          }
           if (t.detailed_after_ride) {
             var note = document.createElement('div');
             note.className = 'after-ride';
@@ -267,6 +337,63 @@
         .catch(function (err) {
           statusEl.textContent = 'Could not refresh live positions (' + err.message + ').';
         });
+    }
+
+    // ── Share my own location from this page (opted-in riders only) ──
+    var shareBtn = document.getElementById('share-btn');
+    if (shareBtn) {
+      var SHARE_INTERVAL = 25000;
+      var sharing = false, watchId = null, wakeLock = null, lastSent = 0;
+      var shareLabel = document.getElementById('share-btn-label');
+      var shareState = document.getElementById('share-state');
+
+      function acquireWake() {
+        try { if ('wakeLock' in navigator) { navigator.wakeLock.request('screen').then(function (w) { wakeLock = w; }).catch(function () {}); } } catch (e) {}
+      }
+      function releaseWake() { if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; } }
+      document.addEventListener('visibilitychange', function () {
+        if (sharing && document.visibilityState === 'visible' && !wakeLock) { acquireWake(); }
+      });
+
+      function sendShare(pos) {
+        var t = Date.now();
+        if (t - lastSent < SHARE_INTERVAL) { return; }
+        lastSent = t;
+        fetch('/api/live/beacon', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude,
+                                 accuracy: pos.coords.accuracy, speed: pos.coords.speed })
+        }).then(function (r) {
+          if (r.status === 403) { shareState.textContent = 'Tracking is off — enable it in settings.'; stopShare(); return null; }
+          if (!r.ok) { throw new Error('status ' + r.status); }
+          return r.json();
+        }).then(function (d) {
+          if (d) { shareState.textContent = 'Sharing · sent ' + new Date().toLocaleTimeString(); poll(); }
+        }).catch(function (e) { shareState.textContent = 'Could not send location (' + e.message + ').'; });
+      }
+      function onShareErr(err) {
+        shareState.textContent = (err.code === 1) ? 'Location permission denied.' : 'Location error.';
+      }
+      function startShare() {
+        if (!('geolocation' in navigator)) { shareState.textContent = 'Geolocation not supported.'; return; }
+        sharing = true; lastSent = 0;
+        shareBtn.className = 'share-btn stop';
+        if (shareLabel) { shareLabel.textContent = 'Stop sharing'; }
+        shareState.className = 'share-state live'; shareState.textContent = 'Starting…';
+        acquireWake();
+        watchId = navigator.geolocation.watchPosition(sendShare, onShareErr,
+          { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
+      }
+      function stopShare() {
+        sharing = false;
+        if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+        releaseWake();
+        shareBtn.className = 'share-btn start';
+        if (shareLabel) { shareLabel.textContent = 'Share my location'; }
+        shareState.className = 'share-state';
+      }
+      shareBtn.addEventListener('click', function () { sharing ? stopShare() : startShare(); });
+      window.addEventListener('pagehide', function () { if (sharing) { releaseWake(); } });
     }
   })();
 </script>
