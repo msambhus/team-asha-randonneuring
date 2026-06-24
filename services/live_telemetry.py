@@ -170,6 +170,36 @@ def moving_stopped(points):
     return round(moving_s / 60.0, 1), round(stopped_s / 60.0, 1)
 
 
+def build_trail(history, track, max_points=40):
+    """Breadcrumb of where the rider actually rode, as [[lng,lat], ...].
+
+    Downsamples `history` (oldest→newest) to at most `max_points`. When a route
+    `track` is given, points that are off-route (> ON_ROUTE_MAX_M from the line)
+    are dropped, so a rider's off-route wandering never draws a spurious trail.
+    """
+    if not history:
+        return []
+    n = len(history)
+    step = max(1, n // max_points)
+    idxs = list(range(0, n, step))
+    if idxs[-1] != n - 1:
+        idxs.append(n - 1)   # always include the most recent point
+    out = []
+    for i in idxs:
+        p = history[i]
+        try:
+            lat = float(p['lat'])
+            lng = float(p['lng'])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if track:
+            _, _, off_by_m = project_to_route(lat, lng, track)
+            if off_by_m is not None and off_by_m > ON_ROUTE_MAX_M:
+                continue
+        out.append([lng, lat])
+    return out
+
+
 def latest_speed_ms(points):
     """Most recent usable ground speed (m/s), reported or derived; None if N/A."""
     if not points:

@@ -268,7 +268,7 @@ def _ride_live_context(ride_id):
     return ctx
 
 
-def _rider_telemetry(row, ctx, now):
+def _rider_telemetry(row, ctx, now, history):
     """Assemble the telemetry block for one rider.
 
     Source-agnostic fields (speed, activity, moving/stopped, elapsed, HR/power)
@@ -279,8 +279,6 @@ def _rider_telemetry(row, ctx, now):
     """
     lat, lng = float(row['lat']), float(row['lng'])
 
-    history = get_positions_for_rider_since(
-        row['rider_id'], now - timedelta(hours=DISPLAY_WINDOW_HOURS))
     moving_min, stopped_min = tlm.moving_stopped(history)
     speed_ms = tlm.latest_speed_ms(history)
     if speed_ms is None and row.get('speed') is not None:
@@ -386,6 +384,9 @@ def live_positions():
 
     ctx = _ride_live_context(ride_id) if rows else None
 
+    has_route = bool(ctx and ctx.get('has_route'))
+    track = ctx.get('track') if has_route else None
+
     positions = []
     for row in rows:
         recorded_at = row['recorded_at']
@@ -394,11 +395,22 @@ def live_positions():
             recorded_at = recorded_at.replace(tzinfo=timezone.utc)
         minutes_ago = max(0, int((now - recorded_at).total_seconds() // 60))
         status = row['status']
+
+        history = get_positions_for_rider_since(
+            row['rider_id'], now - timedelta(hours=DISPLAY_WINDOW_HOURS))
         telemetry = None
         try:
-            telemetry = _rider_telemetry(row, ctx, now)
+            telemetry = _rider_telemetry(row, ctx, now, history)
         except Exception:
             current_app.logger.exception('live telemetry failed for rider %s', row['rider_id'])
+
+        trail = tlm.build_trail(history, track)   # on-route breadcrumb of where they rode
+
+        # Hide a rider only when they're off-route AND have no on-route history
+        # — so an off-route session (e.g. testing from home) is hidden, but a
+        # momentary GPS bounce on a real ride doesn't make the rider vanish.
+        if has_route and telemetry and telemetry.get('on_route') is False and not trail:
+            continue
         positions.append({
             'rider_id': row['rider_id'],
             'name': (row['name'] or '').strip(),
@@ -410,6 +422,7 @@ def live_positions():
             'minutes_ago': minutes_ago,
             'stale': minutes_ago > STALE_AFTER_MINUTES,
             'telemetry': telemetry,
+            'trail': trail,
         })
 
     return jsonify({

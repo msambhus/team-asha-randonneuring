@@ -149,9 +149,28 @@
         ROUTE_POLYLINE.forEach(function (c) { bounds.extend(c); });
         map.fitBounds(bounds, { padding: 40, duration: 0 });
       }
+      // Per-rider breadcrumb trails (where each rider has actually ridden).
+      map.addSource('rider-trails', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({
+        id: 'rider-trails-line', type: 'line', source: 'rider-trails',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': ['get', 'color'], 'line-width': 3, 'line-opacity': 0.85 }
+      });
       poll();
       setInterval(poll, POLL_MS);
     });
+
+    function updateTrails(positions) {
+      var src = map.getSource('rider-trails');
+      if (!src) { return; }
+      var feats = positions
+        .filter(function (p) { return p.trail && p.trail.length > 1; })
+        .map(function (p) {
+          return { type: 'Feature', properties: { color: p.color },
+                   geometry: { type: 'LineString', coordinates: p.trail } };
+        });
+      src.setData({ type: 'FeatureCollection', features: feats });
+    }
 
     function buildPopup(p) {
       // Build DOM nodes (textContent) so rider names can never inject HTML.
@@ -330,6 +349,7 @@
             if (!seen[rid]) { markers[rid].marker.remove(); delete markers[rid]; }
           });
           renderRiders(positions);
+          updateTrails(positions);
           emptyEl.style.display = positions.length ? 'none' : 'block';
           var now = new Date();
           statusEl.textContent = positions.length
