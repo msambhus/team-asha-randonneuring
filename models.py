@@ -3387,21 +3387,74 @@ def get_live_tracking(rider_id):
     ).fetchone()
 
 
-def set_live_tracking(rider_id, enabled, session_url, session_token):
-    """Upsert a rider's live-tracking prefs. Returns True on success."""
+def set_live_tracking_enabled(rider_id, enabled):
+    """Set the master opt-in flag for a rider, preserving any Garmin session.
+
+    Used by the global settings toggle and the one-tap beacon switch — neither
+    should clobber the per-ride Garmin link registered from a ride's live map.
+    Returns True on success.
+    """
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""
+            INSERT INTO rider_live_tracking (rider_id, enabled, updated_at)
+            VALUES (%s, %s, now())
+            ON CONFLICT (rider_id) DO UPDATE
+              SET enabled = EXCLUDED.enabled, updated_at = now()
+        """, (rider_id, bool(enabled)))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+
+
+def set_ride_garmin(rider_id, ride_id, session_url, session_token):
+    """Register a Garmin LiveTrack link for ONE specific ride and opt the rider in.
+
+    Garmin mints a fresh session per activity, so the link is inherently
+    per-ride: saving one points the rider's tracking at `ride_id` (active_ride_id)
+    and enables tracking. Positions the cron ingests are then tagged with this
+    ride, so they only show on that ride's map. Returns True on success.
+    """
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         cur.execute("""
             INSERT INTO rider_live_tracking
-                (rider_id, enabled, garmin_session_url, garmin_session_token, updated_at)
-            VALUES (%s, %s, %s, %s, now())
+                (rider_id, enabled, garmin_session_url, garmin_session_token,
+                 active_ride_id, updated_at)
+            VALUES (%s, TRUE, %s, %s, %s, now())
             ON CONFLICT (rider_id) DO UPDATE
-              SET enabled = EXCLUDED.enabled,
+              SET enabled = TRUE,
                   garmin_session_url = EXCLUDED.garmin_session_url,
                   garmin_session_token = EXCLUDED.garmin_session_token,
+                  active_ride_id = EXCLUDED.active_ride_id,
                   updated_at = now()
-        """, (rider_id, bool(enabled), session_url, session_token))
+        """, (rider_id, session_url, session_token, ride_id))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+
+
+def clear_ride_garmin(rider_id, ride_id):
+    """Remove the rider's Garmin link if it's currently pointed at `ride_id`.
+
+    Leaves the master opt-in flag alone (they may still beacon). No-op if the
+    active ride is a different one. Returns True on success.
+    """
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""
+            UPDATE rider_live_tracking
+               SET garmin_session_url = NULL, garmin_session_token = NULL,
+                   active_ride_id = NULL, updated_at = now()
+             WHERE rider_id = %s AND active_ride_id = %s
+        """, (rider_id, ride_id))
         conn.commit()
         return True
     except Exception:
@@ -3410,14 +3463,16 @@ def set_live_tracking(rider_id, enabled, session_url, session_token):
 
 
 def get_enabled_live_tracking():
-    """All riders who have opted in AND registered a Garmin session token.
+    """All riders opted in WITH a Garmin session pointed at a specific ride.
 
-    The poll cron iterates these.
+    The poll cron iterates these and tags ingested points with active_ride_id.
     """
     return _execute("""
-        SELECT rider_id, garmin_session_url, garmin_session_token
+        SELECT rider_id, garmin_session_url, garmin_session_token, active_ride_id
         FROM rider_live_tracking
-        WHERE enabled = TRUE AND garmin_session_token IS NOT NULL
+        WHERE enabled = TRUE
+          AND garmin_session_token IS NOT NULL
+          AND active_ride_id IS NOT NULL
     """).fetchall()
 
 
@@ -3432,12 +3487,15 @@ def _coerce_num(value, cast):
 
 
 def insert_live_position(rider_id, lat, lng, recorded_at, source, accuracy=None,
-                         speed=None, heart_rate=None, power=None, cadence=None):
+                         speed=None, heart_rate=None, power=None, cadence=None,
+                         ride_id=None):
     """Insert one position point. Validates/clamps coordinates.
 
-    Optional telemetry fields (speed m/s, heart_rate bpm, power W, cadence rpm)
-    are stored when the source provides them; bad values are coerced to NULL.
-    Returns True on success, False if coordinates are invalid (out of range).
+    `ride_id` tags the point to a specific ride so it only shows on that ride's
+    map (NULL points are not shown on any per-ride map). Optional telemetry
+    fields (speed m/s, heart_rate bpm, power W, cadence rpm) are stored when the
+    source provides them; bad values are coerced to NULL. Returns True on
+    success, False if coordinates are invalid (out of range).
     """
     try:
         lat = float(lat)
@@ -3459,10 +3517,10 @@ def insert_live_position(rider_id, lat, lng, recorded_at, source, accuracy=None,
         cur.execute("""
             INSERT INTO rider_live_position
                 (rider_id, lat, lng, accuracy, recorded_at, source,
-                 speed, heart_rate, power, cadence)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 speed, heart_rate, power, cadence, ride_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (rider_id, lat, lng, accuracy, recorded_at, source,
-              speed, heart_rate, power, cadence))
+              speed, heart_rate, power, cadence, ride_id))
         conn.commit()
         return True
     except Exception:
@@ -3470,11 +3528,20 @@ def insert_live_position(rider_id, lat, lng, recorded_at, source, accuracy=None,
         return False
 
 
-def get_positions_for_rider_since(rider_id, since):
+def get_positions_for_rider_since(rider_id, since, ride_id=None):
     """Ordered position history for a rider since `since` (oldest → newest).
 
-    Used to derive elapsed/moving/stopped time and recent speed.
+    Scoped to one ride when `ride_id` is given, so elapsed/moving/stopped time
+    and recent speed never mix points from a different ride. Used by the live
+    telemetry block.
     """
+    if ride_id is not None:
+        return _execute("""
+            SELECT lat, lng, accuracy, recorded_at, source, speed, heart_rate, power, cadence
+            FROM rider_live_position
+            WHERE rider_id = %s AND ride_id = %s AND recorded_at >= %s
+            ORDER BY recorded_at ASC
+        """, (rider_id, ride_id, since)).fetchall()
     return _execute("""
         SELECT lat, lng, accuracy, recorded_at, source, speed, heart_rate, power, cadence
         FROM rider_live_position
@@ -3483,12 +3550,18 @@ def get_positions_for_rider_since(rider_id, since):
     """, (rider_id, since)).fetchall()
 
 
-def get_last_position_recorded_at(rider_id):
-    """Most recent stored position timestamp for a rider, or None."""
-    row = _execute("""
-        SELECT MAX(recorded_at) AS last_at
-        FROM rider_live_position WHERE rider_id = %s
-    """, (rider_id,)).fetchone()
+def get_last_position_recorded_at(rider_id, ride_id=None):
+    """Most recent stored position timestamp for a rider (optionally one ride)."""
+    if ride_id is not None:
+        row = _execute("""
+            SELECT MAX(recorded_at) AS last_at
+            FROM rider_live_position WHERE rider_id = %s AND ride_id = %s
+        """, (rider_id, ride_id)).fetchone()
+    else:
+        row = _execute("""
+            SELECT MAX(recorded_at) AS last_at
+            FROM rider_live_position WHERE rider_id = %s
+        """, (rider_id,)).fetchone()
     return row['last_at'] if row else None
 
 
@@ -3496,6 +3569,8 @@ def get_latest_positions_for_ride(ride_id, since):
     """Latest position per opted-in GOING rider for a ride, newer than `since`.
 
     Joins rider_ride (status GOING) → rider → opted-in tracking → latest point.
+    Only points tagged with THIS ride (p.ride_id) count, so a rider Going on
+    several rides shows up on each ride's map only when actually tracking it.
     `since` is the display-window cutoff (a datetime). Returns rows with
     rider_id, name, lat, lng, recorded_at, source, status.
     """
@@ -3511,11 +3586,15 @@ def get_latest_positions_for_ride(ride_id, since):
         JOIN rider r ON r.id = p.rider_id
         JOIN rider_live_tracking t ON t.rider_id = p.rider_id
         WHERE rr.ride_id = %s
+          AND p.ride_id = %s
           AND rr.status = %s
           AND t.enabled = TRUE
           AND p.recorded_at >= %s
         ORDER BY p.rider_id, p.recorded_at DESC
-    """, (ride_id, RideStatus.GOING.value, since)).fetchall()
+    -- params: rr.ride_id, p.ride_id (both = ride_id), GOING gate (load-bearing:
+    -- beacon does not check GOING on write, so this read-side filter is what
+    -- keeps non-participant points off the map), recency cutoff.
+    """, (ride_id, ride_id, RideStatus.GOING.value, since)).fetchall()
 
 
 def purge_old_positions(retention_days=7):

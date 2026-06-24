@@ -98,6 +98,52 @@
 .garmin-link { font-size: 0.78rem; color: #2563eb; text-decoration: none; }
 .garmin-link:hover { text-decoration: underline; }
 .share-note { font-size: 0.72rem; color: var(--text-light); margin-top: 6px; }
+
+/* Per-ride Garmin setup panel (collapsible <details>) */
+.garmin-panel {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 0 18px; margin: 0 0 14px;
+}
+.garmin-panel > summary {
+    cursor: pointer; list-style: none; padding: 14px 0; font-weight: 600;
+    font-size: 0.92rem; display: flex; align-items: center; gap: 8px;
+}
+.garmin-panel > summary::-webkit-details-marker { display: none; }
+.garmin-panel > summary .chev { margin-left: auto; transition: transform 0.15s; color: var(--text-light); }
+.garmin-panel[open] > summary .chev { transform: rotate(90deg); }
+.garmin-panel .gp-body { padding: 2px 0 18px; }
+.gp-linked { color: #166534; font-weight: 600; font-size: 0.85rem; margin: 0 0 12px; }
+.gp-callout {
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+    padding: 10px 13px; font-size: 0.82rem; line-height: 1.45; margin: 0 0 16px;
+}
+.gp-callout strong { color: #92400e; }
+.gp-steps { margin: 0 0 16px; padding: 0; list-style: none; counter-reset: gstep; }
+.gp-steps > li { position: relative; padding: 0 0 12px 34px; font-size: 0.85rem; line-height: 1.45; }
+.gp-steps > li::before {
+    counter-increment: gstep; content: counter(gstep);
+    position: absolute; left: 0; top: -1px; width: 24px; height: 24px;
+    border-radius: 50%; background: var(--primary); color: #fff;
+    font-weight: 700; font-size: 0.78rem;
+    display: flex; align-items: center; justify-content: center;
+}
+.gp-steps .sub { display: block; color: var(--text-light); font-size: 0.8rem; margin-top: 2px; }
+.gp-steps code { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: 0.78rem; word-break: break-all; }
+.gp-form { display: flex; flex-direction: column; gap: 8px; }
+.gp-form label { font-weight: 600; font-size: 0.85rem; }
+.gp-form input[type="url"] {
+    padding: 10px 13px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 0.88rem; background: var(--bg); color: var(--text);
+}
+.gp-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.gp-save {
+    padding: 9px 20px; background: var(--primary); color: #fff; border: none;
+    border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer;
+}
+.gp-clear {
+    padding: 9px 14px; background: transparent; color: #b91c1c; border: 1px solid #fecaca;
+    border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer;
+}
 </style>
 {% endblock %}
 
@@ -117,10 +163,53 @@
         <span id="share-btn-label">Share my location</span>
       </button>
       <label class="lowpower"><input type="checkbox" id="share-lowpower"> Low power</label>
-      <a class="garmin-link" href="{{ url_for('live.live_settings') }}">Set up Garmin</a>
+      <a class="garmin-link" href="#garmin-setup">⌚ Track this ride with Garmin</a>
       <div id="share-state" class="share-state"></div>
     </div>
   </div>
+
+  <details class="garmin-panel" id="garmin-setup" {% if not garmin_here %}open{% endif %}>
+    <summary>
+      ⌚ Track this ride with Garmin LiveTrack
+      {% if garmin_here %}<span style="color:#166534;font-size:0.8rem;font-weight:700;">· LINKED</span>{% endif %}
+      <span class="chev">›</span>
+    </summary>
+    <div class="gp-body">
+      {% if garmin_here %}
+        <p class="gp-linked">● This ride is linked to your Garmin LiveTrack — you'll appear with the ⌚ marker. Started a new activity? Paste the new link below.</p>
+      {% endif %}
+
+      <div class="gp-callout">
+        ⚠️ <strong>Garmin makes a new link every ride.</strong> Each time you start an
+        activity, Garmin creates a fresh LiveTrack session — the old link stops working.
+        Paste a new one here at the start of <em>this</em> ride.
+      </div>
+
+      <ol class="gp-steps">
+        <li><strong>One-time:</strong> in the <strong>Garmin Connect</strong> app, go to
+          <strong>More → LiveTrack</strong>, turn it on, and enable <strong>Auto Start</strong>.
+          <span class="sub">Sometimes under <em>Safety &amp; Tracking</em>; menu names vary by app version.</span></li>
+        <li><strong>Start your ride</strong> on your Garmin so a LiveTrack session goes live.</li>
+        <li>In Garmin Connect, open the live session and <strong>copy the share link</strong>.
+          <span class="sub">It looks like <code>https://livetrack.garmin.com/session/…/token/…</code></span></li>
+        <li><strong>Paste it below and Save.</strong> You'll show up on this map within a few minutes.</li>
+      </ol>
+
+      <form class="gp-form" method="POST" action="{{ url_for('live.ride_garmin_link', ride_id=ride.id) }}">
+        <label for="garmin_session_url">Garmin LiveTrack link for this ride</label>
+        <input type="url" id="garmin_session_url" name="garmin_session_url"
+               placeholder="https://livetrack.garmin.com/session/.../token/..."
+               value="{{ garmin_url }}">
+        <div class="gp-actions">
+          <button type="submit" name="action" value="save" class="gp-save">Save link</button>
+          {% if garmin_here %}
+          <button type="submit" name="action" value="clear" class="gp-clear">Stop tracking this ride</button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </details>
+
   <div id="live-map"></div>
   <div class="live-legend">
     <span class="item"><span class="swatch garmin"></span> ⌚ Garmin device <span style="color:var(--text-light)">(works screen-off)</span></span>
@@ -481,7 +570,8 @@
         lastSent = t;
         fetch('/api/live/beacon', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
-          body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude,
+          body: JSON.stringify({ ride_id: RIDE_ID,
+                                 lat: pos.coords.latitude, lng: pos.coords.longitude,
                                  accuracy: pos.coords.accuracy, speed: pos.coords.speed })
         }).then(function (r) {
           if (r.status === 403) { shareState.textContent = 'Tracking is off — enable it in settings.'; stopShare(); return null; }

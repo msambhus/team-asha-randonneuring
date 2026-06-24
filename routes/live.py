@@ -14,7 +14,8 @@ from flask import (Blueprint, render_template, request, redirect, url_for,
 
 from auth import profile_required, api_login_required
 from cache import cache, CACHE_TIMEOUT
-from models import (get_ride_by_id, get_live_tracking, set_live_tracking,
+from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled,
+                    set_ride_garmin, clear_ride_garmin,
                     get_latest_positions_for_ride, insert_live_position,
                     get_rider_upcoming_signups, get_ride_plan_stops,
                     get_positions_for_rider_since)
@@ -103,25 +104,13 @@ def live_hub():
 @live_bp.route('/live/settings', methods=['GET', 'POST'])
 @profile_required
 def live_settings():
-    """Opt-in toggle + Garmin LiveTrack session registration for the current rider."""
+    """Master opt-in toggle + privacy info. The Garmin LiveTrack link is set
+    per-ride on each ride's live map (it changes every ride), not here."""
     rider_id = session['rider_id']
 
     if request.method == 'POST':
         enabled = request.form.get('enabled') == 'on'
-        session_url = (request.form.get('garmin_session_url') or '').strip()
-        token = None
-        if session_url:
-            parsed = parse_session(session_url)
-            if not parsed:
-                flash('That does not look like a Garmin LiveTrack link. Expected '
-                      'https://livetrack.garmin.com/session/.../token/...', 'warning')
-                tracking = get_live_tracking(rider_id)
-                return render_template('live_settings.html', tracking=tracking)
-            token = parsed['token']
-
-        # A Garmin link is optional — riders can opt in for the browser
-        # beacon (Share my location) without registering a Garmin session.
-        ok = set_live_tracking(rider_id, enabled, session_url or None, token)
+        ok = set_live_tracking_enabled(rider_id, enabled)
         if ok:
             flash('Live tracking ' + ('enabled.' if enabled else 'disabled.'), 'success')
         else:
@@ -144,6 +133,12 @@ def ride_live_map(ride_id):
     route_polyline = _build_route_polyline(ride)
     tracking = get_live_tracking(session['rider_id'])
     opted_in = bool(tracking and tracking.get('enabled'))
+    # The Garmin link is per-ride: only show it as linked here if it's pointed
+    # at THIS ride (active_ride_id), so a link saved for another ride doesn't
+    # look active on this one.
+    garmin_here = bool(tracking and tracking.get('garmin_session_url')
+                       and tracking.get('active_ride_id') == ride_id)
+    garmin_url = tracking.get('garmin_session_url') if garmin_here else ''
 
     return render_template(
         'live.html',
@@ -152,7 +147,43 @@ def ride_live_map(ride_id):
         route_polyline=route_polyline,
         stale_after_minutes=STALE_AFTER_MINUTES,
         opted_in=opted_in,
+        garmin_here=garmin_here,
+        garmin_url=garmin_url,
     )
+
+
+@live_bp.route('/ride/<int:ride_id>/live/garmin', methods=['POST'])
+@profile_required
+def ride_garmin_link(ride_id):
+    """Register (or clear) this rider's Garmin LiveTrack link FOR THIS RIDE.
+
+    Garmin mints a fresh session each ride, so the link lives on the ride, not in
+    global settings. Saving opts the rider in and points tracking at this ride;
+    clearing removes it (master opt-in untouched, so the beacon still works).
+    """
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        abort(404)
+    rider_id = session['rider_id']
+
+    action = request.form.get('action', 'save')
+    if action == 'clear':
+        clear_ride_garmin(rider_id, ride_id)
+        flash('Garmin LiveTrack link removed for this ride.', 'success')
+        return redirect(url_for('live.ride_live_map', ride_id=ride_id))
+
+    session_url = (request.form.get('garmin_session_url') or '').strip()
+    parsed = parse_session(session_url) if session_url else None
+    if not parsed:
+        flash('That does not look like a Garmin LiveTrack link. Expected '
+              'https://livetrack.garmin.com/session/.../token/...', 'warning')
+        return redirect(url_for('live.ride_live_map', ride_id=ride_id))
+
+    ok = set_ride_garmin(rider_id, ride_id, session_url, parsed['token'])
+    flash('Garmin LiveTrack linked for this ride — you should appear within a few minutes.'
+          if ok else 'Could not save your Garmin link. Please try again.',
+          'success' if ok else 'danger')
+    return redirect(url_for('live.ride_live_map', ride_id=ride_id))
 
 
 def _build_wind_by_dist(track_points):
@@ -397,7 +428,8 @@ def live_positions():
         status = row['status']
 
         history = get_positions_for_rider_since(
-            row['rider_id'], now - timedelta(hours=DISPLAY_WINDOW_HOURS))
+            row['rider_id'], now - timedelta(hours=DISPLAY_WINDOW_HOURS),
+            ride_id=ride_id)
         telemetry = None
         try:
             telemetry = _rider_telemetry(row, ctx, now, history)
@@ -458,10 +490,7 @@ def live_sharing_toggle():
     if not rider_id:
         return jsonify({'error': 'Complete your profile to share your location'}), 403
     enabled = bool((request.get_json(silent=True) or {}).get('enabled'))
-    existing = get_live_tracking(rider_id)
-    url = existing.get('garmin_session_url') if existing else None
-    token = existing.get('garmin_session_token') if existing else None
-    ok = set_live_tracking(rider_id, enabled, url, token)
+    ok = set_live_tracking_enabled(rider_id, enabled)
     return jsonify({'ok': ok, 'enabled': enabled})
 
 
@@ -490,11 +519,21 @@ def live_beacon():
     if lat is None or lng is None:
         return jsonify({'error': 'lat and lng are required'}), 400
 
+    # Beacon points are per-ride too: take the ride from the page that's sharing
+    # (the ride map sends it), falling back to the rider's active Garmin ride.
+    # Without a ride the point can't be shown on any map, so require one.
+    try:
+        ride_id = int(data.get('ride_id'))
+    except (TypeError, ValueError):
+        ride_id = tracking.get('active_ride_id')
+    if not ride_id:
+        return jsonify({'error': 'Open a ride\'s live map to share for that ride'}), 400
+
     now = datetime.now(timezone.utc)
     ok = insert_live_position(
         rider_id=rider_id,          # session only — client value never trusted
         lat=lat, lng=lng, accuracy=accuracy, speed=speed,
-        recorded_at=now, source='beacon',
+        recorded_at=now, source='beacon', ride_id=ride_id,
     )
     if not ok:
         return jsonify({'error': 'Invalid coordinates'}), 400

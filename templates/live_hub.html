@@ -71,13 +71,13 @@
       </svg>
     </span>
     <span class="body">
-      <span class="t">Set up Garmin LiveTrack</span>
-      <span class="d">Register a Garmin LiveTrack session so your device posts automatically.</span>
+      <span class="t">Live tracking settings</span>
+      <span class="d">Your master on/off switch. The Garmin LiveTrack link is set per-ride on each ride's live map below.</span>
     </span>
-    <span class="hub-chip {{ 'on' if has_garmin else 'off' }}">{{ 'LINKED' if has_garmin else 'NOT SET' }}</span>
+    <span class="hub-chip {{ 'on' if opted_in else 'off' }}">{{ 'ON' if opted_in else 'OFF' }}</span>
   </a>
 
-  <div class="hub-section-title">View a ride's live map</div>
+  <div class="hub-section-title">Set up &amp; view a ride's live map</div>
   {% if upcoming %}
     {% for ride in upcoming %}
     <a class="ride-row" href="{{ url_for('live.ride_live_map', ride_id=ride.id) }}">

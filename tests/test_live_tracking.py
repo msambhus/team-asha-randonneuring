@@ -267,6 +267,42 @@ def test_positions_shape_color_and_stale(client):
     assert stale['source'] == 'beacon'      # defaulted when the row has no source
 
 
+# ── cross-ride isolation: the latest-positions query is ride-scoped ────────
+
+def test_latest_positions_query_filters_by_ride_id():
+    """The leak fix: get_latest_positions_for_ride must constrain p.ride_id so a
+    rider Going on several rides only shows on the ride their points belong to.
+
+    Exercises the real query builder (not the route, which other tests mock) by
+    capturing the SQL + params handed to _execute.
+    """
+    import models
+    from datetime import datetime, timezone
+
+    captured = {}
+
+    class _FakeCur:
+        def fetchall(self):
+            return []
+
+    def _fake_execute(sql, params=None):
+        captured['sql'] = sql
+        captured['params'] = params
+        return _FakeCur()
+
+    since = datetime(2026, 6, 24, tzinfo=timezone.utc)
+    with patch('models._execute', side_effect=_fake_execute):
+        models.get_latest_positions_for_ride(42, since)
+
+    # The position row must be constrained to THIS ride, not just the rider.
+    assert 'p.ride_id = %s' in captured['sql']
+    # ride_id is bound twice (rr.ride_id and p.ride_id); GOING + since follow.
+    assert captured['params'][0] == 42
+    assert captured['params'][1] == 42
+    assert captured['params'][2] == models.RideStatus.GOING.value
+    assert captured['params'][3] == since
+
+
 # ── /ride/<id>/live map page ──────────────────────────────────────────────
 
 _RIDE = {'id': 5, 'name': 'Mt Hamilton 200K', 'date': '2026-07-04',
@@ -286,7 +322,8 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'live-map' in html
     assert 'ROUTE_POLYLINE = null' in html   # no RWGPS route on this ride
     assert 'Share my location' in html       # beacon Start control on the map
-    assert 'Set up Garmin' in html           # Garmin settings reachable from the map
+    assert 'Track this ride with Garmin' in html   # per-ride Garmin panel on the map
+    assert '/ride/5/live/garmin' in html     # form posts to the per-ride link endpoint
 
 
 def test_map_page_draws_rwgps_route(client):
@@ -352,40 +389,54 @@ def test_settings_get_renders(client):
     assert 'Live Tracking' in resp.data.decode()
 
 
-def test_settings_post_enables_and_stores_token(client):
+# ── POST /ride/<id>/live/garmin (per-ride Garmin link) ────────────────────
+
+def test_ride_garmin_link_saves_for_this_ride(client):
     captured = {}
 
-    def _set(rider_id, enabled, url, token):
-        captured.update(rider_id=rider_id, enabled=enabled, url=url, token=token)
+    def _set(rider_id, ride_id, url, token):
+        captured.update(rider_id=rider_id, ride_id=ride_id, url=url, token=token)
         return True
 
     with client.session_transaction() as s:
         s['user_id'] = 1
         s['rider_id'] = 7
-    with patch('routes.live.set_live_tracking', side_effect=_set), \
-         patch('routes.live.get_live_tracking', return_value=None):
-        resp = client.post('/live/settings', data={
-            'enabled': 'on',
+    with patch('routes.live.get_ride_by_id', return_value=dict(_RIDE)), \
+         patch('routes.live.set_ride_garmin', side_effect=_set):
+        resp = client.post('/ride/5/live/garmin', data={
+            'action': 'save',
             'garmin_session_url': 'https://livetrack.garmin.com/session/s1/token/t1',
         }, follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert captured['rider_id'] == 7
-    assert captured['enabled'] is True
+    assert captured['ride_id'] == 5      # scoped to THIS ride, not global
     assert captured['token'] == 't1'
 
 
-def test_settings_post_rejects_bad_url(client):
+def test_ride_garmin_link_rejects_bad_url(client):
     with client.session_transaction() as s:
         s['user_id'] = 1
         s['rider_id'] = 7
-    with patch('routes.live.set_live_tracking') as mock_set, \
-         patch('routes.live.get_live_tracking', return_value=None):
-        resp = client.post('/live/settings', data={
-            'enabled': 'on',
+    with patch('routes.live.get_ride_by_id', return_value=dict(_RIDE)), \
+         patch('routes.live.set_ride_garmin') as mock_set:
+        resp = client.post('/ride/5/live/garmin', data={
+            'action': 'save',
             'garmin_session_url': 'https://example.com/not-livetrack',
-        })
-    assert resp.status_code == 200
+        }, follow_redirects=False)
+    assert resp.status_code in (301, 302)   # redirects back with a flash
     mock_set.assert_not_called()
+
+
+def test_ride_garmin_link_clear(client):
+    with client.session_transaction() as s:
+        s['user_id'] = 1
+        s['rider_id'] = 7
+    with patch('routes.live.get_ride_by_id', return_value=dict(_RIDE)), \
+         patch('routes.live.clear_ride_garmin', return_value=True) as mock_clear:
+        resp = client.post('/ride/5/live/garmin', data={'action': 'clear'},
+                           follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    mock_clear.assert_called_once_with(7, 5)
 
 
 # ── /api/cron/poll-garmin-livetrack ───────────────────────────────────────
@@ -401,6 +452,7 @@ def test_cron_polls_inserts_and_purges(client, app):
         'rider_id': 7,
         'garmin_session_url': 'https://livetrack.garmin.com/session/s1/token/t1',
         'garmin_session_token': 't1',
+        'active_ride_id': 5,
     }]
     # Two points 4 min apart → both kept (history-append, downsample ≥30s).
     points = [
@@ -424,6 +476,7 @@ def test_cron_polls_inserts_and_purges(client, app):
     assert len(inserts) == 2
     assert {i['recorded_at'] for i in inserts} == {p['recorded_at'] for p in points}
     assert inserts[0]['source'] == 'garmin'
+    assert all(i['ride_id'] == 5 for i in inserts)   # tagged to the active ride
 
 
 def test_cron_failsoft_on_fetch_error(client, app):
@@ -432,6 +485,7 @@ def test_cron_failsoft_on_fetch_error(client, app):
         'rider_id': 7,
         'garmin_session_url': 'https://livetrack.garmin.com/session/s1/token/t1',
         'garmin_session_token': 't1',
+        'active_ride_id': 5,
     }]
     with patch('models.get_enabled_live_tracking', return_value=tracked), \
          patch('services.garmin_livetrack.fetch_positions', side_effect=Exception('expired')), \
@@ -453,6 +507,7 @@ def test_cron_skips_points_that_fail_to_insert(client, app):
         'rider_id': 7,
         'garmin_session_url': 'https://livetrack.garmin.com/session/s1/token/t1',
         'garmin_session_token': 't1',
+        'active_ride_id': 5,
     }]
     points = [{'lat': 999.0, 'lng': 0.0, 'recorded_at': _now()}]   # bad coords → insert returns False
     with patch('models.get_enabled_live_tracking', return_value=tracked), \
