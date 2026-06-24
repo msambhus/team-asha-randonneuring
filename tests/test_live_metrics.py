@@ -158,13 +158,17 @@ def test_positions_includes_telemetry(client):
          patch('routes.live.get_positions_for_rider_since', return_value=history):
         resp = client.get('/api/live/positions?ride_id=5')
     assert resp.status_code == 200
-    t = resp.get_json()['positions'][0]['telemetry']
+    pos = resp.get_json()['positions'][0]
+    t = pos['telemetry']
     assert t is not None
     assert t['now']['distance_mi'] is not None
     assert t['now']['heart_rate'] == 140
     assert t['remaining']['toughness'] is not None
     assert t['detailed_after_ride'] is True
     assert 'status' in (t['plan'] or {})
+    # On-route breadcrumb trail of where the rider has ridden.
+    assert pos['trail'] and len(pos['trail']) >= 1
+    assert pos['trail'][0] == [-122.0, 37.0]   # [lng,lat], on-route history point
 
 
 def test_positions_without_route_still_shows_source_metrics(client):
@@ -185,8 +189,8 @@ def test_positions_without_route_still_shows_source_metrics(client):
     assert t['now']['activity'] == 'cycling'   # 5 m/s
 
 
-def test_positions_off_route_suppresses_route_metrics(client):
-    """A rider far from the route gets on_route=False and NO bogus mileage."""
+def test_positions_off_route_rider_is_hidden(client):
+    """A rider far from the route is omitted from the live map entirely."""
     _login(client)
     # _FAKE_CTX track is around lat 37.0; put the rider ~22 km north.
     row = {'rider_id': 7, 'name': 'Off Route', 'lat': 37.2, 'lng': -121.99,
@@ -197,11 +201,30 @@ def test_positions_off_route_suppresses_route_metrics(client):
          patch('routes.live.get_positions_for_rider_since', return_value=[]):
         resp = client.get('/api/live/positions?ride_id=5')
     assert resp.status_code == 200
-    t = resp.get_json()['positions'][0]['telemetry']
-    assert t['on_route'] is False
-    assert t['remaining'] is None
-    assert 'distance_mi' not in t['now']      # no snapped mileage
-    assert t['now']['activity'] == 'paused'
+    assert resp.get_json()['positions'] == []   # off-route session not shown
+
+
+def test_positions_off_route_bounce_with_history_stays_shown(client):
+    """A momentary off-route fix doesn't hide a rider who has on-route history."""
+    _login(client)
+    now = _now()
+    row = {'rider_id': 7, 'name': 'Bounce', 'lat': 37.2, 'lng': -121.99,   # current fix off-route
+           'recorded_at': now, 'status': 'GOING',
+           'speed': 5.0, 'heart_rate': None, 'power': None, 'cadence': None}
+    # Recent history is ON the route (near the _FAKE_CTX track at lat 37.0).
+    history = [
+        {'lat': 37.0, 'lng': -122.0, 'recorded_at': now - timedelta(minutes=10), 'speed': 5.0},
+        {'lat': 37.0, 'lng': -121.99, 'recorded_at': now - timedelta(minutes=5), 'speed': 5.0},
+    ]
+    with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
+         patch('routes.live._ride_live_context', return_value=_FAKE_CTX), \
+         patch('routes.live.get_positions_for_rider_since', return_value=history):
+        resp = client.get('/api/live/positions?ride_id=5')
+    assert resp.status_code == 200
+    positions = resp.get_json()['positions']
+    assert len(positions) == 1                       # not hidden — has on-route breadcrumb
+    assert positions[0]['telemetry']['on_route'] is False
+    assert positions[0]['trail']                     # on-route trail present
 
 
 def test_positions_future_ride_elapsed_is_none(client):

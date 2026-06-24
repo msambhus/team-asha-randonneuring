@@ -151,3 +151,35 @@ def test_latest_speed_derived_when_absent():
 
 def test_latest_speed_none_when_empty():
     assert tlm.latest_speed_ms([]) is None
+
+
+def test_build_trail_drops_off_route_points():
+    history = [
+        {'lat': 37.0, 'lng': -122.00, 'recorded_at': _t(0)},    # on route
+        {'lat': 37.2, 'lng': -121.99, 'recorded_at': _t(30)},   # ~22 km off → dropped
+        {'lat': 37.0, 'lng': -121.98, 'recorded_at': _t(60)},   # on route
+    ]
+    trail = tlm.build_trail(history, _TRACK)
+    assert trail == [[-122.0, 37.0], [-121.98, 37.0]]   # [lng,lat], off-route removed
+
+
+def test_build_trail_without_route_keeps_all():
+    history = [
+        {'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(0)},
+        {'lat': 37.5, 'lng': -122.5, 'recorded_at': _t(30)},
+    ]
+    assert tlm.build_trail(history, None) == [[-122.0, 37.0], [-122.5, 37.5]]
+
+
+def test_build_trail_downsamples_keeps_order_and_newest():
+    history = [{'lat': 37.0, 'lng': -122.0 + i * 0.0001, 'recorded_at': _t(i)} for i in range(400)]
+    trail = tlm.build_trail(history, None, max_points=40)
+    assert 0 < len(trail) <= 50                 # downsampled, not 400
+    assert trail[0] == [-122.0, 37.0]           # oldest first
+    assert trail[-1] == [-122.0 + 399 * 0.0001, 37.0]   # newest always included
+    lngs = [c[0] for c in trail]
+    assert lngs == sorted(lngs)                 # order preserved
+
+
+def test_build_trail_empty():
+    assert tlm.build_trail([], _TRACK) == []

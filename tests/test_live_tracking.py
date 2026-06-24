@@ -174,7 +174,8 @@ def test_positions_shape_color_and_stale(client):
         s['rider_id'] = 1
     # No route context here — telemetry is exercised in test_live_metrics.py.
     with patch('routes.live.get_latest_positions_for_ride', return_value=rows), \
-         patch('routes.live._ride_live_context', return_value={'has_route': False}):
+         patch('routes.live._ride_live_context', return_value={'has_route': False}), \
+         patch('routes.live.get_positions_for_rider_since', return_value=[]):
         resp = client.get('/api/live/positions?ride_id=5')
     assert resp.status_code == 200
     data = resp.get_json()
