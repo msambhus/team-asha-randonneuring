@@ -26,6 +26,33 @@
 .status-line { font-size: 0.85rem; margin-top: 14px; }
 .status-on { color: #166534; font-weight: 600; }
 .status-off { color: var(--text-light); }
+
+/* Per-ride callout + Garmin setup steps */
+.lt-callout {
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+    padding: 11px 14px; font-size: 0.85rem; line-height: 1.45; margin: 0 0 20px;
+}
+.lt-callout strong { color: #92400e; }
+.lt-section-title { font-weight: 700; font-size: 0.98rem; margin: 22px 0 4px; }
+.lt-section-sub { color: var(--text-light); font-size: 0.82rem; margin: 0 0 10px; }
+.lt-steps { margin: 0 0 8px; padding: 0; list-style: none; counter-reset: step; }
+.lt-steps > li {
+    position: relative; padding: 0 0 13px 38px;
+    font-size: 0.88rem; line-height: 1.45;
+}
+.lt-steps > li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: -1px; width: 26px; height: 26px;
+    border-radius: 50%; background: var(--primary); color: #fff;
+    font-weight: 700; font-size: 0.8rem;
+    display: flex; align-items: center; justify-content: center;
+}
+.lt-steps .sub { display: block; color: var(--text-light); font-size: 0.82rem; margin-top: 2px; }
+.lt-steps code {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+    padding: 1px 5px; font-size: 0.8rem; word-break: break-all;
+}
+.lt-divider { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
 </style>
 {% endblock %}
 
@@ -34,12 +61,42 @@
   <div class="settings-card">
     <h1>Live Tracking</h1>
     <p class="help">
-      Opt in to share your live location with the club during a ride. Paste your
-      <a href="https://www.garmin.com/en-US/livetrack/" target="_blank" rel="noopener">Garmin LiveTrack</a>
-      session link below. Only logged-in club members can see the live map, and
-      position history is automatically deleted after 7 days. You can turn this
-      off at any time.
+      Share your live location with the club during a ride using
+      <a href="https://www.garmin.com/en-US/livetrack/" target="_blank" rel="noopener">Garmin LiveTrack</a> —
+      it broadcasts your watch/bike-computer GPS through the Garmin Connect app on your
+      phone, so it keeps working with your screen off and your phone in your pocket. Only
+      logged-in club members can see the live map, position history is automatically
+      deleted after 7 days, and you can turn this off at any time.
     </p>
+
+    <div class="lt-callout">
+      ⚠️ <strong>You need a fresh link for every ride.</strong> Garmin creates a brand-new
+      LiveTrack session — and a new link — each time you start an activity. The previous
+      link stops working, so grab a new one and paste it below at the start of each ride.
+    </div>
+
+    <div class="lt-section-title">One-time setup (in the Garmin Connect app)</div>
+    <p class="lt-section-sub">You only do this once on your phone.</p>
+    <ol class="lt-steps">
+      <li>Open the <strong>Garmin Connect</strong> app and go to
+        <strong>More → LiveTrack</strong>.
+        <span class="sub">On some versions it's under <em>Safety &amp; Tracking → LiveTrack</em>. Menu names vary by app version.</span></li>
+      <li>Turn <strong>LiveTrack on</strong>, and enable <strong>Auto Start</strong> so a
+        session begins automatically whenever you start an activity.</li>
+    </ol>
+
+    <div class="lt-section-title">Each ride</div>
+    <ol class="lt-steps">
+      <li><strong>Start your ride/activity</strong> on your Garmin so a LiveTrack session
+        goes live.</li>
+      <li>In Garmin Connect, open the active LiveTrack session and
+        <strong>copy the share link</strong>.
+        <span class="sub">It looks like <code>https://livetrack.garmin.com/session/…/token/…</code></span></li>
+      <li><strong>Paste it below</strong>, tick <strong>Enable live tracking</strong>, and
+        tap <strong>Save settings</strong>.</li>
+    </ol>
+
+    <hr class="lt-divider">
 
     <form method="POST" action="{{ url_for('live.live_settings') }}">
       <div class="toggle-row">
@@ -49,7 +106,7 @@
       </div>
 
       <div class="form-group">
-        <label for="garmin_session_url">Garmin LiveTrack link</label>
+        <label for="garmin_session_url">Garmin LiveTrack link (paste a fresh one each ride)</label>
         <input type="url" id="garmin_session_url" name="garmin_session_url"
                placeholder="https://livetrack.garmin.com/session/.../token/..."
                value="{{ tracking.garmin_session_url if tracking and tracking.garmin_session_url else '' }}">
@@ -63,16 +120,7 @@
         <span class="status-on">● Live tracking is ON.</span>
         You'll appear on the live map of any ride you're going on
         {% if tracking.garmin_session_token %}via Garmin LiveTrack{% endif %}.
-        <div style="margin-top:14px;">
-          <a href="{{ url_for('live.live_share') }}"
-             style="display:inline-flex;align-items:center;gap:6px;padding:10px 18px;background:#16a34a;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
-            </svg>
-            Share my location from this device
-          </a>
-        </div>
+        Remember to paste a fresh link before your next ride.
       {% else %}
         <span class="status-off">○ Live tracking is off.</span>
       {% endif %}
