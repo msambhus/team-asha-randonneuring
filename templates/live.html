@@ -79,7 +79,6 @@
       <div class="live-sub">{{ ride.name | clean_name }}{% if ride.date %} &middot; {{ ride.date }}{% endif %}</div>
     </div>
     <div class="share-control">
-      {% if opted_in %}
       <button id="share-btn" class="share-btn start">
         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -89,10 +88,6 @@
       </button>
       <label class="lowpower"><input type="checkbox" id="share-lowpower"> Low power</label>
       <div id="share-state" class="share-state"></div>
-      {% else %}
-      <a class="share-btn start" href="{{ url_for('live.live_settings') }}"
-         style="text-decoration:none;">Enable sharing</a>
-      {% endif %}
     </div>
   </div>
   <div id="live-map"></div>
@@ -398,19 +393,32 @@
       function onShareErr(err) {
         shareState.textContent = (err.code === 1) ? 'Location permission denied.' : 'Location error.';
       }
-      function startShare() {
-        if (!('geolocation' in navigator)) { shareState.textContent = 'Geolocation not supported.'; return; }
-        var lowPower = lowPowerEl && lowPowerEl.checked;
-        SHARE_INTERVAL = lowPower ? 60000 : 25000;   // fewer pings in low power
+      function beginWatch(lowPower) {
         sharing = true; lastSent = 0;
         shareBtn.className = 'share-btn stop';
         if (shareLabel) { shareLabel.textContent = 'Stop sharing'; }
-        shareState.className = 'share-state live'; shareState.textContent = 'Starting…';
+        shareState.className = 'share-state live'; shareState.textContent = 'Sharing your location…';
         acquireWake();   // screen must stay on — web pages can't share in the background
         watchId = navigator.geolocation.watchPosition(sendShare, onShareErr, {
           enableHighAccuracy: !lowPower,
           maximumAge: lowPower ? 30000 : 10000,
           timeout: 20000
+        });
+      }
+      function startShare() {
+        if (!('geolocation' in navigator)) { shareState.textContent = 'Geolocation not supported.'; return; }
+        var lowPower = lowPowerEl && lowPowerEl.checked;
+        SHARE_INTERVAL = lowPower ? 60000 : 25000;   // fewer pings in low power
+        shareState.className = 'share-state live'; shareState.textContent = 'Starting…';
+        // Opt in (one tap = consent) before sending — no detour to settings.
+        fetch('/api/live/sharing', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin', body: JSON.stringify({ enabled: true })
+        }).then(function (r) {
+          if (!r.ok) { throw new Error('status ' + r.status); }
+          beginWatch(lowPower);
+        }).catch(function (e) {
+          shareState.className = 'share-state'; shareState.textContent = 'Could not start (' + e.message + ').';
         });
       }
       function stopShare() {
