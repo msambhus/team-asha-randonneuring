@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "Team Asha Live",
+    "slug": "team-asha-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "teamasha",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "org.teamasha.randonneuring",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["location"],
+        "NSLocationWhenInUseUsageDescription": "Team Asha uses your location to show you on the club's live ride map.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Team Asha keeps sharing your location during a ride — even with the screen off — so the club can follow along. You control when sharing starts and stops."
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Team Asha keeps sharing your location during a ride — even with the screen off — so the club can follow along.",
+          "isIosBackgroundLocationEnabled": true
+        }
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_REVERSED_IOS_CLIENT_ID"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "apiBase": "https://team-asha-randonneuring.vercel.app",
+      "googleIosClientId": "REPLACE_WITH_GOOGLE_IOS_CLIENT_ID.apps.googleusercontent.com",
+      "googleWebClientId": "REPLACE_WITH_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com",
+      "eas": {
+        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+      }
+    }
+  }
+}
