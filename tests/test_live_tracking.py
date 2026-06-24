@@ -206,6 +206,8 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'Live Map' in html
     assert 'live-map' in html
     assert 'ROUTE_POLYLINE = null' in html   # no RWGPS route on this ride
+    assert 'Share my location' in html       # beacon Start control on the map
+    assert 'Set up Garmin' in html           # Garmin settings reachable from the map
 
 
 def test_map_page_draws_rwgps_route(client):
