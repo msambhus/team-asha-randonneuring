@@ -20,15 +20,31 @@ _FIXTURE = os.path.join(os.path.dirname(__file__), 'fixtures',
                         'garmin_livetrack_trackpoints.json')
 
 
-def _load_fixture():
+def _load_fixture_points():
     with open(_FIXTURE) as f:
-        return json.load(f)
+        return json.load(f)['trackPoints']
 
 
-def _mock_response(status_code=200, json_data=None, raise_json=False):
+def _wrap_share_html(points):
+    """Embed `points` into a fake LiveTrack share page the way Garmin's Next.js
+    app server-renders them: an escaped ``"trackPoints":[ ... ]`` JSON inside a
+    JS string. Mirrors the real RSC/flight payload our scraper parses out.
+    """
+    raw = json.dumps(points)
+    esc = raw.replace('\\', '\\\\').replace('"', '\\"')   # JS-string escaping
+    return (
+        '<!DOCTYPE html><html><body><script>'
+        'self.__next_f.push([1,"a:{\\"data\\":{\\"pages\\":[{\\"trackPoints\\":'
+        + esc + '}]}}"])'
+        '</script></body></html>'
+    )
+
+
+def _mock_response(status_code=200, text='', json_data=None, raise_json=False):
     resp = MagicMock()
     resp.status_code = status_code
     resp.ok = 200 <= status_code < 300
+    resp.text = text
     if raise_json:
         resp.json.side_effect = ValueError('no json')
     else:
@@ -59,9 +75,9 @@ def test_parse_session_invalid(bad):
 # ── fetch_positions ──────────────────────────────────────────────────────
 
 def test_fetch_positions_success(app):
-    fixture = _load_fixture()
+    html = _wrap_share_html(_load_fixture_points())
     with app.app_context():
-        with patch.object(requests, 'get', return_value=_mock_response(200, fixture)):
+        with patch.object(requests, 'get', return_value=_mock_response(200, text=html)):
             points = garmin_livetrack.fetch_positions('tok', 'sess')
     # 3 of 4 points have coordinates (the 4th is missing position).
     assert len(points) == 3
@@ -71,17 +87,84 @@ def test_fetch_positions_success(app):
     assert points[0]['recorded_at'].tzinfo is not None
 
 
-def test_fetch_positions_accepts_bare_list_and_alt_keys(app):
+def test_fetch_positions_accepts_alt_keys(app):
     data = [
         {'latitude': 40.0, 'longitude': -73.0, 'timestamp': 1750684800000},
         {'lat': 41.0, 'lng': -74.0, 'dateTime': '2026-06-23T15:00:00Z'},
     ]
+    html = _wrap_share_html(data)
     with app.app_context():
-        with patch.object(requests, 'get', return_value=_mock_response(200, data)):
+        with patch.object(requests, 'get', return_value=_mock_response(200, text=html)):
             points = garmin_livetrack.fetch_positions('tok', 'sess')
     assert len(points) == 2
     assert points[0]['lat'] == 40.0 and points[0]['lng'] == -73.0
     assert points[1]['lat'] == 41.0
+
+
+def test_fetch_positions_parses_garmin_fitness_fields(app):
+    # Real Garmin point shape: speedMetersPerSec is preferred over the legacy
+    # `speed` field, and HR/power/cadence use Garmin's verbose key names.
+    data = [{
+        'position': {'lat': 37.5, 'lon': -121.9},
+        'dateTime': '2026-06-24T18:00:00.000Z',
+        'speed': 0, 'speedMetersPerSec': 5.5,
+        'heartRateBeatsPerMin': 142, 'powerWatts': 210, 'cadenceCyclesPerMin': 88,
+    }]
+    html = _wrap_share_html(data)
+    with app.app_context():
+        with patch.object(requests, 'get', return_value=_mock_response(200, text=html)):
+            points = garmin_livetrack.fetch_positions('tok', 'sess')
+    assert len(points) == 1
+    p = points[0]
+    assert p['speed'] == pytest.approx(5.5)   # speedMetersPerSec wins over speed=0
+    assert p['heart_rate'] == 142
+    assert p['power'] == 210
+    assert p['cadence'] == 88
+
+
+def test_fetch_positions_uses_share_page_url(app):
+    captured = {}
+
+    def _get(url, **kwargs):
+        captured['url'] = url
+        captured['headers'] = kwargs.get('headers', {})
+        return _mock_response(200, text=_wrap_share_html([]))
+
+    with app.app_context():
+        with patch.object(requests, 'get', side_effect=_get):
+            garmin_livetrack.fetch_positions('TOK', 'SID')
+    # The share page a human opens — NOT the deleted REST trackpoints endpoint.
+    assert captured['url'] == 'https://livetrack.garmin.com/session/SID/token/TOK'
+    assert 'trackpoints' not in captured['url']
+    assert 'Mozilla' in captured['headers'].get('User-Agent', '')
+
+
+def test_fetch_positions_no_trackpoints_returns_empty(app):
+    # A page that loads but embeds no trackpoints (session hasn't reported yet)
+    # yields [] rather than raising.
+    html = '<html><body>no live data yet</body></html>'
+    with app.app_context():
+        with patch.object(requests, 'get', return_value=_mock_response(200, text=html)):
+            points = garmin_livetrack.fetch_positions('tok', 'sess')
+    assert points == []
+
+
+def test_extract_trackpoints_html_multiple_arrays():
+    # Garmin's RSC stream can split trackpoints across several pushes; we must
+    # collect every embedded array, not just the first.
+    a = _wrap_share_html([{'position': {'lat': 1.0, 'lon': 2.0},
+                           'dateTime': '2026-06-24T00:00:00Z'}])
+    b = _wrap_share_html([{'position': {'lat': 3.0, 'lon': 4.0},
+                           'dateTime': '2026-06-24T00:01:00Z'}])
+    raw = garmin_livetrack._extract_trackpoints_html(a + b)
+    assert len(raw) == 2
+    assert raw[0]['position']['lat'] == 1.0
+    assert raw[1]['position']['lat'] == 3.0
+
+
+def test_extract_trackpoints_html_empty_or_absent():
+    assert garmin_livetrack._extract_trackpoints_html('') == []
+    assert garmin_livetrack._extract_trackpoints_html('<html>nope</html>') == []
 
 
 @pytest.mark.parametrize('code,needle', [
@@ -102,14 +185,6 @@ def test_fetch_positions_timeout(app):
             with pytest.raises(Exception) as exc:
                 garmin_livetrack.fetch_positions('tok', 'sess')
     assert 'timed out' in str(exc.value).lower()
-
-
-def test_fetch_positions_non_json(app):
-    with app.app_context():
-        with patch.object(requests, 'get', return_value=_mock_response(200, raise_json=True)):
-            with pytest.raises(Exception) as exc:
-                garmin_livetrack.fetch_positions('tok', 'sess')
-    assert 'non-json' in str(exc.value).lower()
 
 
 def test_fetch_positions_requires_token_and_session(app):
@@ -165,7 +240,9 @@ def test_positions_requires_ride_id(client):
 def test_positions_shape_color_and_stale(client):
     rows = [
         {'rider_id': 7, 'name': 'Asha Rider', 'lat': 37.8, 'lng': -122.2,
-         'recorded_at': _now() - timedelta(minutes=2), 'status': 'GOING'},
+         'recorded_at': _now() - timedelta(minutes=2), 'status': 'GOING',
+         'source': 'garmin'},
+        # No 'source' key → API should default it to 'beacon'.
         {'rider_id': 9, 'name': 'Stale Rider', 'lat': 37.9, 'lng': -122.3,
          'recorded_at': _now() - timedelta(minutes=45), 'status': 'GOING'},
     ]
@@ -184,8 +261,10 @@ def test_positions_shape_color_and_stale(client):
     fresh, stale = data['positions']
     assert fresh['color'] == '#16a34a'      # GOING → green
     assert fresh['stale'] is False
+    assert fresh['source'] == 'garmin'      # passed through from the latest point
     assert stale['stale'] is True
     assert stale['minutes_ago'] >= 10
+    assert stale['source'] == 'beacon'      # defaulted when the row has no source
 
 
 # ── /ride/<id>/live map page ──────────────────────────────────────────────

@@ -29,10 +29,31 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.3);
     font-size: 10px; line-height: 16px; text-align: center;
 }
+/* Source emblem (bottom-right): ⌚ Garmin device vs 📱 phone beacon. */
+.rider-marker .src {
+    position: absolute; bottom: -5px; right: -7px;
+    width: 16px; height: 16px; border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    font-size: 9px; line-height: 16px; text-align: center;
+}
+/* Phone-beacon pins use a dashed ring; Garmin device pins stay solid. */
+.rider-marker.src-beacon .pin { border-style: dashed; }
 .rider-marker.stale { opacity: 0.45; filter: grayscale(0.7); }
 .live-popup { font-size: 0.85rem; line-height: 1.3; }
 .live-popup .name { font-weight: 600; }
 .live-popup .ago { color: #6b7280; }
+.live-popup .src-line { color: #374151; font-size: 0.78rem; margin-top: 2px; }
+
+.live-legend {
+    display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+    margin-top: 8px; font-size: 0.78rem; color: var(--text-light);
+}
+.live-legend .item { display: inline-flex; align-items: center; gap: 5px; }
+.live-legend .swatch {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid #9ca3af; box-sizing: border-box;
+}
+.live-legend .swatch.beacon { border-style: dashed; }
 
 #live-riders { margin-top: 16px; display: grid; gap: 12px; }
 .rider-card {
@@ -94,6 +115,10 @@
     </div>
   </div>
   <div id="live-map"></div>
+  <div class="live-legend">
+    <span class="item"><span class="swatch garmin"></span> ⌚ Garmin device <span style="color:var(--text-light)">(works screen-off)</span></span>
+    <span class="item"><span class="swatch beacon"></span> 📱 Phone <span style="color:var(--text-light)">(needs screen on)</span></span>
+  </div>
   <div id="live-status" class="live-status"></div>
   <div id="live-empty" class="live-empty" style="display:none;">
     No riders are sharing their location right now. Riders can opt in from
@@ -131,8 +156,53 @@
     map.addControl(new mapboxgl.FullscreenControl(), 'top-right');
 
     var markers = {};   // rider_id -> { marker, el }
-    var follow = true;  // auto-frame riders until the user pans the map
-    map.on('dragstart', function () { follow = false; });
+    var follow = true;  // auto-frame riders until the user moves the map
+    var lastPositions = [];
+
+    // Disable auto-follow on ANY user-initiated camera move — pan, pinch-zoom,
+    // scroll-zoom, the +/- buttons. We key off `e.originalEvent`: our own
+    // programmatic fitBounds calls (frameRiders) have none, so they don't
+    // count as the user taking control. (Previously only `dragstart` was
+    // handled, so zooming out got yanked back on the next poll.)
+    function userMove(e) { if (e && e.originalEvent) follow = false; }
+    map.on('dragstart', userMove);
+    map.on('zoomstart', userMove);
+    map.on('rotatestart', userMove);
+
+    function frameRiders(positions) {
+      if (!positions.length) return;
+      var fb = new mapboxgl.LngLatBounds();
+      positions.forEach(function (p) { fb.extend([p.lng, p.lat]); });
+      map.fitBounds(fb, { maxZoom: 14, padding: 80, duration: 500 });
+    }
+
+    // Custom "recenter on riders" control — re-enables follow and reframes.
+    function RecenterControl() {}
+    RecenterControl.prototype.onAdd = function (m) {
+      this._map = m;
+      var div = document.createElement('div');
+      div.className = 'mapboxgl-ctrl mapboxgl-ctrl-group';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.title = 'Recenter on riders';
+      btn.setAttribute('aria-label', 'Recenter on riders');
+      btn.textContent = '◎';
+      btn.style.fontSize = '16px';
+      btn.addEventListener('click', function () {
+        follow = true;
+        frameRiders(lastPositions);
+      });
+      div.appendChild(btn);
+      this._container = div;
+      return div;
+    };
+    RecenterControl.prototype.onRemove = function () {
+      if (this._container && this._container.parentNode) {
+        this._container.parentNode.removeChild(this._container);
+      }
+      this._map = undefined;
+    };
+    map.addControl(new RecenterControl(), 'top-left');
 
     map.on('load', function () {
       if (ROUTE_POLYLINE && ROUTE_POLYLINE.length > 1) {
@@ -183,8 +253,13 @@
       ago.className = 'ago';
       ago.textContent = p.minutes_ago <= 0 ? 'updated just now'
         : 'updated ' + p.minutes_ago + ' min ago';
+      var src = document.createElement('div');
+      src.className = 'src-line';
+      src.textContent = p.source === 'garmin'
+        ? '⌚ Garmin device' : '📱 Phone (browser)';
       wrap.appendChild(name);
       wrap.appendChild(ago);
+      wrap.appendChild(src);
       return wrap;
     }
 
@@ -197,9 +272,12 @@
       return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }
 
+    var SOURCE_ICON = { garmin: '⌚', beacon: '📱' };
+
     function applyMarker(el, p) {
       // Mutate the marker element in place (Mapbox keeps tracking the same node).
-      el.className = 'rider-marker' + (p.stale ? ' stale' : '');
+      var src = p.source === 'garmin' ? 'garmin' : 'beacon';
+      el.className = 'rider-marker src-' + src + (p.stale ? ' stale' : '');
       var pin = el.querySelector('.pin');
       pin.style.background = p.color;
       pin.textContent = initials(p.name);           // textContent — no HTML injection
@@ -213,6 +291,14 @@
         badge.title = act;
         el.appendChild(badge);
       }
+      // Source emblem (⌚ Garmin device / 📱 phone beacon).
+      var oldSrc = el.querySelector('.src');
+      if (oldSrc) { oldSrc.remove(); }
+      var srcBadge = document.createElement('div');
+      srcBadge.className = 'src';
+      srcBadge.textContent = SOURCE_ICON[src];
+      srcBadge.title = src === 'garmin' ? 'Garmin device' : 'Phone (browser)';
+      el.appendChild(srcBadge);
     }
 
     function buildMarkerEl(p) {
@@ -343,6 +429,7 @@
         .then(function (data) {
           var positions = data.positions || [];
           var seen = {};
+          lastPositions = positions;
           positions.forEach(function (p) { seen[p.rider_id] = true; upsertMarker(p); });
           // Remove markers for riders no longer in the window.
           Object.keys(markers).forEach(function (rid) {
@@ -350,12 +437,8 @@
           });
           renderRiders(positions);
           updateTrails(positions);
-          // Keep the riders framed (close-up) until the user pans the map.
-          if (follow && positions.length) {
-            var fb = new mapboxgl.LngLatBounds();
-            positions.forEach(function (p) { fb.extend([p.lng, p.lat]); });
-            map.fitBounds(fb, { maxZoom: 14, padding: 80, duration: 500 });
-          }
+          // Keep the riders framed (close-up) until the user moves the map.
+          if (follow) { frameRiders(positions); }
           emptyEl.style.display = positions.length ? 'none' : 'block';
           var now = new Date();
           statusEl.textContent = positions.length

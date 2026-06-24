@@ -1,20 +1,26 @@
 """Garmin LiveTrack ingestion service.
 
-Garmin LiveTrack has **no official API**. This module talks to the same
-unofficial JSON endpoints the LiveTrack web page uses, isolated here so the
-single point of breakage (and the single point to mock in tests) is one file.
+Garmin LiveTrack has **no official API**. This module scrapes the same public
+share page a human would open, isolated here so the single point of breakage
+(and the single point to mock in tests) is one file.
 
 A LiveTrack share link looks like:
     https://livetrack.garmin.com/session/<session_id>/token/<token>
 
 `parse_session(url)` pulls the {session_id, token} out of that link.
-`fetch_positions(token, session_id)` polls the trackpoints endpoint and returns
-a normalized list of {lat, lng, recorded_at} dicts.
+`fetch_positions(token, session_id)` loads the share page and returns a
+normalized list of {lat, lng, recorded_at, ...} dicts.
 
 Design notes:
+  - Garmin rebuilt LiveTrack as a Next.js app and **deleted** the old
+    unofficial REST endpoint (`/services/session/.../trackpoints`, now a hard
+    404). The live trackpoints are instead **server-side-rendered into the
+    share-page HTML** as an embedded (RSC/flight) JSON payload. So we fetch the
+    share page itself (with a browser User-Agent) and pull the embedded
+    `"trackPoints":[ ... ]` arrays back out.
   - All network access uses `requests` with a timeout and explicit handling of
     404 / 401 / 429 / 5xx, mirroring services/rwgps.py.
-  - The JSON shape is parsed defensively (Garmin has changed field names over
+  - The point shape is parsed defensively (Garmin has changed field names over
     time): we accept position under `position.{lat,lon}`, top-level
     `latitude/longitude`, or `lat/lng`, and timestamps under `dateTime`/
     `timestamp`/`recorded_at`.
@@ -22,6 +28,7 @@ Design notes:
     exception that the cron handler catches per-rider so one bad session never
     breaks the batch.
 """
+import json
 import re
 from datetime import datetime, timezone
 
@@ -34,9 +41,16 @@ _SESSION_URL_RE = re.compile(
     r'livetrack\.garmin\.com/session/(?P<session_id>[^/?#]+)/token/(?P<token>[^/?#]+)',
     re.IGNORECASE,
 )
-_TRACKPOINTS_URL = (
-    'https://livetrack.garmin.com/services/session/{session_id}'
-    '/token/{token}/trackpoints'
+# Public share page (a real browser URL). Garmin server-renders the trackpoints
+# into this page's HTML; we scrape them back out of `_extract_trackpoints_html`.
+_SHARE_PAGE_URL = (
+    'https://livetrack.garmin.com/session/{session_id}/token/{token}'
+)
+# A browser-like User-Agent: the share page is a normal web page and a bare
+# requests UA is more likely to be challenged/blocked.
+_BROWSER_UA = (
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+    'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 )
 _REQUEST_TIMEOUT = 15
 
@@ -149,26 +163,64 @@ def _extract_point(raw_point):
 
     return {
         'lat': lat, 'lng': lng, 'recorded_at': recorded_at,
-        'speed': _num(pick('speed', 'speedMetersPerSecond'), float),
+        'speed': _num(pick('speedMetersPerSec', 'speed', 'speedMetersPerSecond'), float),
         'heart_rate': _num(pick('heartRate', 'heartRateBeatsPerMin', 'heart_rate'), int),
         'power': _num(pick('power', 'powerWatts'), int),
         'cadence': _num(pick('cadence', 'cadenceCyclesPerMin'), int),
     }
 
 
-def fetch_positions(token, session_id):
-    """Poll the LiveTrack trackpoints endpoint for one session.
+def _extract_trackpoints_html(html):
+    """Pull every embedded `"trackPoints":[ ... ]` array out of the share page.
 
-    Returns a list of {lat, lng, recorded_at} dicts ordered as Garmin returns
-    them (chronological). Raises a descriptive Exception on any HTTP/parse
-    failure so the caller can fail soft per-rider.
+    Garmin's Next.js app server-renders the session's trackpoints into the page
+    HTML as an escaped JSON (RSC/flight) payload — e.g.
+    ``...trackPoints\\":[{\\"dateTime\\":...,\\"position\\":{...}}...]...``. We
+    locate each `"trackPoints":[` marker, bracket-match the array out of the
+    surrounding JS string (respecting the `\\"`/`\\\\` escaping), un-escape it,
+    and json.loads the result. Returns a flat list of raw point dicts (caller
+    normalizes via `_extract_point`). Tolerant of zero matches → [].
+    """
+    if not html:
+        return []
+
+    decoder = json.JSONDecoder()
+    raw_points = []
+    # `\"trackPoints\":[`  — the key is itself escaped inside the JS string.
+    for marker in re.finditer(r'trackPoints\\":\[', html):
+        start = marker.end() - 1  # index of the opening '['
+        # Reverse the JS-string escaping (\" -> ", \\ -> \) from the array start
+        # to EOF, then let the JSON decoder find the array's end via raw_decode
+        # (it stops at the first complete value and ignores trailing data). Using
+        # the decoder — rather than counting raw brackets — means a literal
+        # '['/']' inside a string value can never mis-terminate the array.
+        candidate = html[start:].replace('\\"', '"').replace('\\\\', '\\')
+        try:
+            arr, _ = decoder.raw_decode(candidate)
+        except ValueError:
+            continue
+        if isinstance(arr, list):
+            raw_points.extend(p for p in arr if isinstance(p, dict))
+
+    return raw_points
+
+
+def fetch_positions(token, session_id):
+    """Load the LiveTrack share page for one session and parse its trackpoints.
+
+    Returns a list of {lat, lng, recorded_at, ...} dicts ordered as Garmin
+    renders them (chronological). Raises a descriptive Exception on any
+    HTTP/parse failure so the caller can fail soft per-rider.
     """
     if not token or not session_id:
         raise ValueError('fetch_positions requires both token and session_id')
 
-    url = _TRACKPOINTS_URL.format(session_id=session_id, token=token)
+    url = _SHARE_PAGE_URL.format(session_id=session_id, token=token)
     try:
-        resp = http_requests.get(url, timeout=_REQUEST_TIMEOUT)
+        resp = http_requests.get(
+            url, timeout=_REQUEST_TIMEOUT,
+            headers={'User-Agent': _BROWSER_UA},
+        )
     except http_requests.Timeout:
         raise Exception(f'Garmin LiveTrack request timed out for session {session_id}.')
     except http_requests.RequestException as exc:
@@ -183,25 +235,7 @@ def fetch_positions(token, session_id):
     if not resp.ok:
         raise Exception(f'Garmin LiveTrack error (HTTP {resp.status_code}) for session {session_id}.')
 
-    try:
-        data = resp.json()
-    except ValueError:
-        raise Exception(f'Garmin LiveTrack returned non-JSON for session {session_id}.')
-
-    # The payload has been seen as a bare list, or wrapped under trackPoints/
-    # trackPointRequest. Be liberal in what we accept.
-    raw_points = None
-    if isinstance(data, list):
-        raw_points = data
-    elif isinstance(data, dict):
-        raw_points = (
-            data.get('trackPoints')
-            or data.get('trackpoints')
-            or (data.get('trackPointRequest') or {}).get('trackPoints')
-            or []
-        )
-    if not isinstance(raw_points, list):
-        raw_points = []
+    raw_points = _extract_trackpoints_html(resp.text or '')
 
     positions = []
     for raw in raw_points:
