@@ -188,17 +188,25 @@ def test_rides_endpoint_requires_auth(client):
 
 
 def test_calendar_endpoint_token_authed(client, app):
-    rides = [
-        {'id': 5, 'name': 'Mt Hamilton 200K', 'date': '2026-07-04', 'distance_km': 200,
-         'ride_type': 'Brevet', 'start_location': 'San Jose', 'club_name': 'Team Asha',
-         'signup_count': 12},
+    # get_all_upcoming_events: full calendar = Team Asha + external club brevets.
+    events = [
+        {'id': 5, 'route_name': 'Mt Hamilton 200K', 'name': 'Mt Hamilton 200K',
+         'date_str': '2026-07-04', 'distance_km': 200, 'ride_type': 'Brevet',
+         'start_location': 'San Jose', 'club_name': 'Team Asha', 'signup_count': 12,
+         'is_team_ride': True},
+        {'id': 9, 'route_name': 'Orr Springs 600k', 'name': 'Orr Springs 600k',
+         'date_str': '2026-06-27', 'distance_km': 600, 'ride_type': 'Brevet',
+         'start_location': None, 'club_name': 'San Francisco Randonneurs',
+         'signup_count': 0, 'is_team_ride': False},
     ]
-    with patch('models.get_upcoming_rides', return_value=rides):
+    with patch('models.get_all_upcoming_events', return_value=events):
         resp = client.get('/api/calendar', headers=_bearer(app, rider_id=7))
     assert resp.status_code == 200
     data = resp.get_json()['rides']
-    assert data[0]['id'] == 5 and data[0]['club_name'] == 'Team Asha'
-    assert data[0]['signup_count'] == 12
+    assert [r['id'] for r in data] == [5, 9]
+    # Team Asha ride keeps its flag; external SFR brevet is included (the bug fix).
+    assert data[0]['name'] == 'Mt Hamilton 200K' and data[0]['is_team_ride'] is True
+    assert data[1]['club_name'] == 'San Francisco Randonneurs' and data[1]['is_team_ride'] is False
 
 
 def test_calendar_endpoint_requires_auth(client):
