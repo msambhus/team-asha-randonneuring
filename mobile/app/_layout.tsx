@@ -48,6 +48,7 @@ export default function RootLayout() {
                 <Stack.Screen name="login" options={{ headerShown: false }} />
                 <Stack.Screen name="index" options={{ title: 'Live Rides' }} />
                 <Stack.Screen name="calendar" options={{ title: 'Brevet Calendar' }} />
+                <Stack.Screen name="season" options={{ title: 'My Season' }} />
                 <Stack.Screen name="ride/[id]" options={{ title: 'Live Map' }} />
               </Stack>
             </AuthGate>

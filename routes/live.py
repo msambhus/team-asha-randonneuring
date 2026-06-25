@@ -515,6 +515,71 @@ def api_calendar():
     return jsonify({'rides': out})
 
 
+@live_bp.route('/api/me/season')
+@token_or_session_required
+def api_my_season():
+    """JSON: the signed-in rider's current-season progress — the app's "My Season" tab.
+
+    Auth: web session OR mobile Bearer token. Read-only; assembles the existing
+    season / SR / R-12 / Eddington helpers for g.rider_id + the current season.
+    No new award computation, no migration.
+    """
+    if not g.rider_id:
+        return jsonify({'error': 'Complete your profile to view your season'}), 403
+
+    from models import (get_current_season, get_rider_season_stats,
+                        get_rider_season_elevation_ft, get_rider_career_stats,
+                        detect_sr_for_rider_season, get_sr_distances_done,
+                        get_r12_current_streak, get_strava_connection)
+
+    rider_id = g.rider_id
+    season = get_current_season()
+    if not season:
+        return jsonify({'error': 'No current season set'}), 404
+
+    season_id = season['id']
+
+    # Season totals (current season uses date-filtered SR, mirroring the web profile).
+    stats = get_rider_season_stats(rider_id, season_id)
+    elevation_ft = get_rider_season_elevation_ft(rider_id, season_id)
+    sr_count = detect_sr_for_rider_season(rider_id, season_id, date_filter=True)
+    distances_done = get_sr_distances_done(rider_id, season_id, date_filter=True)
+
+    # R-12: current consecutive-month streak + whether it's still alive.
+    r12 = get_r12_current_streak(rider_id)
+
+    # Career totals (KMs, all seasons).
+    career = get_rider_career_stats(rider_id)
+
+    # Eddington: stored value (miles) + badge, mirroring the web profile. Skip the
+    # optional live-recalc here to keep this a fast per-rider call.
+    eddington = None
+    conn = get_strava_connection(rider_id)
+    if conn and conn.get('eddington_number_miles'):
+        from services.eddington import get_eddington_badge_level
+        value = conn['eddington_number_miles']
+        eddington = {'value': value, 'badge': get_eddington_badge_level(value)}
+
+    return jsonify({
+        'season': {'name': season.get('name')},
+        'stats': {
+            'distance_km': round(stats['kms'] or 0),
+            'rides': stats['rides'] or 0,
+            'elevation_ft': elevation_ft,
+        },
+        'sr': {
+            'has_sr': sr_count >= 1,
+            'distances_done': distances_done,
+        },
+        'r12': {
+            'months': r12['months'],
+            'active': r12['active'],
+        },
+        'career': {'distance_km': round(career['total_kms'] or 0)},
+        'eddington': eddington,
+    })
+
+
 @live_bp.route('/live/share')
 @profile_required
 def live_share():

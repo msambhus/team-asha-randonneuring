@@ -36,6 +36,23 @@ export interface CalendarResponse {
   rides: BrevetSummary[];
 }
 
+export interface EddingtonBadge {
+  level: string;
+  color?: string;
+  label: string;
+  emoji?: string;
+}
+
+/** GET /api/me/season — the signed-in rider's current-season progress. */
+export interface MySeasonResponse {
+  season: { name: string | null };
+  stats: { distance_km: number; rides: number; elevation_ft: number };
+  sr: { has_sr: boolean; distances_done: number[] };
+  r12: { months: number; active: boolean };
+  career: { distance_km: number };
+  eddington: { value: number; badge: EddingtonBadge } | null;
+}
+
 export interface LivePositionTelemetryNow {
   speed_mph: number | null;
   activity: 'paused' | 'walking' | 'cycling' | 'driving' | null;

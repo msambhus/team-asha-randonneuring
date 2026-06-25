@@ -25,9 +25,14 @@ export default function RidesScreen() {
 
   return (
     <View style={styles.container}>
-      <Link href="/calendar" asChild>
-        <Pressable style={styles.calLink}><Text style={styles.link}>📅 Brevet calendar</Text></Pressable>
-      </Link>
+      <View style={styles.navRow}>
+        <Link href="/calendar" asChild>
+          <Pressable style={styles.calLink}><Text style={styles.link}>📅 Brevet calendar</Text></Pressable>
+        </Link>
+        <Link href="/season" asChild>
+          <Pressable style={styles.calLink}><Text style={styles.link}>🏅 My Season</Text></Pressable>
+        </Link>
+      </View>
       <FlatList
         data={rides ?? []}
         keyExtractor={(r) => String(r.id)}
@@ -65,5 +70,6 @@ const styles = StyleSheet.create({
   muted: { color: '#6b7280' },
   link: { color: '#2563eb', fontWeight: '600' },
   signOut: { alignItems: 'center', paddingVertical: 14 },
-  calLink: { paddingVertical: 10, paddingHorizontal: 4, marginBottom: 4 },
+  navRow: { flexDirection: 'row', gap: 16, marginBottom: 4 },
+  calLink: { paddingVertical: 10, paddingHorizontal: 4 },
 });

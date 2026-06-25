@@ -311,6 +311,22 @@ def get_rider_season_stats(rider_id, season_id):
     """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchone()
     return dict(row) if row else {'rides': 0, 'kms': 0}
 
+
+# NOT CACHED - rider-specific data should not be cached in serverless environments
+def get_rider_season_elevation_ft(rider_id, season_id):
+    """Total climbed elevation (ft) for a rider's finished rides in a season.
+
+    Same FINISHED-ride definition as get_rider_season_stats; kept separate so the
+    web season-stats query is untouched. Returns an int (0 when no data)."""
+    row = _execute("""
+        SELECT COALESCE(SUM(ri.elevation_ft), 0) as elevation_ft
+        FROM rider_ride rr
+        JOIN ride ri ON rr.ride_id = ri.id
+        WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
+          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
+    """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchone()
+    return int(row['elevation_ft']) if row and row['elevation_ft'] else 0
+
 @cache.memoize(CACHE_TIMEOUT)
 def get_all_rider_season_stats(season_id):
     """Batch: rides and KMs for ALL riders in a season. Returns dict keyed by rider_id."""
@@ -424,6 +440,45 @@ def detect_sr_for_rider_season(rider_id, season_id, date_filter=False):
         elif d >= 600:
             buckets[600] += 1
     return min(buckets.values())
+
+# NOT CACHED - rider-specific data should not be cached in serverless environments
+def get_sr_distances_done(rider_id, season_id, date_filter=False):
+    """Which SR distance tiers (200/300/400/600) the rider has at least one
+    finished ride in this season. Returns a sorted list, e.g. [200, 400].
+
+    Uses the same query + bucket thresholds as detect_sr_for_rider_season so the
+    canonical SR definition stays single-sourced — this just exposes per-tier
+    completion for progress display instead of the min-across-buckets count."""
+    today = date.today()
+    if date_filter:
+        rows = _execute("""
+            SELECT ri.distance_km FROM rider_ride rr
+            JOIN ride ri ON rr.ride_id = ri.id
+            WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
+              AND ri.date <= %s
+              AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
+        """, (rider_id, season_id, RideStatus.FINISHED.value, today)).fetchall()
+    else:
+        rows = _execute("""
+            SELECT ri.distance_km FROM rider_ride rr
+            JOIN ride ri ON rr.ride_id = ri.id
+            WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
+              AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
+        """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchall()
+
+    done = set()
+    for row in rows:
+        d = row['distance_km']
+        if 200 <= d < 300:
+            done.add(200)
+        elif 300 <= d < 400:
+            done.add(300)
+        elif 400 <= d < 600:
+            done.add(400)
+        elif d >= 600:
+            done.add(600)
+    return sorted(done)
+
 
 @cache.memoize(CACHE_TIMEOUT)
 def detect_sr_for_all_riders_in_season(season_id, date_filter=False):
@@ -545,6 +600,55 @@ def detect_r12_awards(rider_id):
             j += 12
 
     return r12_awards
+
+
+# NOT CACHED - rider-specific + date-dependent ('active' tracks the current month)
+def get_r12_current_streak(rider_id):
+    """The rider's *current* R-12 streak: consecutive recent months each with a
+    finished 200+km ride, ending at the most recent qualifying month.
+
+    Reuses the same monthly-qualification rule as detect_r12_awards (200+km,
+    finished). Returns {'months': int, 'active': bool}. ``active`` means the chain
+    is still alive — its last qualifying month is the current or previous calendar
+    month, so the rider can keep it going. A completed-but-stale streak is inactive."""
+    rows = _execute("""
+        SELECT DISTINCT TO_CHAR(ri.date, 'YYYY-MM') as ride_month
+        FROM rider_ride rr
+        JOIN ride ri ON rr.ride_id = ri.id
+        WHERE rr.rider_id = %s
+          AND rr.status = %s
+          AND ri.distance_km >= 200
+          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
+        ORDER BY ride_month
+    """, (rider_id, RideStatus.FINISHED.value)).fetchall()
+
+    if not rows:
+        return {'months': 0, 'active': False}
+
+    def parse_ym(ym_str):
+        y, m = ym_str.split('-')
+        return int(y), int(m)
+
+    def month_diff(ym1, ym2):
+        return (ym2[0] - ym1[0]) * 12 + (ym2[1] - ym1[1])
+
+    parsed = [parse_ym(r['ride_month']) for r in rows]
+
+    # Length of the trailing run of consecutive months (ending at the latest month).
+    streak = 1
+    for i in range(len(parsed) - 1, 0, -1):
+        if month_diff(parsed[i - 1], parsed[i]) == 1:
+            streak += 1
+        else:
+            break
+
+    # Active if the latest qualifying month is this month or last month.
+    today = date.today()
+    last = parsed[-1]
+    months_since_last = month_diff(last, (today.year, today.month))
+    active = months_since_last <= 1
+
+    return {'months': streak, 'active': active}
 
 
 # ========== ALL-TIME STATS ==========
