@@ -205,6 +205,85 @@ def test_calendar_endpoint_requires_auth(client):
     assert client.get('/api/calendar').status_code == 401
 
 
+def _patch_season(**overrides):
+    """Patch every model fn /api/me/season assembles. Override any return value
+    by keyword (e.g. season=None, conn={...})."""
+    season = overrides.get('season', {'id': 1, 'name': '2025-2026'})
+    stats = overrides.get('stats', {'rides': 5, 'kms': 1200})
+    elevation = overrides.get('elevation', 42000)
+    sr_count = overrides.get('sr_count', 1)
+    distances = overrides.get('distances', [200, 300, 400, 600])
+    r12 = overrides.get('r12', {'months': 8, 'active': True})
+    career = overrides.get('career', {'total_rides': 30, 'total_kms': 9000})
+    conn = overrides.get('conn', {'eddington_number_miles': 62, 'eddington_number_km': 70})
+    badge = overrides.get('badge', {'level': 'strong', 'label': 'Strong', 'emoji': '💪'})
+    return [
+        patch('models.get_current_season', return_value=season),
+        patch('models.get_rider_season_stats', return_value=stats),
+        patch('models.get_rider_season_elevation_ft', return_value=elevation),
+        patch('models.detect_sr_for_rider_season', return_value=sr_count),
+        patch('models.get_sr_distances_done', return_value=distances),
+        patch('models.get_r12_current_streak', return_value=r12),
+        patch('models.get_rider_career_stats', return_value=career),
+        patch('models.get_strava_connection', return_value=conn),
+        patch('services.eddington.get_eddington_badge_level', return_value=badge),
+    ]
+
+
+def test_my_season_token_authed(client, app):
+    import contextlib
+    with contextlib.ExitStack() as stack:
+        for p in _patch_season():
+            stack.enter_context(p)
+        resp = client.get('/api/me/season', headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['season']['name'] == '2025-2026'
+    assert data['stats'] == {'distance_km': 1200, 'rides': 5, 'elevation_ft': 42000}
+    assert data['sr'] == {'has_sr': True, 'distances_done': [200, 300, 400, 600]}
+    assert data['r12'] == {'months': 8, 'active': True}
+    assert data['career'] == {'distance_km': 9000}
+    assert data['eddington']['value'] == 62
+    assert data['eddington']['badge']['label'] == 'Strong'
+
+
+def test_my_season_no_sr_yet(client, app):
+    import contextlib
+    with contextlib.ExitStack() as stack:
+        for p in _patch_season(sr_count=0, distances=[200]):
+            stack.enter_context(p)
+        resp = client.get('/api/me/season', headers=_bearer(app, rider_id=7))
+    data = resp.get_json()
+    assert data['sr'] == {'has_sr': False, 'distances_done': [200]}
+
+
+def test_my_season_eddington_null_without_strava(client, app):
+    import contextlib
+    with contextlib.ExitStack() as stack:
+        for p in _patch_season(conn=None):
+            stack.enter_context(p)
+        resp = client.get('/api/me/season', headers=_bearer(app, rider_id=7))
+    assert resp.get_json()['eddington'] is None
+
+
+def test_my_season_no_current_season_404(client, app):
+    import contextlib
+    with contextlib.ExitStack() as stack:
+        for p in _patch_season(season=None):
+            stack.enter_context(p)
+        resp = client.get('/api/me/season', headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 404
+
+
+def test_my_season_requires_auth(client):
+    assert client.get('/api/me/season').status_code == 401
+
+
+def test_my_season_token_without_rider_is_403(client, app):
+    resp = client.get('/api/me/season', headers=_bearer(app, rider_id=None))
+    assert resp.status_code == 403
+
+
 def test_beacon_still_works_with_session_and_no_token(client, app):
     """No regression: the web session path is unchanged."""
     captured = {}
