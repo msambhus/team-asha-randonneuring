@@ -31,6 +31,10 @@ class Config:
     GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
     GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
     GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
+    # iOS native Google Sign-In client id — the audience the mobile app's Google
+    # ID tokens are verified against (POST /api/auth/google). Separate from the
+    # web client above. Optional: the endpoint returns 503 until it's set.
+    GOOGLE_IOS_CLIENT_ID = os.environ.get('GOOGLE_IOS_CLIENT_ID')
 
     # Linear API Configuration
     LINEAR_API_KEY = os.environ.get('LINEAR_API_KEY')
