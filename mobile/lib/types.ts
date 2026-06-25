@@ -21,6 +21,21 @@ export interface RidesResponse {
   rides: RideSummary[];
 }
 
+export interface BrevetSummary {
+  id: number;
+  name: string;
+  date: string | null;
+  distance_km: number | null;
+  ride_type: string | null;
+  start_location: string | null;
+  club_name: string | null;
+  signup_count: number | null;
+}
+
+export interface CalendarResponse {
+  rides: BrevetSummary[];
+}
+
 export interface LivePositionTelemetryNow {
   speed_mph: number | null;
   activity: 'paused' | 'walking' | 'cycling' | 'driving' | null;

@@ -25,6 +25,9 @@ export default function RidesScreen() {
 
   return (
     <View style={styles.container}>
+      <Link href="/calendar" asChild>
+        <Pressable style={styles.calLink}><Text style={styles.link}>📅 Brevet calendar</Text></Pressable>
+      </Link>
       <FlatList
         data={rides ?? []}
         keyExtractor={(r) => String(r.id)}
@@ -62,4 +65,5 @@ const styles = StyleSheet.create({
   muted: { color: '#6b7280' },
   link: { color: '#2563eb', fontWeight: '600' },
   signOut: { alignItems: 'center', paddingVertical: 14 },
+  calLink: { paddingVertical: 10, paddingHorizontal: 4, marginBottom: 4 },
 });
