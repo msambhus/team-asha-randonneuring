@@ -33,7 +33,7 @@
       [
         "@react-native-google-signin/google-signin",
         {
-          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_REVERSED_IOS_CLIENT_ID"
+          "iosUrlScheme": "com.googleusercontent.apps.465825889971-bbk5vdfldcblrr6h91jvjd66tmgudf5h"
         }
       ]
     ],
@@ -43,8 +43,8 @@
     "extra": {
       "router": {},
       "apiBase": "https://team-asha-randonneuring.vercel.app",
-      "googleIosClientId": "REPLACE_WITH_GOOGLE_IOS_CLIENT_ID.apps.googleusercontent.com",
-      "googleWebClientId": "REPLACE_WITH_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com",
+      "googleIosClientId": "465825889971-bbk5vdfldcblrr6h91jvjd66tmgudf5h.apps.googleusercontent.com",
+      "googleWebClientId": "465825889971-tkfv9td375ap2cle1pipm0sniogi0rjc.apps.googleusercontent.com",
       "eas": {
         "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
       }
