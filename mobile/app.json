@@ -11,7 +11,9 @@
       "bundleIdentifier": "org.teamasha.randonneuring",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["location"],
+        "UIBackgroundModes": [
+          "location"
+        ],
         "NSLocationWhenInUseUsageDescription": "Team Asha uses your location to show you on the club's live ride map.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Team Asha keeps sharing your location during a ride — even with the screen off — so the club can follow along. You control when sharing starts and stops."
       }
@@ -46,8 +48,9 @@
       "googleIosClientId": "465825889971-bbk5vdfldcblrr6h91jvjd66tmgudf5h.apps.googleusercontent.com",
       "googleWebClientId": "465825889971-tkfv9td375ap2cle1pipm0sniogi0rjc.apps.googleusercontent.com",
       "eas": {
-        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+        "projectId": "a2d7adfa-7b86-4383-b5b7-cb2b7daaddfa"
       }
-    }
+    },
+    "owner": "mihirsam"
   }
 }
