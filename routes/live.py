@@ -491,6 +491,30 @@ def live_rides():
     return jsonify({'rides': out})
 
 
+@live_bp.route('/api/calendar')
+@token_or_session_required
+def api_calendar():
+    """JSON: Team Asha's upcoming brevets — the mobile app's calendar tab.
+
+    Auth: web session OR mobile Bearer token. Read-only; reuses get_upcoming_rides.
+    """
+    if not g.rider_id:
+        return jsonify({'error': 'Complete your profile to view the calendar'}), 403
+    from models import get_upcoming_rides
+    rides = get_upcoming_rides()
+    out = [{
+        'id': r['id'],
+        'name': (r.get('name') or '').strip(),
+        'date': str(r['date']) if r.get('date') else None,
+        'distance_km': r.get('distance_km'),
+        'ride_type': r.get('ride_type'),
+        'start_location': r.get('start_location'),
+        'club_name': r.get('club_name'),
+        'signup_count': r.get('signup_count'),
+    } for r in rides]
+    return jsonify({'rides': out})
+
+
 @live_bp.route('/live/share')
 @profile_required
 def live_share():

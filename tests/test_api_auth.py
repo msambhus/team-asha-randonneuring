@@ -187,6 +187,24 @@ def test_rides_endpoint_requires_auth(client):
     assert client.get('/api/live/rides').status_code == 401
 
 
+def test_calendar_endpoint_token_authed(client, app):
+    rides = [
+        {'id': 5, 'name': 'Mt Hamilton 200K', 'date': '2026-07-04', 'distance_km': 200,
+         'ride_type': 'Brevet', 'start_location': 'San Jose', 'club_name': 'Team Asha',
+         'signup_count': 12},
+    ]
+    with patch('models.get_upcoming_rides', return_value=rides):
+        resp = client.get('/api/calendar', headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 200
+    data = resp.get_json()['rides']
+    assert data[0]['id'] == 5 and data[0]['club_name'] == 'Team Asha'
+    assert data[0]['signup_count'] == 12
+
+
+def test_calendar_endpoint_requires_auth(client):
+    assert client.get('/api/calendar').status_code == 401
+
+
 def test_beacon_still_works_with_session_and_no_token(client, app):
     """No regression: the web session path is unchanged."""
     captured = {}
