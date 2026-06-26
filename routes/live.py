@@ -520,6 +520,32 @@ def api_calendar():
     return jsonify({'rides': out})
 
 
+@cache.memoize(CACHE_TIMEOUT)
+def _ride_route_polyline(ride_id):
+    """Cached [[lng,lat],...] RWGPS route line for a ride (static per ride).
+    Returns None when the ride is missing or has no resolvable route."""
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        return None
+    return _build_route_polyline(ride)
+
+
+@live_bp.route('/api/ride/<int:ride_id>/route')
+@token_or_session_required
+def api_ride_route(ride_id):
+    """JSON: the RWGPS route polyline for a ride — the mobile map's route line.
+
+    Auth: web session OR mobile Bearer token. Reuses _build_route_polyline (the
+    same source the web live map draws). The polyline is large + static, so it's
+    a separate cached endpoint rather than a field on the 20s position poll.
+    Fail-soft: returns an empty polyline (not 404) so the map still renders dots.
+    """
+    if not g.rider_id:
+        return jsonify({'error': 'Complete your profile to view the route'}), 403
+    polyline = _ride_route_polyline(ride_id)
+    return jsonify({'ride_id': ride_id, 'polyline': polyline or []})
+
+
 @live_bp.route('/api/me/season')
 @token_or_session_required
 def api_my_season():
