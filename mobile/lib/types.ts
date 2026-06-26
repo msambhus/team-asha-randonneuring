@@ -44,11 +44,20 @@ export interface EddingtonBadge {
   emoji?: string;
 }
 
+export interface SeasonRideDone {
+  id: number;
+  name: string;
+  date: string | null;
+  distance_km: number | null;
+}
+
 /** GET /api/me/season — the signed-in rider's current-season progress. */
 export interface MySeasonResponse {
   season: { name: string | null };
   stats: { distance_km: number; rides: number; elevation_ft: number };
-  sr: { has_sr: boolean; distances_done: number[] };
+  // counts: how many finished rides in each SR tier this season, keyed "200".."600".
+  sr: { has_sr: boolean; distances_done: number[]; counts: Record<string, number> };
+  rides_done: SeasonRideDone[];
   r12: { months: number; active: boolean };
   career: { distance_km: number };
   eddington: { value: number; badge: EddingtonBadge } | null;

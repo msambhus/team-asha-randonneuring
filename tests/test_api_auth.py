@@ -247,6 +247,10 @@ def _patch_season(**overrides):
     elevation = overrides.get('elevation', 42000)
     sr_count = overrides.get('sr_count', 1)
     distances = overrides.get('distances', [200, 300, 400, 600])
+    sr_counts = overrides.get('sr_counts', {200: 1, 300: 1, 400: 1, 600: 1})
+    rides_done = overrides.get('rides_done', [
+        {'id': 5, 'name': 'Mt Hamilton 200K', 'date': '2026-05-04', 'distance_km': 200},
+    ])
     r12 = overrides.get('r12', {'months': 8, 'active': True})
     career = overrides.get('career', {'total_rides': 30, 'total_kms': 9000})
     conn = overrides.get('conn', {'eddington_number_miles': 62, 'eddington_number_km': 70})
@@ -257,6 +261,8 @@ def _patch_season(**overrides):
         patch('models.get_rider_season_elevation_ft', return_value=elevation),
         patch('models.detect_sr_for_rider_season', return_value=sr_count),
         patch('models.get_sr_distances_done', return_value=distances),
+        patch('models.get_sr_counts_by_tier', return_value=sr_counts),
+        patch('models.get_rider_finished_rides_for_season', return_value=rides_done),
         patch('models.get_r12_current_streak', return_value=r12),
         patch('models.get_rider_career_stats', return_value=career),
         patch('models.get_strava_connection', return_value=conn),
@@ -274,7 +280,14 @@ def test_my_season_token_authed(client, app):
     data = resp.get_json()
     assert data['season']['name'] == '2025-2026'
     assert data['stats'] == {'distance_km': 1200, 'rides': 5, 'elevation_ft': 42000}
-    assert data['sr'] == {'has_sr': True, 'distances_done': [200, 300, 400, 600]}
+    assert data['sr'] == {
+        'has_sr': True,
+        'distances_done': [200, 300, 400, 600],
+        'counts': {'200': 1, '300': 1, '400': 1, '600': 1},
+    }
+    assert data['rides_done'] == [
+        {'id': 5, 'name': 'Mt Hamilton 200K', 'date': '2026-05-04', 'distance_km': 200},
+    ]
     assert data['r12'] == {'months': 8, 'active': True}
     assert data['career'] == {'distance_km': 9000}
     assert data['eddington']['value'] == 62
@@ -288,7 +301,21 @@ def test_my_season_no_sr_yet(client, app):
             stack.enter_context(p)
         resp = client.get('/api/me/season', headers=_bearer(app, rider_id=7))
     data = resp.get_json()
-    assert data['sr'] == {'has_sr': False, 'distances_done': [200]}
+    assert data['sr']['has_sr'] is False
+    assert data['sr']['distances_done'] == [200]
+
+
+def test_my_season_unescapes_ride_names_and_keys_counts(client, app):
+    """rides_done names are HTML-unescaped; SR counts are returned keyed by str."""
+    import contextlib
+    rides = [{'id': 9, 'name': 'Paris&ndash;Brest&nbsp;600K', 'date': '2026-06-01', 'distance_km': 600}]
+    with contextlib.ExitStack() as stack:
+        for p in _patch_season(sr_counts={200: 2, 300: 0, 400: 1, 600: 1}, rides_done=rides):
+            stack.enter_context(p)
+        resp = client.get('/api/me/season', headers=_bearer(app, rider_id=7))
+    data = resp.get_json()
+    assert data['sr']['counts'] == {'200': 2, '300': 0, '400': 1, '600': 1}
+    assert data['rides_done'][0]['name'] == 'Paris–Brest 600K'  # entities decoded, nbsp → space
 
 
 def test_my_season_eddington_null_without_strava(client, app):

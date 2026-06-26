@@ -17,7 +17,11 @@ jest.mock('../contexts/SessionContext', () => ({
 const SEASON: MySeasonResponse = {
   season: { name: '2025-2026' },
   stats: { distance_km: 1200, rides: 5, elevation_ft: 42000 },
-  sr: { has_sr: false, distances_done: [200, 300] },
+  sr: { has_sr: false, distances_done: [200, 300], counts: { '200': 2, '300': 1, '400': 0, '600': 0 } },
+  rides_done: [
+    { id: 5, name: 'Mt Hamilton 200K', date: '2026-05-04', distance_km: 200 },
+    { id: 6, name: 'Coast 300K', date: '2026-04-18', distance_km: 300 },
+  ],
   r12: { months: 8, active: true },
   career: { distance_km: 9000 },
   eddington: { value: 62, badge: { level: 'strong', label: 'Strong', emoji: '💪' } },
