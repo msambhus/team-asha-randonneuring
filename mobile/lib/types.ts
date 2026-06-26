@@ -126,6 +126,54 @@ export interface RideWeatherUnavailable {
 
 export type RideWeatherResponse = RideWeatherAvailable | RideWeatherUnavailable;
 
+// ── Ride plan (GET /api/ride/<id>/plan) — mirrors the web ride-plan page ──────
+export interface PlanStop {
+  stop_order: number;
+  location: string;
+  stop_type: string;            // start | control | rest | finish | waypoint
+  stop_name: string | null;
+  notes: string | null;
+  distance_mi: number;          // cumulative
+  seg_dist_mi: number;
+  elevation_gain_ft: number;
+  ft_per_mi: number;
+  segment_time_min: number;
+  stop_duration_min: number;
+  cum_time_min: number;
+  arrival_time_min: number;
+  eta: string;                  // clock time, e.g. "9:00 AM"
+  time_bank_min: number | null; // present when the ride has a cutoff
+  // best-effort per-stop wind/temp (when the route + forecast allow)
+  wind_speed_mph?: number | null;
+  wind_label?: string | null;
+  wind_direction_deg?: number | null;
+  temperature_f?: number | null;
+}
+
+export interface RidePlanAvailable {
+  available: true;
+  plan: {
+    name: string;
+    slug: string;
+    total_distance_mi: number | null;
+    total_elevation_ft: number | null;
+    distance_km: number | null;
+    cutoff_hours: number | null;
+    start_time: string;
+    overall_ft_per_mile: number | null;
+  };
+  ride_date: string | null;
+  stops: PlanStop[];
+}
+
+export interface RidePlanUnavailable {
+  available: false;
+  reason: 'no_plan' | 'no_stops';
+  message: string;
+}
+
+export type RidePlanResponse = RidePlanAvailable | RidePlanUnavailable;
+
 export interface LivePositionTelemetryNow {
   speed_mph: number | null;
   activity: 'paused' | 'walking' | 'cycling' | 'driving' | null;
