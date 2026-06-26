@@ -3,7 +3,7 @@
  *
  * Mirrors the web ride-plan page: a header (distance/elevation/cutoff/start) and a
  * compact stops table — location · cumulative distance · segment time · time bank ·
- * elevation · wind. Tap any stop to expand the rest (ETA, break, ft/mi, temp,
+ * ETA · wind. Tap any stop to expand the rest (elapsed, climb, ft/mi, break, temp,
  * notes). Reached from the ride's live-map header. Reads ?id=<rideId>.
  */
 import { useState } from 'react';
@@ -55,7 +55,7 @@ function StopRow({ s, expanded, onToggle }: { s: PlanStop; expanded: boolean; on
         <Text style={[styles.td, styles.cBank, { color: bankColor }]}>
           {bank == null ? '—' : (bank >= 0 ? '+' : '−') + hm(bank)}
         </Text>
-        <Text style={[styles.td, styles.cNum]}>{s.elevation_gain_ft ? s.elevation_gain_ft.toLocaleString() : '—'}</Text>
+        <Text style={[styles.td, styles.cEta]}>{s.eta}</Text>
         <Text style={[styles.td, styles.cWind, { color: windColor(s.wind_label) }]}>
           {wind != null ? Math.round(wind) : '—'}
         </Text>
@@ -63,8 +63,8 @@ function StopRow({ s, expanded, onToggle }: { s: PlanStop; expanded: boolean; on
       {expanded ? (
         <View style={styles.detailPanel}>
           <View style={styles.detailGrid}>
-            <Detail label="ETA" value={s.eta} />
             <Detail label="elapsed" value={hm(s.cum_time_min)} />
+            <Detail label="climb" value={s.elevation_gain_ft ? `${s.elevation_gain_ft.toLocaleString()} ft` : '—'} />
             <Detail label="ft/mi" value={String(s.ft_per_mi)} />
             {s.stop_duration_min ? (
               <Detail label="break" value={`${s.stop_name ? s.stop_name + ' · ' : ''}${s.stop_duration_min}m`} />
@@ -118,7 +118,7 @@ function PlanBody({ data, onView }: { data: RidePlanAvailable; onView: (v: 'base
           <Text style={[styles.th, styles.cNum]}>mi</Text>
           <Text style={[styles.th, styles.cNum]}>seg</Text>
           <Text style={[styles.th, styles.cBank]}>bank</Text>
-          <Text style={[styles.th, styles.cNum]}>ft</Text>
+          <Text style={[styles.th, styles.cEta]}>eta</Text>
           <Text style={[styles.th, styles.cWind]}>wind</Text>
         </View>
         {data.stops.map((s) => (
@@ -188,6 +188,7 @@ const styles = StyleSheet.create({
   cLoc: { flex: 1, fontWeight: '600' },
   cNum: { width: 40, textAlign: 'right' },
   cBank: { width: 50, textAlign: 'right', fontWeight: '700' },
+  cEta: { width: 64, textAlign: 'right' },
   cWind: { width: 38, textAlign: 'right', fontWeight: '600' },
   detailPanel: { paddingHorizontal: 8, paddingBottom: 10, paddingTop: 2 },
   detailGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
