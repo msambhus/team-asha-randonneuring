@@ -167,23 +167,7 @@ function WeatherBody({ data }: { data: RideWeatherAvailable }) {
       {/* 2: sticky detail card for the selected point */}
       {selSeg ? <DetailCard s={selSeg} /> : <View />}
 
-      {/* 3: per-segment table */}
-      <View style={styles.card}>
-        <View style={[styles.tr, styles.thead]}>
-          <Text style={[styles.th, styles.cDist]}>mi</Text>
-          <Text style={[styles.th, styles.cTime]}>time</Text>
-          <Text style={[styles.th, styles.cTemp]}>temp</Text>
-          <Text style={[styles.th, styles.cWind]}>mph</Text>
-          <Text style={[styles.th, styles.cHw]}>h/t</Text>
-          <Text style={[styles.th, styles.cSky]}>sky</Text>
-          <Text style={[styles.th, styles.cRain]}>rain</Text>
-        </View>
-        {data.table_segments.map((s, j) => (
-          <SegmentRow key={j} s={s} active={j === activeRow} onPress={() => setSel(tableMapIdx[j])} />
-        ))}
-      </View>
-
-      {/* 4–9: charts (all share selIdx + setSel) */}
+      {/* 3–8: charts (all share selIdx + setSel) */}
       <WeatherChart title="Temperature" unit="°F" labels={c.labels} selectedIndex={selIdx} onScrub={setSel}
         series={[{ data: c.temperature_f, color: '#ef4444', fill: true }, { data: c.feels_like_f, color: '#f59e0b' }]}
         legend={[{ label: 'temp', color: '#ef4444' }, { label: 'feels like', color: '#f59e0b' }]} />
@@ -205,6 +189,22 @@ function WeatherBody({ data }: { data: RideWeatherAvailable }) {
 
       <WeatherChart title="Humidity" unit="%" labels={c.labels} selectedIndex={selIdx} onScrub={setSel}
         series={[{ data: c.humidity, color: '#0d9488', fill: true }]} />
+
+      {/* 9: per-segment table (full detail) — at the bottom */}
+      <View style={styles.card}>
+        <View style={[styles.tr, styles.thead]}>
+          <Text style={[styles.th, styles.cDist]}>mi</Text>
+          <Text style={[styles.th, styles.cTime]}>time</Text>
+          <Text style={[styles.th, styles.cTemp]}>temp</Text>
+          <Text style={[styles.th, styles.cWind]}>mph</Text>
+          <Text style={[styles.th, styles.cHw]}>h/t</Text>
+          <Text style={[styles.th, styles.cSky]}>sky</Text>
+          <Text style={[styles.th, styles.cRain]}>rain</Text>
+        </View>
+        {data.table_segments.map((s, j) => (
+          <SegmentRow key={j} s={s} active={j === activeRow} onPress={() => setSel(tableMapIdx[j])} />
+        ))}
+      </View>
 
       <Text style={styles.attribution}>Tap a chart, arrow, or row to inspect a point · Weather data: Open-Meteo</Text>
     </ScrollView>
