@@ -37,9 +37,12 @@ export function locationOptions(lowPower: boolean): Location.LocationTaskOptions
     return {
       accuracy: Location.Accuracy.Balanced,   // ~100m — the dominant battery win vs High
       activityType: Location.ActivityType.Fitness,
-      timeInterval: 60_000,                    // ~60s
-      distanceInterval: 80,                    // or every 80m, whichever first
-      deferredUpdatesInterval: 60_000,
+      // ~2-minute cadence. Both thresholds are raised: updates fire on whichever
+      // trips first, so the distance gate must also be wide or it dominates while
+      // moving (80m ≈ every ~15s at speed). iOS treats these as hints.
+      timeInterval: 120_000,                   // ~2 min
+      distanceInterval: 250,                    // or every 250m, whichever first
+      deferredUpdatesInterval: 120_000,         // let iOS batch + sleep between deliveries
       pausesUpdatesAutomatically: true,        // let iOS sleep GPS at controls/stops
       showsBackgroundLocationIndicator: true,
       foregroundService,
