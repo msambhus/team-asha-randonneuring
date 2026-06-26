@@ -6,14 +6,22 @@
  * only have a per-ride Start/Stop that streams while this is on. Turning it OFF
  * here is a kill-switch — the backend then rejects every beacon.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSharing } from '../hooks/useSharing';
-import { stopSharing } from '../location/backgroundLocation';
+import { getLowPower, setLowPower, stopSharing } from '../location/backgroundLocation';
 
 export default function SettingsScreen() {
   const { enabled, isLoading, isError, refetch, setEnabled, saving } = useSharing();
   const [error, setError] = useState<string | null>(null);
+  const [lowPower, setLowPowerState] = useState(false);
+
+  useEffect(() => { getLowPower().then(setLowPowerState); }, []);
+
+  async function onToggleLowPower(on: boolean) {
+    setLowPowerState(on);                  // optimistic; setLowPower is best-effort
+    await setLowPower(on).catch(() => undefined);
+  }
 
   async function onToggle(on: boolean) {
     setError(null);
@@ -56,6 +64,19 @@ export default function SettingsScreen() {
         </Text>
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </View>
+
+      <Text style={[styles.section, styles.sectionTop]}>Battery</Text>
+      <View style={styles.card}>
+        <View style={styles.row}>
+          <Text style={styles.rowLabel}>Low power mode</Text>
+          <Switch value={lowPower} onValueChange={onToggleLowPower} />
+        </View>
+        <Text style={styles.help}>
+          Uses coarser GPS (~100m) and updates less often to save battery on long
+          rides — recommended for 300 km+ brevets. Your live dot may lag a little
+          and round to about a block. Takes effect immediately while you're sharing.
+        </Text>
+      </View>
     </ScrollView>
   );
 }
@@ -64,6 +85,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f7fafc' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   section: { fontSize: 13, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', marginBottom: 8 },
+  sectionTop: { marginTop: 20 },
   card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#e5e7eb' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   rowLabel: { flex: 1, fontSize: 15, fontWeight: '600', color: '#1a365d' },
