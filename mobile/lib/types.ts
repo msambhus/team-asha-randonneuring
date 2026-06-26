@@ -63,6 +63,34 @@ export interface LivePositionTelemetryNow {
   heart_rate: number | null;
   power: number | null;
   cadence: number | null;
+  // on-route only
+  distance_mi?: number | null;
+  ascent_done_ft?: number | null;
+  headwind_done_mph?: number | null;
+  headwind_done_label?: string | null;
+}
+
+export interface LivePositionRemaining {
+  distance_mi: number | null;
+  ascent_left_ft: number | null;
+  headwind_ahead_mph: number | null;
+  headwind_ahead_label: string | null;
+  time_left_min: number | null;
+  toughness: number | string | null;
+}
+
+export interface LivePositionTelemetry {
+  on_route: boolean | null;
+  now: LivePositionTelemetryNow;
+  remaining: LivePositionRemaining | null;
+  plan: { delta_min: number; status: 'ahead' | 'behind' | 'on' } | null;
+  detailed_after_ride: boolean;
+}
+
+/** GET /api/ride/<id>/route — RWGPS route polyline as [[lng,lat],...]. */
+export interface RideRouteResponse {
+  ride_id: number;
+  polyline: [number, number][];
 }
 
 export interface LivePosition {
@@ -76,7 +104,7 @@ export interface LivePosition {
   minutes_ago: number;
   stale: boolean;
   source: 'garmin' | 'beacon';
-  telemetry: { now?: LivePositionTelemetryNow } | null;
+  telemetry: LivePositionTelemetry | null;
   trail: [number, number][] | null;
 }
 
