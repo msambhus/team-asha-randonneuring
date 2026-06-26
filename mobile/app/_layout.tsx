@@ -68,6 +68,7 @@ export default function RootLayout() {
                 <Stack.Screen name="settings" options={{ title: 'Settings' }} />
                 <Stack.Screen name="ride/[id]" options={{ title: 'Live Map' }} />
                 <Stack.Screen name="ride/weather" options={{ title: 'Ride Weather' }} />
+                <Stack.Screen name="ride/plan" options={{ title: 'Ride Plan' }} />
               </Stack>
             </AuthGate>
           </SessionProvider>

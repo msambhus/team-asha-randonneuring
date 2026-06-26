@@ -430,3 +430,106 @@ def test_ride_weather_404_unknown_ride(client, app):
     with patch('routes.live.get_ride_by_id', return_value=None):
         resp = client.get('/api/ride/999/weather', headers=_bearer(app))
     assert resp.status_code == 404
+
+
+# ── GET /api/ride/<id>/plan (ride plan stops + timing) ──────────────────────
+
+from datetime import date as _pl_date
+
+_PLAN = {
+    'id': 7, 'name': 'SFR 100', 'slug': 'sfr-100',
+    'total_distance_miles': 100, 'total_elevation_ft': 5000, 'distance_km': 160,
+    'cutoff_hours': 10, 'start_time': '06:00', 'overall_ft_per_mile': 50,
+    'rwgps_url': None, 'rwgps_url_team': None,
+}
+_PLAN_STOPS = [
+    {'stop_order': 1, 'location': 'Start', 'stop_type': 'start', 'distance_miles': 0,
+     'segment_time_min': 0, 'stop_duration_min': 0, 'elevation_gain': 0, 'stop_name': None, 'notes': None},
+    {'stop_order': 2, 'location': 'Control 1', 'stop_type': 'control', 'distance_miles': 50,
+     'segment_time_min': 180, 'stop_duration_min': 15, 'elevation_gain': 2000, 'stop_name': 'Lunch', 'notes': 'Cafe'},
+    {'stop_order': 3, 'location': 'Finish', 'stop_type': 'finish', 'distance_miles': 100,
+     'segment_time_min': 180, 'stop_duration_min': 0, 'elevation_gain': 1000, 'stop_name': None, 'notes': None},
+]
+
+
+def _ride_pl(**over):
+    r = {'id': 5, 'date': _pl_date(2026, 7, 4), 'plan_slug': 'sfr-100',
+         'rwgps_url': None, 'rwgps_url_team': None, 'plan_start_time': '06:00'}
+    r.update(over)
+    return r
+
+
+def test_ride_plan_requires_auth(client):
+    assert client.get('/api/ride/5/plan').status_code == 401
+
+
+def test_ride_plan_no_plan(client, app):
+    with patch('routes.live.get_ride_by_id', return_value=_ride_pl(plan_slug=None)):
+        resp = client.get('/api/ride/5/plan', headers=_bearer(app))
+    assert resp.status_code == 200
+    assert resp.get_json()['reason'] == 'no_plan'
+
+
+def test_ride_plan_404_unknown_ride(client, app):
+    with patch('routes.live.get_ride_by_id', return_value=None):
+        resp = client.get('/api/ride/999/plan', headers=_bearer(app))
+    assert resp.status_code == 404
+
+
+def test_ride_plan_computes_timing_and_time_bank(client, app):
+    with patch('routes.live.get_ride_by_id', return_value=_ride_pl()), \
+         patch('models.get_ride_plan_by_slug', return_value=dict(_PLAN)), \
+         patch('models.get_ride_plan_stops', return_value=[dict(s) for s in _PLAN_STOPS]):
+        resp = client.get('/api/ride/5/plan', headers=_bearer(app))
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['available'] is True
+    assert data['plan']['name'] == 'SFR 100'
+    stops = data['stops']
+    assert len(stops) == 3
+    s2 = stops[1]
+    assert s2['cum_time_min'] == 195 and s2['arrival_time_min'] == 180
+    assert s2['time_bank_min'] == 120          # bookend 300 − arrival 180
+    assert s2['eta'] == '9:00 AM'              # 06:00 + 180 min
+    assert s2['ft_per_mi'] == 40               # 2000 ft / 50 mi
+    assert s2['stop_name'] == 'Lunch'
+    s3 = stops[2]
+    assert s3['cum_time_min'] == 375 and s3['time_bank_min'] == 225
+    assert s3['eta'] == '12:15 PM'
+    assert 'wind_speed_mph' not in s2          # no rwgps url → wind skipped
+
+
+def test_ride_plan_prefers_ride_cutoff_and_start_time(client, app):
+    """Canonical event fields (ride.time_limit_hours / ride.start_time) win over the
+    deprecated ride_plan columns, so ETA + time bank match the web page."""
+    plan = dict(_PLAN)
+    plan['cutoff_hours'] = None         # deprecated plan column absent
+    plan['start_time'] = None
+    ride = _ride_pl(time_limit_hours=10, start_time='06:00', plan_start_time='09:99')
+    with patch('routes.live.get_ride_by_id', return_value=ride), \
+         patch('models.get_ride_plan_by_slug', return_value=plan), \
+         patch('models.get_ride_plan_stops', return_value=[dict(s) for s in _PLAN_STOPS]):
+        resp = client.get('/api/ride/5/plan', headers=_bearer(app))
+    data = resp.get_json()
+    s2 = data['stops'][1]
+    assert s2['eta'] == '9:00 AM'        # ride.start_time 06:00 used, not the bogus alias
+    assert s2['time_bank_min'] == 120    # ride.time_limit_hours 10 used for the bookend
+
+
+def test_ride_plan_attaches_wind_best_effort(client, app):
+    winds = [
+        {'wind_speed_mph': 5, 'label': 'tailwind', 'wind_direction_deg': 10, 'temperature_f': 60},
+        {'wind_speed_mph': 12, 'label': 'headwind', 'wind_direction_deg': 200, 'temperature_f': 64},
+        {'wind_speed_mph': 8, 'label': 'crosswind', 'wind_direction_deg': 90, 'temperature_f': 70},
+    ]
+    with patch('routes.live.get_ride_by_id',
+               return_value=_ride_pl(rwgps_url='https://ridewithgps.com/routes/123')), \
+         patch('models.get_ride_plan_by_slug', return_value=dict(_PLAN)), \
+         patch('models.get_ride_plan_stops', return_value=[dict(s) for s in _PLAN_STOPS]), \
+         patch('routes.live.fetch_route', return_value={'track_points': [{'x': -122, 'y': 37, 'd': 0}]}), \
+         patch('services.weather.fetch_stop_wind', return_value=winds):
+        resp = client.get('/api/ride/5/plan', headers=_bearer(app))
+    data = resp.get_json()
+    assert data['stops'][1]['wind_speed_mph'] == 12
+    assert data['stops'][1]['wind_label'] == 'headwind'
+    assert data['stops'][1]['temperature_f'] == 64

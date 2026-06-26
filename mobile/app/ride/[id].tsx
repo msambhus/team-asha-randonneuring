@@ -147,9 +147,14 @@ export default function RideLiveScreen() {
     <View style={styles.container}>
       <Stack.Screen options={{
         headerRight: () => (
-          <Pressable onPress={() => router.push(`/ride/weather?id=${rideId}`)} hitSlop={12} style={{ paddingHorizontal: 4 }}>
-            <Feather name="cloud-drizzle" size={22} color="#1a365d" />
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 18 }}>
+            <Pressable onPress={() => router.push(`/ride/plan?id=${rideId}`)} hitSlop={12}>
+              <Feather name="list" size={22} color="#1a365d" />
+            </Pressable>
+            <Pressable onPress={() => router.push(`/ride/weather?id=${rideId}`)} hitSlop={12}>
+              <Feather name="cloud-drizzle" size={22} color="#1a365d" />
+            </Pressable>
+          </View>
         ),
       }} />
       <MapView ref={mapRef} style={styles.map} initialRegion={initialRegion} showsUserLocation>

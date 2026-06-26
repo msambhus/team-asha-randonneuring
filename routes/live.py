@@ -603,6 +603,129 @@ def api_ride_weather(ride_id):
     return jsonify(payload)
 
 
+@live_bp.route('/api/ride/<int:ride_id>/plan')
+@token_or_session_required
+def api_ride_plan(ride_id):
+    """JSON: the ride plan (stops + timing) for a ride — mirrors the web plan page.
+
+    Auth: web session OR mobile Bearer token. Resolves the ride to its ride_plan,
+    computes per-stop cumulative time / arrival ETA / time bank with the same
+    formulas as the web ride_plan_detail, and best-effort attaches per-stop wind +
+    temperature (the existing fetch_stop_wind, when the route + forecast allow).
+    Returns {available: false, reason} when the ride has no plan/stops.
+    """
+    if not g.rider_id:
+        return jsonify({'error': 'Complete your profile to view the plan'}), 403
+
+    from datetime import date as _date, time as _time
+    from models import get_ride_plan_by_slug, get_ride_plan_stops
+    from services.weather import fetch_stop_wind
+
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        return jsonify({'error': 'Ride not found'}), 404
+
+    plan_slug = ride.get('plan_slug')
+    plan = get_ride_plan_by_slug(plan_slug) if plan_slug else None
+    if not plan:
+        return jsonify({'available': False, 'reason': 'no_plan',
+                        'message': 'No ride plan is published for this ride yet.'})
+
+    raw_stops = get_ride_plan_stops(plan['id'])
+    if not raw_stops:
+        return jsonify({'available': False, 'reason': 'no_stops',
+                        'message': 'This ride plan has no stops yet.'})
+
+    # Prefer the canonical event-level fields on the ride (migration 018 deprecated
+    # the ride_plan.cutoff_hours / start_time columns); fall back to the plan.
+    cutoff_raw = ride.get('time_limit_hours') or plan.get('cutoff_hours')
+    cutoff_hours = float(cutoff_raw) if cutoff_raw else None
+    total_mi = float(plan.get('total_distance_miles') or 0)
+    start_str = (ride.get('start_time') or plan.get('start_time')
+                 or ride.get('plan_start_time') or '07:00')
+    try:
+        hh, mm = (int(x) for x in str(start_str).split(':')[:2])
+        start_clock = _time(hh, mm)
+    except (ValueError, TypeError):
+        start_clock = _time(7, 0)
+    base_dt = datetime.combine(ride.get('date') or _date.today(), start_clock)
+
+    # Per-stop timing (web formulas): cum_time = Σ(segment + break); arrival is
+    # before the break; time bank = RUSA bookend at this distance − arrival.
+    stops = []
+    cum_time = 0
+    prev_mi = 0.0
+    for s in raw_stops:
+        d = dict(s)
+        dist_mi = float(d.get('distance_miles') or 0)
+        seg_time = int(d.get('segment_time_min') or 0)
+        stop_dur = int(d.get('stop_duration_min') or 0)
+        elev = int(d.get('elevation_gain') or 0)
+        seg_dist = round(dist_mi - prev_mi, 1)
+        ft_per_mi = int(round(elev / seg_dist)) if elev and seg_dist > 0 else 0
+        cum_time += seg_time + stop_dur
+        arrival = cum_time - stop_dur
+        time_bank = None
+        if cutoff_hours and total_mi > 0 and dist_mi:
+            bookend = round((dist_mi / total_mi) * cutoff_hours * 60)
+            time_bank = bookend - arrival
+        eta = (base_dt + timedelta(minutes=arrival)).strftime('%-I:%M %p')
+        stops.append({
+            'stop_order': d.get('stop_order'),
+            'location': (d.get('location') or '').strip(),
+            'stop_type': d.get('stop_type') or 'waypoint',
+            'stop_name': (d.get('stop_name') or '').strip() or None,
+            'notes': (d.get('notes') or '').strip() or None,
+            'distance_mi': round(dist_mi, 1),
+            'seg_dist_mi': seg_dist,
+            'elevation_gain_ft': elev,
+            'ft_per_mi': ft_per_mi,
+            'segment_time_min': seg_time,
+            'stop_duration_min': stop_dur,
+            'cum_time_min': cum_time,
+            'arrival_time_min': arrival,
+            'eta': eta,
+            'time_bank_min': time_bank,
+        })
+        prev_mi = dist_mi
+
+    # Best-effort per-stop wind + temperature (same service as the plan web page).
+    try:
+        route_id = extract_rwgps_route_id(
+            plan.get('rwgps_url_team') or plan.get('rwgps_url')
+            or ride.get('rwgps_url_team') or ride.get('rwgps_url'))
+        track = (fetch_route(route_id) or {}).get('track_points') if route_id else None
+        if track:
+            wind_stops = [{'distance_miles': st['distance_mi'],
+                           'arrival_time_min': st['arrival_time_min']} for st in stops]
+            winds = fetch_stop_wind(wind_stops, track, plan_slug, start_str, cache=cache)
+            for st, w in zip(stops, winds or []):
+                if w:
+                    st['wind_speed_mph'] = w.get('wind_speed_mph')
+                    st['wind_label'] = w.get('label') or w.get('wind_type')
+                    st['wind_direction_deg'] = w.get('wind_direction_deg')
+                    st['temperature_f'] = w.get('temperature_f')
+    except Exception:
+        current_app.logger.warning('ride plan %s: stop wind unavailable', plan_slug)
+
+    return jsonify({
+        'available': True,
+        'plan': {
+            'name': plan.get('name'),
+            'slug': plan.get('slug'),
+            'total_distance_mi': round(total_mi, 1) if total_mi else None,
+            'total_elevation_ft': plan.get('total_elevation_ft'),
+            'distance_km': ride.get('distance_km') or plan.get('distance_km'),
+            'cutoff_hours': cutoff_hours,
+            'start_time': start_str,
+            'overall_ft_per_mile': (round(float(plan['overall_ft_per_mile']))
+                                    if plan.get('overall_ft_per_mile') else None),
+        },
+        'ride_date': str(ride['date']) if ride.get('date') else None,
+        'stops': stops,
+    })
+
+
 @live_bp.route('/api/me/season')
 @token_or_session_required
 def api_my_season():
