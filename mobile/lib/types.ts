@@ -143,6 +143,8 @@ export interface PlanStop {
   arrival_time_min: number;
   eta: string;                  // clock time, e.g. "9:00 AM"
   time_bank_min: number | null; // present when the ride has a cutoff
+  is_custom_stop?: boolean;
+  is_modified?: boolean;
   // best-effort per-stop wind/temp (when the route + forecast allow)
   wind_speed_mph?: number | null;
   wind_label?: string | null;
@@ -162,6 +164,9 @@ export interface RidePlanAvailable {
     start_time: string;
     overall_ft_per_mile: number | null;
   };
+  has_custom: boolean;          // the rider has a custom plan for this ride
+  using_custom: boolean;        // the returned stops are the custom plan
+  custom_name: string | null;
   ride_date: string | null;
   stops: PlanStop[];
 }

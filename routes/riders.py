@@ -168,27 +168,10 @@ def season_riders(season_name):
                                pbp_finishers=[])
 
 
-def _normalize_route(name):
-    """Normalize a route name for matching: lowercase, strip common suffixes."""
-    s = name.lower()
-    s = re.sub(r'&nbsp;', ' ', s)
-    s = re.sub(r'[^a-z0-9 ]', ' ', s)
-    s = re.sub(r'\b(plan|route|brevet|k|km|mi)\b', '', s)
-    s = re.sub(r'\b(20\d{2})\b', '', s)  # remove years
-    s = re.sub(r'#\d+', '', s)  # remove brevet numbers
-    # Strip standalone short numbers (e.g. "Day 2", "Stage 3"); these are too
-    # generic to count as matching tokens and produce false positives like
-    # "200K Mostly SLO Day 2" → "Del Peurto 200K plan #2".
-    s = re.sub(r'\b\d{1,2}\b', '', s)
-    return set(s.split()) - {'', 'the', 'a', 'and', 'of', 'in', 'to', 'scr', 'sfr', 'dbc', 'sr', 'ta'}
-
-
-# Words too generic for single-word matching
-_GENERIC_WORDS = {'200', '300', '302', '400', '600', '1000', '1200',
-                  '200k', '300k', '400k', '600k', '1000k', '1200k',
-                  'city', 'lake', 'valley', 'creek', 'mountain', 'mountains',
-                  'coast', 'bay', 'point', 'beach', 'night', 'gold', 'river',
-                  'davis', 'del', 'san'}
+# Ride↔plan name matching lives in services/plan_match.py so the web and the
+# mobile API resolve plans identically (no drift). Aliased to the original names
+# to keep the existing call sites below unchanged.
+from services.plan_match import normalize_route as _normalize_route, GENERIC_WORDS as _GENERIC_WORDS
 
 
 def _extract_distance_km(name):
