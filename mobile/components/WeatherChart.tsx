@@ -3,12 +3,17 @@
  * with react-native-svg. Mirrors the web /weather Chart.js panels (temp, wind,
  * headwind/tailwind, precip, elevation, humidity) on a phone-sized canvas.
  *
+ * Interactive like the web: touch/drag anywhere on the chart to scrub — it reports
+ * the nearest data index via onScrub, and every chart draws a synced vertical
+ * crosshair + dots at the shared selectedIndex (the parent keeps them in lockstep
+ * with the map + detail card).
+ *
  * Pass a `baseline` (e.g. 0 for headwind) to fill areas toward it and draw a
  * dashed reference line; otherwise areas fill to the data minimum.
  */
 import React from 'react';
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import Svg, { Line, Path, Polyline, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Line, Path, Polyline, Text as SvgText } from 'react-native-svg';
 
 export interface ChartSeries {
   data: number[];
@@ -24,9 +29,13 @@ interface Props {
   baseline?: number;                // y the area fills toward; also draws a ref line
   height?: number;
   legend?: { label: string; color: string }[];
+  selectedIndex?: number;           // synced crosshair position (−1 / undefined = none)
+  onScrub?: (index: number) => void;
 }
 
-export function WeatherChart({ title, unit, labels, series, baseline, height = 150, legend }: Props) {
+export function WeatherChart({
+  title, unit, labels, series, baseline, height = 150, legend, selectedIndex, onScrub,
+}: Props) {
   const { width: screenW } = useWindowDimensions();
   const W = Math.max(240, screenW - 32 - 24); // screen padding (16×2) + card padding (12×2)
   const H = height;
@@ -47,35 +56,62 @@ export function WeatherChart({ title, unit, labels, series, baseline, height = 1
   const sx = (i: number) => padL + (plotW * i) / (n - 1);
   const sy = (v: number) => padT + plotH * (1 - ((Number.isFinite(v) ? v : base) - yMin) / (yMax - yMin));
 
+  const sel = selectedIndex != null && selectedIndex >= 0 && selectedIndex < n ? selectedIndex : null;
+
+  // Touch x (relative to the canvas) → nearest data index. Handlers are re-bound
+  // each render, so they always read the current geometry/props (no stale closure).
+  const scrub = (locationX: number) => {
+    if (!onScrub) return;
+    const i = Math.round(((locationX - padL) / plotW) * (n - 1));
+    onScrub(Math.max(0, Math.min(n - 1, i)));
+  };
+
   return (
     <View style={styles.card}>
       <Text style={styles.title}>{title}{unit ? `  ·  ${unit}` : ''}</Text>
-      <Svg width={W} height={H}>
-        {baseline != null ? (
-          <Line x1={padL} y1={sy(base)} x2={W - padR} y2={sy(base)}
-            stroke="#cbd5e1" strokeWidth={1} strokeDasharray="3 3" />
-        ) : null}
-        {series.map((s, si) => {
-          const pts = s.data.map((v, i) => `${sx(i)},${sy(v)}`).join(' ');
-          const area =
-            `M ${sx(0)},${sy(base)} ` +
-            s.data.map((v, i) => `L ${sx(i)},${sy(v)}`).join(' ') +
-            ` L ${sx(n - 1)},${sy(base)} Z`;
-          return (
-            <React.Fragment key={si}>
-              {s.fill ? <Path d={area} fill={s.color} opacity={0.18} /> : null}
-              <Polyline points={pts} fill="none" stroke={s.color} strokeWidth={2} />
-            </React.Fragment>
-          );
-        })}
-        <SvgText x={4} y={sy(yMax) + 3} fontSize={9} fill="#6b7280">{Math.round(yMax)}</SvgText>
-        <SvgText x={4} y={sy(yMin) + 3} fontSize={9} fill="#6b7280">{Math.round(yMin)}</SvgText>
-        <SvgText x={padL} y={H - 6} fontSize={9} fill="#9ca3af">{Math.round(labels[0])}</SvgText>
-        <SvgText x={padL + plotW / 2 - 10} y={H - 6} fontSize={9} fill="#9ca3af">
-          {Math.round(labels[Math.floor(n / 2)])}
-        </SvgText>
-        <SvgText x={W - padR - 18} y={H - 6} fontSize={9} fill="#9ca3af">{Math.round(labels[n - 1])}</SvgText>
-      </Svg>
+      <View
+        onStartShouldSetResponder={() => !!onScrub}
+        onMoveShouldSetResponder={() => !!onScrub}
+        onResponderGrant={(e) => scrub(e.nativeEvent.locationX)}
+        onResponderMove={(e) => scrub(e.nativeEvent.locationX)}
+      >
+        <Svg width={W} height={H}>
+          {baseline != null ? (
+            <Line x1={padL} y1={sy(base)} x2={W - padR} y2={sy(base)}
+              stroke="#cbd5e1" strokeWidth={1} strokeDasharray="3 3" />
+          ) : null}
+          {sel != null ? (
+            <Line x1={sx(sel)} y1={padT} x2={sx(sel)} y2={H - padB}
+              stroke="#1a365d" strokeWidth={1} opacity={0.5} />
+          ) : null}
+          {series.map((s, si) => {
+            const pts = s.data.map((v, i) => `${sx(i)},${sy(v)}`).join(' ');
+            const area =
+              `M ${sx(0)},${sy(base)} ` +
+              s.data.map((v, i) => `L ${sx(i)},${sy(v)}`).join(' ') +
+              ` L ${sx(n - 1)},${sy(base)} Z`;
+            return (
+              <React.Fragment key={si}>
+                {s.fill ? <Path d={area} fill={s.color} opacity={0.18} /> : null}
+                <Polyline points={pts} fill="none" stroke={s.color} strokeWidth={2} />
+              </React.Fragment>
+            );
+          })}
+          {sel != null ? series.map((s, si) => (
+            Number.isFinite(s.data[sel]) ? (
+              <Circle key={`d${si}`} cx={sx(sel)} cy={sy(s.data[sel])} r={3.5}
+                fill="#fff" stroke={s.color} strokeWidth={2} />
+            ) : null
+          )) : null}
+          <SvgText x={4} y={sy(yMax) + 3} fontSize={9} fill="#6b7280">{Math.round(yMax)}</SvgText>
+          <SvgText x={4} y={sy(yMin) + 3} fontSize={9} fill="#6b7280">{Math.round(yMin)}</SvgText>
+          <SvgText x={padL} y={H - 6} fontSize={9} fill="#9ca3af">{Math.round(labels[0])}</SvgText>
+          <SvgText x={padL + plotW / 2 - 10} y={H - 6} fontSize={9} fill="#9ca3af">
+            {Math.round(labels[Math.floor(n / 2)])}
+          </SvgText>
+          <SvgText x={W - padR - 18} y={H - 6} fontSize={9} fill="#9ca3af">{Math.round(labels[n - 1])}</SvgText>
+        </Svg>
+      </View>
       <View style={styles.footer}>
         {legend?.length ? (
           <View style={styles.legendRow}>

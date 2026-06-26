@@ -3,11 +3,15 @@
  *
  * Mirrors the web /weather page on a phone: a summary card, a wind map (route line
  * + color-coded wind arrows), a per-segment table, and the six charts (temperature,
- * wind, headwind/tailwind, precipitation, elevation, humidity). Reached from the
- * ride's live-map header. Reads ?id=<rideId> from the route.
+ * wind, headwind/tailwind, precipitation, elevation, humidity).
+ *
+ * Interactive like the web: a shared selectedIndex links everything — scrubbing any
+ * chart, tapping a wind arrow on the map, or tapping a table row selects that point;
+ * a sticky detail card shows its full forecast and every chart draws a synced
+ * crosshair while the map rings the spot. Reached from the ride's live-map header.
  */
-import { useMemo } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import MapView, { Marker, Polyline, Region } from 'react-native-maps';
 import { useRideWeather } from '../../hooks/useRideWeather';
@@ -22,7 +26,6 @@ function windColor(label: string): string {
   return BLUE;
 }
 
-/** A map region framing all [lat,lng] coords, with padding. */
 function regionForCoords(coords: { latitude: number; longitude: number }[]): Region | null {
   if (!coords.length) return null;
   const lats = coords.map((c) => c.latitude);
@@ -37,11 +40,47 @@ function regionForCoords(coords: { latitude: number; longitude: number }[]): Reg
   };
 }
 
-function SegmentRow({ s }: { s: WeatherSegment }) {
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.metric}>
+      <Text style={styles.metricVal}>{value}</Text>
+      <Text style={styles.metricLbl}>{label}</Text>
+    </View>
+  );
+}
+
+/** Sticky card showing the selected point's full forecast (mirrors the web popup). */
+function DetailCard({ s }: { s: WeatherSegment }) {
+  const hw = Math.round(s.headwind_mph);
+  return (
+    <View style={styles.detail}>
+      <View style={styles.detailHead}>
+        <Text style={styles.detailTitle}>Mile {Math.round(s.distance_mi)} · {s.arrival_time}</Text>
+        <Text style={styles.detailCond}>{s.conditions_icon} {s.conditions}</Text>
+      </View>
+      <View style={styles.metricRow}>
+        <Metric label="temp" value={`${Math.round(s.temperature_f)}°`} />
+        <Metric label="feels" value={`${Math.round(s.feels_like_f)}°`} />
+        <Metric label="wind" value={`${Math.round(s.wind_speed_mph)}`} />
+        <Metric label="gust" value={`${Math.round(s.wind_gust_mph)}`} />
+        <Metric label={hw >= 0 ? 'headwind' : 'tailwind'} value={`${Math.abs(hw)}`} />
+      </View>
+      <View style={styles.metricRow}>
+        <Metric label="precip" value={`${s.precip_percent}%`} />
+        <Metric label="rain" value={`${s.precipitation_mm} mm`} />
+        <Metric label="cloud" value={`${s.cloud_cover}%`} />
+        <Metric label="humid" value={`${s.humidity}%`} />
+        <Metric label="climb" value={`${s.elevation_ft.toLocaleString()}`} />
+      </View>
+    </View>
+  );
+}
+
+function SegmentRow({ s, active, onPress }: { s: WeatherSegment; active: boolean; onPress: () => void }) {
   const hw = s.headwind_mph;
   const hwColor = hw > 1 ? RED : hw < -1 ? GREEN : '#6b7280';
   return (
-    <View style={styles.tr}>
+    <Pressable onPress={onPress} style={[styles.tr, active && styles.trActive]}>
       <Text style={[styles.td, styles.cDist]}>{Math.round(s.distance_mi)}</Text>
       <Text style={[styles.td, styles.cTime]}>{s.arrival_time}</Text>
       <Text style={[styles.td, styles.cTemp]}>{Math.round(s.temperature_f)}°</Text>
@@ -51,23 +90,39 @@ function SegmentRow({ s }: { s: WeatherSegment }) {
       </Text>
       <Text style={[styles.td, styles.cSky]}>{s.conditions_icon}</Text>
       <Text style={[styles.td, styles.cRain]}>{s.precip_percent}%</Text>
-    </View>
+    </Pressable>
   );
 }
 
 function WeatherBody({ data }: { data: RideWeatherAvailable }) {
+  const [sel, setSel] = useState(0);
   const coords = useMemo(
     () => data.polyline.map(([lat, lng]) => ({ latitude: lat, longitude: lng })),
     [data.polyline],
   );
   const region = useMemo(() => regionForCoords(coords), [coords]);
   const c = data.chart_data;
-  const headPos = c.headwind_mph.map((v) => (v > 0 ? v : 0));
-  const headNeg = c.headwind_mph.map((v) => (v < 0 ? v : 0));
+  const n = c.labels.length;
+  const selIdx = Math.min(sel, Math.max(0, n - 1));
+
+  const headPos = useMemo(() => c.headwind_mph.map((v) => (v > 0 ? v : 0)), [c.headwind_mph]);
+  const headNeg = useMemo(() => c.headwind_mph.map((v) => (v < 0 ? v : 0)), [c.headwind_mph]);
+
+  // table rows are a subset of map_segments (same objects) — map each to its dense index.
+  const tableMapIdx = useMemo(
+    () => data.table_segments.map((ts) =>
+      Math.max(0, data.map_segments.findIndex((ms) => ms.distance_mi === ts.distance_mi && ms.lat === ts.lat))),
+    [data.table_segments, data.map_segments],
+  );
+  // active table row = the last row whose dense index is ≤ the selection.
+  let activeRow = 0;
+  for (let j = 0; j < tableMapIdx.length; j++) if (tableMapIdx[j] <= selIdx) activeRow = j;
+
+  const selSeg = data.map_segments[selIdx];
 
   return (
-    <ScrollView contentContainerStyle={styles.list}>
-      {/* Summary */}
+    <ScrollView contentContainerStyle={styles.list} stickyHeaderIndices={[2]}>
+      {/* 0: summary */}
       <View style={styles.card}>
         <Text style={styles.routeName}>{data.route_name}</Text>
         <Text style={styles.summaryMeta}>
@@ -78,23 +133,28 @@ function WeatherBody({ data }: { data: RideWeatherAvailable }) {
         {data.ride_summary ? <Text style={styles.summary}>{data.ride_summary}</Text> : null}
       </View>
 
-      {/* Wind map */}
+      {/* 1: wind map */}
       {region ? (
         <View style={styles.mapCard}>
           <MapView style={styles.map} initialRegion={region}>
             {coords.length ? <Polyline coordinates={coords} strokeColor={BLUE} strokeWidth={3} /> : null}
             {data.map_segments.map((s, i) => {
               const color = windColor(s.wind_label);
-              // Arrow points the way the wind blows TO (dir is where it comes FROM).
-              const rotate = (s.wind_direction_deg + 180) % 360;
+              const rotate = (s.wind_direction_deg + 180) % 360; // arrow points where wind blows TO
               const size = s.wind_speed_mph < 8 ? 14 : s.wind_speed_mph < 16 ? 18 : 22;
               return (
                 <Marker key={i} coordinate={{ latitude: s.lat, longitude: s.lng }}
-                  anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
+                  anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} onPress={() => setSel(i)}>
                   <Text style={{ fontSize: size, color, transform: [{ rotate: `${rotate}deg` }] }}>↑</Text>
                 </Marker>
               );
             })}
+            {selSeg ? (
+              <Marker key="sel-ring" coordinate={{ latitude: selSeg.lat, longitude: selSeg.lng }}
+                anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
+                <View style={styles.selRing} />
+              </Marker>
+            ) : null}
           </MapView>
           <View style={styles.legend}>
             <Legend color={RED} label="headwind" />
@@ -102,9 +162,12 @@ function WeatherBody({ data }: { data: RideWeatherAvailable }) {
             <Legend color={BLUE} label="crosswind" />
           </View>
         </View>
-      ) : null}
+      ) : <View />}
 
-      {/* Per-segment table */}
+      {/* 2: sticky detail card for the selected point */}
+      {selSeg ? <DetailCard s={selSeg} /> : <View />}
+
+      {/* 3: per-segment table */}
       <View style={styles.card}>
         <View style={[styles.tr, styles.thead]}>
           <Text style={[styles.th, styles.cDist]}>mi</Text>
@@ -115,33 +178,35 @@ function WeatherBody({ data }: { data: RideWeatherAvailable }) {
           <Text style={[styles.th, styles.cSky]}>sky</Text>
           <Text style={[styles.th, styles.cRain]}>rain</Text>
         </View>
-        {data.table_segments.map((s, i) => <SegmentRow key={i} s={s} />)}
+        {data.table_segments.map((s, j) => (
+          <SegmentRow key={j} s={s} active={j === activeRow} onPress={() => setSel(tableMapIdx[j])} />
+        ))}
       </View>
 
-      {/* Charts */}
-      <WeatherChart title="Temperature" unit="°F" labels={c.labels}
+      {/* 4–9: charts (all share selIdx + setSel) */}
+      <WeatherChart title="Temperature" unit="°F" labels={c.labels} selectedIndex={selIdx} onScrub={setSel}
         series={[{ data: c.temperature_f, color: '#ef4444', fill: true }, { data: c.feels_like_f, color: '#f59e0b' }]}
         legend={[{ label: 'temp', color: '#ef4444' }, { label: 'feels like', color: '#f59e0b' }]} />
 
-      <WeatherChart title="Wind" unit="mph" labels={c.labels}
+      <WeatherChart title="Wind" unit="mph" labels={c.labels} selectedIndex={selIdx} onScrub={setSel}
         series={[{ data: c.wind_speed_mph, color: BLUE, fill: true }, { data: c.wind_gust_mph, color: '#93c5fd' }]}
         legend={[{ label: 'wind', color: BLUE }, { label: 'gusts', color: '#93c5fd' }]} />
 
-      <WeatherChart title="Headwind / Tailwind" unit="mph" labels={c.labels} baseline={0}
+      <WeatherChart title="Headwind / Tailwind" unit="mph" labels={c.labels} baseline={0} selectedIndex={selIdx} onScrub={setSel}
         series={[{ data: headPos, color: RED, fill: true }, { data: headNeg, color: GREEN, fill: true }]}
         legend={[{ label: 'headwind', color: RED }, { label: 'tailwind', color: GREEN }]} />
 
-      <WeatherChart title="Precipitation & cloud" unit="% chance / % cloud" labels={c.labels}
+      <WeatherChart title="Precipitation & cloud" unit="% chance / % cloud" labels={c.labels} selectedIndex={selIdx} onScrub={setSel}
         series={[{ data: c.precip_probability, color: BLUE, fill: true }, { data: c.cloud_cover, color: '#94a3b8' }]}
         legend={[{ label: 'precip %', color: BLUE }, { label: 'cloud %', color: '#94a3b8' }]} />
 
-      <WeatherChart title="Elevation" unit="ft" labels={c.labels}
+      <WeatherChart title="Elevation" unit="ft" labels={c.labels} selectedIndex={selIdx} onScrub={setSel}
         series={[{ data: c.elevation_ft, color: '#15803d', fill: true }]} />
 
-      <WeatherChart title="Humidity" unit="%" labels={c.labels}
+      <WeatherChart title="Humidity" unit="%" labels={c.labels} selectedIndex={selIdx} onScrub={setSel}
         series={[{ data: c.humidity, color: '#0d9488', fill: true }]} />
 
-      <Text style={styles.attribution}>Weather data: Open-Meteo</Text>
+      <Text style={styles.attribution}>Tap a chart, arrow, or row to inspect a point · Weather data: Open-Meteo</Text>
     </ScrollView>
   );
 }
@@ -200,12 +265,23 @@ const styles = StyleSheet.create({
   summary: { color: '#1f2937', fontSize: 14, marginTop: 8, lineHeight: 20 },
   mapCard: { backgroundColor: '#fff', borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb', overflow: 'hidden' },
   map: { height: 240 },
+  selRing: { width: 22, height: 22, borderRadius: 11, borderWidth: 3, borderColor: '#1a365d', backgroundColor: 'rgba(26,54,93,0.15)' },
   legend: { flexDirection: 'row', gap: 16, padding: 10 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   swatch: { width: 12, height: 12, borderRadius: 3 },
   legendText: { fontSize: 12, color: '#6b7280' },
+  // sticky detail card
+  detail: { backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#1a365d' },
+  detailHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  detailTitle: { fontSize: 14, fontWeight: '800', color: '#1a365d' },
+  detailCond: { fontSize: 13, color: '#374151', flexShrink: 1, textAlign: 'right' },
+  metricRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
+  metric: { alignItems: 'center', flex: 1 },
+  metricVal: { fontSize: 15, fontWeight: '700', color: '#1a365d' },
+  metricLbl: { fontSize: 9, color: '#6b7280', textTransform: 'uppercase' },
   // table
-  tr: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6 },
+  tr: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4, borderRadius: 6 },
+  trActive: { backgroundColor: '#eff6ff' },
   thead: { borderBottomWidth: 1, borderBottomColor: '#e5e7eb', paddingBottom: 6 },
   th: { fontSize: 10, fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase' },
   td: { fontSize: 13, color: '#1f2937' },
