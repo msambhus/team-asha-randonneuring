@@ -387,6 +387,7 @@ def test_ride_weather_happy_path(client, app):
                'temp_range': {'min_f': 50, 'max_f': 70},
                'attribution': '*Weather data: Open-Meteo*'}
     with patch('routes.live.get_ride_by_id', return_value=ride), \
+         patch('models.get_ride_plan_by_slug', return_value={'slug': 'hamilton-200k'}), \
          patch('routes.weather.build_weather_payload',
                return_value=(payload, None)) as mock_b:
         resp = client.get('/api/ride/5/weather', headers=_bearer(app))
@@ -394,7 +395,7 @@ def test_ride_weather_happy_path(client, app):
     data = resp.get_json()
     assert data['available'] is True
     assert data['route_name'] == 'Hamilton 200K'
-    # route id extracted from the rwgps url; plan timing + rider passed through
+    # plan resolved (FK slug) and passed through with the rider for custom-plan timing
     args, kwargs = mock_b.call_args
     assert str(args[0]) == '12345'
     assert kwargs['plan_slug'] == 'hamilton-200k'
@@ -464,10 +465,31 @@ def test_ride_plan_requires_auth(client):
 
 
 def test_ride_plan_no_plan(client, app):
-    with patch('routes.live.get_ride_by_id', return_value=_ride_pl(plan_slug=None)):
+    # No FK slug and no name match → no plan.
+    with patch('routes.live.get_ride_by_id', return_value=_ride_pl(plan_slug=None, name='Mystery Ride')), \
+         patch('models.get_all_ride_plans', return_value=[]):
         resp = client.get('/api/ride/5/plan', headers=_bearer(app))
     assert resp.status_code == 200
     assert resp.get_json()['reason'] == 'no_plan'
+
+
+def test_ride_plan_resolves_by_name_when_fk_missing(client, app):
+    """SCR 600k case: ride_plan_id is null, but the plan is found by route-name match
+    (same matcher the web uses)."""
+    ride = _ride_pl(plan_slug=None, name='Surf City 600k VI Brevet (#3141)')
+    matched = dict(_PLAN); matched['name'] = 'SCR Surf City VI 600k #3141'; matched['slug'] = 'scr-surf-city-vi-600k-3141'
+    with patch('routes.live.get_ride_by_id', return_value=ride), \
+         patch('models.get_all_ride_plans', return_value=[
+             {'name': 'Mendocino Coast 600K', 'slug': 'mendocino-coast-600k'},
+             {'name': 'SCR Surf City VI 600k #3141', 'slug': 'scr-surf-city-vi-600k-3141'}]), \
+         patch('models.get_ride_plan_by_slug', return_value=matched), \
+         patch('models.get_custom_plan', return_value=None), \
+         patch('models.get_ride_plan_stops', return_value=[dict(s) for s in _PLAN_STOPS]):
+        resp = client.get('/api/ride/5/plan', headers=_bearer(app))
+    data = resp.get_json()
+    assert data['available'] is True
+    assert data['plan']['slug'] == 'scr-surf-city-vi-600k-3141'
+    assert data['using_custom'] is False and data['has_custom'] is False
 
 
 def test_ride_plan_404_unknown_ride(client, app):
@@ -479,6 +501,7 @@ def test_ride_plan_404_unknown_ride(client, app):
 def test_ride_plan_computes_timing_and_time_bank(client, app):
     with patch('routes.live.get_ride_by_id', return_value=_ride_pl()), \
          patch('models.get_ride_plan_by_slug', return_value=dict(_PLAN)), \
+         patch('models.get_custom_plan', return_value=None), \
          patch('models.get_ride_plan_stops', return_value=[dict(s) for s in _PLAN_STOPS]):
         resp = client.get('/api/ride/5/plan', headers=_bearer(app))
     assert resp.status_code == 200
@@ -508,6 +531,7 @@ def test_ride_plan_prefers_ride_cutoff_and_start_time(client, app):
     ride = _ride_pl(time_limit_hours=10, start_time='06:00', plan_start_time='09:99')
     with patch('routes.live.get_ride_by_id', return_value=ride), \
          patch('models.get_ride_plan_by_slug', return_value=plan), \
+         patch('models.get_custom_plan', return_value=None), \
          patch('models.get_ride_plan_stops', return_value=[dict(s) for s in _PLAN_STOPS]):
         resp = client.get('/api/ride/5/plan', headers=_bearer(app))
     data = resp.get_json()
@@ -525,6 +549,7 @@ def test_ride_plan_attaches_wind_best_effort(client, app):
     with patch('routes.live.get_ride_by_id',
                return_value=_ride_pl(rwgps_url='https://ridewithgps.com/routes/123')), \
          patch('models.get_ride_plan_by_slug', return_value=dict(_PLAN)), \
+         patch('models.get_custom_plan', return_value=None), \
          patch('models.get_ride_plan_stops', return_value=[dict(s) for s in _PLAN_STOPS]), \
          patch('routes.live.fetch_route', return_value={'track_points': [{'x': -122, 'y': 37, 'd': 0}]}), \
          patch('services.weather.fetch_stop_wind', return_value=winds):
@@ -533,3 +558,41 @@ def test_ride_plan_attaches_wind_best_effort(client, app):
     assert data['stops'][1]['wind_speed_mph'] == 12
     assert data['stops'][1]['wind_label'] == 'headwind'
     assert data['stops'][1]['temperature_f'] == 64
+
+
+def test_ride_plan_uses_custom_by_default_and_view_base_toggles(client, app):
+    """When the rider has a custom plan it's used by default (merged + recomputed);
+    ?view=base forces the base plan."""
+    custom = {'id': 9, 'name': 'My SCR 100', 'base_plan_id': 7}
+    custom_stops = [
+        {'stop_order': 1, 'location': 'Start', 'stop_type': 'start', 'distance_miles': 0,
+         'segment_time_min': 0, 'stop_duration_min': 0, 'elevation_gain': 0, 'seg_dist': 0,
+         'ft_per_mi': 0, 'cum_time_min': 0, 'arrival_time_min': 0, 'time_bank_min': None,
+         'stop_name': None, 'notes': None},
+        {'stop_order': 2, 'location': 'Control 1', 'stop_type': 'control', 'distance_miles': 50,
+         'segment_time_min': 170, 'stop_duration_min': 20, 'elevation_gain': 2000, 'seg_dist': 50,
+         'ft_per_mi': 40, 'cum_time_min': 190, 'arrival_time_min': 170, 'time_bank_min': 130,
+         'stop_name': 'My Lunch', 'notes': None, 'is_modified': True},
+    ]
+    # Default → custom
+    with patch('routes.live.get_ride_by_id', return_value=_ride_pl()), \
+         patch('models.get_ride_plan_by_slug', return_value=dict(_PLAN)), \
+         patch('models.get_custom_plan', return_value=custom), \
+         patch('services.custom_plan_service.get_merged_plan_stops', return_value=(custom_stops, custom)), \
+         patch('services.custom_plan_service.recalculate_cumulative_values', return_value=custom_stops):
+        resp = client.get('/api/ride/5/plan', headers=_bearer(app))
+    data = resp.get_json()
+    assert data['has_custom'] is True and data['using_custom'] is True
+    assert data['custom_name'] == 'My SCR 100'
+    assert data['stops'][1]['stop_name'] == 'My Lunch'
+    assert data['stops'][1]['eta'] == '8:50 AM'   # 06:00 + arrival 170 min
+
+    # ?view=base → base plan even though a custom exists
+    with patch('routes.live.get_ride_by_id', return_value=_ride_pl()), \
+         patch('models.get_ride_plan_by_slug', return_value=dict(_PLAN)), \
+         patch('models.get_custom_plan', return_value=custom), \
+         patch('models.get_ride_plan_stops', return_value=[dict(s) for s in _PLAN_STOPS]):
+        resp = client.get('/api/ride/5/plan?view=base', headers=_bearer(app))
+    data = resp.get_json()
+    assert data['has_custom'] is True and data['using_custom'] is False
+    assert data['stops'][1]['stop_name'] == 'Lunch'   # base stop name

@@ -546,6 +546,74 @@ def api_ride_route(ride_id):
     return jsonify({'ride_id': ride_id, 'polyline': polyline or []})
 
 
+def _resolve_base_plan(ride):
+    """The base ride_plan for a ride: by ride_plan_id (FK) else by route-name match
+    — the SAME resolution the web uses (services.plan_match), so a ride with no FK
+    still finds its plan (e.g. the SCR 600k brevet whose ride_plan_id is null)."""
+    from models import get_ride_plan_by_slug, get_all_ride_plans
+    from services.plan_match import match_plan
+    slug = ride.get('plan_slug')
+    if slug:
+        p = get_ride_plan_by_slug(slug)
+        if p:
+            return p
+    m = match_plan(ride.get('name'), get_all_ride_plans())
+    return get_ride_plan_by_slug(m['slug']) if m else None
+
+
+def _emit_plan_stop(d, base_dt):
+    """Serialize a stop dict that already carries computed timing fields
+    (cum_time_min / arrival_time_min / time_bank_min / seg_dist / ft_per_mi)."""
+    arrival = int(d.get('arrival_time_min') or 0)
+    return {
+        'stop_order': d.get('stop_order'),
+        'location': (d.get('location') or '').strip(),
+        'stop_type': d.get('stop_type') or 'waypoint',
+        'stop_name': (d.get('stop_name') or '').strip() or None,
+        'notes': (d.get('notes') or '').strip() or None,
+        'distance_mi': round(float(d.get('distance_miles') or 0), 1),
+        'seg_dist_mi': round(float(d.get('seg_dist') or 0), 1),
+        'elevation_gain_ft': int(d.get('elevation_gain') or 0),
+        'ft_per_mi': int(d.get('ft_per_mi') or 0),
+        'segment_time_min': int(d.get('segment_time_min') or 0),
+        'stop_duration_min': int(d.get('stop_duration_min') or 0),
+        'cum_time_min': int(d.get('cum_time_min') or 0),
+        'arrival_time_min': arrival,
+        'eta': (base_dt + timedelta(minutes=arrival)).strftime('%-I:%M %p'),
+        'time_bank_min': d.get('time_bank_min'),
+        'is_custom_stop': bool(d.get('is_custom_stop')),
+        'is_modified': bool(d.get('is_modified')),
+    }
+
+
+def _compute_base_timing(raw_stops, cutoff_hours, total_mi):
+    """Add cum/arrival/seg_dist/ft_per_mi/time_bank to base ride_plan_stop rows
+    (the web ride_plan_detail formulas). The custom path uses the custom-plan
+    service's recalculate instead; both feed _emit_plan_stop."""
+    out = []
+    cum_time = 0
+    prev_mi = 0.0
+    for s in raw_stops:
+        d = dict(s)
+        dist_mi = float(d.get('distance_miles') or 0)
+        seg_time = int(d.get('segment_time_min') or 0)
+        stop_dur = int(d.get('stop_duration_min') or 0)
+        elev = int(d.get('elevation_gain') or 0)
+        seg_dist = round(dist_mi - prev_mi, 1)
+        d['seg_dist'] = seg_dist
+        d['ft_per_mi'] = int(round(elev / seg_dist)) if elev and seg_dist > 0 else 0
+        cum_time += seg_time + stop_dur
+        d['cum_time_min'] = cum_time
+        d['arrival_time_min'] = cum_time - stop_dur
+        d['time_bank_min'] = None
+        if cutoff_hours and total_mi > 0 and dist_mi:
+            bookend = round((dist_mi / total_mi) * cutoff_hours * 60)
+            d['time_bank_min'] = bookend - d['arrival_time_min']
+        out.append(d)
+        prev_mi = dist_mi
+    return out
+
+
 @live_bp.route('/api/ride/<int:ride_id>/weather')
 @token_or_session_required
 def api_ride_weather(ride_id):
@@ -581,8 +649,8 @@ def api_ride_weather(ride_id):
         return jsonify({'available': False, 'reason': 'past_ride',
                         'message': 'This ride has already happened.'})
 
-    # Start datetime = ride date at the plan's start time (fallback 07:00 local).
-    start_str = ride.get('plan_start_time') or '07:00'
+    # Start datetime = ride date at the ride's start time (fallback 07:00 local).
+    start_str = ride.get('start_time') or ride.get('plan_start_time') or '07:00'
     try:
         parts = str(start_str).split(':')
         start_dt = datetime.combine(ride_date, _time(int(parts[0]), int(parts[1])))
@@ -594,8 +662,12 @@ def api_ride_weather(ride_id):
                         'message': 'Weather forecast opens within 16 days of the ride.',
                         'ride_date': str(ride_date)})
 
+    # Resolve the plan the SAME way as the plan screen (FK → name match) so the
+    # weather timing follows it — and the rider's custom plan when present (the
+    # rider_id makes build_weather_payload prefer the custom plan's stop timing).
+    plan = _resolve_base_plan(ride)
     payload, err = build_weather_payload(
-        route_id, start_dt, plan_slug=ride.get('plan_slug'), rider_id=g.rider_id)
+        route_id, start_dt, plan_slug=(plan['slug'] if plan else None), rider_id=g.rider_id)
     if err:
         body, status = err
         return jsonify(body), status
@@ -618,26 +690,26 @@ def api_ride_plan(ride_id):
         return jsonify({'error': 'Complete your profile to view the plan'}), 403
 
     from datetime import date as _date, time as _time
-    from models import get_ride_plan_by_slug, get_ride_plan_stops
+    from models import get_ride_plan_stops, get_custom_plan
     from services.weather import fetch_stop_wind
 
     ride = get_ride_by_id(ride_id)
     if not ride:
         return jsonify({'error': 'Ride not found'}), 404
 
-    plan_slug = ride.get('plan_slug')
-    plan = get_ride_plan_by_slug(plan_slug) if plan_slug else None
+    # Resolve the base plan the same way the web does (FK → route-name match).
+    plan = _resolve_base_plan(ride)
     if not plan:
         return jsonify({'available': False, 'reason': 'no_plan',
                         'message': 'No ride plan is published for this ride yet.'})
+    plan_slug = plan['slug']
 
-    raw_stops = get_ride_plan_stops(plan['id'])
-    if not raw_stops:
-        return jsonify({'available': False, 'reason': 'no_stops',
-                        'message': 'This ride plan has no stops yet.'})
+    # Prefer the rider's own custom plan (default), like the web; ?view=base forces base.
+    custom = get_custom_plan(g.rider_id, plan['id'])
+    use_custom = bool(custom) and (request.args.get('view') or '').lower() != 'base'
 
-    # Prefer the canonical event-level fields on the ride (migration 018 deprecated
-    # the ride_plan.cutoff_hours / start_time columns); fall back to the plan.
+    # Canonical event-level fields for cutoff / start (migration 018 deprecated the
+    # ride_plan.cutoff_hours / start_time columns); fall back to the plan.
     cutoff_raw = ride.get('time_limit_hours') or plan.get('cutoff_hours')
     cutoff_hours = float(cutoff_raw) if cutoff_raw else None
     total_mi = float(plan.get('total_distance_miles') or 0)
@@ -650,44 +722,21 @@ def api_ride_plan(ride_id):
         start_clock = _time(7, 0)
     base_dt = datetime.combine(ride.get('date') or _date.today(), start_clock)
 
-    # Per-stop timing (web formulas): cum_time = Σ(segment + break); arrival is
-    # before the break; time bank = RUSA bookend at this distance − arrival.
-    stops = []
-    cum_time = 0
-    prev_mi = 0.0
-    for s in raw_stops:
-        d = dict(s)
-        dist_mi = float(d.get('distance_miles') or 0)
-        seg_time = int(d.get('segment_time_min') or 0)
-        stop_dur = int(d.get('stop_duration_min') or 0)
-        elev = int(d.get('elevation_gain') or 0)
-        seg_dist = round(dist_mi - prev_mi, 1)
-        ft_per_mi = int(round(elev / seg_dist)) if elev and seg_dist > 0 else 0
-        cum_time += seg_time + stop_dur
-        arrival = cum_time - stop_dur
-        time_bank = None
-        if cutoff_hours and total_mi > 0 and dist_mi:
-            bookend = round((dist_mi / total_mi) * cutoff_hours * 60)
-            time_bank = bookend - arrival
-        eta = (base_dt + timedelta(minutes=arrival)).strftime('%-I:%M %p')
-        stops.append({
-            'stop_order': d.get('stop_order'),
-            'location': (d.get('location') or '').strip(),
-            'stop_type': d.get('stop_type') or 'waypoint',
-            'stop_name': (d.get('stop_name') or '').strip() or None,
-            'notes': (d.get('notes') or '').strip() or None,
-            'distance_mi': round(dist_mi, 1),
-            'seg_dist_mi': seg_dist,
-            'elevation_gain_ft': elev,
-            'ft_per_mi': ft_per_mi,
-            'segment_time_min': seg_time,
-            'stop_duration_min': stop_dur,
-            'cum_time_min': cum_time,
-            'arrival_time_min': arrival,
-            'eta': eta,
-            'time_bank_min': time_bank,
-        })
-        prev_mi = dist_mi
+    if use_custom:
+        # Merge the rider's overrides onto the base stops and recompute timing the
+        # SAME way the web custom plan view does (services/custom_plan_service).
+        from services.custom_plan_service import (get_merged_plan_stops,
+                                                  recalculate_cumulative_values)
+        merged, meta = get_merged_plan_stops(custom['id'])
+        raw = recalculate_cumulative_values(merged or [], meta or custom)
+    else:
+        raw = _compute_base_timing(get_ride_plan_stops(plan['id']), cutoff_hours, total_mi)
+
+    if not raw:
+        return jsonify({'available': False, 'reason': 'no_stops',
+                        'message': 'This ride plan has no stops yet.'})
+
+    stops = [_emit_plan_stop(d, base_dt) for d in raw]
 
     # Best-effort per-stop wind + temperature (same service as the plan web page).
     try:
@@ -721,6 +770,9 @@ def api_ride_plan(ride_id):
             'overall_ft_per_mile': (round(float(plan['overall_ft_per_mile']))
                                     if plan.get('overall_ft_per_mile') else None),
         },
+        'has_custom': bool(custom),
+        'using_custom': use_custom,
+        'custom_name': custom.get('name') if custom else None,
         'ride_date': str(ride['date']) if ride.get('date') else None,
         'stops': stops,
     })

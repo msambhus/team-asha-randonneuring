@@ -79,7 +79,7 @@ function StopRow({ s, expanded, onToggle }: { s: PlanStop; expanded: boolean; on
   );
 }
 
-function PlanBody({ data }: { data: RidePlanAvailable }) {
+function PlanBody({ data, onView }: { data: RidePlanAvailable; onView: (v: 'base' | 'custom') => void }) {
   const [open, setOpen] = useState<number | null>(null);
   const p = data.plan;
   return (
@@ -92,7 +92,24 @@ function PlanBody({ data }: { data: RidePlanAvailable }) {
           {p.cutoff_hours ? ` · ${p.cutoff_hours}h cutoff` : ''}
           {` · start ${p.start_time}`}
         </Text>
+        {data.using_custom ? (
+          <Text style={styles.customNote}>Showing your custom plan{data.custom_name ? ` · ${data.custom_name}` : ''}.</Text>
+        ) : data.has_custom ? (
+          <Text style={styles.customNote}>Showing the Team plan.</Text>
+        ) : null}
       </View>
+
+      {/* Custom ⇄ Team toggle (only when the rider has a custom plan) */}
+      {data.has_custom ? (
+        <View style={styles.toggle}>
+          <Pressable style={[styles.seg, data.using_custom && styles.segOn]} onPress={() => onView('custom')}>
+            <Text style={[styles.segText, data.using_custom && styles.segTextOn]}>Your plan</Text>
+          </Pressable>
+          <Pressable style={[styles.seg, !data.using_custom && styles.segOn]} onPress={() => onView('base')}>
+            <Text style={[styles.segText, !data.using_custom && styles.segTextOn]}>Team plan</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <View style={styles.card}>
         <View style={[styles.tr, styles.thead]}>
@@ -121,7 +138,8 @@ function PlanBody({ data }: { data: RidePlanAvailable }) {
 export default function RidePlanScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const rideId = parseInt(String(params.id), 10);
-  const { data, isLoading, isError, refetch } = useRidePlan(rideId);
+  const [view, setView] = useState<'base' | 'custom' | undefined>(undefined);
+  const { data, isLoading, isError, refetch } = useRidePlan(rideId, view);
 
   if (isLoading) return <View style={styles.center}><ActivityIndicator /></View>;
   if (isError || !data) {
@@ -140,7 +158,7 @@ export default function RidePlanScreen() {
       </View>
     );
   }
-  return <PlanBody data={data} />;
+  return <PlanBody data={data} onView={setView} />;
 }
 
 const styles = StyleSheet.create({
@@ -153,6 +171,12 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb' },
   name: { fontSize: 18, fontWeight: '800', color: '#1a365d' },
   meta: { color: '#6b7280', fontSize: 13, marginTop: 4 },
+  customNote: { color: '#4338ca', fontSize: 12, fontWeight: '600', marginTop: 6 },
+  toggle: { flexDirection: 'row', backgroundColor: '#eef2f7', borderRadius: 10, padding: 3, marginBottom: 12 },
+  seg: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
+  segOn: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#c7d2fe' },
+  segText: { fontSize: 13, fontWeight: '700', color: '#6b7280' },
+  segTextOn: { color: '#4338ca' },
   // table
   rowWrap: { borderRadius: 8 },
   rowWrapOpen: { backgroundColor: '#f8fafc' },

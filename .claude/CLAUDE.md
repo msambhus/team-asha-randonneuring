@@ -134,6 +134,26 @@ When reviewing code before a PR, check:
 - [ ] Mock helpers accept `**kwargs`
 - [ ] Max tokens enforced on LLM calls (<=800)
 - [ ] Imports are at module level, not inside functions (unless circular)
+- [ ] **Web parity** (mobile features): behavior matches the web counterpart, or every deviation is called out explicitly
+
+## Mobile ↔ Web Parity (mandatory)
+
+The mobile app (`mobile/`) mirrors the Flask web app. For ANY mobile feature that has a
+web counterpart:
+
+1. **Read the web implementation first** — find the route/template/service that does the
+   same thing (`routes/*.py`, `templates/*.html`, `services/*`).
+2. **Enumerate what the web does** — including variants (base vs custom/per-rider),
+   selectable state, fallbacks, and how it resolves data (e.g. ride→plan is FK **then**
+   route-name match via `services/plan_match.py`, not FK-only).
+3. **Surface every web↔mobile inconsistency to the user before building.** Never silently
+   narrow scope (e.g. "base plan only" when the web has custom plans).
+4. **Share logic, don't duplicate it** — extract common code (like plan matching) into a
+   module both surfaces import, so they can't drift.
+
+In the aidlc lifecycle, the **blueprint** and **redteam** phases MUST include an explicit
+"Web parity" section comparing planned mobile behavior to the web, and flag an
+unexamined web counterpart as a finding.
 
 ## Environment Variables
 
