@@ -27,6 +27,12 @@ jest.mock('expo-task-manager', () => ({
   defineTask: jest.fn(),
 }));
 
+jest.mock('expo-screen-orientation', () => ({
+  unlockAsync: jest.fn(async () => undefined),
+  lockAsync: jest.fn(async () => undefined),
+  OrientationLock: { PORTRAIT_UP: 1 },
+}));
+
 jest.mock('expo-location', () => ({
   Accuracy: { High: 4, Fitness: 5 },
   ActivityType: { Fitness: 3 },
