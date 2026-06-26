@@ -21,6 +21,8 @@ export default function SeasonScreen() {
   }
 
   const { season, stats, sr, r12, career, eddington } = data;
+  // Default for deploy-ordering safety: OTA JS may briefly hit the pre-deploy API.
+  const rides_done = data.rides_done ?? [];
   const doneTiers = new Set(sr.distances_done);
 
   return (
@@ -47,10 +49,14 @@ export default function SeasonScreen() {
         <View style={styles.badgeRow}>
           {SR_TIERS.map((tier) => {
             const done = doneTiers.has(tier);
+            const count = sr.counts?.[String(tier)] ?? 0;
             return (
               <View key={tier} style={[styles.badge, done ? styles.badgeDone : styles.badgeTodo]}>
                 <Text style={[styles.badgeText, done ? styles.badgeTextDone : styles.badgeTextTodo]}>
                   {tier}
+                </Text>
+                <Text style={[styles.badgeCount, done ? styles.badgeTextDone : styles.badgeTextTodo]}>
+                  {count > 0 ? `×${count}` : '—'}
                 </Text>
               </View>
             );
@@ -61,14 +67,33 @@ export default function SeasonScreen() {
         </Text>
       </View>
 
-      {/* R-12 streak */}
+      {/* Rides done this season */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>R-12 streak</Text>
-        <Text style={styles.big}>{r12.months} {r12.months === 1 ? 'month' : 'months'}</Text>
-        <Text style={[styles.muted, r12.active && styles.active]}>
-          {r12.active ? '🔥 Active — keep it going' : 'Not currently active'}
-        </Text>
+        <Text style={styles.cardTitle}>Rides done ({rides_done.length})</Text>
+        {rides_done.length ? (
+          rides_done.map((r, i) => (
+            <View key={r.id} style={[styles.rideRow, i > 0 && styles.rideRowBorder]}>
+              <Text style={styles.rideName} numberOfLines={1}>{r.name || 'Ride'}</Text>
+              <Text style={styles.rideMeta}>
+                {r.date ?? ''}{r.distance_km ? ` · ${r.distance_km} km` : ''}
+              </Text>
+            </View>
+          ))
+        ) : (
+          <Text style={styles.muted}>No finished rides yet this season.</Text>
+        )}
       </View>
+
+      {/* R-12 streak — only meaningful once a few months are stacked up. */}
+      {r12.months >= 4 ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>R-12 streak</Text>
+          <Text style={styles.big}>{r12.months} {r12.months === 1 ? 'month' : 'months'}</Text>
+          <Text style={[styles.muted, r12.active && styles.active]}>
+            {r12.active ? '🔥 Active — keep it going' : 'Not currently active'}
+          </Text>
+        </View>
+      ) : null}
 
       {/* Eddington */}
       {eddington ? (
@@ -115,8 +140,13 @@ const styles = StyleSheet.create({
   badgeDone: { backgroundColor: '#dcfce7', borderColor: '#16a34a' },
   badgeTodo: { backgroundColor: '#f3f4f6', borderColor: '#e5e7eb' },
   badgeText: { fontWeight: '700' },
+  badgeCount: { fontWeight: '700', fontSize: 12, marginTop: 2 },
   badgeTextDone: { color: '#166534' },
   badgeTextTodo: { color: '#9ca3af' },
+  rideRow: { paddingVertical: 8 },
+  rideRowBorder: { borderTopWidth: 1, borderTopColor: '#f3f4f6' },
+  rideName: { fontSize: 14, fontWeight: '600', color: '#1a365d' },
+  rideMeta: { color: '#6b7280', fontSize: 12, marginTop: 2 },
   big: { fontSize: 24, fontWeight: '800' },
   muted: { color: '#6b7280', fontSize: 13, marginTop: 2 },
   active: { color: '#16a34a', fontWeight: '600' },

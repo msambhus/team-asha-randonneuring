@@ -561,7 +561,9 @@ def api_my_season():
     from models import (get_current_season, get_rider_season_stats,
                         get_rider_season_elevation_ft, get_rider_career_stats,
                         detect_sr_for_rider_season, get_sr_distances_done,
+                        get_sr_counts_by_tier, get_rider_finished_rides_for_season,
                         get_r12_current_streak, get_strava_connection)
+    import html as _html
 
     rider_id = g.rider_id
     season = get_current_season()
@@ -575,6 +577,16 @@ def api_my_season():
     elevation_ft = get_rider_season_elevation_ft(rider_id, season_id)
     sr_count = detect_sr_for_rider_season(rider_id, season_id, date_filter=True)
     distances_done = get_sr_distances_done(rider_id, season_id, date_filter=True)
+    sr_counts = get_sr_counts_by_tier(rider_id, season_id, date_filter=True)
+
+    # Which rides the rider finished this season (newest first). Names come from
+    # web scraping, so unescape HTML entities (mirrors the clean_name filter).
+    rides_done = [{
+        'id': r['id'],
+        'name': _html.unescape(str(r['name'] or '')).replace('\xa0', ' ').strip(),
+        'date': str(r['date']) if r.get('date') else None,
+        'distance_km': r.get('distance_km'),
+    } for r in get_rider_finished_rides_for_season(rider_id, season_id)]
 
     # R-12: current consecutive-month streak + whether it's still alive.
     r12 = get_r12_current_streak(rider_id)
@@ -601,7 +613,9 @@ def api_my_season():
         'sr': {
             'has_sr': sr_count >= 1,
             'distances_done': distances_done,
+            'counts': {str(k): v for k, v in sr_counts.items()},
         },
+        'rides_done': rides_done,
         'r12': {
             'months': r12['months'],
             'active': r12['active'],

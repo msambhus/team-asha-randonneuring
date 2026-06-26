@@ -327,6 +327,24 @@ def get_rider_season_elevation_ft(rider_id, season_id):
     """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchone()
     return int(row['elevation_ft']) if row and row['elevation_ft'] else 0
 
+
+# NOT CACHED - rider-specific data should not be cached in serverless environments
+def get_rider_finished_rides_for_season(rider_id, season_id):
+    """The rider's finished rides this season (newest first) — id/name/date/distance.
+
+    Same FINISHED-ride definition as get_rider_season_stats, so the list length
+    matches the season `rides` count. Powers the app's "rides done" list."""
+    rows = _execute("""
+        SELECT ri.id, ri.name, ri.date, ri.distance_km
+        FROM rider_ride rr
+        JOIN ride ri ON rr.ride_id = ri.id
+        WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
+          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
+        ORDER BY ri.date DESC
+    """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchall()
+    return [dict(r) for r in rows]
+
+
 @cache.memoize(CACHE_TIMEOUT)
 def get_all_rider_season_stats(season_id):
     """Batch: rides and KMs for ALL riders in a season. Returns dict keyed by rider_id."""
@@ -478,6 +496,44 @@ def get_sr_distances_done(rider_id, season_id, date_filter=False):
         elif d >= 600:
             done.add(600)
     return sorted(done)
+
+
+# NOT CACHED - rider-specific data should not be cached in serverless environments
+def get_sr_counts_by_tier(rider_id, season_id, date_filter=False):
+    """How many finished rides the rider has in each SR distance tier this season.
+
+    Returns {200: n, 300: n, 400: n, 600: n}. Same query + bucket thresholds as
+    detect_sr_for_rider_season / get_sr_distances_done so the SR definition stays
+    single-sourced — this exposes the per-tier *counts* for progress display."""
+    today = date.today()
+    if date_filter:
+        rows = _execute("""
+            SELECT ri.distance_km FROM rider_ride rr
+            JOIN ride ri ON rr.ride_id = ri.id
+            WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
+              AND ri.date <= %s
+              AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
+        """, (rider_id, season_id, RideStatus.FINISHED.value, today)).fetchall()
+    else:
+        rows = _execute("""
+            SELECT ri.distance_km FROM rider_ride rr
+            JOIN ride ri ON rr.ride_id = ri.id
+            WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
+              AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
+        """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchall()
+
+    counts = {200: 0, 300: 0, 400: 0, 600: 0}
+    for row in rows:
+        d = row['distance_km']
+        if 200 <= d < 300:
+            counts[200] += 1
+        elif 300 <= d < 400:
+            counts[300] += 1
+        elif 400 <= d < 600:
+            counts[400] += 1
+        elif d >= 600:
+            counts[600] += 1
+    return counts
 
 
 @cache.memoize(CACHE_TIMEOUT)

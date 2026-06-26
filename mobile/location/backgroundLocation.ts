@@ -128,3 +128,13 @@ export async function stopSharing(): Promise<void> {
 export async function isSharing(): Promise<boolean> {
   return Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false);
 }
+
+/** The ride id currently being shared, or null if not sharing. Lets the rides
+ *  list badge the ride whose beacon is live (only one ride shares at a time). */
+export async function getSharingRideId(): Promise<number | null> {
+  const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false);
+  if (!started) return null;
+  const raw = await SecureStore.getItemAsync(RIDE_KEY);
+  const id = raw ? parseInt(raw, 10) : NaN;
+  return Number.isNaN(id) ? null : id;
+}

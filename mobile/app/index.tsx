@@ -1,15 +1,22 @@
 /**
  * mobile/app/index.tsx — the rider's upcoming rides; tap one to open its live map.
  */
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, useFocusEffect } from 'expo-router';
 import { useRides } from '../hooks/useRides';
 import { useSession } from '../contexts/SessionContext';
+import { getSharingRideId } from '../location/backgroundLocation';
 import type { RideSummary } from '../lib/types';
 
 export default function RidesScreen() {
   const { data: rides, isLoading, isError, refetch, isRefetching } = useRides();
   const { signOut } = useSession();
+  const [sharingRideId, setSharingRideId] = useState<number | null>(null);
+
+  // Re-check on every focus so the badge reflects starting/stopping sharing on
+  // the ride screen (only one ride broadcasts at a time).
+  useFocusEffect(useCallback(() => { getSharingRideId().then(setSharingRideId); }, []));
 
   if (isLoading) {
     return <View style={styles.center}><ActivityIndicator /></View>;
@@ -42,7 +49,12 @@ export default function RidesScreen() {
           <Link href={`/ride/${item.id}`} asChild>
             <Pressable style={styles.row}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{item.name}</Text>
+                <View style={styles.nameRow}>
+                  <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+                  {item.id === sharingRideId ? (
+                    <Text style={styles.sharingBadge}>📍 Sharing</Text>
+                  ) : null}
+                </View>
                 <Text style={styles.meta}>
                   {item.date ?? ''}{item.distance_km ? ` · ${item.distance_km} km` : ''}
                   {item.signup_status ? ` · ${item.signup_status}` : ''}
@@ -64,7 +76,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   row: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#e5e7eb' },
-  name: { fontSize: 16, fontWeight: '700' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  name: { fontSize: 16, fontWeight: '700', flexShrink: 1 },
+  sharingBadge: {
+    fontSize: 11, fontWeight: '700', color: '#166534', backgroundColor: '#dcfce7',
+    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden',
+  },
   meta: { color: '#6b7280', fontSize: 13, marginTop: 2 },
   chev: { color: '#9ca3af', fontSize: 22 },
   muted: { color: '#6b7280' },
