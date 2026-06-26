@@ -728,7 +728,12 @@ def api_ride_plan(ride_id):
         from services.custom_plan_service import (get_merged_plan_stops,
                                                   recalculate_cumulative_values)
         merged, meta = get_merged_plan_stops(custom['id'])
-        raw = recalculate_cumulative_values(merged or [], meta or custom)
+        # Pass the canonical cutoff (ride.time_limit_hours) + plan total so the time bank
+        # is computed even when the custom plan name carries no distance class. (The web
+        # custom views recompute time_bank inline from the base-plan name; keep that path
+        # in sync via tests — TODO: consolidate onto this service in a follow-up.)
+        raw = recalculate_cumulative_values(merged or [], meta or custom,
+                                            cutoff_hours=cutoff_hours, total_mi=total_mi)
     else:
         raw = _compute_base_timing(get_ride_plan_stops(plan['id']), cutoff_hours, total_mi)
 
