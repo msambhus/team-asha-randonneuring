@@ -3,18 +3,18 @@
  *
  * Map: RWGPS route line + every rider's marker (initials, colour, ⌚/📱 source,
  * activity badge) + per-rider breadcrumb trail. Below: rider telemetry cards.
- * Controls: a master "Enable location sharing" toggle (POST /api/live/sharing)
- * and a per-ride Share/Stop button driving the screen-off background beacon.
+ * Controls: a per-ride Share/Stop button driving the screen-off background
+ * beacon. The account-level consent toggle lives on the Settings screen; this
+ * screen reads it (useSharing) and only lets you Share while it's on.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import MapView, { Marker, Polyline, Region } from 'react-native-maps';
 import { Feather } from '@expo/vector-icons';
 import { useLivePositions } from '../../hooks/useLivePositions';
 import { useRideRoute } from '../../hooks/useRideRoute';
-import { useSession } from '../../contexts/SessionContext';
-import { apiFetch } from '../../lib/api';
+import { useSharing } from '../../hooks/useSharing';
 import { startSharing, stopSharing, isSharing } from '../../location/backgroundLocation';
 import type { LivePosition } from '../../lib/types';
 
@@ -96,18 +96,22 @@ function RiderCard({ p }: { p: LivePosition }) {
 export default function RideLiveScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const rideId = parseInt(String(params.id), 10);
-  const { signOut } = useSession();
+  const router = useRouter();
   const { data: positions, isLoading } = useLivePositions(rideId);
-  const { data: route } = useRideRoute(rideId);
+  const { data: route, isLoading: routeLoading } = useRideRoute(rideId);
+  const { enabled } = useSharing();   // global account consent (Settings)
 
   const [sharing, setSharing] = useState(false);
-  const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mapRef = useRef<MapView>(null);
   const framedOnce = useRef(false);
 
   useEffect(() => { isSharing().then(setSharing); }, []);
+
+  // If consent is revoked from Settings while this screen is open, the beacon is
+  // already stopped there — keep the button in sync (don't strand it on "Stop").
+  useEffect(() => { if (enabled === false && sharing) setSharing(false); }, [enabled, sharing]);
 
   // Frame the map to the route (preferred) or the riders, once.
   useEffect(() => {
@@ -123,25 +127,17 @@ export default function RideLiveScreen() {
     return first ? { ...first, latitudeDelta: 0.08, longitudeDelta: 0.08 } : FALLBACK_REGION;
   }, [route, positions]);
 
-  async function toggleEnabled(on: boolean) {
-    setBusy(true); setError(null);
-    try {
-      await apiFetch('/api/live/sharing', () => { void signOut(); }, {
-        method: 'POST', body: JSON.stringify({ enabled: on }),
-      });
-      setEnabled(on);
-      if (!on && sharing) { await stopSharing(); setSharing(false); }
-    } catch { setError('Could not update your sharing setting. Try again.'); }
-    setBusy(false);
-  }
-
   async function toggleShare() {
     setBusy(true); setError(null);
     if (sharing) {
       await stopSharing(); setSharing(false);
+    } else if (enabled !== true) {
+      // Strict consent gate: don't even request OS permissions until the
+      // account-level toggle is on. Point the rider to Settings.
+      setError('Turn on location sharing in Settings to broadcast on rides.');
     } else {
       const err = await startSharing(rideId);
-      if (err) setError(enabled ? err : 'Turn on “Enable location sharing” first.');
+      if (err) setError(err);
       else setSharing(true);
     }
     setBusy(false);
@@ -171,17 +167,33 @@ export default function RideLiveScreen() {
         })}
       </MapView>
 
+      {routeLoading ? (
+        <View style={styles.routeLoadingWrap} pointerEvents="none">
+          <View style={styles.routeLoadingPill}>
+            <ActivityIndicator size="small" color="#2563eb" />
+            <Text style={styles.routeLoadingText}>Loading route…</Text>
+          </View>
+        </View>
+      ) : null}
+
       <View style={styles.controls}>
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        <View style={styles.enableRow}>
-          <Text style={styles.enableLabel}>Enable location sharing</Text>
-          <Switch value={enabled} onValueChange={toggleEnabled} disabled={busy} />
-        </View>
-        <Pressable style={[styles.shareBtn, sharing ? styles.stop : styles.start, busy && styles.busy]} onPress={toggleShare} disabled={busy}>
+        <Pressable
+          style={[styles.shareBtn, sharing ? styles.stop : styles.start, (busy || (!sharing && enabled !== true)) && styles.busy]}
+          onPress={toggleShare}
+          disabled={busy || (!sharing && enabled !== true)}>
           <Feather name="map-pin" size={16} color="#fff" />
           <Text style={styles.shareText}>{busy ? '…' : sharing ? 'Stop sharing' : 'Share my location'}</Text>
         </Pressable>
         {sharing ? <Text style={styles.hint}>Sharing on this ride — works with the screen off.</Text> : null}
+        {!sharing && enabled === false ? (
+          <View style={styles.offNote}>
+            <Text style={styles.hint}>Location sharing is off for your account.</Text>
+            <Pressable onPress={() => router.push('/settings')}>
+              <Text style={styles.link}>Turn it on in Settings</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
       <ScrollView style={styles.cards} contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
@@ -200,8 +212,15 @@ const styles = StyleSheet.create({
   pinText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   pinAct: { position: 'absolute', bottom: -10, fontSize: 12 },
   controls: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#fff', borderTopWidth: 1, borderColor: '#e5e7eb' },
-  enableRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  enableLabel: { fontSize: 14, fontWeight: '600', color: '#1a365d' },
+  routeLoadingWrap: { position: 'absolute', top: 12, left: 0, right: 0, alignItems: 'center' },
+  routeLoadingPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff',
+    paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20,
+    shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 3,
+  },
+  routeLoadingText: { color: '#1a365d', fontSize: 13, fontWeight: '600' },
+  offNote: { alignItems: 'center', marginTop: 8, gap: 2 },
+  link: { color: '#2563eb', fontWeight: '700', fontSize: 13 },
   shareBtn: { flexDirection: 'row', gap: 8, paddingVertical: 13, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   start: { backgroundColor: '#16a34a' },
   stop: { backgroundColor: '#dc2626' },

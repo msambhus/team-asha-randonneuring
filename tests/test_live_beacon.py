@@ -203,6 +203,36 @@ def test_sharing_toggle_enables_preserving_garmin(client):
     assert captured['rid'] == 7 and captured['en'] is True
 
 
+# ── GET /api/live/sharing (read the opt-in state for the mobile toggle) ─────
+
+def test_sharing_status_requires_login(client):
+    resp = client.get('/api/live/sharing')
+    assert resp.status_code == 401
+
+
+def test_sharing_status_requires_profile(client):
+    with client.session_transaction() as s:
+        s['user_id'] = 1   # no rider_id
+    resp = client.get('/api/live/sharing')
+    assert resp.status_code == 403
+
+
+def test_sharing_status_true_when_enabled(client):
+    _login(client, rider_id=7)
+    with patch('routes.live.get_live_tracking', return_value={'enabled': True}):
+        resp = client.get('/api/live/sharing')
+    assert resp.status_code == 200
+    assert resp.get_json()['enabled'] is True
+
+
+def test_sharing_status_false_when_never_set(client):
+    _login(client, rider_id=7)
+    with patch('routes.live.get_live_tracking', return_value=None):
+        resp = client.get('/api/live/sharing')
+    assert resp.status_code == 200
+    assert resp.get_json()['enabled'] is False
+
+
 def test_share_page_requires_profile(client):
     with client.session_transaction() as s:
         s['user_id'] = 1   # no rider_id
