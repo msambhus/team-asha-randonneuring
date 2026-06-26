@@ -20,6 +20,63 @@ import { getToken, authHeaders, apiUrl } from '../lib/api';
 
 export const LOCATION_TASK = 'team-asha-live-location';
 const RIDE_KEY = 'ta_active_ride_id';
+const LOW_POWER_KEY = 'ta_low_power';
+
+/** The expo-location options for a given power profile. Pure + exported so the
+ *  profiles are inspectable/testable. Low power is the big battery saver: coarser
+ *  GPS (~100m vs continuous high-accuracy), a slower cadence, and letting iOS
+ *  pause updates while the rider is stopped. */
+export function locationOptions(lowPower: boolean): Location.LocationTaskOptions {
+  const foregroundService = {
+    notificationTitle: lowPower
+      ? 'Team Asha — sharing (low power)'
+      : 'Team Asha — sharing your location',
+    notificationBody: 'Tap to stop sharing.',
+  };
+  if (lowPower) {
+    return {
+      accuracy: Location.Accuracy.Balanced,   // ~100m — the dominant battery win vs High
+      activityType: Location.ActivityType.Fitness,
+      timeInterval: 60_000,                    // ~60s
+      distanceInterval: 80,                    // or every 80m, whichever first
+      deferredUpdatesInterval: 60_000,
+      pausesUpdatesAutomatically: true,        // let iOS sleep GPS at controls/stops
+      showsBackgroundLocationIndicator: true,
+      foregroundService,
+    };
+  }
+  return {
+    accuracy: Location.Accuracy.High,
+    activityType: Location.ActivityType.Fitness,
+    timeInterval: 30_000,           // ~30s (iOS treats as a hint)
+    distanceInterval: 25,            // or every 25m, whichever first
+    deferredUpdatesInterval: 30_000,
+    pausesUpdatesAutomatically: false,
+    showsBackgroundLocationIndicator: true,
+    foregroundService,
+  };
+}
+
+/** Is low-power sharing enabled? Persisted (default off) so the headless task and
+ *  startSharing can read it outside the React tree. */
+export async function getLowPower(): Promise<boolean> {
+  return (await SecureStore.getItemAsync(LOW_POWER_KEY).catch(() => null)) === '1';
+}
+
+/** Set the low-power preference. Applies immediately to an active beacon by
+ *  restarting updates with the new profile (the active ride id is untouched). */
+export async function setLowPower(on: boolean): Promise<void> {
+  await SecureStore.setItemAsync(LOW_POWER_KEY, on ? '1' : '0');
+  const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false);
+  if (started) await startUpdates(on);
+}
+
+/** Restart background updates with the given power profile (idempotent). */
+async function startUpdates(lowPower: boolean): Promise<void> {
+  const already = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false);
+  if (already) await Location.stopLocationUpdatesAsync(LOCATION_TASK).catch(() => undefined);
+  await Location.startLocationUpdatesAsync(LOCATION_TASK, locationOptions(lowPower));
+}
 
 export interface BeaconPayload {
   ride_id: number;
@@ -97,23 +154,7 @@ export async function startSharing(rideId: number): Promise<string | null> {
   }
 
   await SecureStore.setItemAsync(RIDE_KEY, String(rideId));
-
-  const already = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false);
-  if (already) await Location.stopLocationUpdatesAsync(LOCATION_TASK).catch(() => undefined);
-
-  await Location.startLocationUpdatesAsync(LOCATION_TASK, {
-    accuracy: Location.Accuracy.High,
-    activityType: Location.ActivityType.Fitness,
-    timeInterval: 30_000,           // ~30s (iOS treats as a hint)
-    distanceInterval: 25,            // or every 25m, whichever first
-    deferredUpdatesInterval: 30_000,
-    pausesUpdatesAutomatically: false,
-    showsBackgroundLocationIndicator: true,
-    foregroundService: {
-      notificationTitle: 'Team Asha — sharing your location',
-      notificationBody: 'Tap to stop sharing.',
-    },
-  });
+  await startUpdates(await getLowPower());
   return null;
 }
 
