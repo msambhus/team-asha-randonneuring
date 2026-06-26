@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useRidePlan } from '../../hooks/useRidePlan';
+import { useAllowRotation } from '../../hooks/useAllowRotation';
 import type { PlanStop, RidePlanAvailable } from '../../lib/types';
 
 const RED = '#dc2626', GREEN = '#16a34a', BLUE = '#2563eb';
@@ -84,6 +85,7 @@ function PlanBody({ data, onView }: { data: RidePlanAvailable; onView: (v: 'base
   const p = data.plan;
   return (
     <ScrollView contentContainerStyle={styles.list}>
+      <View style={styles.inner}>
       <View style={styles.card}>
         <Text style={styles.name}>{p.name}</Text>
         <Text style={styles.meta}>
@@ -131,11 +133,13 @@ function PlanBody({ data, onView }: { data: RidePlanAvailable; onView: (v: 'base
         Tap a stop for ETA, break, climb &amp; notes. Time bank is your cushion vs the
         RUSA cutoff{data.stops.some((s) => s.wind_speed_mph != null) ? ' · wind from Open-Meteo' : ''}.
       </Text>
+      </View>
     </ScrollView>
   );
 }
 
 export default function RidePlanScreen() {
+  useAllowRotation();   // the wide plan table benefits from landscape
   const params = useLocalSearchParams<{ id: string }>();
   const rideId = parseInt(String(params.id), 10);
   const [view, setView] = useState<'base' | 'custom' | undefined>(undefined);
@@ -163,6 +167,8 @@ export default function RidePlanScreen() {
 
 const styles = StyleSheet.create({
   list: { padding: 16, paddingBottom: 28 },
+  // Cap + center the column so the flex "stop" cell doesn't sprawl in landscape / on tablets.
+  inner: { width: '100%', maxWidth: 640, alignSelf: 'center' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24 },
   muted: { color: '#6b7280' },
   link: { color: BLUE, fontWeight: '700' },

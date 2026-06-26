@@ -11,10 +11,11 @@
  * crosshair while the map rings the spot. Reached from the ride's live-map header.
  */
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import MapView, { Marker, Polyline, Region } from 'react-native-maps';
 import { useRideWeather } from '../../hooks/useRideWeather';
+import { useAllowRotation } from '../../hooks/useAllowRotation';
 import { WeatherChart } from '../../components/WeatherChart';
 import type { RideWeatherAvailable, WeatherSegment } from '../../lib/types';
 
@@ -96,6 +97,8 @@ function SegmentRow({ s, active, onPress }: { s: WeatherSegment; active: boolean
 
 function WeatherBody({ data }: { data: RideWeatherAvailable }) {
   const [sel, setSel] = useState(0);
+  const { width, height } = useWindowDimensions();
+  const landscape = width > height;   // give the route map more canvas when rotated
   const coords = useMemo(
     () => data.polyline.map(([lat, lng]) => ({ latitude: lat, longitude: lng })),
     [data.polyline],
@@ -136,7 +139,7 @@ function WeatherBody({ data }: { data: RideWeatherAvailable }) {
       {/* 1: wind map */}
       {region ? (
         <View style={styles.mapCard}>
-          <MapView style={styles.map} initialRegion={region}>
+          <MapView style={[styles.map, landscape && styles.mapLandscape]} initialRegion={region}>
             {coords.length ? <Polyline coordinates={coords} strokeColor={BLUE} strokeWidth={3} /> : null}
             {data.map_segments.map((s, i) => {
               const color = windColor(s.wind_label);
@@ -221,6 +224,7 @@ function Legend({ color, label }: { color: string; label: string }) {
 }
 
 export default function RideWeatherScreen() {
+  useAllowRotation();   // the map + charts + per-segment table benefit from landscape
   const params = useLocalSearchParams<{ id: string }>();
   const rideId = parseInt(String(params.id), 10);
   const { data, isLoading, isError, refetch } = useRideWeather(rideId);
@@ -265,6 +269,7 @@ const styles = StyleSheet.create({
   summary: { color: '#1f2937', fontSize: 14, marginTop: 8, lineHeight: 20 },
   mapCard: { backgroundColor: '#fff', borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb', overflow: 'hidden' },
   map: { height: 240 },
+  mapLandscape: { height: 340 },
   selRing: { width: 22, height: 22, borderRadius: 11, borderWidth: 3, borderColor: '#1a365d', backgroundColor: 'rgba(26,54,93,0.15)' },
   legend: { flexDirection: 'row', gap: 16, padding: 10 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },

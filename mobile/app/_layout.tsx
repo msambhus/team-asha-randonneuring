@@ -5,6 +5,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { Feather } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -51,6 +52,13 @@ function AuthGate({ children }: { children: ReactNode }) {
 }
 
 export default function RootLayout() {
+  // The app is portrait by default; only the ride plan + weather screens opt into
+  // rotation (see useAllowRotation). app.json now permits all orientations natively,
+  // so lock portrait here to keep every other screen upright.
+  useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

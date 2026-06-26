@@ -9,7 +9,10 @@ import RidePlanScreen from '../app/ride/plan';
 import * as useRidePlanHook from '../hooks/useRidePlan';
 import type { PlanStop, RidePlanAvailable } from '../lib/types';
 
-jest.mock('expo-router', () => ({ useLocalSearchParams: () => ({ id: '42' }) }));
+jest.mock('expo-router', () => ({
+  useLocalSearchParams: () => ({ id: '42' }),
+  useFocusEffect: jest.fn(),   // useAllowRotation() — no-op in the render test
+}));
 // Cut the auth import chain (SessionContext -> lib/auth -> native google-signin).
 jest.mock('../contexts/SessionContext', () => ({
   useSession: () => ({ token: 'tok-1', signOut: jest.fn() }),
