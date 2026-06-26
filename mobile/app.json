@@ -1,11 +1,12 @@
 {
   "expo": {
-    "name": "Team Asha Live",
+    "name": "Team Asha Randonneuring",
     "slug": "team-asha-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "teamasha",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "org.teamasha.randonneuring",
