@@ -213,6 +213,32 @@ def test_calendar_endpoint_requires_auth(client):
     assert client.get('/api/calendar').status_code == 401
 
 
+def test_ride_route_endpoint_token_authed(client, app):
+    poly = [[-122.4, 37.8], [-122.41, 37.81], [-122.42, 37.82]]
+    with patch('routes.live._ride_route_polyline', return_value=poly):
+        resp = client.get('/api/ride/5/route', headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['ride_id'] == 5 and data['polyline'] == poly
+
+
+def test_ride_route_endpoint_empty_when_no_route(client, app):
+    # Fail-soft: no resolvable route → empty polyline, not an error.
+    with patch('routes.live._ride_route_polyline', return_value=None):
+        resp = client.get('/api/ride/5/route', headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 200
+    assert resp.get_json()['polyline'] == []
+
+
+def test_ride_route_endpoint_requires_auth(client):
+    assert client.get('/api/ride/5/route').status_code == 401
+
+
+def test_ride_route_endpoint_no_profile_403(client, app):
+    resp = client.get('/api/ride/5/route', headers=_bearer(app, rider_id=None))
+    assert resp.status_code == 403
+
+
 def _patch_season(**overrides):
     """Patch every model fn /api/me/season assembles. Override any return value
     by keyword (e.g. season=None, conn={...})."""
