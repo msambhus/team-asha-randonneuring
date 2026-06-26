@@ -357,3 +357,76 @@ def test_beacon_still_works_with_session_and_no_token(client, app):
         resp = client.post('/api/live/beacon', json={'ride_id': 5, 'lat': 37.8, 'lng': -122.2})
     assert resp.status_code == 200
     assert captured['rider_id'] == 7
+
+
+# ── GET /api/ride/<id>/weather (mirrors the web /weather forecast) ──────────
+
+from datetime import date as _wx_date, timedelta as _wx_td
+
+_RIDE_WX = {
+    'id': 5, 'name': 'Hamilton 200K',
+    'rwgps_url': 'https://ridewithgps.com/routes/12345',
+    'rwgps_url_team': None, 'plan_slug': 'hamilton-200k', 'plan_start_time': '07:00',
+}
+
+
+def _ride_wx(**over):
+    r = dict(_RIDE_WX)
+    r.update(over)
+    return r
+
+
+def test_ride_weather_requires_auth(client):
+    assert client.get('/api/ride/5/weather').status_code == 401
+
+
+def test_ride_weather_happy_path(client, app):
+    ride = _ride_wx(date=_wx_date.today() + _wx_td(days=3))
+    payload = {'route_name': 'Hamilton 200K', 'table_segments': [], 'map_segments': [],
+               'chart_data': {}, 'polyline': [], 'ride_summary': 'mild',
+               'temp_range': {'min_f': 50, 'max_f': 70},
+               'attribution': '*Weather data: Open-Meteo*'}
+    with patch('routes.live.get_ride_by_id', return_value=ride), \
+         patch('routes.weather.build_weather_payload',
+               return_value=(payload, None)) as mock_b:
+        resp = client.get('/api/ride/5/weather', headers=_bearer(app))
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['available'] is True
+    assert data['route_name'] == 'Hamilton 200K'
+    # route id extracted from the rwgps url; plan timing + rider passed through
+    args, kwargs = mock_b.call_args
+    assert str(args[0]) == '12345'
+    assert kwargs['plan_slug'] == 'hamilton-200k'
+    assert kwargs['rider_id'] == 7
+
+
+def test_ride_weather_no_route(client, app):
+    ride = _ride_wx(rwgps_url=None, rwgps_url_team=None,
+                    date=_wx_date.today() + _wx_td(days=3))
+    with patch('routes.live.get_ride_by_id', return_value=ride):
+        resp = client.get('/api/ride/5/weather', headers=_bearer(app))
+    assert resp.status_code == 200
+    assert resp.get_json() == {'available': False, 'reason': 'no_route',
+                               'message': 'No route is attached to this ride yet.'}
+
+
+def test_ride_weather_past_ride(client, app):
+    ride = _ride_wx(date=_wx_date.today() - _wx_td(days=1))
+    with patch('routes.live.get_ride_by_id', return_value=ride):
+        resp = client.get('/api/ride/5/weather', headers=_bearer(app))
+    assert resp.get_json()['reason'] == 'past_ride'
+
+
+def test_ride_weather_beyond_forecast_horizon(client, app):
+    ride = _ride_wx(date=_wx_date.today() + _wx_td(days=30))
+    with patch('routes.live.get_ride_by_id', return_value=ride):
+        resp = client.get('/api/ride/5/weather', headers=_bearer(app))
+    body = resp.get_json()
+    assert body['available'] is False and body['reason'] == 'forecast_horizon'
+
+
+def test_ride_weather_404_unknown_ride(client, app):
+    with patch('routes.live.get_ride_by_id', return_value=None):
+        resp = client.get('/api/ride/999/weather', headers=_bearer(app))
+    assert resp.status_code == 404

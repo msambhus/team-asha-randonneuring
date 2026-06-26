@@ -63,6 +63,69 @@ export interface MySeasonResponse {
   eddington: { value: number; badge: EddingtonBadge } | null;
 }
 
+// ── Ride weather (GET /api/ride/<id>/weather) — mirrors the web /weather page ──
+export interface WeatherSegment {
+  distance_mi: number;
+  arrival_time: string;
+  temperature_f: number;
+  feels_like_f: number;
+  wind_speed_mph: number;
+  wind_gust_mph: number;
+  wind_direction_deg: number;
+  headwind_mph: number;        // + = headwind, − = tailwind
+  wind_label: string;
+  precip_percent: number;
+  precipitation_mm: number;
+  cloud_cover: number;
+  humidity: number;
+  conditions: string;
+  conditions_icon: string;
+  elevation_ft: number;
+  lat: number;
+  lng: number;
+  rider_bearing_deg: number;
+}
+
+export interface WeatherChartData {
+  labels: number[];            // distance (mi)
+  times: string[];
+  temperature_f: number[];
+  feels_like_f: number[];
+  wind_speed_mph: number[];
+  wind_gust_mph: number[];
+  headwind_mph: number[];
+  precip_probability: number[];
+  precipitation_mm: number[];
+  cloud_cover: number[];
+  elevation_ft: number[];
+  humidity: number[];
+}
+
+export interface RideWeatherAvailable {
+  available: true;
+  route_name: string;
+  total_distance_mi: number;
+  total_elevation_ft: number;
+  plan_source: 'base' | 'custom' | null;
+  polyline: [number, number][];   // [[lat,lng],...]
+  table_segments: WeatherSegment[];
+  map_segments: WeatherSegment[];
+  chart_data: WeatherChartData;
+  cue_points: { name: string; distance_mi: number; stop_type: string }[];
+  ride_summary: string;
+  temp_range: { min_f: number; max_f: number };
+  attribution: string;
+}
+
+export interface RideWeatherUnavailable {
+  available: false;
+  reason: 'no_route' | 'no_date' | 'past_ride' | 'forecast_horizon';
+  message: string;
+  ride_date?: string;
+}
+
+export type RideWeatherResponse = RideWeatherAvailable | RideWeatherUnavailable;
+
 export interface LivePositionTelemetryNow {
   speed_mph: number | null;
   activity: 'paused' | 'walking' | 'cycling' | 'driving' | null;

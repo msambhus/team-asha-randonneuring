@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import MapView, { Marker, Polyline, Region } from 'react-native-maps';
 import { Feather } from '@expo/vector-icons';
 import { useLivePositions } from '../../hooks/useLivePositions';
@@ -145,6 +145,13 @@ export default function RideLiveScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen options={{
+        headerRight: () => (
+          <Pressable onPress={() => router.push(`/ride/weather?id=${rideId}`)} hitSlop={12} style={{ paddingHorizontal: 4 }}>
+            <Feather name="cloud-drizzle" size={22} color="#1a365d" />
+          </Pressable>
+        ),
+      }} />
       <MapView ref={mapRef} style={styles.map} initialRegion={initialRegion} showsUserLocation>
         {route?.length ? <Polyline coordinates={route} strokeColor="#2563eb" strokeWidth={4} /> : null}
         {(positions ?? []).map((p) =>
