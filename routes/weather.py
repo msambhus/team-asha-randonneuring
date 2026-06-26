@@ -277,37 +277,17 @@ def weather_page():
                            auto_fetch=request.args.get('auto', ''))
 
 
-@weather_bp.route('/api/weather-map', methods=['POST'])
-def weather_map_api():
-    """JSON API: fetch route weather and return data for table + map + charts."""
-    data = request.get_json(silent=True) or {}
-    rwgps_url = (data.get('rwgps_url') or '').strip()
-    start_datetime_str = data.get('start_datetime')
-    speed_mph = data.get('speed_mph')
-    plan_slug = data.get('plan_slug')
+def build_weather_payload(route_id, start_dt, speed_mph=None, plan_slug=None,
+                          rider_id=None):
+    """Shared core: fetch a route + its weather and build the table/map/chart payload.
 
-    # Validate URL
-    if not rwgps_url:
-        return jsonify({'error': 'Please provide a RideWithGPS URL.'}), 400
+    Used by both the web `/api/weather-map` POST and the mobile
+    `GET /api/ride/<id>/weather`. Returns ``(payload_dict, None)`` on success or
+    ``(None, (error_dict, status_code))`` on failure, so callers just jsonify.
 
-    route_id = extract_rwgps_route_id(rwgps_url)
-    if not route_id:
-        return jsonify({'error': 'Could not extract a route ID from that URL. Use a URL like ridewithgps.com/routes/12345.'}), 400
-
-    # Parse start datetime early (default: tomorrow 7:00 AM local)
-    if start_datetime_str:
-        try:
-            start_dt = datetime.fromisoformat(start_datetime_str)
-        except (ValueError, TypeError):
-            start_dt = _default_start_time()
-    else:
-        start_dt = _default_start_time()
-
-    # Validate within 16-day forecast window before making API calls
-    max_forecast = datetime.now() + timedelta(days=16)
-    if start_dt > max_forecast:
-        return jsonify({'error': 'Weather forecasts are only available up to 16 days ahead.'}), 400
-
+    speed_mph: optional already-parsed float (flat-speed fallback when there's no
+    plan timing). plan_slug + rider_id drive plan-aware arrival interpolation.
+    """
     t0 = time.time()
 
     # Fetch route from RWGPS (cached 1 hour — route geometry rarely changes)
@@ -323,17 +303,17 @@ def weather_map_api():
             logger.info("RWGPS fetch for route %s took %.1fs", route_id, time.time() - t0)
         except Exception:
             logger.exception("Failed to fetch RWGPS route %s", route_id)
-            return jsonify({'error': 'Could not fetch route data from RideWithGPS. The route may not exist or the service may be temporarily unavailable.'}), 502
+            return None, ({'error': 'Could not fetch route data from RideWithGPS. The route may not exist or the service may be temporarily unavailable.'}, 502)
 
     track_points = route_data.get('track_points', [])
     if not track_points:
-        return jsonify({'error': 'This route has no GPS track data.'}), 400
+        return None, ({'error': 'This route has no GPS track data.'}, 400)
 
     # Sample at dense interval for map; table picks every Nth from the same data
     map_sample = sample_track_points(track_points, interval_m=_MAP_INTERVAL_M)
 
     if not map_sample:
-        return jsonify({'error': 'Could not sample points from this route.'}), 400
+        return None, ({'error': 'Could not sample points from this route.'}, 400)
 
     # Single weather fetch for all map points (one API call, cached 1 hour)
     start_hour_str = start_dt.strftime("%Y-%m-%dT%H:00")
@@ -345,7 +325,7 @@ def weather_map_api():
         logger.info("Weather fetch took %.1fs, %d forecasts", time.time() - t1, len(weather_data))
     except Exception:
         logger.exception("Weather fetch failed for route %s with %d points", route_id, len(map_sample))
-        return jsonify({'error': 'Weather data is temporarily unavailable. Please try again.'}), 503
+        return None, ({'error': 'Weather data is temporarily unavailable. Please try again.'}, 503)
 
     # Compute bearings for map points
     map_bearings = []
@@ -360,7 +340,6 @@ def weather_map_api():
     plan_source = None
     if plan_slug:
         try:
-            rider_id = session.get('rider_id')
             plan_stops, plan_name = _load_plan_stops(plan_slug, rider_id)
             if plan_stops:
                 arrival_fn = _build_arrival_interpolator(plan_stops, start_dt)
@@ -370,16 +349,10 @@ def weather_map_api():
         except Exception:
             logger.exception("Failed to load plan %s, falling back to speed-based timing", plan_slug)
 
-    # Parse speed (mph) — used as fallback if no plan timing
-    try:
-        rider_speed = float(speed_mph) if speed_mph else None
-    except (ValueError, TypeError):
-        rider_speed = None
-
     # Build all segments with elevation and expanded weather fields
     map_segments = _build_weather_segments(
         map_sample, weather_data, map_bearings, start_dt,
-        rider_speed, track_points, arrival_fn)
+        speed_mph, track_points, arrival_fn)
 
     # Table: pick every Nth segment to approximate TABLE_INTERVAL spacing
     table_step = max(1, _TABLE_INTERVAL_M // _MAP_INTERVAL_M)
@@ -390,9 +363,6 @@ def weather_map_api():
     # Chart data from dense map segments
     chart_data = _build_chart_data(map_segments)
 
-    # Overall assessment from table segments
-    headwinds = [s['headwind_mph'] for s in table_segments]
-    avg_hw_mph = sum(headwinds) / len(headwinds) if headwinds else 0
     temps_f = [s['temperature_f'] for s in table_segments]
 
     # Decimate track points for map polyline
@@ -434,7 +404,7 @@ def weather_map_api():
     logger.info("Weather map total time: %.1fs for route %s (%d map points, %d table points, plan=%s)",
                 time.time() - t0, route_id, len(map_segments), len(table_segments), plan_source or 'none')
 
-    return jsonify({
+    return {
         'route_name': route_name,
         'total_distance_mi': total_dist_mi,
         'total_elevation_ft': total_elev_ft,
@@ -450,7 +420,53 @@ def weather_map_api():
             'max_f': max(temps_f) if temps_f else 0,
         },
         'attribution': '*Weather data: Open-Meteo*',
-    })
+    }, None
+
+
+@weather_bp.route('/api/weather-map', methods=['POST'])
+def weather_map_api():
+    """JSON API: fetch route weather and return data for table + map + charts."""
+    data = request.get_json(silent=True) or {}
+    rwgps_url = (data.get('rwgps_url') or '').strip()
+    start_datetime_str = data.get('start_datetime')
+    speed_mph = data.get('speed_mph')
+    plan_slug = data.get('plan_slug')
+
+    # Validate URL
+    if not rwgps_url:
+        return jsonify({'error': 'Please provide a RideWithGPS URL.'}), 400
+
+    route_id = extract_rwgps_route_id(rwgps_url)
+    if not route_id:
+        return jsonify({'error': 'Could not extract a route ID from that URL. Use a URL like ridewithgps.com/routes/12345.'}), 400
+
+    # Parse start datetime early (default: tomorrow 7:00 AM local)
+    if start_datetime_str:
+        try:
+            start_dt = datetime.fromisoformat(start_datetime_str)
+        except (ValueError, TypeError):
+            start_dt = _default_start_time()
+    else:
+        start_dt = _default_start_time()
+
+    # Validate within 16-day forecast window before making API calls
+    max_forecast = datetime.now() + timedelta(days=16)
+    if start_dt > max_forecast:
+        return jsonify({'error': 'Weather forecasts are only available up to 16 days ahead.'}), 400
+
+    # Parse speed (mph) — used as fallback if no plan timing
+    try:
+        rider_speed = float(speed_mph) if speed_mph else None
+    except (ValueError, TypeError):
+        rider_speed = None
+
+    payload, err = build_weather_payload(
+        route_id, start_dt, speed_mph=rider_speed, plan_slug=plan_slug,
+        rider_id=session.get('rider_id'))
+    if err:
+        body, status = err
+        return jsonify(body), status
+    return jsonify(payload)
 
 
 def generate_ride_summary(route_name, total_distance_mi, total_elevation_ft, map_segments):

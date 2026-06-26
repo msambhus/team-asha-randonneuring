@@ -546,6 +546,63 @@ def api_ride_route(ride_id):
     return jsonify({'ride_id': ride_id, 'polyline': polyline or []})
 
 
+@live_bp.route('/api/ride/<int:ride_id>/weather')
+@token_or_session_required
+def api_ride_weather(ride_id):
+    """JSON: the weather forecast for a ride's route — mirrors the web /weather page.
+
+    Auth: web session OR mobile Bearer token. Resolves the ride to its RWGPS route +
+    start datetime (the plan's start time, else 07:00) and reuses build_weather_payload
+    — the SAME pipeline the web /api/weather-map uses — so the mobile screen renders
+    the identical table / wind-map / charts. Returns {available: false, reason, message}
+    (HTTP 200) for rides with no route, no date, in the past, or beyond Open-Meteo's
+    16-day forecast horizon, so the app can show a friendly note instead of an error.
+    """
+    if not g.rider_id:
+        return jsonify({'error': 'Complete your profile to view weather'}), 403
+
+    from datetime import date as _date, time as _time
+    from routes.weather import build_weather_payload  # local: avoids import cycle
+
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        return jsonify({'error': 'Ride not found'}), 404
+
+    route_id = extract_rwgps_route_id(ride.get('rwgps_url_team') or ride.get('rwgps_url'))
+    if not route_id:
+        return jsonify({'available': False, 'reason': 'no_route',
+                        'message': 'No route is attached to this ride yet.'})
+
+    ride_date = ride.get('date')
+    if not ride_date:
+        return jsonify({'available': False, 'reason': 'no_date',
+                        'message': 'This ride has no date yet.'})
+    if ride_date < _date.today():
+        return jsonify({'available': False, 'reason': 'past_ride',
+                        'message': 'This ride has already happened.'})
+
+    # Start datetime = ride date at the plan's start time (fallback 07:00 local).
+    start_str = ride.get('plan_start_time') or '07:00'
+    try:
+        parts = str(start_str).split(':')
+        start_dt = datetime.combine(ride_date, _time(int(parts[0]), int(parts[1])))
+    except (ValueError, TypeError, IndexError):
+        start_dt = datetime.combine(ride_date, _time(7, 0))
+
+    if start_dt > datetime.now() + timedelta(days=16):
+        return jsonify({'available': False, 'reason': 'forecast_horizon',
+                        'message': 'Weather forecast opens within 16 days of the ride.',
+                        'ride_date': str(ride_date)})
+
+    payload, err = build_weather_payload(
+        route_id, start_dt, plan_slug=ride.get('plan_slug'), rider_id=g.rider_id)
+    if err:
+        body, status = err
+        return jsonify(body), status
+    payload['available'] = True
+    return jsonify(payload)
+
+
 @live_bp.route('/api/me/season')
 @token_or_session_required
 def api_my_season():
