@@ -72,9 +72,9 @@ export default function SettingsScreen() {
           <Switch value={lowPower} onValueChange={onToggleLowPower} />
         </View>
         <Text style={styles.help}>
-          Uses coarser GPS (~100m) and updates less often to save battery on long
-          rides — recommended for 300 km+ brevets. Your live dot may lag a little
-          and round to about a block. Takes effect immediately while you're sharing.
+          Uses coarser GPS (~100m) and updates about every 2 minutes to save battery
+          on long rides — recommended for 300 km+ brevets. Your live dot may lag up to
+          a couple minutes (about a block off). Takes effect immediately while sharing.
         </Text>
       </View>
     </ScrollView>
