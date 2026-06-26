@@ -136,29 +136,40 @@ def get_merged_plan_stops(custom_plan_id):
     return merged_with_calcs, custom_plan
 
 
-def recalculate_cumulative_values(stops, custom_plan):
+def recalculate_cumulative_values(stops, custom_plan, cutoff_hours=None, total_mi=None):
     """
     Recalculate all cumulative and derived values for stops.
-    
+
     Handles:
     - Cumulative time
     - Segment distance
     - Average speed per segment
     - Ft/mile for each segment
     - Time bank (if cutoff_hours available)
+
+    Args:
+        cutoff_hours: canonical event cutoff (e.g. ride.time_limit_hours). When given,
+            it is used directly. When None, fall back to parsing a distance class out of
+            ``custom_plan['name']`` — which yields None for a custom plan whose name has
+            no distance (e.g. "Mihir's Push pace"), silently zeroing the time bank. Callers
+            that know the real cutoff (routes/live.py) should always pass it.
+        total_mi: the plan's total distance in miles, used as the time-bank fraction basis.
+            When None, fall back to the largest per-stop cumulative distance.
     """
     if not stops:
         return stops
-    
-    # Extract distance class for time bank calculation
-    base_plan_name = custom_plan.get('name', '')
-    distance_km = _extract_distance_km(base_plan_name)
-    cutoff_hours = _get_cutoff_hours(distance_km)
+
+    # Prefer the caller's canonical cutoff; only parse the (custom) plan name as a fallback.
+    if cutoff_hours is None:
+        distance_km = _extract_distance_km(custom_plan.get('name', ''))
+        cutoff_hours = _get_cutoff_hours(distance_km)
     if cutoff_hours:
         cutoff_hours = float(cutoff_hours)
-    
+
     # Calculate total distance for time bank proportions
-    total_distance = float(max((float(s.get('distance_miles') or 0) for s in stops), default=0))
+    total_distance = float(total_mi) if total_mi else 0.0
+    if total_distance <= 0:
+        total_distance = float(max((float(s.get('distance_miles') or 0) for s in stops), default=0))
     
     cum_time_min = 0
     prev_dist = 0.0
