@@ -1,17 +1,20 @@
 {
   "expo": {
-    "name": "Team Asha Live",
+    "name": "Team Asha Randonneuring",
     "slug": "team-asha-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "teamasha",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "org.teamasha.randonneuring",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["location"],
+        "UIBackgroundModes": [
+          "location"
+        ],
         "NSLocationWhenInUseUsageDescription": "Team Asha uses your location to show you on the club's live ride map.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Team Asha keeps sharing your location during a ride — even with the screen off — so the club can follow along. You control when sharing starts and stops."
       }
@@ -33,7 +36,7 @@
       [
         "@react-native-google-signin/google-signin",
         {
-          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_REVERSED_IOS_CLIENT_ID"
+          "iosUrlScheme": "com.googleusercontent.apps.465825889971-bbk5vdfldcblrr6h91jvjd66tmgudf5h"
         }
       ]
     ],
@@ -43,11 +46,12 @@
     "extra": {
       "router": {},
       "apiBase": "https://team-asha-randonneuring.vercel.app",
-      "googleIosClientId": "REPLACE_WITH_GOOGLE_IOS_CLIENT_ID.apps.googleusercontent.com",
-      "googleWebClientId": "REPLACE_WITH_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com",
+      "googleIosClientId": "465825889971-bbk5vdfldcblrr6h91jvjd66tmgudf5h.apps.googleusercontent.com",
+      "googleWebClientId": "465825889971-tkfv9td375ap2cle1pipm0sniogi0rjc.apps.googleusercontent.com",
       "eas": {
-        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+        "projectId": "a2d7adfa-7b86-4383-b5b7-cb2b7daaddfa"
       }
-    }
+    },
+    "owner": "mihirsam"
   }
 }

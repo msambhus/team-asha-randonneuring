@@ -30,6 +30,7 @@ export interface BrevetSummary {
   start_location: string | null;
   club_name: string | null;
   signup_count: number | null;
+  is_team_ride?: boolean;
 }
 
 export interface CalendarResponse {

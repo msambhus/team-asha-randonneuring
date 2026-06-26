@@ -32,8 +32,13 @@ export default function CalendarScreen() {
             {item.date ?? ''}{item.distance_km ? ` · ${item.distance_km} km` : ''}
             {item.ride_type ? ` · ${item.ride_type}` : ''}
           </Text>
+          {item.club_name ? (
+            <Text style={[styles.meta, item.is_team_ride && styles.teamClub]}>
+              {item.is_team_ride ? '🚴 ' : ''}{item.club_name}
+            </Text>
+          ) : null}
           {item.start_location ? <Text style={styles.meta}>Start: {item.start_location}</Text> : null}
-          {item.signup_count != null ? <Text style={styles.count}>{item.signup_count} signed up</Text> : null}
+          {item.signup_count ? <Text style={styles.count}>{item.signup_count} signed up</Text> : null}
         </View>
       )}
     />
@@ -47,6 +52,7 @@ const styles = StyleSheet.create({
   name: { fontSize: 16, fontWeight: '700' },
   meta: { color: '#6b7280', fontSize: 13, marginTop: 2 },
   count: { color: '#16a34a', fontSize: 12, marginTop: 4, fontWeight: '600' },
+  teamClub: { color: '#1a365d', fontWeight: '700' },
   muted: { color: '#6b7280' },
   link: { color: '#2563eb', fontWeight: '600' },
 });
