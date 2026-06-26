@@ -17,6 +17,9 @@
         ],
         "NSLocationWhenInUseUsageDescription": "Team Asha uses your location to show you on the club's live ride map.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Team Asha keeps sharing your location during a ride — even with the screen off — so the club can follow along. You control when sharing starts and stops."
+      },
+      "runtimeVersion": {
+        "policy": "appVersion"
       }
     },
     "web": {
@@ -38,7 +41,8 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.465825889971-bbk5vdfldcblrr6h91jvjd66tmgudf5h"
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
@@ -52,6 +56,18 @@
         "projectId": "a2d7adfa-7b86-4383-b5b7-cb2b7daaddfa"
       }
     },
-    "owner": "mihirsam"
+    "owner": "mihirsam",
+    "updates": {
+      "url": "https://u.expo.dev/a2d7adfa-7b86-4383-b5b7-cb2b7daaddfa"
+    },
+    "android": {
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
   }
 }

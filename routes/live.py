@@ -621,6 +621,22 @@ def live_share():
     return render_template('live_share.html', opted_in=opted_in)
 
 
+@live_bp.route('/api/live/sharing', methods=['GET'])
+@token_or_session_required
+def live_sharing_status():
+    """Read the current rider's live-tracking opt-in flag.
+
+    Lets the mobile Settings toggle reflect the real server-side state on open
+    (it's the account-level consent gate the per-ride beacon depends on).
+    Auth: web session OR mobile Bearer token.
+    """
+    rider_id = g.rider_id
+    if not rider_id:
+        return jsonify({'error': 'Complete your profile to share your location'}), 403
+    tracking = get_live_tracking(rider_id)
+    return jsonify({'enabled': bool(tracking and tracking.get('enabled'))})
+
+
 @live_bp.route('/api/live/sharing', methods=['POST'])
 @token_or_session_required
 def live_sharing_toggle():
