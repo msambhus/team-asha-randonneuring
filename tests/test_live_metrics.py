@@ -210,6 +210,43 @@ def test_positions_wind_shows_mph_type_and_arrow(client):
     assert ahead[0] in '↑↗→↘↓↙←↖' and ahead.endswith('cross')
 
 
+def test_positions_time_left_is_limit_minus_elapsed(client):
+    """Time left = overall brevet time limit − elapsed (e.g. 40h for a 600)."""
+    _login(client)
+    now = _now()
+    ctx = dict(_FAKE_CTX,
+               time_limit_min=2400,                                  # 40h (a 600)
+               ride_start_iso=(now - timedelta(minutes=120)).isoformat())  # 2h in
+    row = {'rider_id': 7, 'name': 'Asha Rider', 'lat': 37.0, 'lng': -121.99,
+           'recorded_at': now - timedelta(minutes=2), 'status': 'GOING',
+           'speed': 6.0, 'heart_rate': None, 'power': None, 'cadence': None}
+    with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
+         patch('routes.live._ride_live_context', return_value=ctx), \
+         patch('routes.live.get_positions_for_rider_since', return_value=[]):
+        resp = client.get('/api/live/positions?ride_id=5')
+    t = resp.get_json()['positions'][0]['telemetry']
+    assert t['remaining']['time_left_min'] == pytest.approx(2280, abs=2)   # 2400 − 120
+
+
+def test_ride_context_time_limit_from_event_and_distance(app):
+    """time_limit_min prefers ride.time_limit_hours; falls back to the ACP
+    standard for the distance (600 km → 40h)."""
+    cache.clear()
+    explicit = {'id': 6601, 'name': 'Has limit', 'date': '2026-06-27',
+                'start_time': '06:00', 'time_limit_hours': 40, 'distance_km': 600,
+                'ride_plan_id': None, 'rwgps_url': None, 'rwgps_url_team': None}
+    fallback = {'id': 6602, 'name': 'No limit', 'date': '2026-06-27',
+                'start_time': '06:00', 'time_limit_hours': None, 'distance_km': 600,
+                'ride_plan_id': None, 'rwgps_url': None, 'rwgps_url_team': None}
+    with app.app_context():
+        with patch('routes.live.get_ride_by_id', return_value=explicit):
+            assert live_module._ride_live_context(6601)['time_limit_min'] == 2400
+        cache.clear()
+        with patch('routes.live.get_ride_by_id', return_value=fallback):
+            assert live_module._ride_live_context(6602)['time_limit_min'] == 2400
+    cache.clear()
+
+
 def test_positions_without_route_still_shows_source_metrics(client):
     _login(client)
     row = {'rider_id': 7, 'name': 'R', 'lat': 37.0, 'lng': -122.0,

@@ -20,7 +20,7 @@ from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled
                     set_ride_garmin, clear_ride_garmin,
                     get_latest_positions_for_ride, insert_live_position,
                     get_rider_upcoming_signups, get_ride_plan_stops,
-                    get_positions_for_rider_since)
+                    get_positions_for_rider_since, get_default_time_limit)
 from services.garmin_livetrack import parse_session
 from services.rwgps import extract_rwgps_route_id, fetch_route
 from services import live_telemetry as tlm
@@ -246,14 +246,26 @@ def _ride_live_context(ride_id):
 
     Keys: track [{lat,lng,dist_m}], cum_ascent_ft[], total_dist_m,
     total_ascent_ft, plan_stops [{distance_miles,cum_time_min}], wind_by_dist,
-    ride_start_iso, has_route, has_plan.
+    ride_start_iso, time_limit_min, has_route, has_plan.
     """
     ride = get_ride_by_id(ride_id)
     ctx = {'track': [], 'cum_ascent_ft': [], 'total_dist_m': None,
            'total_ascent_ft': None, 'plan_stops': [], 'wind_by_dist': None,
-           'ride_start_iso': None, 'has_route': False, 'has_plan': False}
+           'ride_start_iso': None, 'time_limit_min': None,
+           'has_route': False, 'has_plan': False}
     if not ride:
         return ctx
+
+    # Overall brevet time limit (for "time left" = limit − elapsed; e.g. 40h for
+    # a 600). Prefer the event's own time_limit_hours; else the standard ACP
+    # allowance for the distance.
+    limit_h = ride.get('time_limit_hours')
+    if not limit_h and ride.get('distance_km'):
+        limit_h = get_default_time_limit(ride['distance_km'])
+    try:
+        ctx['time_limit_min'] = round(float(limit_h) * 60) if limit_h else None
+    except (TypeError, ValueError):
+        ctx['time_limit_min'] = None
 
     # Ride start = ride date + plan start_time (for elapsed/plan comparison).
     # start_time is Bay-Area wall-clock ("06:00" = 6 AM Pacific), so build it in
@@ -379,11 +391,12 @@ def _rider_telemetry(row, ctx, now, history):
     dist_mi = dist_m * M_TO_MI
     remaining_mi = (remaining_m or 0) * M_TO_MI
 
-    # Time-left estimate from the rider's own moving average.
+    # Time left = the brevet's overall time limit minus elapsed (e.g. 40h for a
+    # 600), not a pace ETA. Clamped at 0 once the time limit is blown.
     time_left_min = None
-    avg_mph = (dist_mi / (moving_min / 60.0)) if moving_min else None
-    if avg_mph and avg_mph > 1:
-        time_left_min = round(remaining_mi / avg_mph * 60)
+    limit_min = ctx.get('time_limit_min')
+    if limit_min is not None and elapsed_min is not None:
+        time_left_min = max(0, limit_min - elapsed_min)
 
     delta = tlm.plan_delta(dist_mi, elapsed_min, ctx.get('plan_stops'))
 
