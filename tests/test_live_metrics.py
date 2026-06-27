@@ -210,6 +210,28 @@ def test_positions_wind_shows_mph_type_and_arrow(client):
     assert ahead[0] in '↑↗→↘↓↙←↖' and ahead.endswith('cross')
 
 
+def test_positions_moving_time_not_more_than_elapsed(client):
+    """Pre-start Garmin recording must not push moving time above elapsed."""
+    _login(client)
+    now = _now()
+    ctx = dict(_FAKE_CTX,
+               ride_start_iso=(now - timedelta(minutes=60)).isoformat())   # 60 min in
+    # Continuous riding from 90 min ago (30 min BEFORE the official start).
+    history = [{'lat': 37.0, 'lng': -122.0 + i * 0.001,
+                'recorded_at': now - timedelta(minutes=90 - 5 * i), 'speed': 5.0}
+               for i in range(19)]                                          # 90→0 min
+    row = {'rider_id': 7, 'name': 'Sreeram', 'lat': 37.0, 'lng': -121.91,
+           'recorded_at': now, 'status': 'GOING',
+           'speed': 5.0, 'heart_rate': None, 'power': None, 'cadence': None}
+    with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
+         patch('routes.live._ride_live_context', return_value=ctx), \
+         patch('routes.live.get_positions_for_rider_since', return_value=history):
+        resp = client.get('/api/live/positions?ride_id=5')
+    n = resp.get_json()['positions'][0]['telemetry']['now']
+    assert n['moving_min'] <= n['elapsed_min']          # the bug: was ~90 > 60
+    assert n['moving_min'] < 90                          # pre-start time excluded
+
+
 def test_positions_time_left_is_limit_minus_elapsed(client):
     """Time left = overall brevet time limit − elapsed (e.g. 40h for a 600)."""
     _login(client)

@@ -325,6 +325,12 @@ def _ride_live_context(ride_id):
     return ctx
 
 
+def _as_utc(dt):
+    """Treat a naive datetime as UTC so it can be compared with tz-aware times
+    (DB timestamptz values are already aware; this just guards naive ones)."""
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+
 def _rider_telemetry(row, ctx, now, history):
     """Assemble the telemetry block for one rider.
 
@@ -336,15 +342,9 @@ def _rider_telemetry(row, ctx, now, history):
     """
     lat, lng = float(row['lat']), float(row['lng'])
 
-    moving_min, stopped_min = tlm.moving_stopped(history)
-    speed_ms = tlm.latest_speed_ms(history)
-    if speed_ms is None and row.get('speed') is not None:
-        try:
-            speed_ms = float(row['speed'])
-        except (TypeError, ValueError):
-            speed_ms = None
-
-    # Elapsed is only meaningful once the ride has actually started.
+    # Ride start (Pacific→UTC) gates BOTH elapsed and moving/stopped: a Garmin
+    # session that began before the official start (warm-up / early recording)
+    # must not count, otherwise moving time can exceed elapsed time.
     elapsed_min = None
     start = None
     if ctx.get('ride_start_iso'):
@@ -354,6 +354,18 @@ def _rider_telemetry(row, ctx, now, history):
             start = None
     if start is not None and start <= now:
         elapsed_min = round((now - start).total_seconds() / 60)
+
+    # Moving/stopped only over history at/after the ride start (≤ elapsed).
+    ride_history = history
+    if start is not None:
+        ride_history = [h for h in history if _as_utc(h['recorded_at']) >= start]
+    moving_min, stopped_min = tlm.moving_stopped(ride_history)
+    speed_ms = tlm.latest_speed_ms(history)
+    if speed_ms is None and row.get('speed') is not None:
+        try:
+            speed_ms = float(row['speed'])
+        except (TypeError, ValueError):
+            speed_ms = None
 
     now_block = {
         'speed_mph': round(speed_ms * MS_TO_MPH, 1) if speed_ms is not None else None,
