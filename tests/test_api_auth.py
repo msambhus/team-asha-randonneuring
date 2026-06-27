@@ -124,6 +124,86 @@ def test_google_signin_creates_user_when_new(client, app):
     mock_create.assert_called_once_with('new@example.com', 'g-sub-2')
 
 
+# ── POST /api/auth/demo (reviewer login) ──────────────────────────────────
+
+def test_demo_signin_disabled_returns_404(client, app):
+    app.config['DEMO_MODE_ENABLED'] = False
+    app.config['DEMO_RIDER_ID'] = '7'
+    resp = client.post('/api/auth/demo')
+    assert resp.status_code == 404
+
+
+def test_demo_signin_unconfigured_rider_returns_503(client, app):
+    app.config['DEMO_MODE_ENABLED'] = True
+    app.config['DEMO_RIDER_ID'] = None
+    resp = client.post('/api/auth/demo')
+    assert resp.status_code == 503
+
+
+def test_demo_signin_rider_not_found_returns_503(client, app):
+    app.config['DEMO_MODE_ENABLED'] = True
+    app.config['DEMO_RIDER_ID'] = '7'
+    with patch('models.get_rider_by_id', return_value=None):
+        resp = client.post('/api/auth/demo')
+    assert resp.status_code == 503
+
+
+def test_demo_signin_existing_user_mints_token(client, app):
+    app.config['DEMO_MODE_ENABLED'] = True
+    app.config['DEMO_RIDER_ID'] = '7'
+    demo_user = {'id': 42, 'email': 'appreview@teamasha.demo',
+                 'google_id': 'demo-reviewer', 'profile_completed': True, 'rider_id': 7}
+    with patch('models.get_rider_by_id', return_value={'id': 7, 'first_name': 'Demo'}), \
+         patch('models.get_user_by_google_id', return_value=demo_user), \
+         patch('models.update_user_login_time') as mock_touch, \
+         patch('models.complete_user_profile') as mock_link:
+        resp = client.post('/api/auth/demo')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['rider_id'] == 7
+    assert data['profile_complete'] is True
+    with app.app_context():
+        assert auth_mod.load_mobile_token(data['token']) == {'user_id': 42, 'rider_id': 7}
+    mock_touch.assert_called_once_with(42)
+    mock_link.assert_not_called()   # already linked to rider 7 → no relink
+
+
+def test_demo_signin_creates_and_links_demo_user(client, app):
+    app.config['DEMO_MODE_ENABLED'] = True
+    app.config['DEMO_RIDER_ID'] = '7'
+    new_user = {'id': 99, 'email': 'appreview@teamasha.demo',
+                'google_id': 'demo-reviewer', 'profile_completed': False, 'rider_id': None}
+    with patch('models.get_rider_by_id', return_value={'id': 7}), \
+         patch('models.get_user_by_google_id', return_value=None), \
+         patch('models.create_user', return_value=new_user) as mock_create, \
+         patch('models.complete_user_profile') as mock_link:
+        resp = client.post('/api/auth/demo')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['rider_id'] == 7
+    mock_create.assert_called_once_with('appreview@teamasha.demo', 'demo-reviewer')
+    mock_link.assert_called_once_with(99, 7)   # newly created → linked to the demo rider
+    with app.app_context():
+        assert auth_mod.load_mobile_token(data['token']) == {'user_id': 99, 'rider_id': 7}
+
+
+def test_demo_signin_ignores_request_body_rider(client, app):
+    """Security: the rider is pinned to the server's DEMO_RIDER_ID — a caller
+    cannot pick a different rider via the request body."""
+    app.config['DEMO_MODE_ENABLED'] = True
+    app.config['DEMO_RIDER_ID'] = '7'
+    demo_user = {'id': 42, 'google_id': 'demo-reviewer',
+                 'profile_completed': True, 'rider_id': 7}
+    with patch('models.get_rider_by_id', return_value={'id': 7}), \
+         patch('models.get_user_by_google_id', return_value=demo_user), \
+         patch('models.update_user_login_time'):
+        resp = client.post('/api/auth/demo', json={'rider_id': 1, 'user_id': 999})
+    assert resp.status_code == 200
+    with app.app_context():
+        # Still rider 7 / the demo user — the attacker-supplied ids are ignored.
+        assert auth_mod.load_mobile_token(resp.get_json()['token']) == {'user_id': 42, 'rider_id': 7}
+
+
 # ── dual session-or-token auth on the live endpoints ──────────────────────
 
 def _bearer(app, user_id=1, rider_id=7):
