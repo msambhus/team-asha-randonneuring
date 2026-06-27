@@ -36,6 +36,13 @@ class Config:
     # web client above. Optional: the endpoint returns 503 until it's set.
     GOOGLE_IOS_CLIENT_ID = os.environ.get('GOOGLE_IOS_CLIENT_ID')
 
+    # Demo / reviewer login (POST /api/auth/demo) — lets Apple App Review sign in
+    # without Google OAuth. Disabled by default: the endpoint 404s unless
+    # DEMO_MODE_ENABLED is truthy, and it issues a token for DEMO_RIDER_ID only.
+    # Turn both on in the production environment during App Review, then off.
+    DEMO_MODE_ENABLED = os.environ.get('DEMO_MODE_ENABLED', '').strip().lower() in ('1', 'true', 'yes', 'on')
+    DEMO_RIDER_ID = os.environ.get('DEMO_RIDER_ID')
+
     # Linear API Configuration
     LINEAR_API_KEY = os.environ.get('LINEAR_API_KEY')
     LINEAR_TEAM_ID = '33d7eaca-512f-4bac-b5cb-d6d61ac2fa74'

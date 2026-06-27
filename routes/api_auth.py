@@ -85,3 +85,58 @@ def google_signin():
         'rider_id': rider_id,
         'profile_complete': profile_complete,
     }), 200
+
+
+# A dedicated, non-Google app_user that the demo login is pinned to, so reviewer
+# sessions never collide with a real Google account.
+DEMO_GOOGLE_ID = 'demo-reviewer'
+DEMO_EMAIL = 'appreview@teamasha.demo'
+
+
+@api_auth_bp.route('/demo', methods=['POST'])
+def demo_signin():
+    """Mint a bearer token for a demo/reviewer account.
+
+    Apple App Review can't complete Google OAuth, so this issues a normal mobile
+    token for a fixed rider (DEMO_RIDER_ID). It is invisible (404) unless
+    DEMO_MODE_ENABLED is set, so it is not an auth path in normal production —
+    enable it only while an app review is in flight.
+
+    Returns: {token, rider_id, profile_complete} — same shape as /google.
+    """
+    if not current_app.config.get('DEMO_MODE_ENABLED'):
+        # 404 (not 403) so the endpoint doesn't even advertise its existence.
+        return jsonify({'error': 'Not found'}), 404
+
+    raw_rider_id = current_app.config.get('DEMO_RIDER_ID')
+    try:
+        rider_id = int(raw_rider_id)
+    except (TypeError, ValueError):
+        current_app.logger.error('demo sign-in: DEMO_RIDER_ID is unset/invalid (%r)', raw_rider_id)
+        return jsonify({'error': 'Demo login is not configured'}), 503
+
+    try:
+        if not models.get_rider_by_id(rider_id):
+            current_app.logger.error('demo sign-in: rider %s not found', rider_id)
+            return jsonify({'error': 'Demo login is not configured'}), 503
+
+        # Find-or-create the dedicated demo user and keep it linked to the rider.
+        user = models.get_user_by_google_id(DEMO_GOOGLE_ID)
+        if not user:
+            user = models.create_user(DEMO_EMAIL, DEMO_GOOGLE_ID)
+            if not user:
+                return jsonify({'error': 'Could not create demo account'}), 500
+        if user.get('rider_id') != rider_id:
+            models.complete_user_profile(user['id'], rider_id)
+        else:
+            models.update_user_login_time(user['id'])
+    except Exception:
+        current_app.logger.exception('demo sign-in: account setup failed')
+        return jsonify({'error': 'Demo account setup failed'}), 500
+
+    token = mint_mobile_token(user['id'], rider_id)
+    return jsonify({
+        'token': token,
+        'rider_id': rider_id,
+        'profile_complete': True,
+    }), 200
