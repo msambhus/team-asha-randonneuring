@@ -82,6 +82,7 @@ def test_join_with_valid_code_grants_and_redirects(client):
     assert resp.headers['Location'].endswith('/ride/5/live')
     with client.session_transaction() as s:
         assert s['live_guest'] == {'code': 'ABCD-2K9P', 'ride_id': 5}
+        assert s.permanent is True       # persistent cookie — no frequent re-entry
 
 
 def test_join_with_bad_code_reprompts(client):

@@ -206,7 +206,10 @@ def live_join():
     """Public page: a guest enters an invite code to view a ride's live map.
 
     No authentication. On a valid code the ride grant is stored in the guest's
-    (non-permanent) session and they're sent to that ride's read-only map."""
+    session and they're sent to that ride's read-only map. The session is made
+    permanent (30-day cookie) so mobile browsers/PWAs don't drop it on
+    backgrounding and force a re-entry — actual access is still bounded by the
+    code's own expiry, which _guest_ride_id() re-checks on every request."""
     if session.get('rider_id'):
         return redirect(url_for('live.live_hub'))   # members don't need a code
     if request.method == 'POST':
@@ -214,6 +217,7 @@ def live_join():
         if not inv:
             flash('That code is invalid or has expired.', 'warning')
             return render_template('live_join.html')
+        session.permanent = True
         session['live_guest'] = {'code': inv['code'], 'ride_id': inv['ride_id']}
         return redirect(url_for('live.ride_live_map', ride_id=inv['ride_id']))
     return render_template('live_join.html')
