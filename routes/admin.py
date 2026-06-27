@@ -96,6 +96,7 @@ def login():
     if request.method == 'POST':
         password = request.form.get('password', '')
         if verify_password(password):
+            session.permanent = True   # persist like the rider login (30d)
             session['logged_in'] = True
             next_url = request.args.get('next')
             return _safe_admin_redirect(next_url)

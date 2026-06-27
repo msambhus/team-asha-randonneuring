@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 
 _VERCEL_ENV = os.environ.get('VERCEL_ENV', '')
 _IS_PRODUCTION = _VERCEL_ENV == 'production'
@@ -74,3 +75,9 @@ class Config:
     SESSION_COOKIE_SECURE = _IS_PRODUCTION  # HTTPS only in prod
     SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to cookies
     SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
+    # Keep web logins alive for 30 days (matching the native app's bearer token).
+    # Without this the login cookie is a transient browser-session cookie that
+    # mobile browsers/PWAs drop on backgrounding — causing frequent logouts.
+    # Requires session.permanent = True at login (routes/auth.py). Flask's default
+    # SESSION_REFRESH_EACH_REQUEST slides this window forward on each visit.
+    PERMANENT_SESSION_LIFETIME = timedelta(days=30)
