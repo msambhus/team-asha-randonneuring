@@ -95,7 +95,10 @@ def google_callback():
             models.update_user_login_time(user['id'])
             user = models.get_user_by_id(user['id'])
         
-        # Set session
+        # Set session. permanent + PERMANENT_SESSION_LIFETIME (config, 30d) make
+        # this a persistent cookie so mobile browsers/PWAs don't drop the login
+        # on backgrounding — the cause of frequent "session timed out" logouts.
+        session.permanent = True
         session['user_id'] = user['id']
         session['email'] = user['email']
         session['google_id'] = user['google_id']

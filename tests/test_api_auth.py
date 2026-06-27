@@ -676,3 +676,33 @@ def test_ride_plan_uses_custom_by_default_and_view_base_toggles(client, app):
     data = resp.get_json()
     assert data['has_custom'] is True and data['using_custom'] is False
     assert data['stops'][1]['stop_name'] == 'Lunch'   # base stop name
+
+
+# ── Web login session persistence (fixes frequent logouts) ─────────────────
+
+def test_session_lifetime_is_30_days():
+    """Web logins persist for 30 days (matches the native bearer token)."""
+    from datetime import timedelta
+    from config import Config
+    assert Config.PERMANENT_SESSION_LIFETIME == timedelta(days=30)
+
+
+def test_google_callback_makes_session_permanent(client):
+    """The OAuth callback marks the session permanent so the cookie is a
+    persistent 30-day cookie, not a transient one mobile browsers drop."""
+    from unittest.mock import MagicMock
+    import routes.auth as auth_routes
+    user = {'id': 5, 'email': 'a@b.com', 'google_id': 'g123',
+            'profile_completed': True, 'rider_id': None}
+    mock_google = MagicMock()
+    mock_google.authorize_access_token.return_value = {
+        'userinfo': {'sub': 'g123', 'email': 'a@b.com'}}
+    with patch.object(auth_routes.oauth, 'google', mock_google, create=True), \
+         patch.object(auth_routes.models, 'get_user_by_google_id', return_value=user), \
+         patch.object(auth_routes.models, 'update_user_login_time'), \
+         patch.object(auth_routes.models, 'get_user_by_id', return_value=user):
+        resp = client.get('/auth/google/callback')
+    assert resp.status_code in (301, 302)
+    with client.session_transaction() as sess:
+        assert sess.get('user_id') == 5
+        assert sess.permanent is True
