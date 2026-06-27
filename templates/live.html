@@ -163,6 +163,25 @@
     padding: 9px 14px; background: transparent; color: #b91c1c; border: 1px solid #fecaca;
     border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer;
 }
+.guest-note {
+    margin: 0 0 12px; padding: 8px 12px; background: #eff6ff; border: 1px solid #bfdbfe;
+    border-radius: 8px; color: #1e3a8a; font-size: 0.85rem;
+}
+.share-invite { margin: 0 0 12px; }
+.invite-btn {
+    padding: 9px 14px; background: var(--primary, #2563eb); color: #fff; border: none;
+    border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer;
+}
+.invite-btn:disabled { opacity: 0.6; cursor: default; }
+.invite-result {
+    margin-top: 10px; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0;
+    border-radius: 8px;
+}
+.invite-code {
+    font-family: ui-monospace, Menlo, monospace; font-size: 1.4rem; font-weight: 700;
+    letter-spacing: 2px; color: #0f172a;
+}
+.invite-hint { font-size: 0.78rem; color: var(--text-light, #64748b); margin-top: 4px; }
 </style>
 {% endblock %}
 
@@ -175,6 +194,44 @@
     </div>
   </div>
 
+  {% if is_guest %}
+  <div class="guest-note">👋 You're following this ride as a guest — view only.</div>
+  {% else %}
+  <div class="share-invite">
+    <button type="button" id="invite-btn" class="invite-btn" data-ride="{{ ride.id }}">🔗 Share live link</button>
+    <div id="invite-result" class="invite-result" hidden></div>
+  </div>
+  <script>
+  (function () {
+    var btn = document.getElementById('invite-btn');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      btn.disabled = true; btn.textContent = 'Creating…';
+      fetch('/ride/' + btn.dataset.ride + '/live/invite', { method: 'POST', credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var box = document.getElementById('invite-result');
+          box.hidden = false; box.textContent = '';
+          if (d.code) {
+            btn.hidden = true;
+            var code = document.createElement('div');
+            code.className = 'invite-code'; code.textContent = d.code;
+            var hint = document.createElement('div');
+            hint.className = 'invite-hint';
+            hint.textContent = 'Share this code — anyone can follow at ' + location.origin + '/live/join';
+            box.appendChild(code); box.appendChild(hint);
+          } else {
+            btn.disabled = false; btn.textContent = '🔗 Share live link';
+            box.textContent = d.error || 'Could not create a code.';
+          }
+        })
+        .catch(function () { btn.disabled = false; btn.textContent = '🔗 Share live link'; });
+    });
+  })();
+  </script>
+  {% endif %}
+
+  {% if not is_guest %}
   <details class="track-setup" {% if not garmin_here %}open{% endif %}>
     <summary>
       Appear on this map — pick how you'll share
@@ -252,6 +309,7 @@
 
     </div>
   </details>
+  {% endif %}
 
   <div id="live-map"></div>
   <div class="live-legend">
@@ -260,8 +318,8 @@
   </div>
   <div id="live-status" class="live-status"></div>
   <div id="live-empty" class="live-empty" style="display:none;">
-    No riders are sharing their location right now. Riders can opt in from
-    <a href="{{ url_for('live.live_settings') }}">Live tracking settings</a>.
+    No riders are sharing their location right now.{% if not is_guest %} Riders can opt in from
+    <a href="{{ url_for('live.live_settings') }}">Live tracking settings</a>.{% endif %}
   </div>
   <div id="live-riders"></div>
 </div>
