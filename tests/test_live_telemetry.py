@@ -42,6 +42,55 @@ def test_project_to_route_empty():
     assert tlm.project_to_route(1, 2, []) == (None, None, None)
 
 
+# Out-and-back over the SAME road: lng -121.99 appears twice — once outbound
+# (dist 889) and once on the return leg (dist 4445).
+_OUT_AND_BACK = [
+    {'lat': 37.0, 'lng': -122.00, 'dist_m': 0.0},
+    {'lat': 37.0, 'lng': -121.99, 'dist_m': 889.0},
+    {'lat': 37.0, 'lng': -121.98, 'dist_m': 1778.0},
+    {'lat': 37.0, 'lng': -121.97, 'dist_m': 2667.0},   # turnaround
+    {'lat': 37.0, 'lng': -121.98, 'dist_m': 3556.0},
+    {'lat': 37.0, 'lng': -121.99, 'dist_m': 4445.0},
+    {'lat': 37.0, 'lng': -122.00, 'dist_m': 5334.0},
+]
+
+
+def test_project_to_route_eastbound_picks_outbound_leg():
+    # Rider sits on the overlapping line, heading east (~90°) → outbound leg.
+    dist_m, idx, off_by_m = tlm.project_to_route(37.0, -121.99, _OUT_AND_BACK,
+                                                 heading_deg=90)
+    assert idx == 1 and dist_m == 889.0
+
+
+def test_project_to_route_westbound_picks_return_leg():
+    # Same spot, but heading west (~270°) → the return leg, ~4.4 km in.
+    dist_m, idx, off_by_m = tlm.project_to_route(37.0, -121.99, _OUT_AND_BACK,
+                                                 heading_deg=270)
+    assert idx == 5 and dist_m == 4445.0
+
+
+def test_project_to_route_no_heading_is_legacy_nearest():
+    # Without a heading we keep the old behavior: the first global nearest point.
+    dist_m, idx, off_by_m = tlm.project_to_route(37.0, -121.99, _OUT_AND_BACK)
+    assert idx == 1 and dist_m == 889.0
+
+
+def test_course_over_ground_eastbound():
+    pts = [{'lat': 37.0, 'lng': -122.00}, {'lat': 37.0, 'lng': -121.99}]
+    hd = tlm.course_over_ground(pts)
+    assert hd is not None and 85 < hd < 95          # due east
+
+
+def test_course_over_ground_none_when_stopped():
+    # All fixes within a few meters → no reliable heading.
+    pts = [{'lat': 37.0, 'lng': -122.0000}, {'lat': 37.0, 'lng': -121.99999}]
+    assert tlm.course_over_ground(pts) is None
+
+
+def test_course_over_ground_none_with_one_point():
+    assert tlm.course_over_ground([{'lat': 37.0, 'lng': -122.0}]) is None
+
+
 def test_activity_from_speed():
     assert tlm.activity_from_speed(None) is None
     assert tlm.activity_from_speed(0.0) == 'paused'
@@ -84,6 +133,27 @@ def test_headwinds_split_done_and_ahead():
 
 def test_headwinds_split_none_when_missing():
     assert tlm.headwinds_split(None, 100) == (None, None)
+
+
+def test_crosswinds_split_done_and_ahead():
+    wind = [
+        {'dist_m': 0, 'headwind_kmh': 10, 'crosswind_kmh': 4},
+        {'dist_m': 1000, 'headwind_kmh': 20, 'crosswind_kmh': 8},
+        {'dist_m': 2000, 'headwind_kmh': -6, 'crosswind_kmh': -10},
+    ]
+    done, ahead = tlm.crosswinds_split(wind, 1000)
+    assert done == 6.0      # mean of 4, 8
+    assert ahead == -10.0
+
+
+def test_crosswinds_split_tolerates_missing_key():
+    # Legacy cached context without crosswind_kmh → (None, None), no KeyError.
+    wind = [{'dist_m': 0, 'headwind_kmh': 10}]
+    assert tlm.crosswinds_split(wind, 1000) == (None, None)
+
+
+def test_crosswinds_split_none_when_missing():
+    assert tlm.crosswinds_split(None, 100) == (None, None)
 
 
 def test_toughness_remaining_scales_with_climb():

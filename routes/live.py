@@ -7,7 +7,9 @@ Club-login-only, opt-in. Three surfaces:
 
 The poll cron that writes positions lives in routes/cron.py.
 """
-from datetime import datetime, timedelta, timezone
+import math
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from flask import (Blueprint, render_template, request, redirect, url_for,
                    session, jsonify, current_app, flash, abort, g)
@@ -23,7 +25,9 @@ from services.garmin_livetrack import parse_session
 from services.rwgps import extract_rwgps_route_id, fetch_route
 from services import live_telemetry as tlm
 from services.weather import (sample_track_points, fetch_route_weather,
-                              calculate_bearing, headwind_component, wind_label)
+                              calculate_bearing, headwind_component,
+                              crosswind_component, classify_wind,
+                              wind_arrow_rotation, wind_arrow_glyph)
 
 live_bp = Blueprint('live', __name__)
 
@@ -31,6 +35,11 @@ M_TO_MI = 1 / 1609.344
 KMH_TO_MPH = 0.621371
 MS_TO_MPH = 2.236936
 _MAX_CONTEXT_TRACK_POINTS = 2000
+
+# Club-local timezone. Ride start_time values (e.g. "06:00") are wall-clock
+# times in the Bay Area, so elapsed-time math must interpret them in Pacific
+# time and convert to UTC — not treat "06:00" as 06:00 UTC.
+CLUB_TZ = ZoneInfo('America/Los_Angeles')
 
 # Display tuning (see plan): show points from the last 24h; grey/fade dots
 # whose latest point is older than 10 minutes.
@@ -222,7 +231,9 @@ def _build_wind_by_dist(track_points):
             if i + 1 >= len(samples):
                 bearing = (bearing + 180) % 360
             hw = headwind_component(ws[idx], wd[idx], bearing)
-            out.append({'dist_m': s['distance_m'], 'headwind_kmh': hw})
+            cw = crosswind_component(ws[idx], wd[idx], bearing)
+            out.append({'dist_m': s['distance_m'], 'headwind_kmh': hw,
+                        'crosswind_kmh': cw})
         return out or None
     except Exception:
         return None
@@ -245,14 +256,17 @@ def _ride_live_context(ride_id):
         return ctx
 
     # Ride start = ride date + plan start_time (for elapsed/plan comparison).
+    # start_time is Bay-Area wall-clock ("06:00" = 6 AM Pacific), so build it in
+    # CLUB_TZ and convert to UTC; treating it as UTC made elapsed ~7-8h too large.
     try:
-        start_t = ride.get('plan_start_time') or ride.get('start_time') or '07:00'
+        start_t = ride.get('plan_start_time') or ride.get('start_time') or '06:00'
         hh, mm = str(start_t).split(':')[:2]
         d = ride['date']
         if isinstance(d, str):
             d = date.fromisoformat(d)
-        ctx['ride_start_iso'] = datetime(d.year, d.month, d.day, int(hh), int(mm),
-                                         tzinfo=timezone.utc).isoformat()
+        local_start = datetime(d.year, d.month, d.day, int(hh), int(mm),
+                               tzinfo=CLUB_TZ)
+        ctx['ride_start_iso'] = local_start.astimezone(timezone.utc).isoformat()
     except Exception:
         ctx['ride_start_iso'] = None
 
@@ -345,7 +359,12 @@ def _rider_telemetry(row, ctx, now, history):
     if not ctx.get('has_route'):
         return base
 
-    dist_m, idx, off_by_m = tlm.project_to_route(lat, lng, ctx['track'])
+    # Use the rider's recent course over ground so an out-and-back / looped
+    # route snaps them to the leg they're actually travelling, not the one
+    # alongside it going the other way.
+    heading = tlm.course_over_ground(history)
+    dist_m, idx, off_by_m = tlm.project_to_route(lat, lng, ctx['track'],
+                                                 heading_deg=heading)
     on_route = (dist_m is not None and off_by_m is not None
                 and off_by_m <= tlm.ON_ROUTE_MAX_M)
     if not on_route:
@@ -355,6 +374,7 @@ def _rider_telemetry(row, ctx, now, history):
     remaining_m = tlm.remaining_distance_m(ctx['total_dist_m'], dist_m)
     ascent_done, ascent_left = tlm.ascent_split(ctx['cum_ascent_ft'], idx, ctx['total_ascent_ft'])
     hw_done, hw_ahead = tlm.headwinds_split(ctx.get('wind_by_dist'), dist_m)
+    cw_done, cw_ahead = tlm.crosswinds_split(ctx.get('wind_by_dist'), dist_m)
     tuf = tlm.toughness_remaining(ascent_left, remaining_m)
     dist_mi = dist_m * M_TO_MI
     remaining_mi = (remaining_m or 0) * M_TO_MI
@@ -367,13 +387,31 @@ def _rider_telemetry(row, ctx, now, history):
 
     delta = tlm.plan_delta(dist_mi, elapsed_min, ctx.get('plan_stops'))
 
-    def mph(kmh):
-        return round(kmh * KMH_TO_MPH, 1) if kmh is not None else None
+    _WIND_SHORT = {'headwind': 'head', 'tailwind': 'tail', 'crosswind': 'cross'}
+
+    def wind_descriptor(head_kmh, cross_kmh):
+        """'↓ 8 mph head' — speed in mph, head/cross/tail, and a direction arrow.
+        Returns (label, speed_mph) where speed_mph is the TOTAL wind magnitude
+        (hypot of head+cross), i.e. what the label shows — the headwind_*_mph
+        fields below carry this magnitude, not the along-track component.
+        Crosswind defaults to 0 so a head/tail-only context (legacy cache) still
+        classifies. 'calm' below ~1 mph."""
+        if head_kmh is None:
+            return None, None
+        cross = cross_kmh or 0.0
+        speed_mph = round(math.hypot(head_kmh, cross) * KMH_TO_MPH, 1)
+        if speed_mph < 1:
+            return 'calm', speed_mph
+        glyph = wind_arrow_glyph(wind_arrow_rotation(head_kmh, cross))
+        short = _WIND_SHORT[classify_wind(head_kmh, cross)]
+        return f'{glyph} {speed_mph:g} mph {short}', speed_mph
 
     now_block['distance_mi'] = round(dist_mi, 1)
     now_block['ascent_done_ft'] = ascent_done
-    now_block['headwind_done_mph'] = mph(hw_done)
-    now_block['headwind_done_label'] = wind_label(hw_done) if hw_done is not None else None
+    wind_done_label, wind_done_mph = wind_descriptor(hw_done, cw_done)
+    now_block['headwind_done_mph'] = wind_done_mph
+    now_block['headwind_done_label'] = wind_done_label
+    wind_ahead_label, wind_ahead_mph = wind_descriptor(hw_ahead, cw_ahead)
 
     return {
         'on_route': True,
@@ -381,8 +419,8 @@ def _rider_telemetry(row, ctx, now, history):
         'remaining': {
             'distance_mi': round(remaining_mi, 1),
             'ascent_left_ft': ascent_left,
-            'headwind_ahead_mph': mph(hw_ahead),
-            'headwind_ahead_label': wind_label(hw_ahead) if hw_ahead is not None else None,
+            'headwind_ahead_mph': wind_ahead_mph,
+            'headwind_ahead_label': wind_ahead_label,
             'time_left_min': time_left_min,
             'toughness': tuf,
         },
