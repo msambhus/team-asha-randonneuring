@@ -51,6 +51,20 @@ export async function exchangeGoogleToken(idToken: string): Promise<GoogleAuthRe
   return res.json() as Promise<GoogleAuthResponse>;
 }
 
+/** Reviewer/demo login: exchange nothing for a backend app token via the gated
+ *  /api/auth/demo endpoint (no Google). Only works when the server has demo mode
+ *  enabled; otherwise it 404s and we surface a friendly message. */
+export async function demoSignIn(): Promise<GoogleAuthResponse> {
+  const res = await fetch(`${API_BASE}/api/auth/demo`, {
+    method: 'POST',
+    headers: authHeaders(null),
+  });
+  if (!res.ok) {
+    throw new Error(res.status === 404 ? 'Demo login is not available right now' : `Demo sign-in failed (${res.status})`);
+  }
+  return res.json() as Promise<GoogleAuthResponse>;
+}
+
 export async function googleSignOut(): Promise<void> {
   try {
     configureGoogle();

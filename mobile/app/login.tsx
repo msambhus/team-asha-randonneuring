@@ -6,7 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { useSession } from '../contexts/SessionContext';
 
 export default function LoginScreen() {
-  const { signInWithGoogle } = useSession();
+  const { signInWithGoogle, signInDemo } = useSession();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,6 +19,14 @@ export default function LoginScreen() {
     // On success the AuthGate redirects into the app.
   }
 
+  async function onDemo() {
+    setBusy(true);
+    setError(null);
+    const err = await signInDemo();
+    setBusy(false);
+    if (err) setError(err);
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Team Asha Randonneuring</Text>
@@ -29,6 +37,11 @@ export default function LoginScreen() {
       </Pressable>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      {/* Reviewer/demo entry — works only when the server has demo mode enabled. */}
+      <Pressable onPress={onDemo} disabled={busy} hitSlop={8} style={styles.demoLink}>
+        <Text style={styles.demoText}>Demo login (reviewers)</Text>
+      </Pressable>
     </View>
   );
 }
@@ -41,4 +54,6 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.6 },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
   error: { color: '#b91c1c', marginTop: 16, textAlign: 'center' },
+  demoLink: { marginTop: 20, paddingVertical: 6 },
+  demoText: { color: '#6b7280', fontSize: 13, textDecorationLine: 'underline' },
 });

@@ -11,7 +11,8 @@ import React, {
 import * as SecureStore from 'expo-secure-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { getToken, storeToken, deleteToken } from '../lib/api';
-import { getGoogleIdToken, exchangeGoogleToken, googleSignOut } from '../lib/auth';
+import { getGoogleIdToken, exchangeGoogleToken, demoSignIn, googleSignOut } from '../lib/auth';
+import type { GoogleAuthResponse } from '../lib/types';
 
 const RIDER_KEY = 'ta_rider_id';
 const PROFILE_KEY = 'ta_profile_complete';
@@ -23,6 +24,8 @@ interface SessionValue {
   isLoading: boolean;
   /** Returns null on success, else an error string to display. */
   signInWithGoogle: () => Promise<string | null>;
+  /** Reviewer/demo login (no Google). Returns null on success, else an error string. */
+  signInDemo: () => Promise<string | null>;
   signOut: () => Promise<void>;
 }
 
@@ -32,6 +35,7 @@ const SessionContext = createContext<SessionValue>({
   profileComplete: false,
   isLoading: true,
   signInWithGoogle: async () => 'not ready',
+  signInDemo: async () => 'not ready',
   signOut: async () => undefined,
 });
 
@@ -55,23 +59,36 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+  // Persist + apply an auth response (shared by Google and demo login).
+  const applySession = useCallback(async (res: GoogleAuthResponse) => {
+    await storeToken(res.token);
+    await SecureStore.setItemAsync(RIDER_KEY, res.rider_id == null ? '' : String(res.rider_id));
+    await SecureStore.setItemAsync(PROFILE_KEY, res.profile_complete ? '1' : '0');
+    setToken(res.token);
+    setRiderId(res.rider_id);
+    setProfileComplete(res.profile_complete);
+    queryClient.clear();
+  }, [queryClient]);
+
   const signInWithGoogle = useCallback(async (): Promise<string | null> => {
     try {
       const idToken = await getGoogleIdToken();
       if (idToken === null) return null;   // user cancelled — not an error
-      const res = await exchangeGoogleToken(idToken);
-      await storeToken(res.token);
-      await SecureStore.setItemAsync(RIDER_KEY, res.rider_id == null ? '' : String(res.rider_id));
-      await SecureStore.setItemAsync(PROFILE_KEY, res.profile_complete ? '1' : '0');
-      setToken(res.token);
-      setRiderId(res.rider_id);
-      setProfileComplete(res.profile_complete);
-      queryClient.clear();
+      await applySession(await exchangeGoogleToken(idToken));
       return null;
     } catch (e) {
       return e instanceof Error ? e.message : 'Sign-in failed';
     }
-  }, [queryClient]);
+  }, [applySession]);
+
+  const signInDemo = useCallback(async (): Promise<string | null> => {
+    try {
+      await applySession(await demoSignIn());
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : 'Demo sign-in failed';
+    }
+  }, [applySession]);
 
   const signOut = useCallback(async () => {
     await deleteToken();
@@ -86,7 +103,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SessionContext.Provider
-      value={{ token, riderId, profileComplete, isLoading, signInWithGoogle, signOut }}
+      value={{ token, riderId, profileComplete, isLoading, signInWithGoogle, signInDemo, signOut }}
     >
       {children}
     </SessionContext.Provider>
