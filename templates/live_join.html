@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Follow a ride — Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<style>
+.join-wrap { max-width: 460px; margin: 40px auto; padding: 0 16px; }
+.join-card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+    padding: 28px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.join-card h1 { margin: 0 0 6px; font-size: 1.4rem; }
+.join-sub { color: var(--text-light, #64748b); font-size: 0.9rem; margin-bottom: 20px; }
+.join-form label { display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; }
+.join-form input[type="text"] {
+    width: 100%; box-sizing: border-box; padding: 12px 14px; font-size: 1.25rem;
+    letter-spacing: 3px; text-align: center; text-transform: uppercase;
+    font-family: ui-monospace, Menlo, monospace; border: 1px solid #cbd5e1; border-radius: 10px;
+}
+.join-form button {
+    width: 100%; margin-top: 14px; padding: 12px; font-size: 0.95rem; font-weight: 700;
+    color: #fff; background: var(--primary, #2563eb); border: none; border-radius: 10px; cursor: pointer;
+}
+.join-note { margin-top: 16px; font-size: 0.8rem; color: var(--text-light, #64748b); }
+</style>
+
+<div class="join-wrap">
+  <div class="join-card">
+    <h1>Follow a ride live</h1>
+    <div class="join-sub">Enter the invite code a Team Asha rider shared with you to watch the
+      live map — no account needed.</div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="flash flash-{{ category }}" style="margin-bottom:14px;color:#b45309;">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <form class="join-form" method="POST" action="{{ url_for('live.live_join') }}">
+      <label for="code">Invite code</label>
+      <input type="text" id="code" name="code" placeholder="ABCD-2K9P" autocomplete="off"
+             autocapitalize="characters" autofocus required>
+      <button type="submit">View live map</button>
+    </form>
+
+    <div class="join-note">The code works until about a day after the ride. A Team Asha member
+      can create one from the ride's live map.</div>
+  </div>
+</div>
+{% endblock %}

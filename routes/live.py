@@ -14,13 +14,14 @@ from zoneinfo import ZoneInfo
 from flask import (Blueprint, render_template, request, redirect, url_for,
                    session, jsonify, current_app, flash, abort, g)
 
-from auth import profile_required, token_or_session_required
+from auth import profile_required, token_or_session_required, resolve_identity
 from cache import cache, CACHE_TIMEOUT
 from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled,
                     set_ride_garmin, clear_ride_garmin,
                     get_latest_positions_for_ride, insert_live_position,
                     get_rider_upcoming_signups, get_ride_plan_stops,
-                    get_positions_for_rider_since, get_default_time_limit)
+                    get_positions_for_rider_since, get_default_time_limit,
+                    get_or_create_ride_invite, get_valid_ride_invite)
 from services.garmin_livetrack import parse_session
 from services.rwgps import extract_rwgps_route_id, fetch_route
 from services import live_telemetry as tlm
@@ -131,23 +132,38 @@ def live_settings():
 
 
 @live_bp.route('/ride/<int:ride_id>/live')
-@profile_required
 def ride_live_map(ride_id):
-    """Per-ride live map: RWGPS route line + live dots for opted-in GOING riders."""
+    """Per-ride live map: RWGPS route line + live dots for opted-in GOING riders.
+
+    Open to logged-in club members, OR to an unauthenticated guest who entered a
+    valid invite code for THIS ride at /live/join (read-only — member controls
+    are hidden)."""
+    is_member = bool(session.get('rider_id'))
+    is_guest = (not is_member) and (_guest_ride_id() == ride_id)
+    if not is_member and not is_guest:
+        # A half-logged-in member finishes profile setup; everyone else is sent
+        # to the guest join page to enter an invite code.
+        if session.get('user_id'):
+            return redirect(url_for('auth.setup_profile'))
+        return redirect(url_for('live.live_join'))
+
     ride = get_ride_by_id(ride_id)
     if not ride:
         abort(404)
 
     mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
     route_polyline = _build_route_polyline(ride)
-    tracking = get_live_tracking(session['rider_id'])
-    opted_in = bool(tracking and tracking.get('enabled'))
-    # The Garmin link is per-ride: only show it as linked here if it's pointed
-    # at THIS ride (active_ride_id), so a link saved for another ride doesn't
-    # look active on this one.
-    garmin_here = bool(tracking and tracking.get('garmin_session_url')
-                       and tracking.get('active_ride_id') == ride_id)
-    garmin_url = tracking.get('garmin_session_url') if garmin_here else ''
+    opted_in = garmin_here = False
+    garmin_url = ''
+    if is_member:
+        tracking = get_live_tracking(session['rider_id'])
+        opted_in = bool(tracking and tracking.get('enabled'))
+        # The Garmin link is per-ride: only show it as linked here if it's
+        # pointed at THIS ride (active_ride_id), so a link saved for another
+        # ride doesn't look active on this one.
+        garmin_here = bool(tracking and tracking.get('garmin_session_url')
+                           and tracking.get('active_ride_id') == ride_id)
+        garmin_url = tracking.get('garmin_session_url') if garmin_here else ''
 
     return render_template(
         'live.html',
@@ -158,7 +174,49 @@ def ride_live_map(ride_id):
         opted_in=opted_in,
         garmin_here=garmin_here,
         garmin_url=garmin_url,
+        is_guest=is_guest,
     )
+
+
+@live_bp.route('/ride/<int:ride_id>/live/invite', methods=['POST'])
+@profile_required
+def ride_live_invite(ride_id):
+    """Mint (or return) a shareable invite code for this ride's live map so a
+    member can let non-members follow along without logging in."""
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        return jsonify({'error': 'Ride not found'}), 404
+    d = ride['date']
+    if isinstance(d, str):
+        d = date.fromisoformat(d)
+    # Expire ~24h after the ride day ends (ride day + the following day).
+    expires_at = datetime(d.year, d.month, d.day, tzinfo=timezone.utc) + timedelta(days=2)
+    code = get_or_create_ride_invite(ride_id, session['rider_id'], expires_at)
+    if not code:
+        return jsonify({'error': 'Could not create an invite code'}), 500
+    return jsonify({
+        'code': code,
+        'join_url': url_for('live.live_join', _external=True),
+        'expires_at': expires_at.isoformat(),
+    })
+
+
+@live_bp.route('/live/join', methods=['GET', 'POST'])
+def live_join():
+    """Public page: a guest enters an invite code to view a ride's live map.
+
+    No authentication. On a valid code the ride grant is stored in the guest's
+    (non-permanent) session and they're sent to that ride's read-only map."""
+    if session.get('rider_id'):
+        return redirect(url_for('live.live_hub'))   # members don't need a code
+    if request.method == 'POST':
+        inv = get_valid_ride_invite(request.form.get('code', ''))
+        if not inv:
+            flash('That code is invalid or has expired.', 'warning')
+            return render_template('live_join.html')
+        session['live_guest'] = {'code': inv['code'], 'ride_id': inv['ride_id']}
+        return redirect(url_for('live.ride_live_map', ride_id=inv['ride_id']))
+    return render_template('live_join.html')
 
 
 @live_bp.route('/ride/<int:ride_id>/live/garmin', methods=['POST'])
@@ -331,6 +389,19 @@ def _as_utc(dt):
     return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
 
 
+def _guest_ride_id():
+    """ride_id an unauthenticated guest may view via a live invite code, else None.
+
+    The grant is stashed in the session at /live/join, but the code is
+    re-validated here on every request so an expired/removed code stops working
+    immediately (the session flag alone is never trusted)."""
+    grant = session.get('live_guest')
+    if not grant or not grant.get('code'):
+        return None
+    inv = get_valid_ride_invite(grant['code'])
+    return inv['ride_id'] if inv else None
+
+
 def _rider_telemetry(row, ctx, now, history):
     """Assemble the telemetry block for one rider.
 
@@ -457,21 +528,25 @@ def _rider_telemetry(row, ctx, now, history):
 
 
 @live_bp.route('/api/live/positions')
-@token_or_session_required
 def live_positions():
     """JSON: latest position + live telemetry per opted-in GOING rider for ?ride_id=.
 
-    Club-only: requires a completed profile. Auth is a web session OR a mobile
-    Bearer token (g.rider_id, set by token_or_session_required). The heavy
-    route/weather context is cached per ride; only per-rider numbers are
-    recomputed each poll.
+    Auth: a logged-in club member (web session or mobile Bearer token) for any
+    ride, OR an unauthenticated guest holding a valid invite code for THIS ride
+    (read-only). The heavy route/weather context is cached per ride; only
+    per-rider numbers are recomputed each poll.
     """
-    if not g.rider_id:
-        return jsonify({'error': 'Complete your profile to view live tracking'}), 403
-
     ride_id = request.args.get('ride_id', type=int)
     if not ride_id:
         return jsonify({'error': 'ride_id is required'}), 400
+
+    user_id, rider_id = resolve_identity()
+    g.rider_id = rider_id
+    is_guest = (not rider_id) and (_guest_ride_id() == ride_id)
+    if not rider_id and not is_guest:
+        if user_id:
+            return jsonify({'error': 'Complete your profile to view live tracking'}), 403
+        return jsonify({'error': 'Authentication required'}), 401
 
     now = datetime.now(timezone.utc)
     since = now - timedelta(hours=DISPLAY_WINDOW_HOURS)

@@ -1,4 +1,5 @@
 """Data access layer — all SQL queries live here (PostgreSQL via psycopg2)."""
+import secrets
 from datetime import datetime, date
 from enum import Enum
 import psycopg2.extras
@@ -3769,3 +3770,61 @@ def purge_old_positions(retention_days=7):
     deleted = len(cur.fetchall())
     conn.commit()
     return deleted
+
+
+# ========== LIVE INVITE CODES (public per-ride map access) ==========
+
+# Unambiguous alphabet — no I/O/0/1 so a code is easy to read aloud / type.
+_INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+
+def _generate_invite_code():
+    """A short, typeable code like 'ABCD-2K9P' (8 chars, ~40 bits)."""
+    raw = ''.join(secrets.choice(_INVITE_ALPHABET) for _ in range(8))
+    return f'{raw[:4]}-{raw[4:]}'
+
+
+def get_or_create_ride_invite(ride_id, created_by, expires_at):
+    """Return an existing unexpired invite code for the ride, or mint one.
+
+    One shared code per ride keeps things simple — any club member who opens
+    the ride gets the same code to share. Returns the code, or None on failure.
+    """
+    existing = _execute(
+        "SELECT code FROM live_invite_code WHERE ride_id = %s "
+        "AND (expires_at IS NULL OR expires_at > now()) "
+        "ORDER BY created_at DESC LIMIT 1", (ride_id,)).fetchone()
+    if existing:
+        return existing['code']
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    for _ in range(5):                      # retry on the rare code collision
+        code = _generate_invite_code()
+        try:
+            cur.execute(
+                "INSERT INTO live_invite_code (code, ride_id, created_by, expires_at) "
+                "VALUES (%s, %s, %s, %s)", (code, ride_id, created_by, expires_at))
+            conn.commit()
+            return code
+        except psycopg2.errors.UniqueViolation:
+            conn.rollback()
+            continue
+        except Exception:
+            conn.rollback()
+            return None
+    return None
+
+
+def get_valid_ride_invite(code):
+    """Return {code, ride_id, expires_at} for a non-expired code, else None.
+
+    Normalizes case/whitespace so a guest can type it casually.
+    """
+    if not code:
+        return None
+    norm = str(code).strip().upper()
+    return _execute(
+        "SELECT code, ride_id, expires_at FROM live_invite_code "
+        "WHERE code = %s AND (expires_at IS NULL OR expires_at > now())",
+        (norm,)).fetchone()
