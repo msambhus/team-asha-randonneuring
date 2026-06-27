@@ -11,6 +11,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "org.teamasha.randonneuring",
       "infoPlist": {
+        "CFBundleDisplayName": "Team Asha Rando",
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [
           "location"
