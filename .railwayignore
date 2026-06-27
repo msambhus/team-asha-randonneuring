@@ -1,0 +1,12 @@
+# The Railway service only runs worker/poll_loop.py (stdlib-only Python).
+# Keep the upload small — exclude everything the poller doesn't need.
+mobile/
+.git/
+tests/
+docs/
+.planning/
+static/
+templates/
+**/__pycache__/
+**/node_modules/
+*.log

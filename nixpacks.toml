@@ -1,0 +1,10 @@
+# Railway builds the live-tracking poller (worker/poll_loop.py) with Nixpacks.
+# The repo root has a package.json (Tailwind build), which makes Nixpacks
+# auto-detect Node and produce an image WITHOUT python3 — so the worker
+# crash-loops with "python3: command not found". Force the Python provider so
+# the poller container has Python. (Vercel ignores this file; only Railway's
+# Nixpacks build uses it.)
+providers = ["python"]
+
+[start]
+cmd = "python3 worker/poll_loop.py"
