@@ -99,11 +99,56 @@ def test_activity_from_speed():
     assert tlm.activity_from_speed(20.0) == 'driving'
 
 
-def test_moving_stopped_ignores_large_gaps():
-    # A 2-hour gap between two points must NOT count as moving/stopped time.
+def test_moving_stopped_long_gap_same_place_is_stopped():
+    # A 2-hour gap where the rider didn't move (same spot) = stopped, not moving.
+    # (The reported speed is irrelevant across a telemetry gap.)
     pts = [
         {'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(0), 'speed': 5.0},
-        {'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(7200), 'speed': 5.0},  # +2h gap
+        {'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(7200), 'speed': 5.0},  # +2h, no move
+    ]
+    moving, stopped = tlm.moving_stopped(pts)
+    assert moving == 0.0 and stopped == 120.0
+
+
+def test_moving_stopped_long_gap_while_riding_counts_as_moving():
+    # Signal dropout on a remote brevet: a 40-min gap where the rider moved
+    # ~15 km (~22 km/h) is real riding and must count as moving, not be dropped.
+    pts = [
+        {'lat': 37.0, 'lng': -122.00, 'recorded_at': _t(0)},
+        {'lat': 37.0, 'lng': -121.83, 'recorded_at': _t(2400)},   # ~15 km in 40 min
+    ]
+    moving, stopped = tlm.moving_stopped(pts)
+    assert moving == 40.0 and stopped == 0.0
+
+
+def test_moving_stopped_long_gap_slow_drift_is_stopped():
+    # 45-min gap where the rider drifted only ~1.5 km (~2 km/h) = a rest, not
+    # riding — must be stopped, not bridged into moving on the bare floor.
+    pts = [
+        {'lat': 37.0, 'lng': -122.000, 'recorded_at': _t(0)},
+        {'lat': 37.0, 'lng': -121.983, 'recorded_at': _t(2700)},   # ~1.5 km in 45 min
+    ]
+    moving, stopped = tlm.moving_stopped(pts)
+    assert moving == 0.0 and stopped == 45.0
+
+
+def test_moving_stopped_boundary_gap_trusts_reported_speed():
+    # Exactly MAX_GAP_SECONDS is still a "normal" interval: trust reported speed
+    # even though the rider didn't change position (e.g. a stationary GPS fix).
+    pts = [
+        {'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(0), 'speed': 5.0},
+        {'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(int(tlm.MAX_GAP_SECONDS)), 'speed': 5.0},
+    ]
+    moving, stopped = tlm.moving_stopped(pts)
+    assert moving == round(tlm.MAX_GAP_SECONDS / 60.0, 1) and stopped == 0.0
+
+
+def test_moving_stopped_long_gap_implausible_speed_dropped():
+    # A 30-min gap implying ~200 km/h (a drive / resumed session / GPS jump) is
+    # not counted at all, so it can't inflate moving time.
+    pts = [
+        {'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(0)},
+        {'lat': 37.0, 'lng': -120.8, 'recorded_at': _t(1800)},    # ~107 km in 30 min
     ]
     moving, stopped = tlm.moving_stopped(pts)
     assert moving == 0.0 and stopped == 0.0

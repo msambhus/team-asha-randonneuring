@@ -23,10 +23,22 @@ STOPPED_SPEED_MS = 0.5
 # we then suppress route-relative metrics rather than snap to a bogus distance.
 ON_ROUTE_MAX_M = 800
 
-# Gaps longer than this (s) between consecutive points are NOT counted toward
-# moving/stopped time — they mean we simply had no data, not that the rider was
-# riding for that whole span (prevents a stale point from inflating moving time).
+# Within this gap (s) we trust a point's reported speed for moving/stopped. For
+# LONGER gaps (no telemetry — e.g. a cell-signal dropout on a remote brevet) we
+# instead classify by the average speed implied by how far the rider actually
+# moved between the two fixes, so real riding through a dead zone still counts as
+# moving rather than being dropped.
 MAX_GAP_SECONDS = 600
+
+# Upper sanity bound (m/s ≈ 72 km/h) for bridging a long gap: above this the
+# implied speed is a vehicle / a session resumed elsewhere / a GPS jump, not
+# cycling — so we don't count that gap at all (prevents inflating moving time).
+MAX_PLAUSIBLE_SPEED_MS = 20.0
+
+# A long gap only counts as moving when the displacement implies a genuine
+# riding pace (≈ 9 km/h, the walk/cycle boundary), not the bare not-stopped
+# floor — so incidental drift during a long rest stays "stopped", not "moving".
+BRIDGE_MOVING_SPEED_MS = 2.5
 
 
 def haversine_m(lat1, lng1, lat2, lng2):
@@ -247,22 +259,38 @@ def moving_stopped(points):
     """(moving_min, stopped_min) from an ordered position history.
 
     Each consecutive interval counts as moving when the rider's ground speed in
-    that interval is at/above STOPPED_SPEED_MS, else stopped. Uses a point's
-    reported `speed` when present, otherwise derives it from displacement/time.
+    that interval is at/above STOPPED_SPEED_MS, else stopped.
+
+    For a normal-cadence interval (<= MAX_GAP_SECONDS) we trust the point's
+    reported `speed`, falling back to displacement/time. For a LONGER gap (a
+    telemetry dropout) the reported speed is meaningless, so we classify by the
+    average speed implied by the straight-line displacement between the two
+    fixes: a riding pace (>= BRIDGE_MOVING_SPEED_MS) → the rider was moving
+    through a dead zone (counts as moving); slower (incidental drift during a
+    rest) → stopped. An implausibly high implied speed (> MAX_PLAUSIBLE_SPEED_MS:
+    a drive, a resumed session, a GPS jump) is not counted at all, so a
+    stale/teleported point can't inflate moving time.
     """
     if not points or len(points) < 2:
         return 0.0, 0.0
     moving_s = stopped_s = 0.0
     for a, b in zip(points, points[1:]):
         dt = (b['recorded_at'] - a['recorded_at']).total_seconds()
-        if dt <= 0 or dt > MAX_GAP_SECONDS:
-            continue   # ignore non-positive and large data gaps
-        speed = b.get('speed')
-        if speed is None:
-            dist = haversine_m(float(a['lat']), float(a['lng']),
-                               float(b['lat']), float(b['lng']))
-            speed = dist / dt
-        if speed >= STOPPED_SPEED_MS:
+        if dt <= 0:
+            continue
+        if dt <= MAX_GAP_SECONDS:
+            speed = b.get('speed')
+            if speed is None:
+                speed = haversine_m(float(a['lat']), float(a['lng']),
+                                    float(b['lat']), float(b['lng'])) / dt
+            is_moving = speed >= STOPPED_SPEED_MS
+        else:
+            implied = haversine_m(float(a['lat']), float(a['lng']),
+                                  float(b['lat']), float(b['lng'])) / dt
+            if implied > MAX_PLAUSIBLE_SPEED_MS:
+                continue   # vehicle / resumed elsewhere / GPS jump — don't count
+            is_moving = implied >= BRIDGE_MOVING_SPEED_MS
+        if is_moving:
             moving_s += dt
         else:
             stopped_s += dt
