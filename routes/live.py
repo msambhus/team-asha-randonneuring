@@ -360,6 +360,10 @@ def _rider_telemetry(row, ctx, now, history):
     if start is not None:
         ride_history = [h for h in history if _as_utc(h['recorded_at']) >= start]
     moving_min, stopped_min = tlm.moving_stopped(ride_history)
+    # Make moving + stopped reconcile to elapsed: anything since the start that
+    # isn't moving (true stops, data gaps, time before the first fix) is stopped.
+    if elapsed_min is not None:
+        stopped_min = round(max(0.0, elapsed_min - moving_min), 1)
     speed_ms = tlm.latest_speed_ms(history)
     if speed_ms is None and row.get('speed') is not None:
         try:
