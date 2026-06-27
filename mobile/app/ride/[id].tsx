@@ -32,13 +32,21 @@ function initials(name: string): string {
 const n = (v: number | null | undefined, unit = ''): string =>
   v == null ? '—' : `${typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(1) : v}${unit}`;
 
+// Minutes -> "Xh YYm" (>= 1h) or "Ym" (< 1h). Always shown in hours+minutes.
+const hm = (v: number | null | undefined): string => {
+  if (v == null) return '—';
+  const total = Math.round(Math.abs(v));
+  const h = Math.floor(total / 60), m = total % 60;
+  return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
+};
+
 function planBadge(p: LivePosition): { text: string; color: string } | null {
   const t = p.telemetry;
   if (!t) return null;
   if (t.on_route === false) return { text: 'Off route', color: '#dc2626' };
   if (!t.plan) return null;
-  if (t.plan.status === 'ahead') return { text: `${t.plan.delta_min} min ahead`, color: '#16a34a' };
-  if (t.plan.status === 'behind') return { text: `${Math.abs(t.plan.delta_min)} min behind`, color: '#dc2626' };
+  if (t.plan.status === 'ahead') return { text: `${hm(t.plan.delta_min)} ahead`, color: '#16a34a' };
+  if (t.plan.status === 'behind') return { text: `${hm(t.plan.delta_min)} behind`, color: '#dc2626' };
   return { text: 'On plan', color: '#16a34a' };
 }
 
@@ -62,7 +70,7 @@ function RiderCard({ p }: { p: LivePosition }) {
         <View style={[styles.dot, { backgroundColor: p.color }]}><Text style={styles.dotText}>{initials(p.name)}</Text></View>
         <View style={{ flex: 1 }}>
           <Text style={styles.cardName}>{p.name || 'Rider'} {p.source === 'garmin' ? '⌚' : '📱'}</Text>
-          <Text style={styles.cardMeta}>updated {p.minutes_ago <= 0 ? 'just now' : `${p.minutes_ago} min ago`}</Text>
+          <Text style={styles.cardMeta}>updated {p.minutes_ago <= 0 ? 'just now' : `${hm(p.minutes_ago)} ago`}</Text>
         </View>
         {badge ? <Text style={[styles.badge, { color: badge.color }]}>{badge.text}</Text> : null}
       </View>
@@ -71,8 +79,8 @@ function RiderCard({ p }: { p: LivePosition }) {
           {now.distance_mi != null ? <Metric label="done" value={n(now.distance_mi, ' mi')} /> : null}
           <Metric label="speed" value={n(now.speed_mph, ' mph')} />
           {now.activity ? <Metric label="state" value={`${ACTIVITY_ICON[now.activity] ?? ''} ${now.activity}`} /> : null}
-          <Metric label="moving" value={n(now.moving_min, ' min')} />
-          <Metric label="stopped" value={n(now.stopped_min, ' min')} />
+          <Metric label="moving" value={hm(now.moving_min)} />
+          <Metric label="stopped" value={hm(now.stopped_min)} />
           {now.ascent_done_ft != null ? <Metric label="climb" value={n(now.ascent_done_ft, ' ft')} /> : null}
           {now.heart_rate != null ? <Metric label="HR" value={n(now.heart_rate, ' bpm')} /> : null}
           {now.power != null ? <Metric label="power" value={n(now.power, ' W')} /> : null}
@@ -83,7 +91,7 @@ function RiderCard({ p }: { p: LivePosition }) {
         <View style={styles.metricRow}>
           <Metric label="to go" value={n(rem.distance_mi, ' mi')} />
           <Metric label="climb left" value={n(rem.ascent_left_ft, ' ft')} />
-          <Metric label="time left" value={n(rem.time_left_min, ' min')} />
+          <Metric label="time left" value={hm(rem.time_left_min)} />
           {rem.toughness != null ? <Metric label="toughness" value={String(rem.toughness)} /> : null}
           {rem.headwind_ahead_label ? <Metric label="wind ahead" value={rem.headwind_ahead_label} /> : null}
         </View>

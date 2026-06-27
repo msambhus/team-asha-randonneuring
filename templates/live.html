@@ -391,7 +391,7 @@
       var ago = document.createElement('div');
       ago.className = 'ago';
       ago.textContent = p.minutes_ago <= 0 ? 'updated just now'
-        : 'updated ' + p.minutes_ago + ' min ago';
+        : 'updated ' + fmtHM(p.minutes_ago) + ' ago';
       var src = document.createElement('div');
       src.className = 'src-line';
       src.textContent = p.source === 'garmin'
@@ -464,6 +464,16 @@
       }
     }
 
+    function fmtHM(min) {
+      // Minutes -> "Xh YYm" (>= 1h) or "Ym" (< 1h). null/undefined -> null so
+      // metric() renders the em-dash placeholder. Magnitude only (callers pass
+      // pre-normalized non-negative values; mirrors mobile hm()).
+      if (min === null || min === undefined || min === '') return null;
+      var total = Math.round(Math.abs(min));
+      var h = Math.floor(total / 60), m = total % 60;
+      return h > 0 ? h + 'h ' + (m < 10 ? '0' : '') + m + 'm' : m + 'm';
+    }
+
     function metric(label, value, unit) {
       // Build a metric cell with textContent only (no HTML injection).
       var wrap = document.createElement('div');
@@ -505,7 +515,7 @@
         nm.className = 'nm'; nm.textContent = p.name || 'Rider';
         var ago = document.createElement('span');
         ago.className = 'ago';
-        ago.textContent = p.minutes_ago <= 0 ? 'updated just now' : 'updated ' + p.minutes_ago + ' min ago';
+        ago.textContent = p.minutes_ago <= 0 ? 'updated just now' : 'updated ' + fmtHM(p.minutes_ago) + ' ago';
         head.appendChild(nm); head.appendChild(ago);
         card.appendChild(head);
 
@@ -522,7 +532,7 @@
             badge.className = 'plan-badge ' + t.plan.status;
             var d = t.plan.delta_min;
             badge.textContent = t.plan.status === 'on' ? 'On plan'
-              : (t.plan.status === 'ahead' ? d + ' min ahead of plan' : (-d) + ' min behind plan');
+              : (t.plan.status === 'ahead' ? fmtHM(d) + ' ahead of plan' : fmtHM(-d) + ' behind plan');
             head.appendChild(badge);
           }
           // Source-agnostic metrics always shown; route-relative ones only when on route.
@@ -530,9 +540,9 @@
             (n.distance_mi != null ? metric('done', n.distance_mi, ' mi') : null),
             metric('speed', n.speed_mph, ' mph'),
             (n.activity ? metric('state', n.activity) : null),
-            metric('elapsed', n.elapsed_min, ' min'),
-            metric('moving', n.moving_min, ' min'),
-            metric('stopped', n.stopped_min, ' min'),
+            metric('elapsed', fmtHM(n.elapsed_min)),
+            metric('moving', fmtHM(n.moving_min)),
+            metric('stopped', fmtHM(n.stopped_min)),
             (n.ascent_done_ft != null ? metric('climb done', n.ascent_done_ft, ' ft') : null),
             (n.headwind_done_label ? metric('wind', n.headwind_done_label) : null),
             (n.heart_rate != null ? metric('HR', n.heart_rate, ' bpm') : null),
@@ -543,7 +553,7 @@
             card.appendChild(group('Remaining', [
               metric('to go', r.distance_mi, ' mi'),
               metric('climb left', r.ascent_left_ft, ' ft'),
-              metric('time left', r.time_left_min, ' min'),
+              metric('time left', fmtHM(r.time_left_min)),
               metric('toughness', r.toughness),
               (r.headwind_ahead_label ? metric('wind ahead', r.headwind_ahead_label) : null)
             ]));
