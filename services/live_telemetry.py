@@ -39,22 +39,103 @@ def haversine_m(lat1, lng1, lat2, lng2):
     return 2 * r * math.asin(min(1.0, math.sqrt(a)))
 
 
-def project_to_route(lat, lng, track):
-    """Nearest point on the route to (lat,lng).
+def bearing_deg(lat1, lng1, lat2, lng2):
+    """Forward bearing in degrees [0, 360) from point 1 to point 2."""
+    lat1_r, lat2_r = math.radians(lat1), math.radians(lat2)
+    d_lng = math.radians(lng2 - lng1)
+    x = math.sin(d_lng) * math.cos(lat2_r)
+    y = (math.cos(lat1_r) * math.sin(lat2_r)
+         - math.sin(lat1_r) * math.cos(lat2_r) * math.cos(d_lng))
+    return math.degrees(math.atan2(x, y)) % 360
+
+
+def angle_diff_deg(a, b):
+    """Smallest absolute difference between two bearings, in [0, 180]."""
+    d = abs((a - b) % 360)
+    return d if d <= 180 else 360 - d
+
+
+def course_over_ground(points, min_move_m=15.0):
+    """The rider's recent travel bearing (deg) from their position history.
+
+    `points` is oldest→newest [{lat,lng,...}]. Walks back from the latest fix to
+    the most recent earlier fix at least `min_move_m` away and returns the bearing
+    between them. Returns None when the rider hasn't moved far enough to have a
+    reliable heading (stopped, or GPS jitter) — callers then fall back to plain
+    nearest-point projection.
+    """
+    if not points or len(points) < 2:
+        return None
+    latest = points[-1]
+    for p in reversed(points[:-1]):
+        if haversine_m(p['lat'], p['lng'], latest['lat'], latest['lng']) >= min_move_m:
+            return bearing_deg(p['lat'], p['lng'], latest['lat'], latest['lng'])
+    return None
+
+
+# How far beyond the single nearest point to still consider a route point a
+# candidate leg (m). Overlapping out-and-back legs on the same road sit within a
+# few meters of each other, so a modest margin captures both.
+_CANDIDATE_RADIUS_MARGIN_M = 150.0
+# A candidate leg is only preferred over plain nearest when the rider's heading
+# agrees with the route tangent to at least this cosine (~ within 90°).
+_MIN_DIRECTION_ALIGN = 0.0
+
+
+def project_to_route(lat, lng, track, heading_deg=None):
+    """Project the rider onto the route, optionally disambiguated by direction.
 
     `track` is a list of {lat,lng,dist_m} (ascending dist_m). Returns
-    (dist_m, index, off_by_m) for the closest track point, where off_by_m is how
-    far the rider is from that point — callers use it to detect off-route. Returns
-    (None, None, None) if the track is empty.
+    (dist_m, index, off_by_m) for the chosen track point, where off_by_m is how
+    far the rider is from that point — callers use it to detect off-route.
+
+    With no `heading_deg`, returns the globally nearest point (legacy behavior).
+    When the rider's `heading_deg` (course over ground) is given, the route
+    points near the rider are treated as candidate *legs*; the one whose forward
+    tangent best matches the rider's heading wins. This stops an out-and-back or
+    looped route — where the return leg runs alongside the outbound leg — from
+    snapping the rider onto the leg going the other way and reporting a bogus
+    distance. Falls back to nearest when no direction-consistent leg is close.
+
+    Returns (None, None, None) if the track is empty.
     """
     if not track:
         return None, None, None
-    best_i, best_d = 0, float('inf')
-    for i, tp in enumerate(track):
-        d = haversine_m(lat, lng, tp['lat'], tp['lng'])
-        if d < best_d:
-            best_d, best_i = d, i
-    return track[best_i]['dist_m'], best_i, best_d
+
+    n = len(track)
+    dists = [haversine_m(lat, lng, tp['lat'], tp['lng']) for tp in track]
+    nearest_i = min(range(n), key=lambda i: dists[i])
+    if heading_deg is None or n < 2:
+        return track[nearest_i]['dist_m'], nearest_i, dists[nearest_i]
+
+    # Candidate legs = local minima of distance-to-rider within a radius of the
+    # nearest point (so both overlapping legs of an out-and-back qualify).
+    radius = dists[nearest_i] + _CANDIDATE_RADIUS_MARGIN_M
+    candidates = []
+    for i in range(n):
+        if dists[i] > radius:
+            continue
+        left = dists[i - 1] if i > 0 else float('inf')
+        right = dists[i + 1] if i + 1 < n else float('inf')
+        if dists[i] <= left and dists[i] <= right:
+            candidates.append(i)
+    if not candidates:
+        return track[nearest_i]['dist_m'], nearest_i, dists[nearest_i]
+
+    # Pick the candidate whose forward route tangent best agrees with heading.
+    best_i, best_align = None, None
+    for i in candidates:
+        a = i if i + 1 < n else i - 1
+        b = i + 1 if i + 1 < n else i
+        tangent = bearing_deg(track[a]['lat'], track[a]['lng'],
+                              track[b]['lat'], track[b]['lng'])
+        align = math.cos(math.radians(angle_diff_deg(heading_deg, tangent)))
+        if best_align is None or align > best_align:
+            best_align, best_i = align, i
+
+    if best_i is None or best_align is None or best_align < _MIN_DIRECTION_ALIGN:
+        return track[nearest_i]['dist_m'], nearest_i, dists[nearest_i]
+    return track[best_i]['dist_m'], best_i, dists[best_i]
 
 
 def activity_from_speed(speed_ms):
@@ -96,6 +177,24 @@ def headwinds_split(wind_by_dist, current_dist_m):
         return None, None
     done = [w['headwind_kmh'] for w in wind_by_dist if w['dist_m'] <= current_dist_m]
     ahead = [w['headwind_kmh'] for w in wind_by_dist if w['dist_m'] > current_dist_m]
+    done_avg = round(sum(done) / len(done), 1) if done else None
+    ahead_avg = round(sum(ahead) / len(ahead), 1) if ahead else None
+    return done_avg, ahead_avg
+
+
+def crosswinds_split(wind_by_dist, current_dist_m):
+    """Average crosswind (km/h) over the done vs remaining route portions.
+
+    Mirrors headwinds_split for the {dist_m, crosswind_kmh} component (positive =
+    from the rider's right, negative = from the left). Tolerates entries without a
+    crosswind_kmh key (legacy cached context). Returns (done_kmh, ahead_kmh).
+    """
+    if not wind_by_dist or current_dist_m is None:
+        return None, None
+    done = [w['crosswind_kmh'] for w in wind_by_dist
+            if w.get('crosswind_kmh') is not None and w['dist_m'] <= current_dist_m]
+    ahead = [w['crosswind_kmh'] for w in wind_by_dist
+             if w.get('crosswind_kmh') is not None and w['dist_m'] > current_dist_m]
     done_avg = round(sum(done) / len(done), 1) if done else None
     ahead_avg = round(sum(ahead) / len(ahead), 1) if ahead else None
     return done_avg, ahead_avg

@@ -3,6 +3,8 @@ cron, beacon speed, and the /api/live/positions telemetry block + caching.
 All external HTTP mocked; models patched so no DB is needed.
 """
 import json
+
+import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock
 
@@ -181,6 +183,33 @@ def test_positions_includes_telemetry(client):
     assert pos['trail'][0] == [-122.0, 37.0]   # [lng,lat], on-route history point
 
 
+def test_positions_wind_shows_mph_type_and_arrow(client):
+    """Wind metric reads '<arrow> <mph> mph <head|cross|tail>', not a bare label."""
+    _login(client)
+    now = _now()
+    ctx = dict(_FAKE_CTX, wind_by_dist=[
+        {'dist_m': 0, 'headwind_kmh': 16, 'crosswind_kmh': 0},        # done: headwind
+        {'dist_m': 1778, 'headwind_kmh': 2, 'crosswind_kmh': 15},     # ahead: crosswind
+    ])
+    row = {'rider_id': 7, 'name': 'Asha Rider', 'lat': 37.0, 'lng': -121.99,
+           'recorded_at': now - timedelta(minutes=2), 'status': 'GOING',
+           'speed': 6.0, 'heart_rate': None, 'power': None, 'cadence': None}
+    history = [
+        {'lat': 37.0, 'lng': -122.0, 'recorded_at': now - timedelta(minutes=30), 'speed': 5.0},
+        {'lat': 37.0, 'lng': -121.99, 'recorded_at': now - timedelta(minutes=2), 'speed': 6.0},
+    ]
+    with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
+         patch('routes.live._ride_live_context', return_value=ctx), \
+         patch('routes.live.get_positions_for_rider_since', return_value=history):
+        resp = client.get('/api/live/positions?ride_id=5')
+    t = resp.get_json()['positions'][0]['telemetry']
+    done = t['now']['headwind_done_label']
+    assert done.startswith('↓') and 'mph' in done and done.endswith('head')
+    assert t['now']['headwind_done_mph'] == pytest.approx(9.9, abs=0.2)
+    ahead = t['remaining']['headwind_ahead_label']
+    assert ahead[0] in '↑↗→↘↓↙←↖' and ahead.endswith('cross')
+
+
 def test_positions_without_route_still_shows_source_metrics(client):
     _login(client)
     row = {'rider_id': 7, 'name': 'R', 'lat': 37.0, 'lng': -122.0,
@@ -322,6 +351,34 @@ def test_ride_context_builds_ascent_and_wind(app):
     assert ctx['total_ascent_ft'] and ctx['total_ascent_ft'] > 0   # ~50m → ~164 ft
     assert ctx['wind_by_dist'] is not None
     assert ctx['wind_by_dist'][0]['headwind_kmh'] > 0   # headwind, not tailwind
+
+
+# ── Ride start is Pacific wall-clock, converted to UTC (not treated as UTC) ──
+
+def test_ride_context_start_time_is_pacific_summer(app):
+    """A 6 AM start on a summer (PDT, UTC-7) ride resolves to 13:00 UTC."""
+    cache.clear()
+    ride = {'id': 5551, 'name': 'PDT 200k', 'date': '2026-06-27',
+            'start_time': '06:00', 'plan_start_time': None, 'ride_plan_id': None,
+            'rwgps_url': None, 'rwgps_url_team': None}
+    with app.app_context():
+        with patch('routes.live.get_ride_by_id', return_value=ride):
+            ctx = live_module._ride_live_context(5551)
+    cache.clear()
+    assert ctx['ride_start_iso'] == '2026-06-27T13:00:00+00:00'
+
+
+def test_ride_context_start_time_is_pacific_winter(app):
+    """A 6 AM start on a winter (PST, UTC-8) ride resolves to 14:00 UTC."""
+    cache.clear()
+    ride = {'id': 5552, 'name': 'PST 200k', 'date': '2026-01-10',
+            'start_time': '06:00', 'plan_start_time': None, 'ride_plan_id': None,
+            'rwgps_url': None, 'rwgps_url_team': None}
+    with app.app_context():
+        with patch('routes.live.get_ride_by_id', return_value=ride):
+            ctx = live_module._ride_live_context(5552)
+    cache.clear()
+    assert ctx['ride_start_iso'] == '2026-01-10T14:00:00+00:00'
 
 
 # ── Per-ride context is cached (no RWGPS re-fetch per poll) ─────────────────

@@ -159,6 +159,30 @@ class TestHeadwindComponent:
         assert hw == 0
 
 
+# ── Wind arrow glyph (live-tracking plain-text cells) ────────────────
+
+class TestWindArrowGlyph:
+    def test_pure_headwind_points_down(self):
+        from services.weather import wind_arrow_glyph, wind_arrow_rotation
+        assert wind_arrow_glyph(wind_arrow_rotation(10, 0)) == '↓'
+
+    def test_pure_tailwind_points_up(self):
+        from services.weather import wind_arrow_glyph, wind_arrow_rotation
+        assert wind_arrow_glyph(wind_arrow_rotation(-10, 0)) == '↑'
+
+    def test_right_crosswind_points_left(self):
+        from services.weather import wind_arrow_glyph, wind_arrow_rotation
+        assert wind_arrow_glyph(wind_arrow_rotation(0, 10)) == '←'
+
+    def test_left_crosswind_points_right(self):
+        from services.weather import wind_arrow_glyph, wind_arrow_rotation
+        assert wind_arrow_glyph(wind_arrow_rotation(0, -10)) == '→'
+
+    def test_wraps_at_360(self):
+        from services.weather import wind_arrow_glyph
+        assert wind_arrow_glyph(360) == wind_arrow_glyph(0) == '↑'
+
+
 # ── Wind Label ───────────────────────────────────────────────────────
 
 class TestWindLabel:

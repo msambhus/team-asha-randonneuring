@@ -132,6 +132,18 @@ def wind_arrow_rotation(headwind_kmh, crosswind_kmh):
     return round((angle_deg + 180) % 360)
 
 
+_WIND_ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖']
+
+
+def wind_arrow_glyph(rotation_deg):
+    """8-way Unicode arrow for a wind-arrow rotation (see wind_arrow_rotation).
+
+    Rotation 0° points up (↑, tailwind pushing the rider forward); 180° points
+    down (↓, headwind into the face); 90°/270° are right/left crosswinds. Used
+    where an SVG can't be rendered (plain-text live-tracking metric cells)."""
+    return _WIND_ARROWS[round((rotation_deg % 360) / 45) % 8]
+
+
 def classify_wind(headwind_kmh, crosswind_kmh):
     """Classify wind type using 45-degree threshold rule.
 
