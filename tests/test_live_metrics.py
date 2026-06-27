@@ -232,6 +232,30 @@ def test_positions_moving_time_not_more_than_elapsed(client):
     assert n['moving_min'] < 90                          # pre-start time excluded
 
 
+def test_positions_moving_plus_stopped_equals_elapsed(client):
+    """moving + stopped must reconcile to elapsed, even across a data gap that
+    moving_stopped() would otherwise drop from both totals."""
+    _login(client)
+    now = _now()
+    ctx = dict(_FAKE_CTX,
+               ride_start_iso=(now - timedelta(minutes=60)).isoformat())   # 60 min in
+    # 10 min of riding, a 25-min data gap (dropped by moving_stopped), then 25 more.
+    mins = [60, 55, 50, 25, 20, 15, 10, 5, 0]
+    history = [{'lat': 37.0, 'lng': -122.0 + i * 0.001,
+                'recorded_at': now - timedelta(minutes=m), 'speed': 5.0}
+               for i, m in enumerate(mins)]
+    row = {'rider_id': 7, 'name': 'Asha Rider', 'lat': 37.0, 'lng': -121.91,
+           'recorded_at': now, 'status': 'GOING',
+           'speed': 5.0, 'heart_rate': None, 'power': None, 'cadence': None}
+    with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
+         patch('routes.live._ride_live_context', return_value=ctx), \
+         patch('routes.live.get_positions_for_rider_since', return_value=history):
+        resp = client.get('/api/live/positions?ride_id=5')
+    n = resp.get_json()['positions'][0]['telemetry']['now']
+    assert n['moving_min'] + n['stopped_min'] == pytest.approx(n['elapsed_min'], abs=1)
+    assert n['stopped_min'] > 0          # the dropped gap is absorbed into stopped
+
+
 def test_positions_time_left_is_limit_minus_elapsed(client):
     """Time left = overall brevet time limit − elapsed (e.g. 40h for a 600)."""
     _login(client)
