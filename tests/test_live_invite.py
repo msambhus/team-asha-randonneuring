@@ -3,6 +3,7 @@ normalization, member code creation, and guest (unauthenticated) access to the
 ride map + positions API. All DB/model calls patched — no database needed.
 """
 import re
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import models
@@ -52,19 +53,36 @@ def test_get_valid_ride_invite_none_for_blank():
 
 # ── member creates an invite code ──────────────────────────────────────────
 
-def test_member_creates_invite_code(client):
+def test_member_creates_invite_code_expires_after_cutoff(client):
+    """A 600k (40h limit) starting 06:00 Pacific: the code expires 48h after the
+    ride's cutoff. start = 06-27 13:00 UTC; cutoff = +40h = 06-29 05:00 UTC;
+    expiry = +48h = 07-01 05:00 UTC — NOT a ride-day UTC midnight. The join_url
+    embeds the code for one-click sharing."""
     _login(client)
-    ride = {'id': 5, 'name': 'SCR 200', 'date': '2026-07-04'}
+    ride = {'id': 5, 'name': 'Surf City 600k', 'date': '2026-06-27',
+            'start_time': '06:00', 'time_limit_hours': 40, 'distance_km': 600}
     with patch('routes.live.get_ride_by_id', return_value=ride), \
          patch('routes.live.get_or_create_ride_invite', return_value='ABCD-2K9P') as mk:
         resp = client.post('/ride/5/live/invite')
     assert resp.status_code == 200
     data = resp.get_json()
     assert data['code'] == 'ABCD-2K9P'
-    assert data['join_url'].endswith('/live/join')
-    # expires ~24h after the ride day (ride date + 2 days at midnight UTC)
+    assert 'code=ABCD-2K9P' in data['join_url'] and '/live/join' in data['join_url']
     assert mk.call_args.args[0] == 5
-    assert '2026-07-06' in mk.call_args.args[2].isoformat()
+    assert mk.call_args.args[2] == datetime(2026, 7, 1, 5, 0, tzinfo=timezone.utc)
+
+
+def test_member_creates_invite_code_uses_default_limit(client):
+    """No explicit time limit → ACP default for the distance (200k → 13.5h):
+    start 07-04 13:00 UTC + 13.5h + 48h = 07-07 02:30 UTC."""
+    _login(client)
+    ride = {'id': 5, 'name': 'SCR 200', 'date': '2026-07-04',
+            'start_time': '06:00', 'distance_km': 200}
+    with patch('routes.live.get_ride_by_id', return_value=ride), \
+         patch('routes.live.get_or_create_ride_invite', return_value='ABCD-2K9P') as mk:
+        resp = client.post('/ride/5/live/invite')
+    assert resp.status_code == 200
+    assert mk.call_args.args[2] == datetime(2026, 7, 7, 2, 30, tzinfo=timezone.utc)
 
 
 def test_invite_requires_login(client):
@@ -83,6 +101,35 @@ def test_join_with_valid_code_grants_and_redirects(client):
     with client.session_transaction() as s:
         assert s['live_guest'] == {'code': 'ABCD-2K9P', 'ride_id': 5}
         assert s.permanent is True       # persistent cookie — no frequent re-entry
+
+
+def test_join_via_link_code_one_click(client):
+    """A shared link /live/join?code=... grants access and redirects — no typing."""
+    inv = {'code': 'ABCD-2K9P', 'ride_id': 5, 'expires_at': None}
+    with patch('routes.live.get_valid_ride_invite', return_value=inv):
+        resp = client.get('/live/join?code=abcd-2k9p')
+    assert resp.status_code == 302
+    assert resp.headers['Location'].endswith('/ride/5/live')
+    with client.session_transaction() as s:
+        assert s['live_guest'] == {'code': 'ABCD-2K9P', 'ride_id': 5}
+        assert s.permanent is True
+
+
+def test_join_via_link_bad_code_shows_form(client):
+    """A link with an expired/invalid code shows the form (prefilled), no grant."""
+    with patch('routes.live.get_valid_ride_invite', return_value=None):
+        resp = client.get('/live/join?code=NOPE-0000')
+    assert resp.status_code == 200
+    assert b'invalid or has expired' in resp.data
+    assert b'NOPE-0000' in resp.data            # prefilled for a retry
+    with client.session_transaction() as s:
+        assert 'live_guest' not in s
+
+
+def test_join_plain_get_shows_form(client):
+    resp = client.get('/live/join')
+    assert resp.status_code == 200
+    assert b'Invite code' in resp.data
 
 
 def test_join_with_bad_code_reprompts(client):

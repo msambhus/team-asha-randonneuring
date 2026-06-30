@@ -38,7 +38,7 @@
     <form class="join-form" method="POST" action="{{ url_for('live.live_join') }}">
       <label for="code">Invite code</label>
       <input type="text" id="code" name="code" placeholder="ABCD-2K9P" autocomplete="off"
-             autocapitalize="characters" autofocus required>
+             autocapitalize="characters" autofocus required value="{{ code }}">
       <button type="submit">View live map</button>
     </form>
 
