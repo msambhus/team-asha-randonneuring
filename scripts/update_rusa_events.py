@@ -12,6 +12,7 @@ import psycopg2
 import sys
 import csv
 import re
+from collections import Counter
 from pathlib import Path
 from urllib.request import urlopen, Request
 from io import StringIO
@@ -45,8 +46,22 @@ def get_time_limit_hours(distance_km):
 # Santa Cruz Randonneurs website
 SCR_EVENTS_URL = 'https://santacruzrandonneurs.org/'
 
-# RUSA website for region 4 (includes Davis)
-RUSA_REGION4_URL = 'https://rusa.org/cgi-bin/eventsearch_PF.pl?region=4&sortby=date'
+# One national RUSA event search returns every region's future events; we filter
+# to the regions the team rides. This is deliberately NOT a per-region-number
+# scrape: RUSA's region NUMBERS are opaque (San Francisco — the RBA for North Bay
+# brevets like the Boonville Lollipop — doesn't surface under the obvious region
+# numbers), whereas the Region LABEL column is stable and self-describing.
+RUSA_NATIONAL_URL = 'https://rusa.org/cgi-bin/eventsearch_PF.pl?sortby=date'
+
+# RUSA region label (as shown in the search's Region column) -> club.region used
+# for the club_id lookup in upsert_event. One national fetch covers all of these.
+TEAM_RUSA_REGIONS = {
+    'CA: San Francisco': 'San Francisco',
+    'CA: Davis': 'Davis',
+    'CA: Santa Rosa': 'Santa Rosa',
+    'CA: Santa Cruz': 'Santa Cruz',
+    'CA: San Luis Obispo': 'San Luis Obispo',
+}
 
 # Santa Rosa Randonneurs brevet calendar
 SRR_EVENTS_URL = 'https://www.santarosarandos.org/2026-brevets'
@@ -203,19 +218,22 @@ def get_rwgps_url_from_route(route_id):
         return None
 
 
-def get_davis_events():
+def get_rusa_events(fetch_rwgps=True):
+    """Download the RUSA calendar and return the team's brevets (all regions).
+
+    One national fetch of the printer-friendly event search; keeps rows whose
+    Region column is in TEAM_RUSA_REGIONS and whose type is 'ACP brevet' or
+    'RUSA brevet'. Each returned event carries event['region'] = the club.region
+    string used by upsert_event for its club lookup. When ``fetch_rwgps`` is
+    True, follows each route's detail page for a RideWithGPS link and elevation.
+    Returns [] on any network/parse error so a RUSA hiccup never breaks the batch.
     """
-    Download and parse Davis (Gold Country Randonneurs) events from RUSA website.
-    Filters for ACP brevet and RUSA brevet events only.
-    Fetches RWGPS links from route detail pages and prioritizes RWGPS data.
-    """
-    print("📥 Downloading Davis (Gold Country Randonneurs) events from RUSA...")
-    
+    print("📥 Downloading RUSA event calendar from rusa.org...")
+
     try:
-        # Fetch RUSA region 4 page
-        req = Request(RUSA_REGION4_URL, headers={'User-Agent': 'Mozilla/5.0'})
-        response = urlopen(req, timeout=10)
-        html_content = response.read().decode('utf-8')
+        req = Request(RUSA_NATIONAL_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        response = urlopen(req, timeout=30)
+        html_content = response.read().decode('utf-8', 'replace')
         
         events = []
         
@@ -242,8 +260,8 @@ def get_davis_events():
             climbing_raw = cells[4]
             route_cell = cells[5]
             
-            # Filter for Davis region only
-            if region != 'CA: Davis':
+            # Keep only the regions the team rides
+            if region not in TEAM_RUSA_REGIONS:
                 continue
             
             # Extract event type (first line before any divs)
@@ -296,7 +314,7 @@ def get_davis_events():
             rwgps_url = None
             elevation_ft = rusa_elevation_ft  # Start with RUSA elevation
             
-            if route_id:
+            if route_id and fetch_rwgps:
                 print(f"  Checking route {route_id} for RWGPS link...")
                 rwgps_url = get_rwgps_url_from_route(route_id)
                 
@@ -317,22 +335,28 @@ def get_davis_events():
                 'start_time': None,
                 'time_limit_hours': get_time_limit_hours(distance_km),
                 'start_location': None,
-                'ride_type': event_type
+                'ride_type': event_type,
+                'region': TEAM_RUSA_REGIONS[region],  # club.region for upsert
             }
             events.append(event)
         
         if events:
-            print(f"✅ Downloaded {len(events)} Davis events from RUSA")
+            print(f"✅ Downloaded {len(events)} RUSA brevet events across the team's regions")
         else:
-            print("⚠️  No Davis ACP/RUSA brevet events found")
-        
+            print("⚠️  No RUSA ACP/RUSA brevet events found for the team's regions")
+
         return events
-        
+
     except Exception as e:
-        print(f"❌ Error downloading Davis events: {e}")
+        print(f"❌ Error downloading RUSA events: {e}")
         import traceback
         traceback.print_exc()
         return []
+
+
+def get_davis_events():
+    """Backward-compatible wrapper: the Davis subset of get_rusa_events()."""
+    return [e for e in get_rusa_events() if e.get('region') == 'Davis']
 
 
 def get_rwgps_details(rwgps_url):
@@ -733,14 +757,22 @@ def upsert_event(cursor, region, event):
         return 'error'
     season_id = season_result[0]
     
-    # Check if event exists (external events only)
+    # Check if this event already exists (external events only). Match either by
+    # exact (date, name) — the historical key — or by (date, club, distance), so
+    # the same ride coming from two sources with different names (e.g. RUSA's
+    # 'HBUH 200' vs the club site's 'Healdsburg-Boonville-Ukiah 200km') updates
+    # one row instead of creating a duplicate. Exact-name matches win the tie.
     cursor.execute("""
-        SELECT ri.id, ri.event_status 
+        SELECT ri.id, ri.event_status
         FROM ride ri
         INNER JOIN club c ON ri.club_id = c.id
-        WHERE ri.date = %s AND ri.name = %s AND c.code != 'TA'
-    """, (event['date'], event['name']))
-    
+        WHERE c.code != 'TA'
+          AND ri.date = %s
+          AND (ri.name = %s OR (ri.club_id = %s AND ri.distance_km = %s))
+        ORDER BY (ri.name = %s) DESC
+        LIMIT 1
+    """, (event['date'], event['name'], club_id, event['distance_km'], event['name']))
+
     existing = cursor.fetchone()
     
     # Default to ACP brevet if not specified
@@ -756,19 +788,22 @@ def upsert_event(cursor, region, event):
         if existing[1] == 'COMPLETED':
             return 'skipped'
         
-        # Update existing event (don't modify event_status)
+        # Update existing event (don't modify event_status or name). COALESCE the
+        # soft/enrichment fields so a sparse source (e.g. a RUSA row with no route
+        # assigned yet → no RWGPS/elevation/start) never wipes richer data a club
+        # site already provided for the same ride.
         cursor.execute("""
-            UPDATE ride 
+            UPDATE ride
             SET club_id = %s,
                 ride_type = %s,
                 distance_km = %s,
-                distance_miles = %s,
-                elevation_ft = %s,
-                ft_per_mile = %s,
-                rwgps_url = %s,
-                start_time = %s,
+                distance_miles = COALESCE(%s, distance_miles),
+                elevation_ft = COALESCE(%s, elevation_ft),
+                ft_per_mile = COALESCE(%s, ft_per_mile),
+                rwgps_url = COALESCE(%s, rwgps_url),
+                start_time = COALESCE(%s, start_time),
                 time_limit_hours = %s,
-                start_location = %s
+                start_location = COALESCE(%s, start_location)
             WHERE id = %s
         """, (
             club_id,
@@ -825,26 +860,15 @@ def main():
     conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
     
-    stats = {'inserted': 0, 'updated': 0, 'skipped': 0, 'filtered': 0}
+    # Counter so any action key (including 'error') is safe to increment — a
+    # missing club/season row returns 'error' and must not crash the daily run.
+    stats = Counter()
     
     # Download and process SFR events
     print("\n📍 San Francisco Randonneurs")
     sfr_events = download_sfr_events()
     for event in sfr_events:
         action = upsert_event(cursor, 'San Francisco', event)
-        stats[action] += 1
-        if action == 'skipped':
-            print(f"  ⊘ {event['name']} ({event['date']}) [DONE - skipped]")
-        elif action == 'filtered':
-            print(f"  ⊗ {event['name']} ({event['date']}) [{event['distance_km']}km - filtered]")
-        else:
-            print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']})")
-    
-    # Process Davis events
-    print("\n📍 Davis Bike Club")
-    davis_events = get_davis_events()
-    for event in davis_events:
-        action = upsert_event(cursor, 'Davis', event)
         stats[action] += 1
         if action == 'skipped':
             print(f"  ⊘ {event['name']} ({event['date']}) [DONE - skipped]")
@@ -895,11 +919,31 @@ def main():
             else:
                 print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']})")
 
+    # Process the RUSA calendar last: one national fetch covering every team
+    # region (SF, Davis, Santa Rosa, Santa Cruz, SLO). Running after the club
+    # sites means a club's friendlier event name wins on shared rides, while RUSA
+    # fills in brevets the club sites don't list yet (e.g. SF's Boonville Lollipop,
+    # which is on RUSA but missing from the SFR Google Sheet).
+    print("\n📍 RUSA calendar (all team regions)")
+    rusa_events = get_rusa_events()
+    for event in rusa_events:
+        action = upsert_event(cursor, event['region'], event)
+        stats[action] += 1
+        tag = event.get('region', '')
+        if action == 'skipped':
+            print(f"  ⊘ {event['name']} ({event['date']}) [{tag} - DONE]")
+        elif action == 'filtered':
+            print(f"  ⊗ {event['name']} ({event['date']}) [{event['distance_km']}km - filtered]")
+        else:
+            print(f"  {'✓' if action == 'updated' else '+'} {event['name']} ({event['date']}) [{tag}]")
+
     conn.commit()
     conn.close()
     
     print("\n" + "=" * 60)
-    print(f"✅ Done! {stats['inserted']} inserted, {stats['updated']} updated, {stats['skipped']} skipped (DONE), {stats['filtered']} filtered (distance)")
+    print(f"✅ Done! {stats['inserted']} inserted, {stats['updated']} updated, "
+          f"{stats['skipped']} skipped (DONE), {stats['filtered']} filtered (distance), "
+          f"{stats['error']} errors")
     print("=" * 60)
 
 
