@@ -169,6 +169,20 @@
     <p style="font-size:0.65rem; color:#a0aec0; margin:6px 0 0 0; font-style:italic;">* Based on synced Strava activities.</p>
 </div>
 </div>
+<script>
+document.getElementById('eddington-toggle').addEventListener('click', function(e) {
+    e.stopPropagation();
+    var el = document.getElementById('eddington-detail');
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+});
+document.addEventListener('click', function(e) {
+    var detail = document.getElementById('eddington-detail');
+    var toggle = document.getElementById('eddington-toggle');
+    if (detail && detail.style.display === 'block' && !detail.contains(e.target) && !toggle.contains(e.target)) {
+        detail.style.display = 'none';
+    }
+});
+</script>
 {% endif %}
 </div>
 
@@ -336,22 +350,6 @@
     </div>
     {% endif %}
 
-    {% if eddington_data %}
-    <script>
-    document.getElementById('eddington-toggle').addEventListener('click', function(e) {
-        e.stopPropagation();
-        var el = document.getElementById('eddington-detail');
-        el.style.display = el.style.display === 'none' ? 'block' : 'none';
-    });
-    document.addEventListener('click', function(e) {
-        var detail = document.getElementById('eddington-detail');
-        var toggle = document.getElementById('eddington-toggle');
-        if (detail && detail.style.display === 'block' && !detail.contains(e.target) && !toggle.contains(e.target)) {
-            detail.style.display = 'none';
-        }
-    });
-    </script>
-    {% endif %}
 
     {# Training Rides Card Grid #}
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
