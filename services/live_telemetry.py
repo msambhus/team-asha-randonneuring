@@ -150,6 +150,66 @@ def project_to_route(lat, lng, track, heading_deg=None):
     return track[best_i]['dist_m'], best_i, dists[best_i]
 
 
+# Temporal projection windows. Each step searches the route only within
+# [cur − back, cur + fwd] of along-route distance, so the match follows the
+# rider's continuous path instead of snapping to a far overlapping leg.
+_PROJ_BACK_WINDOW_M = 300.0    # allow stepping back this far (GPS noise / brief reversal)
+_PROJ_MIN_FWD_M = 3000.0       # min forward window per step (covers a downsample gap)
+_PROJ_MAX_SPEED_MS = 20.0      # forward window grows with elapsed time at this cap
+
+
+def project_history_to_route(history, track):
+    """Project the rider's whole trajectory onto the route, in time order.
+
+    `history` is oldest→newest [{lat,lng,recorded_at}]; `track` is
+    [{lat,lng,dist_m}] ascending. Carries the matched route position forward —
+    each fix is matched only within a window ahead of (and a little behind) the
+    previous match — so a route that passes the same place more than once
+    (out-and-back / loop) resolves to the leg the rider is actually on, and the
+    returned distance is monotonic (never less than a position already reached).
+
+    Returns (dist_m, index, off_by_m): dist_m is the monotonic distance-done,
+    index the track point for it (for ascent/wind splits), off_by_m how far the
+    LATEST fix is from the route (for on-route detection). (None, None, None) if
+    track or history is empty.
+    """
+    if not track or not history:
+        return None, None, None
+    n = len(track)
+    # Seed on the first fix with a global nearest match.
+    d0 = [haversine_m(float(history[0]['lat']), float(history[0]['lng']),
+                      t['lat'], t['lng']) for t in track]
+    cur = min(range(n), key=lambda i: d0[i])
+    best_dist, best_idx, off_by = track[cur]['dist_m'], cur, d0[cur]
+    prev_t = history[0]['recorded_at']
+    for p in history[1:]:
+        dt = (p['recorded_at'] - prev_t).total_seconds()
+        prev_t = p['recorded_at']
+        if dt <= 0:
+            continue
+        lat, lng = float(p['lat']), float(p['lng'])
+        cur_dist = track[cur]['dist_m']
+        hi = cur_dist + max(_PROJ_MIN_FWD_M, _PROJ_MAX_SPEED_MS * dt)
+        lo = cur_dist - _PROJ_BACK_WINDOW_M
+        best_i, best_d = cur, float('inf')
+        for i in range(cur, n):              # forward within the window
+            if track[i]['dist_m'] > hi:
+                break
+            d = haversine_m(lat, lng, track[i]['lat'], track[i]['lng'])
+            if d < best_d:
+                best_d, best_i = d, i
+        for i in range(cur - 1, -1, -1):     # limited backward within the window
+            if track[i]['dist_m'] < lo:
+                break
+            d = haversine_m(lat, lng, track[i]['lat'], track[i]['lng'])
+            if d < best_d:
+                best_d, best_i = d, i
+        cur, off_by = best_i, best_d
+        if track[cur]['dist_m'] > best_dist:
+            best_dist, best_idx = track[cur]['dist_m'], cur
+    return best_dist, best_idx, off_by
+
+
 def activity_from_speed(speed_ms):
     """Classify movement from ground speed (m/s): paused/walking/cycling/driving."""
     if speed_ms is None:
