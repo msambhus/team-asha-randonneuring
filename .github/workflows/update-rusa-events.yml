@@ -1,0 +1,52 @@
+name: Update RUSA Calendar Events
+
+# Refresh the ride calendar from RUSA + the club sites every day, so newly added
+# brevets (e.g. a new RUSA event) appear in the app without a manual run.
+#
+# Unlike the other cron jobs (which curl a Vercel endpoint), this runs the
+# collector script directly in the runner: it makes many external requests
+# (RUSA + per-route RWGPS lookups) and would risk a serverless timeout as an
+# endpoint. It needs only the database — add a DATABASE_URL repository secret
+# (same Supabase pooler URL the app uses).
+
+on:
+  schedule:
+    # Daily at 13:00 UTC (early morning US Pacific), after the morning syncs.
+    - cron: '0 13 * * *'
+
+  workflow_dispatch: {}
+
+jobs:
+  update-rusa-events:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Update RUSA calendar events
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set — add it in repo Settings → Secrets → Actions"
+            exit 1
+          fi
+          python scripts/update_rusa_events.py
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "::error::RUSA calendar update failed — check the logs above."
+          echo "Common causes: DATABASE_URL secret missing/incorrect, RUSA/club site unreachable, or a parser change."
