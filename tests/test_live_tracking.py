@@ -139,6 +139,31 @@ def test_fetch_positions_uses_share_page_url(app):
     assert 'Mozilla' in captured['headers'].get('User-Agent', '')
 
 
+def test_fetch_positions_sends_browser_headers(app):
+    # The fetch should look like a real browser opening the public share page:
+    # a current Chrome UA plus Accept / Accept-Language and a consistent
+    # Sec-Fetch-* navigation set. Accept-Encoding is intentionally left to
+    # `requests` (no manual Brotli advert that we couldn't decode).
+    captured = {}
+
+    def _get(url, **kwargs):
+        captured['headers'] = kwargs.get('headers', {})
+        return _mock_response(200, text=_wrap_share_html([]))
+
+    with app.app_context():
+        with patch.object(requests, 'get', side_effect=_get):
+            garmin_livetrack.fetch_positions('TOK', 'SID')
+
+    headers = captured['headers']
+    assert 'Mozilla' in headers.get('User-Agent', '')
+    assert 'Chrome/' in headers.get('User-Agent', '')
+    assert headers.get('Accept', '').startswith('text/html')
+    assert headers.get('Accept-Language', '')
+    assert headers.get('Sec-Fetch-Mode') == 'navigate'
+    # Must not advertise an encoding we can't guarantee decoding (Brotli).
+    assert 'Accept-Encoding' not in headers
+
+
 def test_fetch_positions_no_trackpoints_returns_empty(app):
     # A page that loads but embeds no trackpoints (session hasn't reported yet)
     # yields [] rather than raising.

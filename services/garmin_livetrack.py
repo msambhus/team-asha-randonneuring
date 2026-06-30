@@ -47,11 +47,33 @@ _SHARE_PAGE_URL = (
     'https://livetrack.garmin.com/session/{session_id}/token/{token}'
 )
 # A browser-like User-Agent: the share page is a normal web page and a bare
-# requests UA is more likely to be challenged/blocked.
+# requests UA is more likely to be challenged/blocked. Keep the Chrome version
+# reasonably current so the request doesn't read as an ancient client.
 _BROWSER_UA = (
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-    'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36'
 )
+# Full browser-like header set sent with the share-page GET. These mirror what
+# Chrome sends for a top-level navigation, so the request looks like a person
+# opening the public share link rather than a scraper. The Sec-Fetch-* values
+# are kept internally consistent with a document navigation (inconsistent values
+# read as MORE bot-like). We deliberately do NOT set Accept-Encoding: `requests`
+# negotiates gzip/deflate and decodes them automatically, but would not decode
+# Brotli ('br') unless the brotli package is installed — advertising it here
+# could yield an undecodable body and break trackpoint parsing.
+_BROWSER_HEADERS = {
+    'User-Agent': _BROWSER_UA,
+    'Accept': (
+        'text/html,application/xhtml+xml,application/xml;q=0.9,'
+        'image/avif,image/webp,image/apng,*/*;q=0.8'
+    ),
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-User': '?1',
+    'Sec-Fetch-Dest': 'document',
+}
 _REQUEST_TIMEOUT = 15
 
 
@@ -219,7 +241,7 @@ def fetch_positions(token, session_id):
     try:
         resp = http_requests.get(
             url, timeout=_REQUEST_TIMEOUT,
-            headers={'User-Agent': _BROWSER_UA},
+            headers=_BROWSER_HEADERS,
         )
     except http_requests.Timeout:
         raise Exception(f'Garmin LiveTrack request timed out for session {session_id}.')
