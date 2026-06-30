@@ -181,7 +181,17 @@
     font-family: ui-monospace, Menlo, monospace; font-size: 1.4rem; font-weight: 700;
     letter-spacing: 2px; color: #0f172a;
 }
-.invite-hint { font-size: 0.78rem; color: var(--text-light, #64748b); margin-top: 4px; }
+.invite-link { display: flex; gap: 8px; align-items: stretch; }
+.invite-url {
+    flex: 1; min-width: 0; padding: 9px 11px; font-size: 0.85rem;
+    font-family: ui-monospace, Menlo, monospace; border: 1px solid #cbd5e1;
+    border-radius: 8px; background: #fff; color: #0f172a;
+}
+.invite-copy {
+    padding: 9px 14px; background: var(--primary, #2563eb); color: #fff; border: none;
+    border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer; white-space: nowrap;
+}
+.invite-hint { font-size: 0.78rem; color: var(--text-light, #64748b); margin-top: 6px; }
 </style>
 {% endblock %}
 
@@ -214,12 +224,26 @@
           box.hidden = false; box.textContent = '';
           if (d.code) {
             btn.hidden = true;
-            var code = document.createElement('div');
-            code.className = 'invite-code'; code.textContent = d.code;
+            var url = d.join_url || (location.origin + '/live/join?code=' + encodeURIComponent(d.code));
+            var row = document.createElement('div');
+            row.className = 'invite-link';
+            var field = document.createElement('input');
+            field.type = 'text'; field.readOnly = true; field.value = url;
+            field.className = 'invite-url';
+            field.addEventListener('focus', function () { field.select(); });
+            var copy = document.createElement('button');
+            copy.type = 'button'; copy.className = 'invite-copy'; copy.textContent = 'Copy';
+            copy.addEventListener('click', function () {
+              field.select();
+              if (navigator.clipboard) { navigator.clipboard.writeText(url); }
+              else { try { document.execCommand('copy'); } catch (e) {} }
+              copy.textContent = 'Copied';
+            });
+            row.appendChild(field); row.appendChild(copy);
             var hint = document.createElement('div');
             hint.className = 'invite-hint';
-            hint.textContent = 'Share this code — anyone can follow at ' + location.origin + '/live/join';
-            box.appendChild(code); box.appendChild(hint);
+            hint.textContent = 'Send this link — it opens the live map directly. Code: ' + d.code;
+            box.appendChild(row); box.appendChild(hint);
           } else {
             btn.disabled = false; btn.textContent = '🔗 Share live link';
             box.textContent = d.error || 'Could not create a code.';

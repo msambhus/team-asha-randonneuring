@@ -42,6 +42,28 @@ _MAX_CONTEXT_TRACK_POINTS = 2000
 # time and convert to UTC — not treat "06:00" as 06:00 UTC.
 CLUB_TZ = ZoneInfo('America/Los_Angeles')
 
+# A live-map invite code stays usable until this long AFTER the ride's own time
+# limit (when the ride "is supposed to be over"), so it covers the whole event
+# (a 600k runs ~40h) plus time to review — not a fixed UTC-midnight cutoff.
+INVITE_BUFFER_HOURS = 48
+
+
+def _ride_start_utc(ride):
+    """The ride's start as a tz-aware UTC datetime, or None.
+
+    start_time is Bay-Area wall-clock ("06:00" = 6 AM Pacific), so it is built in
+    CLUB_TZ then converted to UTC — treating "06:00" as UTC would be ~7-8h off."""
+    try:
+        start_t = ride.get('plan_start_time') or ride.get('start_time') or '06:00'
+        hh, mm = (int(x) for x in str(start_t).split(':')[:2])
+        d = ride['date']
+        if isinstance(d, str):
+            d = date.fromisoformat(d)
+        return datetime(d.year, d.month, d.day, hh, mm,
+                        tzinfo=CLUB_TZ).astimezone(timezone.utc)
+    except Exception:
+        return None
+
 # Display tuning (see plan): show points from the last 24h; grey/fade dots
 # whose latest point is older than 10 minutes.
 DISPLAY_WINDOW_HOURS = 24
@@ -186,41 +208,54 @@ def ride_live_invite(ride_id):
     ride = get_ride_by_id(ride_id)
     if not ride:
         return jsonify({'error': 'Ride not found'}), 404
-    d = ride['date']
-    if isinstance(d, str):
-        d = date.fromisoformat(d)
-    # Expire ~24h after the ride day ends (ride day + the following day).
-    expires_at = datetime(d.year, d.month, d.day, tzinfo=timezone.utc) + timedelta(days=2)
+    # Expire the code a buffer after the ride's OWN time limit, so it stays valid
+    # for the whole event (a 600k runs ~40h — a ride-day-only window died before
+    # the cutoff) plus time to review afterward. Falls back to ride-day + 2 days
+    # only if the start can't be resolved.
+    start_utc = _ride_start_utc(ride)
+    limit_h = (ride.get('time_limit_hours')
+               or get_default_time_limit(ride.get('distance_km') or 0) or 24)
+    if start_utc is not None:
+        expires_at = start_utc + timedelta(hours=float(limit_h) + INVITE_BUFFER_HOURS)
+    else:
+        d = ride['date']
+        if isinstance(d, str):
+            d = date.fromisoformat(d)
+        expires_at = datetime(d.year, d.month, d.day, tzinfo=timezone.utc) + timedelta(days=2)
     code = get_or_create_ride_invite(ride_id, session['rider_id'], expires_at)
     if not code:
         return jsonify({'error': 'Could not create an invite code'}), 500
     return jsonify({
         'code': code,
-        'join_url': url_for('live.live_join', _external=True),
+        # Code embedded in the link so sharing is one click — no typing.
+        'join_url': url_for('live.live_join', code=code, _external=True),
         'expires_at': expires_at.isoformat(),
     })
 
 
 @live_bp.route('/live/join', methods=['GET', 'POST'])
 def live_join():
-    """Public page: a guest enters an invite code to view a ride's live map.
+    """Public page: a guest joins a ride's live map with an invite code.
 
-    No authentication. On a valid code the ride grant is stored in the guest's
-    session and they're sent to that ride's read-only map. The session is made
-    permanent (30-day cookie) so mobile browsers/PWAs don't drop it on
-    backgrounding and force a re-entry — actual access is still bounded by the
-    code's own expiry, which _guest_ride_id() re-checks on every request."""
+    No authentication. The code can arrive in the shared link (?code=...) for a
+    one-click join, or be typed into the form. On a valid code the ride grant is
+    stored in the guest's session and they're sent to that ride's read-only map.
+    The session is made permanent (30-day cookie) so mobile browsers/PWAs don't
+    drop it on backgrounding and force a re-entry — actual access is still
+    bounded by the code's own expiry, which _guest_ride_id() re-checks each
+    request."""
     if session.get('rider_id'):
         return redirect(url_for('live.live_hub'))   # members don't need a code
-    if request.method == 'POST':
-        inv = get_valid_ride_invite(request.form.get('code', ''))
-        if not inv:
-            flash('That code is invalid or has expired.', 'warning')
-            return render_template('live_join.html')
-        session.permanent = True
-        session['live_guest'] = {'code': inv['code'], 'ride_id': inv['ride_id']}
-        return redirect(url_for('live.ride_live_map', ride_id=inv['ride_id']))
-    return render_template('live_join.html')
+    submitted = (request.form.get('code') if request.method == 'POST'
+                 else request.args.get('code'))
+    if submitted:
+        inv = get_valid_ride_invite(submitted)
+        if inv:
+            session.permanent = True
+            session['live_guest'] = {'code': inv['code'], 'ride_id': inv['ride_id']}
+            return redirect(url_for('live.ride_live_map', ride_id=inv['ride_id']))
+        flash('That code is invalid or has expired.', 'warning')
+    return render_template('live_join.html', code=(submitted or ''))
 
 
 @live_bp.route('/ride/<int:ride_id>/live/garmin', methods=['POST'])
@@ -329,20 +364,9 @@ def _ride_live_context(ride_id):
     except (TypeError, ValueError):
         ctx['time_limit_min'] = None
 
-    # Ride start = ride date + plan start_time (for elapsed/plan comparison).
-    # start_time is Bay-Area wall-clock ("06:00" = 6 AM Pacific), so build it in
-    # CLUB_TZ and convert to UTC; treating it as UTC made elapsed ~7-8h too large.
-    try:
-        start_t = ride.get('plan_start_time') or ride.get('start_time') or '06:00'
-        hh, mm = str(start_t).split(':')[:2]
-        d = ride['date']
-        if isinstance(d, str):
-            d = date.fromisoformat(d)
-        local_start = datetime(d.year, d.month, d.day, int(hh), int(mm),
-                               tzinfo=CLUB_TZ)
-        ctx['ride_start_iso'] = local_start.astimezone(timezone.utc).isoformat()
-    except Exception:
-        ctx['ride_start_iso'] = None
+    # Ride start (Bay-Area wall-clock → UTC) for elapsed/plan comparison.
+    start_utc = _ride_start_utc(ride)
+    ctx['ride_start_iso'] = start_utc.isoformat() if start_utc else None
 
     # Plan stops for on/behind-plan comparison.
     try:
