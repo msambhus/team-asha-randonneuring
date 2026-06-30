@@ -87,7 +87,15 @@
 }
 .matrix-grid {
   display: grid; min-width: max-content;
-  /* Cols set via JS / inline style */
+  /* Column widths are CSS variables so the media queries below can shrink the
+     matrix on small screens. The inline grid-template-columns and the pinned
+     totals' `right` offsets both reference these vars. Desktop values match the
+     previous hard-coded px, so desktop layout is unchanged. */
+  --mx-rider-w: 220px;
+  --mx-cell-w: 64px;
+  --mx-rides-w: 52px;
+  --mx-km-w: 64px;
+  --mx-gap: 8px;
 }
 
 /* Header cells */
@@ -431,10 +439,28 @@
   .season-toolbar { padding: 12px; gap: 8px; }
   .season-search { max-width: none; flex-basis: 100%; order: 99; }
   .matrix-wrap { max-height: calc(100vh - 60px); }
+  /* Shrink the matrix so the pinned rider + totals columns don't eat the whole
+     viewport, leaving room for the scrollable brevet cells. */
+  .matrix-grid { --mx-rider-w: 150px; --mx-cell-w: 50px; --mx-rides-w: 42px; --mx-km-w: 52px; --mx-gap: 6px; }
   .mx-h, .mx-h-rider, .mx-h-totals, .mx-h-gap { height: 96px !important; }
   .mx-h-rider { padding: 0 8px; font-size: 0.6rem; }
   .mx-rider { padding: 0 8px; gap: 6px; }
   .mx-rider a { font-size: 0.72rem; }
+}
+@media (max-width: 480px) {
+  /* Phone: tighten further. The pinned rider column drops to ~112px and both
+     totals shrink, so the frozen chrome is ~194px of the viewport instead of
+     336px — the brevet results finally get usable scroll space. */
+  .matrix-grid { --mx-rider-w: 112px; --mx-cell-w: 40px; --mx-rides-w: 36px; --mx-km-w: 46px; --mx-gap: 4px; }
+  .mx-h, .mx-h-rider, .mx-h-totals, .mx-h-gap { height: 84px !important; }
+  .mx-h-rider { padding: 0 6px; font-size: 0.56rem; }
+  .mx-h-name { font-size: 0.6rem; }
+  .mx-rider { padding: 0 6px; gap: 5px; }
+  .mx-rider a { font-size: 0.68rem; }
+  .mx-rider .avatar { width: 22px; height: 22px; font-size: 0.6rem; }
+  .mx-totals { font-size: 0.8rem; }
+  .mx-pill { padding: 3px 4px; font-size: 0.7rem; }
+  .mx-pill.t { font-size: 0.6rem; }
 }
 </style>
 {% endblock %}
@@ -565,7 +591,6 @@
     {% set totals_w = 52 %}
     {% set km_w = 64 %}
     {% set cell_w = 64 %}
-    {% set group_gap = 8 %}
 
     {# Compute groups by adjacent equal distance_km (preserve date order from server) #}
     {% set ns = namespace(prev=-1, groups=[]) %}
@@ -580,13 +605,13 @@
 
     {# Build CSS grid template-columns: rider | (group cells, gap)+ | rides | km #}
     {% set col_template = [] %}
-    {% set _ = col_template.append(rider_col_w|string + 'px') %}
+    {% set _ = col_template.append('var(--mx-rider-w)') %}
     {% for g in ns.groups %}
-      {% if not loop.first %}{% set _ = col_template.append(group_gap|string + 'px') %}{% endif %}
-      {% set _ = col_template.append('repeat(' + g.rides|length|string + ', ' + cell_w|string + 'px)') %}
+      {% if not loop.first %}{% set _ = col_template.append('var(--mx-gap)') %}{% endif %}
+      {% set _ = col_template.append('repeat(' + g.rides|length|string + ', var(--mx-cell-w))') %}
     {% endfor %}
-    {% set _ = col_template.append(totals_w|string + 'px') %}
-    {% set _ = col_template.append(km_w|string + 'px') %}
+    {% set _ = col_template.append('var(--mx-rides-w)') %}
+    {% set _ = col_template.append('var(--mx-km-w)') %}
 
     <div class="matrix-wrap" id="matrix-scroll">
       <div class="matrix-grid" id="matrix-grid"
@@ -617,7 +642,7 @@
           {% set ride_idx.i = ride_idx.i + 1 %}
           {% endfor %}
         {% endfor %}
-        <div class="mx-h-totals rides mx-sortable" data-sort-key="rides" tabindex="0" role="button" aria-label="Sort by rides" style="right: {{ km_w }}px;">Rides <span class="mx-sort-ind"></span></div>
+        <div class="mx-h-totals rides mx-sortable" data-sort-key="rides" tabindex="0" role="button" aria-label="Sort by rides" style="right: var(--mx-km-w);">Rides <span class="mx-sort-ind"></span></div>
         <div class="mx-h-totals mx-sortable" data-sort-key="kms" tabindex="0" role="button" aria-label="Sort by kilometers" style="right:0;">KM <span class="mx-sort-ind"></span></div>
 
         {# ---- Data rows ---- #}
@@ -665,7 +690,7 @@
             {% endfor %}
           {% endfor %}
 
-          <div class="mx-totals rides" style="background:{{ row_bg }}; right: {{ km_w }}px;">{{ rd.rides }}</div>
+          <div class="mx-totals rides" style="background:{{ row_bg }}; right: var(--mx-km-w);">{{ rd.rides }}</div>
           <div class="mx-totals" style="background:{{ row_bg }}; right: 0;">{{ rd.kms|commafy }}</div>
         </div>
         {% endfor %}
@@ -869,19 +894,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const timesToggle = document.getElementById('times-toggle');
   const grid = document.getElementById('matrix-grid');
 
-  // Restore last view
-  const savedView = localStorage.getItem('ta_riders_view') || 'matrix';
-  setView(savedView);
+  // Restore last view. On phones, default first-time visitors to the
+  // mobile-friendly "By Rider" cards instead of the wide matrix (the matrix is
+  // still one tap away, and is itself responsive now). An explicit saved choice
+  // always wins, and we only persist a view the user actively picks so the
+  // mobile default stays adaptive if they later switch devices.
+  const stored = localStorage.getItem('ta_riders_view');
+  const isNarrow = window.matchMedia('(max-width: 480px)').matches;
+  setView(stored || (isNarrow ? 'riders' : 'matrix'));
 
-  function setView(name) {
+  function setView(name, persist) {
     pills.forEach(p => p.classList.toggle('active', p.dataset.view === name));
     Object.entries(panels).forEach(([k, el]) => {
       if (!el) return;
       el.hidden = (k !== name);
     });
-    localStorage.setItem('ta_riders_view', name);
+    if (persist) localStorage.setItem('ta_riders_view', name);
   }
-  pills.forEach(p => p.addEventListener('click', () => setView(p.dataset.view)));
+  pills.forEach(p => p.addEventListener('click', () => setView(p.dataset.view, true)));
 
   /* ---- Search filter (riders + matrix rows) ---- */
   function applyFilter(q) {
