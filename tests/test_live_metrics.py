@@ -339,10 +339,12 @@ def test_positions_off_route_bounce_with_history_stays_shown(client):
     row = {'rider_id': 7, 'name': 'Bounce', 'lat': 37.2, 'lng': -121.99,   # current fix off-route
            'recorded_at': now, 'status': 'GOING',
            'speed': 5.0, 'heart_rate': None, 'power': None, 'cadence': None}
-    # Recent history is ON the route (near the _FAKE_CTX track at lat 37.0).
+    # Recent history is ON the route (near the _FAKE_CTX track at lat 37.0); the
+    # newest fix (matching `row`) is the off-route bounce at lat 37.2.
     history = [
         {'lat': 37.0, 'lng': -122.0, 'recorded_at': now - timedelta(minutes=10), 'speed': 5.0},
         {'lat': 37.0, 'lng': -121.99, 'recorded_at': now - timedelta(minutes=5), 'speed': 5.0},
+        {'lat': 37.2, 'lng': -121.99, 'recorded_at': now, 'speed': 5.0},
     ]
     with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
          patch('routes.live._ride_live_context', return_value=_FAKE_CTX), \

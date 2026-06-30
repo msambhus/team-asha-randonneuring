@@ -486,12 +486,14 @@ def _rider_telemetry(row, ctx, now, history):
     if not ctx.get('has_route'):
         return base
 
-    # Use the rider's recent course over ground so an out-and-back / looped
-    # route snaps them to the leg they're actually travelling, not the one
-    # alongside it going the other way.
-    heading = tlm.course_over_ground(history)
-    dist_m, idx, off_by_m = tlm.project_to_route(lat, lng, ctx['track'],
-                                                 heading_deg=heading)
+    # Project the rider's whole trajectory (since the ride start) onto the route
+    # in time order, so an out-and-back / looped route that passes the same place
+    # more than once resolves to the leg they're actually on and the distance is
+    # monotonic (never jumps backward). Falls back to a stateless match only when
+    # there's no in-ride trajectory yet (ride_history empty).
+    dist_m, idx, off_by_m = tlm.project_history_to_route(ride_history, ctx['track'])
+    if dist_m is None:
+        dist_m, idx, off_by_m = tlm.project_to_route(lat, lng, ctx['track'])
     on_route = (dist_m is not None and off_by_m is not None
                 and off_by_m <= tlm.ON_ROUTE_MAX_M)
     if not on_route:

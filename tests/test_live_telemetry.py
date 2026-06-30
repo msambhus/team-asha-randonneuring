@@ -75,6 +75,41 @@ def test_project_to_route_no_heading_is_legacy_nearest():
     assert idx == 1 and dist_m == 889.0
 
 
+def test_project_history_follows_out_and_back():
+    # Rider rides out to the turnaround then back; at lng -121.99 on the RETURN
+    # the temporal walk must pick the return leg (4445 m), not snap to the
+    # outbound 889 m a stateless nearest match would give.
+    hist = [
+        {'lat': 37.0, 'lng': -122.00, 'recorded_at': _t(0)},
+        {'lat': 37.0, 'lng': -121.99, 'recorded_at': _t(60)},
+        {'lat': 37.0, 'lng': -121.98, 'recorded_at': _t(120)},
+        {'lat': 37.0, 'lng': -121.97, 'recorded_at': _t(180)},   # turnaround
+        {'lat': 37.0, 'lng': -121.98, 'recorded_at': _t(240)},
+        {'lat': 37.0, 'lng': -121.99, 'recorded_at': _t(300)},   # back, on the return leg
+    ]
+    dist_m, idx, off = tlm.project_history_to_route(hist, _OUT_AND_BACK)
+    assert idx == 5 and dist_m == 4445.0
+    assert tlm.project_to_route(37.0, -121.99, _OUT_AND_BACK)[0] == 889.0   # stateless is wrong
+
+
+def test_project_history_is_monotonic_through_gps_backstep():
+    # A small backward GPS blip must not reduce the distance already reached.
+    hist = [
+        {'lat': 37.0, 'lng': -122.00, 'recorded_at': _t(0)},      # 0 m
+        {'lat': 37.0, 'lng': -121.98, 'recorded_at': _t(60)},     # 1778 m reached
+        {'lat': 37.0, 'lng': -121.99, 'recorded_at': _t(120)},    # blip back toward 889 m
+        {'lat': 37.0, 'lng': -121.97, 'recorded_at': _t(180)},    # 2667 m
+    ]
+    dist_m, idx, off = tlm.project_history_to_route(hist, _TRACK)
+    assert dist_m == 2667.0          # never dropped to 889 on the blip
+
+
+def test_project_history_empty_or_no_track():
+    assert tlm.project_history_to_route([], _TRACK) == (None, None, None)
+    assert tlm.project_history_to_route(
+        [{'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(0)}], []) == (None, None, None)
+
+
 def test_course_over_ground_eastbound():
     pts = [{'lat': 37.0, 'lng': -122.00}, {'lat': 37.0, 'lng': -121.99}]
     hd = tlm.course_over_ground(pts)
