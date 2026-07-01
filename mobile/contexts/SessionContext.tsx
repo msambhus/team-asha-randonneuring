@@ -11,7 +11,10 @@ import React, {
 import * as SecureStore from 'expo-secure-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { getToken, storeToken, deleteToken } from '../lib/api';
-import { getGoogleIdToken, exchangeGoogleToken, demoSignIn, googleSignOut } from '../lib/auth';
+import {
+  getGoogleIdToken, exchangeGoogleToken, demoSignIn, googleSignOut,
+  getAppleCredential, exchangeAppleToken, deleteAccount as deleteAccountApi,
+} from '../lib/auth';
 import type { GoogleAuthResponse } from '../lib/types';
 
 const RIDER_KEY = 'ta_rider_id';
@@ -24,9 +27,14 @@ interface SessionValue {
   isLoading: boolean;
   /** Returns null on success, else an error string to display. */
   signInWithGoogle: () => Promise<string | null>;
+  /** Sign in with Apple. Returns null on success, else an error string. */
+  signInWithApple: () => Promise<string | null>;
   /** Reviewer/demo login (no Google). Returns null on success, else an error string. */
   signInDemo: () => Promise<string | null>;
   signOut: () => Promise<void>;
+  /** Permanently delete the account, then sign out. Returns null on success,
+   *  else an error string. */
+  deleteAccount: () => Promise<string | null>;
 }
 
 const SessionContext = createContext<SessionValue>({
@@ -35,8 +43,10 @@ const SessionContext = createContext<SessionValue>({
   profileComplete: false,
   isLoading: true,
   signInWithGoogle: async () => 'not ready',
+  signInWithApple: async () => 'not ready',
   signInDemo: async () => 'not ready',
   signOut: async () => undefined,
+  deleteAccount: async () => 'not ready',
 });
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
@@ -81,6 +91,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
   }, [applySession]);
 
+  const signInWithApple = useCallback(async (): Promise<string | null> => {
+    try {
+      const cred = await getAppleCredential();
+      if (cred === null) return null;   // user cancelled — not an error
+      await applySession(await exchangeAppleToken(cred.identityToken, cred.email));
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : 'Sign-in failed';
+    }
+  }, [applySession]);
+
   const signInDemo = useCallback(async (): Promise<string | null> => {
     try {
       await applySession(await demoSignIn());
@@ -101,9 +122,23 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     queryClient.clear();
   }, [queryClient]);
 
+  const deleteAccount = useCallback(async (): Promise<string | null> => {
+    try {
+      await deleteAccountApi();
+    } catch (e) {
+      return e instanceof Error ? e.message : 'Account deletion failed';
+    }
+    // Deletion succeeded on the server — clear all local state.
+    await signOut();
+    return null;
+  }, [signOut]);
+
   return (
     <SessionContext.Provider
-      value={{ token, riderId, profileComplete, isLoading, signInWithGoogle, signInDemo, signOut }}
+      value={{
+        token, riderId, profileComplete, isLoading,
+        signInWithGoogle, signInWithApple, signInDemo, signOut, deleteAccount,
+      }}
     >
       {children}
     </SessionContext.Provider>
