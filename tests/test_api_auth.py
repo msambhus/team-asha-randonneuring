@@ -124,6 +124,107 @@ def test_google_signin_creates_user_when_new(client, app):
     mock_create.assert_called_once_with('new@example.com', 'g-sub-2')
 
 
+# ── POST /api/auth/apple (Sign in with Apple) ─────────────────────────────
+
+def _apple_claims(sub='a-sub-1', email='rider@example.com'):
+    c = {'sub': sub}
+    if email is not None:
+        c['email'] = email
+    return c
+
+
+def test_apple_signin_requires_identity_token(client, app):
+    resp = client.post('/api/auth/apple', json={})
+    assert resp.status_code == 400
+
+
+def test_apple_signin_invalid_token_401(client, app):
+    with patch('routes.api_auth._verify_apple_id_token', side_effect=ValueError('bad')):
+        resp = client.post('/api/auth/apple', json={'identity_token': 'bad'})
+    assert resp.status_code == 401
+
+
+def test_apple_signin_existing_user_mints_token(client, app):
+    user = {'id': 4, 'email': 'rider@example.com', 'google_id': None,
+            'apple_sub': 'a-sub-1', 'profile_completed': True, 'rider_id': 7}
+    with patch('routes.api_auth._verify_apple_id_token', return_value=_apple_claims()), \
+         patch('models.get_user_by_apple_sub', return_value=user), \
+         patch('models.update_user_login_time') as mock_touch, \
+         patch('models.get_user_by_id', return_value=user):
+        resp = client.post('/api/auth/apple', json={'identity_token': 'good'})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['rider_id'] == 7 and data['profile_complete'] is True
+    with app.app_context():
+        assert auth_mod.load_mobile_token(data['token']) == {'user_id': 4, 'rider_id': 7}
+    mock_touch.assert_called_once_with(4)
+
+
+def test_apple_signin_creates_user_when_new(client, app):
+    new_user = {'id': 11, 'email': 'new@example.com', 'google_id': None,
+                'apple_sub': 'a-sub-2', 'profile_completed': False, 'rider_id': None}
+    with patch('routes.api_auth._verify_apple_id_token',
+               return_value=_apple_claims(sub='a-sub-2', email='new@example.com')), \
+         patch('models.get_user_by_apple_sub', return_value=None), \
+         patch('models.create_user_apple', return_value=new_user) as mock_create:
+        resp = client.post('/api/auth/apple', json={'identity_token': 'good'})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['rider_id'] is None and data['profile_complete'] is False
+    mock_create.assert_called_once_with('new@example.com', 'a-sub-2')
+
+
+def test_apple_signin_enforces_bundle_audience(client, app):
+    """Security: the identity token is verified against OUR bundle id, so a token
+    minted for a different app (different aud) can't be accepted."""
+    app.config['APPLE_BUNDLE_ID'] = 'org.teamasha.randonneuring'
+    user = {'id': 4, 'apple_sub': 'a-sub-1', 'profile_completed': True, 'rider_id': 7}
+    with patch('routes.api_auth._verify_apple_id_token', return_value=_apple_claims()) as mock_verify, \
+         patch('models.get_user_by_apple_sub', return_value=user), \
+         patch('models.update_user_login_time'), \
+         patch('models.get_user_by_id', return_value=user):
+        client.post('/api/auth/apple', json={'identity_token': 'tok'})
+    args, _ = mock_verify.call_args
+    assert args[0] == 'tok'
+    assert args[1] == 'org.teamasha.randonneuring'
+
+
+def test_apple_signin_body_email_cannot_override_identity(client, app):
+    """Security: identity is keyed on the verified token `sub` only. A body-
+    supplied email can't map the request onto a different account, and the
+    verified claim email wins over the body email for the stored address."""
+    existing = {'id': 4, 'email': 'real@example.com', 'google_id': None,
+                'apple_sub': 'a-sub-1', 'profile_completed': True, 'rider_id': 7}
+    with patch('routes.api_auth._verify_apple_id_token',
+               return_value=_apple_claims(sub='a-sub-1', email='real@example.com')), \
+         patch('models.get_user_by_apple_sub', return_value=existing) as mock_lookup, \
+         patch('models.create_user_apple') as mock_create, \
+         patch('models.update_user_login_time'), \
+         patch('models.get_user_by_id', return_value=existing):
+        resp = client.post('/api/auth/apple',
+                           json={'identity_token': 'good', 'email': 'attacker@evil.com'})
+    assert resp.status_code == 200
+    # Lookup was by the verified sub, not the body email; existing user reused.
+    mock_lookup.assert_called_once_with('a-sub-1')
+    mock_create.assert_not_called()
+    with app.app_context():
+        assert auth_mod.load_mobile_token(resp.get_json()['token']) == {'user_id': 4, 'rider_id': 7}
+
+
+def test_apple_signin_synthesizes_email_when_hidden(client, app):
+    """Apple omits email on later logins / when hidden; a new user still gets a
+    non-null email (relay placeholder) so account creation succeeds."""
+    new_user = {'id': 12, 'email': 'a-sub-3@privaterelay.appleid.com', 'google_id': None,
+                'apple_sub': 'a-sub-3', 'profile_completed': False, 'rider_id': None}
+    with patch('routes.api_auth._verify_apple_id_token',
+               return_value=_apple_claims(sub='a-sub-3', email=None)), \
+         patch('models.get_user_by_apple_sub', return_value=None), \
+         patch('models.create_user_apple', return_value=new_user) as mock_create:
+        resp = client.post('/api/auth/apple', json={'identity_token': 'good'})
+    assert resp.status_code == 200
+    mock_create.assert_called_once_with('a-sub-3@privaterelay.appleid.com', 'a-sub-3')
+
+
 # ── POST /api/auth/demo (reviewer login) ──────────────────────────────────
 
 def test_demo_signin_disabled_returns_404(client, app):
