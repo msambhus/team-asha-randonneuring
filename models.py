@@ -1770,7 +1770,7 @@ def complete_user_profile(user_id, rider_id):
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("""UPDATE app_user SET rider_id = %s, profile_completed = TRUE 
+        cur.execute("""UPDATE app_user SET rider_id = %s, profile_completed = TRUE
                       WHERE id = %s""",
                    (rider_id, user_id))
         conn.commit()
@@ -1778,6 +1778,22 @@ def complete_user_profile(user_id, rider_id):
     except Exception as e:
         conn.rollback()
         return False
+
+def get_user_by_apple_sub(apple_sub):
+    """Get user by Sign in with Apple subject id. NOT CACHED (serverless)."""
+    return _execute("SELECT * FROM app_user WHERE apple_sub = %s", (apple_sub,)).fetchone()
+
+def create_user_apple(email, apple_sub):
+    """Create a new user from a Sign in with Apple identity (no google_id)."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""INSERT INTO app_user (email, apple_sub, profile_completed, last_login)
+                  VALUES (%s, %s, FALSE, CURRENT_TIMESTAMP)
+                  RETURNING id, email, google_id, apple_sub, profile_completed, rider_id""",
+               (email, apple_sub))
+    user = cur.fetchone()
+    conn.commit()
+    return dict(user) if user else None
 
 @cache.memoize(CACHE_TIMEOUT)
 def get_rider_by_name_and_rusa(first_name, last_name, rusa_id):

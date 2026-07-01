@@ -29,6 +29,40 @@ def _verify_google_id_token(id_token, audience):
     )
 
 
+# Sign in with Apple identity tokens are RS256 JWTs signed by Apple. We verify
+# the signature against Apple's published JWKS and check issuer + audience.
+_APPLE_JWKS_URL = 'https://appleid.apple.com/auth/keys'
+_APPLE_ISSUER = 'https://appleid.apple.com'
+# The token's `aud` is our app's bundle identifier (native Sign in with Apple).
+_APPLE_AUDIENCE_DEFAULT = 'org.teamasha.randonneuring'
+
+# One JWKS client reused across requests so we don't refetch Apple's keys on
+# every sign-in (PyJWKClient caches keys internally). Created lazily.
+_apple_jwks_client = None
+
+
+def _get_apple_jwks_client():
+    global _apple_jwks_client
+    if _apple_jwks_client is None:
+        import jwt  # PyJWT; RS256 verification uses the cryptography lib
+        _apple_jwks_client = jwt.PyJWKClient(_APPLE_JWKS_URL)
+    return _apple_jwks_client
+
+
+def _verify_apple_id_token(id_token, audience):
+    """Verify an Apple identity token and return its claims. Raises on failure.
+
+    Isolated (like _verify_google_id_token) so tests mock this one function and
+    the PyJWT / JWKS-fetch import stays lazy and out of the test env.
+    """
+    import jwt  # PyJWT; RS256 verification uses the (already-present) cryptography lib
+    signing_key = _get_apple_jwks_client().get_signing_key_from_jwt(id_token)
+    return jwt.decode(
+        id_token, signing_key.key, algorithms=['RS256'],
+        audience=audience, issuer=_APPLE_ISSUER,
+    )
+
+
 @api_auth_bp.route('/google', methods=['POST'])
 def google_signin():
     """Exchange a Google ID token for a native app bearer token.
@@ -79,6 +113,66 @@ def google_signin():
     # Token is tied to user_id always; rider_id may be None until the rider
     # completes profile setup (the app can then prompt for it). Live endpoints
     # still require a rider_id (→ 403), matching the web's profile gate.
+    token = mint_mobile_token(user['id'], rider_id)
+    return jsonify({
+        'token': token,
+        'rider_id': rider_id,
+        'profile_complete': profile_complete,
+    }), 200
+
+
+@api_auth_bp.route('/apple', methods=['POST'])
+def apple_signin():
+    """Exchange a Sign in with Apple identity token for a native app bearer token.
+
+    Body: {"identity_token": "<apple id token>", "email": "<optional>"}
+    Apple only includes the email in the token on the FIRST authorization; the
+    app may also pass it in the body on that first sign-in. On later logins we
+    already know the user by their Apple `sub`, so email is not needed.
+
+    Returns: {token, rider_id, profile_complete} — same shape as /google.
+    """
+    audience = current_app.config.get('APPLE_BUNDLE_ID') or _APPLE_AUDIENCE_DEFAULT
+
+    body = request.get_json(silent=True) or {}
+    identity_token = (body.get('identity_token') or '').strip()
+    if not identity_token:
+        return jsonify({'error': 'identity_token is required'}), 400
+
+    # Verify signature (Apple JWKS), issuer, expiry, and audience == our bundle id.
+    try:
+        claims = _verify_apple_id_token(identity_token, audience)
+    except Exception as exc:  # noqa: BLE001 — any verification failure → 401
+        current_app.logger.warning('mobile apple sign-in: token verify failed: %s', exc)
+        return jsonify({'error': 'Invalid Apple token'}), 401
+
+    apple_sub = claims.get('sub')
+    if not apple_sub:
+        return jsonify({'error': 'Apple token missing sub'}), 401
+
+    # Email: prefer the verified token claim; fall back to the client-provided
+    # value (first-login only); else synthesize a stable placeholder so the
+    # NOT NULL email column is satisfied for a user who hid their address.
+    email = (claims.get('email')
+             or (body.get('email') or '').strip()
+             or f'{apple_sub}@privaterelay.appleid.com')
+
+    # Find-or-create by Apple sub (the stable per-app user id), mirroring /google.
+    try:
+        user = models.get_user_by_apple_sub(apple_sub)
+        if not user:
+            user = models.create_user_apple(email, apple_sub)
+            if not user:
+                return jsonify({'error': 'Could not create account'}), 500
+        else:
+            models.update_user_login_time(user['id'])
+            user = models.get_user_by_id(user['id'])
+    except Exception:
+        current_app.logger.exception('mobile apple sign-in: user lookup failed')
+        return jsonify({'error': 'Account lookup failed'}), 500
+
+    rider_id = user.get('rider_id')
+    profile_complete = bool(user.get('profile_completed') and rider_id)
     token = mint_mobile_token(user['id'], rider_id)
     return jsonify({
         'token': token,
