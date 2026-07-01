@@ -792,7 +792,11 @@ _FSW_STOPS = [
 ]
 
 # Mock hourly weather data for use in fetch_stop_wind tests
-_FSW_HOURLY_TIMES = [f"2026-03-23T{h:02d}:00" for h in range(24)]
+# Must be TODAY's date: fetch_stop_wind builds arrival times from
+# datetime.now(), and get_hour_index matches forecast times against them. A
+# hardcoded past date makes every arrival fall after the forecast window, so
+# get_hour_index returns the last index for every stop (hiding per-hour logic).
+_FSW_HOURLY_TIMES = [f"{datetime.now():%Y-%m-%d}T{h:02d}:00" for h in range(24)]
 
 def _make_fsw_forecast(**kwargs):
     """Return a minimal Open-Meteo forecast dict for testing."""

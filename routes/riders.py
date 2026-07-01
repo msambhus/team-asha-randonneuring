@@ -1030,7 +1030,7 @@ def ride_all_strava_analysis(ride_id):
     import traceback
     try:
         from models import (get_ride_by_id, get_finished_riders_for_ride,
-                            get_ride_plan_stops, _execute)
+                            get_ride_plan_stops)
         from services.strava_analysis import build_comparison, fetch_and_analyze
 
         if not session.get('user_id'):
@@ -1046,11 +1046,10 @@ def ride_all_strava_analysis(ride_id):
         has_plan = bool(ride.get('ride_plan_id'))
         if has_plan:
             plan_stops = list(get_ride_plan_stops(ride['ride_plan_id']))
-            plan_row = _execute("SELECT slug, start_time FROM ride_plan WHERE id = %s",
-                                (ride['ride_plan_id'],)).fetchone()
-            if plan_row:
-                plan_slug = plan_row.get('slug')
-                plan_start_time = plan_row.get('start_time')
+            # get_ride_by_id already LEFT JOINs ride_plan, so the linked plan's
+            # slug and start_time are already on `ride` — no extra query needed.
+            plan_slug = ride.get('plan_slug')
+            plan_start_time = ride.get('plan_start_time')
 
         riders_raw = get_finished_riders_for_ride(ride_id)
 
