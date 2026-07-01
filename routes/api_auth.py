@@ -8,12 +8,52 @@ the app's native Google Sign-In) for a stateless bearer token the app sends as
 The Google account → user/rider mapping deliberately reuses the SAME model
 helpers as the web OAuth callback so the two login paths stay in lockstep.
 """
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, g
 
 import models
-from auth import mint_mobile_token
+from auth import mint_mobile_token, token_or_session_required
 
 api_auth_bp = Blueprint('api_auth', __name__)
+
+
+def _demo_rider_id():
+    """The configured demo rider id as an int, or None if unset/invalid."""
+    raw = current_app.config.get('DEMO_RIDER_ID')
+    try:
+        return int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+@api_auth_bp.route('/account', methods=['DELETE'])
+@token_or_session_required
+def delete_account():
+    """Permanently delete the authenticated user's account and data.
+
+    App Store Guideline 5.1.1(v): an app that supports account creation must let
+    users delete their account in-app. Auth accepts the mobile bearer token or a
+    web session; a rider profile is NOT required (a user who never finished
+    setup can still delete). The shared demo rider is preserved so App Review can
+    exercise deletion without wiping the demo data.
+    """
+    user_id = g.get('user_id')
+    if not user_id:
+        # Session-only callers may have a rider_id but no user_id; deletion is
+        # keyed on the app_user, so we need one.
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    demo_rider_id = _demo_rider_id()
+    preserve_rider = demo_rider_id is not None and g.get('rider_id') == demo_rider_id
+
+    try:
+        deleted = models.delete_account(user_id, preserve_rider=preserve_rider)
+    except Exception:
+        current_app.logger.exception('account deletion failed for user %s', user_id)
+        return jsonify({'error': 'Account deletion failed'}), 500
+
+    if not deleted:
+        return jsonify({'error': 'Account not found'}), 404
+    return jsonify({'deleted': True}), 200
 
 
 def _verify_google_id_token(id_token, audience):

@@ -225,6 +225,50 @@ def test_apple_signin_synthesizes_email_when_hidden(client, app):
     mock_create.assert_called_once_with('a-sub-3@privaterelay.appleid.com', 'a-sub-3')
 
 
+# ── DELETE /api/auth/account (account deletion, Guideline 5.1.1(v)) ────────
+
+def test_delete_account_requires_auth(client):
+    assert client.delete('/api/auth/account').status_code == 401
+
+
+def test_delete_account_success(client, app):
+    with patch('models.delete_account', return_value=True) as mock_del:
+        resp = client.delete('/api/auth/account', headers=_bearer(app, user_id=3, rider_id=7))
+    assert resp.status_code == 200
+    assert resp.get_json() == {'deleted': True}
+    mock_del.assert_called_once_with(3, preserve_rider=False)
+
+
+def test_delete_account_not_found_404(client, app):
+    with patch('models.delete_account', return_value=False):
+        resp = client.delete('/api/auth/account', headers=_bearer(app, user_id=999, rider_id=None))
+    assert resp.status_code == 404
+
+
+def test_delete_account_db_error_500(client, app):
+    with patch('models.delete_account', side_effect=Exception('boom')):
+        resp = client.delete('/api/auth/account', headers=_bearer(app, user_id=3, rider_id=7))
+    assert resp.status_code == 500
+
+
+def test_delete_account_without_rider_still_works(client, app):
+    """A user who never completed profile setup (rider_id None) can still delete."""
+    with patch('models.delete_account', return_value=True) as mock_del:
+        resp = client.delete('/api/auth/account', headers=_bearer(app, user_id=5, rider_id=None))
+    assert resp.status_code == 200
+    mock_del.assert_called_once_with(5, preserve_rider=False)
+
+
+def test_delete_account_preserves_shared_demo_rider(client, app):
+    """Deleting the demo/reviewer account removes the login but preserves the
+    shared demo rider so App Review can re-exercise the demo login afterwards."""
+    app.config['DEMO_RIDER_ID'] = '7'
+    with patch('models.delete_account', return_value=True) as mock_del:
+        resp = client.delete('/api/auth/account', headers=_bearer(app, user_id=42, rider_id=7))
+    assert resp.status_code == 200
+    mock_del.assert_called_once_with(42, preserve_rider=True)
+
+
 # ── POST /api/auth/demo (reviewer login) ──────────────────────────────────
 
 def test_demo_signin_disabled_returns_404(client, app):
