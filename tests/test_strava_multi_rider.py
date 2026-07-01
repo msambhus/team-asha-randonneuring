@@ -46,7 +46,8 @@ def _make_rider(rider_id=1, first_name='Alice', last_name='Smith', rusa_id=1001,
 
 
 def _make_ride(ride_id=10, ride_plan_id=5, plan_slug='test-plan', **kwargs):
-    """Build a mock ride dict as returned by get_ride_by_id_full."""
+    """Build a mock ride dict as returned by get_ride_by_id (LEFT JOINs
+    ride_plan, so plan_slug/plan_start_time are already present)."""
     return {
         'id': ride_id,
         'name': 'Test 200km Brevet',
@@ -108,7 +109,7 @@ class TestRideAllStravaAnalysisRoute:
     @patch('services.strava_analysis.fetch_and_analyze')
     @patch('models.get_ride_plan_stops', return_value=[])
     @patch('models.get_finished_riders_for_ride')
-    @patch('models.get_ride_by_id_full')
+    @patch('models.get_ride_by_id')
     def test_returns_200_for_valid_ride(self, mock_ride, mock_riders, mock_stops,
                                         mock_fetch, mock_build, mock_admin, client):
         mock_ride.return_value = _make_ride()
@@ -118,7 +119,7 @@ class TestRideAllStravaAnalysisRoute:
         resp = client.get('/ride/10/all-strava')
         assert resp.status_code == 200
 
-    @patch('models.get_ride_by_id_full')
+    @patch('models.get_ride_by_id')
     def test_returns_404_for_nonexistent_ride(self, mock_ride, client):
         mock_ride.return_value = None
         with client.session_transaction() as sess:
@@ -131,7 +132,7 @@ class TestRideAllStravaAnalysisRoute:
     @patch('services.strava_analysis.fetch_and_analyze')
     @patch('models.get_ride_plan_stops', return_value=[])
     @patch('models.get_finished_riders_for_ride')
-    @patch('models.get_ride_by_id_full')
+    @patch('models.get_ride_by_id')
     def test_private_rider_gets_error_private(self, mock_ride, mock_riders, mock_stops,
                                               mock_fetch, mock_build, mock_admin, client):
         mock_ride.return_value = _make_ride()
@@ -150,7 +151,7 @@ class TestRideAllStravaAnalysisRoute:
     @patch('services.strava_analysis.fetch_and_analyze')
     @patch('models.get_ride_plan_stops', return_value=[])
     @patch('models.get_finished_riders_for_ride')
-    @patch('models.get_ride_by_id_full')
+    @patch('models.get_ride_by_id')
     def test_rider_without_match_has_match_false(self, mock_ride, mock_riders, mock_stops,
                                                   mock_fetch, mock_build, mock_admin, client):
         mock_ride.return_value = _make_ride()
@@ -168,7 +169,7 @@ class TestRideAllStravaAnalysisRoute:
     @patch('services.strava_analysis.fetch_and_analyze')
     @patch('models.get_ride_plan_stops', return_value=[])
     @patch('models.get_finished_riders_for_ride')
-    @patch('models.get_ride_by_id_full')
+    @patch('models.get_ride_by_id')
     def test_rider_without_cached_analysis_not_fetched(self, mock_ride, mock_riders, mock_stops,
                                                         mock_fetch, mock_build, mock_admin, client):
         """Riders without a strava_ride_analysis row should NOT trigger fetch_and_analyze."""
@@ -187,7 +188,7 @@ class TestRideAllStravaAnalysisRoute:
     @patch('services.strava_analysis.fetch_and_analyze')
     @patch('models.get_ride_plan_stops', return_value=[{'name': 'Start', 'distance_miles': 0}])
     @patch('models.get_finished_riders_for_ride')
-    @patch('models.get_ride_by_id_full')
+    @patch('models.get_ride_by_id')
     def test_rider_with_cached_analysis_gets_comparison(self, mock_ride, mock_riders, mock_stops,
                                                          mock_fetch, mock_build, mock_admin, client):
         """Riders WITH cached analysis should have fetch_and_analyze + build_comparison called."""
@@ -223,7 +224,7 @@ class TestRideAllStravaAnalysisRoute:
     @patch('services.strava_analysis.fetch_and_analyze')
     @patch('models.get_ride_plan_stops', return_value=[])
     @patch('models.get_finished_riders_for_ride')
-    @patch('models.get_ride_by_id_full')
+    @patch('models.get_ride_by_id')
     def test_only_finished_riders_included(self, mock_ride, mock_riders, mock_stops,
                                             mock_fetch, mock_build, mock_admin, client):
         """The model function is called with correct params; route trusts it to filter."""
