@@ -1795,6 +1795,51 @@ def create_user_apple(email, apple_sub):
     conn.commit()
     return dict(user) if user else None
 
+def delete_account(user_id, preserve_rider=False):
+    """Permanently delete an account for App Store Guideline 5.1.1(v).
+
+    Removes the app_user (login identity) and, unless ``preserve_rider`` is set,
+    the linked rider and ALL rider-scoped data. Most rider-child tables are
+    ON DELETE CASCADE (strava_*, rider_live_*, rider_ride, custom_ride_plan,
+    gear_preference, personality_*, ...) so deleting the rider removes them; the
+    two NO ACTION references (app_user.rider_id and rider_profile.rider_id) and
+    app_user's NO ACTION referrer (access_request.reviewed_by_user_id) are
+    detached/deleted explicitly, in order.
+
+    ``preserve_rider`` keeps a shared rider intact when only the login should go
+    (the demo/reviewer account — its rider is re-linked on the next demo login).
+
+    Returns True if a user was deleted, False if no such user. Raises (after
+    rollback) on any DB error so the caller can fail cleanly rather than
+    half-delete.
+    """
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT rider_id FROM app_user WHERE id = %s", (user_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.rollback()
+            return False
+        rider_id = row['rider_id']
+
+        # Detach the one NO ACTION referrer of app_user, then delete the login
+        # account (conversation rows cascade off app_user).
+        cur.execute("UPDATE access_request SET reviewed_by_user_id = NULL WHERE reviewed_by_user_id = %s", (user_id,))
+        cur.execute("DELETE FROM app_user WHERE id = %s", (user_id,))
+
+        if rider_id and not preserve_rider:
+            # rider_profile is NO ACTION → delete before the rider; deleting the
+            # rider cascades the rest of the rider-scoped data.
+            cur.execute("DELETE FROM rider_profile WHERE rider_id = %s", (rider_id,))
+            cur.execute("DELETE FROM rider WHERE id = %s", (rider_id,))
+
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+
 @cache.memoize(CACHE_TIMEOUT)
 def get_rider_by_name_and_rusa(first_name, last_name, rusa_id):
     """Get rider by exact name match and RUSA ID."""
