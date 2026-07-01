@@ -7,16 +7,23 @@ import { Link, useFocusEffect } from 'expo-router';
 import { useRides } from '../hooks/useRides';
 import { useSession } from '../contexts/SessionContext';
 import { getSharingRideId } from '../location/backgroundLocation';
+import Onboarding from '../components/Onboarding';
 import type { RideSummary } from '../lib/types';
 
 export default function RidesScreen() {
   const { data: rides, isLoading, isError, refetch, isRefetching } = useRides();
-  const { signOut } = useSession();
+  const { signOut, profileComplete } = useSession();
   const [sharingRideId, setSharingRideId] = useState<number | null>(null);
 
   // Re-check on every focus so the badge reflects starting/stopping sharing on
   // the ride screen (only one ride broadcasts at a time).
   useFocusEffect(useCallback(() => { getSharingRideId().then(setSharingRideId); }, []));
+
+  // A signed-in account with no linked rider (profile is created on the web)
+  // can't load any data — show onboarding instead of an error (App Store 2.1a).
+  if (!profileComplete) {
+    return <Onboarding onSignOut={() => { void signOut(); }} />;
+  }
 
   if (isLoading) {
     return <View style={styles.center}><ActivityIndicator /></View>;

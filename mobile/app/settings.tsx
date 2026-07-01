@@ -7,16 +7,41 @@
  * here is a kill-switch — the backend then rejects every beacon.
  */
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSharing } from '../hooks/useSharing';
+import { useSession } from '../contexts/SessionContext';
 import { getLowPower, setLowPower, stopSharing } from '../location/backgroundLocation';
 
 export default function SettingsScreen() {
   const { enabled, isLoading, isError, refetch, setEnabled, saving } = useSharing();
+  const { deleteAccount } = useSession();
   const [error, setError] = useState<string | null>(null);
   const [lowPower, setLowPowerState] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => { getLowPower().then(setLowPowerState); }, []);
+
+  function onDeleteAccount() {
+    Alert.alert(
+      'Delete account?',
+      'This permanently deletes your account and all your data (ride history, '
+        + 'Strava connection, live-tracking, and settings). This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            const err = await deleteAccount();
+            setDeleting(false);
+            if (err) Alert.alert('Could not delete account', err);
+            // On success, signOut (inside deleteAccount) sends us back to login.
+          },
+        },
+      ],
+    );
+  }
 
   async function onToggleLowPower(on: boolean) {
     setLowPowerState(on);                  // optimistic; setLowPower is best-effort
@@ -77,6 +102,22 @@ export default function SettingsScreen() {
           a couple minutes (about a block off). Takes effect immediately while sharing.
         </Text>
       </View>
+
+      <Text style={[styles.section, styles.sectionTop]}>Account</Text>
+      <View style={styles.card}>
+        <Pressable
+          style={[styles.dangerBtn, deleting && styles.btnDisabled]}
+          onPress={onDeleteAccount}
+          disabled={deleting}
+        >
+          {deleting
+            ? <ActivityIndicator color="#b91c1c" />
+            : <Text style={styles.dangerText}>Delete account</Text>}
+        </Pressable>
+        <Text style={styles.help}>
+          Permanently deletes your account and all your data. This can't be undone.
+        </Text>
+      </View>
     </ScrollView>
   );
 }
@@ -93,4 +134,7 @@ const styles = StyleSheet.create({
   muted: { color: '#6b7280' },
   link: { color: '#2563eb', fontWeight: '600' },
   error: { color: '#b91c1c', marginTop: 10, fontSize: 13 },
+  btnDisabled: { opacity: 0.6 },
+  dangerBtn: { borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fef2f2', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  dangerText: { color: '#b91c1c', fontWeight: '700', fontSize: 15 },
 });

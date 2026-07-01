@@ -1,30 +1,34 @@
 /**
- * mobile/app/login.tsx — Google sign-in.
+ * mobile/app/login.tsx — Google + Sign in with Apple.
+ *
+ * App Store Guideline 4.8 requires a privacy-preserving login option alongside
+ * a third-party one, so we offer Sign in with Apple next to Google.
  */
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useSession } from '../contexts/SessionContext';
 
 export default function LoginScreen() {
-  const { signInWithGoogle, signInDemo } = useSession();
+  const { signInWithGoogle, signInWithApple, signInDemo } = useSession();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [appleAvailable, setAppleAvailable] = useState(false);
 
-  async function onPress() {
+  // Sign in with Apple is iOS 13+ only; hide the button where it's unavailable.
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => undefined);
+    }
+  }, []);
+
+  async function run(fn: () => Promise<string | null>) {
     setBusy(true);
     setError(null);
-    const err = await signInWithGoogle();
+    const err = await fn();
     setBusy(false);
     if (err) setError(err);
     // On success the AuthGate redirects into the app.
-  }
-
-  async function onDemo() {
-    setBusy(true);
-    setError(null);
-    const err = await signInDemo();
-    setBusy(false);
-    if (err) setError(err);
   }
 
   return (
@@ -32,14 +36,24 @@ export default function LoginScreen() {
       <Text style={styles.title}>Team Asha Randonneuring</Text>
       <Text style={styles.sub}>Live ride tracking</Text>
 
-      <Pressable style={[styles.btn, busy && styles.btnDisabled]} onPress={onPress} disabled={busy}>
+      <Pressable style={[styles.btn, busy && styles.btnDisabled]} onPress={() => run(signInWithGoogle)} disabled={busy}>
         {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Sign in with Google</Text>}
       </Pressable>
+
+      {appleAvailable ? (
+        <AppleAuthentication.AppleAuthenticationButton
+          buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+          cornerRadius={10}
+          style={styles.appleBtn}
+          onPress={() => run(signInWithApple)}
+        />
+      ) : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {/* Reviewer/demo entry — works only when the server has demo mode enabled. */}
-      <Pressable onPress={onDemo} disabled={busy} hitSlop={8} style={styles.demoLink}>
+      <Pressable onPress={() => run(signInDemo)} disabled={busy} hitSlop={8} style={styles.demoLink}>
         <Text style={styles.demoText}>Demo login (reviewers)</Text>
       </Pressable>
     </View>
@@ -53,6 +67,7 @@ const styles = StyleSheet.create({
   btn: { backgroundColor: '#1a2a4f', paddingVertical: 14, paddingHorizontal: 28, borderRadius: 10, minWidth: 240, alignItems: 'center' },
   btnDisabled: { opacity: 0.6 },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  appleBtn: { width: 240, height: 48, marginTop: 4 },
   error: { color: '#b91c1c', marginTop: 16, textAlign: 'center' },
   demoLink: { marginTop: 20, paddingVertical: 6 },
   demoText: { color: '#6b7280', fontSize: 13, textDecorationLine: 'underline' },
