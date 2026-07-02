@@ -183,6 +183,15 @@ def apple_signin():
         identity_token = identity_token[7:].strip()
     identity_token = identity_token.strip('"').strip()
     if not identity_token:
+        _raw = body.get('identity_token')
+        current_app.logger.warning(
+            'mobile apple sign-in: empty token | body_keys=%s raw_type=%s raw_len=%s '
+            'ctype=%r content_len=%s email=%r',
+            list(body.keys()), type(_raw).__name__,
+            (len(_raw) if isinstance(_raw, str) else 'n/a'),
+            request.content_type, request.content_length,
+            (body.get('email') or '')[:30] if isinstance(body.get('email'), str) else body.get('email'),
+        )
         return jsonify({'error': 'identity_token is required'}), 400
 
     # Verify signature (Apple JWKS), issuer, expiry, and audience == our bundle id.
