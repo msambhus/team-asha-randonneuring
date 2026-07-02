@@ -64,10 +64,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 8 },
   title: { fontSize: 24, fontWeight: '700' },
   sub: { color: '#6b7280', marginBottom: 24 },
-  btn: { backgroundColor: '#1a2a4f', paddingVertical: 14, paddingHorizontal: 28, borderRadius: 10, minWidth: 240, alignItems: 'center' },
+  // Google + Apple buttons share identical dimensions so they line up 1:1.
+  btn: { backgroundColor: '#1a2a4f', width: 240, height: 48, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   btnDisabled: { opacity: 0.6 },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-  appleBtn: { width: 240, height: 48, marginTop: 4 },
+  appleBtn: { width: 240, height: 48 },
   error: { color: '#b91c1c', marginTop: 16, textAlign: 'center' },
   demoLink: { marginTop: 20, paddingVertical: 6 },
   demoText: { color: '#6b7280', fontSize: 13, textDecorationLine: 'underline' },
