@@ -176,6 +176,12 @@ def apple_signin():
 
     body = request.get_json(silent=True) or {}
     identity_token = (body.get('identity_token') or '').strip()
+    # Be tolerant of clients that accidentally wrap the token: a stray "Bearer "
+    # prefix or surrounding quotes corrupt the JWT header segment and surface as
+    # PyJWT "Invalid header padding". Normalize before verifying.
+    if identity_token[:7].lower() == 'bearer ':
+        identity_token = identity_token[7:].strip()
+    identity_token = identity_token.strip('"').strip()
     if not identity_token:
         return jsonify({'error': 'identity_token is required'}), 400
 
@@ -183,7 +189,14 @@ def apple_signin():
     try:
         claims = _verify_apple_id_token(identity_token, audience)
     except Exception as exc:  # noqa: BLE001 — any verification failure → 401
-        current_app.logger.warning('mobile apple sign-in: token verify failed: %s', exc)
+        # Log a non-sensitive fingerprint (JWT header is public; segment lengths
+        # reveal structure) so a malformed token can be diagnosed without leaking
+        # the payload/signature.
+        _segs = identity_token.split('.')
+        current_app.logger.warning(
+            'mobile apple sign-in: token verify failed: %s | len=%d segs=%d seglens=%s head=%r',
+            exc, len(identity_token), len(_segs), [len(s) for s in _segs], identity_token[:24],
+        )
         return jsonify({'error': 'Invalid Apple token'}), 401
 
     apple_sub = claims.get('sub')
