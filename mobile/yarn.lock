@@ -2962,6 +2962,11 @@ expect@^30.0.0:
     jest-mock "30.4.1"
     jest-util "30.4.1"
 
+expo-apple-authentication@~56.0.4:
+  version "56.0.4"
+  resolved "https://registry.yarnpkg.com/expo-apple-authentication/-/expo-apple-authentication-56.0.4.tgz#138c8b2933ab80c19e873efe1233be95324a9211"
+  integrity sha512-y9cIfulRCKyWrbWBx6lV172dnJZ+aNHdyEPC7tIlGJAO2zn3J1Vq6/mcKr2eynzjdt3e5Z02qeZWQN2R7rcbrg==
+
 expo-asset@~56.0.17:
   version "56.0.17"
   resolved "https://registry.yarnpkg.com/expo-asset/-/expo-asset-56.0.17.tgz#e58dbeaa45dfe6ad3ee4a3000182ed17af4f54e2"
