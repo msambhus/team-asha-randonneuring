@@ -242,3 +242,41 @@ class TestRideAllStravaAnalysisRoute:
         """Route should redirect to login when no session user_id."""
         resp = client.get('/ride/10/all-strava')
         assert resp.status_code == 302
+
+    @patch('routes.riders.is_admin_user', return_value=False)
+    @patch('routes.riders.get_all_ride_plans')
+    @patch('models.get_ride_plan_stops', return_value=[{'name': 'Start', 'distance_miles': 0}])
+    @patch('models.get_finished_riders_for_ride', return_value=[])
+    @patch('models.get_ride_by_id')
+    def test_null_fk_resolves_plan_by_name_match(self, mock_ride, mock_riders, mock_stops,
+                                                 mock_all_plans, mock_admin, client):
+        """A ride whose ride_plan_id FK is NULL still resolves its plan by route-name
+        match (web parity), so analysis loads the plan instead of showing 'no plan'."""
+        mock_ride.return_value = _make_ride(ride_plan_id=None, plan_slug=None,
+                                            plan_start_time=None)
+        mock_all_plans.return_value = [
+            {'id': 77, 'name': 'Test 200km Brevet', 'slug': 'test-200km', 'start_time': '06:00'},
+            {'id': 88, 'name': 'Unrelated Coastal 300k', 'slug': 'unrelated-300k'},
+        ]
+        with client.session_transaction() as sess:
+            sess['user_id'] = 1
+        resp = client.get('/ride/10/all-strava')
+        assert resp.status_code == 200
+        # Plan stops loaded for the NAME-MATCHED plan id (77), despite the null FK.
+        mock_stops.assert_called_once_with(77)
+
+    @patch('routes.riders.is_admin_user', return_value=False)
+    @patch('routes.riders.get_all_ride_plans')
+    @patch('models.get_ride_plan_stops', return_value=[])
+    @patch('models.get_finished_riders_for_ride', return_value=[])
+    @patch('models.get_ride_by_id')
+    def test_fk_link_skips_name_match(self, mock_ride, mock_riders, mock_stops,
+                                      mock_all_plans, mock_admin, client):
+        """When the FK is present, the plan comes from the FK — no name-match lookup."""
+        mock_ride.return_value = _make_ride(ride_plan_id=5)
+        with client.session_transaction() as sess:
+            sess['user_id'] = 1
+        resp = client.get('/ride/10/all-strava')
+        assert resp.status_code == 200
+        mock_stops.assert_called_once_with(5)
+        mock_all_plans.assert_not_called()

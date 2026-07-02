@@ -1040,16 +1040,24 @@ def ride_all_strava_analysis(ride_id):
         if not ride:
             abort(404)
 
+        # Resolve the base plan FK-first, then by route-name match (web parity —
+        # see services/plan_match): a ride whose ride_plan_id FK is NULL still has
+        # a plan when its name matches one. get_ride_by_id LEFT JOINs ride_plan, so
+        # the FK-linked plan's slug/start_time are already on `ride`.
         plan_stops = []
-        plan_slug = None
-        plan_start_time = None
-        has_plan = bool(ride.get('ride_plan_id'))
+        plan_slug = ride.get('plan_slug')
+        plan_start_time = ride.get('plan_start_time')
+        base_plan_id = ride.get('ride_plan_id')
+        if not base_plan_id:
+            from services.plan_match import match_plan
+            matched = match_plan(ride['name'], get_all_ride_plans())
+            if matched:
+                base_plan_id = matched['id']
+                plan_slug = matched['slug']
+                plan_start_time = plan_start_time or matched.get('start_time')
+        has_plan = bool(base_plan_id)
         if has_plan:
-            plan_stops = list(get_ride_plan_stops(ride['ride_plan_id']))
-            # get_ride_by_id already LEFT JOINs ride_plan, so the linked plan's
-            # slug and start_time are already on `ride` — no extra query needed.
-            plan_slug = ride.get('plan_slug')
-            plan_start_time = ride.get('plan_start_time')
+            plan_stops = list(get_ride_plan_stops(base_plan_id))
 
         riders_raw = get_finished_riders_for_ride(ride_id)
 
@@ -1165,18 +1173,29 @@ def ride_strava_analysis(rusa_id, ride_id):
                                is_own_profile=is_own_profile,
                                stop_wind=None)
 
-    # Load plan stops if available
+    # Load plan stops if available. Resolve the base plan FK-first, then by
+    # route-name match (web parity — see services/plan_match): a ride whose
+    # ride_plan_id FK is NULL still has a plan when its name matches one, and the
+    # rider may have customized THAT plan. Without this the analysis wrongly shows
+    # "no plan" for name-linked rides (e.g. RUSA-scraped events never FK-linked).
     plan_stops = []
     custom_stops = None
-    has_plan = bool(ride.get('ride_plan_id'))
-    has_custom = False
+    base_plan_id = ride.get('ride_plan_id')
     plan_slug = ride.get('plan_slug')
+    if not base_plan_id:
+        from services.plan_match import match_plan
+        matched = match_plan(ride['name'], get_all_ride_plans())
+        if matched:
+            base_plan_id = matched['id']
+            plan_slug = matched['slug']
+    has_plan = bool(base_plan_id)
+    has_custom = False
 
     if has_plan:
-        plan_stops = get_ride_plan_stops(ride['ride_plan_id'])
+        plan_stops = get_ride_plan_stops(base_plan_id)
 
         # Check for custom plan
-        custom_plan = get_custom_plan(rider['id'], ride['ride_plan_id'])
+        custom_plan = get_custom_plan(rider['id'], base_plan_id)
         if custom_plan:
             has_custom = True
             from services.custom_plan_service import get_merged_plan_stops
