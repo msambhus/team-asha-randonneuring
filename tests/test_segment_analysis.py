@@ -329,3 +329,19 @@ def test_headwind_narrative_handles_decimal_wind():
                                    ride_baseline={}, band_baseline={})
     assert 'C1' in out
     assert 'mph headwind' in out['C1']
+
+
+def test_same_route_time_comparison_sentence():
+    """A segment slower than the rider's same-route average produces a time note."""
+    rows = [{
+        'location': 'Aptos', 'is_extra': False, 'distance_miles': 50.0,
+        'actual_segment_min': 225, 'actual_speed_mph': 12.5, 'actual_avg_watts': 170,
+        'actual_avg_cadence': 82, 'actual_grade_pct': 1.0,
+        'vs_prev': {'watts_pct': 0, 'speed_pct': 0, 'cadence_pct': 0},
+    }]
+    same_route = {'Aptos': {'avg_segment_min': 210.0, 'avg_speed_mph': 13.5,
+                            'avg_watts': 185, 'avg_cadence': 85, 'n_rides': 3}}
+    out = build_segment_narratives(rows, same_route_baseline=same_route)
+    assert 'Aptos' in out
+    assert '15 min slower' in out['Aptos'] and 'on this route' in out['Aptos']
+    assert '3 prior rides' in out['Aptos']

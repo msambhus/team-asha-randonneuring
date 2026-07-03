@@ -161,7 +161,7 @@ def compute_gradient_band_baseline(rider_id, exclude_ride_id=None, max_rides=15)
 
 
 def build_segment_narratives(rows, stop_wind=None, ride_baseline=None,
-                             band_baseline=None):
+                             band_baseline=None, same_route_baseline=None):
     """Build a rule-based factual narrative for each planned segment.
 
     Composes 1-3 short sentences per segment from whatever signals are present.
@@ -182,6 +182,7 @@ def build_segment_narratives(rows, stop_wind=None, ride_baseline=None,
     """
     stop_wind = stop_wind or {}
     band_baseline = band_baseline or {}
+    same_route_baseline = same_route_baseline or {}
 
     narratives = {}
     for row in rows or []:
@@ -215,6 +216,22 @@ def build_segment_narratives(rows, stop_wind=None, ride_baseline=None,
                 f"You averaged {watts} W here — {abs(watts_pct)}% {direction} "
                 f"than the previous segment."
             )
+
+        # 1b) Same-route history: time at this waypoint vs the rider's average on
+        # prior rides of the SAME route.
+        sr = same_route_baseline.get(location) or {}
+        seg_min = row.get('actual_segment_min')
+        sr_min = sr.get('avg_segment_min')
+        if seg_min is not None and sr_min:
+            diff = round(seg_min - sr_min)
+            if abs(diff) >= 2:
+                slower = 'slower' if diff > 0 else 'faster'
+                n = sr.get('n_rides', 0)
+                sentences.append(
+                    f"You rode this segment in {seg_min} min — about {abs(diff)} min "
+                    f"{slower} than your usual {round(sr_min)} min on this route "
+                    f"(over {n} prior ride{'s' if n != 1 else ''})."
+                )
 
         # 2) Slow-despite-flat + headwind.
         if (is_flat and speed_pct is not None and speed_pct < 0
