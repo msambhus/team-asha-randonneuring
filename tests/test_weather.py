@@ -1839,6 +1839,7 @@ class TestStravaAnalysisWind:
                  patch('models.get_strava_ride_match', return_value=match), \
                  patch('models.get_strava_connection', return_value=None), \
                  patch('models.get_custom_plan', return_value=None), \
+                 patch('routes.riders.get_all_ride_plans', return_value=[]), \
                  patch('routes.riders.get_rider_by_rusa', return_value=rider), \
                  patch('services.strava_analysis.find_matching_activity', return_value=None), \
                  patch('services.strava_analysis.fetch_and_analyze', return_value=mock_analysis), \
@@ -1853,6 +1854,52 @@ class TestStravaAnalysisWind:
         call_kwargs = mock_render.call_args[1]
         assert call_kwargs.get('stop_wind') is None, \
             f"stop_wind should be None when no plan, got: {call_kwargs.get('stop_wind')}"
+
+    def test_null_fk_resolves_plan_and_custom_by_name(self, app):
+        """A ride with a NULL ride_plan_id FK still resolves its plan — and the
+        rider's custom plan on it — by route-name match (the reported bug: a
+        RUSA-scraped 600k with a customized plan showed 'no plan')."""
+        from unittest.mock import patch
+
+        rider = _make_rider_row()
+        ride = dict(_make_ride_row())
+        ride['ride_plan_id'] = None          # never FK-linked (typical RUSA event)
+        ride['plan_slug'] = None
+        ride['name'] = 'Surf City 600k Brevet'
+        match = _make_match_row()
+        comparison = _make_comparison_obj()
+        mock_analysis = {'error': None, 'detected_stops': []}
+        matched_plan = {'id': 60, 'name': 'SCR Surf City 600k',
+                        'slug': 'scr-surf-city-600k', 'start_time': None}
+        custom_plan = {'id': 40}
+
+        with app.test_request_context():
+            with patch('models.get_ride_by_id_full', return_value=ride), \
+                 patch('models.get_strava_ride_match', return_value=match), \
+                 patch('models.get_strava_connection', return_value=None), \
+                 patch('routes.riders.get_all_ride_plans', return_value=[matched_plan]), \
+                 patch('models.get_ride_plan_stops',
+                       return_value=[{'location': 'Start', 'distance_miles': 0.0}]), \
+                 patch('models.get_custom_plan', return_value=custom_plan) as mock_custom, \
+                 patch('services.custom_plan_service.get_merged_plan_stops',
+                       return_value=([{'location': 'Start', 'distance_miles': 0.0}], None)), \
+                 patch('routes.riders.get_ride_plan_by_slug', return_value=None), \
+                 patch('routes.riders.get_rider_by_rusa', return_value=rider), \
+                 patch('services.strava_analysis.find_matching_activity', return_value=None), \
+                 patch('services.strava_analysis.fetch_and_analyze', return_value=mock_analysis), \
+                 patch('services.strava_analysis.build_comparison', return_value=comparison), \
+                 patch('routes.riders.render_template', return_value='') as mock_render, \
+                 patch('routes.riders.session', {'rider_id': 999}):
+                from routes.riders import ride_strava_analysis
+                ride_strava_analysis(rusa_id=1234, ride_id=99)
+
+        # Custom plan looked up with the NAME-MATCHED base plan id (60), not the null FK.
+        mock_custom.assert_called_once()
+        assert mock_custom.call_args[0][1] == 60
+        kw = mock_render.call_args[1]
+        assert kw.get('has_plan') is True
+        assert kw.get('has_custom') is True
+        assert kw.get('plan_slug') == 'scr-surf-city-600k'
 
     def test_has_plan_no_rwgps_route_passes_stop_wind_none(self, app):
         """HIST-02: has_plan=True but no RWGPS route → stop_wind=None, no error."""
