@@ -535,6 +535,56 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
                 stopped += dt
         return round(stopped / 60, 1) if stopped > 0 else None
 
+    # Extra per-segment streams (cadence/altitude/grade are fetched + cached but
+    # were previously unused). All are index-aligned with dist_stream_mi.
+    cadence_stream = streams.get('cadence', []) if streams else []
+    altitude_stream = streams.get('altitude', []) if streams else []
+    grade_stream = streams.get('grade_smooth', []) if streams else []
+
+    def avg_grade_in_range(start_mi, end_mi):
+        """Average (signed) grade percent over a mile range. Unlike
+        avg_stream_in_range this keeps negatives (descents)."""
+        if not grade_stream or not dist_stream_mi or len(grade_stream) != len(dist_stream_mi):
+            return None
+        vals = [grade_stream[i] for i in range(len(dist_stream_mi))
+                if start_mi <= dist_stream_mi[i] <= end_mi and grade_stream[i] is not None]
+        return round(sum(vals) / len(vals), 1) if vals else None
+
+    def elev_gain_in_range(start_mi, end_mi):
+        """Sum of positive altitude deltas (feet) — the climbing done in a segment."""
+        if not altitude_stream or not dist_stream_mi or len(altitude_stream) != len(dist_stream_mi):
+            return None
+        idx = [i for i in range(len(dist_stream_mi)) if start_mi <= dist_stream_mi[i] <= end_mi]
+        if len(idx) < 2:
+            return None
+        gain_m = 0.0
+        for a, b in zip(idx, idx[1:]):
+            d = altitude_stream[b] - altitude_stream[a]
+            if d and d > 0:
+                gain_m += d
+        return round(gain_m * 3.28084)
+
+    def normalized_power_in_range(start_mi, end_mi):
+        """Approximate normalized power (W): 4th-root of the mean of 30-sample
+        rolling-average power^4. Needs >=30 power samples in the segment."""
+        if not watts_stream or not dist_stream_mi or len(watts_stream) != len(dist_stream_mi):
+            return None
+        seg = [watts_stream[i] for i in range(len(dist_stream_mi))
+               if start_mi <= dist_stream_mi[i] <= end_mi and watts_stream[i] is not None]
+        if len(seg) < 30:
+            return None
+        from collections import deque
+        window, run, q, rolling = 30, 0.0, deque(), []
+        for w in seg:
+            q.append(w); run += w
+            if len(q) > window:
+                run -= q.popleft()
+            if len(q) == window:
+                rolling.append(run / window)
+        if not rolling:
+            return None
+        return round((sum(p ** 4 for p in rolling) / len(rolling)) ** 0.25)
+
     actual_elevation_ft = (activity.get('total_elevation_gain') or 0) * 3.28084
     actual_avg_speed_mph = (activity.get('average_speed') or 0) * 2.23694
 
@@ -788,6 +838,7 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
     prev_planned_departure = 0  # same, but only for planned rows
     prev_dist = 0.0
     prev_planned_dist = 0.0
+    prev_seg_metrics = {}  # last planned segment's power/speed/cadence for vs_prev
     for row in rows:
         cur_dist = row['distance_miles']
         is_extra = row.get('is_extra', False)
@@ -804,9 +855,13 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         # and again via stops_in_seg.
         row_location = row.get('location') if not is_extra else None
 
-        # Per-segment HR and power from Strava streams
+        # Per-segment HR, power, cadence, climb + gradient from Strava streams
         row['actual_avg_hr'] = avg_stream_in_range(hr_stream, from_dist, cur_dist) if seg_dist > 0 else None
         row['actual_avg_watts'] = avg_stream_in_range(watts_stream, from_dist, cur_dist) if seg_dist > 0 else None
+        row['actual_avg_cadence'] = avg_stream_in_range(cadence_stream, from_dist, cur_dist) if seg_dist > 0 else None
+        row['actual_np_watts'] = normalized_power_in_range(from_dist, cur_dist) if seg_dist > 0 else None
+        row['actual_elev_gain_ft'] = elev_gain_in_range(from_dist, cur_dist) if seg_dist > 0 else None
+        row['actual_grade_pct'] = avg_grade_in_range(from_dist, cur_dist) if seg_dist > 0 else None
 
         if row['actual_cum_time_min'] is not None:
             actual_arrival = row.get('actual_arrival_time_min')
@@ -843,6 +898,23 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         )
         unplanned = (raw_stopped - known_stops_in_seg) if raw_stopped else None
         row['actual_seg_break_min'] = round(unplanned, 1) if unplanned and unplanned > 0.5 else None
+
+        # Comparison vs the previous (non-extra) segment: % change in the rider's
+        # power / speed / cadence. Drives the "X% lower than the previous segment"
+        # narrative. Only planned segments participate (extras are tiny sub-legs).
+        row['vs_prev'] = None
+        if not is_extra and seg_dist > 0:
+            vp = {}
+            for key, cur in (('watts', row.get('actual_avg_watts')),
+                             ('speed', row.get('actual_speed_mph')),
+                             ('cadence', row.get('actual_avg_cadence'))):
+                prev = prev_seg_metrics.get(key)
+                if prev and cur:
+                    vp[f'{key}_pct'] = round((cur - prev) / prev * 100)
+            row['vs_prev'] = vp or None
+            prev_seg_metrics = {'watts': row.get('actual_avg_watts'),
+                                'speed': row.get('actual_speed_mph'),
+                                'cadence': row.get('actual_avg_cadence')}
 
         # Always advance prev_dist; advance prev_planned_dist only for planned rows
         prev_dist = cur_dist
