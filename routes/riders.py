@@ -1317,20 +1317,25 @@ def ride_strava_analysis(rusa_id, ride_id):
     if isinstance(comparison, dict) and comparison.get('rows'):
         try:
             from models import get_rider_activity_baseline
-            from services import segment_analysis, ride_coach
+            from services import segment_analysis, ride_coach, route_history
             ride_baseline = get_rider_activity_baseline(rider['id'])
             band_baseline = segment_analysis.compute_gradient_band_baseline(
                 rider['id'], exclude_ride_id=ride['id'])
+            # Rider's average per-waypoint on PRIOR rides of the SAME route.
+            same_route_baseline = route_history.compute_same_route_segment_baseline(
+                rider['id'], base_plan_id, exclude_ride_id=ride['id'])
             narratives = segment_analysis.build_segment_narratives(
                 comparison['rows'], stop_wind=stop_wind,
-                ride_baseline=ride_baseline, band_baseline=band_baseline)
+                ride_baseline=ride_baseline, band_baseline=band_baseline,
+                same_route_baseline=same_route_baseline)
             overall_narrative = segment_analysis.build_overall_narrative(
                 comparison['summary'], hr_power=comparison.get('hr_power'),
                 ride_baseline=ride_baseline)
             coaching = ride_coach.generate_ride_coaching(
                 rider['id'], ride['id'], match['id'], dict(match),
                 comparison['rows'], comparison['summary'], comparison.get('hr_power'),
-                stop_wind, ride_baseline, band_baseline, narratives)
+                stop_wind, ride_baseline, band_baseline, narratives,
+                same_route_baseline=same_route_baseline)
             coach_seg = (coaching or {}).get('per_segment', {})
             for loc in set(narratives) | set(coach_seg):
                 segment_eval[loc] = {'narrative': narratives.get(loc),

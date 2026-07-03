@@ -145,7 +145,9 @@ def test_system_message_contains_no_rider_data(monkeypatch):
     # Rider data must appear ONLY in the user message.
     assert 'Pescadero Control' not in system_msg
     assert '182' not in system_msg
-    assert 'headwind' not in system_msg
+    # The system prompt describes wind as a concept (may say "headwind"); what must
+    # NOT leak is the rider's actual wind DATA (e.g. the specific mph value).
+    assert 'weather=' not in system_msg
     assert str(_ACTIVITY['strava_activity_id']) not in system_msg
     # And it must actually be present in the user (data) message.
     assert 'Pescadero Control' in user_msg

@@ -1934,6 +1934,7 @@ class TestStravaAnalysisWind:
                  patch('models.get_rider_activity_baseline',
                        return_value={'n_rides': 10, 'avg_speed_mph': 14.0}), \
                  patch('services.segment_analysis.compute_gradient_band_baseline', return_value={}), \
+                 patch('services.route_history.compute_same_route_segment_baseline', return_value={}), \
                  patch('services.segment_analysis.build_segment_narratives',
                        return_value={'Control 1': 'You averaged 180 W, 10% lower than the previous segment.'}), \
                  patch('services.segment_analysis.build_overall_narrative',
