@@ -308,3 +308,24 @@ def test_overall_np_intensity_vs_baseline():
 def test_overall_empty_when_nothing_meaningful():
     summary = {'speed_delta_mph': 0.1}   # below the 0.3 threshold
     assert build_overall_narrative(summary) == []
+
+
+def test_headwind_narrative_handles_decimal_wind():
+    """Regression: wind read back from ride_wind_data comes as Decimal; the
+    headwind sentence must not blow up on Decimal * float (prod TA-208 bug)."""
+    from decimal import Decimal
+    rows = [{
+        'location': 'C1', 'is_extra': False, 'distance_miles': 50.0,
+        'actual_avg_watts': 170, 'actual_speed_mph': 12.5, 'actual_avg_cadence': 82,
+        'actual_grade_pct': 0.5, 'actual_elev_gain_ft': 50,
+        'vs_prev': {'watts_pct': -8, 'speed_pct': -11, 'cadence_pct': -5},
+    }]
+    stop_wind = {'C1': {
+        'wind_type': 'headwind',
+        'headwind_kmh': Decimal('18.4'), 'crosswind_kmh': Decimal('2.1'),
+        'wind_speed_mph': Decimal('12.0'), 'temperature_c': Decimal('14.0'),
+    }}
+    out = build_segment_narratives(rows, stop_wind=stop_wind,
+                                   ride_baseline={}, band_baseline={})
+    assert 'C1' in out
+    assert 'mph headwind' in out['C1']

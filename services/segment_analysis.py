@@ -221,7 +221,9 @@ def build_segment_narratives(rows, stop_wind=None, ride_baseline=None,
                 and wind.get('wind_type') == 'headwind'):
             headwind_kmh = wind.get('headwind_kmh')
             if headwind_kmh is not None:
-                headwind_mph = round(headwind_kmh * KMH_TO_MPH, 1)
+                # Wind comes from the DB (ride_wind_data NUMERIC) as Decimal;
+                # coerce so Decimal * float doesn't blow up the whole narrative.
+                headwind_mph = round(float(headwind_kmh) * KMH_TO_MPH, 1)
                 sentences.append(
                     f"Your speed dropped {abs(speed_pct)}% on flat ground — you "
                     f"were into a {headwind_mph} mph headwind."
