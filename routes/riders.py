@@ -1310,13 +1310,46 @@ def ride_strava_analysis(rusa_id, ride_id):
             )
             stop_wind = None
 
+    # --- Rich per-segment analysis + coach (best-effort; must never block render) ---
+    segment_eval = {}            # {location: {'narrative': str|None, 'coach': str|None}}
+    overall_narrative = []       # rule-based overall observations
+    ride_recommendations = None  # LLM overall {'summary', 'recommendations'}
+    if isinstance(comparison, dict) and comparison.get('rows'):
+        try:
+            from models import get_rider_activity_baseline
+            from services import segment_analysis, ride_coach
+            ride_baseline = get_rider_activity_baseline(rider['id'])
+            band_baseline = segment_analysis.compute_gradient_band_baseline(
+                rider['id'], exclude_ride_id=ride['id'])
+            narratives = segment_analysis.build_segment_narratives(
+                comparison['rows'], stop_wind=stop_wind,
+                ride_baseline=ride_baseline, band_baseline=band_baseline)
+            overall_narrative = segment_analysis.build_overall_narrative(
+                comparison['summary'], hr_power=comparison.get('hr_power'),
+                ride_baseline=ride_baseline)
+            coaching = ride_coach.generate_ride_coaching(
+                rider['id'], ride['id'], match['id'], dict(match),
+                comparison['rows'], comparison['summary'], comparison.get('hr_power'),
+                stop_wind, ride_baseline, band_baseline, narratives)
+            coach_seg = (coaching or {}).get('per_segment', {})
+            for loc in set(narratives) | set(coach_seg):
+                segment_eval[loc] = {'narrative': narratives.get(loc),
+                                     'coach': coach_seg.get(loc)}
+            ride_recommendations = (coaching or {}).get('overall')
+        except Exception:
+            current_app.logger.exception(
+                'ride_strava_analysis: rich analysis failed for ride %s', ride_id)
+
     return render_template('strava_ride_analysis.html',
                            rider=rider, ride=ride, activity=dict(match),
                            comparison=comparison, error=None,
                            has_plan=has_plan, has_custom=has_custom,
                            plan_slug=plan_slug,
                            is_own_profile=is_own_profile,
-                           stop_wind=stop_wind)
+                           stop_wind=stop_wind,
+                           segment_eval=segment_eval,
+                           overall_narrative=overall_narrative,
+                           ride_recommendations=ride_recommendations)
 
 
 @riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/strava-retry', methods=['POST'])

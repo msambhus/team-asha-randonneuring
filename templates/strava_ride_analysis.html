@@ -526,8 +526,10 @@
     <th style="text-align:right;">Bank</th>
     {% if comparison.hr_power %}
     <th style="text-align:right;">HR</th>
-    <th style="text-align:right;">W</th>
+    <th style="text-align:right;" title="Average power (normalized power shown below)">W</th>
+    <th style="text-align:right;" title="Average cadence (rpm)">Cad</th>
     {% endif %}
+    <th style="text-align:right;" title="Elevation gain and average gradient for the segment">Climb</th>
     <th style="text-align:right;">&Delta;</th>
     {% if stop_wind %}<th style="text-align:center;">Actual Wind</th><th style="text-align:center;">Temp</th>{% endif %}
 </tr>
@@ -616,9 +618,17 @@
         {% if row.actual_avg_hr %}{{ row.actual_avg_hr }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
     </td>
     <td style="text-align:right;font-size:0.7rem;color:#7c3aed;">
-        {% if row.actual_avg_watts %}{{ row.actual_avg_watts }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+        {% if row.actual_avg_watts %}{{ row.actual_avg_watts }}{% if row.actual_np_watts %}<div style="font-size:0.6rem;color:#a78bfa;" title="Normalized power">NP {{ row.actual_np_watts }}</div>{% endif %}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+    </td>
+    <td style="text-align:right;font-size:0.7rem;color:#0891b2;">
+        {% if row.actual_avg_cadence %}{{ row.actual_avg_cadence }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
     </td>
     {% endif %}
+
+    {# Climb: elevation gain + average gradient for the segment #}
+    <td style="text-align:right;font-size:0.7rem;color:#65a30d;">
+        {% if row.actual_elev_gain_ft is not none and not row.is_extra %}{{ row.actual_elev_gain_ft }}&nbsp;ft{% if row.actual_grade_pct is not none %}<div style="font-size:0.6rem;color:#84cc16;">{{ row.actual_grade_pct }}%</div>{% endif %}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+    </td>
 
     {# Delta (h:mm against custom/primary plan) #}
     <td style="text-align:right;font-weight:700;">
@@ -647,6 +657,16 @@
     </td>
     {% endif %}
 </tr>
+{# Per-segment analysis: rule-based narrative + LLM coach note (best-effort) #}
+{% set ev = segment_eval.get(row.location) if segment_eval else None %}
+{% if ev and (ev.narrative or ev.coach) and not row.is_extra %}
+<tr class="segment-analysis-row">
+    <td colspan="20" style="padding:6px 12px 10px;background:#f8fafc;border-bottom:1px solid #eef2f7;">
+        {% if ev.narrative %}<div style="font-size:0.78rem;color:#334155;line-height:1.45;">{{ ev.narrative }}</div>{% endif %}
+        {% if ev.coach %}<div style="font-size:0.78rem;color:#0369a1;line-height:1.45;margin-top:3px;"><span style="font-weight:600;">Coach:</span> {{ ev.coach }}</div>{% endif %}
+    </td>
+</tr>
+{% endif %}
 {% endfor %}
 </tbody>
 </table>
@@ -659,7 +679,30 @@
     &nbsp; | Arrow size = wind speed (mph)
 </div>
 {% endif %}
+
+{# --- Coach's Read: overall observations + LLM recommendations --- #}
+{% if ride_recommendations or overall_narrative %}
+<div class="analysis-summary" style="margin-top:24px;background:white;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <h3 style="margin-top:0;">&#x1f9ed; Coach's Read</h3>
+    {% if ride_recommendations and ride_recommendations.summary %}
+    <p style="color:var(--text);line-height:1.5;">{{ ride_recommendations.summary }}</p>
+    {% endif %}
+    {% if overall_narrative %}
+    <ul style="margin:8px 0;padding-left:20px;color:var(--text-muted,#475569);font-size:0.9rem;">
+        {% for obs in overall_narrative %}<li style="margin-bottom:4px;">{{ obs }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if ride_recommendations and ride_recommendations.recommendations %}
+    <div style="margin-top:12px;">
+        <div style="font-weight:600;color:var(--text);margin-bottom:6px;">Recommendations to improve</div>
+        <ul style="margin:0;padding-left:20px;color:var(--text);font-size:0.9rem;line-height:1.5;">
+            {% for rec in ride_recommendations.recommendations %}<li style="margin-bottom:5px;">{{ rec }}</li>{% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+    <div style="margin-top:12px;font-size:0.72rem;color:var(--text-light,#94a3b8);">Automated analysis &mdash; use your own judgment.</div>
 </div>
+{% endif %}
 
 {# --- Chart.js --- #}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>

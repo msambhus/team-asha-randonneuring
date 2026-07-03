@@ -1901,6 +1901,88 @@ class TestStravaAnalysisWind:
         assert kw.get('has_custom') is True
         assert kw.get('plan_slug') == 'scr-surf-city-600k'
 
+    def test_rich_analysis_passed_to_template(self, app):
+        """Segment narratives + LLM coach notes + overall recommendations are
+        assembled and passed to the template when a comparison exists."""
+        from unittest.mock import patch
+
+        rider = _make_rider_row()
+        ride = dict(_make_ride_row())
+        match = _make_match_row()
+        mock_analysis = {'error': None, 'detected_stops': [], 'streams': {}}
+        comparison_dict = {
+            'rows': [{'location': 'Control 1', 'is_extra': False, 'distance_miles': 50.0}],
+            'summary': {'speed_delta_mph': -1.0},
+            'hr_power': {'avg_watts': 180},
+        }
+        coaching = {'per_segment': {'Control 1': 'Ease off on the early climbs.'},
+                    'overall': {'summary': 'Solid, well-paced ride.',
+                                'recommendations': ['Fuel earlier', 'Shorter controls']}}
+
+        with app.test_request_context():
+            with patch('models.get_ride_by_id_full', return_value=ride), \
+                 patch('models.get_strava_ride_match', return_value=match), \
+                 patch('models.get_strava_connection', return_value=None), \
+                 patch('models.get_custom_plan', return_value=None), \
+                 patch('models.get_ride_plan_stops',
+                       return_value=[{'location': 'Control 1', 'distance_miles': 50.0}]), \
+                 patch('routes.riders.get_ride_plan_by_slug', return_value=None), \
+                 patch('routes.riders.get_rider_by_rusa', return_value=rider), \
+                 patch('services.strava_analysis.find_matching_activity', return_value=None), \
+                 patch('services.strava_analysis.fetch_and_analyze', return_value=mock_analysis), \
+                 patch('services.strava_analysis.build_comparison', return_value=comparison_dict), \
+                 patch('models.get_rider_activity_baseline',
+                       return_value={'n_rides': 10, 'avg_speed_mph': 14.0}), \
+                 patch('services.segment_analysis.compute_gradient_band_baseline', return_value={}), \
+                 patch('services.segment_analysis.build_segment_narratives',
+                       return_value={'Control 1': 'You averaged 180 W, 10% lower than the previous segment.'}), \
+                 patch('services.segment_analysis.build_overall_narrative',
+                       return_value=['You rode 1 mph slower than plan.']), \
+                 patch('services.ride_coach.generate_ride_coaching', return_value=coaching), \
+                 patch('routes.riders.render_template', return_value='') as mock_render, \
+                 patch('routes.riders.session', {'rider_id': 999}):
+                from routes.riders import ride_strava_analysis
+                ride_strava_analysis(rusa_id=1234, ride_id=99)
+
+        kw = mock_render.call_args[1]
+        assert kw['segment_eval']['Control 1']['narrative'].startswith('You averaged 180 W')
+        assert kw['segment_eval']['Control 1']['coach'] == 'Ease off on the early climbs.'
+        assert kw['ride_recommendations']['summary'] == 'Solid, well-paced ride.'
+        assert kw['overall_narrative'] == ['You rode 1 mph slower than plan.']
+
+    def test_rich_analysis_failure_does_not_break_render(self, app):
+        """If the rich-analysis layer raises, the page still renders (best-effort)."""
+        from unittest.mock import patch
+
+        rider = _make_rider_row()
+        ride = dict(_make_ride_row())
+        match = _make_match_row()
+        mock_analysis = {'error': None, 'detected_stops': [], 'streams': {}}
+        comparison_dict = {'rows': [{'location': 'Control 1', 'is_extra': False,
+                                     'distance_miles': 50.0}], 'summary': {}, 'hr_power': {}}
+
+        with app.test_request_context():
+            with patch('models.get_ride_by_id_full', return_value=ride), \
+                 patch('models.get_strava_ride_match', return_value=match), \
+                 patch('models.get_strava_connection', return_value=None), \
+                 patch('models.get_custom_plan', return_value=None), \
+                 patch('models.get_ride_plan_stops', return_value=[{'location': 'Control 1'}]), \
+                 patch('routes.riders.get_ride_plan_by_slug', return_value=None), \
+                 patch('routes.riders.get_rider_by_rusa', return_value=rider), \
+                 patch('services.strava_analysis.find_matching_activity', return_value=None), \
+                 patch('services.strava_analysis.fetch_and_analyze', return_value=mock_analysis), \
+                 patch('services.strava_analysis.build_comparison', return_value=comparison_dict), \
+                 patch('models.get_rider_activity_baseline', side_effect=RuntimeError('boom')), \
+                 patch('routes.riders.render_template', return_value='') as mock_render, \
+                 patch('routes.riders.session', {'rider_id': 999}):
+                from routes.riders import ride_strava_analysis
+                ride_strava_analysis(rusa_id=1234, ride_id=99)
+
+        kw = mock_render.call_args[1]
+        # Degrades to empty enrichment; render still happens.
+        assert kw['segment_eval'] == {}
+        assert kw['ride_recommendations'] is None
+
     def test_has_plan_no_rwgps_route_passes_stop_wind_none(self, app):
         """HIST-02: has_plan=True but no RWGPS route → stop_wind=None, no error."""
         from unittest.mock import patch
