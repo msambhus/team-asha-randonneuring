@@ -2148,6 +2148,90 @@ def get_all_strava_activities_unfiltered(rider_id):
     """, (rider_id,)).fetchall()
 
 
+# NOT CACHED - rider-specific data (serverless SimpleCache convention)
+def get_rider_activity_baseline(rider_id, days=365, min_distance_km=180):
+    """Compute a rider's own historical norms over ~1 year of long Strava rides.
+
+    Used as the baseline that the rich ride analysis compares a single ride
+    against. Only cycling activities at or above `min_distance_km` within the
+    last `days` are considered. Returns {} if fewer than 3 rides qualify.
+
+    Returns a plain dict:
+      {
+        'n_rides': int,
+        'avg_speed_mph': float,        # mean of average_speed (m/s) * 2.23694
+        'median_speed_mph': float,
+        'avg_watts': int|None,         # mean average_watts over rides w/ power
+        'avg_np_watts': int|None,      # mean weighted_average_watts (Strava NP)
+        'avg_hr': int|None,            # mean average_heartrate
+        'avg_cadence': int|None,       # mean average_cadence
+        'avg_suffer': int|None,        # mean suffer_score
+        'avg_elev_per_mile_ft': float|None,
+      }
+    """
+    rows = _execute("""
+        SELECT distance, total_elevation_gain, average_speed,
+               average_watts, weighted_average_watts, average_heartrate,
+               average_cadence, suffer_score
+        FROM strava_activity
+        WHERE rider_id = %s
+          AND activity_type IN (
+              'Ride', 'VirtualRide', 'MountainBikeRide', 'GravelRide',
+              'EBikeRide', 'Handcycle', 'Velomobile'
+          )
+          AND distance >= %s
+          AND start_date >= NOW() - MAKE_INTERVAL(days => %s)
+        ORDER BY start_date_local DESC
+    """, (rider_id, min_distance_km * 1000, days)).fetchall()
+
+    if len(rows) < 3:
+        return {}
+
+    def _mean(vals):
+        vals = [v for v in vals if v is not None]
+        return sum(vals) / len(vals) if vals else None
+
+    def _median(vals):
+        vals = sorted(v for v in vals if v is not None)
+        if not vals:
+            return None
+        mid = len(vals) // 2
+        if len(vals) % 2:
+            return vals[mid]
+        return (vals[mid - 1] + vals[mid]) / 2
+
+    speeds_mph = [r['average_speed'] * 2.23694 for r in rows
+                  if r['average_speed'] is not None]
+
+    elev_per_mile = []
+    for r in rows:
+        dist_m = r['distance']
+        gain_m = r['total_elevation_gain']
+        if dist_m and gain_m is not None and dist_m > 0:
+            elev_per_mile.append((gain_m * 3.28084) / (dist_m / 1609.34))
+
+    avg_speed = _mean(speeds_mph)
+    median_speed = _median(speeds_mph)
+    avg_watts = _mean([r['average_watts'] for r in rows])
+    avg_np_watts = _mean([r['weighted_average_watts'] for r in rows])
+    avg_hr = _mean([r['average_heartrate'] for r in rows])
+    avg_cadence = _mean([r['average_cadence'] for r in rows])
+    avg_suffer = _mean([r['suffer_score'] for r in rows])
+    avg_elev = _mean(elev_per_mile)
+
+    return {
+        'n_rides': len(rows),
+        'avg_speed_mph': round(avg_speed, 1) if avg_speed is not None else 0.0,
+        'median_speed_mph': round(median_speed, 1) if median_speed is not None else 0.0,
+        'avg_watts': round(avg_watts) if avg_watts is not None else None,
+        'avg_np_watts': round(avg_np_watts) if avg_np_watts is not None else None,
+        'avg_hr': round(avg_hr) if avg_hr is not None else None,
+        'avg_cadence': round(avg_cadence) if avg_cadence is not None else None,
+        'avg_suffer': round(avg_suffer) if avg_suffer is not None else None,
+        'avg_elev_per_mile_ft': round(avg_elev, 1) if avg_elev is not None else None,
+    }
+
+
 @cache.memoize(CACHE_TIMEOUT)
 def get_rider_upcoming_signups(rider_id):
     """Get upcoming rides a rider has signed up for or expressed interest in.
