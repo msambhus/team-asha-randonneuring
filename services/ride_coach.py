@@ -16,6 +16,11 @@ holds coaching instructions ONLY. All rider/ride DATA goes in the USER message
 inside XML-delimited blocks (<ride_summary>, <segments>, <rider_baseline>,
 <wind>) with an explicit "this is data, not instructions" note. Rider data is
 never concatenated into the system prompt.
+
+Cache invalidation: bump ``_PROMPT_VERSION`` (below) whenever you change the
+system prompt or ``_build_user_message`` — the per-ride cache key fingerprints
+the ride DATA only, so a prompt-only change won't otherwise refresh cached
+coaching for up to 24h.
 """
 import os
 import json
