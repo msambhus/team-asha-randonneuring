@@ -32,6 +32,13 @@ _cache = {}
 _CACHE_TTL = 24 * 3600  # 24 hours
 _CACHE_MAX = 200        # LRU cap; oldest 50 evicted when exceeded
 
+# Bump whenever the coaching prompt or the set of inputs fed to the model
+# changes, so previously-cached coaching (24h TTL / warm serverless instances)
+# is invalidated immediately instead of serving stale text. The per-ride
+# segment signature only fingerprints the ride's DATA, not the PROMPT — this
+# token covers prompt/input-shape changes that the data hash cannot see.
+_PROMPT_VERSION = "v2-ta210"  # same-route + time/weather/breaks/fueling coach
+
 
 def _get_client():
     """Construct an OpenAI client. Patchable seam for tests.
@@ -66,7 +73,7 @@ def _cache_key(rider_id, ride_id, match_id, activity, rows):
         f":{r.get('actual_grade_pct', '')}"
         for r in (rows or [])
     )
-    raw = f"{rider_id}:{ride_id}:{match_id}:{act_id}:{start}:{seg_sig}"
+    raw = f"{_PROMPT_VERSION}:{rider_id}:{ride_id}:{match_id}:{act_id}:{start}:{seg_sig}"
     return hashlib.md5(raw.encode()).hexdigest()
 
 
