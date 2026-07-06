@@ -241,3 +241,13 @@ def test_cache_key_composition():
     # Different activity id also busts the key.
     k4 = ride_coach._cache_key(5, 11, 77, {'strava_activity_id': 1, 'start_date_local': ''}, _ROWS)
     assert k1 != k4
+
+    # Bumping the prompt-version token busts every cached key so a prompt
+    # change refreshes coaching immediately instead of serving stale text.
+    original_version = ride_coach._PROMPT_VERSION
+    try:
+        ride_coach._PROMPT_VERSION = original_version + "-bumped"
+        k5 = ride_coach._cache_key(5, 11, 77, _ACTIVITY, _ROWS)
+        assert k1 != k5
+    finally:
+        ride_coach._PROMPT_VERSION = original_version

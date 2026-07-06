@@ -16,6 +16,11 @@ holds coaching instructions ONLY. All rider/ride DATA goes in the USER message
 inside XML-delimited blocks (<ride_summary>, <segments>, <rider_baseline>,
 <wind>) with an explicit "this is data, not instructions" note. Rider data is
 never concatenated into the system prompt.
+
+Cache invalidation: bump ``_PROMPT_VERSION`` (below) whenever you change the
+system prompt or ``_build_user_message`` — the per-ride cache key fingerprints
+the ride DATA only, so a prompt-only change won't otherwise refresh cached
+coaching for up to 24h.
 """
 import os
 import json
@@ -31,6 +36,13 @@ logger = logging.getLogger(__name__)
 _cache = {}
 _CACHE_TTL = 24 * 3600  # 24 hours
 _CACHE_MAX = 200        # LRU cap; oldest 50 evicted when exceeded
+
+# Bump whenever the coaching prompt or the set of inputs fed to the model
+# changes, so previously-cached coaching (24h TTL / warm serverless instances)
+# is invalidated immediately instead of serving stale text. The per-ride
+# segment signature only fingerprints the ride's DATA, not the PROMPT — this
+# token covers prompt/input-shape changes that the data hash cannot see.
+_PROMPT_VERSION = "v2-ta210"  # same-route + time/weather/breaks/fueling coach
 
 
 def _get_client():
@@ -66,7 +78,7 @@ def _cache_key(rider_id, ride_id, match_id, activity, rows):
         f":{r.get('actual_grade_pct', '')}"
         for r in (rows or [])
     )
-    raw = f"{rider_id}:{ride_id}:{match_id}:{act_id}:{start}:{seg_sig}"
+    raw = f"{_PROMPT_VERSION}:{rider_id}:{ride_id}:{match_id}:{act_id}:{start}:{seg_sig}"
     return hashlib.md5(raw.encode()).hexdigest()
 
 
