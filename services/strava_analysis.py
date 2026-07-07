@@ -498,6 +498,11 @@ def _segment_thumbnails(track, segments, width=100, height=60, pad=6,
         x, y = raw(p)
         px = ox + (x - xmin) * scale
         py = oy + (ymax - y) * scale  # flip: SVG y grows downward
+        # Clamp into the viewbox: the bbox is derived from the (downsampled)
+        # track, so a full-resolution segment point at an extreme could land a
+        # hair outside; clamping keeps every drawn point inside the frame.
+        px = min(max(px, 0.0), width)
+        py = min(max(py, 0.0), height)
         return f"{round(px, 1)},{round(py, 1)}"
 
     def downsample(pts, cap):
