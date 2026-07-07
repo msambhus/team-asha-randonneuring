@@ -2,7 +2,19 @@
 {% block title %}Strava Analysis - {{ ride.name }} - Team Asha Randonneuring{% endblock %}
 
 {% block extra_head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
+/* Ride map */
+#rideMap { height: 420px; border-radius: 10px; z-index: 0; }
+.map-stop-popup textarea {
+    width: 100%; min-height: 60px; box-sizing: border-box; font-size: 0.8rem;
+    border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px; resize: vertical;
+}
+.map-stop-popup button {
+    margin-top: 6px; padding: 5px 12px; background: #fc4c02; color: #fff;
+    border: none; border-radius: 6px; font-size: 0.78rem; font-weight: 600; cursor: pointer;
+}
+.map-stop-popup .save-status { font-size: 0.72rem; color: #16a34a; margin-left: 8px; }
 /* Summary Card */
 .analysis-summary {
     background: linear-gradient(135deg, #fff5f0, #fed7aa);
@@ -490,6 +502,116 @@
         {% endif %}
     </div>
 </div>
+{% endif %}
+
+{# --- Interactive Route Map --- #}
+{% if map_data and map_data.track %}
+<div class="chart-container" style="margin-bottom:24px;">
+    <h3>Route Map</h3>
+    <div id="rideMap"></div>
+    <div style="margin-top:8px;font-size:0.72rem;color:var(--text-light,#94a3b8);">
+        Track coloured by segment speed. Markers show detected stops
+        {% if is_own_profile %}&mdash; click a stop to add your own notes (they help the coach). Note: retrying analysis clears saved notes.{% else %}.{% endif %}
+    </div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+    const mapData = {{ map_data|tojson }};
+    const isOwn = {{ is_own_profile|tojson }};
+    const saveUrlBase = "{{ url_for('riders.save_stop_commentary', rusa_id=rider.rusa_id, ride_id=ride.id) }}";
+    if (!mapData || !mapData.track || mapData.track.length < 2) return;
+
+    const map = L.map('rideMap', { scrollWheelZoom: false });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: '&copy; OpenStreetMap contributors',
+    }).addTo(map);
+
+    // Base track (neutral) — always drawn so the ride shows even without segments.
+    L.polyline(mapData.track, { color: '#94a3b8', weight: 3, opacity: 0.7 }).addTo(map);
+
+    // Fit to bounds.
+    if (mapData.bounds) {
+        map.fitBounds(mapData.bounds, { padding: [20, 20] });
+    } else {
+        map.fitBounds(L.polyline(mapData.track).getBounds(), { padding: [20, 20] });
+    }
+
+    // Colour a segment by its average speed (mph) — slow=red, fast=green.
+    function speedColor(mph) {
+        if (mph == null) return '#64748b';
+        if (mph < 10) return '#dc2626';
+        if (mph < 13) return '#f59e0b';
+        if (mph < 16) return '#65a30d';
+        return '#16a34a';
+    }
+
+    (mapData.segments || []).forEach(function(seg) {
+        const line = L.polyline(seg.points, {
+            color: speedColor(seg.speed_mph), weight: 5, opacity: 0.9,
+        }).addTo(map);
+        const spd = seg.speed_mph != null ? seg.speed_mph + ' mph' : 'n/a';
+        line.bindTooltip(seg.location + ': ' + spd, { sticky: true });
+    });
+
+    function escapeHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s == null ? '' : s;
+        return d.innerHTML;
+    }
+
+    // Stop markers, with an editable commentary box on own profile.
+    (mapData.stops || []).forEach(function(stop) {
+        const marker = L.marker([stop.lat, stop.lng]).addTo(map);
+        const where = stop.location ? escapeHtml(stop.location) : (stop.distance_miles + ' mi');
+        const dur = stop.duration_min != null ? stop.duration_min + ' min stop' : '';
+        let html = '<div class="map-stop-popup" style="min-width:200px;">'
+            + '<div style="font-weight:700;">' + where + '</div>'
+            + '<div style="font-size:0.72rem;color:#64748b;">' + stop.distance_miles + ' mi &middot; ' + dur + '</div>';
+        if (isOwn) {
+            html += '<textarea data-stop-index="' + stop.stop_index + '" '
+                + 'placeholder="What happened here? (fuel, mechanical, how you felt...)">'
+                + escapeHtml(stop.commentary) + '</textarea>'
+                + '<div><button type="button" data-save="' + stop.stop_index + '">Save note</button>'
+                + '<span class="save-status" data-status="' + stop.stop_index + '"></span></div>';
+        } else if (stop.commentary) {
+            html += '<div style="font-size:0.8rem;margin-top:6px;">' + escapeHtml(stop.commentary) + '</div>';
+        }
+        html += '</div>';
+        marker.bindPopup(html);
+    });
+
+    if (isOwn) {
+        // Delegate the save click from within any open popup.
+        map.on('popupopen', function(e) {
+            const el = e.popup.getElement();
+            const btn = el.querySelector('button[data-save]');
+            if (!btn) return;
+            btn.addEventListener('click', function() {
+                const idx = btn.getAttribute('data-save');
+                const ta = el.querySelector('textarea[data-stop-index="' + idx + '"]');
+                const status = el.querySelector('span[data-status="' + idx + '"]');
+                btn.disabled = true;
+                if (status) { status.style.color = '#64748b'; status.textContent = 'Saving...'; }
+                fetch(saveUrlBase, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ stop_index: Number(idx), commentary: ta.value }),
+                }).then(function(r) { return r.ok ? r.json() : Promise.reject(r); })
+                  .then(function(data) {
+                      // Keep the local payload in sync so re-opening shows the saved text.
+                      const s = (mapData.stops || []).find(function(x){ return String(x.stop_index) === String(idx); });
+                      if (s) s.commentary = data.commentary;
+                      if (status) { status.style.color = '#16a34a'; status.textContent = 'Saved'; }
+                  }).catch(function() {
+                      if (status) { status.style.color = '#dc2626'; status.textContent = 'Save failed'; }
+                  }).finally(function() { btn.disabled = false; });
+            });
+        });
+    }
+})();
+</script>
 {% endif %}
 
 {# --- Chart --- #}
