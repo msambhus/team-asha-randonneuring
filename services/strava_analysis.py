@@ -462,6 +462,70 @@ def match_stops_to_plan(detected_stops, plan_stops):
     return detected_stops
 
 
+def _segment_thumbnails(track, segments, width=100, height=60, pad=6,
+                        max_track=90, max_seg=60):
+    """Precompute tiny inline-SVG thumbnails, one per planned segment.
+
+    Each thumbnail draws that segment's GPS shape (bold) over the faint full
+    track (context), in a SINGLE shared projection so every row is comparable.
+    Longitude is scaled by cos(mean latitude) so the shape isn't horizontally
+    stretched, then the track is fit into the box preserving aspect ratio.
+
+    Returns ``{'viewbox', 'track' (SVG points str), 'segments': {location:
+    points str}}`` or ``None`` when there's no usable track. Point strings are
+    plain "x,y x,y …" numbers (safe to inline in an SVG ``points`` attribute).
+    """
+    import math
+    if not track or len(track) < 2:
+        return None
+
+    mean_lat = sum(p[0] for p in track) / len(track)
+    kx = math.cos(math.radians(mean_lat)) or 1e-6
+
+    def raw(p):                       # (x from lng, y from lat)
+        return (p[1] * kx, p[0])
+
+    xs = [p[1] * kx for p in track]
+    ys = [p[0] for p in track]
+    xmin, xmax, ymin, ymax = min(xs), max(xs), min(ys), max(ys)
+    xspan = (xmax - xmin) or 1e-9
+    yspan = (ymax - ymin) or 1e-9
+    scale = min((width - 2 * pad) / xspan, (height - 2 * pad) / yspan)
+    ox = (width - xspan * scale) / 2
+    oy = (height - yspan * scale) / 2
+
+    def proj(p):
+        x, y = raw(p)
+        px = ox + (x - xmin) * scale
+        py = oy + (ymax - y) * scale  # flip: SVG y grows downward
+        return f"{round(px, 1)},{round(py, 1)}"
+
+    def downsample(pts, cap):
+        if len(pts) <= cap:
+            return pts
+        step = math.ceil(len(pts) / cap)
+        out = pts[::step]
+        if out[-1] != pts[-1]:
+            out.append(pts[-1])
+        return out
+
+    def to_str(pts):
+        return ' '.join(proj(p) for p in pts)
+
+    seg_thumbs = {}
+    for seg in segments or []:
+        loc = seg.get('location')
+        pts = seg.get('points')
+        if loc and pts and len(pts) >= 2:
+            seg_thumbs[loc] = to_str(downsample(pts, max_seg))
+
+    return {
+        'viewbox': f"0 0 {width} {height}",
+        'track': to_str(downsample(track, max_track)),
+        'segments': seg_thumbs,
+    }
+
+
 def build_map_data(streams, comparison, detected_stops, max_points=500,
                    max_segment_points=120):
     """Build a compact map payload for the ride-analysis page.
@@ -566,6 +630,7 @@ def build_map_data(streams, comparison, detected_stops, max_points=500,
         'bounds': bounds,
         'segments': segments,
         'stops': stops,
+        'thumb': _segment_thumbnails(track, segments),
     }
 
 

@@ -150,3 +150,40 @@ def test_build_map_data_downsamples_track():
     assert len(data['track']) <= 501
     # No segments when there are no planned rows, but the track still renders.
     assert data['segments'] == []
+
+
+# ── per-segment SVG thumbnails ───────────────────────────────────────
+
+def _points_within(points_str, w, h):
+    """Every 'x,y' pair in an SVG points string lies inside the viewbox."""
+    for pair in points_str.split():
+        x, y = (float(v) for v in pair.split(','))
+        if not (0 <= x <= w and 0 <= y <= h):
+            return False
+    return True
+
+
+def test_thumbnails_present_per_segment():
+    data = build_map_data(_map_streams(), _COMPARISON, [])
+    thumb = data['thumb']
+    assert thumb is not None
+    assert thumb['viewbox'] == '0 0 100 60'
+    assert thumb['track']  # non-empty full-track polyline
+    # One thumbnail per PLANNED segment (Mid, Finish); Start has no leg, extras excluded.
+    assert set(thumb['segments'].keys()) == {'Mid', 'Finish'}
+    for pts in thumb['segments'].values():
+        assert len(pts.split()) >= 2
+
+
+def test_thumbnail_points_within_viewbox():
+    data = build_map_data(_map_streams(), _COMPARISON, [])
+    thumb = data['thumb']
+    assert _points_within(thumb['track'], 100, 60)
+    for pts in thumb['segments'].values():
+        assert _points_within(pts, 100, 60)
+
+
+def test_thumbnails_none_without_track():
+    from services.strava_analysis import _segment_thumbnails
+    assert _segment_thumbnails([], []) is None
+    assert _segment_thumbnails([[37.0, -122.0]], []) is None  # <2 points
