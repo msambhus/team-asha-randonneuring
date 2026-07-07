@@ -1,4 +1,5 @@
 """Data access layer — all SQL queries live here (PostgreSQL via psycopg2)."""
+import json
 import secrets
 from datetime import datetime, date
 from enum import Enum
@@ -2972,6 +2973,33 @@ def clear_strava_ride_analysis(match_id):
     cur = conn.cursor()
     cur.execute("DELETE FROM strava_ride_analysis WHERE match_id = %s", (match_id,))
     conn.commit()
+
+
+def update_stop_commentary(match_id, stop_index, commentary):
+    """Persist a rider's free-text note onto one detected stop, in place.
+
+    Extends the existing ``detected_stops`` JSONB array element at
+    ``stop_index`` with a ``commentary`` key (rather than using the dormant
+    ``llm_narrative`` column) so saved notes ride along with the stop and feed
+    the ride coach. Parameterized only — the caller MUST validate that
+    ``stop_index`` is within the current array bounds, since jsonb_set would
+    otherwise append a stray element for an out-of-range index.
+
+    Returns the number of rows updated (0 when no analysis row exists).
+    """
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE strava_ride_analysis
+        SET detected_stops = jsonb_set(
+                COALESCE(detected_stops, '[]'::jsonb),
+                %s::text[],
+                %s::jsonb,
+                true)
+        WHERE match_id = %s
+    """, ([str(stop_index), 'commentary'], json.dumps(commentary), match_id))
+    conn.commit()
+    return cur.rowcount
 
 
 def get_rider_rides_with_cached_streams(rider_id):
