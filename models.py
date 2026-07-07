@@ -1796,6 +1796,21 @@ def create_user_apple(email, apple_sub):
     conn.commit()
     return dict(user) if user else None
 
+def link_apple_sub(user_id, apple_sub):
+    """Attach an Apple sub to an EXISTING app_user (account linking by email).
+
+    Lets a member who set up their profile on the web (Google/email) keep their
+    rider profile when they first use Sign in with Apple. The ``apple_sub IS
+    NULL`` guard makes this a safe no-op if the row already has an Apple id
+    (never overwrites a different one). Returns the number of rows updated.
+    """
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE app_user SET apple_sub = %s WHERE id = %s AND apple_sub IS NULL",
+                (apple_sub, user_id))
+    conn.commit()
+    return cur.rowcount
+
 def delete_account(user_id, preserve_rider=False):
     """Permanently delete an account for App Store Guideline 5.1.1(v).
 
