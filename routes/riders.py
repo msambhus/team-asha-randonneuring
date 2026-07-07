@@ -1310,18 +1310,14 @@ def ride_strava_analysis(rusa_id, ride_id):
             )
             stop_wind = None
 
-    # Rider's saved per-stop commentary (persisted onto detected_stops JSONB).
-    # Fed to the coach and to the map UI so notes both change coaching and
-    # pre-fill the stop popups. Empty notes are dropped.
-    stop_commentary = []
-    for ds in (analysis.get('detected_stops') or []):
-        note = (ds.get('commentary') or '').strip()
-        if note:
-            stop_commentary.append({
-                'location': ds.get('matched_stop_name') or ds.get('location'),
-                'distance_miles': ds.get('distance_miles'),
-                'commentary': note,
-            })
+    # Rider's own saved notes (rider_notes JSONB: {overall, segments{location}}).
+    # Fed to the coach (so notes change coaching) and to the template (to pre-fill
+    # the per-segment note fields + the overall note box).
+    rider_notes = analysis.get('rider_notes') or {}
+    segment_notes = rider_notes.get('segments') if isinstance(rider_notes, dict) else None
+    segment_notes = segment_notes if isinstance(segment_notes, dict) else {}
+    overall_note = rider_notes.get('overall') if isinstance(rider_notes, dict) else None
+    overall_note = overall_note if isinstance(overall_note, str) else ''
 
     # --- Rich per-segment analysis + coach (best-effort; must never block render) ---
     segment_eval = {}            # {location: {'narrative': str|None, 'coach': str|None}}
@@ -1349,7 +1345,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                 comparison['rows'], comparison['summary'], comparison.get('hr_power'),
                 stop_wind, ride_baseline, band_baseline, narratives,
                 same_route_baseline=same_route_baseline,
-                stop_commentary=stop_commentary)
+                segment_notes=segment_notes, overall_note=overall_note)
             coach_seg = (coaching or {}).get('per_segment', {})
             for loc in set(narratives) | set(coach_seg):
                 segment_eval[loc] = {'narrative': narratives.get(loc),
@@ -1381,7 +1377,9 @@ def ride_strava_analysis(rusa_id, ride_id):
                            segment_eval=segment_eval,
                            overall_narrative=overall_narrative,
                            ride_recommendations=ride_recommendations,
-                           map_data=map_data)
+                           map_data=map_data,
+                           segment_notes=segment_notes,
+                           overall_note=overall_note)
 
 
 @riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/strava-retry', methods=['POST'])
@@ -1400,27 +1398,32 @@ def retry_strava_analysis(rusa_id, ride_id):
     return redirect(url_for('riders.ride_strava_analysis', rusa_id=rusa_id, ride_id=ride_id))
 
 
-# Server-side cap on stored stop commentary (also bounds the coach prompt).
-MAX_STOP_COMMENTARY_LEN = 1000
+# Server-side cap on a stored rider note (also bounds the coach prompt).
+MAX_RIDE_NOTE_LEN = 1000
 
 
-@riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/stop-commentary', methods=['POST'])
-def save_stop_commentary(rusa_id, ride_id):
-    """Persist a rider's free-text note for one detected stop.
+@riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/notes', methods=['POST'])
+def save_ride_notes(rusa_id, ride_id):
+    """Persist a rider's free-text note on the ride analysis.
 
-    Owner-guarded (only the profile owner may write their own commentary) and
-    parameterized. The note is stored in place on the ``detected_stops`` JSONB
-    element at ``stop_index`` so it feeds the ride coach on the next render.
+    Two scopes:
+      - ``scope=overall`` — one note for the whole ride.
+      - ``scope=segment`` — a note on the segment identified by ``location``
+        (the same key the analysis page uses for ``segment_eval``).
+
+    Owner-guarded (only the profile owner may write their own notes) and
+    parameterized. Stored in the ``rider_notes`` JSONB so the note feeds the
+    ride coach on the next render.
     """
-    from models import (get_strava_ride_match, get_strava_ride_analysis,
-                        update_stop_commentary)
+    from models import (get_strava_ride_match, update_overall_note,
+                        update_segment_note)
 
     rider = get_rider_by_rusa(rusa_id)
     if not rider:
         abort(404)
 
-    # Owner guard: only the profile owner may write commentary (same check the
-    # page uses to decide whether to show the editable textareas).
+    # Owner guard: only the profile owner may write notes (same check the page
+    # uses to decide whether to show the editable fields).
     if session.get('rider_id') != rider['id']:
         abort(403)
 
@@ -1429,40 +1432,21 @@ def save_stop_commentary(rusa_id, ride_id):
         abort(404)
 
     payload = request.get_json(silent=True) or request.form
+    scope = (payload.get('scope') or '').strip()
+    note = (payload.get('note') or '').strip()[:MAX_RIDE_NOTE_LEN]
 
-    analysis = get_strava_ride_analysis(match['id'])
-    stops = (analysis or {}).get('detected_stops') or []
-
-    # Resolve the target stop. Prefer the stop's stable start_time_s identity
-    # (unchanged by match_stops_to_plan) so a note can't be written to the wrong
-    # element if the persisted array and the rendered array diverge (e.g. the
-    # plan changed between render and save). Fall back to the positional index.
-    raw_sts = payload.get('start_time_s')
-    if raw_sts not in (None, ''):
-        try:
-            sts = float(raw_sts)
-        except (TypeError, ValueError):
+    if scope == 'overall':
+        update_overall_note(match['id'], note)
+    elif scope == 'segment':
+        location = (payload.get('location') or '').strip()
+        if not location:
             abort(400)
-        stop_index = next(
-            (i for i, ds in enumerate(stops)
-             if ds.get('start_time_s') is not None and float(ds['start_time_s']) == sts),
-            None)
-        if stop_index is None:
-            abort(400)
+        update_segment_note(match['id'], location, note)
     else:
-        try:
-            stop_index = int(payload.get('stop_index'))
-        except (TypeError, ValueError):
-            abort(400)
-        if stop_index < 0 or stop_index >= len(stops):
-            abort(400)
-
-    commentary = (payload.get('commentary') or '').strip()[:MAX_STOP_COMMENTARY_LEN]
-
-    update_stop_commentary(match['id'], stop_index, commentary)
+        abort(400)
 
     if request.is_json:
-        return jsonify({'ok': True, 'stop_index': stop_index, 'commentary': commentary})
+        return jsonify({'ok': True, 'scope': scope, 'note': note})
     return redirect(url_for('riders.ride_strava_analysis', rusa_id=rusa_id, ride_id=ride_id))
 
 
