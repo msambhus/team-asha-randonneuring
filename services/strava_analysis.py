@@ -553,6 +553,11 @@ def build_map_data(streams, comparison, detected_stops, max_points=500,
             continue
         stops.append({
             'stop_index': i,
+            # start_time_s is a stable, immutable per-stop identity (unchanged by
+            # match_stops_to_plan) — the save endpoint resolves the target stop
+            # by it so a note can't drift to the wrong element if the persisted
+            # and rendered arrays differ (e.g. plan changed between render/save).
+            'start_time_s': ds.get('start_time_s'),
             'lat': lat,
             'lng': lng,
             'distance_miles': ds.get('distance_miles'),

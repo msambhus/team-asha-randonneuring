@@ -1429,15 +1429,33 @@ def save_stop_commentary(rusa_id, ride_id):
         abort(404)
 
     payload = request.get_json(silent=True) or request.form
-    try:
-        stop_index = int(payload.get('stop_index'))
-    except (TypeError, ValueError):
-        abort(400)
 
     analysis = get_strava_ride_analysis(match['id'])
     stops = (analysis or {}).get('detected_stops') or []
-    if stop_index < 0 or stop_index >= len(stops):
-        abort(400)
+
+    # Resolve the target stop. Prefer the stop's stable start_time_s identity
+    # (unchanged by match_stops_to_plan) so a note can't be written to the wrong
+    # element if the persisted array and the rendered array diverge (e.g. the
+    # plan changed between render and save). Fall back to the positional index.
+    raw_sts = payload.get('start_time_s')
+    if raw_sts not in (None, ''):
+        try:
+            sts = float(raw_sts)
+        except (TypeError, ValueError):
+            abort(400)
+        stop_index = next(
+            (i for i, ds in enumerate(stops)
+             if ds.get('start_time_s') is not None and float(ds['start_time_s']) == sts),
+            None)
+        if stop_index is None:
+            abort(400)
+    else:
+        try:
+            stop_index = int(payload.get('stop_index'))
+        except (TypeError, ValueError):
+            abort(400)
+        if stop_index < 0 or stop_index >= len(stops):
+            abort(400)
 
     commentary = (payload.get('commentary') or '').strip()[:MAX_STOP_COMMENTARY_LEN]
 

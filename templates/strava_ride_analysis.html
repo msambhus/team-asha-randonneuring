@@ -538,6 +538,12 @@
         map.fitBounds(L.polyline(mapData.track).getBounds(), { padding: [20, 20] });
     }
 
+    function escapeHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s == null ? '' : s;
+        return d.innerHTML;
+    }
+
     // Colour a segment by its average speed (mph) — slow=red, fast=green.
     function speedColor(mph) {
         if (mph == null) return '#64748b';
@@ -552,14 +558,10 @@
             color: speedColor(seg.speed_mph), weight: 5, opacity: 0.9,
         }).addTo(map);
         const spd = seg.speed_mph != null ? seg.speed_mph + ' mph' : 'n/a';
-        line.bindTooltip(seg.location + ': ' + spd, { sticky: true });
+        // seg.location may carry scraped HTML entities — escape it (Leaflet
+        // tooltips render their content as HTML).
+        line.bindTooltip(escapeHtml(seg.location) + ': ' + spd, { sticky: true });
     });
-
-    function escapeHtml(s) {
-        const d = document.createElement('div');
-        d.textContent = s == null ? '' : s;
-        return d.innerHTML;
-    }
 
     // Stop markers, with an editable commentary box on own profile.
     (mapData.stops || []).forEach(function(stop) {
@@ -573,7 +575,8 @@
             html += '<textarea data-stop-index="' + stop.stop_index + '" '
                 + 'placeholder="What happened here? (fuel, mechanical, how you felt...)">'
                 + escapeHtml(stop.commentary) + '</textarea>'
-                + '<div><button type="button" data-save="' + stop.stop_index + '">Save note</button>'
+                + '<div><button type="button" data-save="' + stop.stop_index + '" '
+                + 'data-sts="' + (stop.start_time_s == null ? '' : stop.start_time_s) + '">Save note</button>'
                 + '<span class="save-status" data-status="' + stop.stop_index + '"></span></div>';
         } else if (stop.commentary) {
             html += '<div style="font-size:0.8rem;margin-top:6px;">' + escapeHtml(stop.commentary) + '</div>';
@@ -590,14 +593,17 @@
             if (!btn) return;
             btn.addEventListener('click', function() {
                 const idx = btn.getAttribute('data-save');
+                const sts = btn.getAttribute('data-sts');
                 const ta = el.querySelector('textarea[data-stop-index="' + idx + '"]');
                 const status = el.querySelector('span[data-status="' + idx + '"]');
                 btn.disabled = true;
                 if (status) { status.style.color = '#64748b'; status.textContent = 'Saving...'; }
+                const body = { stop_index: Number(idx), commentary: ta.value };
+                if (sts !== '' && sts != null) body.start_time_s = Number(sts);
                 fetch(saveUrlBase, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ stop_index: Number(idx), commentary: ta.value }),
+                    body: JSON.stringify(body),
                 }).then(function(r) { return r.ok ? r.json() : Promise.reject(r); })
                   .then(function(data) {
                       // Keep the local payload in sync so re-opening shows the saved text.

@@ -91,7 +91,7 @@ _COMPARISON = {
 
 
 def test_build_map_data_basic_shape():
-    stops = [{'distance_miles': 2.0, 'duration_min': 5.0,
+    stops = [{'distance_miles': 2.0, 'duration_min': 5.0, 'start_time_s': 900,
               'lat': 37.002, 'lng': -122.0, 'commentary': 'water stop'}]
     data = build_map_data(_map_streams(), _COMPARISON, stops)
 
@@ -107,9 +107,10 @@ def test_build_map_data_basic_shape():
     assert data['segments'][0]['speed_mph'] == 14.0
     assert len(data['segments'][0]['points']) >= 2
 
-    # Stop marker carries index + saved commentary for the popup.
+    # Stop marker carries index, stable identity, and saved commentary.
     assert len(data['stops']) == 1
     assert data['stops'][0]['stop_index'] == 0
+    assert data['stops'][0]['start_time_s'] == 900
     assert data['stops'][0]['commentary'] == 'water stop'
     assert data['stops'][0]['lat'] == 37.002
 
