@@ -4,6 +4,7 @@ Matches Strava activities to brevet rides, fetches stream data,
 detects stoppages, and builds plan-vs-actual comparison data.
 """
 
+import bisect
 import difflib
 import html as html_mod
 import json
@@ -377,10 +378,16 @@ def _coalesce_stops(stops):
 
     Prevents one long stop from showing as several (e.g. a 25-min control break
     split into 15+3+7 min entries at the same mile). Consecutive stops whose gap
-    ``next.start_time_s - prev_end`` is <= ``STOP_MERGE_GAP_S`` are merged into
-    one whose duration spans first-start..last-end. The merged entry keeps the
-    earliest stop's position/coords and adopts a matched-waypoint identity if
-    any member had one (so a control is never downgraded to an extra).
+    ``next.start_time_s - prev_real_end`` is <= ``STOP_MERGE_GAP_S`` are merged.
+
+    The merged ``duration_s`` is the SUM of the members' true stopped durations
+    — the brief moving blips *between* them are NOT counted as stopped time, so
+    downstream segment riding-time / speed math (and enroute-break detection,
+    which compares against below-threshold samples only) stays consistent. The
+    merged entry keeps the earliest stop's position/coords and adopts a
+    matched-waypoint identity only when the earlier stop has none (so a control
+    is never downgraded to an extra, and two *different* matched controls are
+    never collapsed).
 
     Idempotent: re-running on already-merged stops is a no-op.
     """
@@ -391,28 +398,30 @@ def _coalesce_stops(stops):
         key=lambda s: (s.get('start_time_s') is None, s.get('start_time_s') or 0),
     )
     merged = []
+    last_end = None  # real clock end of the current merged group (for the gap check)
     for s in ordered:
         st = s.get('start_time_s')
-        if merged and st is not None:
+        dur = s.get('duration_s') or 0
+        if (merged and st is not None and last_end is not None
+                and st - last_end <= STOP_MERGE_GAP_S):
             prev = merged[-1]
-            p_start = prev.get('start_time_s') or 0
-            p_end = p_start + (prev.get('duration_s') or 0)
-            if st - p_end <= STOP_MERGE_GAP_S:
-                new_end = max(p_end, st + (s.get('duration_s') or 0))
-                prev['duration_s'] = new_end - p_start
+            pn, sn = prev.get('matched_stop_name'), s.get('matched_stop_name')
+            if not (pn and sn and pn != sn):  # never collapse two distinct controls
+                prev['duration_s'] = (prev.get('duration_s') or 0) + dur
                 prev['duration_min'] = round(prev['duration_s'] / 60, 1)
-                if s.get('matched_stop_name') and not prev.get('matched_stop_name'):
-                    prev['matched_stop_name'] = s.get('matched_stop_name')
+                if sn and not pn:
+                    prev['matched_stop_name'] = sn
                     prev['matched_stop_type'] = s.get('matched_stop_type')
                     prev['is_extra'] = s.get('is_extra', False)
+                last_end = max(last_end, st + dur)
                 continue
         merged.append(dict(s))
+        last_end = (st + dur) if st is not None else last_end
     return merged
 
 
 def _nearest_time_index(time_arr, t):
     """Index of the stream sample whose time is closest to ``t`` (monotonic arr)."""
-    import bisect
     if not time_arr:
         return None
     i = bisect.bisect_left(time_arr, t)

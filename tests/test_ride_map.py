@@ -204,9 +204,10 @@ def test_coalesce_merges_split_stops():
     m = merged[0]
     assert m['distance_miles'] == 134.7
     assert m['start_time_s'] == 48829
-    # Duration spans first-start .. last-end = (49922+420) - 48829 = 1513s.
-    assert m['duration_s'] == 1513
-    assert m['duration_min'] == round(1513 / 60, 1)
+    # Duration is the SUM of true stopped time (moving blips excluded):
+    # 906 + 162 + 420 = 1488s.
+    assert m['duration_s'] == 1488
+    assert m['duration_min'] == round(1488 / 60, 1)
 
 
 def test_coalesce_keeps_distinct_stops():
@@ -217,6 +218,35 @@ def test_coalesce_keeps_distinct_stops():
         {'distance_miles': 45.0, 'start_time_s': 4500, 'duration_s': 300},  # gap 600s > 120
     ]
     assert len(_coalesce_stops(stops)) == 2
+
+
+def test_coalesce_does_not_collapse_two_distinct_controls():
+    from services.strava_analysis import _coalesce_stops
+    # Two DIFFERENT matched controls close in time must stay separate.
+    stops = [
+        {'distance_miles': 90.0, 'start_time_s': 10000, 'duration_s': 300,
+         'matched_stop_name': 'Control #3', 'is_extra': False},
+        {'distance_miles': 90.1, 'start_time_s': 10350, 'duration_s': 300,
+         'matched_stop_name': 'Control #4', 'is_extra': False},  # gap 50s but distinct
+    ]
+    out = _coalesce_stops(stops)
+    assert len(out) == 2
+    assert [o['matched_stop_name'] for o in out] == ['Control #3', 'Control #4']
+
+
+def test_coalesce_is_idempotent_and_handles_edges():
+    from services.strava_analysis import _coalesce_stops
+    assert _coalesce_stops([]) == []
+    one = [{'distance_miles': 5.0, 'start_time_s': 100, 'duration_s': 200}]
+    assert _coalesce_stops(one) == one
+    stops = [
+        {'distance_miles': 134.7, 'start_time_s': 48829, 'duration_s': 906},
+        {'distance_miles': 134.7, 'start_time_s': 49739, 'duration_s': 162},
+        {'distance_miles': 134.7, 'start_time_s': 49922, 'duration_s': 420},
+    ]
+    once = _coalesce_stops(stops)
+    twice = _coalesce_stops(once)
+    assert twice == once  # re-running on merged output is a no-op
 
 
 def test_coalesce_preserves_matched_identity():
