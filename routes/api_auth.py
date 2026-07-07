@@ -222,13 +222,29 @@ def apple_signin():
     # Find-or-create by Apple sub (the stable per-app user id), mirroring /google.
     try:
         user = models.get_user_by_apple_sub(apple_sub)
-        if not user:
-            user = models.create_user_apple(email, apple_sub)
-            if not user:
-                return jsonify({'error': 'Could not create account'}), 500
-        else:
+        if user:
             models.update_user_login_time(user['id'])
             user = models.get_user_by_id(user['id'])
+        else:
+            # First Apple sign-in: link to an existing account by Apple's
+            # VERIFIED email so a member who set up their profile on the web
+            # (Google/email) keeps their rider profile — instead of getting a
+            # fresh, empty account and being stuck on onboarding. Only the
+            # token's own verified email is trusted for linking; never the
+            # client-supplied body email or a Hide-My-Email privaterelay
+            # placeholder (those must not attach a stranger to an account).
+            token_email = claims.get('email')
+            email_verified = str(claims.get('email_verified', '')).lower() == 'true'
+            existing = (models.get_user_by_email(token_email)
+                        if token_email and email_verified else None)
+            if existing and not existing.get('apple_sub'):
+                models.link_apple_sub(existing['id'], apple_sub)
+                models.update_user_login_time(existing['id'])
+                user = models.get_user_by_id(existing['id'])
+            else:
+                user = models.create_user_apple(email, apple_sub)
+                if not user:
+                    return jsonify({'error': 'Could not create account'}), 500
     except Exception:
         current_app.logger.exception('mobile apple sign-in: user lookup failed')
         return jsonify({'error': 'Account lookup failed'}), 500

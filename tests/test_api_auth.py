@@ -174,6 +174,106 @@ def test_apple_signin_creates_user_when_new(client, app):
     mock_create.assert_called_once_with('new@example.com', 'a-sub-2')
 
 
+def test_apple_signin_links_existing_account_by_verified_email(client, app):
+    """First Apple sign-in whose VERIFIED email matches an existing (web) account
+    links apple_sub to it and inherits its rider profile — no new empty account."""
+    claims = _apple_claims(sub='a-sub-new', email='rider@example.com')
+    claims['email_verified'] = 'true'
+    existing = {'id': 3, 'email': 'rider@example.com', 'google_id': 'g-1',
+                'apple_sub': None, 'profile_completed': True, 'rider_id': 6}
+    linked = dict(existing, apple_sub='a-sub-new')
+    with patch('routes.api_auth._verify_apple_id_token', return_value=claims), \
+         patch('models.get_user_by_apple_sub', return_value=None), \
+         patch('models.get_user_by_email', return_value=existing), \
+         patch('models.link_apple_sub', return_value=1) as mock_link, \
+         patch('models.update_user_login_time'), \
+         patch('models.get_user_by_id', return_value=linked), \
+         patch('models.create_user_apple') as mock_create:
+        resp = client.post('/api/auth/apple', json={'identity_token': 'good'})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['rider_id'] == 6 and data['profile_complete'] is True
+    mock_link.assert_called_once_with(3, 'a-sub-new')
+    mock_create.assert_not_called()
+
+
+def test_apple_signin_links_with_boolean_email_verified(client, app):
+    """Apple encodes email_verified as a JSON boolean (PyJWT → Python True); the
+    link must fire for the boolean form, not just the string 'true'."""
+    claims = _apple_claims(sub='a-sub-bool', email='rider@example.com')
+    claims['email_verified'] = True  # boolean, as real Apple tokens send it
+    existing = {'id': 3, 'email': 'rider@example.com', 'google_id': 'g-1',
+                'apple_sub': None, 'profile_completed': True, 'rider_id': 6}
+    linked = dict(existing, apple_sub='a-sub-bool')
+    with patch('routes.api_auth._verify_apple_id_token', return_value=claims), \
+         patch('models.get_user_by_apple_sub', return_value=None), \
+         patch('models.get_user_by_email', return_value=existing), \
+         patch('models.link_apple_sub', return_value=1) as mock_link, \
+         patch('models.update_user_login_time'), \
+         patch('models.get_user_by_id', return_value=linked), \
+         patch('models.create_user_apple') as mock_create:
+        resp = client.post('/api/auth/apple', json={'identity_token': 'good'})
+    assert resp.status_code == 200
+    assert resp.get_json()['rider_id'] == 6
+    mock_link.assert_called_once_with(3, 'a-sub-bool')
+    mock_create.assert_not_called()
+
+
+def test_apple_signin_verified_email_no_match_creates(client, app):
+    """Verified email that matches NO existing account → create a fresh account."""
+    claims = _apple_claims(sub='a-sub-z', email='nobody@example.com')
+    claims['email_verified'] = True
+    new_user = {'id': 30, 'email': 'nobody@example.com', 'google_id': None,
+                'apple_sub': 'a-sub-z', 'profile_completed': False, 'rider_id': None}
+    with patch('routes.api_auth._verify_apple_id_token', return_value=claims), \
+         patch('models.get_user_by_apple_sub', return_value=None), \
+         patch('models.get_user_by_email', return_value=None), \
+         patch('models.link_apple_sub') as mock_link, \
+         patch('models.create_user_apple', return_value=new_user) as mock_create:
+        resp = client.post('/api/auth/apple', json={'identity_token': 'good'})
+    assert resp.status_code == 200
+    mock_link.assert_not_called()
+    mock_create.assert_called_once_with('nobody@example.com', 'a-sub-z')
+
+
+def test_apple_signin_does_not_link_when_email_unverified(client, app):
+    """An unverified (or absent email_verified) token must NOT link to an
+    existing account — it creates a fresh Apple account instead."""
+    claims = _apple_claims(sub='a-sub-x', email='rider@example.com')  # no email_verified
+    new_user = {'id': 12, 'email': 'rider@example.com', 'google_id': None,
+                'apple_sub': 'a-sub-x', 'profile_completed': False, 'rider_id': None}
+    with patch('routes.api_auth._verify_apple_id_token', return_value=claims), \
+         patch('models.get_user_by_apple_sub', return_value=None), \
+         patch('models.get_user_by_email') as mock_by_email, \
+         patch('models.link_apple_sub') as mock_link, \
+         patch('models.create_user_apple', return_value=new_user) as mock_create:
+        resp = client.post('/api/auth/apple', json={'identity_token': 'good'})
+    assert resp.status_code == 200
+    mock_by_email.assert_not_called()   # short-circuits before the email lookup
+    mock_link.assert_not_called()
+    mock_create.assert_called_once_with('rider@example.com', 'a-sub-x')
+
+
+def test_apple_signin_does_not_link_when_existing_has_apple_sub(client, app):
+    """Guard: if a verified-email match already carries a (different) apple_sub,
+    do not relink — create a new account instead of hijacking it."""
+    claims = _apple_claims(sub='a-sub-new', email='rider@example.com')
+    claims['email_verified'] = 'true'
+    existing = {'id': 3, 'email': 'rider@example.com', 'google_id': None,
+                'apple_sub': 'a-sub-OLD', 'profile_completed': True, 'rider_id': 6}
+    new_user = {'id': 20, 'email': 'rider@example.com', 'google_id': None,
+                'apple_sub': 'a-sub-new', 'profile_completed': False, 'rider_id': None}
+    with patch('routes.api_auth._verify_apple_id_token', return_value=claims), \
+         patch('models.get_user_by_apple_sub', return_value=None), \
+         patch('models.get_user_by_email', return_value=existing), \
+         patch('models.link_apple_sub') as mock_link, \
+         patch('models.create_user_apple', return_value=new_user) as mock_create:
+        resp = client.post('/api/auth/apple', json={'identity_token': 'good'})
+    assert resp.status_code == 200
+    mock_link.assert_not_called()
+    mock_create.assert_called_once()
+
+
 def test_apple_signin_enforces_bundle_audience(client, app):
     """Security: the identity token is verified against OUR bundle id, so a token
     minted for a different app (different aud) can't be accepted."""
