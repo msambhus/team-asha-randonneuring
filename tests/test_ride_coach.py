@@ -251,3 +251,77 @@ def test_cache_key_composition():
         assert k1 != k5
     finally:
         ride_coach._PROMPT_VERSION = original_version
+
+
+# --------------------------------------------------------------------------
+# Per-stop commentary (TA-212): feeds the coach and busts only that ride's cache
+# --------------------------------------------------------------------------
+_STOP_COMMENTARY = [
+    {'location': 'Pescadero Control', 'distance_miles': 42.0,
+     'commentary': 'legs cramped badly, way too long a taco stop'},
+]
+
+
+def test_commentary_appears_in_user_message(monkeypatch):
+    monkeypatch.setenv('OPENAI_API_KEY', 'test-key')
+    client = _mock_client(_VALID_JSON)
+    with patch('services.ride_coach._get_client', return_value=client):
+        _call(stop_commentary=_STOP_COMMENTARY)
+
+    messages = client.chat.completions.create.call_args[1]['messages']
+    user_msg = next(m for m in messages if m['role'] == 'user')['content']
+    system_msg = next(m for m in messages if m['role'] == 'system')['content']
+
+    # Commentary is present as a delimited DATA block in the USER message only.
+    assert '<stop_notes>' in user_msg
+    assert 'legs cramped badly' in user_msg
+    # It must NOT leak into the system (instructions) message (injection guard).
+    assert 'legs cramped badly' not in system_msg
+
+
+def test_no_commentary_omits_stop_notes_block(monkeypatch):
+    monkeypatch.setenv('OPENAI_API_KEY', 'test-key')
+    client = _mock_client(_VALID_JSON)
+    with patch('services.ride_coach._get_client', return_value=client):
+        _call()  # no stop_commentary
+
+    messages = client.chat.completions.create.call_args[1]['messages']
+    user_msg = next(m for m in messages if m['role'] == 'user')['content']
+    assert '<stop_notes>' not in user_msg
+
+
+def test_build_user_message_includes_commentary_directly():
+    msg = ride_coach._build_user_message(
+        _ACTIVITY, _ROWS, _SUMMARY, _HR_POWER, _STOP_WIND,
+        _RIDE_BASELINE, _BAND_BASELINE, _SEGMENT_NARRATIVES,
+        stop_commentary=_STOP_COMMENTARY)
+    assert '<stop_notes>' in msg
+    assert 'Pescadero Control' in msg
+    assert 'taco stop' in msg
+
+
+def test_commentary_busts_cache_key_for_that_ride():
+    base = ride_coach._cache_key(5, 11, 77, _ACTIVITY, _ROWS)
+    with_comment = ride_coach._cache_key(
+        5, 11, 77, _ACTIVITY, _ROWS, stop_commentary=_STOP_COMMENTARY)
+    assert base != with_comment
+
+    # Editing the commentary text changes the key again.
+    edited = [dict(_STOP_COMMENTARY[0], commentary='felt great, quick stop')]
+    assert with_comment != ride_coach._cache_key(
+        5, 11, 77, _ACTIVITY, _ROWS, stop_commentary=edited)
+
+    # Whitespace-only / empty commentary is treated as no commentary.
+    blank = [dict(_STOP_COMMENTARY[0], commentary='   ')]
+    assert base == ride_coach._cache_key(
+        5, 11, 77, _ACTIVITY, _ROWS, stop_commentary=blank)
+
+
+def test_commentary_change_forces_new_api_call(monkeypatch):
+    """A saved note must refresh coaching, not serve the pre-note cached text."""
+    monkeypatch.setenv('OPENAI_API_KEY', 'test-key')
+    client = _mock_client(_VALID_JSON)
+    with patch('services.ride_coach._get_client', return_value=client):
+        _call()                                       # cache miss #1
+        _call(stop_commentary=_STOP_COMMENTARY)       # different key → miss #2
+    assert client.chat.completions.create.call_count == 2

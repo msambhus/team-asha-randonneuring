@@ -281,18 +281,39 @@ def fetch_and_analyze(rider_id, match_id, strava_activity_id, plan_stops=None):
     }
 
 
+def _latlng_at(latlng, idx):
+    """Return (lat, lng) at a stream index, or (None, None) when unavailable.
+
+    The ``latlng`` stream is index-aligned with velocity/time/distance. Returns
+    None coordinates when the stream is absent, the index is out of range, or the
+    point is malformed — callers treat those stops as having no map position.
+    """
+    if not latlng or idx < 0 or idx >= len(latlng):
+        return None, None
+    pt = latlng[idx]
+    if isinstance(pt, (list, tuple)) and len(pt) >= 2 and pt[0] is not None and pt[1] is not None:
+        try:
+            return round(float(pt[0]), 6), round(float(pt[1]), 6)
+        except (TypeError, ValueError):
+            return None, None
+    return None, None
+
+
 def detect_stops(streams):
     """Detect stoppages from velocity and distance streams.
 
     Walks velocity_smooth array. When velocity < threshold for > min_duration,
-    records a stop with its distance position and duration.
+    records a stop with its distance position, duration, and (when the latlng
+    stream is present) the lat/lng where the stop began.
 
     Returns:
-        list of dicts: [{distance_miles, start_time_s, duration_s, duration_min}]
+        list of dicts: [{distance_miles, start_time_s, duration_s, duration_min,
+        lat, lng}]  (lat/lng are None when no latlng stream is available)
     """
     velocity = streams.get('velocity_smooth', [])
     distance = streams.get('distance', [])
     time_arr = streams.get('time', [])
+    latlng = streams.get('latlng', [])
 
     if not velocity or not distance or not time_arr:
         return []
@@ -310,11 +331,14 @@ def detect_stops(streams):
             if in_stop:
                 duration_s = time_arr[i] - time_arr[stop_start_idx]
                 if duration_s >= MIN_STOP_DURATION:
+                    lat, lng = _latlng_at(latlng, stop_start_idx)
                     stops.append({
                         'distance_miles': round(distance[stop_start_idx] / METERS_PER_MILE, 1),
                         'start_time_s': time_arr[stop_start_idx],
                         'duration_s': duration_s,
                         'duration_min': round(duration_s / 60, 1),
+                        'lat': lat,
+                        'lng': lng,
                     })
                 in_stop = False
 
@@ -322,11 +346,14 @@ def detect_stops(streams):
     if in_stop and len(time_arr) > 0:
         duration_s = time_arr[-1] - time_arr[stop_start_idx]
         if duration_s >= MIN_STOP_DURATION:
+            lat, lng = _latlng_at(latlng, stop_start_idx)
             stops.append({
                 'distance_miles': round(distance[stop_start_idx] / METERS_PER_MILE, 1),
                 'start_time_s': time_arr[stop_start_idx],
                 'duration_s': duration_s,
                 'duration_min': round(duration_s / 60, 1),
+                'lat': lat,
+                'lng': lng,
             })
 
     return stops
@@ -433,6 +460,118 @@ def match_stops_to_plan(detected_stops, plan_stops):
         detected_stops = [ds for i, ds in enumerate(detected_stops) if i not in absorbed_indices]
 
     return detected_stops
+
+
+def build_map_data(streams, comparison, detected_stops, max_points=500,
+                   max_segment_points=120):
+    """Build a compact map payload for the ride-analysis page.
+
+    Assembles, from the decoded Strava streams and the plan-vs-actual
+    comparison:
+      - ``track``:  the full GPS polyline, downsampled to ``max_points``.
+      - ``segments``: per planned segment, its sub-polyline plus the segment's
+        ``actual_speed_mph`` (from ``comparison['rows']``) for map colouring.
+      - ``stops``: each detected stop that has coordinates, with its index into
+        the persisted ``detected_stops`` array (the save key for commentary),
+        distance, duration, matched label, and any saved commentary.
+      - ``bounds``: [[min_lat, min_lng], [max_lat, max_lng]] for map fit.
+
+    Best-effort: returns ``None`` when there is no usable ``latlng`` stream (old
+    cached rows, or activities with no GPS), so the page renders without a map.
+    """
+    import math
+
+    if not streams:
+        return None
+    latlng = streams.get('latlng') or []
+    if len(latlng) < 2:
+        return None
+
+    n = len(latlng)
+
+    def _pt(idx):
+        lat, lng = _latlng_at(latlng, idx)
+        return [lat, lng] if lat is not None and lng is not None else None
+
+    # Downsample the full track for the base polyline.
+    if n > max_points:
+        step = math.ceil(n / max_points)
+        idxs = list(range(0, n, step))
+        if idxs[-1] != n - 1:
+            idxs.append(n - 1)
+    else:
+        idxs = list(range(n))
+    track = [p for p in (_pt(i) for i in idxs) if p]
+    if len(track) < 2:
+        return None
+
+    lats = [p[0] for p in track]
+    lngs = [p[1] for p in track]
+    bounds = [[min(lats), min(lngs)], [max(lats), max(lngs)]]
+
+    # Distance (miles) per stream index — used to slice segment sub-polylines.
+    distance_m = streams.get('distance') or []
+    dist_mi = ([d / METERS_PER_MILE for d in distance_m]
+               if distance_m and len(distance_m) == n else None)
+
+    segments = []
+    rows = comparison.get('rows') if isinstance(comparison, dict) else None
+    if dist_mi and rows:
+        planned = sorted(
+            (r for r in rows if not r.get('is_extra')),
+            key=lambda r: r.get('distance_miles') or 0,
+        )
+        prev_dist = None
+        for r in planned:
+            cur_dist = r.get('distance_miles')
+            if cur_dist is None:
+                continue
+            if prev_dist is None:
+                prev_dist = cur_dist
+                continue
+            seg_idx = [i for i in range(n) if prev_dist <= dist_mi[i] <= cur_dist]
+            if len(seg_idx) >= 2:
+                if len(seg_idx) > max_segment_points:
+                    st = math.ceil(len(seg_idx) / max_segment_points)
+                    seg_idx = seg_idx[::st] + [seg_idx[-1]]
+                pts = [p for p in (_pt(i) for i in seg_idx) if p]
+                if len(pts) >= 2:
+                    segments.append({
+                        'location': r.get('location', ''),
+                        'start_mi': round(prev_dist, 1),
+                        'end_mi': round(cur_dist, 1),
+                        'speed_mph': r.get('actual_speed_mph'),
+                        'points': pts,
+                    })
+            prev_dist = cur_dist
+
+    stops = []
+    for i, ds in enumerate(detected_stops or []):
+        lat = ds.get('lat')
+        lng = ds.get('lng')
+        if lat is None or lng is None:
+            continue
+        stops.append({
+            'stop_index': i,
+            # start_time_s is a stable, immutable per-stop identity (unchanged by
+            # match_stops_to_plan) — the save endpoint resolves the target stop
+            # by it so a note can't drift to the wrong element if the persisted
+            # and rendered arrays differ (e.g. plan changed between render/save).
+            'start_time_s': ds.get('start_time_s'),
+            'lat': lat,
+            'lng': lng,
+            'distance_miles': ds.get('distance_miles'),
+            'duration_min': ds.get('duration_min'),
+            'location': ds.get('matched_stop_name') or ds.get('location') or None,
+            'commentary': ds.get('commentary') or '',
+        })
+
+    return {
+        'track': track,
+        'bounds': bounds,
+        'segments': segments,
+        'stops': stops,
+    }
 
 
 def _build_stream_interpolator(streams):
