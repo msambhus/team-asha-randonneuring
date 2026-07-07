@@ -4,6 +4,7 @@ Matches Strava activities to brevet rides, fetches stream data,
 detects stoppages, and builds plan-vs-actual comparison data.
 """
 
+import bisect
 import difflib
 import html as html_mod
 import json
@@ -195,6 +196,12 @@ def fetch_and_analyze(rider_id, match_id, strava_activity_id, plan_stops=None):
     if cached and cached.get('activity_streams') and not cached.get('strava_api_error'):
         streams = _decompress_streams(cached['activity_streams'])
         detected_stops = cached.get('detected_stops') or detect_stops(streams)
+        # Normalize cached stops at render (non-destructive): merge split-up
+        # duplicates and backfill coords for rows analyzed before stops carried
+        # lat/lng — so old rides get de-duped breaks and map pins without a
+        # re-analysis. Idempotent / no-op for freshly-detected stops.
+        detected_stops = _coalesce_stops(detected_stops)
+        detected_stops = _backfill_stop_coords(detected_stops, streams)
         if plan_stops and detected_stops:
             detected_stops = match_stops_to_plan(detected_stops, plan_stops)
         stream_summary = cached.get('stream_summary') or _build_stream_summary(streams)
@@ -256,7 +263,8 @@ def fetch_and_analyze(rider_id, match_id, strava_activity_id, plan_stops=None):
 
     # ── 3. Detect stops + build summary ──────────────────────────────
     if cached_stops is not None:
-        detected_stops = cached_stops
+        detected_stops = _coalesce_stops(cached_stops)
+        detected_stops = _backfill_stop_coords(detected_stops, streams)
         if plan_stops and detected_stops:
             detected_stops = match_stops_to_plan(detected_stops, plan_stops)
         stream_summary = (cached.get('stream_summary') or {}) if cached else {}
@@ -356,6 +364,98 @@ def detect_stops(streams):
                 'lng': lng,
             })
 
+    return _coalesce_stops(stops)
+
+
+# A single physical stop can be split into several when velocity briefly rises
+# above threshold (GPS jitter, rolling a few feet, re-parking). Consecutive
+# stops separated by only this much MOVING time are treated as one.
+STOP_MERGE_GAP_S = 120  # seconds
+
+
+def _coalesce_stops(stops):
+    """Merge consecutive stops separated by only a brief moving gap.
+
+    Prevents one long stop from showing as several (e.g. a 25-min control break
+    split into 15+3+7 min entries at the same mile). Consecutive stops whose gap
+    ``next.start_time_s - prev_real_end`` is <= ``STOP_MERGE_GAP_S`` are merged.
+
+    The merged ``duration_s`` is the SUM of the members' true stopped durations
+    — the brief moving blips *between* them are NOT counted as stopped time, so
+    downstream segment riding-time / speed math (and enroute-break detection,
+    which compares against below-threshold samples only) stays consistent. The
+    merged entry keeps the earliest stop's position/coords and adopts a
+    matched-waypoint identity only when the earlier stop has none (so a control
+    is never downgraded to an extra, and two *different* matched controls are
+    never collapsed).
+
+    Idempotent: re-running on already-merged stops is a no-op.
+    """
+    if not stops:
+        return stops
+    ordered = sorted(
+        stops,
+        key=lambda s: (s.get('start_time_s') is None, s.get('start_time_s') or 0),
+    )
+    merged = []
+    last_end = None  # real clock end of the current merged group (for the gap check)
+    for s in ordered:
+        st = s.get('start_time_s')
+        dur = s.get('duration_s') or 0
+        if (merged and st is not None and last_end is not None
+                and st - last_end <= STOP_MERGE_GAP_S):
+            prev = merged[-1]
+            pn, sn = prev.get('matched_stop_name'), s.get('matched_stop_name')
+            if not (pn and sn and pn != sn):  # never collapse two distinct controls
+                prev['duration_s'] = (prev.get('duration_s') or 0) + dur
+                prev['duration_min'] = round(prev['duration_s'] / 60, 1)
+                if sn and not pn:
+                    prev['matched_stop_name'] = sn
+                    prev['matched_stop_type'] = s.get('matched_stop_type')
+                    prev['is_extra'] = s.get('is_extra', False)
+                last_end = max(last_end, st + dur)
+                continue
+        merged.append(dict(s))
+        last_end = (st + dur) if st is not None else last_end
+    return merged
+
+
+def _nearest_time_index(time_arr, t):
+    """Index of the stream sample whose time is closest to ``t`` (monotonic arr)."""
+    if not time_arr:
+        return None
+    i = bisect.bisect_left(time_arr, t)
+    if i <= 0:
+        return 0
+    if i >= len(time_arr):
+        return len(time_arr) - 1
+    return i if abs(time_arr[i] - t) < abs(time_arr[i - 1] - t) else i - 1
+
+
+def _backfill_stop_coords(stops, streams):
+    """Fill lat/lng on stops that lack them, from the streams (by start_time_s).
+
+    Stops analyzed before they carried coordinates (older cached rows) have
+    ``lat``/``lng`` None; map each stop's ``start_time_s`` to the nearest stream
+    time index and read its latlng so the map can pin them — no re-analysis,
+    non-destructive (computed at render, not persisted).
+    """
+    if not stops:
+        return stops
+    latlng = streams.get('latlng') or []
+    time_arr = streams.get('time') or []
+    if not latlng or not time_arr:
+        return stops
+    for s in stops:
+        if s.get('lat') is not None and s.get('lng') is not None:
+            continue
+        t = s.get('start_time_s')
+        if t is None:
+            continue
+        idx = _nearest_time_index(time_arr, t)
+        if idx is not None:
+            lat, lng = _latlng_at(latlng, idx)
+            s['lat'], s['lng'] = lat, lng
     return stops
 
 
