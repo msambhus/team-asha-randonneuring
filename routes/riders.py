@@ -1314,7 +1314,12 @@ def ride_strava_analysis(rusa_id, ride_id):
     #   {overall, segments{location}, stops{distance_key}}).
     # Fed to the coach (so notes change coaching) and to the template (to pre-fill
     # the per-segment / per-unplanned-stop note fields + the overall note box).
-    rider_notes = analysis.get('rider_notes') or {}
+    # NOTE: read straight from the DB row — fetch_and_analyze() returns a
+    # constructed dict WITHOUT the rider_notes column, so reading it off
+    # `analysis` would always be None (saved notes would never re-display).
+    from models import get_strava_ride_analysis
+    _db_row = get_strava_ride_analysis(match['id'])
+    rider_notes = (_db_row or {}).get('rider_notes') or {}
     if not isinstance(rider_notes, dict):
         rider_notes = {}
     segment_notes = rider_notes.get('segments')
