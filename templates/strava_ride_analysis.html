@@ -510,16 +510,13 @@
     <h3>Route Map</h3>
     <div id="rideMap"></div>
     <div style="margin-top:8px;font-size:0.72rem;color:var(--text-light,#94a3b8);">
-        Track coloured by segment speed. Markers show detected stops
-        {% if is_own_profile %}&mdash; click a stop to add your own notes (they help the coach). Note: retrying analysis clears saved notes.{% else %}.{% endif %}
+        Track coloured by segment speed. Markers show detected stops.
     </div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function() {
     const mapData = {{ map_data|tojson }};
-    const isOwn = {{ is_own_profile|tojson }};
-    const saveUrlBase = "{{ url_for('riders.save_stop_commentary', rusa_id=rider.rusa_id, ride_id=ride.id) }}";
     if (!mapData || !mapData.track || mapData.track.length < 2) return;
 
     const map = L.map('rideMap', { scrollWheelZoom: false });
@@ -563,59 +560,18 @@
         line.bindTooltip(escapeHtml(seg.location) + ': ' + spd, { sticky: true });
     });
 
-    // Stop markers, with an editable commentary box on own profile.
+    // Stop markers — informational only (notes live in the segment table +
+    // the overall note box below, not on the map).
     (mapData.stops || []).forEach(function(stop) {
         const marker = L.marker([stop.lat, stop.lng]).addTo(map);
         const where = stop.location ? escapeHtml(stop.location) : (stop.distance_miles + ' mi');
         const dur = stop.duration_min != null ? stop.duration_min + ' min stop' : '';
-        let html = '<div class="map-stop-popup" style="min-width:200px;">'
+        const html = '<div class="map-stop-popup" style="min-width:160px;">'
             + '<div style="font-weight:700;">' + where + '</div>'
-            + '<div style="font-size:0.72rem;color:#64748b;">' + stop.distance_miles + ' mi &middot; ' + dur + '</div>';
-        if (isOwn) {
-            html += '<textarea data-stop-index="' + stop.stop_index + '" '
-                + 'placeholder="What happened here? (fuel, mechanical, how you felt...)">'
-                + escapeHtml(stop.commentary) + '</textarea>'
-                + '<div><button type="button" data-save="' + stop.stop_index + '" '
-                + 'data-sts="' + (stop.start_time_s == null ? '' : stop.start_time_s) + '">Save note</button>'
-                + '<span class="save-status" data-status="' + stop.stop_index + '"></span></div>';
-        } else if (stop.commentary) {
-            html += '<div style="font-size:0.8rem;margin-top:6px;">' + escapeHtml(stop.commentary) + '</div>';
-        }
-        html += '</div>';
+            + '<div style="font-size:0.72rem;color:#64748b;">' + stop.distance_miles + ' mi &middot; ' + dur + '</div>'
+            + '</div>';
         marker.bindPopup(html);
     });
-
-    if (isOwn) {
-        // Delegate the save click from within any open popup.
-        map.on('popupopen', function(e) {
-            const el = e.popup.getElement();
-            const btn = el.querySelector('button[data-save]');
-            if (!btn) return;
-            btn.addEventListener('click', function() {
-                const idx = btn.getAttribute('data-save');
-                const sts = btn.getAttribute('data-sts');
-                const ta = el.querySelector('textarea[data-stop-index="' + idx + '"]');
-                const status = el.querySelector('span[data-status="' + idx + '"]');
-                btn.disabled = true;
-                if (status) { status.style.color = '#64748b'; status.textContent = 'Saving...'; }
-                const body = { stop_index: Number(idx), commentary: ta.value };
-                if (sts !== '' && sts != null) body.start_time_s = Number(sts);
-                fetch(saveUrlBase, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body),
-                }).then(function(r) { return r.ok ? r.json() : Promise.reject(r); })
-                  .then(function(data) {
-                      // Keep the local payload in sync so re-opening shows the saved text.
-                      const s = (mapData.stops || []).find(function(x){ return String(x.stop_index) === String(idx); });
-                      if (s) s.commentary = data.commentary;
-                      if (status) { status.style.color = '#16a34a'; status.textContent = 'Saved'; }
-                  }).catch(function() {
-                      if (status) { status.style.color = '#dc2626'; status.textContent = 'Save failed'; }
-                  }).finally(function() { btn.disabled = false; });
-            });
-        });
-    }
 })();
 </script>
 {% endif %}
@@ -795,6 +751,22 @@
     </td>
 </tr>
 {% endif %}
+{# Owner-editable per-segment note (feeds the coach). #}
+{% if is_own_profile and not row.is_extra %}
+<tr class="segment-note-row">
+    <td colspan="20" style="padding:2px 12px 10px;background:#f8fafc;border-bottom:1px solid #eef2f7;">
+        <div class="seg-note" style="display:flex;gap:8px;align-items:flex-start;">
+            <span style="font-size:0.7rem;color:#64748b;white-space:nowrap;padding-top:8px;">Your note:</span>
+            <textarea class="seg-note-input" rows="1"
+                placeholder="Notes on this segment (fuel, mechanical, how you felt&hellip;) &mdash; feeds the coach"
+                style="flex:1;min-height:32px;font-size:0.78rem;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;resize:vertical;">{{ segment_notes.get(row.location, '') }}</textarea>
+            <button type="button" class="seg-note-save" data-location="{{ row.location }}"
+                style="white-space:nowrap;font-size:0.72rem;padding:6px 10px;">Save</button>
+            <span class="seg-note-status" style="font-size:0.7rem;padding-top:8px;min-width:60px;"></span>
+        </div>
+    </td>
+</tr>
+{% endif %}
 {% endfor %}
 </tbody>
 </table>
@@ -830,6 +802,57 @@
     {% endif %}
     <div style="margin-top:12px;font-size:0.72rem;color:var(--text-light,#94a3b8);">Automated analysis &mdash; use your own judgment.</div>
 </div>
+{% endif %}
+
+{# --- Owner's ride notes: overall note box + save wiring for all notes --- #}
+{% if is_own_profile %}
+<div class="analysis-summary" style="margin-top:16px;background:white;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <h3 style="margin-top:0;">&#x1f4dd; Your notes on this ride</h3>
+    <p style="font-size:0.8rem;color:var(--text-muted,#64748b);margin-top:0;">These feed the AI coach &mdash; save to refresh the coaching above on your next visit.</p>
+    <textarea id="overallNote" placeholder="How did the ride go overall? Nutrition, sleep, weather, how you felt&hellip;"
+        style="width:100%;min-height:90px;font-size:0.85rem;padding:10px;border:1px solid #e2e8f0;border-radius:8px;resize:vertical;box-sizing:border-box;">{{ overall_note }}</textarea>
+    <div style="margin-top:8px;display:flex;align-items:center;gap:10px;">
+        <button type="button" id="overallNoteSave" style="font-size:0.8rem;padding:7px 14px;">Save note</button>
+        <span id="overallNoteStatus" style="font-size:0.75rem;"></span>
+    </div>
+</div>
+<script>
+(function() {
+    const saveUrl = "{{ url_for('riders.save_ride_notes', rusa_id=rider.rusa_id, ride_id=ride.id) }}";
+    function save(body, statusEl, btn) {
+        if (btn) btn.disabled = true;
+        if (statusEl) { statusEl.style.color = '#64748b'; statusEl.textContent = 'Saving…'; }
+        fetch(saveUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        }).then(function(r) { return r.ok ? r.json() : Promise.reject(r); })
+          .then(function() { if (statusEl) { statusEl.style.color = '#16a34a'; statusEl.textContent = 'Saved'; } })
+          .catch(function() { if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = 'Save failed'; } })
+          .finally(function() { if (btn) btn.disabled = false; });
+    }
+
+    // Per-segment notes (button + textarea are siblings in .seg-note).
+    document.querySelectorAll('.seg-note-save').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const wrap = btn.closest('.seg-note');
+            const ta = wrap ? wrap.querySelector('.seg-note-input') : null;
+            const status = wrap ? wrap.querySelector('.seg-note-status') : null;
+            if (!ta) return;
+            save({ scope: 'segment', location: btn.getAttribute('data-location'), note: ta.value }, status, btn);
+        });
+    });
+
+    // Overall ride note.
+    const oBtn = document.getElementById('overallNoteSave');
+    if (oBtn) {
+        oBtn.addEventListener('click', function() {
+            save({ scope: 'overall', note: document.getElementById('overallNote').value },
+                 document.getElementById('overallNoteStatus'), oBtn);
+        });
+    }
+})();
+</script>
 {% endif %}
 
 {# --- Chart.js --- #}

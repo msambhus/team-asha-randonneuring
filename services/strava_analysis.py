@@ -471,9 +471,9 @@ def build_map_data(streams, comparison, detected_stops, max_points=500,
       - ``track``:  the full GPS polyline, downsampled to ``max_points``.
       - ``segments``: per planned segment, its sub-polyline plus the segment's
         ``actual_speed_mph`` (from ``comparison['rows']``) for map colouring.
-      - ``stops``: each detected stop that has coordinates, with its index into
-        the persisted ``detected_stops`` array (the save key for commentary),
-        distance, duration, matched label, and any saved commentary.
+      - ``stops``: each detected stop that has coordinates, with its distance,
+        duration, and matched label (informational markers; notes live in the
+        segment table + an overall note, not on the map).
       - ``bounds``: [[min_lat, min_lng], [max_lat, max_lng]] for map fit.
 
     Best-effort: returns ``None`` when there is no usable ``latlng`` stream (old
@@ -551,19 +551,14 @@ def build_map_data(streams, comparison, detected_stops, max_points=500,
         lng = ds.get('lng')
         if lat is None or lng is None:
             continue
+        # Informational marker only — notes are no longer attached to map stops
+        # (they live in the segment table + an overall note; see rider_notes).
         stops.append({
-            'stop_index': i,
-            # start_time_s is a stable, immutable per-stop identity (unchanged by
-            # match_stops_to_plan) — the save endpoint resolves the target stop
-            # by it so a note can't drift to the wrong element if the persisted
-            # and rendered arrays differ (e.g. plan changed between render/save).
-            'start_time_s': ds.get('start_time_s'),
             'lat': lat,
             'lng': lng,
             'distance_miles': ds.get('distance_miles'),
             'duration_min': ds.get('duration_min'),
             'location': ds.get('matched_stop_name') or ds.get('location') or None,
-            'commentary': ds.get('commentary') or '',
         })
 
     return {

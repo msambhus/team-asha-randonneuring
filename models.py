@@ -2975,15 +2975,11 @@ def clear_strava_ride_analysis(match_id):
     conn.commit()
 
 
-def update_stop_commentary(match_id, stop_index, commentary):
-    """Persist a rider's free-text note onto one detected stop, in place.
+def update_overall_note(match_id, note):
+    """Persist a rider's free-text note about the whole ride, in place.
 
-    Extends the existing ``detected_stops`` JSONB array element at
-    ``stop_index`` with a ``commentary`` key (rather than using the dormant
-    ``llm_narrative`` column) so saved notes ride along with the stop and feed
-    the ride coach. Parameterized only — the caller MUST validate that
-    ``stop_index`` is within the current array bounds, since jsonb_set would
-    otherwise append a stray element for an out-of-range index.
+    Writes ``rider_notes -> 'overall'`` on the analysis row. Parameterized only;
+    the JSONB path is a fixed literal, ``note`` is passed as a bound value.
 
     Returns the number of rows updated (0 when no analysis row exists).
     """
@@ -2991,13 +2987,45 @@ def update_stop_commentary(match_id, stop_index, commentary):
     cur = conn.cursor()
     cur.execute("""
         UPDATE strava_ride_analysis
-        SET detected_stops = jsonb_set(
-                COALESCE(detected_stops, '[]'::jsonb),
+        SET rider_notes = jsonb_set(
+                COALESCE(rider_notes, '{}'::jsonb),
+                '{overall}',
+                %s::jsonb,
+                true)
+        WHERE match_id = %s
+    """, (json.dumps(note), match_id))
+    conn.commit()
+    return cur.rowcount
+
+
+def update_segment_note(match_id, location, note):
+    """Persist a rider's free-text note on one analysis segment, in place.
+
+    Writes ``rider_notes -> 'segments' -> <location>`` on the analysis row.
+    Segments are keyed by their (stable, human-meaningful) ``location`` — the
+    same key ``ride_strava_analysis`` uses for ``segment_eval`` — so notes stay
+    attached across re-analysis. Parameterized only: the two-element path
+    ``{segments, <location>}`` is passed as a bound ``text[]`` so an arbitrary
+    ``location`` string can never be interpolated into SQL. The intermediate
+    ``segments`` object is created on demand via a COALESCE-then-set.
+
+    Returns the number of rows updated (0 when no analysis row exists).
+    """
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE strava_ride_analysis
+        SET rider_notes = jsonb_set(
+                jsonb_set(
+                    COALESCE(rider_notes, '{}'::jsonb),
+                    '{segments}',
+                    COALESCE(rider_notes -> 'segments', '{}'::jsonb),
+                    true),
                 %s::text[],
                 %s::jsonb,
                 true)
         WHERE match_id = %s
-    """, ([str(stop_index), 'commentary'], json.dumps(commentary), match_id))
+    """, (['segments', location], json.dumps(note), match_id))
     conn.commit()
     return cur.rowcount
 

@@ -92,7 +92,7 @@ _COMPARISON = {
 
 def test_build_map_data_basic_shape():
     stops = [{'distance_miles': 2.0, 'duration_min': 5.0, 'start_time_s': 900,
-              'lat': 37.002, 'lng': -122.0, 'commentary': 'water stop'}]
+              'lat': 37.002, 'lng': -122.0, 'matched_stop_name': 'Water'}]
     data = build_map_data(_map_streams(), _COMPARISON, stops)
 
     assert data is not None
@@ -107,12 +107,14 @@ def test_build_map_data_basic_shape():
     assert data['segments'][0]['speed_mph'] == 14.0
     assert len(data['segments'][0]['points']) >= 2
 
-    # Stop marker carries index, stable identity, and saved commentary.
+    # Stop marker is informational only (coords + label + distance/duration);
+    # notes are NOT attached to map stops any more.
     assert len(data['stops']) == 1
-    assert data['stops'][0]['stop_index'] == 0
-    assert data['stops'][0]['start_time_s'] == 900
-    assert data['stops'][0]['commentary'] == 'water stop'
-    assert data['stops'][0]['lat'] == 37.002
+    stop = data['stops'][0]
+    assert stop['lat'] == 37.002 and stop['lng'] == -122.0
+    assert stop['location'] == 'Water'
+    assert stop['distance_miles'] == 2.0 and stop['duration_min'] == 5.0
+    assert 'commentary' not in stop and 'stop_index' not in stop
 
 
 def test_build_map_data_none_without_latlng():
@@ -131,9 +133,9 @@ def test_build_map_data_skips_stops_without_coords():
         {'distance_miles': 4.0, 'duration_min': 3.0, 'lat': 37.004, 'lng': -122.0},
     ]
     data = build_map_data(_map_streams(), _COMPARISON, stops)
-    # Only the coordinate-bearing stop survives; index reflects original position.
+    # Only the coordinate-bearing stop survives.
     assert len(data['stops']) == 1
-    assert data['stops'][0]['stop_index'] == 1
+    assert data['stops'][0]['lat'] == 37.004
 
 
 def test_build_map_data_downsamples_track():
