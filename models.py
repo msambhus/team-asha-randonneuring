@@ -2975,62 +2975,81 @@ def clear_strava_ride_analysis(match_id):
     conn.commit()
 
 
-def update_overall_note(match_id, note):
-    """Persist a rider's free-text note about the whole ride, in place.
+def _set_or_remove_rider_note(match_id, path, note):
+    """Set (or, for an empty note, remove) one rider_notes value, in place.
 
-    Writes ``rider_notes -> 'overall'`` on the analysis row. Parameterized only;
-    the JSONB path is a fixed literal, ``note`` is passed as a bound value.
+    ``path`` is a JSONB path as a Python list (e.g. ``['overall']`` or
+    ``['segments', location]``); it is bound as a ``text[]`` param so an
+    arbitrary key string can never be interpolated into SQL. A non-empty
+    ``note`` is written with jsonb_set, creating any missing intermediate
+    object; an empty/blank note REMOVES the key (``#-``) so cleared notes leave
+    no residue and read back as absent.
 
     Returns the number of rows updated (0 when no analysis row exists).
     """
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("""
-        UPDATE strava_ride_analysis
-        SET rider_notes = jsonb_set(
-                COALESCE(rider_notes, '{}'::jsonb),
-                '{overall}',
-                %s::jsonb,
-                true)
-        WHERE match_id = %s
-    """, (json.dumps(note), match_id))
+    if (note or '').strip():
+        # Ensure the parent object exists, then set the leaf. For a 2-element
+        # path the parent is path[:-1]; a 1-element path has no parent object.
+        if len(path) > 1:
+            parent = path[:-1]
+            cur.execute("""
+                UPDATE strava_ride_analysis
+                SET rider_notes = jsonb_set(
+                        jsonb_set(
+                            COALESCE(rider_notes, '{}'::jsonb),
+                            %s::text[],
+                            COALESCE(rider_notes #> %s::text[], '{}'::jsonb),
+                            true),
+                        %s::text[],
+                        %s::jsonb,
+                        true)
+                WHERE match_id = %s
+            """, (parent, parent, path, json.dumps(note), match_id))
+        else:
+            cur.execute("""
+                UPDATE strava_ride_analysis
+                SET rider_notes = jsonb_set(
+                        COALESCE(rider_notes, '{}'::jsonb),
+                        %s::text[], %s::jsonb, true)
+                WHERE match_id = %s
+            """, (path, json.dumps(note), match_id))
+    else:
+        cur.execute("""
+            UPDATE strava_ride_analysis
+            SET rider_notes = rider_notes #- %s::text[]
+            WHERE match_id = %s
+        """, (path, match_id))
     conn.commit()
     return cur.rowcount
 
 
-def update_segment_note(match_id, location, note):
-    """Persist a rider's free-text note on one analysis segment, in place.
+def update_overall_note(match_id, note):
+    """Set/clear the rider's note about the whole ride (rider_notes.overall)."""
+    return _set_or_remove_rider_note(match_id, ['overall'], note)
 
-    Writes ``rider_notes -> 'segments' -> <location>`` on the analysis row.
+
+def update_segment_note(match_id, location, note):
+    """Set/clear a rider's note on one planned segment (rider_notes.segments.<location>).
+
     Segments are keyed by their (stable, human-meaningful) ``location`` — the
     same key ``ride_strava_analysis`` uses for ``segment_eval`` and ``stop_wind``
     — so notes stay attached across re-analysis. (Caveat inherited from that
     keying scheme: on a loop route where two segments share a ``location`` name,
-    a note maps to both; a distance-qualified key would be needed to separate
-    them.) Parameterized only: the two-element path
-    ``{segments, <location>}`` is passed as a bound ``text[]`` so an arbitrary
-    ``location`` string can never be interpolated into SQL. The intermediate
-    ``segments`` object is created on demand via a COALESCE-then-set.
-
-    Returns the number of rows updated (0 when no analysis row exists).
+    a note maps to both; unplanned stops avoid this by keying on distance.)
     """
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        UPDATE strava_ride_analysis
-        SET rider_notes = jsonb_set(
-                jsonb_set(
-                    COALESCE(rider_notes, '{}'::jsonb),
-                    '{segments}',
-                    COALESCE(rider_notes -> 'segments', '{}'::jsonb),
-                    true),
-                %s::text[],
-                %s::jsonb,
-                true)
-        WHERE match_id = %s
-    """, (['segments', location], json.dumps(note), match_id))
-    conn.commit()
-    return cur.rowcount
+    return _set_or_remove_rider_note(match_id, ['segments', location], note)
+
+
+def update_stop_note(match_id, key, note):
+    """Set/clear a rider's note on one UNPLANNED stop (rider_notes.stops.<key>).
+
+    Unplanned (is_extra) stops have no clean location, so they are keyed by
+    their rounded cumulative distance (a stable, unique per-stop string),
+    avoiding the label collisions bare ``location`` would cause.
+    """
+    return _set_or_remove_rider_note(match_id, ['stops', key], note)
 
 
 def get_rider_rides_with_cached_streams(rider_id):

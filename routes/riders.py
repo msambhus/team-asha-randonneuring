@@ -1310,14 +1310,29 @@ def ride_strava_analysis(rusa_id, ride_id):
             )
             stop_wind = None
 
-    # Rider's own saved notes (rider_notes JSONB: {overall, segments{location}}).
+    # Rider's own saved notes (rider_notes JSONB:
+    #   {overall, segments{location}, stops{distance_key}}).
     # Fed to the coach (so notes change coaching) and to the template (to pre-fill
-    # the per-segment note fields + the overall note box).
+    # the per-segment / per-unplanned-stop note fields + the overall note box).
     rider_notes = analysis.get('rider_notes') or {}
-    segment_notes = rider_notes.get('segments') if isinstance(rider_notes, dict) else None
+    if not isinstance(rider_notes, dict):
+        rider_notes = {}
+    segment_notes = rider_notes.get('segments')
     segment_notes = segment_notes if isinstance(segment_notes, dict) else {}
-    overall_note = rider_notes.get('overall') if isinstance(rider_notes, dict) else None
+    stop_notes = rider_notes.get('stops')
+    stop_notes = stop_notes if isinstance(stop_notes, dict) else {}
+    overall_note = rider_notes.get('overall')
     overall_note = overall_note if isinstance(overall_note, str) else ''
+
+    # Unplanned-stop notes for the coach: a list of {label, note} built from the
+    # extra (is_extra) comparison rows whose distance key carries a saved note.
+    coach_stop_notes = []
+    if isinstance(comparison, dict):
+        for r in (comparison.get('rows') or []):
+            if r.get('is_extra') and r.get('distance_miles') is not None:
+                note = (stop_notes.get(_stop_note_key(r['distance_miles'])) or '').strip()
+                if note:
+                    coach_stop_notes.append({'label': r.get('location') or '', 'note': note})
 
     # --- Rich per-segment analysis + coach (best-effort; must never block render) ---
     segment_eval = {}            # {location: {'narrative': str|None, 'coach': str|None}}
@@ -1345,7 +1360,8 @@ def ride_strava_analysis(rusa_id, ride_id):
                 comparison['rows'], comparison['summary'], comparison.get('hr_power'),
                 stop_wind, ride_baseline, band_baseline, narratives,
                 same_route_baseline=same_route_baseline,
-                segment_notes=segment_notes, overall_note=overall_note)
+                segment_notes=segment_notes, overall_note=overall_note,
+                stop_notes=coach_stop_notes)
             coach_seg = (coaching or {}).get('per_segment', {})
             for loc in set(narratives) | set(coach_seg):
                 segment_eval[loc] = {'narrative': narratives.get(loc),
@@ -1379,6 +1395,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                            ride_recommendations=ride_recommendations,
                            map_data=map_data,
                            segment_notes=segment_notes,
+                           stop_notes=stop_notes,
                            overall_note=overall_note)
 
 
@@ -1402,21 +1419,32 @@ def retry_strava_analysis(rusa_id, ride_id):
 MAX_RIDE_NOTE_LEN = 1000
 
 
+def _stop_note_key(distance_miles):
+    """Stable string key for an unplanned-stop note: its 1-decimal distance.
+
+    The same formatting is used by the template (to pre-fill) and here (to
+    save), so a stop always maps to the same rider_notes.stops entry.
+    """
+    return '%.1f' % float(distance_miles)
+
+
 @riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/notes', methods=['POST'])
 def save_ride_notes(rusa_id, ride_id):
-    """Persist a rider's free-text note on the ride analysis.
+    """Persist (or clear) a rider's free-text note on the ride analysis.
 
-    Two scopes:
+    Scopes:
       - ``scope=overall`` — one note for the whole ride.
-      - ``scope=segment`` — a note on the segment identified by ``location``
-        (the same key the analysis page uses for ``segment_eval``).
+      - ``scope=segment`` — a note on a planned segment, ``ident`` = its
+        ``location`` (the key the page uses for ``segment_eval``).
+      - ``scope=stop`` — a note on an unplanned stop, ``ident`` = its
+        distance key (see ``_stop_note_key``).
 
-    Owner-guarded (only the profile owner may write their own notes) and
-    parameterized. Stored in the ``rider_notes`` JSONB so the note feeds the
+    A blank ``note`` deletes that note (the model removes the JSONB key).
+    Owner-guarded and parameterized; stored in ``rider_notes`` so it feeds the
     ride coach on the next render.
     """
     from models import (get_strava_ride_match, update_overall_note,
-                        update_segment_note)
+                        update_segment_note, update_stop_note)
 
     rider = get_rider_by_rusa(rusa_id)
     if not rider:
@@ -1437,11 +1465,14 @@ def save_ride_notes(rusa_id, ride_id):
 
     if scope == 'overall':
         update_overall_note(match['id'], note)
-    elif scope == 'segment':
-        location = (payload.get('location') or '').strip()
-        if not location:
+    elif scope in ('segment', 'stop'):
+        ident = (payload.get('ident') or '').strip()
+        if not ident:
             abort(400)
-        update_segment_note(match['id'], location, note)
+        if scope == 'segment':
+            update_segment_note(match['id'], ident, note)
+        else:
+            update_stop_note(match['id'], ident, note)
     else:
         abort(400)
 

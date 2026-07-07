@@ -259,13 +259,14 @@ def test_cache_key_composition():
 # --------------------------------------------------------------------------
 _SEGMENT_NOTES = {'Pescadero Control': 'legs cramped badly, way too long a taco stop'}
 _OVERALL_NOTE = 'undertrained for the distance, felt it after 180k'
+_STOP_NOTES = [{'label': 'Unplanned stop @ 148.0mi', 'note': 'flat tire, 20 min fix'}]
 
 
 def test_notes_appear_in_user_message(monkeypatch):
     monkeypatch.setenv('OPENAI_API_KEY', 'test-key')
     client = _mock_client(_VALID_JSON)
     with patch('services.ride_coach._get_client', return_value=client):
-        _call(segment_notes=_SEGMENT_NOTES, overall_note=_OVERALL_NOTE)
+        _call(segment_notes=_SEGMENT_NOTES, overall_note=_OVERALL_NOTE, stop_notes=_STOP_NOTES)
 
     messages = client.chat.completions.create.call_args[1]['messages']
     user_msg = next(m for m in messages if m['role'] == 'user')['content']
@@ -273,11 +274,13 @@ def test_notes_appear_in_user_message(monkeypatch):
 
     # Notes are present as delimited DATA blocks in the USER message only.
     assert '<segment_notes>' in user_msg and '<overall_note>' in user_msg
+    assert '<stop_notes>' in user_msg
     assert 'legs cramped badly' in user_msg
     assert 'undertrained for the distance' in user_msg
+    assert 'flat tire, 20 min fix' in user_msg
     # They must NOT leak into the system (instructions) message (injection guard).
     assert 'legs cramped badly' not in system_msg
-    assert 'undertrained for the distance' not in system_msg
+    assert 'flat tire, 20 min fix' not in system_msg
 
 
 def test_no_notes_omits_note_blocks(monkeypatch):
@@ -289,15 +292,17 @@ def test_no_notes_omits_note_blocks(monkeypatch):
     messages = client.chat.completions.create.call_args[1]['messages']
     user_msg = next(m for m in messages if m['role'] == 'user')['content']
     assert '<segment_notes>' not in user_msg and '<overall_note>' not in user_msg
+    assert '<stop_notes>' not in user_msg
 
 
 def test_build_user_message_includes_notes_directly():
     msg = ride_coach._build_user_message(
         _ACTIVITY, _ROWS, _SUMMARY, _HR_POWER, _STOP_WIND,
         _RIDE_BASELINE, _BAND_BASELINE, _SEGMENT_NARRATIVES,
-        segment_notes=_SEGMENT_NOTES, overall_note=_OVERALL_NOTE)
+        segment_notes=_SEGMENT_NOTES, overall_note=_OVERALL_NOTE, stop_notes=_STOP_NOTES)
     assert '<segment_notes>' in msg and 'Pescadero Control' in msg and 'taco stop' in msg
     assert '<overall_note>' in msg and 'undertrained' in msg
+    assert '<stop_notes>' in msg and 'Unplanned stop @ 148.0mi' in msg and 'flat tire' in msg
 
 
 def test_notes_bust_cache_key_for_that_ride():
@@ -311,6 +316,10 @@ def test_notes_bust_cache_key_for_that_ride():
         5, 11, 77, _ACTIVITY, _ROWS, overall_note=_OVERALL_NOTE)
     assert base != with_overall and with_seg != with_overall
 
+    with_stop = ride_coach._cache_key(
+        5, 11, 77, _ACTIVITY, _ROWS, stop_notes=_STOP_NOTES)
+    assert base != with_stop and with_seg != with_stop
+
     # Editing a note changes the key again.
     edited = {'Pescadero Control': 'felt great, quick stop'}
     assert with_seg != ride_coach._cache_key(
@@ -319,7 +328,8 @@ def test_notes_bust_cache_key_for_that_ride():
     # Whitespace-only / empty notes are treated as no notes.
     assert base == ride_coach._cache_key(
         5, 11, 77, _ACTIVITY, _ROWS,
-        segment_notes={'Pescadero Control': '   '}, overall_note='  ')
+        segment_notes={'Pescadero Control': '   '}, overall_note='  ',
+        stop_notes=[{'label': 'x', 'note': '  '}])
 
 
 def test_note_change_forces_new_api_call(monkeypatch):
