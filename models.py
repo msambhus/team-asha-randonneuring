@@ -3003,8 +3003,11 @@ def update_segment_note(match_id, location, note):
 
     Writes ``rider_notes -> 'segments' -> <location>`` on the analysis row.
     Segments are keyed by their (stable, human-meaningful) ``location`` — the
-    same key ``ride_strava_analysis`` uses for ``segment_eval`` — so notes stay
-    attached across re-analysis. Parameterized only: the two-element path
+    same key ``ride_strava_analysis`` uses for ``segment_eval`` and ``stop_wind``
+    — so notes stay attached across re-analysis. (Caveat inherited from that
+    keying scheme: on a loop route where two segments share a ``location`` name,
+    a note maps to both; a distance-qualified key would be needed to separate
+    them.) Parameterized only: the two-element path
     ``{segments, <location>}`` is passed as a bound ``text[]`` so an arbitrary
     ``location`` string can never be interpolated into SQL. The intermediate
     ``segments`` object is created on demand via a COALESCE-then-set.
