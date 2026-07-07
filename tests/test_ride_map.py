@@ -187,3 +187,85 @@ def test_thumbnails_none_without_track():
     from services.strava_analysis import _segment_thumbnails
     assert _segment_thumbnails([], []) is None
     assert _segment_thumbnails([[37.0, -122.0]], []) is None  # <2 points
+
+
+# ── stop coalescing + coord backfill ─────────────────────────────────
+
+def test_coalesce_merges_split_stops():
+    from services.strava_analysis import _coalesce_stops
+    # One physical ~25-min stop split into 3 by brief velocity blips.
+    stops = [
+        {'distance_miles': 134.7, 'start_time_s': 48829, 'duration_s': 906, 'duration_min': 15.1},
+        {'distance_miles': 134.7, 'start_time_s': 49739, 'duration_s': 162, 'duration_min': 2.7},
+        {'distance_miles': 134.7, 'start_time_s': 49922, 'duration_s': 420, 'duration_min': 7.0},
+    ]
+    merged = _coalesce_stops(stops)
+    assert len(merged) == 1
+    m = merged[0]
+    assert m['distance_miles'] == 134.7
+    assert m['start_time_s'] == 48829
+    # Duration spans first-start .. last-end = (49922+420) - 48829 = 1513s.
+    assert m['duration_s'] == 1513
+    assert m['duration_min'] == round(1513 / 60, 1)
+
+
+def test_coalesce_keeps_distinct_stops():
+    from services.strava_analysis import _coalesce_stops
+    # Two stops separated by ~10 min of moving → NOT merged.
+    stops = [
+        {'distance_miles': 40.0, 'start_time_s': 3600, 'duration_s': 300},
+        {'distance_miles': 45.0, 'start_time_s': 4500, 'duration_s': 300},  # gap 600s > 120
+    ]
+    assert len(_coalesce_stops(stops)) == 2
+
+
+def test_coalesce_preserves_matched_identity():
+    from services.strava_analysis import _coalesce_stops
+    # An extra blip right after a matched control keeps the control identity.
+    stops = [
+        {'distance_miles': 90.0, 'start_time_s': 10000, 'duration_s': 600,
+         'matched_stop_name': 'Control #3', 'is_extra': False},
+        {'distance_miles': 90.0, 'start_time_s': 10650, 'duration_s': 120,
+         'matched_stop_name': None, 'is_extra': True},  # gap 50s → merged
+    ]
+    merged = _coalesce_stops(stops)
+    assert len(merged) == 1
+    assert merged[0]['matched_stop_name'] == 'Control #3'
+    assert merged[0]['is_extra'] is False
+
+
+def test_backfill_stop_coords_fills_missing():
+    from services.strava_analysis import _backfill_stop_coords
+    streams = {
+        'time': [0, 10, 20, 30, 40],
+        'latlng': [[37.0, -122.0], [37.1, -122.1], [37.2, -122.2],
+                   [37.3, -122.3], [37.4, -122.4]],
+    }
+    stops = [
+        {'start_time_s': 19, 'lat': None, 'lng': None},   # nearest idx 2 → 37.2
+        {'start_time_s': 40, 'lat': 1.0, 'lng': 2.0},     # already has coords → untouched
+    ]
+    out = _backfill_stop_coords(stops, streams)
+    assert out[0]['lat'] == 37.2 and out[0]['lng'] == -122.2
+    assert out[1]['lat'] == 1.0 and out[1]['lng'] == 2.0  # preserved
+
+
+def test_backfill_noop_without_latlng_stream():
+    from services.strava_analysis import _backfill_stop_coords
+    stops = [{'start_time_s': 10, 'lat': None, 'lng': None}]
+    out = _backfill_stop_coords(stops, {'time': [0, 10]})  # no latlng
+    assert out[0]['lat'] is None
+
+
+def test_detect_stops_coalesces_blip_split_stop():
+    from services.strava_analysis import detect_stops
+    n = 400
+    streams = {
+        'time': list(range(n)),
+        # one long stop (idx 50..351) broken by a 2-sample moving blip at 200-201
+        'velocity_smooth': [5.0] * 50 + [0.0] * 150 + [5.0] * 2 + [0.0] * 150 + [5.0] * 48,
+        'distance': [i * 5.0 for i in range(n)],
+        'latlng': [[37.0 + i * 0.0001, -122.0] for i in range(n)],
+    }
+    stops = detect_stops(streams)
+    assert len(stops) == 1  # the two halves merge into one physical stop
