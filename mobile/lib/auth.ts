@@ -66,6 +66,31 @@ export async function demoSignIn(): Promise<GoogleAuthResponse> {
   return res.json() as Promise<GoogleAuthResponse>;
 }
 
+/** Email + password sign-up (mobile's 3rd login option) → backend app token.
+ *  Surfaces the backend's friendly error (e.g. "email already exists"). */
+export async function passwordSignup(email: string, password: string): Promise<GoogleAuthResponse> {
+  const res = await fetch(`${API_BASE}/api/auth/signup`, {
+    method: 'POST',
+    headers: authHeaders(null),
+    body: JSON.stringify({ email, password }),
+  });
+  const data = (await res.json().catch(() => ({}))) as GoogleAuthResponse & { error?: string };
+  if (!res.ok) throw new Error(data.error || `Sign-up failed (${res.status})`);
+  return data;
+}
+
+/** Email + password sign-in → backend app token. */
+export async function passwordLogin(email: string, password: string): Promise<GoogleAuthResponse> {
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: authHeaders(null),
+    body: JSON.stringify({ email, password }),
+  });
+  const data = (await res.json().catch(() => ({}))) as GoogleAuthResponse & { error?: string };
+  if (!res.ok) throw new Error(data.error || `Sign-in failed (${res.status})`);
+  return data;
+}
+
 export async function googleSignOut(): Promise<void> {
   try {
     configureGoogle();
