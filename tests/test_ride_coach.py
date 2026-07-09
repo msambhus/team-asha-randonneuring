@@ -340,3 +340,56 @@ def test_note_change_forces_new_api_call(monkeypatch):
         _call()                                     # cache miss #1
         _call(overall_note=_OVERALL_NOTE)           # different key → miss #2
     assert client.chat.completions.create.call_count == 2
+
+
+# ── PR3: notes as one equal signal + new signals + same-route cache key ──
+
+def test_notes_framed_as_one_equal_signal_not_heavy():
+    """#3: the prompt must weight notes EQUALLY, not 'heavily'."""
+    prompt = ride_coach.SYSTEM_PROMPT
+    assert 'WEIGHT THEM HEAVILY' not in prompt
+    assert 'ONE signal' in prompt and 'EQUALLY' in prompt
+
+
+def test_prompt_version_bumped_for_new_signals():
+    """#3: bumping _PROMPT_VERSION invalidates stale cached coaching on deploy."""
+    assert ride_coach._PROMPT_VERSION == 'v6-signals'
+
+
+def test_new_signals_appear_in_user_message():
+    """#5/#6/#7: ft/mile climb, peak gust, and temp range reach the model."""
+    rows = [dict(_ROWS[1], actual_climb_ft_per_mi=57)]
+    stop_wind = {'Pescadero Control': {
+        'wind_speed_mph': 8, 'wind_type': 'headwind',
+        'wind_gust_peak_mph': 21, 'temp_min_f': 52, 'temp_max_f': 74,
+    }}
+    msg = ride_coach._build_user_message(
+        _ACTIVITY, rows, _SUMMARY, _HR_POWER, stop_wind,
+        _RIDE_BASELINE, _BAND_BASELINE, _SEGMENT_NARRATIVES)
+    assert 'climb_ft_per_mi=57' in msg   # ft/mile climbing rate
+    assert 'gusts 21mph' in msg          # peak gust (>= sustained + 8)
+    assert '52-74F' in msg               # temperature range across the leg
+
+
+def test_gust_hidden_when_not_notably_above_sustained():
+    """A gust barely above sustained is not surfaced (mirrors the display rule)."""
+    stop_wind = {'Pescadero Control': {
+        'wind_speed_mph': 15, 'wind_type': 'headwind', 'wind_gust_peak_mph': 18,
+    }}
+    msg = ride_coach._build_user_message(
+        _ACTIVITY, [_ROWS[1]], _SUMMARY, _HR_POWER, stop_wind,
+        _RIDE_BASELINE, _BAND_BASELINE, _SEGMENT_NARRATIVES)
+    assert 'gusts' not in msg            # 18 < 15 + 8
+
+
+def test_same_route_baseline_folded_into_cache_key():
+    """#4: a change in same-route history busts the cache (self-invalidation)."""
+    base = ride_coach._cache_key(5, 11, 77, _ACTIVITY, _ROWS)
+    sr_a = {'Pescadero Control': {'avg_segment_min': 88.0, 'n_rides': 1}}
+    sr_b = {'Pescadero Control': {'avg_segment_min': 91.0, 'n_rides': 2}}
+    k_a = ride_coach._cache_key(5, 11, 77, _ACTIVITY, _ROWS, same_route_baseline=sr_a)
+    k_b = ride_coach._cache_key(5, 11, 77, _ACTIVITY, _ROWS, same_route_baseline=sr_b)
+    assert base != k_a != k_b and k_a != k_b
+    # Empty baseline is identical to the no-baseline case.
+    assert base == ride_coach._cache_key(5, 11, 77, _ACTIVITY, _ROWS,
+                                         same_route_baseline={})

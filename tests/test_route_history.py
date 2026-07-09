@@ -136,6 +136,36 @@ def test_name_match_to_wrong_plan_excluded():
         assert route_history.compute_same_route_segment_baseline(1, 42) == {}
 
 
+def test_fk_match_kept_despite_name_mismatch():
+    """Regression (#4): a prior ride FK-linked to the base plan is counted even
+    when its NAME wouldn't fuzzy-match — the real-world case (rider 6 / plan 6)
+    that returned an empty baseline until get_rider_rides_with_cached_streams
+    started selecting ride_plan_id, restoring the FK-first path."""
+    rows = [_row(1, ride_name='Tuesday Shop Ride', ride_plan_id=42)]
+    plans = [{'id': 42, 'name': 'Marshall Wall 200K'}]  # name does NOT match
+    with patch.object(route_history.models, 'get_rider_rides_with_cached_streams',
+                      return_value=rows), \
+         patch.object(route_history.models, 'get_all_ride_plans', return_value=plans), \
+         patch.object(route_history.models, 'get_ride_plan_stops',
+                      return_value=[{'location': 'Start'}]), \
+         patch.object(route_history.models, 'get_strava_ride_analysis',
+                      return_value={'detected_stops': []}), \
+         patch.object(route_history.strava_analysis, 'build_comparison',
+                      return_value=_comparison([_seg('Start', 72, speed=13.0)])):
+        result = route_history.compute_same_route_segment_baseline(1, 42)
+    assert result and result['Start']['n_rides'] == 1  # FK path saved it
+
+
+def test_cached_streams_query_selects_ride_plan_id():
+    """Regression (#4): the candidate query MUST select ride_plan_id, or the
+    FK-first match in _resolve_base_plan_id is dead and same-route history breaks."""
+    import inspect
+    from models import (get_rider_rides_with_cached_streams,
+                        get_rider_rides_with_cached_streams_by_ids)
+    assert 'ride_plan_id' in inspect.getsource(get_rider_rides_with_cached_streams)
+    assert 'ride_plan_id' in inspect.getsource(get_rider_rides_with_cached_streams_by_ids)
+
+
 # ── averaging across rides ───────────────────────────────────────────────
 def test_averaging_across_rides():
     rows = [_row(1, ride_plan_id=42, match_id=101),
