@@ -1453,22 +1453,29 @@ def _make_wind_hourly():
     }
 
 
-def _stored_wind_rows():
-    """Pre-built DB rows mimicking get_ride_wind_data return value."""
+def _stored_wind_rows(healed=True):
+    """Pre-built DB rows mimicking get_ride_wind_data return value.
+
+    healed=True includes the migration-027 gust/temp-range columns (a fresh row);
+    healed=False mimics a pre-027 row (columns absent / None) that must be treated
+    as stale and re-fetched.
+    """
+    extra = ({'wind_gust_kmh': 25.0, 'temp_min_c': 9.0, 'temp_max_c': 11.0}
+             if healed else {})
     return [
         {
             'stop_order': 0, 'stop_name': 'Stop 0',
             'wind_speed_kmh': 12.0, 'wind_direction_deg': 270,
             'headwind_kmh': 10.0, 'crosswind_kmh': 2.0,
             'wind_type': 'headwind', 'temperature_c': 10.0,
-            'conditions': 'clear sky', 'data_source': 'archive',
+            'conditions': 'clear sky', 'data_source': 'archive', **extra,
         },
         {
             'stop_order': 1, 'stop_name': 'Stop 1',
             'wind_speed_kmh': 18.0, 'wind_direction_deg': 270,
             'headwind_kmh': 15.0, 'crosswind_kmh': 3.0,
             'wind_type': 'headwind', 'temperature_c': 9.0,
-            'conditions': 'clear sky', 'data_source': 'archive',
+            'conditions': 'clear sky', 'data_source': 'archive', **extra,
         },
     ]
 
@@ -1539,7 +1546,7 @@ class TestGetHistoricalStopWind:
         required_keys = {
             'stop_order', 'stop_name', 'wind_speed_kmh', 'wind_direction_deg',
             'headwind_kmh', 'crosswind_kmh', 'wind_type', 'temperature_c',
-            'conditions', 'data_source',
+            'conditions', 'data_source', 'wind_gust_kmh', 'temp_min_c', 'temp_max_c',
         }
         for row in wind_rows:
             assert required_keys.issubset(row.keys()), f"Missing keys: {required_keys - row.keys()}"
@@ -1607,6 +1614,84 @@ class TestGetHistoricalStopWind:
         save_args = mock_save.call_args[0]
         assert save_args[0] == 42
         assert save_args[1] == wind_rows  # saved rows match returned rows
+
+    def test_stale_pre027_rows_trigger_refetch(self):
+        """STOR-02 heal: stored rows lacking wind_gust_kmh are re-fetched, not served."""
+        from datetime import date, timedelta
+        from services.weather import get_historical_stop_wind
+
+        stops = _make_stops(2)
+        track_points = _make_track_points()
+        ride_date = date.today() - timedelta(days=10)
+        stale = _stored_wind_rows(healed=False)  # no gust/temp-range columns
+        weather_data = [_make_wind_hourly(), _make_wind_hourly()]
+
+        with patch('services.weather.get_ride_wind_data', return_value=stale), \
+             patch('services.weather.fetch_historical_wind',
+                   return_value=(weather_data, 'archive')) as mock_fetch, \
+             patch('services.weather.save_ride_wind_data') as mock_save:
+            wind_rows, _ = get_historical_stop_wind(stops, track_points, ride_date, ride_id=42)
+
+        mock_fetch.assert_called_once()   # stale rows were NOT served
+        mock_save.assert_called_once()    # re-saved with the new columns
+        assert all(r.get('temp_min_c') is not None for r in wind_rows)
+
+    def test_gustless_but_healed_rows_are_served(self):
+        """Freshness keys on temp_min_c: a row with temp range but NO gust (gusts
+        genuinely absent) is fresh and served, not re-fetched on every view."""
+        from datetime import date, timedelta
+        from services.weather import get_historical_stop_wind
+
+        stops = _make_stops(2)
+        track_points = _make_track_points()
+        ride_date = date.today() - timedelta(days=10)
+        served = _stored_wind_rows(healed=True)
+        for r in served:
+            r['wind_gust_kmh'] = None  # temp range present, gust absent
+
+        with patch('services.weather.get_ride_wind_data', return_value=served), \
+             patch('services.weather.fetch_historical_wind') as mock_fetch:
+            wind_rows, _ = get_historical_stop_wind(stops, track_points, ride_date, ride_id=42)
+
+        mock_fetch.assert_not_called()   # not re-fetched — temp_min_c marks it fresh
+        assert wind_rows == served
+
+    def test_gust_and_temp_sampled_over_segment_window(self):
+        """#6/#7: gust = peak, temp = min/max over the leg's hour window, not a point."""
+        from datetime import date
+        from services.weather import get_historical_stop_wind
+
+        # arrival_time_min 0 and 120 -> stop0 at 07:00 (hour 7), stop1 at 09:00 (hour 9).
+        # Stop1's window is hours [7..9]; put a gust spike + temp swing inside it.
+        def _hourly():
+            times = [f"2026-01-01T{h:02d}:00" for h in range(24)]
+            gusts = [20.0] * 24
+            gusts[8] = 47.0  # spike between the two stops
+            temps = [10.0] * 24
+            temps[8] = 26.0  # hot hour mid-leg
+            temps[9] = 4.0   # cold at arrival
+            return {'hourly': {
+                'time': times, 'wind_speed_10m': [15.0] * 24,
+                'wind_direction_10m': [270] * 24,
+                'wind_gusts_10m': gusts, 'temperature_2m': temps,
+            }}
+
+        stops = _make_stops(2)
+        track_points = _make_track_points()
+        ride_date = date(2026, 1, 1)  # match the hardcoded hourly time strings
+
+        with patch('services.weather.get_ride_wind_data', return_value=[]), \
+             patch('services.weather.fetch_historical_wind',
+                   return_value=([_hourly(), _hourly()], 'archive')), \
+             patch('services.weather.save_ride_wind_data'):
+            wind_rows, _ = get_historical_stop_wind(stops, track_points, ride_date, ride_id=42)
+
+        # Stop 0 window = [07:00, 07:00] -> single hour, no spike.
+        assert wind_rows[0]['wind_gust_kmh'] == 20.0
+        assert wind_rows[0]['temp_min_c'] == 10.0 and wind_rows[0]['temp_max_c'] == 10.0
+        # Stop 1 window = hours 7..9 -> captures the spike and the swing.
+        assert wind_rows[1]['wind_gust_kmh'] == 47.0
+        assert wind_rows[1]['temp_min_c'] == 4.0 and wind_rows[1]['temp_max_c'] == 26.0
 
 
 # ── HIST-01/02/03/04: Strava Analysis Route — Historical Wind Wiring ──

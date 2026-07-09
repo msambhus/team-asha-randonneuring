@@ -1292,6 +1292,19 @@ def ride_strava_analysis(rusa_id, ride_id):
                             row['wind_speed_mph'] = round(
                                 float(row['wind_speed_kmh']) * 0.621371, 1
                             )
+                            # Gust + temp-range display fields (DB NUMERIC ->
+                            # Decimal; coerce before arithmetic). Absent on
+                            # pre-027 rows until the next re-fetch heals them.
+                            gust_kmh = row.get('wind_gust_kmh')
+                            row['wind_gust_peak_mph'] = (
+                                round(float(gust_kmh) * 0.621371, 1)
+                                if gust_kmh is not None else None
+                            )
+                            for src, dst in (('temp_min_c', 'temp_min_f'),
+                                             ('temp_max_c', 'temp_max_f')):
+                                cval = row.get(src)
+                                row[dst] = (round(float(cval) * 9 / 5 + 32)
+                                            if cval is not None else None)
                             # Compute continuous arrow angle from stored components
                             row['wind_arrow_deg'] = wind_arrow_rotation(
                                 row.get('headwind_kmh', 0),

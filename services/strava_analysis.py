@@ -1186,6 +1186,13 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         row['actual_np_watts'] = normalized_power_in_range(from_dist, cur_dist) if seg_dist > 0 else None
         row['actual_elev_gain_ft'] = elev_gain_in_range(from_dist, cur_dist) if seg_dist > 0 else None
         row['actual_grade_pct'] = avg_grade_in_range(from_dist, cur_dist) if seg_dist > 0 else None
+        # Climbing rate in ft/mile — the display metric (grade% is kept above for
+        # gradient-band history). None on the start row / zero-length segments.
+        row['actual_climb_ft_per_mi'] = (
+            round(row['actual_elev_gain_ft'] / seg_dist)
+            if row['actual_elev_gain_ft'] is not None and seg_dist > 0
+            else None
+        )
 
         if row['actual_cum_time_min'] is not None:
             actual_arrival = row.get('actual_arrival_time_min')

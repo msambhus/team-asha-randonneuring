@@ -220,6 +220,30 @@ def get_hour_index(hourly_times, arrival_dt):
     return len(hourly_times) - 1
 
 
+def _window_values(hourly, key, lo, hi):
+    """Non-None values of an hourly series over the inclusive index window [lo, hi]."""
+    series = hourly.get(key) or []
+    if not series:
+        return []
+    lo = max(0, min(lo, hi))
+    hi = min(max(lo, hi), len(series) - 1)
+    return [v for v in series[lo:hi + 1] if v is not None]
+
+
+def _window_max(hourly, key, lo, hi):
+    """Peak value of an hourly series over the window, or None when absent."""
+    vals = _window_values(hourly, key, lo, hi)
+    return round(float(max(vals)), 1) if vals else None
+
+
+def _window_min_max(hourly, key, lo, hi):
+    """(min, max) of an hourly series over the window, or (None, None) when absent."""
+    vals = _window_values(hourly, key, lo, hi)
+    if not vals:
+        return None, None
+    return round(float(min(vals)), 1), round(float(max(vals)), 1)
+
+
 # ── Track point sampling ────────────────────────────────────────────
 
 def sample_track_points(track_points, interval_m=50000):
@@ -463,10 +487,15 @@ def get_historical_stop_wind(stops, track_points, ride_date, ride_id=None):
     if not track_points:
         return None, None
 
-    # STOR-02: DB check before API call
+    # STOR-02: DB check before API call. Rows saved before migration 027 lack
+    # gust / temp-range columns; treat those as stale and fall through to a
+    # (deterministic) re-fetch so the new columns get backfilled once. Freshness
+    # is keyed on temp_min_c (temperature_2m is always present in an Open-Meteo
+    # response) rather than wind_gust_kmh (gusts can legitimately be absent),
+    # so a gust-less ride heals once instead of re-fetching on every view.
     if ride_id is not None:
         stored = get_ride_wind_data(ride_id)
-        if stored:
+        if stored and stored[0].get('temp_min_c') is not None:
             return stored, stored[0]['data_source']
 
     # Interpolate stop coordinates from RWGPS track points
@@ -496,6 +525,10 @@ def get_historical_stop_wind(stops, track_points, ride_date, ride_id=None):
     # Estimate ride start as 07:00 on ride_date
     start_dt = datetime(ride_date.year, ride_date.month, ride_date.day, 7, 0)
 
+    # Track the previous stop's arrival so each segment's weather is sampled over
+    # the leg's time window (prev arrival -> this arrival), not just a point.
+    prev_arrival_dt = start_dt
+
     wind_rows = []
     for i, coord in enumerate(coords):
         if coord is None:
@@ -517,11 +550,26 @@ def get_historical_stop_wind(stops, track_points, ride_date, ride_id=None):
             hours_to_arrive = dist_km / _AVG_SPEED_KMH if _AVG_SPEED_KMH > 0 else 0
             arrival_dt = start_dt + timedelta(hours=hours_to_arrive)
 
-        hour_index = get_hour_index(hourly.get('time', []), arrival_dt)
+        times = hourly.get('time', []) or []
+        hour_index = get_hour_index(times, arrival_dt)
+
+        # Segment window: hours ridden from the previous stop to this one, in THIS
+        # stop's forecast. this-stop index is the UPPER bound; lower bound is the
+        # previous stop's arrival hour (start-of-ride for the first segment).
+        prev_index = get_hour_index(times, prev_arrival_dt)
+        lo, hi = min(prev_index, hour_index), max(prev_index, hour_index)
+        gust_kmh = _window_max(hourly, 'wind_gusts_10m', lo, hi)
+        temp_min_c, temp_max_c = _window_min_max(hourly, 'temperature_2m', lo, hi)
 
         wind_speed = _safe_get(hourly, 'wind_speed_10m', hour_index, 0.0)
         wind_dir = _safe_get(hourly, 'wind_direction_10m', hour_index, 0)
         temperature = _safe_get(hourly, 'temperature_2m', hour_index, 0.0)
+
+        # If the window yielded no temperature samples, fall back to the arrival
+        # point temp so temp_min_c is never None on a saved row — otherwise the
+        # temp_min_c freshness check would re-fetch this ride on every view.
+        if temp_min_c is None:
+            temp_min_c = temp_max_c = round(float(temperature), 1)
 
         # Bearing: current -> next stop; for last stop: previous -> current
         bearing = 0.0
@@ -550,9 +598,14 @@ def get_historical_stop_wind(stops, track_points, ride_date, ride_id=None):
             'wind_type': wind_type,
             'wind_arrow_deg': wind_arrow_rotation(hw, cw),
             'temperature_c': round(float(temperature), 1),
+            'wind_gust_kmh': gust_kmh,
+            'temp_min_c': temp_min_c,
+            'temp_max_c': temp_max_c,
             'conditions': '',
             'data_source': data_source,
         })
+
+        prev_arrival_dt = arrival_dt
 
     if not wind_rows:
         return None, None
