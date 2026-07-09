@@ -20,7 +20,7 @@ export default function Onboarding({ onSignOut }: { onSignOut: () => void }) {
         your member profile on our website — then your rides, brevet calendar, and
         season stats will show up here.
       </Text>
-      <Pressable style={styles.btn} onPress={() => Linking.openURL(`${API_BASE}/login`).catch(() => undefined)}>
+      <Pressable style={styles.btn} onPress={() => Linking.openURL(`${API_BASE}/auth/login`).catch(() => undefined)}>
         <Text style={styles.btnText}>Set up my profile on the web</Text>
       </Pressable>
       <Pressable style={styles.signOut} onPress={onSignOut} hitSlop={8}>
