@@ -183,6 +183,48 @@ def test_thumbnail_points_within_viewbox():
         assert _points_within(pts, 100, 60)
 
 
+def test_thumbnails_include_segment_pins():
+    # Each planned segment gets a pin at its arrival (end) point, in the SAME
+    # projection as the polyline — so the pin lands on the segment's last point.
+    data = build_map_data(_map_streams(), _COMPARISON, [])
+    thumb = data['thumb']
+    assert set(thumb['pins'].keys()) == {'Mid', 'Finish'}
+    for loc, pin in thumb['pins'].items():
+        assert _points_within(pin, 100, 60)
+        # Pin == the last "x,y" of that segment's polyline (its endpoint).
+        assert pin == thumb['segments'][loc].split()[-1]
+
+
+def test_thumbnails_include_stop_pins():
+    # Unplanned stops get a pin keyed by distance (miles, 1 decimal) matching the
+    # template's stop-note key.
+    stops = [{'distance_miles': 2.0, 'duration_min': 5.0,
+              'lat': 37.004, 'lng': -122.0, 'matched_stop_name': None}]
+    data = build_map_data(_map_streams(), _COMPARISON, stops)
+    thumb = data['thumb']
+    assert set(thumb['stop_pins'].keys()) == {'2.0'}
+    assert _points_within(thumb['stop_pins']['2.0'], 100, 60)
+
+
+def test_stop_pins_empty_without_stops():
+    data = build_map_data(_map_streams(), _COMPARISON, [])
+    assert data['thumb']['stop_pins'] == {}
+    # A stop lacking coords contributes no pin.
+    stops = [{'distance_miles': 4.0, 'duration_min': 3.0, 'lat': None, 'lng': None}]
+    data2 = build_map_data(_map_streams(), _COMPARISON, stops)
+    assert data2['thumb']['stop_pins'] == {}
+
+
+def test_thumbnails_stops_without_segments():
+    # A track + stops but no planned segments: no segment pins, but stops still pin.
+    from services.strava_analysis import _segment_thumbnails
+    track = [[37.0 + i * 0.001, -122.0] for i in range(10)]
+    stops = [{'distance_miles': 1.5, 'lat': 37.003, 'lng': -122.0}]
+    thumb = _segment_thumbnails(track, [], stops)
+    assert thumb['segments'] == {} and thumb['pins'] == {}
+    assert set(thumb['stop_pins'].keys()) == {'1.5'}
+
+
 def test_thumbnails_none_without_track():
     from services.strava_analysis import _segment_thumbnails
     assert _segment_thumbnails([], []) is None

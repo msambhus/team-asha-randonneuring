@@ -562,8 +562,8 @@ def match_stops_to_plan(detected_stops, plan_stops):
     return detected_stops
 
 
-def _segment_thumbnails(track, segments, width=100, height=60, pad=6,
-                        max_track=90, max_seg=60):
+def _segment_thumbnails(track, segments, stops=None, width=100, height=60,
+                        pad=6, max_track=90, max_seg=60):
     """Precompute tiny inline-SVG thumbnails, one per planned segment.
 
     Each thumbnail draws that segment's GPS shape (bold) over the faint full
@@ -572,8 +572,13 @@ def _segment_thumbnails(track, segments, width=100, height=60, pad=6,
     stretched, then the track is fit into the box preserving aspect ratio.
 
     Returns ``{'viewbox', 'track' (SVG points str), 'segments': {location:
-    points str}}`` or ``None`` when there's no usable track. Point strings are
-    plain "x,y x,y …" numbers (safe to inline in an SVG ``points`` attribute).
+    points str}, 'pins': {location: "x,y"}, 'stop_pins': {dist_key: "x,y"}}`` or
+    ``None`` when there's no usable track. ``pins`` marks each planned segment's
+    end point (the stop it arrives at); ``stop_pins`` marks each unplanned stop's
+    location (keyed by its distance in miles to 1 decimal, matching the note key
+    used in the template). All values share the one projection, so a pin lands
+    exactly on the track it belongs to. Point strings are plain "x,y x,y …"
+    numbers (safe to inline in an SVG ``points`` attribute).
     """
     import math
     if not track or len(track) < 2:
@@ -618,16 +623,31 @@ def _segment_thumbnails(track, segments, width=100, height=60, pad=6,
         return ' '.join(proj(p) for p in pts)
 
     seg_thumbs = {}
+    pins = {}
     for seg in segments or []:
         loc = seg.get('location')
         pts = seg.get('points')
         if loc and pts and len(pts) >= 2:
             seg_thumbs[loc] = to_str(downsample(pts, max_seg))
+            # Pin the segment's arrival point (the stop it ends at).
+            pins[loc] = proj(pts[-1])
+
+    # Pin each unplanned stop at its own coordinate, keyed by distance (miles, 1
+    # decimal) to match the template's stop-note key.
+    stop_pins = {}
+    for ds in stops or []:
+        lat, lng = ds.get('lat'), ds.get('lng')
+        dist = ds.get('distance_miles')
+        if lat is None or lng is None or dist is None:
+            continue
+        stop_pins[f"{float(dist):.1f}"] = proj([lat, lng])
 
     return {
         'viewbox': f"0 0 {width} {height}",
         'track': to_str(downsample(track, max_track)),
         'segments': seg_thumbs,
+        'pins': pins,
+        'stop_pins': stop_pins,
     }
 
 
@@ -735,7 +755,7 @@ def build_map_data(streams, comparison, detected_stops, max_points=500,
         'bounds': bounds,
         'segments': segments,
         'stops': stops,
-        'thumb': _segment_thumbnails(track, segments),
+        'thumb': _segment_thumbnails(track, segments, stops),
     }
 
 
