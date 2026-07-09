@@ -312,3 +312,108 @@ def demo_signin():
         'rider_id': rider_id,
         'profile_complete': True,
     }), 200
+
+
+# ── Email + password (mobile's 3rd login option) ─────────────────────────
+# First-party credential alongside Google + Sign in with Apple. Existing
+# Google/Apple accounts are unaffected (password_hash stays NULL); password is
+# for new members who prefer it. NOTE: no email-verification step in v1 — a
+# follow-up if abuse ever appears; the account is inert until a rider profile is
+# claimed, and signup refuses emails that already have ANY account (no hijack).
+_MIN_PASSWORD_LEN = 8
+# Upper bound so a multi-MB password body can't amplify into heavy scrypt CPU on
+# a serverless function (DoS). 128 is well above any real password.
+_MAX_PASSWORD_LEN = 128
+
+
+def _valid_email(email):
+    """Cheap structural email check (not RFC-perfect; blocks obvious garbage)."""
+    import re
+    return bool(re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email or ''))
+
+
+@api_auth_bp.route('/signup', methods=['POST'])
+def password_signup():
+    """Create an email + password account and mint a bearer token.
+
+    Body: {"email": "...", "password": "..."}
+    Returns: {token, rider_id, profile_complete} — same shape as /google.
+    Refuses an email that already has an account (409) so a password signup can
+    never take over an existing Google/Apple account.
+    """
+    from werkzeug.security import generate_password_hash
+
+    body = request.get_json(silent=True) or {}
+    email = (body.get('email') or '').strip().lower()
+    password = body.get('password') or ''
+
+    if not _valid_email(email):
+        return jsonify({'error': 'A valid email is required'}), 400
+    if not (_MIN_PASSWORD_LEN <= len(password) <= _MAX_PASSWORD_LEN):
+        return jsonify({'error': f'Password must be {_MIN_PASSWORD_LEN}-{_MAX_PASSWORD_LEN} characters'}), 400
+
+    import psycopg2
+    try:
+        if models.get_user_by_email(email):
+            # Existing account (Google/Apple/password) — don't leak which method.
+            return jsonify({'error': 'An account with this email already exists. Try signing in.'}), 409
+        user = models.create_user_password(email, generate_password_hash(password))
+        if not user:
+            return jsonify({'error': 'Could not create account'}), 500
+    except psycopg2.errors.UniqueViolation:
+        # Lost a TOCTOU race with a concurrent signup (unique lower(email) index).
+        return jsonify({'error': 'An account with this email already exists. Try signing in.'}), 409
+    except Exception:
+        current_app.logger.exception('password signup: account creation failed')
+        return jsonify({'error': 'Could not create account'}), 500
+
+    rider_id = user.get('rider_id')
+    profile_complete = bool(user.get('profile_completed') and rider_id)
+    token = mint_mobile_token(user['id'], rider_id)
+    return jsonify({
+        'token': token,
+        'rider_id': rider_id,
+        'profile_complete': profile_complete,
+    }), 200
+
+
+@api_auth_bp.route('/login', methods=['POST'])
+def password_login():
+    """Verify an email + password and mint a bearer token.
+
+    Body: {"email": "...", "password": "..."}
+    Returns: {token, rider_id, profile_complete}. All failures return a generic
+    401 (no account enumeration); a Google/Apple-only account (no password_hash)
+    also gets the generic 401.
+    """
+    from werkzeug.security import check_password_hash
+
+    body = request.get_json(silent=True) or {}
+    email = (body.get('email') or '').strip().lower()
+    password = body.get('password') or ''
+    if not email or not password:
+        return jsonify({'error': 'Email and password are required'}), 400
+    # An over-length password can never match a real (capped) one; reject before
+    # hashing so it can't be used as a scrypt-CPU DoS. Generic 401, no leak.
+    if len(password) > _MAX_PASSWORD_LEN:
+        return jsonify({'error': 'Incorrect email or password'}), 401
+
+    try:
+        user = models.get_user_by_email(email)
+        pw_hash = user.get('password_hash') if user else None
+        if not user or not pw_hash or not check_password_hash(pw_hash, password):
+            return jsonify({'error': 'Incorrect email or password'}), 401
+        models.update_user_login_time(user['id'])
+        user = models.get_user_by_id(user['id'])
+    except Exception:
+        current_app.logger.exception('password login: lookup failed')
+        return jsonify({'error': 'Sign-in failed'}), 500
+
+    rider_id = user.get('rider_id')
+    profile_complete = bool(user.get('profile_completed') and rider_id)
+    token = mint_mobile_token(user['id'], rider_id)
+    return jsonify({
+        'token': token,
+        'rider_id': rider_id,
+        'profile_complete': profile_complete,
+    }), 200

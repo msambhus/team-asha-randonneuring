@@ -1736,8 +1736,10 @@ def update_strava_privacy(rider_id, is_private):
 # ========== USER AUTHENTICATION ==========
 
 def get_user_by_email(email):
-    """Get user by email. NOT CACHED - user data should not be cached in serverless environments."""
-    return _execute("SELECT * FROM app_user WHERE email = %s", (email,)).fetchone()
+    """Get user by email, CASE-INSENSITIVELY (emails are case-insensitive; the
+    Google/Apple paths may store mixed case). NOT CACHED (serverless)."""
+    return _execute("SELECT * FROM app_user WHERE lower(email) = lower(%s)",
+                    (email,)).fetchone()
 
 def get_user_by_google_id(google_id):
     """Get user by Google ID. NOT CACHED - user data should not be cached in serverless environments."""
@@ -1757,6 +1759,29 @@ def create_user(email, google_id):
                (email, google_id))
     user = cur.fetchone()
     conn.commit()
+    return dict(user) if user else None
+
+def create_user_password(email, password_hash):
+    """Create a new user with an email + password (mobile's 3rd login option).
+
+    ``password_hash`` is a werkzeug hash string (never the plaintext). google_id
+    and apple_sub stay NULL — this is a first-party credential. Mirrors
+    create_user / create_user_apple.
+    """
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""INSERT INTO app_user (email, password_hash, profile_completed, last_login)
+                      VALUES (%s, %s, FALSE, CURRENT_TIMESTAMP)
+                      RETURNING id, email, password_hash, profile_completed, rider_id""",
+                   (email, password_hash))
+        user = cur.fetchone()
+        conn.commit()
+    except psycopg2.errors.UniqueViolation:
+        # Lost a race against a concurrent signup for the same email (the
+        # unique lower(email) index caught it). Surface it so the route → 409.
+        conn.rollback()
+        raise
     return dict(user) if user else None
 
 def update_user_login_time(user_id):

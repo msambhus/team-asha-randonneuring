@@ -951,3 +951,111 @@ def test_google_callback_makes_session_permanent(client):
     with client.session_transaction() as sess:
         assert sess.get('user_id') == 5
         assert sess.permanent is True
+
+
+# ── Email + password (3rd login option) ──────────────────────────────────
+from werkzeug.security import generate_password_hash
+
+
+def test_password_signup_creates_account_and_mints_token(client, app):
+    created = {'id': 9, 'email': 'new@example.com', 'password_hash': 'x',
+               'profile_completed': False, 'rider_id': None}
+    with patch('models.get_user_by_email', return_value=None), \
+         patch('models.create_user_password', return_value=created) as mock_create:
+        resp = client.post('/api/auth/signup',
+                           json={'email': 'New@Example.com', 'password': 'sup3rsecret'})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['rider_id'] is None and data['profile_complete'] is False
+    # Email is normalized to lowercase; the stored hash is NOT the plaintext.
+    args = mock_create.call_args[0]
+    assert args[0] == 'new@example.com'
+    assert args[1] != 'sup3rsecret' and args[1]
+    with app.app_context():
+        assert auth_mod.load_mobile_token(data['token'])['user_id'] == 9
+
+
+def test_password_signup_rejects_existing_email(client, app):
+    existing = {'id': 3, 'email': 'taken@example.com', 'google_id': 'g1'}
+    with patch('models.get_user_by_email', return_value=existing), \
+         patch('models.create_user_password') as mock_create:
+        resp = client.post('/api/auth/signup',
+                           json={'email': 'taken@example.com', 'password': 'longenough1'})
+    assert resp.status_code == 409          # no takeover of a Google/Apple account
+    mock_create.assert_not_called()
+
+
+def test_password_signup_validates_input(client, app):
+    bad_email = client.post('/api/auth/signup',
+                            json={'email': 'not-an-email', 'password': 'longenough1'})
+    assert bad_email.status_code == 400
+    short_pw = client.post('/api/auth/signup',
+                           json={'email': 'a@b.com', 'password': 'short'})
+    assert short_pw.status_code == 400
+
+
+def test_password_login_succeeds_with_correct_password(client, app):
+    user = {'id': 5, 'email': 'rider@example.com',
+            'password_hash': generate_password_hash('correct-horse'),
+            'profile_completed': True, 'rider_id': 7}
+    with patch('models.get_user_by_email', return_value=user), \
+         patch('models.update_user_login_time') as mock_touch, \
+         patch('models.get_user_by_id', return_value=user):
+        resp = client.post('/api/auth/login',
+                           json={'email': 'Rider@Example.com', 'password': 'correct-horse'})
+    assert resp.status_code == 200
+    assert resp.get_json()['rider_id'] == 7
+    mock_touch.assert_called_once_with(5)
+
+
+def test_password_login_wrong_password_401(client, app):
+    user = {'id': 5, 'email': 'rider@example.com',
+            'password_hash': generate_password_hash('correct-horse'), 'rider_id': 7}
+    with patch('models.get_user_by_email', return_value=user):
+        resp = client.post('/api/auth/login',
+                           json={'email': 'rider@example.com', 'password': 'wrong'})
+    assert resp.status_code == 401
+
+
+def test_password_login_unknown_email_401(client, app):
+    with patch('models.get_user_by_email', return_value=None):
+        resp = client.post('/api/auth/login',
+                           json={'email': 'ghost@example.com', 'password': 'whatever12'})
+    assert resp.status_code == 401
+
+
+def test_password_login_google_only_account_401(client, app):
+    # A Google/Apple account (no password_hash) can't be logged into by password.
+    user = {'id': 3, 'email': 'g@example.com', 'google_id': 'g1', 'password_hash': None}
+    with patch('models.get_user_by_email', return_value=user):
+        resp = client.post('/api/auth/login',
+                           json={'email': 'g@example.com', 'password': 'anything12'})
+    assert resp.status_code == 401
+
+
+def test_password_signup_rejects_overlong_password(client, app):
+    # A multi-KB password must be rejected before hashing (scrypt-CPU DoS guard).
+    resp = client.post('/api/auth/signup',
+                       json={'email': 'a@b.com', 'password': 'x' * 5000})
+    assert resp.status_code == 400
+
+
+def test_password_login_rejects_overlong_password_without_hashing(client, app):
+    import routes.api_auth as api_auth_mod
+    with patch('models.get_user_by_email') as mock_get, \
+         patch.object(api_auth_mod, 'check_password_hash', create=True) as mock_check:
+        resp = client.post('/api/auth/login',
+                           json={'email': 'a@b.com', 'password': 'x' * 5000})
+    assert resp.status_code == 401
+    mock_check.assert_not_called()   # never reached the hash check
+    mock_get.assert_not_called()     # never even hit the DB
+
+
+def test_password_signup_toctou_unique_violation_returns_409(client, app):
+    import psycopg2
+    with patch('models.get_user_by_email', return_value=None), \
+         patch('models.create_user_password',
+               side_effect=psycopg2.errors.UniqueViolation('dup')):
+        resp = client.post('/api/auth/signup',
+                           json={'email': 'race@example.com', 'password': 'longenough1'})
+    assert resp.status_code == 409
