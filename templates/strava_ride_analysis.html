@@ -136,6 +136,13 @@
     vertical-align: top;
     font-variant-numeric: tabular-nums;
 }
+/* Alternating shade groups: a segment's main + analysis + note rows share one
+   shade so the note/coach block reads as part of that segment; adjacent
+   segments differ. Stamped in the Jinja loop (nth-child can't span the 3 rows). */
+.analysis-table tbody tr.seg-grp-a { background: #ffffff; }
+.analysis-table tbody tr.seg-grp-b { background: #f1f5f9; }
+.analysis-table tbody tr.seg-grp-a:hover,
+.analysis-table tbody tr.seg-grp-b:hover { background: #e2e8f0; }
 .analysis-table tbody tr:hover { background: #f8fafc; }
 
 .stop-cell {
@@ -172,8 +179,44 @@
     margin-left: 4px;
 }
 
-.extra-row { background: #fffbeb; }
-.extra-row:hover { background: #fef3c7 !important; }
+/* Unplanned stops keep their amber identity as a left-border accent only, so it
+   doesn't fight the alternating group shade (which now owns the background). */
+.extra-row { border-left: 3px solid #f59e0b; }
+
+/* Per-row map affordance: opens the shared overlay (works on touch — no hover). */
+.seg-map-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+    margin-top: 5px; padding: 5px 8px; min-height: 30px;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
+    color: #475569; font-size: 0.62rem; font-weight: 600; line-height: 1;
+    cursor: pointer;
+}
+.seg-map-btn:hover { background: #eef2f7; border-color: #cbd5e1; color: #0369a1; }
+.seg-map-btn:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
+.seg-map-btn svg { width: 12px; height: 12px; display: block; }
+
+/* Shared enlarged-map overlay (one element, populated on click). */
+.seg-map-overlay {
+    position: fixed; inset: 0; z-index: 1000; padding: 16px;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(15, 23, 42, 0.55);
+}
+.seg-map-overlay.open { display: flex; }
+.seg-map-card {
+    position: relative; background: #fff; border-radius: 12px; padding: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3); width: 360px; max-width: 92vw;
+}
+.seg-map-card h3 { margin: 0 0 8px; padding-right: 28px; font-size: 0.85rem; color: #1e293b; }
+.seg-map-close {
+    position: absolute; top: 8px; right: 12px; padding: 4px 8px;
+    background: none; border: none; font-size: 1.3rem; line-height: 1;
+    color: #64748b; cursor: pointer;
+}
+.seg-map-close:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
+.seg-map-svg {
+    width: 100%; height: auto; background: #f8fafc;
+    border: 1px solid #eef2f7; border-radius: 8px;
+}
 
 .stop-name {
     max-width: 100px;
@@ -620,7 +663,9 @@
 </thead>
 <tbody>
 {% for row in comparison.rows %}
-<tr class="{% if row.is_extra %}extra-row{% endif %}">
+{# Alternating group shade: main + analysis + note rows of a segment share _grp. #}
+{% set _grp = 'seg-grp-a' if loop.index0 % 2 == 0 else 'seg-grp-b' %}
+<tr class="{{ _grp }}{% if row.is_extra %} extra-row{% endif %}">
     {# Stop name — truncated with hover #}
     <td style="max-width:120px;">
         <div class="stop-cell">
@@ -630,16 +675,18 @@
             <span class="stop-name" title="{{ row.location }}">{{ row.location }}</span>
             {% if row.is_extra %}<span class="extra-badge">Extra</span>{% endif %}
         </div>
-        {# Per-segment map snapshot: this leg (bold) over the faint full route. #}
-        {% if map_data and map_data.thumb and map_data.thumb.segments.get(row.location) and not row.is_extra %}
-        <svg viewBox="{{ map_data.thumb.viewbox }}" width="76" height="46" preserveAspectRatio="xMidYMid meet"
-             role="img" aria-label="Map of the segment ending at {{ row.location }}"
-             style="margin-top:5px;display:block;background:#f8fafc;border:1px solid #eef2f7;border-radius:5px;">
-            <polyline points="{{ map_data.thumb.track }}" fill="none" stroke="#cbd5e1" stroke-width="1.3"
-                      stroke-linejoin="round" stroke-linecap="round"/>
-            <polyline points="{{ map_data.thumb.segments.get(row.location) }}" fill="none" stroke="#c2410c"
-                      stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
-        </svg>
+        {# Map affordance: opens the shared overlay with this leg (bold) + a pin.
+           Shown for any row that has a pin — planned segments and unplanned stops. #}
+        {% set _mapkey = ('%.1f'|format(row.distance_miles)) if row.is_extra else row.location %}
+        {% if map_data and map_data.thumb and ((row.is_extra and map_data.thumb.stop_pins.get(_mapkey)) or (not row.is_extra and map_data.thumb.pins.get(row.location))) %}
+        <button type="button" class="seg-map-btn" data-mapkey="{{ _mapkey }}"
+                data-isstop="{{ '1' if row.is_extra else '0' }}" data-label="{{ row.location }}"
+                aria-label="Show map for {{ row.location }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>
+            </svg>
+            map
+        </button>
         {% endif %}
     </td>
 
@@ -755,8 +802,8 @@
 {# Per-segment analysis: rule-based narrative + LLM coach note (best-effort) #}
 {% set ev = segment_eval.get(row.location) if segment_eval else None %}
 {% if ev and (ev.narrative or ev.coach) and not row.is_extra %}
-<tr class="segment-analysis-row">
-    <td colspan="20" style="padding:6px 12px 10px;background:#f8fafc;border-bottom:1px solid #eef2f7;">
+<tr class="segment-analysis-row {{ _grp }}">
+    <td colspan="20" style="padding:6px 12px 10px;border-bottom:1px solid #eef2f7;">
         {% if ev.narrative %}<div style="font-size:0.78rem;color:#334155;line-height:1.45;">{{ ev.narrative }}</div>{% endif %}
         {% if ev.coach %}<div style="font-size:0.78rem;color:#0369a1;line-height:1.45;margin-top:3px;"><span style="font-weight:600;">Coach:</span> {{ ev.coach }}</div>{% endif %}
     </td>
@@ -768,8 +815,8 @@
 {% set _is_stop = row.is_extra %}
 {% set _ident = ('%.1f'|format(row.distance_miles)) if _is_stop else row.location %}
 {% set _note = (stop_notes.get('%.1f'|format(row.distance_miles), '')) if _is_stop else segment_notes.get(row.location, '') %}
-<tr class="segment-note-row">
-    <td colspan="20" style="padding:2px 12px 10px;background:#f8fafc;border-bottom:1px solid #eef2f7;">
+<tr class="segment-note-row {{ _grp }}{% if row.is_extra %} extra-row{% endif %}">
+    <td colspan="20" style="padding:2px 12px 10px;border-bottom:1px solid #eef2f7;">
         <div class="row-note" data-scope="{{ 'stop' if _is_stop else 'segment' }}" data-ident="{{ _ident }}"
              style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;font-size:0.75rem;">
             {# Saved-note view (shown when a note exists) #}
@@ -925,6 +972,84 @@
     });
     if (oDel) oDel.addEventListener('click', function() {
         post({ scope: 'overall', note: '' }, oStatus).then(function() { oTa.value = ''; }).catch(function() {});
+    });
+})();
+</script>
+{% endif %}
+
+{# --- Segment/stop map overlay (opened by any .seg-map-btn; click/tap, no hover) --- #}
+{% if map_data and map_data.thumb %}
+<div class="seg-map-overlay" id="segMapOverlay" role="dialog" aria-modal="true"
+     aria-label="Segment map" aria-hidden="true">
+    <div class="seg-map-card">
+        <button type="button" class="seg-map-close" aria-label="Close map">&times;</button>
+        <h3 id="segMapTitle"></h3>
+        <svg class="seg-map-svg" id="segMapSvg" viewBox="{{ map_data.thumb.viewbox }}"
+             preserveAspectRatio="xMidYMid meet" role="img"></svg>
+    </div>
+</div>
+<script>
+(function () {
+    var thumb = {{ map_data.thumb|tojson }};
+    var overlay = document.getElementById('segMapOverlay');
+    if (!overlay || !thumb) return;
+    var svg = document.getElementById('segMapSvg');
+    var title = document.getElementById('segMapTitle');
+    var closeBtn = overlay.querySelector('.seg-map-close');
+    var lastFocus = null;
+    var SVGNS = 'http://www.w3.org/2000/svg';
+
+    function line(points, stroke, width) {
+        var pl = document.createElementNS(SVGNS, 'polyline');
+        pl.setAttribute('points', points);
+        pl.setAttribute('fill', 'none');
+        pl.setAttribute('stroke', stroke);
+        pl.setAttribute('stroke-width', width);
+        pl.setAttribute('stroke-linejoin', 'round');
+        pl.setAttribute('stroke-linecap', 'round');
+        return pl;
+    }
+    function pin(xy) {
+        var p = String(xy).split(',');
+        var c = document.createElementNS(SVGNS, 'circle');
+        c.setAttribute('cx', p[0]); c.setAttribute('cy', p[1]); c.setAttribute('r', '2.6');
+        c.setAttribute('fill', '#dc2626');
+        c.setAttribute('stroke', '#ffffff'); c.setAttribute('stroke-width', '1');
+        return c;
+    }
+    function render(key, isStop, label) {
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+        if (thumb.track) svg.appendChild(line(thumb.track, '#cbd5e1', '1.3'));
+        var seg = (!isStop && thumb.segments) ? thumb.segments[key] : null;
+        if (seg) svg.appendChild(line(seg, '#c2410c', '2.4'));
+        var pinXY = isStop ? (thumb.stop_pins || {})[key] : (thumb.pins || {})[key];
+        if (pinXY) svg.appendChild(pin(pinXY));
+        title.textContent = label || '';
+        svg.setAttribute('aria-label', 'Map for ' + (label || 'segment'));
+    }
+    function open(key, isStop, label) {
+        lastFocus = document.activeElement;
+        render(key, isStop, label);
+        overlay.classList.add('open');
+        overlay.setAttribute('aria-hidden', 'false');
+        closeBtn.focus();
+    }
+    function close() {
+        overlay.classList.remove('open');
+        overlay.setAttribute('aria-hidden', 'true');
+        if (lastFocus && lastFocus.focus) lastFocus.focus();
+    }
+    document.querySelectorAll('.seg-map-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            open(btn.getAttribute('data-mapkey'),
+                 btn.getAttribute('data-isstop') === '1',
+                 btn.getAttribute('data-label'));
+        });
+    });
+    closeBtn.addEventListener('click', close);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && overlay.classList.contains('open')) close();
     });
 })();
 </script>
