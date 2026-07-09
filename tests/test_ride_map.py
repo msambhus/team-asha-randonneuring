@@ -231,6 +231,38 @@ def test_thumbnails_none_without_track():
     assert _segment_thumbnails([[37.0, -122.0]], []) is None  # <2 points
 
 
+# ── climb ft/mile (build_comparison) ─────────────────────────────────
+
+def test_build_comparison_climb_ft_per_mile():
+    # 100 m of climb (328 ft) over a 2-mile segment -> 164 ft/mi; grade% kept.
+    from datetime import datetime
+    from services.strava_analysis import build_comparison, METERS_PER_MILE as M
+    streams = {
+        'distance': [0.0, 1 * M, 2 * M],
+        'altitude': [0.0, 50.0, 100.0],
+        'time': [0, 300, 600],
+        'velocity_smooth': [5.0, 5.0, 5.0],
+        'grade_smooth': [3.0, 3.0, 3.0],
+    }
+    plan_stops = [
+        {'location': 'Start', 'distance_miles': 0.0, 'segment_time_min': 0,
+         'stop_duration_min': 0, 'seg_dist': 0.0},
+        {'location': 'Mid', 'distance_miles': 2.0, 'segment_time_min': 12,
+         'stop_duration_min': 0, 'seg_dist': 2.0},
+    ]
+    activity = {'distance': 2 * M, 'moving_time': 600, 'elapsed_time': 600,
+                'start_date_local': datetime(2026, 1, 1, 7, 0)}
+    comp = build_comparison(plan_stops=plan_stops, detected_stops=[], activity=activity,
+                            plan_start_time='07:00',
+                            actual_start_time=datetime(2026, 1, 1, 7, 0), streams=streams)
+    rows = {r['location']: r for r in comp['rows']}
+    assert rows['Mid']['actual_elev_gain_ft'] == 328
+    assert rows['Mid']['actual_climb_ft_per_mi'] == 164   # round(328 / 2)
+    assert rows['Mid']['actual_grade_pct'] == 3.0         # grade% retained for history
+    # Start row has no leg -> divide-by-zero guard returns None, not 0.
+    assert rows['Start']['actual_climb_ft_per_mi'] is None
+
+
 # ── stop coalescing + coord backfill ─────────────────────────────────
 
 def test_coalesce_merges_split_stops():

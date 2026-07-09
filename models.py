@@ -3433,7 +3433,8 @@ def save_ride_wind_data(ride_id, wind_rows):
         wind_rows: List of dicts, each containing stop wind data.
                    Required keys: stop_order, data_source.
                    Optional keys: stop_name, wind_speed_kmh, wind_direction_deg,
-                   headwind_kmh, crosswind_kmh, wind_type, temperature_c, conditions.
+                   headwind_kmh, crosswind_kmh, wind_type, temperature_c, conditions,
+                   wind_gust_kmh, temp_min_c, temp_max_c.
     """
     if not wind_rows:
         return
@@ -3455,6 +3456,9 @@ def save_ride_wind_data(ride_id, wind_rows):
             row.get('temperature_c'),
             row.get('conditions'),
             row.get('data_source'),
+            row.get('wind_gust_kmh'),
+            row.get('temp_min_c'),
+            row.get('temp_max_c'),
         )
         for row in wind_rows
     ]
@@ -3465,7 +3469,8 @@ def save_ride_wind_data(ride_id, wind_rows):
             ride_id, stop_order, stop_name,
             wind_speed_kmh, wind_direction_deg,
             headwind_kmh, crosswind_kmh,
-            wind_type, temperature_c, conditions, data_source
+            wind_type, temperature_c, conditions, data_source,
+            wind_gust_kmh, temp_min_c, temp_max_c
         ) VALUES %s
         ON CONFLICT (ride_id, stop_order) DO UPDATE SET
             stop_name = EXCLUDED.stop_name,
@@ -3477,6 +3482,9 @@ def save_ride_wind_data(ride_id, wind_rows):
             temperature_c = EXCLUDED.temperature_c,
             conditions = EXCLUDED.conditions,
             data_source = EXCLUDED.data_source,
+            wind_gust_kmh = EXCLUDED.wind_gust_kmh,
+            temp_min_c = EXCLUDED.temp_min_c,
+            temp_max_c = EXCLUDED.temp_max_c,
             fetched_at = NOW()
         """,
         values,

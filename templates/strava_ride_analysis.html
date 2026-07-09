@@ -767,9 +767,9 @@
     </td>
     {% endif %}
 
-    {# Climb: elevation gain + average gradient for the segment #}
+    {# Climb: elevation gain + climbing rate (ft/mile) for the segment #}
     <td style="text-align:right;font-size:0.7rem;color:#65a30d;">
-        {% if row.actual_elev_gain_ft is not none and not row.is_extra %}{{ row.actual_elev_gain_ft }}&nbsp;ft{% if row.actual_grade_pct is not none %}<div style="font-size:0.6rem;color:#84cc16;">{{ row.actual_grade_pct }}%</div>{% endif %}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+        {% if row.actual_elev_gain_ft is not none and not row.is_extra %}{{ row.actual_elev_gain_ft }}&nbsp;ft{% if row.actual_climb_ft_per_mi is not none %}<div style="font-size:0.6rem;color:#84cc16;">{{ row.actual_climb_ft_per_mi }} ft/mi</div>{% endif %}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
     </td>
 
     {# Delta (h:mm against custom/primary plan) #}
@@ -787,12 +787,18 @@
     <td style="text-align:center;padding:4px 8px;">
         {% if w %}
         {{ wind_arrow(w) }}
+        {# Peak gust for the segment, shown only when notably above sustained. #}
+        {% if w.wind_gust_peak_mph and w.wind_speed_mph and w.wind_gust_peak_mph >= w.wind_speed_mph + 8 and w.wind_gust_peak_mph >= w.wind_speed_mph * 1.25 %}
+        <div style="font-size:0.58rem;color:#b45309;" title="Peak gust over this segment">gust {{ w.wind_gust_peak_mph|round|int }}</div>
+        {% endif %}
         {% else %}
         &mdash;
         {% endif %}
     </td>
     <td style="text-align:center;padding:4px 8px;font-size:0.7rem;color:#64748b;">
-        {% if w and w.temperature_c is defined %}
+        {% if w and w.temp_min_f is defined and w.temp_min_f is not none and w.temp_max_f is not none and (w.temp_max_f - w.temp_min_f) >= 5 %}
+        {{ w.temp_min_f }}&ndash;{{ w.temp_max_f }}&deg;F
+        {% elif w and w.temperature_c is defined and w.temperature_c is not none %}
         {% set temp_f = (w.temperature_c * 9 / 5 + 32)|round(0)|int %}
         {{ temp_f }}&deg;F
         {% else %}&mdash;{% endif %}
