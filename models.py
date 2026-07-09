@@ -3074,7 +3074,8 @@ def get_rider_rides_with_cached_streams(rider_id):
     Only includes rides where stream analysis completed successfully.
     """
     return _execute("""
-        SELECT r.id AS ride_id, r.name AS ride_name, r.date, r.distance_km,
+        SELECT r.id AS ride_id, r.name AS ride_name, r.ride_plan_id,
+               r.date, r.distance_km,
                r.elevation_ft,
                s.name AS season_name,
                srm.id AS match_id,
@@ -3102,7 +3103,8 @@ def get_rider_rides_with_cached_streams(rider_id):
 def get_rider_rides_metadata_for_comparison(rider_id):
     """Get ride metadata (no streams) for the brevet comparison selector list."""
     return _execute("""
-        SELECT r.id AS ride_id, r.name AS ride_name, r.date, r.distance_km,
+        SELECT r.id AS ride_id, r.name AS ride_name, r.ride_plan_id,
+               r.date, r.distance_km,
                r.elevation_ft,
                s.name AS season_name,
                sa.elapsed_time, sa.moving_time, sa.distance AS strava_distance_m,
@@ -3128,7 +3130,8 @@ def get_rider_rides_metadata_for_comparison(rider_id):
 def get_rider_rides_with_cached_streams_by_ids(rider_id, ride_ids):
     """Get finished rides with cached streams for specific ride IDs."""
     return _execute("""
-        SELECT r.id AS ride_id, r.name AS ride_name, r.date, r.distance_km,
+        SELECT r.id AS ride_id, r.name AS ride_name, r.ride_plan_id,
+               r.date, r.distance_km,
                r.elevation_ft,
                s.name AS season_name,
                srm.id AS match_id,
