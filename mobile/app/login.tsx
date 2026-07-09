@@ -1,35 +1,41 @@
 /**
- * mobile/app/login.tsx — Google + Sign in with Apple + email/password.
+ * mobile/app/login.tsx — first-party login only.
  *
- * App Store Guideline 4.8 requires a privacy-preserving login option alongside
- * a third-party one, so we offer Sign in with Apple next to Google. Email +
- * password is a first-party 3rd option for members who prefer it.
+ * Google + Sign in with Apple were removed (App Store Guideline 4.8 only requires
+ * a privacy-preserving option when a third-party login is offered; with none, no
+ * Apple button is needed). Two options remain:
+ *   • Email code (passwordless OTP): request a code, then enter it. This is also
+ *     how an existing Google member signs in — the code goes to their email.
+ *   • Email + password.
+ * An optional phone number is collected on the code flow for a future
+ * text-message sign-in (phase 2).
  */
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
-  ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View,
 } from 'react-native';
-import * as AppleAuthentication from 'expo-apple-authentication';
 import { useSession } from '../contexts/SessionContext';
+
+type Method = 'otp' | 'password';
 
 export default function LoginScreen() {
   const {
-    signInWithGoogle, signInWithApple, signInDemo,
-    signInWithPassword, signUpWithPassword,
+    signInDemo, signInWithPassword, signUpWithPassword,
+    requestEmailOtp, verifyEmailOtp,
   } = useSession();
+
+  const [method, setMethod] = useState<Method>('otp');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [appleAvailable, setAppleAvailable] = useState(false);
+  const [info, setInfo] = useState<string | null>(null);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [mode, setMode] = useState<'login' | 'signup'>('login');   // password mode
 
-  // Sign in with Apple is iOS 13+ only; hide the button where it's unavailable.
-  useEffect(() => {
-    if (Platform.OS === 'ios') {
-      AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => undefined);
-    }
-  }, []);
+  const [otpStage, setOtpStage] = useState<'request' | 'verify'>('request');
+  const [code, setCode] = useState('');
+  const [phone, setPhone] = useState('');
 
   async function run(fn: () => Promise<string | null>) {
     setBusy(true);
@@ -38,6 +44,30 @@ export default function LoginScreen() {
     setBusy(false);
     if (err) setError(err);
     // On success the AuthGate redirects into the app.
+  }
+
+  function switchMethod(next: Method) {
+    setMethod(next);
+    setError(null);
+    setInfo(null);
+  }
+
+  async function sendCode() {
+    setBusy(true);
+    setError(null);
+    const err = await requestEmailOtp(email.trim());
+    setBusy(false);
+    if (err) { setError(err); return; }
+    setOtpStage('verify');
+    setInfo(`We emailed a 6-digit code to ${email.trim()}. Enter it below.`);
+  }
+
+  function verifyCode() {
+    run(() => verifyEmailOtp({
+      email: email.trim(),
+      code: code.trim(),
+      phone: phone.trim() || undefined,
+    }));
   }
 
   function submitPassword() {
@@ -57,25 +87,27 @@ export default function LoginScreen() {
       <Text style={styles.title}>Team Asha Randonneuring</Text>
       <Text style={styles.sub}>Live ride tracking</Text>
 
-      <Pressable style={[styles.btn, busy && styles.btnDisabled]} onPress={() => run(signInWithGoogle)} disabled={busy}>
-        {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Sign in with Google</Text>}
-      </Pressable>
+      {/* Method switch */}
+      <View style={styles.tabs}>
+        <Pressable
+          style={[styles.tab, method === 'otp' && styles.tabActive]}
+          onPress={() => switchMethod('otp')}
+          disabled={busy}
+        >
+          <Text style={[styles.tabText, method === 'otp' && styles.tabTextActive]}>Email code</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.tab, method === 'password' && styles.tabActive]}
+          onPress={() => switchMethod('password')}
+          disabled={busy}
+        >
+          <Text style={[styles.tabText, method === 'password' && styles.tabTextActive]}>Password</Text>
+        </Pressable>
+      </View>
 
-      {appleAvailable ? (
-        <AppleAuthentication.AppleAuthenticationButton
-          buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-          cornerRadius={10}
-          style={styles.appleBtn}
-          onPress={() => run(signInWithApple)}
-        />
-      ) : null}
-
-      <Text style={styles.or}>or</Text>
-
-      {/* Email + password (first-party 3rd option). */}
+      {/* Email is shared by both methods; lock it on the code-verify step. */}
       <TextInput
-        style={styles.input}
+        style={[styles.input, method === 'otp' && otpStage === 'verify' && styles.inputLocked]}
         placeholder="Email"
         placeholderTextColor="#9ca3af"
         value={email}
@@ -84,41 +116,96 @@ export default function LoginScreen() {
         autoCorrect={false}
         keyboardType="email-address"
         textContentType="emailAddress"
-        editable={!busy}
+        editable={!busy && !(method === 'otp' && otpStage === 'verify')}
       />
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        placeholderTextColor="#9ca3af"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        autoCapitalize="none"
-        textContentType={mode === 'signup' ? 'newPassword' : 'password'}
-        editable={!busy}
-      />
-      <Pressable
-        style={[styles.btn, (busy || !email.trim() || !password) && styles.btnDisabled]}
-        disabled={busy || !email.trim() || !password}
-        onPress={submitPassword}
-      >
-        {busy ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.btnText}>{mode === 'login' ? 'Log in' : 'Create account'}</Text>
-        )}
-      </Pressable>
-      <Pressable
-        onPress={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(null); }}
-        disabled={busy}
-        hitSlop={8}
-        style={styles.toggleLink}
-      >
-        <Text style={styles.toggleText}>
-          {mode === 'login' ? 'New here? Create an account' : 'Have an account? Log in'}
-        </Text>
-      </Pressable>
 
+      {method === 'otp' ? (
+        otpStage === 'request' ? (
+          <Pressable
+            style={[styles.btn, (busy || !email.trim()) && styles.btnDisabled]}
+            disabled={busy || !email.trim()}
+            onPress={sendCode}
+          >
+            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Email me a code</Text>}
+          </Pressable>
+        ) : (
+          <>
+            <TextInput
+              style={styles.input}
+              placeholder="6-digit code"
+              placeholderTextColor="#9ca3af"
+              value={code}
+              onChangeText={setCode}
+              keyboardType="number-pad"
+              maxLength={6}
+              textContentType="oneTimeCode"
+              editable={!busy}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Phone (optional, for text sign-in later)"
+              placeholderTextColor="#9ca3af"
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              textContentType="telephoneNumber"
+              editable={!busy}
+            />
+            <Pressable
+              style={[styles.btn, (busy || code.trim().length < 6) && styles.btnDisabled]}
+              disabled={busy || code.trim().length < 6}
+              onPress={verifyCode}
+            >
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Verify &amp; sign in</Text>}
+            </Pressable>
+            <Pressable
+              onPress={() => { setOtpStage('request'); setCode(''); setInfo(null); setError(null); }}
+              disabled={busy}
+              hitSlop={8}
+              style={styles.toggleLink}
+            >
+              <Text style={styles.toggleText}>Use a different email / resend code</Text>
+            </Pressable>
+          </>
+        )
+      ) : (
+        <>
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            placeholderTextColor="#9ca3af"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoCapitalize="none"
+            textContentType={mode === 'signup' ? 'newPassword' : 'password'}
+            editable={!busy}
+          />
+          <Pressable
+            style={[styles.btn, (busy || !email.trim() || !password) && styles.btnDisabled]}
+            disabled={busy || !email.trim() || !password}
+            onPress={submitPassword}
+          >
+            {busy ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.btnText}>{mode === 'login' ? 'Log in' : 'Create account'}</Text>
+            )}
+          </Pressable>
+          <Pressable
+            onPress={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(null); }}
+            disabled={busy}
+            hitSlop={8}
+            style={styles.toggleLink}
+          >
+            <Text style={styles.toggleText}>
+              {mode === 'login' ? 'New here? Create an account' : 'Have an account? Log in'}
+            </Text>
+          </Pressable>
+        </>
+      )}
+
+      {info ? <Text style={styles.info}>{info}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {/* Reviewer/demo entry — works only when the server has demo mode enabled. */}
@@ -133,19 +220,23 @@ const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 8 },
   title: { fontSize: 24, fontWeight: '700' },
   sub: { color: '#6b7280', marginBottom: 24 },
-  // Google + Apple buttons share identical dimensions so they line up 1:1.
+  tabs: { flexDirection: 'row', width: 240, marginBottom: 8, borderRadius: 10, borderWidth: 1, borderColor: '#d1d5db', overflow: 'hidden' },
+  tab: { flex: 1, paddingVertical: 10, alignItems: 'center', backgroundColor: '#fff' },
+  tabActive: { backgroundColor: '#1a2a4f' },
+  tabText: { color: '#1a2a4f', fontWeight: '600', fontSize: 14 },
+  tabTextActive: { color: '#fff' },
   btn: { backgroundColor: '#1a2a4f', width: 240, height: 48, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   btnDisabled: { opacity: 0.6 },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-  appleBtn: { width: 240, height: 48 },
-  or: { color: '#9ca3af', fontSize: 13, marginVertical: 12 },
   input: {
     width: 240, height: 46, borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10,
     paddingHorizontal: 14, fontSize: 15, color: '#111827', backgroundColor: '#fff',
   },
+  inputLocked: { backgroundColor: '#f3f4f6', color: '#6b7280' },
   toggleLink: { marginTop: 12, paddingVertical: 6 },
   toggleText: { color: '#1a2a4f', fontSize: 13, textDecorationLine: 'underline' },
-  error: { color: '#b91c1c', marginTop: 16, textAlign: 'center' },
+  info: { color: '#1a2a4f', marginTop: 16, textAlign: 'center', width: 260 },
+  error: { color: '#b91c1c', marginTop: 16, textAlign: 'center', width: 260 },
   demoLink: { marginTop: 20, paddingVertical: 6 },
   demoText: { color: '#6b7280', fontSize: 13, textDecorationLine: 'underline' },
 });

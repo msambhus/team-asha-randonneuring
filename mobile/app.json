@@ -9,7 +9,6 @@
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": false,
-      "usesAppleSignIn": true,
       "bundleIdentifier": "org.teamasha.randonneuring",
       "infoPlist": {
         "CFBundleDisplayName": "Team Asha Rando",
@@ -31,18 +30,11 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-apple-authentication",
       [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Team Asha keeps sharing your location during a ride — even with the screen off — so the club can follow along.",
           "isIosBackgroundLocationEnabled": true
-        }
-      ],
-      [
-        "@react-native-google-signin/google-signin",
-        {
-          "iosUrlScheme": "com.googleusercontent.apps.465825889971-bbk5vdfldcblrr6h91jvjd66tmgudf5h"
         }
       ],
       "expo-font"
@@ -53,8 +45,6 @@
     "extra": {
       "router": {},
       "apiBase": "https://team-asha-randonneuring.vercel.app",
-      "googleIosClientId": "465825889971-bbk5vdfldcblrr6h91jvjd66tmgudf5h.apps.googleusercontent.com",
-      "googleWebClientId": "465825889971-tkfv9td375ap2cle1pipm0sniogi0rjc.apps.googleusercontent.com",
       "eas": {
         "projectId": "a2d7adfa-7b86-4383-b5b7-cb2b7daaddfa"
       }

@@ -1,9 +1,10 @@
 /**
- * mobile/contexts/SessionContext.tsx — token lifecycle + Google sign-in.
+ * mobile/contexts/SessionContext.tsx — token lifecycle + first-party sign-in.
  *
  * On mount reads the stored token once (block route guards on isLoading).
- * signInWithGoogle() runs native Google sign-in → exchanges for our app token.
- * signOut() clears the token + Google session + query cache.
+ * Sign-in is email + password or passwordless email OTP (code or magic link);
+ * Google + Sign in with Apple were removed (App Store Guideline 4.8).
+ * signOut() clears the token + query cache.
  */
 import React, {
   createContext, useCallback, useContext, useEffect, useState,
@@ -12,9 +13,11 @@ import * as SecureStore from 'expo-secure-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { getToken, storeToken, deleteToken } from '../lib/api';
 import {
-  getGoogleIdToken, exchangeGoogleToken, demoSignIn, googleSignOut,
-  getAppleCredential, exchangeAppleToken, deleteAccount as deleteAccountApi,
+  demoSignIn, deleteAccount as deleteAccountApi,
   passwordLogin, passwordSignup,
+  requestEmailOtp as requestEmailOtpApi,
+  verifyEmailOtp as verifyEmailOtpApi,
+  type OtpVerifyParams,
 } from '../lib/auth';
 import type { GoogleAuthResponse } from '../lib/types';
 
@@ -26,15 +29,15 @@ interface SessionValue {
   riderId: number | null;
   profileComplete: boolean;
   isLoading: boolean;
-  /** Returns null on success, else an error string to display. */
-  signInWithGoogle: () => Promise<string | null>;
-  /** Sign in with Apple. Returns null on success, else an error string. */
-  signInWithApple: () => Promise<string | null>;
-  /** Reviewer/demo login (no Google). Returns null on success, else an error string. */
+  /** Reviewer/demo login (no third party). Returns null on success, else an error string. */
   signInDemo: () => Promise<string | null>;
   /** Email + password sign-in / sign-up. Returns null on success, else an error string. */
   signInWithPassword: (email: string, password: string) => Promise<string | null>;
   signUpWithPassword: (email: string, password: string) => Promise<string | null>;
+  /** Email OTP: request a code, then verify a code or magic-link token. Each
+   *  returns null on success, else an error string to display. */
+  requestEmailOtp: (email: string) => Promise<string | null>;
+  verifyEmailOtp: (params: OtpVerifyParams) => Promise<string | null>;
   signOut: () => Promise<void>;
   /** Permanently delete the account, then sign out. Returns null on success,
    *  else an error string. */
@@ -46,11 +49,11 @@ const SessionContext = createContext<SessionValue>({
   riderId: null,
   profileComplete: false,
   isLoading: true,
-  signInWithGoogle: async () => 'not ready',
-  signInWithApple: async () => 'not ready',
   signInDemo: async () => 'not ready',
   signInWithPassword: async () => 'not ready',
   signUpWithPassword: async () => 'not ready',
+  requestEmailOtp: async () => 'not ready',
+  verifyEmailOtp: async () => 'not ready',
   signOut: async () => undefined,
   deleteAccount: async () => 'not ready',
 });
@@ -75,7 +78,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  // Persist + apply an auth response (shared by Google and demo login).
+  // Persist + apply an auth response (shared by every sign-in path).
   const applySession = useCallback(async (res: GoogleAuthResponse) => {
     await storeToken(res.token);
     await SecureStore.setItemAsync(RIDER_KEY, res.rider_id == null ? '' : String(res.rider_id));
@@ -85,28 +88,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setProfileComplete(res.profile_complete);
     queryClient.clear();
   }, [queryClient]);
-
-  const signInWithGoogle = useCallback(async (): Promise<string | null> => {
-    try {
-      const idToken = await getGoogleIdToken();
-      if (idToken === null) return null;   // user cancelled — not an error
-      await applySession(await exchangeGoogleToken(idToken));
-      return null;
-    } catch (e) {
-      return e instanceof Error ? e.message : 'Sign-in failed';
-    }
-  }, [applySession]);
-
-  const signInWithApple = useCallback(async (): Promise<string | null> => {
-    try {
-      const cred = await getAppleCredential();
-      if (cred === null) return null;   // user cancelled — not an error
-      await applySession(await exchangeAppleToken(cred.identityToken, cred.email));
-      return null;
-    } catch (e) {
-      return e instanceof Error ? e.message : 'Sign-in failed';
-    }
-  }, [applySession]);
 
   const signInDemo = useCallback(async (): Promise<string | null> => {
     try {
@@ -141,11 +122,32 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     [applySession],
   );
 
+  // Requesting a code does NOT establish a session — it just emails the code.
+  const requestEmailOtp = useCallback(async (email: string): Promise<string | null> => {
+    try {
+      await requestEmailOtpApi(email);
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : 'Could not send a code';
+    }
+  }, []);
+
+  const verifyEmailOtp = useCallback(
+    async (params: OtpVerifyParams): Promise<string | null> => {
+      try {
+        await applySession(await verifyEmailOtpApi(params));
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : 'Sign-in failed';
+      }
+    },
+    [applySession],
+  );
+
   const signOut = useCallback(async () => {
     await deleteToken();
     await SecureStore.deleteItemAsync(RIDER_KEY).catch(() => undefined);
     await SecureStore.deleteItemAsync(PROFILE_KEY).catch(() => undefined);
-    await googleSignOut();
     setToken(null);
     setRiderId(null);
     setProfileComplete(false);
@@ -167,8 +169,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     <SessionContext.Provider
       value={{
         token, riderId, profileComplete, isLoading,
-        signInWithGoogle, signInWithApple, signInDemo,
-        signInWithPassword, signUpWithPassword, signOut, deleteAccount,
+        signInDemo, signInWithPassword, signUpWithPassword,
+        requestEmailOtp, verifyEmailOtp, signOut, deleteAccount,
       }}
     >
       {children}
