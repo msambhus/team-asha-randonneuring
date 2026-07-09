@@ -37,7 +37,10 @@ function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isLoading) return;
     const inLogin = segments[0] === 'login';
-    if (!token && !inLogin) router.replace('/login');
+    // The magic-link screen (/auth/otp) signs the user in, so allow it to load
+    // without a token instead of bouncing to /login before it can redeem.
+    const inAuthFlow = inLogin || segments[0] === 'auth';
+    if (!token && !inAuthFlow) router.replace('/login');
     else if (token && inLogin) router.replace('/');
   }, [token, isLoading, segments, router]);
 
@@ -67,6 +70,7 @@ export default function RootLayout() {
             <AuthGate>
               <Stack>
                 <Stack.Screen name="login" options={{ headerShown: false }} />
+                <Stack.Screen name="auth/otp" options={{ headerShown: false }} />
                 <Stack.Screen
                   name="index"
                   options={{ title: 'Live Rides', headerRight: () => <SettingsButton /> }}

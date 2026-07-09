@@ -1,60 +1,23 @@
 /**
- * mobile/lib/auth.ts — native Google sign-in → backend token exchange.
+ * mobile/lib/auth.ts — login helpers that exchange credentials for our backend
+ * bearer token.
  *
- * Flow: GoogleSignin gives a Google ID token; we POST it to /api/auth/google,
- * which verifies it (audience = our iOS client id) and returns our app token.
+ * The iOS app dropped Google + Sign in with Apple (App Store Guideline 4.8) in
+ * favour of first-party logins:
+ *   • email + password
+ *   • passwordless email OTP — a 6-digit code OR a magic link.
+ * An existing Google/Apple member signs in with an email code: the backend sends
+ * it to their verified email and it resolves to their SAME account, so removing
+ * the buttons orphans no one. All helpers return the shared session shape
+ * ({token, rider_id, profile_complete}).
  */
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import * as AppleAuthentication from 'expo-apple-authentication';
-import { API_BASE, GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID } from './config';
+import { API_BASE } from './config';
 import { authHeaders, getToken } from './api';
 import type { GoogleAuthResponse } from './types';
 
-let configured = false;
-
-export function configureGoogle(): void {
-  if (configured) return;
-  // webClientId is what makes getTokens() return an ID token reliably; its aud
-  // is the web client id, which the backend must verify against.
-  GoogleSignin.configure({
-    iosClientId: GOOGLE_IOS_CLIENT_ID,
-    webClientId: GOOGLE_WEB_CLIENT_ID || undefined,
-  });
-  configured = true;
-}
-
-/**
- * Run native Google sign-in. Returns the Google ID token, or `null` if the user
- * cancelled (a normal action — callers should treat null as a no-op, not an error).
- */
-export async function getGoogleIdToken(): Promise<string | null> {
-  configureGoogle();
-  await GoogleSignin.hasPlayServices();
-  const result = await GoogleSignin.signIn();
-  // v13 returns a discriminated result; a cancel is not an error.
-  if (result && (result as { type?: string }).type === 'cancelled') return null;
-  const { idToken } = await GoogleSignin.getTokens();
-  if (!idToken) throw new Error('Google did not return an ID token (configure a Web client id).');
-  return idToken;
-}
-
-/** Exchange a Google ID token for our backend app token. Pure-ish: takes the
- *  id token so it's unit-testable without the native module. */
-export async function exchangeGoogleToken(idToken: string): Promise<GoogleAuthResponse> {
-  const res = await fetch(`${API_BASE}/api/auth/google`, {
-    method: 'POST',
-    headers: authHeaders(null),
-    body: JSON.stringify({ id_token: idToken }),
-  });
-  if (!res.ok) {
-    throw new Error(res.status === 401 ? 'Google sign-in was rejected' : `Sign-in failed (${res.status})`);
-  }
-  return res.json() as Promise<GoogleAuthResponse>;
-}
-
 /** Reviewer/demo login: exchange nothing for a backend app token via the gated
- *  /api/auth/demo endpoint (no Google). Only works when the server has demo mode
- *  enabled; otherwise it 404s and we surface a friendly message. */
+ *  /api/auth/demo endpoint. Only works when the server has demo mode enabled;
+ *  otherwise it 404s and we surface a friendly message. */
 export async function demoSignIn(): Promise<GoogleAuthResponse> {
   const res = await fetch(`${API_BASE}/api/auth/demo`, {
     method: 'POST',
@@ -66,8 +29,8 @@ export async function demoSignIn(): Promise<GoogleAuthResponse> {
   return res.json() as Promise<GoogleAuthResponse>;
 }
 
-/** Email + password sign-up (mobile's 3rd login option) → backend app token.
- *  Surfaces the backend's friendly error (e.g. "email already exists"). */
+/** Email + password sign-up → backend app token. Surfaces the backend's friendly
+ *  error (e.g. "email already exists"). */
 export async function passwordSignup(email: string, password: string): Promise<GoogleAuthResponse> {
   const res = await fetch(`${API_BASE}/api/auth/signup`, {
     method: 'POST',
@@ -91,64 +54,42 @@ export async function passwordLogin(email: string, password: string): Promise<Go
   return data;
 }
 
-export async function googleSignOut(): Promise<void> {
-  try {
-    configureGoogle();
-    await GoogleSignin.signOut();
-  } catch {
-    // best-effort — clearing our own token is what matters
-  }
-}
+// ── Passwordless email OTP ────────────────────────────────────────────────
 
-// ── Sign in with Apple (App Store Guideline 4.8) ──────────────────────────
-
-/** Whether Sign in with Apple is available (iOS 13+). Cheap to call; false on
- *  Android/web so the button can be hidden. */
-export async function isAppleSignInAvailable(): Promise<boolean> {
-  try {
-    return await AppleAuthentication.isAvailableAsync();
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Run native Sign in with Apple. Returns {identityToken, email}, or `null` if
- * the user cancelled (a normal action — treat null as a no-op, not an error).
- * Apple only returns the email on the FIRST authorization; later logins omit it
- * (the backend already knows the user by the token's stable `sub`).
- */
-export async function getAppleCredential(): Promise<{ identityToken: string; email: string | null } | null> {
-  try {
-    const cred = await AppleAuthentication.signInAsync({
-      requestedScopes: [
-        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-        AppleAuthentication.AppleAuthenticationScope.EMAIL,
-      ],
-    });
-    if (!cred.identityToken) throw new Error('Apple did not return an identity token.');
-    return { identityToken: cred.identityToken, email: cred.email ?? null };
-  } catch (e) {
-    if ((e as { code?: string })?.code === 'ERR_REQUEST_CANCELED') return null;
-    throw e;
-  }
-}
-
-/** Exchange an Apple identity token for our backend app token. Pure-ish: takes
- *  the token so it's unit-testable without the native module. */
-export async function exchangeAppleToken(
-  identityToken: string,
-  email: string | null,
-): Promise<GoogleAuthResponse> {
-  const res = await fetch(`${API_BASE}/api/auth/apple`, {
+/** Ask the backend to email a 6-digit code + magic link to `email`. Resolves on
+ *  success; throws with the backend's message on rate-limit / send failure. */
+export async function requestEmailOtp(email: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/auth/otp/request`, {
     method: 'POST',
     headers: authHeaders(null),
-    body: JSON.stringify({ identity_token: identityToken, email }),
+    body: JSON.stringify({ email }),
   });
-  if (!res.ok) {
-    throw new Error(res.status === 401 ? 'Apple sign-in was rejected' : `Sign-in failed (${res.status})`);
-  }
-  return res.json() as Promise<GoogleAuthResponse>;
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) throw new Error(data.error || `Could not send a code (${res.status})`);
+}
+
+/** Params for verifyEmailOtp: either a typed code (with email) or a magic-link
+ *  token. `phone` is optional and, if given, stored UNVERIFIED for a future
+ *  SMS-OTP login (phase 2). */
+export type OtpVerifyParams =
+  | { email: string; code: string; phone?: string }
+  | { linkToken: string; phone?: string };
+
+/** Verify an email OTP (typed code or magic-link token) → backend app token. */
+export async function verifyEmailOtp(params: OtpVerifyParams): Promise<GoogleAuthResponse> {
+  const body: Record<string, string> = {};
+  if ('linkToken' in params) body.link_token = params.linkToken;
+  else { body.email = params.email; body.code = params.code; }
+  if (params.phone) body.phone = params.phone;
+
+  const res = await fetch(`${API_BASE}/api/auth/otp/verify`, {
+    method: 'POST',
+    headers: authHeaders(null),
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => ({}))) as GoogleAuthResponse & { error?: string };
+  if (!res.ok) throw new Error(data.error || `Sign-in failed (${res.status})`);
+  return data;
 }
 
 // ── Account deletion (App Store Guideline 5.1.1(v)) ───────────────────────

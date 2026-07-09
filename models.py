@@ -1836,6 +1836,137 @@ def link_apple_sub(user_id, apple_sub):
     conn.commit()
     return cur.rowcount
 
+def create_user_email_otp(email, phone=None):
+    """Create a passwordless user from a verified email OTP signup.
+
+    The email is proven (they received & entered the code), so google_id,
+    apple_sub and password_hash all stay NULL. Optional ``phone`` is stored
+    UNVERIFIED for a future SMS OTP. Mirrors create_user / create_user_password;
+    raises UniqueViolation on a concurrent same-email signup so the route → 409.
+    """
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""INSERT INTO app_user (email, phone, profile_completed, last_login)
+                      VALUES (%s, %s, FALSE, CURRENT_TIMESTAMP)
+                      RETURNING id, email, phone, profile_completed, rider_id""",
+                   (email, phone))
+        user = cur.fetchone()
+        conn.commit()
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        raise
+    return dict(user) if user else None
+
+
+def set_user_phone(user_id, phone):
+    """Store/replace a user's phone number (always UNVERIFIED until an SMS OTP).
+
+    Used when an existing account supplies a phone during an OTP login so a
+    future SMS OTP can reach them. No-op (returns 0) when the phone is unchanged.
+    Returns the number of rows updated.
+    """
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""UPDATE app_user SET phone = %s, phone_verified = FALSE
+                   WHERE id = %s AND phone IS DISTINCT FROM %s""",
+                (phone, user_id, phone))
+    conn.commit()
+    return cur.rowcount
+
+
+# ========== EMAIL OTP (passwordless login) ==========
+
+def create_otp(identifier, code_hash, link_hash, expires_at, channel='email', request_ip=None):
+    """Insert an OTP row and return its id.
+
+    ``code_hash`` is a salted werkzeug hash of the 6-digit code; ``link_hash`` is
+    sha256 hex of the magic-link token (see services/otp_service.py). Neither
+    plaintext is ever stored. ``request_ip`` is kept for per-IP rate limiting.
+    """
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""INSERT INTO auth_otp (identifier, channel, code_hash, link_hash, request_ip, expires_at)
+                  VALUES (lower(%s), %s, %s, %s, %s, %s) RETURNING id""",
+               (identifier, channel, code_hash, link_hash, request_ip, expires_at))
+    row = cur.fetchone()
+    conn.commit()
+    return row['id'] if row else None
+
+
+def invalidate_active_otps(identifier):
+    """Consume any still-live OTPs for ``identifier`` (called before issuing a new
+    one) so only the newest code/link is ever valid. This makes the per-code
+    attempts cap an effective per-identifier lockout instead of one-per-row.
+    Returns the number of rows invalidated.
+    """
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""UPDATE auth_otp SET consumed_at = CURRENT_TIMESTAMP
+                   WHERE identifier = lower(%s) AND consumed_at IS NULL""", (identifier,))
+    conn.commit()
+    return cur.rowcount
+
+
+def count_recent_otps(identifier, since):
+    """How many OTPs were issued to ``identifier`` at/after ``since`` (rate limiting)."""
+    return _execute("""SELECT COUNT(*) AS n FROM auth_otp
+                       WHERE identifier = lower(%s) AND created_at >= %s""",
+                    (identifier, since)).fetchone()['n']
+
+
+def count_recent_otps_by_ip(request_ip, since):
+    """How many OTPs were requested from ``request_ip`` at/after ``since``. Guards
+    against email-bombing / cross-identifier brute force from one source. Returns
+    0 when the IP is unknown (None) so a missing IP never blocks a legit login."""
+    if not request_ip:
+        return 0
+    return _execute("""SELECT COUNT(*) AS n FROM auth_otp
+                       WHERE request_ip = %s AND created_at >= %s""",
+                    (request_ip, since)).fetchone()['n']
+
+
+def get_active_otp_by_identifier(identifier):
+    """Newest live (unconsumed, unexpired) OTP for ``identifier``, or None."""
+    return _execute("""SELECT * FROM auth_otp
+                       WHERE identifier = lower(%s) AND consumed_at IS NULL
+                         AND expires_at > CURRENT_TIMESTAMP
+                       ORDER BY created_at DESC LIMIT 1""", (identifier,)).fetchone()
+
+
+def get_active_otp_by_link_hash(link_hash):
+    """Newest live OTP matching a magic-link token's sha256 hash, or None."""
+    return _execute("""SELECT * FROM auth_otp
+                       WHERE link_hash = %s AND consumed_at IS NULL
+                         AND expires_at > CURRENT_TIMESTAMP
+                       ORDER BY created_at DESC LIMIT 1""", (link_hash,)).fetchone()
+
+
+def increment_otp_attempts(otp_id):
+    """Bump the wrong-attempt counter; return the new count (or None if gone)."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("UPDATE auth_otp SET attempts = attempts + 1 WHERE id = %s RETURNING attempts",
+                (otp_id,))
+    row = cur.fetchone()
+    conn.commit()
+    return row['attempts'] if row else None
+
+
+def consume_otp(otp_id):
+    """Atomically mark an OTP consumed. Returns True iff THIS call consumed it.
+
+    The ``consumed_at IS NULL`` guard makes redemption single-use even under a
+    concurrent double-submit — the loser sees rowcount 0.
+    """
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""UPDATE auth_otp SET consumed_at = CURRENT_TIMESTAMP
+                   WHERE id = %s AND consumed_at IS NULL""", (otp_id,))
+    conn.commit()
+    return cur.rowcount == 1
+
+
 def delete_account(user_id, preserve_rider=False):
     """Permanently delete an account for App Store Guideline 5.1.1(v).
 
