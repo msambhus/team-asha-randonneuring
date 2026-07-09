@@ -14,6 +14,7 @@ import { getToken, storeToken, deleteToken } from '../lib/api';
 import {
   getGoogleIdToken, exchangeGoogleToken, demoSignIn, googleSignOut,
   getAppleCredential, exchangeAppleToken, deleteAccount as deleteAccountApi,
+  passwordLogin, passwordSignup,
 } from '../lib/auth';
 import type { GoogleAuthResponse } from '../lib/types';
 
@@ -31,6 +32,9 @@ interface SessionValue {
   signInWithApple: () => Promise<string | null>;
   /** Reviewer/demo login (no Google). Returns null on success, else an error string. */
   signInDemo: () => Promise<string | null>;
+  /** Email + password sign-in / sign-up. Returns null on success, else an error string. */
+  signInWithPassword: (email: string, password: string) => Promise<string | null>;
+  signUpWithPassword: (email: string, password: string) => Promise<string | null>;
   signOut: () => Promise<void>;
   /** Permanently delete the account, then sign out. Returns null on success,
    *  else an error string. */
@@ -45,6 +49,8 @@ const SessionContext = createContext<SessionValue>({
   signInWithGoogle: async () => 'not ready',
   signInWithApple: async () => 'not ready',
   signInDemo: async () => 'not ready',
+  signInWithPassword: async () => 'not ready',
+  signUpWithPassword: async () => 'not ready',
   signOut: async () => undefined,
   deleteAccount: async () => 'not ready',
 });
@@ -111,6 +117,30 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
   }, [applySession]);
 
+  const signInWithPassword = useCallback(
+    async (email: string, password: string): Promise<string | null> => {
+      try {
+        await applySession(await passwordLogin(email, password));
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : 'Sign-in failed';
+      }
+    },
+    [applySession],
+  );
+
+  const signUpWithPassword = useCallback(
+    async (email: string, password: string): Promise<string | null> => {
+      try {
+        await applySession(await passwordSignup(email, password));
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : 'Sign-up failed';
+      }
+    },
+    [applySession],
+  );
+
   const signOut = useCallback(async () => {
     await deleteToken();
     await SecureStore.deleteItemAsync(RIDER_KEY).catch(() => undefined);
@@ -137,7 +167,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     <SessionContext.Provider
       value={{
         token, riderId, profileComplete, isLoading,
-        signInWithGoogle, signInWithApple, signInDemo, signOut, deleteAccount,
+        signInWithGoogle, signInWithApple, signInDemo,
+        signInWithPassword, signUpWithPassword, signOut, deleteAccount,
       }}
     >
       {children}
