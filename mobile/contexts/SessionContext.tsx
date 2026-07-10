@@ -17,6 +17,7 @@ import {
   passwordLogin, passwordSignup,
   requestEmailOtp as requestEmailOtpApi,
   verifyEmailOtp as verifyEmailOtpApi,
+  setupProfile as setupProfileApi,
   type OtpVerifyParams,
 } from '../lib/auth';
 import type { GoogleAuthResponse } from '../lib/types';
@@ -38,6 +39,9 @@ interface SessionValue {
    *  returns null on success, else an error string to display. */
   requestEmailOtp: (email: string) => Promise<string | null>;
   verifyEmailOtp: (params: OtpVerifyParams) => Promise<string | null>;
+  /** Link the account to a RUSA rider (onboarding). Returns null on success,
+   *  else an error string. On success the session updates to profile-complete. */
+  setupProfile: (rusaId: string) => Promise<string | null>;
   signOut: () => Promise<void>;
   /** Permanently delete the account, then sign out. Returns null on success,
    *  else an error string. */
@@ -54,6 +58,7 @@ const SessionContext = createContext<SessionValue>({
   signUpWithPassword: async () => 'not ready',
   requestEmailOtp: async () => 'not ready',
   verifyEmailOtp: async () => 'not ready',
+  setupProfile: async () => 'not ready',
   signOut: async () => undefined,
   deleteAccount: async () => 'not ready',
 });
@@ -144,6 +149,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     [applySession],
   );
 
+  const setupProfile = useCallback(async (rusaId: string): Promise<string | null> => {
+    try {
+      // Reuses applySession: the response carries a new token with the rider_id,
+      // and setting profileComplete=true flips the app out of Onboarding.
+      await applySession(await setupProfileApi(rusaId));
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : 'Profile setup failed';
+    }
+  }, [applySession]);
+
   const signOut = useCallback(async () => {
     await deleteToken();
     await SecureStore.deleteItemAsync(RIDER_KEY).catch(() => undefined);
@@ -170,7 +186,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       value={{
         token, riderId, profileComplete, isLoading,
         signInDemo, signInWithPassword, signUpWithPassword,
-        requestEmailOtp, verifyEmailOtp, signOut, deleteAccount,
+        requestEmailOtp, verifyEmailOtp, setupProfile, signOut, deleteAccount,
       }}
     >
       {children}

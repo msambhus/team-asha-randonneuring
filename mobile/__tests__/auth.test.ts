@@ -5,7 +5,7 @@
  */
 import {
   deleteAccount, passwordSignup, passwordLogin,
-  requestEmailOtp, verifyEmailOtp,
+  requestEmailOtp, verifyEmailOtp, setupProfile,
 } from '../lib/auth';
 
 jest.mock('../lib/api', () => ({
@@ -136,5 +136,28 @@ describe('verifyEmailOtp', () => {
     );
     await expect(verifyEmailOtp({ email: 'r@example.com', code: '999999' }))
       .rejects.toThrow('Incorrect or expired code');
+  });
+});
+
+describe('setupProfile', () => {
+  it('POSTs rusa_id with the bearer token and returns the new session', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch' as never).mockReturnValue(
+      okJson({ token: 'new-tok', rider_id: 88, profile_complete: true, rider_name: 'Mihir Sambhus' }) as never,
+    );
+    const res = await setupProfile('12345');
+    expect(res.rider_id).toBe(88);
+    expect(res.profile_complete).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/auth/setup-profile');
+    expect(init.method).toBe('POST');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer stored-token');
+    expect(JSON.parse(init.body as string)).toEqual({ rusa_id: '12345' });
+  });
+
+  it('surfaces the backend error (e.g. RUSA ID already claimed)', async () => {
+    jest.spyOn(global, 'fetch' as never).mockReturnValue(
+      errBody(409, { error: 'This RUSA ID is already registered by another user' }) as never,
+    );
+    await expect(setupProfile('12345')).rejects.toThrow('already registered');
   });
 });

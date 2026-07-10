@@ -92,6 +92,24 @@ export async function verifyEmailOtp(params: OtpVerifyParams): Promise<GoogleAut
   return data;
 }
 
+// ── Profile setup (link account → RUSA rider) ─────────────────────────────
+
+/** Link the signed-in account to a RUSA rider profile (native onboarding).
+ *  Returns a NEW session whose token carries the rider_id, so the rider/live
+ *  endpoints work right after. Surfaces the backend's friendly error. */
+export async function setupProfile(rusaId: string): Promise<GoogleAuthResponse & { rider_name?: string }> {
+  const token = await getToken();
+  const res = await fetch(`${API_BASE}/api/auth/setup-profile`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ rusa_id: rusaId }),
+  });
+  const data = (await res.json().catch(() => ({}))) as
+    GoogleAuthResponse & { error?: string; rider_name?: string };
+  if (!res.ok) throw new Error(data.error || `Profile setup failed (${res.status})`);
+  return data;
+}
+
 // ── Account deletion (App Store Guideline 5.1.1(v)) ───────────────────────
 
 /** Permanently delete the signed-in account (DELETE /api/auth/account). The

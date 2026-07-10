@@ -6,6 +6,7 @@ from enum import Enum
 import psycopg2.extras
 from db import get_db
 from cache import cache, CACHE_TIMEOUT
+from services.email_normalize import normalize_email
 
 
 class RideStatus(str, Enum):
@@ -1741,6 +1742,15 @@ def get_user_by_email(email):
     return _execute("SELECT * FROM app_user WHERE lower(email) = lower(%s)",
                     (email,)).fetchone()
 
+def get_user_by_normalized_email(email):
+    """Get the account matching an email's canonical form (see
+    services/email_normalize), so Gmail dot/+tag variants resolve to ONE account.
+    When variants have somehow produced duplicates, prefers a profile-completed
+    row (the real account) over an empty one, then the oldest. NOT CACHED."""
+    return _execute("""SELECT * FROM app_user WHERE email_normalized = %s
+                       ORDER BY (profile_completed IS TRUE) DESC, id ASC LIMIT 1""",
+                    (normalize_email(email),)).fetchone()
+
 def get_user_by_google_id(google_id):
     """Get user by Google ID. NOT CACHED - user data should not be cached in serverless environments."""
     return _execute("SELECT * FROM app_user WHERE google_id = %s", (google_id,)).fetchone()
@@ -1753,10 +1763,10 @@ def create_user(email, google_id):
     """Create a new user with Google credentials."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""INSERT INTO app_user (email, google_id, profile_completed, last_login)
-                  VALUES (%s, %s, FALSE, CURRENT_TIMESTAMP)
+    cur.execute("""INSERT INTO app_user (email, email_normalized, google_id, profile_completed, last_login)
+                  VALUES (%s, %s, %s, FALSE, CURRENT_TIMESTAMP)
                   RETURNING id, email, google_id, profile_completed, rider_id""",
-               (email, google_id))
+               (email, normalize_email(email), google_id))
     user = cur.fetchone()
     conn.commit()
     return dict(user) if user else None
@@ -1771,10 +1781,10 @@ def create_user_password(email, password_hash):
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("""INSERT INTO app_user (email, password_hash, profile_completed, last_login)
-                      VALUES (%s, %s, FALSE, CURRENT_TIMESTAMP)
+        cur.execute("""INSERT INTO app_user (email, email_normalized, password_hash, profile_completed, last_login)
+                      VALUES (%s, %s, %s, FALSE, CURRENT_TIMESTAMP)
                       RETURNING id, email, password_hash, profile_completed, rider_id""",
-                   (email, password_hash))
+                   (email, normalize_email(email), password_hash))
         user = cur.fetchone()
         conn.commit()
     except psycopg2.errors.UniqueViolation:
@@ -1813,10 +1823,10 @@ def create_user_apple(email, apple_sub):
     """Create a new user from a Sign in with Apple identity (no google_id)."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""INSERT INTO app_user (email, apple_sub, profile_completed, last_login)
-                  VALUES (%s, %s, FALSE, CURRENT_TIMESTAMP)
+    cur.execute("""INSERT INTO app_user (email, email_normalized, apple_sub, profile_completed, last_login)
+                  VALUES (%s, %s, %s, FALSE, CURRENT_TIMESTAMP)
                   RETURNING id, email, google_id, apple_sub, profile_completed, rider_id""",
-               (email, apple_sub))
+               (email, normalize_email(email), apple_sub))
     user = cur.fetchone()
     conn.commit()
     return dict(user) if user else None
@@ -1847,10 +1857,10 @@ def create_user_email_otp(email, phone=None):
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("""INSERT INTO app_user (email, phone, profile_completed, last_login)
-                      VALUES (%s, %s, FALSE, CURRENT_TIMESTAMP)
+        cur.execute("""INSERT INTO app_user (email, email_normalized, phone, profile_completed, last_login)
+                      VALUES (%s, %s, %s, FALSE, CURRENT_TIMESTAMP)
                       RETURNING id, email, phone, profile_completed, rider_id""",
-                   (email, phone))
+                   (email, normalize_email(email), phone))
         user = cur.fetchone()
         conn.commit()
     except psycopg2.errors.UniqueViolation:
