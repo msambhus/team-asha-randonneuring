@@ -340,6 +340,11 @@
     <span class="item"><span class="swatch garmin"></span> ⌚ Garmin device <span style="color:var(--text-light)">(works screen-off)</span></span>
     <span class="item"><span class="swatch beacon"></span> 📱 Phone <span style="color:var(--text-light)">(needs screen on)</span></span>
   </div>
+  <div class="live-legend">
+    <span class="item"><span class="swatch" style="background:#16a34a;border-color:#16a34a"></span> Ahead / on plan</span>
+    <span class="item"><span class="swatch" style="background:#dc2626;border-color:#dc2626"></span> Behind plan</span>
+    <span class="item"><span class="swatch" style="background:#6b7280;border-color:#6b7280"></span> Off-route / no plan</span>
+  </div>
   <div id="live-status" class="live-status"></div>
   <div id="live-empty" class="live-empty" style="display:none;">
     No riders are sharing their location right now.{% if not is_guest %} Riders can opt in from
@@ -500,7 +505,9 @@
       var src = p.source === 'garmin' ? 'garmin' : 'beacon';
       el.className = 'rider-marker src-' + src + (p.stale ? ' stale' : '');
       var pin = el.querySelector('.pin');
-      pin.style.background = p.color;
+      // Colour by plan timing (ahead=green / behind=red / grey=unknown); the
+      // server falls back to the signup-status colour when no plan is matched.
+      pin.style.background = p.plan_color || p.color;
       pin.textContent = initials(p.name);           // textContent — no HTML injection
       var oldBadge = el.querySelector('.act');
       if (oldBadge) { oldBadge.remove(); }
