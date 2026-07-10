@@ -213,8 +213,8 @@
     color: #64748b; cursor: pointer;
 }
 .seg-map-close:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
-.seg-map-svg {
-    width: 100%; height: auto; background: #f8fafc;
+.seg-map-leaflet {
+    width: 100%; height: 300px; background: #f8fafc;
     border: 1px solid #eef2f7; border-radius: 8px;
 }
 
@@ -990,54 +990,80 @@
     <div class="seg-map-card">
         <button type="button" class="seg-map-close" aria-label="Close map">&times;</button>
         <h3 id="segMapTitle"></h3>
-        <svg class="seg-map-svg" id="segMapSvg" viewBox="{{ map_data.thumb.viewbox }}"
-             preserveAspectRatio="xMidYMid meet" role="img"></svg>
+        <div class="seg-map-leaflet" id="segMapLeaflet" role="img"
+             aria-label="Segment map"></div>
     </div>
 </div>
 <script>
 (function () {
-    var thumb = {{ map_data.thumb|tojson }};
+    // Real basemap (OpenStreetMap tiles) behind the route, instead of the old
+    // blank SVG that drew the route on an empty background. Driven by the same
+    // lat/lng map_data the main #rideMap uses, so a Leaflet map with the full
+    // track (faint) + the selected leg/stop (bold) shows over actual streets.
+    var mapData = {{ map_data|tojson }};
     var overlay = document.getElementById('segMapOverlay');
-    if (!overlay || !thumb) return;
-    var svg = document.getElementById('segMapSvg');
+    if (!overlay || !mapData || !mapData.track || mapData.track.length < 2) return;
     var title = document.getElementById('segMapTitle');
     var closeBtn = overlay.querySelector('.seg-map-close');
     var lastFocus = null;
-    var SVGNS = 'http://www.w3.org/2000/svg';
+    var lmap = null, layers = null;
 
-    function line(points, stroke, width) {
-        var pl = document.createElementNS(SVGNS, 'polyline');
-        pl.setAttribute('points', points);
-        pl.setAttribute('fill', 'none');
-        pl.setAttribute('stroke', stroke);
-        pl.setAttribute('stroke-width', width);
-        pl.setAttribute('stroke-linejoin', 'round');
-        pl.setAttribute('stroke-linecap', 'round');
-        return pl;
+    // data-mapkey is the leg's arrival location (planned segment) or the stop's
+    // distance ('%.1f', unplanned stop) — look those up in map_data by the same key.
+    var segByLoc = {};
+    (mapData.segments || []).forEach(function (s) { if (s.location) segByLoc[s.location] = s; });
+    var stopByDist = {};
+    (mapData.stops || []).forEach(function (s) {
+        if (s.distance_miles != null) stopByDist[Number(s.distance_miles).toFixed(1)] = s;
+    });
+
+    function ensureMap() {
+        if (lmap) return lmap;
+        lmap = L.map('segMapLeaflet', { scrollWheelZoom: false });
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 18, attribution: '&copy; OpenStreetMap contributors',
+        }).addTo(lmap);
+        layers = L.layerGroup().addTo(lmap);
+        return lmap;
     }
-    function pin(xy) {
-        var p = String(xy).split(',');
-        var c = document.createElementNS(SVGNS, 'circle');
-        c.setAttribute('cx', p[0]); c.setAttribute('cy', p[1]); c.setAttribute('r', '2.6');
-        c.setAttribute('fill', '#dc2626');
-        c.setAttribute('stroke', '#ffffff'); c.setAttribute('stroke-width', '1');
-        return c;
-    }
+
     function render(key, isStop, label) {
-        while (svg.firstChild) svg.removeChild(svg.firstChild);
-        if (thumb.track) svg.appendChild(line(thumb.track, '#cbd5e1', '1.3'));
-        var seg = (!isStop && thumb.segments) ? thumb.segments[key] : null;
-        if (seg) svg.appendChild(line(seg, '#c2410c', '2.4'));
-        var pinXY = isStop ? (thumb.stop_pins || {})[key] : (thumb.pins || {})[key];
-        if (pinXY) svg.appendChild(pin(pinXY));
+        ensureMap();
+        layers.clearLayers();
+        // Faint full track for context (same neutral grey as the main map).
+        L.polyline(mapData.track, { color: '#cbd5e1', weight: 3, opacity: 0.8 }).addTo(layers);
+        var focus = null;
+        if (!isStop && segByLoc[key]) {
+            var seg = segByLoc[key];
+            focus = L.polyline(seg.points, { color: '#c2410c', weight: 5, opacity: 0.95 }).addTo(layers);
+            var end = seg.points[seg.points.length - 1];
+            L.circleMarker(end, { radius: 6, color: '#fff', weight: 2, fillColor: '#dc2626', fillOpacity: 1 }).addTo(layers);
+        } else if (isStop && stopByDist[key]) {
+            var st = stopByDist[key];
+            focus = L.circleMarker([st.lat, st.lng], { radius: 7, color: '#fff', weight: 2, fillColor: '#dc2626', fillOpacity: 1 }).addTo(layers);
+        }
         title.textContent = label || '';
-        svg.setAttribute('aria-label', 'Map for ' + (label || 'segment'));
+        return focus;
     }
     function open(key, isStop, label) {
         lastFocus = document.activeElement;
-        render(key, isStop, label);
         overlay.classList.add('open');
         overlay.setAttribute('aria-hidden', 'false');
+        var focus = render(key, isStop, label);
+        // The container was hidden until now; Leaflet must recompute its size,
+        // then fit to the selected leg/stop (fall back to the whole track).
+        setTimeout(function () {
+            ensureMap().invalidateSize();
+            try {
+                if (focus && focus.getBounds) {
+                    lmap.fitBounds(focus.getBounds(), { padding: [30, 30], maxZoom: 15 });
+                } else if (focus && focus.getLatLng) {
+                    lmap.setView(focus.getLatLng(), 14);
+                } else {
+                    lmap.fitBounds(L.latLngBounds(mapData.track), { padding: [20, 20] });
+                }
+            } catch (e) { /* ignore fit errors on degenerate geometry */ }
+        }, 60);
         closeBtn.focus();
     }
     function close() {
