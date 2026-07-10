@@ -15,10 +15,11 @@ import requests
 from flask import current_app
 
 RESEND_ENDPOINT = 'https://api.resend.com/emails'
-# thrrive.fit is verified in the Resend account; any local-part is allowed on a
-# verified domain (no mailbox needed). Swap via OTP_FROM_EMAIL when a Team Asha
-# domain is verified.
-DEFAULT_FROM = 'Team Asha Randonneuring <teamasha@thrrive.fit>'
+# thrrive.io is the domain verified in the Resend account whose API key we use;
+# any local-part is allowed on a verified domain (no mailbox needed). Sending from
+# an UNVERIFIED domain (e.g. thrrive.fit) makes Resend 403 the request. Swap via
+# OTP_FROM_EMAIL when a Team Asha domain is verified.
+DEFAULT_FROM = 'Team Asha Randonneuring <teamasha@thrrive.io>'
 _TIMEOUT = 10
 
 
