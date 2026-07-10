@@ -35,7 +35,6 @@ export default function LoginScreen() {
 
   const [otpStage, setOtpStage] = useState<'request' | 'verify'>('request');
   const [code, setCode] = useState('');
-  const [phone, setPhone] = useState('');
 
   async function run(fn: () => Promise<string | null>) {
     setBusy(true);
@@ -63,11 +62,8 @@ export default function LoginScreen() {
   }
 
   function verifyCode() {
-    run(() => verifyEmailOtp({
-      email: email.trim(),
-      code: code.trim(),
-      phone: phone.trim() || undefined,
-    }));
+    // Phone is intentionally NOT collected until SMS OTP (phase 2) is built.
+    run(() => verifyEmailOtp({ email: email.trim(), code: code.trim() }));
   }
 
   function submitPassword() {
@@ -121,13 +117,22 @@ export default function LoginScreen() {
 
       {method === 'otp' ? (
         otpStage === 'request' ? (
-          <Pressable
-            style={[styles.btn, (busy || !email.trim()) && styles.btnDisabled]}
-            disabled={busy || !email.trim()}
-            onPress={sendCode}
-          >
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Email me a code</Text>}
-          </Pressable>
+          <>
+            <Pressable
+              style={[styles.btn, (busy || !email.trim()) && styles.btnDisabled]}
+              disabled={busy || !email.trim()}
+              onPress={sendCode}
+            >
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Email me a code</Text>}
+            </Pressable>
+            {/* Email-code is sign-up AND sign-in: entering an email and verifying
+                the code creates the account if it's new. Say so, since (unlike the
+                Password tab) there's no separate "create account" step. */}
+            <Text style={styles.hint}>
+              New or returning — we&apos;ll email you a sign-in code. No password needed;
+              an account is created automatically the first time.
+            </Text>
+          </>
         ) : (
           <>
             <TextInput
@@ -139,16 +144,6 @@ export default function LoginScreen() {
               keyboardType="number-pad"
               maxLength={6}
               textContentType="oneTimeCode"
-              editable={!busy}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Phone (optional, for text sign-in later)"
-              placeholderTextColor="#9ca3af"
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-              textContentType="telephoneNumber"
               editable={!busy}
             />
             <Pressable
@@ -233,6 +228,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, fontSize: 15, color: '#111827', backgroundColor: '#fff',
   },
   inputLocked: { backgroundColor: '#f3f4f6', color: '#6b7280' },
+  hint: { color: '#6b7280', fontSize: 12, textAlign: 'center', width: 240, marginTop: 10, lineHeight: 17 },
   toggleLink: { marginTop: 12, paddingVertical: 6 },
   toggleText: { color: '#1a2a4f', fontSize: 13, textDecorationLine: 'underline' },
   info: { color: '#1a2a4f', marginTop: 16, textAlign: 'center', width: 260 },
