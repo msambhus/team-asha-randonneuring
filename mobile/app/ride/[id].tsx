@@ -67,7 +67,7 @@ function RiderCard({ p }: { p: LivePosition }) {
   return (
     <View style={[styles.card, p.stale && styles.cardStale]}>
       <View style={styles.cardHead}>
-        <View style={[styles.dot, { backgroundColor: p.color }]}><Text style={styles.dotText}>{initials(p.name)}</Text></View>
+        <View style={[styles.dot, { backgroundColor: p.plan_color ?? p.color }]}><Text style={styles.dotText}>{initials(p.name)}</Text></View>
         <View style={{ flex: 1 }}>
           <Text style={styles.cardName}>{p.name || 'Rider'} {p.source === 'garmin' ? '⌚' : '📱'}</Text>
           <Text style={styles.cardMeta}>updated {p.minutes_ago <= 0 ? 'just now' : `${hm(p.minutes_ago)} ago`}</Text>
@@ -178,14 +178,21 @@ export default function RideLiveScreen() {
           return (
             <Marker key={p.rider_id} coordinate={{ latitude: p.lat, longitude: p.lng }} title={p.name}
               opacity={p.stale ? 0.45 : 1} anchor={{ x: 0.5, y: 0.5 }}>
-              <View style={[styles.pin, { backgroundColor: p.color, borderStyle: p.source === 'garmin' ? 'solid' : 'dashed' }]}>
+              <View style={[styles.pin, { backgroundColor: p.plan_color ?? p.color, borderStyle: p.source === 'garmin' ? 'solid' : 'dashed' }]}>
                 <Text style={styles.pinText}>{initials(p.name)}</Text>
                 {act ? <Text style={styles.pinAct}>{ACTIVITY_ICON[act] ?? ''}</Text> : null}
               </View>
             </Marker>
           );
         })}
+        {/* Dot colors mean pace vs. the ride plan. */}
       </MapView>
+
+      <View style={styles.legend} pointerEvents="none">
+        <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#16a34a' }]} /><Text style={styles.legendText}>Ahead/on plan</Text></View>
+        <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#dc2626' }]} /><Text style={styles.legendText}>Behind</Text></View>
+        <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#6b7280' }]} /><Text style={styles.legendText}>Off-route/no plan</Text></View>
+      </View>
 
       {routeLoading ? (
         <View style={styles.routeLoadingWrap} pointerEvents="none">
@@ -231,6 +238,13 @@ const styles = StyleSheet.create({
   pin: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   pinText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   pinAct: { position: 'absolute', bottom: -10, fontSize: 12 },
+  legend: {
+    position: 'absolute', top: 8, left: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.9)', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot: { width: 9, height: 9, borderRadius: 5 },
+  legendText: { fontSize: 10, color: '#374151' },
   controls: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#fff', borderTopWidth: 1, borderColor: '#e5e7eb' },
   routeLoadingWrap: { position: 'absolute', top: 12, left: 0, right: 0, alignItems: 'center' },
   routeLoadingPill: {

@@ -181,6 +181,110 @@ def test_positions_includes_telemetry(client):
     # On-route breadcrumb trail of where the rider has ridden.
     assert pos['trail'] and len(pos['trail']) >= 1
     assert pos['trail'][0] == [-122.0, 37.0]   # [lng,lat], on-route history point
+    # Plan-timing dot color is present and agrees with the telemetry plan status.
+    assert pos['plan_color'].startswith('#')
+    from routes.live import PLAN_AHEAD_COLOR, PLAN_BEHIND_COLOR
+    if (t['plan'] or {}).get('status') == 'behind':
+        assert pos['plan_color'] == PLAN_BEHIND_COLOR
+    elif (t['plan'] or {}).get('status') in ('ahead', 'on'):
+        assert pos['plan_color'] == PLAN_AHEAD_COLOR
+
+
+# ── plan-timing dot color (ahead/behind) ───────────────────────────────────
+
+def test_plan_dot_color_precedence():
+    from routes.live import (_plan_dot_color, STATUS_COLORS,
+                             PLAN_AHEAD_COLOR, PLAN_BEHIND_COLOR, PLAN_UNKNOWN_COLOR)
+    ahead = {'on_route': True, 'plan': {'status': 'ahead', 'delta_min': 10}}
+    on = {'on_route': True, 'plan': {'status': 'on', 'delta_min': 0}}
+    behind = {'on_route': True, 'plan': {'status': 'behind', 'delta_min': -10}}
+    offroute = {'on_route': False}
+    noplan = {'on_route': True, 'plan': None}
+
+    assert _plan_dot_color('GOING', ahead) == PLAN_AHEAD_COLOR
+    assert _plan_dot_color('GOING', on) == PLAN_AHEAD_COLOR       # on-plan = green
+    assert _plan_dot_color('GOING', behind) == PLAN_BEHIND_COLOR
+    assert _plan_dot_color('GOING', offroute) == PLAN_UNKNOWN_COLOR   # off-route → grey
+    assert _plan_dot_color('FINISHED', ahead) == PLAN_UNKNOWN_COLOR   # finished → grey
+    # No plan matched → fall back to the signup-status color (no regression).
+    assert _plan_dot_color('INTERESTED', noplan) == STATUS_COLORS['INTERESTED']
+    assert _plan_dot_color('GOING', None) == STATUS_COLORS['GOING']
+
+
+def test_plan_dot_color_keeps_pace_color_when_stale():
+    """Staleness is shown by dimming, NOT greying — a stale-but-behind rider keeps
+    a red dot so the map dot agrees with the card's 'behind' badge (which is not
+    stale-gated). Only finished/off-route/no-plan change the color."""
+    from routes.live import _plan_dot_color, PLAN_BEHIND_COLOR, PLAN_AHEAD_COLOR
+    behind = {'on_route': True, 'plan': {'status': 'behind', 'delta_min': -10}}
+    ahead = {'on_route': True, 'plan': {'status': 'ahead', 'delta_min': 10}}
+    assert _plan_dot_color('GOING', behind) == PLAN_BEHIND_COLOR
+    assert _plan_dot_color('GOING', ahead) == PLAN_AHEAD_COLOR
+
+
+def test_ride_live_context_resolves_plan_and_times_it():
+    """The live context resolves the base plan via _resolve_base_plan (FK-slug OR
+    route-name match) and computes its timing — so a FK-null, name-matched ride
+    (e.g. SCR 600k) still gets plan stops + base_plan_id for the ahead/behind delta."""
+    from routes.live import _ride_live_context
+    ride = {'id': 5, 'name': 'Surf City 600k', 'ride_plan_id': None, 'plan_slug': None,
+            'time_limit_hours': 40, 'distance_km': 600,
+            'rwgps_url': None, 'rwgps_url_team': None, 'date': None, 'start_time': None}
+    plan = {'id': 9, 'slug': 'scr-600', 'total_distance_miles': 375, 'cutoff_hours': None}
+    stops = [{'distance_miles': 0, 'segment_time_min': 0, 'stop_duration_min': 0, 'elevation_gain': 0},
+             {'distance_miles': 100, 'segment_time_min': 360, 'stop_duration_min': 15, 'elevation_gain': 3000}]
+    with patch('routes.live.get_ride_by_id', return_value=ride), \
+         patch('routes.live._resolve_base_plan', return_value=plan), \
+         patch('routes.live.get_ride_plan_stops', return_value=stops), \
+         patch('routes.live._ride_start_utc', return_value=None):
+        ctx = _ride_live_context.uncached(5)   # bypass the per-ride memoize
+    assert ctx['base_plan_id'] == 9
+    assert ctx['plan_cutoff_hours'] == 40.0     # event time_limit_hours wins
+    assert ctx['plan_total_mi'] == 375.0
+    assert len(ctx['plan_stops']) == 2 and ctx['has_plan'] is True
+    assert ctx['plan_stops'][1]['cum_time_min'] == 375   # 360 seg + 15 stop
+
+
+# ── per-rider custom plan resolution for the live delta ────────────────────
+
+_BASE_STOPS = [{'distance_miles': 0, 'cum_time_min': 0},
+               {'distance_miles': 10, 'cum_time_min': 60}]
+
+
+def test_rider_plan_stops_prefers_custom_plan():
+    from routes.live import _rider_plan_stops
+    ctx = {'plan_stops': _BASE_STOPS, 'base_plan_id': 7,
+           'plan_cutoff_hours': 10, 'plan_total_mi': 100}
+    custom_raw = [{'distance_miles': 0, 'cum_time_min': 0},
+                  {'distance_miles': 10, 'cum_time_min': 50}]   # 50, not base's 60
+    with patch('models.get_custom_plan', return_value={'id': 99}), \
+         patch('services.custom_plan_service.get_merged_plan_stops', return_value=(['m'], {'id': 99})), \
+         patch('services.custom_plan_service.recalculate_cumulative_values', return_value=custom_raw):
+        stops = _rider_plan_stops(ctx, rider_id=7)
+    assert stops[1]['cum_time_min'] == 50.0            # graded against the rider's custom plan
+
+
+def test_rider_plan_stops_falls_back_to_base():
+    from routes.live import _rider_plan_stops
+    ctx = {'plan_stops': _BASE_STOPS, 'base_plan_id': 7,
+           'plan_cutoff_hours': 10, 'plan_total_mi': 100}
+    with patch('models.get_custom_plan', return_value=None):
+        assert _rider_plan_stops(ctx, 7) is _BASE_STOPS       # no custom → base
+    # No base plan id → base, without even a custom lookup.
+    assert _rider_plan_stops({'plan_stops': _BASE_STOPS, 'base_plan_id': None}, 7) is _BASE_STOPS
+
+
+def test_rider_plan_stops_custom_under_two_stops_falls_back():
+    """A custom plan that yields fewer than 2 usable stops can't grade pace, so we
+    fall back to the base plan rather than return an unusable single point."""
+    from routes.live import _rider_plan_stops
+    ctx = {'plan_stops': _BASE_STOPS, 'base_plan_id': 7,
+           'plan_cutoff_hours': 10, 'plan_total_mi': 100}
+    one_stop = [{'distance_miles': 0, 'cum_time_min': 0}]
+    with patch('models.get_custom_plan', return_value={'id': 99}), \
+         patch('services.custom_plan_service.get_merged_plan_stops', return_value=(['m'], {'id': 99})), \
+         patch('services.custom_plan_service.recalculate_cumulative_values', return_value=one_stop):
+        assert _rider_plan_stops(ctx, 7) is _BASE_STOPS
 
 
 def test_positions_wind_shows_mph_type_and_arrow(client):

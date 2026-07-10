@@ -225,6 +225,9 @@ export interface LivePosition {
   lng: number;
   status: string | null;
   color: string;
+  /** Dot color by plan timing (ahead=green / behind=red / grey=unknown). Falls
+   *  back to `color` (signup status) server-side when no plan is matched. */
+  plan_color?: string;
   recorded_at: string;
   minutes_ago: number;
   stale: boolean;

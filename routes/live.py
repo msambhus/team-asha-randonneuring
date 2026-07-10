@@ -21,7 +21,7 @@ from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled
                     get_latest_positions_for_ride, insert_live_position,
                     get_rider_upcoming_signups, get_ride_plan_stops,
                     get_positions_for_rider_since, get_default_time_limit,
-                    get_or_create_ride_invite, get_valid_ride_invite)
+                    get_or_create_ride_invite, get_valid_ride_invite, RideStatus)
 from services.garmin_livetrack import parse_session
 from services.rwgps import extract_rwgps_route_id, fetch_route
 from services import live_telemetry as tlm
@@ -78,6 +78,36 @@ STATUS_COLORS = {
     'FINISHED': '#6b7280',    # grey
 }
 DEFAULT_COLOR = '#16a34a'
+
+# Map-dot colors by PLAN TIMING (ahead/behind), which override the signup-status
+# color on the live map so you can see at a glance who's on pace. Green = ahead or
+# on plan, red = behind, grey = we can't grade pace (off-route / finished / no plan
+# matched). The detail-card badge is computed from the SAME telemetry, so the dot
+# and the badge agree on ahead/behind.
+PLAN_AHEAD_COLOR = '#16a34a'    # green — ahead of or on plan
+PLAN_BEHIND_COLOR = '#dc2626'   # red — behind plan
+PLAN_UNKNOWN_COLOR = '#6b7280'  # grey — pace can't be graded
+
+
+def _plan_dot_color(status, telemetry):
+    """Dot color from plan timing. Precedence: finished/off-route → grey;
+    behind → red; ahead/on → green; and when no plan is resolved → fall back to
+    the signup-status color (so rides without a plan don't regress).
+
+    Staleness is deliberately NOT greyed here: the map already dims a stale rider
+    (marker opacity / .stale class) and the detail card keeps showing their
+    last-known ahead/behind badge — so the dot keeps that color too and the two
+    stay in agreement. Off-route is grey because pace can't be graded; the card
+    labels that case explicitly as "Off route"."""
+    if status == RideStatus.FINISHED.value:
+        return PLAN_UNKNOWN_COLOR
+    if telemetry is not None and telemetry.get('on_route') is False:
+        return PLAN_UNKNOWN_COLOR
+    plan = (telemetry or {}).get('plan')
+    if plan and plan.get('status'):
+        return PLAN_BEHIND_COLOR if plan['status'] == 'behind' else PLAN_AHEAD_COLOR
+    return STATUS_COLORS.get(status, DEFAULT_COLOR)
+
 
 # Cap polyline payload — long brevet routes can have tens of thousands of points.
 _MAX_POLYLINE_POINTS = 1000
@@ -349,7 +379,10 @@ def _ride_live_context(ride_id):
     ctx = {'track': [], 'cum_ascent_ft': [], 'total_dist_m': None,
            'total_ascent_ft': None, 'plan_stops': [], 'wind_by_dist': None,
            'ride_start_iso': None, 'time_limit_min': None,
-           'has_route': False, 'has_plan': False}
+           'has_route': False, 'has_plan': False,
+           # Base plan id + timing inputs so the per-rider custom plan (if any) can
+           # be merged + retimed the SAME way the web plan page does (_rider_plan_stops).
+           'base_plan_id': None, 'plan_cutoff_hours': None, 'plan_total_mi': 0.0}
     if not ride:
         return ctx
 
@@ -368,17 +401,30 @@ def _ride_live_context(ride_id):
     start_utc = _ride_start_utc(ride)
     ctx['ride_start_iso'] = start_utc.isoformat() if start_utc else None
 
-    # Plan stops for on/behind-plan comparison.
+    # Base plan for on/behind-plan comparison. Resolve it the SAME way the web plan
+    # page does — FK (ride_plan_id) THEN route-name match (services.plan_match) — so
+    # a ride with no FK (e.g. the SCR 600k) still gets a plan, and time it with the
+    # web formulas so the live delta matches the plan page. Per-rider custom plans
+    # are layered on later in _rider_plan_stops (they're per-rider, not per-ride).
     try:
-        if ride.get('ride_plan_id'):
+        plan = _resolve_base_plan(ride)
+        if plan:
+            cutoff_raw = ride.get('time_limit_hours') or plan.get('cutoff_hours')
+            ctx['plan_cutoff_hours'] = float(cutoff_raw) if cutoff_raw else None
+            ctx['plan_total_mi'] = float(plan.get('total_distance_miles') or 0)
+            ctx['base_plan_id'] = plan['id']
+            base_raw = _compute_base_timing(
+                get_ride_plan_stops(plan['id']), ctx['plan_cutoff_hours'], ctx['plan_total_mi'])
             ctx['plan_stops'] = [
                 {'distance_miles': float(s['distance_miles']),
                  'cum_time_min': float(s['cum_time_min'])}
-                for s in get_ride_plan_stops(ride['ride_plan_id'])
+                for s in base_raw
                 if s.get('distance_miles') is not None and s.get('cum_time_min') is not None
             ]
             ctx['has_plan'] = len(ctx['plan_stops']) >= 2
     except Exception:
+        current_app.logger.warning('live ctx: plan resolution failed for ride %s',
+                                   ride_id, exc_info=True)
         ctx['plan_stops'] = []
 
     # Route geometry: track + cumulative ascent (downsampled for the cache).
@@ -430,7 +476,38 @@ def _guest_ride_id():
     return inv['ride_id'] if inv else None
 
 
-def _rider_telemetry(row, ctx, now, history):
+def _rider_plan_stops(ctx, rider_id):
+    """Plan stops to grade THIS rider against: their own custom plan if they have
+    one (merged + retimed the SAME way the web plan page does), else the ride's
+    base plan (ctx['plan_stops']). Returns a list of {distance_miles, cum_time_min}
+    for tlm.plan_delta. Best-effort: any failure falls back to the base plan."""
+    base = ctx.get('plan_stops') or []
+    base_plan_id = ctx.get('base_plan_id')
+    if not base_plan_id or not rider_id:
+        return base
+    try:
+        from models import get_custom_plan
+        custom = get_custom_plan(rider_id, base_plan_id)
+        if not custom:
+            return base
+        from services.custom_plan_service import (get_merged_plan_stops,
+                                                  recalculate_cumulative_values)
+        merged, meta = get_merged_plan_stops(custom['id'])
+        raw = recalculate_cumulative_values(
+            merged or [], meta or custom,
+            cutoff_hours=ctx.get('plan_cutoff_hours'), total_mi=ctx.get('plan_total_mi') or 0)
+        stops = [
+            {'distance_miles': float(s['distance_miles']), 'cum_time_min': float(s['cum_time_min'])}
+            for s in (raw or [])
+            if s.get('distance_miles') is not None and s.get('cum_time_min') is not None
+        ]
+        return stops if len(stops) >= 2 else base
+    except Exception:
+        current_app.logger.warning('live: custom plan stops failed for rider %s', rider_id)
+        return base
+
+
+def _rider_telemetry(row, ctx, now, history, plan_stops=None):
     """Assemble the telemetry block for one rider.
 
     Source-agnostic fields (speed, activity, moving/stopped, elapsed, HR/power)
@@ -515,7 +592,9 @@ def _rider_telemetry(row, ctx, now, history):
     if limit_min is not None and elapsed_min is not None:
         time_left_min = max(0, limit_min - elapsed_min)
 
-    delta = tlm.plan_delta(dist_mi, elapsed_min, ctx.get('plan_stops'))
+    # Grade against this rider's plan (custom if they have one, else base).
+    delta = tlm.plan_delta(dist_mi, elapsed_min,
+                           plan_stops if plan_stops is not None else ctx.get('plan_stops'))
 
     _WIND_SHORT = {'headwind': 'head', 'tailwind': 'tail', 'crosswind': 'cross'}
 
@@ -605,7 +684,8 @@ def live_positions():
             ride_id=ride_id)
         telemetry = None
         try:
-            telemetry = _rider_telemetry(row, ctx, now, history)
+            rider_plan_stops = _rider_plan_stops(ctx, row['rider_id']) if ctx else None
+            telemetry = _rider_telemetry(row, ctx, now, history, plan_stops=rider_plan_stops)
         except Exception:
             current_app.logger.exception('live telemetry failed for rider %s', row['rider_id'])
 
@@ -621,6 +701,10 @@ def live_positions():
             'lng': float(row['lng']),
             'status': status,
             'color': STATUS_COLORS.get(status, DEFAULT_COLOR),
+            # Plan-timing dot color (ahead=green / behind=red / grey=unknown), used
+            # by the map instead of the signup-status `color`. Falls back to `color`
+            # when no plan is matched, so it's always safe to use.
+            'plan_color': _plan_dot_color(status, telemetry),
             'recorded_at': recorded_at.isoformat(),
             'minutes_ago': minutes_ago,
             'stale': minutes_ago > STALE_AFTER_MINUTES,
