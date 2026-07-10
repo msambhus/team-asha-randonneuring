@@ -1059,3 +1059,130 @@ def test_password_signup_toctou_unique_violation_returns_409(client, app):
         resp = client.post('/api/auth/signup',
                            json={'email': 'race@example.com', 'password': 'longenough1'})
     assert resp.status_code == 409
+
+
+# ── POST /api/auth/setup-profile (native RUSA onboarding) ──────────────────
+
+_RUSA_OK = {'valid': True, 'first_name': 'Mihir', 'last_name': 'Sambhus',
+            'rusa_name': 'Mihir Sambhus', 'rusa_club': 'Team Asha'}
+
+
+def test_setup_profile_requires_auth(client):
+    assert client.post('/api/auth/setup-profile', json={'rusa_id': 12345}).status_code == 401
+
+
+def test_setup_profile_links_new_rider_and_mints_rider_token(client, app):
+    """Creates the rider, links it to the SIGNED-IN account, and returns a token
+    that now carries the rider_id (so live endpoints stop 403-ing)."""
+    user = {'id': 5, 'email': 'r@example.com', 'profile_completed': False, 'rider_id': None}
+    rider = {'id': 88, 'first_name': 'Mihir', 'last_name': 'Sambhus', 'rusa_id': 12345}
+    with patch('models.get_user_by_id', return_value=user), \
+         patch('models.get_rider_by_rusa_id', return_value=None), \
+         patch('routes.api_auth.get_rusa_info', return_value=_RUSA_OK), \
+         patch('models.get_rider_by_name_and_rusa', return_value=None), \
+         patch('models.create_rider', return_value=rider) as mock_create, \
+         patch('models.complete_user_profile', return_value=True) as mock_link:
+        resp = client.post('/api/auth/setup-profile',
+                           headers=_bearer(app, user_id=5, rider_id=None),
+                           json={'rusa_id': 12345})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['rider_id'] == 88 and data['profile_complete'] is True
+    assert data['rider_name'] == 'Mihir Sambhus'
+    mock_create.assert_called_once_with('Mihir', 'Sambhus', 12345)
+    mock_link.assert_called_once_with(5, 88)
+    with app.app_context():
+        assert auth_mod.load_mobile_token(data['token']) == {'user_id': 5, 'rider_id': 88}
+
+
+def test_setup_profile_identity_from_token_not_body(client, app):
+    """Security: the account linked is the token's user_id — a body-supplied
+    user_id can't retarget another account."""
+    user = {'id': 5, 'email': 'r@example.com', 'profile_completed': False, 'rider_id': None}
+    rider = {'id': 88, 'first_name': 'Mihir', 'last_name': 'Sambhus', 'rusa_id': 12345}
+    with patch('models.get_user_by_id', return_value=user) as mock_get, \
+         patch('models.get_rider_by_rusa_id', return_value=None), \
+         patch('routes.api_auth.get_rusa_info', return_value=_RUSA_OK), \
+         patch('models.get_rider_by_name_and_rusa', return_value=None), \
+         patch('models.create_rider', return_value=rider), \
+         patch('models.complete_user_profile', return_value=True) as mock_link:
+        client.post('/api/auth/setup-profile',
+                    headers=_bearer(app, user_id=5, rider_id=None),
+                    json={'rusa_id': 12345, 'user_id': 999})
+    mock_get.assert_called_once_with(5)          # token identity, not body
+    mock_link.assert_called_once_with(5, 88)
+
+
+def test_setup_profile_idempotent_when_already_linked(client, app):
+    user = {'id': 5, 'email': 'r@example.com', 'profile_completed': True, 'rider_id': 7}
+    with patch('models.get_user_by_id', return_value=user), \
+         patch('routes.api_auth.get_rusa_info') as mock_rusa, \
+         patch('models.complete_user_profile') as mock_link:
+        resp = client.post('/api/auth/setup-profile',
+                           headers=_bearer(app, user_id=5, rider_id=7),
+                           json={'rusa_id': 12345})
+    assert resp.status_code == 200
+    assert resp.get_json()['rider_id'] == 7
+    mock_rusa.assert_not_called()                # no RUSA hit; already set up
+    mock_link.assert_not_called()
+
+
+def test_setup_profile_rejects_rusa_claimed_by_another(client, app):
+    user = {'id': 5, 'profile_completed': False, 'rider_id': None}
+    with patch('models.get_user_by_id', return_value=user), \
+         patch('models.get_rider_by_rusa_id', return_value={'id': 88}), \
+         patch('models.is_rider_linked_to_user', return_value=True), \
+         patch('models.complete_user_profile') as mock_link:
+        resp = client.post('/api/auth/setup-profile',
+                           headers=_bearer(app, user_id=5, rider_id=None),
+                           json={'rusa_id': 12345})
+    assert resp.status_code == 409
+    mock_link.assert_not_called()
+
+
+def test_setup_profile_invalid_rusa_id_400(client, app):
+    user = {'id': 5, 'profile_completed': False, 'rider_id': None}
+    with patch('models.get_user_by_id', return_value=user):
+        resp = client.post('/api/auth/setup-profile',
+                           headers=_bearer(app, user_id=5, rider_id=None),
+                           json={'rusa_id': 'not-a-number'})
+    assert resp.status_code == 400
+
+
+def test_setup_profile_rusa_not_found_404(client, app):
+    user = {'id': 5, 'profile_completed': False, 'rider_id': None}
+    with patch('models.get_user_by_id', return_value=user), \
+         patch('models.get_rider_by_rusa_id', return_value=None), \
+         patch('routes.api_auth.get_rusa_info',
+               return_value={'valid': False, 'error': 'RUSA ID not found on rusa.org'}):
+        resp = client.post('/api/auth/setup-profile',
+                           headers=_bearer(app, user_id=5, rider_id=None),
+                           json={'rusa_id': 999999})
+    assert resp.status_code == 404
+
+
+def test_setup_profile_non_positive_rusa_id_400(client, app):
+    user = {'id': 5, 'profile_completed': False, 'rider_id': None}
+    with patch('models.get_user_by_id', return_value=user):
+        resp = client.post('/api/auth/setup-profile',
+                           headers=_bearer(app, user_id=5, rider_id=None),
+                           json={'rusa_id': 0})
+    assert resp.status_code == 400
+
+
+def test_setup_profile_link_failure_500(client, app):
+    """A DB failure to link (complete_user_profile → False) returns 500, not a
+    success, and never mints a rider token."""
+    user = {'id': 5, 'profile_completed': False, 'rider_id': None}
+    rider = {'id': 88, 'first_name': 'Mihir', 'last_name': 'Sambhus', 'rusa_id': 12345}
+    with patch('models.get_user_by_id', return_value=user), \
+         patch('models.get_rider_by_rusa_id', return_value=None), \
+         patch('routes.api_auth.get_rusa_info', return_value=_RUSA_OK), \
+         patch('models.get_rider_by_name_and_rusa', return_value=None), \
+         patch('models.create_rider', return_value=rider), \
+         patch('models.complete_user_profile', return_value=False):
+        resp = client.post('/api/auth/setup-profile',
+                           headers=_bearer(app, user_id=5, rider_id=None),
+                           json={'rusa_id': 12345})
+    assert resp.status_code == 500
+    assert 'token' not in resp.get_json()

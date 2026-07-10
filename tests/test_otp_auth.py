@@ -115,6 +115,22 @@ def test_otp_request_happy_path_sends_and_stores(client):
     assert email_arg == 'rider@example.com' and len(code_arg) == 6
 
 
+def test_otp_request_keys_gmail_on_canonical_form(client):
+    """A dotted/+tagged Gmail is stored under its canonical identifier so a later
+    verify with a different dot variant still matches the same code."""
+    with patch('models.count_recent_otps_by_ip', return_value=0), \
+         patch('models.count_recent_otps', return_value=0), \
+         patch('models.get_active_otp_by_identifier', return_value=None), \
+         patch('models.invalidate_active_otps', return_value=0) as mock_inv, \
+         patch('models.create_otp', return_value=1) as mock_store, \
+         patch('services.otp_service.send_otp_email', return_value=True) as mock_send:
+        resp = client.post('/api/auth/otp/request', json={'email': 'Mihir.Sambhus+ta@gmail.com'})
+    assert resp.status_code == 200
+    assert mock_store.call_args[0][0] == 'mihirsambhus@gmail.com'   # canonical identifier
+    mock_inv.assert_called_once_with('mihirsambhus@gmail.com')
+    assert mock_send.call_args[0][0] == 'mihir.sambhus+ta@gmail.com'  # emailed to the typed address
+
+
 def test_otp_request_non_enumerating(client):
     """Same generic response whether or not an account exists — /request never
     looks up the account (find-or-create happens at verify)."""
@@ -238,7 +254,7 @@ def test_otp_verify_correct_code_existing_user_mints_token(client, app):
     user = {'id': 5, 'email': 'rider@example.com', 'profile_completed': True, 'rider_id': 7}
     with patch('models.get_active_otp_by_identifier', return_value=_otp_row()), \
          patch('models.consume_otp', return_value=True) as mock_consume, \
-         patch('models.get_user_by_email', return_value=user), \
+         patch('models.get_user_by_normalized_email', return_value=user), \
          patch('models.update_user_login_time') as mock_touch, \
          patch('models.get_user_by_id', return_value=user):
         resp = client.post('/api/auth/otp/verify',
@@ -257,9 +273,10 @@ def test_otp_verify_existing_google_user_logs_in_via_email_code(client, app):
     email code that resolves to their SAME row — no new account created."""
     google_user = {'id': 3, 'email': 'rider@example.com', 'google_id': 'g-1',
                    'password_hash': None, 'profile_completed': True, 'rider_id': 6}
+    # Resolves via the CANONICAL-email lookup (the Google row's email_normalized).
     with patch('models.get_active_otp_by_identifier', return_value=_otp_row()), \
          patch('models.consume_otp', return_value=True), \
-         patch('models.get_user_by_email', return_value=google_user), \
+         patch('models.get_user_by_normalized_email', return_value=google_user), \
          patch('models.update_user_login_time'), \
          patch('models.get_user_by_id', return_value=google_user), \
          patch('models.create_user_email_otp') as mock_create:
@@ -275,6 +292,7 @@ def test_otp_verify_new_user_created_with_phone(client):
                 'profile_completed': False, 'rider_id': None}
     with patch('models.get_active_otp_by_identifier', return_value=_otp_row(identifier='new@example.com')), \
          patch('models.consume_otp', return_value=True), \
+         patch('models.get_user_by_normalized_email', return_value=None), \
          patch('models.get_user_by_email', return_value=None), \
          patch('models.create_user_email_otp', return_value=new_user) as mock_create:
         resp = client.post('/api/auth/otp/verify',
@@ -289,7 +307,7 @@ def test_otp_verify_existing_user_stores_new_phone(client):
     user = {'id': 5, 'email': 'rider@example.com', 'profile_completed': True, 'rider_id': 7}
     with patch('models.get_active_otp_by_identifier', return_value=_otp_row()), \
          patch('models.consume_otp', return_value=True), \
-         patch('models.get_user_by_email', return_value=user), \
+         patch('models.get_user_by_normalized_email', return_value=user), \
          patch('models.update_user_login_time'), \
          patch('models.set_user_phone') as mock_phone, \
          patch('models.get_user_by_id', return_value=user):
@@ -315,7 +333,8 @@ def test_otp_verify_signup_race_unique_violation_recovers(client, app):
     existing = {'id': 12, 'email': 'race@example.com', 'profile_completed': False, 'rider_id': None}
     with patch('models.get_active_otp_by_identifier', return_value=_otp_row(identifier='race@example.com')), \
          patch('models.consume_otp', return_value=True), \
-         patch('models.get_user_by_email', side_effect=[None, existing]), \
+         patch('models.get_user_by_normalized_email', side_effect=[None, existing]), \
+         patch('models.get_user_by_email', return_value=None), \
          patch('models.create_user_email_otp',
                side_effect=psycopg2.errors.UniqueViolation('dup')):
         resp = client.post('/api/auth/otp/verify',
@@ -332,7 +351,7 @@ def test_otp_verify_link_token_existing_user(client, app):
     otp = {'id': 2, 'identifier': 'rider@example.com'}
     with patch('models.get_active_otp_by_link_hash', return_value=otp) as mock_lookup, \
          patch('models.consume_otp', return_value=True), \
-         patch('models.get_user_by_email', return_value=user), \
+         patch('models.get_user_by_normalized_email', return_value=user), \
          patch('models.update_user_login_time'), \
          patch('models.get_user_by_id', return_value=user):
         resp = client.post('/api/auth/otp/verify', json={'link_token': 'magic-abc'})
@@ -418,3 +437,23 @@ def test_count_recent_otps_by_ip_none_is_zero_without_query():
     with patch('models._execute') as mock_exec:
         assert models.count_recent_otps_by_ip(None, datetime.now(timezone.utc)) == 0
     mock_exec.assert_not_called()
+
+
+def test_get_user_by_normalized_email_canonicalizes_and_prefers_completed():
+    captured = {}
+
+    class _Cur:
+        def fetchone(self):
+            return None
+
+    def fake_execute(sql, params=None):
+        captured['sql'] = sql
+        captured['params'] = params
+        return _Cur()
+
+    with patch('models._execute', side_effect=fake_execute):
+        models.get_user_by_normalized_email('Mihir.Sambhus+x@Gmail.com')
+    # Looks up by the canonical form, and prefers a profile-completed row.
+    assert captured['params'] == ('mihirsambhus@gmail.com',)
+    assert 'email_normalized = %s' in captured['sql']
+    assert 'profile_completed IS TRUE) DESC' in captured['sql']

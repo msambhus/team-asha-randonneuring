@@ -17,7 +17,10 @@ from flask import Blueprint, request, jsonify, current_app, g
 
 import models
 from auth import mint_mobile_token, token_or_session_required
+from cache import cache
 from services import otp_service
+from services.email_normalize import normalize_email
+from utils.rusa_validator import get_rusa_info
 
 api_auth_bp = Blueprint('api_auth', __name__)
 
@@ -422,6 +425,10 @@ def otp_request():
     if not _valid_email(email):
         return jsonify({'error': 'A valid email is required'}), 400
 
+    # Key the OTP on the CANONICAL email so Gmail dot/+tag variants share one
+    # code + one account (see services/email_normalize). The code itself is
+    # emailed to the address as typed (Gmail delivers dot variants anyway).
+    identifier = normalize_email(email)
     ip = _client_ip()
     # Rate limits: (1) per-IP across ALL emails so the endpoint can't be used to
     # email-bomb many victims or brute the code space from one source; (2) per-email
@@ -431,9 +438,9 @@ def otp_request():
         hour_ago = now - timedelta(hours=1)
         if models.count_recent_otps_by_ip(ip, hour_ago) >= otp_service.IP_MAX_PER_HOUR:
             return jsonify({'error': 'Too many code requests. Try again later.'}), 429
-        if models.count_recent_otps(email, hour_ago) >= otp_service.MAX_PER_HOUR:
+        if models.count_recent_otps(identifier, hour_ago) >= otp_service.MAX_PER_HOUR:
             return jsonify({'error': 'Too many code requests. Try again later.'}), 429
-        latest = models.get_active_otp_by_identifier(email)
+        latest = models.get_active_otp_by_identifier(identifier)
         if latest and latest['created_at'] > now - timedelta(seconds=otp_service.RESEND_COOLDOWN_SECONDS):
             return jsonify({'error': 'A code was just sent. Please wait a moment.'}), 429
     except Exception:
@@ -445,9 +452,9 @@ def otp_request():
     try:
         # Supersede any still-live code for this email so only the newest is valid
         # (turns the per-code attempts cap into an effective per-email lockout).
-        models.invalidate_active_otps(email)
+        models.invalidate_active_otps(identifier)
         models.create_otp(
-            email,
+            identifier,
             otp_service.hash_code(code),
             otp_service.hash_link_token(link_token),
             otp_service.expiry_from_now(),
@@ -497,7 +504,9 @@ def otp_verify():
             code = (body.get('code') or '').strip()
             if not _valid_email(email) or not code:
                 return jsonify({'error': 'Email and code are required'}), 400
-            otp = models.get_active_otp_by_identifier(email)
+            # Canonical form so a dot/+tag variant matches the code we issued.
+            identifier = normalize_email(email)
+            otp = models.get_active_otp_by_identifier(identifier)
             if not otp:
                 return jsonify({'error': 'Incorrect or expired code'}), 401
             # Cap wrong tries per code so a 6-digit code can't be brute-forced.
@@ -506,14 +515,15 @@ def otp_verify():
             if not otp_service.verify_code(code, otp['code_hash']):
                 models.increment_otp_attempts(otp['id'])
                 return jsonify({'error': 'Incorrect or expired code'}), 401
-            identifier = email
 
         # Single-use: only the caller that flips consumed_at proceeds (a
         # concurrent double-submit loses the race and is rejected).
         if not models.consume_otp(otp['id']):
             return jsonify({'error': 'This code was already used. Request a new one.'}), 401
 
-        user = models.get_user_by_email(identifier)
+        # Resolve by canonical email first (reuses an existing Google/Apple/
+        # password account for the same inbox), then exact, else create.
+        user = models.get_user_by_normalized_email(identifier) or models.get_user_by_email(identifier)
         if not user:
             user = models.create_user_email_otp(identifier, phone)
             if not user:
@@ -525,7 +535,8 @@ def otp_verify():
             user = models.get_user_by_id(user['id'])
     except psycopg2.errors.UniqueViolation:
         # Lost a signup race; the account now exists — fetch it and continue.
-        user = models.get_user_by_email(identifier) if identifier else None
+        user = (models.get_user_by_normalized_email(identifier)
+                or models.get_user_by_email(identifier)) if identifier else None
         if not user:
             return jsonify({'error': 'Could not create account'}), 500
     except Exception:
@@ -638,4 +649,80 @@ def password_login():
         'token': token,
         'rider_id': rider_id,
         'profile_complete': profile_complete,
+    }), 200
+
+
+@api_auth_bp.route('/setup-profile', methods=['POST'])
+@token_or_session_required
+def setup_profile():
+    """Link the signed-in account to a RUSA rider profile (native onboarding).
+
+    Body: {"rusa_id": <int>}
+    Mirrors the web /auth/setup-profile: validates the RUSA id, refuses one that
+    another account already claimed, creates/reuses the rider, and links it. The
+    caller's identity comes from the bearer token (g.user_id) — never the body —
+    so it always links THE SAME account the app is signed into (the web-detour
+    onboarding could land on a different Google account). Returns a NEW token
+    carrying the rider_id so live/rider endpoints work immediately:
+    {token, rider_id, profile_complete, rider_name}.
+    """
+    user = models.get_user_by_id(g.user_id)
+    if not user:
+        return jsonify({'error': 'Account not found'}), 404
+
+    # Idempotent: already linked → hand back a token that carries the rider_id.
+    if user.get('profile_completed') and user.get('rider_id'):
+        token = mint_mobile_token(user['id'], user['rider_id'])
+        return jsonify({'token': token, 'rider_id': user['rider_id'],
+                        'profile_complete': True}), 200
+
+    body = request.get_json(silent=True) or {}
+    raw_id = body.get('rusa_id')
+    raw = str(raw_id if raw_id is not None else '').strip()
+    try:
+        rusa_id = int(raw)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'A numeric RUSA ID is required'}), 400
+    if rusa_id <= 0:
+        return jsonify({'error': 'A valid RUSA ID is required'}), 400
+
+    try:
+        # Refuse a RUSA id another account already claimed (mirrors the web). This
+        # guard is advisory — is_rider_linked_to_user is memoized and there is no
+        # DB unique constraint on app_user.rider_id — so we invalidate its cache
+        # after linking (below) to avoid a stale "unlinked" read racing a claim.
+        existing_rider = models.get_rider_by_rusa_id(rusa_id)
+        if existing_rider and models.is_rider_linked_to_user(existing_rider['id']):
+            return jsonify({'error': 'This RUSA ID is already registered by another user'}), 409
+
+        # Fetch the rider's name from RUSA (also validates the id exists). Note the
+        # names come from RUSA, not the client (safer than the web form, which
+        # re-validates client-supplied names).
+        info = get_rusa_info(rusa_id)
+        if not info.get('valid'):
+            return jsonify({'error': info.get('error') or 'RUSA ID not found'}), 404
+        first_name, last_name = info['first_name'], info['last_name']
+
+        rider = existing_rider or models.get_rider_by_name_and_rusa(first_name, last_name, rusa_id)
+        if not rider:
+            rider = models.create_rider(first_name, last_name, rusa_id)
+        if not rider:
+            return jsonify({'error': 'Could not create rider profile'}), 500
+
+        if not models.complete_user_profile(user['id'], rider['id']):
+            return jsonify({'error': 'Could not complete profile setup'}), 500
+        # Freshen the memoized link status so a later claim of this rider sees it
+        # as taken instead of a stale cached "unlinked".
+        cache.delete_memoized(models.is_rider_linked_to_user, rider['id'])
+    except Exception:
+        current_app.logger.exception('setup-profile: failed for user %s', g.user_id)
+        return jsonify({'error': 'Profile setup failed. Please try again.'}), 500
+
+    # New token now carries rider_id so the live/rider endpoints stop 403-ing.
+    token = mint_mobile_token(user['id'], rider['id'])
+    return jsonify({
+        'token': token,
+        'rider_id': rider['id'],
+        'profile_complete': True,
+        'rider_name': f"{rider['first_name']} {rider['last_name']}",
     }), 200
