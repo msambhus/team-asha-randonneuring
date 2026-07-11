@@ -198,7 +198,6 @@ function PlanSelector({ plans, applied, onSelect }: {
   if (plans.length <= 1) {
     return <Text style={styles.planLabel}>Plan: <Text style={styles.planLabelStrong}>base plan</Text></Text>;
   }
-  const showOwnNote = String(applied) === 'own';
   return (
     <View style={styles.planWrap}>
       <Text style={styles.planTitle}>Plan</Text>
@@ -215,19 +214,19 @@ function PlanSelector({ plans, applied, onSelect }: {
           );
         })}
       </ScrollView>
-      {showOwnNote ? (
-        <Text style={styles.planNote}>Upcoming controls use base-plan timing (each rider graded against their own plan).</Text>
-      ) : null}
     </View>
   );
 }
 
 /** Shared, ride-level upcoming-controls list (item 2) — one list, not per rider. */
-function UpcomingControls({ controls }: { controls: UpcomingControl[] }) {
+function UpcomingControls({ controls, showOwnNote }: { controls: UpcomingControl[]; showOwnNote?: boolean }) {
   if (!controls.length) return null;
   return (
     <View style={styles.ucBox}>
       <Text style={styles.ucTitle}>Upcoming controls</Text>
+      {showOwnNote ? (
+        <Text style={styles.planNote}>Upcoming controls use base-plan timing (each rider graded against their own plan).</Text>
+      ) : null}
       {controls.map((c, i) => (
         <View key={i} style={styles.ucRow}>
           <Text style={styles.ucName} numberOfLines={1}>{(c.name || 'control').replace(', CA', '')}</Text>
@@ -370,10 +369,11 @@ export default function RideLiveScreen() {
       <ScrollView style={styles.cards} contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
         {isLoading ? <ActivityIndicator style={{ marginTop: 16 }} /> : null}
         <PlanSelector plans={plans} applied={appliedPlanId} onSelect={setSelectedPlanId} />
-        <UpcomingControls controls={upcoming} />
         {(positions ?? []).map((p) => <RiderCard key={p.rider_id} p={p} />)}
         {!isLoading && !(positions ?? []).length ? <Text style={styles.empty}>No live riders yet.</Text> : null}
         {chartData ? <LiveCharts chart={chartData} positions={positions ?? []} /> : null}
+        {/* Shared upcoming-controls list — placed AFTER the weather charts. */}
+        <UpcomingControls controls={upcoming} showOwnNote={String(appliedPlanId) === 'own'} />
       </ScrollView>
     </View>
   );

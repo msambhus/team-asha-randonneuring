@@ -380,15 +380,6 @@
     <select id="plan-selector"></select>
   </div>
   <div id="plan-label" class="plan-label" style="display:none;">Plan: <strong>base plan</strong></div>
-  <div id="plan-own-note" class="plan-note" style="display:none;">
-    Upcoming controls use base-plan timing (each rider is graded against their own plan).
-  </div>
-
-  {# ── Shared upcoming controls (item 2): one ride-level list ── #}
-  <div id="upcoming-controls" class="upcoming-controls" style="display:none;">
-    <h2 class="uc-title">Upcoming controls</h2>
-    <div id="uc-list" class="uc-list"></div>
-  </div>
 
   <div id="live-empty" class="live-empty" style="display:none;">
     No riders are sharing their location right now.{% if not is_guest %} Riders can opt in from
@@ -402,6 +393,15 @@
     <div class="chart-card"><h3>Elevation (ft)</h3><canvas id="chartElev" height="120"></canvas></div>
     <div class="chart-card" id="chartHeadwindCard"><h3>Headwind (mph) — + head / − tail</h3><canvas id="chartHeadwind" height="120"></canvas></div>
     <div class="chart-card" id="chartTempCard"><h3>Temperature (°F)</h3><canvas id="chartTemp" height="120"></canvas></div>
+  </div>
+
+  {# ── Shared upcoming controls (item 2): one ride-level list — placed AFTER the weather charts ── #}
+  <div id="plan-own-note" class="plan-note" style="display:none;">
+    Upcoming controls use base-plan timing (each rider is graded against their own plan).
+  </div>
+  <div id="upcoming-controls" class="upcoming-controls" style="display:none;">
+    <h2 class="uc-title">Upcoming controls</h2>
+    <div id="uc-list" class="uc-list"></div>
   </div>
 </div>
 {% endblock %}
