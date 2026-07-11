@@ -236,7 +236,9 @@ export default function RideLiveScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f7fafc' },
-  map: { flex: 1.3 },
+  // Smaller than the cards below so the first rider stats peek above the fold
+  // (otherwise users don't realize there's data to scroll to).
+  map: { flex: 0.9 },
   pin: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   pinText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   pinAct: { position: 'absolute', bottom: -10, fontSize: 12 },
