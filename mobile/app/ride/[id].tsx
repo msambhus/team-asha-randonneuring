@@ -78,6 +78,8 @@ function RiderCard({ p }: { p: LivePosition }) {
         <View style={styles.metricRow}>
           {now.distance_mi != null ? <Metric label="done" value={n(now.distance_mi, ' mi')} /> : null}
           <Metric label="speed" value={n(now.speed_mph, ' mph')} />
+          {now.avg_elapsed_speed_mph != null ? <Metric label="avg (elapsed)" value={n(now.avg_elapsed_speed_mph, ' mph')} /> : null}
+          {now.avg_moving_speed_mph != null ? <Metric label="avg (moving)" value={n(now.avg_moving_speed_mph, ' mph')} /> : null}
           {now.activity ? <Metric label="state" value={`${ACTIVITY_ICON[now.activity] ?? ''} ${now.activity}`} /> : null}
           <Metric label="moving" value={hm(now.moving_min)} />
           <Metric label="stopped" value={hm(now.stopped_min)} />

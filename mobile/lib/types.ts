@@ -181,6 +181,8 @@ export type RidePlanResponse = RidePlanAvailable | RidePlanUnavailable;
 
 export interface LivePositionTelemetryNow {
   speed_mph: number | null;
+  avg_elapsed_speed_mph?: number | null;
+  avg_moving_speed_mph?: number | null;
   activity: 'paused' | 'walking' | 'cycling' | 'driving' | null;
   elapsed_min: number | null;
   moving_min: number | null;

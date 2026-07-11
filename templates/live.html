@@ -628,6 +628,8 @@
           card.appendChild(group('Now', [
             (n.distance_mi != null ? metric('done', n.distance_mi, ' mi') : null),
             metric('speed', n.speed_mph, ' mph'),
+            metric('avg (elapsed)', n.avg_elapsed_speed_mph, ' mph'),
+            metric('avg (moving)', n.avg_moving_speed_mph, ' mph'),
             (n.activity ? metric('state', n.activity) : null),
             metric('elapsed', fmtHM(n.elapsed_min)),
             metric('moving', fmtHM(n.moving_min)),
