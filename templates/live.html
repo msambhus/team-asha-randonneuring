@@ -84,6 +84,28 @@
 .metric .l { font-size: 0.72rem; color: var(--text-light); }
 .after-ride { margin-top: 10px; font-size: 0.75rem; color: var(--text-light); font-style: italic; }
 
+/* Plan selector (item 1) — a global viewing lens; overrides each rider's own plan. */
+.plan-selector-wrap { display: flex; align-items: center; gap: 8px; margin: 12px 0 6px; flex-wrap: wrap; }
+.plan-selector-wrap label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-light); }
+.plan-selector-wrap select {
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 0.85rem; background: var(--bg-card); color: var(--text); max-width: 260px;
+}
+.plan-label { font-size: 0.8rem; color: var(--text-light); margin: 12px 0 6px; }
+.plan-note { font-size: 0.72rem; color: var(--text-light); margin: 2px 0 0; }
+
+/* Shared upcoming-controls list (item 2) — one ride-level list, not per rider. */
+.upcoming-controls { margin: 8px 0 14px; }
+.upcoming-controls .uc-title { font-size: 0.95rem; margin: 0 0 6px; }
+.uc-list { display: flex; flex-direction: column; gap: 4px; }
+.uc-row {
+    display: flex; align-items: baseline; gap: 10px; padding: 6px 10px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+}
+.uc-row .uc-name { font-weight: 600; font-size: 0.85rem; flex: 1; }
+.uc-row .uc-dist { font-size: 0.75rem; color: var(--text-light); }
+.uc-row .uc-eta { font-weight: 700; font-size: 0.85rem; color: #1a365d; }
+
 /* Route-ahead charts (elevation / headwind / temperature) — mirror the weather
    page, with a vertical marker at each rider's current mileage. */
 .live-charts { margin-top: 18px; }
@@ -351,6 +373,23 @@
     <span class="item"><span class="swatch" style="background:#6b7280;border-color:#6b7280"></span> Off-route / no plan</span>
   </div>
   <div id="live-status" class="live-status"></div>
+
+  {# ── Plan selector (item 1): shown only when the ride has >1 plan ── #}
+  <div id="plan-selector-wrap" class="plan-selector-wrap" style="display:none;">
+    <label for="plan-selector">Plan</label>
+    <select id="plan-selector"></select>
+  </div>
+  <div id="plan-label" class="plan-label" style="display:none;">Plan: <strong>base plan</strong></div>
+  <div id="plan-own-note" class="plan-note" style="display:none;">
+    Upcoming controls use base-plan timing (each rider is graded against their own plan).
+  </div>
+
+  {# ── Shared upcoming controls (item 2): one ride-level list ── #}
+  <div id="upcoming-controls" class="upcoming-controls" style="display:none;">
+    <h2 class="uc-title">Upcoming controls</h2>
+    <div id="uc-list" class="uc-list"></div>
+  </div>
+
   <div id="live-empty" class="live-empty" style="display:none;">
     No riders are sharing their location right now.{% if not is_guest %} Riders can opt in from
     <a href="{{ url_for('live.live_settings') }}">Live tracking settings</a>.{% endif %}
@@ -397,6 +436,10 @@
     var markers = {};   // rider_id -> { marker, el }
     var follow = true;  // auto-frame riders until the user moves the map
     var lastPositions = [];
+    // Currently selected plan lens (item 1): null until the rider picks one; sent as
+    // ?plan_id= on each poll so ALL riders re-grade against the chosen plan.
+    var selectedPlanId = null;
+    var plansBuilt = false;
 
     // Disable auto-follow on ANY user-initiated camera move — pan, pinch-zoom,
     // scroll-zoom, the +/- buttons. We key off `e.originalEvent`: our own
@@ -690,6 +733,16 @@
               (nc.distance_mi != null ? metric('at', nc.distance_mi, ' mi') : null)
             ]));
           }
+          // Speed to reach the FINISH on time (item 3), alongside the next-control
+          // speed above; null (em-dash) + behind when the finish time has passed.
+          if (t.finish) {
+            var fin = t.finish;
+            card.appendChild(group('To finish', [
+              metric('ETA (arrival)', fin.eta_label),
+              metric('req speed', fin.required_mph, ' mph'),
+              (fin.dist_to_go_mi != null ? metric('to go', fin.dist_to_go_mi, ' mi') : null)
+            ]));
+          }
           if (t.detailed_after_ride) {
             var note = document.createElement('div');
             note.className = 'after-ride';
@@ -701,6 +754,72 @@
       });
     }
 
+    // ── Plan selector (item 1) ──
+    // Built once from the server's allow-set (data.plans). A ride with a single plan
+    // sends only the base option → no selector, just a "base plan" label. Choosing a
+    // plan re-polls with ?plan_id= so ALL riders re-grade against it.
+    function renderPlans(data) {
+      var wrap = document.getElementById('plan-selector-wrap');
+      var label = document.getElementById('plan-label');
+      var ownNote = document.getElementById('plan-own-note');
+      var sel = document.getElementById('plan-selector');
+      var plans = (data && data.plans) || [];
+
+      if (plans.length <= 1) {
+        // Single-plan ride: no selector, just the "base plan" label.
+        wrap.style.display = 'none';
+        label.style.display = 'block';
+        ownNote.style.display = 'none';
+        return;
+      }
+      label.style.display = 'none';
+      wrap.style.display = 'flex';
+
+      if (!plansBuilt) {
+        sel.textContent = '';
+        plans.forEach(function (p) {
+          var opt = document.createElement('option');
+          opt.value = String(p.id);
+          opt.textContent = p.name + (p.owner ? ' · ' + p.owner : '');
+          sel.appendChild(opt);
+        });
+        sel.addEventListener('change', function () {
+          selectedPlanId = sel.value;
+          poll();   // re-grade everyone immediately against the new plan
+        });
+        plansBuilt = true;
+      }
+      // Keep the dropdown in sync with the APPLIED plan (a rejected id echoes 'base').
+      if (data.selected_plan_id != null) { sel.value = String(data.selected_plan_id); }
+      // 'own' grades each rider on their own plan; the shared list falls back to base.
+      ownNote.style.display = (String(data.selected_plan_id) === 'own') ? 'block' : 'none';
+    }
+
+    // ── Shared upcoming controls (item 2) ──
+    function renderUpcoming(data) {
+      var box = document.getElementById('upcoming-controls');
+      var list = document.getElementById('uc-list');
+      var controls = (data && data.upcoming_controls) || [];
+      list.textContent = '';
+      if (!controls.length) { box.style.display = 'none'; return; }
+      box.style.display = 'block';
+      controls.forEach(function (c) {
+        var row = document.createElement('div');
+        row.className = 'uc-row';
+        var name = document.createElement('span');
+        name.className = 'uc-name';
+        name.textContent = (c.name || 'control').replace(', CA', '');
+        var dist = document.createElement('span');
+        dist.className = 'uc-dist';
+        dist.textContent = (c.distance_mi != null ? c.distance_mi + ' mi' : '');
+        var eta = document.createElement('span');
+        eta.className = 'uc-eta';
+        eta.textContent = c.eta_label || '—';
+        row.appendChild(name); row.appendChild(dist); row.appendChild(eta);
+        list.appendChild(row);
+      });
+    }
+
     // ── Route-ahead charts (elevation / headwind / temperature) ──
     // chart_data is static per ride, so the charts are built once; each poll only
     // repositions the per-rider markers. Degrades to hidden if Chart.js is blocked
@@ -708,6 +827,9 @@
     var liveCharts = {};
     var chartsBuilt = false;
 
+    // Per-rider dots (item 4): one labeled dot per on-route rider at their current
+    // mileage, colored by plan pace — a faint vertical guide line + a filled dot with
+    // the rider's initials near the top of each chart.
     var riderMarkerPlugin = {
       id: 'riderMarkers',
       afterDatasetsDraw: function (chart) {
@@ -715,14 +837,28 @@
         var xAxis = chart.scales.x, area = chart.chartArea;
         if (!xAxis || !area || !markers.length) { return; }
         var ctx = chart.ctx;
-        markers.forEach(function (m) {
+        markers.forEach(function (m, i) {
           if (m.index == null || m.index < 0) { return; }
           var x = xAxis.getPixelForValue(m.index);
+          var color = m.color || '#1a365d';
           ctx.save();
+          // Faint full-height guide line.
           ctx.beginPath();
           ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom);
-          ctx.lineWidth = 2; ctx.strokeStyle = m.color || '#1a365d';
+          ctx.lineWidth = 1.5; ctx.globalAlpha = 0.5; ctx.strokeStyle = color;
           ctx.stroke();
+          ctx.globalAlpha = 1;
+          // Dot near the top, stacked so dots at the same x don't fully overlap.
+          var cy = area.top + 7 + (i % 3) * 13;
+          ctx.beginPath();
+          ctx.arc(x, cy, 5, 0, 2 * Math.PI);
+          ctx.fillStyle = color; ctx.fill();
+          ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff'; ctx.stroke();
+          if (m.initials) {
+            ctx.font = '700 9px sans-serif';
+            ctx.fillStyle = '#1a365d'; ctx.textBaseline = 'middle';
+            ctx.fillText(m.initials, x + 8, cy);
+          }
           ctx.restore();
         });
       }
@@ -738,34 +874,50 @@
       return best;
     }
 
+    function chartInitials(name) {
+      var parts = (name || '').trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) { return '?'; }
+      if (parts.length === 1) { return parts[0].slice(0, 2).toUpperCase(); }
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+
     function buildCharts(cd) {
       var labels = cd.labels || [];
-      function mk(id, cardId, label, data, color) {
+      var xScale = { ticks: { maxTicksLimit: 6, callback: function (v, i) { return Math.round(labels[i]) + ' mi'; } } };
+      var baseOpts = {
+        responsive: true, maintainAspectRatio: true, animation: false,
+        plugins: { legend: { display: false } },
+        scales: { x: xScale, y: { ticks: { font: { size: 9 } } } }
+      };
+      function areaSet(label, data, color) {
+        return { label: label, data: data, borderColor: color,
+                 backgroundColor: color + '33', borderWidth: 1.5, fill: true,
+                 tension: 0.3, pointRadius: 0, pointHitRadius: 6 };
+      }
+      function mk(id, cardId, datasets, data) {
         var canvas = document.getElementById(id);
         var card = document.getElementById(cardId);
         if (!canvas) { return; }
         if (!data || data.length < 2) { if (card) { card.style.display = 'none'; } return; }
         liveCharts[id] = new Chart(canvas.getContext('2d'), {
-          type: 'line',
-          data: { labels: labels, datasets: [{
-            label: label, data: data, borderColor: color,
-            backgroundColor: color + '33', borderWidth: 1.5, fill: true,
-            tension: 0.3, pointRadius: 0, pointHitRadius: 6 }] },
-          options: {
-            responsive: true, maintainAspectRatio: true, animation: false,
-            plugins: { legend: { display: false } },
-            scales: {
-              x: { ticks: { maxTicksLimit: 6, callback: function (v, i) { return Math.round(labels[i]) + ' mi'; } } },
-              y: { ticks: { font: { size: 9 } } }
-            }
-          },
-          plugins: [riderMarkerPlugin]
+          type: 'line', data: { labels: labels, datasets: datasets },
+          options: baseOpts, plugins: [riderMarkerPlugin]
         });
       }
-      // Elevation always has its own card; headwind/temp may be absent (no wind data).
-      mk('chartElev', null, 'Elevation (ft)', cd.elevation_ft, '#15803d');
-      mk('chartHeadwind', 'chartHeadwindCard', 'Headwind (mph)', cd.headwind_mph, '#dc2626');
-      mk('chartTemp', 'chartTempCard', 'Temperature (°F)', cd.temperature_f, '#f59e0b');
+      // Colors match the weather page exactly: elevation gray-green, headwind split
+      // into red (head, +) / green (tail, −) areas, temperature red.
+      mk('chartElev', null, [areaSet('Elevation (ft)', cd.elevation_ft, '#15803d')], cd.elevation_ft);
+      if (cd.headwind_mph && cd.headwind_mph.length >= 2) {
+        var headPos = cd.headwind_mph.map(function (v) { return v > 0 ? v : 0; });
+        var headNeg = cd.headwind_mph.map(function (v) { return v < 0 ? v : 0; });
+        mk('chartHeadwind', 'chartHeadwindCard',
+           [areaSet('Headwind (mph)', headPos, '#dc2626'),
+            areaSet('Tailwind (mph)', headNeg, '#16a34a')], cd.headwind_mph);
+      } else {
+        var hwCard = document.getElementById('chartHeadwindCard');
+        if (hwCard) { hwCard.style.display = 'none'; }
+      }
+      mk('chartTemp', 'chartTempCard', [areaSet('Temperature (°F)', cd.temperature_f, '#ef4444')], cd.temperature_f);
     }
 
     function updateCharts(data, positions) {
@@ -781,7 +933,7 @@
         .filter(function (p) { return p.telemetry && p.telemetry.now && p.telemetry.now.distance_mi != null; })
         .map(function (p) {
           return { index: nearestIndex(cd.labels, p.telemetry.now.distance_mi),
-                   color: p.plan_color || p.color };
+                   color: p.plan_color || p.color, initials: chartInitials(p.name) };
         });
       Object.keys(liveCharts).forEach(function (id) {
         var c = liveCharts[id];
@@ -790,8 +942,15 @@
       });
     }
 
+    function planQuery() {
+      // Only append plan_id once the rider has explicitly chosen a plan; absent →
+      // the backend applies the base plan (the default view).
+      return selectedPlanId ? ('&plan_id=' + encodeURIComponent(selectedPlanId)) : '';
+    }
+
     function poll() {
-      fetch('/api/live/positions?ride_id=' + encodeURIComponent(RIDE_ID), { credentials: 'same-origin' })
+      fetch('/api/live/positions?ride_id=' + encodeURIComponent(RIDE_ID) + planQuery(),
+            { credentials: 'same-origin' })
         .then(function (r) {
           if (!r.ok) { throw new Error('status ' + r.status); }
           return r.json();
@@ -805,6 +964,8 @@
           Object.keys(markers).forEach(function (rid) {
             if (!seen[rid]) { markers[rid].marker.remove(); delete markers[rid]; }
           });
+          renderPlans(data);
+          renderUpcoming(data);
           renderRiders(positions);
           updateTrails(positions);
           updateCharts(data, positions);
