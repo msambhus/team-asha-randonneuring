@@ -187,7 +187,10 @@ def test_anonymous_without_code_is_sent_to_join(client):
 def test_guest_positions_allowed_for_granted_ride(client):
     _guest(client, ride_id=5)
     inv = {'code': 'ABCD-2K9P', 'ride_id': 5, 'expires_at': None}
+    # The context is now built even with no active sharers, so stub it (no RWGPS/
+    # weather calls) — this test only exercises invite scoping + the empty roster.
     with patch('routes.live.get_valid_ride_invite', return_value=inv), \
+         patch('routes.live._ride_live_context', return_value={'has_route': False}), \
          patch('routes.live.get_latest_positions_for_ride', return_value=[]):
         resp = client.get('/api/live/positions?ride_id=5')
     assert resp.status_code == 200

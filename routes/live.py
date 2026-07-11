@@ -1025,7 +1025,12 @@ def live_positions():
     since = now - timedelta(hours=DISPLAY_WINDOW_HOURS)
     rows = get_latest_positions_for_ride(ride_id, since)
 
-    ctx = _ride_live_context(ride_id) if rows else None
+    # Build the per-ride context ALWAYS — not only when someone is sharing — so a
+    # spectator opening a ride before anyone broadcasts still gets the plan selector,
+    # the route-ahead charts, and the shared upcoming-controls list. The context is
+    # memoized per ride (~5 min), so the RWGPS/weather work still runs at most once
+    # per window regardless of how many riders (or none) are active.
+    ctx = _ride_live_context(ride_id)
 
     has_route = bool(ctx and ctx.get('has_route'))
     track = ctx.get('track') if has_route else None

@@ -257,6 +257,27 @@ def test_positions_guest_own_lens_falls_back_to_base(client):
     assert 'own' not in [p['id'] for p in body['plans']]   # 'own' withheld from guests
 
 
+def test_positions_no_sharers_still_returns_plans_charts_and_controls(client):
+    """Fix for the spectator gap: a ride with NO active sharers still builds the
+    context, so the plan selector, route-ahead chart_data, and the shared
+    upcoming-controls list are all present even before anyone broadcasts."""
+    _login(client, rider_id=7)
+    chart = {'labels': [0.0, 0.5, 1.1], 'elevation_ft': [30, 60, 90],
+             'headwind_mph': [5.0, 4.0, 3.0], 'temperature_f': [60.0, 61.0, 62.0]}
+    ctx = _arrival_ctx(_now() - timedelta(minutes=5), chart_data=chart)
+    with patch('routes.live.get_latest_positions_for_ride', return_value=[]), \
+         patch('routes.live._ride_live_context', return_value=ctx) as build_ctx, \
+         patch('models.get_public_custom_plans', return_value=_PUB), \
+         patch('models.get_custom_plan', return_value=None):
+        body = client.get('/api/live/positions?ride_id=5').get_json()
+    build_ctx.assert_called_once()                       # context built despite no rows
+    assert body['positions'] == []                       # nobody sharing yet
+    ids = [p['id'] for p in body['plans']]
+    assert ids[0] == 'base' and 11 in ids and 'own' in ids   # >1 plan → selector shows
+    assert body['chart_data'] is not None                # route-ahead charts available
+    assert body['upcoming_controls']                     # shared upcoming-controls present
+
+
 # ── Shared upcoming-controls list (item 2) ─────────────────────────────────
 
 def test_upcoming_controls_shared_ride_level_with_eta(client):
