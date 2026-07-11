@@ -38,6 +38,12 @@ M_TO_MI = 1 / 1609.344
 KMH_TO_MPH = 0.621371
 MS_TO_MPH = 2.236936
 _MAX_CONTEXT_TRACK_POINTS = 2000
+# The per-ride live context (route geometry + weather + chart_data + plan stops)
+# is rider-independent and changes slowly, so it gets a longer TTL than the
+# global CACHE_TIMEOUT (5 min) to cut the CPU cost of rebuilding the weather/route
+# work on every deploy or cache expiry. Rider POSITIONS are NOT cached — they're
+# read fresh each poll — so this only ages the static route/weather overlay.
+LIVE_CONTEXT_TTL = 900  # 15 minutes
 
 # Club-local timezone. Ride start_time values (e.g. "06:00") are wall-clock
 # times in the Bay Area, so elapsed-time math must interpret them in Pacific
@@ -446,7 +452,7 @@ def _build_live_chart_data(track_points, plan_stops, start_dt):
     }
 
 
-@cache.memoize(CACHE_TIMEOUT)
+@cache.memoize(LIVE_CONTEXT_TTL)
 def _ride_live_context(ride_id):
     """Per-ride context for telemetry, computed ONCE and cached (~5 min) so the
     per-poll path never re-fetches RWGPS / weather. Returns a plain dict.

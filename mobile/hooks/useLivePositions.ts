@@ -13,7 +13,7 @@ export function useLivePositions(rideId: number, planId?: LivePlanId | null) {
     // planId is part of the key so switching plans re-polls (and re-grades everyone).
     queryKey: ['positions', rideId, planId ?? 'base'],
     enabled: !!token && !!rideId,
-    refetchInterval: 20_000,
+    refetchInterval: 60_000,
     queryFn: () =>
       apiFetch<PositionsResponse>(
         `/api/live/positions?ride_id=${encodeURIComponent(rideId)}` +
