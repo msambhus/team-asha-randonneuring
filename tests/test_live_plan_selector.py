@@ -52,15 +52,18 @@ def test_available_plans_member_includes_public_and_own():
 
 def test_available_plans_guest_gets_public_only_never_own():
     """A guest (rider_id None) sees base + public plans only — the private 'own'
-    lookup is NEVER performed, so no private plan can enter the allow-set."""
-    from routes.live import _available_plans, PLAN_OWN
+    lookup is NEVER performed AND the 'own' per-rider lens is NOT offered (it would
+    expose per-rider private-plan timing to a guest)."""
+    from routes.live import _available_plans, PLAN_OWN, PLAN_BASE
     publics = [{'id': 11, 'name': 'Fast', 'first_name': 'Alice', 'is_public': True}]
     with patch('models.get_public_custom_plans', return_value=publics), \
          patch('models.get_custom_plan') as own_lookup:
         options, allowed = _available_plans(base_plan_id=5, viewer_rider_id=None)
     own_lookup.assert_not_called()
     assert allowed == {11}
-    assert PLAN_OWN in [o['id'] for o in options]   # 'own' still offered (a custom exists)
+    ids = [o['id'] for o in options]
+    assert PLAN_OWN not in ids                       # 'own' withheld from guests
+    assert ids == [PLAN_BASE, 11]                    # base + the public plan only
 
 
 def test_available_plans_single_plan_ride_has_no_selector():
@@ -92,8 +95,19 @@ def test_selected_plan_stops_base_and_own(app):
     with app.app_context():
         assert _selected_plan_stops(None, ctx, set()) == (PLAN_BASE, _BASE)
         assert _selected_plan_stops('base', ctx, set()) == (PLAN_BASE, _BASE)
-        applied, stops = _selected_plan_stops('own', ctx, set())
-    assert applied == PLAN_OWN and stops is None   # 'own' → each rider keeps own plan
+        # 'own' is a member-only lens → each rider keeps their own plan.
+        applied, stops = _selected_plan_stops('own', ctx, set(), is_member=True)
+    assert applied == PLAN_OWN and stops is None
+
+
+def test_selected_plan_stops_own_rejected_for_guest(app):
+    """AUTHORIZATION: a guest (is_member False) requesting the 'own' lens falls back to
+    the base plan — never per-rider (private-plan) grading."""
+    from routes.live import _selected_plan_stops, PLAN_BASE
+    ctx = {'plan_stops': _BASE}
+    with app.app_context():
+        applied, stops = _selected_plan_stops('own', ctx, set(), is_member=False)
+    assert applied == PLAN_BASE and stops is _BASE
 
 
 def test_selected_plan_stops_allowed_custom_overrides(app):
@@ -215,6 +229,32 @@ def test_positions_default_is_base_plan(client):
     _login(client, rider_id=7)
     body = _positions_json(client, _arrival_ctx(_now() - timedelta(minutes=5)))
     assert body['selected_plan_id'] == 'base'
+
+
+def _guest(client, code='ABCD-2K9P', ride_id=5):
+    with client.session_transaction() as s:
+        s['live_guest'] = {'code': code, 'ride_id': ride_id}
+
+
+def test_positions_guest_own_lens_falls_back_to_base(client):
+    """AUTHORIZATION (endpoint): a GUEST requesting plan_id=own gets the base plan —
+    the 'own' per-rider lens is never applied (no private per-rider timing leaks) and
+    is not even offered in `plans`."""
+    _guest(client, ride_id=5)
+    inv = {'code': 'ABCD-2K9P', 'ride_id': 5, 'expires_at': None}
+    ctx = _arrival_ctx(_now() - timedelta(minutes=5))
+    with patch('routes.live.get_valid_ride_invite', return_value=inv), \
+         patch('routes.live.get_latest_positions_for_ride', return_value=[_row()]), \
+         patch('routes.live._ride_live_context', return_value=ctx), \
+         patch('routes.live.get_positions_for_rider_since', return_value=[]), \
+         patch('models.get_public_custom_plans', return_value=_PUB), \
+         patch('models.get_custom_plan') as own_lookup, \
+         patch('routes.live._rider_plan_stops') as per_rider:
+        body = client.get('/api/live/positions?ride_id=5&plan_id=own').get_json()
+    own_lookup.assert_not_called()                  # no per-rider own-plan lookup for a guest
+    per_rider.assert_not_called()                   # per-rider grading never engaged
+    assert body['selected_plan_id'] == 'base'
+    assert 'own' not in [p['id'] for p in body['plans']]   # 'own' withheld from guests
 
 
 # ── Shared upcoming-controls list (item 2) ─────────────────────────────────

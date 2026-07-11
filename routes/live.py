@@ -690,16 +690,19 @@ def _available_plans(base_plan_id, viewer_rider_id):
             current_app.logger.warning('live: own custom plan lookup failed for rider %s',
                                        viewer_rider_id, exc_info=True)
 
-    # Offer the "each rider's own plan" lens only when there IS a custom plan to
-    # distinguish it from base — otherwise every rider's own plan == base and the
-    # ride is effectively single-plan (no selector shown).
-    if allowed_custom_ids:
+    # Offer the "each rider's own plan" lens only to a logged-in MEMBER, and only
+    # when there IS a custom plan to distinguish it from base. 'own' grades every
+    # rider against THEIR OWN (possibly private) custom plan, so a guest must never
+    # get it — that would expose per-rider private-plan timing. Guests still see
+    # base + public named plans. Without a custom plan the ride is effectively
+    # single-plan (no selector shown).
+    if allowed_custom_ids and viewer_rider_id:
         options.append({'id': PLAN_OWN, 'name': "Each rider's own plan",
                         'owner': None, 'is_custom': False})
     return options, allowed_custom_ids
 
 
-def _selected_plan_stops(requested_plan_id, ctx, allowed_custom_ids):
+def _selected_plan_stops(requested_plan_id, ctx, allowed_custom_ids, is_member=False):
     """Resolve the requested plan_id STRICTLY from the allow-set. Returns
     (applied_id, override_stops):
 
@@ -708,14 +711,21 @@ def _selected_plan_stops(requested_plan_id, ctx, allowed_custom_ids):
       - override_stops: the plan stops every rider is graded against (base or the
         selected custom plan), or None for 'own' (each rider keeps their own plan).
 
-    Any numeric id NOT in allowed_custom_ids — a private plan owned by someone else,
-    an unknown/malformed id, any private id for a guest — is refused and logged, so
-    no private plan can leak through the query string."""
+    Any value the viewer isn't allowed to resolve — a numeric id NOT in
+    allowed_custom_ids (a private plan owned by someone else), an unknown/malformed
+    id, or the 'own' lens requested by a GUEST (is_member False) — is refused and
+    logged, so no private plan (named or per-rider) can leak through the query string.
+    'own' grades every rider against their OWN (possibly private) custom plan, so it
+    is members-only; a guest gets the base plan instead."""
     base_stops = ctx.get('plan_stops') if ctx else None
 
     if requested_plan_id is None or requested_plan_id == '' or requested_plan_id == PLAN_BASE:
         return PLAN_BASE, base_stops
     if requested_plan_id == PLAN_OWN:
+        if not is_member:
+            # Guests may not re-enable per-rider (private-plan) grading.
+            current_app.logger.warning("live: rejected 'own' lens for guest → base fallback")
+            return PLAN_BASE, base_stops
         return PLAN_OWN, None
 
     try:
@@ -1025,8 +1035,10 @@ def live_positions():
     # is resolved strictly against it; a rejected id falls back to the base plan.
     base_plan_id = ctx.get('base_plan_id') if ctx else None
     plan_options, allowed_custom_ids = _available_plans(base_plan_id, rider_id)
+    # is_member gates the 'own' (each-rider's-own) lens to logged-in riders; a guest
+    # (rider_id None) requesting it falls back to base, never per-rider private grading.
     applied_plan_id, override_stops = _selected_plan_stops(
-        request.args.get('plan_id'), ctx, allowed_custom_ids)
+        request.args.get('plan_id'), ctx, allowed_custom_ids, is_member=bool(rider_id))
 
     # The plan whose controls populate the shared upcoming-controls list: the applied
     # override (base or the selected custom), or — for 'own' — the base plan, since no
