@@ -412,7 +412,7 @@
   var RIDE_ID = {{ ride.id | tojson }};
   var ROUTE_POLYLINE = {{ route_polyline | tojson }};   // [[lng,lat],...] or null
   var STALE_AFTER_MIN = {{ stale_after_minutes | tojson }};
-  var POLL_MS = 30000;
+  var POLL_MS = 60000;
 
   (function () {
     var statusEl = document.getElementById('live-status');
