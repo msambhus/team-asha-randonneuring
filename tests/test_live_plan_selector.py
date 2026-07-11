@@ -288,6 +288,33 @@ def test_positions_member_own_rejected_when_not_offered(client):
     assert 'own' not in [p['id'] for p in body['plans']]
 
 
+def test_positions_own_lens_does_not_leak_private_plan(client):
+    """NON-LEAK (endpoint): under an offered 'own' lens, a rider whose custom plan is
+    NOT in the viewer's allow-set (another rider's PRIVATE plan) is graded against the
+    base plan — that plan is never merged and its control timing never reaches the
+    payload; only the viewer's own / public plans are surfaced."""
+    _login(client, rider_id=7)
+    ctx = _arrival_ctx(_now() - timedelta(minutes=5))
+    row8 = dict(_row(), rider_id=8, name='Other Rider')
+
+    def custom_for(rider_id, base_plan_id):
+        # Viewer 7 has their OWN plan (→ 'own' offered); tracked rider 8 has a PRIVATE
+        # plan (id 99) the viewer isn't allowed to see.
+        return {'id': 50} if rider_id == 7 else {'id': 99}
+
+    with patch('routes.live.get_latest_positions_for_ride', return_value=[row8]), \
+         patch('routes.live._ride_live_context', return_value=ctx), \
+         patch('routes.live.get_positions_for_rider_since', return_value=[]), \
+         patch('models.get_public_custom_plans', return_value=[]), \
+         patch('models.get_custom_plan', side_effect=custom_for), \
+         patch('routes.live._merge_custom_stops') as merge:
+        body = client.get('/api/live/positions?ride_id=5&plan_id=own').get_json()
+    assert body['selected_plan_id'] == 'own'            # viewer has a plan → 'own' allowed
+    merge.assert_not_called()                            # rider 8's PRIVATE plan never merged
+    nc = body['positions'][0]['telemetry']['next_control']
+    assert nc['arrival_time_min'] == 20                  # BASE timing, not the private plan's
+
+
 def test_positions_no_sharers_still_returns_plans_charts_and_controls(client):
     """Fix for the spectator gap: a ride with NO active sharers still builds the
     context, so the plan selector, route-ahead chart_data, and the shared

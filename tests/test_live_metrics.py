@@ -292,6 +292,35 @@ def test_rider_plan_stops_custom_under_two_stops_falls_back():
         assert _rider_plan_stops(ctx, 7) is _BASE_STOPS
 
 
+def test_rider_plan_stops_allowset_permits_visible_custom():
+    """Under the 'own' lens, a rider's custom plan is used only when the VIEWER may see
+    it — its id is in allowed_custom_ids (a public plan, or the viewer's own)."""
+    from routes.live import _rider_plan_stops
+    ctx = {'plan_stops': _BASE_STOPS, 'base_plan_id': 7,
+           'plan_cutoff_hours': 10, 'plan_total_mi': 100}
+    custom_raw = [{'distance_miles': 0, 'cum_time_min': 0},
+                  {'distance_miles': 10, 'cum_time_min': 50}]
+    with patch('models.get_custom_plan', return_value={'id': 99}), \
+         patch('services.custom_plan_service.get_merged_plan_stops', return_value=(['m'], {'id': 99})), \
+         patch('services.custom_plan_service.recalculate_cumulative_values', return_value=custom_raw):
+        stops = _rider_plan_stops(ctx, 7, allowed_custom_ids={99})   # 99 visible → custom used
+    assert stops[1]['cum_time_min'] == 50.0
+
+
+def test_rider_plan_stops_allowset_blocks_private_custom():
+    """NON-LEAK: a rider's PRIVATE plan (id NOT in the viewer's allow-set) is never
+    merged/read — the rider is graded against base, so no private control names/timing
+    can reach the payload."""
+    from routes.live import _rider_plan_stops
+    ctx = {'plan_stops': _BASE_STOPS, 'base_plan_id': 7,
+           'plan_cutoff_hours': 10, 'plan_total_mi': 100}
+    with patch('models.get_custom_plan', return_value={'id': 99}), \
+         patch('services.custom_plan_service.get_merged_plan_stops') as merged:
+        stops = _rider_plan_stops(ctx, 7, allowed_custom_ids={11})   # 99 not allowed
+    merged.assert_not_called()                          # private plan never merged
+    assert stops is _BASE_STOPS
+
+
 # ── Item 1-3: arrival ETA, required speed, time banked ─────────────────────
 
 def _arrival_ctx(start_dt, **over):

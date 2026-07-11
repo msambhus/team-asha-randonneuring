@@ -605,11 +605,20 @@ def _merge_custom_stops(custom_plan_id, ctx, meta=None):
     return stops if len(stops) >= 2 else None
 
 
-def _rider_plan_stops(ctx, rider_id):
-    """Plan stops to grade THIS rider against: their own custom plan if they have
-    one (merged + retimed the SAME way the web plan page does), else the ride's
-    base plan (ctx['plan_stops']). Returns a list of {distance_miles, cum_time_min}
-    for tlm.plan_delta. Best-effort: any failure falls back to the base plan."""
+def _rider_plan_stops(ctx, rider_id, allowed_custom_ids=None):
+    """Plan stops to grade THIS rider against under the 'own' lens: their own custom
+    plan if they have one (merged + retimed the SAME way the web plan page does), else
+    the ride's base plan (ctx['plan_stops']). Returns a list of
+    {distance_miles, cum_time_min} for tlm.plan_delta. Best-effort: any failure falls
+    back to the base plan.
+
+    AUTHORIZATION: the rider's own plan is used ONLY when the VIEWER is allowed to see
+    it — its id is in ``allowed_custom_ids`` (a public plan, or the viewer's own). A
+    PRIVATE plan belonging to another rider is NOT in the viewer's allow-set, so this
+    rider is graded against the base plan instead and their private plan's control
+    names / arrival timing never reach the payload. ``allowed_custom_ids=None`` means
+    no restriction (raw per-rider merge — for direct unit tests only; the endpoint
+    always passes the viewer's allow-set)."""
     base = ctx.get('plan_stops') or []
     base_plan_id = ctx.get('base_plan_id')
     if not base_plan_id or not rider_id:
@@ -618,6 +627,9 @@ def _rider_plan_stops(ctx, rider_id):
         from models import get_custom_plan
         custom = get_custom_plan(rider_id, base_plan_id)
         if not custom:
+            return base
+        # Non-leak gate: never surface a plan the viewer isn't entitled to see.
+        if allowed_custom_ids is not None and custom.get('id') not in allowed_custom_ids:
             return base
         stops = _merge_custom_stops(custom['id'], ctx, meta=custom)
         return stops if stops else base
@@ -1091,7 +1103,11 @@ def live_positions():
             if override_stops is not None:
                 rider_plan_stops = override_stops
             else:
-                rider_plan_stops = _rider_plan_stops(ctx, row['rider_id']) if ctx else None
+                # 'own' lens: grade each rider against their own plan, but ONLY when the
+                # viewer may see it (in allowed_custom_ids) — a private plan of another
+                # rider falls back to base so its control names/timing never leak.
+                rider_plan_stops = (_rider_plan_stops(ctx, row['rider_id'], allowed_custom_ids)
+                                    if ctx else None)
             telemetry = _rider_telemetry(row, ctx, now, history, plan_stops=rider_plan_stops)
         except Exception:
             current_app.logger.exception('live telemetry failed for rider %s', row['rider_id'])
