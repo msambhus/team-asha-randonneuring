@@ -63,6 +63,7 @@ function RiderCard({ p }: { p: LivePosition }) {
   const t = p.telemetry;
   const now = t?.now;
   const rem = t?.remaining;
+  const nc = t?.next_control;
   const badge = planBadge(p);
   return (
     <View style={[styles.card, p.stale && styles.cardStale]}>
@@ -86,6 +87,8 @@ function RiderCard({ p }: { p: LivePosition }) {
           {now.ascent_done_ft != null ? <Metric label="climb" value={n(now.ascent_done_ft, ' ft')} /> : null}
           {now.heart_rate != null ? <Metric label="HR" value={n(now.heart_rate, ' bpm')} /> : null}
           {now.power != null ? <Metric label="power" value={n(now.power, ' W')} /> : null}
+          {now.cadence != null ? <Metric label="cadence" value={n(now.cadence, ' rpm')} /> : null}
+          {now.grade_pct != null ? <Metric label="grade" value={n(now.grade_pct, '%')} /> : null}
           {now.headwind_done_label ? <Metric label="wind" value={now.headwind_done_label} /> : null}
         </View>
       ) : null}
@@ -96,6 +99,16 @@ function RiderCard({ p }: { p: LivePosition }) {
           <Metric label="time left" value={hm(rem.time_left_min)} />
           {rem.toughness != null ? <Metric label="toughness" value={String(rem.toughness)} /> : null}
           {rem.headwind_ahead_label ? <Metric label="wind ahead" value={rem.headwind_ahead_label} /> : null}
+        </View>
+      ) : null}
+      {nc ? (
+        <View style={styles.nextControl}>
+          <Text style={styles.nextControlName}>Next: {(nc.name || 'control').replace(', CA', '')}</Text>
+          <View style={styles.metricRow}>
+            <Metric label="ETA (plan)" value={nc.eta_label ?? '—'} />
+            {nc.dist_to_go_mi != null ? <Metric label="to go" value={n(nc.dist_to_go_mi, ' mi')} /> : null}
+            {nc.distance_mi != null ? <Metric label="at" value={n(nc.distance_mi, ' mi')} /> : null}
+          </View>
         </View>
       ) : null}
       {t?.detailed_after_ride ? <Text style={styles.afterRide}>Power, pedaling & coasting time available after the ride.</Text> : null}
@@ -276,6 +289,8 @@ const styles = StyleSheet.create({
   cardMeta: { color: '#6b7280', fontSize: 12 },
   badge: { fontSize: 12, fontWeight: '700' },
   metricRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 4 },
+  nextControl: { marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#eef2f7' },
+  nextControlName: { fontSize: 12, fontWeight: '700', color: '#1a365d' },
   metric: { minWidth: 56 },
   metricVal: { fontSize: 14, fontWeight: '700', color: '#1a365d' },
   metricLbl: { fontSize: 10, color: '#6b7280', textTransform: 'uppercase' },
