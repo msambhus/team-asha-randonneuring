@@ -62,7 +62,6 @@
     width: 14px; height: 14px; border-radius: 50%;
     border: 2px solid #9ca3af; box-sizing: border-box;
 }
-.live-legend .swatch.beacon { border-style: dashed; }
 
 #live-riders { margin-top: 16px; display: grid; gap: 12px; }
 .rider-card {
@@ -165,14 +164,10 @@
     padding: 9px 14px; background: transparent; color: #b91c1c; border: 1px solid #fecaca;
     border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer;
 }
-.guest-note {
-    margin: 0 0 12px; padding: 8px 12px; background: #eff6ff; border: 1px solid #bfdbfe;
-    border-radius: 8px; color: #1e3a8a; font-size: 0.85rem;
-}
-.share-invite { margin: 0 0 12px; }
+.share-invite { margin: 0; }
 .invite-btn {
-    padding: 9px 14px; background: var(--primary, #2563eb); color: #fff; border: none;
-    border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer;
+    padding: 5px 10px; background: var(--primary, #2563eb); color: #fff; border: none;
+    border-radius: 6px; font-weight: 600; font-size: 0.75rem; cursor: pointer; white-space: nowrap;
 }
 .invite-btn:disabled { opacity: 0.6; cursor: default; }
 .invite-result {
@@ -201,18 +196,18 @@
 <div class="live-container">
   <div class="live-header">
     <div>
-      <h1>Live Map</h1>
-      <div class="live-sub">{{ ride.name | clean_name }}{% if ride.date %} &middot; {{ ride.date }}{% endif %}</div>
+      <h1>{{ ride.name | clean_name }}</h1>
+      {% if ride.date %}<div class="live-sub">{{ ride.date }}</div>{% endif %}
     </div>
+    {% if not is_guest %}
+    <div class="share-invite">
+      <button type="button" id="invite-btn" class="invite-btn" data-ride="{{ ride.id }}">🔗 Share</button>
+      <div id="invite-result" class="invite-result" hidden></div>
+    </div>
+    {% endif %}
   </div>
 
-  {% if is_guest %}
-  <div class="guest-note">👋 You're following this ride as a guest — view only.</div>
-  {% else %}
-  <div class="share-invite">
-    <button type="button" id="invite-btn" class="invite-btn" data-ride="{{ ride.id }}">🔗 Share live link</button>
-    <div id="invite-result" class="invite-result" hidden></div>
-  </div>
+  {% if not is_guest %}
   <script>
   (function () {
     var btn = document.getElementById('invite-btn');
@@ -247,18 +242,18 @@
             hint.textContent = 'Send this link — it opens the live map directly. Code: ' + d.code;
             box.appendChild(row); box.appendChild(hint);
           } else {
-            btn.disabled = false; btn.textContent = '🔗 Share live link';
+            btn.disabled = false; btn.textContent = '🔗 Share';
             box.textContent = d.error || 'Could not create a code.';
           }
         })
-        .catch(function () { btn.disabled = false; btn.textContent = '🔗 Share live link'; });
+        .catch(function () { btn.disabled = false; btn.textContent = '🔗 Share'; });
     });
   })();
   </script>
   {% endif %}
 
   {% if not is_guest %}
-  <details class="track-setup" {% if not garmin_here %}open{% endif %}>
+  <details class="track-setup">
     <summary>
       Appear on this map — pick how you'll share
       {% if garmin_here %}<span class="ts-linked">· ⌚ Garmin linked</span>{% endif %}
@@ -338,10 +333,6 @@
   {% endif %}
 
   <div id="live-map"></div>
-  <div class="live-legend">
-    <span class="item"><span class="swatch garmin"></span> ⌚ Garmin device <span style="color:var(--text-light)">(works screen-off)</span></span>
-    <span class="item"><span class="swatch beacon"></span> 📱 Phone <span style="color:var(--text-light)">(needs screen on)</span></span>
-  </div>
   <div class="live-legend">
     <span class="item"><span class="swatch" style="background:#16a34a;border-color:#16a34a"></span> Ahead / on plan</span>
     <span class="item"><span class="swatch" style="background:#dc2626;border-color:#dc2626"></span> Behind plan</span>
