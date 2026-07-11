@@ -22,10 +22,12 @@ export interface ChartSeries {
 }
 
 /** Static vertical marker (e.g. a live rider's current position). Distinct from
- *  the interactive scrub crosshair — several can be drawn at once. */
+ *  the interactive scrub crosshair — several can be drawn at once. An optional
+ *  `label` (rider initials) is drawn beside a dot near the top of the chart. */
 export interface ChartMarker {
   index: number;
   color?: string;
+  label?: string;
 }
 
 interface Props {
@@ -92,12 +94,23 @@ export function WeatherChart({
             <Line x1={sx(sel)} y1={padT} x2={sx(sel)} y2={H - padB}
               stroke="#1a365d" strokeWidth={1} opacity={0.5} />
           ) : null}
-          {(markers ?? []).map((m, mi) => (
-            m.index >= 0 && m.index < n ? (
-              <Line key={`m${mi}`} x1={sx(m.index)} y1={padT} x2={sx(m.index)} y2={H - padB}
-                stroke={m.color ?? '#1a365d'} strokeWidth={2} />
-            ) : null
-          ))}
+          {(markers ?? []).map((m, mi) => {
+            if (!(m.index >= 0 && m.index < n)) return null;
+            // Faint guide line + a labeled dot per rider, stacked so dots at the same
+            // x don't fully overlap (item 4). Colored by the rider's plan pace.
+            const cx = sx(m.index);
+            const cy = padT + 6 + (mi % 3) * 12;
+            const color = m.color ?? '#1a365d';
+            return (
+              <React.Fragment key={`m${mi}`}>
+                <Line x1={cx} y1={padT} x2={cx} y2={H - padB} stroke={color} strokeWidth={1.5} opacity={0.5} />
+                <Circle cx={cx} cy={cy} r={4.5} fill={color} stroke="#fff" strokeWidth={1.5} />
+                {m.label ? (
+                  <SvgText x={cx + 7} y={cy + 3} fontSize={9} fontWeight="700" fill="#1a365d">{m.label}</SvgText>
+                ) : null}
+              </React.Fragment>
+            );
+          })}
           {series.map((s, si) => {
             const pts = s.data.map((v, i) => `${sx(i)},${sy(v)}`).join(' ');
             const area =

@@ -17,7 +17,7 @@ import { useRideRoute } from '../../hooks/useRideRoute';
 import { useSharing } from '../../hooks/useSharing';
 import { startSharing, stopSharing, isSharing } from '../../location/backgroundLocation';
 import { WeatherChart } from '../../components/WeatherChart';
-import type { LivePosition, LiveChartData } from '../../lib/types';
+import type { LivePosition, LiveChartData, LivePlanOption, LivePlanId, UpcomingControl } from '../../lib/types';
 
 const FALLBACK_REGION: Region = {
   latitude: 37.3, longitude: -121.9, latitudeDelta: 0.4, longitudeDelta: 0.4,
@@ -64,9 +64,12 @@ const RED = '#dc2626', GREEN = '#16a34a';
 function LiveCharts({ chart, positions }: { chart: LiveChartData; positions: LivePosition[] }) {
   const labels = chart.labels ?? [];
   if (labels.length < 2) return null;
+  // One labeled dot per on-route rider at their current mileage, colored by plan
+  // pace (item 4) — initials keep them distinguishable.
   const markers = positions
     .filter((p) => p.telemetry?.now?.distance_mi != null)
-    .map((p) => ({ index: nearestIndex(labels, p.telemetry?.now?.distance_mi), color: p.plan_color ?? p.color }));
+    .map((p) => ({ index: nearestIndex(labels, p.telemetry?.now?.distance_mi),
+                   color: p.plan_color ?? p.color, label: initials(p.name) }));
   return (
     <View>
       <Text style={styles.chartsTitle}>Route ahead</Text>
@@ -83,8 +86,9 @@ function LiveCharts({ chart, positions }: { chart: LiveChartData; positions: Liv
           legend={[{ label: 'headwind', color: RED }, { label: 'tailwind', color: GREEN }]} />
       ) : null}
       {chart.temperature_f ? (
+        // Temperature red (#ef4444) to match the weather page's live-chart color scheme.
         <WeatherChart title="Temperature" unit="°F" labels={labels} markers={markers}
-          series={[{ data: chart.temperature_f, color: '#f59e0b', fill: true }]} />
+          series={[{ data: chart.temperature_f, color: '#ef4444', fill: true }]} />
       ) : null}
     </View>
   );
@@ -114,6 +118,7 @@ function RiderCard({ p }: { p: LivePosition }) {
   const now = t?.now;
   const rem = t?.remaining;
   const nc = t?.next_control;
+  const fin = t?.finish;
   const badge = planBadge(p);
   return (
     <View style={[styles.card, p.stale && styles.cardStale]}>
@@ -169,7 +174,67 @@ function RiderCard({ p }: { p: LivePosition }) {
           </View>
         </View>
       ) : null}
+      {fin ? (
+        <View style={styles.nextControl}>
+          <Text style={styles.nextControlName}>To finish</Text>
+          <View style={styles.metricRow}>
+            <Metric label="ETA (arrival)" value={fin.eta_label ?? '—'} />
+            {/* Speed to reach the finish on time; em-dash when behind (item 3). */}
+            <Metric label="req speed" value={fin.required_mph != null ? n(fin.required_mph, ' mph') : '—'} />
+            {fin.dist_to_go_mi != null ? <Metric label="to go" value={n(fin.dist_to_go_mi, ' mi')} /> : null}
+          </View>
+        </View>
+      ) : null}
       {t?.detailed_after_ride ? <Text style={styles.afterRide}>Power, pedaling & coasting time available after the ride.</Text> : null}
+    </View>
+  );
+}
+
+/** Plan selector (item 1): a chip row when the ride has >1 plan; otherwise just a
+ *  "base plan" label. Picking a plan re-polls so ALL riders re-grade against it. */
+function PlanSelector({ plans, applied, onSelect }: {
+  plans: LivePlanOption[]; applied: LivePlanId | null; onSelect: (id: LivePlanId) => void;
+}) {
+  if (plans.length <= 1) {
+    return <Text style={styles.planLabel}>Plan: <Text style={styles.planLabelStrong}>base plan</Text></Text>;
+  }
+  const showOwnNote = String(applied) === 'own';
+  return (
+    <View style={styles.planWrap}>
+      <Text style={styles.planTitle}>Plan</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.planChips}>
+        {plans.map((p) => {
+          const on = String(applied) === String(p.id);
+          return (
+            <Pressable key={String(p.id)} onPress={() => onSelect(p.id)}
+              style={[styles.planChip, on && styles.planChipOn]}>
+              <Text style={[styles.planChipText, on && styles.planChipTextOn]}>
+                {p.name}{p.owner ? ` · ${p.owner}` : ''}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+      {showOwnNote ? (
+        <Text style={styles.planNote}>Upcoming controls use base-plan timing (each rider graded against their own plan).</Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** Shared, ride-level upcoming-controls list (item 2) — one list, not per rider. */
+function UpcomingControls({ controls }: { controls: UpcomingControl[] }) {
+  if (!controls.length) return null;
+  return (
+    <View style={styles.ucBox}>
+      <Text style={styles.ucTitle}>Upcoming controls</Text>
+      {controls.map((c, i) => (
+        <View key={i} style={styles.ucRow}>
+          <Text style={styles.ucName} numberOfLines={1}>{(c.name || 'control').replace(', CA', '')}</Text>
+          <Text style={styles.ucDist}>{c.distance_mi != null ? `${c.distance_mi} mi` : ''}</Text>
+          <Text style={styles.ucEta}>{c.eta_label ?? '—'}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -178,9 +243,13 @@ export default function RideLiveScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const rideId = parseInt(String(params.id), 10);
   const router = useRouter();
-  const { data, isLoading } = useLivePositions(rideId);
+  const [selectedPlanId, setSelectedPlanId] = useState<LivePlanId | null>(null);
+  const { data, isLoading } = useLivePositions(rideId, selectedPlanId);
   const positions = data?.positions ?? null;
   const chartData = data?.chart_data ?? null;
+  const plans = data?.plans ?? [];
+  const appliedPlanId = data?.selected_plan_id ?? null;
+  const upcoming = data?.upcoming_controls ?? [];
   const { data: route, isLoading: routeLoading } = useRideRoute(rideId);
   const { enabled } = useSharing();   // global account consent (Settings)
 
@@ -300,6 +369,8 @@ export default function RideLiveScreen() {
 
       <ScrollView style={styles.cards} contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
         {isLoading ? <ActivityIndicator style={{ marginTop: 16 }} /> : null}
+        <PlanSelector plans={plans} applied={appliedPlanId} onSelect={setSelectedPlanId} />
+        <UpcomingControls controls={upcoming} />
         {(positions ?? []).map((p) => <RiderCard key={p.rider_id} p={p} />)}
         {!isLoading && !(positions ?? []).length ? <Text style={styles.empty}>No live riders yet.</Text> : null}
         {chartData ? <LiveCharts chart={chartData} positions={positions ?? []} /> : null}
@@ -358,4 +429,20 @@ const styles = StyleSheet.create({
   afterRide: { fontStyle: 'italic', color: '#6b7280', fontSize: 11, marginTop: 8 },
   empty: { color: '#6b7280', textAlign: 'center', marginTop: 16 },
   chartsTitle: { fontSize: 15, fontWeight: '800', color: '#1a365d', marginTop: 6, marginBottom: 8 },
+  planWrap: { marginBottom: 10 },
+  planTitle: { fontSize: 11, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', marginBottom: 6 },
+  planChips: { gap: 8, paddingRight: 8 },
+  planChip: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: '#cbd5e1', backgroundColor: '#fff' },
+  planChipOn: { backgroundColor: '#1a365d', borderColor: '#1a365d' },
+  planChipText: { fontSize: 12, color: '#1a365d', fontWeight: '600' },
+  planChipTextOn: { color: '#fff' },
+  planNote: { fontSize: 11, color: '#6b7280', marginTop: 6 },
+  planLabel: { fontSize: 13, color: '#6b7280', marginBottom: 10 },
+  planLabelStrong: { fontWeight: '700', color: '#1a365d' },
+  ucBox: { backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#e5e7eb' },
+  ucTitle: { fontSize: 14, fontWeight: '800', color: '#1a365d', marginBottom: 8 },
+  ucRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 5, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+  ucName: { flex: 1, fontSize: 13, fontWeight: '600', color: '#1a365d' },
+  ucDist: { fontSize: 12, color: '#6b7280' },
+  ucEta: { fontSize: 13, fontWeight: '700', color: '#1a365d' },
 });

@@ -226,6 +226,8 @@ export interface LivePositionTelemetry {
   now: LivePositionTelemetryNow;
   remaining: LivePositionRemaining | null;
   next_control?: LivePositionNextControl | null;
+  // Speed to reach the FINISH on time (item 3); same shape as next_control.
+  finish?: LivePositionNextControl | null;
   // banked_min = delta_min surfaced explicitly (banked vs the plan).
   plan: { delta_min: number; banked_min?: number; status: 'ahead' | 'behind' | 'on' } | null;
   // Time banked vs the brevet cutoff (OTL margin) and vs the plan; either may be null.
@@ -247,6 +249,27 @@ export interface LiveChartData {
 export interface RideRouteResponse {
   ride_id: number;
   polyline: [number, number][];
+}
+
+/** A selectable plan in the live view (item 1). id is 'base', 'own', or an int
+ *  custom-plan id the viewer is allowed to see (server-side allow-set). */
+export type LivePlanId = number | 'base' | 'own';
+
+export interface LivePlanOption {
+  id: LivePlanId;
+  name: string;
+  owner?: string | null;
+  is_custom: boolean;
+}
+
+/** A future control in the shared, ride-level upcoming-controls list (item 2). */
+export interface UpcomingControl {
+  name: string | null;
+  type: string | null;
+  distance_mi: number | null;
+  arrival_time_min: number | null;
+  eta_iso: string | null;
+  eta_label: string | null;   // club-local clock, e.g. "3:45 PM"
 }
 
 export interface LivePosition {
@@ -273,6 +296,9 @@ export interface PositionsResponse {
   stale_after_minutes: number;
   server_time: string;
   chart_data?: LiveChartData | null;   // route-ahead charts; null when no route
+  plans?: LivePlanOption[];            // plan selector options (item 1)
+  selected_plan_id?: LivePlanId | null; // the APPLIED plan (rejected id echoes 'base')
+  upcoming_controls?: UpcomingControl[]; // shared ride-level list (item 2)
 }
 
 /** What useLivePositions exposes to the screen — the positions array plus the
@@ -280,4 +306,7 @@ export interface PositionsResponse {
 export interface LivePositionsResult {
   positions: LivePosition[];
   chart_data: LiveChartData | null;
+  plans: LivePlanOption[];
+  selected_plan_id: LivePlanId | null;
+  upcoming_controls: UpcomingControl[];
 }
