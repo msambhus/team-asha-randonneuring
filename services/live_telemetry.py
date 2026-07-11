@@ -363,6 +363,35 @@ def next_control(current_dist_miles, plan_stops):
     }
 
 
+def finish_stop(plan_stops):
+    """The plan's FINISH — the farthest stop by distance (skipping 'start') — for the
+    per-rider "speed to finish" metric (item 3). Returns
+    {location, stop_type, distance_miles, arrival_time_min} or None when there's no
+    usable plan. arrival_time_min falls back to cum_time_min for a legacy stop that
+    carries no arrival time."""
+    if not plan_stops:
+        return None
+    cands = []
+    for s in plan_stops:
+        dm, ct = s.get('distance_miles'), s.get('cum_time_min')
+        if dm is None or ct is None:
+            continue
+        if (s.get('stop_type') or '').lower() == 'start':
+            continue
+        cands.append((float(dm), s))
+    if not cands:
+        return None
+    dm, s = max(cands, key=lambda x: x[0])
+    arrival = s.get('arrival_time_min')
+    arrival = round(float(arrival)) if arrival is not None else round(float(s['cum_time_min']))
+    return {
+        'location': s.get('location') or None,
+        'stop_type': s.get('stop_type') or None,
+        'distance_miles': round(dm, 1),
+        'arrival_time_min': arrival,
+    }
+
+
 def required_speed_mph(dist_to_go_mi, arrival_time_min, elapsed_min):
     """Average speed (mph) the rider must hold to reach the next control at the
     plan's SCHEDULED ARRIVAL time. Returns (required_mph, behind):
