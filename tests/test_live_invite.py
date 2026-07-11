@@ -115,6 +115,27 @@ def test_join_via_link_code_one_click(client):
         assert s.permanent is True
 
 
+def test_member_join_via_link_opens_the_ride_not_the_hub(client):
+    """A logged-in member clicking a shared link lands on the ride it points at
+    (TA-229) — previously they were bounced to the hub and the code was dropped."""
+    with client.session_transaction() as s:
+        s['rider_id'] = 7
+    inv = {'code': 'ABCD-2K9P', 'ride_id': 5, 'expires_at': None}
+    with patch('routes.live.get_valid_ride_invite', return_value=inv):
+        resp = client.get('/live/join?code=abcd-2k9p')
+    assert resp.status_code == 302
+    assert resp.headers['Location'].endswith('/ride/5/live')   # the ride, not /live/hub
+    with client.session_transaction() as s:
+        assert 'live_guest' not in s          # members don't need the guest grant
+
+
+def test_member_join_no_code_goes_to_hub(client):
+    with client.session_transaction() as s:
+        s['rider_id'] = 7
+    resp = client.get('/live/join')
+    assert resp.status_code == 302 and '/live' in resp.headers['Location']
+
+
 def test_join_via_link_bad_code_shows_form(client):
     """A link with an expired/invalid code shows the form (prefilled), no grant."""
     with patch('routes.live.get_valid_ride_invite', return_value=None):
