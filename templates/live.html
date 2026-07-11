@@ -10,7 +10,9 @@
 .live-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .live-header h1 { font-size: 1.4rem; margin: 0; }
 .live-sub { color: var(--text-light); font-size: 0.85rem; }
-#live-map { height: 560px; width: 100%; border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
+/* Height in vh (not a tall fixed px) so the rider stat cards below peek above
+   the fold — otherwise users don't realize there's data to scroll to. */
+#live-map { height: 46vh; min-height: 300px; width: 100%; border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
 .live-status { font-size: 0.8rem; color: var(--text-light); margin-top: 8px; min-height: 1.2em; }
 .live-empty {
     background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
