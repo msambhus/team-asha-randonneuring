@@ -24,8 +24,18 @@ jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('react-native-maps', () => {
   const React = require('react');
   const { View } = require('react-native');
+  // MapView forwards a ref exposing the imperative methods the screen calls
+  // (fitToCoordinates in the auto-frame effect); a plain functional mock has no
+  // ref, so mapRef.current.fitToCoordinates would be undefined.
+  const MapView = React.forwardRef((props: any, ref: any) => {
+    React.useImperativeHandle(ref, () => ({
+      fitToCoordinates: () => {},
+      animateToRegion: () => {},
+    }));
+    return React.createElement(View, props, props.children);
+  });
   const Mock = (props: any) => React.createElement(View, props, props.children);
-  return { __esModule: true, default: Mock, Marker: Mock, Polyline: Mock };
+  return { __esModule: true, default: MapView, Marker: Mock, Polyline: Mock };
 });
 jest.mock('react-native-svg', () => {
   const React = require('react');
