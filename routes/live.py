@@ -425,7 +425,9 @@ def _ride_live_context(ride_id):
                 get_ride_plan_stops(plan['id']), ctx['plan_cutoff_hours'], ctx['plan_total_mi'])
             ctx['plan_stops'] = [
                 {'distance_miles': float(s['distance_miles']),
-                 'cum_time_min': float(s['cum_time_min'])}
+                 'cum_time_min': float(s['cum_time_min']),
+                 'location': s.get('location'),
+                 'stop_type': s.get('stop_type')}
                 for s in base_raw
                 if s.get('distance_miles') is not None and s.get('cum_time_min') is not None
             ]
@@ -452,7 +454,10 @@ def _ride_live_context(ride_id):
                         cum += e_ft - prev_e
                     prev_e = e_ft
                     track.append({'lat': float(tp['y']), 'lng': float(tp['x']),
-                                  'dist_m': float(tp.get('d') or 0)})
+                                  'dist_m': float(tp.get('d') or 0),
+                                  # Elevation (m) for live grade; None when the
+                                  # route has no profile so grade reads "—".
+                                  'e_m': float(tp['e']) if tp.get('e') is not None else None})
                     cum_ascent.append(round(cum))
                 ctx['track'] = track
                 ctx['cum_ascent_ft'] = cum_ascent
@@ -505,7 +510,8 @@ def _rider_plan_stops(ctx, rider_id):
             merged or [], meta or custom,
             cutoff_hours=ctx.get('plan_cutoff_hours'), total_mi=ctx.get('plan_total_mi') or 0)
         stops = [
-            {'distance_miles': float(s['distance_miles']), 'cum_time_min': float(s['cum_time_min'])}
+            {'distance_miles': float(s['distance_miles']), 'cum_time_min': float(s['cum_time_min']),
+             'location': s.get('location'), 'stop_type': s.get('stop_type')}
             for s in (raw or [])
             if s.get('distance_miles') is not None and s.get('cum_time_min') is not None
         ]
@@ -624,6 +630,9 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
         return f'{glyph} {speed_mph:g} mph {short}', speed_mph
 
     now_block['distance_mi'] = round(dist_mi, 1)
+    # Current grade (%) from the route's elevation profile at the rider's
+    # position — Garmin LiveTrack sends altitude but no per-point gradient.
+    now_block['grade_pct'] = tlm.grade_at(ctx.get('track'), idx)
     # Average speeds over the ride so far: elapsed (wall-clock, includes stops)
     # and moving-only. Complements the instantaneous speed_mph above.
     now_block['avg_elapsed_speed_mph'] = (
@@ -636,9 +645,29 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
     now_block['headwind_done_label'] = wind_done_label
     wind_ahead_label, wind_ahead_mph = wind_descriptor(hw_ahead, cw_ahead)
 
+    # Next waypoint/control ahead, with the plan's expected arrival time there.
+    nc = tlm.next_control(dist_mi,
+                          plan_stops if plan_stops is not None else ctx.get('plan_stops'))
+    next_control_block = None
+    if nc:
+        eta_iso = eta_label = None
+        if start is not None and nc.get('cum_time_min') is not None:
+            eta_dt = start + timedelta(minutes=nc['cum_time_min'])
+            eta_iso = eta_dt.isoformat()
+            eta_label = eta_dt.astimezone(CLUB_TZ).strftime('%I:%M %p').lstrip('0')
+        next_control_block = {
+            'name': nc.get('location'),
+            'type': nc.get('stop_type'),
+            'distance_mi': nc.get('distance_miles'),
+            'dist_to_go_mi': nc.get('dist_to_go_mi'),
+            'eta_iso': eta_iso,
+            'eta_label': eta_label,
+        }
+
     return {
         'on_route': True,
         'now': now_block,
+        'next_control': next_control_block,
         'remaining': {
             'distance_mi': round(remaining_mi, 1),
             'ascent_left_ft': ascent_left,

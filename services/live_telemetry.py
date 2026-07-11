@@ -315,6 +315,78 @@ def plan_delta(current_dist_miles, elapsed_min, plan_stops):
     return round(expected - elapsed_min)
 
 
+# Don't re-surface a control the rider is essentially standing at; the next one
+# starts this far (miles) ahead of their current distance.
+NEXT_CONTROL_EPS_MI = 0.1
+
+
+def next_control(current_dist_miles, plan_stops):
+    """The next plan stop ahead of the rider — for a live "next control + ETA".
+
+    `plan_stops` is a list of stop dicts with at least distance_miles and
+    cum_time_min, and (when available) location and stop_type. Returns the first
+    stop strictly ahead of the rider's current distance, skipping the 'start':
+    {location, stop_type, distance_miles, cum_time_min, dist_to_go_mi}, or None
+    when there is no plan or nothing ahead (rider past the last stop).
+    """
+    if not plan_stops or current_dist_miles is None:
+        return None
+    ahead = []
+    for s in plan_stops:
+        dm, ct = s.get('distance_miles'), s.get('cum_time_min')
+        if dm is None or ct is None:
+            continue
+        if (s.get('stop_type') or '').lower() == 'start':
+            continue
+        dm = float(dm)
+        if dm > current_dist_miles + NEXT_CONTROL_EPS_MI:
+            ahead.append((dm, s))
+    if not ahead:
+        return None
+    dm, s = min(ahead, key=lambda x: x[0])
+    return {
+        'location': s.get('location') or None,
+        'stop_type': s.get('stop_type') or None,
+        'distance_miles': round(dm, 1),
+        'cum_time_min': round(float(s['cum_time_min'])),
+        'dist_to_go_mi': round(max(0.0, dm - current_dist_miles), 1),
+    }
+
+
+def grade_at(track, index, min_window_m=140.0):
+    """Signed % grade of the route profile around a track index (climb positive).
+
+    `track` is the downsampled route [{dist_m, e_m, ...}]. Averages the slope over
+    the smallest window spanning at least `min_window_m` centered on `index`, so a
+    single short/noisy segment doesn't dominate the reading. Returns a float
+    percent, or None when the route carries no elevation (e_m) at that point.
+    """
+    if not track or index is None or len(track) < 2:
+        return None
+
+    def _has(p):
+        return p.get('e_m') is not None and p.get('dist_m') is not None
+
+    n = len(track)
+    i = max(0, min(index, n - 1))
+    if not _has(track[i]):
+        return None
+    lo = hi = i
+    # Expand symmetrically until the span covers min_window_m (or we hit an end).
+    while (track[hi]['dist_m'] - track[lo]['dist_m']) < min_window_m and (lo > 0 or hi < n - 1):
+        if lo > 0:
+            lo -= 1
+        if hi < n - 1:
+            hi += 1
+    if not (_has(track[lo]) and _has(track[hi])):
+        return None
+    run_m = track[hi]['dist_m'] - track[lo]['dist_m']
+    if run_m <= 0:
+        return None
+    rise_m = track[hi]['e_m'] - track[lo]['e_m']
+    return round((rise_m / run_m) * 100, 1)
+
+
 def moving_stopped(points):
     """(moving_min, stopped_min) from an ordered position history.
 
