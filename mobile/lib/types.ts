@@ -204,8 +204,12 @@ export interface LivePositionNextControl {
   type: string | null;
   distance_mi: number | null;         // cumulative distance of the control
   dist_to_go_mi: number | null;
+  arrival_time_min?: number | null;   // plan's reaching time (not departure)
   eta_iso: string | null;
-  eta_label: string | null;           // club-local clock, e.g. "3:45 PM"
+  eta_label: string | null;           // club-local clock, e.g. "3:45 PM" — ARRIVAL time
+  // Speed needed to reach the control at the plan's arrival; null when behind.
+  required_mph?: number | null;
+  behind?: boolean;                   // plan's arrival time already passed
 }
 
 export interface LivePositionRemaining {
@@ -222,8 +226,21 @@ export interface LivePositionTelemetry {
   now: LivePositionTelemetryNow;
   remaining: LivePositionRemaining | null;
   next_control?: LivePositionNextControl | null;
-  plan: { delta_min: number; status: 'ahead' | 'behind' | 'on' } | null;
+  // banked_min = delta_min surfaced explicitly (banked vs the plan).
+  plan: { delta_min: number; banked_min?: number; status: 'ahead' | 'behind' | 'on' } | null;
+  // Time banked vs the brevet cutoff (OTL margin) and vs the plan; either may be null.
+  time_banked_cutoff_min?: number | null;
+  time_banked_plan_min?: number | null;
   detailed_after_ride: boolean;
+}
+
+/** Top-level route-ahead chart series on the positions response (static per ride).
+ *  Aligned arrays keyed by distance (mi); series are null when unavailable. */
+export interface LiveChartData {
+  labels: number[];                   // distance (mi)
+  elevation_ft: number[] | null;
+  headwind_mph: number[] | null;      // + head / − tail
+  temperature_f: number[] | null;
 }
 
 /** GET /api/ride/<id>/route — RWGPS route polyline as [[lng,lat],...]. */
@@ -255,4 +272,12 @@ export interface PositionsResponse {
   positions: LivePosition[];
   stale_after_minutes: number;
   server_time: string;
+  chart_data?: LiveChartData | null;   // route-ahead charts; null when no route
+}
+
+/** What useLivePositions exposes to the screen — the positions array plus the
+ *  top-level chart_data (which a positions-only projection would otherwise drop). */
+export interface LivePositionsResult {
+  positions: LivePosition[];
+  chart_data: LiveChartData | null;
 }

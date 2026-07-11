@@ -16,7 +16,8 @@ import { useLivePositions } from '../../hooks/useLivePositions';
 import { useRideRoute } from '../../hooks/useRideRoute';
 import { useSharing } from '../../hooks/useSharing';
 import { startSharing, stopSharing, isSharing } from '../../location/backgroundLocation';
-import type { LivePosition } from '../../lib/types';
+import { WeatherChart } from '../../components/WeatherChart';
+import type { LivePosition, LiveChartData } from '../../lib/types';
 
 const FALLBACK_REGION: Region = {
   latitude: 37.3, longitude: -121.9, latitudeDelta: 0.4, longitudeDelta: 0.4,
@@ -39,6 +40,55 @@ const hm = (v: number | null | undefined): string => {
   const h = Math.floor(total / 60), m = total % 60;
   return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
 };
+
+// Signed "time banked": +Xh YYm in hand, −Xh YYm behind. '—' when unknown.
+const fmtBank = (v: number | null | undefined): string =>
+  v == null ? '—' : `${v < 0 ? '−' : '+'}${hm(v)}`;
+
+// Nearest chart index (into `labels`, distance in mi) for a rider's mileage.
+function nearestIndex(labels: number[], mi: number | null | undefined): number {
+  if (mi == null || !labels.length) return -1;
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < labels.length; i++) {
+    const d = Math.abs(labels[i] - mi);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
+
+const RED = '#dc2626', GREEN = '#16a34a';
+
+/** Route-ahead charts (elevation / headwind / temperature) with a vertical marker
+ *  at each on-route rider's current position — mirrors the web live page and reuses
+ *  the weather page's WeatherChart (react-native-svg, no new native dependency). */
+function LiveCharts({ chart, positions }: { chart: LiveChartData; positions: LivePosition[] }) {
+  const labels = chart.labels ?? [];
+  if (labels.length < 2) return null;
+  const markers = positions
+    .filter((p) => p.telemetry?.now?.distance_mi != null)
+    .map((p) => ({ index: nearestIndex(labels, p.telemetry?.now?.distance_mi), color: p.plan_color ?? p.color }));
+  return (
+    <View>
+      <Text style={styles.chartsTitle}>Route ahead</Text>
+      {chart.elevation_ft ? (
+        <WeatherChart title="Elevation" unit="ft" labels={labels} markers={markers}
+          series={[{ data: chart.elevation_ft, color: '#15803d', fill: true }]} />
+      ) : null}
+      {chart.headwind_mph ? (
+        <WeatherChart title="Headwind / Tailwind" unit="mph" labels={labels} baseline={0} markers={markers}
+          series={[
+            { data: chart.headwind_mph.map((v) => (v > 0 ? v : 0)), color: RED, fill: true },
+            { data: chart.headwind_mph.map((v) => (v < 0 ? v : 0)), color: GREEN, fill: true },
+          ]}
+          legend={[{ label: 'headwind', color: RED }, { label: 'tailwind', color: GREEN }]} />
+      ) : null}
+      {chart.temperature_f ? (
+        <WeatherChart title="Temperature" unit="°F" labels={labels} markers={markers}
+          series={[{ data: chart.temperature_f, color: '#f59e0b', fill: true }]} />
+      ) : null}
+    </View>
+  );
+}
 
 function planBadge(p: LivePosition): { text: string; color: string } | null {
   const t = p.telemetry;
@@ -101,11 +151,19 @@ function RiderCard({ p }: { p: LivePosition }) {
           {rem.headwind_ahead_label ? <Metric label="wind ahead" value={rem.headwind_ahead_label} /> : null}
         </View>
       ) : null}
+      {t && (t.time_banked_cutoff_min != null || t.time_banked_plan_min != null) ? (
+        <View style={styles.metricRow}>
+          <Metric label="banked (cutoff)" value={fmtBank(t.time_banked_cutoff_min)} />
+          <Metric label="banked (plan)" value={fmtBank(t.time_banked_plan_min)} />
+        </View>
+      ) : null}
       {nc ? (
         <View style={styles.nextControl}>
           <Text style={styles.nextControlName}>Next: {(nc.name || 'control').replace(', CA', '')}</Text>
           <View style={styles.metricRow}>
-            <Metric label="ETA (plan)" value={nc.eta_label ?? '—'} />
+            <Metric label="ETA (arrival)" value={nc.eta_label ?? '—'} />
+            {/* Speed to hit the plan's arrival; em-dash when behind. */}
+            <Metric label="req speed" value={nc.required_mph != null ? n(nc.required_mph, ' mph') : '—'} />
             {nc.dist_to_go_mi != null ? <Metric label="to go" value={n(nc.dist_to_go_mi, ' mi')} /> : null}
             {nc.distance_mi != null ? <Metric label="at" value={n(nc.distance_mi, ' mi')} /> : null}
           </View>
@@ -120,7 +178,9 @@ export default function RideLiveScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const rideId = parseInt(String(params.id), 10);
   const router = useRouter();
-  const { data: positions, isLoading } = useLivePositions(rideId);
+  const { data, isLoading } = useLivePositions(rideId);
+  const positions = data?.positions ?? null;
+  const chartData = data?.chart_data ?? null;
   const { data: route, isLoading: routeLoading } = useRideRoute(rideId);
   const { enabled } = useSharing();   // global account consent (Settings)
 
@@ -242,6 +302,7 @@ export default function RideLiveScreen() {
         {isLoading ? <ActivityIndicator style={{ marginTop: 16 }} /> : null}
         {(positions ?? []).map((p) => <RiderCard key={p.rider_id} p={p} />)}
         {!isLoading && !(positions ?? []).length ? <Text style={styles.empty}>No live riders yet.</Text> : null}
+        {chartData ? <LiveCharts chart={chartData} positions={positions ?? []} /> : null}
       </ScrollView>
     </View>
   );
@@ -296,4 +357,5 @@ const styles = StyleSheet.create({
   metricLbl: { fontSize: 10, color: '#6b7280', textTransform: 'uppercase' },
   afterRide: { fontStyle: 'italic', color: '#6b7280', fontSize: 11, marginTop: 8 },
   empty: { color: '#6b7280', textAlign: 'center', marginTop: 16 },
+  chartsTitle: { fontSize: 15, fontWeight: '800', color: '#1a365d', marginTop: 6, marginBottom: 8 },
 });
