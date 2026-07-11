@@ -638,6 +638,17 @@ PLAN_OWN = 'own'
 PLAN_BASE = 'base'
 
 
+def _own_lens_available(allowed_custom_ids, viewer_rider_id):
+    """Whether the 'own' (each-rider's-own) lens may be OFFERED and RESOLVED.
+
+    'own' grades every rider against THEIR OWN (possibly private) custom plan, so it
+    must be available only to a logged-in member who already has at least one VISIBLE
+    custom plan (public or their own). Gating both the selector offer AND the resolver
+    on this single predicate is what stops a crafted ?plan_id=own from bypassing the
+    allow-set into per-rider private-plan grading when 'own' was deliberately withheld."""
+    return bool(allowed_custom_ids and viewer_rider_id)
+
+
 def _available_plans(base_plan_id, viewer_rider_id):
     """Assemble the AUTHORIZATION allow-set AND the selector's option list in one.
 
@@ -690,13 +701,12 @@ def _available_plans(base_plan_id, viewer_rider_id):
             current_app.logger.warning('live: own custom plan lookup failed for rider %s',
                                        viewer_rider_id, exc_info=True)
 
-    # Offer the "each rider's own plan" lens only to a logged-in MEMBER, and only
-    # when there IS a custom plan to distinguish it from base. 'own' grades every
-    # rider against THEIR OWN (possibly private) custom plan, so a guest must never
-    # get it — that would expose per-rider private-plan timing. Guests still see
-    # base + public named plans. Without a custom plan the ride is effectively
+    # Offer the "each rider's own plan" lens only when it is actually available (a
+    # member with at least one visible custom plan). The resolver gates on the SAME
+    # predicate, so a lens that isn't offered here can never be resolved. Guests still
+    # see base + public named plans; a ride with no visible custom plan is effectively
     # single-plan (no selector shown).
-    if allowed_custom_ids and viewer_rider_id:
+    if _own_lens_available(allowed_custom_ids, viewer_rider_id):
         options.append({'id': PLAN_OWN, 'name': "Each rider's own plan",
                         'owner': None, 'is_custom': False})
     return options, allowed_custom_ids
@@ -722,9 +732,13 @@ def _selected_plan_stops(requested_plan_id, ctx, allowed_custom_ids, is_member=F
     if requested_plan_id is None or requested_plan_id == '' or requested_plan_id == PLAN_BASE:
         return PLAN_BASE, base_stops
     if requested_plan_id == PLAN_OWN:
-        if not is_member:
-            # Guests may not re-enable per-rider (private-plan) grading.
-            current_app.logger.warning("live: rejected 'own' lens for guest → base fallback")
+        # 'own' is resolvable ONLY when it was actually offered — a member with at
+        # least one visible custom plan (the same predicate _available_plans offers it
+        # on). A guest, or a member for whom 'own' was withheld (no visible custom
+        # plan), gets the base plan — so a crafted ?plan_id=own can never fall into
+        # per-rider grading that reads other riders' private custom plans.
+        if not _own_lens_available(allowed_custom_ids, is_member):
+            current_app.logger.warning("live: rejected 'own' lens not in allow-set → base fallback")
             return PLAN_BASE, base_stops
         return PLAN_OWN, None
 

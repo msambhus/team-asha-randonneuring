@@ -95,18 +95,31 @@ def test_selected_plan_stops_base_and_own(app):
     with app.app_context():
         assert _selected_plan_stops(None, ctx, set()) == (PLAN_BASE, _BASE)
         assert _selected_plan_stops('base', ctx, set()) == (PLAN_BASE, _BASE)
-        # 'own' is a member-only lens → each rider keeps their own plan.
-        applied, stops = _selected_plan_stops('own', ctx, set(), is_member=True)
+        # 'own' resolves only when it was OFFERED — a member WITH a visible custom
+        # plan (allow-set non-empty). Then each rider keeps their own plan.
+        applied, stops = _selected_plan_stops('own', ctx, {11}, is_member=True)
     assert applied == PLAN_OWN and stops is None
 
 
 def test_selected_plan_stops_own_rejected_for_guest(app):
     """AUTHORIZATION: a guest (is_member False) requesting the 'own' lens falls back to
-    the base plan — never per-rider (private-plan) grading."""
+    the base plan — never per-rider (private-plan) grading — even when public plans
+    exist (allow-set non-empty)."""
     from routes.live import _selected_plan_stops, PLAN_BASE
     ctx = {'plan_stops': _BASE}
     with app.app_context():
-        applied, stops = _selected_plan_stops('own', ctx, set(), is_member=False)
+        applied, stops = _selected_plan_stops('own', ctx, {11}, is_member=False)
+    assert applied == PLAN_BASE and stops is _BASE
+
+
+def test_selected_plan_stops_own_rejected_when_not_offered(app):
+    """COUNCIL FIX: a member for whom 'own' was WITHHELD (no visible custom plan →
+    empty allow-set) cannot craft ?plan_id=own into per-rider private grading; it
+    falls back to base. Offer and resolution share one predicate, so they can't drift."""
+    from routes.live import _selected_plan_stops, PLAN_BASE
+    ctx = {'plan_stops': _BASE}
+    with app.app_context():
+        applied, stops = _selected_plan_stops('own', ctx, set(), is_member=True)
     assert applied == PLAN_BASE and stops is _BASE
 
 
@@ -255,6 +268,24 @@ def test_positions_guest_own_lens_falls_back_to_base(client):
     per_rider.assert_not_called()                   # per-rider grading never engaged
     assert body['selected_plan_id'] == 'base'
     assert 'own' not in [p['id'] for p in body['plans']]   # 'own' withheld from guests
+
+
+def test_positions_member_own_rejected_when_not_offered(client):
+    """COUNCIL FIX (endpoint): a MEMBER on a ride with NO visible custom plans is not
+    offered 'own', so a crafted ?plan_id=own falls back to base and never triggers
+    the per-rider branch that would read other riders' PRIVATE custom plans."""
+    _login(client, rider_id=7)
+    ctx = _arrival_ctx(_now() - timedelta(minutes=5))
+    with patch('routes.live.get_latest_positions_for_ride', return_value=[_row()]), \
+         patch('routes.live._ride_live_context', return_value=ctx), \
+         patch('routes.live.get_positions_for_rider_since', return_value=[]), \
+         patch('models.get_public_custom_plans', return_value=[]), \
+         patch('models.get_custom_plan', return_value=None), \
+         patch('routes.live._rider_plan_stops') as per_rider:
+        body = client.get('/api/live/positions?ride_id=5&plan_id=own').get_json()
+    per_rider.assert_not_called()                   # per-rider private grading never engaged
+    assert body['selected_plan_id'] == 'base'       # withheld 'own' → base fallback
+    assert 'own' not in [p['id'] for p in body['plans']]
 
 
 def test_positions_no_sharers_still_returns_plans_charts_and_controls(client):
