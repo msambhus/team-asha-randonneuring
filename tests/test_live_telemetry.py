@@ -289,6 +289,74 @@ def test_next_control_none_when_past_last_or_no_plan():
     assert tlm.next_control(None, _PLAN_STOPS) is None
 
 
+# arrival_time_min (= cum − stop_duration) is the REACHING time — distinct from
+# cum_time_min for a control with a break, and the basis for the live ETA.
+_PLAN_STOPS_WITH_BREAK = [
+    {'distance_miles': 0, 'cum_time_min': 0, 'arrival_time_min': 0,
+     'location': 'Start', 'stop_type': 'start'},
+    {'distance_miles': 25, 'cum_time_min': 135, 'arrival_time_min': 120,
+     'location': 'Control 1', 'stop_type': 'control'},   # 15-min break here
+    {'distance_miles': 60, 'cum_time_min': 315, 'arrival_time_min': 300,
+     'location': 'Control 2', 'stop_type': 'control'},
+]
+
+
+def test_next_control_returns_arrival_time_distinct_from_cum():
+    nc = tlm.next_control(10, _PLAN_STOPS_WITH_BREAK)     # heading to Control 1
+    assert nc['location'] == 'Control 1'
+    # ETA basis is arrival (120), NOT departure (cum 135) — earlier by the break.
+    assert nc['arrival_time_min'] == 120
+    assert nc['cum_time_min'] == 135
+    assert nc['arrival_time_min'] < nc['cum_time_min']
+
+
+def test_next_control_arrival_falls_back_to_cum_when_absent():
+    # Legacy cached stop without arrival_time_min → arrival falls back to cum.
+    nc = tlm.next_control(30, _PLAN_STOPS)                # _PLAN_STOPS has no arrival
+    assert nc['arrival_time_min'] == nc['cum_time_min'] == 300
+
+
+# ── required_speed_mph ─────────────────────────────────────────────────────
+
+def test_required_speed_normal():
+    # 30 mi to go, plan arrival at 240 min, elapsed 120 → 2 h window → 15 mph.
+    mph, behind = tlm.required_speed_mph(30, 240, 120)
+    assert mph == 15.0 and behind is False
+
+
+def test_required_speed_behind_when_window_nonpositive():
+    # Arrival already passed → behind, no negative / no divide-by-zero.
+    mph, behind = tlm.required_speed_mph(10, 100, 130)
+    assert mph is None and behind is True
+
+
+def test_required_speed_zero_window_is_behind_not_zerodiv():
+    # Exactly at the arrival time (window == 0) must not raise ZeroDivisionError.
+    mph, behind = tlm.required_speed_mph(5, 120, 120)
+    assert mph is None and behind is True
+
+
+def test_required_speed_none_inputs():
+    assert tlm.required_speed_mph(None, 100, 50) == (None, False)
+    assert tlm.required_speed_mph(10, None, 50) == (None, False)
+    assert tlm.required_speed_mph(10, 100, None) == (None, False)
+
+
+# ── time_banked_cutoff_min ─────────────────────────────────────────────────
+
+def test_time_banked_cutoff_positive_and_negative():
+    # 100 mi into a 200 mi / 20 h ride → cutoff clock 600 min at that distance.
+    assert tlm.time_banked_cutoff_min(100, 500, 200, 20) == 100   # 100 min in hand
+    assert tlm.time_banked_cutoff_min(100, 700, 200, 20) == -100  # 100 min over
+
+
+def test_time_banked_cutoff_none_without_cutoff_or_distance():
+    assert tlm.time_banked_cutoff_min(100, 500, 200, None) is None   # no cutoff
+    assert tlm.time_banked_cutoff_min(100, 500, 0, 20) is None       # no plan distance
+    assert tlm.time_banked_cutoff_min(None, 500, 200, 20) is None
+    assert tlm.time_banked_cutoff_min(100, None, 200, 20) is None
+
+
 # A short 3-point profile: flat, then a 10 m climb over 100 m (10% grade).
 _GRADE_TRACK = [
     {'dist_m': 0, 'e_m': 100.0},

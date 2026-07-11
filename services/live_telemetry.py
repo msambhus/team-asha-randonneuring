@@ -15,6 +15,7 @@ from services.rwgps import _compute_difficulty_score
 
 METERS_TO_MILES = 1 / 1609.344
 METERS_TO_FEET = 3.28084
+KMH_TO_MPH = 0.621371
 
 # Below this ground speed (m/s) a rider is considered stopped (~1.8 km/h).
 STOPPED_SPEED_MS = 0.5
@@ -324,10 +325,16 @@ def next_control(current_dist_miles, plan_stops):
     """The next plan stop ahead of the rider — for a live "next control + ETA".
 
     `plan_stops` is a list of stop dicts with at least distance_miles and
-    cum_time_min, and (when available) location and stop_type. Returns the first
-    stop strictly ahead of the rider's current distance, skipping the 'start':
-    {location, stop_type, distance_miles, cum_time_min, dist_to_go_mi}, or None
-    when there is no plan or nothing ahead (rider past the last stop).
+    cum_time_min, and (when available) location, stop_type and arrival_time_min.
+    Returns the first stop strictly ahead of the rider's current distance,
+    skipping the 'start': {location, stop_type, distance_miles, cum_time_min,
+    arrival_time_min, dist_to_go_mi}, or None when there is no plan or nothing
+    ahead (rider past the last stop).
+
+    `arrival_time_min` (= cum_time_min − stop_duration_min) is the plan's REACHING
+    time at the control, i.e. before the break there — the correct basis for the
+    live "next control ETA". When a stop carries no arrival_time_min (legacy cached
+    context) it falls back to cum_time_min so the ETA still resolves.
     """
     if not plan_stops or current_dist_miles is None:
         return None
@@ -344,13 +351,50 @@ def next_control(current_dist_miles, plan_stops):
     if not ahead:
         return None
     dm, s = min(ahead, key=lambda x: x[0])
+    arrival = s.get('arrival_time_min')
+    arrival = round(float(arrival)) if arrival is not None else round(float(s['cum_time_min']))
     return {
         'location': s.get('location') or None,
         'stop_type': s.get('stop_type') or None,
         'distance_miles': round(dm, 1),
         'cum_time_min': round(float(s['cum_time_min'])),
+        'arrival_time_min': arrival,
         'dist_to_go_mi': round(max(0.0, dm - current_dist_miles), 1),
     }
+
+
+def required_speed_mph(dist_to_go_mi, arrival_time_min, elapsed_min):
+    """Average speed (mph) the rider must hold to reach the next control at the
+    plan's SCHEDULED ARRIVAL time. Returns (required_mph, behind):
+
+      - required_mph: dist_to_go_mi / ((arrival_time_min − elapsed_min)/60),
+        rounded; None when an input is missing or the window is non-positive.
+      - behind: True when the plan's arrival time has already passed
+        (arrival_time_min − elapsed_min ≤ 0), so a renderer shows an em-dash /
+        "behind" indicator rather than a divide-by-zero or a negative speed.
+    """
+    if dist_to_go_mi is None or arrival_time_min is None or elapsed_min is None:
+        return None, False
+    window_min = arrival_time_min - elapsed_min
+    if window_min <= 0:
+        return None, True
+    return round(dist_to_go_mi / (window_min / 60.0), 1), False
+
+
+def time_banked_cutoff_min(current_dist_miles, elapsed_min, total_mi, cutoff_hours):
+    """Minutes in hand vs the brevet CUTOFF (OTL margin) at the rider's current
+    distance: the interpolated cutoff clock there minus elapsed. Positive = margin
+    before going over the time limit.
+
+    cutoff_at_dist = (dist / total_mi) × cutoff_hours × 60 — a linear pro-rata of
+    the overall time allowance, matching the plan page's per-stop time-bank bookend.
+    Returns None when the ride has no cutoff or the plan distance is unknown/zero.
+    """
+    if (current_dist_miles is None or elapsed_min is None
+            or not cutoff_hours or not total_mi or total_mi <= 0):
+        return None
+    cutoff_at_dist = (current_dist_miles / total_mi) * cutoff_hours * 60.0
+    return round(cutoff_at_dist - elapsed_min)
 
 
 def grade_at(track, index, min_window_m=140.0):
