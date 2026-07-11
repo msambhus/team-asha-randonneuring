@@ -11,6 +11,12 @@ from services.weather import (
     sample_track_points, calculate_bearing, headwind_component,
     get_cached_route_weather, format_weather_response,
     wind_label, wmo_to_text, wmo_to_icon, get_hour_index, _safe_get,
+    # Segment/chart builders now live in services.weather so the live map can
+    # reuse the identical time-aware pipeline (imported here so the weather page's
+    # behavior and this module's public helpers are unchanged).
+    build_arrival_interpolator, build_weather_segments, build_chart_data,
+    _c_to_f, _kmh_to_mph, _km_to_mi, _interpolate_elevation,
+    _KMH_TO_MPH, _M_TO_FT,
 )
 from cache import cache
 
@@ -27,102 +33,6 @@ _POLYLINE_DECIMATION = 20
 # Sampling intervals
 _TABLE_INTERVAL_M = 25000   # 25km (~16 mi) between table rows
 _MAP_INTERVAL_M = 15000     # 15km between map arrows
-
-# Unit conversion
-_KMH_TO_MPH = 0.621371
-_MI_TO_M = 1609.344
-_M_TO_FT = 3.28084
-_AVG_SPEED_KMH = 22  # for arrival-time estimation
-
-
-def _c_to_f(c):
-    """Celsius to Fahrenheit."""
-    return round(c * 9 / 5 + 32, 1)
-
-
-def _kmh_to_mph(kmh):
-    """km/h to mph."""
-    return round(kmh * _KMH_TO_MPH, 1)
-
-
-def _km_to_mi(km):
-    """Kilometers to miles."""
-    return round(km * 0.621371, 1)
-
-
-def _interpolate_elevation(track_points, distance_m):
-    """Interpolate elevation (ft) at a given distance along the route."""
-    if not track_points:
-        return 0
-    prev = track_points[0]
-    for pt in track_points[1:]:
-        d = pt.get('d', 0) or 0
-        if d >= distance_m:
-            prev_d = prev.get('d', 0) or 0
-            prev_e = prev.get('e', 0) or 0
-            cur_e = pt.get('e', 0) or 0
-            seg_len = d - prev_d
-            if seg_len > 0:
-                frac = (distance_m - prev_d) / seg_len
-                elev_m = prev_e + frac * (cur_e - prev_e)
-            else:
-                elev_m = cur_e
-            return round(elev_m * _M_TO_FT)
-        prev = pt
-    last_e = track_points[-1].get('e', 0) or 0
-    return round(last_e * _M_TO_FT)
-
-
-def _build_arrival_interpolator(plan_stops, start_dt):
-    """Build a function that returns arrival datetime for a given distance_m.
-
-    Uses the plan's cumulative stop times (segment speeds + break durations)
-    to interpolate arrival time at any point along the route, rather than
-    assuming a flat speed.
-
-    plan_stops: list of dicts with 'distance_miles' and 'cum_time_min'
-    start_dt: datetime of ride start
-    """
-    # Build sorted list of (distance_m, cum_time_min) pairs
-    points = []
-    for s in plan_stops:
-        dist_mi = float(s.get('distance_miles') or 0)
-        cum_min = float(s.get('cum_time_min') or 0)
-        points.append((dist_mi * _MI_TO_M, cum_min))
-
-    if not points:
-        return None
-
-    # Sort by distance (should already be sorted, but be safe)
-    points.sort(key=lambda p: p[0])
-
-    def interpolate(distance_m):
-        """Return estimated arrival datetime at this distance."""
-        # Before first stop
-        if distance_m <= points[0][0]:
-            return start_dt + timedelta(minutes=points[0][1])
-
-        # After last stop — extrapolate using last segment speed
-        if distance_m >= points[-1][0]:
-            return start_dt + timedelta(minutes=points[-1][1])
-
-        # Interpolate between stops
-        for j in range(1, len(points)):
-            if points[j][0] >= distance_m:
-                d0, t0 = points[j - 1]
-                d1, t1 = points[j]
-                seg_len = d1 - d0
-                if seg_len > 0:
-                    frac = (distance_m - d0) / seg_len
-                    cum_min = t0 + frac * (t1 - t0)
-                else:
-                    cum_min = t1
-                return start_dt + timedelta(minutes=cum_min)
-
-        return start_dt + timedelta(minutes=points[-1][1])
-
-    return interpolate
-
 
 def _load_plan_stops(plan_slug, rider_id=None):
     """Load plan stops for arrival time interpolation.
@@ -162,94 +72,6 @@ def _load_plan_stops(plan_slug, rider_id=None):
         d['cum_time_min'] = cum_time
         stops.append(d)
     return stops, plan.get('name', '')
-
-
-def _build_weather_segments(sample_points, weather_data, bearings, start_dt,
-                            speed_mph=None, track_points=None, arrival_fn=None):
-    """Build weather segments with imperial units, chart-ready fields, and elevation.
-
-    arrival_fn: function(distance_m) -> datetime. If provided, uses plan-aware
-                arrival times instead of flat speed. Falls back to flat speed if None.
-    track_points: RWGPS track points for elevation interpolation (optional).
-    """
-    speed_kmh = (speed_mph / _KMH_TO_MPH) if speed_mph else _AVG_SPEED_KMH
-    segments = []
-    for i in range(len(weather_data)):
-        if i >= len(sample_points):
-            break
-
-        pt = sample_points[i]
-        forecast = weather_data[i]
-        hourly = forecast.get('hourly', {})
-        times = hourly.get('time', [])
-
-        # Use plan-aware arrival time if available, else flat speed
-        if arrival_fn:
-            arrival = arrival_fn(pt['distance_m'])
-        else:
-            dist_km = pt['distance_m'] / 1000
-            hours_to_arrive = dist_km / speed_kmh if speed_kmh > 0 else 0
-            arrival = start_dt + timedelta(hours=hours_to_arrive)
-
-        idx = get_hour_index(times, arrival)
-
-        temp_c = _safe_get(hourly, 'temperature_2m', idx, 0.0)
-        feels_c = _safe_get(hourly, 'apparent_temperature', idx, temp_c)
-        wind_speed_kmh = _safe_get(hourly, 'wind_speed_10m', idx, 0.0)
-        wind_gust_kmh = _safe_get(hourly, 'wind_gusts_10m', idx, 0.0)
-        wind_dir = _safe_get(hourly, 'wind_direction_10m', idx, 0)
-        precip = _safe_get(hourly, 'precipitation_probability', idx, 0)
-        precip_mm = _safe_get(hourly, 'precipitation', idx, 0.0)
-        cloud = _safe_get(hourly, 'cloud_cover', idx, 0)
-        humidity = _safe_get(hourly, 'relative_humidity_2m', idx, 0)
-        wmo_code = _safe_get(hourly, 'weather_code', idx, 0)
-
-        bearing = bearings[i] if i < len(bearings) else (bearings[-1] if bearings else 0)
-        hw_kmh = headwind_component(wind_speed_kmh, wind_dir, bearing)
-
-        elev_ft = _interpolate_elevation(track_points, pt['distance_m']) if track_points else 0
-
-        segments.append({
-            'distance_mi': _km_to_mi(pt['distance_m'] / 1000),
-            'arrival_time': arrival.strftime('%-I:%M %p'),
-            'temperature_f': _c_to_f(temp_c),
-            'feels_like_f': _c_to_f(feels_c),
-            'wind_speed_mph': _kmh_to_mph(wind_speed_kmh),
-            'wind_gust_mph': _kmh_to_mph(wind_gust_kmh),
-            'wind_direction_deg': wind_dir,
-            'headwind_mph': _kmh_to_mph(hw_kmh),
-            'wind_label': wind_label(hw_kmh),
-            'precip_percent': precip,
-            'precipitation_mm': round(precip_mm, 1),
-            'cloud_cover': cloud,
-            'humidity': humidity,
-            'conditions': wmo_to_text(wmo_code),
-            'conditions_icon': wmo_to_icon(wmo_code),
-            'elevation_ft': elev_ft,
-            'lat': pt['lat'],
-            'lng': pt['lng'],
-            'rider_bearing_deg': bearing,
-        })
-
-    return segments
-
-
-def _build_chart_data(segments):
-    """Extract arrays from segments for Chart.js rendering."""
-    return {
-        'labels': [s['distance_mi'] for s in segments],
-        'times': [s['arrival_time'] for s in segments],
-        'temperature_f': [s['temperature_f'] for s in segments],
-        'feels_like_f': [s['feels_like_f'] for s in segments],
-        'wind_speed_mph': [s['wind_speed_mph'] for s in segments],
-        'wind_gust_mph': [s['wind_gust_mph'] for s in segments],
-        'headwind_mph': [s['headwind_mph'] for s in segments],
-        'precip_probability': [s['precip_percent'] for s in segments],
-        'precipitation_mm': [s['precipitation_mm'] for s in segments],
-        'cloud_cover': [s['cloud_cover'] for s in segments],
-        'elevation_ft': [s['elevation_ft'] for s in segments],
-        'humidity': [s['humidity'] for s in segments],
-    }
 
 
 @weather_bp.route('/weather')
@@ -342,7 +164,7 @@ def build_weather_payload(route_id, start_dt, speed_mph=None, plan_slug=None,
         try:
             plan_stops, plan_name = _load_plan_stops(plan_slug, rider_id)
             if plan_stops:
-                arrival_fn = _build_arrival_interpolator(plan_stops, start_dt)
+                arrival_fn = build_arrival_interpolator(plan_stops, start_dt)
                 plan_source = 'custom' if rider_id and plan_name else 'base'
                 logger.info("Using %s plan '%s' timing (%d stops) for route %s",
                             plan_source, plan_name, len(plan_stops), route_id)
@@ -350,7 +172,7 @@ def build_weather_payload(route_id, start_dt, speed_mph=None, plan_slug=None,
             logger.exception("Failed to load plan %s, falling back to speed-based timing", plan_slug)
 
     # Build all segments with elevation and expanded weather fields
-    map_segments = _build_weather_segments(
+    map_segments = build_weather_segments(
         map_sample, weather_data, map_bearings, start_dt,
         speed_mph, track_points, arrival_fn)
 
@@ -361,7 +183,7 @@ def build_weather_payload(route_id, start_dt, speed_mph=None, plan_slug=None,
         table_segments.append(map_segments[-1])
 
     # Chart data from dense map segments
-    chart_data = _build_chart_data(map_segments)
+    chart_data = build_chart_data(map_segments)
 
     temps_f = [s['temperature_f'] for s in table_segments]
 

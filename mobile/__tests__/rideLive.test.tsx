@@ -10,7 +10,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react-native';
 import RideLiveScreen from '../app/ride/[id]';
 import * as useLivePositionsHook from '../hooks/useLivePositions';
-import type { LivePosition, LiveChartData } from '../lib/types';
+import type { LivePosition, LiveChartData, LivePlanOption, UpcomingControl } from '../lib/types';
 
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -78,9 +78,22 @@ function rider(over: Partial<LivePosition>): LivePosition {
   };
 }
 
-function mockPositions(positions: LivePosition[], chart_data: LiveChartData | null) {
+const PLANS: LivePlanOption[] = [
+  { id: 'base', name: 'Base plan', owner: null, is_custom: false },
+  { id: 11, name: 'Fast', owner: 'Alice', is_custom: true },
+  { id: 'own', name: "Each rider's own plan", owner: null, is_custom: false },
+];
+const UPCOMING: UpcomingControl[] = [
+  { name: 'Control 1, CA', type: 'control', distance_mi: 10, arrival_time_min: 90,
+    eta_iso: null, eta_label: '9:30 AM' },
+];
+
+type Extra = { plans?: LivePlanOption[]; selected_plan_id?: number | 'base' | 'own' | null; upcoming_controls?: UpcomingControl[] };
+
+function mockPositions(positions: LivePosition[], chart_data: LiveChartData | null, extra: Extra = {}) {
   jest.spyOn(useLivePositionsHook, 'useLivePositions').mockReturnValue({
-    data: { positions, chart_data }, isLoading: false,
+    data: { positions, chart_data, plans: [], selected_plan_id: null, upcoming_controls: [], ...extra },
+    isLoading: false,
   } as never);
 }
 
@@ -124,7 +137,54 @@ describe('RideLiveScreen', () => {
     mockPositions([rider({})], null);
     render(<RideLiveScreen />);
     expect(screen.queryByText(/Route ahead/)).toBeNull();
-    // The rider card still renders.
+    // The rider card still renders (default rider has only a next-control block).
     expect(screen.getByText('ETA (arrival)')).toBeTruthy();
+  });
+
+  it('renders the plan selector when the ride has multiple plans (item 1)', () => {
+    mockPositions([rider({})], CHART, { plans: PLANS, selected_plan_id: 'base' });
+    render(<RideLiveScreen />);
+    expect(screen.getByText('Base plan')).toBeTruthy();
+    expect(screen.getByText('Fast · Alice')).toBeTruthy();       // owner shown
+    expect(screen.getByText("Each rider's own plan")).toBeTruthy();
+  });
+
+  it('shows a base-plan label and no selector for a single-plan ride', () => {
+    mockPositions([rider({})], CHART,
+      { plans: [{ id: 'base', name: 'Base plan', owner: null, is_custom: false }], selected_plan_id: 'base' });
+    render(<RideLiveScreen />);
+    expect(screen.getByText('base plan')).toBeTruthy();          // the strong label text
+  });
+
+  it('renders the shared upcoming-controls list once, not per rider (item 2)', () => {
+    mockPositions([rider({}), rider({ rider_id: 8, name: 'Bob Rider' })], CHART,
+      { upcoming_controls: UPCOMING });
+    render(<RideLiveScreen />);
+    expect(screen.getByText('Upcoming controls')).toBeTruthy();
+    expect(screen.getByText('Control 1')).toBeTruthy();          // ', CA' stripped
+    expect(screen.getAllByText('9:30 AM')).toHaveLength(1);      // one ride-level entry
+  });
+
+  it('shows speed to finish alongside speed to next control (item 3)', () => {
+    const p = rider({});
+    p.telemetry!.finish = { name: 'Finish', type: 'finish', distance_mi: 60, dist_to_go_mi: 55,
+      arrival_time_min: 200, eta_iso: null, eta_label: '5:00 PM', required_mph: 14, behind: false };
+    mockPositions([p], CHART);
+    render(<RideLiveScreen />);
+    expect(screen.getByText('To finish')).toBeTruthy();
+    expect(screen.getByText('5:00 PM')).toBeTruthy();
+    expect(screen.getByText('14 mph')).toBeTruthy();
+    // Both the next-control and the finish req-speed cells are present.
+    expect(screen.getAllByText('req speed')).toHaveLength(2);
+  });
+
+  it('shows an em-dash for speed to finish when the rider is behind (item 3)', () => {
+    const p = rider({});
+    p.telemetry!.finish = { name: 'Finish', type: 'finish', distance_mi: 60, dist_to_go_mi: 55,
+      arrival_time_min: 200, eta_iso: null, eta_label: '5:00 PM', required_mph: null, behind: true };
+    mockPositions([p], CHART);
+    render(<RideLiveScreen />);
+    expect(screen.getByText('To finish')).toBeTruthy();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 });

@@ -402,34 +402,42 @@ def test_positions_chart_data_null_without_route(client):
     assert body['positions'][0]['telemetry']['on_route'] is None
 
 
-def test_build_live_chart_data_aligns_series():
-    """_build_live_chart_data produces equal-length labels/elevation/headwind/temp
-    from the track + wind samples; elevation from e_m, wind interpolated onto it."""
+def test_build_live_chart_data_from_weather_pipeline():
+    """chart_data is sourced from the SAME time-aware weather pipeline as the weather
+    page — sample → fetch_route_weather → arrival-hour selection — NOT a
+    current-conditions sampler. Returns aligned labels/elevation/headwind/temperature."""
     from routes.live import _build_live_chart_data
-    track = [{'dist_m': 0, 'e_m': 100.0}, {'dist_m': 800, 'e_m': 120.0},
-             {'dist_m': 1600, 'e_m': 90.0}]
-    wind = [{'dist_m': 0, 'headwind_kmh': 16, 'temperature_f': 60.0},
-            {'dist_m': 1600, 'headwind_kmh': -8, 'temperature_f': 70.0}]
-    cd = _build_live_chart_data(track, wind)
+    # 60km RWGPS-format route (x=lng, y=lat, d=dist_m, e=elev_m).
+    track = [{'x': -122.0 + i * 0.05, 'y': 37.0, 'd': i * 15000, 'e': 100 + i * 10}
+             for i in range(5)]
+    start = datetime(2026, 6, 27, 7, 0)
+    times = [(start + timedelta(hours=h)).strftime('%Y-%m-%dT%H:00') for h in range(4)]
+    forecast = {'utc_offset_seconds': 0, 'hourly': {
+        'time': times, 'temperature_2m': [15.0, 16.0, 17.0, 18.0],
+        'wind_speed_10m': [10, 10, 10, 10], 'wind_direction_10m': [90, 90, 90, 90]}}
+    plan_stops = [{'distance_miles': 0, 'cum_time_min': 0},
+                  {'distance_miles': 40, 'cum_time_min': 120}]
+    with patch('routes.live.fetch_route_weather', return_value=[forecast] * 5):
+        cd = _build_live_chart_data(track, plan_stops, start)
     n = len(cd['labels'])
+    assert n >= 2
     assert n == len(cd['elevation_ft']) == len(cd['headwind_mph']) == len(cd['temperature_f'])
-    assert cd['elevation_ft'][0] == round(100.0 * 3.28084)   # e_m → ft
-    assert cd['headwind_mph'][0] > 0                          # headwind at the start
+    # Arrival-hour selection picks the first forecast hour at the start point: 15C → 59F.
+    assert cd['temperature_f'][0] == pytest.approx(59.0, abs=0.2)
+    assert cd['headwind_mph'][0] > 0    # east wind on an eastbound leg → headwind
 
 
 def test_build_live_chart_data_none_without_track():
     from routes.live import _build_live_chart_data
-    assert _build_live_chart_data([], None) is None
-    assert _build_live_chart_data([{'dist_m': 0, 'e_m': 10.0}], None) is None   # <2 pts
+    assert _build_live_chart_data([], [], None) is None
 
 
-def test_build_live_chart_data_no_wind_leaves_elevation_only():
-    """No wind samples → headwind/temperature series null, elevation still built."""
+def test_build_live_chart_data_none_without_forecast():
+    """A failed/empty forecast → None so the caller hides the charts (graceful)."""
     from routes.live import _build_live_chart_data
-    track = [{'dist_m': 0, 'e_m': 100.0}, {'dist_m': 800, 'e_m': 120.0}]
-    cd = _build_live_chart_data(track, None)
-    assert cd['elevation_ft'] is not None
-    assert cd['headwind_mph'] is None and cd['temperature_f'] is None
+    track = [{'x': -122.0 + i * 0.05, 'y': 37.0, 'd': i * 15000, 'e': 100} for i in range(5)]
+    with patch('routes.live.fetch_route_weather', return_value=[]):
+        assert _build_live_chart_data(track, [], None) is None
 
 
 def test_positions_wind_shows_mph_type_and_arrow(client):
@@ -685,6 +693,10 @@ def test_ride_context_builds_ascent_and_wind(app):
     assert ctx['total_ascent_ft'] and ctx['total_ascent_ft'] > 0   # ~50m → ~164 ft
     assert ctx['wind_by_dist'] is not None
     assert ctx['wind_by_dist'][0]['headwind_kmh'] > 0   # headwind, not tailwind
+    # Route-ahead charts are sourced from the shared weather pipeline (item 5): the
+    # same fetch_route_weather mock feeds them, so chart_data is built here too.
+    assert ctx['chart_data'] is not None
+    assert len(ctx['chart_data']['labels']) >= 2
 
 
 # ── Ride start is Pacific wall-clock, converted to UTC (not treated as UTC) ──

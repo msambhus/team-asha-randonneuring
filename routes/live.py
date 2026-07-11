@@ -28,7 +28,9 @@ from services import live_telemetry as tlm
 from services.weather import (sample_track_points, fetch_route_weather,
                               calculate_bearing, headwind_component,
                               crosswind_component, classify_wind,
-                              wind_arrow_rotation, wind_arrow_glyph)
+                              wind_arrow_rotation, wind_arrow_glyph,
+                              build_arrival_interpolator, build_weather_segments,
+                              build_chart_data)
 
 live_bp = Blueprint('live', __name__)
 
@@ -380,78 +382,67 @@ def _build_wind_by_dist(track_points):
         return None
 
 
-# Max points in the live route-ahead charts — enough for a smooth elevation
-# profile without bloating the cached context / JSON payload.
-_CHART_MAX_POINTS = 60
+# Sample interval (m) for the live route-ahead charts — matches the weather page's
+# map interval so the same route yields the same forecast points.
+_LIVE_CHART_INTERVAL_M = 15000
 
 
-def _interp_by_dist(samples, dist_m, key, conv=1.0):
-    """Linear-interpolate a wind_by_dist series (each {dist_m, <key>}) at dist_m.
-
-    Clamps to the endpoints outside the sampled range; returns None when no sample
-    carries the key (e.g. a legacy cached context without temperature)."""
-    pts = sorted((s['dist_m'], s[key]) for s in samples
-                 if s.get('dist_m') is not None and s.get(key) is not None)
-    if not pts:
+def _ride_start_local(ride):
+    """Ride start as a NAIVE local datetime (ride-day + start clock), the way the
+    weather page times its forecast points. Open-Meteo returns local-time hourly
+    arrays, so the live charts must be timed from a naive local start (NOT the UTC
+    start used for elapsed math) or the arrival-hour selection would be offset by
+    the UTC-offset. Returns None when the ride has no resolvable date."""
+    if not ride:
         return None
-    if dist_m <= pts[0][0]:
-        return round(pts[0][1] * conv, 1)
-    if dist_m >= pts[-1][0]:
-        return round(pts[-1][1] * conv, 1)
-    for (d0, v0), (d1, v1) in zip(pts, pts[1:]):
-        if d0 <= dist_m <= d1:
-            frac = (dist_m - d0) / (d1 - d0) if d1 > d0 else 0
-            return round((v0 + frac * (v1 - v0)) * conv, 1)
-    return round(pts[-1][1] * conv, 1)
-
-
-def _build_live_chart_data(track, wind_by_dist):
-    """Route-ahead chart series for the live page: aligned arrays keyed by distance
-    (miles), mirroring the weather page's elevation / headwind / temperature charts.
-
-    - labels: cumulative distance (mi) at each sampled point.
-    - elevation_ft: the route's elevation profile (from track e_m); None when the
-      route has no elevation.
-    - headwind_mph / temperature_f: interpolated from the (coarser) wind_by_dist
-      samples onto the same x-grid; None when wind/temperature is unavailable.
-
-    All non-None arrays share the same length as labels so a renderer can index
-    them together. Returns None when there's no usable track (<2 points)."""
-    if not track or len(track) < 2:
+    try:
+        d = ride['date']
+        if isinstance(d, str):
+            d = date.fromisoformat(d)
+        if d is None:
+            return None
+        start_t = ride.get('plan_start_time') or ride.get('start_time') or '06:00'
+        hh, mm = (int(x) for x in str(start_t).split(':')[:2])
+        return datetime(d.year, d.month, d.day, hh, mm)
+    except Exception:
         return None
-    n = len(track)
-    step = max(1, n // _CHART_MAX_POINTS)
-    idxs = list(range(0, n, step))
-    if idxs[-1] != n - 1:
-        idxs.append(n - 1)
 
-    labels, dist_ms, elevation_ft, have_elev = [], [], [], False
-    for i in idxs:
-        tp = track[i]
-        dm = float(tp.get('dist_m') or 0)
-        dist_ms.append(dm)
-        labels.append(round(dm * M_TO_MI, 1))
-        e_m = tp.get('e_m')
-        if e_m is not None:
-            elevation_ft.append(round(e_m * tlm.METERS_TO_FEET))
-            have_elev = True
-        else:
-            elevation_ft.append(None)
 
-    headwind_mph = temperature_f = None
-    if wind_by_dist:
-        hw = [_interp_by_dist(wind_by_dist, dm, 'headwind_kmh', tlm.KMH_TO_MPH) for dm in dist_ms]
-        if any(v is not None for v in hw):
-            headwind_mph = hw
-        tf = [_interp_by_dist(wind_by_dist, dm, 'temperature_f') for dm in dist_ms]
-        if any(v is not None for v in tf):
-            temperature_f = tf
+def _build_live_chart_data(track_points, plan_stops, start_dt):
+    """Route-ahead chart series for the live page, sourced from the SAME time-aware
+    weather pipeline the weather page uses — sample_track_points → fetch_route_weather
+    → arrival-hour selection (build_weather_segments) → build_chart_data — so the live
+    charts and the weather page can never diverge (item 5). Each point is timed against
+    the ride's BASE plan (plan_stops) when available, else a flat speed, exactly like
+    routes/weather.py's build_weather_payload.
 
+    Returns {labels, elevation_ft, headwind_mph, temperature_f} (aligned arrays,
+    distance in mi) or None when the route is too short / the forecast is unavailable,
+    so the caller hides the charts (today's graceful-degradation behavior)."""
+    if not track_points:
+        return None
+    samples = sample_track_points(track_points, interval_m=_LIVE_CHART_INTERVAL_M)
+    if len(samples) < 2:
+        return None
+    forecasts = fetch_route_weather(samples)
+    if not forecasts or len(forecasts) < 2:
+        return None
+    bearings = [calculate_bearing(samples[i]['lat'], samples[i]['lng'],
+                                  samples[i + 1]['lat'], samples[i + 1]['lng'])
+                for i in range(len(samples) - 1)]
+    arrival_fn = (build_arrival_interpolator(plan_stops, start_dt)
+                  if plan_stops and start_dt else None)
+    segments = build_weather_segments(
+        samples, forecasts, bearings, start_dt or datetime.now(),
+        track_points=track_points, arrival_fn=arrival_fn)
+    if len(segments) < 2:
+        return None
+    cd = build_chart_data(segments)
     return {
-        'labels': labels,
-        'elevation_ft': elevation_ft if have_elev else None,
-        'headwind_mph': headwind_mph,
-        'temperature_f': temperature_f,
+        'labels': cd['labels'],
+        'elevation_ft': cd['elevation_ft'],
+        'headwind_mph': cd['headwind_mph'],
+        'temperature_f': cd['temperature_f'],
     }
 
 
@@ -550,12 +541,22 @@ def _ride_live_context(ride_id):
                 ctx['total_dist_m'] = track[-1]['dist_m'] if track else None
                 ctx['total_ascent_ft'] = cum_ascent[-1] if cum_ascent else None
                 ctx['has_route'] = True
+                # Per-rider "wind done / ahead" labels keep sampling CURRENT
+                # conditions along the route (unchanged — a separate concern from
+                # the route-ahead charts).
                 ctx['wind_by_dist'] = _build_wind_by_dist(tps)
-                # Weather-style route-ahead chart series (elevation / headwind /
-                # temperature), sampled along the whole route. Static per ride, so
-                # it rides the cached context; the per-poll path only adds each
-                # rider's current-position marker on top.
-                ctx['chart_data'] = _build_live_chart_data(track, ctx['wind_by_dist'])
+                # Route-ahead charts (elevation / headwind / temperature) now come
+                # from the SAME time-aware weather pipeline as the weather page,
+                # timed against the BASE plan's arrival schedule (item 5). Static
+                # per ride, so it rides the cached context; the per-poll path only
+                # adds each rider's current-position marker on top.
+                try:
+                    ctx['chart_data'] = _build_live_chart_data(
+                        tps, ctx['plan_stops'], _ride_start_local(ride))
+                except Exception as cexc:  # noqa: BLE001 — charts are best-effort
+                    current_app.logger.warning(
+                        'live ctx: chart_data failed for ride %s: %s', ride_id, cexc)
+                    ctx['chart_data'] = None
         except Exception as exc:  # noqa: BLE001 — telemetry is best-effort
             current_app.logger.warning('live ctx: route %s failed: %s', route_id, exc)
     return ctx
@@ -580,6 +581,30 @@ def _guest_ride_id():
     return inv['ride_id'] if inv else None
 
 
+def _merge_custom_stops(custom_plan_id, ctx, meta=None):
+    """Merge + retime a custom plan (by id) into the ctx['plan_stops'] shape, the
+    SAME way the web plan page does. Returns a list of
+    {distance_miles, cum_time_min, arrival_time_min, location, stop_type} or None
+    when the plan yields fewer than 2 usable stops (can't grade pace)."""
+    from services.custom_plan_service import (get_merged_plan_stops,
+                                              recalculate_cumulative_values)
+    merged, merged_meta = get_merged_plan_stops(custom_plan_id)
+    raw = recalculate_cumulative_values(
+        merged or [], merged_meta or meta or {},
+        cutoff_hours=ctx.get('plan_cutoff_hours'), total_mi=ctx.get('plan_total_mi') or 0)
+    stops = [
+        {'distance_miles': float(s['distance_miles']), 'cum_time_min': float(s['cum_time_min']),
+         # arrival_time_min (= cum − stop_duration) for the arrival-based ETA;
+         # recalculate_cumulative_values sets it the same way the base path does.
+         'arrival_time_min': (float(s['arrival_time_min'])
+                              if s.get('arrival_time_min') is not None else None),
+         'location': s.get('location'), 'stop_type': s.get('stop_type')}
+        for s in (raw or [])
+        if s.get('distance_miles') is not None and s.get('cum_time_min') is not None
+    ]
+    return stops if len(stops) >= 2 else None
+
+
 def _rider_plan_stops(ctx, rider_id):
     """Plan stops to grade THIS rider against: their own custom plan if they have
     one (merged + retimed the SAME way the web plan page does), else the ride's
@@ -594,26 +619,187 @@ def _rider_plan_stops(ctx, rider_id):
         custom = get_custom_plan(rider_id, base_plan_id)
         if not custom:
             return base
-        from services.custom_plan_service import (get_merged_plan_stops,
-                                                  recalculate_cumulative_values)
-        merged, meta = get_merged_plan_stops(custom['id'])
-        raw = recalculate_cumulative_values(
-            merged or [], meta or custom,
-            cutoff_hours=ctx.get('plan_cutoff_hours'), total_mi=ctx.get('plan_total_mi') or 0)
-        stops = [
-            {'distance_miles': float(s['distance_miles']), 'cum_time_min': float(s['cum_time_min']),
-             # arrival_time_min (= cum − stop_duration) for the arrival-based ETA;
-             # recalculate_cumulative_values sets it the same way the base path does.
-             'arrival_time_min': (float(s['arrival_time_min'])
-                                  if s.get('arrival_time_min') is not None else None),
-             'location': s.get('location'), 'stop_type': s.get('stop_type')}
-            for s in (raw or [])
-            if s.get('distance_miles') is not None and s.get('cum_time_min') is not None
-        ]
-        return stops if len(stops) >= 2 else base
+        stops = _merge_custom_stops(custom['id'], ctx, meta=custom)
+        return stops if stops else base
     except Exception:
         current_app.logger.warning('live: custom plan stops failed for rider %s', rider_id)
         return base
+
+
+# ── Plan selector: authorization allow-set + selected-plan resolution ───────
+# The live positions endpoint is reachable by any logged-in rider AND by
+# unauthenticated guests holding an invite code, so a viewer must never be able to
+# resolve a private plan they aren't allowed to see. Every selectable plan is
+# assembled here into an allow-set; the resolver refuses any id outside it.
+
+# Sentinel selector value: "grade each rider against their OWN custom plan" (the
+# behavior that used to be the default). Distinct from a numeric plan id.
+PLAN_OWN = 'own'
+PLAN_BASE = 'base'
+
+
+def _own_lens_available(allowed_custom_ids, viewer_rider_id):
+    """Whether the 'own' (each-rider's-own) lens may be OFFERED and RESOLVED.
+
+    'own' grades every rider against THEIR OWN (possibly private) custom plan, so it
+    must be available only to a logged-in member who already has at least one VISIBLE
+    custom plan (public or their own). Gating both the selector offer AND the resolver
+    on this single predicate is what stops a crafted ?plan_id=own from bypassing the
+    allow-set into per-rider private-plan grading when 'own' was deliberately withheld."""
+    return bool(allowed_custom_ids and viewer_rider_id)
+
+
+def _available_plans(base_plan_id, viewer_rider_id):
+    """Assemble the AUTHORIZATION allow-set AND the selector's option list in one.
+
+    Returns (options, allowed_custom_ids):
+      options: [{'id': 'base'|'own'|<int>, 'name', 'owner', 'is_custom'}] for the
+               dropdown — base first, then each allowed named custom plan, then the
+               'own' (each-rider's-own) sentinel. Only base when the ride has no
+               custom plans (single-plan ride → no selector).
+      allowed_custom_ids: the set of int custom-plan ids the viewer may resolve.
+
+    Membership (never leaks a private plan):
+      - base            — always
+      - public custom   — every public custom plan for this base plan
+      - own custom      — the viewer's OWN custom plan, only for a logged-in rider
+      - 'own' sentinel  — offered whenever any custom plan is visible
+    A guest (viewer_rider_id is None) gets base + public plans only.
+    """
+    options = [{'id': PLAN_BASE, 'name': 'Base plan', 'owner': None, 'is_custom': False}]
+    allowed_custom_ids = set()
+    if not base_plan_id:
+        return options, allowed_custom_ids
+
+    seen = set()
+    try:
+        from models import get_public_custom_plans
+        for cp in (get_public_custom_plans(base_plan_id) or []):
+            cid = cp.get('id')
+            if cid is None or cid in seen:
+                continue
+            seen.add(cid)
+            allowed_custom_ids.add(cid)
+            owner = (cp.get('first_name') or '').strip() or None
+            options.append({'id': cid, 'name': (cp.get('name') or 'Custom plan'),
+                            'owner': owner, 'is_custom': True})
+    except Exception:
+        current_app.logger.warning('live: public custom plans lookup failed for base %s',
+                                   base_plan_id, exc_info=True)
+
+    # The viewer's OWN custom plan (members only) — added when not already public.
+    if viewer_rider_id:
+        try:
+            from models import get_custom_plan
+            own = get_custom_plan(viewer_rider_id, base_plan_id)
+            if own and own.get('id') is not None and own['id'] not in seen:
+                seen.add(own['id'])
+                allowed_custom_ids.add(own['id'])
+                options.append({'id': own['id'], 'name': (own.get('name') or 'My plan'),
+                                'owner': None, 'is_custom': True})
+        except Exception:
+            current_app.logger.warning('live: own custom plan lookup failed for rider %s',
+                                       viewer_rider_id, exc_info=True)
+
+    # Offer the "each rider's own plan" lens only when it is actually available (a
+    # member with at least one visible custom plan). The resolver gates on the SAME
+    # predicate, so a lens that isn't offered here can never be resolved. Guests still
+    # see base + public named plans; a ride with no visible custom plan is effectively
+    # single-plan (no selector shown).
+    if _own_lens_available(allowed_custom_ids, viewer_rider_id):
+        options.append({'id': PLAN_OWN, 'name': "Each rider's own plan",
+                        'owner': None, 'is_custom': False})
+    return options, allowed_custom_ids
+
+
+def _selected_plan_stops(requested_plan_id, ctx, allowed_custom_ids, is_member=False):
+    """Resolve the requested plan_id STRICTLY from the allow-set. Returns
+    (applied_id, override_stops):
+
+      - applied_id: the value actually applied — 'base', 'own', or an int id. A
+        rejected/unknown id falls back to 'base' (surfaced, never silent misgrading).
+      - override_stops: the plan stops every rider is graded against (base or the
+        selected custom plan), or None for 'own' (each rider keeps their own plan).
+
+    Any value the viewer isn't allowed to resolve — a numeric id NOT in
+    allowed_custom_ids (a private plan owned by someone else), an unknown/malformed
+    id, or the 'own' lens requested by a GUEST (is_member False) — is refused and
+    logged, so no private plan (named or per-rider) can leak through the query string.
+    'own' grades every rider against their OWN (possibly private) custom plan, so it
+    is members-only; a guest gets the base plan instead."""
+    base_stops = ctx.get('plan_stops') if ctx else None
+
+    if requested_plan_id is None or requested_plan_id == '' or requested_plan_id == PLAN_BASE:
+        return PLAN_BASE, base_stops
+    if requested_plan_id == PLAN_OWN:
+        # 'own' is resolvable ONLY when it was actually offered — a member with at
+        # least one visible custom plan (the same predicate _available_plans offers it
+        # on). A guest, or a member for whom 'own' was withheld (no visible custom
+        # plan), gets the base plan — so a crafted ?plan_id=own can never fall into
+        # per-rider grading that reads other riders' private custom plans.
+        if not _own_lens_available(allowed_custom_ids, is_member):
+            current_app.logger.warning("live: rejected 'own' lens not in allow-set → base fallback")
+            return PLAN_BASE, base_stops
+        return PLAN_OWN, None
+
+    try:
+        pid = int(requested_plan_id)
+    except (TypeError, ValueError):
+        current_app.logger.warning('live: rejected malformed plan_id %r → base fallback',
+                                   requested_plan_id)
+        return PLAN_BASE, base_stops
+
+    if pid not in allowed_custom_ids:
+        # IDOR guard: an id the viewer isn't allowed to see never resolves.
+        current_app.logger.warning('live: rejected out-of-allowset plan_id %s → base fallback', pid)
+        return PLAN_BASE, base_stops
+
+    try:
+        stops = _merge_custom_stops(pid, ctx)
+        if stops:
+            return pid, stops
+    except Exception:
+        current_app.logger.warning('live: selected plan %s merge failed → base fallback', pid,
+                                   exc_info=True)
+    return PLAN_BASE, base_stops
+
+
+def _upcoming_controls(plan_stops, leader_dist_mi, start_utc):
+    """One shared, ride-level list of the applied plan's future controls (item 2).
+
+    Future = ahead of the furthest-along on-route rider (leader_dist_mi); when no
+    rider is on route yet, every control (bar the start) is upcoming. Each entry
+    carries the plan's ARRIVAL ETA in club-local time. Ride-level, so it is computed
+    once — never per rider."""
+    if not plan_stops:
+        return []
+    out = []
+    for s in plan_stops:
+        dm, ct = s.get('distance_miles'), s.get('cum_time_min')
+        if dm is None or ct is None:
+            continue
+        if (s.get('stop_type') or '').lower() == 'start':
+            continue
+        dm = float(dm)
+        if leader_dist_mi is not None and dm <= leader_dist_mi + tlm.NEXT_CONTROL_EPS_MI:
+            continue
+        arrival = s.get('arrival_time_min')
+        arrival = round(float(arrival)) if arrival is not None else round(float(ct))
+        eta_iso = eta_label = None
+        if start_utc is not None:
+            eta_dt = start_utc + timedelta(minutes=arrival)
+            eta_iso = eta_dt.isoformat()
+            eta_label = eta_dt.astimezone(CLUB_TZ).strftime('%I:%M %p').lstrip('0')
+        out.append({
+            'name': s.get('location') or None,
+            'type': s.get('stop_type') or None,
+            'distance_mi': round(dm, 1),
+            'arrival_time_min': arrival,
+            'eta_iso': eta_iso,
+            'eta_label': eta_label,
+        })
+    out.sort(key=lambda c: c['distance_mi'])
+    return out
 
 
 def _rider_telemetry(row, ctx, now, history, plan_stops=None):
@@ -771,6 +957,34 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
             'behind': behind,
         }
 
+    # Speed to reach the FINISH on time (item 3), alongside the speed-to-next-control
+    # above. Both use the SAME plan (the applied/selected plan) and the same
+    # required_speed_mph helper — behind → required_mph None + behind True (em-dash).
+    active_stops = plan_stops if plan_stops is not None else ctx.get('plan_stops')
+    fin = tlm.finish_stop(active_stops)
+    finish_block = None
+    if fin:
+        fin_arrival = fin.get('arrival_time_min')
+        dist_to_finish = round(max(0.0, fin['distance_miles'] - dist_mi), 1)
+        fin_req_mph, fin_behind = tlm.required_speed_mph(
+            dist_to_finish, fin_arrival, elapsed_min)
+        fin_eta_iso = fin_eta_label = None
+        if start is not None and fin_arrival is not None:
+            fin_eta_dt = start + timedelta(minutes=fin_arrival)
+            fin_eta_iso = fin_eta_dt.isoformat()
+            fin_eta_label = fin_eta_dt.astimezone(CLUB_TZ).strftime('%I:%M %p').lstrip('0')
+        finish_block = {
+            'name': fin.get('location'),
+            'type': fin.get('stop_type'),
+            'distance_mi': fin.get('distance_miles'),
+            'dist_to_go_mi': dist_to_finish,
+            'arrival_time_min': fin_arrival,
+            'eta_iso': fin_eta_iso,
+            'eta_label': fin_eta_label,
+            'required_mph': fin_req_mph,
+            'behind': fin_behind,
+        }
+
     # Time banked, shown BOTH ways: vs the brevet CUTOFF (OTL margin at the rider's
     # current distance) and vs the PLAN (= plan delta). Both are surfaced explicitly
     # in addition to the ahead/behind badge (which stays driven by plan.status).
@@ -781,6 +995,7 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
         'on_route': True,
         'now': now_block,
         'next_control': next_control_block,
+        'finish': finish_block,
         'remaining': {
             'distance_mi': round(remaining_mi, 1),
             'ascent_left_ft': ascent_left,
@@ -824,10 +1039,37 @@ def live_positions():
     since = now - timedelta(hours=DISPLAY_WINDOW_HOURS)
     rows = get_latest_positions_for_ride(ride_id, since)
 
-    ctx = _ride_live_context(ride_id) if rows else None
+    # Build the per-ride context ALWAYS — not only when someone is sharing — so a
+    # spectator opening a ride before anyone broadcasts still gets the plan selector,
+    # the route-ahead charts, and the shared upcoming-controls list. The context is
+    # memoized per ride (~5 min), so the RWGPS/weather work still runs at most once
+    # per window regardless of how many riders (or none) are active.
+    ctx = _ride_live_context(ride_id)
 
     has_route = bool(ctx and ctx.get('has_route'))
     track = ctx.get('track') if has_route else None
+
+    # Plan selector (item 1): the allow-set is the sole source of resolvable plans, so
+    # a private plan can never leak to a guest or another rider. The requested plan_id
+    # is resolved strictly against it; a rejected id falls back to the base plan.
+    base_plan_id = ctx.get('base_plan_id') if ctx else None
+    plan_options, allowed_custom_ids = _available_plans(base_plan_id, rider_id)
+    # is_member gates the 'own' (each-rider's-own) lens to logged-in riders; a guest
+    # (rider_id None) requesting it falls back to base, never per-rider private grading.
+    applied_plan_id, override_stops = _selected_plan_stops(
+        request.args.get('plan_id'), ctx, allowed_custom_ids, is_member=bool(rider_id))
+
+    # The plan whose controls populate the shared upcoming-controls list: the applied
+    # override (base or the selected custom), or — for 'own' — the base plan, since no
+    # single per-rider schedule exists at ride level.
+    list_stops = override_stops if override_stops is not None else (
+        ctx.get('plan_stops') if ctx else None)
+    start_utc = None
+    if ctx and ctx.get('ride_start_iso'):
+        try:
+            start_utc = datetime.fromisoformat(ctx['ride_start_iso'])
+        except ValueError:
+            start_utc = None
 
     positions = []
     for row in rows:
@@ -843,7 +1085,13 @@ def live_positions():
             ride_id=ride_id)
         telemetry = None
         try:
-            rider_plan_stops = _rider_plan_stops(ctx, row['rider_id']) if ctx else None
+            # A selected named plan (base or a custom) overrides EVERY rider's grading
+            # so the whole view compares riders on one schedule; the 'own' lens
+            # (override_stops None) keeps each rider on their own custom plan.
+            if override_stops is not None:
+                rider_plan_stops = override_stops
+            else:
+                rider_plan_stops = _rider_plan_stops(ctx, row['rider_id']) if ctx else None
             telemetry = _rider_telemetry(row, ctx, now, history, plan_stops=rider_plan_stops)
         except Exception:
             current_app.logger.exception('live telemetry failed for rider %s', row['rider_id'])
@@ -875,6 +1123,15 @@ def live_positions():
             'trail': trail,
         })
 
+    # Leader (furthest-along on-route rider) drives the shared upcoming-controls list.
+    leader_dist_mi = None
+    for p in positions:
+        t = p.get('telemetry') or {}
+        d = (t.get('now') or {}).get('distance_mi')
+        if d is not None and (leader_dist_mi is None or d > leader_dist_mi):
+            leader_dist_mi = d
+    upcoming_controls = _upcoming_controls(list_stops, leader_dist_mi, start_utc)
+
     return jsonify({
         'ride_id': ride_id,
         'positions': positions,
@@ -884,6 +1141,13 @@ def live_positions():
         # static per ride. Top-level (not per-rider): each rider's current position is
         # marked from their telemetry.now.distance_mi. Null when the ride has no route.
         'chart_data': ctx.get('chart_data') if ctx else None,
+        # Plan selector (item 1): the options the viewer may pick (base + allowed
+        # custom plans + 'own'; base only for a single-plan ride) and the plan actually
+        # APPLIED — 'base', 'own', or an int id (a rejected id echoes as 'base').
+        'plans': plan_options,
+        'selected_plan_id': applied_plan_id,
+        # Shared upcoming controls of the applied plan with club-local ETAs (item 2).
+        'upcoming_controls': upcoming_controls,
     })
 
 
