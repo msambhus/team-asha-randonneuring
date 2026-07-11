@@ -624,6 +624,12 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
         return f'{glyph} {speed_mph:g} mph {short}', speed_mph
 
     now_block['distance_mi'] = round(dist_mi, 1)
+    # Average speeds over the ride so far: elapsed (wall-clock, includes stops)
+    # and moving-only. Complements the instantaneous speed_mph above.
+    now_block['avg_elapsed_speed_mph'] = (
+        round(dist_mi / (elapsed_min / 60.0), 1) if elapsed_min and elapsed_min > 0 else None)
+    now_block['avg_moving_speed_mph'] = (
+        round(dist_mi / (moving_min / 60.0), 1) if moving_min and moving_min > 0 else None)
     now_block['ascent_done_ft'] = ascent_done
     wind_done_label, wind_done_mph = wind_descriptor(hw_done, cw_done)
     now_block['headwind_done_mph'] = wind_done_mph

@@ -174,6 +174,11 @@ def test_positions_includes_telemetry(client):
     t = pos['telemetry']
     assert t is not None
     assert t['now']['distance_mi'] is not None
+    # Average speeds (elapsed + moving) accompany the instantaneous speed.
+    assert 'avg_elapsed_speed_mph' in t['now'] and 'avg_moving_speed_mph' in t['now']
+    if t['now']['moving_min']:
+        assert t['now']['avg_moving_speed_mph'] == round(
+            t['now']['distance_mi'] / (t['now']['moving_min'] / 60.0), 1)
     assert t['now']['heart_rate'] == 140
     assert t['remaining']['toughness'] is not None
     assert t['detailed_after_ride'] is True
