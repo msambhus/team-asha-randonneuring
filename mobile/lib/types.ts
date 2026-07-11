@@ -192,9 +192,20 @@ export interface LivePositionTelemetryNow {
   cadence: number | null;
   // on-route only
   distance_mi?: number | null;
+  grade_pct?: number | null;          // current route grade at the rider's position
   ascent_done_ft?: number | null;
   headwind_done_mph?: number | null;
   headwind_done_label?: string | null;
+}
+
+/** Next waypoint/control ahead of the rider, with the plan's expected arrival. */
+export interface LivePositionNextControl {
+  name: string | null;
+  type: string | null;
+  distance_mi: number | null;         // cumulative distance of the control
+  dist_to_go_mi: number | null;
+  eta_iso: string | null;
+  eta_label: string | null;           // club-local clock, e.g. "3:45 PM"
 }
 
 export interface LivePositionRemaining {
@@ -210,6 +221,7 @@ export interface LivePositionTelemetry {
   on_route: boolean | null;
   now: LivePositionTelemetryNow;
   remaining: LivePositionRemaining | null;
+  next_control?: LivePositionNextControl | null;
   plan: { delta_min: number; status: 'ahead' | 'behind' | 'on' } | null;
   detailed_after_ride: boolean;
 }
