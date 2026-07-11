@@ -24,11 +24,17 @@ import type { GoogleAuthResponse } from '../lib/types';
 
 const RIDER_KEY = 'ta_rider_id';
 const PROFILE_KEY = 'ta_profile_complete';
+// The account email is captured at sign-in (when we know it) so the account
+// screen can require the user to retype it before deleting. Not known for the
+// demo login or a magic-link-only session — those fall back to a DELETE keyword.
+const EMAIL_KEY = 'ta_account_email';
 
 interface SessionValue {
   token: string | null;
   riderId: number | null;
   profileComplete: boolean;
+  /** The signed-in account's email, if known (used to confirm deletion). */
+  accountEmail: string | null;
   isLoading: boolean;
   /** Reviewer/demo login (no third party). Returns null on success, else an error string. */
   signInDemo: () => Promise<string | null>;
@@ -52,6 +58,7 @@ const SessionContext = createContext<SessionValue>({
   token: null,
   riderId: null,
   profileComplete: false,
+  accountEmail: null,
   isLoading: true,
   signInDemo: async () => 'not ready',
   signInWithPassword: async () => 'not ready',
@@ -67,6 +74,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [riderId, setRiderId] = useState<number | null>(null);
   const [profileComplete, setProfileComplete] = useState(false);
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const queryClient = useQueryClient();
 
@@ -77,17 +85,25 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         const r = await SecureStore.getItemAsync(RIDER_KEY);
         if (r) setRiderId(parseInt(r, 10));
         setProfileComplete((await SecureStore.getItemAsync(PROFILE_KEY)) === '1');
+        setAccountEmail((await SecureStore.getItemAsync(EMAIL_KEY)) || null);
       } finally {
         setIsLoading(false);
       }
     })();
   }, []);
 
-  // Persist + apply an auth response (shared by every sign-in path).
-  const applySession = useCallback(async (res: GoogleAuthResponse) => {
+  // Persist + apply an auth response (shared by every sign-in path). `email` is
+  // passed by the paths that know it (password + OTP-code) so the account screen
+  // can require it to confirm deletion; omitted for demo / magic-link.
+  const applySession = useCallback(async (res: GoogleAuthResponse, email?: string) => {
     await storeToken(res.token);
     await SecureStore.setItemAsync(RIDER_KEY, res.rider_id == null ? '' : String(res.rider_id));
     await SecureStore.setItemAsync(PROFILE_KEY, res.profile_complete ? '1' : '0');
+    const cleanEmail = (email || '').trim();
+    if (cleanEmail) {
+      await SecureStore.setItemAsync(EMAIL_KEY, cleanEmail);
+      setAccountEmail(cleanEmail);
+    }
     setToken(res.token);
     setRiderId(res.rider_id);
     setProfileComplete(res.profile_complete);
@@ -106,7 +122,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const signInWithPassword = useCallback(
     async (email: string, password: string): Promise<string | null> => {
       try {
-        await applySession(await passwordLogin(email, password));
+        await applySession(await passwordLogin(email, password), email);
         return null;
       } catch (e) {
         return e instanceof Error ? e.message : 'Sign-in failed';
@@ -118,7 +134,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const signUpWithPassword = useCallback(
     async (email: string, password: string): Promise<string | null> => {
       try {
-        await applySession(await passwordSignup(email, password));
+        await applySession(await passwordSignup(email, password), email);
         return null;
       } catch (e) {
         return e instanceof Error ? e.message : 'Sign-up failed';
@@ -140,7 +156,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const verifyEmailOtp = useCallback(
     async (params: OtpVerifyParams): Promise<string | null> => {
       try {
-        await applySession(await verifyEmailOtpApi(params));
+        // The code path carries the email; the magic-link path does not.
+        const email = 'email' in params ? params.email : undefined;
+        await applySession(await verifyEmailOtpApi(params), email);
         return null;
       } catch (e) {
         return e instanceof Error ? e.message : 'Sign-in failed';
@@ -164,9 +182,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     await deleteToken();
     await SecureStore.deleteItemAsync(RIDER_KEY).catch(() => undefined);
     await SecureStore.deleteItemAsync(PROFILE_KEY).catch(() => undefined);
+    await SecureStore.deleteItemAsync(EMAIL_KEY).catch(() => undefined);
     setToken(null);
     setRiderId(null);
     setProfileComplete(false);
+    setAccountEmail(null);
     queryClient.clear();
   }, [queryClient]);
 
@@ -184,7 +204,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   return (
     <SessionContext.Provider
       value={{
-        token, riderId, profileComplete, isLoading,
+        token, riderId, profileComplete, accountEmail, isLoading,
         signInDemo, signInWithPassword, signUpWithPassword,
         requestEmailOtp, verifyEmailOtp, setupProfile, signOut, deleteAccount,
       }}

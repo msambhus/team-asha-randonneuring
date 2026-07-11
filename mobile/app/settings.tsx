@@ -7,40 +7,44 @@
  * here is a kill-switch — the backend then rejects every beacon.
  */
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSharing } from '../hooks/useSharing';
 import { useSession } from '../contexts/SessionContext';
 import { getLowPower, setLowPower, stopSharing } from '../location/backgroundLocation';
+import { deleteConfirmSpec, isDeleteConfirmed, DELETE_KEYWORD } from '../lib/deleteConfirm';
 
 export default function SettingsScreen() {
   const { enabled, isLoading, isError, refetch, setEnabled, saving } = useSharing();
-  const { deleteAccount } = useSession();
+  const { deleteAccount, accountEmail } = useSession();
   const [error, setError] = useState<string | null>(null);
   const [lowPower, setLowPowerState] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Two-step delete: tapping "Delete account" reveals a confirmation box where
+  // the user must retype their email (or the DELETE keyword when we don't know
+  // their email) before the final button unlocks.
+  const [confirming, setConfirming] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
 
   useEffect(() => { getLowPower().then(setLowPowerState); }, []);
 
-  function onDeleteAccount() {
-    Alert.alert(
-      'Delete account?',
-      'This permanently deletes your account and all your data (ride history, '
-        + 'Strava connection, live-tracking, and settings). This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setDeleting(true);
-            const err = await deleteAccount();
-            setDeleting(false);
-            if (err) Alert.alert('Could not delete account', err);
-            // On success, signOut (inside deleteAccount) sends us back to login.
-          },
-        },
-      ],
-    );
+  const { requireEmail } = deleteConfirmSpec(accountEmail);
+  const confirmed = isDeleteConfirmed(confirmText, accountEmail);
+
+  function cancelDelete() {
+    setConfirming(false);
+    setConfirmText('');
+  }
+
+  async function onConfirmDelete() {
+    if (!confirmed) return;
+    setDeleting(true);
+    const err = await deleteAccount();
+    setDeleting(false);
+    if (err) {
+      Alert.alert('Could not delete account', err);
+      return;
+    }
+    // On success, signOut (inside deleteAccount) sends us back to login.
   }
 
   async function onToggleLowPower(on: boolean) {
@@ -105,18 +109,63 @@ export default function SettingsScreen() {
 
       <Text style={[styles.section, styles.sectionTop]}>Account</Text>
       <View style={styles.card}>
-        <Pressable
-          style={[styles.dangerBtn, deleting && styles.btnDisabled]}
-          onPress={onDeleteAccount}
-          disabled={deleting}
-        >
-          {deleting
-            ? <ActivityIndicator color="#b91c1c" />
-            : <Text style={styles.dangerText}>Delete account</Text>}
-        </Pressable>
-        <Text style={styles.help}>
-          Permanently deletes your account and all your data. This can't be undone.
-        </Text>
+        {!confirming ? (
+          <>
+            <Pressable
+              style={styles.dangerBtn}
+              onPress={() => setConfirming(true)}
+            >
+              <Text style={styles.dangerText}>Delete account</Text>
+            </Pressable>
+            <Text style={styles.help}>
+              Permanently deletes your account and all your data. This can't be undone.
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.confirmTitle}>Permanently delete your account?</Text>
+            <Text style={styles.help}>
+              This deletes your account and all your data (ride history, Strava
+              connection, live-tracking, and settings). This cannot be undone.
+            </Text>
+            <Text style={styles.confirmPrompt}>
+              {requireEmail
+                ? 'To confirm, type your account email address:'
+                : `To confirm, type ${DELETE_KEYWORD} below:`}
+            </Text>
+            {requireEmail
+              ? <Text selectable style={styles.confirmTarget}>{accountEmail}</Text>
+              : null}
+            <TextInput
+              style={styles.confirmInput}
+              value={confirmText}
+              onChangeText={setConfirmText}
+              placeholder={requireEmail ? 'you@example.com' : DELETE_KEYWORD}
+              placeholderTextColor="#9ca3af"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType={requireEmail ? 'email-address' : 'default'}
+              editable={!deleting}
+              autoFocus
+            />
+            <Pressable
+              style={[styles.dangerBtn, (!confirmed || deleting) && styles.btnDisabled]}
+              onPress={onConfirmDelete}
+              disabled={!confirmed || deleting}
+            >
+              {deleting
+                ? <ActivityIndicator color="#b91c1c" />
+                : <Text style={styles.dangerText}>Delete my account</Text>}
+            </Pressable>
+            <Pressable
+              style={styles.cancelBtn}
+              onPress={cancelDelete}
+              disabled={deleting}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
+            </Pressable>
+          </>
+        )}
       </View>
     </ScrollView>
   );
@@ -137,4 +186,14 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.6 },
   dangerBtn: { borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fef2f2', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   dangerText: { color: '#b91c1c', fontWeight: '700', fontSize: 15 },
+  confirmTitle: { fontSize: 16, fontWeight: '700', color: '#1a365d', marginBottom: 4 },
+  confirmPrompt: { color: '#374151', fontSize: 14, fontWeight: '600', marginTop: 14 },
+  confirmTarget: { color: '#1a365d', fontSize: 15, fontWeight: '700', marginTop: 4 },
+  confirmInput: {
+    borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10, paddingHorizontal: 14,
+    paddingVertical: 10, fontSize: 15, color: '#111827', backgroundColor: '#fff',
+    marginTop: 10, marginBottom: 14,
+  },
+  cancelBtn: { paddingVertical: 12, alignItems: 'center', marginTop: 8 },
+  cancelText: { color: '#6b7280', fontWeight: '600', fontSize: 15 },
 });
