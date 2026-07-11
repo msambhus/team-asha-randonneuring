@@ -21,6 +21,13 @@ export interface ChartSeries {
   fill?: boolean;
 }
 
+/** Static vertical marker (e.g. a live rider's current position). Distinct from
+ *  the interactive scrub crosshair — several can be drawn at once. */
+export interface ChartMarker {
+  index: number;
+  color?: string;
+}
+
 interface Props {
   title: string;
   unit?: string;
@@ -31,10 +38,11 @@ interface Props {
   legend?: { label: string; color: string }[];
   selectedIndex?: number;           // synced crosshair position (−1 / undefined = none)
   onScrub?: (index: number) => void;
+  markers?: ChartMarker[];          // static vertical lines (rider positions)
 }
 
 export function WeatherChart({
-  title, unit, labels, series, baseline, height = 150, legend, selectedIndex, onScrub,
+  title, unit, labels, series, baseline, height = 150, legend, selectedIndex, onScrub, markers,
 }: Props) {
   const { width: screenW } = useWindowDimensions();
   const W = Math.max(240, screenW - 32 - 24); // screen padding (16×2) + card padding (12×2)
@@ -84,6 +92,12 @@ export function WeatherChart({
             <Line x1={sx(sel)} y1={padT} x2={sx(sel)} y2={H - padB}
               stroke="#1a365d" strokeWidth={1} opacity={0.5} />
           ) : null}
+          {(markers ?? []).map((m, mi) => (
+            m.index >= 0 && m.index < n ? (
+              <Line key={`m${mi}`} x1={sx(m.index)} y1={padT} x2={sx(m.index)} y2={H - padB}
+                stroke={m.color ?? '#1a365d'} strokeWidth={2} />
+            ) : null
+          ))}
           {series.map((s, si) => {
             const pts = s.data.map((v, i) => `${sx(i)},${sy(v)}`).join(' ');
             const area =

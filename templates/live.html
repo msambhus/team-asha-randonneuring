@@ -5,6 +5,7 @@
 {% block extra_head %}
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
 .live-container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
 .live-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
@@ -82,6 +83,17 @@
 .metric .v { font-weight: 700; font-size: 0.95rem; }
 .metric .l { font-size: 0.72rem; color: var(--text-light); }
 .after-ride { margin-top: 10px; font-size: 0.75rem; color: var(--text-light); font-style: italic; }
+
+/* Route-ahead charts (elevation / headwind / temperature) — mirror the weather
+   page, with a vertical marker at each rider's current mileage. */
+.live-charts { margin-top: 18px; }
+.live-charts .charts-title { font-size: 1rem; margin: 0 0 4px; }
+.live-charts .charts-sub { font-size: 0.78rem; color: var(--text-light); margin: 0 0 10px; }
+.chart-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px; margin-bottom: 12px;
+}
+.chart-card h3 { font-size: 0.85rem; margin: 0 0 6px; color: var(--text); }
 
 .share-control { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .share-btn {
@@ -344,6 +356,14 @@
     <a href="{{ url_for('live.live_settings') }}">Live tracking settings</a>.{% endif %}
   </div>
   <div id="live-riders"></div>
+
+  <div id="live-charts" class="live-charts" style="display:none;">
+    <h2 class="charts-title">Route ahead</h2>
+    <p class="charts-sub">Conditions along the route — the vertical line marks each rider's current position.</p>
+    <div class="chart-card"><h3>Elevation (ft)</h3><canvas id="chartElev" height="120"></canvas></div>
+    <div class="chart-card" id="chartHeadwindCard"><h3>Headwind (mph) — + head / − tail</h3><canvas id="chartHeadwind" height="120"></canvas></div>
+    <div class="chart-card" id="chartTempCard"><h3>Temperature (°F)</h3><canvas id="chartTemp" height="120"></canvas></div>
+  </div>
 </div>
 {% endblock %}
 
@@ -556,6 +576,13 @@
       return h > 0 ? h + 'h ' + (m < 10 ? '0' : '') + m + 'm' : m + 'm';
     }
 
+    function fmtBank(min) {
+      // Signed "time banked": +Xh YYm in hand, −Xh YYm behind. null → null so the
+      // metric cell shows the em-dash placeholder. (mirrors mobile fmtBank)
+      if (min === null || min === undefined || min === '') return null;
+      return (min < 0 ? '−' : '+') + fmtHM(min);
+    }
+
     function metric(label, value, unit) {
       // Build a metric cell with textContent only (no HTML injection).
       var wrap = document.createElement('div');
@@ -644,11 +671,21 @@
               (r.headwind_ahead_label ? metric('wind ahead', r.headwind_ahead_label) : null)
             ]));
           }
+          // Time banked — both vs the brevet cutoff (OTL margin) and vs the plan,
+          // shown alongside (not replacing) the ahead/behind badge above.
+          if (t.time_banked_cutoff_min != null || t.time_banked_plan_min != null) {
+            card.appendChild(group('Time banked', [
+              metric('vs cutoff', fmtBank(t.time_banked_cutoff_min)),
+              metric('vs plan', fmtBank(t.time_banked_plan_min))
+            ]));
+          }
           if (t.next_control) {
             var nc = t.next_control;
             var ncName = (nc.name || 'control').replace(', CA', '');
             card.appendChild(group('Next: ' + ncName, [
-              metric('ETA (plan)', nc.eta_label),
+              metric('ETA (arrival)', nc.eta_label),
+              // Speed needed to hit the plan's arrival; null (em-dash) when behind.
+              metric('req speed', nc.required_mph, ' mph'),
               (nc.dist_to_go_mi != null ? metric('to go', nc.dist_to_go_mi, ' mi') : null),
               (nc.distance_mi != null ? metric('at', nc.distance_mi, ' mi') : null)
             ]));
@@ -661,6 +698,95 @@
           }
         }
         wrap.appendChild(card);
+      });
+    }
+
+    // ── Route-ahead charts (elevation / headwind / temperature) ──
+    // chart_data is static per ride, so the charts are built once; each poll only
+    // repositions the per-rider markers. Degrades to hidden if Chart.js is blocked
+    // or the ride has no route.
+    var liveCharts = {};
+    var chartsBuilt = false;
+
+    var riderMarkerPlugin = {
+      id: 'riderMarkers',
+      afterDatasetsDraw: function (chart) {
+        var markers = chart.$riderMarkers || [];
+        var xAxis = chart.scales.x, area = chart.chartArea;
+        if (!xAxis || !area || !markers.length) { return; }
+        var ctx = chart.ctx;
+        markers.forEach(function (m) {
+          if (m.index == null || m.index < 0) { return; }
+          var x = xAxis.getPixelForValue(m.index);
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom);
+          ctx.lineWidth = 2; ctx.strokeStyle = m.color || '#1a365d';
+          ctx.stroke();
+          ctx.restore();
+        });
+      }
+    };
+
+    function nearestIndex(labels, mi) {
+      if (mi == null || !labels || !labels.length) { return -1; }
+      var best = 0, bd = Infinity;
+      for (var i = 0; i < labels.length; i++) {
+        var d = Math.abs(labels[i] - mi);
+        if (d < bd) { bd = d; best = i; }
+      }
+      return best;
+    }
+
+    function buildCharts(cd) {
+      var labels = cd.labels || [];
+      function mk(id, cardId, label, data, color) {
+        var canvas = document.getElementById(id);
+        var card = document.getElementById(cardId);
+        if (!canvas) { return; }
+        if (!data || data.length < 2) { if (card) { card.style.display = 'none'; } return; }
+        liveCharts[id] = new Chart(canvas.getContext('2d'), {
+          type: 'line',
+          data: { labels: labels, datasets: [{
+            label: label, data: data, borderColor: color,
+            backgroundColor: color + '33', borderWidth: 1.5, fill: true,
+            tension: 0.3, pointRadius: 0, pointHitRadius: 6 }] },
+          options: {
+            responsive: true, maintainAspectRatio: true, animation: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { maxTicksLimit: 6, callback: function (v, i) { return Math.round(labels[i]) + ' mi'; } } },
+              y: { ticks: { font: { size: 9 } } }
+            }
+          },
+          plugins: [riderMarkerPlugin]
+        });
+      }
+      // Elevation always has its own card; headwind/temp may be absent (no wind data).
+      mk('chartElev', null, 'Elevation (ft)', cd.elevation_ft, '#15803d');
+      mk('chartHeadwind', 'chartHeadwindCard', 'Headwind (mph)', cd.headwind_mph, '#dc2626');
+      mk('chartTemp', 'chartTempCard', 'Temperature (°F)', cd.temperature_f, '#f59e0b');
+    }
+
+    function updateCharts(data, positions) {
+      var wrap = document.getElementById('live-charts');
+      var cd = data.chart_data;
+      if (typeof Chart === 'undefined' || !cd || !cd.labels || cd.labels.length < 2) {
+        wrap.style.display = 'none';
+        return;
+      }
+      wrap.style.display = 'block';
+      if (!chartsBuilt) { buildCharts(cd); chartsBuilt = true; }
+      var markers = positions
+        .filter(function (p) { return p.telemetry && p.telemetry.now && p.telemetry.now.distance_mi != null; })
+        .map(function (p) {
+          return { index: nearestIndex(cd.labels, p.telemetry.now.distance_mi),
+                   color: p.plan_color || p.color };
+        });
+      Object.keys(liveCharts).forEach(function (id) {
+        var c = liveCharts[id];
+        c.$riderMarkers = markers;
+        c.update('none');
       });
     }
 
@@ -681,6 +807,7 @@
           });
           renderRiders(positions);
           updateTrails(positions);
+          updateCharts(data, positions);
           // Keep the riders framed (close-up) until the user moves the map.
           if (follow) { frameRiders(positions); }
           emptyEl.style.display = positions.length ? 'none' : 'block';
