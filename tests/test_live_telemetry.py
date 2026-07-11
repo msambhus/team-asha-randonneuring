@@ -259,6 +259,67 @@ def test_plan_delta_none_without_plan():
     assert tlm.plan_delta(10, 60, [{'distance_miles': 0, 'cum_time_min': 0}]) is None
 
 
+_PLAN_STOPS = [
+    {'distance_miles': 0, 'cum_time_min': 0, 'location': 'Start', 'stop_type': 'start'},
+    {'distance_miles': 25, 'cum_time_min': 120, 'location': 'Control 1, CA', 'stop_type': 'control'},
+    {'distance_miles': 60, 'cum_time_min': 300, 'location': 'Control 2', 'stop_type': 'control'},
+    {'distance_miles': 90, 'cum_time_min': 480, 'location': 'Finish', 'stop_type': 'finish'},
+]
+
+
+def test_next_control_returns_first_stop_ahead():
+    nc = tlm.next_control(30, _PLAN_STOPS)      # past Control 1 (25 mi)
+    assert nc['location'] == 'Control 2'
+    assert nc['stop_type'] == 'control'
+    assert nc['distance_miles'] == 60
+    assert nc['cum_time_min'] == 300
+    assert nc['dist_to_go_mi'] == 30.0
+
+
+def test_next_control_skips_start_and_current_stop():
+    # At the very beginning, the next stop is Control 1, never the 'start'.
+    assert tlm.next_control(0, _PLAN_STOPS)['location'] == 'Control 1, CA'
+    # Standing essentially on Control 1 → next is Control 2 (epsilon skip).
+    assert tlm.next_control(25.05, _PLAN_STOPS)['location'] == 'Control 2'
+
+
+def test_next_control_none_when_past_last_or_no_plan():
+    assert tlm.next_control(95, _PLAN_STOPS) is None      # past the finish
+    assert tlm.next_control(10, []) is None
+    assert tlm.next_control(None, _PLAN_STOPS) is None
+
+
+# A short 3-point profile: flat, then a 10 m climb over 100 m (10% grade).
+_GRADE_TRACK = [
+    {'dist_m': 0, 'e_m': 100.0},
+    {'dist_m': 100, 'e_m': 100.0},
+    {'dist_m': 200, 'e_m': 110.0},
+    {'dist_m': 300, 'e_m': 120.0},
+]
+
+
+def test_grade_at_positive_on_climb():
+    # Around index 2 (200 m), the window spans a rising profile → positive grade.
+    g = tlm.grade_at(_GRADE_TRACK, 2, min_window_m=100)
+    assert g is not None and g > 0
+
+
+def test_grade_at_negative_on_descent():
+    descent = [
+        {'dist_m': 0, 'e_m': 120.0},
+        {'dist_m': 100, 'e_m': 110.0},
+        {'dist_m': 200, 'e_m': 100.0},
+    ]
+    assert tlm.grade_at(descent, 1, min_window_m=100) < 0
+
+
+def test_grade_at_none_without_elevation():
+    no_elev = [{'dist_m': 0, 'e_m': None}, {'dist_m': 100, 'e_m': None}]
+    assert tlm.grade_at(no_elev, 0) is None
+    assert tlm.grade_at([], 0) is None
+    assert tlm.grade_at(_GRADE_TRACK, None) is None
+
+
 def test_moving_stopped_with_reported_speed():
     pts = [
         {'lat': 37, 'lng': -122, 'recorded_at': _t(0), 'speed': 5.0},

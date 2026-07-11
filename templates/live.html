@@ -630,7 +630,9 @@
             (n.ascent_done_ft != null ? metric('climb done', n.ascent_done_ft, ' ft') : null),
             (n.headwind_done_label ? metric('wind', n.headwind_done_label) : null),
             (n.heart_rate != null ? metric('HR', n.heart_rate, ' bpm') : null),
-            (n.power != null ? metric('power', n.power, ' W') : null)
+            (n.power != null ? metric('power', n.power, ' W') : null),
+            (n.cadence != null ? metric('cadence', n.cadence, ' rpm') : null),
+            (n.grade_pct != null ? metric('grade', n.grade_pct, '%') : null)
           ]));
           if (t.remaining) {
             var r = t.remaining;
@@ -640,6 +642,15 @@
               metric('time left', fmtHM(r.time_left_min)),
               metric('toughness', r.toughness),
               (r.headwind_ahead_label ? metric('wind ahead', r.headwind_ahead_label) : null)
+            ]));
+          }
+          if (t.next_control) {
+            var nc = t.next_control;
+            var ncName = (nc.name || 'control').replace(', CA', '');
+            card.appendChild(group('Next: ' + ncName, [
+              metric('ETA (plan)', nc.eta_label),
+              (nc.dist_to_go_mi != null ? metric('to go', nc.dist_to_go_mi, ' mi') : null),
+              (nc.distance_mi != null ? metric('at', nc.distance_mi, ' mi') : null)
             ]));
           }
           if (t.detailed_after_ride) {

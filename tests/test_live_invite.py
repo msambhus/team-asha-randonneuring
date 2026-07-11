@@ -171,7 +171,7 @@ def test_guest_can_view_ride_map(client):
          patch('routes.live._build_route_polyline', return_value=[]):
         resp = client.get('/ride/5/live')
     assert resp.status_code == 200
-    assert b'guest' in resp.data.lower()             # guest note shown
+    assert b'SCR 200' in resp.data                   # ride loads for the guest
     # member-only controls hidden (the Garmin link form)
     assert b'Garmin LiveTrack link for this ride' not in resp.data
 
