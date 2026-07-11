@@ -346,6 +346,7 @@ def _build_wind_by_dist(track_points):
             times = hourly.get('time') or []
             ws = hourly.get('wind_speed_10m') or []
             wd = hourly.get('wind_direction_10m') or []
+            temps = hourly.get('temperature_2m') or []
             if not times or not ws or not wd:
                 continue
             offset = (fc or {}).get('utc_offset_seconds') or 0
@@ -367,11 +368,91 @@ def _build_wind_by_dist(track_points):
                 bearing = (bearing + 180) % 360
             hw = headwind_component(ws[idx], wd[idx], bearing)
             cw = crosswind_component(ws[idx], wd[idx], bearing)
+            # Temperature (°F) sampled at the same hour — for the live temperature
+            # chart. Best-effort: absent when the hourly payload omits it.
+            temp_f = None
+            if idx < len(temps) and temps[idx] is not None:
+                temp_f = round(float(temps[idx]) * 9 / 5 + 32, 1)
             out.append({'dist_m': s['distance_m'], 'headwind_kmh': hw,
-                        'crosswind_kmh': cw})
+                        'crosswind_kmh': cw, 'temperature_f': temp_f})
         return out or None
     except Exception:
         return None
+
+
+# Max points in the live route-ahead charts — enough for a smooth elevation
+# profile without bloating the cached context / JSON payload.
+_CHART_MAX_POINTS = 60
+
+
+def _interp_by_dist(samples, dist_m, key, conv=1.0):
+    """Linear-interpolate a wind_by_dist series (each {dist_m, <key>}) at dist_m.
+
+    Clamps to the endpoints outside the sampled range; returns None when no sample
+    carries the key (e.g. a legacy cached context without temperature)."""
+    pts = sorted((s['dist_m'], s[key]) for s in samples
+                 if s.get('dist_m') is not None and s.get(key) is not None)
+    if not pts:
+        return None
+    if dist_m <= pts[0][0]:
+        return round(pts[0][1] * conv, 1)
+    if dist_m >= pts[-1][0]:
+        return round(pts[-1][1] * conv, 1)
+    for (d0, v0), (d1, v1) in zip(pts, pts[1:]):
+        if d0 <= dist_m <= d1:
+            frac = (dist_m - d0) / (d1 - d0) if d1 > d0 else 0
+            return round((v0 + frac * (v1 - v0)) * conv, 1)
+    return round(pts[-1][1] * conv, 1)
+
+
+def _build_live_chart_data(track, wind_by_dist):
+    """Route-ahead chart series for the live page: aligned arrays keyed by distance
+    (miles), mirroring the weather page's elevation / headwind / temperature charts.
+
+    - labels: cumulative distance (mi) at each sampled point.
+    - elevation_ft: the route's elevation profile (from track e_m); None when the
+      route has no elevation.
+    - headwind_mph / temperature_f: interpolated from the (coarser) wind_by_dist
+      samples onto the same x-grid; None when wind/temperature is unavailable.
+
+    All non-None arrays share the same length as labels so a renderer can index
+    them together. Returns None when there's no usable track (<2 points)."""
+    if not track or len(track) < 2:
+        return None
+    n = len(track)
+    step = max(1, n // _CHART_MAX_POINTS)
+    idxs = list(range(0, n, step))
+    if idxs[-1] != n - 1:
+        idxs.append(n - 1)
+
+    labels, dist_ms, elevation_ft, have_elev = [], [], [], False
+    for i in idxs:
+        tp = track[i]
+        dm = float(tp.get('dist_m') or 0)
+        dist_ms.append(dm)
+        labels.append(round(dm * M_TO_MI, 1))
+        e_m = tp.get('e_m')
+        if e_m is not None:
+            elevation_ft.append(round(e_m * tlm.METERS_TO_FEET))
+            have_elev = True
+        else:
+            elevation_ft.append(None)
+
+    headwind_mph = temperature_f = None
+    if wind_by_dist:
+        hw = [_interp_by_dist(wind_by_dist, dm, 'headwind_kmh', tlm.KMH_TO_MPH) for dm in dist_ms]
+        if any(v is not None for v in hw):
+            headwind_mph = hw
+        tf = [_interp_by_dist(wind_by_dist, dm, 'temperature_f') for dm in dist_ms]
+        if any(v is not None for v in tf):
+            temperature_f = tf
+
+    return {
+        'labels': labels,
+        'elevation_ft': elevation_ft if have_elev else None,
+        'headwind_mph': headwind_mph,
+        'temperature_f': temperature_f,
+    }
 
 
 @cache.memoize(CACHE_TIMEOUT)
@@ -387,7 +468,7 @@ def _ride_live_context(ride_id):
     ctx = {'track': [], 'cum_ascent_ft': [], 'total_dist_m': None,
            'total_ascent_ft': None, 'plan_stops': [], 'wind_by_dist': None,
            'ride_start_iso': None, 'time_limit_min': None,
-           'has_route': False, 'has_plan': False,
+           'has_route': False, 'has_plan': False, 'chart_data': None,
            # Base plan id + timing inputs so the per-rider custom plan (if any) can
            # be merged + retimed the SAME way the web plan page does (_rider_plan_stops).
            'base_plan_id': None, 'plan_cutoff_hours': None, 'plan_total_mi': 0.0}
@@ -426,6 +507,11 @@ def _ride_live_context(ride_id):
             ctx['plan_stops'] = [
                 {'distance_miles': float(s['distance_miles']),
                  'cum_time_min': float(s['cum_time_min']),
+                 # arrival_time_min (= cum − stop_duration) is the REACHING time at
+                 # the control, carried through so next_control's ETA is arrival,
+                 # not departure. _compute_base_timing always sets it.
+                 'arrival_time_min': (float(s['arrival_time_min'])
+                                      if s.get('arrival_time_min') is not None else None),
                  'location': s.get('location'),
                  'stop_type': s.get('stop_type')}
                 for s in base_raw
@@ -465,6 +551,11 @@ def _ride_live_context(ride_id):
                 ctx['total_ascent_ft'] = cum_ascent[-1] if cum_ascent else None
                 ctx['has_route'] = True
                 ctx['wind_by_dist'] = _build_wind_by_dist(tps)
+                # Weather-style route-ahead chart series (elevation / headwind /
+                # temperature), sampled along the whole route. Static per ride, so
+                # it rides the cached context; the per-poll path only adds each
+                # rider's current-position marker on top.
+                ctx['chart_data'] = _build_live_chart_data(track, ctx['wind_by_dist'])
         except Exception as exc:  # noqa: BLE001 — telemetry is best-effort
             current_app.logger.warning('live ctx: route %s failed: %s', route_id, exc)
     return ctx
@@ -511,6 +602,10 @@ def _rider_plan_stops(ctx, rider_id):
             cutoff_hours=ctx.get('plan_cutoff_hours'), total_mi=ctx.get('plan_total_mi') or 0)
         stops = [
             {'distance_miles': float(s['distance_miles']), 'cum_time_min': float(s['cum_time_min']),
+             # arrival_time_min (= cum − stop_duration) for the arrival-based ETA;
+             # recalculate_cumulative_values sets it the same way the base path does.
+             'arrival_time_min': (float(s['arrival_time_min'])
+                                  if s.get('arrival_time_min') is not None else None),
              'location': s.get('location'), 'stop_type': s.get('stop_type')}
             for s in (raw or [])
             if s.get('distance_miles') is not None and s.get('cum_time_min') is not None
@@ -650,19 +745,37 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
                           plan_stops if plan_stops is not None else ctx.get('plan_stops'))
     next_control_block = None
     if nc:
+        # ETA is the plan's ARRIVAL (reaching) time at the control — arrival_time_min,
+        # not cum_time_min, so a control with a break shows when you get there, not
+        # when you leave.
+        arrival_min = nc.get('arrival_time_min')
         eta_iso = eta_label = None
-        if start is not None and nc.get('cum_time_min') is not None:
-            eta_dt = start + timedelta(minutes=nc['cum_time_min'])
+        if start is not None and arrival_min is not None:
+            eta_dt = start + timedelta(minutes=arrival_min)
             eta_iso = eta_dt.isoformat()
             eta_label = eta_dt.astimezone(CLUB_TZ).strftime('%I:%M %p').lstrip('0')
+        # Speed the rider must hold to make the plan's arrival. behind=True when that
+        # time has already passed → renderers show an em-dash / "behind", never a
+        # negative or divide-by-zero value.
+        req_mph, behind = tlm.required_speed_mph(
+            nc.get('dist_to_go_mi'), arrival_min, elapsed_min)
         next_control_block = {
             'name': nc.get('location'),
             'type': nc.get('stop_type'),
             'distance_mi': nc.get('distance_miles'),
             'dist_to_go_mi': nc.get('dist_to_go_mi'),
+            'arrival_time_min': arrival_min,
             'eta_iso': eta_iso,
             'eta_label': eta_label,
+            'required_mph': req_mph,
+            'behind': behind,
         }
+
+    # Time banked, shown BOTH ways: vs the brevet CUTOFF (OTL margin at the rider's
+    # current distance) and vs the PLAN (= plan delta). Both are surfaced explicitly
+    # in addition to the ahead/behind badge (which stays driven by plan.status).
+    banked_cutoff = tlm.time_banked_cutoff_min(
+        dist_mi, elapsed_min, ctx.get('plan_total_mi'), ctx.get('plan_cutoff_hours'))
 
     return {
         'on_route': True,
@@ -676,7 +789,10 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
             'time_left_min': time_left_min,
             'toughness': tuf,
         },
+        'time_banked_cutoff_min': banked_cutoff,
+        'time_banked_plan_min': delta,   # = plan.delta_min, surfaced explicitly
         'plan': ({'delta_min': delta,
+                  'banked_min': delta,   # banked-vs-plan, alongside the badge
                   'status': 'ahead' if delta > 2 else ('behind' if delta < -2 else 'on')}
                  if delta is not None else None),
         'detailed_after_ride': True,   # power / pedaling-vs-coasting come from Strava post-ride
@@ -764,6 +880,10 @@ def live_positions():
         'positions': positions,
         'stale_after_minutes': STALE_AFTER_MINUTES,
         'server_time': now.isoformat(),
+        # Route-ahead weather-style chart series (elevation / headwind / temperature),
+        # static per ride. Top-level (not per-rider): each rider's current position is
+        # marked from their telemetry.now.distance_mi. Null when the ride has no route.
+        'chart_data': ctx.get('chart_data') if ctx else None,
     })
 
 

@@ -292,6 +292,146 @@ def test_rider_plan_stops_custom_under_two_stops_falls_back():
         assert _rider_plan_stops(ctx, 7) is _BASE_STOPS
 
 
+# ── Item 1-3: arrival ETA, required speed, time banked ─────────────────────
+
+def _arrival_ctx(start_dt, **over):
+    """A ctx whose next control (1.1 mi) has arrival_time_min (20) distinct from
+    cum_time_min (30), plus plan total/cutoff for the banked-vs-cutoff metric."""
+    ctx = dict(_FAKE_CTX,
+               ride_start_iso=start_dt.isoformat(),
+               plan_total_mi=100.0, plan_cutoff_hours=10,
+               plan_stops=[
+                   {'distance_miles': 0, 'cum_time_min': 0, 'arrival_time_min': 0,
+                    'location': 'Start', 'stop_type': 'start'},
+                   {'distance_miles': 1.1, 'cum_time_min': 30, 'arrival_time_min': 20,
+                    'location': 'Control 1', 'stop_type': 'control'}])
+    ctx.update(over)
+    return ctx
+
+
+def _run_positions(client, ctx, row_over=None):
+    now = _now()
+    row = {'rider_id': 7, 'name': 'Asha Rider', 'lat': 37.0, 'lng': -121.99,
+           'recorded_at': now - timedelta(minutes=2), 'status': 'GOING',
+           'speed': 6.0, 'heart_rate': None, 'power': None, 'cadence': None}
+    if row_over:
+        row.update(row_over)
+    with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
+         patch('routes.live._ride_live_context', return_value=ctx), \
+         patch('routes.live.get_positions_for_rider_since', return_value=[]):
+        resp = client.get('/api/live/positions?ride_id=5')
+    return resp
+
+
+def test_next_control_eta_uses_arrival_not_departure(client):
+    """The next-control ETA is the plan's ARRIVAL time (arrival_time_min=20),
+    earlier than the departure (cum_time_min=30) for a control with a break."""
+    _login(client)
+    start = _now() - timedelta(minutes=5)
+    resp = _run_positions(client, _arrival_ctx(start))
+    nc = resp.get_json()['positions'][0]['telemetry']['next_control']
+    assert nc['arrival_time_min'] == 20
+    # eta_iso is start + arrival(20), NOT start + cum(30).
+    eta = datetime.fromisoformat(nc['eta_iso'])
+    assert round((eta - start).total_seconds() / 60) == 20
+
+
+def test_next_control_required_speed_on_time(client):
+    """A rider on pace gets a positive required speed and behind=False."""
+    _login(client)
+    resp = _run_positions(client, _arrival_ctx(_now() - timedelta(minutes=5)))
+    nc = resp.get_json()['positions'][0]['telemetry']['next_control']
+    assert nc['behind'] is False
+    assert nc['required_mph'] is not None and nc['required_mph'] > 0
+
+
+def test_next_control_required_speed_behind_is_null(client):
+    """Past the plan's arrival time → required_mph null + behind flag (em-dash),
+    never a negative number or a crash."""
+    _login(client)
+    resp = _run_positions(client, _arrival_ctx(_now() - timedelta(minutes=60)))
+    nc = resp.get_json()['positions'][0]['telemetry']['next_control']
+    assert nc['required_mph'] is None
+    assert nc['behind'] is True
+
+
+def test_time_banked_cutoff_and_plan_present(client):
+    """Both banked metrics are surfaced: vs cutoff (top-level) and vs plan
+    (top-level + plan.banked_min), alongside the ahead/behind badge."""
+    _login(client)
+    resp = _run_positions(client, _arrival_ctx(_now() - timedelta(minutes=5)))
+    t = resp.get_json()['positions'][0]['telemetry']
+    assert t['time_banked_cutoff_min'] is not None
+    assert t['time_banked_plan_min'] == t['plan']['delta_min']
+    assert t['plan']['banked_min'] == t['plan']['delta_min']
+
+
+def test_time_banked_cutoff_null_without_cutoff(client):
+    """No cutoff on the ride → banked-vs-cutoff is null (plan banked still present)."""
+    _login(client)
+    ctx = _arrival_ctx(_now() - timedelta(minutes=5), plan_cutoff_hours=None)
+    t = _run_positions(client, ctx).get_json()['positions'][0]['telemetry']
+    assert t['time_banked_cutoff_min'] is None
+    assert t['time_banked_plan_min'] is not None
+
+
+# ── Item 4: route-ahead chart data ─────────────────────────────────────────
+
+def test_positions_includes_chart_data(client):
+    """The positions response carries a top-level chart_data block with aligned
+    (equal-length) series, and marks are drawn from telemetry.now.distance_mi."""
+    _login(client)
+    chart = {'labels': [0.0, 0.5, 1.1], 'elevation_ft': [30, 60, 90],
+             'headwind_mph': [5.0, 4.0, 3.0], 'temperature_f': [60.0, 61.0, 62.0]}
+    ctx = _arrival_ctx(_now() - timedelta(minutes=5), chart_data=chart)
+    body = _run_positions(client, ctx).get_json()
+    cd = body['chart_data']
+    assert cd is not None
+    n = len(cd['labels'])
+    assert n == len(cd['elevation_ft']) == len(cd['headwind_mph']) == len(cd['temperature_f'])
+    # The rider is on-route, so their current mileage is available to mark.
+    assert body['positions'][0]['telemetry']['now']['distance_mi'] is not None
+
+
+def test_positions_chart_data_null_without_route(client):
+    """A ride with no route yields chart_data == null and no telemetry error."""
+    _login(client)
+    ctx = dict(_arrival_ctx(_now() - timedelta(minutes=5)), has_route=False, chart_data=None)
+    body = _run_positions(client, ctx).get_json()
+    assert body['chart_data'] is None
+    assert body['positions'][0]['telemetry']['on_route'] is None
+
+
+def test_build_live_chart_data_aligns_series():
+    """_build_live_chart_data produces equal-length labels/elevation/headwind/temp
+    from the track + wind samples; elevation from e_m, wind interpolated onto it."""
+    from routes.live import _build_live_chart_data
+    track = [{'dist_m': 0, 'e_m': 100.0}, {'dist_m': 800, 'e_m': 120.0},
+             {'dist_m': 1600, 'e_m': 90.0}]
+    wind = [{'dist_m': 0, 'headwind_kmh': 16, 'temperature_f': 60.0},
+            {'dist_m': 1600, 'headwind_kmh': -8, 'temperature_f': 70.0}]
+    cd = _build_live_chart_data(track, wind)
+    n = len(cd['labels'])
+    assert n == len(cd['elevation_ft']) == len(cd['headwind_mph']) == len(cd['temperature_f'])
+    assert cd['elevation_ft'][0] == round(100.0 * 3.28084)   # e_m → ft
+    assert cd['headwind_mph'][0] > 0                          # headwind at the start
+
+
+def test_build_live_chart_data_none_without_track():
+    from routes.live import _build_live_chart_data
+    assert _build_live_chart_data([], None) is None
+    assert _build_live_chart_data([{'dist_m': 0, 'e_m': 10.0}], None) is None   # <2 pts
+
+
+def test_build_live_chart_data_no_wind_leaves_elevation_only():
+    """No wind samples → headwind/temperature series null, elevation still built."""
+    from routes.live import _build_live_chart_data
+    track = [{'dist_m': 0, 'e_m': 100.0}, {'dist_m': 800, 'e_m': 120.0}]
+    cd = _build_live_chart_data(track, None)
+    assert cd['elevation_ft'] is not None
+    assert cd['headwind_mph'] is None and cd['temperature_f'] is None
+
+
 def test_positions_wind_shows_mph_type_and_arrow(client):
     """Wind metric reads '<arrow> <mph> mph <head|cross|tail>', not a bare label."""
     _login(client)
