@@ -274,17 +274,25 @@ def live_join():
     drop it on backgrounding and force a re-entry — actual access is still
     bounded by the code's own expiry, which _guest_ride_id() re-checks each
     request."""
-    if session.get('rider_id'):
-        return redirect(url_for('live.live_hub'))   # members don't need a code
     submitted = (request.form.get('code') if request.method == 'POST'
                  else request.args.get('code'))
+    is_member = bool(session.get('rider_id'))
     if submitted:
         inv = get_valid_ride_invite(submitted)
         if inv:
-            session.permanent = True
-            session['live_guest'] = {'code': inv['code'], 'ride_id': inv['ride_id']}
+            # A valid share link should ALWAYS open the ride it points at —
+            # including for logged-in members. (Previously members were bounced
+            # to the hub before the code was even read, so a shared link never
+            # opened the ride — it looked like a "share your location" prompt.)
+            # Guests also get a read-only session grant for that ride.
+            if not is_member:
+                session.permanent = True
+                session['live_guest'] = {'code': inv['code'], 'ride_id': inv['ride_id']}
             return redirect(url_for('live.ride_live_map', ride_id=inv['ride_id']))
         flash('That code is invalid or has expired.', 'warning')
+    # No / invalid code: members go to their live hub; guests get the join form.
+    if is_member:
+        return redirect(url_for('live.live_hub'))
     return render_template('live_join.html', code=(submitted or ''))
 
 
