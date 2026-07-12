@@ -780,10 +780,12 @@ def fetch_route_weather_cron():
                 entry['status'] = 'skip_no_samples'
                 details.append(entry)
                 continue
-            # Request enough forecast days that the hourly arrays span the ride date
-            # (Open-Meteo defaults to 7; a ride 12 days out would otherwise be missing).
+            # Request enough days to REACH the ride date plus a buffer for multi-day
+            # brevets (a 600k spans ~2 days), and never fewer than Open-Meteo's old 7-day
+            # default so a same-day multi-day ride doesn't lose its day-2 hours. Capped at
+            # the 16-day forecast horizon.
             forecast_days = min(FORECAST_HORIZON_DAYS,
-                                max(1, (forecast_date - today).days + 1))
+                                max(7, (forecast_date - today).days + 3))
             weather_data = fetch_route_weather(samples, forecast_days=forecast_days)
             if not weather_data:
                 entry['status'] = 'skip_no_data'
