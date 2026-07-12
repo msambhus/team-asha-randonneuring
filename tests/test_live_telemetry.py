@@ -251,6 +251,21 @@ def test_rebase_then_plan_delta_matches_rider_frame():
     assert tlm.plan_delta(5.0, 25, reb) == 5
 
 
+def test_rebase_fractional_offset_interpolates_start_time():
+    # Offset 15 mi lands BETWEEN stops (C1@10=60min, C2@20=120min) → t_start=90 min.
+    # C2 (mile 20) → rider-distance 5, elapsed 120−90=30 min; its arrival wraps the
+    # same way. Exercises plan_time_at interpolation + arrival rebasing off a stop.
+    reb = tlm.rebase_plan_stops(_PLAN, 15.0, 30.0)
+    c2 = next(s for s in reb if abs(s['distance_miles'] - 5.0) < 0.01)
+    assert c2['cum_time_min'] == 30 and c2['arrival_time_min'] == 30
+    # Loop node (mile 0/30, plan-time 0/180) → rider-distance 15, time 90 (=180−90).
+    node = next(s for s in reb if abs(s['distance_miles'] - 15.0) < 0.01)
+    assert node['cum_time_min'] == 90
+    # Duplicate wrap-point stops are collapsed: distances are unique.
+    dists = [s['distance_miles'] for s in reb]
+    assert len(dists) == len(set(dists))
+
+
 def test_course_over_ground_eastbound():
     pts = [{'lat': 37.0, 'lng': -122.00}, {'lat': 37.0, 'lng': -121.99}]
     hd = tlm.course_over_ground(pts)

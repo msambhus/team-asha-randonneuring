@@ -392,6 +392,9 @@ def rebase_plan_stops(plan_stops, start_offset_miles, total_miles):
     if not plan_stops or not start_offset_miles or not total_miles:
         return plan_stops
     t_start = plan_time_at(start_offset_miles, plan_stops) or 0.0
+    # Time wraps over one loop. total_time = the plan's max cumulative time, which on
+    # a loop permanent is the finish node's time (start==finish node) = the full-loop
+    # duration — the correct wrap period.
     total_time = max((float(s['cum_time_min']) for s in plan_stops
                       if s.get('cum_time_min') is not None), default=0.0)
     out = []
@@ -420,6 +423,16 @@ def rebase_plan_stops(plan_stops, start_offset_miles, total_miles):
             stop['stop_type'] = 'control'
         out.append(stop)
     out.sort(key=lambda x: x['distance_miles'])
+    # On a loop the plan's start-node and finish-node share a point, so both wrap to
+    # the same rider-distance — collapse such duplicates (keep the one with a location).
+    deduped = []
+    for s in out:
+        if deduped and abs(s['distance_miles'] - deduped[-1]['distance_miles']) < 0.01:
+            if not deduped[-1].get('location') and s.get('location'):
+                deduped[-1] = s
+            continue
+        deduped.append(s)
+    out = deduped
     # The rider finishes back at their OWN start after the full loop — a point the
     # plan (start/finish at the loop node) doesn't list. Add it so the finish metric
     # and the last leg of the plan comparison span the rider's whole ride.
