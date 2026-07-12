@@ -86,6 +86,27 @@ def course_over_ground(points, min_move_m=15.0):
     return None
 
 
+def _initial_heading(points, min_move_m=15.0):
+    """Bearing (deg) LEAVING the first fix: from points[0] to the first later fix
+    at least min_move_m away. The mirror of course_over_ground (which reads the
+    latest heading) — used to disambiguate the seed leg at a loop start, where the
+    rider heads out along the route. None until the rider has moved far enough."""
+    if not points or len(points) < 2:
+        return None
+    try:
+        flat, flng = float(points[0]['lat']), float(points[0]['lng'])
+    except (TypeError, ValueError, KeyError):
+        return None
+    for p in points[1:]:
+        try:
+            lat, lng = float(p['lat']), float(p['lng'])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if haversine_m(flat, flng, lat, lng) >= min_move_m:
+            return bearing_deg(flat, flng, lat, lng)
+    return None
+
+
 # How far beyond the single nearest point to still consider a route point a
 # candidate leg (m). Overlapping out-and-back legs on the same road sit within a
 # few meters of each other, so a modest margin captures both.
@@ -159,7 +180,7 @@ _PROJ_MIN_FWD_M = 3000.0       # min forward window per step (covers a downsampl
 _PROJ_MAX_SPEED_MS = 20.0      # forward window grows with elapsed time at this cap
 
 
-def project_history_to_route(history, track):
+def project_history_to_route(history, track, with_start=False):
     """Project the rider's whole trajectory onto the route, in time order.
 
     `history` is oldest→newest [{lat,lng,recorded_at}]; `track` is
@@ -169,21 +190,47 @@ def project_history_to_route(history, track):
     (out-and-back / loop) resolves to the leg the rider is actually on, and the
     returned distance is monotonic (never less than a position already reached).
 
+    The walk is SEEDED on the first cleanly on-route fix (skipping off-route
+    warm-up fixes), disambiguated by the rider's initial heading — so a loop whose
+    start coincides with its finish seeds on the OUTBOUND leg the rider is actually
+    on, not the finish vertex a few metres away. This seed is also the rider's
+    START position on the route (see route_start_offset_m), so distance-done and
+    the start offset come from ONE consistent match.
+
     Returns (dist_m, index, off_by_m): dist_m is the monotonic distance-done,
     index the track point for it (for ascent/wind splits), off_by_m how far the
-    LATEST fix is from the route (for on-route detection). (None, None, None) if
-    track or history is empty.
+    LATEST fix is from the route (for on-route detection). When `with_start` is
+    True, returns (dist_m, index, off_by_m, start_dist_m, start_index) with the
+    seed's along-route distance and index appended. All-None on empty input.
     """
+    empty = (None, None, None, None, None) if with_start else (None, None, None)
     if not track or not history:
-        return None, None, None
+        return empty
     n = len(track)
-    # Seed on the first fix with a global nearest match.
-    d0 = [haversine_m(float(history[0]['lat']), float(history[0]['lng']),
-                      t['lat'], t['lng']) for t in track]
-    cur = min(range(n), key=lambda i: d0[i])
-    best_dist, best_idx, off_by = track[cur]['dist_m'], cur, d0[cur]
-    prev_t = history[0]['recorded_at']
-    for p in history[1:]:
+    # Seed on the first on-route fix (skipping off-route warm-up fixes), picking
+    # the leg that agrees with the rider's initial heading. Fall back to the first
+    # fix's best match when nothing is cleanly on-route yet.
+    cur = off_by = seed_pos = None
+    for i, p in enumerate(history):
+        try:
+            lat, lng = float(p['lat']), float(p['lng'])
+        except (TypeError, ValueError, KeyError):
+            continue
+        _, si, soff = project_to_route(lat, lng, track,
+                                       heading_deg=_initial_heading(history[i:]))
+        if si is None:
+            continue
+        if cur is None:                      # first usable fix = fallback seed
+            cur, off_by, seed_pos = si, soff, i
+        if soff is not None and soff <= ON_ROUTE_MAX_M:
+            cur, off_by, seed_pos = si, soff, i
+            break
+    if cur is None:
+        return empty
+    start_idx, start_dist = cur, track[cur]['dist_m']
+    best_dist, best_idx = track[cur]['dist_m'], cur
+    prev_t = history[seed_pos]['recorded_at']
+    for p in history[seed_pos + 1:]:
         dt = (p['recorded_at'] - prev_t).total_seconds()
         prev_t = p['recorded_at']
         if dt <= 0:
@@ -208,6 +255,8 @@ def project_history_to_route(history, track):
         cur, off_by = best_i, best_d
         if track[cur]['dist_m'] > best_dist:
             best_dist, best_idx = track[cur]['dist_m'], cur
+    if with_start:
+        return best_dist, best_idx, off_by, start_dist, start_idx
     return best_dist, best_idx, off_by
 
 
@@ -241,28 +290,22 @@ START_OFFSET_MIN_M = 800.0   # ~0.5 mi
 
 
 def route_start_offset_m(ride_history, track):
-    """Along-route distance (m) at the rider's FIRST on-route fix — where they
-    joined the route. For a loop permanent begun partway round this is > 0 and the
-    live "distance done" must be measured from here (wrapping the loop), not from
-    the route's mile 0.
+    """Along-route distance (m) at the rider's start on the route — where they
+    joined it. For a loop permanent begun partway round this is > 0 and the live
+    "distance done" must be measured from here (wrapping the loop), not from the
+    route's mile 0.
 
-    Scans fixes oldest→newest and returns the along-route distance of the first
-    one within ON_ROUTE_MAX_M of the line, skipping off-route warm-up fixes.
-    Returns (offset_m, index). Returns (0.0, 0) when nothing is on-route yet or the
-    offset is below START_OFFSET_MIN_M (an ordinary mile-0 start)."""
-    if not track or not ride_history:
+    Uses the SAME leg-aware trajectory walk as the distance projection
+    (project_history_to_route's seed) so the start point and the current position
+    are matched consistently — never by an independent stateless match that could
+    snap to the wrong overlapping leg. Returns (offset_m, index), or (0.0, 0) when
+    there's no on-route fix yet or the offset is below START_OFFSET_MIN_M (an
+    ordinary mile-0 start, so no offset is applied)."""
+    _, _, _, start_dist, start_idx = project_history_to_route(
+        ride_history, track, with_start=True)
+    if start_dist is None or start_dist < START_OFFSET_MIN_M:
         return 0.0, 0
-    for p in ride_history:
-        try:
-            lat, lng = float(p['lat']), float(p['lng'])
-        except (TypeError, ValueError, KeyError):
-            continue
-        dist_m, idx, off_by = project_to_route(lat, lng, track)
-        if off_by is not None and off_by <= ON_ROUTE_MAX_M:
-            if dist_m is not None and dist_m >= START_OFFSET_MIN_M:
-                return dist_m, (idx or 0)
-            return 0.0, 0
-    return 0.0, 0
+    return start_dist, (start_idx or 0)
 
 
 def distance_progressed_m(current_dist_m, start_offset_m, total_dist_m):

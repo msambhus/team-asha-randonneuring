@@ -142,6 +142,39 @@ def test_route_start_offset_empty():
         [{'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(0)}], []) == (0.0, 0)
 
 
+# A loop whose FINISH vertex sits ~15 m from the START vertex — the case that made
+# a stateless nearest-point seed mis-snap a normal mile-0 start onto the finish.
+_LOOP = [
+    {'lat': 37.00,    'lng': -122.00,    'dist_m': 0.0},      # start
+    {'lat': 37.00,    'lng': -121.99,    'dist_m': 889.0},    # east
+    {'lat': 37.01,    'lng': -121.99,    'dist_m': 1900.0},   # north
+    {'lat': 37.01,    'lng': -122.00,    'dist_m': 2789.0},   # west
+    {'lat': 37.0001,  'lng': -122.0001,  'dist_m': 3700.0},   # finish ≈ start
+]
+
+
+def test_route_start_offset_zero_on_loop_started_at_mile0():
+    # First fix sits BETWEEN the start and finish vertices, marginally closer to the
+    # finish — a stateless nearest match would snap to the finish (3700 m) and
+    # wrongly flag a mid-route start. Heading-aware seeding sees the rider heading
+    # OUT (east) and keeps them at mile 0.
+    hist = [
+        {'lat': 37.00007, 'lng': -122.00007, 'recorded_at': _t(0)},
+        {'lat': 37.00, 'lng': -121.995, 'recorded_at': _t(60)},   # moved east
+    ]
+    assert tlm.route_start_offset_m(hist, _LOOP) == (0.0, 0)
+
+
+def test_project_history_with_start_returns_seed_tuple():
+    hist = [{'lat': 37.0, 'lng': -121.98, 'recorded_at': _t(0)}]
+    dist_m, idx, off, start_dist, start_idx = tlm.project_history_to_route(
+        hist, _TRACK, with_start=True)
+    assert start_dist == 1778.0 and start_idx == 2
+    assert dist_m == 1778.0 and idx == 2           # single fix: current == start
+    assert tlm.project_history_to_route([], _TRACK, with_start=True) == (
+        None, None, None, None, None)
+
+
 def test_distance_progressed_no_offset_is_absolute():
     assert tlm.distance_progressed_m(2667.0, 0, 5334.0) == 2667.0
     assert tlm.distance_progressed_m(None, 0, 5334.0) is None

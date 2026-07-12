@@ -869,9 +869,15 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
     # more than once resolves to the leg they're actually on and the distance is
     # monotonic (never jumps backward). Falls back to a stateless match only when
     # there's no in-ride trajectory yet (ride_history empty).
-    dist_m, idx, off_by_m = tlm.project_history_to_route(ride_history, ctx['track'])
+    # One leg-aware trajectory walk yields BOTH the current distance-done and the
+    # rider's START position on the route (the seed), so the two are always matched
+    # consistently. Fall back to a stateless match only when there's no in-ride
+    # trajectory yet (ride_history empty) — then there's no offset.
+    dist_m, idx, off_by_m, start_dist_m, start_idx = tlm.project_history_to_route(
+        ride_history, ctx['track'], with_start=True)
     if dist_m is None:
         dist_m, idx, off_by_m = tlm.project_to_route(lat, lng, ctx['track'])
+        start_dist_m, start_idx = None, 0
     on_route = (dist_m is not None and off_by_m is not None
                 and off_by_m <= tlm.ON_ROUTE_MAX_M)
     if not on_route:
@@ -881,15 +887,23 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
     # A loop permanent can be started PARTWAY round (rider begins at, say, route-mile
     # 5 and finishes back there). Measure distance DONE from the rider's OWN start on
     # the route, wrapping the loop — not from the route file's mile 0 — so "distance
-    # done", remaining, average speed and climbing done reflect THEIR ride. For an
-    # ordinary mile-0 start the offset is 0 and every number below is unchanged.
-    start_offset_m, start_idx = tlm.route_start_offset_m(ride_history, ctx['track'])
+    # done", remaining, average speed and climbing done reflect THEIR ride. A start
+    # within START_OFFSET_MIN_M of mile 0 is an ordinary start: offset 0, and every
+    # number below is unchanged.
+    start_offset_m = (start_dist_m if (start_dist_m or 0) >= tlm.START_OFFSET_MIN_M
+                      else 0.0)
+    if not start_offset_m:
+        start_idx = 0
     mid_route_start = start_offset_m > 0
     progressed_m = tlm.distance_progressed_m(dist_m, start_offset_m, ctx['total_dist_m'])
 
     remaining_m = tlm.remaining_distance_m(ctx['total_dist_m'], progressed_m)
     ascent_done, ascent_left = tlm.ascent_progressed_split(
         ctx['cum_ascent_ft'], start_idx, idx, ctx['total_ascent_ft'])
+    # Wind done/ahead split at the rider's ABSOLUTE route position (not the wrapped
+    # progressed distance). Known, accepted deviation for a mid-route loop start: the
+    # head/cross-wind partition is a soft advisory metric and keeping it on the route
+    # frame is self-consistent with the geometry.
     hw_done, hw_ahead = tlm.headwinds_split(ctx.get('wind_by_dist'), dist_m)
     cw_done, cw_ahead = tlm.crosswinds_split(ctx.get('wind_by_dist'), dist_m)
     tuf = tlm.toughness_remaining(ascent_left, remaining_m)
