@@ -183,7 +183,8 @@
    doesn't fight the alternating group shade (which now owns the background). */
 .extra-row { border-left: 3px solid #f59e0b; }
 
-/* Per-row map affordance: opens the shared overlay (works on touch — no hover). */
+/* Per-row map affordance: click/tap opens the shared modal (all devices); on
+   fine-pointer devices a hover also reveals the lightweight preview popover. */
 .seg-map-btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 3px;
     margin-top: 5px; padding: 5px 8px; min-height: 30px;
@@ -217,6 +218,21 @@
     width: 100%; height: 300px; background: #f8fafc;
     border: 1px solid #eef2f7; border-radius: 8px;
 }
+
+/* Hover-reveal preview: a non-modal, button-anchored popover (fine-pointer
+   devices only — bound in JS via matchMedia). No full-screen backdrop, so it
+   never covers the triggering button and the cursor can move onto it without
+   the preview self-cancelling. Positioned with position:fixed so the scrollable
+   .table-wrap can't clip it. Touch devices never see it (tap opens the modal). */
+.seg-map-hover {
+    position: fixed; top: 0; left: 0; z-index: 900; display: none;
+    width: 320px; max-width: 92vw;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.28); padding: 12px;
+}
+.seg-map-hover.open { display: block; }
+.seg-map-hover h3 { margin: 0 0 8px; font-size: 0.8rem; color: #1e293b; }
+.seg-map-hover-pane { height: 220px; }
 
 .stop-name {
     max-width: 100px;
@@ -983,7 +999,9 @@
 </script>
 {% endif %}
 
-{# --- Segment/stop map overlay (opened by any .seg-map-btn; click/tap, no hover) --- #}
+{# --- Segment/stop map preview. Two surfaces sharing one render core + one
+      Leaflet lifecycle: a modal (click/tap/keyboard) and a hover popover
+      (fine-pointer only). At most one Leaflet map is alive at a time. --- #}
 {% if map_data and map_data.thumb %}
 <div class="seg-map-overlay" id="segMapOverlay" role="dialog" aria-modal="true"
      aria-label="Segment map" aria-hidden="true">
@@ -994,19 +1012,28 @@
              aria-label="Segment map"></div>
     </div>
 </div>
+{# Non-modal hover preview — anchored beside the button, no backdrop, supplementary
+   (never steals focus). Only shown on fine-pointer devices (JS matchMedia gate). #}
+<div class="seg-map-hover" id="segMapHover" role="presentation" aria-hidden="true">
+    <h3 id="segMapHoverTitle"></h3>
+    <div class="seg-map-leaflet seg-map-hover-pane" id="segMapHoverLeaflet"
+         role="img" aria-label="Segment map preview"></div>
+</div>
 <script>
 (function () {
-    // Real basemap (OpenStreetMap tiles) behind the route, instead of the old
-    // blank SVG that drew the route on an empty background. Driven by the same
-    // lat/lng map_data the main #rideMap uses, so a Leaflet map with the full
-    // track (faint) + the selected leg/stop (bold) shows over actual streets.
+    // Real basemap (OpenStreetMap tiles) behind the route, driven by the same
+    // lat/lng map_data the main #rideMap uses: the full track (faint) + the
+    // selected leg/stop (bold) over actual streets.
     var mapData = {{ map_data|tojson }};
     var overlay = document.getElementById('segMapOverlay');
     if (!overlay || !mapData || !mapData.track || mapData.track.length < 2) return;
-    var title = document.getElementById('segMapTitle');
+
+    var modalTitle = document.getElementById('segMapTitle');
+    var modalPane = document.getElementById('segMapLeaflet');
     var closeBtn = overlay.querySelector('.seg-map-close');
-    var lastFocus = null;
-    var lmap = null, layers = null;
+    var hover = document.getElementById('segMapHover');
+    var hoverTitle = document.getElementById('segMapHoverTitle');
+    var hoverPane = document.getElementById('segMapHoverLeaflet');
 
     // data-mapkey is the leg's arrival location (planned segment) or the stop's
     // distance ('%.1f', unplanned stop) — look those up in map_data by the same key.
@@ -1017,18 +1044,16 @@
         if (s.distance_miles != null) stopByDist[Number(s.distance_miles).toFixed(1)] = s;
     });
 
-    function ensureMap() {
-        if (lmap) return lmap;
-        lmap = L.map('segMapLeaflet', { scrollWheelZoom: false });
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 18, attribution: '&copy; OpenStreetMap contributors',
-        }).addTo(lmap);
-        layers = L.layerGroup().addTo(lmap);
-        return lmap;
+    // ---- Single live Leaflet instance shared across both surfaces ----------
+    // Only one map is ever alive (single-instance invariant / no eager N maps).
+    var lmap = null, layers = null, mapPane = null;
+
+    function destroyMap() {
+        if (lmap) lmap.remove();
+        lmap = null; layers = null; mapPane = null;
     }
 
-    function render(key, isStop, label) {
-        ensureMap();
+    function drawSelection(key, isStop) {
         layers.clearLayers();
         // Faint full track for context (same neutral grey as the main map).
         L.polyline(mapData.track, { color: '#cbd5e1', weight: 3, opacity: 0.8 }).addTo(layers);
@@ -1042,18 +1067,28 @@
             var st = stopByDist[key];
             focus = L.circleMarker([st.lat, st.lng], { radius: 7, color: '#fff', weight: 2, fillColor: '#dc2626', fillOpacity: 1 }).addTo(layers);
         }
-        title.textContent = label || '';
         return focus;
     }
-    function open(key, isStop, label) {
-        lastFocus = document.activeElement;
-        overlay.classList.add('open');
-        overlay.setAttribute('aria-hidden', 'false');
-        var focus = render(key, isStop, label);
-        // The container was hidden until now; Leaflet must recompute its size,
-        // then fit to the selected leg/stop (fall back to the whole track).
-        setTimeout(function () {
-            ensureMap().invalidateSize();
+
+    // Build a fresh map into an already-visible pane. The container must be
+    // displayed BEFORE L.map() runs: creating a map on a 0-width node makes
+    // Leaflet read offsetWidth === 0 and never request tiles (the "only the
+    // route shows up" bug). So we create + add the tile layer inside rAF, once
+    // the pane has non-zero size, then invalidateSize()/fitBounds(). Destroying
+    // on every hide (not reusing) also kills the stale-tile-on-reopen case.
+    function buildMap(pane, key, isStop, label, titleEl) {
+        destroyMap();            // enforce single-instance before creating
+        mapPane = pane;
+        if (titleEl) titleEl.textContent = label || '';
+        requestAnimationFrame(function () {
+            if (mapPane !== pane) return;   // superseded/hidden before this frame
+            lmap = L.map(pane, { scrollWheelZoom: false });
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 18, attribution: '&copy; OpenStreetMap contributors',
+            }).addTo(lmap);
+            layers = L.layerGroup().addTo(lmap);
+            var focus = drawSelection(key, isStop);
+            lmap.invalidateSize();
             try {
                 if (focus && focus.getBounds) {
                     lmap.fitBounds(focus.getBounds(), { padding: [30, 30], maxZoom: 15 });
@@ -1063,26 +1098,102 @@
                     lmap.fitBounds(L.latLngBounds(mapData.track), { padding: [20, 20] });
                 }
             } catch (e) { /* ignore fit errors on degenerate geometry */ }
-        }, 60);
+        });
+    }
+
+    // ---- Modal surface (click / tap / keyboard) ----------------------------
+    var lastFocus = null;
+    function openModal(key, isStop, label) {
+        hideHover(true);         // a click supersedes any hover popover
+        lastFocus = document.activeElement;
+        overlay.classList.add('open');
+        overlay.setAttribute('aria-hidden', 'false');
+        buildMap(modalPane, key, isStop, label, modalTitle);
         closeBtn.focus();
     }
-    function close() {
+    function closeModal() {
         overlay.classList.remove('open');
         overlay.setAttribute('aria-hidden', 'true');
+        if (mapPane === modalPane) destroyMap();
         if (lastFocus && lastFocus.focus) lastFocus.focus();
     }
     document.querySelectorAll('.seg-map-btn').forEach(function (btn) {
         btn.addEventListener('click', function () {
-            open(btn.getAttribute('data-mapkey'),
-                 btn.getAttribute('data-isstop') === '1',
-                 btn.getAttribute('data-label'));
+            openModal(btn.getAttribute('data-mapkey'),
+                      btn.getAttribute('data-isstop') === '1',
+                      btn.getAttribute('data-label'));
         });
     });
-    closeBtn.addEventListener('click', close);
-    overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+    closeBtn.addEventListener('click', closeModal);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) closeModal(); });
     document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && overlay.classList.contains('open')) close();
+        if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal();
     });
+
+    // ---- Hover surface (fine-pointer only) ---------------------------------
+    // Button + popover are treated as ONE hover region sharing one close timer,
+    // so the cursor can cross the small gap from button to popover without it
+    // closing. Bound only when the device actually has a fine hover pointer.
+    var fine = window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+    function positionHover(btn) {
+        var r = btn.getBoundingClientRect();
+        var gap = 8, margin = 8;
+        var pw = hover.offsetWidth, ph = hover.offsetHeight;
+        var left = r.right + gap;                       // prefer right of the button
+        if (left + pw > window.innerWidth - margin) {   // flip left if it would overflow
+            left = r.left - gap - pw;
+        }
+        left = Math.max(margin, Math.min(left, window.innerWidth - margin - pw));
+        var top = Math.max(margin, Math.min(r.top, window.innerHeight - margin - ph));
+        hover.style.left = left + 'px';
+        hover.style.top = top + 'px';
+    }
+    function showHover(btn) {
+        if (overlay.classList.contains('open')) return; // modal wins; skip popover
+        hover.style.visibility = 'hidden';              // place before revealing
+        hover.classList.add('open');
+        positionHover(btn);
+        hover.style.visibility = '';
+        hover.setAttribute('aria-hidden', 'false');
+        buildMap(hoverPane, btn.getAttribute('data-mapkey'),
+                 btn.getAttribute('data-isstop') === '1',
+                 btn.getAttribute('data-label'), hoverTitle);
+    }
+    function hideHover(immediate) {
+        clearTimers();
+        hover.classList.remove('open');
+        hover.setAttribute('aria-hidden', 'true');
+        if (mapPane === hoverPane) destroyMap();
+    }
+
+    var openTimer = null, closeTimer = null;
+    function clearOpen() { if (openTimer) { clearTimeout(openTimer); openTimer = null; } }
+    function clearClose() { if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; } }
+    function clearTimers() { clearOpen(); clearClose(); }
+    function scheduleClose() {
+        clearClose();
+        closeTimer = setTimeout(function () { closeTimer = null; hideHover(); }, 200);
+    }
+
+    if (fine && hover) {
+        document.querySelectorAll('.seg-map-btn').forEach(function (btn) {
+            // ~120ms open-intent debounce so sweeping the cursor down the table
+            // doesn't thrash map create/destroy.
+            btn.addEventListener('mouseenter', function () {
+                clearClose();
+                clearOpen();
+                openTimer = setTimeout(function () { openTimer = null; showHover(btn); }, 120);
+            });
+            btn.addEventListener('mouseleave', function () {
+                clearOpen();
+                scheduleClose();
+            });
+        });
+        // Moving onto the popover keeps it open; leaving it restarts the timer.
+        hover.addEventListener('mouseenter', clearClose);
+        hover.addEventListener('mouseleave', scheduleClose);
+    }
 })();
 </script>
 {% endif %}
