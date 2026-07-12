@@ -353,6 +353,83 @@ def ascent_progressed_split(cum_ascent_ft, start_index, cur_index, total_ascent_
     return round(done), round(left)
 
 
+def plan_time_at(dist_miles, plan_stops):
+    """Expected cumulative plan time (min) at an along-route distance, linearly
+    interpolated over the plan's {distance_miles, cum_time_min} points and clamped
+    to the endpoints. None when there's no usable plan or distance."""
+    if not plan_stops or dist_miles is None:
+        return None
+    pts = sorted(((float(s['distance_miles']), float(s['cum_time_min']))
+                  for s in plan_stops
+                  if s.get('distance_miles') is not None and s.get('cum_time_min') is not None),
+                 key=lambda x: x[0])
+    if not pts:
+        return None
+    if dist_miles <= pts[0][0]:
+        return pts[0][1]
+    if dist_miles >= pts[-1][0]:
+        return pts[-1][1]
+    for (d0, t0), (d1, t1) in zip(pts, pts[1:]):
+        if d0 <= dist_miles <= d1:
+            frac = (dist_miles - d0) / (d1 - d0) if d1 > d0 else 0
+            return t0 + frac * (t1 - t0)
+    return pts[-1][1]
+
+
+def rebase_plan_stops(plan_stops, start_offset_miles, total_miles):
+    """Re-express the plan in the rider's frame for a mid-route (loop) start.
+
+    A loop permanent begun partway round means the rider rides the plan ROTATED:
+    their start = 0, distances wrap the loop, and each control's expected time is
+    measured as elapsed since THEIR start. This lets the ordinary plan_delta /
+    next_control / finish_stop logic work on a rider who did not start at the plan's
+    mile 0 — feed them (progressed_distance, rebased_stops).
+
+    Returns stops sorted by rebased distance, with a synthetic finish at the rider's
+    OWN start point (a full loop later) so comparison spans their whole ride. With
+    no offset it returns the stops unchanged.
+    """
+    if not plan_stops or not start_offset_miles or not total_miles:
+        return plan_stops
+    t_start = plan_time_at(start_offset_miles, plan_stops) or 0.0
+    total_time = max((float(s['cum_time_min']) for s in plan_stops
+                      if s.get('cum_time_min') is not None), default=0.0)
+    out = []
+    for s in plan_stops:
+        d, ct = s.get('distance_miles'), s.get('cum_time_min')
+        if d is None or ct is None:
+            continue
+        d_r = float(d) - start_offset_miles
+        if d_r < 0:
+            d_r += total_miles
+        c_r = float(ct) - t_start
+        if c_r < 0:
+            c_r += total_time
+        stop = dict(s)
+        stop['distance_miles'] = round(d_r, 2)
+        stop['cum_time_min'] = round(c_r)
+        ar = s.get('arrival_time_min')
+        if ar is not None:
+            a_r = float(ar) - t_start
+            if a_r < 0:
+                a_r += total_time
+            stop['arrival_time_min'] = round(a_r)
+        # The plan's own start/finish (the loop point) is just a waypoint mid-ride
+        # for this rider — demote it so it isn't treated as their finish.
+        if (stop.get('stop_type') or '').lower() in ('start', 'finish'):
+            stop['stop_type'] = 'control'
+        out.append(stop)
+    out.sort(key=lambda x: x['distance_miles'])
+    # The rider finishes back at their OWN start after the full loop — a point the
+    # plan (start/finish at the loop node) doesn't list. Add it so the finish metric
+    # and the last leg of the plan comparison span the rider's whole ride.
+    out.append({'distance_miles': round(total_miles, 2),
+                'cum_time_min': round(total_time),
+                'arrival_time_min': round(total_time),
+                'location': 'Start / Finish', 'stop_type': 'finish'})
+    return out
+
+
 def headwinds_split(wind_by_dist, current_dist_m):
     """Average headwind (km/h) over the done vs remaining route portions.
 

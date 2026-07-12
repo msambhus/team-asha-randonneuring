@@ -208,6 +208,49 @@ def test_ascent_progressed_split_wrapped_arc():
     assert tlm.ascent_progressed_split(_CUM_ASCENT, 3, 1, 400) == (100, 300)
 
 
+# A simple loop plan: start/finish share the node; controls every 10 mi, 6 min/mi.
+_PLAN = [
+    {'distance_miles': 0.0,  'cum_time_min': 0,   'arrival_time_min': 0,   'stop_type': 'start',   'location': 'S/F'},
+    {'distance_miles': 10.0, 'cum_time_min': 60,  'arrival_time_min': 60,  'stop_type': 'control', 'location': 'C1'},
+    {'distance_miles': 20.0, 'cum_time_min': 120, 'arrival_time_min': 120, 'stop_type': 'control', 'location': 'C2'},
+    {'distance_miles': 30.0, 'cum_time_min': 180, 'arrival_time_min': 180, 'stop_type': 'finish',  'location': 'S/F'},
+]
+
+
+def test_plan_time_at_interpolates_and_clamps():
+    assert tlm.plan_time_at(15.0, _PLAN) == 90.0     # halfway between 60 and 120
+    assert tlm.plan_time_at(0.0, _PLAN) == 0.0
+    assert tlm.plan_time_at(-5.0, _PLAN) == 0.0       # clamp low
+    assert tlm.plan_time_at(99.0, _PLAN) == 180.0     # clamp high
+    assert tlm.plan_time_at(5.0, None) is None
+
+
+def test_rebase_plan_stops_identity_without_offset():
+    assert tlm.rebase_plan_stops(_PLAN, 0, 30.0) is _PLAN
+
+
+def test_rebase_plan_stops_rotates_to_rider_start():
+    # Rider began at plan-mile 10. Their frame: that becomes 0; the loop node (mile 0
+    # / 30) sits at rider-distance 20; a synthetic finish caps their ride at 30.
+    reb = tlm.rebase_plan_stops(_PLAN, 10.0, 30.0)
+    by_dist = {s['distance_miles']: s['cum_time_min'] for s in reb}
+    assert by_dist[0.0] == 0        # rider's own start, elapsed 0
+    assert by_dist[10.0] == 60      # next control, +60 min
+    assert by_dist[20.0] == 120     # the loop node
+    # Synthetic finish at a full loop on: rider-distance = total, time = full plan.
+    fin = tlm.finish_stop(reb)
+    assert fin['distance_miles'] == 30.0 and fin['arrival_time_min'] == 180
+    # No 'start' stop_type survives (the plan's start is a mid-ride waypoint now).
+    assert all((s.get('stop_type') or '') != 'start' for s in reb)
+
+
+def test_rebase_then_plan_delta_matches_rider_frame():
+    # Rider started at mile 10, has ridden 5 mi (rider frame) in 25 min. Plan expects
+    # 30 min there (interp 0→60 over 0→10) → +5 min ahead.
+    reb = tlm.rebase_plan_stops(_PLAN, 10.0, 30.0)
+    assert tlm.plan_delta(5.0, 25, reb) == 5
+
+
 def test_course_over_ground_eastbound():
     pts = [{'lat': 37.0, 'lng': -122.00}, {'lat': 37.0, 'lng': -121.99}]
     hd = tlm.course_over_ground(pts)

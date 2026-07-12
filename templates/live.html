@@ -929,10 +929,16 @@
       }
       wrap.style.display = 'block';
       if (!chartsBuilt) { buildCharts(cd); chartsBuilt = true; }
+      // Charts' x-axis is ABSOLUTE route distance, so place each marker at the rider's
+      // absolute route position (route_position_mi). It differs from distance_mi (the
+      // ridden odometer) only for a mid-route loop start; fall back for older payloads.
+      function chartDist(now) {
+        return now.route_position_mi != null ? now.route_position_mi : now.distance_mi;
+      }
       var markers = positions
-        .filter(function (p) { return p.telemetry && p.telemetry.now && p.telemetry.now.distance_mi != null; })
+        .filter(function (p) { return p.telemetry && p.telemetry.now && chartDist(p.telemetry.now) != null; })
         .map(function (p) {
-          return { index: nearestIndex(cd.labels, p.telemetry.now.distance_mi),
+          return { index: nearestIndex(cd.labels, chartDist(p.telemetry.now)),
                    color: p.plan_color || p.color, initials: chartInitials(p.name) };
         });
       Object.keys(liveCharts).forEach(function (id) {
