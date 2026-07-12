@@ -1,7 +1,7 @@
 """Data access layer — all SQL queries live here (PostgreSQL via psycopg2)."""
 import json
 import secrets
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from enum import Enum
 import psycopg2.extras
 from db import get_db
@@ -3659,6 +3659,98 @@ def save_ride_wind_data(ride_id, wind_rows):
         values,
     )
     conn.commit()
+
+
+# ========== ROUTE WEATHER CACHE (async forecast cron — TA-237) ==========
+# Weather is pre-fetched hourly by /api/cron/fetch-route-weather and READ from
+# route_weather_cache on every request path (no live Open-Meteo on the request path).
+
+def get_route_weather_cache(route_id, forecast_date):
+    """Return the stored Open-Meteo forecast for a route on a date, or None.
+
+    Row shape: {'route_id', 'forecast_date', 'weather_data' (list of per-sample
+    forecast dicts), 'sample_points' (list of {lat,lng,distance_m}), 'fetched_at'}.
+    Populated hourly by the fetch-route-weather cron; every request path READS from
+    here instead of calling Open-Meteo live (TA-237).
+    """
+    return _execute(
+        "SELECT route_id, forecast_date, weather_data, sample_points, fetched_at "
+        "FROM route_weather_cache WHERE route_id = %s AND forecast_date = %s",
+        (route_id, forecast_date),
+    ).fetchone()
+
+
+def save_route_weather_cache(route_id, forecast_date, weather_data, sample_points):
+    """Upsert one route's forecast for a date (idempotent on (route_id, forecast_date)).
+
+    Overwrites the payload + sample points and bumps fetched_at, so each hourly cron run
+    refreshes the last-good row in place. Only called from the fetch-route-weather cron —
+    never on a request path. On a cron fetch failure the caller simply skips this upsert,
+    leaving the previous last-good row untouched.
+    """
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        """
+        INSERT INTO route_weather_cache
+            (route_id, forecast_date, weather_data, sample_points, fetched_at)
+        VALUES (%s, %s, %s, %s, NOW())
+        ON CONFLICT (route_id, forecast_date) DO UPDATE SET
+            weather_data = EXCLUDED.weather_data,
+            sample_points = EXCLUDED.sample_points,
+            fetched_at = NOW()
+        """,
+        (route_id, forecast_date,
+         psycopg2.extras.Json(weather_data), psycopg2.extras.Json(sample_points)),
+    )
+    conn.commit()
+
+
+def get_upcoming_weather_targets(within_days=28):
+    """Rides needing pre-fetched weather: upcoming rides within `within_days` OR
+    live/active rides, that have a date.
+
+    One row per ride: ride_id, forecast_date (the ride date), name, the RWGPS url, and
+    plan_id. The fetch-route-weather cron extracts the route id, gates on the 16-day
+    forecast horizon, and upserts route_weather_cache. NOT cached — the cron needs fresh
+    dates each run. "Live/active" = a ride currently pointed at by rider_live_tracking,
+    so a multi-day ride that started before the window is still covered.
+    """
+    today = date.today()
+    cutoff = today + timedelta(days=within_days)
+    rows = _execute("""
+        SELECT ri.id AS ride_id, ri.date AS forecast_date, ri.name AS name,
+               COALESCE(rp.rwgps_url_team, ri.rwgps_url_team, ri.rwgps_url) AS rwgps_url,
+               rp.id AS plan_id
+        FROM ride ri
+        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
+        WHERE ri.date IS NOT NULL
+          AND (
+                (ri.date >= %s AND ri.date <= %s)
+             OR ri.id IN (
+                    SELECT active_ride_id FROM rider_live_tracking
+                    WHERE enabled = TRUE AND active_ride_id IS NOT NULL
+                )
+          )
+        ORDER BY ri.date
+    """, (today, cutoff)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_upcoming_ride_date_for_plan(plan_id):
+    """Return the date of this plan's next upcoming ride (>= today), or None.
+
+    The ride-plan-detail pages render a route class (not a dated event), so they key the
+    stored forecast on the plan's next scheduled running of the route. None when the plan
+    has no upcoming dated ride — the page then shows no wind (a stored-cache miss), the
+    same graceful degradation as any route without a stored forecast.
+    """
+    row = _execute("""
+        SELECT MIN(date) AS next_date
+        FROM ride
+        WHERE ride_plan_id = %s AND date >= CURRENT_DATE
+    """, (plan_id,)).fetchone()
+    return row['next_date'] if row else None
 
 
 # ========== PERSONALITY & COACHING ==========

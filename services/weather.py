@@ -340,8 +340,13 @@ _BATCH_SIZE = 5   # Locations per Open-Meteo request (small to avoid 504s)
 _MAX_RETRIES = 2  # Retry count per batch on transient errors
 
 
-def _fetch_batch(batch_points):
-    """Fetch weather for a small batch of points with retry on transient errors."""
+def _fetch_batch(batch_points, forecast_days=None):
+    """Fetch weather for a small batch of points with retry on transient errors.
+
+    forecast_days: optional int (1-16). When set, request that many days of hourly data
+    so the arrays span a ride further out than Open-Meteo's 7-day default. The
+    fetch-route-weather cron passes the horizon value; other callers omit it.
+    """
     lats = ",".join(str(round(p['lat'], 4)) for p in batch_points)
     lngs = ",".join(str(round(p['lng'], 4)) for p in batch_points)
 
@@ -351,6 +356,8 @@ def _fetch_batch(batch_points):
         'hourly': 'temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation_probability,precipitation,cloud_cover,weather_code',
         'timezone': 'auto',
     }
+    if forecast_days:
+        params['forecast_days'] = forecast_days
 
     last_error = None
     for attempt in range(_MAX_RETRIES + 1):
@@ -384,11 +391,16 @@ def _fetch_batch(batch_points):
     raise last_error
 
 
-def fetch_route_weather(sample_points):
+def fetch_route_weather(sample_points, forecast_days=None):
     """Fetch weather forecasts for sample points via Open-Meteo API.
 
     Splits into small batches with retry to handle transient 504/connection errors.
     Returns list of per-location forecast dicts.
+
+    forecast_days: optional int (1-16) passed through to each batch so the hourly arrays
+    span a ride up to 16 days out. After TA-237 this live-fetch primitive is called only
+    by the fetch-route-weather cron; request paths read from route_weather_cache via
+    load_stored_route_weather instead.
     """
     if not sample_points:
         return []
@@ -396,9 +408,54 @@ def fetch_route_weather(sample_points):
     all_results = []
     for i in range(0, len(sample_points), _BATCH_SIZE):
         batch = sample_points[i:i + _BATCH_SIZE]
-        all_results.extend(_fetch_batch(batch))
+        all_results.extend(_fetch_batch(batch, forecast_days=forecast_days))
 
     return all_results
+
+
+# ── Stored weather (read path — populated by the fetch-route-weather cron) ──
+
+def load_stored_route_weather(route_id, forecast_date):
+    """Load the pre-fetched Open-Meteo forecast for a route on a date (TA-237).
+
+    The hourly fetch-route-weather cron pre-computes and stores a dense (15 km) sampled
+    forecast per (route_id, forecast_date); every request path READS it here instead of
+    calling Open-Meteo live. Returns (weather_data, sample_points) — a list of per-sample
+    forecast dicts and the aligned [{lat,lng,distance_m}] points it was sampled at — or
+    (None, None) when nothing is stored (new route, beyond-horizon ride, or the cron has
+    not run yet), so callers degrade gracefully with no live fallback.
+    """
+    if route_id is None or forecast_date is None:
+        return None, None
+    from models import get_route_weather_cache
+    row = get_route_weather_cache(route_id, forecast_date)
+    if not row:
+        return None, None
+    return row.get('weather_data'), row.get('sample_points')
+
+
+def _nearest_sample_index(sample_points, target_m):
+    """Index of the stored sample point whose route distance is closest to target_m."""
+    if not sample_points:
+        return None
+    best_idx, best_diff = None, None
+    for i, sp in enumerate(sample_points):
+        diff = abs(float(sp.get('distance_m') or 0) - target_m)
+        if best_diff is None or diff < best_diff:
+            best_idx, best_diff = i, diff
+    return best_idx
+
+
+def _sample_bearing(sample_points, idx):
+    """Forward bearing at stored sample `idx` (idx→idx+1; for the last sample idx-1→idx)."""
+    n = len(sample_points)
+    if n < 2:
+        return 0.0
+    if idx + 1 < n:
+        a, b = sample_points[idx], sample_points[idx + 1]
+    else:
+        a, b = sample_points[idx - 1], sample_points[idx]
+    return calculate_bearing(a['lat'], a['lng'], b['lat'], b['lng'])
 
 
 # ── Historical Wind (Archive API + forecast past_days fallback) ──────
@@ -625,28 +682,6 @@ def get_historical_stop_wind(stops, track_points, ride_date, ride_id=None):
     return wind_rows, data_source
 
 
-# ── Caching ──────────────────────────────────────────────────────────
-
-def get_cached_route_weather(route_slug, start_hour_str, sample_points, cache=None):
-    """Cache-first weather fetch with 1-hour TTL.
-
-    cache: Flask-Caching cache object (passed explicitly for testability).
-    """
-    cache_key = f"weather:{route_slug}:{start_hour_str}"
-
-    if cache is not None:
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return cached
-
-    data = fetch_route_weather(sample_points)
-
-    if cache is not None:
-        cache.set(cache_key, data, timeout=3600)
-
-    return data
-
-
 # ── Segment + chart builders (shared by the weather page AND the live map) ──
 # These were extracted from routes/weather.py so the live route can build its
 # route-ahead charts from the EXACT same time-aware pipeline (sample → forecast →
@@ -836,88 +871,58 @@ def build_chart_data(segments):
 
 # ── Per-stop wind pipeline ───────────────────────────────────────────
 
-def fetch_stop_wind(stops, track_points, plan_slug, start_time_str, cache=None):
-    """Return per-stop wind data for display in the base ride plan table.
+def fetch_stop_wind(stops, route_id, forecast_date, start_time_str):
+    """Return per-stop wind data for the ride-plan table, READ from stored weather (TA-237).
 
-    stops: list of stop dicts with 'distance_miles' key (and optionally 'arrival_time_min')
-    track_points: list of RWGPS track dicts (y=lat, x=lng, d=distance_m)
-    plan_slug: str used as part of cache key prefix "wind:{plan_slug}:{start_hour}"
-    start_time_str: "HH:MM" string for estimated ride start
-    cache: Flask-Caching cache object (passed explicitly for testability)
+    stops: list of stop dicts with 'distance_miles' (and optionally 'arrival_time_min')
+    route_id: RWGPS route id — keys the stored forecast
+    forecast_date: datetime.date of the ride — keys the stored forecast AND dates arrivals
+    start_time_str: "HH:MM" ride start clock (a time object stringifies fine too)
 
-    Returns list of dicts — same length as stops:
-        {'wind_speed_kmh': float, 'wind_type': str, 'style': dict, 'label': str}
-    None entries for stops whose coordinates could not be resolved.
-    Returns None on empty track, all-None coordinates, or API error.
+    Loads the forecast the hourly fetch-route-weather cron stored for
+    (route_id, forecast_date), maps each stop to the nearest stored sample point by route
+    distance, derives bearing from adjacent samples, and picks the arrival-hour forecast —
+    with ZERO live Open-Meteo calls. Returns a list the same length as `stops` (None for
+    stops that can't be resolved), or None when no forecast is stored for this route+date
+    (graceful miss: the plan/calendar simply shows no wind, exactly like the old
+    API-error path). Same per-stop dict shape as before.
     """
-    if not track_points:
+    if route_id is None or forecast_date is None:
         return None
 
-    # Step 1: interpolate stop coordinates from RWGPS track points
-    coords = get_stop_coordinates(stops, track_points)
-    valid_coords = [c for c in coords if c is not None]
-    if not valid_coords:
+    weather_data, sample_points = load_stored_route_weather(route_id, forecast_date)
+    if not weather_data or not sample_points:
         return None
 
-    # Step 2: build cache key — "wind:{plan_slug}:{YYYYMMDD}{HH}"
-    # Use hour-level granularity so the cache doesn't miss every second.
-    hour_str = start_time_str[:2]
-    date_str = datetime.now().strftime('%Y%m%d')
-    current_hour = datetime.now().strftime('%H')
-    cache_key = f"wind:{plan_slug}:{date_str}{current_hour}"
-
-    if cache is not None:
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return cached
-
-    # Step 3: fetch forecast data for valid coordinates
+    # Ride start on the REAL ride date — the stored hourly arrays span that day, so
+    # arrival-hour selection is correct even for a ride weeks out (the old code timed
+    # arrivals from datetime.now(), i.e. as if the ride were today).
+    s = str(start_time_str or '')
     try:
-        weather_data = fetch_route_weather(valid_coords)
-    except Exception:
-        logger.exception("fetch_stop_wind: weather API error for plan %s", plan_slug)
-        return None
+        start_hour = int(s[:2])
+        start_minute = int(s[3:5]) if len(s) >= 5 else 0
+    except (ValueError, TypeError):
+        start_hour, start_minute = 7, 0
+    start_dt = datetime(forecast_date.year, forecast_date.month, forecast_date.day,
+                        start_hour, start_minute)
 
-    if not weather_data:
-        return None
-
-    # Step 4: build index mapping — valid_index -> original stop index
-    # valid_map[i] = index in coords where coords[index] is the i-th non-None entry
-    valid_map = {}
-    valid_idx = 0
-    for orig_idx, c in enumerate(coords):
-        if c is not None:
-            valid_map[orig_idx] = valid_idx
-            valid_idx += 1
-
-    # Step 5: parse start time into a datetime for arrival estimation
-    start_hour = int(start_time_str[:2])
-    start_minute = int(start_time_str[3:5]) if len(start_time_str) >= 5 else 0
-    today = datetime.now().date()
-    start_dt = datetime(today.year, today.month, today.day, start_hour, start_minute)
-
-    # Step 6: compute per-stop wind entry
     result = []
-    for i, coord in enumerate(coords):
-        if coord is None:
+    for stop in stops:
+        target_m = float(stop.get('distance_miles') or 0) * MILES_TO_METERS
+        idx = _nearest_sample_index(sample_points, target_m)
+        if idx is None or idx >= len(weather_data):
             result.append(None)
             continue
 
-        # Map this stop's original index to its weather_data slice
-        v_idx = valid_map.get(i)
-        if v_idx is None or v_idx >= len(weather_data):
-            result.append(None)
-            continue
-
-        forecast = weather_data[v_idx]
+        forecast = weather_data[idx]
         hourly = forecast.get('hourly', {})
 
         # Use arrival_time_min if present; otherwise estimate from distance
-        arrival_time_min = stops[i].get('arrival_time_min')
+        arrival_time_min = stop.get('arrival_time_min')
         if arrival_time_min is not None:
             arrival_dt = start_dt + timedelta(minutes=float(arrival_time_min))
         else:
-            dist_km = float(stops[i].get('distance_miles') or 0) * 1.60934
+            dist_km = float(stop.get('distance_miles') or 0) * 1.60934
             hours_to_arrive = dist_km / _AVG_SPEED_KMH if _AVG_SPEED_KMH > 0 else 0
             arrival_dt = start_dt + timedelta(hours=hours_to_arrive)
 
@@ -927,18 +932,8 @@ def fetch_stop_wind(stops, track_points, plan_slug, start_time_str, cache=None):
         wind_dir = _safe_get(hourly, 'wind_direction_10m', hour_index, 0)
         temperature = _safe_get(hourly, 'temperature_2m', hour_index, 0.0)
 
-        # Bearing: current stop -> next stop; for last stop: previous -> current
-        bearing = 0.0
-        if i + 1 < len(coords) and coords[i + 1] is not None:
-            bearing = calculate_bearing(
-                coord['lat'], coord['lng'],
-                coords[i + 1]['lat'], coords[i + 1]['lng'],
-            )
-        elif i > 0 and coords[i - 1] is not None:
-            bearing = calculate_bearing(
-                coords[i - 1]['lat'], coords[i - 1]['lng'],
-                coord['lat'], coord['lng'],
-            )
+        # Bearing from the stored sample geometry (nearest sample -> its neighbour).
+        bearing = _sample_bearing(sample_points, idx)
 
         hw = headwind_component(wind_speed, wind_dir, bearing)
         cw = crosswind_component(wind_speed, wind_dir, bearing)
@@ -961,10 +956,6 @@ def fetch_stop_wind(stops, track_points, plan_slug, start_time_str, cache=None):
             'temperature_c': round(float(temperature), 1),
             'temperature_f': int(temp_f),
         })
-
-    # Step 7: cache and return
-    if cache is not None:
-        cache.set(cache_key, result, timeout=3600)
 
     return result
 

@@ -1,0 +1,41 @@
+name: Fetch Route Weather
+
+on:
+  schedule:
+    # Hourly — pre-fetch Open-Meteo weather for upcoming + live rides so the request
+    # path (calendar / live / weather page / mobile plan) never fetches live (TA-237).
+    - cron: '15 * * * *'
+
+  workflow_dispatch: {}
+
+jobs:
+  fetch-route-weather:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Fetch and store route weather
+        run: |
+          echo "Pre-fetching route weather for upcoming + live rides..."
+
+          response=$(curl -X POST https://team-asha-randonneuring.vercel.app/api/cron/fetch-route-weather \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -w "\n%{http_code}" \
+            --max-time 120 \
+            -s)
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+
+          if [[ "$http_code" =~ ^2 ]]; then
+            echo "$body" | jq -r '"Weather: \(.succeeded) stored, \(.failed) failed, \(.skipped_beyond_horizon) beyond horizon"' || echo "$body"
+            exit 0
+          else
+            echo "Fetch route weather failed with status $http_code"
+            echo "$body"
+            exit 1
+          fi

@@ -23,7 +23,7 @@ from services.rwgps import (
 )
 from services.weather import (
     sample_track_points, calculate_bearing,
-    get_cached_route_weather, format_weather_response,
+    load_stored_route_weather, format_weather_response,
 )
 from cache import cache
 import models
@@ -399,19 +399,10 @@ def execute_route_weather(ride_name: str, start_datetime: str = None) -> dict:
         if route_id is None:
             return {'error': "Could not extract a valid route ID from the RWGPS URL."}
 
-        # Step 2: Fetch route geometry from RWGPS
-        route_data = fetch_route(route_id)
-        track_points = route_data.get('track_points', [])
+        # Weather is pre-fetched hourly by the fetch-route-weather cron and READ from
+        # storage — the chat tool never calls Open-Meteo live (TA-237).
 
-        if not track_points:
-            return {'error': "This route has no GPS track data available for weather forecasting."}
-
-        # Step 3: Sample track points at 50km intervals
-        sample_points = sample_track_points(track_points, interval_m=50000)
-        if not sample_points:
-            return {'error': "This route has no GPS track data available for weather forecasting."}
-
-        # Step 4: Parse start datetime
+        # Step 2: Parse start datetime
         if start_datetime:
             try:
                 start_dt = datetime.fromisoformat(start_datetime)
@@ -420,16 +411,19 @@ def execute_route_weather(ride_name: str, start_datetime: str = None) -> dict:
         else:
             start_dt = datetime.now() + timedelta(hours=12)
 
-        # Check if within 16-day forecast window
+        # Step 3: Check if within 16-day forecast window
         max_forecast = datetime.now() + timedelta(days=16)
         if start_dt > max_forecast:
             return {'error': "Weather forecasts are only available up to 16 days ahead. Check back closer to your ride date."}
 
-        # Step 5: Fetch weather data (cached)
-        start_hour_str = start_dt.strftime("%Y-%m-%dT%H:00")
-        weather_data = get_cached_route_weather(route_slug, start_hour_str, sample_points, cache=cache)
+        # Step 4: Load the stored forecast for this route + date. The stored sample points
+        # ARE the points the forecast was sampled at, so weather_data aligns with them.
+        weather_data, sample_points = load_stored_route_weather(route_id, start_dt.date())
+        if not weather_data or not sample_points:
+            return {'error': "Weather forecast isn't available for this route yet — it's prepared "
+                             "hourly for upcoming rides. Check back closer to the ride date."}
 
-        # Step 6: Compute bearings between consecutive sample points
+        # Step 5: Compute bearings between consecutive sample points
         bearings = []
         for i in range(len(sample_points) - 1):
             b = calculate_bearing(
@@ -438,7 +432,7 @@ def execute_route_weather(ride_name: str, start_datetime: str = None) -> dict:
             )
             bearings.append(b)
 
-        # Step 7: Format response
+        # Step 6: Format response
         formatted = format_weather_response(sample_points, weather_data, bearings, start_dt)
         return {'rows': [formatted]}
 

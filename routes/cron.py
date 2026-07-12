@@ -685,6 +685,138 @@ def backfill_strava_streams():
     }), 200
 
 
+@cron_bp.route('/fetch-route-weather', methods=['GET', 'POST'])
+def fetch_route_weather_cron():
+    """Pre-fetch Open-Meteo weather for upcoming + live rides and store it (TA-237).
+
+    Runs hourly (GitHub Actions). Selects rides within 28 days (+ live/active rides) that
+    resolve to an RWGPS route, then fetches Open-Meteo ONLY for those within the 16-day
+    forecast horizon, samples a dense (15 km) route forecast, and upserts it into
+    route_weather_cache. Rides 17-28 days out are reported skipped_beyond_horizon and
+    picked up automatically once they cross the horizon (hourly cadence -> self-healing).
+
+    Per-route fail-soft: a fetch error keeps the last-good stored row (the upsert is simply
+    skipped), logs a warning, and never raises — so no user request ever fetches weather
+    live (removing the TLS-handshake hangs that hit the brevet calendar). Optional
+    ?limit=N caps how many routes are fetched per run and REPORTS truncation.
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    import re
+    from services.rwgps import fetch_route
+    from services.weather import sample_track_points, fetch_route_weather
+    from models import get_upcoming_weather_targets, save_route_weather_cache
+
+    FORECAST_HORIZON_DAYS = 16   # Open-Meteo forecasts at most 16 days ahead
+    SELECT_WINDOW_DAYS = 28      # rides we consider (mission wording / calendar cutoff)
+    SAMPLE_INTERVAL_M = 15000    # dense 15 km sampling (matches weather page / live charts)
+
+    try:
+        targets = get_upcoming_weather_targets(within_days=SELECT_WINDOW_DAYS)
+    except Exception as e:
+        current_app.logger.error('fetch-route-weather: failed to load targets: %s', e)
+        return jsonify({'error': 'Database error'}), 500
+
+    try:
+        limit = int(request.args.get('limit', 0))
+    except (TypeError, ValueError):
+        limit = 0
+
+    today = date.today()
+    horizon_cutoff = today + timedelta(days=FORECAST_HORIZON_DAYS)
+
+    # Dedup on (route_id, forecast_date) — several riders/events can share a route+date —
+    # and gate on the forecast horizon before any fetch.
+    seen = set()
+    plan_targets = []
+    skipped_beyond_horizon = 0
+    skipped_no_route = 0
+    for t in targets:
+        forecast_date = t.get('forecast_date')
+        if isinstance(forecast_date, str):
+            forecast_date = date.fromisoformat(forecast_date)
+        if forecast_date is None:
+            continue
+        match = re.search(r'/routes/(\d+)', t.get('rwgps_url') or '')
+        if not match:
+            skipped_no_route += 1
+            continue
+        route_id = int(match.group(1))
+        key = (route_id, forecast_date)
+        if key in seen:
+            continue
+        seen.add(key)
+        if forecast_date < today:
+            continue  # a live multi-day ride that started earlier — nothing to forecast
+        if forecast_date > horizon_cutoff:
+            skipped_beyond_horizon += 1
+            continue
+        plan_targets.append((route_id, forecast_date, t.get('name')))
+
+    truncated = False
+    if limit and len(plan_targets) > limit:
+        truncated = True
+        current_app.logger.warning(
+            'fetch-route-weather: %d routes in horizon, truncating to limit=%d',
+            len(plan_targets), limit)
+        plan_targets = plan_targets[:limit]
+
+    succeeded = 0
+    failed = 0
+    details = []
+    for route_id, forecast_date, name in plan_targets:
+        entry = {'route_id': route_id, 'date': str(forecast_date), 'name': name}
+        try:
+            route_data = fetch_route(route_id)
+            track_points = (route_data or {}).get('track_points') or []
+            if not track_points:
+                entry['status'] = 'skip_no_track'
+                details.append(entry)
+                continue
+            samples = sample_track_points(track_points, interval_m=SAMPLE_INTERVAL_M)
+            if not samples:
+                entry['status'] = 'skip_no_samples'
+                details.append(entry)
+                continue
+            # Request enough forecast days that the hourly arrays span the ride date
+            # (Open-Meteo defaults to 7; a ride 12 days out would otherwise be missing).
+            forecast_days = min(FORECAST_HORIZON_DAYS,
+                                max(1, (forecast_date - today).days + 1))
+            weather_data = fetch_route_weather(samples, forecast_days=forecast_days)
+            if not weather_data:
+                entry['status'] = 'skip_no_data'
+                details.append(entry)
+                continue
+            save_route_weather_cache(route_id, forecast_date, weather_data, samples)
+            entry['status'] = 'ok'
+            entry['samples'] = len(samples)
+            succeeded += 1
+        except Exception as e:
+            # Fail-soft: keep the last-good stored row (skip the upsert), log, never raise.
+            failed += 1
+            entry['status'] = f'error: {str(e)[:120]}'
+            current_app.logger.warning(
+                'fetch-route-weather: route %s date %s failed (last-good kept): %s',
+                route_id, forecast_date, e)
+        details.append(entry)
+        time.sleep(0.5)  # gentle rate limit on Open-Meteo
+
+    current_app.logger.info(
+        'fetch-route-weather: %d ok, %d failed, %d beyond-horizon, %d no-route',
+        succeeded, failed, skipped_beyond_horizon, skipped_no_route)
+    return jsonify({
+        'succeeded': succeeded,
+        'failed': failed,
+        'skipped_beyond_horizon': skipped_beyond_horizon,
+        'skipped_no_route': skipped_no_route,
+        'truncated': truncated,
+        'processed': len(details),
+        'details': details,
+    }), 200
+
+
 @cron_bp.route('/poll-garmin-livetrack', methods=['POST'])
 def poll_garmin_livetrack():
     """Poll Garmin LiveTrack for opted-in riders, store positions, purge old data.

@@ -9,7 +9,7 @@ from flask import Blueprint, render_template, request, jsonify, current_app, ses
 from services.rwgps import fetch_route, extract_controls, extract_rwgps_route_id
 from services.weather import (
     sample_track_points, calculate_bearing, headwind_component,
-    get_cached_route_weather, format_weather_response,
+    load_stored_route_weather, format_weather_response,
     wind_label, wmo_to_text, wmo_to_icon, get_hour_index, _safe_get,
     # Segment/chart builders now live in services.weather so the live map can
     # reuse the identical time-aware pipeline (imported here so the weather page's
@@ -131,23 +131,17 @@ def build_weather_payload(route_id, start_dt, speed_mph=None, plan_slug=None,
     if not track_points:
         return None, ({'error': 'This route has no GPS track data.'}, 400)
 
-    # Sample at dense interval for map; table picks every Nth from the same data
-    map_sample = sample_track_points(track_points, interval_m=_MAP_INTERVAL_M)
-
-    if not map_sample:
-        return None, ({'error': 'Could not sample points from this route.'}, 400)
-
-    # Single weather fetch for all map points (one API call, cached 1 hour)
-    start_hour_str = start_dt.strftime("%Y-%m-%dT%H:00")
-    slug = f"route-{route_id}"
-    t1 = time.time()
-    try:
-        logger.info("Fetching weather for %d sample points, route %s", len(map_sample), route_id)
-        weather_data = get_cached_route_weather(slug, start_hour_str, map_sample, cache=cache)
-        logger.info("Weather fetch took %.1fs, %d forecasts", time.time() - t1, len(weather_data))
-    except Exception:
-        logger.exception("Weather fetch failed for route %s with %d points", route_id, len(map_sample))
-        return None, ({'error': 'Weather data is temporarily unavailable. Please try again.'}, 503)
+    # Weather is pre-fetched hourly by the fetch-route-weather cron and READ from storage
+    # here — no live Open-Meteo call on this request path (TA-237). The stored sample
+    # points ARE the dense (15 km) points the forecast was sampled at, so weather_data[i]
+    # aligns with map_sample[i]. The route's own track_points (fetched above) still drive
+    # the polyline / elevation / cue points.
+    weather_data, map_sample = load_stored_route_weather(route_id, start_dt.date())
+    if not weather_data or not map_sample:
+        return None, ({'available': False, 'reason': 'not_cached',
+                       'message': 'Weather forecast is not available yet — it is prepared '
+                                  'hourly for upcoming rides. Check back closer to the ride.'},
+                      200)
 
     # Compute bearings for map points
     map_bearings = []

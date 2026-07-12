@@ -25,7 +25,7 @@ from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled
 from services.garmin_livetrack import parse_session
 from services.rwgps import extract_rwgps_route_id, fetch_route
 from services import live_telemetry as tlm
-from services.weather import (sample_track_points, fetch_route_weather,
+from services.weather import (sample_track_points, load_stored_route_weather,
                               calculate_bearing, headwind_component,
                               crosswind_component, classify_wind,
                               wind_arrow_rotation, wind_arrow_glyph,
@@ -338,16 +338,16 @@ def ride_garmin_link(ride_id):
     return redirect(url_for('live.ride_live_map', ride_id=ride_id))
 
 
-def _build_wind_by_dist(track_points):
-    """Best-effort [{dist_m, headwind_kmh}] using CURRENT wind sampled along the
-    route. Returns None on any failure (headwinds then degrade gracefully)."""
+def _build_wind_by_dist(sample_points, forecasts):
+    """Best-effort [{dist_m, headwind_kmh, crosswind_kmh, temperature_f}] using the
+    current-hour wind from STORED weather sampled along the route (no live fetch —
+    TA-237). `sample_points` / `forecasts` are the aligned points + forecasts the
+    fetch-route-weather cron stored. Returns None on any failure (headwinds then
+    degrade gracefully)."""
     try:
-        samples = sample_track_points(track_points)
-        if len(samples) < 2:
+        if not sample_points or not forecasts or len(forecasts) != len(sample_points):
             return None
-        forecasts = fetch_route_weather(samples)
-        if not forecasts or len(forecasts) != len(samples):
-            return None
+        samples = sample_points
         out = []
         for i, (s, fc) in enumerate(zip(samples, forecasts)):
             hourly = (fc or {}).get('hourly') or {}
@@ -414,24 +414,23 @@ def _ride_start_local(ride):
         return None
 
 
-def _build_live_chart_data(track_points, plan_stops, start_dt):
-    """Route-ahead chart series for the live page, sourced from the SAME time-aware
-    weather pipeline the weather page uses — sample_track_points → fetch_route_weather
-    → arrival-hour selection (build_weather_segments) → build_chart_data — so the live
-    charts and the weather page can never diverge (item 5). Each point is timed against
-    the ride's BASE plan (plan_stops) when available, else a flat speed, exactly like
+def _build_live_chart_data(sample_points, forecasts, track_points, plan_stops, start_dt):
+    """Route-ahead chart series for the live page, built from the STORED weather the
+    fetch-route-weather cron pre-computed (no live fetch — TA-237) through the SAME
+    time-aware pipeline the weather page uses — arrival-hour selection
+    (build_weather_segments) → build_chart_data — so the live charts and the weather
+    page can never diverge (item 5). `sample_points` / `forecasts` are the aligned stored
+    points + forecasts; `track_points` supplies elevation. Each point is timed against the
+    ride's BASE plan (plan_stops) when available, else a flat speed, exactly like
     routes/weather.py's build_weather_payload.
 
     Returns {labels, elevation_ft, headwind_mph, temperature_f} (aligned arrays,
     distance in mi) or None when the route is too short / the forecast is unavailable,
     so the caller hides the charts (today's graceful-degradation behavior)."""
-    if not track_points:
+    if not sample_points or not forecasts or len(forecasts) < 2:
         return None
-    samples = sample_track_points(track_points, interval_m=_LIVE_CHART_INTERVAL_M)
+    samples = sample_points
     if len(samples) < 2:
-        return None
-    forecasts = fetch_route_weather(samples)
-    if not forecasts or len(forecasts) < 2:
         return None
     bearings = [calculate_bearing(samples[i]['lat'], samples[i]['lng'],
                                   samples[i + 1]['lat'], samples[i + 1]['lng'])
@@ -547,18 +546,28 @@ def _ride_live_context(ride_id):
                 ctx['total_dist_m'] = track[-1]['dist_m'] if track else None
                 ctx['total_ascent_ft'] = cum_ascent[-1] if cum_ascent else None
                 ctx['has_route'] = True
-                # Per-rider "wind done / ahead" labels keep sampling CURRENT
-                # conditions along the route (unchanged — a separate concern from
-                # the route-ahead charts).
-                ctx['wind_by_dist'] = _build_wind_by_dist(tps)
-                # Route-ahead charts (elevation / headwind / temperature) now come
-                # from the SAME time-aware weather pipeline as the weather page,
-                # timed against the BASE plan's arrival schedule (item 5). Static
-                # per ride, so it rides the cached context; the per-poll path only
-                # adds each rider's current-position marker on top.
+                # Weather is pre-fetched hourly by the fetch-route-weather cron and READ
+                # from storage — no live Open-Meteo on the live/telemetry path (TA-237).
+                # Load once (keyed by route + ride date) and feed BOTH the per-rider
+                # wind labels and the route-ahead charts.
+                rd = ride.get('date')
+                if isinstance(rd, str):
+                    try:
+                        rd = date.fromisoformat(rd)
+                    except ValueError:
+                        rd = None
+                weather_data, weather_samples = (
+                    load_stored_route_weather(route_id, rd) if rd else (None, None))
+                # Per-rider "wind done / ahead" labels from the stored current-hour wind.
+                ctx['wind_by_dist'] = _build_wind_by_dist(weather_samples, weather_data)
+                # Route-ahead charts (elevation / headwind / temperature) from the SAME
+                # time-aware weather pipeline as the weather page, timed against the BASE
+                # plan's arrival schedule (item 5). Static per ride, so it rides the cached
+                # context; the per-poll path only adds each rider's position marker on top.
                 try:
                     ctx['chart_data'] = _build_live_chart_data(
-                        tps, ctx['plan_stops'], _ride_start_local(ride))
+                        weather_samples, weather_data, tps, ctx['plan_stops'],
+                        _ride_start_local(ride))
                 except Exception as cexc:  # noqa: BLE001 — charts are best-effort
                     current_app.logger.warning(
                         'live ctx: chart_data failed for ride %s: %s', ride_id, cexc)
@@ -1432,16 +1441,20 @@ def api_ride_plan(ride_id):
 
     stops = [_emit_plan_stop(d, base_dt) for d in raw]
 
-    # Best-effort per-stop wind + temperature (same service as the plan web page).
+    # Best-effort per-stop wind + temperature (same service as the plan web page),
+    # READ from the pre-fetched forecast for this route + ride date (no live Open-Meteo
+    # on the mobile plan path — TA-237).
     try:
         route_id = extract_rwgps_route_id(
             plan.get('rwgps_url_team') or plan.get('rwgps_url')
             or ride.get('rwgps_url_team') or ride.get('rwgps_url'))
-        track = (fetch_route(route_id) or {}).get('track_points') if route_id else None
-        if track:
+        ride_date = ride.get('date')
+        if isinstance(ride_date, str):
+            ride_date = _date.fromisoformat(ride_date)
+        if route_id and ride_date:
             wind_stops = [{'distance_miles': st['distance_mi'],
                            'arrival_time_min': st['arrival_time_min']} for st in stops]
-            winds = fetch_stop_wind(wind_stops, track, plan_slug, start_str, cache=cache)
+            winds = fetch_stop_wind(wind_stops, route_id, ride_date, start_str)
             for st, w in zip(stops, winds or []):
                 if w:
                     st['wind_speed_mph'] = w.get('wind_speed_mph')
