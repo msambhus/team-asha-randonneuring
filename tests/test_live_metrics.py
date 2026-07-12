@@ -403,13 +403,16 @@ def test_positions_chart_data_null_without_route(client):
 
 
 def test_build_live_chart_data_from_weather_pipeline():
-    """chart_data is sourced from the SAME time-aware weather pipeline as the weather
-    page — sample → fetch_route_weather → arrival-hour selection — NOT a
+    """chart_data is built from the STORED weather (no live fetch — TA-237) through the
+    SAME time-aware pipeline as the weather page — arrival-hour selection — NOT a
     current-conditions sampler. Returns aligned labels/elevation/headwind/temperature."""
     from routes.live import _build_live_chart_data
-    # 60km RWGPS-format route (x=lng, y=lat, d=dist_m, e=elev_m).
+    # 60km RWGPS-format route (x=lng, y=lat, d=dist_m, e=elev_m) for elevation.
     track = [{'x': -122.0 + i * 0.05, 'y': 37.0, 'd': i * 15000, 'e': 100 + i * 10}
              for i in range(5)]
+    # Stored sample points the cron persisted (aligned to the forecasts below).
+    samples = [{'lat': 37.0, 'lng': -122.0 + i * 0.05, 'distance_m': i * 15000}
+               for i in range(5)]
     start = datetime(2026, 6, 27, 7, 0)
     times = [(start + timedelta(hours=h)).strftime('%Y-%m-%dT%H:00') for h in range(4)]
     forecast = {'utc_offset_seconds': 0, 'hourly': {
@@ -417,8 +420,7 @@ def test_build_live_chart_data_from_weather_pipeline():
         'wind_speed_10m': [10, 10, 10, 10], 'wind_direction_10m': [90, 90, 90, 90]}}
     plan_stops = [{'distance_miles': 0, 'cum_time_min': 0},
                   {'distance_miles': 40, 'cum_time_min': 120}]
-    with patch('routes.live.fetch_route_weather', return_value=[forecast] * 5):
-        cd = _build_live_chart_data(track, plan_stops, start)
+    cd = _build_live_chart_data(samples, [forecast] * 5, track, plan_stops, start)
     n = len(cd['labels'])
     assert n >= 2
     assert n == len(cd['elevation_ft']) == len(cd['headwind_mph']) == len(cd['temperature_f'])
@@ -427,17 +429,17 @@ def test_build_live_chart_data_from_weather_pipeline():
     assert cd['headwind_mph'][0] > 0    # east wind on an eastbound leg → headwind
 
 
-def test_build_live_chart_data_none_without_track():
+def test_build_live_chart_data_none_without_samples():
     from routes.live import _build_live_chart_data
-    assert _build_live_chart_data([], [], None) is None
+    assert _build_live_chart_data([], [], [], None, None) is None
 
 
 def test_build_live_chart_data_none_without_forecast():
-    """A failed/empty forecast → None so the caller hides the charts (graceful)."""
+    """No stored forecast → None so the caller hides the charts (graceful)."""
     from routes.live import _build_live_chart_data
     track = [{'x': -122.0 + i * 0.05, 'y': 37.0, 'd': i * 15000, 'e': 100} for i in range(5)]
-    with patch('routes.live.fetch_route_weather', return_value=[]):
-        assert _build_live_chart_data(track, [], None) is None
+    samples = [{'lat': 37.0, 'lng': -122.0 + i * 0.05, 'distance_m': i * 15000} for i in range(5)]
+    assert _build_live_chart_data(samples, [], track, [], None) is None
 
 
 def test_positions_wind_shows_mph_type_and_arrow(client):
@@ -683,10 +685,14 @@ def test_ride_context_builds_ascent_and_wind(app):
                 'hourly': {'time': times,
                            'wind_speed_10m': [10, 10, 10],
                            'wind_direction_10m': [90, 90, 90]}}
+    # Stored sample points (eastbound) the fetch-route-weather cron persisted (TA-237).
+    samples = [{'lat': 37.0, 'lng': -122.0, 'distance_m': 0},
+               {'lat': 37.0, 'lng': -121.7, 'distance_m': 30000}]
     with app.app_context():
         with patch('routes.live.get_ride_by_id', return_value=ride), \
              patch('routes.live.fetch_route', return_value=route), \
-             patch('routes.live.fetch_route_weather', return_value=[forecast, forecast]):
+             patch('routes.live.load_stored_route_weather',
+                   return_value=([forecast, forecast], samples)):
             ctx = live_module._ride_live_context(8888)
     cache.clear()
     assert ctx['has_route'] is True
@@ -748,7 +754,7 @@ def test_ride_context_cached_across_polls(client):
          patch('routes.live.get_ride_by_id', return_value=ride), \
          patch('routes.live.fetch_route', return_value=route) as mock_fetch, \
          patch('routes.live.get_ride_plan_stops', return_value=[]), \
-         patch('routes.live.fetch_route_weather', return_value=[]), \
+         patch('routes.live.load_stored_route_weather', return_value=(None, None)), \
          patch('routes.live.get_positions_for_rider_since', return_value=[]):
         r1 = client.get('/api/live/positions?ride_id=%d' % RIDE_ID)
         r2 = client.get('/api/live/positions?ride_id=%d' % RIDE_ID)

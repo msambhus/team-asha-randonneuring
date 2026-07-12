@@ -58,6 +58,14 @@ SAMPLE_WEATHER_DATA = [
 ]
 
 
+# Stored sample points aligned with SAMPLE_WEATHER_DATA (2 forecasts). The
+# fetch-route-weather cron stores these; build_weather_payload READS them (TA-237).
+SAMPLE_SAMPLE_POINTS = [
+    {'lat': 37.77, 'lng': -122.41, 'distance_m': 0},
+    {'lat': 37.00, 'lng': -121.60, 'distance_m': 200000},
+]
+
+
 # ── Endpoint tests ──────────────────────────────────────────────────
 
 class TestWeatherMapPage:
@@ -90,11 +98,11 @@ class TestWeatherMapAPI:
                            content_type='application/json')
         assert resp.status_code == 400
 
-    @patch('routes.weather.get_cached_route_weather')
+    @patch('routes.weather.load_stored_route_weather')
     @patch('routes.weather.fetch_route')
     def test_happy_path_returns_imperial_units(self, mock_fetch, mock_weather, client):
         mock_fetch.return_value = SAMPLE_ROUTE_DATA
-        mock_weather.return_value = SAMPLE_WEATHER_DATA
+        mock_weather.return_value = (SAMPLE_WEATHER_DATA, SAMPLE_SAMPLE_POINTS)
 
         resp = client.post('/api/weather-map',
                            json={'rwgps_url': 'https://ridewithgps.com/routes/12345'},
@@ -112,11 +120,11 @@ class TestWeatherMapAPI:
         assert 'min_f' in data['temp_range']
         assert 'max_f' in data['temp_range']
 
-    @patch('routes.weather.get_cached_route_weather')
+    @patch('routes.weather.load_stored_route_weather')
     @patch('routes.weather.fetch_route')
     def test_table_segments_have_imperial_fields(self, mock_fetch, mock_weather, client):
         mock_fetch.return_value = SAMPLE_ROUTE_DATA
-        mock_weather.return_value = SAMPLE_WEATHER_DATA
+        mock_weather.return_value = (SAMPLE_WEATHER_DATA, SAMPLE_SAMPLE_POINTS)
 
         resp = client.post('/api/weather-map',
                            json={'rwgps_url': 'https://ridewithgps.com/routes/12345'},
@@ -131,11 +139,11 @@ class TestWeatherMapAPI:
             assert 'wind_label' in seg
             assert 'wind_direction_deg' in seg
 
-    @patch('routes.weather.get_cached_route_weather')
+    @patch('routes.weather.load_stored_route_weather')
     @patch('routes.weather.fetch_route')
     def test_map_segments_have_lat_lng_bearing(self, mock_fetch, mock_weather, client):
         mock_fetch.return_value = SAMPLE_ROUTE_DATA
-        mock_weather.return_value = SAMPLE_WEATHER_DATA
+        mock_weather.return_value = (SAMPLE_WEATHER_DATA, SAMPLE_SAMPLE_POINTS)
 
         resp = client.post('/api/weather-map',
                            json={'rwgps_url': 'https://ridewithgps.com/routes/12345'},
@@ -148,12 +156,12 @@ class TestWeatherMapAPI:
             assert 'rider_bearing_deg' in seg, 'segment missing rider_bearing_deg'
             assert 'wind_speed_mph' in seg
 
-    @patch('routes.weather.get_cached_route_weather')
+    @patch('routes.weather.load_stored_route_weather')
     @patch('routes.weather.fetch_route')
     def test_map_segments_denser_than_table(self, mock_fetch, mock_weather, client):
         """Map segments use 10km interval vs 50km for table — should have more points."""
         mock_fetch.return_value = SAMPLE_ROUTE_DATA
-        mock_weather.return_value = SAMPLE_WEATHER_DATA
+        mock_weather.return_value = (SAMPLE_WEATHER_DATA, SAMPLE_SAMPLE_POINTS)
 
         resp = client.post('/api/weather-map',
                            json={'rwgps_url': 'https://ridewithgps.com/routes/12345'},
@@ -162,11 +170,11 @@ class TestWeatherMapAPI:
 
         assert len(data['map_segments']) >= len(data['table_segments'])
 
-    @patch('routes.weather.get_cached_route_weather')
+    @patch('routes.weather.load_stored_route_weather')
     @patch('routes.weather.fetch_route')
     def test_polyline_is_decimated(self, mock_fetch, mock_weather, client):
         mock_fetch.return_value = SAMPLE_ROUTE_DATA
-        mock_weather.return_value = SAMPLE_WEATHER_DATA
+        mock_weather.return_value = (SAMPLE_WEATHER_DATA, SAMPLE_SAMPLE_POINTS)
 
         resp = client.post('/api/weather-map',
                            json={'rwgps_url': 'https://ridewithgps.com/routes/12345'},
@@ -176,11 +184,11 @@ class TestWeatherMapAPI:
         assert len(data['polyline']) <= len(SAMPLE_TRACK_POINTS)
         assert len(data['polyline']) >= 2
 
-    @patch('routes.weather.get_cached_route_weather')
+    @patch('routes.weather.load_stored_route_weather')
     @patch('routes.weather.fetch_route')
     def test_cue_points_in_miles(self, mock_fetch, mock_weather, client):
         mock_fetch.return_value = SAMPLE_ROUTE_DATA
-        mock_weather.return_value = SAMPLE_WEATHER_DATA
+        mock_weather.return_value = (SAMPLE_WEATHER_DATA, SAMPLE_SAMPLE_POINTS)
 
         resp = client.post('/api/weather-map',
                            json={'rwgps_url': 'https://ridewithgps.com/routes/12345'},
@@ -225,11 +233,11 @@ class TestWeatherMapAPI:
         assert resp.status_code == 400
         assert '16 days' in resp.get_json()['error']
 
-    @patch('routes.weather.get_cached_route_weather')
+    @patch('routes.weather.load_stored_route_weather')
     @patch('routes.weather.fetch_route')
     def test_custom_start_datetime(self, mock_fetch, mock_weather, client):
         mock_fetch.return_value = SAMPLE_ROUTE_DATA
-        mock_weather.return_value = SAMPLE_WEATHER_DATA
+        mock_weather.return_value = (SAMPLE_WEATHER_DATA, SAMPLE_SAMPLE_POINTS)
         tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%dT06:00')
 
         resp = client.post('/api/weather-map',
@@ -240,17 +248,19 @@ class TestWeatherMapAPI:
                            content_type='application/json')
         assert resp.status_code == 200
 
-    @patch('routes.weather.get_cached_route_weather')
+    @patch('routes.weather.load_stored_route_weather')
     @patch('routes.weather.fetch_route')
-    def test_weather_api_failure_returns_503(self, mock_fetch, mock_weather, client):
+    def test_no_stored_weather_returns_available_false(self, mock_fetch, mock_weather, client):
+        """No stored forecast (cron hasn't covered this route yet) -> graceful 200
+        'not available yet', NOT a hang or a live fetch (TA-237)."""
         mock_fetch.return_value = SAMPLE_ROUTE_DATA
-        mock_weather.side_effect = Exception('Open-Meteo timeout')
+        mock_weather.return_value = (None, None)
 
         resp = client.post('/api/weather-map',
                            json={'rwgps_url': 'https://ridewithgps.com/routes/12345'},
                            content_type='application/json')
-        assert resp.status_code == 503
-        assert 'unavailable' in resp.get_json()['error'].lower()
+        assert resp.status_code == 200
+        assert resp.get_json()['available'] is False
 
 
 class TestUnitConversions:
