@@ -869,21 +869,45 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
     # more than once resolves to the leg they're actually on and the distance is
     # monotonic (never jumps backward). Falls back to a stateless match only when
     # there's no in-ride trajectory yet (ride_history empty).
-    dist_m, idx, off_by_m = tlm.project_history_to_route(ride_history, ctx['track'])
+    # One leg-aware trajectory walk yields BOTH the current distance-done and the
+    # rider's START position on the route (the seed), so the two are always matched
+    # consistently. Fall back to a stateless match only when there's no in-ride
+    # trajectory yet (ride_history empty) — then there's no offset.
+    dist_m, idx, off_by_m, start_dist_m, start_idx = tlm.project_history_to_route(
+        ride_history, ctx['track'], with_start=True)
     if dist_m is None:
         dist_m, idx, off_by_m = tlm.project_to_route(lat, lng, ctx['track'])
+        start_dist_m, start_idx = None, 0
     on_route = (dist_m is not None and off_by_m is not None
                 and off_by_m <= tlm.ON_ROUTE_MAX_M)
     if not on_route:
         base['on_route'] = False
         return base
 
-    remaining_m = tlm.remaining_distance_m(ctx['total_dist_m'], dist_m)
-    ascent_done, ascent_left = tlm.ascent_split(ctx['cum_ascent_ft'], idx, ctx['total_ascent_ft'])
+    # A loop permanent can be started PARTWAY round (rider begins at, say, route-mile
+    # 5 and finishes back there). Measure distance DONE from the rider's OWN start on
+    # the route, wrapping the loop — not from the route file's mile 0 — so "distance
+    # done", remaining, average speed and climbing done reflect THEIR ride. A start
+    # within START_OFFSET_MIN_M of mile 0 is an ordinary start: offset 0, and every
+    # number below is unchanged.
+    start_offset_m = (start_dist_m if (start_dist_m or 0) >= tlm.START_OFFSET_MIN_M
+                      else 0.0)
+    if not start_offset_m:
+        start_idx = 0
+    mid_route_start = start_offset_m > 0
+    progressed_m = tlm.distance_progressed_m(dist_m, start_offset_m, ctx['total_dist_m'])
+
+    remaining_m = tlm.remaining_distance_m(ctx['total_dist_m'], progressed_m)
+    ascent_done, ascent_left = tlm.ascent_progressed_split(
+        ctx['cum_ascent_ft'], start_idx, idx, ctx['total_ascent_ft'])
+    # Wind done/ahead split at the rider's ABSOLUTE route position (not the wrapped
+    # progressed distance). Known, accepted deviation for a mid-route loop start: the
+    # head/cross-wind partition is a soft advisory metric and keeping it on the route
+    # frame is self-consistent with the geometry.
     hw_done, hw_ahead = tlm.headwinds_split(ctx.get('wind_by_dist'), dist_m)
     cw_done, cw_ahead = tlm.crosswinds_split(ctx.get('wind_by_dist'), dist_m)
     tuf = tlm.toughness_remaining(ascent_left, remaining_m)
-    dist_mi = dist_m * M_TO_MI
+    dist_mi = progressed_m * M_TO_MI
     remaining_mi = (remaining_m or 0) * M_TO_MI
 
     # Time left = the brevet's overall time limit minus elapsed (e.g. 40h for a
@@ -893,9 +917,15 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
     if limit_min is not None and elapsed_min is not None:
         time_left_min = max(0, limit_min - elapsed_min)
 
-    # Grade against this rider's plan (custom if they have one, else base).
-    delta = tlm.plan_delta(dist_mi, elapsed_min,
-                           plan_stops if plan_stops is not None else ctx.get('plan_stops'))
+    # Grade against this rider's plan (custom if they have one, else base). The plan's
+    # stops are indexed at ABSOLUTE route miles, so for a mid-route loop start (rider
+    # began partway round) they can't be mapped onto the wrapped "distance done"
+    # without reindexing the whole plan — so we suppress plan-relative ETAs rather
+    # than show a control the rider has already passed. Ordinary mile-0 starts are
+    # unaffected.
+    delta = None if mid_route_start else tlm.plan_delta(
+        dist_mi, elapsed_min,
+        plan_stops if plan_stops is not None else ctx.get('plan_stops'))
 
     _WIND_SHORT = {'headwind': 'head', 'tailwind': 'tail', 'crosswind': 'cross'}
 
@@ -933,8 +963,10 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
     wind_ahead_label, wind_ahead_mph = wind_descriptor(hw_ahead, cw_ahead)
 
     # Next waypoint/control ahead, with the plan's expected arrival time there.
-    nc = tlm.next_control(dist_mi,
-                          plan_stops if plan_stops is not None else ctx.get('plan_stops'))
+    # Suppressed for a mid-route loop start (see plan_delta above) — absolute-mile
+    # controls can't be ordered against wrapped "distance done" without reindexing.
+    nc = None if mid_route_start else tlm.next_control(
+        dist_mi, plan_stops if plan_stops is not None else ctx.get('plan_stops'))
     next_control_block = None
     if nc:
         # ETA is the plan's ARRIVAL (reaching) time at the control — arrival_time_min,
@@ -967,7 +999,7 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
     # above. Both use the SAME plan (the applied/selected plan) and the same
     # required_speed_mph helper — behind → required_mph None + behind True (em-dash).
     active_stops = plan_stops if plan_stops is not None else ctx.get('plan_stops')
-    fin = tlm.finish_stop(active_stops)
+    fin = None if mid_route_start else tlm.finish_stop(active_stops)
     finish_block = None
     if fin:
         fin_arrival = fin.get('arrival_time_min')
@@ -994,8 +1026,14 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
     # Time banked, shown BOTH ways: vs the brevet CUTOFF (OTL margin at the rider's
     # current distance) and vs the PLAN (= plan delta). Both are surfaced explicitly
     # in addition to the ahead/behind badge (which stays driven by plan.status).
+    # For a mid-route loop start, "distance done" is measured round the whole route,
+    # so pro-rate the cutoff against the ROUTE total (the full loop the rider covers),
+    # not the plan's total which may not span the same distance.
+    cutoff_total_mi = ctx.get('plan_total_mi')
+    if mid_route_start and ctx.get('total_dist_m'):
+        cutoff_total_mi = ctx['total_dist_m'] * M_TO_MI
     banked_cutoff = tlm.time_banked_cutoff_min(
-        dist_mi, elapsed_min, ctx.get('plan_total_mi'), ctx.get('plan_cutoff_hours'))
+        dist_mi, elapsed_min, cutoff_total_mi, ctx.get('plan_cutoff_hours'))
 
     return {
         'on_route': True,

@@ -110,6 +110,104 @@ def test_project_history_empty_or_no_track():
         [{'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(0)}], []) == (None, None, None)
 
 
+# --- mid-route loop start (permanent begun partway round) ---
+
+def test_route_start_offset_detects_mid_route_start():
+    # First fix sits at the -121.98 vertex (1778 m along) → a mid-route start.
+    hist = [{'lat': 37.0, 'lng': -121.98, 'recorded_at': _t(0)}]
+    offset_m, idx = tlm.route_start_offset_m(hist, _TRACK)
+    assert offset_m == 1778.0 and idx == 2
+
+
+def test_route_start_offset_zero_for_mile0_start():
+    # Started at the route's mile 0 → no offset (below START_OFFSET_MIN_M).
+    hist = [{'lat': 37.0, 'lng': -122.00, 'recorded_at': _t(0)}]
+    assert tlm.route_start_offset_m(hist, _TRACK) == (0.0, 0)
+
+
+def test_route_start_offset_skips_offroute_warmup_fix():
+    # A garbage warm-up fix ~22 km off-route is skipped; the first ON-route fix
+    # (at 1778 m) sets the offset.
+    hist = [
+        {'lat': 37.2, 'lng': -121.99, 'recorded_at': _t(0)},    # far off-route
+        {'lat': 37.0, 'lng': -121.98, 'recorded_at': _t(60)},   # on route, 1778 m
+    ]
+    offset_m, idx = tlm.route_start_offset_m(hist, _TRACK)
+    assert offset_m == 1778.0 and idx == 2
+
+
+def test_route_start_offset_empty():
+    assert tlm.route_start_offset_m([], _TRACK) == (0.0, 0)
+    assert tlm.route_start_offset_m(
+        [{'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(0)}], []) == (0.0, 0)
+
+
+# A loop whose FINISH vertex sits ~15 m from the START vertex — the case that made
+# a stateless nearest-point seed mis-snap a normal mile-0 start onto the finish.
+_LOOP = [
+    {'lat': 37.00,    'lng': -122.00,    'dist_m': 0.0},      # start
+    {'lat': 37.00,    'lng': -121.99,    'dist_m': 889.0},    # east
+    {'lat': 37.01,    'lng': -121.99,    'dist_m': 1900.0},   # north
+    {'lat': 37.01,    'lng': -122.00,    'dist_m': 2789.0},   # west
+    {'lat': 37.0001,  'lng': -122.0001,  'dist_m': 3700.0},   # finish ≈ start
+]
+
+
+def test_route_start_offset_zero_on_loop_started_at_mile0():
+    # First fix sits BETWEEN the start and finish vertices, marginally closer to the
+    # finish — a stateless nearest match would snap to the finish (3700 m) and
+    # wrongly flag a mid-route start. Heading-aware seeding sees the rider heading
+    # OUT (east) and keeps them at mile 0.
+    hist = [
+        {'lat': 37.00007, 'lng': -122.00007, 'recorded_at': _t(0)},
+        {'lat': 37.00, 'lng': -121.995, 'recorded_at': _t(60)},   # moved east
+    ]
+    assert tlm.route_start_offset_m(hist, _LOOP) == (0.0, 0)
+
+
+def test_project_history_with_start_returns_seed_tuple():
+    hist = [{'lat': 37.0, 'lng': -121.98, 'recorded_at': _t(0)}]
+    dist_m, idx, off, start_dist, start_idx = tlm.project_history_to_route(
+        hist, _TRACK, with_start=True)
+    assert start_dist == 1778.0 and start_idx == 2
+    assert dist_m == 1778.0 and idx == 2           # single fix: current == start
+    assert tlm.project_history_to_route([], _TRACK, with_start=True) == (
+        None, None, None, None, None)
+
+
+def test_distance_progressed_no_offset_is_absolute():
+    assert tlm.distance_progressed_m(2667.0, 0, 5334.0) == 2667.0
+    assert tlm.distance_progressed_m(None, 0, 5334.0) is None
+
+
+def test_distance_progressed_subtracts_offset():
+    # Started 1778 m in, now at 2667 m → 889 m done.
+    assert tlm.distance_progressed_m(2667.0, 1778.0, 5334.0) == 889.0
+
+
+def test_distance_progressed_wraps_the_loop():
+    # Started at 4445 m, now wrapped past the finish to 500 m → 500 − 4445 + 5334.
+    assert tlm.distance_progressed_m(500.0, 4445.0, 5334.0) == pytest.approx(1389.0)
+
+
+_CUM_ASCENT = [0, 100, 250, 400]
+
+
+def test_ascent_progressed_split_start0_matches_ascent_split():
+    assert (tlm.ascent_progressed_split(_CUM_ASCENT, 0, 3, 400)
+            == tlm.ascent_split(_CUM_ASCENT, 3, 400))
+
+
+def test_ascent_progressed_split_mid_route_arc():
+    # Climbed from index 1 (100 ft) to index 3 (400 ft) → 300 done, 100 left.
+    assert tlm.ascent_progressed_split(_CUM_ASCENT, 1, 3, 400) == (300, 100)
+
+
+def test_ascent_progressed_split_wrapped_arc():
+    # Started at the finish index (3) and wrapped to index 1 → (400−400) + 100 done.
+    assert tlm.ascent_progressed_split(_CUM_ASCENT, 3, 1, 400) == (100, 300)
+
+
 def test_course_over_ground_eastbound():
     pts = [{'lat': 37.0, 'lng': -122.00}, {'lat': 37.0, 'lng': -121.99}]
     hd = tlm.course_over_ground(pts)
