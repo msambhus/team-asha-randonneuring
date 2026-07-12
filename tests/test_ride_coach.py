@@ -353,7 +353,89 @@ def test_notes_framed_as_one_equal_signal_not_heavy():
 
 def test_prompt_version_bumped_for_new_signals():
     """#3: bumping _PROMPT_VERSION invalidates stale cached coaching on deploy."""
-    assert ride_coach._PROMPT_VERSION == 'v6-signals'
+    assert ride_coach._PROMPT_VERSION == 'v7-randonneuring'
+
+
+# ── v7-randonneuring: evidence-based coaching content in the SYSTEM prompt ──
+# Keyword-assertion pattern mirrors tests/test_system_prompt.py. These prove the
+# prompt *instructs* the model on each topic; the live coaching text is
+# non-deterministic and out of scope for unit tests.
+
+def test_prompt_covers_carbohydrate_fueling():
+    """Fueling guidance: carbohydrate g/hr range, start-early framing."""
+    prompt = ride_coach.SYSTEM_PROMPT.lower()
+    assert 'carbohydrate' in prompt
+    assert '60-90' in prompt and 'g' in prompt  # 60-90 g/hr
+    assert 'first hour' in prompt               # start fueling early, don't wait
+
+
+def test_prompt_covers_hydration_and_electrolytes():
+    """Hydration guidance: ml/hr range plus electrolytes."""
+    prompt = ride_coach.SYSTEM_PROMPT.lower()
+    assert '500-750' in prompt and 'ml' in prompt   # 500-750 ml/hr
+    assert 'hydration' in prompt
+    assert 'electrolyte' in prompt
+
+
+def test_prompt_covers_pacing_negative_split():
+    """Pacing guidance: even / negative-split."""
+    prompt = ride_coach.SYSTEM_PROMPT.lower()
+    assert 'negative' in prompt and 'split' in prompt
+    assert 'even' in prompt
+
+
+def test_prompt_covers_rest_stop_discipline():
+    """Rest-stop discipline: minimize dead time at controls."""
+    prompt = ride_coach.SYSTEM_PROMPT.lower()
+    assert 'control' in prompt
+    assert 'stop' in prompt
+    assert 'dead time' in prompt or 'minimize' in prompt
+
+
+def test_prompt_covers_sleep_strategy_for_600k():
+    """Sleep strategy is scoped to 600k+ / overnight efforts."""
+    prompt = ride_coach.SYSTEM_PROMPT.lower()
+    assert 'sleep' in prompt
+    assert '600' in prompt
+
+
+def test_prompt_covers_heat_and_cold_management():
+    """Both heat and cold management are addressed."""
+    prompt = ride_coach.SYSTEM_PROMPT.lower()
+    assert 'heat' in prompt
+    assert 'cold' in prompt
+
+
+def test_prompt_covers_caffeine_timing():
+    """Caffeine timing guidance is present."""
+    prompt = ride_coach.SYSTEM_PROMPT.lower()
+    assert 'caffeine' in prompt
+
+
+def test_prompt_has_rest_and_refuel_coverage_mandate():
+    """Explicit mandate to cover BOTH rest discipline and refueling/hydration."""
+    prompt = ride_coach.SYSTEM_PROMPT
+    assert 'COVERAGE MANDATE' in prompt
+    lower = prompt.lower()
+    assert 'rest' in lower and 'refuel' in lower
+
+
+def test_prompt_has_no_fabrication_guard():
+    """Explicit guard: reason only from the ride's real data, never invent numbers."""
+    prompt = ride_coach.SYSTEM_PROMPT
+    assert 'NO-FABRICATION GUARD' in prompt
+    lower = prompt.lower()
+    assert 'never invent' in lower or 'do not' in lower
+    # Reference ranges are framed as comparison targets, not ride measurements.
+    assert 'comparison target' in lower
+
+
+def test_prompt_ties_guidance_to_this_rides_data():
+    """The mandate ties fueling/rest reasoning to the ride's own break/weather data."""
+    lower = ride_coach.SYSTEM_PROMPT.lower()
+    assert 'this ride' in lower
+    # References the actual per-segment break fields carried in <segments>.
+    assert 'stop_here_min' in lower or 'enroute_break_min' in lower
 
 
 def test_new_signals_appear_in_user_message():
