@@ -907,8 +907,26 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
     hw_done, hw_ahead = tlm.headwinds_split(ctx.get('wind_by_dist'), dist_m)
     cw_done, cw_ahead = tlm.crosswinds_split(ctx.get('wind_by_dist'), dist_m)
     tuf = tlm.toughness_remaining(ascent_left, remaining_m)
+    # Two distances, deliberately distinct for a mid-route loop start:
+    #   dist_mi          = distance the rider has actually RIDDEN (progressed, wrapped)
+    #                      → the odometer, average speed, remaining, plan comparison.
+    #   route_position_mi = absolute position along the route file (mile 0 = route
+    #                      start) → aligns the rider's marker with the route-ahead
+    #                      charts, whose x-axis is absolute route distance.
+    # For an ordinary mile-0 start the two are equal.
     dist_mi = progressed_m * M_TO_MI
+    route_position_mi = dist_m * M_TO_MI
     remaining_mi = (remaining_m or 0) * M_TO_MI
+
+    # The rider's plan, re-expressed in THEIR frame when they started mid-route (a loop
+    # begun partway round): distances measured from their start, wrapping the loop, and
+    # times as elapsed since their start. This lets the ordinary plan_delta /
+    # next_control / finish logic compare a rider who did not start at the plan's mile 0.
+    # An ordinary start (offset 0) leaves the plan stops unchanged.
+    active_stops = plan_stops if plan_stops is not None else ctx.get('plan_stops')
+    plan_total_mi = ctx.get('plan_total_mi') or ((ctx['total_dist_m'] or 0) * M_TO_MI)
+    plan_frame = (tlm.rebase_plan_stops(active_stops, start_offset_m * M_TO_MI, plan_total_mi)
+                  if mid_route_start else active_stops)
 
     # Time left = the brevet's overall time limit minus elapsed (e.g. 40h for a
     # 600), not a pace ETA. Clamped at 0 once the time limit is blown.
@@ -917,15 +935,9 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
     if limit_min is not None and elapsed_min is not None:
         time_left_min = max(0, limit_min - elapsed_min)
 
-    # Grade against this rider's plan (custom if they have one, else base). The plan's
-    # stops are indexed at ABSOLUTE route miles, so for a mid-route loop start (rider
-    # began partway round) they can't be mapped onto the wrapped "distance done"
-    # without reindexing the whole plan — so we suppress plan-relative ETAs rather
-    # than show a control the rider has already passed. Ordinary mile-0 starts are
-    # unaffected.
-    delta = None if mid_route_start else tlm.plan_delta(
-        dist_mi, elapsed_min,
-        plan_stops if plan_stops is not None else ctx.get('plan_stops'))
+    # Grade against this rider's plan, in the rider's frame (plan_frame above), so a
+    # mid-route loop start is compared against the plan rotated to their own start.
+    delta = tlm.plan_delta(dist_mi, elapsed_min, plan_frame)
 
     _WIND_SHORT = {'headwind': 'head', 'tailwind': 'tail', 'crosswind': 'cross'}
 
@@ -946,7 +958,8 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
         short = _WIND_SHORT[classify_wind(head_kmh, cross)]
         return f'{glyph} {speed_mph:g} mph {short}', speed_mph
 
-    now_block['distance_mi'] = round(dist_mi, 1)
+    now_block['distance_mi'] = round(dist_mi, 1)                 # ridden (odometer)
+    now_block['route_position_mi'] = round(route_position_mi, 1)  # absolute (chart marker)
     # Current grade (%) from the route's elevation profile at the rider's
     # position — Garmin LiveTrack sends altitude but no per-point gradient.
     now_block['grade_pct'] = tlm.grade_at(ctx.get('track'), idx)
@@ -962,11 +975,9 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
     now_block['headwind_done_label'] = wind_done_label
     wind_ahead_label, wind_ahead_mph = wind_descriptor(hw_ahead, cw_ahead)
 
-    # Next waypoint/control ahead, with the plan's expected arrival time there.
-    # Suppressed for a mid-route loop start (see plan_delta above) — absolute-mile
-    # controls can't be ordered against wrapped "distance done" without reindexing.
-    nc = None if mid_route_start else tlm.next_control(
-        dist_mi, plan_stops if plan_stops is not None else ctx.get('plan_stops'))
+    # Next waypoint/control ahead, with the plan's expected arrival time there — in the
+    # rider's frame (plan_frame), so it's ordered against distance the rider has ridden.
+    nc = tlm.next_control(dist_mi, plan_frame)
     next_control_block = None
     if nc:
         # ETA is the plan's ARRIVAL (reaching) time at the control — arrival_time_min,
@@ -996,10 +1007,11 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
         }
 
     # Speed to reach the FINISH on time (item 3), alongside the speed-to-next-control
-    # above. Both use the SAME plan (the applied/selected plan) and the same
+    # above. Both use the SAME plan (in the rider's frame) and the same
     # required_speed_mph helper — behind → required_mph None + behind True (em-dash).
-    active_stops = plan_stops if plan_stops is not None else ctx.get('plan_stops')
-    fin = None if mid_route_start else tlm.finish_stop(active_stops)
+    # For a mid-route start plan_frame carries a synthetic finish at the rider's own
+    # start (a full loop on), so this is their true finish, not the plan's loop node.
+    fin = tlm.finish_stop(plan_frame)
     finish_block = None
     if fin:
         fin_arrival = fin.get('arrival_time_min')
