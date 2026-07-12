@@ -1,5 +1,13 @@
 """Rider routes: season view, individual profiles, profile edit, upcoming brevets, ride plans."""
 import math
+import time
+
+# The brevet-calendar wind-warning loop fetches weather (Open-Meteo) + route
+# (RWGPS) per within-28-day brevet. It's best-effort decoration, so it must NEVER
+# stall the page: once this wall-clock budget is spent we stop checking more
+# brevets (a slow/timing-out weather API used to stack multiple 20s fetches and
+# blow the serverless function's time limit → the calendar wouldn't load).
+_WIND_WARNING_BUDGET_S = 6.0
 from flask import Blueprint, render_template, abort, request, redirect, url_for, session, jsonify, current_app, flash
 
 def is_admin_user():
@@ -497,6 +505,7 @@ def upcoming_brevets(season_name):
 
     # Wind warning loop: check brevets within 28 days that have a linked ride plan
     cutoff = date.today() + timedelta(days=28)
+    wind_deadline = time.monotonic() + _WIND_WARNING_BUDGET_S
     wind_warnings = []
     for event in rusa_events:
         event_date = event.get('date')
@@ -514,6 +523,13 @@ def upcoming_brevets(season_name):
         weather_route_id = _extract_rwgps_route_id(weather_rwgps_url)
         if not weather_route_id:
             continue
+        # Best-effort budget: stop adding weather/route fetches once we've spent
+        # our time allowance, so a slow API can never hang the calendar page.
+        if time.monotonic() > wind_deadline:
+            current_app.logger.warning(
+                "Wind warning loop hit %.0fs budget; skipping remaining brevets",
+                _WIND_WARNING_BUDGET_S)
+            break
         try:
             plan_stops = get_ride_plan_stops(plan_id)
             route_data = fetch_route(weather_route_id)
