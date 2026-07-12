@@ -355,7 +355,11 @@ def _fetch_batch(batch_points):
     last_error = None
     for attempt in range(_MAX_RETRIES + 1):
         try:
-            resp = requests.get(OPEN_METEO_URL, params=params, timeout=20)
+            # Short timeout so a slow/hanging Open-Meteo fails fast — this fetch is
+            # on the brevet-calendar critical path, and a long timeout × retries
+            # used to stack past the serverless function limit (calendar wouldn't
+            # load). See routes/riders.py wind-warning budget.
+            resp = requests.get(OPEN_METEO_URL, params=params, timeout=6)
             if resp.status_code in (502, 503, 504) and attempt < _MAX_RETRIES:
                 import time
                 time.sleep(1)
@@ -365,7 +369,11 @@ def _fetch_batch(batch_points):
             if isinstance(data, dict):
                 return [data]
             return data
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+        except requests.exceptions.Timeout:
+            # Don't retry a timeout: the API is slow/unreachable, so retrying just
+            # multiplies the wall-clock. Fail immediately; callers degrade gracefully.
+            raise
+        except requests.exceptions.ConnectionError as e:
             last_error = e
             if attempt < _MAX_RETRIES:
                 import time
