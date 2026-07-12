@@ -231,12 +231,82 @@ def remaining_distance_m(total_dist_m, current_dist_m):
     return max(0.0, total_dist_m - current_dist_m)
 
 
+# Minimum along-route distance (m) at a rider's first on-route fix before we
+# treat it as a mid-route "start offset". A loop permanent can be begun partway
+# round (rider starts at, say, route-mile 5 and finishes back there), so "distance
+# done" must be measured from their own start, not the route file's mile 0. Below
+# this threshold the rider effectively started at mile 0 and NO offset is applied —
+# so every ordinary ride is unaffected.
+START_OFFSET_MIN_M = 800.0   # ~0.5 mi
+
+
+def route_start_offset_m(ride_history, track):
+    """Along-route distance (m) at the rider's FIRST on-route fix — where they
+    joined the route. For a loop permanent begun partway round this is > 0 and the
+    live "distance done" must be measured from here (wrapping the loop), not from
+    the route's mile 0.
+
+    Scans fixes oldest→newest and returns the along-route distance of the first
+    one within ON_ROUTE_MAX_M of the line, skipping off-route warm-up fixes.
+    Returns (offset_m, index). Returns (0.0, 0) when nothing is on-route yet or the
+    offset is below START_OFFSET_MIN_M (an ordinary mile-0 start)."""
+    if not track or not ride_history:
+        return 0.0, 0
+    for p in ride_history:
+        try:
+            lat, lng = float(p['lat']), float(p['lng'])
+        except (TypeError, ValueError, KeyError):
+            continue
+        dist_m, idx, off_by = project_to_route(lat, lng, track)
+        if off_by is not None and off_by <= ON_ROUTE_MAX_M:
+            if dist_m is not None and dist_m >= START_OFFSET_MIN_M:
+                return dist_m, (idx or 0)
+            return 0.0, 0
+    return 0.0, 0
+
+
+def distance_progressed_m(current_dist_m, start_offset_m, total_dist_m):
+    """Distance (m) travelled since the rider's OWN start on the route, wrapping a
+    loop. `current`/`start` are absolute along-route distances; a rider who began
+    at start_offset progresses (current − start), and on a loop a position that has
+    wrapped past the finish adds the route total. With no offset this is just
+    current_dist_m (an ordinary mile-0 start)."""
+    if current_dist_m is None:
+        return None
+    if not start_offset_m:
+        return current_dist_m
+    prog = current_dist_m - start_offset_m
+    if prog < 0 and total_dist_m:
+        prog += total_dist_m
+    return max(0.0, prog)
+
+
 def ascent_split(cum_ascent_ft, index, total_ascent_ft):
     """(done_ft, left_ft) given a cumulative-ascent array and current index."""
     if not cum_ascent_ft or index is None:
         return None, None
     done = cum_ascent_ft[min(index, len(cum_ascent_ft) - 1)]
     left = max(0.0, (total_ascent_ft or cum_ascent_ft[-1]) - done)
+    return round(done), round(left)
+
+
+def ascent_progressed_split(cum_ascent_ft, start_index, cur_index, total_ascent_ft):
+    """(done_ft, left_ft) for ascent climbed since the rider's start index, wrapping
+    a loop. Like ascent_split but measures the arc start_index→cur_index rather than
+    0→cur_index, so a mid-route loop start reports climbing done on THEIR ride, not
+    from the route file's mile 0. With start_index 0 this equals ascent_split."""
+    if not cum_ascent_ft or cur_index is None:
+        return None, None
+    n = len(cum_ascent_ft)
+    ci = min(cur_index, n - 1)
+    si = min(start_index or 0, n - 1)
+    total = total_ascent_ft or cum_ascent_ft[-1]
+    if ci >= si:
+        done = cum_ascent_ft[ci] - cum_ascent_ft[si]
+    else:   # wrapped past the finish
+        done = (total - cum_ascent_ft[si]) + cum_ascent_ft[ci]
+    done = max(0.0, done)
+    left = max(0.0, total - done)
     return round(done), round(left)
 
 
