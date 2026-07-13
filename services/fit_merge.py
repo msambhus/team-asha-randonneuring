@@ -222,7 +222,15 @@ def read_fit(data):
                             devs[fld.name] = fld.value
                             dev_field_names.add(fld.name)
                         else:
-                            fields[fld.name] = fld.value
+                            val = fld.value
+                            # fitdecode returns position_lat/long as raw int32
+                            # semicircles; the IR is degrees (haversine and the
+                            # fit_tool writer both expect degrees), so convert on
+                            # read. Only raw semicircles are ints — a value already
+                            # in degrees would be a float, so leave those alone.
+                            if fld.name in ('position_lat', 'position_long') and isinstance(val, int):
+                                val = semicircles_to_degrees(val)
+                            fields[fld.name] = val
                     records.append(Record(timestamp=_as_utc(ts), fields=fields, dev_fields=devs))
     except FitMergeError:
         raise
