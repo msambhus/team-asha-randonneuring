@@ -28,6 +28,20 @@ class Config:
     UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'riders')
     MAX_CONTENT_LENGTH = 2 * 1024 * 1024  # 2MB max upload
 
+    # FIT merge tool (/tools/merge-fit) upload limits. The larger byte cap is
+    # enforced route-locally inside routes/tools.py, which parses the multipart
+    # body with werkzeug.formparser.parse_form_data(max_content_length=...) rather
+    # than touching the global MAX_CONTENT_LENGTH above — that stays 2 MB so the
+    # disk-writing rider-photo upload path it guards is not broadened.
+    #
+    # Capped at 4 MB, deliberately UNDER Vercel's ~4.5 MB serverless-function
+    # request-body ceiling: this app is deployed as a single Python function
+    # (api/index.py, see vercel.json), and Vercel rejects larger bodies with a
+    # platform 413 before Flask runs. A higher cap here would be a promise the
+    # production platform can't keep, so the app's limit must stay below it.
+    FIT_MERGE_MAX_FILES = 20
+    FIT_MERGE_MAX_BYTES = 4 * 1024 * 1024  # 4 MB total (under Vercel's ~4.5 MB body cap)
+
     # Google OAuth Configuration
     GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
     GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')

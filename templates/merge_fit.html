@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Merge FIT Files - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero">
+<h1>Merge FIT Files</h1>
+<p class="mt-2 text-white/85 text-sm md:text-base">Combine activity files into one — free, self-hosted, no donor gate.</p>
+</div>
+
+<div class="container max-w-[720px]">
+
+{% if error %}
+<div class="py-3 px-5 rounded-lg my-4 text-sm bg-[#fed7d7] text-[#9b2c2c]">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('tools.merge_fit_submit') }}" enctype="multipart/form-data"
+      class="bg-card-bg rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.06)] p-6 md:p-8 my-6">
+
+<div class="mb-6">
+<label for="files" class="block font-semibold text-primary mb-2">Activity files (.fit)</label>
+<input type="file" id="files" name="files" accept=".fit" multiple required
+       class="block w-full text-sm text-text file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary file:text-white file:font-medium file:cursor-pointer hover:file:bg-primary-dark">
+<p class="text-text-light text-xs mt-2">
+Select 2–{{ max_files }} files, up to {{ max_mb }} MB total (the hosting platform's upload limit).
+Files are processed in memory and deleted immediately — nothing is stored.
+</p>
+</div>
+
+<fieldset class="mb-6">
+<legend class="font-semibold text-primary mb-3">Merge mode</legend>
+
+<label class="flex items-start gap-3 p-3 rounded-lg border border-border mb-2 cursor-pointer hover:bg-bg">
+<input type="radio" name="mode" value="concat" checked class="mt-1">
+<span>
+<span class="font-medium text-text block">Concatenation (end-to-end)</span>
+<span class="text-text-light text-sm">Stitch files in chronological order into one continuous
+activity — e.g. a device died mid-ride and you finished on another. Distance stays continuous
+across the seam.</span>
+</span>
+</label>
+
+<label class="flex items-start gap-3 p-3 rounded-lg border border-border cursor-pointer hover:bg-bg">
+<input type="radio" name="mode" value="overlay" class="mt-1">
+<span>
+<span class="font-medium text-text block">Overlay (interleave)</span>
+<span class="text-text-light text-sm">Merge overlapping recordings by timestamp — e.g. add heart
+rate / power / cadence from one file onto the GPS track of another. The <strong>first file</strong>
+you select is the position source, so overlapping GPS tracks don't double-count distance.</span>
+</span>
+</label>
+</fieldset>
+
+<button type="submit"
+        class="inline-block py-2.5 px-6 bg-accent text-white border-0 rounded-md font-semibold cursor-pointer transition-colors hover:bg-[#c53030]">
+Merge &amp; download .fit
+</button>
+</form>
+
+<p class="text-text-light text-xs mb-8">
+Output is a standard FIT file with position, altitude, speed, distance, heart rate, cadence, power
+and temperature preserved, ready to upload to Garmin Connect or Strava. GPX / TCX input is a planned
+future enhancement.
+</p>
+
+</div>
+{% endblock %}
