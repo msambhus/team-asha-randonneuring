@@ -8,6 +8,7 @@ mission requirements:
   3. stop name ellipsizes with a hover tooltip (title attr),
   4. a per-segment toughness column reflecting climbing + headwind.
 """
+from datetime import date
 from unittest.mock import patch
 
 
@@ -51,6 +52,8 @@ def _patches():
         'routes.riders.get_ride_plan_stops': lambda pid: [dict(s) for s in _STOPS],
         'routes.riders.get_public_custom_plans': lambda pid: [],
         'routes.riders.fetch_route': lambda rid: {'track_points': [{'x': 0, 'y': 0, 'd': 0}]},
+        # The v2 plan page now keys stored weather on the plan's next upcoming ride date.
+        'routes.riders.get_upcoming_ride_date_for_plan': lambda pid: date(2026, 7, 20),
         'routes.riders.fetch_stop_wind': lambda **kw: list(_WIND),
         'routes.riders.get_user_by_id': lambda uid: None,
         'models.get_latest_ride_for_plan': lambda pid: None,

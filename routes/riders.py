@@ -27,6 +27,7 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_upcoming_rusa_events, update_rider_profile, update_strava_privacy,
                     get_pbp_finishers,
                     get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops, update_ride_plan_info,
+                    get_upcoming_ride_date_for_plan,
                     get_signup_count, get_rider_signup_status, get_ride_by_id, update_ride_details, update_ride_core,
                     get_user_by_id, _execute,
                     get_strava_connection, get_strava_activities,
@@ -532,14 +533,14 @@ def upcoming_brevets(season_name):
             break
         try:
             plan_stops = get_ride_plan_stops(plan_id)
-            route_data = fetch_route(weather_route_id)
-            track_points = route_data.get('track_points') or []
+            # Read the pre-fetched forecast for this route + event date (no live
+            # Open-Meteo call on the calendar path — TA-237). The event already holds
+            # both keys, so no RWGPS fetch is needed for wind anymore.
             stop_wind = fetch_stop_wind(
                 stops=plan_stops,
-                track_points=track_points,
-                plan_slug=plan_slug,
+                route_id=weather_route_id,
+                forecast_date=event_date,
                 start_time_str=str(event.get('start_time') or '07:00')[:5],
-                cache=cache,
             )
             warning = detect_heavy_wind(stop_wind)
             if warning:
@@ -2218,15 +2219,17 @@ def ride_plan_detail_v1(slug):
     stop_wind = None
     if weather_route_id:
         try:
-            route_data = fetch_route(weather_route_id)
-            track_points = route_data.get('track_points') or []
-            stop_wind = fetch_stop_wind(
-                stops=stops,
-                track_points=track_points,
-                plan_slug=plan['slug'],
-                start_time_str=plan.get('start_time', '06:00'),
-                cache=cache,
-            )
+            # Read the pre-fetched forecast for this route on the plan's next upcoming
+            # ride date (no live Open-Meteo on the plan page — TA-237). No upcoming ride
+            # -> no stored forecast -> no wind, the same graceful miss as an uncached route.
+            forecast_date = get_upcoming_ride_date_for_plan(plan['id'])
+            if forecast_date:
+                stop_wind = fetch_stop_wind(
+                    stops=stops,
+                    route_id=weather_route_id,
+                    forecast_date=forecast_date,
+                    start_time_str=plan.get('start_time', '06:00'),
+                )
         except Exception:
             current_app.logger.exception("Wind fetch failed for plan %s", slug)
             stop_wind = None
@@ -2373,15 +2376,16 @@ def ride_plan_detail(slug):
     stop_wind = None
     if weather_route_id:
         try:
-            route_data = fetch_route(weather_route_id)
-            track_points = route_data.get('track_points') or []
-            stop_wind = fetch_stop_wind(
-                stops=stops,
-                track_points=track_points,
-                plan_slug=plan['slug'],
-                start_time_str=plan.get('start_time', '06:00'),
-                cache=cache,
-            )
+            # Read the pre-fetched forecast for this route on the plan's next upcoming
+            # ride date (no live Open-Meteo on the plan page — TA-237).
+            forecast_date = get_upcoming_ride_date_for_plan(plan['id'])
+            if forecast_date:
+                stop_wind = fetch_stop_wind(
+                    stops=stops,
+                    route_id=weather_route_id,
+                    forecast_date=forecast_date,
+                    start_time_str=plan.get('start_time', '06:00'),
+                )
         except Exception:
             current_app.logger.exception("v2 wind fetch failed for plan %s", slug)
             stop_wind = None
@@ -3724,15 +3728,16 @@ def custom_ride_plan_view(slug, custom_plan_id=None):
     stop_wind = None
     if weather_route_id:
         try:
-            route_data = fetch_route(weather_route_id)
-            track_points = route_data.get('track_points') or []
-            stop_wind = fetch_stop_wind(
-                stops=stops,
-                track_points=track_points,
-                plan_slug=plan['slug'],
-                start_time_str=str(plan.get('start_time') or '07:00')[:5],
-                cache=cache,
-            )
+            # Read the pre-fetched forecast for this route on the plan's next upcoming
+            # ride date (no live Open-Meteo on the plan page — TA-237).
+            forecast_date = get_upcoming_ride_date_for_plan(plan['id'])
+            if forecast_date:
+                stop_wind = fetch_stop_wind(
+                    stops=stops,
+                    route_id=weather_route_id,
+                    forecast_date=forecast_date,
+                    start_time_str=str(plan.get('start_time') or '07:00')[:5],
+                )
         except Exception:
             current_app.logger.exception("Wind fetch failed for custom plan %s", slug)
             stop_wind = None

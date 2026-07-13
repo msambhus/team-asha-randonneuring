@@ -440,9 +440,18 @@ def test_execute_route_weather_success(app):
                         'precipitation_probability': [5], 'weather_code': [0]}},
         ]
 
+        # Stored sample points aligned to mock_weather_data (3 forecasts) — the chat tool
+        # READS the pre-fetched forecast, never calls Open-Meteo live (TA-237).
+        mock_sample_points = [
+            {'lat': 47.6, 'lng': -122.3, 'distance_m': 0},
+            {'lat': 47.7, 'lng': -122.4, 'distance_m': 50000},
+            {'lat': 47.8, 'lng': -122.5, 'distance_m': 100000},
+        ]
+
         with patch('services.chat_tools.execute_allowed_query', return_value={'rows': mock_ride_plan_rows}), \
              patch('services.chat_tools.fetch_route', return_value=mock_route_data), \
-             patch('services.chat_tools.get_cached_route_weather', return_value=mock_weather_data):
+             patch('services.chat_tools.load_stored_route_weather',
+                   return_value=(mock_weather_data, mock_sample_points)):
 
             result = execute_route_weather('Cascade 400', start_datetime='2026-03-20T06:00')
 
