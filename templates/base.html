@@ -34,6 +34,7 @@
     </div>
     <a href="{{ url_for('main.resources') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'main.resources' %}bg-white/15 text-white{% endif %}">Resources</a>
     <a href="{{ url_for('weather.weather_page') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'weather.weather_page' %}bg-white/15 text-white{% endif %}">Weather</a>
+    <a href="{{ url_for('tools.merge_fit_page') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'tools.merge_fit_page' %}bg-white/15 text-white{% endif %}">Merge FIT</a>
     {% if user_logged_in %}
     <div class="relative inline-block group">
         <a class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs">{{ rider_name or user_email }}</a>

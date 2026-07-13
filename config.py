@@ -28,6 +28,13 @@ class Config:
     UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'riders')
     MAX_CONTENT_LENGTH = 2 * 1024 * 1024  # 2MB max upload
 
+    # FIT merge tool (/tools/merge-fit) upload limits. The larger byte cap is
+    # applied per-request inside routes/tools.py via request.max_content_length,
+    # NOT here — the global MAX_CONTENT_LENGTH above stays 2 MB so the
+    # disk-writing rider-photo upload path it guards is not broadened.
+    FIT_MERGE_MAX_FILES = 20
+    FIT_MERGE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB total across all uploaded FIT files
+
     # Google OAuth Configuration
     GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
     GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
