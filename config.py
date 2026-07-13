@@ -29,8 +29,9 @@ class Config:
     MAX_CONTENT_LENGTH = 2 * 1024 * 1024  # 2MB max upload
 
     # FIT merge tool (/tools/merge-fit) upload limits. The larger byte cap is
-    # applied per-request inside routes/tools.py via request.max_content_length,
-    # NOT here — the global MAX_CONTENT_LENGTH above stays 2 MB so the
+    # enforced route-locally inside routes/tools.py, which parses the multipart
+    # body with werkzeug.formparser.parse_form_data(max_content_length=...) rather
+    # than touching the global MAX_CONTENT_LENGTH above — that stays 2 MB so the
     # disk-writing rider-photo upload path it guards is not broadened.
     FIT_MERGE_MAX_FILES = 20
     FIT_MERGE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB total across all uploaded FIT files

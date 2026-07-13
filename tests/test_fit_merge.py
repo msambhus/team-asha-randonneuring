@@ -371,6 +371,23 @@ def test_global_content_length_cap_unchanged(app):
     assert app.config['MAX_CONTENT_LENGTH'] == 2 * 1024 * 1024
 
 
+def test_post_accepts_body_larger_than_global_cap(client, app):
+    """Route-local cap must let a >2 MB body through (not the global 2 MB).
+
+    Guards the Flask-3.0 fix: request.max_content_length is not a per-request
+    setter here, so the route parses the body with its own max_content_length.
+    Two ~3 MB parts (≈6 MB total) are well over the global 2 MB but under the
+    10 MB FIT cap — the request must reach the merge stage (rejected as malformed
+    FIT, 400) rather than be turned away as too large (413).
+    """
+    assert app.config['MAX_CONTENT_LENGTH'] == 2 * 1024 * 1024
+    assert app.config['FIT_MERGE_MAX_BYTES'] > 2 * 1024 * 1024
+    big = b'0' * (3 * 1024 * 1024)  # 3 MB of non-FIT bytes, each > global cap
+    resp = _upload(client, [big, big])
+    assert resp.status_code == 400   # accepted past 2 MB, then failed to parse
+    assert resp.status_code != 413
+
+
 def test_merge_writes_nothing_to_disk(client, app):
     """Privacy: a merge must not persist any file to the upload folder."""
     upload_dir = app.config['UPLOAD_FOLDER']
