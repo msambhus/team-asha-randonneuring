@@ -42,7 +42,7 @@ _CACHE_MAX = 200        # LRU cap; oldest 50 evicted when exceeded
 # is invalidated immediately instead of serving stale text. The per-ride
 # segment signature only fingerprints the ride's DATA, not the PROMPT — this
 # token covers prompt/input-shape changes that the data hash cannot see.
-_PROMPT_VERSION = "v6-signals"  # notes=one equal signal + ft/mi + gusts + temp range
+_PROMPT_VERSION = "v7-randonneuring"  # + evidence-based fueling/hydration/pacing/rest/sleep/heat-cold/caffeine guidance
 
 
 def _get_client():
@@ -177,6 +177,53 @@ stop", "mechanical", "low mood"); acknowledge the relevant note on its segment \
 and address the overall_note in your summary, but let the data carry equal \
 weight — don't let a note override or dominate what the metrics show. When a \
 note and the numbers disagree, say so and reason about both.
+
+EVIDENCE-BASED RANDONNEURING REFERENCE (comparison targets, NOT ride \
+measurements — see the no-fabrication guard below):
+- FUELING: on efforts over ~90 min aim for 60-90 g of carbohydrate per hour, \
+starting within the first hour rather than waiting until hungry; the gut \
+tolerates a steady drip far better than a big catch-up feed after a long dry \
+stretch. Long gaps between real breaks are a red flag for under-fueling.
+- HYDRATION: roughly 500-750 ml of fluid per hour (more in heat, less in cold), \
+with electrolytes in every bottle, not plain water — sodium loss, not just \
+fluid loss, is what cramps riders late.
+- PACING: ride an even or slightly NEGATIVE split — the back half as fast as or \
+faster than the front. Going out too hot buys minutes early and loses far more \
+late. A big power/speed fade in the closing segments usually means the opening \
+was over-cooked or the fueling fell behind.
+- REST / CONTROL DISCIPLINE: time stopped at controls is time not moving toward \
+the finish and it counts fully against the brevet cutoff. Keep stops short and \
+purposeful — refill, refuel, and roll — and minimize dead time; a handful of \
+disciplined 5-10 min controls beats one sprawling stop. Contrast the actual \
+stopped time against the planned break time to judge control discipline.
+- SLEEP: on 600k+ and other overnight-length efforts a short planned sleep \
+(even 20-90 min) at a control is usually faster overall than grinding through \
+deep fatigue; on 200-400k rides sleep is rarely needed and the answer is to \
+tighten stops instead.
+- HEAT: in the heat, drink more, add electrolytes, ease the pace, and expect \
+heart-rate drift at a given power — a hot leg costs more than the watts suggest. \
+- COLD: in the cold, layer, protect the extremities, and keep eating and \
+drinking even when appetite and thirst fade — riders quietly under-fuel when \
+it is cold.
+- CAFFEINE: use caffeine strategically, saving it for the back half or the \
+pre-dawn low rather than burning it early when motivation is still high.
+
+COVERAGE MANDATE (both are REQUIRED in every analysis): your coaching MUST \
+explicitly address (1) REST / stop discipline — how the rider spent time at \
+controls and enroute, tied to the actual stop_here_min / enroute_break_min / \
+stopped-vs-planned-break numbers in the data — and (2) REFUELING and HYDRATION \
+TIMING — when to eat and drink across THIS ride's segments and breaks, tied to \
+the actual break spacing and the weather (temperature range, heat/cold) shown \
+in the data.
+
+NO-FABRICATION GUARD: reason ONLY from the numbers actually present in the \
+data blocks (watts, bpm, mph, grade %, minutes, ft/mile, stop durations, \
+temperature, gusts). The reference ranges above are comparison targets to \
+judge the ride against — they are NOT measurements from this ride. NEVER invent \
+or state a figure the data does not contain (e.g. do not claim a specific \
+grams-per-hour or ml intake, a temperature, or a stop length that is not in the \
+data). If a value needed to make a point is missing, say it is not in the data \
+rather than making one up.
 
 HOW TO COACH:
 - Be specific and QUANTITATIVE. Cite the actual numbers from the data \
