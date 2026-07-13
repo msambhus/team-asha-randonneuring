@@ -68,8 +68,10 @@ class Record:
     ``fields`` carries every standard field the source record had (position,
     altitude, speed, distance, heart_rate, cadence, power, temperature, and any
     others such as enhanced_* / grade / gps_accuracy / vertical_oscillation).
-    ``dev_fields`` holds developer/custom fields best-effort; the writer cannot
-    round-trip them today, so they are warned about, never silently lost.
+    ``dev_fields`` holds this record's developer/custom field values keyed by
+    field name; they are re-emitted best-effort by :func:`write_fit` against the
+    captured definitions, and only a *specific* field the writer cannot serialize
+    is warned about — never silently lost.
     """
     timestamp: object                     # timezone-aware datetime (UTC)
     fields: dict = field(default_factory=dict)
@@ -78,10 +80,19 @@ class Record:
 
 @dataclass
 class ParsedActivity:
-    """A decoded activity: its records plus enough header context to re-emit."""
+    """A decoded activity: its records plus enough header context to re-emit.
+
+    ``developer_data_ids`` and ``field_descriptions`` are the captured developer
+    profile — ``developer_data_id`` and ``field_description`` definition messages
+    (as plain field dicts) — carried through so the writer can re-declare them and
+    re-emit each record's developer values. ``dev_field_names`` is the convenience
+    set of developer field names seen (derivable from ``field_descriptions``).
+    """
     records: list = field(default_factory=list)
     sport: object = 'cycling'
     dev_field_names: list = field(default_factory=list)
+    developer_data_ids: list = field(default_factory=list)
+    field_descriptions: list = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -160,10 +171,21 @@ def _is_dev_field(fld):
     return fdef is not None and hasattr(fdef, 'dev_data_index')
 
 
+def _frame_field_dict(frame):
+    """Snapshot a fitdecode data frame's standard fields into a plain dict."""
+    out = {}
+    for fld in frame.fields:
+        if fld.value is not None:
+            out[fld.name] = fld.value
+    return out
+
+
 def read_fit(data):
     """Decode FIT bytes into a :class:`ParsedActivity`.
 
-    Copies the complete field map of each ``record`` message. Raises
+    Copies the complete field map of each ``record`` message plus the developer
+    profile — ``developer_data_id`` / ``field_description`` definitions and each
+    record's developer field values — so the writer can re-emit them. Raises
     :class:`FitMergeError` on empty, truncated, or unparseable input, or when the
     file carries no ``record`` messages.
     """
@@ -175,6 +197,8 @@ def read_fit(data):
     records = []
     sport = None
     dev_field_names = set()
+    developer_data_ids = []
+    field_descriptions = []
     try:
         with fitdecode.FitReader(io.BytesIO(data)) as reader:
             for frame in reader:
@@ -182,6 +206,10 @@ def read_fit(data):
                     continue
                 if frame.name in ('sport', 'session') and sport is None:
                     sport = frame.get_value('sport', fallback=None)
+                elif frame.name == 'developer_data_id':
+                    developer_data_ids.append(_frame_field_dict(frame))
+                elif frame.name == 'field_description':
+                    field_descriptions.append(_frame_field_dict(frame))
                 elif frame.name == 'record':
                     ts = frame.get_value('timestamp', fallback=None)
                     if ts is None:
@@ -205,12 +233,10 @@ def read_fit(data):
         raise FitMergeError("no GPS/record data found in FIT file")
 
     records.sort(key=lambda r: r.timestamp)
-    if dev_field_names:
-        # Honesty boundary: developer fields are captured but not re-emitted.
-        logger.warning("read_fit: developer fields present, not re-emitted: %s",
-                       sorted(dev_field_names))
     return ParsedActivity(records=records, sport=sport or 'cycling',
-                          dev_field_names=sorted(dev_field_names))
+                          dev_field_names=sorted(dev_field_names),
+                          developer_data_ids=developer_data_ids,
+                          field_descriptions=field_descriptions)
 
 
 # --------------------------------------------------------------------------- #
@@ -284,7 +310,9 @@ def concat_activities(activities):
         offset += local_last
 
     return ParsedActivity(records=out_records, sport=ordered[0].sport,
-                          dev_field_names=_merged_dev_names(ordered))
+                          dev_field_names=_merged_dev_names(ordered),
+                          developer_data_ids=_merged_developer_data_ids(ordered),
+                          field_descriptions=_merged_field_descriptions(ordered))
 
 
 def overlay_activities(activities, position_source_idx=0):
@@ -318,9 +346,16 @@ def overlay_activities(activities, position_source_idx=0):
                     continue
                 if name not in target.fields:
                     target.fields[name] = val
+            # Developer values are non-positional too: overlay any the aligned
+            # source record lacks, so auxiliary custom sensors are preserved.
+            for name, val in ar.dev_fields.items():
+                if val is not None and name not in target.dev_fields:
+                    target.dev_fields[name] = val
 
     return ParsedActivity(records=out, sport=source.sport,
-                          dev_field_names=_merged_dev_names(activities))
+                          dev_field_names=_merged_dev_names(activities),
+                          developer_data_ids=_merged_developer_data_ids(activities),
+                          field_descriptions=_merged_field_descriptions(activities))
 
 
 def _merged_dev_names(activities):
@@ -328,6 +363,32 @@ def _merged_dev_names(activities):
     for a in activities:
         names.update(a.dev_field_names)
     return sorted(names)
+
+
+def _merged_developer_data_ids(activities):
+    """Union of developer_data_id definitions, deduped by developer_data_index."""
+    seen, out = set(), []
+    for a in activities:
+        for did in a.developer_data_ids:
+            key = did.get('developer_data_index')
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(did)
+    return out
+
+
+def _merged_field_descriptions(activities):
+    """Union of field_description definitions, deduped by (dev index, field num)."""
+    seen, out = set(), []
+    for a in activities:
+        for fd in a.field_descriptions:
+            key = (fd.get('developer_data_index'), fd.get('field_definition_number'))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(fd)
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -349,10 +410,13 @@ def _sport_value(sport):
 def write_fit(activity):
     """Serialize a :class:`ParsedActivity` to valid FIT bytes.
 
-    Emits ``file_id``, a timer start/stop event pair, every record with its full
-    field map, and ``lap`` / ``session`` / ``activity`` summary messages so the
-    file is accepted by Garmin Connect / Strava. Any record field the writer
-    cannot serialize is logged at WARNING, never dropped silently.
+    Emits ``file_id``, the captured developer profile (``developer_data_id`` /
+    ``field_description`` definitions), a timer start/stop event pair, every record
+    with its full standard field map **and** its developer field values, and
+    ``lap`` / ``session`` / ``activity`` summary messages so the file is accepted
+    by Garmin Connect / Strava. Developer values are re-emitted best-effort against
+    the captured definitions; any *specific* standard or developer field the writer
+    cannot serialize is logged at WARNING by name, never dropped silently.
     """
     from fit_tool.fit_file_builder import FitFileBuilder
     from fit_tool.profile.messages.file_id_message import FileIdMessage
@@ -382,6 +446,11 @@ def write_fit(activity):
     fid.time_created = start_ms
     builder.add(fid)
 
+    # Re-declare the developer profile BEFORE any record that uses it (FIT
+    # requires definitions to precede use). desc_by_name maps a developer field
+    # name to its emitted field_description so per-record values can be attached.
+    desc_by_name, dev_failures = _emit_developer_profile(builder, activity)
+
     start_evt = EventMessage()
     start_evt.event = Event.TIMER.value
     start_evt.event_type = EventType.START.value
@@ -402,6 +471,8 @@ def write_fit(activity):
                 setattr(msg, name, val)
             except Exception:  # fit_tool has no property for this field / bad type
                 dropped.add(name)
+
+        _attach_developer_values(msg, rec, desc_by_name, dev_failures)
 
         dist = rec.fields.get('distance')
         if dist is not None:
@@ -458,10 +529,113 @@ def write_fit(activity):
 
     if dropped:
         logger.warning("write_fit: could not serialize record fields: %s", sorted(dropped))
-    if activity.dev_field_names:
-        logger.warning("write_fit: developer fields not re-emitted: %s", activity.dev_field_names)
+    if dev_failures:
+        # Honesty boundary: only fields that actually failed to round-trip are
+        # reported — the rest were re-emitted with their captured definitions.
+        logger.warning("write_fit: developer fields not re-emitted: %s", sorted(dev_failures))
 
     return bytes(builder.build().to_bytes())
+
+
+def _emit_developer_profile(builder, activity):
+    """Re-declare developer_data_id + field_description messages best-effort.
+
+    Returns ``(desc_by_name, dev_failures)`` where ``desc_by_name`` maps a
+    developer field name to its emitted ``FieldDescriptionMessage`` (for later
+    per-record value attachment) and ``dev_failures`` collects the names of
+    definitions that could not be re-emitted, so only those are warned about.
+    """
+    desc_by_name, dev_failures = {}, set()
+    if not activity.developer_data_ids and not activity.field_descriptions:
+        return desc_by_name, dev_failures
+
+    try:
+        from fit_tool.profile.messages.developer_data_id_message import (
+            DeveloperDataIdMessage,
+        )
+        from fit_tool.profile.messages.field_description_message import (
+            FieldDescriptionMessage,
+        )
+    except Exception:
+        # fit_tool build lacks the developer-profile messages — every developer
+        # field is a specific failure; name them all rather than lose them silently.
+        dev_failures.update(activity.dev_field_names)
+        return desc_by_name, dev_failures
+
+    data_ids = activity.developer_data_ids
+    if not data_ids and activity.field_descriptions:
+        # Synthesize the developer_data_id(s) the field_descriptions reference.
+        indexes = {fd.get('developer_data_index', 0) for fd in activity.field_descriptions}
+        data_ids = [{'developer_data_index': idx} for idx in sorted(indexes)]
+
+    for did in data_ids:
+        try:
+            msg = DeveloperDataIdMessage()
+            _apply_fields(msg, did)
+            builder.add(msg)
+        except Exception:
+            pass  # a missing id is surfaced per-field via desc lookups below
+
+    for fd in activity.field_descriptions:
+        name = fd.get('field_name')
+        try:
+            msg = FieldDescriptionMessage()
+            _apply_fields(msg, fd)
+            builder.add(msg)
+            if name is not None:
+                desc_by_name[name] = msg
+        except Exception:
+            if name is not None:
+                dev_failures.add(name)
+    return desc_by_name, dev_failures
+
+
+def _attach_developer_values(msg, rec, desc_by_name, dev_failures):
+    """Attach a record's developer field values to its RecordMessage best-effort.
+
+    Each value is matched to its ``field_description`` by name and appended via
+    fit_tool's developer-field API. A value with no definition, or that fit_tool
+    cannot serialize, is added to ``dev_failures`` (warned by name) — never lost
+    without a trace.
+    """
+    if not rec.dev_fields:
+        return
+    for name, value in rec.dev_fields.items():
+        if value is None:
+            continue
+        desc = desc_by_name.get(name)
+        if desc is None:
+            dev_failures.add(name)
+            continue
+        try:
+            _set_developer_field(msg, desc, value)
+        except Exception:
+            dev_failures.add(name)
+
+
+def _set_developer_field(msg, description, value):
+    """Append one developer field value to a message via fit_tool's API.
+
+    Isolated so the exact fit_tool construction is the only thing a caller's
+    try/except needs to guard.
+    """
+    from fit_tool.developer_field import DeveloperField
+    from fit_tool.developer_field_definition import DeveloperFieldDefinition
+
+    definition = DeveloperFieldDefinition(field_description_message=description)
+    field = DeveloperField(definition, value)
+    msg.developer_fields.append(field)
+
+
+def _apply_fields(msg, values):
+    """Best-effort setattr of a captured field dict onto a fit_tool message."""
+    for key, val in values.items():
+        if val is None:
+            continue
+        try:
+            setattr(msg, key, val)
+        except Exception:
+            pass
 
 
 def _apply_stats(msg, speeds, hrs, cadences, powers):

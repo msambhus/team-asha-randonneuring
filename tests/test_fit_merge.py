@@ -245,13 +245,22 @@ def test_developer_field_is_never_silently_lost(caplog):
     except Exception as exc:  # pragma: no cover
         pytest.skip(f"could not build a developer-field fixture: {exc}")
 
+    # Read must capture the developer profile into the IR (definitions + values),
+    # not merely note the field name.
+    parsed = read_fit(data)
+    assert parsed.field_descriptions, "field_description definition was dropped on read"
+    assert any('custom_metric' in r.dev_fields for r in parsed.records), \
+        "per-record developer value was dropped on read"
+
+    # Write must re-emit best-effort: the value either round-trips through
+    # decode->encode->decode OR write_fit warns naming that specific field.
     import logging
     with caplog.at_level(logging.WARNING, logger='services.fit_merge'):
-        parsed = read_fit(data)
+        out = write_fit(parsed)
+    reparsed = read_fit(out)
 
-    round_tripped = any('custom_metric' in r.dev_fields for r in parsed.records)
-    warned = any('custom_metric' in rec.getMessage() for rec in caplog.records) \
-        or bool(parsed.dev_field_names)
+    round_tripped = any('custom_metric' in r.dev_fields for r in reparsed.records)
+    warned = any('custom_metric' in rec.getMessage() for rec in caplog.records)
     assert round_tripped or warned, "developer field was silently lost"
 
 
