@@ -446,6 +446,64 @@ def test_interpolator_clamps_beyond_finish_not_at_spike():
     assert interp(195) > 100.0
 
 
+def test_reported_geometry_control5_speed_is_sane_custom_plan():
+    """Synthetic model of the reported bug's exact geometry (custom-plan path).
+
+    Mirrors the Mendocino Coast 600K leg from the mission: Control #4 @183.0 mi →
+    Control #5 @227.0 mi (a 44-mi leg), with two UNPLANNED breaks inside it at
+    199.5 mi (7.8 min) and 213.1 mi (4.3 min), rendered via the custom-plan path
+    (custom_stops passed). A GPS spike inside the leg makes the pre-fix binary-
+    search interpolator mis-bracket interp(227) to a too-early time, so Control #5
+    renders a physically-impossible ~38 mph / ~69 min segment. With the monotonic-
+    safe fix, interp(227) resolves to the true arrival and Control #5 renders the
+    correct ~13 mph / ~199 min (elapsed 211 min − 12.1 min of breaks).
+
+    This is a SYNTHETIC stand-in for the real match_id 212 reproduction (Step A),
+    which is DB-gated (see test_step_a_real_ride_control5_speed_is_sane). It uses
+    no real ride data.
+    """
+    plan = [
+        _plan_stop('Start', 0, 'start'),
+        _plan_stop('Control #4', 183.0, 'control', stop_duration_min=30,
+                   cum_time_min=762, segment_time_min=732, seg_dist=183.0),
+        _plan_stop('Control #5', 227.0, 'control', stop_duration_min=0,
+                   cum_time_min=985, segment_time_min=223, seg_dist=44.0),
+        _plan_stop('Finish', 250.0, 'finish', cum_time_min=1090,
+                   segment_time_min=105, seg_dist=23.0),
+    ]
+    detected = [
+        _detected_stop(183.0, 30, 'Control #4'),
+        _detected_stop(199.5, 7.8),   # unplanned: light failure + fall
+        _detected_stop(213.1, 4.3),   # unplanned: refuel
+    ]
+    # (miles, minute) stream samples. C4 arrive 732 / depart 762; break plateaus at
+    # 199.5 and 213.1; a spurious GPS spike to 230 mi inside the leg; C5 @973; end.
+    stream_pts = [
+        (0, 0), (183, 732), (183, 762),
+        (199.5, 836), (230, 843.5), (199.5, 844),   # spike to 230 mid-leg
+        (213.1, 906), (213.1, 910), (227, 973), (250, 1090),
+    ]
+    streams = {
+        'distance': [mi * METERS_PER_MILE for mi, _ in stream_pts],
+        'time': [t * 60 for _, t in stream_pts],
+    }
+    comparison = build_comparison(
+        plan_stops=plan,
+        detected_stops=detected,
+        activity=_activity(1090, 250),
+        custom_stops=[dict(p) for p in plan],   # custom-plan display path
+        streams=streams,
+    )
+    c5 = _row_by_location(comparison, 'Control #5')
+    assert c5 is not None
+    # Physically sane brevet pace, not the pre-fix ~38 mph corruption.
+    assert c5['actual_speed_mph'] is not None
+    assert 8.0 < c5['actual_speed_mph'] < 20.0, (
+        f"Control #5 speed {c5['actual_speed_mph']} mph is not a sane brevet pace")
+    # Segment = leg elapsed (211 min) minus the two breaks (7.8 + 4.3 = 12.1).
+    assert c5['actual_segment_min'] == 199
+
+
 # ── Step A: DB-gated real-ride reproduction (match_id 212) ────────────────────
 
 _STEP_A_DB = os.environ.get('TEST_DATABASE_URL') or os.environ.get('DATABASE_URL')
