@@ -20,7 +20,17 @@ average speed to a physically-impossible value. The monotonic-safe interpolation
 resolves a control distance to the time it was *last* reached, recovering the true
 arrival. Test F fails with the unmodified interpolator (impossible mph) and passes
 after; Tests G/H guard that well-formed (monotonic) streams are unchanged.
+
+Test Step-A (test_step_a_real_ride_control5_speed_is_sane) is the DB-gated real
+reproduction the plan requires: it runs match_id 212 (rider 6 / ride 103) through
+the exact custom-plan build_comparison path and asserts Control #5 renders a sane
+speed. It SKIPS unless TEST_DATABASE_URL/DATABASE_URL is set (a skip is UNPROVEN,
+not passing) and commits no real ride data — it only reads stored rows at runtime.
 """
+
+import os
+
+import pytest
 
 from services.strava_analysis import build_comparison, _build_stream_interpolator
 
@@ -408,3 +418,130 @@ def test_interpolator_unchanged_on_monotonic_stream():
         )
     # Departure semantics at the 30-mi stop: last sample there is t=140.
     assert abs(interp(30) - 140.0) < 1e-9
+
+
+# ── Step A: DB-gated real-ride reproduction (match_id 212) ────────────────────
+
+_STEP_A_DB = os.environ.get('TEST_DATABASE_URL') or os.environ.get('DATABASE_URL')
+_STEP_A_REASON = (
+    "Step A real-ride reproduction is DB-gated: set TEST_DATABASE_URL/DATABASE_URL "
+    "(and optionally STEP_A_* id overrides) to run match_id 212 through the "
+    "custom-plan path. A skip here is UNPROVEN, not passing."
+)
+
+
+@pytest.mark.skipif(not _STEP_A_DB, reason=_STEP_A_REASON)
+def test_step_a_real_ride_control5_speed_is_sane(app):
+    """Step A: match_id 212 custom-plan path renders Control #5 at a sane speed.
+
+    Reproduces the reported bug on the real ride (rider 6 / ride 103 / plan 58,
+    Mendocino Coast 600K) by running the stored streams + detected stops + base
+    plan + the rider's custom plan through build_comparison EXACTLY as
+    routes/riders.py ride_strava_analysis does (custom_stops / base_for_comparison
+    path). Confirms Control #5 (~227.0 mi) no longer renders the impossible
+    ~85 mph / ~199 min segment, and dumps the Step-A intermediate terms.
+
+    Reads stored rows at runtime only — commits no real ride data. This is the
+    blocking acceptance gate the synthetic tests cannot satisfy; if it FAILS with
+    a DB present, the interpolation diagnosis was wrong for this ride (e.g. a
+    custom course-mile vs GPS-odometer scale mismatch) — rewind, do not merge.
+    """
+    rider_id = int(os.environ.get('STEP_A_RIDER_ID', '6'))
+    ride_id = int(os.environ.get('STEP_A_RIDE_ID', '103'))
+    base_plan_id = int(os.environ.get('STEP_A_BASE_PLAN_ID', '58'))
+    match_id_expected = int(os.environ.get('STEP_A_MATCH_ID', '212'))
+    control5_mi = float(os.environ.get('STEP_A_CONTROL5_MI', '227.0'))
+    control4_mi = float(os.environ.get('STEP_A_CONTROL4_MI', '183.0'))
+
+    with app.app_context():
+        from models import (get_strava_ride_match, get_ride_plan_stops,
+                            get_custom_plan)
+        from services.custom_plan_service import get_merged_plan_stops
+        from services.strava_analysis import fetch_and_analyze
+
+        match_row = get_strava_ride_match(rider_id, ride_id)
+        assert match_row is not None, (
+            f"no Strava match for rider {rider_id} ride {ride_id}")
+        match = dict(match_row)
+        assert match['id'] == match_id_expected, (
+            f"expected match_id {match_id_expected}, got {match['id']}")
+
+        plan_stops = get_ride_plan_stops(base_plan_id)
+        assert plan_stops, f"no plan stops for base plan {base_plan_id}"
+
+        custom_plan = get_custom_plan(rider_id, base_plan_id)
+        assert custom_plan is not None, (
+            "expected a custom plan for this rider/base plan (custom path)")
+        custom_stops, _ = get_merged_plan_stops(custom_plan['id'])
+        assert custom_stops, "custom plan has no merged stops"
+        primary_stops = custom_stops
+
+        analysis = fetch_and_analyze(
+            rider_id=rider_id,
+            match_id=match['id'],
+            strava_activity_id=match['strava_activity_id'],
+            plan_stops=primary_stops,
+        )
+        assert not analysis.get('error'), analysis.get('error')
+        streams = analysis.get('streams')
+        assert streams, "expected cached activity_streams for match 212"
+
+        # Recompute the base plan's cumulative times exactly like the route.
+        base_for_comparison = []
+        cum = 0
+        prev_dist = 0.0
+        for s in plan_stops:
+            sd = dict(s)
+            sd['distance_miles'] = (
+                float(sd['distance_miles']) if sd.get('distance_miles') is not None else 0)
+            sd['segment_time_min'] = int(sd.get('segment_time_min') or 0)
+            sd['stop_duration_min'] = int(sd.get('stop_duration_min') or 0)
+            sd['seg_dist'] = round(sd['distance_miles'] - prev_dist, 1)
+            cum += sd['segment_time_min'] + sd['stop_duration_min']
+            sd['cum_time_min'] = cum
+            sd['arrival_time_min'] = cum - sd['stop_duration_min']
+            prev_dist = sd['distance_miles']
+            base_for_comparison.append(sd)
+
+        comparison = build_comparison(
+            plan_stops=primary_stops,
+            detected_stops=analysis['detected_stops'],
+            activity=match,
+            custom_stops=base_for_comparison,
+            plan_start_time=None,
+            actual_start_time=match.get('start_date_local'),
+            streams=streams,
+        )
+
+        interp = _build_stream_interpolator(streams)
+
+    # Locate the Control #5 planned row (closest planned row to ~227.0 mi).
+    planned = [r for r in comparison['rows'] if not r.get('is_extra')]
+    assert planned, "no planned rows in comparison"
+    c5 = min(planned, key=lambda r: abs((r.get('distance_miles') or 0) - control5_mi))
+
+    # Step-A diagnostic dump (plan condition 1).
+    dist_miles = [d / METERS_PER_MILE for d in streams['distance']]
+    window = [d for d in dist_miles if control4_mi <= d <= control5_mi]
+    window_monotonic = all(window[i] <= window[i + 1] for i in range(len(window) - 1))
+    print(
+        "\n[Step A] match_id=%s Control#5 dist=%.1f arrival=%s cum=%s seg_min=%s "
+        "speed_mph=%s" % (
+            match['id'], c5.get('distance_miles'),
+            c5.get('actual_arrival_time_min'), c5.get('actual_cum_time_min'),
+            c5.get('actual_segment_min'), c5.get('actual_speed_mph')))
+    print(
+        "[Step A] interp(%.1f)=%.1f interp(%.1f)=%.1f seg_elapsed=%.1f "
+        "dist_miles[-1]=%.1f window_monotonic=%s" % (
+            control4_mi, interp(control4_mi), control5_mi, interp(control5_mi),
+            interp(control5_mi) - interp(control4_mi), dist_miles[-1],
+            window_monotonic))
+
+    # Acceptance (plan condition 10): Control #5 is physically sane — a finite,
+    # brevet-plausible pace, not the ~85 mph / ~199 min corruption.
+    assert c5.get('actual_speed_mph') is not None, "Control #5 speed is blank"
+    assert 3.0 < c5['actual_speed_mph'] < 40.0, (
+        f"Control #5 speed {c5['actual_speed_mph']} mph is physically impossible; "
+        f"the fix does not resolve this ride — rewind, do not merge.")
+    assert c5.get('actual_segment_min') is not None and c5['actual_segment_min'] < 600, (
+        f"Control #5 segment {c5.get('actual_segment_min')} min is implausible")
