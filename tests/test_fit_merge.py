@@ -335,6 +335,17 @@ def test_get_merge_fit_page_renders_form(client):
     assert 'value="overlay"' in body
 
 
+def test_overlay_is_the_default_mode(client):
+    """Overlay is the pre-selected radio, and the server falls back to it too."""
+    import re
+    from routes.tools import _normalize_mode
+    body = client.get('/tools/merge-fit').get_data(as_text=True)
+    assert re.search(r'value="overlay"[^>]*checked', body)
+    assert not re.search(r'value="concat"[^>]*checked', body)
+    assert _normalize_mode(None) == 'overlay'
+    assert _normalize_mode('') == 'overlay'
+
+
 def test_post_happy_path_returns_merged_fit(client):
     a = _make_synthetic_fit(_make_records(5, start=_T0))
     b = _make_synthetic_fit(_make_records(5, start=_T0 + timedelta(hours=1)))
