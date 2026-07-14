@@ -522,8 +522,14 @@ def test_step_a_real_ride_control5_speed_is_sane(app):
     Mendocino Coast 600K) by running the stored streams + detected stops + base
     plan + the rider's custom plan through build_comparison EXACTLY as
     routes/riders.py ride_strava_analysis does (custom_stops / base_for_comparison
-    path). Confirms Control #5 (~227.0 mi) no longer renders the impossible
-    ~85 mph / ~199 min segment, and dumps the Step-A intermediate terms.
+    path). Confirms Control #5 (~227.0 mi) renders the APPROVED real-ride value
+    (~13 mph / ~199 min) instead of the impossible ~85 mph / ~31 min corruption,
+    and dumps the Step-A intermediate terms.
+
+    The acceptance band enforces the plan's approved criterion (condition 10:
+    ~13 mph / ~199 min), NOT a broad "anything sane" range — a still-wrong ~30 or
+    ~85 mph reading, a blank, or a too-slow value all FAIL. Bands are overridable
+    via STEP_A_C5_* env vars once the exact real-ride numbers are known.
 
     Reads stored rows at runtime only — commits no real ride data. This is the
     blocking acceptance gate the synthetic tests cannot satisfy; if it FAILS with
@@ -536,6 +542,13 @@ def test_step_a_real_ride_control5_speed_is_sane(app):
     match_id_expected = int(os.environ.get('STEP_A_MATCH_ID', '212'))
     control5_mi = float(os.environ.get('STEP_A_CONTROL5_MI', '227.0'))
     control4_mi = float(os.environ.get('STEP_A_CONTROL4_MI', '183.0'))
+    # Approved real-ride acceptance band (plan condition 10: ~13 mph / ~199 min).
+    # Tight enough to reject the ~85 mph corruption AND a merely-"sane-ish" ~30 mph
+    # or a too-slow/blank reading; widen via env only against confirmed real values.
+    c5_speed_min = float(os.environ.get('STEP_A_C5_SPEED_MIN', '10.0'))
+    c5_speed_max = float(os.environ.get('STEP_A_C5_SPEED_MAX', '17.0'))
+    c5_seg_min = float(os.environ.get('STEP_A_C5_SEG_MIN', '175.0'))
+    c5_seg_max = float(os.environ.get('STEP_A_C5_SEG_MAX', '225.0'))
 
     with app.app_context():
         from models import (get_strava_ride_match, get_ride_plan_stops,
@@ -621,11 +634,15 @@ def test_step_a_real_ride_control5_speed_is_sane(app):
             interp(control5_mi) - interp(control4_mi), dist_miles[-1],
             window_monotonic))
 
-    # Acceptance (plan condition 10): Control #5 is physically sane — a finite,
-    # brevet-plausible pace, not the ~85 mph / ~199 min corruption.
+    # Acceptance (plan condition 10): Control #5 must render the APPROVED real-ride
+    # value (~13 mph / ~199 min), not merely "something sane". A ~30 or ~85 mph
+    # reading, a blank, or a too-slow value all fail this gate.
     assert c5.get('actual_speed_mph') is not None, "Control #5 speed is blank"
-    assert 3.0 < c5['actual_speed_mph'] < 40.0, (
-        f"Control #5 speed {c5['actual_speed_mph']} mph is physically impossible; "
-        f"the fix does not resolve this ride — rewind, do not merge.")
-    assert c5.get('actual_segment_min') is not None and c5['actual_segment_min'] < 600, (
-        f"Control #5 segment {c5.get('actual_segment_min')} min is implausible")
+    assert c5_speed_min <= c5['actual_speed_mph'] <= c5_speed_max, (
+        f"Control #5 speed {c5['actual_speed_mph']} mph is outside the approved "
+        f"[{c5_speed_min}, {c5_speed_max}] mph band (~13 mph target); the fix does "
+        f"not resolve this ride to the approved value — rewind, do not merge.")
+    assert c5.get('actual_segment_min') is not None, "Control #5 segment is blank"
+    assert c5_seg_min <= c5['actual_segment_min'] <= c5_seg_max, (
+        f"Control #5 segment {c5['actual_segment_min']} min is outside the approved "
+        f"[{c5_seg_min}, {c5_seg_max}] min band (~199 min target) — rewind, do not merge.")
