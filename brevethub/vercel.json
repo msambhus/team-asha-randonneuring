@@ -1,26 +1,11 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/index.py",
-      "use": "@vercel/python",
-      "config": {
-        "includeFiles": "../shared/**"
-      }
-    },
-    {
-      "src": "static/**",
-      "use": "@vercel/static"
+  "buildCommand": "cp -r ../shared ./shared",
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "shared/**"
     }
-  ],
-  "routes": [
-    {
-      "src": "/static/(.*)",
-      "dest": "/static/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.py"
-    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index.py" }
   ]
 }
