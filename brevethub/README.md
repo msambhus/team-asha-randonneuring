@@ -46,17 +46,24 @@ No secrets are committed — `.env` is git-ignored and the README uses placehold
 
 ## Deploy (post-merge; out of this `pr-only` mission, documented for the owner)
 
+> **Note on `shared/`:** this Mission-1 slice does **not** import `shared/` yet —
+> it only needs the files under `brevethub/`. So the deploy has no dependency on
+> the sibling package, and the entry point (`api/index.py`) is written to work
+> whether or not the repo root is present in the deployment (see `test_deploy_entrypoint.py`).
+> When a later mission actually imports `shared.*`, enable Vercel's **"Include
+> files outside the Root Directory in the Build Step"** so the sibling package is
+> bundled.
+
 1. **Apply the migration** `migrations/033_brevethub_rp_tables.sql` to Supabase.
-   It is additive/idempotent and touches no Team Asha table.
-2. **Create a new Vercel project** rooted at `brevethub/` (Vercel supports a
-   second project in the same repo). Set its **Root Directory** to `brevethub`.
-   `vercel.json` bundles the sibling `shared/**` via `includeFiles`; if Vercel's
-   root-directory tracing does not pick up the sibling package in your project
-   settings, set the project Root Directory to the repo root and keep
-   `api/index.py` as the entry point (it puts the repo root on `sys.path`).
-3. **Set env vars** on the new project: `DATABASE_URL`, `BREVETHUB_SECRET_KEY`
-   (a fresh 32+ char random value), and the reused `GOOGLE_CLIENT_ID` /
-   `GOOGLE_CLIENT_SECRET`.
+   It is additive/idempotent and touches no Team Asha table. *(Applied 2026-07-14.)*
+2. **Create a new Vercel project** on this same repo (Vercel supports a second
+   project in one repo). Set its **Root Directory** to `brevethub`. The entry
+   point self-heals under both layouts, so the "include files outside root"
+   toggle is optional for Mission 1 (turn it on once a mission imports `shared/`).
+3. **Set env vars** on the new project (Production + Preview):
+   - `DATABASE_URL` — same Supabase Postgres as Team Asha (BrevetHub only touches `rp_*`).
+   - `BREVETHUB_SECRET_KEY` — a fresh 32+ char random value (its own, not Team Asha's).
+   - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — reused from Team Asha's existing OAuth client.
 4. **Register the Google redirect URIs** below on the existing OAuth client.
 
 ### Google redirect URIs to register (on the existing OAuth client)
