@@ -775,6 +775,21 @@ def _build_stream_interpolator(streams):
     # Convert distance to miles once
     dist_miles = [d / METERS_PER_MILE for d in distance_m]
 
+    # Strava's distance stream is a cumulative odometer and is normally
+    # non-decreasing, so a binary-search bracket is valid and cheap. GPS glitches
+    # can occasionally push a sample backwards (a dip) or spuriously forwards (a
+    # spike). On such a non-monotonic stream the binary search may bracket the
+    # wrong samples and return a wildly-too-early time for a control's distance,
+    # which collapses that segment's elapsed time and inflates its average speed
+    # to a physically-impossible value (e.g. an 85 mph brevet leg). Detect the
+    # non-monotonic case once and fall back to a monotonic-safe scan that resolves
+    # a distance to the time it was *last* reached on the way up — the true
+    # arrival — ignoring the glitch. On a well-formed (non-decreasing) stream both
+    # paths are identical, so normal rides are unaffected.
+    monotonic = all(
+        dist_miles[i] <= dist_miles[i + 1] for i in range(len(dist_miles) - 1)
+    )
+
     def interpolate(target_miles):
         """Return elapsed time in minutes at the given distance in miles."""
         if target_miles <= 0:
@@ -797,7 +812,46 @@ def _build_stream_interpolator(streams):
         frac = (target_miles - d0) / (d1 - d0)
         return (t0 + frac * (t1 - t0)) / 60.0
 
-    return interpolate
+    if monotonic:
+        return interpolate
+
+    max_dist = max(dist_miles)
+
+    def interpolate_monotonic_safe(target_miles):
+        """Interpolate elapsed time robustly on a non-monotonic distance stream.
+
+        Resolves ``target_miles`` to the time of its *last* upward crossing — the
+        final sample interval where the odometer goes from below the target to at
+        or above it — so a spurious earlier spike/dip cannot yield a too-early
+        time. Preserves the binary-search "return departure time at a stop"
+        behaviour by advancing across any plateau exactly at the target distance.
+        """
+        if target_miles <= 0:
+            return 0.0
+        if target_miles >= max_dist:
+            return time_s[-1] / 60.0
+        cross = None
+        for i in range(len(dist_miles) - 1):
+            if dist_miles[i] < target_miles <= dist_miles[i + 1]:
+                cross = i
+        if cross is None:
+            # No clean upward crossing (target below the first sample); fall back
+            # to the plain bracket search rather than guessing.
+            return interpolate(target_miles)
+        d0, d1 = dist_miles[cross], dist_miles[cross + 1]
+        t0, t1 = time_s[cross], time_s[cross + 1]
+        frac = (target_miles - d0) / (d1 - d0) if d1 != d0 else 1.0
+        t = t0 + frac * (t1 - t0)
+        # Departure semantics: if the crossing lands exactly on a plateau at this
+        # distance (the rider stopped here), advance to the plateau's last sample.
+        if abs(d1 - target_miles) < 1e-9:
+            j = cross + 1
+            while j + 1 < len(dist_miles) and abs(dist_miles[j + 1] - target_miles) < 1e-9:
+                j += 1
+            t = time_s[j]
+        return t / 60.0
+
+    return interpolate_monotonic_safe
 
 
 def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,

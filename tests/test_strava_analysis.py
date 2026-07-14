@@ -6,13 +6,23 @@ Tests A-D verify the is_extra=True extra-stop arithmetic that is ALREADY
 CORRECT in the current code. They are regression guards — they pass before and
 after the pointer-sync fix.
 
-Test E (test_finish_segment_no_streams) is the PRIMARY CORRECTNESS PROOF: it
-exercises the pointer-desync bug (prev_planned_dist advancing outside the
-actual_cum_time guard when streams are absent) and FAILS with the unmodified
-code. It must fail before the fix is applied and pass after.
+Test E (test_finish_segment_no_streams) is the PRIMARY CORRECTNESS PROOF for the
+no-streams pointer-sync fix: it exercises the pointer-desync bug
+(prev_planned_dist advancing outside the actual_cum_time guard when streams are
+absent) and FAILS with the unmodified code. It must fail before the fix is
+applied and pass after.
+
+Tests F-H are the PRIMARY CORRECTNESS PROOF for the streams-present interpolation
+fix. A non-monotonic Strava distance stream (a GPS spike/dip) makes the plain
+binary search in _build_stream_interpolator mis-bracket a control's distance and
+return a too-early time, collapsing that leg's elapsed time and inflating its
+average speed to a physically-impossible value. The monotonic-safe interpolation
+resolves a control distance to the time it was *last* reached, recovering the true
+arrival. Test F fails with the unmodified interpolator (impossible mph) and passes
+after; Tests G/H guard that well-formed (monotonic) streams are unchanged.
 """
 
-from services.strava_analysis import build_comparison
+from services.strava_analysis import build_comparison, _build_stream_interpolator
 
 
 # ── constants ────────────────────────────────────────────────────────────────
@@ -286,3 +296,115 @@ def test_finish_segment_no_streams():
         f"If this is ~9.1, the pointer-sync fix is not applied."
     )
     assert finish['actual_segment_min'] == 610
+
+
+# ── Test F: non-monotonic stream (PRIMARY PROOF, streams-present) ─────────────
+
+# A GPS distance stream for a 10→30 mi leg with a spurious forward spike to 35 mi
+# early in the leg. C1 departs at t=50 min; the rider truly reaches (and passes)
+# 30 mi at t=130 min. The plain binary search brackets the spike and resolves
+# interp(30) to ~61 min — long before the rider was there — so C2's segment
+# collapses to ~11 min and its speed reads ~109 mph. The monotonic-safe path
+# resolves interp(30) to the last upward crossing (t=150, the departure sample),
+# giving a physically sane speed.
+_SPIKE_DIST_MI = [0, 10, 10, 20, 35, 25, 30, 30, 40]
+_SPIKE_TIME_MIN = [0, 20, 50, 60, 62, 90, 130, 150, 170]
+
+
+def _spike_streams():
+    return {
+        'distance': [mi * METERS_PER_MILE for mi in _SPIKE_DIST_MI],
+        'time': [t * 60 for t in _SPIKE_TIME_MIN],
+    }
+
+
+def test_non_monotonic_stream_speed_is_physically_sane():
+    """A GPS spike in the distance stream no longer inflates a planned leg's speed.
+
+    Fails with the unmodified interpolator (C2 reads ~109 mph); passes after.
+    """
+    plan = [
+        _plan_stop('Start', 0, 'start'),
+        _plan_stop('C1', 10, 'control', stop_duration_min=30, cum_time_min=50,
+                   segment_time_min=20, seg_dist=10),
+        _plan_stop('C2', 30, 'control', stop_duration_min=0, cum_time_min=125,
+                   segment_time_min=75, seg_dist=20),
+        _plan_stop('Finish', 40, 'finish', cum_time_min=135, segment_time_min=10,
+                   seg_dist=10),
+    ]
+    detected = [_detected_stop(10, 30, 'C1')]
+    comparison = build_comparison(
+        plan_stops=plan,
+        detected_stops=detected,
+        activity=_activity(170, 40),
+        streams=_spike_streams(),
+    )
+    c2 = _row_by_location(comparison, 'C2')
+    assert c2 is not None
+    # 20 mi over ~100 min of riding ≈ 12 mph — a possible brevet pace, not 109.
+    assert c2['actual_speed_mph'] is not None
+    assert 5.0 < c2['actual_speed_mph'] < 40.0, (
+        f"C2 speed {c2['actual_speed_mph']} mph is physically impossible; "
+        f"the monotonic-safe interpolation fix is not applied."
+    )
+    # True arrival at 30 mi is t=130 (departure sample 150), C1 departs at 50,
+    # so riding time is 100 min with no unplanned stops in the leg.
+    assert c2['actual_segment_min'] == 100
+
+
+def test_interpolator_recovers_true_time_on_spike():
+    """_build_stream_interpolator resolves a control distance past a GPS spike.
+
+    The naive bracket search returns ~61 min for 30 mi; the fix returns 150 min
+    (the last time the odometer was at 30 mi — the departure sample).
+    """
+    interp = _build_stream_interpolator(_spike_streams())
+    assert interp is not None
+    assert abs(interp(30) - 150.0) < 0.5
+
+
+# ── Test G/H: well-formed streams unchanged (happy-path guard) ────────────────
+
+def test_interpolator_unchanged_on_monotonic_stream():
+    """On a non-decreasing stream the interpolator matches a plain binary search.
+
+    Guards that the monotonic-safe fallback never alters well-formed rides,
+    including the "return departure time at a stop plateau" behaviour.
+    """
+    # Start@0 → arrive 10 @20, depart @50 (30-min stop) → arrive 30 @120,
+    # depart @140 (20-min stop) → finish 40 @150.
+    dist_mi = [0, 10, 10, 30, 30, 40]
+    time_min = [0, 20, 50, 120, 140, 150]
+    streams = {
+        'distance': [mi * METERS_PER_MILE for mi in dist_mi],
+        'time': [t * 60 for t in time_min],
+    }
+
+    def reference(target):
+        dm = [d / METERS_PER_MILE for d in streams['distance']]
+        ts = streams['time']
+        if target <= 0:
+            return 0.0
+        if target >= dm[-1]:
+            return ts[-1] / 60.0
+        lo, hi = 0, len(dm) - 1
+        while lo < hi - 1:
+            mid = (lo + hi) // 2
+            if dm[mid] <= target:
+                lo = mid
+            else:
+                hi = mid
+        d0, d1 = dm[lo], dm[hi]
+        t0, t1 = ts[lo], ts[hi]
+        if d1 == d0:
+            return t0 / 60.0
+        return (t0 + (target - d0) / (d1 - d0) * (t1 - t0)) / 60.0
+
+    interp = _build_stream_interpolator(streams)
+    for target in (5, 10, 20, 30, 35, 40):
+        assert abs(interp(target) - reference(target)) < 1e-9, (
+            f"interp({target}) diverged from the binary-search reference on a "
+            f"monotonic stream"
+        )
+    # Departure semantics at the 30-mi stop: last sample there is t=140.
+    assert abs(interp(30) - 140.0) < 1e-9
