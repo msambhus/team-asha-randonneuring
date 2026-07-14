@@ -1212,9 +1212,13 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
             row['actual_speed_mph'] = round(seg_dist / (actual_riding / 60), 1) if actual_riding > 0 and seg_dist > 0 else None
             # Always advance the every-row pointer
             prev_actual_departure = row['actual_cum_time_min']
-            # Only advance the planned pointer for planned rows
+            # Advance both planned pointers together so from_dist and from_departure
+            # always anchor the same segment interval. If actual_cum_time_min is None
+            # (no streams or zero-distance plan stop), neither advances — the next
+            # planned row correctly inherits the last valid planned anchor.
             if not is_extra:
                 prev_planned_departure = row['actual_cum_time_min']
+                prev_planned_dist = cur_dist
         else:
             row['actual_segment_min'] = None
             row['actual_speed_mph'] = None
@@ -1247,10 +1251,9 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
                                 'speed': row.get('actual_speed_mph'),
                                 'cadence': row.get('actual_avg_cadence')}
 
-        # Always advance prev_dist; advance prev_planned_dist only for planned rows
+        # Always advance prev_dist. prev_planned_dist is advanced inside the
+        # actual_cum_time guard above, keeping distance and time anchors in sync.
         prev_dist = cur_dist
-        if not is_extra:
-            prev_planned_dist = cur_dist
 
     # Plan total time
     plan_total_time_min = plan_stops[-1].get('cum_time_min', 0) if plan_stops else 0
