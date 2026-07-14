@@ -1,11 +1,11 @@
 {
-  "buildCommand": "cp -r ../shared ./shared",
-  "functions": {
-    "api/index.py": {
-      "includeFiles": "shared/**"
-    }
-  },
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index.py" }
+  "version": 2,
+  "builds": [
+    { "src": "api/index.py", "use": "@vercel/python" },
+    { "src": "static/**", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/static/(.*)", "dest": "/static/$1" },
+    { "src": "/(.*)", "dest": "/api/index.py" }
   ]
 }
