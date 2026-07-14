@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ product_name }} — randonneuring, for every club{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>{{ product_name }}</h1>
+  <p class="tagline">
+    Track your brevets, your fitness, and your club — one home for every
+    randonneur, whatever jersey you wear.
+  </p>
+  <a class="btn btn-google" href="{{ url_for('auth.google_login') }}">
+    Sign in with Google
+  </a>
+  <p class="hero-sub">
+    New here? Signing in creates your account, then you pick your club and
+    (optionally) add your RUSA ID.
+  </p>
+</section>
+
+<section class="features">
+  <div class="feature">
+    <h3>Your club, your directory</h3>
+    <p>Pick your randonneuring club from the official directory when you join.</p>
+  </div>
+  <div class="feature">
+    <h3>Your brevet record</h3>
+    <p>Add your RUSA ID to bring your randonneuring history along (coming soon).</p>
+  </div>
+  <div class="feature">
+    <h3>Your training</h3>
+    <p>Connect Strava for per-rider fitness stats (coming soon).</p>
+  </div>
+</section>
+{% endblock %}

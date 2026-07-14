@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Sign in — {{ product_name }}{% endblock %}
+{% block content %}
+<section class="card auth-card">
+  <h1>Sign in to {{ product_name }}</h1>
+  <p>Use your Google account to sign in or create an account.</p>
+  <a class="btn btn-google" href="{{ url_for('auth.google_login') }}">
+    Sign in with Google
+  </a>
+</section>
+{% endblock %}

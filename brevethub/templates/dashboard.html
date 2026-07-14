@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — {{ product_name }}{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Welcome to {{ product_name }}</h1>
+  <p class="muted">{{ rider.email }}</p>
+
+  <dl class="profile">
+    <dt>Club</dt>
+    <dd>{% if club %}{{ club.name }}{% else %}—{% endif %}</dd>
+
+    <dt>RUSA ID</dt>
+    <dd>
+      {% if rider.rusa_id %}
+        {{ rider.rusa_id }}
+        {% if rider.rusa_id_duplicate %}
+          <span class="badge badge-warn" title="Another rider has claimed this RUSA ID">
+            also claimed by another rider
+          </span>
+        {% endif %}
+      {% else %}
+        <span class="muted">not provided</span>
+      {% endif %}
+    </dd>
+  </dl>
+
+  <section class="coming-soon">
+    <h2>Coming soon</h2>
+    <ul>
+      <li>Your RUSA brevet history and stats</li>
+      <li>Strava connect and per-rider fitness</li>
+      <li>Public live-ride tracking</li>
+    </ul>
+  </section>
+</section>
+{% endblock %}
