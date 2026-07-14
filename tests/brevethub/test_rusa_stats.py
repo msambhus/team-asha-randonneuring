@@ -140,6 +140,29 @@ def test_refresh_endpoint_always_scrapes(client):
     mock_scrape.assert_called_once_with('12345')
 
 
+def test_refresh_empty_scrape_keeps_cache_and_reports_failure(client):
+    """A forced refresh that comes back empty (a silent scraper/network failure)
+    must NOT overwrite the existing cache and must flash a failure message —
+    never 'RUSA history refreshed'."""
+    _login(client)
+    fresh = datetime.now(timezone.utc)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_club', return_value=None), \
+         patch('brevethub.models.get_strava_connection', return_value=None), \
+         patch('brevethub.models.get_rider_rusa_cache',
+               return_value={'rusa_cache': _CACHED, 'rusa_fetched_at': fresh}), \
+         patch('brevethub.models.update_rider_rusa_cache') as mock_store, \
+         patch('brevethub.routes.main.fetch_rider_results', return_value=[]) as mock_scrape:
+        resp = client.post('/rusa/refresh', follow_redirects=True)
+    assert resp.status_code == 200
+    mock_scrape.assert_called_once_with('12345')
+    mock_store.assert_not_called()  # cache preserved, not overwritten with empty
+    body = resp.get_data(as_text=True)
+    assert 'cached history' in body           # failure message flashed
+    assert 'RUSA history refreshed' not in body
+    assert 'Spring 200' in body               # cached history still shown
+
+
 def test_dashboard_scrape_failure_does_not_500(client):
     """A scraper exception with no cache → 200 with an explanatory message."""
     _login(client)

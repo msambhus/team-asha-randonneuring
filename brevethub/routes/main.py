@@ -49,14 +49,19 @@ def load_rusa_section(rider, force_refresh=False):
     if force_refresh or not fresh or cached is None:
         try:
             brevets = rusa_stats.normalize_results(fetch_rider_results(rusa_id))
-            # Only overwrite a good cache with a non-empty scrape: the scraper
-            # reports a transient RUSA outage as an empty list, and blindly
-            # caching that would wipe previously-fetched history.
+            # The scraper conflates a transient RUSA outage with a genuinely
+            # empty result — both come back as []. So an empty scrape is only
+            # ever treated as "fresh data" when it is non-empty. Never overwrite
+            # a good cache with an empty scrape, and always surface a message so a
+            # forced/stale refresh that got nothing is not reported as success.
             if brevets:
                 models.update_rider_rusa_cache(rider['id'], brevets)
                 cached = brevets
                 fetched_at = datetime.now(timezone.utc)
-            elif cached is None:
+            elif cached:
+                error = ('Could not fetch fresh RUSA results just now — showing '
+                         'your cached history.')
+            else:
                 cached = []
                 error = ('No RUSA results found — RUSA may be temporarily '
                          'unavailable, or this ID has no completed brevets yet.')
