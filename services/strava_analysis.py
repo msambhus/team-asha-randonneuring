@@ -1195,17 +1195,23 @@ def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
         )
 
         if row['actual_cum_time_min'] is not None:
-            actual_arrival = row.get('actual_arrival_time_min')
-            if actual_arrival is None:
-                actual_arrival = row['actual_cum_time_min']
-            # Segment elapsed = arrival at this row minus departure from the anchor row
-            seg_elapsed = actual_arrival - from_departure
-            # Subtract detected stops strictly within this range to get riding time.
-            # Exclude the stop matched to this waypoint (see row_location above).
+            # Segment elapsed = interpolated reach-time at this row minus the reach-time
+            # departing the anchor row. Both endpoints use actual_cum_time_min (the
+            # stream-interpolated time at the exact mile marker), which is monotonic and
+            # reliable. Do NOT use actual_arrival_time_min here: it subtracts THIS row's
+            # own stop from its reach-time, so a long control stop (e.g. a multi-hour
+            # sleep at a staffed control) yields an "arrival" earlier than prior
+            # waypoints, collapsing the segment to an impossible speed. The endpoint's
+            # own stop is excluded correctly without that subtraction — it is counted in
+            # the NEXT segment, where its distance falls inside (from_dist, cur_dist).
+            seg_elapsed = row['actual_cum_time_min'] - from_departure
+            # Subtract every detected stop whose location falls strictly inside this leg.
+            # Each stop is thus counted exactly once across the whole ride (legs
+            # partition the route by distance), so a break never leaks into the adjacent
+            # segment and is never double-counted.
             stops_in_seg = sum(
                 ds['duration_min'] for ds in all_detected
                 if from_dist < ds['distance_miles'] < cur_dist
-                and ds.get('matched_stop_name') != row_location
             )
             actual_riding = seg_elapsed - stops_in_seg
             row['actual_segment_min'] = max(0, round(actual_riding))
