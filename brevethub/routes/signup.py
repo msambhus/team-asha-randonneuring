@@ -13,6 +13,7 @@ from flask import (
 
 from brevethub import models
 from brevethub.decorators import current_rider, login_required
+from brevethub.redirects import safe_redirect
 
 signup_bp = Blueprint('signup', __name__)
 
@@ -69,10 +70,10 @@ def signup():
             "BrevetHub signup completed: rider=%s club=%s rusa=%s",
             rider['id'], club_id, rusa_id)
 
+        # Same open-redirect guard as the OAuth callback: only a same-host
+        # relative path is honored, never an absolute or scheme-relative URL.
         next_url = session.pop('next_url', None)
-        if next_url and next_url.startswith('/'):
-            return redirect(next_url)
-        return redirect(url_for('main.dashboard'))
+        return safe_redirect(next_url, 'main.dashboard')
 
     return render_template('signup.html', clubs=clubs,
                            rusa_id=rider.get('rusa_id') or '',

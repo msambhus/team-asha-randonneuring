@@ -6,8 +6,6 @@ first sign-in a `rp_rider` row is created and the user is sent to /signup to add
 an optional RUSA ID and pick a club; returning users with a completed profile go
 straight to the dashboard.
 """
-from urllib.parse import urlparse
-
 from authlib.integrations.flask_client import OAuth
 from flask import (
     Blueprint, current_app, flash, redirect, render_template, request,
@@ -15,6 +13,7 @@ from flask import (
 )
 
 from brevethub import models
+from brevethub.redirects import safe_redirect
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -32,15 +31,6 @@ def init_oauth(app):
         server_metadata_url=app.config['GOOGLE_DISCOVERY_URL'],
         client_kwargs={'scope': 'openid email profile'},
     )
-
-
-def _safe_redirect(url, fallback='main.dashboard'):
-    """Redirect only to a relative path on this host (open-redirect guard)."""
-    if url:
-        parsed = urlparse(url)
-        if not parsed.scheme and not parsed.netloc:
-            return redirect(url)
-    return redirect(url_for(fallback))
 
 
 @auth_bp.route('/login')
@@ -99,7 +89,7 @@ def google_callback():
         return redirect(url_for('signup.signup'))
 
     next_url = session.pop('next_url', None)
-    return _safe_redirect(next_url, fallback='main.dashboard')
+    return safe_redirect(next_url, 'main.dashboard')
 
 
 @auth_bp.route('/logout')

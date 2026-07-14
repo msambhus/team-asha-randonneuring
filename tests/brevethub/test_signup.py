@@ -80,6 +80,37 @@ def test_signup_post_soft_flags_duplicate_rusa_id(client):
     mock_complete.assert_called_once_with(7, '12345', 1, rusa_id_duplicate=True)
 
 
+def test_signup_post_ignores_scheme_relative_next(client):
+    """Open-redirect guard: a planted scheme-relative `next` is not honored after
+    profile completion — the rider lands on the dashboard, not the attacker host."""
+    with client.session_transaction() as sess:
+        sess['rider_id'] = 7
+        sess['next_url'] = '//evil.example/phish'
+    with patch('brevethub.routes.signup.current_rider', return_value=_RIDER), \
+         patch('brevethub.models.get_all_clubs', return_value=_CLUBS), \
+         patch('brevethub.models.club_exists', return_value=True), \
+         patch('brevethub.models.complete_rider_profile'):
+        resp = client.post('/signup/', data={'club_id': '1', 'rusa_id': ''})
+    assert resp.status_code in (301, 302)
+    location = resp.headers['Location']
+    assert 'evil.example' not in location
+    assert location.endswith('/dashboard')
+
+
+def test_signup_post_honors_safe_relative_next(client):
+    """A genuine same-host relative `next` is still honored after completion."""
+    with client.session_transaction() as sess:
+        sess['rider_id'] = 7
+        sess['next_url'] = '/rides?ride_id=5'
+    with patch('brevethub.routes.signup.current_rider', return_value=_RIDER), \
+         patch('brevethub.models.get_all_clubs', return_value=_CLUBS), \
+         patch('brevethub.models.club_exists', return_value=True), \
+         patch('brevethub.models.complete_rider_profile'):
+        resp = client.post('/signup/', data={'club_id': '1', 'rusa_id': ''})
+    assert resp.status_code in (301, 302)
+    assert resp.headers['Location'].endswith('/rides?ride_id=5')
+
+
 def test_signup_post_requires_a_valid_club(client):
     """No club (or an unknown club) → re-render the form, nothing stored."""
     _login(client)
