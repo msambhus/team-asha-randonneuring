@@ -2,6 +2,13 @@
 {% block title %}Merge GPS Files - Team Asha Randonneuring{% endblock %}
 
 {% block content %}
+<style>
+  /* Indeterminate progress: a stripe sliding across the track while the server
+     merges (no byte-progress to report during that phase). */
+  @keyframes fitmerge-slide { from { left: -40%; } to { left: 100%; } }
+  #merge-bar.fitmerge-indet { width: 40% !important; animation: fitmerge-slide 1.1s ease-in-out infinite; }
+</style>
+
 <div class="hero">
 <h1>Merge GPS Files</h1>
 <p class="mt-2 text-white/85 text-sm md:text-base">Combine activity files into one — free, self-hosted, no donor gate.</p>
@@ -58,8 +65,8 @@ Merge files
 
 <!-- Progress (shown while uploading + merging) -->
 <div id="merge-progress" class="hidden mt-5">
-  <div class="w-full h-2.5 bg-border rounded-full overflow-hidden">
-    <div id="merge-bar" class="h-2.5 bg-accent rounded-full transition-[width] duration-200" style="width:0%"></div>
+  <div class="relative w-full h-2.5 bg-border rounded-full overflow-hidden">
+    <div id="merge-bar" class="absolute top-0 left-0 h-2.5 bg-accent rounded-full transition-[width] duration-200" style="width:0%"></div>
   </div>
   <p id="merge-status" class="text-text-light text-xs mt-2">Uploading…</p>
 </div>
@@ -99,18 +106,25 @@ future enhancement.
   var dlMeta = document.getElementById('download-meta');
   var lastUrl = null;
 
-  function setBar(pct, pulse) {
+  function setDeterminate(pct) {
+    bar.classList.remove('fitmerge-indet');
     bar.style.width = pct + '%';
-    bar.classList.toggle('animate-pulse', !!pulse);
+  }
+  // Server-side merge has no byte progress → show a sliding indeterminate stripe.
+  function setMerging(fileCount) {
+    bar.style.width = '';
+    bar.classList.add('fitmerge-indet');
+    statusEl.textContent = 'Merging ' + fileCount + ' files — a large ride can take a few seconds…';
   }
 
   form.addEventListener('submit', function (e) {
     e.preventDefault();
 
-    if (!fileInput.files || fileInput.files.length < 2) {
-      statusEl.textContent = 'Select at least two .fit files to merge.';
+    var count = fileInput.files ? fileInput.files.length : 0;
+    if (count < 2) {
       progress.classList.remove('hidden');
-      setBar(0, false);
+      setDeterminate(0);
+      statusEl.textContent = 'Select at least two .fit files to merge.';
       return;
     }
 
@@ -118,7 +132,7 @@ future enhancement.
     dlArea.classList.add('hidden');
     if (lastUrl) { URL.revokeObjectURL(lastUrl); lastUrl = null; }
     progress.classList.remove('hidden');
-    setBar(0, false);
+    setDeterminate(0);
     statusEl.textContent = 'Uploading…';
     btn.disabled = true;
 
@@ -130,15 +144,16 @@ future enhancement.
     xhr.upload.onprogress = function (ev) {
       if (!ev.lengthComputable) return;
       var pct = Math.round(ev.loaded / ev.total * 100);
-      if (pct >= 100) { setBar(100, true); statusEl.textContent = 'Merging…'; }
-      else { setBar(pct, false); statusEl.textContent = 'Uploading… ' + pct + '%'; }
+      if (pct >= 100) { setMerging(count); }
+      else { setDeterminate(pct); statusEl.textContent = 'Uploading… ' + pct + '%'; }
     };
-    xhr.upload.onload = function () { setBar(100, true); statusEl.textContent = 'Merging…'; };
+    // Upload finished, server now merging (covers the fast-upload case).
+    xhr.upload.onload = function () { setMerging(count); };
 
     xhr.onload = function () {
       btn.disabled = false;
-      setBar(100, false);
       if (xhr.status === 200) {
+        setDeterminate(100);
         progress.classList.add('hidden');
         var blob = xhr.response;
         lastUrl = URL.createObjectURL(blob);
@@ -151,16 +166,16 @@ future enhancement.
         reader.onload = function () {
           var msg = 'Merge failed — please try again.';
           try { msg = JSON.parse(reader.result).error || msg; } catch (err) {}
+          setDeterminate(0);
           statusEl.textContent = msg;
-          setBar(0, false);
         };
-        reader.onerror = function () { statusEl.textContent = 'Merge failed — please try again.'; };
+        reader.onerror = function () { setDeterminate(0); statusEl.textContent = 'Merge failed — please try again.'; };
         reader.readAsText(xhr.response);
       }
     };
     xhr.onerror = function () {
       btn.disabled = false;
-      setBar(0, false);
+      setDeterminate(0);
       statusEl.textContent = 'Network error — please try again.';
     };
 
