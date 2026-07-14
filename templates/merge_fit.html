@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Merge FIT Files - Team Asha Randonneuring{% endblock %}
+{% block title %}Merge GPS Files - Team Asha Randonneuring{% endblock %}
 
 {% block content %}
 <div class="hero">
-<h1>Merge FIT Files</h1>
+<h1>Merge GPS Files</h1>
 <p class="mt-2 text-white/85 text-sm md:text-base">Combine activity files into one — free, self-hosted, no donor gate.</p>
 </div>
 
@@ -13,17 +13,18 @@
 <div class="py-3 px-5 rounded-lg my-4 text-sm bg-[#fed7d7] text-[#9b2c2c]">{{ error }}</div>
 {% endif %}
 
-<form method="post" action="{{ url_for('tools.merge_fit_submit') }}" enctype="multipart/form-data"
+<form id="merge-form" method="post" action="{{ url_for('tools.merge_fit_submit') }}" enctype="multipart/form-data"
       class="bg-card-bg rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.06)] p-6 md:p-8 my-6">
 
 <div class="mb-6">
 <label for="files" class="block font-semibold text-primary mb-2">Activity files (.fit)</label>
 <input type="file" id="files" name="files" accept=".fit" multiple required
        class="block w-full text-sm text-text file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary file:text-white file:font-medium file:cursor-pointer hover:file:bg-primary-dark">
-<p class="text-text-light text-xs mt-2">
-Select 2–{{ max_files }} files, up to {{ max_mb }} MB total (the hosting platform's upload limit).
-Files are processed in memory and deleted immediately — nothing is stored.
-</p>
+<div class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-text-light">
+  <span>📁 <strong class="text-text">2–{{ max_files }} files</strong> per merge</span>
+  <span>⚖️ <strong class="text-text">{{ max_mb }} MB</strong> total upload limit</span>
+  <span>🔒 processed in memory, nothing stored</span>
+</div>
 </div>
 
 <fieldset class="mb-6">
@@ -50,10 +51,28 @@ you select is the position source, so overlapping GPS tracks don't double-count 
 </label>
 </fieldset>
 
-<button type="submit"
-        class="inline-block py-2.5 px-6 bg-accent text-white border-0 rounded-md font-semibold cursor-pointer transition-colors hover:bg-[#c53030]">
-Merge &amp; download .fit
+<button id="merge-btn" type="submit"
+        class="inline-block py-2.5 px-6 bg-accent text-white border-0 rounded-md font-semibold cursor-pointer transition-colors hover:bg-[#c53030] disabled:opacity-60 disabled:cursor-not-allowed">
+Merge files
 </button>
+
+<!-- Progress (shown while uploading + merging) -->
+<div id="merge-progress" class="hidden mt-5">
+  <div class="w-full h-2.5 bg-border rounded-full overflow-hidden">
+    <div id="merge-bar" class="h-2.5 bg-accent rounded-full transition-[width] duration-200" style="width:0%"></div>
+  </div>
+  <p id="merge-status" class="text-text-light text-xs mt-2">Uploading…</p>
+</div>
+
+<!-- Download (shown only when the merged file is ready) -->
+<div id="download-area" class="hidden mt-5 p-4 rounded-lg bg-[#f0fff4] border border-[#9ae6b4]">
+  <p class="text-sm text-[#22543d] font-medium mb-3">✅ Your merged file is ready<span id="download-meta"></span>.</p>
+  <a id="download-link" href="#" download="merged.fit"
+     class="inline-block py-2.5 px-6 bg-success text-white border-0 rounded-md font-semibold no-underline cursor-pointer transition-opacity hover:opacity-90">
+  ⬇ Download merged.fit
+  </a>
+</div>
+
 </form>
 
 <p class="text-text-light text-xs mb-8">
@@ -63,4 +82,90 @@ future enhancement.
 </p>
 
 </div>
+
+<script>
+(function () {
+  var form = document.getElementById('merge-form');
+  // Progressive enhancement: with no JS the plain form still POSTs and downloads.
+  if (!form || !window.FormData || !window.XMLHttpRequest) return;
+
+  var fileInput = document.getElementById('files');
+  var btn = document.getElementById('merge-btn');
+  var progress = document.getElementById('merge-progress');
+  var bar = document.getElementById('merge-bar');
+  var statusEl = document.getElementById('merge-status');
+  var dlArea = document.getElementById('download-area');
+  var dlLink = document.getElementById('download-link');
+  var dlMeta = document.getElementById('download-meta');
+  var lastUrl = null;
+
+  function setBar(pct, pulse) {
+    bar.style.width = pct + '%';
+    bar.classList.toggle('animate-pulse', !!pulse);
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+
+    if (!fileInput.files || fileInput.files.length < 2) {
+      statusEl.textContent = 'Select at least two .fit files to merge.';
+      progress.classList.remove('hidden');
+      setBar(0, false);
+      return;
+    }
+
+    // Reset UI for a fresh run; release any previous object URL.
+    dlArea.classList.add('hidden');
+    if (lastUrl) { URL.revokeObjectURL(lastUrl); lastUrl = null; }
+    progress.classList.remove('hidden');
+    setBar(0, false);
+    statusEl.textContent = 'Uploading…';
+    btn.disabled = true;
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', form.action, true);
+    xhr.responseType = 'blob';
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+    xhr.upload.onprogress = function (ev) {
+      if (!ev.lengthComputable) return;
+      var pct = Math.round(ev.loaded / ev.total * 100);
+      if (pct >= 100) { setBar(100, true); statusEl.textContent = 'Merging…'; }
+      else { setBar(pct, false); statusEl.textContent = 'Uploading… ' + pct + '%'; }
+    };
+    xhr.upload.onload = function () { setBar(100, true); statusEl.textContent = 'Merging…'; };
+
+    xhr.onload = function () {
+      btn.disabled = false;
+      setBar(100, false);
+      if (xhr.status === 200) {
+        progress.classList.add('hidden');
+        var blob = xhr.response;
+        lastUrl = URL.createObjectURL(blob);
+        dlLink.href = lastUrl;
+        dlMeta.textContent = ' (' + (blob.size / 1024 / 1024).toFixed(1) + ' MB)';
+        dlArea.classList.remove('hidden');
+      } else {
+        // Error responses come back as JSON (X-Requested-With); read the blob as text.
+        var reader = new FileReader();
+        reader.onload = function () {
+          var msg = 'Merge failed — please try again.';
+          try { msg = JSON.parse(reader.result).error || msg; } catch (err) {}
+          statusEl.textContent = msg;
+          setBar(0, false);
+        };
+        reader.onerror = function () { statusEl.textContent = 'Merge failed — please try again.'; };
+        reader.readAsText(xhr.response);
+      }
+    };
+    xhr.onerror = function () {
+      btn.disabled = false;
+      setBar(0, false);
+      statusEl.textContent = 'Network error — please try again.';
+    };
+
+    xhr.send(new FormData(form));
+  });
+})();
+</script>
 {% endblock %}

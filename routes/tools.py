@@ -19,7 +19,7 @@ import time
 import logging
 
 from flask import (
-    Blueprint, render_template, request, send_file, current_app,
+    Blueprint, render_template, request, send_file, current_app, jsonify,
 )
 from werkzeug.formparser import parse_form_data
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -56,6 +56,19 @@ def _render_form(error=None, status=200):
     return (html, status) if status != 200 else html
 
 
+def _wants_json():
+    """True when the request came from the page's AJAX submit (so errors should be
+    JSON the script can show inline, not a re-rendered HTML page)."""
+    return request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
+
+def _fail(error, status):
+    """Return a merge error as JSON (AJAX submit) or a re-rendered form (no-JS)."""
+    if _wants_json():
+        return jsonify({'error': error}), status
+    return _render_form(error=error, status=status)
+
+
 @tools_bp.route('/merge-fit', methods=['GET'])
 def merge_fit_page():
     """Render the upload form with the mode selector."""
@@ -79,19 +92,19 @@ def merge_fit_submit():
             max_content_length=max_bytes,
         )
     except RequestEntityTooLarge:
-        return _render_form(
+        return _fail(
             error=f"Upload is too large. Keep the total under {max_bytes // (1024 * 1024)} MB.",
             status=413)
 
     mode = _normalize_mode(form.get('mode'))
     if mode not in MERGE_MODES:
-        return _render_form(error="Please choose a valid merge mode.", status=400)
+        return _fail(error="Please choose a valid merge mode.", status=400)
 
     uploads = [f for f in files.getlist('files') if f and f.filename]
     if len(uploads) < 2:
-        return _render_form(error="Select at least two .fit files to merge.", status=400)
+        return _fail(error="Select at least two .fit files to merge.", status=400)
     if len(uploads) > max_files:
-        return _render_form(
+        return _fail(
             error=f"Too many files — you can merge up to {max_files} at once.",
             status=400)
 
@@ -101,12 +114,12 @@ def merge_fit_submit():
         total += len(data)
         blobs.append(data)
     if total == 0:
-        return _render_form(error="The uploaded files are empty.", status=400)
+        return _fail(error="The uploaded files are empty.", status=400)
 
     try:
         merged = merge_fit_files(blobs, mode=mode)
     except FitMergeError as exc:
-        return _render_form(error=f"Could not merge those files: {exc}", status=400)
+        return _fail(error=f"Could not merge those files: {exc}", status=400)
 
     # No PII: mode, counts, and byte totals only — never filenames or positions.
     logger.info("merge-fit mode=%s files=%d in_bytes=%d out_bytes=%d elapsed=%.2fs",
