@@ -355,6 +355,33 @@ def test_post_single_file_rejected(client):
     assert resp.status_code == 400
 
 
+def test_ajax_error_returns_json(client):
+    """An AJAX submit (X-Requested-With) gets a JSON error, not an HTML page, so the
+    page's progress script can show it inline."""
+    a = _make_synthetic_fit(_make_records(3))
+    resp = client.post('/tools/merge-fit',
+                       data={'mode': 'concat', 'files': [(io.BytesIO(a), '0_ride.fit')]},
+                       content_type='multipart/form-data',
+                       headers={'X-Requested-With': 'XMLHttpRequest'})
+    assert resp.status_code == 400
+    assert resp.mimetype == 'application/json'
+    assert 'error' in resp.get_json()
+
+
+def test_ajax_happy_path_still_returns_file(client):
+    """A successful AJAX submit still streams the merged FIT (only errors are JSON)."""
+    a = _make_synthetic_fit(_make_records(4, start=_T0))
+    b = _make_synthetic_fit(_make_records(4, start=_T0 + timedelta(hours=1)))
+    resp = client.post('/tools/merge-fit',
+                       data={'mode': 'concat',
+                             'files': [(io.BytesIO(a), '0.fit'), (io.BytesIO(b), '1.fit')]},
+                       content_type='multipart/form-data',
+                       headers={'X-Requested-With': 'XMLHttpRequest'})
+    assert resp.status_code == 200
+    assert resp.mimetype == 'application/octet-stream'
+    assert len(read_fit(resp.get_data()).records) == 8
+
+
 def test_post_malformed_file_rejected(client):
     resp = _upload(client, [b'garbage-1', b'garbage-2'])
     assert resp.status_code == 400
