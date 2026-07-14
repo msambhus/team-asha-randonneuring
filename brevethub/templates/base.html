@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}{{ product_name }}{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% block extra_head %}{% endblock %}
+</head>
+<body>
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href="{{ url_for('main.landing') }}">{{ product_name }}</a>
+    <nav class="nav">
+      {% if session.get('rider_id') %}
+      <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('auth.logout') }}">Sign out</a>
+      {% else %}
+      <a href="{{ url_for('auth.login') }}">Sign in</a>
+      {% endif %}
+    </nav>
+  </div>
+</header>
+
+<main class="container content">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <ul class="flashes">
+        {% for category, message in messages %}
+          <li class="flash flash-{{ category }}">{{ message }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <span>{{ product_name }} &middot; a club-agnostic randonneuring platform</span>
+  </div>
+</footer>
+</body>
+</html>
