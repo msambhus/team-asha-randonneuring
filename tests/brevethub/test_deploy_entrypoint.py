@@ -34,26 +34,38 @@ def test_entrypoint_repo_root_layout():
     assert callable(module.app), "entry point did not expose a callable WSGI app"
 
 
-def test_entrypoint_flat_layout(tmp_path):
-    """Root Directory = brevethub/ (flat): only brevethub's contents are deployed,
-    with no importable `brevethub` package. Run the entry point in a fresh Python
-    process whose sys.path cannot see the real package, proving it self-heals."""
-    deploy_root = tmp_path / 'deploy_root'
-    shutil.copytree(_BREVETHUB_DIR, deploy_root,
-                    ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
-    entry = deploy_root / 'api' / 'index.py'
+def test_entrypoint_bundled_shared_layout(tmp_path):
+    """Root Directory = brevethub/ WITH "Include files outside the Root Directory"
+    enabled — the supported production layout once BrevetHub imports `shared/`
+    (Mission 2 added `from shared.strava import ...`). Vercel then bundles the
+    whole repo, so a sibling `shared/` package sits under the repo root next to
+    `brevethub/`.
 
-    # A subprocess with cwd inside the deploy root and PYTHONPATH scoped to it —
-    # the real repo `brevethub` package is not importable here.
+    Simulate exactly that — a repo tree with `brevethub/` and `shared/` and
+    nothing else discoverable on `sys.path` — and prove the entry point self-adds
+    the repo root so BOTH `brevethub.*` and `shared.*` resolve. (The old
+    flat-without-shared layout is intentionally no longer covered: it cannot work
+    once `shared/` is a runtime dependency, and this test documents that the
+    sibling package must be bundled.)"""
+    repo = tmp_path / 'repo'
+    ign = shutil.ignore_patterns('__pycache__', '*.pyc')
+    shutil.copytree(_BREVETHUB_DIR, repo / 'brevethub', ignore=ign)
+    shutil.copytree(os.path.join(_REPO_ROOT, 'shared'), repo / 'shared', ignore=ign)
+    entry = repo / 'brevethub' / 'api' / 'index.py'
+
+    # PYTHONPATH is empty of our packages; the entry point must add the repo root
+    # itself. Assert the app loads AND that `shared` (the new M2 dep) is importable.
     probe = (
         "import importlib.util;"
         f"spec=importlib.util.spec_from_file_location('e', r'{entry}');"
         "m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);"
+        "import shared.strava;"
         "print('WSGI_OK' if callable(m.app) else 'WSGI_BAD')"
     )
-    env = dict(os.environ, PYTHONPATH=str(deploy_root))
+    env = dict(os.environ)
+    env.pop('PYTHONPATH', None)
     result = subprocess.run(
         [sys.executable, '-c', probe],
-        cwd=str(deploy_root), env=env, capture_output=True, text=True)
+        cwd=str(repo / 'brevethub'), env=env, capture_output=True, text=True)
     assert 'WSGI_OK' in result.stdout, (
-        f"flat-layout entry point failed:\nSTDOUT {result.stdout}\nSTDERR {result.stderr}")
+        f"bundled-shared entry point failed:\nSTDOUT {result.stdout}\nSTDERR {result.stderr}")
