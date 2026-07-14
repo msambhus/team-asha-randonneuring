@@ -1,8 +1,21 @@
-"""Strava API service — OAuth token exchange, refresh, and activity fetching."""
-import json
+"""Strava API service — OAuth token exchange, refresh, and activity fetching.
+
+The club-agnostic, framework-free HTTP layer now lives in ``shared/strava.py`` so
+both Team Asha and BrevetHub share a single implementation. This module keeps the
+Flask/DB-coupled wrappers — reading Strava config from ``current_app``, persisting
+refreshed tokens, and syncing activities into the DB — and delegates the pure
+protocol work to ``shared.strava``. Every symbol previously importable from
+``services.strava`` is preserved with identical behavior, and Team Asha's
+``strava_connection.expires_at`` stays a Unix-epoch INTEGER end to end.
+"""
 import time
-import requests as http_requests
+
 from flask import current_app
+
+from shared import strava as _shared
+# Pure, framework-free helpers re-exported unchanged so existing importers of
+# `services.strava` keep resolving these names.
+from shared.strava import transform_activity, deauthorize_strava  # noqa: F401
 
 
 def exchange_code_for_token(code):
@@ -11,27 +24,12 @@ def exchange_code_for_token(code):
     Returns:
         dict with athlete, access_token, refresh_token, expires_at
     """
-    client_secret = current_app.config['STRAVA_CLIENT_SECRET']
-    if not client_secret:
-        raise Exception("STRAVA_CLIENT_SECRET not configured — add it to environment variables")
-
-    resp = http_requests.post(
-        current_app.config['STRAVA_TOKEN_URL'],
-        data={
-            'client_id': current_app.config['STRAVA_CLIENT_ID'],
-            'client_secret': client_secret,
-            'code': code,
-            'grant_type': 'authorization_code',
-        },
-        timeout=10,
+    return _shared.exchange_code_for_token(
+        code,
+        client_id=current_app.config['STRAVA_CLIENT_ID'],
+        client_secret=current_app.config['STRAVA_CLIENT_SECRET'],
+        token_url=current_app.config['STRAVA_TOKEN_URL'],
     )
-    if not resp.ok:
-        try:
-            detail = resp.json()
-        except Exception:
-            detail = resp.text
-        raise Exception(f"Strava token error ({resp.status_code}): {detail}")
-    return resp.json()
 
 
 def _get_valid_token(connection):
@@ -49,24 +47,13 @@ def _get_valid_token(connection):
     if connection['expires_at'] > time.time() + 60:  # 60s buffer
         return connection['access_token']
 
-    # Token expired or about to expire — refresh
-    resp = http_requests.post(
-        current_app.config['STRAVA_TOKEN_URL'],
-        data={
-            'client_id': current_app.config['STRAVA_CLIENT_ID'],
-            'client_secret': current_app.config['STRAVA_CLIENT_SECRET'],
-            'grant_type': 'refresh_token',
-            'refresh_token': connection['refresh_token'],
-        },
-        timeout=10,
+    # Token expired or about to expire — refresh via the shared protocol layer.
+    token_data = _shared.refresh_access_token(
+        connection['refresh_token'],
+        client_id=current_app.config['STRAVA_CLIENT_ID'],
+        client_secret=current_app.config['STRAVA_CLIENT_SECRET'],
+        token_url=current_app.config['STRAVA_TOKEN_URL'],
     )
-    if not resp.ok:
-        try:
-            detail = resp.json()
-        except Exception:
-            detail = resp.text
-        raise Exception(f"Strava token refresh error ({resp.status_code}): {detail}")
-    token_data = resp.json()
 
     # Persist new tokens
     from models import update_strava_tokens
@@ -93,86 +80,13 @@ def fetch_activities(connection, after_epoch=None, before_epoch=None, per_page=1
         list of activity dicts from Strava API
     """
     token = _get_valid_token(connection)
-
-    if after_epoch is None:
-        after_epoch = int(time.time()) - (365 * 24 * 3600)  # 1 year
-
-    all_activities = []
-    page = 1
-
-    while True:
-        params = {
-            'after': after_epoch,
-            'per_page': per_page,
-            'page': page,
-        }
-        if before_epoch is not None:
-            params['before'] = before_epoch
-
-        resp = http_requests.get(
-            f"{current_app.config['STRAVA_API_BASE']}/athlete/activities",
-            headers={'Authorization': f'Bearer {token}'},
-            params=params,
-            timeout=15,
-        )
-        if resp.status_code == 429:
-            raise Exception("Strava rate limit exceeded. Please try again later.")
-        resp.raise_for_status()
-        activities = resp.json()
-
-        if not activities:
-            break
-
-        all_activities.extend(activities)
-
-        if len(activities) < per_page:
-            break
-        page += 1
-
-    return all_activities
-
-
-def transform_activity(activity, rider_id):
-    """Transform Strava API activity into DB row dict."""
-    strava_id = activity['id']
-    return {
-        'rider_id': rider_id,
-        'strava_activity_id': strava_id,
-        'name': activity.get('name'),
-        'activity_type': activity.get('type'),
-        'distance': activity.get('distance'),
-        'moving_time': activity.get('moving_time'),
-        'elapsed_time': activity.get('elapsed_time'),
-        'total_elevation_gain': activity.get('total_elevation_gain'),
-        'start_date': activity.get('start_date'),
-        'start_date_local': activity.get('start_date_local'),
-        'average_heartrate': activity.get('average_heartrate'),
-        'max_heartrate': activity.get('max_heartrate'),
-        'has_heartrate': activity.get('has_heartrate', False),
-        'average_watts': activity.get('average_watts'),
-        'max_watts': activity.get('max_watts'),
-        'weighted_average_watts': activity.get('weighted_average_watts'),
-        'kilojoules': activity.get('kilojoules'),
-        'device_watts': activity.get('device_watts', False),
-        'average_speed': activity.get('average_speed'),
-        'max_speed': activity.get('max_speed'),
-        'suffer_score': activity.get('suffer_score'),
-        'strava_url': f'https://www.strava.com/activities/{strava_id}',
-        'average_cadence':      activity.get('average_cadence'),
-        'average_temp':         activity.get('average_temp'),
-        'calories':             activity.get('calories'),
-        'pr_count':             activity.get('pr_count'),
-        'achievement_count':    activity.get('achievement_count'),
-        'gear_id':              activity.get('gear_id'),
-        'elev_high':            activity.get('elev_high'),
-        'elev_low':             activity.get('elev_low'),
-        'trainer':              activity.get('trainer', False),
-        'commute':              activity.get('commute', False),
-        'workout_type':         activity.get('workout_type'),
-        'map_summary_polyline': (activity.get('map') or {}).get('summary_polyline'),
-        'start_latlng':         json.dumps(activity['start_latlng']) if activity.get('start_latlng') else None,
-        'end_latlng':           json.dumps(activity['end_latlng']) if activity.get('end_latlng') else None,
-    }
+    return _shared.fetch_activities(
+        token,
+        api_base=current_app.config['STRAVA_API_BASE'],
+        after_epoch=after_epoch,
+        before_epoch=before_epoch,
+        per_page=per_page,
+    )
 
 
 def sync_rider_activities(rider_id, days=365, before_epoch=None, after_epoch=None, calculate_eddington=True):
@@ -239,15 +153,3 @@ def sync_rider_activities(rider_id, days=365, before_epoch=None, after_epoch=Non
             current_app.logger.warning("Eddington calculation failed for rider %s: %s", rider_id, e)
 
     return {'new': new_count, 'updated': updated_count, 'failed': failed_count, 'total': len(activities)}
-
-
-def deauthorize_strava(access_token):
-    """Revoke Strava access token (best-effort)."""
-    try:
-        http_requests.post(
-            'https://www.strava.com/oauth/deauthorize',
-            data={'access_token': access_token},
-            timeout=10,
-        )
-    except Exception:
-        pass  # Best-effort revocation

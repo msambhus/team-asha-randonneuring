@@ -40,6 +40,19 @@ class Config:
     GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
     GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 
+    # Strava OAuth — reuse Team Asha's existing Strava app (client 113090) by
+    # default; the owner sets STRAVA_CLIENT_SECRET on the BrevetHub Vercel
+    # project and registers BrevetHub's callback URL on that Strava app. These
+    # are BrevetHub's own config keys (nothing is imported from Team Asha) but
+    # they intentionally mirror Team Asha's Strava app so one Strava app serves
+    # both. See brevethub/README.md.
+    STRAVA_CLIENT_ID = os.environ.get('STRAVA_CLIENT_ID', '113090')
+    STRAVA_CLIENT_SECRET = os.environ.get('STRAVA_CLIENT_SECRET')
+    STRAVA_AUTH_URL = 'https://www.strava.com/oauth/authorize'
+    STRAVA_TOKEN_URL = 'https://www.strava.com/oauth/token'
+    STRAVA_API_BASE = 'https://www.strava.com/api/v3'
+    STRAVA_SCOPE = 'activity:read_all'
+
     # Session security — HTTPS-only cookies in production, 30-day persistent login.
     SESSION_COOKIE_SECURE = _IS_PRODUCTION
     SESSION_COOKIE_HTTPONLY = True

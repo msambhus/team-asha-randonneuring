@@ -27,10 +27,102 @@
   <section class="coming-soon">
     <h2>Coming soon</h2>
     <ul>
-      <li>Your RUSA brevet history and stats</li>
-      <li>Strava connect and per-rider fitness</li>
       <li>Public live-ride tracking</li>
     </ul>
   </section>
+</section>
+
+<section class="card" id="rusa">
+  <h2>RUSA brevet history</h2>
+
+  {% if not rusa.has_id %}
+    <p class="muted">
+      Add your RUSA ID to see your official brevet history and stats here.
+    </p>
+    <p><a class="btn" href="{{ url_for('signup.signup') }}">Add a RUSA ID</a></p>
+  {% else %}
+    {% if rusa.error %}
+      <p class="flash flash-warning">{{ rusa.error }}</p>
+    {% endif %}
+
+    {% if rusa.stats %}
+      <dl class="profile stats-grid">
+        <dt>Total distance</dt><dd>{{ rusa.stats.total_km }} km ({{ rusa.stats.count }} brevets)</dd>
+        <dt>By distance</dt>
+        <dd>
+          200: {{ rusa.stats.bands['200'] }} &middot;
+          300: {{ rusa.stats.bands['300'] }} &middot;
+          400: {{ rusa.stats.bands['400'] }} &middot;
+          600: {{ rusa.stats.bands['600'] }} &middot;
+          1000: {{ rusa.stats.bands['1000'] }}
+        </dd>
+        <dt>Super Randonneur</dt>
+        <dd>
+          {% if rusa.stats.is_sr %}
+            <span class="badge">SR — {{ rusa.stats.sr_year }}</span>
+          {% else %}
+            <span class="muted">not yet</span>
+          {% endif %}
+        </dd>
+        <dt>Longest</dt><dd>{{ rusa.stats.longest_km }} km</dd>
+        <dt>{{ rusa.stats.season_year }} season</dt>
+        <dd>{{ rusa.stats.season_total_km }} km ({{ rusa.stats.season_count }} brevets)</dd>
+      </dl>
+    {% endif %}
+
+    {% if rusa.brevets %}
+      <table class="rusa-history">
+        <thead>
+          <tr><th>Date</th><th>Distance</th><th>Event</th><th>Time</th></tr>
+        </thead>
+        <tbody>
+          {% for b in rusa.brevets %}
+            <tr>
+              <td>{{ b.date }}</td>
+              <td>{{ b.distance_km }} km</td>
+              <td>{{ b.route_name }}</td>
+              <td>{{ b.finish_time }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% elif not rusa.error %}
+      <p class="muted">No completed brevets found yet.</p>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('main.rusa_refresh') }}">
+      <button class="btn" type="submit">Refresh from RUSA</button>
+    </form>
+  {% endif %}
+</section>
+
+<section class="card" id="strava">
+  <h2>Strava</h2>
+
+  {% if not strava.connected %}
+    <p class="muted">Connect Strava to see your recent activity and fitness score.</p>
+    <p><a class="btn" href="{{ url_for('strava.connect') }}">Connect Strava</a></p>
+  {% else %}
+    {% if strava.error %}
+      <p class="flash flash-warning">{{ strava.error }}</p>
+    {% endif %}
+
+    {% if strava.stats %}
+      <dl class="profile stats-grid">
+        <dt>Rides (28 days)</dt><dd>{{ strava.stats.rides }}</dd>
+        <dt>Distance</dt><dd>{{ strava.stats.distance_km }} km</dd>
+        <dt>Elevation</dt><dd>{{ strava.stats.elevation_m }} m</dd>
+        <dt>Moving time</dt><dd>{{ strava.stats.moving_hours }} h</dd>
+        <dt>Fitness score</dt>
+        <dd>{% if strava.stats.fitness is not none %}{{ strava.stats.fitness }}/100{% else %}—{% endif %}</dd>
+      </dl>
+    {% else %}
+      <p class="muted">Connected — activity summary will appear shortly.</p>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('strava.disconnect') }}">
+      <button class="btn btn-secondary" type="submit">Disconnect Strava</button>
+    </form>
+  {% endif %}
 </section>
 {% endblock %}

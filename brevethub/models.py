@@ -6,6 +6,8 @@ scans this file and fails the build if a non-`rp_` table name ever appears.
 """
 from enum import Enum
 
+from psycopg2.extras import Json
+
 from brevethub import db
 
 
@@ -120,4 +122,117 @@ def get_public_rides():
     return db.query(
         "SELECT id, club_id, name, distance_km, start_at, is_public, status "
         "FROM rp_ride WHERE is_public = TRUE ORDER BY start_at DESC"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# RUSA brevet cache (rp_rider.rusa_cache) — the rider's scraped RUSA history,
+# stored as a JSON-safe array so every dashboard load does not re-scrape.
+# --------------------------------------------------------------------------- #
+def get_rider_rusa_cache(rider_id):
+    """Return the cached RUSA scrape + its fetch time for a rider.
+
+    Yields ``{'rusa_cache': <list|None>, 'rusa_fetched_at': <datetime|None>}``.
+    ``rusa_cache`` is decoded by psycopg2 straight to a Python list; a NULL
+    (never fetched) comes back as None.
+    """
+    return db.query_one(
+        "SELECT rusa_cache, rusa_fetched_at FROM rp_rider WHERE id = %s",
+        (rider_id,),
+    )
+
+
+def update_rider_rusa_cache(rider_id, brevets):
+    """Store a fresh RUSA scrape (a JSON-safe list of brevet dicts) and stamp
+    the fetch time. Callers pass results already normalized to JSON-safe values
+    (dates as ISO strings)."""
+    db.execute(
+        "UPDATE rp_rider SET rusa_cache = %s, rusa_fetched_at = NOW() WHERE id = %s",
+        (Json(brevets), rider_id),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Strava connection (rp_strava_connection) — per-rider OAuth link + cached
+# activity summary.
+#
+# This layer owns the epoch<->TIMESTAMPTZ conversion for expires_at: the shared
+# Strava code is epoch-native (Unix integers, as Strava returns them), while the
+# column is TIMESTAMPTZ. Writes convert with to_timestamp(%s); the getter reads
+# the tz-aware datetimes back and returns them as epoch floats, so every consumer
+# (staleness / refresh decisions) stays epoch-native and comparable to time.time().
+# --------------------------------------------------------------------------- #
+def get_strava_connection(rider_id):
+    """Return the rider's Strava connection, or None.
+
+    ``expires_at`` and ``stats_fetched_at`` are returned as epoch floats (never
+    bare datetimes) so callers compare them directly against ``time.time()``.
+    """
+    row = db.query_one(
+        "SELECT id, rider_id, strava_athlete_id, access_token, refresh_token, "
+        "       expires_at, scope, stats_cache, stats_fetched_at, created_at "
+        "FROM rp_strava_connection WHERE rider_id = %s",
+        (rider_id,),
+    )
+    if row is None:
+        return None
+    row = dict(row)
+    row['expires_at'] = row['expires_at'].timestamp() if row.get('expires_at') else None
+    row['stats_fetched_at'] = (
+        row['stats_fetched_at'].timestamp() if row.get('stats_fetched_at') else None
+    )
+    return row
+
+
+def upsert_strava_connection(rider_id, *, strava_athlete_id, access_token,
+                             refresh_token, expires_at, scope=None):
+    """Create or replace the rider's Strava connection.
+
+    ``expires_at`` is a Unix epoch integer (as Strava returns it) and is written
+    to the TIMESTAMPTZ column via ``to_timestamp(%s)``.
+    """
+    if get_strava_connection(rider_id):
+        db.execute(
+            "UPDATE rp_strava_connection "
+            "SET strava_athlete_id = %s, access_token = %s, refresh_token = %s, "
+            "    expires_at = to_timestamp(%s), scope = %s "
+            "WHERE rider_id = %s",
+            (strava_athlete_id, access_token, refresh_token, expires_at, scope, rider_id),
+        )
+    else:
+        db.execute(
+            "INSERT INTO rp_strava_connection "
+            "  (rider_id, strava_athlete_id, access_token, refresh_token, expires_at, scope) "
+            "VALUES (%s, %s, %s, %s, to_timestamp(%s), %s)",
+            (rider_id, strava_athlete_id, access_token, refresh_token, expires_at, scope),
+        )
+
+
+def update_strava_tokens(rider_id, *, access_token, refresh_token, expires_at):
+    """Persist refreshed Strava tokens. ``expires_at`` is a Unix epoch integer,
+    stored via ``to_timestamp(%s)``."""
+    db.execute(
+        "UPDATE rp_strava_connection "
+        "SET access_token = %s, refresh_token = %s, expires_at = to_timestamp(%s) "
+        "WHERE rider_id = %s",
+        (access_token, refresh_token, expires_at, rider_id),
+    )
+
+
+def update_strava_stats(rider_id, stats):
+    """Cache the computed per-rider activity summary (a JSON-safe dict) and stamp
+    the fetch time."""
+    db.execute(
+        "UPDATE rp_strava_connection "
+        "SET stats_cache = %s, stats_fetched_at = NOW() "
+        "WHERE rider_id = %s",
+        (Json(stats), rider_id),
+    )
+
+
+def delete_strava_connection(rider_id):
+    """Remove the rider's Strava connection (disconnect)."""
+    db.execute(
+        "DELETE FROM rp_strava_connection WHERE rider_id = %s",
+        (rider_id,),
     )
