@@ -2,13 +2,6 @@
 {% block title %}Merge GPS Files - Team Asha Randonneuring{% endblock %}
 
 {% block content %}
-<style>
-  /* Indeterminate progress: a stripe sliding across the track while the server
-     merges (no byte-progress to report during that phase). */
-  @keyframes fitmerge-slide { from { left: -40%; } to { left: 100%; } }
-  #merge-bar.fitmerge-indet { width: 40% !important; animation: fitmerge-slide 1.1s ease-in-out infinite; }
-</style>
-
 <div class="hero">
 <h1>Merge GPS Files</h1>
 <p class="mt-2 text-white/85 text-sm md:text-base">Combine activity files into one — free, self-hosted, no donor gate.</p>
@@ -38,7 +31,7 @@
 <legend class="font-semibold text-primary mb-3">Merge mode</legend>
 
 <label class="flex items-start gap-3 p-3 rounded-lg border border-border mb-2 cursor-pointer hover:bg-bg">
-<input type="radio" name="mode" value="concat" checked class="mt-1">
+<input type="radio" name="mode" value="concat" class="mt-1">
 <span>
 <span class="font-medium text-text block">Concatenation (end-to-end)</span>
 <span class="text-text-light text-sm">Stitch files in chronological order into one continuous
@@ -48,7 +41,7 @@ across the seam.</span>
 </label>
 
 <label class="flex items-start gap-3 p-3 rounded-lg border border-border cursor-pointer hover:bg-bg">
-<input type="radio" name="mode" value="overlay" class="mt-1">
+<input type="radio" name="mode" value="overlay" checked class="mt-1">
 <span>
 <span class="font-medium text-text block">Overlay (interleave)</span>
 <span class="text-text-light text-sm">Merge overlapping recordings by timestamp — e.g. add heart
@@ -63,12 +56,15 @@ you select is the position source, so overlapping GPS tracks don't double-count 
 Merge files
 </button>
 
-<!-- Progress (shown while uploading + merging) -->
+<!-- Progress: upload (real %) then merge (advancing estimate) -->
 <div id="merge-progress" class="hidden mt-5">
   <div class="relative w-full h-2.5 bg-border rounded-full overflow-hidden">
-    <div id="merge-bar" class="absolute top-0 left-0 h-2.5 bg-accent rounded-full transition-[width] duration-200" style="width:0%"></div>
+    <div id="merge-bar" class="absolute top-0 left-0 h-2.5 bg-accent rounded-full transition-[width] duration-150" style="width:0%"></div>
   </div>
-  <p id="merge-status" class="text-text-light text-xs mt-2">Uploading…</p>
+  <div class="flex justify-between mt-2 text-xs text-text-light">
+    <span id="merge-status">Uploading…</span>
+    <span id="merge-pct"></span>
+  </div>
 </div>
 
 <!-- Download (shown only when the merged file is ready) -->
@@ -101,20 +97,37 @@ future enhancement.
   var progress = document.getElementById('merge-progress');
   var bar = document.getElementById('merge-bar');
   var statusEl = document.getElementById('merge-status');
+  var pctEl = document.getElementById('merge-pct');
   var dlArea = document.getElementById('download-area');
   var dlLink = document.getElementById('download-link');
   var dlMeta = document.getElementById('download-meta');
   var lastUrl = null;
+  var mergeTimer = null;
+  var pct = 0;
 
-  function setDeterminate(pct) {
-    bar.classList.remove('fitmerge-indet');
-    bar.style.width = pct + '%';
+  // Upload is the first UPLOAD_SHARE of the bar (real byte progress); the server
+  // merge fills the rest as an advancing estimate (no per-record signal is possible
+  // in a single serverless request) that eases toward MERGE_CEIL and snaps to 100%
+  // when the file actually arrives.
+  var UPLOAD_SHARE = 0.30;
+  var MERGE_CEIL = 96;
+
+  function paint() {
+    bar.style.width = pct.toFixed(1) + '%';
+    pctEl.textContent = Math.round(pct) + '%';
   }
-  // Server-side merge has no byte progress → show a sliding indeterminate stripe.
-  function setMerging(fileCount) {
-    bar.style.width = '';
-    bar.classList.add('fitmerge-indet');
+  function set(p) { pct = Math.max(0, Math.min(100, p)); paint(); }
+  function stopMerge() { if (mergeTimer) { clearInterval(mergeTimer); mergeTimer = null; } }
+
+  function startMerge(fileCount) {
     statusEl.textContent = 'Merging ' + fileCount + ' files — a large ride can take a few seconds…';
+    stopMerge();
+    // Ease toward the ceiling: fast at first, slowing as it approaches, so the bar
+    // keeps moving for the whole merge without ever falsely hitting 100%.
+    mergeTimer = setInterval(function () {
+      pct += (MERGE_CEIL - pct) * 0.055;
+      paint();
+    }, 120);
   }
 
   form.addEventListener('submit', function (e) {
@@ -123,7 +136,7 @@ future enhancement.
     var count = fileInput.files ? fileInput.files.length : 0;
     if (count < 2) {
       progress.classList.remove('hidden');
-      setDeterminate(0);
+      stopMerge(); set(0); pctEl.textContent = '';
       statusEl.textContent = 'Select at least two .fit files to merge.';
       return;
     }
@@ -132,7 +145,7 @@ future enhancement.
     dlArea.classList.add('hidden');
     if (lastUrl) { URL.revokeObjectURL(lastUrl); lastUrl = null; }
     progress.classList.remove('hidden');
-    setDeterminate(0);
+    stopMerge(); set(0);
     statusEl.textContent = 'Uploading…';
     btn.disabled = true;
 
@@ -141,19 +154,23 @@ future enhancement.
     xhr.responseType = 'blob';
     xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
 
+    var mergeStarted = false;
+    function enterMerge() { if (!mergeStarted) { mergeStarted = true; startMerge(count); } }
+
     xhr.upload.onprogress = function (ev) {
-      if (!ev.lengthComputable) return;
-      var pct = Math.round(ev.loaded / ev.total * 100);
-      if (pct >= 100) { setMerging(count); }
-      else { setDeterminate(pct); statusEl.textContent = 'Uploading… ' + pct + '%'; }
+      if (!ev.lengthComputable || mergeStarted) return;
+      var up = ev.loaded / ev.total;               // 0..1 of the upload
+      set(up * UPLOAD_SHARE * 100);
+      statusEl.textContent = 'Uploading… ' + Math.round(up * 100) + '%';
+      if (up >= 1) enterMerge();
     };
-    // Upload finished, server now merging (covers the fast-upload case).
-    xhr.upload.onload = function () { setMerging(count); };
+    xhr.upload.onload = enterMerge;                 // fast-upload case
 
     xhr.onload = function () {
       btn.disabled = false;
+      stopMerge();
       if (xhr.status === 200) {
-        setDeterminate(100);
+        set(100);
         progress.classList.add('hidden');
         var blob = xhr.response;
         lastUrl = URL.createObjectURL(blob);
@@ -166,16 +183,15 @@ future enhancement.
         reader.onload = function () {
           var msg = 'Merge failed — please try again.';
           try { msg = JSON.parse(reader.result).error || msg; } catch (err) {}
-          setDeterminate(0);
-          statusEl.textContent = msg;
+          set(0); pctEl.textContent = ''; statusEl.textContent = msg;
         };
-        reader.onerror = function () { setDeterminate(0); statusEl.textContent = 'Merge failed — please try again.'; };
+        reader.onerror = function () { set(0); pctEl.textContent = ''; statusEl.textContent = 'Merge failed — please try again.'; };
         reader.readAsText(xhr.response);
       }
     };
     xhr.onerror = function () {
       btn.disabled = false;
-      setDeterminate(0);
+      stopMerge(); set(0); pctEl.textContent = '';
       statusEl.textContent = 'Network error — please try again.';
     };
 

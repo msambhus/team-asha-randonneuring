@@ -38,8 +38,9 @@ def _memory_stream_factory(total_content_length, content_type, filename=None,
 
 
 def _normalize_mode(raw):
-    """Map the form value to a canonical merge mode ('concat' / 'overlay')."""
-    value = (raw or 'concat').strip().lower()
+    """Map the form value to a canonical merge mode ('concat' / 'overlay').
+    Overlay is the default when the form omits a mode."""
+    value = (raw or 'overlay').strip().lower()
     if value.startswith('concat'):
         return 'concat'
     if value.startswith('overlay'):
