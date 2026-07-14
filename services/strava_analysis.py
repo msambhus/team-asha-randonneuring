@@ -815,8 +815,6 @@ def _build_stream_interpolator(streams):
     if monotonic:
         return interpolate
 
-    max_dist = max(dist_miles)
-
     def interpolate_monotonic_safe(target_miles):
         """Interpolate elapsed time robustly on a non-monotonic distance stream.
 
@@ -828,7 +826,12 @@ def _build_stream_interpolator(streams):
         """
         if target_miles <= 0:
             return 0.0
-        if target_miles >= max_dist:
+        # Clamp beyond-range at the final odometer value (the activity's true end),
+        # NOT at max(dist_miles): a GPS spike can push some earlier sample past the
+        # finish, and clamping at the max would let a control at/beyond the true
+        # final distance resolve against that early spike (a too-early time) instead
+        # of the finish. This mirrors the monotonic binary-search path exactly.
+        if target_miles >= dist_miles[-1]:
             return time_s[-1] / 60.0
         cross = None
         for i in range(len(dist_miles) - 1):

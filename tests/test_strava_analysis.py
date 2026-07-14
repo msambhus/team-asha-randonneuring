@@ -420,6 +420,32 @@ def test_interpolator_unchanged_on_monotonic_stream():
     assert abs(interp(30) - 140.0) < 1e-9
 
 
+def test_interpolator_clamps_beyond_finish_not_at_spike():
+    """A control at/beyond the true finish resolves to the finish time, not a spike.
+
+    The rider truly reaches 200 mi at t=120 min, but a GPS spike reads 250 mi
+    mid-ride. Clamping the out-of-range boundary at max(dist_miles)=250 would let a
+    control at 210 mi (beyond the activity's true end of 200 mi) resolve against
+    that early spike (~61 min). The fix clamps at the final odometer value
+    (dist_miles[-1]=200), returning the finish time. Fails before the fix (~61),
+    passes after (120).
+    """
+    dist_mi = [0, 100, 250, 150, 200]   # spike to 250 mid-ride; ends at 200
+    time_min = [0, 60, 61, 62, 120]
+    streams = {
+        'distance': [mi * METERS_PER_MILE for mi in dist_mi],
+        'time': [t * 60 for t in time_min],
+    }
+    interp = _build_stream_interpolator(streams)
+    assert interp is not None
+    # Beyond the true finish → finish time, not the ~61-min spike crossing.
+    assert abs(interp(210) - 120.0) < 1e-9
+    assert abs(interp(200) - 120.0) < 1e-9
+    # A target genuinely reached late still picks the real final approach, not the
+    # earlier spike (spike would give ~60 min; true late crossing is ~114 min).
+    assert interp(195) > 100.0
+
+
 # ── Step A: DB-gated real-ride reproduction (match_id 212) ────────────────────
 
 _STEP_A_DB = os.environ.get('TEST_DATABASE_URL') or os.environ.get('DATABASE_URL')
