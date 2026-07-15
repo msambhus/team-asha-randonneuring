@@ -9,12 +9,17 @@ longer holds the flow keys after every terminal path.
 from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
+from shared.broker_state import sign_state
+
 _RIDER = {'id': 7, 'email': 'r@example.com', 'google_id': 'g-1',
           'profile_completed': True, 'rusa_id': None, 'club_id': None,
           'rusa_id_duplicate': False}
 
 _TOKENS = {'athlete': {'id': 555}, 'access_token': 'A', 'refresh_token': 'R',
            'expires_at': 1999999999}
+
+_BROKER_SECRET = 'shared-broker-secret-long-enough'
+_TA_RETURN = 'https://team-asha-randonneuring.vercel.app/strava/broker-return'
 
 
 def _login(client, rider_id=7):
@@ -24,6 +29,17 @@ def _login(client, rider_id=7):
 
 def _configure_strava(client):
     client.application.config['STRAVA_CLIENT_SECRET'] = 'test-secret'
+
+
+def _configure_broker(client):
+    client.application.config['STRAVA_CLIENT_SECRET'] = 'test-secret'
+    client.application.config['BROKER_HMAC_SECRET'] = _BROKER_SECRET
+
+
+def _ta_state(client, *, origin='team-asha', return_url=_TA_RETURN, nonce='nonce-1',
+              secret=_BROKER_SECRET):
+    return sign_state(secret=secret, origin=origin, ta_rider_id=42,
+                      return_url=return_url, nonce=nonce)
 
 
 # --------------------------------------------------------------------------- #
@@ -205,3 +221,179 @@ def test_dashboard_renders_cached_strava_stats(client):
     assert '72/100' in body     # fitness score
     assert 'Disconnect Strava' in body
     mock_fetch.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# Broker origin — connect (Team Asha, no BrevetHub login)
+# --------------------------------------------------------------------------- #
+def test_broker_connect_valid_state_claims_nonce_and_redirects_to_strava(client):
+    _configure_broker(client)
+    state = _ta_state(client, nonce='nonce-1')
+    with patch('brevethub.models.claim_broker_state', return_value={'nonce': 'nonce-1'}) as mock_claim:
+        resp = client.get(f'/strava/connect?origin=team-asha&state={state}')
+    assert resp.status_code == 302
+    loc = resp.headers['Location']
+    assert loc.startswith('https://www.strava.com/oauth/authorize')
+    qs = parse_qs(urlparse(loc).query)
+    assert qs['state'] == [state]          # the signed state is echoed to Strava
+    mock_claim.assert_called_once()
+    assert mock_claim.call_args.args[0] == 'nonce-1'
+    with client.session_transaction() as sess:
+        assert sess.get('strava_broker_flow') is True
+
+
+def test_broker_connect_replayed_state_hard_rejects(client):
+    """The SAME valid state used twice: first claims the nonce, second is rejected
+    because claim_broker_state returns None (durable single-use). A signature-only
+    design would 302 both times — this fails unless the claim store exists."""
+    _configure_broker(client)
+    state = _ta_state(client, nonce='nonce-replay')
+    with patch('brevethub.models.claim_broker_state',
+               side_effect=[{'nonce': 'nonce-replay'}, None]):
+        first = client.get(f'/strava/connect?origin=team-asha&state={state}')
+        second = client.get(f'/strava/connect?origin=team-asha&state={state}')
+    assert first.status_code == 302
+    assert first.headers['Location'].startswith('https://www.strava.com/oauth/authorize')
+    assert second.status_code == 409           # replay hard-rejected, no Strava redirect
+    assert 'Location' not in second.headers or 'strava.com' not in second.headers.get('Location', '')
+
+
+def test_broker_connect_forged_state_rejected_without_claiming(client):
+    _configure_broker(client)
+    state = _ta_state(client)
+    forged = ('A' if state[0] != 'A' else 'B') + state[1:]  # break the signature (first char)
+    with patch('brevethub.models.claim_broker_state') as mock_claim:
+        resp = client.get(f'/strava/connect?origin=team-asha&state={forged}')
+    assert resp.status_code == 400
+    mock_claim.assert_not_called()            # a bad state never burns a nonce
+
+
+def test_broker_connect_expired_state_rejected_without_claiming(client):
+    import time
+    _configure_broker(client)
+    stale = sign_state(secret=_BROKER_SECRET, origin='team-asha', ta_rider_id=42,
+                       return_url=_TA_RETURN, nonce='old', issued_at=int(time.time()) - 5000)
+    with patch('brevethub.models.claim_broker_state') as mock_claim:
+        resp = client.get(f'/strava/connect?origin=team-asha&state={stale}')
+    assert resp.status_code == 400
+    mock_claim.assert_not_called()
+
+
+def test_broker_connect_disallowed_return_url_rejected_before_claim(client):
+    _configure_broker(client)
+    evil = _ta_state(client, return_url='https://evil.example.com/steal')
+    with patch('brevethub.models.claim_broker_state') as mock_claim:
+        resp = client.get(f'/strava/connect?origin=team-asha&state={evil}')
+    assert resp.status_code == 400
+    mock_claim.assert_not_called()            # open-redirect guard runs before the claim
+
+
+def test_broker_connect_unknown_origin_rejected(client):
+    _configure_broker(client)
+    state = _ta_state(client, origin='team-asha')
+    with patch('brevethub.models.claim_broker_state') as mock_claim:
+        resp = client.get(f'/strava/connect?origin=martians&state={state}')
+    assert resp.status_code == 400
+    mock_claim.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# Broker origin — callback (Team Asha destination)
+# --------------------------------------------------------------------------- #
+def test_broker_callback_stores_handoff_and_bounces_with_code_only(client):
+    _configure_broker(client)
+    state = _ta_state(client, nonce='cb-1')
+    with patch('brevethub.models.consume_broker_state', return_value={'nonce': 'cb-1'}), \
+         patch('brevethub.routes.strava.exchange_code_for_token', return_value=_TOKENS), \
+         patch('brevethub.models.create_broker_handoff', return_value='HANDOFF-XYZ') as mock_handoff, \
+         patch('brevethub.models.upsert_strava_connection') as mock_upsert:
+        resp = client.get(f'/strava/callback?code=abc&state={state}&scope=activity:read_all')
+    assert resp.status_code == 302
+    loc = resp.headers['Location']
+    assert loc.startswith(_TA_RETURN)
+    qs = parse_qs(urlparse(loc).query)
+    assert qs['code'] == ['HANDOFF-XYZ']      # only the opaque handoff code, no token
+    # No Strava token EVER appears in the redirect Location.
+    assert 'access_token' not in loc and 'refresh_token' not in loc
+    mock_handoff.assert_called_once()
+    assert mock_handoff.call_args.kwargs['ta_rider_id'] == 42
+    assert mock_handoff.call_args.kwargs['access_token'] == 'A'
+    # A brokered flow NEVER writes the BrevetHub rider table.
+    mock_upsert.assert_not_called()
+
+
+def test_broker_callback_unclaimed_state_hard_rejects_no_exchange(client):
+    """A valid signed state that skipped /connect (direct-to-Strava bypass) has no
+    consumable claim: consume_broker_state -> None -> hard reject BEFORE any token
+    exchange or handoff. Without the phase-2 consume this would mint a handoff."""
+    _configure_broker(client)
+    state = _ta_state(client, nonce='never-claimed')
+    with patch('brevethub.models.consume_broker_state', return_value=None) as mock_consume, \
+         patch('brevethub.routes.strava.exchange_code_for_token') as mock_exch, \
+         patch('brevethub.models.create_broker_handoff') as mock_handoff:
+        resp = client.get(f'/strava/callback?code=abc&state={state}')
+    assert resp.status_code == 409
+    mock_consume.assert_called_once()
+    assert mock_consume.call_args.args[0] == 'never-claimed'
+    mock_exch.assert_not_called()
+    mock_handoff.assert_not_called()
+
+
+def test_broker_callback_replayed_state_hard_rejects_second_time(client):
+    """The SAME signed state through /callback twice: consume returns the row once
+    (claimed + unused), then None (already consumed) -> the second mints nothing."""
+    _configure_broker(client)
+    state = _ta_state(client, nonce='cb-replay')
+    with patch('brevethub.models.consume_broker_state',
+               side_effect=[{'nonce': 'cb-replay'}, None]), \
+         patch('brevethub.routes.strava.exchange_code_for_token', return_value=_TOKENS), \
+         patch('brevethub.models.create_broker_handoff', return_value='H1') as mock_handoff:
+        first = client.get(f'/strava/callback?code=abc&state={state}&scope=activity:read_all')
+        second = client.get(f'/strava/callback?code=abc&state={state}&scope=activity:read_all')
+    assert first.status_code == 302
+    assert second.status_code == 409
+    assert mock_handoff.call_count == 1       # only the first, claimed callback mints a handoff
+
+
+def test_broker_callback_denied_bounces_with_neutral_error_no_exchange(client):
+    _configure_broker(client)
+    state = _ta_state(client, nonce='cb-deny')
+    with patch('brevethub.models.consume_broker_state', return_value={'nonce': 'cb-deny'}), \
+         patch('brevethub.routes.strava.exchange_code_for_token') as mock_exch, \
+         patch('brevethub.models.create_broker_handoff') as mock_handoff:
+        resp = client.get(f'/strava/callback?error=access_denied&state={state}')
+    assert resp.status_code == 302
+    loc = resp.headers['Location']
+    assert loc.startswith(_TA_RETURN)
+    assert 'error=access_denied' in loc
+    mock_exch.assert_not_called()
+    mock_handoff.assert_not_called()
+
+
+def test_broker_callback_disallowed_return_url_hard_rejects(client):
+    _configure_broker(client)
+    evil = _ta_state(client, return_url='https://evil.example.com/x')
+    with patch('brevethub.models.consume_broker_state') as mock_consume, \
+         patch('brevethub.routes.strava.exchange_code_for_token') as mock_exch:
+        resp = client.get(f'/strava/callback?code=abc&state={evil}')
+    assert resp.status_code == 400          # never bounce to a non-allowlisted host
+    mock_consume.assert_not_called()        # allowlist guard runs before the consume
+    mock_exch.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# Regression — a logged-in BrevetHub rider still upserts rp_strava_connection and
+# never touches the broker handoff table.
+# --------------------------------------------------------------------------- #
+def test_rider_callback_upserts_connection_never_handoff(client):
+    _configure_strava(client)
+    with client.session_transaction() as sess:
+        sess['strava_oauth_state'] = 'good'
+        sess['strava_connecting_rider_id'] = 7
+    with patch('brevethub.routes.strava.exchange_code_for_token', return_value=_TOKENS), \
+         patch('brevethub.models.upsert_strava_connection') as mock_upsert, \
+         patch('brevethub.models.create_broker_handoff') as mock_handoff:
+        resp = client.get('/strava/callback?code=abc&state=good&scope=activity:read_all')
+    assert resp.status_code == 302
+    mock_upsert.assert_called_once()
+    mock_handoff.assert_not_called()

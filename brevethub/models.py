@@ -4,6 +4,7 @@ Every SQL statement in this module targets a `rp_`-prefixed tenant table. The
 app never reads or writes any Team Asha table; `tests/brevethub/test_rp_only.py`
 scans this file and fails the build if a non-`rp_` table name ever appears.
 """
+import secrets
 from enum import Enum
 
 from psycopg2.extras import Json
@@ -236,3 +237,73 @@ def delete_strava_connection(rider_id):
         "DELETE FROM rp_strava_connection WHERE rider_id = %s",
         (rider_id,),
     )
+
+
+# --------------------------------------------------------------------------- #
+# Strava OAuth broker (rp_strava_broker_state + rp_strava_broker_handoff) —
+# BrevetHub serving a Strava connect on behalf of Team Asha. BrevetHub is the
+# sole writer here; Team Asha only reads+deletes the handoff row (see the note in
+# migration 035). Both tables are rp_-prefixed, so the rp-only isolation invariant
+# holds.
+# --------------------------------------------------------------------------- #
+def claim_broker_state(nonce, *, state_ttl_seconds=600):
+    """Phase 1 (at /connect): atomically claim a broker-state nonce for single use.
+
+    Returns the claim row on first use, or ``None`` if the nonce was already
+    claimed — the durable replay guard that makes a signed state single-use across
+    stateless serverless invocations (an HMAC + TTL check alone cannot). The
+    caller hard-rejects the connect when this returns ``None``. The claim is left
+    unconsumed (``consumed_at IS NULL``) until :func:`consume_broker_state` marks
+    it at the matching /callback.
+    """
+    return db.execute(
+        "INSERT INTO rp_strava_broker_state (nonce, state_expires_at) "
+        "VALUES (%s, NOW() + make_interval(secs => %s)) "
+        "ON CONFLICT (nonce) DO NOTHING "
+        "RETURNING nonce",
+        (nonce, state_ttl_seconds),
+        returning=True,
+    )
+
+
+def consume_broker_state(nonce):
+    """Phase 2 (at /callback): atomically consume a previously-claimed nonce.
+
+    Returns the row only if the nonce was claimed at /connect AND has not already
+    been consumed by an earlier callback. ``None`` means the state either skipped
+    /connect entirely (a direct-to-Strava bypass that never passed the claim) or is
+    being replayed through /callback — either way the caller hard-rejects before any
+    token exchange or handoff. This is what makes the single-use guarantee hold end
+    to end, not just at the first hop.
+    """
+    return db.execute(
+        "UPDATE rp_strava_broker_state SET consumed_at = NOW() "
+        "WHERE nonce = %s AND consumed_at IS NULL "
+        "RETURNING nonce",
+        (nonce,),
+        returning=True,
+    )
+
+
+def create_broker_handoff(*, ta_rider_id, strava_athlete_id, access_token,
+                          refresh_token, strava_token_expires_at, scope=None,
+                          handoff_ttl_seconds=300):
+    """Insert a one-time Strava-token handoff row and return its opaque code.
+
+    ``strava_token_expires_at`` is a Unix epoch integer (Strava's access-token
+    lifetime) stored via ``to_timestamp()``; the separate ``handoff_expires_at``
+    is the short single-use TTL Team Asha's consume gate reads. The code is a
+    high-entropy random token — the only thing put in the return URL, never a
+    Strava token.
+    """
+    code = secrets.token_urlsafe(32)
+    db.execute(
+        "INSERT INTO rp_strava_broker_handoff "
+        "  (code, ta_rider_id, strava_athlete_id, access_token, refresh_token, "
+        "   strava_token_expires_at, scope, handoff_expires_at) "
+        "VALUES (%s, %s, %s, %s, %s, to_timestamp(%s), %s, "
+        "        NOW() + make_interval(secs => %s))",
+        (code, ta_rider_id, strava_athlete_id, access_token, refresh_token,
+         strava_token_expires_at, scope, handoff_ttl_seconds),
+    )
+    return code

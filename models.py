@@ -2120,6 +2120,34 @@ def delete_strava_connection(rider_id):
     cur.execute("DELETE FROM strava_connection WHERE rider_id = %s", (rider_id,))
     conn.commit()
 
+def consume_strava_broker_handoff(code):
+    """Atomically consume a one-time Strava broker handoff row (delete-on-read).
+
+    A single ``DELETE ... RETURNING`` enforces BOTH invariants at once:
+      - single-use: a second consume of the same code deletes nothing (zero rows).
+      - freshness: the TTL gate reads ONLY ``handoff_expires_at`` (the short
+        one-time-code window), never the ~6h Strava-token column — so an expired
+        code can never be accepted while the underlying token is still alive.
+
+    Returns the row (with ``expires_at`` as the Strava token's epoch integer, ready
+    for ``create_strava_connection``) or ``None`` if the code is unknown, already
+    consumed, or expired. The handoff row is written by BrevetHub into the neutral
+    ``rp_strava_broker_handoff`` broker table (see migration 035); Team Asha only
+    reads+deletes it here.
+    """
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        DELETE FROM rp_strava_broker_handoff
+        WHERE code = %s AND handoff_expires_at > NOW()
+        RETURNING ta_rider_id, strava_athlete_id, access_token, refresh_token,
+                  EXTRACT(EPOCH FROM strava_token_expires_at)::bigint AS expires_at,
+                  scope
+    """, (code,))
+    row = cur.fetchone()
+    conn.commit()
+    return row
+
 def get_all_active_strava_connections():
     """Get all riders with active Strava connections.
 
