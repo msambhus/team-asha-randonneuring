@@ -115,14 +115,123 @@ def complete_rider_profile(rider_id, rusa_id, club_id, rusa_id_duplicate=False):
 
 
 # --------------------------------------------------------------------------- #
-# Public rides (rp_ride) — guest/spectator browse of rides opted into public
-# tracking. The full live-position ingestion is a follow-on mission; this is the
-# read-only shell the guest browse view renders.
+# Public rides (rp_ride) + live positions (rp_live_position) — guest/spectator
+# browse of rides opted into public tracking, and the owner-only ingestion path
+# that feeds the live map. Every guest-facing query selects ONLY non-PII columns
+# (name/club/distance/start/status) — never rider email — and the map/poll gates
+# hard-filter on is_public = TRUE so a private or unknown ride is never viewable.
 # --------------------------------------------------------------------------- #
 def get_public_rides():
+    """Public rides for the guest browse list, joined to their club name.
+
+    Guest-facing: selects only what a club would publicly show (name, club,
+    distance, start time, status). No rider identity (no email, no rider_id) is
+    exposed on this surface.
+    """
     return db.query(
-        "SELECT id, club_id, name, distance_km, start_at, is_public, status "
-        "FROM rp_ride WHERE is_public = TRUE ORDER BY start_at DESC"
+        "SELECT r.id, r.name, r.distance_km, r.start_at, r.status, "
+        "       c.name AS club_name "
+        "FROM rp_ride r LEFT JOIN rp_club c ON c.id = r.club_id "
+        "WHERE r.is_public = TRUE ORDER BY r.start_at DESC NULLS LAST"
+    )
+
+
+def get_public_ride(ride_id):
+    """A single PUBLIC ride by id (the guest-view 404 gate), joined to its club.
+
+    Returns None when the ride is unknown OR is_public = FALSE, so a private/
+    unknown ride is indistinguishable to a guest (both 404). No rider PII.
+    """
+    return db.query_one(
+        "SELECT r.id, r.name, r.distance_km, r.start_at, r.status, "
+        "       c.name AS club_name "
+        "FROM rp_ride r LEFT JOIN rp_club c ON c.id = r.club_id "
+        "WHERE r.id = %s AND r.is_public = TRUE",
+        (ride_id,),
+    )
+
+
+def get_ride(ride_id):
+    """A ride by id for the OWNER check (position POST / flag-public).
+
+    Includes rider_id so the caller can compare it to the session rider before
+    allowing a write. Never rendered to a guest.
+    """
+    return db.query_one(
+        "SELECT id, club_id, rider_id, name, distance_km, start_at, status, "
+        "       is_public FROM rp_ride WHERE id = %s",
+        (ride_id,),
+    )
+
+
+def get_rider_rides(rider_id):
+    """A rider's own rides, for the create/flag page listing + share links."""
+    return db.query(
+        "SELECT id, name, distance_km, start_at, status, is_public "
+        "FROM rp_ride WHERE rider_id = %s ORDER BY start_at DESC NULLS LAST",
+        (rider_id,),
+    )
+
+
+def create_ride(rider_id, *, name, distance_km=None, is_public=False,
+                club_id=None, status=None):
+    """Create a ride owned by ``rider_id`` and return its new id.
+
+    Used by the rider-facing "share a live ride" flow: the owner names a ride and
+    (optionally) flags it public+live in one step. start_at defaults to NOW() so a
+    just-created live ride sorts to the top of the public list.
+    """
+    row = db.execute(
+        "INSERT INTO rp_ride (rider_id, club_id, name, distance_km, is_public, "
+        "                     status, start_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, NOW()) RETURNING id",
+        (rider_id, club_id, name, distance_km, is_public, status),
+        returning=True,
+    )
+    return row['id'] if row else None
+
+
+def set_ride_public(ride_id, rider_id, is_public):
+    """Flag one of the rider's OWN rides public/private. Owner-scoped: the write
+    is filtered by rider_id too, so a non-owner can never flip another rider's flag.
+
+    Returns the updated row (id) or None when the ride is not the rider's.
+    """
+    return db.execute(
+        "UPDATE rp_ride SET is_public = %s WHERE id = %s AND rider_id = %s "
+        "RETURNING id",
+        (is_public, ride_id, rider_id),
+        returning=True,
+    )
+
+
+def get_ride_positions(ride_id, limit=500):
+    """The ride's position breadcrumbs (oldest→newest) for the live trail.
+
+    Guest-facing: selects ONLY lat/lng/recorded_at — never rider_id or the row id
+    — so the public poll endpoint leaks no rider identity. Capped at ``limit``
+    most-recent points (then re-ordered oldest→newest for the trail).
+    """
+    return db.query(
+        "SELECT lat, lng, recorded_at FROM ("
+        "  SELECT lat, lng, recorded_at FROM rp_live_position "
+        "  WHERE ride_id = %s ORDER BY recorded_at DESC LIMIT %s"
+        ") p ORDER BY recorded_at ASC",
+        (ride_id, limit),
+    )
+
+
+def insert_position(ride_id, rider_id, lat, lng, recorded_at=None):
+    """Append one {lat,lng,recorded_at} breadcrumb for a ride.
+
+    ``recorded_at`` is an optional ISO-8601 string (as the rider's device reports
+    it); when omitted the DB stamps NOW(). Owner enforcement is the route's job —
+    this is the raw insert.
+    """
+    db.execute(
+        "INSERT INTO rp_live_position (ride_id, rider_id, lat, lng, recorded_at) "
+        "VALUES (%s, %s, %s, %s, COALESCE(%s::timestamptz, NOW()))",
+        (ride_id, rider_id, lat, lng, recorded_at),
     )
 
 
