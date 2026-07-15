@@ -141,9 +141,13 @@ def live_new():
         if not ride_id:
             flash('Could not create the ride. Please try again.', 'error')
             return redirect(url_for('live.live_new'))
-        flash('Ride created. Share the link below so anyone can follow along.',
+        if make_public:
+            flash('Ride created. Share the link below so anyone can follow along.',
+                  'success')
+            return redirect(url_for('live.live_map', ride_id=ride_id))
+        flash('Ride created. Make it public when you are ready to share it.',
               'success')
-        return redirect(url_for('live.live_map', ride_id=ride_id))
+        return redirect(url_for('live.live_new'))
 
     rides = models.get_rider_rides(rider_id)
     return render_template('live_new.html', rides=rides)

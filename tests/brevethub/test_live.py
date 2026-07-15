@@ -214,6 +214,16 @@ def test_create_ride_public_redirects_to_shareable_map(client):
     assert mock_create.call_args.kwargs['name'] == 'My Live 200'
 
 
+def test_create_private_ride_returns_to_manage_page(client):
+    _login(client, rider_id=7)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.create_ride', return_value=56) as mock_create:
+        resp = client.post('/live/new', data={'name': 'Private prep ride'})
+    assert resp.status_code == 302
+    assert resp.headers['Location'].endswith('/live/new')
+    assert mock_create.call_args.kwargs['is_public'] is False
+
+
 def test_create_ride_requires_name(client):
     _login(client, rider_id=7)
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
