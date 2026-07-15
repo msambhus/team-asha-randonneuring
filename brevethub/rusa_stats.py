@@ -4,12 +4,16 @@ Framework-free and DB-free: turn the raw scrape from ``shared/rusa.py`` into a
 JSON-safe list suitable for caching, and compute summary stats from a cached
 list. Kept separate from the route so the cache orchestration stays thin and
 these computations are unit-testable in isolation. Distance bands and the SR
-rule mirror Team Asha's definitions (200/300/400/600 series; 600 tier = >=600).
+rule mirror Team Asha's definitions (200/300/400/600 series; 600 tier = >=600),
+sourced from the shared ``seasons`` module so the thresholds live in one place.
 """
 from datetime import datetime
 
-# Distance bands shown on the dashboard (km). 600 is [600, 1000); 1000 is >=1000.
-_BANDS = (200, 300, 400, 600, 1000)
+# Distance bands + SR-tier classification are single-sourced in shared.seasons so
+# the dashboard, profile, and rides-by-season pages can never disagree.
+from shared.seasons import DISTANCE_BANDS as _BANDS
+from shared.seasons import band_for as _band_for
+from shared.seasons import sr_tier_for as _sr_tier
 
 
 def normalize_results(raw):
@@ -34,35 +38,6 @@ def normalize_results(raw):
             'route_name': r.get('route_name') or '',
         })
     return brevets
-
-
-def _band_for(distance_km):
-    """Display band for a distance, or None if under 200km."""
-    if 200 <= distance_km < 300:
-        return 200
-    if 300 <= distance_km < 400:
-        return 300
-    if 400 <= distance_km < 600:
-        return 400
-    if 600 <= distance_km < 1000:
-        return 600
-    if distance_km >= 1000:
-        return 1000
-    return None
-
-
-def _sr_tier(distance_km):
-    """SR series tier (200/300/400/600). The 600 tier is >=600, so a 1000 also
-    satisfies the 600 requirement — matching Team Asha's single-sourced SR rule."""
-    if 200 <= distance_km < 300:
-        return 200
-    if 300 <= distance_km < 400:
-        return 300
-    if 400 <= distance_km < 600:
-        return 400
-    if distance_km >= 600:
-        return 600
-    return None
 
 
 def _year_of(brevet):

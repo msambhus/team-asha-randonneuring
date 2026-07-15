@@ -153,6 +153,25 @@ body {
 }
 .badge-warn { background: var(--warn-bg); color: var(--warn-text); }
 
+/* SR legs (200/300/400/600) — done vs still-to-ride pips. */
+.sr-legs, .sr-progress { display: inline-flex; gap: 6px; align-items: center; }
+.sr-leg {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+}
+.sr-leg.done { background: var(--primary-dark); color: #fff; border-color: var(--primary-dark); }
+.sr-leg.todo { color: var(--muted); }
+
+/* Rides-by-season blocks */
+.season-current { border-left: 4px solid var(--primary-dark); }
+.season-totals { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+.season-past { margin-bottom: 10px; }
+.season-past > summary { cursor: pointer; font-weight: 600; }
+
 /* Flash messages */
 .flashes { list-style: none; padding: 0; margin: 0 0 20px; }
 .flash { padding: 10px 14px; border-radius: 8px; margin-bottom: 8px; font-size: 0.92rem; }

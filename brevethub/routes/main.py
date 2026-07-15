@@ -12,7 +12,7 @@ outage shows a message, never a 500. The guest/spectator public-ride browse now
 ships in `routes/live.py` (the public `/live` list + per-ride map); the dashboard
 links into it.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from flask import (Blueprint, current_app, flash, redirect, render_template,
                    url_for)
@@ -20,6 +20,7 @@ from flask import (Blueprint, current_app, flash, redirect, render_template,
 from brevethub import models, rusa_stats
 from brevethub.decorators import current_rider, profile_required
 from brevethub.routes.strava import load_strava_section
+from shared import seasons
 from shared.rusa import fetch_rider_results
 
 main_bp = Blueprint('main', __name__)
@@ -99,6 +100,84 @@ def dashboard():
     strava = load_strava_section(rider)
     return render_template('dashboard.html', rider=rider, club=club,
                            rusa=rusa, strava=strava)
+
+
+@main_bp.route('/profile')
+@profile_required
+def profile():
+    """The signed-in rider's own private profile: identity, Strava status, and a
+    career summary (km, brevet count, current-season SR, R-12) computed from the
+    authoritative RUSA history only. Login-required and self-scoped — there is no
+    rider-id parameter, so a rider can only ever load their own row (no PII leak
+    to other riders).
+    """
+    rider = current_rider()
+    club = models.get_club(rider['club_id']) if rider.get('club_id') else None
+    rusa = load_rusa_section(rider)
+    strava = load_strava_section(rider)
+    # Career/SR/R-12 come from the RUSA cache only (the official record), so a
+    # self-logged rp_ride can never inflate them. seasons.career_summary is total
+    # for an empty history, giving a graceful zero-state for a RUSA-less rider.
+    career = seasons.career_summary(rusa.get('brevets') or [], date.today())
+    return render_template('profile.html', rider=rider, club=club,
+                           rusa=rusa, strava=strava, career=career)
+
+
+def _finished_rides_as_brevets(rides):
+    """Convert a rider's FINISHED ``rp_ride`` rows into the brevet dict shape so
+    they can be merged into the season view. Rides without a start date or a
+    distance are skipped (they can't be placed in a season or measured)."""
+    out = []
+    for r in rides or []:
+        if r.get('status') != models.RideStatus.FINISHED.value:
+            continue
+        start = r.get('start_at')
+        if not start or not r.get('distance_km'):
+            continue
+        iso = start.date().isoformat() if hasattr(start, 'date') else str(start)[:10]
+        out.append({
+            'date': iso,
+            'distance_km': int(r['distance_km']),
+            'finish_time': '',
+            'route_name': r.get('name') or '',
+            'source': 'ride',
+        })
+    return out
+
+
+def _merge_brevets(rusa_brevets, own_brevets):
+    """Merge the rider's own finished rides into the RUSA history, preferring the
+    RUSA entry on a ``(distance_km, date)`` collision so an officially-recorded
+    brevet is never double-counted by a self-logged ride of the same day+distance.
+    """
+    seen = {(b.get('distance_km'), b.get('date')) for b in rusa_brevets}
+    merged = list(rusa_brevets)
+    for b in own_brevets:
+        key = (b.get('distance_km'), b.get('date'))
+        if key not in seen:
+            merged.append(b)
+            seen.add(key)
+    return merged
+
+
+@main_bp.route('/rides-by-season')
+@profile_required
+def rides_by_season():
+    """The signed-in rider's brevets grouped into randonneuring seasons (Nov 1
+    boundary), current season first + highlighted, past seasons collapsible. The
+    RUSA history is merged with the rider's own finished ``rp_ride`` records
+    (deduped on date+distance). Self-scoped like /profile — no rider-id parameter.
+    """
+    rider = current_rider()
+    rusa = load_rusa_section(rider)
+    own = _finished_rides_as_brevets(models.get_rider_rides(rider['id']))
+    merged = _merge_brevets(rusa.get('brevets') or [], own)
+    today = date.today()
+    return render_template(
+        'rides_by_season.html', rider=rider, rusa=rusa,
+        seasons=seasons.seasons_with_summaries(merged, today),
+        current_season=seasons.current_season_name(today),
+    )
 
 
 @main_bp.route('/rusa/refresh', methods=['POST'])
