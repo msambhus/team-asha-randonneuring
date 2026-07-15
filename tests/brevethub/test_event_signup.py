@@ -147,13 +147,30 @@ def test_dashboard_empty_signups_prompts_calendar(client):
 # --------------------------------------------------------------------------- #
 # Model shape — one row per (rider, event)
 # --------------------------------------------------------------------------- #
-def test_set_rider_signup_is_upsert_by_pair():
-    """set_rider_signup transitions an existing row in place (UPDATE) or INSERTs a
-    new one — so a rider never accumulates duplicate rows for the same event."""
+def test_set_rider_signup_is_atomic_upsert_by_pair():
+    """set_rider_signup is a single atomic INSERT ... ON CONFLICT ... DO UPDATE keyed
+    on UNIQUE(event_id, rider_id) — so concurrent/duplicate POSTs transition the
+    status cleanly instead of racing into a unique-violation 500, and a rider never
+    accumulates duplicate rows for the same event."""
     with open(MODELS_PATH, 'r', encoding='utf-8') as fh:
         src = fh.read()
     body = re.search(r'def set_rider_signup\(.*?\n(?=def )', src, re.DOTALL).group(0)
-    assert 'UPDATE rp_event_signup SET status' in body
     assert 'INSERT INTO rp_event_signup' in body
-    # Existence keyed on (rider_id, event_id).
-    assert 'WHERE rider_id = %s AND event_id = %s' in body
+    assert 'ON CONFLICT (event_id, rider_id) DO UPDATE' in body
+    assert 'status = EXCLUDED.status' in body
+    # No SELECT-then-INSERT race window remains.
+    assert 'SELECT id FROM rp_event_signup' not in body
+
+
+def test_upsert_brevet_event_is_atomic_upsert_by_key():
+    """upsert_brevet_event is a single atomic INSERT ... ON CONFLICT ... DO UPDATE
+    keyed on UNIQUE(date, name, distance_km), COALESCE-ing enrichment from EXCLUDED
+    so a sparse repeat scrape never wipes richer cached data and concurrent refreshes
+    never hit a unique-violation 500."""
+    with open(MODELS_PATH, 'r', encoding='utf-8') as fh:
+        src = fh.read()
+    body = re.search(r'def upsert_brevet_event\(.*?\n(?=def )', src, re.DOTALL).group(0)
+    assert 'INSERT INTO rp_brevet_event' in body
+    assert 'ON CONFLICT (date, name, distance_km) DO UPDATE' in body
+    assert 'COALESCE(EXCLUDED.rwgps_url, rp_brevet_event.rwgps_url)' in body
+    assert 'SELECT id FROM rp_brevet_event' not in body

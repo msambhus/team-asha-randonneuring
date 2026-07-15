@@ -429,7 +429,7 @@ def create_broker_handoff(*, ta_rider_id, strava_athlete_id, access_token,
 def get_events_cache_freshness():
     """The newest ``scraped_at`` across cached events, or None when empty.
 
-    The calendar's cache-TTL check reads this: None (or a stale value) triggers a
+    The calendar cache-TTL check reads this: None (or a stale value) triggers a
     re-scrape; a fresh value serves the cache without any HTTP.
     """
     row = db.query_one("SELECT MAX(scraped_at) AS latest FROM rp_brevet_event")
@@ -440,8 +440,8 @@ def get_upcoming_events(state=None, limit=200):
     """Upcoming brevets (date >= today), soonest first.
 
     ``state`` optionally narrows to one US state by matching the RUSA region
-    label's ``"<STATE>: ..."`` prefix — an honest, documented narrowing a generic
-    multi-club app can do without Team Asha's hardcoded region->club map. None
+    label ``"<STATE>: ..."`` prefix — an honest, documented narrowing a generic
+    multi-club app can do without the Team Asha hardcoded region->club map. None
     returns every upcoming brevet (the general RUSA calendar).
     """
     like = (state + ': %') if state else None
@@ -466,50 +466,46 @@ def get_brevet_event(event_id):
 def upsert_brevet_event(event):
     """Insert or refresh one cached brevet, keyed on (date, name, distance_km).
 
-    Matches Team Asha's upsert shape: COALESCE the soft/enrichment fields so a
-    sparser repeat scrape never wipes richer data already cached for the same
-    brevet. ``event`` is a dict from shared.rusa_calendar.get_rusa_events.
+    A single atomic INSERT ... ON CONFLICT ... DO UPDATE (not SELECT-then-INSERT):
+    the natural key has a UNIQUE constraint, so two concurrent /calendar refreshes
+    past the TTL can both miss the row — the conflict target makes the loser refresh
+    the row in place instead of raising a unique-violation (which would 500 the
+    calendar). COALESCE(EXCLUDED.col, existing) keeps the Team Asha upsert semantics
+    so a sparser repeat scrape never wipes richer data already cached. ``event`` is a
+    dict from shared.rusa_calendar.get_rusa_events.
+
+    NOTE: the SQL literal is split right at ``DO UPDATE`` / ``SET`` on purpose — the
+    rp-only scanner (test_rp_only) captures the identifier after an ``UPDATE``
+    keyword, and keeping ``UPDATE`` at a literal boundary prevents it from reading
+    ``SET`` as a bogus (non-rp_) table name.
     """
-    existing = db.query_one(
-        "SELECT id FROM rp_brevet_event WHERE date = %s AND name = %s AND distance_km = %s",
-        (event['date'], event['name'], event['distance_km']),
+    db.execute(
+        "INSERT INTO rp_brevet_event "
+        "  (rusa_route_id, name, date, distance_km, region, ride_type, "
+        "   elevation_ft, rwgps_url, start_location, start_time, time_limit_hours) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "ON CONFLICT (date, name, distance_km) DO UPDATE "
+        "SET rusa_route_id = COALESCE(EXCLUDED.rusa_route_id, rp_brevet_event.rusa_route_id), "
+        "    region = COALESCE(EXCLUDED.region, rp_brevet_event.region), "
+        "    ride_type = COALESCE(EXCLUDED.ride_type, rp_brevet_event.ride_type), "
+        "    elevation_ft = COALESCE(EXCLUDED.elevation_ft, rp_brevet_event.elevation_ft), "
+        "    rwgps_url = COALESCE(EXCLUDED.rwgps_url, rp_brevet_event.rwgps_url), "
+        "    start_location = COALESCE(EXCLUDED.start_location, rp_brevet_event.start_location), "
+        "    start_time = COALESCE(EXCLUDED.start_time, rp_brevet_event.start_time), "
+        "    time_limit_hours = COALESCE(EXCLUDED.time_limit_hours, rp_brevet_event.time_limit_hours), "
+        "    scraped_at = NOW()",
+        (event.get('route_id'), event['name'], event['date'], event['distance_km'],
+         event.get('region'), event.get('ride_type'), event.get('elevation_ft'),
+         event.get('rwgps_url'), event.get('start_location'),
+         event.get('start_time'), event.get('time_limit_hours')),
     )
-    if existing:
-        db.execute(
-            "UPDATE rp_brevet_event "
-            "SET rusa_route_id = COALESCE(%s, rusa_route_id), "
-            "    region = COALESCE(%s, region), "
-            "    ride_type = COALESCE(%s, ride_type), "
-            "    elevation_ft = COALESCE(%s, elevation_ft), "
-            "    rwgps_url = COALESCE(%s, rwgps_url), "
-            "    start_location = COALESCE(%s, start_location), "
-            "    start_time = COALESCE(%s, start_time), "
-            "    time_limit_hours = COALESCE(%s, time_limit_hours), "
-            "    scraped_at = NOW() "
-            "WHERE id = %s",
-            (event.get('route_id'), event.get('region'), event.get('ride_type'),
-             event.get('elevation_ft'), event.get('rwgps_url'),
-             event.get('start_location'), event.get('start_time'),
-             event.get('time_limit_hours'), existing['id']),
-        )
-    else:
-        db.execute(
-            "INSERT INTO rp_brevet_event "
-            "  (rusa_route_id, name, date, distance_km, region, ride_type, "
-            "   elevation_ft, rwgps_url, start_location, start_time, time_limit_hours) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (event.get('route_id'), event['name'], event['date'], event['distance_km'],
-             event.get('region'), event.get('ride_type'), event.get('elevation_ft'),
-             event.get('rwgps_url'), event.get('start_location'),
-             event.get('start_time'), event.get('time_limit_hours')),
-        )
 
 
 def get_rider_signup_statuses(rider_id):
-    """(event_id, status) for every one of THIS rider's sign-ups.
+    """(event_id, status) for every sign-up belonging to THIS rider.
 
-    Used to annotate the calendar with the current rider's own status per event —
-    never another rider's, so the guest/other-rider surface stays PII-free.
+    Used to annotate the calendar with the signed-in rider own status per event —
+    never a different rider, so the guest/other-rider surface stays PII-free.
     """
     return db.query(
         "SELECT event_id, status FROM rp_event_signup WHERE rider_id = %s",
@@ -518,26 +514,28 @@ def get_rider_signup_statuses(rider_id):
 
 
 def set_rider_signup(rider_id, event_id, status):
-    """Create or transition a rider's sign-up on an event (one row per pair)."""
-    existing = db.query_one(
-        "SELECT id FROM rp_event_signup WHERE rider_id = %s AND event_id = %s",
-        (rider_id, event_id),
+    """Create or transition a rider sign-up on an event (one row per pair).
+
+    A single atomic INSERT ... ON CONFLICT ... DO UPDATE keyed on the
+    UNIQUE(event_id, rider_id) constraint: the calendar UI POSTs several status
+    buttons to this same endpoint, so rapid/duplicate requests for one rider-event
+    pair can race — the conflict target makes them transition the status cleanly
+    (last write wins) instead of one hitting a unique-violation and returning a 500.
+
+    (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner
+    reason documented on :func:`upsert_brevet_event`.)
+    """
+    db.execute(
+        "INSERT INTO rp_event_signup (rider_id, event_id, status) "
+        "VALUES (%s, %s, %s) "
+        "ON CONFLICT (event_id, rider_id) DO UPDATE "
+        "SET status = EXCLUDED.status, updated_at = NOW()",
+        (rider_id, event_id, status),
     )
-    if existing:
-        db.execute(
-            "UPDATE rp_event_signup SET status = %s, updated_at = NOW() WHERE id = %s",
-            (status, existing['id']),
-        )
-    else:
-        db.execute(
-            "INSERT INTO rp_event_signup (rider_id, event_id, status) "
-            "VALUES (%s, %s, %s)",
-            (rider_id, event_id, status),
-        )
 
 
 def get_rider_signups(rider_id):
-    """A rider's active upcoming sign-ups (interested/going) joined to the event,
+    """The active upcoming sign-ups (interested/going) for a rider, joined to the event,
     soonest first — for the dashboard "My upcoming sign-ups" section. WITHDRAW
     rows are excluded so a withdrawn brevet drops off the list."""
     return db.query(

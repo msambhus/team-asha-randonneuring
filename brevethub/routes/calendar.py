@@ -84,15 +84,19 @@ def _refresh_calendar_cache():
         # following every route-detail page would make a cold load do dozens of
         # blocking HTTP calls. region_filter=None → the general RUSA calendar.
         events = get_rusa_events(fetch_rwgps=False)
+        if events:
+            # The upsert loop is inside the try too: upsert_brevet_event is an atomic
+            # ON CONFLICT upsert, but a DB hiccup (or a concurrent DDL) must still
+            # degrade to the cached calendar rather than 500 — the never-500 promise
+            # covers the whole refresh, not just the HTTP scrape.
+            for event in events:
+                models.upsert_brevet_event(event)
+            return None
     except Exception as e:
-        current_app.logger.warning('RUSA calendar scrape failed: %s', e)
+        current_app.logger.warning('RUSA calendar refresh failed: %s', e)
         return 'stale' if latest is not None else 'empty'
 
-    if events:
-        for event in events:
-            models.upsert_brevet_event(event)
-        return None
-    # Empty scrape: keep any good cache, but flag that we served nothing fresh.
+    # Empty scrape (no exception): keep any good cache, but flag we served nothing new.
     return 'stale' if latest is not None else 'empty'
 
 
