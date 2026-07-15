@@ -8,9 +8,9 @@
 RUSA scraping reuses `shared.rusa` (the same logic Team Asha uses) and is cached
 on `rp_rider` (rusa_cache JSONB + rusa_fetched_at); the Strava summary lives in
 `routes/strava.py`. Every external call degrades gracefully — a RUSA/Strava
-outage shows a message, never a 500. The guest/spectator public-ride browse is
-deferred to a follow-on mission (the `rp_ride.is_public` flag + `get_public_rides`
-helper already exist so no later migration alters this baseline).
+outage shows a message, never a 500. The guest/spectator public-ride browse now
+ships in `routes/live.py` (the public `/live` list + per-ride map); the dashboard
+links into it.
 """
 from datetime import datetime, timedelta, timezone
 

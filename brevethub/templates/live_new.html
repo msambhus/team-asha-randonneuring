@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Share a live ride — {{ product_name }}{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Share a live ride</h1>
+  <p class="muted">
+    Create a ride and flag it public to get a shareable link anyone can open to
+    follow you on the map — no account needed on their end.
+  </p>
+
+  <form class="form" method="post" action="{{ url_for('live.live_new') }}">
+    <label class="required" for="name">Ride name</label>
+    <input id="name" name="name" type="text" required
+           placeholder="SFR Point Reyes 200k" />
+
+    <label class="optional" for="distance_km">Distance (km)</label>
+    <input id="distance_km" name="distance_km" type="number" min="0" step="1"
+           placeholder="200" />
+
+    <label>
+      <input name="is_public" type="checkbox" checked />
+      Make it public now (you can toggle this later)
+    </label>
+
+    <button class="btn btn-primary" type="submit">Create ride</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Your rides</h2>
+  {% if rides %}
+    <table class="live-rides">
+      <thead>
+        <tr><th>Ride</th><th>Distance</th><th>Public</th><th>Share link</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for ride in rides %}
+          <tr>
+            <td>{{ ride.name }}</td>
+            <td>{% if ride.distance_km %}{{ ride.distance_km }} km{% else %}—{% endif %}</td>
+            <td>
+              {% if ride.is_public %}
+                <span class="badge">Public</span>
+              {% else %}
+                <span class="muted">Private</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if ride.is_public %}
+                <a href="{{ url_for('live.live_map', ride_id=ride.id, _external=True) }}">
+                  {{ url_for('live.live_map', ride_id=ride.id, _external=True) }}
+                </a>
+              {% else %}
+                <span class="muted">make public to share</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="{{ url_for('live.set_public', ride_id=ride.id) }}">
+                {% if ride.is_public %}
+                  <button class="btn btn-secondary" type="submit">Make private</button>
+                {% else %}
+                  <input type="hidden" name="is_public" value="on" />
+                  <button class="btn" type="submit">Make public</button>
+                {% endif %}
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">You have no rides yet. Create one above.</p>
+  {% endif %}
+</section>
+{% endblock %}

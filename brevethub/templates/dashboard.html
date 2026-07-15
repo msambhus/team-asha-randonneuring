@@ -24,11 +24,16 @@
     </dd>
   </dl>
 
-  <section class="coming-soon">
-    <h2>Coming soon</h2>
-    <ul>
-      <li>Public live-ride tracking</li>
-    </ul>
+  <section class="live-entry">
+    <h2>Live rides</h2>
+    <p class="muted">
+      Follow public rides on the map, or share one of your own so anyone can
+      watch you live.
+    </p>
+    <p>
+      <a class="btn" href="{{ url_for('live.live_list') }}">Browse live rides</a>
+      <a class="btn btn-secondary" href="{{ url_for('live.live_new') }}">Share a live ride</a>
+    </p>
   </section>
 </section>
 

@@ -12,6 +12,7 @@
   <div class="container header-inner">
     <a class="brand" href="{{ url_for('main.landing') }}">{{ product_name }}</a>
     <nav class="nav">
+      <a href="{{ url_for('live.live_list') }}">Live</a>
       {% if session.get('rider_id') %}
       <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
       <a href="{{ url_for('auth.logout') }}">Sign out</a>
