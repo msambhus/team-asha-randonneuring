@@ -29,6 +29,32 @@
     <a class="btn btn-secondary" href="{{ url_for('main.rides_by_season') }}">Rides by Season</a>
   </p>
 
+  <section class="signups-entry" id="signups">
+    <h2>My upcoming sign-ups</h2>
+    {% if signups %}
+      <table class="signups-table">
+        <thead>
+          <tr><th>Date</th><th>Brevet</th><th>Distance</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for s in signups %}
+            <tr>
+              <td>{{ s.date }}</td>
+              <td>{{ s.name }}</td>
+              <td>{{ s.distance_km }} km</td>
+              <td>{{ s.status|capitalize }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">
+        You haven't signed up for any upcoming brevets yet.
+        <a href="{{ url_for('calendar.calendar') }}">Browse the calendar</a>.
+      </p>
+    {% endif %}
+  </section>
+
   <section class="live-entry">
     <h2>Live rides</h2>
     <p class="muted">

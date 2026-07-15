@@ -22,26 +22,24 @@ from html.parser import HTMLParser
 # Add parent directory to path to import from project
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# The RUSA national-feed parser now lives in the club-agnostic shared library so
+# both Team Asha and BrevetHub parse the same source of truth. This script is a
+# thin importer: the national scrape + RWGPS/time-limit helpers come from shared,
+# and the local get_rusa_events() below re-applies the team's region filter so
+# runtime behavior is byte-for-byte what it was before the extract.
+from shared.rusa_calendar import (
+    get_time_limit_hours,
+    get_rwgps_url_from_route,
+    get_rwgps_details,
+    get_rusa_events as _get_rusa_events,
+)
+
 # Resolved lazily in main() so importing this module's functions never exits.
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 # Google Sheets URL - convert to CSV export URL
 SFR_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1LO6FfMJeMP_cvnEUtCfBvpmVudLNzWH-dRVv_PWqLqQ/export?format=csv&gid=0'
 
-
-def get_time_limit_hours(distance_km):
-    """Calculate standard RUSA/ACP time limit in hours based on distance."""
-    if distance_km == 200:
-        return 13.5
-    elif distance_km == 300:
-        return 20
-    elif distance_km == 400:
-        return 27
-    elif distance_km == 600:
-        return 40
-    elif distance_km == 1000:
-        return 75
-    return None
 
 # Santa Cruz Randonneurs website
 SCR_EVENTS_URL = 'https://santacruzrandonneurs.org/'
@@ -200,206 +198,21 @@ def download_sfr_events():
         return []
 
 
-def get_rwgps_url_from_route(route_id):
-    """Fetch RWGPS URL from RUSA route detail page."""
-    try:
-        route_url = f'https://rusa.org/cgi-bin/routeview_PF.pl?rtid={route_id}'
-        req = Request(route_url, headers={'User-Agent': 'Mozilla/5.0'})
-        response = urlopen(req, timeout=10)
-        html_content = response.read().decode('utf-8')
-        
-        # Look for ridewithgps.com links
-        rwgps_match = re.search(r'href=["\']?(https://ridewithgps\.com/routes/\d+)["\']?', html_content, re.IGNORECASE)
-        if rwgps_match:
-            return rwgps_match.group(1)
-        
-        return None
-    except Exception as e:
-        return None
-
-
 def get_rusa_events(fetch_rwgps=True):
-    """Download the RUSA calendar and return the team's brevets (all regions).
+    """Team-scoped RUSA calendar: the shared national scrape, filtered to the
+    team's regions.
 
-    One national fetch of the printer-friendly event search; keeps rows whose
-    Region column is in TEAM_RUSA_REGIONS and whose type is 'ACP brevet' or
-    'RUSA brevet'. Each returned event carries event['region'] = the club.region
-    string used by upsert_event for its club lookup. When ``fetch_rwgps`` is
-    True, follows each route's detail page for a RideWithGPS link and elevation.
-    Returns [] on any network/parse error so a RUSA hiccup never breaks the batch.
+    Delegates all parsing to shared.rusa_calendar.get_rusa_events and passes
+    TEAM_RUSA_REGIONS as the region filter, so every returned event carries
+    event['region'] = the club.region string upsert_event looks up — exactly the
+    behavior this function had before the parser moved to the shared library.
     """
-    print("📥 Downloading RUSA event calendar from rusa.org...")
-
-    try:
-        req = Request(RUSA_NATIONAL_URL, headers={'User-Agent': 'Mozilla/5.0'})
-        response = urlopen(req, timeout=30)
-        html_content = response.read().decode('utf-8', 'replace')
-        
-        events = []
-        
-        # Parse the events table
-        # Columns: Region | Type | Date | Distance | Climbing | Route | Website
-        
-        # Find all table rows (case insensitive)
-        row_pattern = r'<TR[^>]*>(.*?)</TR>'
-        rows = re.findall(row_pattern, html_content, re.DOTALL | re.IGNORECASE)
-        
-        for row_html in rows:
-            # Extract all cells from this row (case insensitive)
-            cell_pattern = r'<TD[^>]*>(.*?)</TD>'
-            cells = re.findall(cell_pattern, row_html, re.DOTALL | re.IGNORECASE)
-            
-            if len(cells) < 7:
-                continue
-            
-            # Parse cells
-            region = re.sub(r'<[^>]+>', '', cells[0]).strip()
-            event_type_raw = cells[1]
-            date_str = re.sub(r'<[^>]+>', '', cells[2]).strip()
-            distance_raw = cells[3]
-            climbing_raw = cells[4]
-            route_cell = cells[5]
-            
-            # Keep only the regions the team rides
-            if region not in TEAM_RUSA_REGIONS:
-                continue
-            
-            # Extract event type (first line before any divs)
-            event_type = re.split(r'<div', event_type_raw)[0]
-            event_type = re.sub(r'<[^>]+>', '', event_type).strip()
-            
-            # Filter for ACP brevet or RUSA brevet only
-            if event_type not in ['ACP brevet', 'RUSA brevet']:
-                continue
-            
-            # Parse date (format: YYYY/MM/DD)
-            date_match = re.search(r'(\d{4})/(\d{2})/(\d{2})', date_str)
-            if not date_match:
-                continue
-            
-            event_date = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}"
-            
-            # Parse distance - extract just the number before any div
-            distance_text = re.split(r'<div', distance_raw)[0]
-            distance_text = re.sub(r'<[^>]+>', '', distance_text).strip()
-            distance_km = 0
-            try:
-                distance_km = int(distance_text)
-            except ValueError:
-                continue
-            
-            # Parse elevation from Climbing column (format: "4,489'" or just a number)
-            climbing_text = re.sub(r'<[^>]+>', '', climbing_raw).strip()
-            rusa_elevation_ft = None
-            if climbing_text and climbing_text != '\xa0' and climbing_text:
-                elev_match = re.search(r"([\d,]+)", climbing_text)
-                if elev_match:
-                    try:
-                        rusa_elevation_ft = int(elev_match.group(1).replace(',', ''))
-                    except ValueError:
-                        pass
-            
-            # Extract route name from Route column
-            route_name_match = re.search(r'<A[^>]*>([^<]+)</A>', route_cell, re.IGNORECASE)
-            if route_name_match:
-                route_name = html.unescape(route_name_match.group(1).strip())
-            else:
-                route_name = html.unescape(re.sub(r'<[^>]+>', '', route_cell).strip())
-            
-            # Extract route ID to fetch RWGPS URL
-            route_id_match = re.search(r'rtid=(\d+)', route_cell, re.IGNORECASE)
-            route_id = route_id_match.group(1) if route_id_match else None
-            
-            # Try to get RWGPS URL from route detail page
-            rwgps_url = None
-            elevation_ft = rusa_elevation_ft  # Start with RUSA elevation
-            
-            if route_id and fetch_rwgps:
-                print(f"  Checking route {route_id} for RWGPS link...")
-                rwgps_url = get_rwgps_url_from_route(route_id)
-                
-                # If RWGPS URL found, fetch elevation from RWGPS (not distance)
-                if rwgps_url:
-                    print(f"  Found RWGPS link, fetching elevation...")
-                    _, rwgps_elevation = get_rwgps_details(rwgps_url)
-                    if rwgps_elevation:
-                        elevation_ft = rwgps_elevation  # RWGPS elevation overrides RUSA data
-            
-            event = {
-                'date': event_date,
-                'name': route_name,
-                'distance_km': distance_km,
-                'distance_miles': None,  # Distance always from RUSA table
-                'elevation_ft': elevation_ft,
-                'rwgps_url': rwgps_url,
-                'start_time': None,
-                'time_limit_hours': get_time_limit_hours(distance_km),
-                'start_location': None,
-                'ride_type': event_type,
-                'region': TEAM_RUSA_REGIONS[region],  # club.region for upsert
-            }
-            events.append(event)
-        
-        if events:
-            print(f"✅ Downloaded {len(events)} RUSA brevet events across the team's regions")
-        else:
-            print("⚠️  No RUSA ACP/RUSA brevet events found for the team's regions")
-
-        return events
-
-    except Exception as e:
-        print(f"❌ Error downloading RUSA events: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
+    return _get_rusa_events(fetch_rwgps=fetch_rwgps, region_filter=TEAM_RUSA_REGIONS)
 
 
 def get_davis_events():
     """Backward-compatible wrapper: the Davis subset of get_rusa_events()."""
     return [e for e in get_rusa_events() if e.get('region') == 'Davis']
-
-
-def get_rwgps_details(rwgps_url):
-    """Fetch distance and elevation from a RideWithGPS URL."""
-    try:
-        # Fetch the route page
-        req = Request(rwgps_url, headers={'User-Agent': 'Mozilla/5.0'})
-        response = urlopen(req, timeout=10)
-        html_content = response.read().decode('utf-8')
-        
-        # Parse distance and elevation from Open Graph meta tag
-        # Format: "125.4 mi, +7490 ft. Bike ride in..."
-        # The meta tag can have attributes in any order
-        og_desc_match = re.search(r'<meta[^>]+property=["\']og:description["\'][^>]*>', html_content)
-        
-        distance_miles = None
-        elevation_ft = None
-        description = None
-        
-        if og_desc_match:
-            # Extract the content attribute value from the meta tag
-            meta_tag = og_desc_match.group(0)
-            content_match = re.search(r'content=["\']([^"\']+)', meta_tag)
-            if content_match:
-                description = content_match.group(1)
-        
-        if description:
-            # Extract distance (e.g., "125.4 mi")
-            distance_match = re.search(r'([\d.]+)\s*mi', description)
-            if distance_match:
-                distance_miles = float(distance_match.group(1))
-            
-            # Extract elevation (e.g., "+7490 ft" or "+7,490 ft")
-            elevation_match = re.search(r'\+\s*([\d,]+)\s*ft', description)
-            if elevation_match:
-                elevation_str = elevation_match.group(1).replace(',', '')
-                elevation_ft = int(elevation_str)
-        
-        return distance_miles, elevation_ft
-        
-    except Exception as e:
-        print(f"  ⚠️  Could not fetch details from {rwgps_url}: {e}")
-        return None, None
 
 
 def get_scr_events():

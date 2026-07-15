@@ -416,3 +416,136 @@ def create_broker_handoff(*, ta_rider_id, strava_athlete_id, access_token,
          strava_token_expires_at, scope, handoff_ttl_seconds),
     )
     return code
+
+
+# --------------------------------------------------------------------------- #
+# Brevet calendar (rp_brevet_event) — a cache of upcoming RUSA brevets parsed by
+# shared/rusa_calendar.py, plus the rider-participation table (rp_event_signup).
+#
+# The national feed carries no start location/time, so those columns are NULL for
+# national-feed events; the calendar renders an honest placeholder and never
+# fabricates them. Every query below targets an rp_* table only.
+# --------------------------------------------------------------------------- #
+def get_events_cache_freshness():
+    """The newest ``scraped_at`` across cached events, or None when empty.
+
+    The calendar's cache-TTL check reads this: None (or a stale value) triggers a
+    re-scrape; a fresh value serves the cache without any HTTP.
+    """
+    row = db.query_one("SELECT MAX(scraped_at) AS latest FROM rp_brevet_event")
+    return row['latest'] if row else None
+
+
+def get_upcoming_events(state=None, limit=200):
+    """Upcoming brevets (date >= today), soonest first.
+
+    ``state`` optionally narrows to one US state by matching the RUSA region
+    label's ``"<STATE>: ..."`` prefix — an honest, documented narrowing a generic
+    multi-club app can do without Team Asha's hardcoded region->club map. None
+    returns every upcoming brevet (the general RUSA calendar).
+    """
+    like = (state + ': %') if state else None
+    return db.query(
+        "SELECT id, rusa_route_id, name, date, distance_km, region, ride_type, "
+        "       elevation_ft, rwgps_url, start_location, start_time, time_limit_hours "
+        "FROM rp_brevet_event "
+        "WHERE date >= CURRENT_DATE AND (%s::text IS NULL OR region ILIKE %s) "
+        "ORDER BY date ASC, distance_km ASC LIMIT %s",
+        (state, like, limit),
+    )
+
+
+def get_brevet_event(event_id):
+    """A single cached brevet by id (the sign-up existence gate)."""
+    return db.query_one(
+        "SELECT id, name, date, distance_km, region FROM rp_brevet_event WHERE id = %s",
+        (event_id,),
+    )
+
+
+def upsert_brevet_event(event):
+    """Insert or refresh one cached brevet, keyed on (date, name, distance_km).
+
+    Matches Team Asha's upsert shape: COALESCE the soft/enrichment fields so a
+    sparser repeat scrape never wipes richer data already cached for the same
+    brevet. ``event`` is a dict from shared.rusa_calendar.get_rusa_events.
+    """
+    existing = db.query_one(
+        "SELECT id FROM rp_brevet_event WHERE date = %s AND name = %s AND distance_km = %s",
+        (event['date'], event['name'], event['distance_km']),
+    )
+    if existing:
+        db.execute(
+            "UPDATE rp_brevet_event "
+            "SET rusa_route_id = COALESCE(%s, rusa_route_id), "
+            "    region = COALESCE(%s, region), "
+            "    ride_type = COALESCE(%s, ride_type), "
+            "    elevation_ft = COALESCE(%s, elevation_ft), "
+            "    rwgps_url = COALESCE(%s, rwgps_url), "
+            "    start_location = COALESCE(%s, start_location), "
+            "    start_time = COALESCE(%s, start_time), "
+            "    time_limit_hours = COALESCE(%s, time_limit_hours), "
+            "    scraped_at = NOW() "
+            "WHERE id = %s",
+            (event.get('route_id'), event.get('region'), event.get('ride_type'),
+             event.get('elevation_ft'), event.get('rwgps_url'),
+             event.get('start_location'), event.get('start_time'),
+             event.get('time_limit_hours'), existing['id']),
+        )
+    else:
+        db.execute(
+            "INSERT INTO rp_brevet_event "
+            "  (rusa_route_id, name, date, distance_km, region, ride_type, "
+            "   elevation_ft, rwgps_url, start_location, start_time, time_limit_hours) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (event.get('route_id'), event['name'], event['date'], event['distance_km'],
+             event.get('region'), event.get('ride_type'), event.get('elevation_ft'),
+             event.get('rwgps_url'), event.get('start_location'),
+             event.get('start_time'), event.get('time_limit_hours')),
+        )
+
+
+def get_rider_signup_statuses(rider_id):
+    """(event_id, status) for every one of THIS rider's sign-ups.
+
+    Used to annotate the calendar with the current rider's own status per event —
+    never another rider's, so the guest/other-rider surface stays PII-free.
+    """
+    return db.query(
+        "SELECT event_id, status FROM rp_event_signup WHERE rider_id = %s",
+        (rider_id,),
+    )
+
+
+def set_rider_signup(rider_id, event_id, status):
+    """Create or transition a rider's sign-up on an event (one row per pair)."""
+    existing = db.query_one(
+        "SELECT id FROM rp_event_signup WHERE rider_id = %s AND event_id = %s",
+        (rider_id, event_id),
+    )
+    if existing:
+        db.execute(
+            "UPDATE rp_event_signup SET status = %s, updated_at = NOW() WHERE id = %s",
+            (status, existing['id']),
+        )
+    else:
+        db.execute(
+            "INSERT INTO rp_event_signup (rider_id, event_id, status) "
+            "VALUES (%s, %s, %s)",
+            (rider_id, event_id, status),
+        )
+
+
+def get_rider_signups(rider_id):
+    """A rider's active upcoming sign-ups (interested/going) joined to the event,
+    soonest first — for the dashboard "My upcoming sign-ups" section. WITHDRAW
+    rows are excluded so a withdrawn brevet drops off the list."""
+    return db.query(
+        "SELECT s.event_id, s.status, e.name, e.date, e.distance_km, e.region, "
+        "       e.start_location, e.start_time "
+        "FROM rp_event_signup s "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "WHERE s.rider_id = %s AND s.status IN (%s, %s) AND e.date >= CURRENT_DATE "
+        "ORDER BY e.date ASC, e.distance_km ASC",
+        (rider_id, RideStatus.INTERESTED.value, RideStatus.GOING.value),
+    )
