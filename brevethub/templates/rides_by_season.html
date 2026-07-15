@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Rides by Season — {{ product_name }}{% endblock %}
+
+{% macro season_block(s) %}
+  <div class="season-totals">
+    <span>{{ s.summary.total_km }} km &middot; {{ s.summary.count }} ride{{ '' if s.summary.count == 1 else 's' }}</span>
+    <span class="muted">
+      200: {{ s.summary.bands['200'] }} &middot;
+      300: {{ s.summary.bands['300'] }} &middot;
+      400: {{ s.summary.bands['400'] }} &middot;
+      600: {{ s.summary.bands['600'] }} &middot;
+      1000: {{ s.summary.bands['1000'] }}
+    </span>
+    <span class="sr-progress">
+      SR:
+      {% if s.summary.is_sr %}
+        <span class="badge">complete</span>
+      {% else %}
+        {% for leg in [200, 300, 400, 600] %}
+          <span class="sr-leg {% if s.summary.legs[leg] %}done{% else %}todo{% endif %}">{{ leg }}</span>
+        {% endfor %}
+      {% endif %}
+    </span>
+  </div>
+  <table class="rusa-history">
+    <thead>
+      <tr><th>Date</th><th>Distance</th><th>Event</th><th>Time</th></tr>
+    </thead>
+    <tbody>
+      {% for b in s.brevets %}
+        <tr>
+          <td>{{ b.date }}</td>
+          <td>{{ b.distance_km }} km</td>
+          <td>
+            {{ b.route_name }}
+            {% if b.source == 'ride' %}<span class="badge badge-warn" title="Your own logged ride">logged</span>{% endif %}
+          </td>
+          <td>{{ b.finish_time }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endmacro %}
+
+{% block content %}
+<section class="card">
+  <h1>Rides by Season</h1>
+  <p class="muted">
+    Your brevets grouped by randonneuring season (Nov 1 – Oct 31), from your RUSA
+    history merged with any rides you've logged here.
+  </p>
+
+  {% if not seasons %}
+    {% if not rusa.has_id %}
+      <p class="muted">
+        Add your RUSA ID to see your brevet history grouped by season.
+      </p>
+      <p><a class="btn" href="{{ url_for('signup.signup') }}">Add a RUSA ID</a></p>
+    {% else %}
+      <p class="muted">
+        No brevets to show yet. Once you finish a brevet — or log a ride here — it
+        will appear under its season.
+      </p>
+    {% endif %}
+  {% endif %}
+</section>
+
+{% for s in seasons %}
+  {% if s.is_current %}
+    <section class="card season season-current" id="season-{{ s.season }}">
+      <h2>{{ s.season }} <span class="badge">current season</span></h2>
+      {{ season_block(s) }}
+    </section>
+  {% endif %}
+{% endfor %}
+
+{% set past = seasons | rejectattr('is_current') | list %}
+{% if past %}
+  <section class="card">
+    <h2>Past seasons</h2>
+    {% for s in past %}
+      <details class="season season-past" id="season-{{ s.season }}">
+        <summary>{{ s.season }} — {{ s.summary.total_km }} km, {{ s.summary.count }} ride{{ '' if s.summary.count == 1 else 's' }}{% if s.summary.is_sr %} &middot; SR{% endif %}</summary>
+        {{ season_block(s) }}
+      </details>
+    {% endfor %}
+  </section>
+{% endif %}
+{% endblock %}
