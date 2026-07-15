@@ -91,6 +91,19 @@ def landing():
     return render_template('landing.html')
 
 
+def load_signups(rider):
+    """The rider's upcoming brevet sign-ups (interested/going) for the dashboard.
+
+    Failure-tolerant like the RUSA/Strava sections: a DB hiccup returns [] and logs
+    a warning rather than 500-ing the whole dashboard over a secondary section.
+    """
+    try:
+        return models.get_rider_signups(rider['id'])
+    except Exception as e:
+        current_app.logger.warning('sign-up load failed for rider %s: %s', rider['id'], e)
+        return []
+
+
 @main_bp.route('/dashboard')
 @profile_required
 def dashboard():
@@ -98,8 +111,9 @@ def dashboard():
     club = models.get_club(rider['club_id']) if rider.get('club_id') else None
     rusa = load_rusa_section(rider)
     strava = load_strava_section(rider)
+    signups = load_signups(rider)
     return render_template('dashboard.html', rider=rider, club=club,
-                           rusa=rusa, strava=strava)
+                           rusa=rusa, strava=strava, signups=signups)
 
 
 @main_bp.route('/profile')

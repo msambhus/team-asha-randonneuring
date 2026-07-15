@@ -12,6 +12,10 @@ from io import BytesIO
 from unittest.mock import patch
 
 import scripts.update_rusa_events as scraper
+# The national-feed parser now lives in the shared engine; the scraper is a thin
+# importer. So the RUSA fetch is patched on shared.rusa_calendar (where urlopen
+# actually lives), while upsert_event stays in scripts.update_rusa_events.
+import shared.rusa_calendar as rusa_calendar
 
 
 # --- A minimal RUSA event-search table (the printer-friendly HTML shape) ------
@@ -37,7 +41,7 @@ def _fake_urlopen(*args, **kwargs):
 
 def test_get_rusa_events_keeps_team_brevets_only():
     """Team-region ACP/RUSA brevets are kept; populaires and other states drop."""
-    with patch.object(scraper, "urlopen", _fake_urlopen):
+    with patch.object(rusa_calendar, "urlopen", _fake_urlopen):
         events = scraper.get_rusa_events(fetch_rwgps=False)
 
     names = {e["name"] for e in events}
@@ -52,7 +56,7 @@ def test_get_rusa_events_keeps_team_brevets_only():
 
 def test_get_rusa_events_tags_club_region_and_fields():
     """Boonville is tagged with the SF club.region and parsed correctly."""
-    with patch.object(scraper, "urlopen", _fake_urlopen):
+    with patch.object(rusa_calendar, "urlopen", _fake_urlopen):
         events = scraper.get_rusa_events(fetch_rwgps=False)
 
     boonville = next(e for e in events if e["name"] == "Boonville Lollipop")
