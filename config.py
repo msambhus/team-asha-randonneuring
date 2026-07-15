@@ -72,6 +72,18 @@ class Config:
     STRAVA_API_BASE = 'https://www.strava.com/api/v3'
     STRAVA_SCOPE = 'activity:read_all'
 
+    # Shared Strava OAuth broker (BrevetHub hosts the Strava callback for both
+    # apps). When STRAVA_BROKER_ENABLED is on, /strava/connect signs a state with
+    # BROKER_HMAC_SECRET (shared, identical value on both Vercel projects) and
+    # redirects to STRAVA_BROKER_URL instead of straight to Strava; the tokens come
+    # back via a one-time handoff row consumed at /strava/broker-return. Off by
+    # default so the direct /strava/callback flow stays the rollback path.
+    BROKER_HMAC_SECRET = os.environ.get('BROKER_HMAC_SECRET')
+    STRAVA_BROKER_ENABLED = os.environ.get('STRAVA_BROKER_ENABLED', '').strip().lower() in ('1', 'true', 'yes', 'on')
+    STRAVA_BROKER_URL = os.environ.get('STRAVA_BROKER_URL', 'https://brevethub.vercel.app/strava/connect')
+    STRAVA_BROKER_ORIGIN = 'team-asha'   # origin token this app sends to the broker
+    BROKER_STATE_MAX_AGE = 600           # signed-state freshness window (seconds)
+
     # RideWithGPS API Configuration
     RWGPS_API_KEY = os.environ.get('RWGPS_API_KEY')
     RWGPS_AUTH_TOKEN = os.environ.get('RWGPS_AUTH_TOKEN')
