@@ -37,12 +37,14 @@ def create_app():
     from brevethub.routes.signup import signup_bp
     from brevethub.routes.clubs import clubs_bp
     from brevethub.routes.strava import strava_bp
+    from brevethub.routes.live import live_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(signup_bp, url_prefix='/signup')
     app.register_blueprint(clubs_bp)
     app.register_blueprint(strava_bp, url_prefix='/strava')
+    app.register_blueprint(live_bp)
 
     @app.context_processor
     def inject_branding():
