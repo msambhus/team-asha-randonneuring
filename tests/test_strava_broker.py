@@ -185,8 +185,13 @@ def test_consume_query_gates_on_handoff_expiry_column():
     import inspect
     import models
     src = inspect.getsource(models.consume_strava_broker_handoff)
-    where = src[src.index('WHERE'):src.index('RETURNING')]
-    assert 'handoff_expires_at' in where, "consume gate must read handoff_expires_at"
+    # Isolate the WHERE...RETURNING of the actual SQL. The docstring also mentions
+    # "DELETE ... RETURNING", so slice from WHERE to the RETURNING that follows it
+    # (not the first RETURNING, which is in the docstring).
+    w = src.index('WHERE')
+    where = src[w:src.index('RETURNING', w)]
+    assert 'handoff_expires_at > NOW()' in where, (
+        "consume gate must read the short handoff_expires_at TTL column")
     assert 'strava_token_expires_at' not in where, (
         "consume gate must NOT read the Strava-token column (would extend the TTL to ~6h)"
     )
