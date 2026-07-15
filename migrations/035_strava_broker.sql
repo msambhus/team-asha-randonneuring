@@ -47,11 +47,18 @@ CREATE INDEX IF NOT EXISTS rp_strava_broker_handoff_expires_idx
 -- --------------------------------------------------------------------------- --
 -- rp_strava_broker_state — the durable single-use claim store (replay guard).
 --
--- On a Team Asha /connect, BrevetHub does INSERT ... ON CONFLICT (nonce) DO
--- NOTHING RETURNING nonce: a returned row is first-use (proceed); zero rows means
--- the nonce was already claimed → hard reject as a replay, BEFORE any Strava
--- redirect. This is what makes signed-state single-use enforceable across
--- stateless serverless invocations (an HMAC + TTL check alone cannot).
+-- The nonce has a TWO-PHASE lifecycle so a signed state is single-use END TO END,
+-- not just at the first hop:
+--   1. /connect (TA origin): INSERT ... ON CONFLICT (nonce) DO NOTHING RETURNING
+--      nonce — a returned row is first-use (proceed); zero rows means the nonce was
+--      already claimed → hard reject as a replay, BEFORE any Strava redirect.
+--   2. /callback (TA origin): UPDATE ... SET consumed_at = NOW() WHERE nonce = %s
+--      AND consumed_at IS NULL RETURNING nonce — a returned row proves the state
+--      was claimed at /connect and not yet consumed. Zero rows means the state
+--      skipped /connect (a direct-to-Strava bypass) or is being replayed through
+--      /callback → hard reject BEFORE any token exchange or handoff.
+-- Without phase 2 an HMAC+TTL-valid state could mint a handoff without ever
+-- passing the durable claim; consumed_at closes that gap.
 --
 -- state_expires_at exists only for opportunistic cleanup of old claims; it is not
 -- part of any security gate. BrevetHub is the sole reader/writer; Team Asha never
@@ -60,6 +67,7 @@ CREATE INDEX IF NOT EXISTS rp_strava_broker_handoff_expires_idx
 CREATE TABLE IF NOT EXISTS rp_strava_broker_state (
     nonce             TEXT PRIMARY KEY,
     state_expires_at  TIMESTAMPTZ NOT NULL,
+    consumed_at       TIMESTAMPTZ,               -- set once at /callback; NULL = claimed but unused
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

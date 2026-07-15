@@ -247,12 +247,14 @@ def delete_strava_connection(rider_id):
 # holds.
 # --------------------------------------------------------------------------- #
 def claim_broker_state(nonce, *, state_ttl_seconds=600):
-    """Atomically claim a broker-state nonce for single use.
+    """Phase 1 (at /connect): atomically claim a broker-state nonce for single use.
 
     Returns the claim row on first use, or ``None`` if the nonce was already
     claimed — the durable replay guard that makes a signed state single-use across
     stateless serverless invocations (an HMAC + TTL check alone cannot). The
-    caller hard-rejects the connect when this returns ``None``.
+    caller hard-rejects the connect when this returns ``None``. The claim is left
+    unconsumed (``consumed_at IS NULL``) until :func:`consume_broker_state` marks
+    it at the matching /callback.
     """
     return db.execute(
         "INSERT INTO rp_strava_broker_state (nonce, state_expires_at) "
@@ -260,6 +262,25 @@ def claim_broker_state(nonce, *, state_ttl_seconds=600):
         "ON CONFLICT (nonce) DO NOTHING "
         "RETURNING nonce",
         (nonce, state_ttl_seconds),
+        returning=True,
+    )
+
+
+def consume_broker_state(nonce):
+    """Phase 2 (at /callback): atomically consume a previously-claimed nonce.
+
+    Returns the row only if the nonce was claimed at /connect AND has not already
+    been consumed by an earlier callback. ``None`` means the state either skipped
+    /connect entirely (a direct-to-Strava bypass that never passed the claim) or is
+    being replayed through /callback — either way the caller hard-rejects before any
+    token exchange or handoff. This is what makes the single-use guarantee hold end
+    to end, not just at the first hop.
+    """
+    return db.execute(
+        "UPDATE rp_strava_broker_state SET consumed_at = NOW() "
+        "WHERE nonce = %s AND consumed_at IS NULL "
+        "RETURNING nonce",
+        (nonce,),
         returning=True,
     )
 

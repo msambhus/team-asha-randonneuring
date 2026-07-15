@@ -34,6 +34,26 @@ def test_claim_returns_none_for_duplicate_nonce():
         assert models.claim_broker_state('dup', state_ttl_seconds=600) is None
 
 
+def test_consume_uses_unconsumed_guard_and_returning():
+    src = inspect.getsource(models.consume_broker_state)
+    assert 'UPDATE rp_strava_broker_state' in src
+    assert 'consumed_at = NOW()' in src
+    assert 'consumed_at IS NULL' in src   # only a claimed, not-yet-used nonce consumes
+    assert 'RETURNING nonce' in src
+
+
+def test_consume_returns_row_when_claimed_and_unused():
+    with patch('brevethub.models.db.execute', return_value={'nonce': 'n1'}) as mock_exec:
+        assert models.consume_broker_state('n1') == {'nonce': 'n1'}
+    assert mock_exec.call_args.kwargs.get('returning') is True
+
+
+def test_consume_returns_none_when_unclaimed_or_already_used():
+    """No matching unconsumed row → None → the route hard-rejects (bypass/replay)."""
+    with patch('brevethub.models.db.execute', return_value=None):
+        assert models.consume_broker_state('never-claimed') is None
+
+
 def test_create_broker_handoff_returns_opaque_code_and_stores_via_to_timestamp():
     with patch('brevethub.models.db.execute') as mock_exec:
         code = models.create_broker_handoff(

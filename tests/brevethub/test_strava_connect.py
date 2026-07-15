@@ -303,7 +303,8 @@ def test_broker_connect_unknown_origin_rejected(client):
 def test_broker_callback_stores_handoff_and_bounces_with_code_only(client):
     _configure_broker(client)
     state = _ta_state(client, nonce='cb-1')
-    with patch('brevethub.routes.strava.exchange_code_for_token', return_value=_TOKENS), \
+    with patch('brevethub.models.consume_broker_state', return_value={'nonce': 'cb-1'}), \
+         patch('brevethub.routes.strava.exchange_code_for_token', return_value=_TOKENS), \
          patch('brevethub.models.create_broker_handoff', return_value='HANDOFF-XYZ') as mock_handoff, \
          patch('brevethub.models.upsert_strava_connection') as mock_upsert:
         resp = client.get(f'/strava/callback?code=abc&state={state}&scope=activity:read_all')
@@ -321,10 +322,44 @@ def test_broker_callback_stores_handoff_and_bounces_with_code_only(client):
     mock_upsert.assert_not_called()
 
 
+def test_broker_callback_unclaimed_state_hard_rejects_no_exchange(client):
+    """A valid signed state that skipped /connect (direct-to-Strava bypass) has no
+    consumable claim: consume_broker_state -> None -> hard reject BEFORE any token
+    exchange or handoff. Without the phase-2 consume this would mint a handoff."""
+    _configure_broker(client)
+    state = _ta_state(client, nonce='never-claimed')
+    with patch('brevethub.models.consume_broker_state', return_value=None) as mock_consume, \
+         patch('brevethub.routes.strava.exchange_code_for_token') as mock_exch, \
+         patch('brevethub.models.create_broker_handoff') as mock_handoff:
+        resp = client.get(f'/strava/callback?code=abc&state={state}')
+    assert resp.status_code == 409
+    mock_consume.assert_called_once()
+    assert mock_consume.call_args.args[0] == 'never-claimed'
+    mock_exch.assert_not_called()
+    mock_handoff.assert_not_called()
+
+
+def test_broker_callback_replayed_state_hard_rejects_second_time(client):
+    """The SAME signed state through /callback twice: consume returns the row once
+    (claimed + unused), then None (already consumed) -> the second mints nothing."""
+    _configure_broker(client)
+    state = _ta_state(client, nonce='cb-replay')
+    with patch('brevethub.models.consume_broker_state',
+               side_effect=[{'nonce': 'cb-replay'}, None]), \
+         patch('brevethub.routes.strava.exchange_code_for_token', return_value=_TOKENS), \
+         patch('brevethub.models.create_broker_handoff', return_value='H1') as mock_handoff:
+        first = client.get(f'/strava/callback?code=abc&state={state}&scope=activity:read_all')
+        second = client.get(f'/strava/callback?code=abc&state={state}&scope=activity:read_all')
+    assert first.status_code == 302
+    assert second.status_code == 409
+    assert mock_handoff.call_count == 1       # only the first, claimed callback mints a handoff
+
+
 def test_broker_callback_denied_bounces_with_neutral_error_no_exchange(client):
     _configure_broker(client)
     state = _ta_state(client, nonce='cb-deny')
-    with patch('brevethub.routes.strava.exchange_code_for_token') as mock_exch, \
+    with patch('brevethub.models.consume_broker_state', return_value={'nonce': 'cb-deny'}), \
+         patch('brevethub.routes.strava.exchange_code_for_token') as mock_exch, \
          patch('brevethub.models.create_broker_handoff') as mock_handoff:
         resp = client.get(f'/strava/callback?error=access_denied&state={state}')
     assert resp.status_code == 302
@@ -338,9 +373,11 @@ def test_broker_callback_denied_bounces_with_neutral_error_no_exchange(client):
 def test_broker_callback_disallowed_return_url_hard_rejects(client):
     _configure_broker(client)
     evil = _ta_state(client, return_url='https://evil.example.com/x')
-    with patch('brevethub.routes.strava.exchange_code_for_token') as mock_exch:
+    with patch('brevethub.models.consume_broker_state') as mock_consume, \
+         patch('brevethub.routes.strava.exchange_code_for_token') as mock_exch:
         resp = client.get(f'/strava/callback?code=abc&state={evil}')
     assert resp.status_code == 400          # never bounce to a non-allowlisted host
+    mock_consume.assert_not_called()        # allowlist guard runs before the consume
     mock_exch.assert_not_called()
 
 

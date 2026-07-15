@@ -52,6 +52,13 @@ def test_state_table_is_nonce_keyed():
     assert re.search(r'nonce\s+TEXT\s+PRIMARY\s+KEY', sql, re.IGNORECASE)
 
 
+def test_state_table_has_consumed_at_for_two_phase_single_use():
+    """The nonce is claimed at /connect and consumed at /callback; consumed_at is
+    what makes the state single-use end to end (not just at the first hop)."""
+    sql = _sql()
+    assert re.search(r'consumed_at\s+TIMESTAMPTZ', sql, re.IGNORECASE)
+
+
 def test_migration_defines_only_rp_tables():
     sql = _sql()
     patterns = [

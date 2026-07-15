@@ -245,6 +245,14 @@ def _broker_callback(payload):
         current_app.logger.warning('Strava broker callback: state missing ta_rider_id')
         return _broker_return_redirect(return_url, error='connect_failed')
 
+    # Enforce the durable single-use claim made at /connect. A signed state that
+    # skipped /connect (a direct-to-Strava bypass) or is being replayed through
+    # /callback has no consumable claim → hard reject before any token exchange.
+    # This runs for EVERY terminal path (including denial) so the nonce burns once.
+    if models.consume_broker_state(payload['nonce']) is None:
+        current_app.logger.warning('Strava broker callback: state not claimed or already used')
+        abort(409)
+
     error = request.args.get('error')
     if error:
         current_app.logger.info('Strava broker callback: authorization denied/aborted')
