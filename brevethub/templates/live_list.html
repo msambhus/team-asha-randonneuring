@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Live rides — {{ product_name }}{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Live rides</h1>
+  <p class="muted">
+    Rides that riders have opted into public tracking. Open one to follow along on
+    the map — no account needed.
+  </p>
+
+  {% if rides %}
+    <table class="live-rides">
+      <thead>
+        <tr><th>Ride</th><th>Club</th><th>Distance</th><th>Start</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for ride in rides %}
+          <tr>
+            <td><a href="{{ url_for('live.live_map', ride_id=ride.id) }}">{{ ride.name }}</a></td>
+            <td>{{ ride.club_name or '—' }}</td>
+            <td>{% if ride.distance_km %}{{ ride.distance_km }} km{% else %}—{% endif %}</td>
+            <td>{% if ride.start_at %}{{ ride.start_at.strftime('%Y-%m-%d %H:%M') }}{% else %}—{% endif %}</td>
+            <td>{{ ride.status or '—' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No public rides right now. Check back when a ride goes live.</p>
+  {% endif %}
+
+  {% if session.get('rider_id') %}
+    <p><a class="btn" href="{{ url_for('live.live_new') }}">Share a live ride</a></p>
+  {% endif %}
+</section>
+{% endblock %}
