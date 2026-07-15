@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 _RIDER = {'id': 7, 'email': 'r@example.com', 'google_id': 'g-1',
-          'profile_completed': True, 'rusa_id': '12345', 'club_id': None,
+          'profile_completed': True, 'rusa_id': '12345', 'club_id': 1,
           'rusa_id_duplicate': False, 'created_at': datetime(2024, 3, 1, tzinfo=timezone.utc)}
 _RIDER_NO_RUSA = {**_RIDER, 'rusa_id': None}
 
