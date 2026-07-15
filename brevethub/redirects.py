@@ -30,3 +30,22 @@ def safe_redirect(url, fallback_endpoint):
     if is_safe_relative_url(url):
         return redirect(url)
     return redirect(url_for(fallback_endpoint))
+
+
+def is_allowed_broker_return_url(url, allowed_origins):
+    """True only for an absolute URL whose ``scheme://host[:port]`` origin exactly
+    matches one in ``allowed_origins``.
+
+    This guards the shared Strava broker's cross-app bounce: BrevetHub must only
+    ever 302 a Team-Asha flow back to a Team-Asha (or its own) origin, never to an
+    attacker-chosen host. Backslashes are normalized first (some browsers read
+    ``https:/\\evil.com`` as a host), and a relative or scheme-less URL has no
+    origin so it can never match an allowlisted absolute origin.
+    """
+    if not url or not allowed_origins:
+        return False
+    parsed = urlparse(url.replace('\\', '/'))
+    if not parsed.scheme or not parsed.netloc:
+        return False
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    return origin in allowed_origins

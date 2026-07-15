@@ -53,6 +53,27 @@ class Config:
     STRAVA_API_BASE = 'https://www.strava.com/api/v3'
     STRAVA_SCOPE = 'activity:read_all'
 
+    # Shared Strava OAuth broker. BrevetHub hosts the Strava callback for both
+    # apps: /strava/connect accepts either a logged-in BrevetHub rider (unchanged)
+    # or a signed Team-Asha origin, and /strava/callback routes tokens to
+    # rp_strava_connection (BrevetHub rider) or to a one-time rp_strava_broker_handoff
+    # row + 302 back to Team Asha (broker origin). BROKER_HMAC_SECRET must be the
+    # SAME value set on the Team Asha Vercel project.
+    BROKER_HMAC_SECRET = os.environ.get('BROKER_HMAC_SECRET')
+    BROKER_STATE_MAX_AGE = 600           # signed-state freshness window (seconds)
+    BROKER_HANDOFF_TTL = 300             # one-time handoff-code lifetime (seconds)
+    # Origins allowed to broker a Strava connect through BrevetHub.
+    BROKER_TEAM_ASHA_ORIGIN = 'team-asha'
+    # Absolute return-URL allowlist (scheme://host) for the open-redirect guard —
+    # only Team Asha's and BrevetHub's own origins. Overridable via env
+    # (comma-separated) for preview deploys / custom domains.
+    BROKER_RETURN_URL_ALLOWLIST = [
+        o.strip() for o in os.environ.get(
+            'BROKER_RETURN_URL_ALLOWLIST',
+            'https://team-asha-randonneuring.vercel.app,https://brevethub.vercel.app',
+        ).split(',') if o.strip()
+    ]
+
     # Session security — HTTPS-only cookies in production, 30-day persistent login.
     SESSION_COOKIE_SECURE = _IS_PRODUCTION
     SESSION_COOKIE_HTTPONLY = True
