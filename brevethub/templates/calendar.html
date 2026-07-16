@@ -70,13 +70,16 @@
                   {% endif %}
                 </h2>
 
-                {% if ev.rwgps_url %}
-                  <div class="event-links">
+                <div class="event-links">
+                  <a class="event-link-btn" href="{{ url_for('plan.plan_view', event_id=ev.id) }}">
+                    Plan
+                  </a>
+                  {% if ev.rwgps_url %}
                     <a class="event-link-btn" href="{{ ev.rwgps_url }}" rel="noopener" target="_blank">
                       Route map
                     </a>
-                  </div>
-                {% endif %}
+                  {% endif %}
+                </div>
 
                 <div class="event-details-info">
                   {% if ev.ride_type %}<span>{{ ev.ride_type }}</span>{% endif %}
