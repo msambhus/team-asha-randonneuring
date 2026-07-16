@@ -712,14 +712,25 @@ def get_ride_analysis(rider_id, strava_activity_id):
     )
 
 
+def get_analyzed_activity_ids(rider_id):
+    """The set of the rider's Strava activity ids that already have a cached
+    analysis — lets the list view mark which activities are analyzed without an
+    N+1 query. Rider-scoped, so it never reveals another rider's activity ids."""
+    rows = db.query(
+        "SELECT strava_activity_id FROM rp_ride_analysis WHERE rider_id = %s",
+        (rider_id,),
+    )
+    return {row['strava_activity_id'] for row in rows}
+
+
 def upsert_ride_analysis(rider_id, strava_activity_id, analysis,
                          compressed_streams=None):
     """Create or replace the rider's cached analysis for one activity.
 
-    A single atomic INSERT ... ON CONFLICT ... DO UPDATE keyed on the
-    UNIQUE(rider_id, strava_activity_id) constraint, so re-analyzing an already
-    cached activity refreshes the row in place (idempotent) instead of raising a
-    unique-violation. ``analysis`` is the SERVER-computed breakdown (JSON-adapted
+    A single atomic upsert on the UNIQUE(rider_id, strava_activity_id) constraint,
+    so re-analyzing an already cached activity refreshes the row in place
+    (idempotent) instead of raising a unique-violation. ``analysis`` is the
+    SERVER-computed breakdown (JSON-adapted
     with psycopg2's ``Json``); ``compressed_streams`` is the zlib-compressed raw
     streams (wrapped with ``Binary`` for the BYTEA column) so the detail/map view
     re-renders without another Strava fetch.

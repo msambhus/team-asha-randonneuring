@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Ride analysis — {{ product_name }}{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Ride analysis</h1>
+  <p class="muted">
+    Pick one of your recent Strava rides for a detailed breakdown — stops, per-leg
+    pace and effort, and a map. Analyzing a ride fetches its data from Strava once,
+    then every later view is served from your saved analysis.
+  </p>
+
+  {% if not connected %}
+    <p class="muted">Connect Strava to analyze your rides.</p>
+    <p><a class="btn" href="{{ url_for('strava.connect') }}">Connect Strava</a></p>
+  {% else %}
+    {% if error %}
+      <p class="flash flash-warning">{{ error }}</p>
+    {% endif %}
+
+    {% if activities %}
+      <table class="analysis-list">
+        <thead>
+          <tr>
+            <th>Date</th><th>Ride</th><th>Distance</th><th>Elevation</th>
+            <th>Moving time</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in activities %}
+            <tr>
+              <td>{{ a.date }}</td>
+              <td>
+                <a href="{{ url_for('analysis.analysis_detail', activity_id=a.id) }}">{{ a.name }}</a>
+              </td>
+              <td>{{ a.distance_km }} km</td>
+              <td>{{ a.elevation_ft }} ft</td>
+              <td>{{ a.moving_time }}</td>
+              <td>
+                {% if a.analyzed %}
+                  <a class="btn btn-secondary"
+                     href="{{ url_for('analysis.analysis_detail', activity_id=a.id) }}">View analysis</a>
+                {% else %}
+                  <form method="post"
+                        action="{{ url_for('analysis.compute', activity_id=a.id) }}">
+                    <button class="btn" type="submit">Analyze</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% elif not error %}
+      <p class="muted">No recent Strava rides found to analyze.</p>
+    {% endif %}
+  {% endif %}
+
+  <p class="muted"><a href="{{ url_for('main.dashboard') }}">← Back to dashboard</a></p>
+</section>
+{% endblock %}

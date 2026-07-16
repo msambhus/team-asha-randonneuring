@@ -119,3 +119,43 @@ def test_deauthorize_is_best_effort():
     with patch('shared.strava.requests.post', side_effect=Exception('boom')):
         # must not raise
         strava.deauthorize_strava('tok')
+
+
+# --------------------------------------------------------------------------- #
+# fetch_activity_streams — the single-activity stream fetch M9 adds. It parses
+# Strava's [{type, data}, …] list into {type: data}, sends the bearer + keys, and
+# raises on a 429 or any non-OK response (so a private/404 activity never returns
+# partial data). All HTTP mocked.
+# --------------------------------------------------------------------------- #
+def test_fetch_activity_streams_parses_list_to_dict():
+    raw = [
+        {'type': 'time', 'data': [0, 1, 2]},
+        {'type': 'distance', 'data': [0, 10, 20]},
+        {'type': 'latlng', 'data': [[37.0, -122.0], [37.1, -122.1]]},
+    ]
+    with patch('shared.strava.requests.get', return_value=_resp(raw)) as mock_get:
+        streams = strava.fetch_activity_streams(
+            'tok', 987654321987, api_base='https://api')
+    assert streams == {'time': [0, 1, 2], 'distance': [0, 10, 20],
+                       'latlng': [[37.0, -122.0], [37.1, -122.1]]}
+    call = mock_get.call_args
+    assert call.args[0] == 'https://api/activities/987654321987/streams'
+    assert call.kwargs['headers']['Authorization'] == 'Bearer tok'
+    assert 'velocity_smooth' in call.kwargs['params']['keys']  # full analysis key set
+    assert call.kwargs['params']['key_type'] == 'time'
+
+
+def test_fetch_activity_streams_raises_on_rate_limit():
+    with patch('shared.strava.requests.get', return_value=_resp([], status_code=429)):
+        with pytest.raises(Exception) as exc:
+            strava.fetch_activity_streams('tok', 1, api_base='https://api')
+    assert 'rate limit' in str(exc.value).lower()
+
+
+def test_fetch_activity_streams_raises_on_http_error():
+    # A private/missing activity (404) must raise via raise_for_status, never return
+    # partial data.
+    with patch('shared.strava.requests.get',
+               return_value=_resp([], status_code=404, ok=False)):
+        with pytest.raises(Exception):
+            strava.fetch_activity_streams('tok', 1, api_base='https://api')

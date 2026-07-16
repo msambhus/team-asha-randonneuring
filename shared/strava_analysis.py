@@ -14,7 +14,7 @@ cohort/brevet overlays, the Strava HTTP fetch) stay in ``services/strava_analysi
 is only the reusable engine.
 
 ``tests/brevethub/test_shared_isolation.py`` fails the build if this module ever
-imports a Team Asha module or reaches for Flask's ``current_app``.
+imports a Team Asha module or reaches for a Flask application global.
 """
 
 import bisect
