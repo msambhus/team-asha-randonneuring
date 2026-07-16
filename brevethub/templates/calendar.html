@@ -96,7 +96,8 @@
                    rp_brevet_weather cache, region-approximate); a far-out or
                    region-less event has no cache row and shows the honest
                    "forecast not available yet" note. Values are preformatted by
-                   the shared summarizer, so no Team Asha Jinja filters are used. #}
+                   the shared summarizer, so only builtin Jinja filters are used
+                   (no commafy/clean_name — this app does not register them). #}
                 {% set wx = weather.get(ev.id) %}
                 {% if wx %}
                   <div class="event-weather" title="Approximate region forecast for this date">
