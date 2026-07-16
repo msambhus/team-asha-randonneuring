@@ -497,3 +497,180 @@ def _fmt_seconds(s):
     h = int(s // 3600)
     m = int((s % 3600) // 60)
     return f'{h}h {m:02d}m'
+
+
+# ── Per-segment metric computation (plan-free) ─────────────────────────
+#
+# The metric math a per-leg breakdown needs, as standalone pure functions over
+# index-aligned streams and a precomputed miles-per-index array. These mirror the
+# formulas Team Asha's plan-coupled ``build_comparison`` uses internally, but are
+# plan-free so any inter-stop leg (BrevetHub's segments) can be measured the same
+# way. Each returns ``None`` when the backing stream is absent or too short.
+
+def _avg_stream_in_range(stream, dist_mi, start_mi, end_mi):
+    """Average the positive samples of a stream (HR/watts/cadence) over a mile range."""
+    if not stream or not dist_mi or len(stream) != len(dist_mi):
+        return None
+    vals = [stream[i] for i in range(len(dist_mi))
+            if start_mi <= dist_mi[i] <= end_mi and stream[i] is not None and stream[i] > 0]
+    return round(sum(vals) / len(vals)) if vals else None
+
+
+def _avg_grade_in_range(grade_stream, dist_mi, start_mi, end_mi):
+    """Average (signed) grade percent over a mile range — keeps negatives (descents)."""
+    if not grade_stream or not dist_mi or len(grade_stream) != len(dist_mi):
+        return None
+    vals = [grade_stream[i] for i in range(len(dist_mi))
+            if start_mi <= dist_mi[i] <= end_mi and grade_stream[i] is not None]
+    return round(sum(vals) / len(vals), 1) if vals else None
+
+
+def _elev_gain_in_range(altitude_stream, dist_mi, start_mi, end_mi):
+    """Sum of positive altitude deltas (feet) — the climbing done over a mile range."""
+    if not altitude_stream or not dist_mi or len(altitude_stream) != len(dist_mi):
+        return None
+    idx = [i for i in range(len(dist_mi)) if start_mi <= dist_mi[i] <= end_mi]
+    if len(idx) < 2:
+        return None
+    gain_m = 0.0
+    for a, b in zip(idx, idx[1:]):
+        d = altitude_stream[b] - altitude_stream[a]
+        if d and d > 0:
+            gain_m += d
+    return round(gain_m * 3.28084)
+
+
+def _normalized_power_in_range(watts_stream, dist_mi, start_mi, end_mi):
+    """Approximate normalized power (W) over a mile range: 4th-root of the mean of
+    30-sample rolling-average power^4. Needs >=30 power samples in the range."""
+    if not watts_stream or not dist_mi or len(watts_stream) != len(dist_mi):
+        return None
+    seg = [watts_stream[i] for i in range(len(dist_mi))
+           if start_mi <= dist_mi[i] <= end_mi and watts_stream[i] is not None]
+    if len(seg) < 30:
+        return None
+    from collections import deque
+    window, run, q, rolling = 30, 0.0, deque(), []
+    for w in seg:
+        q.append(w); run += w
+        if len(q) > window:
+            run -= q.popleft()
+        if len(q) == window:
+            rolling.append(run / window)
+    if not rolling:
+        return None
+    return round((sum(p ** 4 for p in rolling) / len(rolling)) ** 0.25)
+
+
+def build_activity_analysis(streams, activity=None):
+    """Compute a plan-free per-ride breakdown from decoded Strava streams.
+
+    Reuses the shared engine end-to-end: ``detect_stops`` for the stop list, the
+    distance→time interpolator for per-leg riding time, ``_build_stream_summary``
+    for the ride summary, the per-segment metric helpers for each leg's
+    HR/cadence/power/NP/climb/gradient, and ``build_map_data`` for the GPS map. The
+    ride is partitioned into inter-stop LEGS (the boundaries are 0, each detected
+    stop's distance, and the total) — no plan data is required, so this works for any
+    activity a rider connects.
+
+    All values are imperial internally (miles / feet / mph / rpm / watts) exactly as
+    the engine produces them; the caller converts at its display boundary. Returns a
+    JSON-safe dict::
+
+        {'summary': {...}, 'stops': [...], 'segments': [...], 'map': {...}|None}
+
+    ``activity`` is an optional Strava activity-summary dict; when given, its elapsed
+    /moving/elevation totals enrich the summary (otherwise the summary is derived
+    from the streams alone). Returns a minimal, safe payload when the streams lack
+    the distance/time backbone.
+    """
+    stops = detect_stops(streams or {})
+    summary = _build_stream_summary(streams or {})
+
+    distance_m = (streams or {}).get('distance') or []
+    time_s = (streams or {}).get('time') or []
+    dist_mi = ([d / METERS_PER_MILE for d in distance_m]
+               if distance_m and time_s and len(distance_m) == len(time_s) else None)
+
+    hr = (streams or {}).get('heartrate') or []
+    watts = (streams or {}).get('watts') or []
+    cadence = (streams or {}).get('cadence') or []
+    altitude = (streams or {}).get('altitude') or []
+    grade = (streams or {}).get('grade_smooth') or []
+
+    segments = []
+    if dist_mi and len(dist_mi) >= 2 and time_s:
+        total_mi = dist_mi[-1]
+        total_s = time_s[-1]
+
+        # Build inter-stop LEGS from each stop's exact TIME boundary (start_time_s +
+        # duration_s), never from distance interpolation. A stop holds the ride at a
+        # constant distance, so interpolating time at the stop's (rounded) mile marker
+        # is ambiguous — it can land on either edge of the plateau and leak the dwell
+        # into the next leg. Using clock time makes each leg's riding time exact and
+        # counts every stop's dwell exactly zero times toward any leg.
+        legs = []          # (start_mi, end_mi, start_time_s, end_time_s)
+        prev_end_s = 0.0
+        prev_mi = 0.0
+        for s in sorted(stops, key=lambda x: (x.get('start_time_s') is None,
+                                              x.get('start_time_s') or 0)):
+            st = s.get('start_time_s')
+            if st is None:
+                continue
+            d = s.get('distance_miles')
+            end_mi = float(d) if d is not None else prev_mi
+            legs.append((prev_mi, end_mi, prev_end_s, st))
+            prev_end_s = st + (s.get('duration_s') or 0)
+            prev_mi = end_mi
+        legs.append((prev_mi, total_mi, prev_end_s, total_s))
+
+        for a, b, t0, t1 in legs:
+            seg_dist = round(b - a, 2)
+            if seg_dist <= 0:
+                continue  # two stops at the same mile — no rideable leg between them
+            riding_min = round(max(0.0, (t1 - t0) / 60.0), 1)
+            speed_mph = (round(seg_dist / (riding_min / 60), 1)
+                         if riding_min > 0 else None)
+            elev = _elev_gain_in_range(altitude, dist_mi, a, b)
+            segments.append({
+                'start_mi': round(a, 1),
+                'end_mi': round(b, 1),
+                'distance_mi': seg_dist,
+                'riding_min': riding_min,
+                'speed_mph': speed_mph,
+                'avg_hr': _avg_stream_in_range(hr, dist_mi, a, b),
+                'avg_watts': _avg_stream_in_range(watts, dist_mi, a, b),
+                'avg_cadence': _avg_stream_in_range(cadence, dist_mi, a, b),
+                'np_watts': _normalized_power_in_range(watts, dist_mi, a, b),
+                'elev_gain_ft': elev,
+                'grade_pct': _avg_grade_in_range(grade, dist_mi, a, b),
+                'climb_ft_per_mi': (round(elev / seg_dist)
+                                    if elev is not None and seg_dist > 0 else None),
+            })
+
+    if activity:
+        elapsed_s = activity.get('elapsed_time') or 0
+        moving_s = activity.get('moving_time') or 0
+        summary['elapsed_time_s'] = elapsed_s
+        summary['moving_time_s'] = moving_s
+        summary['stopped_time_s'] = max(0, elapsed_s - moving_s)
+        if activity.get('total_elevation_gain') is not None:
+            summary['total_elevation_ft'] = round(activity['total_elevation_gain'] * 3.28084)
+        if activity.get('average_speed'):
+            summary['avg_speed_mph'] = round(activity['average_speed'] * 2.23694, 1)
+        if activity.get('name'):
+            summary['name'] = activity['name']
+
+    # A comparison-shaped view of the legs lets build_map_data colour each segment
+    # by its actual speed — genuine reuse of the plan-vs-actual map builder.
+    map_rows = [{'location': f"Leg {i + 1}", 'is_extra': False,
+                 'distance_miles': seg['end_mi'], 'actual_speed_mph': seg['speed_mph']}
+                for i, seg in enumerate(segments)]
+    ride_map = build_map_data(streams or {}, {'rows': map_rows}, stops)
+
+    return {
+        'summary': summary,
+        'stops': stops,
+        'segments': segments,
+        'map': ride_map,
+    }
