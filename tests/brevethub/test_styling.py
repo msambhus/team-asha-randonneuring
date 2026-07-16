@@ -7,7 +7,14 @@ Two guards, both DB-free / network-free per the established BrevetHub test patte
    the regression guard that the three feature pages bolted on during M8–M9 (plan,
    analysis, live-map) never render as raw, unstyled HTML again.
 
-2. **Render-path contract** — each key page returns 200, links ``style.css``, and
+2. **Static missing-filter guard** — a dependency-free scan (pure stdlib, no
+   jinja2/flask needed) that every ``| filter`` used in a BrevetHub template is a
+   Jinja builtin or a BrevetHub-registered filter. BrevetHub does NOT inherit Team
+   Asha's ``commafy``/``clean_name`` filters, so any such usage would 500 at render.
+   It needs no flask/jinja2 render, so it's the durable static counterpart to the
+   render tests below (which do).
+
+3. **Render-path contract** — each key page returns 200, links ``style.css``, and
    contains its expected component class(es) in the rendered markup. A render (not
    a Jinja parse check) is the only thing that catches a missing-filter 500, so the
    plan/analysis/live pages are exercised through the real client with mocked models.
@@ -20,7 +27,9 @@ from unittest.mock import patch
 import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-STYLE_CSS = os.path.join(REPO_ROOT, 'brevethub', 'static', 'style.css')
+BREVETHUB_DIR = os.path.join(REPO_ROOT, 'brevethub')
+STYLE_CSS = os.path.join(BREVETHUB_DIR, 'static', 'style.css')
+TEMPLATES_DIR = os.path.join(BREVETHUB_DIR, 'templates')
 
 
 _RIDER = {'id': 7, 'email': 'rider@example.com', 'google_id': 'g-1',
@@ -106,7 +115,67 @@ def test_root_tokens_present():
 
 
 # --------------------------------------------------------------------------- #
-# 2. Render-path contract — each key page: 200, links style.css, has its class.
+# 2. Static missing-filter guard — dep-free (no jinja2/flask). Catches the exact
+#    class of bug a Jinja *parse* check misses: a template using a filter that this
+#    app never registers (commafy/clean_name are Team Asha-only) -> a 500 at render.
+# --------------------------------------------------------------------------- #
+
+# Jinja2 3.x built-in filters. Flask registers no extra template filters by default.
+_JINJA_BUILTIN_FILTERS = {
+    'abs', 'attr', 'batch', 'capitalize', 'center', 'default', 'd', 'dictsort',
+    'escape', 'e', 'filesizeformat', 'first', 'float', 'forceescape', 'format',
+    'groupby', 'indent', 'int', 'items', 'join', 'last', 'length', 'count', 'list',
+    'lower', 'map', 'max', 'min', 'pprint', 'random', 'reject', 'rejectattr',
+    'replace', 'reverse', 'round', 'safe', 'select', 'selectattr', 'slice', 'sort',
+    'string', 'striptags', 'sum', 'title', 'tojson', 'trim', 'truncate', 'unique',
+    'upper', 'urlencode', 'urlize', 'wordcount', 'wordwrap', 'xmlattr',
+}
+
+_JINJA_REGION = re.compile(r'{{.*?}}|{%.*?%}', re.DOTALL)   # only scan Jinja delimiters
+_FILTER_USE = re.compile(r'\|\s*(\w+)')                     # a `| filter` application
+
+
+def _registered_brevethub_filters():
+    """Filters BrevetHub registers on its own Jinja env (currently none — the app
+    only adds the product_name context processor). Scanning keeps this honest if a
+    future mission adds a brevethub-local commafy/clean_name."""
+    src = open(os.path.join(BREVETHUB_DIR, 'app.py'), 'r', encoding='utf-8').read()
+    names = set(re.findall(r"template_filter\(['\"](\w+)['\"]\)", src))
+    names |= set(re.findall(r"jinja_env\.filters\[['\"](\w+)['\"]\]", src))
+    names |= set(re.findall(r"add_template_filter\([^,]+,\s*['\"]?(\w+)", src))
+    return names
+
+
+def test_no_unregistered_jinja_filters():
+    allowed = _JINJA_BUILTIN_FILTERS | _registered_brevethub_filters()
+    offenders = {}
+    for name in sorted(os.listdir(TEMPLATES_DIR)):
+        if not name.endswith('.html'):
+            continue
+        src = open(os.path.join(TEMPLATES_DIR, name), 'r', encoding='utf-8').read()
+        for region in _JINJA_REGION.findall(src):
+            for filt in _FILTER_USE.findall(region):
+                if filt not in allowed:
+                    offenders.setdefault(name, set()).add(filt)
+    assert not offenders, (
+        'BrevetHub templates use filters this app does not register (would 500 at '
+        f'render — e.g. Team Asha-only commafy/clean_name): {offenders}')
+
+
+def test_no_ta_only_filters_used():
+    """Explicit guard for the two Team Asha-only filters BrevetHub must never use."""
+    for name in sorted(os.listdir(TEMPLATES_DIR)):
+        if not name.endswith('.html'):
+            continue
+        src = open(os.path.join(TEMPLATES_DIR, name), 'r', encoding='utf-8').read()
+        for region in _JINJA_REGION.findall(src):
+            used = set(_FILTER_USE.findall(region))
+            assert 'commafy' not in used, f'{name} uses TA-only |commafy'
+            assert 'clean_name' not in used, f'{name} uses TA-only |clean_name'
+
+
+# --------------------------------------------------------------------------- #
+# 3. Render-path contract — each key page: 200, links style.css, has its class.
 # --------------------------------------------------------------------------- #
 def test_landing_styled(client):
     resp = client.get('/')
