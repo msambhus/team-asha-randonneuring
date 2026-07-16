@@ -91,6 +91,35 @@
                   {% endif %}
                 </div>
 
+                {# Weather badge — cache-read-only. A near-term event with a
+                   resolvable region shows a compact forecast (from the warmed
+                   rp_brevet_weather cache, region-approximate); a far-out or
+                   region-less event has no cache row and shows the honest
+                   "forecast not available yet" note. Values are preformatted by
+                   the shared summarizer, so no Team Asha Jinja filters are used. #}
+                {% set wx = weather.get(ev.id) %}
+                {% if wx %}
+                  <div class="event-weather" title="Approximate region forecast for this date">
+                    <span class="wx-condition">
+                      {% if wx.condition_icon %}<span class="wx-icon">{{ wx.condition_icon }}</span>{% endif %}
+                      {{ wx.condition }}
+                    </span>
+                    {% if wx.temp_min_f is not none and wx.temp_max_f is not none %}
+                      <span class="wx-metric">{{ wx.temp_min_f }}–{{ wx.temp_max_f }}°F</span>
+                    {% endif %}
+                    {% if wx.wind_speed_mph is not none %}
+                      <span class="wx-metric">Wind {{ wx.wind_speed_mph }} mph{% if wx.wind_dir_label %} {{ wx.wind_dir_label }}{% endif %}</span>
+                    {% endif %}
+                    {% if wx.precip_prob is not none %}
+                      <span class="wx-metric">{{ wx.precip_prob }}% precip</span>
+                    {% endif %}
+                  </div>
+                {% else %}
+                  <div class="event-weather event-weather-none">
+                    <span class="wx-metric muted">Forecast not available yet</span>
+                  </div>
+                {% endif %}
+
                 <div class="signup-section">
                   <span class="signup-count">{{ ev.signup_count or 0 }} interested</span>
                   {% if rider %}
