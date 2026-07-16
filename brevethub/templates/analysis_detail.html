@@ -11,9 +11,6 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
           crossorigin=""></script>
-  <style>
-    #analysis-map { height: 55vh; width: 100%; border-radius: 8px; margin: 1rem 0; }
-  </style>
   {% endif %}
 {% endblock %}
 {% block content %}
@@ -93,7 +90,7 @@
       </tbody>
     </table>
   {% else %}
-    <p class="muted">Not enough stream data to break this ride into segments.</p>
+    <p class="muted empty-state">Not enough stream data to break this ride into segments.</p>
   {% endif %}
 </section>
 
@@ -114,7 +111,7 @@
       </tbody>
     </table>
   {% else %}
-    <p class="muted">No stops of two minutes or longer were detected.</p>
+    <p class="muted empty-state">No stops of two minutes or longer were detected.</p>
   {% endif %}
   <p class="muted"><a href="{{ url_for('analysis.analysis_list') }}">← Back to your rides</a></p>
 </section>
@@ -135,7 +132,8 @@
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
 
-  var line = L.polyline(track, { color: '#2563eb', weight: 3 }).addTo(map);
+  // Colors mirror the design-system tokens (--accent, --warning); JS can't read CSS vars.
+  var line = L.polyline(track, { color: '#4b7bec', weight: 3 }).addTo(map);
   if (bounds && bounds.length === 2) {
     map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
   } else {
@@ -147,7 +145,7 @@
     var label = s.distance_km + ' km';
     if (s.duration_min != null) label += ' · ' + s.duration_min + ' min stop';
     L.circleMarker([s.lat, s.lng], {
-      radius: 6, color: '#d97706', fillColor: '#f59e0b', fillOpacity: 0.9
+      radius: 6, color: '#b7791f', fillColor: '#b7791f', fillOpacity: 0.9
     }).addTo(map).bindPopup(label);
   });
 })();

@@ -9,12 +9,14 @@
 
    Plain hand-written CSS — BrevetHub has no Tailwind/PostCSS build step, so this
    file is served as-is. Structure:
-     1. Design tokens (:root)         6. Buttons
-     2. Base + layout                 7. Tables + badges
-     3. Header / nav / footer         8. Dashboard / profile / seasons
-     4. Landing / hero                9. Live rides
-     5. Cards / forms                10. Calendar (filters + event cards)
-                                      11. Responsive breakpoints
+     1. Design tokens (:root)         9. Live rides
+     2. Base + layout                10. Calendar (filters + event cards)
+     3. Header / nav / footer        11. Pacing plan (schedule)
+     4. Landing / hero               12. Ride analysis (list + detail)
+     5. Cards / forms                13. Empty state
+     6. Buttons                      14. Flash messages
+     7. Tables + badges              15. Responsive breakpoints
+     8. Dashboard / profile / seasons
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
@@ -326,7 +328,10 @@ table {
 .rusa-history,
 .signups-table,
 .live-rides,
-.calendar-table {
+.plan-schedule,
+.analysis-list,
+.analysis-legs,
+.analysis-stops {
   margin: 16px 0;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -463,6 +468,15 @@ table tbody tr:hover {
   padding: 0;
   margin: 16px 0;
   border-left: 2px solid var(--border);
+  max-height: 16rem;
+  overflow-y: auto;
+}
+/* Live tracking map — moved in from the template's inline <style>. */
+#live-map {
+  height: 60vh;
+  width: 100%;
+  border-radius: var(--radius-sm);
+  margin: 16px 0;
 }
 .live-timeline li {
   position: relative;
@@ -833,7 +847,154 @@ table tbody tr:hover {
 }
 
 /* --------------------------------------------------------------------------
-   11. Flash messages
+   11. Pacing plan (per-brevet schedule)
+
+   The plan page was bolted on during M8 and referenced these classes before any
+   of them existed, so it rendered as raw HTML. They reuse the same tokens and the
+   card/table shell the rest of the app already uses — no new palette.
+   -------------------------------------------------------------------------- */
+.plan-page { max-width: var(--maxw); margin: 0 auto; }
+.plan-intro { margin-bottom: 24px; }
+.plan-intro h1 { margin-bottom: 4px; }
+.plan-event-name {
+  font-size: 1.15rem;
+  color: var(--primary);
+  margin: 0 0 12px;
+}
+.plan-event-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  color: var(--text-light);
+  font-size: 0.9rem;
+  margin-bottom: 12px;
+}
+.plan-event-meta span {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  font-weight: 600;
+}
+.plan-scope-note { max-width: 640px; font-size: 0.9rem; }
+
+/* Target picker — follows the .form idiom but laid out as a responsive row. */
+.plan-target-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 24px;
+}
+.plan-target-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 200px;
+}
+.plan-target-field label { font-weight: 600; font-size: 0.9rem; }
+.plan-target-field input {
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  background: #fff;
+  color: var(--text);
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.plan-target-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.plan-target-or {
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding-bottom: 12px;
+  align-self: flex-end;
+}
+.plan-target-form .btn { flex: 0 0 auto; }
+
+/* Summary chip row — target pace, est. finish, finish-line time bank. */
+.plan-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.plan-summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+.plan-summary strong { color: var(--primary); }
+
+/* Time-bank state — semantic success/warn, reused in the summary and the table. */
+.plan-bank-ok { background: var(--success-soft); color: var(--success); }
+.plan-bank-low { background: var(--warn-bg); color: var(--warn-text); }
+.plan-summary .plan-bank { border-color: transparent; }
+.plan-summary .plan-bank strong { color: inherit; }
+
+/* Pacing schedule table (card/table shell defined above). */
+.plan-schedule td.plan-dist { font-weight: 600; }
+.plan-schedule td.plan-bank-cell { font-weight: 600; }
+
+.plan-save-section {
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+/* --------------------------------------------------------------------------
+   12. Ride analysis (list + detail)
+
+   Same story as the plan page: analysis_list/analysis_detail referenced these
+   table classes and the map id before they were defined. Card/table shell above
+   already covers .analysis-* — here we just size the map and tidy the id.
+   -------------------------------------------------------------------------- */
+#analysis-map {
+  height: 55vh;
+  width: 100%;
+  border-radius: var(--radius-sm);
+  margin: 16px 0;
+}
+
+/* --------------------------------------------------------------------------
+   13. Empty state — a consistent, muted, centered no-data block.
+
+   Applied alongside .muted on the ad-hoc "no data" paragraphs so every empty
+   surface reads the same. Text content is preserved verbatim from before.
+   -------------------------------------------------------------------------- */
+.empty-state {
+  text-align: center;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  padding: 28px 20px;
+  margin: 16px 0;
+  font-size: 0.95rem;
+}
+.empty-state a { font-weight: 600; }
+
+/* --------------------------------------------------------------------------
+   14. Flash messages
    -------------------------------------------------------------------------- */
 .flashes { list-style: none; padding: 0; margin: 0 0 20px; }
 .flash {
@@ -849,7 +1010,7 @@ table tbody tr:hover {
 .flash-success { background: var(--success-soft); color: var(--success); }
 
 /* --------------------------------------------------------------------------
-   12. Responsive breakpoints
+   15. Responsive breakpoints
    -------------------------------------------------------------------------- */
 @media (max-width: 768px) {
   .header-inner { flex-direction: column; align-items: flex-start; gap: 8px; }
@@ -892,20 +1053,34 @@ table tbody tr:hover {
   .event-distance { font-size: 1.2rem; }
   .event-link-btn { padding: 5px 10px; font-size: 0.7rem; }
 
-  /* Tables collapse to stacked rows on the narrowest screens. */
+  /* Tables collapse to stacked rows on the narrowest screens. Wide feature
+     tables (plan schedule, analysis legs/stops) are included so they don't
+     overflow horizontally on mobile. */
   .rusa-history thead,
   .signups-table thead,
-  .live-rides thead { display: none; }
+  .live-rides thead,
+  .plan-schedule thead,
+  .analysis-list thead,
+  .analysis-legs thead,
+  .analysis-stops thead { display: none; }
   .rusa-history tbody td,
   .signups-table tbody td,
-  .live-rides tbody td {
+  .live-rides tbody td,
+  .plan-schedule tbody td,
+  .analysis-list tbody td,
+  .analysis-legs tbody td,
+  .analysis-stops tbody td {
     display: block;
     border-top: none;
     padding: 4px 14px;
   }
   .rusa-history tbody tr,
   .signups-table tbody tr,
-  .live-rides tbody tr {
+  .live-rides tbody tr,
+  .plan-schedule tbody tr,
+  .analysis-list tbody tr,
+  .analysis-legs tbody tr,
+  .analysis-stops tbody tr {
     display: block;
     border-top: 1px solid var(--border);
     padding: 8px 0;

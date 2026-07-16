@@ -26,7 +26,7 @@
       </tbody>
     </table>
   {% else %}
-    <p class="muted">No public rides right now. Check back when a ride goes live.</p>
+    <p class="muted empty-state">No public rides right now. Check back when a ride goes live.</p>
   {% endif %}
 
   {% if session.get('rider_id') %}

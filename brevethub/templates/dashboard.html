@@ -48,7 +48,7 @@
         </tbody>
       </table>
     {% else %}
-      <p class="muted">
+      <p class="muted empty-state">
         You haven't signed up for any upcoming brevets yet.
         <a href="{{ url_for('calendar.calendar') }}">Browse the calendar</a>.
       </p>
@@ -123,7 +123,7 @@
         </tbody>
       </table>
     {% elif not rusa.error %}
-      <p class="muted">No completed brevets found yet.</p>
+      <p class="muted empty-state">No completed brevets found yet.</p>
     {% endif %}
 
     <form method="post" action="{{ url_for('main.rusa_refresh') }}">
