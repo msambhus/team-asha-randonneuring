@@ -30,7 +30,7 @@
 -- analysis holds the JSON-safe computed breakdown (summary + stops + per-leg rows,
 -- already unit-converted at the view boundary). activity_streams holds the raw
 -- zlib-compressed streams so the map/detail view re-renders without re-fetching.
--- The FK references an rp_* table only.
+-- Its foreign key points at rp_rider only.
 -- --------------------------------------------------------------------------- --
 CREATE TABLE IF NOT EXISTS rp_ride_analysis (
     id                  SERIAL PRIMARY KEY,
