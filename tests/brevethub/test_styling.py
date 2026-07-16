@@ -1,22 +1,29 @@
 """BrevetHub design-system smoke test (Mission 10 — styling cleanup).
 
-Two guards, both DB-free / network-free per the established BrevetHub test pattern:
+Four guards, all DB-free / network-free per the established BrevetHub test pattern.
+The first three are pure stdlib (no jinja2/flask/pytest-fixture needed), so they run
+even in a minimal checkout; the fourth needs the Flask test client.
 
 1. **Stylesheet contract** — the shared design-system classes and element ids that
    every template references are actually DEFINED in ``static/style.css``. This is
    the regression guard that the three feature pages bolted on during M8–M9 (plan,
    analysis, live-map) never render as raw, unstyled HTML again.
 
-2. **Static missing-filter guard** — a dependency-free scan (pure stdlib, no
-   jinja2/flask needed) that every ``| filter`` used in a BrevetHub template is a
-   Jinja builtin or a BrevetHub-registered filter. BrevetHub does NOT inherit Team
-   Asha's ``commafy``/``clean_name`` filters, so any such usage would 500 at render.
-   It needs no flask/jinja2 render, so it's the durable static counterpart to the
-   render tests below (which do).
+2. **Static missing-filter guard** — a dependency-free scan that every ``| filter``
+   used in a BrevetHub template is a Jinja builtin or a BrevetHub-registered filter.
+   BrevetHub does NOT inherit Team Asha's ``commafy``/``clean_name`` filters, so any
+   such usage would 500 at render. This is the durable static counterpart to the
+   render tests below.
 
-3. **Render-path contract** — each key page returns 200, links ``style.css``, and
+3. **Structural parse smoke** — a dependency-free stand-in for a Jinja parse when
+   jinja2 isn't importable: every template has balanced ``{% %}``/``{{ }}``
+   delimiters, only known statement tags, and correctly nested/closed blocks. Not a
+   substitute for a real render (the client tests below are), but it catches the
+   markup-structure class of error a parse would, with zero deps.
+
+4. **Render-path contract** — each key page returns 200, links ``style.css``, and
    contains its expected component class(es) in the rendered markup. A render (not
-   a Jinja parse check) is the only thing that catches a missing-filter 500, so the
+   a parse check) is the only thing that catches a missing-filter 500, so the
    plan/analysis/live pages are exercised through the real client with mocked models.
 """
 import os
@@ -175,7 +182,71 @@ def test_no_ta_only_filters_used():
 
 
 # --------------------------------------------------------------------------- #
-# 3. Render-path contract — each key page: 200, links style.css, has its class.
+# 3. Structural parse smoke — dep-free stand-in for a Jinja parse. Validates
+#    delimiter balance, known tags, and block nesting across every template.
+# --------------------------------------------------------------------------- #
+
+# Jinja statement tags these templates may use. Openers pair with an explicit end
+# tag; mid tags (elif/else) may only appear inside a matching open block.
+_TAG_OPENERS = {'if': 'endif', 'for': 'endfor', 'block': 'endblock',
+                'with': 'endwith', 'macro': 'endmacro', 'call': 'endcall',
+                'filter': 'endfilter', 'autoescape': 'endautoescape'}
+_TAG_CLOSERS = {v: k for k, v in _TAG_OPENERS.items()}
+_TAG_MIDS = {'elif': {'if'}, 'else': {'if', 'for'}}
+_SELF_CONTAINED_TAGS = {'extends', 'include', 'import', 'from', 'set', 'do'}
+_KNOWN_TAGS = (set(_TAG_OPENERS) | set(_TAG_CLOSERS) | set(_TAG_MIDS)
+               | _SELF_CONTAINED_TAGS)
+
+_STMT = re.compile(r'{%(.*?)%}', re.DOTALL)
+_STMT_KW = re.compile(r'-?\s*(\w+)')
+
+
+def _template_files():
+    return [n for n in sorted(os.listdir(TEMPLATES_DIR)) if n.endswith('.html')]
+
+
+def _structural_errors(src):
+    errs = []
+    # Delimiter balance — an unclosed {% or {{ is a hard parse error.
+    for opener, closer in (('{%', '%}'), ('{{', '}}')):
+        if src.count(opener) != src.count(closer):
+            errs.append(f'{opener}/{closer} imbalance '
+                        f'{src.count(opener)}/{src.count(closer)}')
+    # Known tags + correct block nesting/closing order.
+    stack = []
+    for stmt in _STMT.findall(src):
+        m = _STMT_KW.match(stmt)
+        if not m:
+            errs.append('empty {% %} statement')
+            continue
+        kw = m.group(1)
+        if kw not in _KNOWN_TAGS:
+            errs.append(f'unknown tag {{% {kw} %}}')
+        elif kw in _TAG_OPENERS:
+            stack.append(kw)
+        elif kw in _TAG_CLOSERS:
+            want = _TAG_CLOSERS[kw]
+            if not stack or stack[-1] != want:
+                errs.append(f'{{% {kw} %}} without open {{% {want} %}} (stack={stack})')
+            else:
+                stack.pop()
+        elif kw in _TAG_MIDS:
+            if not stack or stack[-1] not in _TAG_MIDS[kw]:
+                errs.append(f'{{% {kw} %}} outside {_TAG_MIDS[kw]} (stack={stack})')
+    if stack:
+        errs.append(f'unclosed blocks {stack}')
+    return errs
+
+
+@pytest.mark.parametrize('name', _template_files())
+def test_template_structurally_valid(name):
+    src = open(os.path.join(TEMPLATES_DIR, name), 'r', encoding='utf-8').read()
+    errs = _structural_errors(src)
+    assert not errs, f'{name} has Jinja structural errors: {errs}'
+
+
+# --------------------------------------------------------------------------- #
+# 4. Render-path contract — each key page: 200, links style.css, has its class.
 # --------------------------------------------------------------------------- #
 def test_landing_styled(client):
     resp = client.get('/')
