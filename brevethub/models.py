@@ -429,8 +429,9 @@ def create_broker_handoff(*, ta_rider_id, strava_athlete_id, access_token,
 def get_events_cache_freshness():
     """The newest ``scraped_at`` across cached events, or None when empty.
 
-    The calendar cache-TTL check reads this: None (or a stale value) triggers a
-    re-scrape; a fresh value serves the cache without any HTTP.
+    The calendar route uses ``None`` to identify the first-deploy seed path. A
+    present timestamp, even an old one, is served from cache; age only controls the
+    soft stale banner.
     """
     row = db.query_one("SELECT MAX(scraped_at) AS latest FROM rp_brevet_event")
     return row['latest'] if row else None
