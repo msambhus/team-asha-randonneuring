@@ -1,24 +1,73 @@
-/* BrevetHub — neutral, minimal theme.
-   Deliberately club-agnostic: a calm slate/indigo palette with no club-specific
-   colors, logo, or identity. Plain hand-written CSS (no Tailwind build). */
+/* ==========================================================================
+   BrevetHub — neutral, club-agnostic theme.
 
+   A polished, product-grade stylesheet with the same component vocabulary a
+   randonneuring site needs (header/nav, cards, tables, distance/status badges,
+   buttons, event cards, responsive layout) but ZERO club identity: no club name,
+   logo, or brand colors. Every color is driven by a CSS variable in :root so a
+   club theme can override the palette later without touching component rules.
+
+   Plain hand-written CSS — BrevetHub has no Tailwind/PostCSS build step, so this
+   file is served as-is. Structure:
+     1. Design tokens (:root)         6. Buttons
+     2. Base + layout                 7. Tables + badges
+     3. Header / nav / footer         8. Dashboard / profile / seasons
+     4. Landing / hero                9. Live rides
+     5. Cards / forms                10. Calendar (filters + event cards)
+                                      11. Responsive breakpoints
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Design tokens
+   -------------------------------------------------------------------------- */
 :root {
+  /* Neutral slate/indigo palette — deliberately not any club's colors. */
   --bg: #f7f8fa;
   --surface: #ffffff;
+  --card-bg: #ffffff;          /* alias of --surface for ported component rules */
   --text: #1f2933;
-  --muted: #6b7280;
+  --text-light: #6b7280;
+  --muted: #6b7280;            /* alias of --text-light */
   --border: #e2e5e9;
-  --primary: #3f4c6b;        /* muted slate-indigo */
+  --border-strong: #cbd2da;
+
+  --primary: #3f4c6b;          /* muted slate-indigo */
   --primary-dark: #2c3550;
-  --accent: #4b7bec;
+  --primary-soft: #eef1f7;     /* tint of --primary for soft fills */
+  --accent: #4b7bec;           /* single neutral accent (distance, links) */
+  --accent-dark: #3a67d4;
+  --accent-soft: #eef3fe;
+
+  /* Semantic status colors (neutral, not club-branded). */
+  --success: #2f855a;
+  --success-soft: #e7f6ee;
+  --warning: #b7791f;
   --warn-bg: #fff4e5;
   --warn-text: #8a5300;
+  --danger: #c0392b;
   --error-bg: #fdecea;
   --error-text: #9b1c1c;
+  --info-soft: #eef2ff;
+
+  /* Shape + elevation. */
   --radius: 10px;
+  --radius-sm: 8px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.10);
+  --shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.12);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --maxw: 1080px;
 }
 
+/* --------------------------------------------------------------------------
+   2. Base + layout
+   -------------------------------------------------------------------------- */
 * { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
@@ -27,24 +76,60 @@ body {
   background: var(--bg);
   color: var(--text);
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+h1, h2, h3, h4 {
+  color: var(--text);
+  line-height: 1.25;
+  margin: 0 0 12px;
+}
+h1 { font-size: 1.9rem; letter-spacing: -0.01em; }
+h2 { font-size: 1.4rem; }
+h3 { font-size: 1.1rem; }
+
+a { color: var(--accent); }
+a:hover { color: var(--accent-dark); }
+
+p { margin: 0 0 12px; }
+
 .container {
-  max-width: 960px;
+  max-width: var(--maxw);
   margin: 0 auto;
   padding: 0 20px;
 }
 
-/* Header / footer */
+.content { padding: 32px 20px 56px; }
+
+.muted { color: var(--muted); }
+.text-center { text-align: center; }
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0);
+  white-space: nowrap; border: 0;
+}
+
+/* --------------------------------------------------------------------------
+   3. Header / nav / footer
+   -------------------------------------------------------------------------- */
 .site-header {
   background: var(--primary);
   color: #fff;
+  box-shadow: var(--shadow);
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 .header-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 14px 20px;
+  max-width: var(--maxw);
+  margin: 0 auto;
 }
 .brand {
   font-size: 1.3rem;
@@ -52,32 +137,60 @@ body {
   letter-spacing: -0.01em;
   color: #fff;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.brand:hover { color: #fff; }
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
 }
 .nav a {
   color: rgba(255, 255, 255, 0.9);
   text-decoration: none;
   margin-left: 18px;
   font-size: 0.95rem;
+  padding: 4px 2px;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
 }
-.nav a:hover { color: #fff; text-decoration: underline; }
-
-.content { padding: 32px 20px 56px; }
+.nav a:hover {
+  color: #fff;
+  border-bottom-color: rgba(255, 255, 255, 0.7);
+}
 
 .site-footer {
   border-top: 1px solid var(--border);
   color: var(--muted);
   font-size: 0.85rem;
-  padding: 20px 0;
+  padding: 24px 0;
   text-align: center;
+  background: var(--surface);
 }
 
-/* Hero / landing */
+/* --------------------------------------------------------------------------
+   4. Landing / hero
+   -------------------------------------------------------------------------- */
 .hero {
   text-align: center;
-  padding: 40px 0 24px;
+  padding: 48px 0 24px;
 }
-.hero h1 { font-size: 2.6rem; margin: 0 0 12px; }
-.tagline { font-size: 1.15rem; color: var(--muted); max-width: 620px; margin: 0 auto 28px; }
+.hero h1 {
+  font-size: 2.6rem;
+  margin: 0 0 12px;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.tagline {
+  font-size: 1.15rem;
+  color: var(--muted);
+  max-width: 640px;
+  margin: 0 auto 28px;
+}
 .hero-sub { color: var(--muted); font-size: 0.9rem; margin-top: 18px; }
 
 .features {
@@ -90,91 +203,680 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px;
+  padding: 22px;
+  transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease),
+    border-color 0.3s var(--ease);
 }
-.feature h3 { margin: 0 0 8px; font-size: 1.05rem; }
+.feature:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--primary);
+}
+.feature h3 { margin: 0 0 8px; font-size: 1.05rem; color: var(--primary); }
 .feature p { margin: 0; color: var(--muted); font-size: 0.92rem; }
 
-/* Cards / forms */
+/* --------------------------------------------------------------------------
+   5. Cards / forms
+   -------------------------------------------------------------------------- */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 28px;
-  max-width: 560px;
-  margin: 0 auto;
+  max-width: 640px;
+  margin: 0 auto 24px;
+  box-shadow: var(--shadow-sm);
 }
+.card > h1:first-child,
+.card > h2:first-child { margin-top: 0; }
 .auth-card { text-align: center; }
 
 .form { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
 .form label { font-weight: 600; margin-top: 12px; }
-.form select, .form input[type="text"] {
+.form select,
+.form input[type="text"],
+.form input[type="email"],
+.form input[type="number"] {
   padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
   font-size: 1rem;
   background: #fff;
+  color: var(--text);
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.form select:focus,
+.form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .hint { color: var(--muted); font-size: 0.82rem; margin: 4px 0 0; }
 .required { color: var(--error-text); }
 .optional { color: var(--muted); font-weight: 400; font-size: 0.85rem; }
 
-/* Buttons */
-.btn {
-  display: inline-block;
-  padding: 11px 22px;
-  border-radius: 8px;
-  border: none;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  text-decoration: none;
+.coming-soon {
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
 }
-.btn-primary { background: var(--accent); color: #fff; margin-top: 20px; }
-.btn-primary:hover { background: #3a67d4; }
-.btn-google { background: var(--primary); color: #fff; }
-.btn-google:hover { background: var(--primary-dark); }
-
-/* Profile / dashboard */
-.profile { display: grid; grid-template-columns: 140px 1fr; gap: 10px 16px; margin: 20px 0; }
-.profile dt { font-weight: 600; color: var(--muted); }
-.profile dd { margin: 0; }
-.muted { color: var(--muted); }
-.coming-soon { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px; }
 .coming-soon h2 { font-size: 1.05rem; }
 .coming-soon ul { color: var(--muted); }
 
+/* --------------------------------------------------------------------------
+   6. Buttons
+   -------------------------------------------------------------------------- */
+.btn {
+  display: inline-block;
+  padding: 11px 22px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: center;
+  line-height: 1.2;
+  background: var(--primary);
+  color: #fff;
+  transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease),
+    background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.btn:hover {
+  background: var(--primary-dark);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+.btn:active { transform: translateY(0); }
+.btn:disabled,
+.btn.disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.btn-primary { background: var(--accent); color: #fff; margin-top: 20px; }
+.btn-primary:hover { background: var(--accent-dark); }
+
+.btn-google { background: var(--primary); color: #fff; }
+.btn-google:hover { background: var(--primary-dark); }
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--primary);
+  border-color: var(--border-strong);
+}
+.btn-secondary:hover {
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  border-color: var(--primary);
+}
+
+.btn-small {
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  border-radius: var(--radius-sm);
+}
+
+/* --------------------------------------------------------------------------
+   7. Tables + badges
+   -------------------------------------------------------------------------- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.rusa-history,
+.signups-table,
+.live-rides,
+.calendar-table {
+  margin: 16px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+table thead th {
+  background: var(--primary);
+  color: #fff;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 12px 14px;
+}
+table tbody td {
+  padding: 11px 14px;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+table tbody tr {
+  transition: background 0.2s var(--ease);
+}
+table tbody tr:hover {
+  background: var(--primary-soft);
+}
+
+/* Badges — generic pill + semantic variants (neutral, var-driven). */
 .badge {
   display: inline-block;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  border: 1px solid var(--border);
 }
-.badge-warn { background: var(--warn-bg); color: var(--warn-text); }
+.badge-warn { background: var(--warn-bg); color: var(--warn-text); border-color: transparent; }
+.badge-success { background: var(--success-soft); color: var(--success); border-color: transparent; }
+.badge-danger { background: var(--error-bg); color: var(--error-text); border-color: transparent; }
+.badge-accent { background: var(--accent-soft); color: var(--accent-dark); border-color: transparent; }
+
+/* Distance badge — a rider glances at "200" more than the name. */
+.distance-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 0.82rem;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
 
 /* SR legs (200/300/400/600) — done vs still-to-ride pips. */
-.sr-legs, .sr-progress { display: inline-flex; gap: 6px; align-items: center; }
+.sr-legs, .sr-progress { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .sr-leg {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.75rem;
   font-weight: 600;
   border: 1px solid var(--border);
 }
-.sr-leg.done { background: var(--primary-dark); color: #fff; border-color: var(--primary-dark); }
+.sr-leg.done {
+  background: var(--primary-dark);
+  color: #fff;
+  border-color: var(--primary-dark);
+}
 .sr-leg.todo { color: var(--muted); }
 
-/* Rides-by-season blocks */
-.season-current { border-left: 4px solid var(--primary-dark); }
-.season-totals { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
-.season-past { margin-bottom: 10px; }
-.season-past > summary { cursor: pointer; font-weight: 600; }
+/* --------------------------------------------------------------------------
+   8. Dashboard / profile / seasons
+   -------------------------------------------------------------------------- */
+.profile {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 10px 16px;
+  margin: 20px 0;
+}
+.profile dt { font-weight: 600; color: var(--muted); }
+.profile dd { margin: 0; }
 
-/* Flash messages */
+.stats-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+}
+.stats-grid dt {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.stats-grid dd {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.signups-entry,
+.live-entry {
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.signups-entry h2,
+.live-entry h2 { font-size: 1.1rem; }
+
+/* Rides-by-season blocks */
+.season { margin-bottom: 20px; }
+.season-current { border-left: 4px solid var(--primary-dark); }
+.season-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.season-past { margin-bottom: 10px; }
+.season-past > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 8px 0;
+}
+.season-past > summary:hover { color: var(--primary); }
+
+/* --------------------------------------------------------------------------
+   9. Live rides
+   -------------------------------------------------------------------------- */
+.live-rides td a { font-weight: 600; }
+.live-timeline {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+  border-left: 2px solid var(--border);
+}
+.live-timeline li {
+  position: relative;
+  padding: 8px 0 8px 20px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.live-timeline li::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 14px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   10. Calendar — filters + month-grouped event cards
+
+   Adapted from the upstream upcoming-brevets component vocabulary and de-branded:
+   the blue/cyan/orange gradients are replaced by neutral, var-driven fills so a
+   club can re-theme via :root alone. No club name, logo, or fixed brand hue.
+   -------------------------------------------------------------------------- */
+.calendar-page { max-width: var(--maxw); margin: 0 auto; }
+.calendar-intro { margin-bottom: 24px; }
+.calendar-intro h1 { margin-bottom: 8px; }
+
+.calendar-signin-prompt {
+  margin-top: 28px;
+  padding: 18px 20px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+}
+
+/* Region filter bar */
+.filter-section {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  margin-bottom: 28px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+}
+.filter-label {
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 12px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.filter-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.region-filter {
+  cursor: pointer;
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease),
+    border-color 0.25s var(--ease), background 0.25s var(--ease), color 0.25s var(--ease);
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.region-filter:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.region-filter.active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+  box-shadow: var(--shadow);
+}
+.region-filter.active:hover { color: #fff; }
+.region-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--accent);
+}
+.region-filter.active .region-dot { background: #fff; }
+
+/* Month sections */
+.month-section { margin-bottom: 40px; }
+.month-header {
+  background: var(--primary);
+  color: #fff;
+  padding: 11px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 1.2rem;
+  font-weight: 800;
+  margin-bottom: 20px;
+  display: inline-block;
+  box-shadow: var(--shadow-md);
+}
+
+/* Event card grid */
+.events-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 20px;
+}
+.event-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease),
+    border-color 0.3s var(--ease);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.event-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 5px;
+  height: 100%;
+  background: var(--accent);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 0.3s var(--ease);
+}
+.event-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--primary);
+}
+.event-card:hover::before { transform: scaleY(1); }
+.event-card.hidden { display: none !important; }
+
+/* Date badge (top-right of card) */
+.event-date {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  text-align: center;
+  background: var(--primary);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  box-shadow: var(--shadow-sm);
+}
+.event-day {
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+}
+.event-month {
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+  color: var(--accent-soft);
+}
+
+/* Region badge (neutral single accent — no per-club color) */
+.event-region-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--primary-dark);
+  background: var(--primary-soft);
+  margin-bottom: 8px;
+  max-width: calc(100% - 76px);
+}
+
+/* Distance + elevation row */
+.event-distance-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.event-distance {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--accent);
+}
+.event-elevation {
+  font-size: 0.75rem;
+  color: var(--text-light);
+  font-weight: 500;
+}
+
+.event-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin: 8px 0 4px;
+  line-height: 1.3;
+  padding-right: 64px;
+}
+.event-title a { color: var(--primary); text-decoration: none; }
+.event-title a:hover { color: var(--accent); text-decoration: underline; }
+
+/* Route / detail links */
+.event-links {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.event-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--accent-dark);
+  background: var(--accent-soft);
+  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease);
+  border: 1px solid var(--border);
+}
+.event-link-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+  color: var(--accent-dark);
+}
+
+.event-details-info {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--text-light);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Sign-up section (bottom of card) */
+.signup-section {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.signup-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  color: var(--accent-dark);
+}
+.signup-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.signup-status {
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.signup-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: 2px solid var(--primary);
+  background: var(--surface);
+  color: var(--primary);
+  cursor: pointer;
+  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease),
+    background 0.2s var(--ease), color 0.2s var(--ease);
+}
+.signup-btn:hover {
+  background: var(--primary);
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+.signup-btn.btn-secondary {
+  border-color: var(--border-strong);
+  color: var(--text-light);
+}
+.signup-btn.btn-secondary:hover {
+  background: var(--text-light);
+  border-color: var(--text-light);
+  color: #fff;
+}
+
+/* --------------------------------------------------------------------------
+   11. Flash messages
+   -------------------------------------------------------------------------- */
 .flashes { list-style: none; padding: 0; margin: 0 0 20px; }
-.flash { padding: 10px 14px; border-radius: 8px; margin-bottom: 8px; font-size: 0.92rem; }
+.flash {
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  font-size: 0.92rem;
+  border: 1px solid transparent;
+}
 .flash-error { background: var(--error-bg); color: var(--error-text); }
 .flash-warning { background: var(--warn-bg); color: var(--warn-text); }
-.flash-info, .flash-message { background: #eef2ff; color: var(--primary-dark); }
+.flash-info, .flash-message { background: var(--info-soft); color: var(--primary-dark); }
+.flash-success { background: var(--success-soft); color: var(--success); }
+
+/* --------------------------------------------------------------------------
+   12. Responsive breakpoints
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+  .header-inner { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .nav { margin-top: 4px; }
+  .nav a { margin-left: 0; margin-right: 16px; }
+
+  .hero { padding: 32px 0 16px; }
+  .hero h1 { font-size: 2rem; }
+  .tagline { font-size: 1rem; }
+
+  .card { padding: 20px; }
+  .profile { grid-template-columns: 1fr; gap: 4px 0; }
+  .profile dt { margin-top: 10px; }
+
+  .events-grid { grid-template-columns: 1fr; }
+  .filter-section { padding: 15px; }
+  .filter-buttons { gap: 8px; }
+  .region-filter { padding: 8px 14px; font-size: 0.85rem; }
+  .event-card { padding: 16px; }
+  .event-title { font-size: 0.95rem; padding-right: 66px; }
+  .event-date { top: 14px; right: 14px; padding: 6px 10px; }
+  .event-day { font-size: 1.3rem; }
+  .month-header { font-size: 1.05rem; padding: 10px 16px; }
+
+  table { font-size: 0.86rem; }
+  table thead th, table tbody td { padding: 9px 10px; }
+}
+
+@media (max-width: 640px) {
+  .content { padding: 24px 16px 40px; }
+  .event-date { top: 12px; right: 12px; padding: 5px 8px; border-radius: 6px; }
+  .event-day { font-size: 1.2rem; }
+  .event-month { font-size: 0.6rem; }
+  .event-title { padding-right: 58px; font-size: 0.9rem; }
+  .signup-section { flex-direction: column; align-items: stretch; gap: 10px; }
+  .signup-actions { justify-content: flex-start; }
+  .filter-buttons { gap: 6px; }
+  .region-filter { padding: 7px 12px; font-size: 0.82rem; gap: 6px; }
+  .month-header { font-size: 1rem; padding: 8px 14px; }
+  .event-distance { font-size: 1.2rem; }
+  .event-link-btn { padding: 5px 10px; font-size: 0.7rem; }
+
+  /* Tables collapse to stacked rows on the narrowest screens. */
+  .rusa-history thead,
+  .signups-table thead,
+  .live-rides thead { display: none; }
+  .rusa-history tbody td,
+  .signups-table tbody td,
+  .live-rides tbody td {
+    display: block;
+    border-top: none;
+    padding: 4px 14px;
+  }
+  .rusa-history tbody tr,
+  .signups-table tbody tr,
+  .live-rides tbody tr {
+    display: block;
+    border-top: 1px solid var(--border);
+    padding: 8px 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero h1 { font-size: 1.7rem; }
+  .region-filter { font-size: 0.8rem; padding: 7px 12px; }
+  .event-distance { font-size: 1.2rem; }
+  .btn { padding: 10px 18px; }
+}

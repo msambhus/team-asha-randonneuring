@@ -1,93 +1,126 @@
 {% extends "base.html" %}
 {% block title %}Brevet calendar — {{ product_name }}{% endblock %}
 {% block content %}
-<section class="card">
-  <h1>Upcoming brevets</h1>
-  <p class="muted">
-    Upcoming ACP/RUSA brevets from RUSA's national calendar. Start location and
-    time are shown only when a source provides them.
-  </p>
+{# Month-abbreviation lookup for the date badge. ev.date stringifies to ISO
+   ("YYYY-MM-DD") whether it is a datetime.date (psycopg2) or a plain string. #}
+{% set MONTH_ABBR = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] %}
 
-  {% if degraded %}
-    <p class="flash flash-warning">
-      {% if degraded == 'empty' %}
-        No brevets to show right now — RUSA may be temporarily unavailable. Please
-        check back shortly.
-      {% else %}
-        Couldn't refresh from RUSA just now — showing the most recent cached calendar.
-      {% endif %}
+<section class="calendar-page">
+  <div class="calendar-intro">
+    <h1>Upcoming brevets</h1>
+    <p class="muted">
+      Upcoming ACP/RUSA brevets from RUSA's national calendar. Start location and
+      time are shown only when a source provides them.
     </p>
-  {% endif %}
 
-  {% if club and club.state %}
-    <p class="calendar-scope">
-      {% if scope == 'club' %}
-        Showing <strong>{{ club.state }}</strong> brevets.
-        <a href="{{ url_for('calendar.calendar') }}">Show all regions</a>
-      {% else %}
-        Showing all regions.
-        <a href="{{ url_for('calendar.calendar', scope='club') }}">Show only {{ club.state }}</a>
-      {% endif %}
-    </p>
-  {% endif %}
+    {% if degraded %}
+      <p class="flash flash-warning">
+        {% if degraded == 'empty' %}
+          No brevets to show right now — RUSA may be temporarily unavailable. Please
+          check back shortly.
+        {% else %}
+          Couldn't refresh from RUSA just now — showing the most recent cached calendar.
+        {% endif %}
+      </p>
+    {% endif %}
 
-  {% if events %}
-    <table class="calendar-table" data-signup-base="/calendar">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Brevet</th>
-          <th>Distance</th>
-          <th>Region</th>
-          <th>Start</th>
-          {% if rider %}<th>My status</th>{% endif %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for ev in events %}
-          <tr data-event-id="{{ ev.id }}">
-            <td>{{ ev.date }}</td>
-            <td>
-              {% if ev.rwgps_url %}
-                <a href="{{ ev.rwgps_url }}" rel="noopener" target="_blank">{{ ev.name }}</a>
-              {% else %}
-                {{ ev.name }}
-              {% endif %}
-            </td>
-            <td>{{ ev.distance_km }} km</td>
-            <td>{{ ev.region or '—' }}</td>
-            <td>
-              {# National-feed events have no start location/time — show an honest
-                 placeholder, never a fabricated value. #}
-              {{ ev.start_location or '—' }}{% if ev.start_time %} · {{ ev.start_time }}{% endif %}
-            </td>
-            {% if rider %}
-              <td class="signup-cell">
-                {% set status = my_status.get(ev.id) %}
-                <span class="signup-status" data-event-id="{{ ev.id }}">
-                  {% if status and status != 'withdraw' %}{{ status|capitalize }}{% else %}—{% endif %}
-                </span>
-                <span class="signup-actions">
-                  <button type="button" class="btn btn-small signup-btn"
-                          data-event-id="{{ ev.id }}" data-status="interested">Interested</button>
-                  <button type="button" class="btn btn-small signup-btn"
-                          data-event-id="{{ ev.id }}" data-status="going">Going</button>
-                  <button type="button" class="btn btn-small btn-secondary signup-btn"
-                          data-event-id="{{ ev.id }}" data-status="withdraw">Withdraw</button>
-                </span>
-              </td>
-            {% endif %}
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% if club and club.state %}
+      <div class="filter-section">
+        <div class="filter-label">Region</div>
+        <div class="filter-buttons">
+          <a class="region-filter {% if scope != 'club' %}active{% endif %}"
+             href="{{ url_for('calendar.calendar') }}">All regions</a>
+          <a class="region-filter {% if scope == 'club' %}active{% endif %}"
+             href="{{ url_for('calendar.calendar', scope='club') }}">Only {{ club.state }}</a>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if months %}
+    <div data-signup-base="/calendar">
+      {% for month_label, month_events in months %}
+        <div class="month-section">
+          <div class="month-header">{{ month_label }}</div>
+          <div class="events-grid">
+            {% for ev in month_events %}
+              {% set ds = ev.date|string %}
+              <article class="event-card" data-event-id="{{ ev.id }}">
+                <div class="event-date">
+                  <div class="event-day">{{ ds[8:10] }}</div>
+                  <div class="event-month">{{ MONTH_ABBR[ds[5:7]|int] if ds[5:7]|int else ds[5:7] }}</div>
+                </div>
+
+                {% if ev.region %}
+                  <span class="event-region-badge">{{ ev.region }}</span>
+                {% endif %}
+
+                <div class="event-distance-row">
+                  <span class="event-distance">{{ ev.distance_km }} km</span>
+                  {% if ev.elevation_ft %}
+                    <span class="event-elevation">{{ ev.elevation_ft }} ft climbing</span>
+                  {% endif %}
+                </div>
+
+                <h2 class="event-title">
+                  {% if ev.rwgps_url %}
+                    <a href="{{ ev.rwgps_url }}" rel="noopener" target="_blank">{{ ev.name }}</a>
+                  {% else %}
+                    {{ ev.name }}
+                  {% endif %}
+                </h2>
+
+                {% if ev.rwgps_url %}
+                  <div class="event-links">
+                    <a class="event-link-btn" href="{{ ev.rwgps_url }}" rel="noopener" target="_blank">
+                      Route map
+                    </a>
+                  </div>
+                {% endif %}
+
+                <div class="event-details-info">
+                  {% if ev.ride_type %}<span>{{ ev.ride_type }}</span>{% endif %}
+                  <span>
+                    Start:
+                    {# National-feed events have no start location/time — show an
+                       honest placeholder, never a fabricated value. #}
+                    {{ ev.start_location or '—' }}{% if ev.start_time %} · {{ ev.start_time }}{% endif %}
+                  </span>
+                  {% if ev.time_limit_hours %}
+                    <span>Time limit: {{ ev.time_limit_hours }} h</span>
+                  {% endif %}
+                </div>
+
+                <div class="signup-section">
+                  <span class="signup-count">{{ ev.signup_count or 0 }} interested</span>
+                  {% if rider %}
+                    <span class="signup-actions">
+                      {% set status = my_status.get(ev.id) %}
+                      <span class="signup-status" data-event-id="{{ ev.id }}">
+                        {% if status and status != 'withdraw' %}{{ status|capitalize }}{% else %}—{% endif %}
+                      </span>
+                      <button type="button" class="btn btn-small signup-btn"
+                              data-event-id="{{ ev.id }}" data-status="interested">Interested</button>
+                      <button type="button" class="btn btn-small signup-btn"
+                              data-event-id="{{ ev.id }}" data-status="going">Going</button>
+                      <button type="button" class="btn btn-small btn-secondary signup-btn"
+                              data-event-id="{{ ev.id }}" data-status="withdraw">Withdraw</button>
+                    </span>
+                  {% endif %}
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
   {% else %}
     <p class="muted">No upcoming brevets found right now.</p>
   {% endif %}
 
   {% if not rider %}
     <p class="calendar-signin-prompt">
-      <a class="btn" href="{{ url_for('auth.login', next=url_for('calendar.calendar')) }}">Sign in</a>
+      <a class="btn btn-primary" href="{{ url_for('auth.login', next=url_for('calendar.calendar')) }}">Sign in</a>
       to mark yourself interested or going on a brevet.
     </p>
   {% endif %}
@@ -96,7 +129,7 @@
 {% if rider %}
 <script>
 // Progressive enhancement: sign-up is a small fetch() POST to the JSON API. No
-// page reload — the row's "My status" cell updates in place. Guests never see
+// page reload — the card's "My status" cell updates in place. Guests never see
 // these controls (server-rendered only when a rider is signed in).
 document.querySelectorAll('.signup-btn').forEach(function (btn) {
   btn.addEventListener('click', function () {

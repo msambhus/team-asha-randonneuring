@@ -39,6 +39,7 @@ def create_app():
     from brevethub.routes.strava import strava_bp
     from brevethub.routes.live import live_bp
     from brevethub.routes.calendar import calendar_bp
+    from brevethub.routes.cron import cron_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix='/auth')
@@ -47,6 +48,10 @@ def create_app():
     app.register_blueprint(strava_bp, url_prefix='/strava')
     app.register_blueprint(live_bp)
     app.register_blueprint(calendar_bp)
+    # cron_bp OWNS the '/cron' segment; the route decorator is leaf-only
+    # ('/refresh-calendar') so the composed URL is exactly '/cron/refresh-calendar'
+    # (matches vercel.json's cron path). Never put '/cron' in the decorator too.
+    app.register_blueprint(cron_bp, url_prefix='/cron')
 
     @app.context_processor
     def inject_branding():

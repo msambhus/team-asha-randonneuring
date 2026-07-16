@@ -74,6 +74,12 @@ class Config:
         ).split(',') if o.strip()
     ]
 
+    # Scheduled-refresh auth. The Vercel cron that warms the calendar cache
+    # (/cron/refresh-calendar) must present `Authorization: Bearer <CRON_SECRET>`.
+    # Unset locally → the cron endpoint 500s (never runs an unauthenticated scrape);
+    # set it on the BrevetHub Vercel project. Separate from Team Asha's CRON_SECRET.
+    CRON_SECRET = os.environ.get('CRON_SECRET')
+
     # Session security — HTTPS-only cookies in production, 30-day persistent login.
     SESSION_COOKIE_SECURE = _IS_PRODUCTION
     SESSION_COOKIE_HTTPONLY = True
