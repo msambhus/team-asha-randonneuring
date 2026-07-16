@@ -631,3 +631,58 @@ def get_brevet_weather_for_events(event_ids):
         'forecast_date': row['forecast_date'],
         'fetched_at': row['fetched_at'],
     } for row in rows}
+
+
+# --------------------------------------------------------------------------- #
+# Brevet pacing plans (rp_brevet_plan) — a rider's saved target speed / finish
+# time per cached brevet, plus the server-computed pacing schedule. The pacing
+# math is the reused shared/pacing.py engine; this layer only persists the
+# rider's inputs and the computed schedule. Every query targets an rp_* table.
+# --------------------------------------------------------------------------- #
+def get_brevet_event_full(event_id):
+    """A single cached brevet by id including ``time_limit_hours`` — the row the
+    pacing planner needs (the sign-up gate's :func:`get_brevet_event` omits it).
+
+    Returns None for an unknown event so the plan route can 404. Touches only
+    rp_brevet_event.
+    """
+    return db.query_one(
+        "SELECT id, rusa_route_id, name, date, distance_km, region, ride_type, "
+        "       elevation_ft, rwgps_url, start_location, start_time, time_limit_hours "
+        "FROM rp_brevet_event WHERE id = %s",
+        (event_id,),
+    )
+
+
+def get_rider_brevet_plan(rider_id, event_id):
+    """The rider's saved pacing plan for a brevet, or None. One row per pair."""
+    return db.query_one(
+        "SELECT rider_id, event_id, target_speed_kmh, target_finish_min, plan_data "
+        "FROM rp_brevet_plan WHERE rider_id = %s AND event_id = %s",
+        (rider_id, event_id),
+    )
+
+
+def upsert_rider_brevet_plan(rider_id, event_id, *, target_speed_kmh=None,
+                             target_finish_min=None, plan_data=None):
+    """Create or replace the rider's saved pacing plan for a brevet.
+
+    A single atomic INSERT ... ON CONFLICT ... DO UPDATE keyed on the
+    UNIQUE(rider_id, event_id) constraint, so a rider re-saving with a new target
+    transitions the row in place (last write wins) instead of hitting a unique
+    violation. ``plan_data`` is the SERVER-computed schedule (never a client-posted
+    one), JSON-adapted with psycopg2's ``Json``.
+
+    (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner
+    reason documented on :func:`upsert_brevet_event`.)
+    """
+    db.execute(
+        "INSERT INTO rp_brevet_plan "
+        "  (rider_id, event_id, target_speed_kmh, target_finish_min, plan_data) "
+        "VALUES (%s, %s, %s, %s, %s) "
+        "ON CONFLICT (rider_id, event_id) DO UPDATE "
+        "SET target_speed_kmh = EXCLUDED.target_speed_kmh, "
+        "    target_finish_min = EXCLUDED.target_finish_min, "
+        "    plan_data = EXCLUDED.plan_data, updated_at = NOW()",
+        (rider_id, event_id, target_speed_kmh, target_finish_min, Json(plan_data)),
+    )

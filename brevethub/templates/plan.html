@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Pacing plan — {{ event.name }} — {{ product_name }}{% endblock %}
+{% block content %}
+{# Uses ONLY builtin Jinja filters (no commafy / clean_name — this app registers
+   neither). All clock-ish values are pre-formatted in the route. #}
+<section class="plan-page">
+  <div class="plan-intro">
+    <p class="muted"><a href="{{ url_for('calendar.calendar') }}">&larr; Back to calendar</a></p>
+    <h1>Pacing plan</h1>
+    <h2 class="plan-event-name">{{ event.name }}</h2>
+    <div class="plan-event-meta">
+      <span>{{ event.distance_km }} km</span>
+      {% if event.region %}<span>{{ event.region }}</span>{% endif %}
+      {% if event.date %}<span>{{ event.date }}</span>{% endif %}
+      <span>ACP time limit: {{ cutoff_hours }} h</span>
+    </div>
+    <p class="muted plan-scope-note">
+      Scope A pacing: stops are spaced evenly from the brevet distance (every 100&nbsp;km
+      plus the finish). Arrival and time bank are computed against the ACP control
+      cutoff.
+    </p>
+  </div>
+
+  {# Target picker — a simple GET form; submitting recomputes the schedule. Pick a
+     target average speed OR a target finish time (speed wins if both are given). #}
+  <form class="plan-target-form" method="get" action="{{ url_for('plan.plan_view', event_id=event.id) }}">
+    <div class="plan-target-field">
+      <label for="plan-speed">Target average speed (km/h)</label>
+      <input id="plan-speed" name="speed" type="number" step="0.1" min="1"
+             value="{{ speed_kmh }}" inputmode="decimal">
+    </div>
+    <div class="plan-target-or">or</div>
+    <div class="plan-target-field">
+      <label for="plan-finish">Target finish time (hours)</label>
+      <input id="plan-finish" name="finish" type="number" step="0.1" min="1"
+             placeholder="{{ finish_hours }}" inputmode="decimal">
+    </div>
+    <button type="submit" class="btn">Recompute</button>
+  </form>
+
+  <div class="plan-summary">
+    <span>Target pace: <strong>{{ speed_kmh }} km/h</strong></span>
+    {% if finish_hours %}<span>Est. finish: <strong>{{ finish_hours }} h</strong></span>{% endif %}
+    {% if finish_row and finish_row.time_bank_known %}
+      <span class="plan-bank {{ 'plan-bank-ok' if finish_row.time_bank_positive else 'plan-bank-low' }}">
+        Finish time bank: <strong>{{ finish_row.time_bank }}</strong>
+      </span>
+    {% endif %}
+  </div>
+
+  {% if schedule %}
+    <table class="plan-schedule">
+      <thead>
+        <tr>
+          <th>Cumulative distance</th>
+          <th>Arrival (elapsed)</th>
+          <th>Avg speed</th>
+          <th>Time bank vs cutoff</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in schedule %}
+          <tr>
+            <td class="plan-dist">{{ row.distance_km }} km</td>
+            <td class="plan-arrival">{{ row.arrival or '—' }}</td>
+            <td class="plan-speed">{% if row.avg_speed is not none %}{{ row.avg_speed }} km/h{% else %}—{% endif %}</td>
+            <td class="plan-bank-cell {{ 'plan-bank-ok' if row.time_bank_positive else 'plan-bank-low' }}">
+              {% if row.time_bank_known %}{{ row.time_bank }}{% else %}—{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No schedule to show for this brevet.</p>
+  {% endif %}
+
+  <div class="plan-save-section">
+    {% if rider %}
+      <button type="button" id="plan-save-btn" class="btn"
+              data-save-url="{{ url_for('plan.save_plan', event_id=event.id) }}"
+              data-speed="{{ speed_kmh }}">Save this plan</button>
+      <span id="plan-save-status" class="muted"
+            data-saved="{{ 'yes' if saved else 'no' }}">
+        {% if saved %}You have a saved plan for this brevet.{% endif %}
+      </span>
+    {% else %}
+      <p class="muted">
+        <a href="{{ url_for('auth.login', next=url_for('plan.plan_view', event_id=event.id)) }}">Sign in</a>
+        to save your pacing plan for this brevet.
+      </p>
+    {% endif %}
+  </div>
+</section>
+
+{% if rider %}
+<script>
+  // Save the current target to the rider's account (server recomputes the schedule).
+  (function () {
+    var btn = document.getElementById('plan-save-btn');
+    var status = document.getElementById('plan-save-status');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      fetch(btn.dataset.saveUrl, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({speed: btn.dataset.speed}),
+      }).then(function (r) {
+        if (r.status === 200) {
+          if (status) status.textContent = 'Plan saved.';
+        } else if (r.status === 401) {
+          if (status) status.textContent = 'Please sign in to save.';
+        } else {
+          if (status) status.textContent = 'Could not save — try again.';
+        }
+      }).catch(function () {
+        if (status) status.textContent = 'Could not save — try again.';
+      }).finally(function () {
+        btn.disabled = false;
+      });
+    });
+  })();
+</script>
+{% endif %}
+{% endblock %}
