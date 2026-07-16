@@ -122,6 +122,49 @@ def fetch_activities(access_token, *, api_base, after_epoch=None, before_epoch=N
     return all_activities
 
 
+# The Strava activity-streams the ride-analysis engine consumes, as the API's
+# `keys` param. Mirrors shared.strava_analysis._STREAM_KEYS.
+ACTIVITY_STREAM_KEYS = 'time,distance,velocity_smooth,heartrate,watts,cadence,altitude,grade_smooth,latlng'
+
+
+def fetch_activity_streams(access_token, activity_id, *, api_base, keys=None,
+                           timeout=15):
+    """Fetch one activity's data streams from the Strava API.
+
+    Args:
+        access_token: a valid Strava access token (bearer).
+        activity_id: the Strava activity id (may exceed 32 bits — a plain int).
+        api_base: Strava API base URL (e.g. https://www.strava.com/api/v3).
+        keys: comma-separated stream keys to request (defaults to the full
+            analysis set in ``ACTIVITY_STREAM_KEYS``).
+        timeout: per-request timeout in seconds.
+
+    Returns:
+        dict mapping each stream type to its data list, e.g.
+        ``{'time': [...], 'distance': [...], 'latlng': [[lat, lng], ...], ...}``.
+        Strava returns a list of ``{type, data, ...}`` objects; this flattens it to
+        ``{type: data}``.
+
+    Raises:
+        Exception on a 429 rate limit (a distinct message the caller can surface),
+        and via ``raise_for_status`` on any other non-OK response — so a private/
+        missing activity (404) or auth failure (401) never returns partial data.
+    """
+    resp = requests.get(
+        f"{api_base}/activities/{activity_id}/streams",
+        headers={'Authorization': f'Bearer {access_token}'},
+        params={'keys': keys or ACTIVITY_STREAM_KEYS, 'key_type': 'time'},
+        timeout=timeout,
+    )
+    if resp.status_code == 429:
+        raise Exception("Strava rate limit exceeded. Please try again later.")
+    resp.raise_for_status()
+    streams = {}
+    for s in resp.json():
+        streams[s['type']] = s['data']
+    return streams
+
+
 def transform_activity(activity, rider_id):
     """Map a raw Strava API activity into a flat, storage-shaped dict."""
     strava_id = activity['id']
