@@ -562,3 +562,72 @@ def get_rider_signups(rider_id):
         "ORDER BY e.date ASC, e.distance_km ASC",
         (rider_id, RideStatus.INTERESTED.value, RideStatus.GOING.value),
     )
+
+
+# --------------------------------------------------------------------------- #
+# Brevet weather cache (rp_brevet_weather) — one raw Open-Meteo point forecast per
+# (event, date), warmed OFF the request path by the weather cron and READ (never
+# fetched) by the calendar. Every query below targets an rp_* table only.
+# --------------------------------------------------------------------------- #
+def get_weather_forecast_targets(horizon_days=16):
+    """Near-term upcoming brevets the weather cron should fetch a forecast for.
+
+    Returns ``[{id, date, region}, ...]`` for events whose date is between today
+    and ``today + horizon_days`` (Open-Meteo's forecast horizon) AND that have a
+    non-NULL region label (so the cron can resolve an approximate start coordinate).
+    Events further out — or without a region — are skipped: there is nothing honest
+    to forecast, so no cache row is created and the calendar shows the "not
+    available yet" state. Touches only rp_brevet_event.
+    """
+    return db.query(
+        "SELECT id, date, region FROM rp_brevet_event "
+        "WHERE date >= CURRENT_DATE "
+        "  AND date <= CURRENT_DATE + make_interval(days => %s) "
+        "  AND region IS NOT NULL "
+        "ORDER BY date ASC",
+        (horizon_days,),
+    )
+
+
+def upsert_brevet_weather(event_id, forecast_date, weather_data):
+    """Insert or refresh one cached point forecast, keyed on (event_id, forecast_date).
+
+    A single atomic upsert on the UNIQUE(event_id, forecast_date) constraint, so a
+    repeated cron run refreshes the row in place (idempotent) instead of raising a
+    unique-violation. ``weather_data``
+    is the raw Open-Meteo JSON dict, JSON-adapted with psycopg2's ``Json``. Only ever
+    called by the cron with a successful fetch, so a transient failure never overwrites
+    a last-good row.
+
+    (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner
+    reason documented on :func:`upsert_brevet_event`.)
+    """
+    db.execute(
+        "INSERT INTO rp_brevet_weather (event_id, forecast_date, weather_data) "
+        "VALUES (%s, %s, %s) "
+        "ON CONFLICT (event_id, forecast_date) DO UPDATE "
+        "SET weather_data = EXCLUDED.weather_data, fetched_at = NOW()",
+        (event_id, forecast_date, Json(weather_data)),
+    )
+
+
+def get_brevet_weather_for_events(event_ids):
+    """Cached forecasts for a list of event ids, as ``{event_id: {weather_data,
+    forecast_date, fetched_at}}``.
+
+    The calendar's cache-read-only lookup: one query for every event on the page,
+    then the route summarizes each raw payload in-process. Returns ``{}`` immediately
+    for an empty id list (no query, no error). Touches only rp_brevet_weather.
+    """
+    if not event_ids:
+        return {}
+    rows = db.query(
+        "SELECT event_id, forecast_date, weather_data, fetched_at "
+        "FROM rp_brevet_weather WHERE event_id = ANY(%s)",
+        (list(event_ids),),
+    )
+    return {row['event_id']: {
+        'weather_data': row['weather_data'],
+        'forecast_date': row['forecast_date'],
+        'fetched_at': row['fetched_at'],
+    } for row in rows}
