@@ -77,8 +77,15 @@ Environment variables (BrevetHub's own namespace):
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | **Reused** from Team Asha's existing OAuth client |
 | `STRAVA_CLIENT_ID` | Strava app client id (**default `113090`** — Team Asha's app; override only for a separate app) |
 | `STRAVA_CLIENT_SECRET` | Strava app client secret — **required for Strava connect**; unset = the button flashes a config message, no crash |
+| `CRON_SECRET` | Bearer secret for the scheduled calendar refresh (`/cron/refresh-calendar`). Unset = the cron endpoint 500s (never scrapes unauthenticated). Its own value, separate from Team Asha's. |
 
 No secrets are committed — `.env` is git-ignored and the README uses placeholders.
+
+The daily Vercel cron (`brevethub/vercel.json` → `/cron/refresh-calendar`, `0 8 * * *`)
+scrapes the RUSA national calendar off the request path and upserts `rp_brevet_event`,
+so `/calendar` only reads the warm cache (it never blocks on the heavy scrape). The
+cache is seeded on the first `/calendar` load when still empty; the maintainer can also
+warm it immediately with `curl -H "Authorization: Bearer $CRON_SECRET" .../cron/refresh-calendar`.
 
 ## Deploy (post-merge; out of this `pr-only` mission, documented for the owner)
 

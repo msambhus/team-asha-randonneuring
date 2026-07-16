@@ -4,6 +4,9 @@
     { "src": "api/index.py", "use": "@vercel/python", "config": { "includeFiles": "shared/**" } },
     { "src": "static/**", "use": "@vercel/static" }
   ],
+  "crons": [
+    { "path": "/cron/refresh-calendar", "schedule": "0 8 * * *" }
+  ],
   "routes": [
     { "src": "/static/(.*)", "dest": "/static/$1" },
     { "src": "/(.*)", "dest": "/api/index.py" }

@@ -13,10 +13,14 @@ Rider surface (authenticated BrevetHub rider):
 
 Events are sourced from RUSA's national listing via the shared, club-agnostic
 scraper (shared.rusa_calendar.get_rusa_events) and cached in rp_brevet_event, so
-the page does not re-scrape on every load: the first request past the TTL blocks on
-a scrape and upserts; later requests hit the cache. A scrape failure never 500s —
-it serves the (stale) cache and shows a soft degradation banner, and an empty scrape
-never overwrites good cache.
+the page never scrapes on a warm load. The heavy scrape lives on the scheduled
+refresh (brevethub.routes.cron.refresh_calendar) — /calendar only READS the cache.
+The ONLY on-request scrape is a one-time, bounded seed of a truly EMPTY cache
+(first deploy, before any cron run); a present cache — even a stale one — is served
+as-is and never scraped synchronously (this is the redteam fix that keeps the heavy
+scrape off the hot path for the whole running lifetime, not just for a TTL window).
+A scrape failure never 500s — it serves the cache and shows a soft degradation
+banner, and an empty scrape never overwrites good cache.
 
 Web parity vs Team Asha's upcoming-brevets page (templates/upcoming_brevets.html,
 populated by scripts/update_rusa_events.py), deliberately narrowed for a multi-club
@@ -50,10 +54,12 @@ from shared.rusa_calendar import get_rusa_events
 
 calendar_bp = Blueprint('calendar', __name__)
 
-# Re-scrape the national RUSA calendar at most once every 6h; between scrapes every
-# /calendar load is served from the rp_brevet_event cache (no HTTP). Matches
-# BrevetHub's cron-less serverless pattern (on-demand refresh, no background job).
-CALENDAR_TTL = timedelta(hours=6)
+# How old the cache may get before /calendar shows a soft "stale" banner. This is a
+# DISPLAY threshold only — it never triggers a scrape (the redteam fix). Set wider
+# than the daily cron interval so a normal day never trips it, while a genuine
+# multi-day cron outage does. The scheduled refresh (routes/cron.py) keeps the cache
+# warm; a present cache is NEVER re-scraped on the request path, only reported stale.
+CALENDAR_STALE_AFTER = timedelta(hours=40)
 
 # The statuses a rider may set from the calendar (BrevetHub's own enum values).
 _SIGNUP_STATUSES = {
@@ -63,41 +69,87 @@ _SIGNUP_STATUSES = {
 }
 
 
-def _refresh_calendar_cache():
-    """Scrape + cache upcoming brevets when the cache is empty or past the TTL.
+def _scrape_and_upsert():
+    """Scrape the national RUSA calendar and upsert each event into rp_brevet_event.
+
+    Returns the number of events upserted (0 when the scrape returned nothing).
+    Raises on a scrape/DB failure so the caller can decide how to degrade — the
+    cron endpoint logs a warning and returns non-500 JSON, the /calendar seed path
+    shows a soft banner. An empty scrape performs NO upsert, so a transient RUSA
+    outage that returns nothing never clobbers a good cache. Shared by the cron
+    refresh and the one-time empty-cache seed so the scrape+upsert logic lives once.
+
+    fetch_rwgps=False: the national feed alone is enough for the calendar, and
+    following every route-detail page would make a load do dozens of blocking HTTP
+    calls. region_filter=None → the general RUSA calendar.
+    """
+    events = get_rusa_events(fetch_rwgps=False)
+    if not events:
+        return 0
+    for event in events:
+        models.upsert_brevet_event(event)
+    return len(events)
+
+
+def _seed_calendar_cache_if_empty():
+    """Warm a truly EMPTY calendar cache with one bounded scrape (first-deploy seed).
 
     Never raises: returns a soft-degradation flag the page renders as a banner —
-      None      cache is fresh, or a fresh scrape succeeded,
-      'stale'   scrape failed/empty but a prior cache is still being served,
-      'empty'   nothing cached and the scrape failed/returned nothing.
-    An empty scrape never overwrites a good cache (a transient RUSA outage and a
-    genuinely empty result are indistinguishable to the scraper).
+      None      cache already has rows (any age — NEVER scraped here) and is fresh,
+                or the empty-cache seed scrape succeeded,
+      'stale'   cache has rows but they are older than CALENDAR_STALE_AFTER,
+      'empty'   cache is empty and the seed scrape failed or returned nothing.
+
+    Policy (redteam fix): a present cache is NEVER scraped on the request path — not
+    even when stale. Only a truly empty cache (first deploy, before any cron run)
+    triggers the single bounded seed scrape; the daily cron keeps it warm thereafter,
+    so once seeded no /calendar load ever scrapes synchronously again.
     """
     latest = models.get_events_cache_freshness()
-    fresh = (latest is not None
-             and (datetime.now(timezone.utc) - latest) < CALENDAR_TTL)
-    if fresh:
-        return None
+    if latest is not None:
+        # Present cache — serve as-is, never scrape on the request path.
+        stale = (datetime.now(timezone.utc) - latest) >= CALENDAR_STALE_AFTER
+        return 'stale' if stale else None
 
+    # Empty cache: one bounded seed scrape. Any failure degrades to 'empty', never 500.
     try:
-        # fetch_rwgps=False: the national feed alone is enough for the calendar, and
-        # following every route-detail page would make a cold load do dozens of
-        # blocking HTTP calls. region_filter=None → the general RUSA calendar.
-        events = get_rusa_events(fetch_rwgps=False)
-        if events:
-            # The upsert loop is inside the try too: upsert_brevet_event is an atomic
-            # ON CONFLICT upsert, but a DB hiccup (or a concurrent DDL) must still
-            # degrade to the cached calendar rather than 500 — the never-500 promise
-            # covers the whole refresh, not just the HTTP scrape.
-            for event in events:
-                models.upsert_brevet_event(event)
+        if _scrape_and_upsert() > 0:
             return None
     except Exception as e:
-        current_app.logger.warning('RUSA calendar refresh failed: %s', e)
-        return 'stale' if latest is not None else 'empty'
+        current_app.logger.warning('RUSA calendar seed failed: %s', e)
+    return 'empty'
 
-    # Empty scrape (no exception): keep any good cache, but flag we served nothing new.
-    return 'stale' if latest is not None else 'empty'
+
+def _month_label(event_date):
+    """Group label like ``"August 2026"`` for an event's date.
+
+    Accepts a ``datetime.date`` (as psycopg2 returns) or an ISO ``"YYYY-MM-DD"``
+    string (as tests supply); both stringify to ISO, so we parse defensively.
+    """
+    iso = str(event_date)[:10]
+    try:
+        return datetime.strptime(iso, '%Y-%m-%d').strftime('%B %Y')
+    except ValueError:
+        return iso
+
+
+def _group_by_month(events):
+    """Turn a date-ordered event list into ``[(month_label, [events]), ...]``.
+
+    Preserves the incoming order (events already come soonest-first from the model),
+    so months and the events within them stay chronological.
+    """
+    groups = []
+    current_label = None
+    bucket = None
+    for ev in events:
+        label = _month_label(ev['date'])
+        if label != current_label:
+            current_label = label
+            bucket = []
+            groups.append((label, bucket))
+        bucket.append(ev)
+    return groups
 
 
 @calendar_bp.route('/calendar')
@@ -113,8 +165,9 @@ def calendar():
     scope = request.args.get('scope', 'all')
     state = club['state'] if (scope == 'club' and club and club.get('state')) else None
 
-    degraded = _refresh_calendar_cache()
+    degraded = _seed_calendar_cache_if_empty()
     events = models.get_upcoming_events(state=state)
+    months = _group_by_month(events)
 
     # The current rider's OWN status per event — never another rider's, so the
     # guest/other-rider view stays free of any participation PII.
@@ -124,8 +177,8 @@ def calendar():
                      for row in models.get_rider_signup_statuses(rider['id'])}
 
     return render_template(
-        'calendar.html', events=events, my_status=my_status, rider=rider,
-        club=club, scope=scope, degraded=degraded,
+        'calendar.html', events=events, months=months, my_status=my_status,
+        rider=rider, club=club, scope=scope, degraded=degraded,
     )
 
 
