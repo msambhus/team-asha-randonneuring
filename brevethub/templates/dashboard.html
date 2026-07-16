@@ -156,6 +156,10 @@
       <p class="muted">Connected — activity summary will appear shortly.</p>
     {% endif %}
 
+    <p>
+      <a class="btn" href="{{ url_for('analysis.analysis_list') }}">Analyze a ride</a>
+    </p>
+
     <form method="post" action="{{ url_for('strava.disconnect') }}">
       <button class="btn btn-secondary" type="submit">Disconnect Strava</button>
     </form>

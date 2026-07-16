@@ -7,6 +7,7 @@ scans this file and fails the build if a non-`rp_` table name ever appears.
 import secrets
 from enum import Enum
 
+from psycopg2 import Binary
 from psycopg2.extras import Json
 
 from brevethub import db
@@ -685,4 +686,65 @@ def upsert_rider_brevet_plan(rider_id, event_id, *, target_speed_kmh=None,
         "    target_finish_min = EXCLUDED.target_finish_min, "
         "    plan_data = EXCLUDED.plan_data, updated_at = NOW()",
         (rider_id, event_id, target_speed_kmh, target_finish_min, Json(plan_data)),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Per-ride analysis (rp_ride_analysis) — a rider's cached, computed breakdown of
+# one of their OWN Strava activities (M9). The heavy Strava stream fetch + the
+# reused shared/strava_analysis.py engine run only on an explicit rider action
+# (POST /analysis/<id>/compute); every read is served from this cache. Both the
+# analysis (JSONB) and the compressed raw streams (BYTEA) live here, keyed per
+# (rider, activity). Every query targets an rp_* table only and is scoped by
+# rider_id, so a rider only ever reads their own analysis.
+# --------------------------------------------------------------------------- #
+def get_ride_analysis(rider_id, strava_activity_id):
+    """The rider's cached analysis for one activity, or None.
+
+    Scoped by ``rider_id`` — the read side of the ownership invariant, so a rider
+    can never read another rider's cached analysis. Returns the decoded ``analysis``
+    dict, the raw compressed ``activity_streams`` blob, and ``computed_at``.
+    """
+    return db.query_one(
+        "SELECT rider_id, strava_activity_id, analysis, activity_streams, computed_at "
+        "FROM rp_ride_analysis WHERE rider_id = %s AND strava_activity_id = %s",
+        (rider_id, strava_activity_id),
+    )
+
+
+def get_analyzed_activity_ids(rider_id):
+    """The set of the rider's Strava activity ids that already have a cached
+    analysis — lets the list view mark which activities are analyzed without an
+    N+1 query. Rider-scoped, so it never reveals another rider's activity ids."""
+    rows = db.query(
+        "SELECT strava_activity_id FROM rp_ride_analysis WHERE rider_id = %s",
+        (rider_id,),
+    )
+    return {row['strava_activity_id'] for row in rows}
+
+
+def upsert_ride_analysis(rider_id, strava_activity_id, analysis,
+                         compressed_streams=None):
+    """Create or replace the rider's cached analysis for one activity.
+
+    A single atomic upsert on the UNIQUE(rider_id, strava_activity_id) constraint,
+    so re-analyzing an already cached activity refreshes the row in place
+    (idempotent) instead of raising a unique-violation. ``analysis`` is the
+    SERVER-computed breakdown (JSON-adapted
+    with psycopg2's ``Json``); ``compressed_streams`` is the zlib-compressed raw
+    streams (wrapped with ``Binary`` for the BYTEA column) so the detail/map view
+    re-renders without another Strava fetch.
+
+    (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner
+    reason documented on :func:`upsert_brevet_event`.)
+    """
+    db.execute(
+        "INSERT INTO rp_ride_analysis "
+        "  (rider_id, strava_activity_id, analysis, activity_streams) "
+        "VALUES (%s, %s, %s, %s) "
+        "ON CONFLICT (rider_id, strava_activity_id) DO UPDATE "
+        "SET analysis = EXCLUDED.analysis, "
+        "    activity_streams = EXCLUDED.activity_streams, computed_at = NOW()",
+        (rider_id, strava_activity_id, Json(analysis),
+         Binary(compressed_streams) if compressed_streams is not None else None),
     )

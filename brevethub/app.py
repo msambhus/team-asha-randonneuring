@@ -40,6 +40,7 @@ def create_app():
     from brevethub.routes.live import live_bp
     from brevethub.routes.calendar import calendar_bp
     from brevethub.routes.plan import plan_bp
+    from brevethub.routes.analysis import analysis_bp
     from brevethub.routes.cron import cron_bp
 
     app.register_blueprint(main_bp)
@@ -50,6 +51,7 @@ def create_app():
     app.register_blueprint(live_bp)
     app.register_blueprint(calendar_bp)
     app.register_blueprint(plan_bp)
+    app.register_blueprint(analysis_bp)
     # cron_bp OWNS the '/cron' segment; the route decorator is leaf-only
     # ('/refresh-calendar') so the composed URL is exactly '/cron/refresh-calendar'
     # (matches vercel.json's cron path). Never put '/cron' in the decorator too.
