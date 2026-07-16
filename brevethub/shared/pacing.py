@@ -51,43 +51,43 @@ def recalculate_cumulative_values(stops, custom_plan, cutoff_hours=None, total_m
     total_distance = float(total_mi) if total_mi else 0.0
     if total_distance <= 0:
         total_distance = float(max((float(s.get('distance_miles') or 0) for s in stops), default=0))
-    
+
     cum_time_min = 0
     prev_dist = 0.0
-    
+
     for i, stop in enumerate(stops):
         # Convert Decimal to float for calculations
         cur_dist = float(stop.get('distance_miles') or 0)
         elev_gain = int(stop.get('elevation_gain') or 0)
         seg_time = int(stop.get('segment_time_min') or 0)
         stop_duration = int(stop.get('stop_duration_min') or 0)
-        
+
         # Calculate segment distance
         seg_dist = round(cur_dist - prev_dist, 1)
         stop['seg_dist'] = seg_dist
-        
+
         # Calculate ft/mile for this segment
         if elev_gain and seg_dist > 0:
             stop['ft_per_mi'] = int(round(elev_gain / seg_dist))
         else:
             stop['ft_per_mi'] = None
-        
+
         # Calculate average speed for this segment (based on segment time only, not including stop duration)
         if seg_time and seg_time > 0 and seg_dist > 0:
             stop['avg_speed'] = round(seg_dist / (seg_time / 60.0), 1)
         else:
             stop['avg_speed'] = None
-        
+
         # Cumulative time includes both segment time (riding) and stop duration (rest)
         if seg_time:
             cum_time_min += seg_time
         if stop_duration:
             cum_time_min += stop_duration
         stop['cum_time_min'] = cum_time_min
-        
+
         # Arrival time: cumulative time minus stop duration (time you arrive, before resting)
         stop['arrival_time_min'] = cum_time_min - stop_duration
-        
+
         # Time bank calculation (bookend time - arrival time, not including stop duration)
         if cutoff_hours and total_distance > 0 and cur_dist > 0:
             fraction = cur_dist / total_distance
@@ -97,51 +97,51 @@ def recalculate_cumulative_values(stops, custom_plan, cutoff_hours=None, total_m
         else:
             stop['bookend_time_min'] = None
             stop['time_bank_min'] = None
-        
+
         # Difficulty scoring
         stop['difficulty_score'] = _compute_difficulty_score(stop['ft_per_mi'], stop.get('notes'))
         stop['difficulty_label'] = _difficulty_label(stop['difficulty_score'])
         stop['difficulty_color'] = _difficulty_color(stop['ft_per_mi'])
-        
+
         prev_dist = cur_dist
-    
+
     return stops
 
 
 def apply_pace_adjustment(stops, avg_moving_speed):
     """
     Recalculate segment times based on a new average moving speed.
-    
+
     Only adjusts segments where distance > 0 (actual riding segments).
     Preserves break/rest stop times (seg_dist = 0).
-    
+
     Args:
         stops: List of stop dictionaries
         avg_moving_speed: New average speed in mph
-    
+
     Returns:
         List of stops with adjusted segment_time_min
     """
     if not avg_moving_speed or avg_moving_speed <= 0:
         return stops
-    
+
     # Convert to float in case it's Decimal from database
     avg_moving_speed = float(avg_moving_speed)
-    
+
     adjusted = []
     for stop in stops:
         stop_copy = dict(stop)
         seg_dist = float(stop_copy.get('seg_dist', 0) or 0)
-        
+
         # Only adjust riding segments (seg_dist > 0)
         if seg_dist and seg_dist > 0:
             # Calculate new time: distance / speed * 60 minutes
             new_time_min = int(round((seg_dist / avg_moving_speed) * 60))
             stop_copy['segment_time_min'] = new_time_min
             stop_copy['is_modified'] = True
-        
+
         adjusted.append(stop_copy)
-    
+
     return adjusted
 
 
@@ -175,15 +175,15 @@ def _compute_difficulty_score(ft_per_mi, notes):
     """Compute difficulty score for a segment."""
     if not ft_per_mi:
         return 0
-    
+
     score = ft_per_mi
-    
+
     # Boost for steep/technical notes
     if notes:
         notes_lower = notes.lower()
         if any(word in notes_lower for word in ['steep', 'climb', 'grade', 'technical']):
             score *= 1.2
-    
+
     return round(score, 1)
 
 
@@ -208,7 +208,7 @@ def _difficulty_color(ft_per_mi):
     """
     if not ft_per_mi:
         return '#94a3b8'  # gray (flat)
-    
+
     if ft_per_mi <= 20:
         return '#22c55e'  # green (easy)
     elif ft_per_mi <= 40:
