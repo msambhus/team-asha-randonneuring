@@ -15,9 +15,10 @@
 -- "forecast not available yet" state rather than a fabricated value.
 --
 -- Strictly additive + idempotent + rp_*-only, exactly like migrations 033/035/036/
--- 037: a guarded CREATE TABLE plus a guarded index, referencing only rp_* tables.
--- Applying (or re-applying) it cannot alter any Team Asha table; old code that
--- predates the table simply ignores it, so it is safe to apply ahead of the deploy.
+-- 037: one guarded table creation plus a guarded index, referencing only rp_* tables
+-- (every statement carries IF NOT EXISTS). Applying (or re-applying) it cannot alter
+-- any Team Asha table; old code that predates the table simply ignores it, so it is
+-- safe to apply ahead of the code deploy.
 
 -- --------------------------------------------------------------------------- --
 -- rp_brevet_weather — cached point forecast per (event, date).
