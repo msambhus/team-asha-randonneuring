@@ -484,7 +484,7 @@ table tbody tr:hover {
 /* --------------------------------------------------------------------------
    10. Calendar — filters + month-grouped event cards
 
-   Ported from Team Asha's upcoming-brevets component vocabulary and de-branded:
+   Adapted from the upstream upcoming-brevets component vocabulary and de-branded:
    the blue/cyan/orange gradients are replaced by neutral, var-driven fills so a
    club can re-theme via :root alone. No club name, logo, or fixed brand hue.
    -------------------------------------------------------------------------- */
