@@ -12,6 +12,19 @@ never touch a real DB or network. The security/honesty contracts are first-class
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _stub_weather_cache():
+    """M7 added a weather-cache read (``models.get_brevet_weather_for_events``) to
+    the ``/calendar`` route. These calendar tests predate weather and don't exercise
+    it, so stub it to an empty cache — keeping them fully mocked / DB-free. Weather
+    badge rendering is covered by test_calendar_weather.py."""
+    with patch('brevethub.models.get_brevet_weather_for_events', return_value={}):
+        yield
+
+
 _RIDER = {'id': 7, 'email': 'rider@example.com', 'google_id': 'g-1',
           'profile_completed': True, 'rusa_id': None, 'club_id': 3,
           'rusa_id_duplicate': False}
