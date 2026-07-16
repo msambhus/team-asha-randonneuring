@@ -51,6 +51,7 @@ from flask import (Blueprint, current_app, jsonify, render_template, request,
 from brevethub import models
 from brevethub.decorators import current_rider
 from shared.rusa_calendar import get_rusa_events
+from shared.weather import summarize_point_forecast
 
 calendar_bp = Blueprint('calendar', __name__)
 
@@ -152,6 +153,26 @@ def _group_by_month(events):
     return groups
 
 
+def _weather_by_event(events):
+    """Map each event id to its summarized cached forecast (cache-read-only).
+
+    Reads the pre-warmed rp_brevet_weather cache in one query for all events on the
+    page, then summarizes each raw Open-Meteo payload with the shared pure
+    summarizer — NO network fetch. Events with no cache row (far-out, region-less,
+    or not yet warmed) simply don't appear in the map, so the template shows the
+    honest "forecast not available yet" state for them. Returns ``{event_id:
+    summary_dict}``.
+    """
+    ids = [ev['id'] for ev in events]
+    cached = models.get_brevet_weather_for_events(ids)
+    result = {}
+    for event_id, row in cached.items():
+        summary = summarize_point_forecast(row.get('weather_data'))
+        if summary:
+            result[event_id] = summary
+    return result
+
+
 @calendar_bp.route('/calendar')
 def calendar():
     """Public upcoming-brevets calendar. Guests browse freely; a signed-in rider
@@ -169,6 +190,14 @@ def calendar():
     events = models.get_upcoming_events(state=state)
     months = _group_by_month(events)
 
+    # Weather badges are CACHE-READ-ONLY: one query for every event on the page,
+    # then summarize the stored raw forecast in-process. NO Open-Meteo/RWGPS fetch
+    # ever happens here — the /cron/fetch-brevet-weather warmer populates the cache
+    # off the request path. Near-term events with a resolvable region get a badge;
+    # far-out or region-less events simply have no cache row and render the honest
+    # "forecast not available yet" state (handled in the template).
+    weather = _weather_by_event(events)
+
     # The current rider's OWN status per event — never another rider's, so the
     # guest/other-rider view stays free of any participation PII.
     my_status = {}
@@ -178,7 +207,7 @@ def calendar():
 
     return render_template(
         'calendar.html', events=events, months=months, my_status=my_status,
-        rider=rider, club=club, scope=scope, degraded=degraded,
+        rider=rider, club=club, scope=scope, degraded=degraded, weather=weather,
     )
 
 

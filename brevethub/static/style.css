@@ -723,6 +723,44 @@ table tbody tr:hover {
   gap: 4px;
 }
 
+/* Weather badge (cache-read-only forecast for near-term events). Neutral palette,
+   driven entirely by design tokens — no club/brand color. */
+.event-weather {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--info-soft);
+  border: 1px solid var(--border);
+  font-size: 0.76rem;
+  color: var(--text);
+}
+.event-weather.event-weather-none {
+  background: transparent;
+  border-style: dashed;
+}
+.event-weather .wx-condition {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+.event-weather .wx-icon { font-size: 0.95rem; line-height: 1; }
+.event-weather .wx-metric {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-light);
+  white-space: nowrap;
+}
+.event-weather .wx-metric.muted { background: transparent; border: none; }
+
 /* Sign-up section (bottom of card) */
 .signup-section {
   margin-top: auto;

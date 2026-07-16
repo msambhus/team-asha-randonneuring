@@ -24,7 +24,10 @@ import hmac
 
 from flask import Blueprint, current_app, jsonify, request
 
+from brevethub import models
 from brevethub.routes.calendar import _scrape_and_upsert
+from shared.weather import (FORECAST_HORIZON_DAYS, fetch_point_forecast,
+                            resolve_region_coordinates)
 
 cron_bp = Blueprint('cron', __name__)
 
@@ -73,3 +76,65 @@ def refresh_calendar():
 
     current_app.logger.info('RUSA calendar refresh upserted %s events', refreshed)
     return jsonify({'ok': True, 'refreshed': refreshed}), 200
+
+
+@cron_bp.route('/fetch-brevet-weather', methods=['GET', 'POST'])
+def fetch_brevet_weather():
+    """Fetch Open-Meteo point forecasts for near-term brevets into the rp_* cache.
+
+    Off the request path (the TA-237 lesson: never fetch weather on a page load).
+    Auth-gated (Bearer CRON_SECRET). Loads near-term upcoming events with a region
+    (get_weather_forecast_targets), resolves each region to an approximate start
+    coordinate, fetches a keyless Open-Meteo daily forecast for the brevet date, and
+    upserts the raw JSON into rp_brevet_weather. The calendar READS this cache only.
+
+    Fails SOFT per event: an event whose region can't be resolved is skipped (no
+    coordinate → nothing honest to fetch), and a transient Open-Meteo error for one
+    event is logged and counted as a failure without 500ing the cron or clobbering
+    that event's last-good cache row (the upsert only runs on a successful fetch).
+    Idempotent — the upsert is ON CONFLICT (event_id, forecast_date), so re-running
+    simply refreshes rows in place. Returns
+    ``{ok, fetched, skipped, failed, considered}`` for observability.
+
+    Route contract (pinned, same as refresh-calendar): the production URL is exactly
+    ``/cron/fetch-brevet-weather`` — the blueprint owns the ``/cron`` prefix and this
+    decorator is LEAF-ONLY, so the composed URL is single-prefixed and the
+    Vercel-scheduled GET reaches the handler (a double ``/cron`` prefix would 404).
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    try:
+        targets = models.get_weather_forecast_targets(horizon_days=FORECAST_HORIZON_DAYS)
+    except Exception as e:
+        current_app.logger.warning('Brevet weather target load failed: %s', e)
+        return jsonify({'ok': False, 'error': 'target load failed',
+                        'fetched': 0, 'skipped': 0, 'failed': 0}), 200
+
+    fetched = skipped = failed = 0
+    for event in targets:
+        coords = resolve_region_coordinates(event.get('region'))
+        if not coords:
+            skipped += 1
+            continue
+        try:
+            weather_data = fetch_point_forecast(coords[0], coords[1], event['date'])
+            if not weather_data:
+                # Outside the forecast horizon (or empty) — nothing honest to store.
+                skipped += 1
+                continue
+            models.upsert_brevet_weather(event['id'], event['date'], weather_data)
+            fetched += 1
+        except Exception as e:
+            # Fail soft: keep the last-good cache row for this event, keep going.
+            current_app.logger.warning(
+                'Brevet weather fetch failed for event %s (%s): %s',
+                event.get('id'), event.get('region'), e)
+            failed += 1
+
+    current_app.logger.info(
+        'Brevet weather cron: fetched=%s skipped=%s failed=%s of %s considered',
+        fetched, skipped, failed, len(targets))
+    return jsonify({'ok': True, 'fetched': fetched, 'skipped': skipped,
+                    'failed': failed, 'considered': len(targets)}), 200
