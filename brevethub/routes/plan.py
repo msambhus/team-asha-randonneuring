@@ -28,8 +28,8 @@ Isolation: imports only flask / stdlib / brevethub.* / shared.*, and every model
 call is on an rp_* table, so test_brevethub_isolation.py and test_rp_only.py stay
 green; the schedule is always recomputed server-side (never trusted from a client).
 """
-from flask import (Blueprint, abort, jsonify, render_template, request,
-                   url_for)
+from flask import (Blueprint, abort, current_app, jsonify, render_template,
+                   request, url_for)
 
 from brevethub import models
 from brevethub.decorators import current_rider
@@ -44,6 +44,25 @@ DEFAULT_SPEED_KMH = 20.0
 # Stops are derived evenly from the brevet distance (Scope A, keyless): a control
 # every STOP_STEP_KM plus a final stop at the exact total.
 STOP_STEP_KM = 100
+
+# ── Unit-conversion boundary (real RWGPS plans) ────────────────────────────
+# The reused shared/rwgps.py engine emits NATIVE miles / mph (and feet); it stores
+# them verbatim in rp_brevet_route_plan[_stop]. BrevetHub's /plan UI is km / km-h,
+# so THIS route is the single conversion boundary: every mile value becomes km and
+# every mph value becomes km-h HERE, before display rows or SVG geometry are built.
+# Elevation stays feet (BH brevet convention). Convert exactly once — relabeling
+# without converting would show ~0.62× the real distance and mph-as-km-h.
+KM_PER_MILE = 1.609344
+
+
+def _mi_to_km(miles):
+    """Miles → km (or None). The engine's stored distance unit → BH's display unit."""
+    return round(miles * KM_PER_MILE, 1) if miles is not None else None
+
+
+def _mph_to_kmh(mph):
+    """mph → km-h (or None). The engine's stored speed unit → BH's display unit."""
+    return round(mph * KM_PER_MILE, 1) if mph is not None else None
 
 
 def _control_distances(total_km):
@@ -178,32 +197,207 @@ def _serialize_plan(raw, speed_kmh, cutoff_hours, total_km):
     }
 
 
+# ── Real RWGPS plan rendering (km / km-h) ──────────────────────────────────
+# Difficulty coloring bands (unit-agnostic 0-10 score → a green→red ramp). Mirrors
+# the intent of Team Asha's per-segment difficulty coloring; the score itself is
+# what the reused engine's _compute_difficulty_score produced.
+_DIFFICULTY_BANDS = [
+    (2.0, '#22c55e'),   # easy — green
+    (4.0, '#84cc16'),   # rolling — lime
+    (6.0, '#eab308'),   # moderate — amber
+    (8.0, '#f97316'),   # hard — orange
+    (10.1, '#ef4444'),  # very hard — red
+]
+
+
+def _difficulty_color(score):
+    """Map a 0-10 difficulty score to a green→red hex color for a stop marker/row."""
+    s = score or 0
+    for threshold, color in _DIFFICULTY_BANDS:
+        if s < threshold:
+            return color
+    return _DIFFICULTY_BANDS[-1][1]
+
+
+def _build_elevation_svg(stops_km, *, width=940, height=200):
+    """Build SVG geometry for the cumulative-climb elevation profile (feet vs km).
+
+    Consumes the ALREADY-converted km display stops (so the x-axis is km, matching
+    the tables) and the stored per-stop elevation gain (feet). Returns a dict of
+    pre-computed pixel paths / gridlines / markers so plan.html stays builtin-Jinja
+    only (no namespace math in the template). Modelled on TA's journey_svg macro.
+    """
+    padl, padr, padt, padb = 40, 16, 18, 26
+    inner_w = width - padl - padr
+    inner_h = height - padt - padb
+
+    total_km = stops_km[-1]['distance_km'] if stops_km else 0
+    span = total_km or 1
+
+    # Cumulative climb series (feet) at each stop's cumulative km position.
+    pts = []
+    cum_ft = 0
+    for s in stops_km:
+        cum_ft += (s['elevation_gain'] or 0)
+        pts.append({'km': s['distance_km'] or 0, 'ft': cum_ft})
+    max_ft = max((p['ft'] for p in pts), default=0) or 1
+
+    def _px(km):
+        return round(padl + (km / span) * inner_w, 2)
+
+    def _py(ft):
+        return round(padt + inner_h - (ft / max_ft) * inner_h, 2)
+
+    # Line + filled area under it.
+    line_cmds = []
+    for i, p in enumerate(pts):
+        line_cmds.append(f"{'M' if i == 0 else 'L'} {_px(p['km'])} {_py(p['ft'])}")
+    line_path = ' '.join(line_cmds)
+    baseline_y = round(padt + inner_h, 2)
+    area_path = (
+        f"M {_px(0)} {baseline_y} " + ' '.join('L' + c[1:] for c in line_cmds)
+        + f" L {_px(span)} {baseline_y} Z"
+    ) if pts else ''
+
+    # km gridlines every 50 km.
+    gridlines = []
+    step = 50
+    km = 0
+    while km <= total_km + 0.001:
+        gridlines.append({'x': _px(km), 'label': int(km),
+                          'minor': (km % 100 != 0)})
+        km += step
+
+    # Elevation axis labels (0, half, max).
+    elev_labels = [
+        {'y': _py(0), 'label': 0},
+        {'y': _py(max_ft / 2), 'label': int(round(max_ft / 2))},
+        {'y': _py(max_ft), 'label': int(round(max_ft))},
+    ]
+
+    # Per-stop markers, colored by difficulty.
+    markers = []
+    for i, s in enumerate(stops_km):
+        st = s['stop_type']
+        markers.append({
+            'x': _px(s['distance_km'] or 0),
+            'y': _py(pts[i]['ft']),
+            'r': 7 if st in ('start', 'finish') else (5.5 if st == 'control' else 4),
+            'color': s['difficulty_color'],
+            'location': s['location'],
+            'distance_km': s['distance_km'],
+            'elevation_gain': s['elevation_gain'],
+            'difficulty_score': s['difficulty_score'],
+        })
+
+    return {
+        'width': width, 'height': height,
+        'line_path': line_path, 'area_path': area_path,
+        'gridlines': gridlines, 'elev_labels': elev_labels, 'markers': markers,
+        'total_km': round(total_km, 1), 'max_ft': int(round(max_ft)),
+    }
+
+
+def _build_real_plan(plan, stops):
+    """Turn a persisted real plan (native miles/mph/feet) into a km / km-h display
+    context for plan.html: converted per-stop rows, the SVG elevation profile, and
+    plan-level summary values. THE conversion happens here and nowhere else.
+    """
+    display_stops = []
+    for s in stops:
+        display_stops.append({
+            'stop_order': s['stop_order'],
+            'location': s['location'],
+            'stop_type': s['stop_type'],
+            'distance_km': _mi_to_km(s['distance_miles']),   # miles → km
+            'seg_dist_km': _mi_to_km(s['seg_dist']),         # miles → km
+            'elevation_gain': s['elevation_gain'],           # feet (unchanged)
+            'ft_per_mi': s['ft_per_mi'],                     # labeled ft/mi in UI
+            'avg_speed_kmh': _mph_to_kmh(s['avg_speed']),    # mph → km-h
+            'difficulty_score': s['difficulty_score'],
+            'difficulty_color': _difficulty_color(s['difficulty_score']),
+            'arrival': _fmt_hm(s['cum_time_min']),
+            'time_bank': _fmt_hm(s['time_bank_min']),
+            'time_bank_positive': (s['time_bank_min'] is not None
+                                   and s['time_bank_min'] >= 0),
+            'time_bank_known': s['time_bank_min'] is not None,
+        })
+
+    final_km = display_stops[-1]['distance_km'] if display_stops else None
+    return {
+        'name': plan['name'],
+        'rwgps_url': plan['rwgps_url'],
+        'distance_km': _mi_to_km(plan['total_distance_miles']),
+        'total_elevation_ft': plan['total_elevation_ft'],
+        'overall_ft_per_mile': plan['overall_ft_per_mile'],
+        'avg_moving_speed_kmh': _mph_to_kmh(plan['avg_moving_speed']),
+        'final_distance_km': final_km,
+        'stops': display_stops,
+        'svg': _build_elevation_svg(display_stops),
+    }
+
+
+def _load_real_plan(event_id):
+    """Fetch the persisted real plan for an event, or None. Fails SOFT: any DB error
+    (or no real plan) yields None so /plan falls back to the synthetic schedule and
+    never 500s on the read path."""
+    try:
+        bundle = models.get_brevet_route_plan_with_stops(event_id)
+    except Exception as e:  # pragma: no cover - defensive; keep the page up
+        current_app.logger.warning('Real plan lookup failed for event %s: %s',
+                                    event_id, e)
+        return None
+    if not bundle or not bundle.get('stops'):
+        return None
+    return _build_real_plan(bundle['plan'], bundle['stops'])
+
+
 @plan_bp.route('/plan/<int:event_id>')
 def plan_view(event_id):
     """Compute + render the pacing schedule for a brevet at a target pace.
 
-    Guest-readable: anyone can compute a schedule; no rider PII is rendered. A
-    signed-in rider additionally sees their previously-saved target (if any) and the
+    If a real, RWGPS-backed plan has been persisted for this brevet, render THAT
+    (real control names, SVG elevation profile, per-segment difficulty coloring and
+    gradient speed, all in km / km-h). Otherwise fall back to the synthetic
+    evenly-spaced Scope-A schedule at a target pace.
+
+    Guest-readable either way: anyone can view; no rider PII is rendered. A signed-in
+    rider additionally sees their previously-saved target (synthetic mode) and the
     Save control. Unknown event -> 404.
     """
     event = models.get_brevet_event_full(event_id)
     if not event:
         abort(404)
 
+    rider = current_rider()
+    real_plan = _load_real_plan(event_id)
+
     total_km = float(event['distance_km'])
     cutoff_hours = _cutoff_hours(event)
-    speed_kmh, mode = _resolve_target(request.args, total_km)
 
+    if real_plan:
+        # Real plan mode: the persisted plan is the schedule; no target picker.
+        return render_template(
+            'plan.html',
+            event=event,
+            real_plan=real_plan,
+            schedule=None,
+            cutoff_hours=cutoff_hours,
+            rider=rider,
+            saved=None,
+        )
+
+    speed_kmh, mode = _resolve_target(request.args, total_km)
     raw = _compute_schedule(total_km, cutoff_hours, speed_kmh)
     schedule = _display_rows(raw)
 
-    rider = current_rider()
     saved = models.get_rider_brevet_plan(rider['id'], event_id) if rider else None
 
     finish_hours = round(total_km / speed_kmh, 2) if speed_kmh > 0 else None
     return render_template(
         'plan.html',
         event=event,
+        real_plan=None,
         schedule=schedule,
         cutoff_hours=cutoff_hours,
         speed_kmh=round(speed_kmh, 1),

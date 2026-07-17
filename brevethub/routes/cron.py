@@ -26,6 +26,8 @@ from flask import Blueprint, current_app, jsonify, request
 
 from brevethub import models
 from brevethub.routes.calendar import _scrape_and_upsert
+from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
+                                    extract_rwgps_route_id, fetch_route)
 from shared.weather import (FORECAST_HORIZON_DAYS, fetch_point_forecast,
                             resolve_region_coordinates)
 
@@ -137,4 +139,69 @@ def fetch_brevet_weather():
         'Brevet weather cron: fetched=%s skipped=%s failed=%s of %s considered',
         fetched, skipped, failed, len(targets))
     return jsonify({'ok': True, 'fetched': fetched, 'skipped': skipped,
+                    'failed': failed, 'considered': len(targets)}), 200
+
+
+@cron_bp.route('/warm-brevet-plans', methods=['GET', 'POST'])
+def warm_brevet_plans():
+    """Pre-fetch + persist real RWGPS ride plans for upcoming brevets, OFF the
+    request path (mirrors /cron/fetch-brevet-weather).
+
+    Auth-gated (Bearer CRON_SECRET). Loads upcoming events that carry an rwgps_url
+    (get_route_plan_warm_targets), and for each: extracts the RWGPS route id, fetches
+    the route via the reused shared engine (credentials from the BrevetHub config —
+    the guest /plan page NEVER calls RWGPS live), builds the plan, and upserts it
+    into rp_brevet_route_plan[_stop]. The guest page then READS this cache only.
+
+    Fails SOFT per event: an event with an unparseable rwgps_url is skipped; a
+    transient RWGPS/build error for one event is logged and counted as a failure
+    without 500ing the cron or clobbering that event's last-good plan (the upsert
+    only runs on a successful build). Idempotent — the upsert is ON CONFLICT
+    (event_id), so re-running refreshes rows in place. Returns
+    ``{ok, warmed, skipped, failed, considered}`` for observability.
+
+    Route contract (pinned, same as the other crons): the production URL is exactly
+    ``/cron/warm-brevet-plans`` — the blueprint owns the ``/cron`` prefix and this
+    decorator is LEAF-ONLY, so the composed URL is single-prefixed and the
+    Vercel-scheduled GET reaches the handler (a double ``/cron`` prefix would 404).
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    try:
+        targets = models.get_route_plan_warm_targets()
+    except Exception as e:
+        current_app.logger.warning('Route-plan warm target load failed: %s', e)
+        return jsonify({'ok': False, 'error': 'target load failed',
+                        'warmed': 0, 'skipped': 0, 'failed': 0}), 200
+
+    api_key = current_app.config.get('RWGPS_API_KEY')
+    auth_token = current_app.config.get('RWGPS_AUTH_TOKEN')
+
+    warmed = skipped = failed = 0
+    for event in targets:
+        route_id = extract_rwgps_route_id(event.get('rwgps_url'))
+        if not route_id:
+            # No parseable RWGPS route — nothing honest to build.
+            skipped += 1
+            continue
+        try:
+            route_data = fetch_route(route_id, api_key, auth_token)
+            controls = extract_controls(route_data)
+            built = build_ride_plan(route_data, controls)
+            models.upsert_brevet_route_plan(
+                event['id'], built['plan'], built['stops'])
+            warmed += 1
+        except Exception as e:
+            # Fail soft: keep the last-good plan for this event, keep going.
+            current_app.logger.warning(
+                'Route-plan warm failed for event %s (%s): %s',
+                event.get('id'), event.get('rwgps_url'), e)
+            failed += 1
+
+    current_app.logger.info(
+        'Brevet route-plan cron: warmed=%s skipped=%s failed=%s of %s considered',
+        warmed, skipped, failed, len(targets))
+    return jsonify({'ok': True, 'warmed': warmed, 'skipped': skipped,
                     'failed': failed, 'considered': len(targets)}), 200

@@ -961,6 +961,57 @@ table tbody tr:hover {
   gap: 10px 14px;
 }
 
+/* Real RWGPS plan: elevation profile + difficulty-colored controls. */
+.plan-real-note { max-width: 640px; font-size: 0.9rem; }
+
+.plan-elev {
+  margin: 18px 0 8px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.plan-elev-svg { display: block; width: 100%; height: auto; }
+
+.plan-real-schedule td.plan-control-name { font-weight: 600; }
+
+.plan-difficulty-chip {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+/* Club-admin plan generator. */
+.admin-page { max-width: 720px; margin: 0 auto; }
+.admin-intro { margin-bottom: 18px; }
+
+.admin-plan-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-field { display: flex; flex-direction: column; gap: 6px; }
+.admin-field label { font-weight: 600; }
+.admin-field select,
+.admin-field input {
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+.admin-plan-form .btn { align-self: flex-start; }
+
 /* --------------------------------------------------------------------------
    12. Ride analysis (list + detail)
 
