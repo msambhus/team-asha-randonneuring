@@ -13,10 +13,29 @@ show ~0.62× the distance and mph-as-km-h and these assertions would fail:
   - the guest page renders the real plan (SVG + real names, no "Scope A") and falls
     back to the synthetic km table when no real plan exists.
 """
+from decimal import Decimal
 from unittest.mock import patch
 
 from brevethub.routes.plan import (KM_PER_MILE, _build_elevation_svg,
                                    _build_real_plan, _mi_to_km, _mph_to_kmh)
+
+
+def _as_numeric(plan, stops):
+    """Re-cast the fixture's distance/speed fields to Decimal, exactly as psycopg2's
+    RealDictCursor returns NUMERIC columns from Postgres."""
+    p = dict(plan)
+    for k in ('total_distance_miles', 'avg_moving_speed', 'overall_ft_per_mile'):
+        if p.get(k) is not None:
+            p[k] = Decimal(str(p[k]))
+    out = []
+    for s in stops:
+        s = dict(s)
+        for k in ('distance_miles', 'seg_dist', 'avg_speed', 'ft_per_mi',
+                  'difficulty_score'):
+            if s.get(k) is not None:
+                s[k] = Decimal(str(s[k]))
+        out.append(s)
+    return p, out
 
 
 # A persisted real plan whose NATIVE total is 124.3 mi (the mile equivalent of
@@ -53,6 +72,15 @@ def test_conversion_constant_and_helpers():
     assert _mi_to_km(124.3) == round(124.3 * 1.609344, 1)   # ≈ 200.0
     assert _mph_to_kmh(12.0) == 19.3                        # 12 * 1.609344 = 19.31
     assert _mi_to_km(None) is None and _mph_to_kmh(None) is None
+
+
+def test_converters_accept_decimal():
+    """psycopg2 returns NUMERIC columns as Decimal; Decimal * float raises TypeError.
+    The converters must coerce, not crash — the /plan 500 the council flagged."""
+    assert _mi_to_km(Decimal('124.3')) == round(124.3 * KM_PER_MILE, 1)
+    assert _mph_to_kmh(Decimal('12.0')) == 19.3
+    # Result is a plain float, safe for further float arithmetic / the SVG geometry.
+    assert isinstance(_mi_to_km(Decimal('62.1')), float)
 
 
 # --------------------------------------------------------------------------- #
@@ -103,6 +131,18 @@ def test_build_svg_handles_empty_stops():
     assert svg['line_path'] == '' and svg['markers'] == []
 
 
+def test_build_real_plan_with_decimal_numeric_columns():
+    """The whole build must survive Decimal-valued NUMERIC columns (no TypeError),
+    and still produce the same converted km / km-h values as the float fixture."""
+    plan, stops = _as_numeric(_PLAN, _STOPS)
+    real = _build_real_plan(plan, stops)
+    assert real['final_distance_km'] == round(124.3 * KM_PER_MILE, 1)
+    assert real['stops'][1]['avg_speed_kmh'] == 19.3
+    assert real['stops'][1]['elevation_gain'] == 1600
+    assert real['svg']['markers']                 # SVG geometry built without crashing
+    assert abs(real['svg']['total_km'] - 124.3 * KM_PER_MILE) < 0.5
+
+
 # --------------------------------------------------------------------------- #
 # Route render — real plan vs synthetic fallback
 # --------------------------------------------------------------------------- #
@@ -120,6 +160,19 @@ def test_guest_sees_real_plan_in_km(client):
     assert '19.3 km/h' in body                  # converted speed
     assert '1600 ft' in body                    # elevation in feet
     assert 'Scope A' not in body                # synthetic note is gone
+
+
+def test_guest_real_plan_renders_200_with_decimal_columns(client):
+    """Regression for the council finding: a persisted plan whose NUMERIC fields come
+    back as Decimal must render 200 (converted km / km-h), not 500."""
+    plan, stops = _as_numeric(_PLAN, _STOPS)
+    bundle = {'plan': plan, 'stops': stops}
+    with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT), \
+         patch('brevethub.models.get_brevet_route_plan_with_stops', return_value=bundle):
+        resp = client.get('/plan/11')
+    assert resp.status_code == 200                 # NOT a 500 from Decimal * float
+    body = resp.get_data(as_text=True)
+    assert '<svg' in body and '19.3 km/h' in body and '200.0 km' in body
 
 
 def test_fallback_to_synthetic_when_no_real_plan(client):

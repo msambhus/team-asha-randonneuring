@@ -56,13 +56,20 @@ KM_PER_MILE = 1.609344
 
 
 def _mi_to_km(miles):
-    """Miles → km (or None). The engine's stored distance unit → BH's display unit."""
-    return round(miles * KM_PER_MILE, 1) if miles is not None else None
+    """Miles → km (or None). The engine's stored distance unit → BH's display unit.
+
+    Coerces to float first: the NUMERIC columns come back from psycopg2 as
+    ``Decimal``, and ``Decimal * float`` raises ``TypeError`` — so cast before the
+    multiply (also accepts int / numeric str).
+    """
+    return round(float(miles) * KM_PER_MILE, 1) if miles is not None else None
 
 
 def _mph_to_kmh(mph):
-    """mph → km-h (or None). The engine's stored speed unit → BH's display unit."""
-    return round(mph * KM_PER_MILE, 1) if mph is not None else None
+    """mph → km-h (or None). The engine's stored speed unit → BH's display unit.
+
+    Coerces to float first (NUMERIC → Decimal, and ``Decimal * float`` raises)."""
+    return round(float(mph) * KM_PER_MILE, 1) if mph is not None else None
 
 
 def _control_distances(total_km):
@@ -338,18 +345,22 @@ def _build_real_plan(plan, stops):
 
 
 def _load_real_plan(event_id):
-    """Fetch the persisted real plan for an event, or None. Fails SOFT: any DB error
-    (or no real plan) yields None so /plan falls back to the synthetic schedule and
-    never 500s on the read path."""
+    """Fetch + build the persisted real plan for an event, or None. Fails SOFT: any
+    DB error, missing plan, OR conversion error yields None so /plan falls back to the
+    synthetic schedule and never 500s on the read path.
+
+    The build (unit conversion + SVG geometry) is inside the try too — the stored
+    NUMERIC values arrive as Decimal, and a conversion slip must degrade to the
+    synthetic table, never crash the guest page."""
     try:
         bundle = models.get_brevet_route_plan_with_stops(event_id)
+        if not bundle or not bundle.get('stops'):
+            return None
+        return _build_real_plan(bundle['plan'], bundle['stops'])
     except Exception as e:  # pragma: no cover - defensive; keep the page up
-        current_app.logger.warning('Real plan lookup failed for event %s: %s',
+        current_app.logger.warning('Real plan load failed for event %s: %s',
                                     event_id, e)
         return None
-    if not bundle or not bundle.get('stops'):
-        return None
-    return _build_real_plan(bundle['plan'], bundle['stops'])
 
 
 @plan_bp.route('/plan/<int:event_id>')
