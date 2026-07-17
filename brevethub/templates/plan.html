@@ -1,9 +1,97 @@
 {% extends "base.html" %}
-{% block title %}Pacing plan — {{ event.name }} — {{ product_name }}{% endblock %}
+{% block title %}
+  {% if real_plan %}Ride plan{% else %}Pacing plan{% endif %} — {{ event.name }} — {{ product_name }}
+{% endblock %}
 {% block content %}
 {# Uses ONLY builtin Jinja filters (no commafy / clean_name — this app registers
-   neither). All clock-ish values are pre-formatted in the route. #}
+   neither). All clock-ish values and (for real plans) all km / km-h conversions are
+   pre-computed in the route; the template only lays them out. #}
 <section class="plan-page">
+
+{% if real_plan %}
+  {# ── Real RWGPS-backed plan (km / km-h) ─────────────────────────────────── #}
+  {% set svg = real_plan.svg %}
+  <div class="plan-intro">
+    <p class="muted"><a href="{{ url_for('calendar.calendar') }}">&larr; Back to calendar</a></p>
+    <h1>Ride plan</h1>
+    <h2 class="plan-event-name">{{ event.name }}</h2>
+    <div class="plan-event-meta">
+      <span>{{ event.distance_km }} km</span>
+      {% if real_plan.total_elevation_ft %}<span>{{ real_plan.total_elevation_ft }} ft climb</span>{% endif %}
+      {% if event.region %}<span>{{ event.region }}</span>{% endif %}
+      {% if event.date %}<span>{{ event.date }}</span>{% endif %}
+      <span>ACP time limit: {{ cutoff_hours }} h</span>
+      {% if real_plan.avg_moving_speed_kmh %}<span>Avg moving: {{ real_plan.avg_moving_speed_kmh }} km/h</span>{% endif %}
+    </div>
+    <p class="muted plan-real-note">
+      Real route plan generated from
+      {% if real_plan.rwgps_url %}<a href="{{ real_plan.rwgps_url }}" rel="noopener" target="_blank">RideWithGPS</a>{% else %}RideWithGPS{% endif %}:
+      controls, elevation and per-segment gradient pacing. Distances are shown in km,
+      speeds in km/h; climb in feet.
+    </p>
+  </div>
+
+  {# Elevation profile (cumulative climb in feet vs distance in km) with per-stop
+     difficulty-colored markers. Geometry is pre-computed in the route. #}
+  <div class="plan-elev">
+    <svg viewBox="0 0 {{ svg.width }} {{ svg.height }}" class="plan-elev-svg"
+         preserveAspectRatio="xMidYMid meet" role="img"
+         aria-label="Elevation profile: {{ svg.max_ft }} ft total climb over {{ svg.total_km }} km">
+      {% for g in svg.gridlines %}
+        <line x1="{{ g.x }}" x2="{{ g.x }}" y1="18" y2="{{ svg.height - 26 }}"
+              stroke="#e2e8f0" stroke-width="1"{% if g.minor %} stroke-dasharray="2 3"{% endif %}></line>
+        <text x="{{ g.x }}" y="{{ svg.height - 8 }}" text-anchor="middle" font-size="9" fill="#94a3b8">{{ g.label }} km</text>
+      {% endfor %}
+      {% for e in svg.elev_labels %}
+        <text x="6" y="{{ e.y + 3 }}" font-size="9" fill="#94a3b8">{{ e.label }}ft</text>
+      {% endfor %}
+      {% if svg.area_path %}<path d="{{ svg.area_path }}" fill="#1a365d" fill-opacity="0.12"></path>{% endif %}
+      {% if svg.line_path %}<path d="{{ svg.line_path }}" stroke="#1a365d" stroke-width="1.6" fill="none"></path>{% endif %}
+      {% for m in svg.markers %}
+        <circle cx="{{ m.x }}" cy="{{ m.y }}" r="{{ m.r }}" fill="{{ m.color }}"
+                stroke="#fff" stroke-width="2">
+          <title>{{ m.location }} — {{ m.distance_km }} km · {{ m.elevation_gain }} ft · difficulty {{ m.difficulty_score }}</title>
+        </circle>
+      {% endfor %}
+    </svg>
+  </div>
+
+  <table class="plan-schedule plan-real-schedule">
+    <thead>
+      <tr>
+        <th>Control</th>
+        <th>Cumulative distance</th>
+        <th>Segment</th>
+        <th>Climb</th>
+        <th>Avg speed</th>
+        <th>Difficulty</th>
+        <th>ETA (elapsed)</th>
+        <th>Time bank vs cutoff</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in real_plan.stops %}
+        <tr>
+          <td class="plan-control-name">{{ s.location }}</td>
+          <td class="plan-dist">{{ s.distance_km }} km</td>
+          <td class="plan-seg">{% if s.seg_dist_km is not none %}{{ s.seg_dist_km }} km{% else %}—{% endif %}</td>
+          <td class="plan-climb">{{ s.elevation_gain }} ft{% if s.ft_per_mi %} ({{ s.ft_per_mi }} ft/mi){% endif %}</td>
+          <td class="plan-speed">{% if s.avg_speed_kmh is not none %}{{ s.avg_speed_kmh }} km/h{% else %}—{% endif %}</td>
+          <td class="plan-difficulty">
+            <span class="plan-difficulty-chip" style="background: {{ s.difficulty_color }}"></span>
+            {{ s.difficulty_score }}
+          </td>
+          <td class="plan-arrival">{{ s.arrival or '—' }}</td>
+          <td class="plan-bank-cell {{ 'plan-bank-ok' if s.time_bank_positive else 'plan-bank-low' }}">
+            {% if s.time_bank_known %}{{ s.time_bank }}{% else %}—{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+{% else %}
+  {# ── Synthetic Scope-A pacing schedule (evenly spaced, target pace) ──────── #}
   <div class="plan-intro">
     <p class="muted"><a href="{{ url_for('calendar.calendar') }}">&larr; Back to calendar</a></p>
     <h1>Pacing plan</h1>
@@ -91,9 +179,10 @@
       </p>
     {% endif %}
   </div>
+{% endif %}
 </section>
 
-{% if rider %}
+{% if not real_plan and rider %}
 <script>
   // Save the current target to the rider's account (server recomputes the schedule).
   (function () {

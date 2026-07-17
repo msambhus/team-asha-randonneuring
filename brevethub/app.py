@@ -42,6 +42,7 @@ def create_app():
     from brevethub.routes.plan import plan_bp
     from brevethub.routes.analysis import analysis_bp
     from brevethub.routes.cron import cron_bp
+    from brevethub.routes.admin import admin_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix='/auth')
@@ -56,6 +57,8 @@ def create_app():
     # ('/refresh-calendar') so the composed URL is exactly '/cron/refresh-calendar'
     # (matches vercel.json's cron path). Never put '/cron' in the decorator too.
     app.register_blueprint(cron_bp, url_prefix='/cron')
+    # admin_bp OWNS the '/admin' segment; owner-gated real ride-plan generation.
+    app.register_blueprint(admin_bp, url_prefix='/admin')
 
     @app.context_processor
     def inject_branding():

@@ -6,7 +6,8 @@
   ],
   "crons": [
     { "path": "/cron/refresh-calendar", "schedule": "0 8 * * *" },
-    { "path": "/cron/fetch-brevet-weather", "schedule": "30 8 * * *" }
+    { "path": "/cron/fetch-brevet-weather", "schedule": "30 8 * * *" },
+    { "path": "/cron/warm-brevet-plans", "schedule": "0 9 * * *" }
   ],
   "routes": [
     { "src": "/static/(.*)", "dest": "/static/$1" },
