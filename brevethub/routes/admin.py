@@ -64,6 +64,12 @@ def generate_plan():
     builds the plan via the reused shared engine using the BrevetHub RWGPS
     credentials, and upserts it scoped to the owner's club. Fails soft on any
     RWGPS/build error (flash + redirect, never 500).
+
+    Authorization: the requester must own a club AND, when the event's club is known
+    (rp_brevet_event.club_id is set), that club must be the requester's own. A rider
+    can never generate a plan for another club's event — otherwise they could claim
+    it first and lock the rightful club out via the first-owner-wins plan guard.
+    National-feed events with no resolved club (club_id NULL) are open to any owner.
     """
     _rider, owned = _owned_club_or_403()
 
@@ -78,6 +84,11 @@ def generate_plan():
     if not event:
         flash('That brevet is not in the calendar.', 'error')
         return redirect(url_for('admin.plan_console'))
+
+    # A known-club event may only be managed by that club's owner.
+    event_club_id = event.get('club_id')
+    if event_club_id is not None and event_club_id != owned['id']:
+        abort(403)
 
     rwgps_url = (request.form.get('rwgps_url') or '').strip() or event.get('rwgps_url')
     route_id = extract_rwgps_route_id(rwgps_url)

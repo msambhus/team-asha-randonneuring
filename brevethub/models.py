@@ -645,12 +645,15 @@ def get_brevet_event_full(event_id):
     """A single cached brevet by id including ``time_limit_hours`` — the row the
     pacing planner needs (the sign-up gate's :func:`get_brevet_event` omits it).
 
-    Returns None for an unknown event so the plan route can 404. Touches only
-    rp_brevet_event.
+    Returns None for an unknown event so the plan route can 404. Includes ``club_id``
+    (the resolved owning club, NULL for national-feed events) so the club-admin route
+    can verify a generator owns the event club before persisting the plan. Touches
+    only rp_brevet_event.
     """
     return db.query_one(
         "SELECT id, rusa_route_id, name, date, distance_km, region, ride_type, "
-        "       elevation_ft, rwgps_url, start_location, start_time, time_limit_hours "
+        "       elevation_ft, rwgps_url, start_location, start_time, time_limit_hours, "
+        "       club_id "
         "FROM rp_brevet_event WHERE id = %s",
         (event_id,),
     )
