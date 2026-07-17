@@ -107,6 +107,21 @@ def test_fail_soft_per_event(app, client):
     assert data['warmed'] == 1 and data['failed'] == 1   # one boom, one warmed
 
 
+def test_club_owned_plan_counted_skipped_not_warmed(app, client):
+    """The warm cron must never clobber a club owner's plan: when the upsert reports
+    the plan is club-owned (None), the event is counted skipped, not warmed."""
+    _with_secret(app)
+    targets = [{'id': 11, 'rwgps_url': 'https://ridewithgps.com/routes/123'}]
+    with patch('brevethub.models.get_route_plan_warm_targets', return_value=targets), \
+         patch('brevethub.routes.cron.fetch_route', return_value={'name': 'r'}), \
+         patch('brevethub.routes.cron.extract_controls', return_value=[{'x': 1}]), \
+         patch('brevethub.routes.cron.build_ride_plan', return_value=_BUILT), \
+         patch('brevethub.models.upsert_brevet_route_plan', return_value=None):
+        resp = client.post(_PATH, headers=_auth())
+    data = resp.get_json()
+    assert data['warmed'] == 0 and data['skipped'] == 1
+
+
 def test_idempotent_counts_on_rerun(app, client):
     _with_secret(app)
     with patch('brevethub.models.get_route_plan_warm_targets', return_value=_TARGETS), \

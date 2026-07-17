@@ -115,6 +115,35 @@ def test_upsert_rolls_back_on_error(monkeypatch):
     assert conn.rolled_back == 1 and conn.committed == 0
 
 
+def test_upsert_blocked_when_another_club_owns(monkeypatch):
+    """Ownership guard: when the conflict update is blocked (RETURNING -> no row),
+    the upsert returns None and NEVER touches the existing club's stops."""
+    class _BlockedCursor(_FakeCursor):
+        def fetchone(self):
+            return None                     # WHERE clause blocked the update
+    conn = _FakeConn()
+    conn.cur = _BlockedCursor()
+    monkeypatch.setattr(db, 'get_db', lambda: conn)
+
+    result = models.upsert_brevet_route_plan(11, _PLAN, _STOPS, club_id=99)
+    assert result is None
+    assert conn.rolled_back == 1 and conn.committed == 0
+    # No stop DELETE / INSERT ran — the other club's plan is left intact.
+    assert not any('rp_brevet_route_plan_stop' in c[0] for c in conn.cur.calls)
+    assert not any('DELETE' in c[0] for c in conn.cur.calls)
+
+
+def test_upsert_sql_carries_ownership_guard(monkeypatch):
+    """The conflict update is guarded so a club can only adopt an unowned plan or
+    refresh its own — the SQL must carry that WHERE clause."""
+    conn = _FakeConn()
+    monkeypatch.setattr(db, 'get_db', lambda: conn)
+    models.upsert_brevet_route_plan(11, _PLAN, _STOPS, club_id=3)
+    insert_sql = conn.cur.calls[0][0]
+    assert 'rp_brevet_route_plan.club_id IS NULL' in insert_sql
+    assert 'rp_brevet_route_plan.club_id = EXCLUDED.club_id' in insert_sql
+
+
 # --------------------------------------------------------------------------- #
 # Read — plan bundled with ordered stops
 # --------------------------------------------------------------------------- #

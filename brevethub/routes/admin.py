@@ -92,13 +92,18 @@ def generate_plan():
         route_data = fetch_route(route_id, api_key, auth_token)
         controls = extract_controls(route_data)
         built = build_ride_plan(route_data, controls)
-        models.upsert_brevet_route_plan(
+        plan_id = models.upsert_brevet_route_plan(
             event_id, built['plan'], built['stops'], club_id=owned['id'])
     except Exception as e:
         current_app.logger.warning(
             'Admin plan generation failed for event %s (route %s): %s',
             event_id, route_id, e)
         flash(f'Could not generate the plan: {e}', 'error')
+        return redirect(url_for('admin.plan_console'))
+
+    if plan_id is None:
+        # Another club already owns this brevet's public plan (first-owner-wins).
+        flash("This brevet's ride plan is already managed by another club.", 'error')
         return redirect(url_for('admin.plan_console'))
 
     flash(f'Real ride plan generated for {event["name"]}.', 'success')

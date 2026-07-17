@@ -104,6 +104,26 @@ def test_generate_success_persists_and_redirects(client):
     assert kwargs.get('club_id') == 3
 
 
+def test_generate_blocked_when_another_club_owns(client):
+    """Authorization: a club owner cannot clobber another club's plan. When the model
+    upsert reports the plan is owned elsewhere (None), the route flashes + redirects
+    back to the console — it does NOT redirect to the (unchanged) plan page."""
+    _login(client)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_club_owned_by_rider', return_value=_OWNED_CLUB), \
+         patch('brevethub.models.get_brevet_event_full', return_value=_EVENT), \
+         patch('brevethub.routes.admin.fetch_route', return_value={'name': 'r'}), \
+         patch('brevethub.routes.admin.extract_controls', return_value=[{'x': 1}]), \
+         patch('brevethub.routes.admin.build_ride_plan', return_value=_BUILT), \
+         patch('brevethub.models.upsert_brevet_route_plan', return_value=None) as mock_up:
+        resp = client.post('/admin/plan/generate',
+                           data={'event_id': '11',
+                                 'rwgps_url': 'https://ridewithgps.com/routes/123'})
+    assert resp.status_code == 302
+    assert resp.headers['Location'].endswith('/admin/plan')   # back to console, NOT /plan/11
+    mock_up.assert_called_once()
+
+
 def test_generate_bad_event_id_fails_soft(client):
     _login(client)
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \

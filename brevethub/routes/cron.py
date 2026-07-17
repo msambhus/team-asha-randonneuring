@@ -190,9 +190,13 @@ def warm_brevet_plans():
             route_data = fetch_route(route_id, api_key, auth_token)
             controls = extract_controls(route_data)
             built = build_ride_plan(route_data, controls)
-            models.upsert_brevet_route_plan(
+            plan_id = models.upsert_brevet_route_plan(
                 event['id'], built['plan'], built['stops'])
-            warmed += 1
+            if plan_id is None:
+                # A club owner manages this brevet's plan — leave it, don't clobber.
+                skipped += 1
+            else:
+                warmed += 1
         except Exception as e:
             # Fail soft: keep the last-good plan for this event, keep going.
             current_app.logger.warning(

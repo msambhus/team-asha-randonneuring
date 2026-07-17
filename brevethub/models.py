@@ -839,9 +839,19 @@ def upsert_brevet_route_plan(event_id, plan, stops, club_id=None):
     idempotent), delete the old stops, then re-insert the fresh ordered stops. Values
     are stored VERBATIM in the engine's native miles / mph / feet.
 
+    OWNERSHIP GUARD (authorization): there is one public plan per brevet, so the
+    ON CONFLICT clause writes a row only when the existing plan is UNOWNED
+    (``club_id IS NULL``, i.e. auto-warmed by cron) or already owned by the SAME club.
+    A club owner can adopt an unowned plan or refresh the plan for the same club, but
+    can NEVER overwrite a different club (first club to generate owns it). When the
+    write is blocked, nothing changes (the stops are left untouched) and this returns
+    ``None``; the caller surfaces that as a flash / skip rather than a silent clobber.
+    The warm cron passes ``club_id=None``, so it can create or refresh only unowned
+    plans and never clobbers a club-owned one.
+
     ``plan`` / ``stops`` are the two parts of the dict returned by
     shared.rwgps.build_ride_plan (``{'plan': ..., 'stops': [...]}``). Returns the
-    new/updated plan id.
+    new/updated plan id, or ``None`` when a different club already owns the plan.
     """
     # slug is UNIQUE; suffix with event_id so two brevets that share a route name
     # never collide, while staying deterministic (idempotent) for the same event.
@@ -874,6 +884,11 @@ def upsert_brevet_route_plan(event_id, plan, stops, club_id=None):
                 "    total_elapsed_time_min = EXCLUDED.total_elapsed_time_min, "
                 "    total_break_time_min = EXCLUDED.total_break_time_min, "
                 "    overall_ft_per_mile = EXCLUDED.overall_ft_per_mile "
+                # Ownership guard: adopt an unowned plan or refresh the same club;
+                # never clobber a different club. A blocked write changes no rows, so
+                # RETURNING yields nothing and fetchone() is None.
+                "WHERE rp_brevet_route_plan.club_id IS NULL "
+                "   OR rp_brevet_route_plan.club_id = EXCLUDED.club_id "
                 "RETURNING id",
                 (event_id, club_id, plan.get('name'), slug,
                  plan.get('total_distance_miles'), plan.get('total_elevation_ft'),
@@ -884,7 +899,12 @@ def upsert_brevet_route_plan(event_id, plan, stops, club_id=None):
                  plan.get('total_moving_time_min'), plan.get('total_elapsed_time_min'),
                  plan.get('total_break_time_min'), plan.get('overall_ft_per_mile')),
             )
-            plan_id = cur.fetchone()['id']
+            row = cur.fetchone()
+            if row is None:
+                # A different club owns this brevet's plan — do NOT touch its stops.
+                conn.rollback()
+                return None
+            plan_id = row['id']
 
             cur.execute(
                 "DELETE FROM rp_brevet_route_plan_stop WHERE ride_plan_id = %s",
