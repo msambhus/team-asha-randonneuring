@@ -132,3 +132,51 @@ def test_generate_bad_event_id_fails_soft(client):
         resp = client.post('/admin/plan/generate', data={'event_id': 'not-a-number'})
     assert resp.status_code == 302
     mock_up.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# Generate — event→club authority gate (a club owner may only generate for their
+# own club's known events; national NULL-club events stay claimable).
+# --------------------------------------------------------------------------- #
+def _mock_generate(client, event, plan_return=99):
+    """POST a generate for `event`, with the owner logged in and RWGPS mocked."""
+    _login(client)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_club_owned_by_rider', return_value=_OWNED_CLUB), \
+         patch('brevethub.models.get_brevet_event_full', return_value=event), \
+         patch('brevethub.routes.admin.fetch_route', return_value={'name': 'r'}), \
+         patch('brevethub.routes.admin.extract_controls', return_value=[{'x': 1}]), \
+         patch('brevethub.routes.admin.build_ride_plan', return_value=_BUILT), \
+         patch('brevethub.models.upsert_brevet_route_plan',
+               return_value=plan_return) as mock_up:
+        resp = client.post('/admin/plan/generate',
+                           data={'event_id': str(event['id']),
+                                 'rwgps_url': 'https://ridewithgps.com/routes/123'})
+    return resp, mock_up
+
+
+def test_generate_403_for_another_clubs_event(client):
+    """The council's HIGH finding: an owner selecting ANOTHER club's known event
+    must be rejected (else first-owner-wins would lock the rightful club out)."""
+    other_club_event = {**_EVENT, 'club_id': 99}   # owned club is id 3
+    resp, mock_up = _mock_generate(client, other_club_event)
+    assert resp.status_code == 403
+    mock_up.assert_not_called()                      # never even attempts the write
+
+
+def test_generate_allowed_for_own_club_event(client):
+    """An owner generating for their OWN club's known event proceeds and persists."""
+    own_club_event = {**_EVENT, 'club_id': 3}        # matches _OWNED_CLUB id
+    resp, mock_up = _mock_generate(client, own_club_event)
+    assert resp.status_code == 302
+    assert '/plan/11' in resp.headers['Location']
+    mock_up.assert_called_once()
+
+
+def test_generate_allowed_for_national_null_club_event(client):
+    """National-feed events (club_id NULL) stay first-owner-wins claimable."""
+    national_event = {**_EVENT, 'club_id': None}
+    resp, mock_up = _mock_generate(client, national_event)
+    assert resp.status_code == 302
+    assert '/plan/11' in resp.headers['Location']
+    mock_up.assert_called_once()

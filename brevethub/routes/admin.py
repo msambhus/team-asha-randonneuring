@@ -79,6 +79,14 @@ def generate_plan():
         flash('That brevet is not in the calendar.', 'error')
         return redirect(url_for('admin.plan_console'))
 
+    # Authority gate: an owner may generate a plan for an event that belongs to
+    # their own club, or for a national-feed event with no club (club_id NULL,
+    # first-owner-wins claimable). Generating for ANOTHER club's known event is
+    # forbidden — otherwise a first-owner-wins claim would lock the rightful club
+    # out of its own brevet's public plan.
+    if event.get('club_id') is not None and event['club_id'] != owned['id']:
+        abort(403)
+
     rwgps_url = (request.form.get('rwgps_url') or '').strip() or event.get('rwgps_url')
     route_id = extract_rwgps_route_id(rwgps_url)
     if not route_id:
