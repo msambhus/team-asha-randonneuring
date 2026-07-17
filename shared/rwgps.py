@@ -2,15 +2,21 @@
 
 Club-agnostic and framework-agnostic: it imports only the stdlib + ``requests``
 and touches no Flask application globals, so both apps in this monorepo can reuse
-it. Credentials are passed in explicitly (``fetch_route(route_id, api_key,
-auth_token)``) rather than read from a request context — the ``shared/`` isolation
-contract (``tests/brevethub/test_shared_isolation.py``) forbids request-context
-globals here, and each caller already knows where its own RWGPS keys live.
+it. This is the SINGLE implementation — ``services/rwgps.py`` is a pure re-export
+shim of this module (see ``tests/test_rwgps_shim.py``), so Team Asha and BrevetHub
+share one engine that cannot drift.
+
+Credentials for ``fetch_route`` may be passed in explicitly, or (when omitted) fall
+back to ``RWGPS_API_KEY`` / ``RWGPS_AUTH_TOKEN`` in the environment — the exact env
+vars both apps' configs already read. That keeps the module free of any
+request-context global (the ``shared/`` isolation contract forbids them) while every
+existing ``fetch_route(route_id)`` caller keeps working unchanged.
 
 The plan math (``extract_controls`` → ``build_ride_plan``) is unchanged from the
 proven implementation: distances are miles, speeds mph, elevation feet. Callers
 that display in km/km-h convert at their own boundary.
 """
+import os
 import re
 import requests as http_requests
 
@@ -109,14 +115,18 @@ def _compute_difficulty_score(ft_per_mi, notes=''):
 
 # ── RWGPS API ──────────────────────────────────────────────────────────
 
-def fetch_route(route_id, api_key, auth_token):
+def fetch_route(route_id, api_key=None, auth_token=None):
     """Fetch full route data from RWGPS API.
 
-    ``api_key`` and ``auth_token`` are passed in by the caller (each app reads its
-    own RWGPS_API_KEY / RWGPS_AUTH_TOKEN). Returns dict with: name, distance
+    ``api_key`` / ``auth_token`` may be passed in by the caller; when omitted they
+    fall back to the ``RWGPS_API_KEY`` / ``RWGPS_AUTH_TOKEN`` environment variables
+    (the same values both apps' configs read). Returns dict with: name, distance
     (meters), elevation_gain (meters), track_points, course_points, and other
     route metadata.
     """
+    api_key = api_key or os.environ.get('RWGPS_API_KEY')
+    auth_token = auth_token or os.environ.get('RWGPS_AUTH_TOKEN')
+
     if not api_key or not auth_token:
         missing = []
         if not api_key:
