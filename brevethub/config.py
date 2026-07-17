@@ -80,6 +80,17 @@ class Config:
     # set it on the BrevetHub Vercel project. Separate from Team Asha's CRON_SECRET.
     CRON_SECRET = os.environ.get('CRON_SECRET')
 
+    # RideWithGPS API credentials — used by the reused shared/rwgps.py engine to
+    # fetch real route data for club-owner-generated ride plans and the
+    # /cron/warm-brevet-plans warmer. Both must be added to the BrevetHub Vercel
+    # project before real plans can be generated; the shared engine reads neither
+    # from a request context (they are passed in explicitly), so unset keys simply
+    # make generation fail soft (the guest /plan page never calls RWGPS live — it
+    # only reads persisted rows). Get them at ridewithgps.com → Account Settings →
+    # Developers tab.
+    RWGPS_API_KEY = os.environ.get('RWGPS_API_KEY')
+    RWGPS_AUTH_TOKEN = os.environ.get('RWGPS_AUTH_TOKEN')
+
     # Session security — HTTPS-only cookies in production, 30-day persistent login.
     SESSION_COOKIE_SECURE = _IS_PRODUCTION
     SESSION_COOKIE_HTTPONLY = True
