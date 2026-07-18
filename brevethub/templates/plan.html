@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_wind_arrow.html" import wind_arrow %}
 {% block title %}
   {% if real_plan %}Ride plan{% else %}Pacing plan{% endif %} — {{ event.name }} — {{ product_name }}
 {% endblock %}
@@ -65,6 +66,7 @@
         <th>Climb</th>
         <th>Avg speed</th>
         <th>Difficulty</th>
+        {% if real_plan.has_wind %}<th class="plan-wind-head">Wind</th>{% endif %}
         <th>ETA (elapsed)</th>
         <th>Time bank vs cutoff</th>
       </tr>
@@ -81,6 +83,11 @@
             <span class="plan-difficulty-chip" style="background: {{ s.difficulty_color }}"></span>
             {{ s.difficulty_score }}
           </td>
+          {% if real_plan.has_wind %}
+          <td class="plan-wind"{% if s.wind and s.wind.style %} style="background: {{ s.wind.style.background }}"{% endif %}>
+            {% if s.wind %}{{ wind_arrow(s.wind) }} km/h{% else %}—{% endif %}
+          </td>
+          {% endif %}
           <td class="plan-arrival">{{ s.arrival or '—' }}</td>
           <td class="plan-bank-cell {{ 'plan-bank-ok' if s.time_bank_positive else 'plan-bank-low' }}">
             {% if s.time_bank_known %}{{ s.time_bank }}{% else %}—{% endif %}

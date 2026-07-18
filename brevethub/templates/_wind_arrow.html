@@ -1,0 +1,27 @@
+{# Shared wind-arrow macro (km/h) — imported by plan.html and analysis_detail.html so
+   the forecast and historical per-stop wind cells render identically. De-branded from
+   Team Asha's ride_plan_detail.html wind_arrow macro: same SVG arrow + color rules,
+   but sized/labeled in km/h (BrevetHub's km / km-h convention) instead of mph.
+
+   `w` is a per-stop wind dict (from shared.weather.compute_stop_winds or the analysis
+   historical assembler): wind_speed_kmh, wind_type, and either arrow_rotation or the
+   legacy wind_arrow_deg. Renders nothing when `w` is None (no forecast for that stop),
+   so the caller can lay out one cell per stop and coordinate-less/unresolved stops
+   simply stay blank. #}
+{% macro wind_arrow(w, show_speed=true) %}
+{% if w %}
+{% set color = '#dc2626' if w.wind_type == 'headwind' else '#16a34a' if w.wind_type == 'tailwind' else '#1e293b' %}
+{% set kmh = (w.wind_speed_kmh|default(0))|round(0)|int %}
+{% set sz = 14 if kmh < 13 else 18 if kmh < 24 else 22 if kmh < 40 else 26 %}
+{% set sw = 1.5 if kmh < 13 else 2 if kmh < 24 else 2.5 if kmh < 40 else 3 %}
+{# Arrow points where the wind travels in the rider's frame — exact angle from the
+   rotation: headwind=↓ (into the face), tailwind=↑ (from behind), crosswind sideways. #}
+{% set rotation = w.arrow_rotation if w.arrow_rotation is defined else (w.wind_arrow_deg if w.wind_arrow_deg is defined else (180 if w.wind_type == 'headwind' else 0 if w.wind_type == 'tailwind' else 90)) %}
+<span class="wind-arrow" title="{{ kmh }} km/h {{ w.wind_type }}{% if w.compass %} ({{ w.compass }}){% endif %}">
+<svg width="{{ sz }}" height="{{ sz }}" viewBox="0 0 24 24" fill="none" stroke="{{ color }}" stroke-width="{{ sw }}" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate({{ rotation }}deg)">
+<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+</svg>
+</span>
+{% if show_speed %}<span class="wind-speed" style="color:{{ color }};font-size:0.7rem;font-weight:600;">{{ kmh }}</span>{% endif %}
+{% endif %}
+{% endmacro %}

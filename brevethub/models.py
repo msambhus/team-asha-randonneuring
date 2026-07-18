@@ -949,3 +949,73 @@ def get_route_plan_warm_targets():
         "WHERE date >= CURRENT_DATE AND rwgps_url IS NOT NULL "
         "ORDER BY date ASC",
     )
+
+
+# --------------------------------------------------------------------------- #
+# Brevet route weather cache (rp_brevet_route_weather) — one dense per-sample
+# Open-Meteo forecast per (event, date), warmed OFF the request path by the
+# warm-brevet-route-weather cron and READ (never fetched) by the /plan page. Mirrors
+# Team Asha's route_weather_cache but keyed on the calendar event. Every query below
+# targets an rp_* table only.
+# --------------------------------------------------------------------------- #
+def get_route_weather_warm_targets(horizon_days=16):
+    """Near-term upcoming brevets with an RWGPS route — the events the route-weather
+    warm cron should fetch an along-route forecast for.
+
+    Returns ``[{id, date, rwgps_url}, ...]`` for events whose date is between today
+    and ``today + horizon_days`` (Open-Meteo's forecast horizon) AND that carry a
+    non-NULL rwgps_url (so the cron has a real route to sample). Events further out —
+    or without a route — are skipped: there is nothing honest to forecast, so no cache
+    row is created and the plan page renders with no Wind column. Touches only
+    rp_brevet_event.
+    """
+    return db.query(
+        "SELECT id, date, rwgps_url FROM rp_brevet_event "
+        "WHERE date >= CURRENT_DATE "
+        "  AND date <= CURRENT_DATE + make_interval(days => %s) "
+        "  AND rwgps_url IS NOT NULL "
+        "ORDER BY date ASC",
+        (horizon_days,),
+    )
+
+
+def upsert_brevet_route_weather(event_id, forecast_date, weather_data, sample_points):
+    """Insert or refresh one cached along-route forecast, keyed on
+    (event_id, forecast_date).
+
+    A single atomic upsert on the UNIQUE(event_id, forecast_date) constraint, so a
+    repeated cron run refreshes the row in place (idempotent) instead of raising a
+    unique-violation. ``weather_data`` is the raw Open-Meteo per-sample forecast list
+    and ``sample_points`` is the aligned ``[{lat, lng, distance_m}]``; both are
+    JSON-adapted with psycopg2's ``Json``. Only ever called by the cron with a
+    successful fetch, so a transient failure never overwrites a last-good row.
+
+    (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner
+    reason documented on :func:`upsert_brevet_event`.)
+    """
+    db.execute(
+        "INSERT INTO rp_brevet_route_weather "
+        "  (event_id, forecast_date, weather_data, sample_points) "
+        "VALUES (%s, %s, %s, %s) "
+        "ON CONFLICT (event_id, forecast_date) DO UPDATE "
+        "SET weather_data = EXCLUDED.weather_data, "
+        "    sample_points = EXCLUDED.sample_points, fetched_at = NOW()",
+        (event_id, forecast_date, Json(weather_data), Json(sample_points)),
+    )
+
+
+def get_brevet_route_weather(event_id, forecast_date):
+    """The cached along-route forecast for a brevet on a date, or None.
+
+    Returns ``{weather_data, sample_points, forecast_date, fetched_at}`` (the raw
+    per-sample Open-Meteo list plus the aligned sample points) so the /plan route can
+    map each stop to the nearest sample and compute per-stop wind in-process
+    (shared/weather.py compute_stop_winds). Returns None when nothing is stored (new
+    route, beyond-horizon brevet, or the cron has not run yet), so the caller degrades
+    gracefully with no live fallback. Touches only rp_brevet_route_weather.
+    """
+    return db.query_one(
+        "SELECT event_id, forecast_date, weather_data, sample_points, fetched_at "
+        "FROM rp_brevet_route_weather WHERE event_id = %s AND forecast_date = %s",
+        (event_id, forecast_date),
+    )

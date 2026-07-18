@@ -446,6 +446,100 @@ def _sample_bearing(sample_points, idx):
     return calculate_bearing(a['lat'], a['lng'], b['lat'], b['lng'])
 
 
+def compute_stop_winds(stops, weather_data, sample_points, forecast_date, start_time_str):
+    """Per-stop wind for a ride plan, computed PURELY from stored route weather.
+
+    Model-agnostic: it takes the pieces a caller has ALREADY READ from its own
+    weather cache — the per-sample Open-Meteo forecast list ``weather_data``, the
+    aligned ``sample_points`` (``[{lat, lng, distance_m}]``) it was sampled at, the
+    ride ``forecast_date`` (a ``datetime.date``, which dates the arrival hours) and
+    the ``start_time_str`` ("HH:MM" clock, a time object stringifies fine too) — and
+    returns the per-stop wind. NO DB and NO HTTP happen inside it.
+
+    This is the single home of the per-stop wind computation: Team Asha's
+    ``services.weather.fetch_stop_wind`` reads its ``route_weather_cache`` row and
+    BrevetHub reads its own ``rp_brevet_route_weather`` row, then BOTH call this — so
+    the head/cross/arrow math lives in exactly one place and the two apps can never
+    drift. Each stop is mapped to the nearest stored sample by route distance, the
+    rider bearing is derived from the adjacent sample geometry, and the arrival-hour
+    forecast is selected (from the stop's ``arrival_time_min`` when present, else a
+    flat-speed estimate from its route distance).
+
+    Returns a list the SAME length as ``stops`` (``None`` for any stop that can't be
+    resolved to a sample + forecast). Each entry carries the neutral wind fields both
+    surfaces need: km/h + mph wind speed, head/cross components (km/h), the wind type,
+    the arrow rotation (degrees) + its 8-way glyph, the compass label, the wind
+    direction + rider bearing, the table-cell style, a text label, and temperature —
+    so a km/h caller (BrevetHub) and an imperial caller (Team Asha) both render from
+    the same dict without recomputing any wind math.
+    """
+    s = str(start_time_str or '')
+    try:
+        start_hour = int(s[:2])
+        start_minute = int(s[3:5]) if len(s) >= 5 else 0
+    except (ValueError, TypeError):
+        start_hour, start_minute = 7, 0
+    start_dt = datetime(forecast_date.year, forecast_date.month, forecast_date.day,
+                        start_hour, start_minute)
+
+    result = []
+    for stop in stops:
+        target_m = float(stop.get('distance_miles') or 0) * MILES_TO_METERS
+        idx = _nearest_sample_index(sample_points, target_m)
+        if idx is None or idx >= len(weather_data):
+            result.append(None)
+            continue
+
+        forecast = weather_data[idx]
+        hourly = forecast.get('hourly', {})
+
+        # Use arrival_time_min if present; otherwise estimate from distance.
+        arrival_time_min = stop.get('arrival_time_min')
+        if arrival_time_min is not None:
+            arrival_dt = start_dt + timedelta(minutes=float(arrival_time_min))
+        else:
+            dist_km = float(stop.get('distance_miles') or 0) * 1.60934
+            hours_to_arrive = dist_km / _AVG_SPEED_KMH if _AVG_SPEED_KMH > 0 else 0
+            arrival_dt = start_dt + timedelta(hours=hours_to_arrive)
+
+        hour_index = get_hour_index(hourly.get('time', []), arrival_dt)
+
+        wind_speed = _safe_get(hourly, 'wind_speed_10m', hour_index, 0.0)
+        wind_dir = _safe_get(hourly, 'wind_direction_10m', hour_index, 0)
+        temperature = _safe_get(hourly, 'temperature_2m', hour_index, 0.0)
+
+        # Bearing from the stored sample geometry (nearest sample -> its neighbour).
+        bearing = _sample_bearing(sample_points, idx)
+
+        hw = headwind_component(wind_speed, wind_dir, bearing)
+        cw = crosswind_component(wind_speed, wind_dir, bearing)
+        wind_type = classify_wind(hw, cw)
+        arrow_rotation = wind_arrow_rotation(hw, cw)
+        style = wind_cell_style(wind_speed, wind_type)
+
+        temp_f = round(float(temperature) * 9 / 5 + 32, 0)
+        wind_speed_mph = round(float(wind_speed) * 0.621371, 1)
+        result.append({
+            'wind_speed_kmh': round(float(wind_speed), 1),
+            'wind_speed_mph': wind_speed_mph,
+            'headwind_kmh': round(float(hw), 1),
+            'crosswind_kmh': round(float(cw), 1),
+            'wind_type': wind_type,
+            'wind_arrow_deg': arrow_rotation,
+            'arrow_rotation': arrow_rotation,
+            'arrow_glyph': wind_arrow_glyph(arrow_rotation),
+            'compass': compass_label(wind_dir),
+            'wind_direction_deg': int(wind_dir),
+            'rider_bearing_deg': int(bearing),
+            'style': style,
+            'label': wind_label(hw),
+            'temperature_c': round(float(temperature), 1),
+            'temperature_f': int(temp_f),
+        })
+
+    return result
+
+
 # ── Historical Wind (Archive API + forecast past_days fallback) ──────
 
 def _fetch_archive_wind(stop_coords, ride_date):
