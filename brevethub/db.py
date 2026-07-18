@@ -24,19 +24,33 @@ def close_db(e=None):
 
 
 def query(sql, params=None):
-    """Run a SELECT and return all rows as a list of RealDict rows."""
+    """Run a SELECT and return all rows as a list of RealDict rows.
+
+    Rolls back on error: the connection is per-request with autocommit off, so a
+    failed SELECT leaves the transaction ABORTED and every later query on the
+    same request fails with InFailedSqlTransaction. Rolling back here lets callers
+    that catch the error (fail-soft reads) keep the request's connection usable."""
     conn = get_db()
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute(sql, params or ())
-        return cur.fetchall()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params or ())
+            return cur.fetchall()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def query_one(sql, params=None):
-    """Run a SELECT and return the first row (or None)."""
+    """Run a SELECT and return the first row (or None). Rolls back on error so a
+    failed read cannot poison the rest of the request's transaction (see query)."""
     conn = get_db()
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute(sql, params or ())
-        return cur.fetchone()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params or ())
+            return cur.fetchone()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def execute(sql, params=None, returning=False):
