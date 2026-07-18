@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_wind_arrow.html" import wind_arrow %}
 {% block title %}
   {% if analyzed %}{{ analysis.activity.name }} — analysis{% else %}Ride analysis{% endif %} — {{ product_name }}
 {% endblock %}
@@ -96,16 +97,25 @@
 
 <section class="card">
   <h2>Stops</h2>
+  {# Wind arrows render only when the historical fetch produced at least one per-stop
+     forecast; a coordinate-less stop keeps its cell blank via the list index. #}
+  {% set has_wind = stop_winds and (stop_winds | select | list | length > 0) %}
   {% if analysis.stops %}
     <table class="analysis-stops">
       <thead>
-        <tr><th>At (km)</th><th>Duration</th></tr>
+        <tr><th>At (km)</th><th>Duration</th>{% if has_wind %}<th class="analysis-wind-head">Wind</th>{% endif %}</tr>
       </thead>
       <tbody>
         {% for stop in analysis.stops %}
+          {% set w = stop_winds[loop.index0] if has_wind and loop.index0 < stop_winds|length else None %}
           <tr>
             <td>{{ stop.distance_km }}</td>
             <td>{% if stop.duration_min is not none %}{{ stop.duration_min }} min{% else %}—{% endif %}</td>
+            {% if has_wind %}
+            <td class="analysis-wind"{% if w and w.style %} style="background: {{ w.style.background }}"{% endif %}>
+              {% if w %}{{ wind_arrow(w) }} km/h{% else %}—{% endif %}
+            </td>
+            {% endif %}
           </tr>
         {% endfor %}
       </tbody>

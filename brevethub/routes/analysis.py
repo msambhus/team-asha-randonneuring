@@ -29,6 +29,7 @@ Isolation: imports only flask / stdlib / brevethub.* / shared.*, and every model
 is on an rp_* table, so test_brevethub_isolation.py and test_rp_only.py stay green.
 """
 import time
+from datetime import datetime, timedelta
 
 from flask import (Blueprint, abort, current_app, flash, redirect,
                    render_template, session, url_for)
@@ -39,6 +40,11 @@ from brevethub.routes.strava import _valid_access_token
 from shared.strava import (CYCLING_TYPES, fetch_activities,
                            fetch_activity_streams)
 from shared.strava_analysis import build_activity_analysis, _compress_streams
+from shared.weather import (_AVG_SPEED_KMH, _safe_get, calculate_bearing,
+                            classify_wind, compass_label, crosswind_component,
+                            fetch_historical_wind, get_hour_index,
+                            headwind_component, wind_arrow_glyph,
+                            wind_arrow_rotation, wind_cell_style)
 
 analysis_bp = Blueprint('analysis', __name__)
 
@@ -176,6 +182,129 @@ def _build_analysis(activity, streams):
     }
 
 
+# Ride start estimate for historical arrival-hour selection — a completed ride's
+# per-stop times aren't stored, so wind is sampled at a flat-speed arrival from a
+# conventional 07:00 grand départ (same heuristic Team Asha's historical path uses).
+_HIST_START_HOUR = 7
+
+
+def _historical_stop_winds(analysis):
+    """Per-stop HISTORICAL wind for a completed ride, over the actual ride date.
+
+    A BrevetHub assembler (NOT an extraction of Team Asha's get_historical_stop_wind —
+    the two paths differ: km/h units, list-index lookup, no gust window, no persist)
+    that composes the SHARED weather primitives — ``fetch_historical_wind`` for the
+    archive/forecast fetch, then bearing → head/cross → arrow — so no wind math is
+    duplicated. The analysis stops already carry lat/lng (from the GPS map), so it
+    fetches per-stop wind directly rather than interpolating a track.
+
+    Index discipline (the redteam-flagged trap): it fetches weather ONLY for stops
+    that have coordinates, but returns a ``stop_winds`` list that is EXACTLY the same
+    length and order as ``analysis['stops']`` — ``None`` at every coordinate-less
+    stop — using an original-index → fetched-index ``valid_map``. The template renders
+    ``stop_winds[loop.index0]`` against the original stops, so a coordinate-less stop
+    can never shift a fetched forecast onto the wrong displayed stop.
+
+    Returns:
+      - ``[]`` for empty stops (no fetch),
+      - ``[None, ...]`` (all None, no fetch) when NO stop has coordinates,
+      - ``None`` on a fetch error or unparseable ride date (fail-soft: the page still
+        renders, just without a Wind column),
+      - otherwise a same-length list of per-stop wind dicts / ``None`` placeholders.
+    """
+    stops = (analysis or {}).get('stops') or []
+    if not stops:
+        return []
+
+    # Original-order coordinates; None where a stop lacks lat/lng.
+    coords = [
+        {'lat': s['lat'], 'lng': s['lng']}
+        if s.get('lat') is not None and s.get('lng') is not None else None
+        for s in stops
+    ]
+
+    # original stop index -> index within the coordinate-only fetch list.
+    valid_map = {}
+    valid_coords = []
+    for orig_idx, c in enumerate(coords):
+        if c is not None:
+            valid_map[orig_idx] = len(valid_coords)
+            valid_coords.append(c)
+
+    if not valid_coords:
+        # No geometry at all — same-length all-None, no fetch.
+        return [None] * len(stops)
+
+    ride_date_str = (analysis.get('activity') or {}).get('date') or ''
+    try:
+        ride_date = datetime.strptime(ride_date_str[:10], '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return None
+
+    try:
+        weather_data, data_source = fetch_historical_wind(valid_coords, ride_date)
+    except Exception as e:  # noqa: BLE001 — fail soft, render without wind
+        current_app.logger.warning('Historical wind fetch failed: %s', e)
+        return None
+    if not weather_data:
+        return None
+
+    start_dt = datetime(ride_date.year, ride_date.month, ride_date.day,
+                        _HIST_START_HOUR, 0)
+
+    stop_winds = []
+    for i, coord in enumerate(coords):
+        if coord is None:
+            stop_winds.append(None)
+            continue
+        v_idx = valid_map.get(i)
+        if v_idx is None or v_idx >= len(weather_data):
+            stop_winds.append(None)
+            continue
+
+        hourly = weather_data[v_idx].get('hourly', {})
+
+        # Arrival estimate from route distance at a flat brevet speed.
+        dist_km = float(stops[i].get('distance_km') or 0)
+        hours_to_arrive = dist_km / _AVG_SPEED_KMH if _AVG_SPEED_KMH > 0 else 0
+        arrival_dt = start_dt + timedelta(hours=hours_to_arrive)
+        hour_index = get_hour_index(hourly.get('time', []), arrival_dt)
+
+        wind_speed = _safe_get(hourly, 'wind_speed_10m', hour_index, 0.0)
+        wind_dir = _safe_get(hourly, 'wind_direction_10m', hour_index, 0)
+        temperature = _safe_get(hourly, 'temperature_2m', hour_index, 0.0)
+
+        # Bearing: current -> next stop; for the last stop, previous -> current.
+        bearing = 0.0
+        if i + 1 < len(coords) and coords[i + 1] is not None:
+            bearing = calculate_bearing(coord['lat'], coord['lng'],
+                                        coords[i + 1]['lat'], coords[i + 1]['lng'])
+        elif i > 0 and coords[i - 1] is not None:
+            bearing = calculate_bearing(coords[i - 1]['lat'], coords[i - 1]['lng'],
+                                        coord['lat'], coord['lng'])
+
+        hw = headwind_component(wind_speed, wind_dir, bearing)
+        cw = crosswind_component(wind_speed, wind_dir, bearing)
+        wind_type = classify_wind(hw, cw)
+        arrow_rotation = wind_arrow_rotation(hw, cw)
+        stop_winds.append({
+            'wind_speed_kmh': round(float(wind_speed), 1),
+            'wind_type': wind_type,
+            'headwind_kmh': round(float(hw), 1),
+            'crosswind_kmh': round(float(cw), 1),
+            'wind_arrow_deg': arrow_rotation,
+            'arrow_rotation': arrow_rotation,
+            'arrow_glyph': wind_arrow_glyph(arrow_rotation),
+            'compass': compass_label(wind_dir),
+            'wind_direction_deg': int(wind_dir),
+            'style': wind_cell_style(wind_speed, wind_type),
+            'temperature_c': round(float(temperature), 1),
+            'data_source': data_source,
+        })
+
+    return stop_winds
+
+
 @analysis_bp.route('/analysis')
 @profile_required
 def analysis_list():
@@ -273,5 +402,7 @@ def analysis_detail(activity_id):
     rider_id = session['rider_id']
     cached = models.get_ride_analysis(rider_id, activity_id)
     analysis = cached['analysis'] if cached and cached.get('analysis') else None
+    stop_winds = _historical_stop_winds(analysis) if analysis else None
     return render_template('analysis_detail.html', analysis=analysis,
-                           activity_id=activity_id, analyzed=analysis is not None)
+                           stop_winds=stop_winds, activity_id=activity_id,
+                           analyzed=analysis is not None)

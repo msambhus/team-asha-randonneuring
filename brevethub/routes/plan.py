@@ -34,6 +34,7 @@ from flask import (Blueprint, abort, current_app, jsonify, render_template,
 from brevethub import models
 from brevethub.decorators import current_rider
 from shared.pacing import recalculate_cumulative_values, _get_cutoff_hours
+from shared.weather import compute_stop_winds
 
 plan_bp = Blueprint('plan', __name__)
 
@@ -298,13 +299,19 @@ def _build_elevation_svg(stops_km, *, width=940, height=200):
     }
 
 
-def _build_real_plan(plan, stops):
+def _build_real_plan(plan, stops, stop_winds=None):
     """Turn a persisted real plan (native miles/mph/feet) into a km / km-h display
     context for plan.html: converted per-stop rows, the SVG elevation profile, and
     plan-level summary values. THE conversion happens here and nowhere else.
+
+    ``stop_winds`` (when present) is the per-stop forecast wind list from
+    ``compute_stop_winds`` — SAME length + order as ``stops``, with ``None`` for a
+    stop that has no forecast. Each stop's dict gets a ``wind`` field (its wind dict
+    or None); ``has_wind`` flags whether the Wind column should render at all.
     """
     display_stops = []
-    for s in stops:
+    for i, s in enumerate(stops):
+        wind = stop_winds[i] if stop_winds and i < len(stop_winds) else None
         display_stops.append({
             'stop_order': s['stop_order'],
             'location': s['location'],
@@ -321,6 +328,7 @@ def _build_real_plan(plan, stops):
             'time_bank_positive': (s['time_bank_min'] is not None
                                    and s['time_bank_min'] >= 0),
             'time_bank_known': s['time_bank_min'] is not None,
+            'wind': wind,
         })
 
     final_km = display_stops[-1]['distance_km'] if display_stops else None
@@ -333,14 +341,49 @@ def _build_real_plan(plan, stops):
         'avg_moving_speed_kmh': _mph_to_kmh(plan['avg_moving_speed']),
         'final_distance_km': final_km,
         'stops': display_stops,
+        'has_wind': any(ds['wind'] for ds in display_stops),
         'svg': _build_elevation_svg(display_stops),
     }
 
 
-def _load_real_plan(event_id):
+def _forecast_stop_winds(event, plan, stops):
+    """Per-stop forecast wind for a real plan, from the warm route-weather cache.
+
+    Reads the pre-fetched rp_brevet_route_weather row for (event, forecast_date) and
+    hands its stored forecast + sample points to the SHARED ``compute_stop_winds`` —
+    the SAME pure per-stop math Team Asha uses — so the guest page NEVER calls
+    Open-Meteo/RWGPS live (it only reads the cron-warmed cache). Returns a list the
+    same length as ``stops`` (None entries for unresolved stops), or None when no
+    forecast is cached (graceful miss: the plan renders with no Wind column). Fails
+    SOFT: any error yields None so the plan page never 500s on the wind path.
+    """
+    try:
+        forecast_date = event.get('date')
+        if not forecast_date:
+            return None
+        row = models.get_brevet_route_weather(event['id'], forecast_date)
+        if not row:
+            return None
+        weather_data = row.get('weather_data')
+        sample_points = row.get('sample_points')
+        if not weather_data or not sample_points:
+            return None
+        start_time_str = plan.get('start_time') or '07:00'
+        return compute_stop_winds(stops, weather_data, sample_points,
+                                  forecast_date, start_time_str)
+    except Exception as e:  # pragma: no cover - defensive; keep the page up
+        current_app.logger.warning('Forecast wind injection failed for event %s: %s',
+                                    event.get('id'), e)
+        return None
+
+
+def _load_real_plan(event_id, event=None):
     """Fetch the persisted real plan for an event, or None. Fails SOFT: any DB error
     (or no real plan) yields None so /plan falls back to the synthetic schedule and
-    never 500s on the read path."""
+    never 500s on the read path.
+
+    When ``event`` is given, per-stop forecast wind is injected from the warm
+    route-weather cache (fail-soft — no wind on a miss)."""
     try:
         bundle = models.get_brevet_route_plan_with_stops(event_id)
     except Exception as e:  # pragma: no cover - defensive; keep the page up
@@ -349,7 +392,8 @@ def _load_real_plan(event_id):
         return None
     if not bundle or not bundle.get('stops'):
         return None
-    return _build_real_plan(bundle['plan'], bundle['stops'])
+    stop_winds = _forecast_stop_winds(event, bundle['plan'], bundle['stops']) if event else None
+    return _build_real_plan(bundle['plan'], bundle['stops'], stop_winds)
 
 
 @plan_bp.route('/plan/<int:event_id>')
@@ -370,7 +414,7 @@ def plan_view(event_id):
         abort(404)
 
     rider = current_rider()
-    real_plan = _load_real_plan(event_id)
+    real_plan = _load_real_plan(event_id, event)
 
     total_km = float(event['distance_km'])
     cutoff_hours = _cutoff_hours(event)

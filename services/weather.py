@@ -209,6 +209,18 @@ def get_historical_stop_wind(stops, track_points, ride_date, ride_id=None):
     return wind_rows, data_source
 
 
+# The exact key set the Team Asha ride-plan table + wind_arrow macro expect from
+# fetch_stop_wind. The shared compute_stop_winds now returns a SUPERSET (it also
+# carries arrow_rotation / arrow_glyph / compass for BrevetHub), so this projection
+# keeps fetch_stop_wind's output byte-identical to the pre-extraction shape — the
+# ``services.weather.<name>`` regression pins this.
+_LEGACY_STOP_WIND_KEYS = (
+    'wind_speed_kmh', 'wind_speed_mph', 'headwind_kmh', 'crosswind_kmh',
+    'wind_type', 'wind_arrow_deg', 'wind_direction_deg', 'rider_bearing_deg',
+    'style', 'label', 'temperature_c', 'temperature_f',
+)
+
+
 def fetch_stop_wind(stops, route_id, forecast_date, start_time_str):
     """Return per-stop wind data for the ride-plan table, READ from stored weather (TA-237).
 
@@ -218,12 +230,15 @@ def fetch_stop_wind(stops, route_id, forecast_date, start_time_str):
     start_time_str: "HH:MM" ride start clock (a time object stringifies fine too)
 
     Loads the forecast the hourly fetch-route-weather cron stored for
-    (route_id, forecast_date), maps each stop to the nearest stored sample point by route
-    distance, derives bearing from adjacent samples, and picks the arrival-hour forecast —
-    with ZERO live Open-Meteo calls. Returns a list the same length as `stops` (None for
-    stops that can't be resolved), or None when no forecast is stored for this route+date
-    (graceful miss: the plan/calendar simply shows no wind, exactly like the old
-    API-error path). Same per-stop dict shape as before.
+    (route_id, forecast_date), then delegates the per-stop wind math to the shared,
+    model-agnostic ``compute_stop_winds`` (bearing → head/cross → arrow, arrival-hour
+    selection) — the SAME pure function BrevetHub calls after reading its own
+    rp_brevet_route_weather row, so the two apps can never drift. ZERO live Open-Meteo
+    calls. Returns a list the same length as `stops` (None for stops that can't be
+    resolved), or None when no forecast is stored for this route+date (graceful miss:
+    the plan/calendar simply shows no wind, exactly like the old API-error path). The
+    per-stop dict is projected back to the exact legacy key set the ride-plan table +
+    wind_arrow macro read, so the output shape is unchanged.
     """
     if route_id is None or forecast_date is None:
         return None
@@ -235,64 +250,7 @@ def fetch_stop_wind(stops, route_id, forecast_date, start_time_str):
     # Ride start on the REAL ride date — the stored hourly arrays span that day, so
     # arrival-hour selection is correct even for a ride weeks out (the old code timed
     # arrivals from datetime.now(), i.e. as if the ride were today).
-    s = str(start_time_str or '')
-    try:
-        start_hour = int(s[:2])
-        start_minute = int(s[3:5]) if len(s) >= 5 else 0
-    except (ValueError, TypeError):
-        start_hour, start_minute = 7, 0
-    start_dt = datetime(forecast_date.year, forecast_date.month, forecast_date.day,
-                        start_hour, start_minute)
-
-    result = []
-    for stop in stops:
-        target_m = float(stop.get('distance_miles') or 0) * MILES_TO_METERS
-        idx = _nearest_sample_index(sample_points, target_m)
-        if idx is None or idx >= len(weather_data):
-            result.append(None)
-            continue
-
-        forecast = weather_data[idx]
-        hourly = forecast.get('hourly', {})
-
-        # Use arrival_time_min if present; otherwise estimate from distance
-        arrival_time_min = stop.get('arrival_time_min')
-        if arrival_time_min is not None:
-            arrival_dt = start_dt + timedelta(minutes=float(arrival_time_min))
-        else:
-            dist_km = float(stop.get('distance_miles') or 0) * 1.60934
-            hours_to_arrive = dist_km / _AVG_SPEED_KMH if _AVG_SPEED_KMH > 0 else 0
-            arrival_dt = start_dt + timedelta(hours=hours_to_arrive)
-
-        hour_index = get_hour_index(hourly.get('time', []), arrival_dt)
-
-        wind_speed = _safe_get(hourly, 'wind_speed_10m', hour_index, 0.0)
-        wind_dir = _safe_get(hourly, 'wind_direction_10m', hour_index, 0)
-        temperature = _safe_get(hourly, 'temperature_2m', hour_index, 0.0)
-
-        # Bearing from the stored sample geometry (nearest sample -> its neighbour).
-        bearing = _sample_bearing(sample_points, idx)
-
-        hw = headwind_component(wind_speed, wind_dir, bearing)
-        cw = crosswind_component(wind_speed, wind_dir, bearing)
-        wind_type = classify_wind(hw, cw)
-        style = wind_cell_style(wind_speed, wind_type)
-
-        temp_f = round(float(temperature) * 9 / 5 + 32, 0)
-        wind_speed_mph = round(float(wind_speed) * 0.621371, 1)
-        result.append({
-            'wind_speed_kmh': round(float(wind_speed), 1),
-            'wind_speed_mph': wind_speed_mph,
-            'headwind_kmh': round(float(hw), 1),
-            'crosswind_kmh': round(float(cw), 1),
-            'wind_type': wind_type,
-            'wind_arrow_deg': wind_arrow_rotation(hw, cw),
-            'wind_direction_deg': int(wind_dir),
-            'rider_bearing_deg': int(bearing),
-            'style': style,
-            'label': wind_label(hw),
-            'temperature_c': round(float(temperature), 1),
-            'temperature_f': int(temp_f),
-        })
-
-    return result
+    winds = compute_stop_winds(stops, weather_data, sample_points,
+                               forecast_date, start_time_str)
+    return [None if w is None else {k: w[k] for k in _LEGACY_STOP_WIND_KEYS}
+            for w in winds]

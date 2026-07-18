@@ -163,11 +163,14 @@ def test_compute_fetches_once_then_caches(client):
     assert analysis['stop_count'] == 1               # the 150 s stop detected
     assert analysis['legs'], "expected inter-stop legs"
 
-    # A subsequent detail GET reads the cache and makes ZERO Strava calls.
+    # A subsequent detail GET reads the cache and makes ZERO Strava calls. The
+    # historical-wind fetch is mocked so the detail view never hits the network.
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_ride_analysis',
                return_value={'analysis': analysis, 'activity_streams': b'x',
                              'computed_at': None}), \
+         patch('brevethub.routes.analysis.fetch_historical_wind',
+               return_value=(None, None)), \
          patch('brevethub.routes.analysis.fetch_activity_streams') as mock_streams_get:
         resp = client.get('/analysis/555')
     assert resp.status_code == 200
@@ -234,7 +237,9 @@ def test_detail_renders_cached_breakdown(client):
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_ride_analysis',
                return_value={'analysis': sample, 'activity_streams': b'x',
-                             'computed_at': None}):
+                             'computed_at': None}), \
+         patch('brevethub.routes.analysis.fetch_historical_wind',
+               return_value=(None, None)):
         resp = client.get('/analysis/555')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)

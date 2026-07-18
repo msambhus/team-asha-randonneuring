@@ -949,3 +949,82 @@ def get_route_plan_warm_targets():
         "WHERE date >= CURRENT_DATE AND rwgps_url IS NOT NULL "
         "ORDER BY date ASC",
     )
+
+
+# --------------------------------------------------------------------------- #
+# Brevet route weather cache (rp_brevet_route_weather) — one dense per-sample
+# Open-Meteo forecast per (event, date), warmed OFF the request path by the
+# warm-brevet-route-weather cron and READ (never fetched) by the /plan page. Mirrors
+# Team Asha's route_weather_cache but keyed on the calendar event. Every query below
+# targets an rp_* table only.
+# --------------------------------------------------------------------------- #
+def get_route_weather_warm_targets(horizon_days=16):
+    """Near-term brevets that HAVE a persisted real plan — the only events whose /plan
+    page renders per-stop wind — each paired with the PLAN's route (not the event's).
+
+    Returns ``[{id, date, rwgps_url, rwgps_route_id}, ...]`` for events dated between
+    today and ``today + horizon_days`` (Open-Meteo's forecast horizon) that have a row
+    in rp_brevet_route_plan. The route fields are read off the PERSISTED PLAN, with the
+    event's URL used only as a fallback when the plan omits one.
+
+    Driving off the plan's route (rather than ``rp_brevet_event.rwgps_url``) is a
+    correctness requirement: a club owner can generate the plan against an admin-entered
+    RWGPS URL that need not match the event's (see routes/admin.py), and the /plan page
+    maps each plan stop onto THAT route. Warming off the event URL could sample the wind
+    along the wrong course — or skip it entirely when only the plan carries a URL.
+    Events without a persisted plan are skipped (no real plan → no Wind column → nothing
+    to warm). Touches only rp_* tables.
+    """
+    return db.query(
+        "SELECT e.id AS id, e.date AS date, "
+        "       COALESCE(p.rwgps_url, e.rwgps_url) AS rwgps_url, "
+        "       p.rwgps_route_id AS rwgps_route_id "
+        "FROM rp_brevet_route_plan p "
+        "JOIN rp_brevet_event e ON e.id = p.event_id "
+        "WHERE e.date >= CURRENT_DATE "
+        "  AND e.date <= CURRENT_DATE + make_interval(days => %s) "
+        "ORDER BY e.date ASC",
+        (horizon_days,),
+    )
+
+
+def upsert_brevet_route_weather(event_id, forecast_date, weather_data, sample_points):
+    """Insert or refresh one cached along-route forecast, keyed on
+    (event_id, forecast_date).
+
+    A single atomic upsert on the UNIQUE(event_id, forecast_date) constraint, so a
+    repeated cron run refreshes the row in place (idempotent) instead of raising a
+    unique-violation. ``weather_data`` is the raw Open-Meteo per-sample forecast list
+    and ``sample_points`` is the aligned ``[{lat, lng, distance_m}]``; both are
+    JSON-adapted with psycopg2's ``Json``. Only ever called by the cron with a
+    successful fetch, so a transient failure never overwrites a last-good row.
+
+    (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner
+    reason documented on :func:`upsert_brevet_event`.)
+    """
+    db.execute(
+        "INSERT INTO rp_brevet_route_weather "
+        "  (event_id, forecast_date, weather_data, sample_points) "
+        "VALUES (%s, %s, %s, %s) "
+        "ON CONFLICT (event_id, forecast_date) DO UPDATE "
+        "SET weather_data = EXCLUDED.weather_data, "
+        "    sample_points = EXCLUDED.sample_points, fetched_at = NOW()",
+        (event_id, forecast_date, Json(weather_data), Json(sample_points)),
+    )
+
+
+def get_brevet_route_weather(event_id, forecast_date):
+    """The cached along-route forecast for a brevet on a date, or None.
+
+    Returns ``{weather_data, sample_points, forecast_date, fetched_at}`` (the raw
+    per-sample Open-Meteo list plus the aligned sample points) so the /plan route can
+    map each stop to the nearest sample and compute per-stop wind in-process
+    (shared/weather.py compute_stop_winds). Returns None when nothing is stored (new
+    route, beyond-horizon brevet, or the cron has not run yet), so the caller degrades
+    gracefully with no live fallback. Touches only rp_brevet_route_weather.
+    """
+    return db.query_one(
+        "SELECT event_id, forecast_date, weather_data, sample_points, fetched_at "
+        "FROM rp_brevet_route_weather WHERE event_id = %s AND forecast_date = %s",
+        (event_id, forecast_date),
+    )
