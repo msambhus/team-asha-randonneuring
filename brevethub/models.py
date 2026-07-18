@@ -959,22 +959,31 @@ def get_route_plan_warm_targets():
 # targets an rp_* table only.
 # --------------------------------------------------------------------------- #
 def get_route_weather_warm_targets(horizon_days=16):
-    """Near-term upcoming brevets with an RWGPS route — the events the route-weather
-    warm cron should fetch an along-route forecast for.
+    """Near-term brevets that HAVE a persisted real plan — the only events whose /plan
+    page renders per-stop wind — each paired with the PLAN's route (not the event's).
 
-    Returns ``[{id, date, rwgps_url}, ...]`` for events whose date is between today
-    and ``today + horizon_days`` (Open-Meteo's forecast horizon) AND that carry a
-    non-NULL rwgps_url (so the cron has a real route to sample). Events further out —
-    or without a route — are skipped: there is nothing honest to forecast, so no cache
-    row is created and the plan page renders with no Wind column. Touches only
-    rp_brevet_event.
+    Returns ``[{id, date, rwgps_url, rwgps_route_id}, ...]`` for events dated between
+    today and ``today + horizon_days`` (Open-Meteo's forecast horizon) that have a row
+    in rp_brevet_route_plan. The route fields are read off the PERSISTED PLAN, with the
+    event's URL used only as a fallback when the plan omits one.
+
+    Driving off the plan's route (rather than ``rp_brevet_event.rwgps_url``) is a
+    correctness requirement: a club owner can generate the plan against an admin-entered
+    RWGPS URL that need not match the event's (see routes/admin.py), and the /plan page
+    maps each plan stop onto THAT route. Warming off the event URL could sample the wind
+    along the wrong course — or skip it entirely when only the plan carries a URL.
+    Events without a persisted plan are skipped (no real plan → no Wind column → nothing
+    to warm). Touches only rp_* tables.
     """
     return db.query(
-        "SELECT id, date, rwgps_url FROM rp_brevet_event "
-        "WHERE date >= CURRENT_DATE "
-        "  AND date <= CURRENT_DATE + make_interval(days => %s) "
-        "  AND rwgps_url IS NOT NULL "
-        "ORDER BY date ASC",
+        "SELECT e.id AS id, e.date AS date, "
+        "       COALESCE(p.rwgps_url, e.rwgps_url) AS rwgps_url, "
+        "       p.rwgps_route_id AS rwgps_route_id "
+        "FROM rp_brevet_route_plan p "
+        "JOIN rp_brevet_event e ON e.id = p.event_id "
+        "WHERE e.date >= CURRENT_DATE "
+        "  AND e.date <= CURRENT_DATE + make_interval(days => %s) "
+        "ORDER BY e.date ASC",
         (horizon_days,),
     )
 

@@ -181,6 +181,29 @@ def test_route_weather_warms_with_url_skips_without(app, client):
     assert kwargs.get('interval_m') == 15000
 
 
+def test_route_weather_uses_plan_route_not_event_url(app, client):
+    """Council regression: warm the cache from the PERSISTED PLAN's route, not the
+    event's rwgps_url. An admin can generate the plan from a different RWGPS URL than
+    the event's; the /plan page renders THAT route, so the sampled weather must match
+    it. The target carries the plan's rwgps_route_id (999) while its rwgps_url points at
+    the event's other route (111) — the cron must fetch 999."""
+    _with_secret(app)
+    target = [{'id': 11, 'date': _D1,
+               'rwgps_url': 'https://ridewithgps.com/routes/111',   # event's route
+               'rwgps_route_id': '999'}]                             # plan's route (wins)
+    with patch('brevethub.models.get_route_weather_warm_targets', return_value=target), \
+         patch('brevethub.models.get_brevet_route_weather', return_value=None), \
+         patch('brevethub.routes.cron.fetch_route', return_value=_ROUTE) as mfetch, \
+         patch('brevethub.routes.cron.sample_track_points', return_value=_SAMPLES), \
+         patch('brevethub.routes.cron.fetch_route_weather', return_value=_WEATHER), \
+         patch('brevethub.models.upsert_brevet_route_weather'):
+        resp = client.post(_PATH, headers=_auth())
+    assert resp.status_code == 200
+    assert resp.get_json()['warmed'] == 1
+    (called_route_id, *_rest), _kw = mfetch.call_args
+    assert called_route_id == '999', 'cron must sample the plan route, not the event URL'
+
+
 def test_route_weather_get_verb_works(app, client):
     _with_secret(app)
     with patch('brevethub.models.get_route_weather_warm_targets', return_value=[]):

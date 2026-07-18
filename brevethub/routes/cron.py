@@ -244,13 +244,20 @@ def warm_brevet_route_weather():
     brevets, OFF the request path (mirrors /cron/warm-brevet-plans and Team Asha's
     fetch-route-weather cron).
 
-    Auth-gated (Bearer CRON_SECRET). Loads upcoming events that carry an rwgps_url and
-    fall within Open-Meteo's 16-day forecast horizon (get_route_weather_warm_targets),
-    and for each: extracts the RWGPS route id, fetches the route via the reused shared
-    engine (credentials from the BrevetHub config — the guest /plan page NEVER calls
-    RWGPS/Open-Meteo live), samples the track at 15 km, batch-fetches Open-Meteo, and
-    upserts the forecast + sample points into rp_brevet_route_weather. The guest page
-    then READS this cache only, mapping each stop to the nearest sample.
+    Auth-gated (Bearer CRON_SECRET). Loads upcoming events that have a PERSISTED real
+    plan within Open-Meteo's 16-day forecast horizon (get_route_weather_warm_targets),
+    and for each: resolves the RWGPS route id FROM THE PLAN (its rwgps_route_id, else
+    its rwgps_url), fetches the route via the reused shared engine (credentials from the
+    BrevetHub config — the guest /plan page NEVER calls RWGPS/Open-Meteo live), samples
+    the track at 15 km, batch-fetches Open-Meteo, and upserts the forecast + sample
+    points into rp_brevet_route_weather. The guest page then READS this cache only,
+    mapping each stop to the nearest sample.
+
+    The route comes from the persisted PLAN, not rp_brevet_event.rwgps_url: an admin can
+    generate a plan from a different RWGPS URL than the event's (routes/admin.py), and
+    the /plan page renders THAT plan's route — so the cached weather must be sampled
+    from the same route the stops are mapped along, or the wind would be off the wrong
+    course (or absent when only the plan has a URL).
 
     Idempotent two ways: a row already fetched within ROUTE_WEATHER_FRESH_HOURS is
     SKIPPED (no redundant Open-Meteo call on a same-day re-run), and the write itself
@@ -283,7 +290,8 @@ def warm_brevet_route_weather():
 
     warmed = skipped = failed = 0
     for event in targets:
-        route_id = extract_rwgps_route_id(event.get('rwgps_url'))
+        # Prefer the persisted plan's route id; fall back to parsing the plan/event URL.
+        route_id = event.get('rwgps_route_id') or extract_rwgps_route_id(event.get('rwgps_url'))
         if not route_id:
             # No parseable RWGPS route — nothing honest to fetch.
             skipped += 1
