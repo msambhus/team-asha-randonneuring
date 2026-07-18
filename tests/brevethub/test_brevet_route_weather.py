@@ -382,10 +382,13 @@ class TestHistoricalStopWinds:
         assert result == [None, None]
         mf.assert_not_called()
 
-    def test_fetch_error_fails_soft(self):
+    def test_fetch_error_fails_soft(self, app):
         from brevethub.routes.analysis import _historical_stop_winds
         stops = [{'distance_km': 50.0, 'lat': 37.0, 'lng': -122.0}]
-        with patch('brevethub.routes.analysis.fetch_historical_wind',
+        # The fail-soft path logs via current_app.logger, which needs an app context
+        # (always present on the real request path); provide one here.
+        with app.app_context(), \
+             patch('brevethub.routes.analysis.fetch_historical_wind',
                    side_effect=Exception('open-meteo down')):
             assert _historical_stop_winds(_analysis(stops)) is None
 
