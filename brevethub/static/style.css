@@ -23,22 +23,24 @@
    1. Design tokens
    -------------------------------------------------------------------------- */
 :root {
-  /* Neutral slate/indigo palette — deliberately not any club's colors. */
-  --bg: #f7f8fa;
+  /* Navy + red theme matching the parent web app's visual language. Still fully
+     token-driven, so a club can re-theme by overriding these vars alone. */
+  --bg: #f7fafc;
   --surface: #ffffff;
   --card-bg: #ffffff;          /* alias of --surface for ported component rules */
-  --text: #1f2933;
-  --text-light: #6b7280;
-  --muted: #6b7280;            /* alias of --text-light */
-  --border: #e2e5e9;
+  --text: #2d3748;
+  --text-light: #718096;
+  --muted: #718096;            /* alias of --text-light */
+  --border: #e2e8f0;
   --border-strong: #cbd2da;
 
-  --primary: #3f4c6b;          /* muted slate-indigo */
-  --primary-dark: #2c3550;
-  --primary-soft: #eef1f7;     /* tint of --primary for soft fills */
-  --accent: #4b7bec;           /* single neutral accent (distance, links) */
-  --accent-dark: #3a67d4;
-  --accent-soft: #eef3fe;
+  --primary: #1a365d;          /* deep navy — header, headings, buttons */
+  --primary-dark: #2a4a7f;     /* header gradient stop */
+  --primary-soft: #edf2f7;     /* tint of --primary for soft fills */
+  --accent: #e53e3e;           /* red — distance emphasis, section rules, CTAs */
+  --accent-dark: #c53030;
+  --accent-soft: #fff5f5;
+  --accent-light: #fc8181;     /* coral highlight */
 
   /* Semantic status colors (neutral, not club-branded). */
   --success: #2f855a;
@@ -91,8 +93,21 @@ h1 { font-size: 1.9rem; letter-spacing: -0.01em; }
 h2 { font-size: 1.4rem; }
 h3 { font-size: 1.1rem; }
 
-a { color: var(--accent); }
-a:hover { color: var(--accent-dark); }
+/* Section headings inside cards get the navy + short red accent rule that gives
+   the parent web app's pages their identity. */
+.card h2 { color: var(--primary); }
+.card h2::after {
+  content: "";
+  display: block;
+  width: 44px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  margin: 8px 0 2px;
+}
+
+a { color: var(--primary); }
+a:hover { color: var(--accent); }
 
 p { margin: 0 0 12px; }
 
@@ -118,9 +133,9 @@ p { margin: 0 0 12px; }
    3. Header / nav / footer
    -------------------------------------------------------------------------- */
 .site-header {
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   color: #fff;
-  box-shadow: var(--shadow);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
   position: sticky;
   top: 0;
   z-index: 50;
