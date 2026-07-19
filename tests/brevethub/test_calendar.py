@@ -85,7 +85,9 @@ def test_guest_calendar_renders_event_with_placeholder(client):
     assert '—' in body
     # Guest sees no rider identity and no sign-up controls.
     assert 'rider@example.com' not in body
-    assert 'signup-btn' not in body
+    # The .signup-btn CSS rule is always in the shared inline styles; assert the
+    # actual control ELEMENT is absent for guests (rendered only {% if rider %}).
+    assert '<button type="button" class="signup-btn"' not in body
 
 
 def test_guest_calendar_renders_start_when_present(client):
@@ -214,7 +216,7 @@ def test_rider_sees_own_status_and_signup_controls(client):
         resp = client.get('/calendar')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'signup-btn' in body            # rider gets the sign-up controls
+    assert '<button type="button" class="signup-btn"' in body  # rider gets the sign-up controls
     assert 'Going' in body                 # their own current status shows
 
 

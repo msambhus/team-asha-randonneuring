@@ -113,7 +113,7 @@ def test_guest_sees_real_plan_in_km(client):
         resp = client.get('/plan/11')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert '<svg' in body                       # elevation profile present
+    assert 'class="plan-elev-svg"' in body      # elevation profile chart element present
     assert 'Midway Control' in body             # real control name (not "100 km")
     assert '200.0 km' in body                   # converted final cumulative (124.3 mi → km)
     assert '124.3 km' not in body               # NOT mile-mislabeled-as-km
@@ -129,5 +129,7 @@ def test_fallback_to_synthetic_when_no_real_plan(client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'Scope A' in body                    # synthetic note present
-    assert '<svg' not in body                   # no elevation profile
+    # Nav has its own hamburger <svg>; assert the elevation-profile chart
+    # specifically is absent in synthetic mode.
+    assert 'class="plan-elev-svg"' not in body  # no elevation profile chart element
     assert '100 km' in body                     # evenly-spaced synthetic control

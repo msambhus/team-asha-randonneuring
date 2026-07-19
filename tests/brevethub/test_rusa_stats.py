@@ -100,7 +100,9 @@ def test_dashboard_renders_cached_history_without_scraping(client):
     body = resp.get_data(as_text=True)
     assert 'Spring 200' in body
     assert 'Summer 300' in body
-    assert '500 km' in body  # total_km of the two cached brevets
+    # TA stat-card format: value in a .number div, unit in the .label ("Total km").
+    assert '500' in body                        # total_km of the two cached brevets
+    assert 'Total km' in body
     mock_scrape.assert_not_called()
 
 
