@@ -1,16 +1,35 @@
 {% extends "base.html" %}
 {% block title %}My Profile — {{ product_name }}{% endblock %}
+{% block extra_head %}
+<style>
+/* Profile / career page-specific components (definition grid, stat grid, SR-leg
+   pips). No parent-app counterpart component, so styled inline with shared tokens. */
+.profile { display: grid; grid-template-columns: 160px 1fr; gap: 10px 16px; margin: 20px 0; }
+.profile dt { font-weight: 600; color: var(--text-light); }
+.profile dd { margin: 0; }
+.stats-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
+.stats-grid dt { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.stats-grid dd { font-size: 1.4rem; font-weight: 700; color: var(--primary); }
+.sr-legs, .sr-progress { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.sr-leg { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; border: 1px solid var(--border); }
+.sr-leg.done { background: #2a4a7f; color: #fff; border-color: #2a4a7f; }
+.sr-leg.todo { color: var(--text-light); }
+.badge-warn { background: #fef3c7; color: #78350f; }
+@media (max-width: 768px) { .profile { grid-template-columns: 1fr; gap: 4px 0; } .profile dt { margin-top: 10px; } }
+</style>
+{% endblock %}
 {% block content %}
+<div class="container section">
 <section class="card">
-  <h1>My Profile</h1>
-  <p class="muted">Your own randonneuring record on {{ product_name }}.</p>
+  <h1 class="text-primary text-[1.6rem] font-bold">My Profile</h1>
+  <p class="text-text-light">Your own randonneuring record on {{ product_name }}.</p>
 
   <dl class="profile">
     <dt>Email</dt>
     <dd>{{ rider.email }}</dd>
 
     <dt>Club</dt>
-    <dd>{% if club %}{{ club.name }}{% else %}<span class="muted">not set</span>{% endif %}</dd>
+    <dd>{% if club %}{{ club.name }}{% else %}<span class="text-text-light">not set</span>{% endif %}</dd>
 
     <dt>RUSA ID</dt>
     <dd>
@@ -22,30 +41,30 @@
           </span>
         {% endif %}
       {% else %}
-        <span class="muted">not provided</span>
-        &middot; <a href="{{ url_for('signup.signup') }}">add one</a>
+        <span class="text-text-light">not provided</span>
+        &middot; <a class="text-primary font-semibold hover:text-accent hover:underline" href="{{ url_for('signup.signup') }}">add one</a>
       {% endif %}
     </dd>
 
     <dt>Member since</dt>
     <dd>
-      {% if rider.created_at %}{{ rider.created_at.strftime('%B %Y') }}{% else %}<span class="muted">—</span>{% endif %}
+      {% if rider.created_at %}{{ rider.created_at.strftime('%B %Y') }}{% else %}<span class="text-text-light">—</span>{% endif %}
     </dd>
   </dl>
 </section>
 
 <section class="card" id="career">
-  <h2>Career summary</h2>
+  <h2 class="text-primary text-[1.3rem] font-bold mb-4">Career summary</h2>
   {% if not rusa.has_id %}
-    <p class="muted">
+    <p class="text-text-light">
       Add your RUSA ID to see your career km, brevet count, Super Randonneur and
       R-12 progress here — these are computed from your official RUSA history.
     </p>
-    <p><a class="btn" href="{{ url_for('signup.signup') }}">Add a RUSA ID</a></p>
+    <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('signup.signup') }}">Add a RUSA ID</a></p>
   {% elif career.count == 0 %}
-    <p class="muted">
+    <p class="text-text-light">
       No completed brevets in your RUSA history yet. Once you finish a 200 km+
-      brevet it will show up here. <a href="{{ url_for('main.rides_by_season') }}">See your rides by season</a>.
+      brevet it will show up here. <a class="text-primary font-semibold hover:text-accent hover:underline" href="{{ url_for('main.rides_by_season') }}">See your rides by season</a>.
     </p>
   {% else %}
     <dl class="profile stats-grid">
@@ -70,7 +89,7 @@
         {% if career.sr_seasons %}
           {{ career.sr_seasons | join(', ') }}
         {% else %}
-          <span class="muted">none yet</span>
+          <span class="text-text-light">none yet</span>
         {% endif %}
       </dd>
 
@@ -80,26 +99,26 @@
         {% if career.r12_streak.active %}
           <span class="badge">active</span>
         {% elif career.r12_streak.months > 0 %}
-          <span class="muted">(lapsed)</span>
+          <span class="text-text-light">(lapsed)</span>
         {% endif %}
       </dd>
 
       <dt>R-12 awards</dt>
       <dd>{{ career.r12_awards | length }}</dd>
     </dl>
-    <p class="muted">R-12 and Super Randonneur reflect your RUSA brevet history.</p>
-    <p><a class="btn" href="{{ url_for('main.rides_by_season') }}">View rides by season</a></p>
+    <p class="text-text-light">R-12 and Super Randonneur reflect your RUSA brevet history.</p>
+    <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('main.rides_by_season') }}">View rides by season</a></p>
   {% endif %}
 </section>
 
 <section class="card" id="strava">
-  <h2>Strava</h2>
+  <h2 class="text-primary text-[1.3rem] font-bold mb-4">Strava</h2>
   {% if not strava.connected %}
-    <p class="muted">Connect Strava to see your recent activity and fitness score.</p>
-    <p><a class="btn" href="{{ url_for('strava.connect') }}">Connect Strava</a></p>
+    <p class="text-text-light">Connect Strava to see your recent activity and fitness score.</p>
+    <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('strava.connect') }}">Connect Strava</a></p>
   {% else %}
     {% if strava.error %}
-      <p class="flash flash-warning">{{ strava.error }}</p>
+      <p class="py-3 px-4 rounded-lg text-sm bg-[#fef3c7] text-[#78350f] mb-4">{{ strava.error }}</p>
     {% endif %}
     {% if strava.stats %}
       <dl class="profile stats-grid">
@@ -111,8 +130,9 @@
         <dd>{% if strava.stats.fitness is not none %}{{ strava.stats.fitness }}/100{% else %}—{% endif %}</dd>
       </dl>
     {% else %}
-      <p class="muted">Connected — activity summary will appear shortly.</p>
+      <p class="text-text-light">Connected — activity summary will appear shortly.</p>
     {% endif %}
   {% endif %}
 </section>
+</div>
 {% endblock %}
