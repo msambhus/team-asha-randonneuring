@@ -57,13 +57,19 @@ KM_PER_MILE = 1.609344
 
 
 def _mi_to_km(miles):
-    """Miles → km (or None). The engine's stored distance unit → BH's display unit."""
-    return round(miles * KM_PER_MILE, 1) if miles is not None else None
+    """Miles → km (or None). The engine's stored distance unit → BH's display unit.
+
+    Coerces to float first: the NUMERIC columns come back from psycopg2 as
+    ``Decimal``, and ``Decimal * float`` raises ``TypeError`` — so cast before the
+    multiply (also accepts int / numeric str)."""
+    return round(float(miles) * KM_PER_MILE, 1) if miles is not None else None
 
 
 def _mph_to_kmh(mph):
-    """mph → km-h (or None). The engine's stored speed unit → BH's display unit."""
-    return round(mph * KM_PER_MILE, 1) if mph is not None else None
+    """mph → km-h (or None). The engine's stored speed unit → BH's display unit.
+
+    Coerces to float first (NUMERIC → Decimal, and ``Decimal * float`` raises)."""
+    return round(float(mph) * KM_PER_MILE, 1) if mph is not None else None
 
 
 def _control_distances(total_km):

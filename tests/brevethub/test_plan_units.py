@@ -13,6 +13,7 @@ show ~0.62× the distance and mph-as-km-h and these assertions would fail:
   - the guest page renders the real plan (SVG + real names, no "Scope A") and falls
     back to the synthetic km table when no real plan exists.
 """
+from decimal import Decimal
 from unittest.mock import patch
 
 from brevethub.routes.plan import (KM_PER_MILE, _build_elevation_svg,
@@ -53,6 +54,29 @@ def test_conversion_constant_and_helpers():
     assert _mi_to_km(124.3) == round(124.3 * 1.609344, 1)   # ≈ 200.0
     assert _mph_to_kmh(12.0) == 19.3                        # 12 * 1.609344 = 19.31
     assert _mi_to_km(None) is None and _mph_to_kmh(None) is None
+
+
+def test_conversion_helpers_accept_decimal():
+    # psycopg2 returns NUMERIC columns as Decimal; Decimal * float raises TypeError.
+    # The helpers must coerce so a real plan's stored values never 500 the page.
+    assert _mi_to_km(Decimal('124.3')) == round(124.3 * 1.609344, 1)
+    assert _mph_to_kmh(Decimal('12.0')) == 19.3
+
+
+def test_build_real_plan_accepts_numeric_decimal_fields():
+    # Re-cast the fixture's distance/speed fields to Decimal, exactly as psycopg2's
+    # NUMERIC columns arrive — the whole km/km-h build must complete without raising.
+    def _dec(d, keys):
+        return {**d, **{k: (Decimal(str(d[k])) if d.get(k) is not None else None)
+                         for k in keys}}
+    plan = _dec(_PLAN, ['total_distance_miles', 'avg_moving_speed', 'overall_ft_per_mile'])
+    stops = [_dec(s, ['distance_miles', 'seg_dist', 'avg_speed', 'difficulty_score'])
+             for s in _STOPS]
+    real = _build_real_plan(plan, stops)
+    # Converted correctly (≈200 km), not crashed or mislabeled.
+    assert abs(real['final_distance_km'] - 124.3 * KM_PER_MILE) < 0.5
+    assert real['stops'][1]['avg_speed_kmh'] == 19.3
+    assert real['svg']['line_path'].startswith('M')
 
 
 # --------------------------------------------------------------------------- #
