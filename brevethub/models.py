@@ -161,7 +161,7 @@ def get_ride(ride_id):
     """
     return db.query_one(
         "SELECT id, club_id, rider_id, name, distance_km, start_at, status, "
-        "       is_public FROM rp_ride WHERE id = %s",
+        "       is_public, rwgps_url FROM rp_ride WHERE id = %s",
         (ride_id,),
     )
 
@@ -208,7 +208,7 @@ def set_ride_public(ride_id, rider_id, is_public):
 
 
 def get_ride_positions(ride_id, limit=500):
-    """The ride's position breadcrumbs (oldest→newest) for the live trail.
+    """The ride position breadcrumbs (oldest→newest) for the live trail.
 
     Guest-facing: selects ONLY lat/lng/recorded_at — never rider_id or the row id
     — so the public poll endpoint leaks no rider identity. Capped at ``limit``
@@ -226,8 +226,8 @@ def get_ride_positions(ride_id, limit=500):
 def insert_position(ride_id, rider_id, lat, lng, recorded_at=None):
     """Append one {lat,lng,recorded_at} breadcrumb for a ride.
 
-    ``recorded_at`` is an optional ISO-8601 string (as the rider's device reports
-    it); when omitted the DB stamps NOW(). Owner enforcement is the route's job —
+    ``recorded_at`` is an optional ISO-8601 string (as the device reports
+    it); when omitted the DB stamps NOW(). Owner enforcement is the route job —
     this is the raw insert.
     """
     db.execute(
@@ -235,6 +235,219 @@ def insert_position(ride_id, rider_id, lat, lng, recorded_at=None):
         "VALUES (%s, %s, %s, %s, COALESCE(%s::timestamptz, NOW()))",
         (ride_id, rider_id, lat, lng, recorded_at),
     )
+
+
+# --------------------------------------------------------------------------- #
+# Live tracking (rp_live_tracking + rp_live_position telemetry) — the Garmin
+# ingestion + multi-rider member map (Mission 1). Distinct `_rp` names so the
+# existing anonymous guest surface (insert_position / get_ride_positions) is
+# untouched. Every write on rp_live_tracking is SELF-scoped: the functions take
+# the SUBJECT (session) rider_id and can only ever read/modify only that rider own
+# row — there is no ride-owner parameter, so one rider can never touch another rider
+# tracking prefs. The named+telemetry latest-positions query is consumed ONLY by
+# the @profile_required member endpoint; the anonymous poll never selects a name.
+# --------------------------------------------------------------------------- #
+def _coerce_num(value, cast):
+    """Best-effort cast to int/float; None on failure (bad telemetry → NULL)."""
+    if value is None:
+        return None
+    try:
+        return cast(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_live_tracking_rp(rider_id):
+    """A rider own live-tracking prefs row, or None if never set."""
+    return db.query_one(
+        "SELECT rider_id, enabled, garmin_session_url, garmin_session_token, "
+        "       active_ride_id, updated_at "
+        "FROM rp_live_tracking WHERE rider_id = %s",
+        (rider_id,),
+    )
+
+
+def upsert_rider_live_tracking_rp(rider_id, enabled):
+    """Set the master opt-in flag for the SUBJECT rider, preserving any Garmin
+    session. Self-scoped (keyed on the session rider_id). Returns True on success.
+
+    The settings toggle calls this; it must not clobber a per-ride Garmin link the
+    rider registered on a ride map (that link lives on active_ride_id)."""
+    try:
+        db.execute(
+            "INSERT INTO rp_live_tracking (rider_id, enabled, updated_at) "
+            "VALUES (%s, %s, NOW()) "
+            "ON CONFLICT (rider_id) DO UPDATE "
+            "SET enabled = EXCLUDED.enabled, updated_at = NOW()",
+            (rider_id, bool(enabled)),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def set_ride_garmin_rp(rider_id, ride_id, session_url, session_token):
+    """Register a Garmin LiveTrack link for ONE ride and opt the SUBJECT rider in.
+
+    Self-scoped: writes only the session rider own row (rider_id), pointing
+    tracking at `ride_id` (active_ride_id) and enabling it. Garmin mints a fresh
+    session per activity, so the link is inherently per-ride. Points the cron
+    ingests are tagged with this ride, so they only show on that ride map.
+    Returns True on success."""
+    try:
+        db.execute(
+            "INSERT INTO rp_live_tracking "
+            "    (rider_id, enabled, garmin_session_url, garmin_session_token, "
+            "     active_ride_id, updated_at) "
+            "VALUES (%s, TRUE, %s, %s, %s, NOW()) "
+            "ON CONFLICT (rider_id) DO UPDATE "
+            "SET enabled = TRUE, "
+            "    garmin_session_url = EXCLUDED.garmin_session_url, "
+            "    garmin_session_token = EXCLUDED.garmin_session_token, "
+            "    active_ride_id = EXCLUDED.active_ride_id, "
+            "    updated_at = NOW()",
+            (rider_id, session_url, session_token, ride_id),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def clear_ride_garmin_rp(rider_id, ride_id):
+    """Remove the SUBJECT rider Garmin link if it is pointed at `ride_id`.
+
+    Self-scoped and a no-op when the rider active ride is a different one (the
+    WHERE clause matches nothing). Leaves the master opt-in flag alone. Returns
+    True on success."""
+    try:
+        db.execute(
+            "UPDATE rp_live_tracking "
+            "SET garmin_session_url = NULL, garmin_session_token = NULL, "
+            "    active_ride_id = NULL, updated_at = NOW() "
+            "WHERE rider_id = %s AND active_ride_id = %s",
+            (rider_id, ride_id),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def get_enabled_live_tracking_rp():
+    """All riders opted in WITH a Garmin session pointed at a specific ride.
+
+    The poll cron iterates these and tags ingested points with active_ride_id."""
+    return db.query(
+        "SELECT rider_id, garmin_session_url, garmin_session_token, active_ride_id "
+        "FROM rp_live_tracking "
+        "WHERE enabled = TRUE "
+        "  AND garmin_session_token IS NOT NULL "
+        "  AND active_ride_id IS NOT NULL"
+    )
+
+
+def insert_live_position_rp(rider_id, lat, lng, recorded_at, source, accuracy=None,
+                            speed=None, heart_rate=None, power=None, cadence=None,
+                            ride_id=None):
+    """Insert one telemetry-bearing position point for a rider. Validates/clamps
+    coordinates and coerces bad telemetry to NULL.
+
+    `ride_id` tags the point to a specific ride so it only shows on that ride
+    member map. `source` records how it arrived ('garmin'). Optional telemetry
+    (speed m/s, heart_rate bpm, power W, cadence rpm) is stored when present.
+    Returns True on success, False if coordinates are invalid (out of range) or
+    the insert fails."""
+    try:
+        lat = float(lat)
+        lng = float(lng)
+    except (TypeError, ValueError):
+        return False
+    if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lng <= 180.0):
+        return False
+
+    accuracy = _coerce_num(accuracy, float)
+    speed = _coerce_num(speed, float)
+    heart_rate = _coerce_num(heart_rate, int)
+    power = _coerce_num(power, int)
+    cadence = _coerce_num(cadence, int)
+
+    try:
+        db.execute(
+            "INSERT INTO rp_live_position "
+            "    (rider_id, ride_id, lat, lng, accuracy, recorded_at, source, "
+            "     speed, heart_rate, power, cadence) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (rider_id, ride_id, lat, lng, accuracy, recorded_at, source,
+             speed, heart_rate, power, cadence),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def get_last_position_recorded_at_rp(rider_id, ride_id):
+    """Most recent stored position timestamp for a rider on one ride (or None).
+
+    The poll cron appends only points newer than this, so a re-run inserts nothing
+    new (idempotent)."""
+    row = db.query_one(
+        "SELECT MAX(recorded_at) AS last_at "
+        "FROM rp_live_position WHERE rider_id = %s AND ride_id = %s",
+        (rider_id, ride_id),
+    )
+    return row['last_at'] if row else None
+
+
+def get_live_positions_rp(ride_id, since):
+    """Latest position per opted-in rider tagged to a ride, newer than `since`.
+
+    A rider appears purely because they are currently opted in
+    (rp_live_tracking.enabled), currently attached to THIS ride
+    (t.active_ride_id), and have points tagged to THIS ride (p.ride_id). That
+    per-ride attach is the opt-in/consent, so clearing or moving the Garmin link
+    drops the rider off the live map even if recent historical points remain.
+    Returns rider_id, a display `name` (email local-part — rp_rider carries no
+    first/last name), lat/lng, recorded_at, and telemetry
+    (speed/heart_rate/power/cadence) + source.
+
+    Consumed ONLY by the @profile_required member endpoint — the anonymous poll
+    (get_ride_positions) never selects a name."""
+    return db.query(
+        "SELECT DISTINCT ON (p.rider_id) "
+        "       p.rider_id, "
+        "       split_part(r.email, '@', 1) AS name, "
+        "       p.lat, p.lng, p.recorded_at, "
+        "       p.speed, p.heart_rate, p.power, p.cadence, p.source "
+        "FROM rp_live_position p "
+        "JOIN rp_rider r ON r.id = p.rider_id "
+        "JOIN rp_live_tracking t ON t.rider_id = p.rider_id "
+        "WHERE p.ride_id = %s "
+        "  AND t.enabled = TRUE "
+        "  AND t.active_ride_id = p.ride_id "
+        "  AND p.recorded_at >= %s "
+        "ORDER BY p.rider_id, p.recorded_at DESC",
+        (ride_id, since),
+    )
+
+
+def purge_old_positions_rp(retention_days=7):
+    """Delete position points older than the retention window. Returns the count
+    deleted (via cursor.rowcount), or None on failure. Goes through the cursor
+    directly because the db.execute helper only surfaces one RETURNING row, not a
+    row count."""
+    conn = db.get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM rp_live_position "
+                "WHERE created_at < NOW() - (%s || ' days')::interval",
+                (str(int(retention_days)),),
+            )
+            deleted = cur.rowcount
+        conn.commit()
+        return deleted
+    except Exception:
+        conn.rollback()
+        return None
 
 
 # --------------------------------------------------------------------------- #
