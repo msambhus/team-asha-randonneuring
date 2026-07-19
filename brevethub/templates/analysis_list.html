@@ -1,23 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Ride analysis — {{ product_name }}{% endblock %}
 {% block content %}
+<div class="container section">
 <section class="card">
-  <h1>Ride analysis</h1>
-  <p class="muted">
+  <h1 class="text-primary text-[1.6rem] font-bold mb-4">Ride analysis</h1>
+  <p class="text-text-light mb-4">
     Pick one of your recent Strava rides for a detailed breakdown — stops, per-leg
     pace and effort, and a map. Analyzing a ride fetches its data from Strava once,
     then every later view is served from your saved analysis.
   </p>
 
   {% if not connected %}
-    <p class="muted">Connect Strava to analyze your rides.</p>
-    <p><a class="btn" href="{{ url_for('strava.connect') }}">Connect Strava</a></p>
+    <p class="text-text-light">Connect Strava to analyze your rides.</p>
+    <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('strava.connect') }}">Connect Strava</a></p>
   {% else %}
     {% if error %}
-      <p class="flash flash-warning">{{ error }}</p>
+      <p class="py-3 px-4 rounded-lg text-sm bg-[#fef3c7] text-[#78350f] mb-4">{{ error }}</p>
     {% endif %}
 
     {% if activities %}
+      <div class="table-wrap">
       <table class="analysis-list">
         <thead>
           <tr>
@@ -30,19 +32,19 @@
             <tr>
               <td>{{ a.date }}</td>
               <td>
-                <a href="{{ url_for('analysis.analysis_detail', activity_id=a.id) }}">{{ a.name }}</a>
+                <a class="text-primary font-semibold hover:text-accent hover:underline" href="{{ url_for('analysis.analysis_detail', activity_id=a.id) }}">{{ a.name }}</a>
               </td>
               <td>{{ a.distance_km }} km</td>
               <td>{{ a.elevation_ft }} ft</td>
               <td>{{ a.moving_time }}</td>
               <td>
                 {% if a.analyzed %}
-                  <a class="btn btn-secondary"
+                  <a class="btn btn-primary btn-sm"
                      href="{{ url_for('analysis.analysis_detail', activity_id=a.id) }}">View analysis</a>
                 {% else %}
                   <form method="post"
                         action="{{ url_for('analysis.compute', activity_id=a.id) }}">
-                    <button class="btn" type="submit">Analyze</button>
+                    <button class="btn btn-accent btn-sm" type="submit">Analyze</button>
                   </form>
                 {% endif %}
               </td>
@@ -50,11 +52,13 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
     {% elif not error %}
-      <p class="muted empty-state">No recent Strava rides found to analyze.</p>
+      <p class="text-text-light">No recent Strava rides found to analyze.</p>
     {% endif %}
   {% endif %}
 
-  <p class="muted"><a href="{{ url_for('main.dashboard') }}">← Back to dashboard</a></p>
+  <p class="mt-4"><a class="back-link" href="{{ url_for('main.dashboard') }}">← Back to dashboard</a></p>
 </section>
+</div>
 {% endblock %}
