@@ -14,6 +14,23 @@ Rider surfaces (authenticated BrevetHub rider):
   POST /api/rides/<ride_id>/position — append a {lat,lng,recorded_at} breadcrumb for
                                        YOUR ride (401 anon / 403 non-owner)
 
+Member live-tracking surfaces (Surface B — Mission 1: real Garmin ingestion +
+multi-rider Mapbox map). PHYSICALLY SPLIT from the anonymous guest map so a rider
+name/telemetry can NEVER reach the world-viewable poll:
+  GET/POST /live/settings          — master live-tracking opt-in toggle (self-scoped)
+  POST /live/<ride_id>/garmin      — register/clear YOUR OWN Garmin link for a ride;
+                                       self-scoped + accessibility-gated (public OR
+                                       own ride, else 404)
+  GET  /live/<ride_id>/map         — member Mapbox map: named dots + telemetry +
+                                       route polyline (@profile_required + gate;
+                                       anon → login; inaccessible → 404; no-token →
+                                       graceful "map unavailable")
+  GET  /live/<ride_id>/live-positions.json — named+telemetry positions poll
+                                       (401 anon / 404 inaccessible)
+Access rule (both attach + member map): a logged-in rider may attach to / view a
+ride iff it is public OR they own it. Attaching to a public ride is the multi-rider
+join; a private ride is owner-only.
+
 Web parity vs Team Asha's live tracking (routes/live.py), deliberately narrowed for
 M3 and called out rather than silently diverged (see the frame plan):
   - Access model: Team Asha gates the per-ride map with a per-ride INVITE CODE
@@ -33,14 +50,15 @@ M3 and called out rather than silently diverged (see the frame plan):
 Isolation: imports only flask / stdlib / brevethub.*, and every model call is on an
 rp_* table, so test_brevethub_isolation.py and test_rp_only.py stay green.
 """
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
                    render_template, request, session, url_for)
 
 from brevethub import models
-from brevethub.decorators import profile_required
+from brevethub.decorators import current_rider, profile_required
 from brevethub.shared.garmin_livetrack import parse_session
+from brevethub.shared.rwgps import extract_rwgps_route_id, fetch_route
 
 live_bp = Blueprint('live', __name__)
 
@@ -252,8 +270,13 @@ def ride_garmin_link(ride_id):
         return redirect(url_for('live.live_ride_map', ride_id=ride_id))
 
     ok = models.set_ride_garmin_rp(rider_id, ride_id, session_url, parsed['token'])
-    flash('Garmin LiveTrack linked for this ride — you should appear within a few '
-          'minutes.' if ok else 'Could not save your Garmin link. Please try again.',
+    # Don't promise a specific short interval: on the current Vercel Hobby schedule
+    # the ingest cron runs daily, so a position only appears after the next poll.
+    # Near-real-time is a deploy-time upgrade (Vercel Pro → per-minute cron); see
+    # the poll cron docstring + the PR's deploy prerequisites.
+    flash('Garmin LiveTrack linked for this ride — your position appears after the '
+          'next tracking poll runs.' if ok
+          else 'Could not save your Garmin link. Please try again.',
           'success' if ok else 'error')
     return redirect(url_for('live.live_ride_map', ride_id=ride_id))
 
@@ -303,3 +326,164 @@ def post_position(ride_id):
 
     models.insert_position(ride_id, rider_id, lat, lng, recorded_at=recorded_at)
     return jsonify({'ok': True}), 200
+
+
+# --------------------------------------------------------------------------- #
+# Member live map (Surface B) — the multi-rider Mapbox map. PHYSICALLY SPLIT from
+# the anonymous guest surface (live_map / positions.json): those stay nameless and
+# world-viewable; everything named/telemetry lives here behind @profile_required +
+# the accessibility gate, so a rider name can never reach the anonymous poll.
+# --------------------------------------------------------------------------- #
+# Show points from the last 24h; grey/fade a rider whose latest point is older
+# than 10 min (mirrors Team Asha's live map tuning).
+DISPLAY_WINDOW_HOURS = 24
+STALE_AFTER_MINUTES = 10
+
+# Every rider on the member map has opted in AND attached to THIS ride, so they
+# are all "going" for it. BrevetHub rides carry no per-rider signup table (unlike
+# TA's rider_ride.status), so the dot colour is a single status here; staleness
+# fade + the name distinguish riders. Kept as a map for forward-compatibility.
+STATUS_COLORS = {'going': '#16a34a'}
+DEFAULT_STATUS = 'going'
+DEFAULT_COLOR = '#16a34a'
+
+# Cap polyline payload — long brevet routes can have tens of thousands of points.
+_MAX_POLYLINE_POINTS = 1000
+
+
+def _build_route_polyline(ride):
+    """Return a downsampled [[lng, lat], ...] polyline for the ride's RWGPS route.
+
+    Fail-soft: returns None on any missing route / fetch error so the map still
+    renders with rider dots only (never 500s). Credentials fall back to the
+    BrevetHub config's RWGPS_* env inside the shared engine."""
+    rwgps_url = ride.get('rwgps_url') if ride else None
+    route_id = extract_rwgps_route_id(rwgps_url)
+    if not route_id:
+        return None
+    try:
+        route_data = fetch_route(route_id)
+    except Exception as exc:  # noqa: BLE001 — fail-soft, route line is optional
+        current_app.logger.warning('live: RWGPS route %s fetch failed: %s', route_id, exc)
+        return None
+
+    track_points = (route_data or {}).get('track_points') or []
+    coords = [
+        [float(tp['x']), float(tp['y'])]
+        for tp in track_points
+        if tp.get('x') is not None and tp.get('y') is not None
+    ]
+    if not coords:
+        return None
+
+    if len(coords) > _MAX_POLYLINE_POINTS:
+        step = len(coords) // _MAX_POLYLINE_POINTS + 1
+        downsampled = coords[::step]
+        if downsampled[-1] != coords[-1]:
+            downsampled.append(coords[-1])
+        coords = downsampled
+    return coords
+
+
+@live_bp.route('/live/<int:ride_id>/map')
+@profile_required
+def live_ride_map(ride_id):
+    """Member multi-rider Mapbox map for a ride: named dots + telemetry + the RWGPS
+    route polyline. @profile_required + accessibility-gated (public OR own ride,
+    else 404). Renders even when MAPBOX_ACCESS_TOKEN is unset (graceful
+    "map unavailable" fallback — never a 500)."""
+    rider_id = session['rider_id']
+    ride = _accessible_ride(ride_id, rider_id)
+    if not ride:
+        abort(404)
+
+    tracking = models.get_live_tracking_rp(rider_id)
+    # Only surface the Garmin link as linked here if it's pointed at THIS ride, so a
+    # link saved for another ride doesn't look active on this one.
+    garmin_here = bool(tracking and tracking.get('garmin_session_url')
+                       and tracking.get('active_ride_id') == ride_id)
+    garmin_url = tracking.get('garmin_session_url') if garmin_here else ''
+
+    return render_template(
+        'live_ride_map.html',
+        ride=ride,
+        mapbox_token=current_app.config.get('MAPBOX_ACCESS_TOKEN') or '',
+        route_polyline=_build_route_polyline(ride),
+        poll_seconds=LIVE_POLL_SECONDS,
+        stale_after_minutes=STALE_AFTER_MINUTES,
+        opted_in=bool(tracking and tracking.get('enabled')),
+        garmin_here=garmin_here,
+        garmin_url=garmin_url,
+    )
+
+
+@live_bp.route('/live/<int:ride_id>/live-positions.json')
+def live_member_positions(ride_id):
+    """JSON: latest NAMED position + telemetry per opted-in rider attached to a ride.
+
+    Auth ladder (JSON API — no redirects): no session rider → 401; a session rider
+    whose profile is INCOMPLETE → 403 (OAuth sets rider_id before signup finishes,
+    so this endpoint must enforce the SAME profile-completeness bar as the
+    @profile_required member page — otherwise a half-signed-up account could read
+    named locations/telemetry the gated UI never shows it); inaccessible (private +
+    non-owner) or unknown ride → 404. The anonymous positions.json poll never
+    selects a name. Each entry:
+      {rider_id, name, lat, lng, status, color, recorded_at, minutes_ago, stale,
+       source, telemetry:{speed, heart_rate, power, cadence}}"""
+    rider = current_rider()
+    if not rider:
+        return jsonify({'error': 'Authentication required'}), 401
+    if not rider['profile_completed']:
+        return jsonify({'error': 'Complete your profile to view live tracking'}), 403
+    rider_id = rider['id']
+
+    ride = _accessible_ride(ride_id, rider_id)
+    if not ride:
+        abort(404)
+
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(hours=DISPLAY_WINDOW_HOURS)
+    rows = models.get_live_positions_rp(ride_id, since)
+
+    positions = []
+    for row in rows:
+        recorded_at = row['recorded_at']
+        if recorded_at is not None and recorded_at.tzinfo is None:
+            recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+        minutes_ago = (max(0, int((now - recorded_at).total_seconds() // 60))
+                       if recorded_at is not None else None)
+        positions.append({
+            'rider_id': row['rider_id'],
+            'name': (row['name'] or 'Rider').strip(),
+            'lat': float(row['lat']),
+            'lng': float(row['lng']),
+            'status': DEFAULT_STATUS,
+            'color': STATUS_COLORS.get(DEFAULT_STATUS, DEFAULT_COLOR),
+            'recorded_at': recorded_at.isoformat() if recorded_at is not None else None,
+            'minutes_ago': minutes_ago,
+            'stale': (minutes_ago is not None and minutes_ago > STALE_AFTER_MINUTES),
+            'source': row.get('source') or 'garmin',
+            'telemetry': {
+                'speed': _num_or_none(row.get('speed'), float),
+                'heart_rate': _num_or_none(row.get('heart_rate'), int),
+                'power': _num_or_none(row.get('power'), int),
+                'cadence': _num_or_none(row.get('cadence'), int),
+            },
+        })
+
+    return jsonify({
+        'ride_id': ride_id,
+        'positions': positions,
+        'stale_after_minutes': STALE_AFTER_MINUTES,
+        'server_time': now.isoformat(),
+    })
+
+
+def _num_or_none(value, cast):
+    """Best-effort cast for JSON output; None on failure (NUMERIC → native)."""
+    if value is None:
+        return None
+    try:
+        return cast(value)
+    except (TypeError, ValueError):
+        return None

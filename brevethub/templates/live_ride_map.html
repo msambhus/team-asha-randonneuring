@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+{% block title %}{{ ride.name }} — live map — {{ product_name }}{% endblock %}
+{% block extra_head %}
+{% if mapbox_token %}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+{% endif %}
+<style>
+/* Live map markers + rider telemetry cards — page-specific styling (markers are
+   built by JS so their pseudo-elements can't be utility classes). Colours use the
+   shared navy/red design tokens (same page-specific-CSS convention as the
+   existing anonymous live_map.html). */
+#live-map { height: 46vh; min-height: 300px; width: 100%; border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
+.live-status { font-size: 0.8rem; color: var(--text-light); margin-top: 8px; min-height: 1.2em; }
+.map-unavailable {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
+  padding: 24px; text-align: center; color: var(--text-light);
+}
+.rider-marker { position: relative; width: 30px; height: 30px; cursor: pointer; transition: opacity 0.2s; }
+.rider-marker .pin {
+  width: 30px; height: 30px; box-sizing: border-box; border-radius: 50%;
+  border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  color: #fff; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em;
+  display: flex; align-items: center; justify-content: center;
+}
+.rider-marker.stale { opacity: 0.45; filter: grayscale(0.7); }
+.live-popup { font-size: 0.85rem; line-height: 1.3; }
+.live-popup .name { font-weight: 600; }
+.live-popup .ago { color: var(--text-light); }
+.live-legend { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin-top: 8px; font-size: 0.78rem; color: var(--text-light); }
+.live-legend .item { display: inline-flex; align-items: center; gap: 5px; }
+.live-legend .swatch { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #9ca3af; box-sizing: border-box; }
+#live-riders { margin-top: 16px; display: grid; gap: 12px; }
+.rider-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.rider-card.stale { opacity: 0.6; }
+.rider-card .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.rider-card .head .nm { font-weight: 700; }
+.rider-card .head .ago { color: var(--text-light); font-size: 0.8rem; }
+.rider-card .metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 6px 12px; margin-top: 10px; }
+.metric .v { font-weight: 700; font-size: 0.95rem; }
+.metric .l { font-size: 0.72rem; color: var(--text-light); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container section">
+<section class="card">
+  <h1 class="text-primary text-[1.6rem] font-bold mb-1">{{ ride.name }}</h1>
+  <p class="text-text-light text-sm mb-4">
+    {% if ride.distance_km %}{{ ride.distance_km }} km &middot; {% endif %}
+    {% if ride.start_at %}{{ ride.start_at.strftime('%Y-%m-%d %H:%M') }} &middot; {% endif %}
+    Live member map
+  </p>
+
+  {# ── Appear on this map: register your Garmin LiveTrack link for this ride ── #}
+  <details class="mb-4 border border-border rounded-xl px-4">
+    <summary class="cursor-pointer py-3 font-bold">
+      Appear on this map — link your Garmin LiveTrack
+      {% if garmin_here %}<span class="text-success font-semibold text-sm">· ⌚ linked</span>{% endif %}
+    </summary>
+    <div class="pb-4">
+      <div class="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm mb-3">
+        ⚠️ <strong>Garmin makes a new link every ride.</strong> Each activity creates a
+        fresh LiveTrack session, so paste a new link for <em>this</em> ride.
+      </div>
+      {% if not opted_in %}
+      <p class="text-text-light text-sm mb-3">
+        Enable live tracking first in
+        <a class="text-primary font-semibold hover:text-accent hover:underline" href="{{ url_for('live.live_settings') }}">settings</a>,
+        then paste your LiveTrack link here.
+      </p>
+      {% endif %}
+      <form method="post" action="{{ url_for('live.ride_garmin_link', ride_id=ride.id) }}">
+        <div class="form-group">
+          <label for="garmin_session_url">Garmin LiveTrack link for this ride</label>
+          <input type="url" id="garmin_session_url" name="garmin_session_url"
+                 placeholder="https://livetrack.garmin.com/session/.../token/..."
+                 value="{{ garmin_url }}" />
+        </div>
+        <div class="flex gap-2 flex-wrap items-center">
+          <button class="btn btn-primary btn-sm" type="submit" name="action" value="save">Save link</button>
+          {% if garmin_here %}
+          <button class="btn btn-sm bg-white text-danger border border-border hover:opacity-90"
+                  type="submit" name="action" value="clear">Stop tracking this ride</button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </details>
+
+  {% if mapbox_token %}
+  <div id="live-map"></div>
+  <div class="live-legend">
+    <span class="item"><span class="swatch" style="background:#16a34a;border-color:#16a34a"></span> Sharing live</span>
+    <span class="item"><span class="swatch" style="background:#9ca3af;border-color:#9ca3af"></span> Stale (no recent fix)</span>
+  </div>
+  <div id="live-status" class="live-status"></div>
+  {% else %}
+  <div class="map-unavailable" id="map-unavailable">
+    <strong>Map unavailable</strong>
+    <p class="mt-1 text-sm">The live map needs a Mapbox access token, which isn't
+      configured for this deployment yet. Rider positions and telemetry still load
+      below.</p>
+  </div>
+  <div id="live-status" class="live-status"></div>
+  {% endif %}
+
+  <p id="live-empty" class="text-text-light mt-4">No riders are sharing their location right now.</p>
+  <div id="live-riders"></div>
+
+  <p class="mt-4"><a class="back-link" href="{{ url_for('live.live_list') }}">← All live rides</a></p>
+</section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  var MAPBOX_TOKEN = {{ mapbox_token | tojson }};
+  var RIDE_ID = {{ ride.id | tojson }};
+  var ROUTE_POLYLINE = {{ route_polyline | tojson }};   // [[lng,lat],...] or null
+  var STALE_AFTER_MIN = {{ stale_after_minutes | tojson }};
+  var POLL_MS = {{ poll_seconds | tojson }} * 1000;
+  var POSITIONS_URL = {{ url_for('live.live_member_positions', ride_id=ride.id) | tojson }};
+
+  (function () {
+    var statusEl = document.getElementById('live-status');
+    var emptyEl = document.getElementById('live-empty');
+    var map = null, markers = {}, fitted = false;
+
+    function initials(name) {
+      var parts = (name || '').trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) { return '?'; }
+      if (parts.length === 1) { return parts[0].slice(0, 2).toUpperCase(); }
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+
+    function fmtAgo(min) {
+      if (min === null || min === undefined) { return ''; }
+      if (min <= 0) { return 'updated just now'; }
+      return 'updated ' + min + ' min ago';
+    }
+
+    function mph(ms) { return ms == null ? null : Math.round(ms * 2.23694 * 10) / 10; }
+
+    // ── Map (Mapbox) — only when a token is configured; else dots-less fallback ──
+    if (MAPBOX_TOKEN) {
+      mapboxgl.accessToken = MAPBOX_TOKEN;
+      map = new mapboxgl.Map({
+        container: 'live-map',
+        style: 'mapbox://styles/mapbox/outdoors-v12',
+        center: [-98.35, 39.5], zoom: 3
+      });
+      map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+      map.on('load', function () {
+        if (ROUTE_POLYLINE && ROUTE_POLYLINE.length > 1) {
+          map.addSource('ride-route', {
+            type: 'geojson',
+            data: { type: 'Feature', geometry: { type: 'LineString', coordinates: ROUTE_POLYLINE } }
+          });
+          map.addLayer({
+            id: 'ride-route-line', type: 'line', source: 'ride-route',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: { 'line-color': '#2563eb', 'line-width': 4, 'line-opacity': 0.7 }
+          });
+          var b = new mapboxgl.LngLatBounds();
+          ROUTE_POLYLINE.forEach(function (c) { b.extend(c); });
+          map.fitBounds(b, { padding: 40, duration: 0 });
+          fitted = true;
+        }
+        poll();
+        setInterval(poll, POLL_MS);
+      });
+    } else {
+      // No map, but still poll so the rider cards + telemetry render.
+      poll();
+      setInterval(poll, POLL_MS);
+    }
+
+    function buildPopup(p) {
+      var wrap = document.createElement('div');
+      wrap.className = 'live-popup';
+      var name = document.createElement('div');
+      name.className = 'name'; name.textContent = p.name || 'Rider';
+      var ago = document.createElement('div');
+      ago.className = 'ago'; ago.textContent = fmtAgo(p.minutes_ago);
+      wrap.appendChild(name); wrap.appendChild(ago);
+      return wrap;
+    }
+
+    function applyMarker(el, p) {
+      el.className = 'rider-marker' + (p.stale ? ' stale' : '');
+      var pin = el.querySelector('.pin');
+      pin.style.background = p.color || '#16a34a';
+      pin.textContent = initials(p.name);          // textContent — no HTML injection
+    }
+
+    function upsertMarker(p) {
+      if (!map) { return; }
+      var existing = markers[p.rider_id];
+      if (existing) {
+        existing.marker.setLngLat([p.lng, p.lat]);
+        applyMarker(existing.el, p);
+        existing.marker.getPopup().setDOMContent(buildPopup(p));
+      } else {
+        var el = document.createElement('div');
+        var pin = document.createElement('div'); pin.className = 'pin';
+        el.appendChild(pin); applyMarker(el, p);
+        var popup = new mapboxgl.Popup({ offset: 18, closeButton: false }).setDOMContent(buildPopup(p));
+        var marker = new mapboxgl.Marker(el).setLngLat([p.lng, p.lat]).setPopup(popup).addTo(map);
+        markers[p.rider_id] = { marker: marker, el: el };
+      }
+    }
+
+    function metric(label, value, unit) {
+      var wrap = document.createElement('div'); wrap.className = 'metric';
+      var v = document.createElement('div'); v.className = 'v';
+      v.textContent = (value === null || value === undefined || value === '') ? '—'
+        : (unit ? value + unit : '' + value);
+      var l = document.createElement('div'); l.className = 'l'; l.textContent = label;
+      wrap.appendChild(v); wrap.appendChild(l);
+      return wrap;
+    }
+
+    function renderRiders(positions) {
+      var wrap = document.getElementById('live-riders');
+      wrap.textContent = '';
+      positions.forEach(function (p) {
+        var card = document.createElement('div');
+        card.className = 'rider-card' + (p.stale ? ' stale' : '');
+        var head = document.createElement('div'); head.className = 'head';
+        var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.name || 'Rider';
+        var ago = document.createElement('span'); ago.className = 'ago'; ago.textContent = fmtAgo(p.minutes_ago);
+        head.appendChild(nm); head.appendChild(ago); card.appendChild(head);
+
+        var t = p.telemetry || {};
+        var metrics = document.createElement('div'); metrics.className = 'metrics';
+        metrics.appendChild(metric('speed', mph(t.speed), ' mph'));
+        metrics.appendChild(metric('HR', t.heart_rate, ' bpm'));
+        metrics.appendChild(metric('power', t.power, ' W'));
+        metrics.appendChild(metric('cadence', t.cadence, ' rpm'));
+        card.appendChild(metrics);
+        wrap.appendChild(card);
+      });
+    }
+
+    function poll() {
+      fetch(POSITIONS_URL, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+        .then(function (r) { if (!r.ok) { throw new Error('status ' + r.status); } return r.json(); })
+        .then(function (data) {
+          var positions = data.positions || [];
+          var seen = {};
+          positions.forEach(function (p) { seen[p.rider_id] = true; upsertMarker(p); });
+          Object.keys(markers).forEach(function (rid) {
+            if (!seen[rid]) { markers[rid].marker.remove(); delete markers[rid]; }
+          });
+          renderRiders(positions);
+          emptyEl.style.display = positions.length ? 'none' : '';
+          if (map && !fitted && positions.length) {
+            var b = new mapboxgl.LngLatBounds();
+            positions.forEach(function (p) { b.extend([p.lng, p.lat]); });
+            map.fitBounds(b, { maxZoom: 14, padding: 60, duration: 0 });
+            fitted = true;
+          }
+          var now = new Date();
+          statusEl.textContent = positions.length
+            ? positions.length + ' rider' + (positions.length === 1 ? '' : 's') +
+              ' sharing · refreshed ' + now.toLocaleTimeString()
+            : '';
+        })
+        .catch(function (err) {
+          statusEl.textContent = 'Could not refresh live positions (' + err.message + ').';
+        });
+    }
+  })();
+</script>
+{% endblock %}
