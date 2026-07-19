@@ -1,43 +1,272 @@
 {% extends "base.html" %}
 {% block title %}Brevet calendar — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+<style>
+/* Event-card / month-header / region-filter treatment mirrored from the parent
+   app's brevet calendar (page-specific CSS lives inline there too). */
+.filter-section {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid var(--border);
+}
+.filter-label {
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 12px;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.filter-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+.region-filter {
+    cursor: pointer;
+    padding: 10px 18px;
+    border-radius: 8px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 2px solid var(--border);
+    background: white;
+    font-weight: 600;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.region-filter:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    border-color: var(--primary);
+}
+.region-filter.active {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: white;
+    box-shadow: 0 4px 12px rgba(26, 54, 93, 0.3);
+}
+.month-section { margin-bottom: 40px; }
+.month-header {
+    background: linear-gradient(135deg, #0891b2, #0e7490);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 1.3rem;
+    font-weight: 800;
+    margin-bottom: 20px;
+    display: inline-block;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.events-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+}
+.event-card {
+    background: white;
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.event-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    border-color: var(--primary);
+}
+.event-date {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    text-align: center;
+    background: linear-gradient(135deg, #1e40af, #1e3a8a);
+    color: white;
+    border-radius: 8px;
+    padding: 6px 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.event-day { font-size: 1.4rem; font-weight: 800; line-height: 1; color: white; }
+.event-month { font-size: 0.62rem; font-weight: 600; text-transform: uppercase; margin-top: 2px; color: #fb923c; }
+.event-region-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: white;
+    background: var(--primary);
+    margin-bottom: 8px;
+    width: fit-content;
+}
+.event-distance-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.event-distance { font-size: 1.25rem; font-weight: 800; color: var(--accent); }
+.event-elevation { font-size: 0.75rem; color: var(--text-light); font-weight: 500; }
+.event-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin: 8px 0 4px 0;
+    line-height: 1.3;
+    padding-right: 70px;
+}
+.event-title a { color: var(--primary); text-decoration: none; }
+.event-title a:hover { color: var(--accent); text-decoration: underline; }
+.event-links { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.event-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+    border: 1px solid var(--border);
+    background: linear-gradient(135deg, #f0f4ff, #e8f0fe);
+    color: #4338ca;
+}
+.event-link-btn:hover { transform: translateY(-2px); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.event-details-info {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: var(--text-light);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+/* Weather badge — BrevetHub-specific card feature (no parent-app calendar
+   counterpart); styled inline like the parent app's other page-specific rules. */
+.event-weather {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    font-size: 0.78rem;
+    color: var(--text);
+}
+.event-weather .wx-condition { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--primary); }
+.event-weather .wx-metric { color: var(--text-light); }
+.event-weather-none .wx-metric { font-style: italic; }
+.signup-section {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+.signup-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.signup-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+    border: 1px solid #7dd3fc;
+    color: #0369a1;
+}
+.signup-status {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--primary);
+}
+.signup-btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: 2px solid var(--primary);
+    background: white;
+    color: var(--primary);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.signup-btn:hover {
+    background: var(--primary);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(26, 54, 93, 0.2);
+}
+.signup-btn.secondary { border-color: var(--text-light); color: var(--text-light); }
+.signup-btn.secondary:hover { background: var(--text-light); color: white; }
+
+@media (max-width: 768px) {
+    .events-grid { grid-template-columns: 1fr; }
+    .event-title { font-size: 0.95rem; }
+}
+</style>
+{% endblock %}
+
 {% block content %}
-{# Month-abbreviation lookup for the date badge. ev.date stringifies to ISO
-   ("YYYY-MM-DD") whether it is a datetime.date (psycopg2) or a plain string. #}
-{% set MONTH_ABBR = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] %}
+<div class="hero" style="padding:40px 20px;">
+  <h1>Upcoming brevets</h1>
+  <p>Upcoming ACP/RUSA brevets from RUSA's national calendar</p>
+</div>
 
-<section class="calendar-page">
-  <div class="calendar-intro">
-    <h1>Upcoming brevets</h1>
-    <p class="muted">
-      Upcoming ACP/RUSA brevets from RUSA's national calendar. Start location and
-      time are shown only when a source provides them.
+<div class="container section">
+
+  <p class="text-text-light mb-5">
+    Start location and time are shown only when a source provides them.
+  </p>
+
+  {% if degraded %}
+    <p class="py-3 px-4 rounded-lg text-sm bg-[#fef3c7] text-[#78350f] mb-5">
+      {% if degraded == 'empty' %}
+        No brevets to show right now — RUSA may be temporarily unavailable. Please
+        check back shortly.
+      {% else %}
+        Couldn't refresh from RUSA just now — showing the most recent cached calendar.
+      {% endif %}
     </p>
+  {% endif %}
 
-    {% if degraded %}
-      <p class="flash flash-warning">
-        {% if degraded == 'empty' %}
-          No brevets to show right now — RUSA may be temporarily unavailable. Please
-          check back shortly.
-        {% else %}
-          Couldn't refresh from RUSA just now — showing the most recent cached calendar.
-        {% endif %}
-      </p>
-    {% endif %}
-
-    {% if club and club.state %}
-      <div class="filter-section">
-        <div class="filter-label">Region</div>
-        <div class="filter-buttons">
-          <a class="region-filter {% if scope != 'club' %}active{% endif %}"
-             href="{{ url_for('calendar.calendar') }}">All regions</a>
-          <a class="region-filter {% if scope == 'club' %}active{% endif %}"
-             href="{{ url_for('calendar.calendar', scope='club') }}">Only {{ club.state }}</a>
-        </div>
+  {% if club and club.state %}
+    <div class="filter-section">
+      <div class="filter-label">Region</div>
+      <div class="filter-buttons">
+        <a class="region-filter {% if scope != 'club' %}active{% endif %}"
+           href="{{ url_for('calendar.calendar') }}">All regions</a>
+        <a class="region-filter {% if scope == 'club' %}active{% endif %}"
+           href="{{ url_for('calendar.calendar', scope='club') }}">Only {{ club.state }}</a>
       </div>
-    {% endif %}
-  </div>
+    </div>
+  {% endif %}
 
   {% if months %}
+    {# Month-abbreviation lookup for the date badge. ev.date stringifies to ISO
+       ("YYYY-MM-DD") whether it is a datetime.date (psycopg2) or a plain string. #}
+    {% set MONTH_ABBR = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] %}
     <div data-signup-base="/calendar">
       {% for month_label, month_events in months %}
         <div class="month-section">
@@ -120,7 +349,7 @@
                   </div>
                 {% else %}
                   <div class="event-weather event-weather-none">
-                    <span class="wx-metric muted">Forecast not available yet</span>
+                    <span class="wx-metric">Forecast not available yet</span>
                   </div>
                 {% endif %}
 
@@ -132,11 +361,11 @@
                       <span class="signup-status" data-event-id="{{ ev.id }}">
                         {% if status and status != 'withdraw' %}{{ status|capitalize }}{% else %}—{% endif %}
                       </span>
-                      <button type="button" class="btn btn-small signup-btn"
+                      <button type="button" class="signup-btn"
                               data-event-id="{{ ev.id }}" data-status="interested">Interested</button>
-                      <button type="button" class="btn btn-small signup-btn"
+                      <button type="button" class="signup-btn"
                               data-event-id="{{ ev.id }}" data-status="going">Going</button>
-                      <button type="button" class="btn btn-small btn-secondary signup-btn"
+                      <button type="button" class="signup-btn secondary"
                               data-event-id="{{ ev.id }}" data-status="withdraw">Withdraw</button>
                     </span>
                   {% endif %}
@@ -148,16 +377,17 @@
       {% endfor %}
     </div>
   {% else %}
-    <p class="muted empty-state">No upcoming brevets found right now.</p>
+    <p class="text-text-light text-center py-10">No upcoming brevets found right now.</p>
   {% endif %}
 
   {% if not rider %}
-    <p class="calendar-signin-prompt">
+    <p class="mt-6">
       <a class="btn btn-primary" href="{{ url_for('auth.login', next=url_for('calendar.calendar')) }}">Sign in</a>
       to mark yourself interested or going on a brevet.
     </p>
   {% endif %}
-</section>
+
+</div>
 
 {% if rider %}
 <script>

@@ -8,7 +8,7 @@ sibling `shared/` package and its own `brevethub` package. The
 """
 import os
 
-from flask import Flask
+from flask import Flask, session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from brevethub.config import Config
@@ -63,8 +63,16 @@ def create_app():
     @app.context_processor
     def inject_branding():
         # Single source of truth for the product name so templates never need a
-        # club name. Deliberately club-agnostic — no Team Asha identity anywhere.
-        return {'product_name': 'BrevetHub'}
+        # club name. Deliberately club-agnostic — no parent-app identity anywhere.
+        # `user_logged_in`/`user_email` drive the shared base.html nav (the user
+        # dropdown vs. the "Sign in" button) from the session alone — no per-request
+        # DB lookup. BrevetHub riders have no display name (Google OAuth stores only
+        # email), so the nav label is the email; there is no rider-page link.
+        return {
+            'product_name': 'BrevetHub',
+            'user_logged_in': bool(session.get('rider_id')),
+            'user_email': session.get('email'),
+        }
 
     return app
 

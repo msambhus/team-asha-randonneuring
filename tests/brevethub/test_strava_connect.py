@@ -218,7 +218,8 @@ def test_dashboard_renders_cached_strava_stats(client):
     body = resp.get_data(as_text=True)
     assert '320.5' in body      # distance km
     assert '2400' in body       # elevation m
-    assert '72/100' in body     # fitness score
+    assert '72' in body                # fitness score value (.number)
+    assert 'Fitness /100' in body      # TA stat-card label
     assert 'Disconnect Strava' in body
     mock_fetch.assert_not_called()
 

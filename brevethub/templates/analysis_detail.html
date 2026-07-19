@@ -15,48 +15,47 @@
   {% endif %}
 {% endblock %}
 {% block content %}
+<div class="container section">
 {% if not analyzed %}
 <section class="card">
-  <h1>Ride analysis</h1>
-  <p class="muted">
+  <h1 class="text-primary text-[1.6rem] font-bold mb-4">Ride analysis</h1>
+  <p class="text-text-light mb-4">
     This ride hasn't been analyzed yet. Analyzing fetches its data from Strava and
     computes the breakdown — it may take a few seconds.
   </p>
   <form method="post" action="{{ url_for('analysis.compute', activity_id=activity_id) }}">
-    <button class="btn" type="submit">Analyze this ride</button>
+    <button class="btn btn-primary" type="submit">Analyze this ride</button>
   </form>
-  <p class="muted"><a href="{{ url_for('analysis.analysis_list') }}">← Back to your rides</a></p>
+  <p class="mt-4"><a class="back-link" href="{{ url_for('analysis.analysis_list') }}">← Back to your rides</a></p>
 </section>
 {% else %}
 <section class="card">
-  <h1>{{ analysis.activity.name }}</h1>
-  <p class="muted">{{ analysis.activity.date }}</p>
+  <h1 class="text-primary text-[1.6rem] font-bold">{{ analysis.activity.name }}</h1>
+  <p class="text-text-light mb-4">{{ analysis.activity.date }}</p>
 
-  <dl class="profile stats-grid">
-    <dt>Distance</dt><dd>{{ analysis.activity.distance_km }} km</dd>
-    <dt>Elevation</dt><dd>{{ analysis.activity.elevation_ft }} ft</dd>
-    <dt>Moving time</dt><dd>{{ analysis.activity.moving_time }}</dd>
-    <dt>Elapsed time</dt><dd>{{ analysis.activity.elapsed_time }}</dd>
-    <dt>Average speed</dt><dd>{{ analysis.activity.avg_speed_kmh }} km/h</dd>
+  <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+    <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Distance</div><div class="font-semibold text-lg">{{ analysis.activity.distance_km }} km</div></div>
+    <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Elevation</div><div class="font-semibold text-lg">{{ analysis.activity.elevation_ft }} ft</div></div>
+    <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Moving time</div><div class="font-semibold text-lg">{{ analysis.activity.moving_time }}</div></div>
+    <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Elapsed time</div><div class="font-semibold text-lg">{{ analysis.activity.elapsed_time }}</div></div>
+    <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Average speed</div><div class="font-semibold text-lg">{{ analysis.activity.avg_speed_kmh }} km/h</div></div>
     {% if analysis.summary.moving_speed_kmh is not none %}
-      <dt>Moving speed</dt><dd>{{ analysis.summary.moving_speed_kmh }} km/h</dd>
+      <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Moving speed</div><div class="font-semibold text-lg">{{ analysis.summary.moving_speed_kmh }} km/h</div></div>
     {% endif %}
     {% if analysis.summary.avg_hr is not none %}
-      <dt>Avg / max HR</dt>
-      <dd>{{ analysis.summary.avg_hr }}{% if analysis.summary.max_hr is not none %} / {{ analysis.summary.max_hr }}{% endif %} bpm</dd>
+      <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Avg / max HR</div><div class="font-semibold text-lg">{{ analysis.summary.avg_hr }}{% if analysis.summary.max_hr is not none %} / {{ analysis.summary.max_hr }}{% endif %} bpm</div></div>
     {% endif %}
     {% if analysis.summary.avg_watts is not none %}
-      <dt>Avg / max power</dt>
-      <dd>{{ analysis.summary.avg_watts }}{% if analysis.summary.max_watts is not none %} / {{ analysis.summary.max_watts }}{% endif %} W</dd>
+      <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Avg / max power</div><div class="font-semibold text-lg">{{ analysis.summary.avg_watts }}{% if analysis.summary.max_watts is not none %} / {{ analysis.summary.max_watts }}{% endif %} W</div></div>
     {% endif %}
-    <dt>Stops detected</dt><dd>{{ analysis.stop_count }}</dd>
-  </dl>
+    <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Stops detected</div><div class="font-semibold text-lg">{{ analysis.stop_count }}</div></div>
+  </div>
 </section>
 
 {% if analysis.map %}
 <section class="card">
-  <h2>Route</h2>
-  <div id="analysis-map"
+  <h2 class="text-primary text-[1.3rem] font-bold mb-2">Route</h2>
+  <div id="analysis-map" style="height:55vh;width:100%;border-radius:8px;margin:16px 0;"
        data-track="{{ analysis.map.track|tojson }}"
        data-bounds="{{ analysis.map.bounds|tojson }}"
        data-stops="{{ analysis.stops|tojson }}"></div>
@@ -64,8 +63,9 @@
 {% endif %}
 
 <section class="card">
-  <h2>Segments</h2>
+  <h2 class="text-primary text-[1.3rem] font-bold mb-2">Segments</h2>
   {% if analysis.legs %}
+    <div class="table-wrap">
     <table class="analysis-legs">
       <thead>
         <tr>
@@ -90,17 +90,19 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   {% else %}
-    <p class="muted empty-state">Not enough stream data to break this ride into segments.</p>
+    <p class="text-text-light">Not enough stream data to break this ride into segments.</p>
   {% endif %}
 </section>
 
 <section class="card">
-  <h2>Stops</h2>
+  <h2 class="text-primary text-[1.3rem] font-bold mb-2">Stops</h2>
   {# Wind arrows render only when the historical fetch produced at least one per-stop
      forecast; a coordinate-less stop keeps its cell blank via the list index. #}
   {% set has_wind = stop_winds and (stop_winds | select | list | length > 0) %}
   {% if analysis.stops %}
+    <div class="table-wrap">
     <table class="analysis-stops">
       <thead>
         <tr><th>At (km)</th><th>Duration</th>{% if has_wind %}<th class="analysis-wind-head">Wind</th>{% endif %}</tr>
@@ -120,10 +122,11 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   {% else %}
-    <p class="muted empty-state">No stops of two minutes or longer were detected.</p>
+    <p class="text-text-light">No stops of two minutes or longer were detected.</p>
   {% endif %}
-  <p class="muted"><a href="{{ url_for('analysis.analysis_list') }}">← Back to your rides</a></p>
+  <p class="mt-4"><a class="back-link" href="{{ url_for('analysis.analysis_list') }}">← Back to your rides</a></p>
 </section>
 
 {% if analysis.map %}
@@ -162,4 +165,5 @@
 </script>
 {% endif %}
 {% endif %}
+</div>
 {% endblock %}

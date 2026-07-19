@@ -8,11 +8,37 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
           crossorigin=""></script>
+<style>
+/* Live map + breadcrumb timeline — page-specific styling (the timeline items are
+   built by JS, so their marker pseudo-element can't be a utility class). Palette
+   uses the shared navy+red tokens. */
+#live-map { height: 60vh; width: 100%; border-radius: 8px; margin: 16px 0; }
+.live-timeline {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+  border-left: 2px solid var(--border);
+  max-height: 16rem;
+  overflow-y: auto;
+}
+.live-timeline li { position: relative; padding: 8px 0 8px 20px; color: var(--text-light); font-size: 0.9rem; }
+.live-timeline li::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 14px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+</style>
 {% endblock %}
 {% block content %}
+<div class="container section">
 <section class="card">
-  <h1>{{ ride.name }}</h1>
-  <p class="muted">
+  <h1 class="text-primary text-[1.6rem] font-bold">{{ ride.name }}</h1>
+  <p class="text-text-light mb-4">
     {% if ride.club_name %}{{ ride.club_name }} &middot; {% endif %}
     {% if ride.distance_km %}{{ ride.distance_km }} km &middot; {% endif %}
     {% if ride.start_at %}{{ ride.start_at.strftime('%Y-%m-%d %H:%M') }} &middot; {% endif %}
@@ -22,11 +48,12 @@
   <div id="live-map" data-positions-url="{{ url_for('live.live_positions', ride_id=ride.id) }}"
        data-poll-seconds="{{ poll_seconds }}"></div>
 
-  <h2>Positions</h2>
-  <p id="live-empty" class="muted">Waiting for the first position…</p>
+  <h2 class="text-primary text-[1.3rem] font-bold mb-2">Positions</h2>
+  <p id="live-empty" class="text-text-light">Waiting for the first position…</p>
   <ol id="live-timeline" class="live-timeline"></ol>
-  <p class="muted"><a href="{{ url_for('live.live_list') }}">← All live rides</a></p>
+  <p class="mt-4"><a class="back-link" href="{{ url_for('live.live_list') }}">← All live rides</a></p>
 </section>
+</div>
 
 <script>
 (function () {

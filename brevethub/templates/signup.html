@@ -1,30 +1,38 @@
 {% extends "base.html" %}
 {% block title %}Complete your profile — {{ product_name }}{% endblock %}
 {% block content %}
+<div class="container section">
+<div class="max-w-[600px] mx-auto">
 <section class="card">
-  <h1>Complete your profile</h1>
-  <p>Pick your club to finish setting up your {{ product_name }} account. Your
+  <h1 class="text-primary text-[1.6rem] font-bold mb-2">Complete your profile</h1>
+  <p class="text-text-light mb-4">Pick your club to finish setting up your {{ product_name }} account. Your
      RUSA ID is optional — add it to link your randonneuring history later.</p>
 
-  <form method="post" action="{{ url_for('signup.signup') }}" class="form">
-    <label for="club_id">Club <span class="required">*</span></label>
-    <select id="club_id" name="club_id" required>
-      <option value="">— select your club —</option>
-      {% for club in clubs %}
-      <option value="{{ club.id }}"
-        {% if selected_club_id and selected_club_id == club.id %}selected{% endif %}>
-        {{ club.name }}{% if club.state %} ({{ club.state }}){% endif %}
-      </option>
-      {% endfor %}
-    </select>
+  <form method="post" action="{{ url_for('signup.signup') }}">
+    <div class="form-group">
+      <label for="club_id">Club <span style="color: var(--accent);">*</span></label>
+      <select id="club_id" name="club_id" required>
+        <option value="">— select your club —</option>
+        {% for club in clubs %}
+        <option value="{{ club.id }}"
+          {% if selected_club_id and selected_club_id == club.id %}selected{% endif %}>
+          {{ club.name }}{% if club.state %} ({{ club.state }}){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
 
-    <label for="rusa_id">RUSA ID <span class="optional">(optional)</span></label>
-    <input type="text" id="rusa_id" name="rusa_id" inputmode="numeric"
-           pattern="[0-9]*" value="{{ rusa_id }}"
-           placeholder="e.g. 12345">
-    <p class="hint">We store this as-is; we do not verify ownership in this version.</p>
+    <div class="form-group">
+      <label for="rusa_id">RUSA ID <span class="text-text-light font-normal">(optional)</span></label>
+      <input type="text" id="rusa_id" name="rusa_id" inputmode="numeric"
+             pattern="[0-9]*" value="{{ rusa_id }}"
+             placeholder="e.g. 12345">
+      <p class="text-text-light text-[0.85rem] mt-1">We store this as-is; we do not verify ownership in this version.</p>
+    </div>
 
     <button type="submit" class="btn btn-primary">Save and continue</button>
   </form>
 </section>
+</div>
+</div>
 {% endblock %}
