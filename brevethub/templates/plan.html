@@ -3,17 +3,126 @@
 {% block title %}
   {% if real_plan %}Ride plan{% else %}Pacing plan{% endif %} — {{ event.name }} — {{ product_name }}
 {% endblock %}
+
+{% block extra_head %}
+<style>
+/* Ride-plan page-specific styling (elevation profile, difficulty chips, pacing
+   schedule, time-bank states). Page-specific CSS is kept inline, mirroring how
+   the parent app scopes its ride-plan-detail styles. Palette uses the shared
+   navy+red tokens from style.css. */
+.plan-page { max-width: 1200px; margin: 0 auto; }
+.plan-intro { margin-bottom: 24px; }
+.plan-intro h1 { margin-bottom: 4px; color: var(--primary); }
+.plan-event-name { font-size: 1.15rem; color: var(--primary); margin: 0 0 12px; }
+.plan-event-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  color: var(--text-light);
+  font-size: 0.9rem;
+  margin-bottom: 12px;
+}
+.plan-event-meta span {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: #ebf2fb;
+  color: #2a4a7f;
+  font-weight: 600;
+}
+.plan-scope-note, .plan-real-note { max-width: 640px; font-size: 0.9rem; }
+
+/* Target picker — a responsive form row. */
+.plan-target-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  margin-bottom: 24px;
+}
+.plan-target-field { display: flex; flex-direction: column; gap: 6px; flex: 1 1 200px; }
+.plan-target-field label { font-weight: 600; font-size: 0.9rem; }
+.plan-target-field input {
+  padding: 10px 12px;
+  border: 1px solid #cbd5e0;
+  border-radius: 8px;
+  font-size: 1rem;
+  background: #fff;
+  color: var(--text);
+  transition: border-color 0.2s cubic-bezier(0.4,0,0.2,1), box-shadow 0.2s cubic-bezier(0.4,0,0.2,1);
+}
+.plan-target-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(229,62,62,0.15);
+}
+.plan-target-or { color: var(--text-light); font-size: 0.85rem; padding-bottom: 12px; align-self: flex-end; }
+.plan-target-form .btn { flex: 0 0 auto; }
+
+/* Summary chip row. */
+.plan-summary { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: center; margin-bottom: 8px; }
+.plan-summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+.plan-summary strong { color: var(--primary); }
+
+/* Time-bank state — semantic success/warn, reused in the summary and the table. */
+.plan-bank-ok { background: #c6f6d5; color: #22543d; }
+.plan-bank-low { background: #fef3c7; color: #78350f; }
+.plan-summary .plan-bank { border-color: transparent; }
+.plan-summary .plan-bank strong { color: inherit; }
+
+.plan-schedule { margin-bottom: 8px; }
+.plan-schedule td.plan-dist { font-weight: 600; }
+.plan-schedule td.plan-bank-cell { font-weight: 600; }
+
+.plan-save-section { margin-top: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+
+/* Real RWGPS plan: elevation profile + difficulty-colored controls. */
+.plan-elev {
+  margin: 18px 0 8px;
+  padding: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.plan-elev-svg { display: block; width: 100%; height: auto; }
+.plan-real-schedule td.plan-control-name { font-weight: 600; }
+.plan-difficulty-chip {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+</style>
+{% endblock %}
+
 {% block content %}
-{# Uses ONLY builtin Jinja filters (no commafy / clean_name — this app registers
-   neither). All clock-ish values and (for real plans) all km / km-h conversions are
-   pre-computed in the route; the template only lays them out. #}
+<div class="container section">
 <section class="plan-page">
 
 {% if real_plan %}
   {# ── Real RWGPS-backed plan (km / km-h) ─────────────────────────────────── #}
   {% set svg = real_plan.svg %}
   <div class="plan-intro">
-    <p class="muted"><a href="{{ url_for('calendar.calendar') }}">&larr; Back to calendar</a></p>
+    <p><a class="back-link" href="{{ url_for('calendar.calendar') }}">&larr; Back to calendar</a></p>
     <h1>Ride plan</h1>
     <h2 class="plan-event-name">{{ event.name }}</h2>
     <div class="plan-event-meta">
@@ -24,9 +133,9 @@
       <span>ACP time limit: {{ cutoff_hours }} h</span>
       {% if real_plan.avg_moving_speed_kmh %}<span>Avg moving: {{ real_plan.avg_moving_speed_kmh }} km/h</span>{% endif %}
     </div>
-    <p class="muted plan-real-note">
+    <p class="plan-real-note text-text-light">
       Real route plan generated from
-      {% if real_plan.rwgps_url %}<a href="{{ real_plan.rwgps_url }}" rel="noopener" target="_blank">RideWithGPS</a>{% else %}RideWithGPS{% endif %}:
+      {% if real_plan.rwgps_url %}<a href="{{ real_plan.rwgps_url }}" rel="noopener" target="_blank" class="text-primary font-semibold hover:text-accent hover:underline">RideWithGPS</a>{% else %}RideWithGPS{% endif %}:
       controls, elevation and per-segment gradient pacing. Distances are shown in km,
       speeds in km/h; climb in feet.
     </p>
@@ -57,6 +166,7 @@
     </svg>
   </div>
 
+  <div class="table-wrap">
   <table class="plan-schedule plan-real-schedule">
     <thead>
       <tr>
@@ -96,11 +206,12 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 
 {% else %}
   {# ── Synthetic Scope-A pacing schedule (evenly spaced, target pace) ──────── #}
   <div class="plan-intro">
-    <p class="muted"><a href="{{ url_for('calendar.calendar') }}">&larr; Back to calendar</a></p>
+    <p><a class="back-link" href="{{ url_for('calendar.calendar') }}">&larr; Back to calendar</a></p>
     <h1>Pacing plan</h1>
     <h2 class="plan-event-name">{{ event.name }}</h2>
     <div class="plan-event-meta">
@@ -109,7 +220,7 @@
       {% if event.date %}<span>{{ event.date }}</span>{% endif %}
       <span>ACP time limit: {{ cutoff_hours }} h</span>
     </div>
-    <p class="muted plan-scope-note">
+    <p class="plan-scope-note text-text-light">
       Scope A pacing: stops are spaced evenly from the brevet distance (every 100&nbsp;km
       plus the finish). Arrival and time bank are computed against the ACP control
       cutoff.
@@ -130,7 +241,7 @@
       <input id="plan-finish" name="finish" type="number" step="0.1" min="1"
              placeholder="{{ finish_hours }}" inputmode="decimal">
     </div>
-    <button type="submit" class="btn">Recompute</button>
+    <button type="submit" class="btn btn-primary">Recompute</button>
   </form>
 
   <div class="plan-summary">
@@ -144,6 +255,7 @@
   </div>
 
   {% if schedule %}
+    <div class="table-wrap">
     <table class="plan-schedule">
       <thead>
         <tr>
@@ -166,28 +278,30 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   {% else %}
-    <p class="muted empty-state">No schedule to show for this brevet.</p>
+    <p class="text-text-light">No schedule to show for this brevet.</p>
   {% endif %}
 
   <div class="plan-save-section">
     {% if rider %}
-      <button type="button" id="plan-save-btn" class="btn"
+      <button type="button" id="plan-save-btn" class="btn btn-primary"
               data-save-url="{{ url_for('plan.save_plan', event_id=event.id) }}"
               data-speed="{{ speed_kmh }}">Save this plan</button>
-      <span id="plan-save-status" class="muted"
+      <span id="plan-save-status" class="text-text-light"
             data-saved="{{ 'yes' if saved else 'no' }}">
         {% if saved %}You have a saved plan for this brevet.{% endif %}
       </span>
     {% else %}
-      <p class="muted">
-        <a href="{{ url_for('auth.login', next=url_for('plan.plan_view', event_id=event.id)) }}">Sign in</a>
+      <p class="text-text-light">
+        <a href="{{ url_for('auth.login', next=url_for('plan.plan_view', event_id=event.id)) }}" class="text-primary font-semibold hover:text-accent hover:underline">Sign in</a>
         to save your pacing plan for this brevet.
       </p>
     {% endif %}
   </div>
 {% endif %}
 </section>
+</div>
 
 {% if not real_plan and rider %}
 <script>
