@@ -91,6 +91,11 @@ class Config:
     RWGPS_API_KEY = os.environ.get('RWGPS_API_KEY')
     RWGPS_AUTH_TOKEN = os.environ.get('RWGPS_AUTH_TOKEN')
 
+    # Mapbox GL token for the member live map (Surface B). Copy from Team Asha's
+    # Vercel project. When UNSET the member map falls back to a clear "map
+    # unavailable" state and never 500s — it does not block the build.
+    MAPBOX_ACCESS_TOKEN = os.environ.get('MAPBOX_ACCESS_TOKEN')
+
     # Session security — HTTPS-only cookies in production, 30-day persistent login.
     SESSION_COOKIE_SECURE = _IS_PRODUCTION
     SESSION_COOKIE_HTTPONLY = True

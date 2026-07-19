@@ -27,6 +27,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from brevethub import models
 from brevethub.routes.calendar import _scrape_and_upsert
+from brevethub.shared.garmin_livetrack import fetch_positions, parse_session
 from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
                                     extract_rwgps_route_id, fetch_route)
 from shared.weather import (FORECAST_HORIZON_DAYS, fetch_point_forecast,
@@ -338,3 +339,123 @@ def warm_brevet_route_weather():
         warmed, skipped, failed, len(targets))
     return jsonify({'ok': True, 'warmed': warmed, 'skipped': skipped,
                     'failed': failed, 'considered': len(targets)}), 200
+
+
+# Retention + downsample tuning (mirrors Team Asha's poll_garmin_livetrack).
+LIVE_RETENTION_DAYS = 7
+LIVE_MIN_GAP_SECONDS = 30   # keep at most one stored point per 30s per rider
+
+
+@cron_bp.route('/poll-garmin-livetrack', methods=['GET', 'POST'])
+def poll_garmin_livetrack():
+    """Poll Garmin LiveTrack for opted-in riders, store positions, purge old data.
+
+    Mirrors Team Asha's poll_garmin_livetrack but on the rp_ tables and the vendored
+    shared engine. Auth-gated (Bearer CRON_SECRET). For each rider opted in with a
+    Garmin session pointed at a ride, it re-derives the session id from the saved
+    share URL, fetches the live trackpoints (all HTTP inside the shared engine),
+    appends only points newer than the last stored one for THIS ride (idempotent),
+    downsampled to at most one per LIVE_MIN_GAP_SECONDS, and tags each with the
+    rider + ride so it shows only on that ride's member map. Fail-soft per rider:
+    one bad/expired session never breaks the batch.
+
+    Returns ``{ok, polled, inserted, skipped, failed}``:
+      - polled:   riders we actually fetched for,
+      - inserted: new position points stored,
+      - skipped:  riders with no usable token/session or no active ride,
+      - failed:   riders whose fetch raised (counted, then the batch continues).
+
+    Scheduling / freshness caveat (see PR — this is the plan's anticipated Vercel
+    fallback): the mission asked for ``* * * * *`` (every minute), but the BrevetHub
+    Vercel project is on the Hobby plan, which caps cron jobs at ONCE PER DAY
+    (±59 min) — a sub-daily expression fails the deployment outright. So per the
+    plan's risk mitigation ("fall back to the tightest accepted schedule and state
+    it"), brevethub/vercel.json schedules this at the tightest the plan allows
+    (``0 10 * * *``), which is FAR coarser than Team Asha's ~3-min Railway loop and
+    is not real-time. CONSEQUENCE (stated in the PR as a deploy prerequisite): with
+    a daily poll, a rider who links their Garmin mid-ride is not ingested until the
+    next run, so the member map can stay empty/stale during the ride — which is why
+    the attach flow tells riders their position "appears after the next tracking
+    poll", not "within minutes". Making this near-real-time is a deploy-time
+    decision outside this change: upgrade the BrevetHub Vercel project to Pro (min
+    interval once/minute) and set ``* * * * *`` here. The endpoint itself is
+    scheduler-agnostic and unchanged either way.
+
+    Route contract (pinned, same as the other crons): the production URL is exactly
+    ``/cron/poll-garmin-livetrack`` — the blueprint owns the ``/cron`` prefix and
+    this decorator is LEAF-ONLY, so a double ``/cron`` prefix can't 404 the
+    Vercel-scheduled request. GET and POST are both accepted because Vercel cron
+    issues a GET.
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    try:
+        tracked = models.get_enabled_live_tracking_rp()
+    except Exception as e:
+        current_app.logger.warning('poll-garmin-livetrack: rider load failed: %s', e)
+        return jsonify({'ok': False, 'error': 'rider load failed',
+                        'polled': 0, 'inserted': 0, 'skipped': 0, 'failed': 0}), 200
+
+    polled = inserted = skipped = failed = 0
+    for row in tracked:
+        rider_id = row['rider_id']
+        ride_id = row.get('active_ride_id')
+        token = row.get('garmin_session_token')
+        session_url = row.get('garmin_session_url')
+        # Prefer the stored token; re-derive session_id from the saved share URL.
+        parsed = parse_session(session_url) if session_url else None
+        session_id = parsed['session_id'] if parsed else None
+        if not token or not session_id or not ride_id:
+            # Nothing to fetch or nowhere to attribute points — skip, don't fail.
+            skipped += 1
+            continue
+
+        polled += 1
+        try:
+            points = fetch_positions(token, session_id)
+        except Exception as e:
+            # Fail soft: one rider's expired/blocked session never breaks the batch.
+            current_app.logger.warning(
+                'poll-garmin-livetrack: rider %s fetch failed: %s', rider_id, e)
+            failed += 1
+            continue
+
+        # Append only points newer than the last stored one FOR THIS RIDE (so a
+        # re-run inserts nothing new — idempotent), downsampled to at most one per
+        # LIVE_MIN_GAP_SECONDS so we accumulate a real history, not just the latest.
+        try:
+            last_at = models.get_last_position_recorded_at_rp(rider_id, ride_id)
+        except Exception:
+            last_at = None
+        fresh = sorted(
+            (p for p in points if p.get('recorded_at') is not None
+             and (last_at is None or p['recorded_at'] > last_at)),
+            key=lambda p: p['recorded_at'],
+        )
+        kept_at = None
+        for p in fresh:
+            if kept_at is not None and \
+                    (p['recorded_at'] - kept_at).total_seconds() < LIVE_MIN_GAP_SECONDS:
+                continue
+            if models.insert_live_position_rp(
+                    rider_id=rider_id, lat=p['lat'], lng=p['lng'],
+                    recorded_at=p['recorded_at'], source='garmin',
+                    speed=p.get('speed'), heart_rate=p.get('heart_rate'),
+                    power=p.get('power'), cadence=p.get('cadence'),
+                    ride_id=ride_id):
+                kept_at = p['recorded_at']
+                inserted += 1
+
+    try:
+        purged = models.purge_old_positions_rp(LIVE_RETENTION_DAYS)
+    except Exception as e:
+        current_app.logger.warning('poll-garmin-livetrack: purge failed: %s', e)
+        purged = None
+
+    current_app.logger.info(
+        'poll-garmin-livetrack: polled=%s inserted=%s skipped=%s failed=%s purged=%s',
+        polled, inserted, skipped, failed, purged)
+    return jsonify({'ok': True, 'polled': polled, 'inserted': inserted,
+                    'skipped': skipped, 'failed': failed}), 200
