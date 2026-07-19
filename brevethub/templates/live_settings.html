@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Live tracking settings — {{ product_name }}{% endblock %}
+{% block content %}
+<div class="container section">
+<section class="card">
+  <h1 class="text-primary text-[1.6rem] font-bold mb-2">Live tracking</h1>
+  <p class="text-text-light mb-4">
+    This is your master switch for sharing your live location with other riders.
+    Only logged-in riders can see the member live map, position history is
+    automatically deleted after 7 days, and you can turn this off at any time.
+  </p>
+
+  <form method="post" action="{{ url_for('live.live_settings') }}">
+    <div class="form-group">
+      <label class="inline-flex items-center gap-2 font-normal">
+        <input type="checkbox" id="enabled" name="enabled" class="w-auto"
+               {% if tracking and tracking.enabled %}checked{% endif %} />
+        Enable live tracking
+      </label>
+    </div>
+    <button class="btn btn-primary" type="submit">Save settings</button>
+  </form>
+
+  <p class="mt-4 text-sm">
+    {% if tracking and tracking.enabled %}
+      <span class="text-success font-semibold">● Live tracking is ON.</span>
+      Set up <strong>each ride</strong> from its live map — your
+      <a class="text-primary font-semibold hover:text-accent hover:underline"
+         href="https://www.garmin.com/en-US/livetrack/" target="_blank" rel="noopener">Garmin LiveTrack</a>
+      link changes every ride, so you register a fresh one there.
+    {% else %}
+      <span class="text-text-light">○ Live tracking is off.</span>
+    {% endif %}
+  </p>
+
+  <p class="mt-4 text-text-light text-sm">
+    <strong>Where do I paste my Garmin link?</strong> On a ride's own live map
+    (open it from the <a class="text-primary font-semibold hover:text-accent hover:underline"
+      href="{{ url_for('live.live_list') }}">Live</a> page). Garmin creates a new
+    LiveTrack link every ride, so it's set per-ride there rather than once here.
+  </p>
+</section>
+</div>
+{% endblock %}

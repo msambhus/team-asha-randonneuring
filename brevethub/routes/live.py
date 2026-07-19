@@ -40,6 +40,7 @@ from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
 
 from brevethub import models
 from brevethub.decorators import profile_required
+from brevethub.shared.garmin_livetrack import parse_session
 
 live_bp = Blueprint('live', __name__)
 
@@ -167,6 +168,94 @@ def set_public(ride_id):
         flash('Ride is now public — share its link.' if make_public
               else 'Ride is no longer public.', 'success')
     return redirect(url_for('live.live_new'))
+
+
+# --------------------------------------------------------------------------- #
+# Member live tracking (Surface B): self-scoped setup + accessibility gate
+#
+# A logged-in rider may attach THEMSELVES to a ride, and view its member map, iff
+# the ride is public OR they own it (a private ride they don't own is
+# indistinguishable from a nonexistent one → 404). Registration is self-scoped:
+# every write targets the SESSION rider's own rp_live_tracking row, so a rider can
+# only ever set their own tracking prefs — never another rider's. Attaching to a
+# public ride is how the map becomes genuinely multi-rider.
+# --------------------------------------------------------------------------- #
+def _accessible_ride(ride_id, rider_id):
+    """Return the ride row if the session rider may attach to / view it, else None.
+
+    Accessible ⇔ ``is_public`` OR the rider owns it. A None return maps to 404 at
+    the call site (a private ride a rider doesn't own must not be distinguishable
+    from a nonexistent one). Resolvable directly from the get_ride row, which
+    exposes both rider_id and is_public."""
+    ride = models.get_ride(ride_id)
+    if not ride:
+        return None
+    if ride.get('is_public') or ride.get('rider_id') == rider_id:
+        return ride
+    return None
+
+
+@live_bp.route('/live/settings', methods=['GET', 'POST'])
+@profile_required
+def live_settings():
+    """Master live-tracking opt-in toggle for the SESSION rider (self-scoped).
+
+    The Garmin LiveTrack link itself is set per-ride on each ride's member map (it
+    changes every ride), not here — mirroring Team Asha's split of a global toggle
+    from the per-ride link."""
+    rider_id = session['rider_id']
+
+    if request.method == 'POST':
+        enabled = request.form.get('enabled') == 'on'
+        ok = models.upsert_rider_live_tracking_rp(rider_id, enabled)
+        if ok:
+            flash('Live tracking ' + ('enabled.' if enabled else 'disabled.'),
+                  'success')
+        else:
+            flash('Could not save your live-tracking settings. Please try again.',
+                  'error')
+        return redirect(url_for('live.live_settings'))
+
+    tracking = models.get_live_tracking_rp(rider_id)
+    return render_template('live_settings.html', tracking=tracking)
+
+
+@live_bp.route('/live/<int:ride_id>/garmin', methods=['POST'])
+@profile_required
+def ride_garmin_link(ride_id):
+    """Register (or clear) the SESSION rider's Garmin LiveTrack link FOR THIS RIDE.
+
+    Self-scoped + accessibility-gated: the ride must be public or owned by the
+    rider (else 404), and the write only ever touches the session rider's own
+    rp_live_tracking row (set_ride_garmin_rp / clear_ride_garmin_rp take the
+    session rider_id as the subject). Garmin mints a fresh session each ride, so
+    the link lives on the ride, not in global settings; saving opts the rider in
+    and points tracking at this ride, clearing removes it (master toggle
+    untouched). Any logged-in rider attaching to a PUBLIC ride is exactly what
+    makes the member map multi-rider."""
+    rider_id = session['rider_id']
+    ride = _accessible_ride(ride_id, rider_id)
+    if not ride:
+        abort(404)
+
+    action = request.form.get('action', 'save')
+    if action == 'clear':
+        models.clear_ride_garmin_rp(rider_id, ride_id)
+        flash('Garmin LiveTrack link removed for this ride.', 'success')
+        return redirect(url_for('live.live_ride_map', ride_id=ride_id))
+
+    session_url = (request.form.get('garmin_session_url') or '').strip()
+    parsed = parse_session(session_url) if session_url else None
+    if not parsed:
+        flash('That does not look like a Garmin LiveTrack link. Expected '
+              'https://livetrack.garmin.com/session/.../token/...', 'warning')
+        return redirect(url_for('live.live_ride_map', ride_id=ride_id))
+
+    ok = models.set_ride_garmin_rp(rider_id, ride_id, session_url, parsed['token'])
+    flash('Garmin LiveTrack linked for this ride — you should appear within a few '
+          'minutes.' if ok else 'Could not save your Garmin link. Please try again.',
+          'success' if ok else 'error')
+    return redirect(url_for('live.live_ride_map', ride_id=ride_id))
 
 
 # --------------------------------------------------------------------------- #
