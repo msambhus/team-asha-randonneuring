@@ -114,7 +114,18 @@ warm it immediately with `curl -H "Authorization: Bearer $CRON_SECRET" .../cron/
      a different `STRAVA_CLIENT_ID`.)
 4. **Register the Google redirect URIs** and the **Strava callback URL** below.
 5. **Enable "Include files outside the Root Directory in the Build Step"** on the
-   BrevetHub Vercel project (Mission 2 imports `shared/`).
+   BrevetHub Vercel project (Mission 2 imports `shared/`). This same toggle now
+   **also drives the CSS build**: `brevethub/vercel.json`'s
+   `buildCommand` (`cd .. && npm ci && npm run build:css`) reaches the repo-root
+   Tailwind toolchain (which lives at `../` in the build filesystem because the
+   toggle is on) and compiles the *one* shared design system — scanning both Team
+   Asha and BrevetHub templates — then copies `output.css` + `style.css` into
+   `brevethub/static/`, which the `@vercel/static` builder serves. There is no
+   second stylesheet, `input.css`, or Tailwind config for BrevetHub. The generated
+   `brevethub/static/output.css` + `style.css` are also committed, so a build that
+   skips the buildCommand still serves a correct (if slightly stale) stylesheet.
+   If a future owner turns this toggle **off**, both `shared/` imports **and** the
+   CSS build break together.
 
 ### Google redirect URIs to register (on the existing OAuth client)
 

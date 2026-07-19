@@ -3,6 +3,11 @@ module.exports = {
   content: [
     "./templates/**/*.html",
     "./templates/**/*.jinja2",
+    // BrevetHub reuses this one canonical design system: scan its templates too
+    // so BH-only utility classes compile into the shared output.css. Additive
+    // only — cannot alter any rule the Team Asha templates already produce.
+    "./brevethub/templates/**/*.html",
+    "./brevethub/templates/**/*.jinja2",
   ],
   theme: {
     extend: {
