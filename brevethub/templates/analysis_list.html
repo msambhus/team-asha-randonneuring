@@ -44,7 +44,7 @@
                 {% else %}
                   <form method="post"
                         action="{{ url_for('analysis.compute', activity_id=a.id) }}">
-                    <button class="btn btn-accent btn-sm" type="submit">Analyze</button>
+                    <button class="btn btn-primary btn-sm" type="submit">Analyze</button>
                   </form>
                 {% endif %}
               </td>

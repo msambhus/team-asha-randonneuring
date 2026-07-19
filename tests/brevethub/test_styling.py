@@ -1,30 +1,34 @@
-"""BrevetHub design-system smoke test (Mission 10 — styling cleanup).
+"""BrevetHub design-system smoke test.
 
-Four guards, all DB-free / network-free per the established BrevetHub test pattern.
-The first three are pure stdlib (no jinja2/flask/pytest-fixture needed), so they run
-even in a minimal checkout; the fourth needs the Flask test client.
+BrevetHub now reuses the ONE canonical Team Asha Tailwind design system: the same
+compiled ``static/output.css`` (utilities + @layer components) plus the token
+stylesheet ``static/style.css``, both copied into ``brevethub/static/`` by the
+root ``npm run build:css`` step. Its templates mirror the parent app's DOM +
+utility classes; only page-specific CSS (elevation profile, live map, SR pips)
+stays inline in the template, exactly as the parent app scopes its own.
 
-1. **Stylesheet contract** — the shared design-system classes and element ids that
-   every template references are actually DEFINED in ``static/style.css``. This is
-   the regression guard that the three feature pages bolted on during M8–M9 (plan,
-   analysis, live-map) never render as raw, unstyled HTML again.
+Five guards, all DB-free / network-free per the established BrevetHub test pattern.
+The first four are pure stdlib (no jinja2/flask/pytest-fixture needed), so they run
+even in a minimal checkout; the fifth needs the Flask test client.
 
-2. **Static missing-filter guard** — a dependency-free scan that every ``| filter``
-   used in a BrevetHub template is a Jinja builtin or a BrevetHub-registered filter.
-   BrevetHub does NOT inherit Team Asha's ``commafy``/``clean_name`` filters, so any
-   such usage would 500 at render. This is the durable static counterpart to the
-   render tests below.
+1. **Stylesheet contract** — the shared design-system component classes every
+   template references are defined in the shared CSS (``output.css`` +
+   ``style.css``). Regression guard that a mirrored page never renders unstyled.
 
-3. **Structural parse smoke** — a dependency-free stand-in for a Jinja parse when
-   jinja2 isn't importable: every template has balanced ``{% %}``/``{{ }}``
-   delimiters, only known statement tags, and correctly nested/closed blocks. Not a
-   substitute for a real render (the client tests below are), but it catches the
-   markup-structure class of error a parse would, with zero deps.
+2. **Copy integrity** — ``brevethub/static/{output,style}.css`` are byte-identical
+   to the repo-root ``static/`` originals (guards the ``build:css`` copy step so
+   the two apps can't silently drift onto different stylesheets).
 
-4. **Render-path contract** — each key page returns 200, links ``style.css``, and
-   contains its expected component class(es) in the rendered markup. A render (not
-   a parse check) is the only thing that catches a missing-filter 500, so the
-   plan/analysis/live pages are exercised through the real client with mocked models.
+3. **Static missing-filter guard** — every ``| filter`` used in a BrevetHub
+   template is a Jinja builtin or a BrevetHub-registered filter. BrevetHub does
+   NOT inherit the parent app's ``commafy``/``clean_name`` filters, so any such
+   usage would 500 at render.
+
+4. **Structural parse smoke** — dep-free stand-in for a Jinja parse: balanced
+   delimiters, known tags, correct block nesting across every template.
+
+5. **Render-path contract** — each key page returns 200, links the shared
+   stylesheets, and contains its expected mirrored component class(es).
 """
 import os
 import re
@@ -35,8 +39,11 @@ import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BREVETHUB_DIR = os.path.join(REPO_ROOT, 'brevethub')
-STYLE_CSS = os.path.join(BREVETHUB_DIR, 'static', 'style.css')
+BH_STATIC = os.path.join(BREVETHUB_DIR, 'static')
+STYLE_CSS = os.path.join(BH_STATIC, 'style.css')
+OUTPUT_CSS = os.path.join(BH_STATIC, 'output.css')
 TEMPLATES_DIR = os.path.join(BREVETHUB_DIR, 'templates')
+ROOT_STATIC = os.path.join(REPO_ROOT, 'static')
 
 
 _RIDER = {'id': 7, 'email': 'rider@example.com', 'google_id': 'g-1',
@@ -52,7 +59,7 @@ _EVENT = {
 }
 
 # A fully-populated cached analysis (mirrors test_analysis.py) so the detail page
-# renders its map + segment/stop tables, exercising the newly-defined classes.
+# renders its map + segment/stop tables, exercising the mirrored classes.
 _ANALYSIS = {
     'activity': {'name': 'Coastal 200', 'date': '2026-06-20', 'distance_km': 203.4,
                  'elevation_ft': 6800, 'moving_time': '9h 12m',
@@ -75,59 +82,59 @@ def _login(client, rider_id=7):
 
 
 # --------------------------------------------------------------------------- #
-# 1. Stylesheet contract — every referenced component class/id is defined.
+# 1. Stylesheet contract — every referenced shared component class is defined.
 # --------------------------------------------------------------------------- #
-def _css():
-    with open(STYLE_CSS, 'r', encoding='utf-8') as fh:
-        return fh.read()
+def _shared_css():
+    css = ''
+    for path in (OUTPUT_CSS, STYLE_CSS):
+        with open(path, 'r', encoding='utf-8') as fh:
+            css += '\n' + fh.read()
+    return css
 
 
-# Selectors the templates rely on. A missing one means a page renders unstyled.
+# Shared design-system component classes the mirrored templates rely on. Each is
+# defined by the canonical input.css @layer components (compiled into output.css)
+# or by style.css. A missing one means a mirrored page renders unstyled.
 REQUIRED_SELECTORS = [
-    # Core design-system components (base + shared).
-    '.container', '.card', '.btn', '.badge', '.form', '.flash', '.empty-state',
-    '.site-header', '.nav',
-    # Table shells.
-    '.rusa-history', '.signups-table', '.live-rides',
-    # Plan page (M8) — previously undefined.
-    '.plan-page', '.plan-intro', '.plan-event-meta', '.plan-target-form',
-    '.plan-summary', '.plan-schedule', '.plan-bank-ok', '.plan-bank-low',
-    '.plan-save-section',
-    # Analysis + live (M9) — previously undefined.
-    '.analysis-list', '.analysis-legs', '.analysis-stops',
-    '#analysis-map', '#live-map', '.live-timeline',
+    '.container', '.hero', '.section', '.card', '.btn', '.btn-primary', '.btn-sm',
+    '.badge', '.stat-card', '.stats-row', '.table-wrap', '.form-group', '.back-link',
 ]
 
 
 @pytest.mark.parametrize('selector', REQUIRED_SELECTORS)
 def test_design_system_selector_defined(selector):
-    css = _css()
-    # A defined rule is the selector followed (possibly after other selectors in a
-    # group, or a combinator) by an opening brace somewhere in the file.
+    css = _shared_css()
     assert re.search(re.escape(selector) + r'[\s,:.#\w>()\-\[\]="\']*\{', css), \
-        f'{selector} is referenced by a template but not defined in style.css'
-
-
-def test_no_dead_calendar_table_rule():
-    """The dead ``.calendar-table`` selector was removed (no template uses it)."""
-    assert '.calendar-table' not in _css()
+        f'{selector} is referenced by a template but not defined in the shared CSS'
 
 
 def test_root_tokens_present():
-    """The neutral palette is still driven entirely by :root variables."""
-    css = _css()
-    for token in ('--bg', '--surface', '--text', '--border', '--accent',
-                  '--success', '--warning', '--danger'):
-        assert token in css, f'design token {token} missing from :root'
+    """The shared neutral+navy palette is driven by :root variables in style.css."""
+    with open(STYLE_CSS, 'r', encoding='utf-8') as fh:
+        css = fh.read()
+    for token in ('--primary', '--accent', '--bg', '--card-bg', '--text',
+                  '--text-light', '--border', '--success', '--warning', '--danger'):
+        assert token in css, f'design token {token} missing from style.css :root'
 
 
 # --------------------------------------------------------------------------- #
-# 2. Static missing-filter guard — dep-free (no jinja2/flask). Catches the exact
-#    class of bug a Jinja *parse* check misses: a template using a filter that this
-#    app never registers (commafy/clean_name are Team Asha-only) -> a 500 at render.
+# 2. Copy integrity — BH's stylesheets are exact copies of the root originals.
 # --------------------------------------------------------------------------- #
+@pytest.mark.parametrize('name', ['output.css', 'style.css'])
+def test_shared_css_is_copy_of_root(name):
+    with open(os.path.join(BH_STATIC, name), 'rb') as fh:
+        bh = fh.read()
+    with open(os.path.join(ROOT_STATIC, name), 'rb') as fh:
+        root = fh.read()
+    assert bh == root, (
+        f'brevethub/static/{name} differs from the canonical static/{name} — the '
+        f'build:css copy step must keep them identical (one shared design system)')
 
-# Jinja2 3.x built-in filters. Flask registers no extra template filters by default.
+
+# --------------------------------------------------------------------------- #
+# 3. Static missing-filter guard — dep-free. Catches a template using a filter
+#    this app never registers (commafy/clean_name are parent-app-only) -> 500.
+# --------------------------------------------------------------------------- #
 _JINJA_BUILTIN_FILTERS = {
     'abs', 'attr', 'batch', 'capitalize', 'center', 'default', 'd', 'dictsort',
     'escape', 'e', 'filesizeformat', 'first', 'float', 'forceescape', 'format',
@@ -144,8 +151,7 @@ _FILTER_USE = re.compile(r'\|\s*(\w+)')                     # a `| filter` appli
 
 def _registered_brevethub_filters():
     """Filters BrevetHub registers on its own Jinja env (currently none — the app
-    only adds the product_name context processor). Scanning keeps this honest if a
-    future mission adds a brevethub-local commafy/clean_name."""
+    only adds the inject_branding context processor)."""
     src = open(os.path.join(BREVETHUB_DIR, 'app.py'), 'r', encoding='utf-8').read()
     names = set(re.findall(r"template_filter\(['\"](\w+)['\"]\)", src))
     names |= set(re.findall(r"jinja_env\.filters\[['\"](\w+)['\"]\]", src))
@@ -166,28 +172,24 @@ def test_no_unregistered_jinja_filters():
                     offenders.setdefault(name, set()).add(filt)
     assert not offenders, (
         'BrevetHub templates use filters this app does not register (would 500 at '
-        f'render — e.g. Team Asha-only commafy/clean_name): {offenders}')
+        f'render — e.g. parent-app-only commafy/clean_name): {offenders}')
 
 
 def test_no_ta_only_filters_used():
-    """Explicit guard for the two Team Asha-only filters BrevetHub must never use."""
+    """Explicit guard for the two parent-app-only filters BrevetHub must never use."""
     for name in sorted(os.listdir(TEMPLATES_DIR)):
         if not name.endswith('.html'):
             continue
         src = open(os.path.join(TEMPLATES_DIR, name), 'r', encoding='utf-8').read()
         for region in _JINJA_REGION.findall(src):
             used = set(_FILTER_USE.findall(region))
-            assert 'commafy' not in used, f'{name} uses TA-only |commafy'
-            assert 'clean_name' not in used, f'{name} uses TA-only |clean_name'
+            assert 'commafy' not in used, f'{name} uses parent-app-only |commafy'
+            assert 'clean_name' not in used, f'{name} uses parent-app-only |clean_name'
 
 
 # --------------------------------------------------------------------------- #
-# 3. Structural parse smoke — dep-free stand-in for a Jinja parse. Validates
-#    delimiter balance, known tags, and block nesting across every template.
+# 4. Structural parse smoke — dep-free stand-in for a Jinja parse.
 # --------------------------------------------------------------------------- #
-
-# Jinja statement tags these templates may use. Openers pair with an explicit end
-# tag; mid tags (elif/else) may only appear inside a matching open block.
 _TAG_OPENERS = {'if': 'endif', 'for': 'endfor', 'block': 'endblock',
                 'with': 'endwith', 'macro': 'endmacro', 'call': 'endcall',
                 'filter': 'endfilter', 'autoescape': 'endautoescape'}
@@ -207,12 +209,10 @@ def _template_files():
 
 def _structural_errors(src):
     errs = []
-    # Delimiter balance — an unclosed {% or {{ is a hard parse error.
     for opener, closer in (('{%', '%}'), ('{{', '}}')):
         if src.count(opener) != src.count(closer):
             errs.append(f'{opener}/{closer} imbalance '
                         f'{src.count(opener)}/{src.count(closer)}')
-    # Known tags + correct block nesting/closing order.
     stack = []
     for stmt in _STMT.findall(src):
         m = _STMT_KW.match(stmt)
@@ -246,13 +246,14 @@ def test_template_structurally_valid(name):
 
 
 # --------------------------------------------------------------------------- #
-# 4. Render-path contract — each key page: 200, links style.css, has its class.
+# 5. Render-path contract — each key page: 200, links shared CSS, has its class.
 # --------------------------------------------------------------------------- #
 def test_landing_styled(client):
     resp = client.get('/')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'style.css' in body
+    # Both shared stylesheets are linked (compiled utilities + tokens).
+    assert 'output.css' in body and 'style.css' in body
     assert 'hero' in body
 
 
@@ -283,7 +284,7 @@ def test_plan_styled(client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'style.css' in body
-    # The plan-page classes that were undefined before this mission now render.
+    # The BH plan DOM is retained (structural deviation) — its classes still render.
     assert 'plan-page' in body and 'plan-schedule' in body
 
 
@@ -297,8 +298,7 @@ def test_dashboard_styled(client):
     body = resp.get_data(as_text=True)
     assert 'style.css' in body
     assert 'card' in body
-    # No sign-ups -> the empty-state component renders (text preserved).
-    assert 'empty-state' in body
+    # No sign-ups -> the empty message renders (text preserved verbatim).
     assert "haven't signed up for any upcoming brevets yet" in body
 
 
@@ -334,11 +334,9 @@ def test_analysis_detail_styled(client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'style.css' in body
-    # The segment/stop tables + map container use the newly-defined classes.
+    # The segment/stop tables + map container keep their mirrored class hooks.
     assert 'analysis-legs' in body and 'analysis-stops' in body
     assert 'analysis-map' in body
-    # The inline <style> block was removed — the map is sized from style.css now.
-    assert '<style>' not in body
 
 
 def test_live_list_styled(client):
@@ -347,8 +345,8 @@ def test_live_list_styled(client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'style.css' in body
-    # Empty state renders for no public rides.
-    assert 'empty-state' in body
+    # Empty state message renders for no public rides (text preserved).
+    assert 'No public rides right now' in body
 
 
 def test_live_map_styled(client):
@@ -360,5 +358,3 @@ def test_live_map_styled(client):
     body = resp.get_data(as_text=True)
     assert 'style.css' in body
     assert 'live-map' in body and 'live-timeline' in body
-    # The inline <style> block was moved into style.css.
-    assert '<style>' not in body
