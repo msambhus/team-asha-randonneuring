@@ -158,9 +158,13 @@ def test_positions_api_inaccessible_private_404(client):
 def test_positions_api_returns_named_telemetry_payload(client):
     _login(client)
     rows = [_pos(7, 'alice', speed=8.3, heart_rate=142, power=210, cadence=88)]
+    hist = [{'lat': 37.5, 'lng': -122.3, 'speed': 8.3,
+             'recorded_at': datetime(2026, 7, 20, 6, 5, tzinfo=timezone.utc)}]
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_ride', return_value=_PUBLIC_RIDE), \
-         patch('brevethub.models.get_live_positions_rp', return_value=rows):
+         patch('brevethub.models.get_live_positions_rp', return_value=rows), \
+         patch('brevethub.models.get_rider_position_history_rp', return_value=hist), \
+         patch('brevethub.models.get_brevet_route_plan_candidates_rp', return_value=[]):
         resp = client.get('/live/1/live-positions.json')
     assert resp.status_code == 200
     data = resp.get_json()
@@ -169,7 +173,16 @@ def test_positions_api_returns_named_telemetry_payload(client):
     assert p['rider_id'] == 7 and p['name'] == 'alice'
     assert p['status'] == 'going' and p['color'] == '#16a34a'
     assert p['source'] == 'garmin' and p['stale'] is False
-    assert p['telemetry'] == {'speed': 8.3, 'heart_rate': 142, 'power': 210, 'cadence': 88}
+    assert 'plan_color' in p                       # plan-timing dot color present
+    # Telemetry is now the parent-app-shaped block: source-agnostic 'now' present,
+    # plan-aware fields absent (no route/plan on this ride) — M1 basics preserved.
+    tel = p['telemetry']
+    assert tel['now']['speed_mph'] == round(8.3 * 2.236936, 1)
+    assert tel['now']['heart_rate'] == 142
+    assert tel['now']['power'] == 210 and tel['now']['cadence'] == 88
+    assert tel['on_route'] is None                 # no route → route fields omitted
+    assert tel['plan'] is None and tel['next_control'] is None
+    assert tel['time_banked_plan_min'] is None
 
 
 def test_positions_api_multi_rider_two_named_dots(client):
@@ -178,7 +191,9 @@ def test_positions_api_multi_rider_two_named_dots(client):
     rows = [_pos(7, 'alice'), _pos(9, 'bob')]
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_ride', return_value=_PUBLIC_RIDE), \
-         patch('brevethub.models.get_live_positions_rp', return_value=rows):
+         patch('brevethub.models.get_live_positions_rp', return_value=rows), \
+         patch('brevethub.models.get_rider_position_history_rp', return_value=[]), \
+         patch('brevethub.models.get_brevet_route_plan_candidates_rp', return_value=[]):
         resp = client.get('/live/1/live-positions.json')
     data = resp.get_json()
     names = sorted(p['name'] for p in data['positions'])
@@ -194,7 +209,9 @@ def test_positions_api_marks_stale_when_old(client):
     old['recorded_at'] = _dt(2020, 1, 1, tzinfo=timezone.utc)
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_ride', return_value=_PUBLIC_RIDE), \
-         patch('brevethub.models.get_live_positions_rp', return_value=[old]):
+         patch('brevethub.models.get_live_positions_rp', return_value=[old]), \
+         patch('brevethub.models.get_rider_position_history_rp', return_value=[]), \
+         patch('brevethub.models.get_brevet_route_plan_candidates_rp', return_value=[]):
         resp = client.get('/live/1/live-positions.json')
     p = resp.get_json()['positions'][0]
     assert p['stale'] is True and p['minutes_ago'] > 10
