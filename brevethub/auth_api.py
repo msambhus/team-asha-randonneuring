@@ -95,4 +95,48 @@ def mint():
         'token': mint_token(rider['id']),
         'token_type': 'Bearer',
         'expires_in': TOKEN_MAX_AGE,
+        # Also echo the identity + profile state, matching the native session shape
+        # ({token, rider_id, profile_complete}) the demo mint below returns.
+        'rider_id': rider['id'],
+        'profile_complete': bool(rider['profile_completed']),
     })
+
+
+@api_auth_bp.route('/api/auth/demo', methods=['POST'])
+def demo_signin():
+    """Cookie-free bearer mint for a demo/reviewer account.
+
+    A native client (or Apple App Review) has no web session cookie, so this issues
+    a normal Bearer token for a fixed rider (``DEMO_RIDER_ID``) WITHOUT a session —
+    the one sign-in path a cookie-less client can use. It is invisible (404) unless
+    ``DEMO_MODE_ENABLED`` is set, so it is not an auth path in normal production;
+    enable it only while an app review is in flight.
+
+    Returns {token, rider_id, profile_complete} — the shared native session shape.
+    Full email/password + email-OTP native sign-in is a documented follow-on (it
+    needs a credential/OTP store migration and an email sender BrevetHub does not
+    have yet); until then, demo is the cookie-free path and the web-gated
+    /api/auth/token mint covers a logged-in browser."""
+    if not current_app.config.get('DEMO_MODE_ENABLED'):
+        # 404 (not 403) so the endpoint does not advertise its existence.
+        return jsonify({'error': 'Not found'}), 404
+
+    raw_rider_id = current_app.config.get('DEMO_RIDER_ID')
+    try:
+        rider_id = int(raw_rider_id)
+    except (TypeError, ValueError):
+        current_app.logger.error(
+            'demo sign-in: DEMO_RIDER_ID is unset/invalid (%r)', raw_rider_id)
+        return jsonify({'error': 'Demo login is not configured'}), 503
+
+    rider = models.get_rider_by_id(rider_id)
+    if not rider:
+        current_app.logger.error('demo sign-in: rider %s not found', rider_id)
+        return jsonify({'error': 'Demo login is not configured'}), 503
+
+    g.rider_id = rider_id
+    return jsonify({
+        'token': mint_token(rider_id),
+        'rider_id': rider_id,
+        'profile_complete': bool(rider['profile_completed']),
+    }), 200

@@ -96,6 +96,16 @@ class Config:
     # unavailable" state and never 500s — it does not block the build.
     MAPBOX_ACCESS_TOKEN = os.environ.get('MAPBOX_ACCESS_TOKEN')
 
+    # Mobile demo/reviewer sign-in. A native client (or App Review) has no web
+    # session cookie, so /api/auth/demo mints a Bearer token for a fixed rider —
+    # but ONLY when DEMO_MODE_ENABLED is truthy (else the endpoint 404s and is not
+    # an auth path in normal production). DEMO_RIDER_ID is the rider that token
+    # authenticates as. Enable both only while an app review is in flight. Mirrors
+    # Team Asha's demo login (BrevetHub carries no separate user table, so the
+    # token is minted straight for the rider).
+    DEMO_MODE_ENABLED = os.environ.get('DEMO_MODE_ENABLED', '').lower() in ('1', 'true', 'yes')
+    DEMO_RIDER_ID = os.environ.get('DEMO_RIDER_ID')
+
     # Session security — HTTPS-only cookies in production, 30-day persistent login.
     SESSION_COOKIE_SECURE = _IS_PRODUCTION
     SESSION_COOKIE_HTTPONLY = True
