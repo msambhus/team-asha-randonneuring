@@ -333,21 +333,32 @@ def clear_ride_garmin_rp(rider_id, ride_id):
 
 
 def set_active_ride_rp(rider_id, ride_id):
-    """Point the SUBJECT rider live-tracking row at ``ride_id`` without disturbing a
-    registered Garmin session.
+    """Point the SUBJECT rider live-tracking row at ``ride_id``; when this MOVES the
+    active ride, clear any registered Garmin session so it cannot be mis-polled.
 
     Self-scoped (keyed on rider_id). The phone beacon calls this to attach the rider
-    to the ride they are streaming to: it sets active_ride_id and leaves the master
-    opt-in flag plus any Garmin session URL/token exactly as they were, so a rider
-    who linked a Garmin device keeps that link while a browser beacon retargets the
-    active ride. A fresh row (no prior prefs) is created with tracking disabled —
-    consent is set separately by the sharing toggle. Returns True on success."""
+    to the ride they are streaming to. A Garmin session is registered against the
+    then-active ride; the poll cron tags every fetched Garmin point with the current
+    active_ride_id. So if a rider linked Garmin for ride A and then beacons ride B,
+    keeping the session would let the cron poll the ride A session and attribute its
+    points to ride B (cross-ride contamination). Therefore, when the active ride
+    actually changes, the session URL/token are nulled; when the active ride is
+    unchanged the Garmin link is preserved. A fresh row is created with tracking
+    disabled — consent is set separately by the sharing toggle. Returns True on
+    success."""
     try:
         db.execute(
             "INSERT INTO rp_live_tracking (rider_id, active_ride_id, updated_at) "
             "VALUES (%s, %s, NOW()) "
             "ON CONFLICT (rider_id) DO UPDATE "
-            "SET active_ride_id = EXCLUDED.active_ride_id, updated_at = NOW()",
+            "SET active_ride_id = EXCLUDED.active_ride_id, "
+            "    garmin_session_url = CASE "
+            "        WHEN COALESCE(rp_live_tracking.active_ride_id, -1) <> EXCLUDED.active_ride_id "
+            "        THEN NULL ELSE rp_live_tracking.garmin_session_url END, "
+            "    garmin_session_token = CASE "
+            "        WHEN COALESCE(rp_live_tracking.active_ride_id, -1) <> EXCLUDED.active_ride_id "
+            "        THEN NULL ELSE rp_live_tracking.garmin_session_token END, "
+            "    updated_at = NOW()",
             (rider_id, ride_id),
         )
         return True
