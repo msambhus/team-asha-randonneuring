@@ -110,6 +110,18 @@ def test_sharing_toggle_off_revokes_consent(client):
     up.assert_called_once_with(7, False)
 
 
+def test_sharing_toggle_failed_write_surfaces_500(client):
+    """A failed consent write must NOT read as success (200) — the beacon page only
+    checks r.ok before starting geolocation, so a silent 200 would start a watch
+    whose fixes are all rejected (tracking was never enabled)."""
+    _login(client)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.upsert_rider_live_tracking_rp', return_value=False):
+        resp = client.post('/api/live/sharing', json={'enabled': True})
+    assert resp.status_code == 500
+    assert resp.get_json()['ok'] is False
+
+
 # --------------------------------------------------------------------------- #
 # Beacon insert — auth + consent + self-scope
 # --------------------------------------------------------------------------- #

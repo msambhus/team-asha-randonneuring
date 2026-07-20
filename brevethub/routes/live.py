@@ -409,7 +409,16 @@ def live_sharing_toggle():
         return jsonify({'error': 'Complete your profile to share your location'}), 403
     enabled = bool((request.get_json(silent=True) or {}).get('enabled'))
     ok = models.upsert_rider_live_tracking_rp(rider['id'], enabled)
-    return jsonify({'ok': ok, 'enabled': enabled})
+    if not ok:
+        # A failed opt-in write must NOT read as success — the beacon page checks
+        # r.ok before starting geolocation, so a silent 200 here would start a watch
+        # whose fixes are then all rejected (tracking was never enabled).
+        current_app.logger.warning(
+            'live: sharing toggle write failed for rider %s (enabled=%s)',
+            rider['id'], enabled)
+        return jsonify({'ok': False, 'enabled': enabled,
+                        'error': 'Could not save your sharing setting. Please try again.'}), 500
+    return jsonify({'ok': True, 'enabled': enabled})
 
 
 def _resolve_beacon_ride(rider_id, payload, tracking):
@@ -957,9 +966,30 @@ def _selected_plan_stops(requested_plan_id, ctx, allowed_custom_ids):
 
 @live_bp.route('/live/<int:ride_id>/live-positions.json')
 def live_member_positions(ride_id):
-    """JSON: latest NAMED position + telemetry per opted-in rider attached to a ride.
+    """Web Surface-B poll: latest NAMED position + telemetry per opted-in rider on a
+    ride (path form; ride_id in the URL). Delegates to the shared builder below."""
+    return _member_positions_response(ride_id)
 
-    Auth ladder (JSON API — no redirects): no session rider → 401; a session rider
+
+@live_bp.route('/api/live/positions')
+def live_positions_api():
+    """Mobile Bearer live poll: the SAME member positions payload as the web
+    Surface-B endpoint, addressed as ``/api/live/positions?ride_id=<id>&plan_id=``
+    to match the BrevetHub mobile client contract (useLivePositions). Bearer OR
+    session auth, the identical accessibility gate + no-PII rules. A missing
+    ride_id is a 400 (no ride to resolve)."""
+    ride_id = request.args.get('ride_id', type=int)
+    if not ride_id:
+        return jsonify({'error': 'ride_id is required'}), 400
+    return _member_positions_response(ride_id)
+
+
+def _member_positions_response(ride_id):
+    """Build the member live-positions JSON for ``ride_id``. Shared by the web
+    (/live/<id>/live-positions.json) and mobile (/api/live/positions?ride_id=)
+    routes so the two can never drift.
+
+    Auth ladder (JSON API — no redirects): no session/Bearer rider → 401; a rider
     whose profile is INCOMPLETE → 403 (OAuth sets rider_id before signup finishes,
     so this endpoint must enforce the SAME profile-completeness bar as the
     @profile_required member page — otherwise a half-signed-up account could read

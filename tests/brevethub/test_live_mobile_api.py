@@ -131,6 +131,64 @@ def test_member_positions_bearer_incomplete_profile_403(app, client):
 
 
 # --------------------------------------------------------------------------- #
+# Mobile live-positions endpoint — /api/live/positions?ride_id= (the mobile
+# client contract: useLivePositions polls this path, not the web .json path)
+# --------------------------------------------------------------------------- #
+def test_api_live_positions_valid_bearer_200(app, client):
+    tok = _token(app)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_ride', return_value=_PUBLIC_RIDE), \
+         patch('brevethub.models.get_live_positions_rp', return_value=[]), \
+         patch('brevethub.routes.live._resolve_ride_plan', return_value=None):
+        resp = client.get('/api/live/positions?ride_id=1', headers=_bearer(tok))
+    assert resp.status_code == 200
+    data = resp.get_json()
+    # Same payload shape the mobile useLivePositions hook selects.
+    assert 'positions' in data and 'plans' in data and 'selected_plan_id' in data
+
+
+def test_api_live_positions_missing_ride_id_400(app, client):
+    tok = _token(app)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER):
+        resp = client.get('/api/live/positions', headers=_bearer(tok))
+    assert resp.status_code == 400
+
+
+def test_api_live_positions_garbage_bearer_401(client):
+    resp = client.get('/api/live/positions?ride_id=1',
+                      headers={'Authorization': 'Bearer nope'})
+    assert resp.status_code == 401
+
+
+def test_api_live_positions_no_auth_401(client):
+    resp = client.get('/api/live/positions?ride_id=1')
+    assert resp.status_code == 401
+
+
+def test_api_live_positions_inaccessible_ride_404(app, client):
+    tok = _token(app)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_ride', return_value=_PRIVATE_OTHER), \
+         patch('brevethub.models.get_live_positions_rp') as get_pos:
+        resp = client.get('/api/live/positions?ride_id=1', headers=_bearer(tok))
+    assert resp.status_code == 404
+    get_pos.assert_not_called()
+
+
+def test_api_live_positions_honors_plan_id(app, client):
+    """An out-of-set plan_id on the mobile path falls back to base (same IDOR guard
+    as the web path)."""
+    tok = _token(app)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_ride', return_value=_PUBLIC_RIDE), \
+         patch('brevethub.models.get_live_positions_rp', return_value=[]), \
+         patch('brevethub.routes.live._resolve_ride_plan', return_value=None):
+        resp = client.get('/api/live/positions?ride_id=1&plan_id=999999',
+                          headers=_bearer(tok))
+    assert resp.get_json()['selected_plan_id'] == 'base'
+
+
+# --------------------------------------------------------------------------- #
 # Beacon accepts Bearer too
 # --------------------------------------------------------------------------- #
 def test_beacon_accepts_bearer(app, client):
