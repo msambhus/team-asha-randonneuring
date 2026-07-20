@@ -564,6 +564,23 @@ def update_rider_rusa_cache(rider_id, brevets):
 # returned; the cached RUSA history rides along, letting career numbers reuse the
 # same engine the self-profile page uses instead of a second computation.
 # --------------------------------------------------------------------------- #
+def get_club_riders_with_rusa(club_id):
+    """Completed-profile riders in one club, each with the cached RUSA history.
+
+    Club-scoped by the club_id bind, so a caller can only ever see members of the
+    club it passes. Rows are ordered by email for a deterministic list; the caller
+    derives the public display name and career numbers and drops the raw email
+    before rendering, so no full address or google id reaches another rider.
+    """
+    return db.query(
+        "SELECT id, email, rusa_id, rusa_cache "
+        "FROM rp_rider "
+        "WHERE club_id = %s AND profile_completed = TRUE "
+        "ORDER BY email ASC",
+        (club_id,),
+    )
+
+
 def get_club_rider_by_rusa(club_id, rusa_id):
     """One club-scoped rider by RUSA id, with the cached RUSA history.
 

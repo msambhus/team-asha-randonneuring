@@ -19,7 +19,7 @@ never a full email address or ``google_id``.
 """
 from datetime import date
 
-from flask import Blueprint, abort, render_template
+from flask import Blueprint, abort, render_template, request
 
 from brevethub import models
 from brevethub.decorators import current_rider, login_required
@@ -52,6 +52,29 @@ def _career_row(rider_row, today):
         'sr_count': len(career['sr_seasons']),
         'career': career,
     }
+
+
+@riders_bp.route('/riders')
+@login_required
+def directory():
+    """Searchable directory of the viewer's club riders. A club-less viewer gets a
+    graceful join-a-club state (never another club's riders)."""
+    viewer = current_rider()
+    club = models.get_club(viewer['club_id']) if viewer.get('club_id') else None
+    q = (request.args.get('q') or '').strip()
+
+    riders = []
+    if viewer.get('club_id'):
+        today = date.today()
+        rows = models.get_club_riders_with_rusa(viewer['club_id'])
+        riders = [_career_row(r, today) for r in rows]
+        if q:
+            needle = q.lower()
+            riders = [r for r in riders if needle in r['display_name'].lower()]
+        riders.sort(key=lambda r: r['display_name'].lower())
+
+    return render_template('riders_directory.html', club=club, riders=riders,
+                           q=q, has_club=bool(viewer.get('club_id')))
 
 
 @riders_bp.route('/riders/<rusa_id>')

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Rider Directory — {{ product_name }}{% endblock %}
+{% block extra_head %}
+<style>
+/* Club rider directory — a searchable card grid. Mirrors the parent web app's
+   roster on the shared design tokens. */
+.rider-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.rider-card { display: flex; align-items: center; gap: 14px; text-decoration: none; }
+.rider-avatar { flex: 0 0 auto; width: 48px; height: 48px; border-radius: 9999px; display: flex; align-items: center; justify-content: center; background: #2a4a7f; color: #fff; font-weight: 700; font-size: 1.2rem; }
+.rider-meta { min-width: 0; }
+.rider-name { font-weight: 600; color: var(--primary); }
+.rider-sub { font-size: 0.78rem; color: var(--text-light); font-variant-numeric: tabular-nums; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:28px 20px;">
+  <h1>Rider Directory</h1>
+  {% if club %}<p style="opacity:0.9;">{{ club.name }}{% if club.city %} &middot; {{ club.city }}{% if club.state %}, {{ club.state }}{% endif %}{% endif %}</p>{% endif %}
+</div>
+
+<div class="container section">
+{% if not has_club %}
+  <section class="card">
+    <h2 class="text-primary text-[1.3rem] font-bold mb-2">Join a club to see your community</h2>
+    <p class="text-text-light">
+      The rider directory shows the members of your club. You have not joined one
+      yet — pick a club to unlock the directory, leaderboard, and season rosters.
+    </p>
+    <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('signup.signup') }}">Choose a club</a></p>
+  </section>
+{% else %}
+  <section class="card">
+    <form method="get" action="{{ url_for('riders.directory') }}" class="flex flex-wrap gap-2 items-center mb-4">
+      <input type="search" name="q" value="{{ q }}" placeholder="Search riders by name"
+             class="flex-1 min-w-[180px] border border-border rounded-lg px-3 py-2 text-sm" aria-label="Search riders by name">
+      <button type="submit" class="btn btn-primary">Search</button>
+      {% if q %}<a class="text-primary font-semibold hover:text-accent hover:underline text-sm" href="{{ url_for('riders.directory') }}">Clear</a>{% endif %}
+    </form>
+
+    {% if riders %}
+      <p class="text-text-light mb-4">{{ riders | length }} rider{{ '' if riders | length == 1 else 's' }}{% if q %} matching &ldquo;{{ q }}&rdquo;{% endif %}.</p>
+      <div class="rider-grid">
+        {% for r in riders %}
+          {% if r.rusa_id %}
+          <a class="card rider-card" style="margin-bottom:0;" href="{{ url_for('riders.rider_profile', rusa_id=r.rusa_id) }}">
+          {% else %}
+          <div class="card rider-card" style="margin-bottom:0;">
+          {% endif %}
+            <span class="rider-avatar">{{ r.display_name[0]|upper }}</span>
+            <span class="rider-meta">
+              <span class="rider-name block">{{ r.display_name }}</span>
+              <span class="rider-sub">{{ r.total_km }} km &middot; {{ r.count }} brevet{{ '' if r.count == 1 else 's' }}{% if r.sr_count %} &middot; SR&times;{{ r.sr_count }}{% endif %}</span>
+            </span>
+          {% if r.rusa_id %}</a>{% else %}</div>{% endif %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-text-light">
+        {% if q %}No riders match &ldquo;{{ q }}&rdquo;.{% else %}No riders in this club yet.{% endif %}
+      </p>
+    {% endif %}
+  </section>
+{% endif %}
+</div>
+{% endblock %}

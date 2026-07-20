@@ -87,6 +87,7 @@ def _fake_rusa_cache(rider_id, **kwargs):
 def _mocked():
     with patch('brevethub.models.get_rider_by_id', side_effect=_fake_get_rider_by_id), \
          patch('brevethub.models.get_club', side_effect=_fake_get_club), \
+         patch('brevethub.models.get_club_riders_with_rusa', side_effect=_fake_club_riders), \
          patch('brevethub.models.get_club_rider_by_rusa', side_effect=_fake_club_rider_by_rusa), \
          patch('brevethub.models.get_rider_rusa_cache', side_effect=_fake_rusa_cache):
         yield
@@ -101,6 +102,48 @@ def _get(client, rider_id, path):
     _login(client, rider_id)
     with _mocked():
         return client.get(path)
+
+
+# --------------------------------------------------------------------------- #
+# Directory
+# --------------------------------------------------------------------------- #
+def test_directory_lists_own_club_only(client):
+    """A club-A viewer sees alice/bob/carol and never the club-B rider mallory."""
+    resp = _get(client, _BOB['id'], '/riders')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'alice' in body and 'bob' in body and 'carol' in body
+    assert 'mallory' not in body            # cross-club isolation (directory)
+
+
+def test_directory_search_by_display_name(client):
+    """Search narrows the club list to display-name matches."""
+    resp = _get(client, _BOB['id'], '/riders?q=ali')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'alice' in body
+    assert 'carol' not in body and 'bob' not in body.split('Search riders')[-1]
+
+
+def test_directory_never_leaks_email_or_google_id(client):
+    """A directory rendered for bob never contains another rider's full email or
+    google_id — only the local-part display name."""
+    resp = _get(client, _BOB['id'], '/riders')
+    body = resp.get_data(as_text=True)
+    for r in (_ALICE, _CAROL):
+        assert r['email'] not in body          # full 'alice@ex.com' must not appear
+        assert r['google_id'] not in body
+    assert 'alice' in body                      # the display local-part does appear
+
+
+def test_directory_club_less_viewer_gets_join_state(client):
+    """A club-less viewer gets a graceful join-a-club state — no crash, no other
+    club's riders leaked."""
+    resp = _get(client, _DAVE['id'], '/riders')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'Choose a club' in body
+    assert 'alice' not in body and 'mallory' not in body
 
 
 # --------------------------------------------------------------------------- #
