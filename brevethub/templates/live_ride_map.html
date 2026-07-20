@@ -103,6 +103,14 @@
     <span class="text-text-light">— no Garmin needed (keep the page open).</span>
   </p>
 
+  {# ── Plan selector (Feature 3): grade riders against the chosen plan. Populated
+       from the poll's allow-set; hidden until at least one option loads. ── #}
+  <div id="plan-select-wrap" class="mb-3 hidden">
+    <label for="plan-select" class="text-sm font-semibold text-text-light mr-2">Grade against plan:</label>
+    <select id="plan-select"
+            class="border border-border rounded-md px-2 py-1 text-sm bg-card-bg"></select>
+  </div>
+
   {% if mapbox_token %}
   <div id="live-map"></div>
   <div class="live-legend">
@@ -141,6 +149,54 @@
     var statusEl = document.getElementById('live-status');
     var emptyEl = document.getElementById('live-empty');
     var map = null, markers = {}, fitted = false;
+
+    // Plan selector state: the plan the viewer picked to grade riders against. The
+    // server resolves it strictly against its allow-set (a rejected id echoes back
+    // as 'base'), so this is only a display/request hint — never an authority.
+    var planSelectWrap = document.getElementById('plan-select-wrap');
+    var planSelect = document.getElementById('plan-select');
+    var selectedPlanId = null;
+
+    function positionsUrl() {
+      // Append the chosen plan_id so the poll grades against it; the server refuses
+      // any id outside its allow-set and falls back to base.
+      if (selectedPlanId && selectedPlanId !== 'base') {
+        return POSITIONS_URL + (POSITIONS_URL.indexOf('?') === -1 ? '?' : '&') +
+               'plan_id=' + encodeURIComponent(selectedPlanId);
+      }
+      return POSITIONS_URL;
+    }
+
+    function renderPlanSelector(plans, applied) {
+      if (!planSelect) { return; }
+      var opts = plans || [];
+      // Only show the selector when the server offered options for this ride.
+      planSelectWrap.classList.toggle('hidden', opts.length === 0);
+      if (opts.length === 0) { return; }
+      // Rebuild options only when they change, so an open dropdown is not clobbered.
+      var sig = opts.map(function (o) { return o.id + ':' + o.name; }).join('|');
+      if (planSelect.getAttribute('data-sig') !== sig) {
+        planSelect.textContent = '';
+        opts.forEach(function (o) {
+          var el = document.createElement('option');
+          el.value = o.id; el.textContent = o.name;   // textContent — no injection
+          planSelect.appendChild(el);
+        });
+        planSelect.setAttribute('data-sig', sig);
+      }
+      // Reflect the plan the server actually applied (echoes 'base' for a refused id).
+      if (applied !== null && applied !== undefined) {
+        selectedPlanId = String(applied);
+        planSelect.value = selectedPlanId;
+      }
+    }
+
+    if (planSelect) {
+      planSelect.addEventListener('change', function () {
+        selectedPlanId = planSelect.value;
+        poll();   // re-grade immediately against the new plan
+      });
+    }
 
     function initials(name) {
       var parts = (name || '').trim().split(/\s+/).filter(Boolean);
@@ -364,9 +420,10 @@
     }
 
     function poll() {
-      fetch(POSITIONS_URL, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+      fetch(positionsUrl(), { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
         .then(function (r) { if (!r.ok) { throw new Error('status ' + r.status); } return r.json(); })
         .then(function (data) {
+          renderPlanSelector(data.plans, data.selected_plan_id);
           var positions = data.positions || [];
           var seen = {};
           positions.forEach(function (p) { seen[p.rider_id] = true; upsertMarker(p); });

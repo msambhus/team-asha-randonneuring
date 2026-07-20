@@ -670,11 +670,13 @@ def _ride_live_context(ride):
 
     Keys: track [{lat,lng,dist_m,e_m}], cum_ascent_ft[], total_dist_m,
     total_ascent_ft, plan_stops [{distance_miles,cum_time_min,location,stop_type}],
-    plan_total_mi, plan_cutoff_hours, has_route, has_plan.
+    plan_total_mi, plan_cutoff_hours, has_route, has_plan, base_plan_id,
+    base_plan_name. base_plan_id/name seed the plan-selector allow-set + label.
     """
     ctx = {'track': [], 'cum_ascent_ft': [], 'total_dist_m': None,
            'total_ascent_ft': None, 'plan_stops': [], 'plan_total_mi': 0.0,
-           'plan_cutoff_hours': None, 'has_route': False, 'has_plan': False}
+           'plan_cutoff_hours': None, 'has_route': False, 'has_plan': False,
+           'base_plan_id': None, 'base_plan_name': None}
     if not ride:
         return ctx
 
@@ -682,6 +684,8 @@ def _ride_live_context(ride):
     try:
         plan = _resolve_ride_plan(ride)
         if plan:
+            ctx['base_plan_id'] = plan.get('id')
+            ctx['base_plan_name'] = plan.get('name')
             ctx['plan_cutoff_hours'] = (float(plan['cutoff_hours'])
                                         if plan.get('cutoff_hours') else None)
             ctx['plan_total_mi'] = float(plan.get('total_distance_miles') or 0)
@@ -903,6 +907,75 @@ def _plan_dot_color(telemetry):
     return DEFAULT_COLOR
 
 
+# --------------------------------------------------------------------------- #
+# Plan selector (Mission 3, Feature 3) — IDOR-safe allow-set + selected-plan
+# resolution, mirroring the parent app's pattern (services/live.py). A viewer on
+# Surface B may pick which plan riders are graded against; the allow-set is the
+# SOLE source of resolvable plans, so a crafted ?plan_id can never resolve a plan
+# outside it. Today a live ride has exactly one real plan (its rp_brevet_route_plan
+# base plan), so there is a single option; the allow-set machinery is built
+# correctly so custom per-rider plans slot in later without a rewrite.
+# --------------------------------------------------------------------------- #
+PLAN_BASE = 'base'
+
+
+def _available_plans(base_plan_id, base_plan_name=None):
+    """Assemble the plan-selector allow-set AND the dropdown option list.
+
+    Returns (options, allowed_custom_ids):
+      options: [{'id': 'base'|<int>, 'name', 'is_custom'}] — base first. Today the
+               only option is the ride's base plan (custom plans are not built yet).
+      allowed_custom_ids: the set of numeric plan ids a viewer may resolve BEYOND
+               base. Empty today. The resolver refuses any id not in this set, so a
+               crafted ?plan_id can never grade against an out-of-set plan (IDOR).
+
+    Built as an allow-set so custom plans slot in later without a rewrite: a future
+    change appends each visible custom plan id to allowed_custom_ids and a matching
+    option here — the resolver already enforces membership."""
+    options = [{'id': PLAN_BASE,
+                'name': (base_plan_name or 'Base plan'),
+                'is_custom': False}]
+    allowed_custom_ids = set()
+    # (When custom plans exist: extend allowed_custom_ids + options here, gated on
+    # the viewer's visibility of each plan. base_plan_id anchors that lookup.)
+    _ = base_plan_id
+    return options, allowed_custom_ids
+
+
+def _selected_plan_stops(requested_plan_id, ctx, allowed_custom_ids):
+    """Resolve ``requested_plan_id`` STRICTLY against the allow-set. Returns
+    (applied_id, override_stops):
+
+      applied_id: the value actually applied — 'base', or an int id that is in the
+                  allow-set. A rejected, unknown, or malformed id falls back to
+                  'base' (surfaced in the response, logged — never a silent
+                  misgrade).
+      override_stops: the plan stops every rider is graded against; today always the
+                  base plan stops, since no custom plan exists to override with.
+
+    IDOR guard: a numeric id NOT in allowed_custom_ids (a plan the viewer may not
+    resolve) is refused and logged, so no out-of-set plan can leak through the query
+    string."""
+    base_stops = ctx.get('plan_stops') if ctx else None
+    if requested_plan_id in (None, '', PLAN_BASE):
+        return PLAN_BASE, base_stops
+
+    try:
+        pid = int(requested_plan_id)
+    except (TypeError, ValueError):
+        current_app.logger.warning(
+            'live: rejected malformed plan_id %r -> base fallback', requested_plan_id)
+        return PLAN_BASE, base_stops
+
+    if pid not in allowed_custom_ids:
+        current_app.logger.warning(
+            'live: rejected out-of-allowset plan_id %s -> base fallback', pid)
+        return PLAN_BASE, base_stops
+
+    # An allowed custom plan would resolve its own stops here (not built yet).
+    return PLAN_BASE, base_stops
+
+
 @live_bp.route('/live/<int:ride_id>/live-positions.json')
 def live_member_positions(ride_id):
     """JSON: latest NAMED position + telemetry per opted-in rider attached to a ride.
@@ -935,6 +1008,14 @@ def live_member_positions(ride_id):
     # then compute each rider plan-aware numbers from their position history. The
     # whole thing is fail-soft: a bad context degrades every rider to the base block.
     ctx = _ride_live_context(ride)
+
+    # Plan selector (Feature 3): the allow-set is the sole source of resolvable
+    # plans, so a crafted ?plan_id can never grade against an out-of-set plan. The
+    # requested id is resolved strictly against it; a rejected id falls back to base.
+    plan_options, allowed_custom_ids = _available_plans(
+        ctx.get('base_plan_id'), ctx.get('base_plan_name'))
+    applied_plan_id, _override_stops = _selected_plan_stops(
+        request.args.get('plan_id'), ctx, allowed_custom_ids)
 
     positions = []
     for row in rows:
@@ -982,6 +1063,11 @@ def live_member_positions(ride_id):
         'positions': positions,
         'stale_after_minutes': STALE_AFTER_MINUTES,
         'server_time': now.isoformat(),
+        # Plan selector (Feature 3): the options the viewer may pick (base only for a
+        # single-plan ride) and the plan actually APPLIED — 'base' or an int id (a
+        # rejected id echoes as 'base').
+        'plans': plan_options,
+        'selected_plan_id': applied_plan_id,
     })
 
 
