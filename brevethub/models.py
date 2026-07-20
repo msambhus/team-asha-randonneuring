@@ -558,6 +558,48 @@ def update_rider_rusa_cache(rider_id, brevets):
 
 
 # --------------------------------------------------------------------------- #
+# Club roster (rp_rider) — read-only, club-scoped community surfaces (directory,
+# leaderboard, season rosters, public rider profile). Every query here is
+# parameterized by the viewer club_id, so no rider outside that club is ever
+# returned; the cached RUSA history rides along, letting career numbers reuse the
+# same engine the self-profile page uses instead of a second computation.
+# --------------------------------------------------------------------------- #
+def get_club_riders_with_rusa(club_id):
+    """Completed-profile riders in one club, each with the cached RUSA history.
+
+    Club-scoped by the club_id bind, so a caller can only ever see members of the
+    club it passes. Rows are ordered by email for a deterministic list; the caller
+    derives the public display name and career numbers and drops the raw email
+    before rendering, so no full address or google id reaches another rider.
+    """
+    return db.query(
+        "SELECT id, email, rusa_id, rusa_cache "
+        "FROM rp_rider "
+        "WHERE club_id = %s AND profile_completed = TRUE "
+        "ORDER BY email ASC",
+        (club_id,),
+    )
+
+
+def get_club_rider(club_id, rider_id):
+    """One club-scoped rider by primary key, with the cached RUSA history.
+
+    Keyed on the unique rider id, never the RUSA id: BrevetHub allows two riders to
+    claim the same RUSA id (soft-flagged, not rejected), so a RUSA id can be
+    ambiguous within a club. The row is returned only when it belongs to the given
+    club, so a viewer can never resolve a rider outside their own club (the
+    public-profile access gate). Returns None when the club has no such
+    completed-profile rider.
+    """
+    return db.query_one(
+        "SELECT id, email, rusa_id, club_id, created_at, rusa_cache "
+        "FROM rp_rider "
+        "WHERE club_id = %s AND id = %s AND profile_completed = TRUE",
+        (club_id, rider_id),
+    )
+
+
+# --------------------------------------------------------------------------- #
 # Strava connection (rp_strava_connection) — per-rider OAuth link + cached
 # activity summary.
 #

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}{{ season_name }} Season — {{ product_name }}{% endblock %}
+{% block extra_head %}
+<style>
+/* Per-season club roster — riders who completed at least one brevet in the season,
+   with that season's per-rider summary. Mirrors the parent web app's season roster
+   on the shared design tokens. */
+.rs-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.rs-table thead th { background: #1a365d; color: #fff; text-align: left; padding: 12px 14px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+.rs-table tbody tr { border-top: 1px solid var(--border); }
+.rs-table tbody tr:nth-child(even) { background: #fafbfc; }
+.rs-table td { padding: 10px 14px; font-variant-numeric: tabular-nums; vertical-align: middle; }
+.rs-num { text-align: right; font-weight: 700; }
+.rs-rider { font-weight: 600; color: var(--primary); }
+.rs-rider:hover { color: var(--accent); }
+.rs-sr .sr-leg { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 0.72rem; font-weight: 600; border: 1px solid var(--border); }
+.rs-sr .sr-leg.done { background: #2a4a7f; color: #fff; border-color: #2a4a7f; }
+.rs-sr .sr-leg.todo { color: var(--text-light); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:28px 20px;">
+  <h1>{{ season_name }} Season{% if season_name == current_season %} <span class="badge">current</span>{% endif %}</h1>
+  {% if club %}<p style="opacity:0.9;">{{ club.name }} &middot; riders active this season</p>{% endif %}
+</div>
+
+<div class="container section">
+{% if not has_club %}
+  <section class="card">
+    <h2 class="text-primary text-[1.3rem] font-bold mb-2">Join a club to see the roster</h2>
+    <p class="text-text-light">Season rosters show the members of your club who rode that season. Pick a club to unlock them.</p>
+    <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('signup.signup') }}">Choose a club</a></p>
+  </section>
+{% else %}
+  <section class="card">
+    <p class="text-text-light mb-4">{{ roster | length }} rider{{ '' if roster | length == 1 else 's' }} completed a brevet in {{ season_name }}.</p>
+    {% if roster %}
+    <div class="table-wrap">
+      <table class="rs-table">
+        <thead>
+          <tr>
+            <th>Rider</th>
+            <th style="text-align:right;">Rides</th>
+            <th style="text-align:right;">km</th>
+            <th>Super Randonneur</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in roster %}
+          <tr>
+            <td>
+              <a class="rs-rider" href="{{ url_for('riders.rider_profile', rider_id=r.id) }}">{{ r.display_name }}</a>
+            </td>
+            <td class="rs-num">{{ r.summary.count }}</td>
+            <td class="rs-num">{{ r.summary.total_km }}</td>
+            <td class="rs-sr">
+              {% if r.summary.is_sr %}
+                <span class="badge">SR complete</span>
+              {% else %}
+                {% for leg in [200, 300, 400, 600] %}
+                  <span class="sr-leg {% if r.summary.legs[leg] %}done{% else %}todo{% endif %}">{{ leg }}</span>
+                {% endfor %}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-text-light">No riders in this club completed a brevet in {{ season_name }}.</p>
+    {% endif %}
+  </section>
+{% endif %}
+</div>
+{% endblock %}

@@ -7,11 +7,21 @@ sibling `shared/` package and its own `brevethub` package. The
 `tests/brevethub/test_brevethub_isolation.py` scan enforces that boundary.
 """
 import os
+from datetime import date
 
 from flask import Flask, session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from brevethub.config import Config
+
+
+def _nav_seasons(today=None):
+    """The season names shown in the Riders nav dropdown: the current
+    randonneuring season plus the two prior, newest first. Derived from the Nov 1
+    boundary so the nav needs no per-club season table."""
+    today = today or date.today()
+    start = today.year if today.month >= 11 else today.year - 1
+    return [f'{y}-{y + 1}' for y in range(start, start - 3, -1)]
 
 
 def create_app():
@@ -43,6 +53,9 @@ def create_app():
     from brevethub.routes.analysis import analysis_bp
     from brevethub.routes.cron import cron_bp
     from brevethub.routes.admin import admin_bp
+    # Community surfaces (club directory / leaderboard / season rosters / public
+    # rider profiles), all club-scoped and login-gated.
+    from brevethub.routes.riders import riders_bp
     # BH-native mobile bearer-token mint (login-gated). Server half of a future
     # BrevetHub mobile client; no BH client consumes it yet.
     from brevethub.auth_api import api_auth_bp
@@ -56,6 +69,7 @@ def create_app():
     app.register_blueprint(calendar_bp)
     app.register_blueprint(plan_bp)
     app.register_blueprint(analysis_bp)
+    app.register_blueprint(riders_bp)
     # cron_bp OWNS the '/cron' segment; the route decorator is leaf-only
     # ('/refresh-calendar') so the composed URL is exactly '/cron/refresh-calendar'
     # (matches vercel.json's cron path). Never put '/cron' in the decorator too.
@@ -77,6 +91,8 @@ def create_app():
             'product_name': 'BrevetHub',
             'user_logged_in': bool(session.get('rider_id')),
             'user_email': session.get('email'),
+            # Seasons for the Riders nav dropdown. Clock-derived, club-agnostic.
+            'nav_seasons': _nav_seasons(),
         }
 
     return app

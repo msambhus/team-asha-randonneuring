@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}{{ display_name }} — {{ product_name }}{% endblock %}
+{% block extra_head %}
+<style>
+/* Public rider profile: hero, career stat grid, SR-leg pips, per-season history.
+   Mirrors the parent web app's rider profile on the shared design tokens; no
+   parallel component library, so the page-specific bits are styled inline. */
+.stats-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
+.stats-grid dt { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.stats-grid dd { font-size: 1.4rem; font-weight: 700; color: var(--primary); }
+.profile { display: grid; grid-template-columns: 160px 1fr; gap: 10px 16px; margin: 20px 0; }
+.profile dt { font-weight: 600; color: var(--text-light); }
+.profile dd { margin: 0; }
+.sr-legs, .sr-progress { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.sr-leg { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; border: 1px solid var(--border); }
+.sr-leg.done { background: #2a4a7f; color: #fff; border-color: #2a4a7f; }
+.sr-leg.todo { color: var(--text-light); }
+.season { margin-bottom: 20px; }
+.season-current { border-left: 4px solid #2a4a7f; }
+.season-totals { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+.season-past { margin-bottom: 10px; }
+.season-past > summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+.season-past > summary:hover { color: var(--primary); }
+@media (max-width: 768px) { .profile { grid-template-columns: 1fr; gap: 4px 0; } .profile dt { margin-top: 10px; } }
+</style>
+{% endblock %}
+
+{% macro season_block(s) %}
+  <div class="season-totals">
+    <span>{{ s.summary.total_km }} km &middot; {{ s.summary.count }} ride{{ '' if s.summary.count == 1 else 's' }}</span>
+    <span class="text-text-light">
+      200: {{ s.summary.bands['200'] }} &middot;
+      300: {{ s.summary.bands['300'] }} &middot;
+      400: {{ s.summary.bands['400'] }} &middot;
+      600: {{ s.summary.bands['600'] }} &middot;
+      1000: {{ s.summary.bands['1000'] }}
+    </span>
+    <span class="sr-progress">
+      SR:
+      {% if s.summary.is_sr %}
+        <span class="badge">complete</span>
+      {% else %}
+        {% for leg in [200, 300, 400, 600] %}
+          <span class="sr-leg {% if s.summary.legs[leg] %}done{% else %}todo{% endif %}">{{ leg }}</span>
+        {% endfor %}
+      {% endif %}
+    </span>
+  </div>
+  <div class="table-wrap">
+  <table class="rusa-history">
+    <thead>
+      <tr><th>Date</th><th>Distance</th><th>Event</th><th>Time</th></tr>
+    </thead>
+    <tbody>
+      {% for b in s.brevets %}
+        <tr>
+          <td>{{ b.date }}</td>
+          <td>{{ b.distance_km }} km</td>
+          <td>{{ b.route_name }}</td>
+          <td>{{ b.finish_time }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endmacro %}
+
+{% block content %}
+{# Hero + stat-card row mirror the parent web app's rider profile: a full-width
+   gradient banner with initials, then a row of headline career numbers. No email
+   address or google id is ever rendered — only the display name and RUSA id. #}
+<div class="hero" style="padding:30px 20px;">
+  <div class="w-[90px] h-[90px] md:w-[110px] md:h-[110px] rounded-full flex items-center justify-center"
+       style="background:rgba(255,255,255,0.2);margin:0 auto 15px;font-size:2.6rem;color:white;font-weight:700;">
+    {{ display_name[0]|upper }}
+  </div>
+  <h1>{{ display_name }}{% if is_self %} <span class="badge">you</span>{% endif %}</h1>
+  {% if rusa_id %}<p>RUSA# {{ rusa_id }}</p>{% endif %}
+</div>
+
+<div class="stats-row">
+  <div class="stat-card"><div class="number">{{ career.count }}</div><div class="label">Career Rides</div></div>
+  <div class="stat-card"><div class="number">{{ career.total_km }}</div><div class="label">Career KMs</div></div>
+  {% set sr_count = career.sr_seasons | length %}
+  <div class="stat-card"><div class="number" style="color:var(--accent);">{% if sr_count > 1 %}SR&times;{{ sr_count }}{% elif sr_count == 1 %}SR{% else %}—{% endif %}</div><div class="label">Super Randonneur</div></div>
+  <div class="stat-card"><div class="number">{{ career.r12_streak.months }}</div><div class="label">R-12 Streak (mo)</div></div>
+</div>
+
+<div class="container section">
+<section class="card" id="career">
+  <h2 class="text-primary text-[1.3rem] font-bold mb-4">Career summary</h2>
+  {% if career.count == 0 %}
+    <p class="text-text-light">
+      No completed brevets in this rider's RUSA history yet.
+    </p>
+  {% else %}
+    <dl class="profile stats-grid">
+      <dt>Career distance</dt>
+      <dd>{{ career.total_km }} km ({{ career.count }} brevets)</dd>
+
+      <dt>Super Randonneur ({{ career.current_season }})</dt>
+      <dd>
+        {% if career.current_sr.is_sr %}
+          <span class="badge">SR complete</span>
+        {% else %}
+          <span class="sr-legs">
+            {% for leg in [200, 300, 400, 600] %}
+              <span class="sr-leg {% if career.current_sr.legs[leg] %}done{% else %}todo{% endif %}">{{ leg }}</span>
+            {% endfor %}
+          </span>
+        {% endif %}
+      </dd>
+
+      <dt>SR seasons</dt>
+      <dd>
+        {% if career.sr_seasons %}
+          {{ career.sr_seasons | join(', ') }}
+        {% else %}
+          <span class="text-text-light">none yet</span>
+        {% endif %}
+      </dd>
+
+      <dt>R-12 streak</dt>
+      <dd>
+        {{ career.r12_streak.months }} consecutive month{{ '' if career.r12_streak.months == 1 else 's' }}
+        {% if career.r12_streak.active %}
+          <span class="badge">active</span>
+        {% elif career.r12_streak.months > 0 %}
+          <span class="text-text-light">(lapsed)</span>
+        {% endif %}
+      </dd>
+
+      <dt>R-12 awards</dt>
+      <dd>{{ career.r12_awards | length }}</dd>
+    </dl>
+    <p class="text-text-light">R-12 and Super Randonneur reflect this rider's official RUSA brevet history.</p>
+  {% endif %}
+  <p class="mt-4"><a class="text-primary font-semibold hover:text-accent hover:underline" href="{{ url_for('riders.directory') }}">&larr; Back to the rider directory</a></p>
+</section>
+
+{% for s in seasons %}
+  {% if s.is_current %}
+    <section class="card season season-current" id="season-{{ s.season }}">
+      <h2 class="text-primary text-[1.3rem] font-bold mb-4">{{ s.season }} <span class="badge">current season</span></h2>
+      {{ season_block(s) }}
+    </section>
+  {% endif %}
+{% endfor %}
+
+{% set past = seasons | rejectattr('is_current') | list %}
+{% if past %}
+  <section class="card">
+    <h2 class="text-primary text-[1.3rem] font-bold mb-4">Past seasons</h2>
+    {% for s in past %}
+      <details class="season season-past" id="season-{{ s.season }}">
+        <summary>{{ s.season }} — {{ s.summary.total_km }} km, {{ s.summary.count }} ride{{ '' if s.summary.count == 1 else 's' }}{% if s.summary.is_sr %} &middot; SR{% endif %}</summary>
+        {{ season_block(s) }}
+      </details>
+    {% endfor %}
+  </section>
+{% endif %}
+</div>
+{% endblock %}

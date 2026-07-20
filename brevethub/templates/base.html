@@ -21,6 +21,18 @@
     <a href="{{ url_for('live.live_list') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'live.live_list' %}bg-white/15 text-white{% endif %}">Live</a>
     {% if user_logged_in %}
     <div class="relative inline-block group">
+        <a class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs {% if request.blueprint == 'riders' %}bg-white/15 text-white{% endif %}">Riders</a>
+        <div class="hidden group-hover:block absolute top-full left-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[180px] z-[200] overflow-hidden pt-0">
+            <a href="{{ url_for('riders.directory') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Directory</a>
+            <a href="{{ url_for('riders.leaderboard') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Career Leaderboard</a>
+            {% for season in nav_seasons %}
+            <a href="{{ url_for('riders.season_roster', season_name=season) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">{{ season }} Season</a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% if user_logged_in %}
+    <div class="relative inline-block group">
         <a class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs">{{ user_email }}</a>
         <div class="hidden group-hover:block absolute top-full right-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[180px] z-[200] overflow-hidden pt-0">
             <a href="{{ url_for('main.dashboard') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Dashboard</a>
