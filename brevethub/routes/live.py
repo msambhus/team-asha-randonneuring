@@ -424,7 +424,10 @@ def _resolve_beacon_ride(rider_id, payload, tracking):
          ride is refused (403). A malformed id is a 400.
       2. the rider's current active ride (a prior beacon/Garmin attach), re-gated
          defensively.
-      3. none accessible → 400 (open a ride live map to share for that ride).
+      3. cold-start auto-attach — deterministically pick the rider's nearest
+         accessible attached ride (owned, or a public ride they already stream to),
+         re-gated before persisting.
+      4. none accessible → 400 (open a ride live map to share for that ride).
     A newly picked ride is persisted to active_ride_id so the member poll surfaces
     the rider on it (without clobbering a Garmin link)."""
     explicit = payload.get('ride_id')
@@ -444,6 +447,14 @@ def _resolve_beacon_ride(rider_id, payload, tracking):
     active = (tracking or {}).get('active_ride_id')
     if active and _accessible_ride(active, rider_id):
         return active, None
+
+    # Cold start: no explicit and no (still-accessible) active ride. Deterministically
+    # attach to the rider's nearest accessible ride, re-gated before the write so an
+    # inaccessible ride can never slip through even if the resolver widened.
+    picked = models.get_auto_attach_ride_rp(rider_id)
+    if picked and _accessible_ride(picked['id'], rider_id):
+        models.set_active_ride_rp(rider_id, picked['id'])
+        return picked['id'], None
 
     return None, (jsonify(
         {'error': 'Open a ride live map to share for that ride'}), 400)
