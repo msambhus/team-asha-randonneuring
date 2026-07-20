@@ -558,6 +558,28 @@ def update_rider_rusa_cache(rider_id, brevets):
 
 
 # --------------------------------------------------------------------------- #
+# Club roster (rp_rider) — read-only, club-scoped community surfaces (directory,
+# leaderboard, season rosters, public rider profile). Every query here is
+# parameterized by the viewer club_id, so no rider outside that club is ever
+# returned; the cached RUSA history rides along, letting career numbers reuse the
+# same engine the self-profile page uses instead of a second computation.
+# --------------------------------------------------------------------------- #
+def get_club_rider_by_rusa(club_id, rusa_id):
+    """One club-scoped rider by RUSA id, with the cached RUSA history.
+
+    Returns the row only when it belongs to the given club, so a viewer can never
+    resolve a rider outside their own club (the public-profile access gate).
+    Returns None when the club has no such completed-profile rider.
+    """
+    return db.query_one(
+        "SELECT id, email, rusa_id, club_id, created_at, rusa_cache "
+        "FROM rp_rider "
+        "WHERE club_id = %s AND rusa_id = %s AND profile_completed = TRUE",
+        (club_id, rusa_id),
+    )
+
+
+# --------------------------------------------------------------------------- #
 # Strava connection (rp_strava_connection) — per-rider OAuth link + cached
 # activity summary.
 #

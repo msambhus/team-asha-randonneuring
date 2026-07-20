@@ -43,6 +43,9 @@ def create_app():
     from brevethub.routes.analysis import analysis_bp
     from brevethub.routes.cron import cron_bp
     from brevethub.routes.admin import admin_bp
+    # Community surfaces (club directory / leaderboard / season rosters / public
+    # rider profiles), all club-scoped and login-gated.
+    from brevethub.routes.riders import riders_bp
     # BH-native mobile bearer-token mint (login-gated). Server half of a future
     # BrevetHub mobile client; no BH client consumes it yet.
     from brevethub.auth_api import api_auth_bp
@@ -56,6 +59,7 @@ def create_app():
     app.register_blueprint(calendar_bp)
     app.register_blueprint(plan_bp)
     app.register_blueprint(analysis_bp)
+    app.register_blueprint(riders_bp)
     # cron_bp OWNS the '/cron' segment; the route decorator is leaf-only
     # ('/refresh-calendar') so the composed URL is exactly '/cron/refresh-calendar'
     # (matches vercel.json's cron path). Never put '/cron' in the decorator too.
