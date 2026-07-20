@@ -56,7 +56,8 @@ from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
                    render_template, request, session, url_for)
 
 from brevethub import models
-from brevethub.decorators import current_rider, profile_required
+from brevethub.auth_api import bearer_or_session_rider
+from brevethub.decorators import profile_required
 from brevethub.shared import live_telemetry as tlm
 from brevethub.shared.garmin_livetrack import parse_session
 from brevethub.shared.plan_match import match_plan
@@ -351,6 +352,191 @@ def post_position(ride_id):
 
 
 # --------------------------------------------------------------------------- #
+# Browser beacon (Mission 3, Feature 1) — a rider streams their OWN phone location
+# to a ride's member map. Two gates, both mandatory before any point is stored:
+#   - CONSENT: a persistent, revocable opt-in (rp_live_tracking.enabled). Without
+#     it the rider is never inserted and never appears in the member poll/map.
+#   - SELF-SCOPE: the rider is ALWAYS the trusted session identity; a client-
+#     supplied rider id is ignored, so a rider can only ever stream their own phone.
+# The beacon page mirrors the parent phone-share UI on the shared design system.
+# --------------------------------------------------------------------------- #
+@live_bp.route('/live/share')
+@profile_required
+def live_share():
+    """Phone beacon page: stream this device location to a ride's member map.
+
+    Opened standalone (the rider picks up their active ride) or from a ride's
+    member map with ``?ride_id=`` so the beacon streams to THAT ride — the
+    multi-rider public-ride join. @profile_required (a completed-profile rider);
+    the map appearance itself is still gated on the consent toggle below."""
+    rider_id = session['rider_id']
+    ride_id = request.args.get('ride_id', type=int)
+    tracking = models.get_live_tracking_rp(rider_id)
+    opted_in = bool(tracking and tracking.get('enabled'))
+    return render_template('live_beacon.html', opted_in=opted_in, ride_id=ride_id,
+                           poll_seconds=LIVE_POLL_SECONDS)
+
+
+@live_bp.route('/api/live/sharing', methods=['GET'])
+def live_sharing_status():
+    """Read the current rider's location-sharing consent flag (JSON).
+
+    Lets the beacon UI reflect the real server-side opt-in on open. 401 for an
+    anonymous caller, 403 for a signed-in rider whose profile is incomplete (the
+    same bar the member surface enforces)."""
+    rider = bearer_or_session_rider()
+    if not rider:
+        return jsonify({'error': 'Authentication required'}), 401
+    if not rider['profile_completed']:
+        return jsonify({'error': 'Complete your profile to share your location'}), 403
+    tracking = models.get_live_tracking_rp(rider['id'])
+    return jsonify({'enabled': bool(tracking and tracking.get('enabled'))})
+
+
+@live_bp.route('/api/live/sharing', methods=['POST'])
+def live_sharing_toggle():
+    """Set the current rider's location-sharing consent on/off (JSON).
+
+    Tapping "Start sharing" (with the on-page privacy note) is the consent act;
+    tapping stop, or POSTing enabled=false, revokes it and drops the rider off the
+    member map on the next poll. Preserves any registered Garmin session
+    (upsert_rider_live_tracking_rp touches only the enabled flag). Self-scoped to
+    the session rider. 401 anon / 403 incomplete profile."""
+    rider = bearer_or_session_rider()
+    if not rider:
+        return jsonify({'error': 'Authentication required'}), 401
+    if not rider['profile_completed']:
+        return jsonify({'error': 'Complete your profile to share your location'}), 403
+    enabled = bool((request.get_json(silent=True) or {}).get('enabled'))
+    ok = models.upsert_rider_live_tracking_rp(rider['id'], enabled)
+    if not ok:
+        # A failed opt-in write must NOT read as success — the beacon page checks
+        # r.ok before starting geolocation, so a silent 200 here would start a watch
+        # whose fixes are then all rejected (tracking was never enabled).
+        current_app.logger.warning(
+            'live: sharing toggle write failed for rider %s (enabled=%s)',
+            rider['id'], enabled)
+        return jsonify({'ok': False, 'enabled': enabled,
+                        'error': 'Could not save your sharing setting. Please try again.'}), 500
+    return jsonify({'ok': True, 'enabled': enabled})
+
+
+def _resolve_beacon_ride(rider_id, payload, tracking):
+    """Resolve (and persist) the ride a beacon fix attaches to, self-scoped and
+    accessibility-gated. Returns ``(ride_id, None)`` on success or
+    ``(None, (response, status))`` to reject.
+
+    Ladder — every resolved ride is re-checked through ``_accessible_ride`` (public
+    OR owned) before any write, so a rider can never beacon to a ride they cannot
+    access:
+      1. explicit ``ride_id`` in the body — the primary multi-rider join (a public
+         ride the rider opened the beacon from); an inaccessible/private non-owned
+         ride is refused (403). A malformed id is a 400.
+      2. the rider's current active ride (a prior beacon/Garmin attach), re-gated
+         defensively.
+      3. cold-start auto-attach — deterministically pick the rider's nearest
+         accessible attached ride (owned, or a public ride they already stream to),
+         re-gated before persisting.
+      4. none accessible → 400 (open a ride live map to share for that ride).
+    A newly picked ride is persisted to active_ride_id so the member poll surfaces
+    the rider on it (without clobbering a Garmin link). If that attach write fails,
+    the fix is NOT stored (500) — a 200 whose point never appears on the map would
+    be a silent lie, because the member poll requires active_ride_id == ride_id."""
+    explicit = payload.get('ride_id')
+    if explicit is not None and str(explicit).strip() != '':
+        try:
+            rid = int(explicit)
+        except (TypeError, ValueError):
+            return None, (jsonify({'error': 'ride_id must be a ride id'}), 400)
+        if not _accessible_ride(rid, rider_id):
+            current_app.logger.warning(
+                'live: rider %s beacon to inaccessible ride %s refused', rider_id, rid)
+            return None, (jsonify({'error': 'You cannot share to that ride'}), 403)
+        if (tracking or {}).get('active_ride_id') != rid:
+            attach_error = _persist_attach(rider_id, rid)
+            if attach_error:
+                return None, attach_error
+        return rid, None
+
+    active = (tracking or {}).get('active_ride_id')
+    if active and _accessible_ride(active, rider_id):
+        return active, None
+
+    # Cold start: no explicit and no (still-accessible) active ride. Deterministically
+    # attach to the rider's nearest accessible ride, re-gated before the write so an
+    # inaccessible ride can never slip through even if the resolver widened.
+    picked = models.get_auto_attach_ride_rp(rider_id)
+    if picked and _accessible_ride(picked['id'], rider_id):
+        attach_error = _persist_attach(rider_id, picked['id'])
+        if attach_error:
+            return None, attach_error
+        return picked['id'], None
+
+    return None, (jsonify(
+        {'error': 'Open a ride live map to share for that ride'}), 400)
+
+
+def _persist_attach(rider_id, ride_id):
+    """Point the rider's active ride at ``ride_id``. Returns None on success or an
+    error ``(response, 500)`` tuple when the write fails — the caller must NOT store
+    the fix in that case, since the member poll only surfaces a rider whose
+    active_ride_id matches the point's ride."""
+    if models.set_active_ride_rp(rider_id, ride_id):
+        return None
+    current_app.logger.warning(
+        'live: could not attach rider %s to ride %s for beacon', rider_id, ride_id)
+    return (jsonify(
+        {'error': 'Could not start sharing for that ride. Please try again.'}), 500)
+
+
+@live_bp.route('/api/live/beacon', methods=['POST'])
+def live_beacon():
+    """Ingest one geolocation fix for the SESSION rider (source='beacon').
+
+    Auth ladder (JSON API, no redirects): no session rider → 401; a signed-in
+    rider with an incomplete profile → 403; no location-sharing consent → 403;
+    lat/lng missing or out of range → 400. The rider is ALWAYS the trusted session
+    identity — a client-supplied rider id is ignored — so a rider can only stream
+    their own phone. The ride the fix attaches to is resolved + accessibility-gated
+    by ``_resolve_beacon_ride`` (an inaccessible ride → 403, no accessible ride →
+    400). Only after every gate passes is the point stored via
+    insert_live_position_rp with source='beacon'."""
+    rider = bearer_or_session_rider()
+    if not rider:
+        return jsonify({'error': 'Authentication required'}), 401
+    if not rider['profile_completed']:
+        return jsonify({'error': 'Complete your profile to share your location'}), 403
+    rider_id = rider['id']
+
+    tracking = models.get_live_tracking_rp(rider_id)
+    if not (tracking and tracking.get('enabled')):
+        return jsonify({'error': 'Turn on location sharing first'}), 403
+
+    payload = request.get_json(silent=True) or {}
+    lat = _valid_coord(payload.get('lat'), -90.0, 90.0)
+    lng = _valid_coord(payload.get('lng'), -180.0, 180.0)
+    if lat is None or lng is None:
+        return jsonify(
+            {'error': 'lat and lng are required and must be valid coordinates'}), 400
+
+    ride_id, error = _resolve_beacon_ride(rider_id, payload, tracking)
+    if ride_id is None:
+        return error
+
+    now = datetime.now(timezone.utc)
+    ok = models.insert_live_position_rp(
+        rider_id=rider_id,          # session only — a client value is never trusted
+        lat=lat, lng=lng,
+        accuracy=payload.get('accuracy'), speed=payload.get('speed'),
+        recorded_at=now, source='beacon', ride_id=ride_id,
+    )
+    if not ok:
+        return jsonify({'error': 'Invalid coordinates'}), 400
+    return jsonify({'ok': True, 'ride_id': ride_id,
+                    'recorded_at': now.isoformat()}), 200
+
+
+# --------------------------------------------------------------------------- #
 # Member live map (Surface B) — the multi-rider Mapbox map. PHYSICALLY SPLIT from
 # the anonymous guest surface (live_map / positions.json): those stay nameless and
 # world-viewable; everything named/telemetry lives here behind @profile_required +
@@ -485,11 +671,13 @@ def _ride_live_context(ride):
 
     Keys: track [{lat,lng,dist_m,e_m}], cum_ascent_ft[], total_dist_m,
     total_ascent_ft, plan_stops [{distance_miles,cum_time_min,location,stop_type}],
-    plan_total_mi, plan_cutoff_hours, has_route, has_plan.
+    plan_total_mi, plan_cutoff_hours, has_route, has_plan, base_plan_id,
+    base_plan_name. base_plan_id/name seed the plan-selector allow-set + label.
     """
     ctx = {'track': [], 'cum_ascent_ft': [], 'total_dist_m': None,
            'total_ascent_ft': None, 'plan_stops': [], 'plan_total_mi': 0.0,
-           'plan_cutoff_hours': None, 'has_route': False, 'has_plan': False}
+           'plan_cutoff_hours': None, 'has_route': False, 'has_plan': False,
+           'base_plan_id': None, 'base_plan_name': None}
     if not ride:
         return ctx
 
@@ -497,6 +685,8 @@ def _ride_live_context(ride):
     try:
         plan = _resolve_ride_plan(ride)
         if plan:
+            ctx['base_plan_id'] = plan.get('id')
+            ctx['base_plan_name'] = plan.get('name')
             ctx['plan_cutoff_hours'] = (float(plan['cutoff_hours'])
                                         if plan.get('cutoff_hours') else None)
             ctx['plan_total_mi'] = float(plan.get('total_distance_miles') or 0)
@@ -718,11 +908,101 @@ def _plan_dot_color(telemetry):
     return DEFAULT_COLOR
 
 
+# --------------------------------------------------------------------------- #
+# Plan selector (Mission 3, Feature 3) — IDOR-safe allow-set + selected-plan
+# resolution, mirroring the parent app's pattern (services/live.py). A viewer on
+# Surface B may pick which plan riders are graded against; the allow-set is the
+# SOLE source of resolvable plans, so a crafted ?plan_id can never resolve a plan
+# outside it. Today a live ride has exactly one real plan (its rp_brevet_route_plan
+# base plan), so there is a single option; the allow-set machinery is built
+# correctly so custom per-rider plans slot in later without a rewrite.
+# --------------------------------------------------------------------------- #
+PLAN_BASE = 'base'
+
+
+def _available_plans(base_plan_id, base_plan_name=None):
+    """Assemble the plan-selector allow-set AND the dropdown option list.
+
+    Returns (options, allowed_custom_ids):
+      options: [{'id': 'base'|<int>, 'name', 'is_custom'}] — base first. Today the
+               only option is the ride's base plan (custom plans are not built yet).
+      allowed_custom_ids: the set of numeric plan ids a viewer may resolve BEYOND
+               base. Empty today. The resolver refuses any id not in this set, so a
+               crafted ?plan_id can never grade against an out-of-set plan (IDOR).
+
+    Built as an allow-set so custom plans slot in later without a rewrite: a future
+    change appends each visible custom plan id to allowed_custom_ids and a matching
+    option here — the resolver already enforces membership."""
+    options = [{'id': PLAN_BASE,
+                'name': (base_plan_name or 'Base plan'),
+                'is_custom': False}]
+    allowed_custom_ids = set()
+    # (When custom plans exist: extend allowed_custom_ids + options here, gated on
+    # the viewer's visibility of each plan. base_plan_id anchors that lookup.)
+    _ = base_plan_id
+    return options, allowed_custom_ids
+
+
+def _selected_plan_stops(requested_plan_id, ctx, allowed_custom_ids):
+    """Resolve ``requested_plan_id`` STRICTLY against the allow-set. Returns
+    (applied_id, override_stops):
+
+      applied_id: the value actually applied — 'base', or an int id that is in the
+                  allow-set. A rejected, unknown, or malformed id falls back to
+                  'base' (surfaced in the response, logged — never a silent
+                  misgrade).
+      override_stops: the plan stops every rider is graded against; today always the
+                  base plan stops, since no custom plan exists to override with.
+
+    IDOR guard: a numeric id NOT in allowed_custom_ids (a plan the viewer may not
+    resolve) is refused and logged, so no out-of-set plan can leak through the query
+    string."""
+    base_stops = ctx.get('plan_stops') if ctx else None
+    if requested_plan_id in (None, '', PLAN_BASE):
+        return PLAN_BASE, base_stops
+
+    try:
+        pid = int(requested_plan_id)
+    except (TypeError, ValueError):
+        current_app.logger.warning(
+            'live: rejected malformed plan_id %r -> base fallback', requested_plan_id)
+        return PLAN_BASE, base_stops
+
+    if pid not in allowed_custom_ids:
+        current_app.logger.warning(
+            'live: rejected out-of-allowset plan_id %s -> base fallback', pid)
+        return PLAN_BASE, base_stops
+
+    # An allowed custom plan would resolve its own stops here (not built yet).
+    return PLAN_BASE, base_stops
+
+
 @live_bp.route('/live/<int:ride_id>/live-positions.json')
 def live_member_positions(ride_id):
-    """JSON: latest NAMED position + telemetry per opted-in rider attached to a ride.
+    """Web Surface-B poll: latest NAMED position + telemetry per opted-in rider on a
+    ride (path form; ride_id in the URL). Delegates to the shared builder below."""
+    return _member_positions_response(ride_id)
 
-    Auth ladder (JSON API — no redirects): no session rider → 401; a session rider
+
+@live_bp.route('/api/live/positions')
+def live_positions_api():
+    """Mobile Bearer live poll: the SAME member positions payload as the web
+    Surface-B endpoint, addressed as ``/api/live/positions?ride_id=<id>&plan_id=``
+    to match the BrevetHub mobile client contract (useLivePositions). Bearer OR
+    session auth, the identical accessibility gate + no-PII rules. A missing
+    ride_id is a 400 (no ride to resolve)."""
+    ride_id = request.args.get('ride_id', type=int)
+    if not ride_id:
+        return jsonify({'error': 'ride_id is required'}), 400
+    return _member_positions_response(ride_id)
+
+
+def _member_positions_response(ride_id):
+    """Build the member live-positions JSON for ``ride_id``. Shared by the web
+    (/live/<id>/live-positions.json) and mobile (/api/live/positions?ride_id=)
+    routes so the two can never drift.
+
+    Auth ladder (JSON API — no redirects): no session/Bearer rider → 401; a rider
     whose profile is INCOMPLETE → 403 (OAuth sets rider_id before signup finishes,
     so this endpoint must enforce the SAME profile-completeness bar as the
     @profile_required member page — otherwise a half-signed-up account could read
@@ -731,7 +1011,7 @@ def live_member_positions(ride_id):
     selects a name. Each entry:
       {rider_id, name, lat, lng, status, color, recorded_at, minutes_ago, stale,
        source, telemetry:{speed, heart_rate, power, cadence}}"""
-    rider = current_rider()
+    rider = bearer_or_session_rider()
     if not rider:
         return jsonify({'error': 'Authentication required'}), 401
     if not rider['profile_completed']:
@@ -750,6 +1030,14 @@ def live_member_positions(ride_id):
     # then compute each rider plan-aware numbers from their position history. The
     # whole thing is fail-soft: a bad context degrades every rider to the base block.
     ctx = _ride_live_context(ride)
+
+    # Plan selector (Feature 3): the allow-set is the sole source of resolvable
+    # plans, so a crafted ?plan_id can never grade against an out-of-set plan. The
+    # requested id is resolved strictly against it; a rejected id falls back to base.
+    plan_options, allowed_custom_ids = _available_plans(
+        ctx.get('base_plan_id'), ctx.get('base_plan_name'))
+    applied_plan_id, _override_stops = _selected_plan_stops(
+        request.args.get('plan_id'), ctx, allowed_custom_ids)
 
     positions = []
     for row in rows:
@@ -797,6 +1085,11 @@ def live_member_positions(ride_id):
         'positions': positions,
         'stale_after_minutes': STALE_AFTER_MINUTES,
         'server_time': now.isoformat(),
+        # Plan selector (Feature 3): the options the viewer may pick (base only for a
+        # single-plan ride) and the plan actually APPLIED — 'base' or an int id (a
+        # rejected id echoes as 'base').
+        'plans': plan_options,
+        'selected_plan_id': applied_plan_id,
     })
 
 

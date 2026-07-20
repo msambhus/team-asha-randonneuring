@@ -117,6 +117,23 @@ def test_clear_ride_garmin_is_self_scoped_to_this_ride():
     assert params == (7, 3)   # only the session rider's own row, only for this ride
 
 
+def test_set_active_ride_clears_stale_garmin_on_ride_change():
+    # Council fix: a beacon retargeting active_ride_id must null a Garmin session
+    # registered for a different ride, or the cron would poll it and mis-tag its
+    # points to the new ride. The clear is conditional on the ride actually moving.
+    with patch('brevethub.db.execute') as ex:
+        ok = models.set_active_ride_rp(rider_id=7, ride_id=3)
+    assert ok is True
+    sql, params = ex.call_args.args[0], ex.call_args.args[1]
+    assert 'INSERT INTO rp_live_tracking' in sql and 'ON CONFLICT (rider_id)' in sql
+    # both Garmin fields are conditionally nulled when the active ride changes
+    assert 'garmin_session_token = CASE' in sql
+    assert 'garmin_session_url = CASE' in sql
+    assert 'COALESCE(rp_live_tracking.active_ride_id, -1) <> EXCLUDED.active_ride_id' in sql
+    assert 'THEN NULL' in sql
+    assert params == (7, 3)
+
+
 def test_get_live_tracking_reads_own_row():
     with patch('brevethub.db.query_one', return_value={'rider_id': 7, 'enabled': True}) as q:
         out = models.get_live_tracking_rp(7)

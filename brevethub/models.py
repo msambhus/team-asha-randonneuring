@@ -332,6 +332,70 @@ def clear_ride_garmin_rp(rider_id, ride_id):
         return False
 
 
+def set_active_ride_rp(rider_id, ride_id):
+    """Point the SUBJECT rider live-tracking row at ``ride_id``; when this MOVES the
+    active ride, clear any registered Garmin session so it cannot be mis-polled.
+
+    Self-scoped (keyed on rider_id). The phone beacon calls this to attach the rider
+    to the ride they are streaming to. A Garmin session is registered against the
+    then-active ride; the poll cron tags every fetched Garmin point with the current
+    active_ride_id. So if a rider linked Garmin for ride A and then beacons ride B,
+    keeping the session would let the cron poll the ride A session and attribute its
+    points to ride B (cross-ride contamination). Therefore, when the active ride
+    actually changes, the session URL/token are nulled; when the active ride is
+    unchanged the Garmin link is preserved. A fresh row is created with tracking
+    disabled — consent is set separately by the sharing toggle. Returns True on
+    success."""
+    try:
+        db.execute(
+            "INSERT INTO rp_live_tracking (rider_id, active_ride_id, updated_at) "
+            "VALUES (%s, %s, NOW()) "
+            "ON CONFLICT (rider_id) DO UPDATE "
+            "SET active_ride_id = EXCLUDED.active_ride_id, "
+            "    garmin_session_url = CASE "
+            "        WHEN COALESCE(rp_live_tracking.active_ride_id, -1) <> EXCLUDED.active_ride_id "
+            "        THEN NULL ELSE rp_live_tracking.garmin_session_url END, "
+            "    garmin_session_token = CASE "
+            "        WHEN COALESCE(rp_live_tracking.active_ride_id, -1) <> EXCLUDED.active_ride_id "
+            "        THEN NULL ELSE rp_live_tracking.garmin_session_token END, "
+            "    updated_at = NOW()",
+            (rider_id, ride_id),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def get_auto_attach_ride_rp(rider_id):
+    """Cold-start auto-attach: deterministically pick the accessible ride a beacon
+    should stream to when neither an explicit nor an active ride is set. Returns a
+    ride row (id, rider_id, is_public, start_at) or None when nothing is eligible.
+
+    The candidate set is the accessible union — rides the rider owns, PLUS public
+    rides the rider already has a stored position on (the concrete signal they
+    attached to another rider public ride). A private ride the rider does not own is
+    never a candidate, so this can never surface an inaccessible ride; the caller
+    still re-gates the pick defensively. Ordering is deterministic: rides the rider
+    is already streaming to first, then the ride whose start is nearest to now, then
+    the highest id. Reads rp_ride and rp_live_position only (live tracking operates
+    on rp_ride, not the calendar tables)."""
+    return db.query_one(
+        "SELECT r.id, r.rider_id, r.is_public, r.start_at "
+        "FROM rp_ride r "
+        "WHERE r.rider_id = %s "
+        "   OR (r.is_public = TRUE "
+        "       AND r.id IN (SELECT ride_id FROM rp_live_position "
+        "                    WHERE rider_id = %s)) "
+        "ORDER BY "
+        "  (r.id IN (SELECT ride_id FROM rp_live_position "
+        "            WHERE rider_id = %s)) DESC, "
+        "  ABS(EXTRACT(EPOCH FROM (COALESCE(r.start_at, NOW()) - NOW()))) ASC, "
+        "  r.id DESC "
+        "LIMIT 1",
+        (rider_id, rider_id, rider_id),
+    )
+
+
 def get_enabled_live_tracking_rp():
     """All riders opted in WITH a Garmin session pointed at a specific ride.
 
