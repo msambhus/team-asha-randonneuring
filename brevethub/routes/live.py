@@ -57,10 +57,32 @@ from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
 
 from brevethub import models
 from brevethub.decorators import current_rider, profile_required
+from brevethub.shared import live_telemetry as tlm
 from brevethub.shared.garmin_livetrack import parse_session
+from brevethub.shared.plan_match import match_plan
 from brevethub.shared.rwgps import extract_rwgps_route_id, fetch_route
 
 live_bp = Blueprint('live', __name__)
+
+# Unit conversions for the plan-aware telemetry readout (mirrors the parent app,
+# which carries brevet plans in native miles / mph / feet).
+M_TO_MI = 1 / 1609.344
+MS_TO_MPH = 2.236936
+
+# Downsample cap for the cached route geometry used by telemetry (distance /
+# ascent / on-route projection). Long brevet routes carry tens of thousands of
+# points; this keeps the per-poll projection cheap.
+_MAX_CONTEXT_TRACK_POINTS = 2000
+
+# Minimum position fixes needed to project a trajectory and derive movement. Below
+# this a rider shows the Mission-1 basics only (no plan-aware grading).
+MIN_HISTORY_FOR_PLAN = 2
+
+# Plan-timing dot colors for the member map (ahead / behind / unknown). Kept
+# distinct from the signup-status color so a ride without a plan never regresses.
+PLAN_AHEAD_COLOR = '#16a34a'
+PLAN_BEHIND_COLOR = '#dc2626'
+PLAN_UNKNOWN_COLOR = '#9ca3af'
 
 # How often the live map re-polls the positions endpoint (seconds). Polling is
 # deliberately simple — no websockets — mirroring Team Asha's poll model.
@@ -417,6 +439,285 @@ def live_ride_map(ride_id):
     )
 
 
+# --------------------------------------------------------------------------- #
+# Plan-aware telemetry (Mission 2). The heavy per-ride context (route geometry +
+# the in-tenant real plan) is built once per poll; the shared telemetry engine
+# (brevethub.shared.live_telemetry) then computes each rider's plan-aware numbers
+# from their position history. Everything is fail-soft: a missing route or plan, a
+# thin history, or an off-route rider degrades to the Mission-1 basics — never a
+# 500. Mirrors the parent app live HUD field shapes; wind / toughness / charts are
+# deferred (see the PR deferred-scope note).
+# --------------------------------------------------------------------------- #
+def _as_utc_dt(dt):
+    """Treat a naive datetime as UTC so it compares with tz-aware DB timestamps."""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+
+def _resolve_ride_plan(ride):
+    """Resolve a live ride to its real plan WITHIN ITS OWN TENANT.
+
+    Mirrors how the parent app resolves a ride to a plan — RWGPS route id first,
+    then a name match — but BOTH paths are club-scoped so a rider is never graded
+    against another club plan (rwgps_route_id is not unique across clubs). Returns a
+    plan row or None when nothing in-tenant matches.
+    """
+    club_id = ride.get('club_id')
+    route_id = extract_rwgps_route_id(ride.get('rwgps_url'))
+    plan = (models.get_brevet_route_plan_by_route_id_rp(route_id, club_id)
+            if route_id else None)
+    if plan:
+        return plan
+    name = ride.get('name')
+    if not name:
+        return None
+    candidates = models.get_brevet_route_plan_candidates_rp(club_id) or []
+    return match_plan(name, candidates)
+
+
+def _ride_live_context(ride):
+    """Per-ride telemetry context: route geometry + the in-tenant real plan.
+
+    Fail-soft — any missing route / plan / fetch error yields a context with
+    has_route / has_plan False, so the member poll still renders the Mission-1
+    basics and never 500s. No weather or wind (deferred to a later mission).
+
+    Keys: track [{lat,lng,dist_m,e_m}], cum_ascent_ft[], total_dist_m,
+    total_ascent_ft, plan_stops [{distance_miles,cum_time_min,location,stop_type}],
+    plan_total_mi, plan_cutoff_hours, has_route, has_plan.
+    """
+    ctx = {'track': [], 'cum_ascent_ft': [], 'total_dist_m': None,
+           'total_ascent_ft': None, 'plan_stops': [], 'plan_total_mi': 0.0,
+           'plan_cutoff_hours': None, 'has_route': False, 'has_plan': False}
+    if not ride:
+        return ctx
+
+    # In-tenant plan for banked-time / next-control / OTL grading.
+    try:
+        plan = _resolve_ride_plan(ride)
+        if plan:
+            ctx['plan_cutoff_hours'] = (float(plan['cutoff_hours'])
+                                        if plan.get('cutoff_hours') else None)
+            ctx['plan_total_mi'] = float(plan.get('total_distance_miles') or 0)
+            stops = models.get_brevet_route_plan_stops(plan['id'])
+            ctx['plan_stops'] = [
+                {'distance_miles': float(s['distance_miles']),
+                 'cum_time_min': float(s['cum_time_min']),
+                 'location': s.get('location'),
+                 'stop_type': s.get('stop_type')}
+                for s in (stops or [])
+                if s.get('distance_miles') is not None and s.get('cum_time_min') is not None
+            ]
+            ctx['has_plan'] = len(ctx['plan_stops']) >= 2
+    except Exception as exc:  # noqa: BLE001 — plan is optional; degrade to base
+        current_app.logger.warning('live: plan resolution failed for ride %s: %s',
+                                   ride.get('id'), exc)
+        ctx['plan_stops'] = []
+
+    # Route geometry: downsampled track + cumulative ascent (feet) for distance /
+    # remaining / on-route projection / ascent split.
+    route_id = extract_rwgps_route_id(ride.get('rwgps_url'))
+    if route_id:
+        try:
+            route = fetch_route(route_id)
+            tps = [tp for tp in ((route or {}).get('track_points') or [])
+                   if tp.get('x') is not None and tp.get('y') is not None]
+            if tps:
+                step = max(1, len(tps) // _MAX_CONTEXT_TRACK_POINTS)
+                track, cum_ascent, prev_e, cum = [], [], None, 0.0
+                for tp in tps[::step]:
+                    e_ft = (tp.get('e') or 0) * tlm.METERS_TO_FEET
+                    if prev_e is not None and e_ft > prev_e:
+                        cum += e_ft - prev_e
+                    prev_e = e_ft
+                    track.append({'lat': float(tp['y']), 'lng': float(tp['x']),
+                                  'dist_m': float(tp.get('d') or 0),
+                                  'e_m': float(tp['e']) if tp.get('e') is not None else None})
+                    cum_ascent.append(round(cum))
+                ctx['track'] = track
+                ctx['cum_ascent_ft'] = cum_ascent
+                ctx['total_dist_m'] = track[-1]['dist_m'] if track else None
+                ctx['total_ascent_ft'] = cum_ascent[-1] if cum_ascent else None
+                ctx['has_route'] = True
+        except Exception as exc:  # noqa: BLE001 — route geometry is optional
+            current_app.logger.warning('live: route %s context failed: %s', route_id, exc)
+    return ctx
+
+
+def _base_now_block(row, history, now):
+    """Source-agnostic 'now' metrics, always present: speed, activity, elapsed,
+    moving, stopped, HR, power, cadence.
+
+    Elapsed is anchored to the rider FIRST fix — BrevetHub ride start_at is the
+    creation time, not the brevet start, so anchoring on the first tracked point is
+    honest and event-lookup-free (a documented parity deviation). Moving + stopped
+    then reconcile to elapsed. Pure — needs no route. Returns
+    (start_dt, elapsed_min, now_block)."""
+    start = _as_utc_dt(history[0]['recorded_at']) if history else None
+    elapsed_min = None
+    if start is not None and start <= now:
+        elapsed_min = round((now - start).total_seconds() / 60)
+    moving_min, stopped_min = tlm.moving_stopped(history)
+    if elapsed_min is not None:
+        stopped_min = round(max(0.0, elapsed_min - moving_min), 1)
+    speed_ms = tlm.latest_speed_ms(history)
+    if speed_ms is None and row.get('speed') is not None:
+        try:
+            speed_ms = float(row['speed'])
+        except (TypeError, ValueError):
+            speed_ms = None
+    now_block = {
+        'speed_mph': round(speed_ms * MS_TO_MPH, 1) if speed_ms is not None else None,
+        'activity': tlm.activity_from_speed(speed_ms),
+        'elapsed_min': elapsed_min,
+        'moving_min': moving_min,
+        'stopped_min': stopped_min,
+        'heart_rate': _num_or_none(row.get('heart_rate'), int),
+        'power': _num_or_none(row.get('power'), int),
+        'cadence': _num_or_none(row.get('cadence'), int),
+    }
+    return start, elapsed_min, now_block
+
+
+def _base_telemetry(row, history, now):
+    """The Mission-1 base block (now-metrics only, all plan-aware fields absent).
+
+    Used for a ride with no route / no plan, a thin-history or off-route rider, and
+    as the last-resort fallback when full assembly raises — so the endpoint always
+    returns position + speed + telemetry and never 500s."""
+    try:
+        _, _, now_block = _base_now_block(row, history, now)
+    except Exception:  # noqa: BLE001 — never let the now-block sink the payload
+        now_block = None
+    return {'on_route': None, 'now': now_block, 'remaining': None,
+            'next_control': None, 'finish': None, 'time_banked_cutoff_min': None,
+            'time_banked_plan_min': None, 'plan': None, 'detailed_after_ride': True}
+
+
+def _rider_telemetry(row, ctx, now, history):
+    """Assemble one rider plan-aware telemetry block, mirroring the parent app field
+    shapes (minus the deferred wind / toughness readouts).
+
+    Source-agnostic 'now' metrics are always present. Route-relative fields
+    (distance done / remaining / ascent / grade) appear only when the rider is ON
+    the route; plan-relative fields (banked-vs-plan, banked-vs-cutoff, next control +
+    ETA + required speed, finish) appear only when an in-tenant plan (>= 2 stops)
+    resolved. Anything missing degrades gracefully — never a 500."""
+    start, elapsed_min, now_block = _base_now_block(row, history, now)
+    base = _base_telemetry(row, history, now)
+    base['now'] = now_block
+
+    if not ctx.get('has_route') or len(history) < MIN_HISTORY_FOR_PLAN:
+        return base
+
+    # One leg-aware trajectory walk yields distance-done AND the rider start on the
+    # route (the seed), so the two are matched consistently.
+    dist_m, idx, off_by_m, start_dist_m, start_idx = tlm.project_history_to_route(
+        history, ctx['track'], with_start=True)
+    if dist_m is None:
+        return base
+    on_route = (off_by_m is not None and off_by_m <= tlm.ON_ROUTE_MAX_M)
+    if not on_route:
+        base['on_route'] = False
+        return base
+
+    # A loop permanent can be begun partway round: measure distance done from the
+    # rider OWN start on the route (wrapping the loop), not the route file mile 0.
+    start_offset_m = (start_dist_m if (start_dist_m or 0) >= tlm.START_OFFSET_MIN_M
+                      else 0.0)
+    if not start_offset_m:
+        start_idx = 0
+    mid_route_start = start_offset_m > 0
+    progressed_m = tlm.distance_progressed_m(dist_m, start_offset_m, ctx['total_dist_m'])
+    remaining_m = tlm.remaining_distance_m(ctx['total_dist_m'], progressed_m)
+    ascent_done, ascent_left = tlm.ascent_progressed_split(
+        ctx['cum_ascent_ft'], start_idx, idx, ctx['total_ascent_ft'])
+
+    dist_mi = progressed_m * M_TO_MI
+    remaining_mi = (remaining_m or 0) * M_TO_MI
+
+    now_block['distance_mi'] = round(dist_mi, 1)
+    now_block['grade_pct'] = tlm.grade_at(ctx.get('track'), idx)
+    now_block['avg_elapsed_speed_mph'] = (
+        round(dist_mi / (elapsed_min / 60.0), 1) if elapsed_min and elapsed_min > 0 else None)
+    now_block['avg_moving_speed_mph'] = (
+        round(dist_mi / (now_block['moving_min'] / 60.0), 1)
+        if now_block['moving_min'] else None)
+    now_block['ascent_done_ft'] = ascent_done
+
+    result = {
+        'on_route': True, 'now': now_block,
+        'remaining': {'distance_mi': round(remaining_mi, 1), 'ascent_left_ft': ascent_left},
+        'next_control': None, 'finish': None,
+        'time_banked_cutoff_min': None, 'time_banked_plan_min': None,
+        'plan': None, 'detailed_after_ride': True,
+    }
+
+    active_stops = ctx.get('plan_stops')
+    if not active_stops or len(active_stops) < 2:
+        return result   # on route but no in-tenant plan: route basics only
+
+    plan_total_mi = ctx.get('plan_total_mi') or ((ctx['total_dist_m'] or 0) * M_TO_MI)
+    plan_frame = (tlm.rebase_plan_stops(active_stops, start_offset_m * M_TO_MI, plan_total_mi)
+                  if mid_route_start else active_stops)
+
+    delta = tlm.plan_delta(dist_mi, elapsed_min, plan_frame)
+    result['time_banked_plan_min'] = delta
+    if delta is not None:
+        result['plan'] = {
+            'delta_min': delta, 'banked_min': delta,
+            'status': 'ahead' if delta > 2 else ('behind' if delta < -2 else 'on')}
+
+    nc = tlm.next_control(dist_mi, plan_frame)
+    if nc:
+        arrival_min = nc.get('arrival_time_min')
+        eta_iso = ((start + timedelta(minutes=arrival_min)).isoformat()
+                   if start is not None and arrival_min is not None else None)
+        req_mph, behind = tlm.required_speed_mph(
+            nc.get('dist_to_go_mi'), arrival_min, elapsed_min)
+        result['next_control'] = {
+            'name': nc.get('location'), 'type': nc.get('stop_type'),
+            'distance_mi': nc.get('distance_miles'), 'dist_to_go_mi': nc.get('dist_to_go_mi'),
+            'arrival_time_min': arrival_min, 'eta_iso': eta_iso, 'eta_label': None,
+            'required_mph': req_mph, 'behind': behind}
+
+    fin = tlm.finish_stop(plan_frame)
+    if fin:
+        fin_arrival = fin.get('arrival_time_min')
+        dist_to_finish = round(max(0.0, fin['distance_miles'] - dist_mi), 1)
+        fin_req_mph, fin_behind = tlm.required_speed_mph(
+            dist_to_finish, fin_arrival, elapsed_min)
+        fin_eta_iso = ((start + timedelta(minutes=fin_arrival)).isoformat()
+                       if start is not None and fin_arrival is not None else None)
+        result['finish'] = {
+            'name': fin.get('location'), 'type': fin.get('stop_type'),
+            'distance_mi': fin.get('distance_miles'), 'dist_to_go_mi': dist_to_finish,
+            'arrival_time_min': fin_arrival, 'eta_iso': fin_eta_iso, 'eta_label': None,
+            'required_mph': fin_req_mph, 'behind': fin_behind}
+
+    # OTL margin (banked vs the ACP cutoff). For a mid-route loop start, distance
+    # done spans the whole route, so pro-rate the cutoff against the route total.
+    cutoff_total_mi = ctx.get('plan_total_mi')
+    if mid_route_start and ctx.get('total_dist_m'):
+        cutoff_total_mi = ctx['total_dist_m'] * M_TO_MI
+    result['time_banked_cutoff_min'] = tlm.time_banked_cutoff_min(
+        dist_mi, elapsed_min, cutoff_total_mi, ctx.get('plan_cutoff_hours'))
+    return result
+
+
+def _plan_dot_color(telemetry):
+    """Map dot color from plan timing: off-route or unknown -> grey; behind -> red;
+    ahead / on plan -> green. Falls back to the default going color when no plan is
+    resolved, so a ride without a plan does not regress."""
+    if telemetry is not None and telemetry.get('on_route') is False:
+        return PLAN_UNKNOWN_COLOR
+    plan = (telemetry or {}).get('plan')
+    if plan and plan.get('status'):
+        return PLAN_BEHIND_COLOR if plan['status'] == 'behind' else PLAN_AHEAD_COLOR
+    return DEFAULT_COLOR
+
+
 @live_bp.route('/live/<int:ride_id>/live-positions.json')
 def live_member_positions(ride_id):
     """JSON: latest NAMED position + telemetry per opted-in rider attached to a ride.
@@ -445,6 +746,11 @@ def live_member_positions(ride_id):
     since = now - timedelta(hours=DISPLAY_WINDOW_HOURS)
     rows = models.get_live_positions_rp(ride_id, since)
 
+    # Build the plan-aware context ONCE per poll (route geometry + in-tenant plan),
+    # then compute each rider plan-aware numbers from their position history. The
+    # whole thing is fail-soft: a bad context degrades every rider to the base block.
+    ctx = _ride_live_context(ride)
+
     positions = []
     for row in rows:
         recorded_at = row['recorded_at']
@@ -452,6 +758,23 @@ def live_member_positions(ride_id):
             recorded_at = recorded_at.replace(tzinfo=timezone.utc)
         minutes_ago = (max(0, int((now - recorded_at).total_seconds() // 60))
                        if recorded_at is not None else None)
+
+        history = []
+        try:
+            history = models.get_rider_position_history_rp(
+                ride_id, row['rider_id'], since) or []
+        except Exception:  # noqa: BLE001 — history is best-effort; fall back to base
+            current_app.logger.exception(
+                'live: history load failed for rider %s on ride %s',
+                row['rider_id'], ride_id)
+        try:
+            telemetry = _rider_telemetry(row, ctx, now, history)
+        except Exception:  # noqa: BLE001 — never 500 the poll on a telemetry bug
+            current_app.logger.exception(
+                'live: telemetry failed for rider %s on ride %s',
+                row['rider_id'], ride_id)
+            telemetry = _base_telemetry(row, history, now)
+
         positions.append({
             'rider_id': row['rider_id'],
             'name': (row['name'] or 'Rider').strip(),
@@ -459,16 +782,14 @@ def live_member_positions(ride_id):
             'lng': float(row['lng']),
             'status': DEFAULT_STATUS,
             'color': STATUS_COLORS.get(DEFAULT_STATUS, DEFAULT_COLOR),
+            # Plan-timing dot color (ahead=green / behind=red / grey=unknown); falls
+            # back to the status color when no plan is matched, so it is always safe.
+            'plan_color': _plan_dot_color(telemetry),
             'recorded_at': recorded_at.isoformat() if recorded_at is not None else None,
             'minutes_ago': minutes_ago,
             'stale': (minutes_ago is not None and minutes_ago > STALE_AFTER_MINUTES),
             'source': row.get('source') or 'garmin',
-            'telemetry': {
-                'speed': _num_or_none(row.get('speed'), float),
-                'heart_rate': _num_or_none(row.get('heart_rate'), int),
-                'power': _num_or_none(row.get('power'), int),
-                'cadence': _num_or_none(row.get('cadence'), int),
-            },
+            'telemetry': telemetry,
         })
 
     return jsonify({

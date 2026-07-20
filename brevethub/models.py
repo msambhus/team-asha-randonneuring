@@ -429,6 +429,22 @@ def get_live_positions_rp(ride_id, since):
     )
 
 
+def get_rider_position_history_rp(ride_id, rider_id, since):
+    """Position history for one rider on one ride, oldest to newest, for telemetry.
+
+    Selects lat, lng, recorded_at and speed so the shared telemetry engine can
+    project the trajectory onto the route and derive moving versus stopped time.
+    Scoped to a single rider and ride and bounded by ``since`` (the display window),
+    so a poll only reads the recent trail. Consumed ONLY by the member endpoint.
+    """
+    return db.query(
+        "SELECT lat, lng, recorded_at, speed FROM rp_live_position "
+        "WHERE ride_id = %s AND rider_id = %s AND recorded_at >= %s "
+        "ORDER BY recorded_at ASC",
+        (ride_id, rider_id, since),
+    )
+
+
 def purge_old_positions_rp(retention_days=7):
     """Delete position points older than the retention window. Returns the count
     deleted (via cursor.rowcount), or None on failure. Goes through the cursor
@@ -1045,6 +1061,48 @@ def get_brevet_route_plan_with_stops(event_id):
     if not plan:
         return None
     return {'plan': plan, 'stops': get_brevet_route_plan_stops(plan['id'])}
+
+
+def get_brevet_route_plan_by_route_id_rp(rwgps_route_id, club_id):
+    """The best in-tenant real plan for an RWGPS route id, or None.
+
+    Tenant-scoped: matches only a plan owned by ``club_id`` OR a public club-less
+    warm plan (club_id IS NULL) — NEVER another club plan, because rwgps_route_id is
+    not unique and two clubs can share one route id. When ``club_id`` is None (a
+    club-less ride) only club-less plans match, since ``club_id = NULL`` is never
+    true. Deterministic pick when a route id maps to more than one accepted plan:
+    same-club before club-less, then newest, then highest id.
+    """
+    if not rwgps_route_id:
+        return None
+    return db.query_one(
+        "SELECT id, event_id, club_id, name, slug, total_distance_miles, "
+        "       total_elevation_ft, rwgps_url, rwgps_route_id, distance_km, "
+        "       cutoff_hours, start_time, created_at "
+        "FROM rp_brevet_route_plan "
+        "WHERE rwgps_route_id = %s AND (club_id = %s OR club_id IS NULL) "
+        "ORDER BY (club_id IS NULL), created_at DESC NULLS LAST, id DESC "
+        "LIMIT 1",
+        (rwgps_route_id, club_id),
+    )
+
+
+def get_brevet_route_plan_candidates_rp(club_id):
+    """In-tenant real plans as name-match candidates when no route id matches.
+
+    Returns the id, name, slug, cutoff_hours and total distance of every plan owned
+    by ``club_id`` OR club-less (club_id IS NULL), so the shared name matcher is fed
+    ONLY same-club and public plans — never another club plan. A club-less ride
+    (``club_id`` None) gets only club-less candidates.
+    """
+    return db.query(
+        "SELECT id, name, slug, rwgps_route_id, club_id, cutoff_hours, "
+        "       total_distance_miles, created_at "
+        "FROM rp_brevet_route_plan "
+        "WHERE club_id = %s OR club_id IS NULL "
+        "ORDER BY (club_id IS NULL), created_at DESC NULLS LAST, id DESC",
+        (club_id,),
+    )
 
 
 def upsert_brevet_route_plan(event_id, plan, stops, club_id=None):
