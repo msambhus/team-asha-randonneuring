@@ -84,7 +84,7 @@ def test_rider_withdraws_existing_signup(client):
     _login(client)
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_brevet_event', return_value=_EVENT), \
-         patch('brevethub.models.withdraw_rider_signup', return_value=True) as mock_wd, \
+         patch('brevethub.models.withdraw_rider_signup', return_value='withdrawn') as mock_wd, \
          patch('brevethub.models.set_rider_signup') as mock_set:
         resp = client.post('/calendar/11/signup', json={'status': 'withdraw'})
     assert resp.status_code == 200
@@ -98,10 +98,40 @@ def test_withdraw_with_no_existing_row_is_404(client):
     _login(client)
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_brevet_event', return_value=_EVENT), \
-         patch('brevethub.models.withdraw_rider_signup', return_value=False) as mock_wd, \
+         patch('brevethub.models.withdraw_rider_signup', return_value='not_found') as mock_wd, \
          patch('brevethub.models.set_rider_signup') as mock_set:
         resp = client.post('/calendar/11/signup', json={'status': 'withdraw'})
     assert resp.status_code == 404
+    mock_wd.assert_called_once_with(7, 11)
+    mock_set.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# A pre-ride intent may NOT clobber a post-ride result (Council finding)
+# --------------------------------------------------------------------------- #
+def test_preride_signup_over_result_is_409(client):
+    """interested / maybe / going over an existing finished/dnf/dns/otl row → 409.
+    The model reports 'has_result' and the route refuses, so a past result is never
+    erased by the pre-ride /signup path (the rider must use /result to correct it)."""
+    _login(client)
+    for pre in ('interested', 'maybe', 'going'):
+        with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+             patch('brevethub.models.get_brevet_event', return_value=_EVENT), \
+             patch('brevethub.models.set_rider_signup', return_value='has_result') as mock_set:
+            resp = client.post('/calendar/11/signup', json={'status': pre})
+        assert resp.status_code == 409, pre
+        mock_set.assert_called_once_with(7, 11, pre)
+
+
+def test_withdraw_over_result_is_409(client):
+    """withdraw over an existing post-ride result → 409, result left intact."""
+    _login(client)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_brevet_event', return_value=_EVENT), \
+         patch('brevethub.models.withdraw_rider_signup', return_value='has_result') as mock_wd, \
+         patch('brevethub.models.set_rider_signup') as mock_set:
+        resp = client.post('/calendar/11/signup', json={'status': 'withdraw'})
+    assert resp.status_code == 409
     mock_wd.assert_called_once_with(7, 11)
     mock_set.assert_not_called()
 
@@ -244,6 +274,53 @@ def test_set_rider_signup_is_atomic_upsert_by_pair():
     assert 'status = EXCLUDED.status' in body
     # No SELECT-then-INSERT race window remains.
     assert 'SELECT id FROM rp_event_signup' not in body
+    # The DO UPDATE is guarded so a pre-ride intent cannot overwrite a result.
+    assert 'WHERE rp_event_signup.status NOT IN' in body
+
+
+# --------------------------------------------------------------------------- #
+# Model guard: a pre-ride mutation never clobbers a post-ride result
+# --------------------------------------------------------------------------- #
+def test_set_rider_signup_applied_when_row_written():
+    """A fresh INSERT or a pre-ride update returns its id → 'applied'."""
+    from brevethub import models
+    with patch('brevethub.db.execute', return_value={'id': 5}) as ex:
+        assert models.set_rider_signup(7, 11, 'going') == 'applied'
+    # single atomic guarded upsert, RETURNING the id
+    assert ex.call_count == 1
+    assert ex.call_args.kwargs.get('returning') is True
+
+
+def test_set_rider_signup_has_result_when_update_blocked():
+    """A conflict the WHERE excluded (an existing post-ride result) returns no row →
+    'has_result', so the route refuses with a 409 and the result is left intact."""
+    from brevethub import models
+    with patch('brevethub.db.execute', return_value=None):
+        assert models.set_rider_signup(7, 11, 'interested') == 'has_result'
+
+
+def test_withdraw_not_found_when_no_row():
+    from brevethub import models
+    with patch('brevethub.db.query_one', return_value=None), \
+         patch('brevethub.db.execute') as ex:
+        assert models.withdraw_rider_signup(7, 11) == 'not_found'
+    ex.assert_not_called()             # nothing to update
+
+
+def test_withdraw_has_result_leaves_post_ride_intact():
+    from brevethub import models
+    with patch('brevethub.db.query_one', return_value={'status': 'finished'}), \
+         patch('brevethub.db.execute') as ex:
+        assert models.withdraw_rider_signup(7, 11) == 'has_result'
+    ex.assert_not_called()             # the result is never touched
+
+
+def test_withdraw_transitions_a_pre_ride_row():
+    from brevethub import models
+    with patch('brevethub.db.query_one', return_value={'status': 'going'}), \
+         patch('brevethub.db.execute') as ex:
+        assert models.withdraw_rider_signup(7, 11) == 'withdrawn'
+    ex.assert_called_once()            # the pre-ride row is transitioned to withdraw
 
 
 def test_upsert_brevet_event_is_atomic_upsert_by_key():

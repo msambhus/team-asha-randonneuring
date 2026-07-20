@@ -924,7 +924,7 @@ def get_rider_signup_statuses(rider_id):
 
 
 def set_rider_signup(rider_id, event_id, status):
-    """Create or transition a rider sign-up on an event (one row per pair).
+    """Create or transition a rider pre-ride sign-up on an event (one row per pair).
 
     A single atomic INSERT ... ON CONFLICT ... DO UPDATE keyed on the
     UNIQUE(event_id, rider_id) constraint: the calendar UI POSTs several status
@@ -932,36 +932,69 @@ def set_rider_signup(rider_id, event_id, status):
     pair can race — the conflict target makes them transition the status cleanly
     (last write wins) instead of one hitting a unique-violation and returning a 500.
 
+    Guarded so a pre-ride intent can NEVER clobber a post-ride result: the guarded
+    write carries a WHERE that skips any existing finished / dnf / dns / otl row, and
+    RETURNING lets the caller tell an applied write apart from a blocked one. Returns
+    a sentinel the route maps to an HTTP code:
+      applied      a new or pre-ride row was written -> 200
+      has_result   an existing post-ride result was left intact -> 409
+    A fresh INSERT and a pre-ride write both yield an id; a blocked write yields none.
+    Without this guard a rider could POST interested / maybe / going onto a past
+    finished ride and erase the result (and, via interested / maybe, block the
+    auto-finalize sweep so it can never restore the result).
+
     (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner
     reason documented on :func:`upsert_brevet_event`.)
     """
-    db.execute(
+    row = db.execute(
         "INSERT INTO rp_event_signup (rider_id, event_id, status) "
         "VALUES (%s, %s, %s) "
         "ON CONFLICT (event_id, rider_id) DO UPDATE "
-        "SET status = EXCLUDED.status, updated_at = NOW()",
-        (rider_id, event_id, status),
+        "SET status = EXCLUDED.status, updated_at = NOW() "
+        "WHERE rp_event_signup.status NOT IN (%s, %s, %s, %s) "
+        "RETURNING id",
+        (rider_id, event_id, status,
+         RideStatus.FINISHED.value, RideStatus.DNF.value,
+         RideStatus.DNS.value, RideStatus.OTL.value),
+        returning=True,
     )
+    # A None row means the conflict hit an existing post-ride result the WHERE
+    # excluded (a fresh INSERT or a pre-ride write both yield an id row).
+    return 'applied' if row is not None else 'has_result'
 
 
 def withdraw_rider_signup(rider_id, event_id):
-    """Transition an EXISTING sign-up to withdraw; return True when a row changed.
+    """Transition an EXISTING pre-ride sign-up to withdraw; return a route sentinel.
 
-    UPDATE-only (never inserts), mirroring the parent web app withdraw guard: a
-    withdraw with no prior sign-up changes nothing and the caller reports 404, so a
-    guest cannot manufacture a withdraw row. Scoped by rider_id, so a rider can only
-    ever withdraw their OWN row. Uses RETURNING because db.execute yields the first
-    returned row (or None) rather than a rowcount.
+    Read-then-guarded-update, mirroring the parent web app withdraw guard and the
+    sibling :func:`clear_rider_signup`:
+      not_found    no sign-up for this rider on this event -> 404
+      has_result   the current status is a post-ride result, left intact -> 409
+      withdrawn    a pre-ride row was transitioned to withdraw -> 200
+    A withdraw with no prior sign-up changes nothing, so a guest cannot manufacture a
+    withdraw row; a withdraw over a finished / dnf / dns / otl result is refused so it
+    cannot erase the result. Scoped by rider_id throughout, so a rider can only ever
+    withdraw their OWN row; the guarded write re-asserts the pre-ride predicate so a
+    concurrent transition cannot slip a post-ride row through.
     """
-    row = db.execute(
+    current = db.query_one(
+        "SELECT status FROM rp_event_signup WHERE rider_id = %s AND event_id = %s",
+        (rider_id, event_id),
+    )
+    if not current:
+        return 'not_found'
+    if RideStatus.is_post_ride(RideStatus.normalize(current['status'])):
+        return 'has_result'
+    db.execute(
         "UPDATE rp_event_signup "
         "SET status = %s, updated_at = NOW() "
         "WHERE rider_id = %s AND event_id = %s "
-        "RETURNING id",
-        (RideStatus.WITHDRAW.value, rider_id, event_id),
-        returning=True,
+        "  AND status NOT IN (%s, %s, %s, %s)",
+        (RideStatus.WITHDRAW.value, rider_id, event_id,
+         RideStatus.FINISHED.value, RideStatus.DNF.value,
+         RideStatus.DNS.value, RideStatus.OTL.value),
     )
-    return row is not None
+    return 'withdrawn'
 
 
 def clear_rider_signup(rider_id, event_id):

@@ -253,10 +253,14 @@ def signup(event_id):
       - no session rider           → 401 (+ a login_url the client can send them to)
       - invalid status             → 400
       - unknown event              → 404
+      - a post-ride result exists  → 409 (a pre-ride intent may not clobber a result)
     Then the pre-ride intent is applied (one row per rider+event). WITHDRAW is
     UPDATE-only (mirrors the parent web app guard): withdrawing with no existing
-    sign-up → 404, so a rider cannot manufacture a withdraw row. Every mutation is
-    scoped to the signed-in rider, so a rider can only ever change their OWN row.
+    sign-up → 404, so a rider cannot manufacture a withdraw row. A pre-ride status
+    (or withdraw) is refused over a finished / dnf / dns / otl result so it cannot
+    erase the result; the rider must use the /result endpoint to correct it. Every
+    mutation is scoped to the signed-in rider, so a rider can only ever change their
+    OWN row.
     """
     rider = current_rider()
     if not rider:
@@ -272,11 +276,15 @@ def signup(event_id):
         return jsonify({'error': 'Event not found'}), 404
 
     if status == models.RideStatus.WITHDRAW.value:
-        # UPDATE-only: withdraw only succeeds against an existing sign-up row.
-        if not models.withdraw_rider_signup(rider['id'], event_id):
+        outcome = models.withdraw_rider_signup(rider['id'], event_id)
+        if outcome == 'not_found':
             return jsonify({'error': 'No sign-up to withdraw'}), 404
+        if outcome == 'has_result':
+            return jsonify({'error': 'Cannot change a sign-up with a result'}), 409
     else:
-        models.set_rider_signup(rider['id'], event_id, status)
+        outcome = models.set_rider_signup(rider['id'], event_id, status)
+        if outcome == 'has_result':
+            return jsonify({'error': 'Cannot change a sign-up with a result'}), 409
     return jsonify({'ok': True, 'event_id': event_id, 'status': status}), 200
 
 
