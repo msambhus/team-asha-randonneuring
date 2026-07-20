@@ -66,6 +66,22 @@ def test_cold_start_picks_public_ride_rider_streams_to(client):
     assert ins.call_args.kwargs['ride_id'] == 12
 
 
+def test_cold_start_refuses_insert_when_attach_persist_fails(client):
+    """A resolver pick is not enough: active_ride_id must persist before the point
+    is stored, or the member map would not show the rider after a 200."""
+    _login(client)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_live_tracking_rp', return_value=_NO_ACTIVE), \
+         patch('brevethub.models.get_auto_attach_ride_rp', return_value=_OWN_RIDE), \
+         patch('brevethub.models.get_ride', return_value=_OWN_RIDE), \
+         patch('brevethub.models.set_active_ride_rp', return_value=False) as setr, \
+         patch('brevethub.models.insert_live_position_rp') as ins:
+        resp = _beacon(client)
+    assert resp.status_code == 500
+    setr.assert_called_once_with(7, 12)
+    ins.assert_not_called()
+
+
 def test_cold_start_regate_refuses_inaccessible_pick(client):
     """Defense in depth: if the resolver ever returned an inaccessible ride (private,
     not owned), the re-gate refuses it — never attach, never store — and 400s."""

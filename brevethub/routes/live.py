@@ -56,7 +56,8 @@ from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
                    render_template, request, session, url_for)
 
 from brevethub import models
-from brevethub.decorators import current_rider, profile_required
+from brevethub.auth_api import bearer_or_session_rider
+from brevethub.decorators import profile_required
 from brevethub.shared import live_telemetry as tlm
 from brevethub.shared.garmin_livetrack import parse_session
 from brevethub.shared.plan_match import match_plan
@@ -383,7 +384,7 @@ def live_sharing_status():
     Lets the beacon UI reflect the real server-side opt-in on open. 401 for an
     anonymous caller, 403 for a signed-in rider whose profile is incomplete (the
     same bar the member surface enforces)."""
-    rider = current_rider()
+    rider = bearer_or_session_rider()
     if not rider:
         return jsonify({'error': 'Authentication required'}), 401
     if not rider['profile_completed']:
@@ -401,7 +402,7 @@ def live_sharing_toggle():
     member map on the next poll. Preserves any registered Garmin session
     (upsert_rider_live_tracking_rp touches only the enabled flag). Self-scoped to
     the session rider. 401 anon / 403 incomplete profile."""
-    rider = current_rider()
+    rider = bearer_or_session_rider()
     if not rider:
         return jsonify({'error': 'Authentication required'}), 401
     if not rider['profile_completed']:
@@ -441,7 +442,10 @@ def _resolve_beacon_ride(rider_id, payload, tracking):
                 'live: rider %s beacon to inaccessible ride %s refused', rider_id, rid)
             return None, (jsonify({'error': 'You cannot share to that ride'}), 403)
         if (tracking or {}).get('active_ride_id') != rid:
-            models.set_active_ride_rp(rider_id, rid)
+            if not models.set_active_ride_rp(rider_id, rid):
+                current_app.logger.warning(
+                    'live: rider %s beacon attach to ride %s failed', rider_id, rid)
+                return None, (jsonify({'error': 'Could not attach to that ride'}), 500)
         return rid, None
 
     active = (tracking or {}).get('active_ride_id')
@@ -453,7 +457,10 @@ def _resolve_beacon_ride(rider_id, payload, tracking):
     # inaccessible ride can never slip through even if the resolver widened.
     picked = models.get_auto_attach_ride_rp(rider_id)
     if picked and _accessible_ride(picked['id'], rider_id):
-        models.set_active_ride_rp(rider_id, picked['id'])
+        if not models.set_active_ride_rp(rider_id, picked['id']):
+            current_app.logger.warning(
+                'live: rider %s auto-attach to ride %s failed', rider_id, picked['id'])
+            return None, (jsonify({'error': 'Could not attach to that ride'}), 500)
         return picked['id'], None
 
     return None, (jsonify(
@@ -472,7 +479,7 @@ def live_beacon():
     by ``_resolve_beacon_ride`` (an inaccessible ride → 403, no accessible ride →
     400). Only after every gate passes is the point stored via
     insert_live_position_rp with source='beacon'."""
-    rider = current_rider()
+    rider = bearer_or_session_rider()
     if not rider:
         return jsonify({'error': 'Authentication required'}), 401
     if not rider['profile_completed']:
@@ -961,7 +968,7 @@ def live_member_positions(ride_id):
     selects a name. Each entry:
       {rider_id, name, lat, lng, status, color, recorded_at, minutes_ago, stale,
        source, telemetry:{speed, heart_rate, power, cadence}}"""
-    rider = current_rider()
+    rider = bearer_or_session_rider()
     if not rider:
         return jsonify({'error': 'Authentication required'}), 401
     if not rider['profile_completed']:

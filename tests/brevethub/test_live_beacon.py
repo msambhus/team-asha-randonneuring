@@ -203,6 +203,22 @@ def test_beacon_joins_public_ride_they_do_not_own(client):
     assert ins.call_args.kwargs['ride_id'] == 5
 
 
+def test_beacon_refuses_insert_when_public_join_attach_fails(client):
+    """If active_ride_id cannot be persisted, do not return success or insert a
+    point that the member map will not show."""
+    _login(client)
+    tracking = dict(_ENABLED, active_ride_id=None)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_live_tracking_rp', return_value=tracking), \
+         patch('brevethub.models.get_ride', return_value=_PUBLIC_OTHER), \
+         patch('brevethub.models.set_active_ride_rp', return_value=False) as setr, \
+         patch('brevethub.models.insert_live_position_rp') as ins:
+        resp = _post(client, {'lat': 37.5, 'lng': -122.3, 'ride_id': 5})
+    assert resp.status_code == 500
+    setr.assert_called_once_with(7, 5)
+    ins.assert_not_called()
+
+
 def test_beacon_refuses_private_ride_they_do_not_own(client):
     """A private ride the rider does not own is inaccessible → 403, no insert."""
     _login(client)
