@@ -581,18 +581,21 @@ def get_club_riders_with_rusa(club_id):
     )
 
 
-def get_club_rider_by_rusa(club_id, rusa_id):
-    """One club-scoped rider by RUSA id, with the cached RUSA history.
+def get_club_rider(club_id, rider_id):
+    """One club-scoped rider by primary key, with the cached RUSA history.
 
-    Returns the row only when it belongs to the given club, so a viewer can never
-    resolve a rider outside their own club (the public-profile access gate).
-    Returns None when the club has no such completed-profile rider.
+    Keyed on the unique rider id, never the RUSA id: BrevetHub allows two riders to
+    claim the same RUSA id (soft-flagged, not rejected), so a RUSA id can be
+    ambiguous within a club. The row is returned only when it belongs to the given
+    club, so a viewer can never resolve a rider outside their own club (the
+    public-profile access gate). Returns None when the club has no such
+    completed-profile rider.
     """
     return db.query_one(
         "SELECT id, email, rusa_id, club_id, created_at, rusa_cache "
         "FROM rp_rider "
-        "WHERE club_id = %s AND rusa_id = %s AND profile_completed = TRUE",
-        (club_id, rusa_id),
+        "WHERE club_id = %s AND id = %s AND profile_completed = TRUE",
+        (club_id, rider_id),
     )
 
 

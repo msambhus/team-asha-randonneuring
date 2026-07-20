@@ -3,7 +3,7 @@
 Login-gated surfaces that turn BrevetHub from self-profile-only into a real
 multi-rider club, each scoped to the signed-in viewer's OWN club:
 
-- ``/riders/<rusa_id>``           a same-club rider's public profile (access-gated)
+- ``/riders/<int:rider_id>``      a same-club rider's public profile (access-gated)
 - ``/riders``                     the club rider directory (searchable by display name)
 - ``/riders/leaderboard``         career km leaderboard for the club
 - ``/riders/season/<name>``       the club roster for one randonneuring season
@@ -45,6 +45,7 @@ def _career_row(rider_row, today):
     brevets = rider_row.get('rusa_cache') or []
     career = seasons.career_summary(brevets, today)
     return {
+        'id': rider_row.get('id'),
         'rusa_id': rider_row.get('rusa_id'),
         'display_name': _display_name(rider_row.get('email')),
         'total_km': career['total_km'],
@@ -96,23 +97,54 @@ def leaderboard():
                            has_club=bool(viewer.get('club_id')))
 
 
-@riders_bp.route('/riders/<rusa_id>')
+@riders_bp.route('/riders/season/<season_name>')
 @login_required
-def rider_profile(rusa_id):
+def season_roster(season_name):
+    """The club roster for one randonneuring season: riders who completed at least
+    one brevet in ``season_name``, with that season's per-rider summary."""
+    viewer = current_rider()
+    club = models.get_club(viewer['club_id']) if viewer.get('club_id') else None
+    today = date.today()
+
+    roster = []
+    if viewer.get('club_id'):
+        rows = models.get_club_riders_with_rusa(viewer['club_id'])
+        for r in rows:
+            brevets = r.get('rusa_cache') or []
+            group = next((s for s in seasons.seasons_with_summaries(brevets, today)
+                          if s['season'] == season_name), None)
+            if group is None:
+                continue  # no brevet in this season → not on the roster
+            roster.append({
+                'id': r.get('id'),
+                'rusa_id': r.get('rusa_id'),
+                'display_name': _display_name(r.get('email')),
+                'summary': group['summary'],
+            })
+        roster.sort(key=lambda x: (-x['summary']['total_km'], x['display_name'].lower()))
+
+    return render_template('season_roster.html', club=club, season_name=season_name,
+                           roster=roster, has_club=bool(viewer.get('club_id')),
+                           current_season=seasons.current_season_name(today))
+
+
+@riders_bp.route('/riders/<int:rider_id>')
+@login_required
+def rider_profile(rider_id):
     """A same-club rider's public profile: hero + career stat cards + season-by-season
-    brevet history. Access gate: same club → 200; other club → 404; a rider viewing
-    their own record → 200 (even when club-less); anonymous → login redirect (the
-    decorator). No full email or google_id ever reaches the rendered page.
+    brevet history. Keyed on the unique rider id (not the RUSA id, which BrevetHub
+    lets two riders share), so every rider resolves to exactly one profile. Access
+    gate: same club → 200; other club → 404; a rider viewing their own record → 200
+    (even when club-less); anonymous → login redirect (the decorator). No full email
+    or google_id ever reaches the rendered page.
     """
     viewer = current_rider()
     today = date.today()
-    rusa_id = str(rusa_id)
 
+    is_self = viewer['id'] == rider_id
     target = None
     if viewer.get('club_id'):
-        target = models.get_club_rider_by_rusa(viewer['club_id'], rusa_id)
-    is_self = (viewer.get('rusa_id') is not None
-               and str(viewer['rusa_id']) == rusa_id)
+        target = models.get_club_rider(viewer['club_id'], rider_id)
     if target is None and is_self:
         # Self-view fallback: a rider can always see their own record, even before
         # joining a club. current_rider() carries no rusa_cache, so read it here.

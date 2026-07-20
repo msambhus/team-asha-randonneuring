@@ -7,11 +7,21 @@ sibling `shared/` package and its own `brevethub` package. The
 `tests/brevethub/test_brevethub_isolation.py` scan enforces that boundary.
 """
 import os
+from datetime import date
 
 from flask import Flask, session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from brevethub.config import Config
+
+
+def _nav_seasons(today=None):
+    """The season names shown in the Riders nav dropdown: the current
+    randonneuring season plus the two prior, newest first. Derived from the Nov 1
+    boundary so the nav needs no per-club season table."""
+    today = today or date.today()
+    start = today.year if today.month >= 11 else today.year - 1
+    return [f'{y}-{y + 1}' for y in range(start, start - 3, -1)]
 
 
 def create_app():
@@ -81,6 +91,8 @@ def create_app():
             'product_name': 'BrevetHub',
             'user_logged_in': bool(session.get('rider_id')),
             'user_email': session.get('email'),
+            # Seasons for the Riders nav dropdown. Clock-derived, club-agnostic.
+            'nav_seasons': _nav_seasons(),
         }
 
     return app

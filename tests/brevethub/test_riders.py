@@ -69,10 +69,10 @@ def _fake_club_riders(club_id, **kwargs):
     return [r for r in _ALL if r['club_id'] == club_id and r['profile_completed']]
 
 
-def _fake_club_rider_by_rusa(club_id, rusa_id, **kwargs):
+def _fake_club_rider(club_id, rider_id, **kwargs):
     for r in _ALL:
         if (r['club_id'] == club_id and r['profile_completed']
-                and str(r['rusa_id']) == str(rusa_id)):
+                and r['id'] == rider_id):
             return r
     return None
 
@@ -88,7 +88,7 @@ def _mocked():
     with patch('brevethub.models.get_rider_by_id', side_effect=_fake_get_rider_by_id), \
          patch('brevethub.models.get_club', side_effect=_fake_get_club), \
          patch('brevethub.models.get_club_riders_with_rusa', side_effect=_fake_club_riders), \
-         patch('brevethub.models.get_club_rider_by_rusa', side_effect=_fake_club_rider_by_rusa), \
+         patch('brevethub.models.get_club_rider', side_effect=_fake_club_rider), \
          patch('brevethub.models.get_rider_rusa_cache', side_effect=_fake_rusa_cache):
         yield
 
@@ -162,11 +162,33 @@ def test_leaderboard_orders_by_career_km_desc_with_tiebreak(client):
 
 
 # --------------------------------------------------------------------------- #
+# Season roster
+# --------------------------------------------------------------------------- #
+def test_season_roster_membership(client):
+    """Only riders with a brevet in the named season appear. alice rode 2024-2025;
+    bob (2022-2023) and carol (2023-2024) did not."""
+    resp = _get(client, _BOB['id'], '/riders/season/2024-2025')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'alice' in body
+    assert 'bob' not in body and 'carol' not in body
+    assert 'mallory' not in body                # cross-club isolation (roster)
+
+
+def test_season_roster_empty_when_no_member_rode_it(client):
+    """A season nobody in the club rode renders a graceful empty state."""
+    resp = _get(client, _BOB['id'], '/riders/season/2019-2020')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'No riders' in body
+
+
+# --------------------------------------------------------------------------- #
 # Public rider profile — access gate + privacy + career reuse
 # --------------------------------------------------------------------------- #
 def test_profile_same_club_returns_200(client):
-    """A same-club viewer sees the target's public profile."""
-    resp = _get(client, _BOB['id'], '/riders/100')       # bob views alice
+    """A same-club viewer sees the target's public profile (keyed by rider id)."""
+    resp = _get(client, _BOB['id'], '/riders/1')          # bob views alice (id 1)
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'alice' in body
@@ -175,20 +197,20 @@ def test_profile_same_club_returns_200(client):
 
 def test_profile_cross_club_404(client):
     """A club-A viewer cannot open a club-B rider's profile → 404."""
-    resp = _get(client, _BOB['id'], '/riders/900')       # bob (A) views mallory (B)
+    resp = _get(client, _BOB['id'], '/riders/4')          # bob (A) views mallory (B, id 4)
     assert resp.status_code == 404
 
 
 def test_profile_cross_club_404_other_direction(client):
     """The club-B rider likewise cannot open a club-A rider's profile → 404."""
-    resp = _get(client, _MALLORY['id'], '/riders/100')   # mallory (B) views alice (A)
+    resp = _get(client, _MALLORY['id'], '/riders/1')      # mallory (B) views alice (A, id 1)
     assert resp.status_code == 404
 
 
 def test_profile_anonymous_redirects_to_login(client):
     """An anonymous request is bounced to login, never served the profile."""
     with _mocked():
-        resp = client.get('/riders/100')
+        resp = client.get('/riders/1')
     assert resp.status_code in (301, 302)
     loc = resp.headers['Location']
     assert '/auth/login' in loc or '/login' in loc
@@ -196,7 +218,7 @@ def test_profile_anonymous_redirects_to_login(client):
 
 def test_profile_self_view_works_even_club_less(client):
     """A rider can always view their own record, even before joining a club."""
-    resp = _get(client, _DAVE['id'], '/riders/500')      # dave (no club) views self
+    resp = _get(client, _DAVE['id'], '/riders/5')         # dave (no club, id 5) views self
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'dave' in body
@@ -205,14 +227,14 @@ def test_profile_self_view_works_even_club_less(client):
 
 def test_profile_club_less_viewer_cannot_view_others(client):
     """A club-less viewer cannot view another rider's profile → 404."""
-    resp = _get(client, _DAVE['id'], '/riders/100')      # dave views alice
+    resp = _get(client, _DAVE['id'], '/riders/1')         # dave views alice
     assert resp.status_code == 404
 
 
 def test_profile_never_leaks_email_or_google_id(client):
     """Another rider's profile view exposes the display name only — never the full
     email address or google_id."""
-    resp = _get(client, _BOB['id'], '/riders/100')       # bob views alice
+    resp = _get(client, _BOB['id'], '/riders/1')          # bob views alice
     body = resp.get_data(as_text=True)
     assert _ALICE['email'] not in body
     assert _ALICE['google_id'] not in body
@@ -223,8 +245,42 @@ def test_profile_career_numbers_reuse_shared_engine(client):
     """The profile's career numbers equal shared.seasons.career_summary over the
     target's cached RUSA history — no reimplementation."""
     expected = seasons.career_summary(_ALICE_CACHE, date.today())
-    resp = _get(client, _BOB['id'], '/riders/100')
+    resp = _get(client, _BOB['id'], '/riders/1')
     body = resp.get_data(as_text=True)
     assert str(expected['total_km']) in body              # 1500 km
     assert '{} brevets'.format(expected['count']) in body  # (4 brevets)
     assert '2024-2025' in body                            # the SR season
+
+
+def test_profile_duplicate_rusa_ids_resolve_distinctly(client):
+    """Two same-club riders sharing a RUSA id (BrevetHub soft-flags duplicate claims
+    rather than rejecting them) each resolve to their OWN profile, because profiles
+    are keyed on the unique rider id, not the ambiguous RUSA id."""
+    twin_a = {'id': 20, 'email': 'twin.a@ex.com', 'google_id': 'g-twin-a', 'rusa_id': '777',
+              'club_id': 3, 'profile_completed': True, 'created_at': _MADE, 'rusa_cache': _ALICE_CACHE}
+    twin_b = {'id': 21, 'email': 'twin.b@ex.com', 'google_id': 'g-twin-b', 'rusa_id': '777',
+              'club_id': 3, 'profile_completed': True, 'created_at': _MADE, 'rusa_cache': _BOB_CACHE}
+    pool = {20: twin_a, 21: twin_b}
+
+    def by_id(rider_id, **kwargs):
+        return pool.get(rider_id)
+
+    def club_rider(club_id, rider_id, **kwargs):
+        r = pool.get(rider_id)
+        return r if r and r['club_id'] == club_id else None
+
+    _login(client, 20)
+    with patch('brevethub.models.get_rider_by_id', side_effect=by_id), \
+         patch('brevethub.models.get_club', side_effect=lambda cid, **k: {'id': cid, 'name': 'Twins'}), \
+         patch('brevethub.models.get_club_rider', side_effect=club_rider), \
+         patch('brevethub.models.get_rider_rusa_cache', side_effect=lambda rid, **k: {'rusa_cache': pool[rid]['rusa_cache']}):
+        resp_a = client.get('/riders/20')
+        resp_b = client.get('/riders/21')
+
+    body_a = resp_a.get_data(as_text=True)
+    body_b = resp_b.get_data(as_text=True)
+    assert resp_a.status_code == 200 and resp_b.status_code == 200
+    # Distinct riders, distinct histories — never collapsed onto one profile.
+    assert 'twin.a' in body_a and 'twin.b' not in body_a
+    assert 'twin.b' in body_b and 'twin.a' not in body_b
+    assert '1500' in body_a and '1500' not in body_b     # twin_a has the SR season

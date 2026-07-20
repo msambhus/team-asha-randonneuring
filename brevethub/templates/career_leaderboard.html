@@ -54,12 +54,8 @@
           <tr>
             <td class="lb-rank">{{ loop.index }}</td>
             <td>
-              {% if r.rusa_id %}
-                <a class="lb-rider" href="{{ url_for('riders.rider_profile', rusa_id=r.rusa_id) }}">{{ r.display_name }}</a>
-                <div class="lb-rusa">RUSA #{{ r.rusa_id }}</div>
-              {% else %}
-                <span class="lb-rider">{{ r.display_name }}</span>
-              {% endif %}
+              <a class="lb-rider" href="{{ url_for('riders.rider_profile', rider_id=r.id) }}">{{ r.display_name }}</a>
+              {% if r.rusa_id %}<div class="lb-rusa">RUSA #{{ r.rusa_id }}</div>{% endif %}
             </td>
             <td class="lb-num">{{ r.count }}</td>
             <td class="lb-num">{{ r.total_km }}</td>
