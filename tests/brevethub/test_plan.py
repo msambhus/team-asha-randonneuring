@@ -91,7 +91,8 @@ def test_missing_time_limit_falls_back_to_acp_mapping(client):
         resp = client.get('/plan/13?speed=20')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'ACP time limit: 20' in body   # 300 km -> 20 h band
+    # Cutoff now renders in the TA-style ACP-limit stat card (value + label).
+    assert '<div class="number">20</div><div class="label">ACP limit (h)</div>' in body  # 300 km -> 20 h band
     assert '300 km' in body
 
 

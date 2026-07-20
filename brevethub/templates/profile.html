@@ -19,9 +19,37 @@
 </style>
 {% endblock %}
 {% block content %}
+{% set display_name = rider.email.split('@')[0] %}
+{# Hero + stat-card row mirror the parent app's my_profile: a full-width gradient
+   banner then a row of headline numbers, before the detail cards. #}
+<div class="hero" style="padding:30px 20px;">
+  <div class="w-[90px] h-[90px] md:w-[110px] md:h-[110px] rounded-full flex items-center justify-center"
+       style="background:rgba(255,255,255,0.2);margin:0 auto 15px;font-size:2.6rem;color:white;font-weight:700;">
+    {{ display_name[0]|upper }}
+  </div>
+  <h1>{{ display_name }}</h1>
+  {% if rider.rusa_id %}<p>RUSA# {{ rider.rusa_id }}</p>{% endif %}
+  <p style="font-size:0.9rem; opacity:0.85;">{{ rider.email }}</p>
+</div>
+
+<div class="stats-row">
+  {% if rusa.has_id and career.count %}
+  <div class="stat-card"><div class="number">{{ career.count }}</div><div class="label">Career Rides</div></div>
+  <div class="stat-card"><div class="number">{{ career.total_km }}</div><div class="label">Career KMs</div></div>
+  {% set sr_count = career.sr_seasons | length %}
+  {% if sr_count > 0 %}
+  <div class="stat-card"><div class="number" style="color:var(--accent);">{% if sr_count > 1 %}SR&times;{{ sr_count }}{% else %}SR{% endif %}</div><div class="label">Super Randonneur</div></div>
+  {% endif %}
+  <div class="stat-card"><div class="number">{{ career.r12_streak.months }}</div><div class="label">R-12 Streak (mo)</div></div>
+  {% endif %}
+  {% if strava.stats and strava.stats.fitness is not none %}
+  <div class="stat-card"><div class="number" style="color:{% if strava.stats.fitness >= 70 %}#38a169{% elif strava.stats.fitness >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ strava.stats.fitness }}</div><div class="label">Fitness Score</div></div>
+  {% endif %}
+</div>
+
 <div class="container section">
 <section class="card">
-  <h1 class="text-primary text-[1.6rem] font-bold">My Profile</h1>
+  <h2 class="text-primary text-[1.3rem] font-bold mb-2">Profile details</h2>
   <p class="text-text-light">Your own randonneuring record on {{ product_name }}.</p>
 
   <dl class="profile">
