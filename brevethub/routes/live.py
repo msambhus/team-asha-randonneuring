@@ -56,7 +56,8 @@ from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
                    render_template, request, session, url_for)
 
 from brevethub import models
-from brevethub.decorators import current_rider, profile_required
+from brevethub.auth_api import bearer_or_session_rider
+from brevethub.decorators import profile_required
 from brevethub.shared import live_telemetry as tlm
 from brevethub.shared.garmin_livetrack import parse_session
 from brevethub.shared.plan_match import match_plan
@@ -383,7 +384,7 @@ def live_sharing_status():
     Lets the beacon UI reflect the real server-side opt-in on open. 401 for an
     anonymous caller, 403 for a signed-in rider whose profile is incomplete (the
     same bar the member surface enforces)."""
-    rider = current_rider()
+    rider = bearer_or_session_rider()
     if not rider:
         return jsonify({'error': 'Authentication required'}), 401
     if not rider['profile_completed']:
@@ -401,7 +402,7 @@ def live_sharing_toggle():
     member map on the next poll. Preserves any registered Garmin session
     (upsert_rider_live_tracking_rp touches only the enabled flag). Self-scoped to
     the session rider. 401 anon / 403 incomplete profile."""
-    rider = current_rider()
+    rider = bearer_or_session_rider()
     if not rider:
         return jsonify({'error': 'Authentication required'}), 401
     if not rider['profile_completed']:
@@ -500,7 +501,7 @@ def live_beacon():
     by ``_resolve_beacon_ride`` (an inaccessible ride → 403, no accessible ride →
     400). Only after every gate passes is the point stored via
     insert_live_position_rp with source='beacon'."""
-    rider = current_rider()
+    rider = bearer_or_session_rider()
     if not rider:
         return jsonify({'error': 'Authentication required'}), 401
     if not rider['profile_completed']:
@@ -978,9 +979,30 @@ def _selected_plan_stops(requested_plan_id, ctx, allowed_custom_ids):
 
 @live_bp.route('/live/<int:ride_id>/live-positions.json')
 def live_member_positions(ride_id):
-    """JSON: latest NAMED position + telemetry per opted-in rider attached to a ride.
+    """Web Surface-B poll: latest NAMED position + telemetry per opted-in rider on a
+    ride (path form; ride_id in the URL). Delegates to the shared builder below."""
+    return _member_positions_response(ride_id)
 
-    Auth ladder (JSON API — no redirects): no session rider → 401; a session rider
+
+@live_bp.route('/api/live/positions')
+def live_positions_api():
+    """Mobile Bearer live poll: the SAME member positions payload as the web
+    Surface-B endpoint, addressed as ``/api/live/positions?ride_id=<id>&plan_id=``
+    to match the BrevetHub mobile client contract (useLivePositions). Bearer OR
+    session auth, the identical accessibility gate + no-PII rules. A missing
+    ride_id is a 400 (no ride to resolve)."""
+    ride_id = request.args.get('ride_id', type=int)
+    if not ride_id:
+        return jsonify({'error': 'ride_id is required'}), 400
+    return _member_positions_response(ride_id)
+
+
+def _member_positions_response(ride_id):
+    """Build the member live-positions JSON for ``ride_id``. Shared by the web
+    (/live/<id>/live-positions.json) and mobile (/api/live/positions?ride_id=)
+    routes so the two can never drift.
+
+    Auth ladder (JSON API — no redirects): no session/Bearer rider → 401; a rider
     whose profile is INCOMPLETE → 403 (OAuth sets rider_id before signup finishes,
     so this endpoint must enforce the SAME profile-completeness bar as the
     @profile_required member page — otherwise a half-signed-up account could read
@@ -989,7 +1011,7 @@ def live_member_positions(ride_id):
     selects a name. Each entry:
       {rider_id, name, lat, lng, status, color, recorded_at, minutes_ago, stale,
        source, telemetry:{speed, heart_rate, power, cadence}}"""
-    rider = current_rider()
+    rider = bearer_or_session_rider()
     if not rider:
         return jsonify({'error': 'Authentication required'}), 401
     if not rider['profile_completed']:

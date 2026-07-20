@@ -43,6 +43,9 @@ def create_app():
     from brevethub.routes.analysis import analysis_bp
     from brevethub.routes.cron import cron_bp
     from brevethub.routes.admin import admin_bp
+    # BH-native mobile bearer-token mint (login-gated). Server half of a future
+    # BrevetHub mobile client; no BH client consumes it yet.
+    from brevethub.auth_api import api_auth_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix='/auth')
@@ -59,6 +62,8 @@ def create_app():
     app.register_blueprint(cron_bp, url_prefix='/cron')
     # admin_bp OWNS the '/admin' segment; owner-gated real ride-plan generation.
     app.register_blueprint(admin_bp, url_prefix='/admin')
+    # Bearer-token mint at /api/auth/token (leaf path in the decorator).
+    app.register_blueprint(api_auth_bp)
 
     @app.context_processor
     def inject_branding():
