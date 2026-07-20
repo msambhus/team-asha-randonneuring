@@ -57,7 +57,7 @@ from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
 
 from brevethub import models
 from brevethub.auth_api import bearer_or_session_rider
-from brevethub.decorators import profile_required
+from brevethub.decorators import current_rider, profile_required
 from brevethub.shared import live_telemetry as tlm
 from brevethub.shared.garmin_livetrack import parse_session
 from brevethub.shared.plan_match import match_plan
@@ -110,9 +110,15 @@ def _valid_coord(value, lo, hi):
 # --------------------------------------------------------------------------- #
 @live_bp.route('/live')
 def live_list():
-    """Public list of rides opted into live tracking (is_public = TRUE only)."""
+    """Public list of rides opted into live tracking (is_public = TRUE only).
+
+    Viewer-aware: guests browse freely; a signed-in rider additionally gets a
+    per-row link into the member map (live.live_ride_map), the page carrying the
+    Garmin LiveTrack + phone-location share. The rider is resolved with the same
+    current_rider helper calendar.py uses; the ride list itself is unchanged."""
+    rider = current_rider()
     rides = models.get_public_rides()
-    return render_template('live_list.html', rides=rides,
+    return render_template('live_list.html', rides=rides, rider=rider,
                            poll_seconds=LIVE_POLL_SECONDS)
 
 

@@ -59,6 +59,65 @@ def test_public_list_query_filters_to_is_public_only(client):
 
 
 # --------------------------------------------------------------------------- #
+# Live list — member-map link is gated on a signed-in, profile-complete rider
+# --------------------------------------------------------------------------- #
+_LIST_RIDES = [
+    {'id': 1, 'name': 'SFR Point Reyes 200k', 'distance_km': 200,
+     'start_at': datetime(2026, 7, 20, 6, 0), 'status': 'going',
+     'club_name': 'San Francisco Randonneurs'},
+    {'id': 2, 'name': 'Night Owl 300', 'distance_km': 300,
+     'start_at': datetime(2026, 7, 21, 20, 0), 'status': 'going',
+     'club_name': 'Seattle International Randonneurs'},
+]
+
+
+def test_public_list_signed_in_rider_gets_member_map_link_per_ride(client):
+    """A signed-in, profile-complete rider sees a per-row link into the member map
+    (live.live_ride_map = /live/<id>/map) for every listed ride."""
+    _login(client, rider_id=7)
+    with patch('brevethub.models.get_public_rides', return_value=_LIST_RIDES), \
+         patch('brevethub.models.get_rider_by_id', return_value=_RIDER):
+        resp = client.get('/live')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    for ride in _LIST_RIDES:
+        assert '/live/%d/map' % ride['id'] in body  # member-map action per row
+    # The ride-name link to the anonymous map is unchanged (exact form, no /map).
+    assert 'href="/live/1"' in body
+
+
+def test_public_list_guest_has_no_member_map_link(client):
+    """A guest never sees the member-map action; the ride-name anonymous link stays.
+
+    Assert the EXACT member-map form (/live/1/map) is absent — /live/1/map is a
+    superstring of the name link /live/1, so a bare /live/1 check would false-pass."""
+    with patch('brevethub.models.get_public_rides', return_value=_LIST_RIDES), \
+         patch('brevethub.models.get_rider_by_id', return_value=None):
+        resp = client.get('/live')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert '/live/1/map' not in body
+    assert '/live/2/map' not in body
+    # The anonymous ride-name link to live.live_map is still present for a guest.
+    assert 'href="/live/1"' in body
+
+
+def test_public_list_incomplete_profile_rider_has_no_member_map_link(client):
+    """An incomplete-profile rider (can't reach @profile_required live_ride_map) is
+    not shown the link — it would be a dead click bounced to /signup."""
+    incomplete = dict(_RIDER, profile_completed=False)
+    _login(client, rider_id=7)
+    with patch('brevethub.models.get_public_rides', return_value=_LIST_RIDES), \
+         patch('brevethub.models.get_rider_by_id', return_value=incomplete):
+        resp = client.get('/live')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert '/live/1/map' not in body
+    # The anonymous ride-name link is still there.
+    assert 'href="/live/1"' in body
+
+
+# --------------------------------------------------------------------------- #
 # Guest browse — per-ride map
 # --------------------------------------------------------------------------- #
 def test_public_map_renders_for_public_ride(client):
