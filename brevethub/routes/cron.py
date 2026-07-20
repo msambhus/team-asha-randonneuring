@@ -30,11 +30,19 @@ from brevethub.routes.calendar import _scrape_and_upsert
 from brevethub.shared.garmin_livetrack import fetch_positions, parse_session
 from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
                                     extract_rwgps_route_id, fetch_route)
+from shared.rusa import fetch_rider_results
 from shared.weather import (FORECAST_HORIZON_DAYS, fetch_point_forecast,
                             fetch_route_weather, resolve_region_coordinates,
                             sample_track_points)
 
 cron_bp = Blueprint('cron', __name__)
+
+# RUSA finish-time matching window — mirrors the parent web app sync tolerance: an
+# official result matches a finished sign-up when the dates are within +-10 days AND
+# the distances within +-20 km (or both are >= 1000 km, where RUSA rounds distances).
+RUSA_MATCH_DATE_DAYS = 10
+RUSA_MATCH_DISTANCE_KM = 20
+RUSA_LONG_BREVET_KM = 1000
 
 # Dense (15 km) route sampling for along-route weather — matches Team Asha's
 # fetch-route-weather cron so the two engines sample identically.
@@ -60,6 +68,60 @@ def _route_weather_is_fresh(fetched_at):
         return (now - fetched_at) < timedelta(hours=ROUTE_WEATHER_FRESH_HOURS)
     except (TypeError, ValueError):
         return False
+
+
+def _coerce_date(value):
+    """Return a datetime.date out of a date-like value or an ISO string, else None.
+
+    The cached rusa_cache stores ISO date strings; the live shared fetcher returns a
+    datetime.date. Both are normalized here so the matcher can subtract them safely.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (ValueError, TypeError):
+        return None
+
+
+def _match_rusa_finish_time(event_date, distance_km, results):
+    """Return the official finish time in RUSA results matching a finished sign-up.
+
+    Matches by date within +-RUSA_MATCH_DATE_DAYS and distance within
+    +-RUSA_MATCH_DISTANCE_KM (or both >= RUSA_LONG_BREVET_KM). Accepts BOTH the cached
+    rusa_cache shape (ISO date strings) and the live fetcher shape (datetime.date),
+    coercing each via _coerce_date. Returns None when nothing matches or the matched
+    finish time is blank. This matcher is BH-native (it reads BrevetHub cached shape),
+    so it is not promoted to shared/ — only the framework-free RUSA fetcher is shared.
+    """
+    target = _coerce_date(event_date)
+    if target is None:
+        return None
+    try:
+        distance_km = int(distance_km or 0)
+    except (TypeError, ValueError):
+        distance_km = 0
+    for r in results or []:
+        r_date = _coerce_date(r.get('date'))
+        if r_date is None:
+            continue
+        try:
+            r_dist = int(r.get('distance_km') or 0)
+        except (TypeError, ValueError):
+            continue
+        date_diff = abs((target - r_date).days)
+        dist_diff = abs(distance_km - r_dist)
+        if date_diff <= RUSA_MATCH_DATE_DAYS and (
+                dist_diff <= RUSA_MATCH_DISTANCE_KM
+                or (distance_km >= RUSA_LONG_BREVET_KM and r_dist >= RUSA_LONG_BREVET_KM)):
+            finish_time = (r.get('finish_time') or '').strip()
+            if finish_time:
+                return finish_time
+    return None
 
 
 def _verify_cron_auth():
@@ -139,6 +201,69 @@ def finalize_signups():
 
     current_app.logger.info('Sign-up auto-finalize: finalized=%s', finalized)
     return jsonify({'ok': True, 'finalized': finalized}), 200
+
+
+@cron_bp.route('/sync-rusa-results', methods=['GET', 'POST'])
+def sync_rusa_results():
+    """Back-fill official RUSA finish times onto finished sign-ups (the sole real
+    finish_time writer).
+
+    Auth-gated (Bearer CRON_SECRET). For every finished rp_event_signup whose rider
+    has a rusa_id and whose finish_time is still empty, it matches the rider RUSA
+    results to the event by date (+-10 days) and distance (+-20 km, or both >= 1000
+    km) and writes the official finish time — mirroring the parent web app
+    sync_rusa_finish_times. It PREFERS the RUSA history BrevetHub already caches
+    (rp_rider.rusa_cache) and only falls back to a live shared fetch when the cache is
+    empty, memoized once per rusa_id so a batch never re-fetches. No page load ever
+    scrapes. Runs AFTER /cron/finalize-signups so freshly finished rows are covered
+    the same day (see brevethub/vercel.json).
+
+    Fails SOFT: a target-load failure returns a non-500 JSON body, and a live-fetch
+    failure for one rider is logged and counted without 500-ing the run or clobbering
+    a good finish time. Returns ``{ok, synced, considered}`` for observability.
+
+    Route contract (pinned, same as the other crons): the production URL is exactly
+    ``/cron/sync-rusa-results`` — the blueprint owns the ``/cron`` prefix and this
+    decorator is LEAF-ONLY, so a double ``/cron`` prefix cannot 404 the
+    Vercel-scheduled request. GET and POST are both accepted (Vercel cron issues GET).
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    try:
+        targets = models.get_signups_needing_finish_time()
+    except Exception as e:
+        current_app.logger.warning('RUSA sync target load failed: %s', e)
+        return jsonify({'ok': False, 'error': 'target load failed',
+                        'synced': 0, 'considered': 0}), 200
+
+    live_by_rusa = {}
+    synced = 0
+    for row in targets:
+        cached = row.get('rusa_cache')
+        if cached:
+            results = cached
+        else:
+            rusa_id = row.get('rusa_id')
+            if rusa_id in live_by_rusa:
+                results = live_by_rusa[rusa_id]
+            else:
+                try:
+                    results = fetch_rider_results(rusa_id)
+                except Exception as e:
+                    current_app.logger.warning(
+                        'RUSA fetch failed for rider %s: %s', row.get('rider_id'), e)
+                    results = []
+                live_by_rusa[rusa_id] = results
+        finish_time = _match_rusa_finish_time(
+            row.get('date'), row.get('distance_km'), results)
+        if finish_time and models.set_signup_finish_time(row['id'], finish_time):
+            synced += 1
+
+    current_app.logger.info(
+        'RUSA finish-time sync: synced=%s of %s considered', synced, len(targets))
+    return jsonify({'ok': True, 'synced': synced, 'considered': len(targets)}), 200
 
 
 @cron_bp.route('/fetch-brevet-weather', methods=['GET', 'POST'])

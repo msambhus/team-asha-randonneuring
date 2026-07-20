@@ -1116,6 +1116,52 @@ def get_rider_past_results(rider_id):
     )
 
 
+def get_signups_needing_finish_time():
+    """Finished sign-ups still missing an official finish_time, for the RUSA sync.
+
+    One row per finished rp_event_signup whose rider has a rusa_id and whose
+    finish_time is NULL or blank, carrying the event date + distance the matcher
+    needs and the rider rusa_id + rusa_cache (so the cron reuses the cached RUSA
+    history before any live fetch). Ordered by rider so the cron can batch per rider.
+    Touches only rp_event_signup / rp_rider / rp_brevet_event; scoped per rider
+    downstream by the cron.
+    """
+    return db.query(
+        "SELECT s.id, s.rider_id, s.event_id, "
+        "       r.rusa_id, r.rusa_cache, "
+        "       e.date, e.distance_km, e.name "
+        "FROM rp_event_signup s "
+        "JOIN rp_rider r ON r.id = s.rider_id "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "WHERE s.status = %s "
+        "  AND (s.finish_time IS NULL OR s.finish_time = '') "
+        "  AND r.rusa_id IS NOT NULL "
+        "ORDER BY r.id, e.date",
+        (RideStatus.FINISHED.value,),
+    )
+
+
+def set_signup_finish_time(signup_id, finish_time):
+    """Write an official RUSA finish_time onto one finished sign-up (by row id).
+
+    The SOLE real-value writer of finish_time — the self-service result endpoint only
+    ever clears it. Re-asserts status = finished AND a still-empty finish_time, so a
+    row that left finished, or was already filled, is never overwritten. Returns True
+    when a row changed (RETURNING id, since db.execute yields the first row not a
+    rowcount). rp_ tables only.
+    """
+    row = db.execute(
+        "UPDATE rp_event_signup "
+        "SET finish_time = %s, updated_at = NOW() "
+        "WHERE id = %s AND status = %s "
+        "  AND (finish_time IS NULL OR finish_time = '') "
+        "RETURNING id",
+        (finish_time, signup_id, RideStatus.FINISHED.value),
+        returning=True,
+    )
+    return row is not None
+
+
 # --------------------------------------------------------------------------- #
 # Brevet weather cache (rp_brevet_weather) — one raw Open-Meteo point forecast per
 # (event, date), warmed OFF the request path by the weather cron and READ (never
