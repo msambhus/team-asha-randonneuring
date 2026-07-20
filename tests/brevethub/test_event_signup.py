@@ -109,12 +109,27 @@ def test_withdraw_with_no_existing_row_is_404(client):
 # --------------------------------------------------------------------------- #
 # Validation
 # --------------------------------------------------------------------------- #
-def test_invalid_status_rejected(client):
+def test_result_status_rejected_on_signup_endpoint(client):
+    """finished/dnf/dns/otl are VALID lifecycle values now — but only via /result.
+    The pre-ride /signup endpoint still rejects every result value (400) and writes
+    nothing (the finished-now-valid contract: valid enum value, wrong endpoint)."""
+    _login(client)
+    for result_status in ('finished', 'dnf', 'dns', 'otl'):
+        with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+             patch('brevethub.models.get_brevet_event', return_value=_EVENT), \
+             patch('brevethub.models.set_rider_signup') as mock_set:
+            resp = client.post('/calendar/11/signup', json={'status': result_status})
+        assert resp.status_code == 400, result_status
+        mock_set.assert_not_called()
+
+
+def test_garbage_status_rejected_on_signup_endpoint(client):
+    """A value outside the whole lifecycle enum is still a 400 with no write."""
     _login(client)
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_brevet_event', return_value=_EVENT), \
          patch('brevethub.models.set_rider_signup') as mock_set:
-        resp = client.post('/calendar/11/signup', json={'status': 'finished'})
+        resp = client.post('/calendar/11/signup', json={'status': 'bogus'})
     assert resp.status_code == 400
     mock_set.assert_not_called()
 

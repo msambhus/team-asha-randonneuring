@@ -992,6 +992,96 @@ def clear_rider_signup(rider_id, event_id):
     return 'deleted'
 
 
+def set_signup_result(rider_id, event_id, status):
+    """Set a post-ride result on a rider OWN PAST sign-up (status-only).
+
+    Read, then a guarded write on a three-part predicate, all three required:
+    ownership (rider_id bind — the tenant-safety gate), a past event date, and a
+    current status eligible for a result (going, or an existing post-ride result).
+    Returns a (sentinel, finish_time) tuple the route maps to an HTTP code:
+      (not_found, None)     no sign-up for this rider on this event -> 404
+      (not_past, None)      the event date has not passed -> 409
+      (ineligible, None)    a non-convertible pre-ride current status -> 409
+      (ok, <time-or-None>)  the result was written -> 200
+
+    finish_time is NEVER given a rider value here — the RUSA-sync cron is the sole
+    real writer. A correction to a non-successful result (dnf / dns / otl) clears any
+    stale finish_time to NULL as a status side effect; a correction to or among
+    finished preserves an existing RUSA value. The guarded write re-asserts the
+    eligibility predicate so a concurrent transition cannot slip a non-eligible row
+    through.
+    """
+    row = db.query_one(
+        "SELECT s.status, s.finish_time, (e.date < CURRENT_DATE) AS is_past "
+        "FROM rp_event_signup s "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "WHERE s.rider_id = %s AND s.event_id = %s",
+        (rider_id, event_id),
+    )
+    if not row:
+        return ('not_found', None)
+    if not row['is_past']:
+        return ('not_past', None)
+    current = RideStatus.normalize(row['status'])
+    if not (current == RideStatus.GOING or RideStatus.is_post_ride(current)):
+        return ('ineligible', None)
+
+    new_status = RideStatus.normalize(status)
+    # The eligibility set re-asserted by the guarded write: a going row or any
+    # post-ride result. Kept identical to the read-time predicate above.
+    eligible = (RideStatus.GOING.value, RideStatus.FINISHED.value,
+                RideStatus.DNF.value, RideStatus.DNS.value, RideStatus.OTL.value)
+    if RideStatus.is_successful(new_status):
+        # Preserve any existing RUSA finish time; only flip the status.
+        updated = db.execute(
+            "UPDATE rp_event_signup "
+            "SET status = %s, updated_at = NOW() "
+            "WHERE rider_id = %s AND event_id = %s "
+            "  AND status IN (%s, %s, %s, %s, %s) "
+            "RETURNING finish_time",
+            (new_status.value, rider_id, event_id) + eligible,
+            returning=True,
+        )
+    else:
+        # A non-finish has no official time: clear any stale finish_time to NULL.
+        updated = db.execute(
+            "UPDATE rp_event_signup "
+            "SET status = %s, finish_time = NULL, updated_at = NOW() "
+            "WHERE rider_id = %s AND event_id = %s "
+            "  AND status IN (%s, %s, %s, %s, %s) "
+            "RETURNING finish_time",
+            (new_status.value, rider_id, event_id) + eligible,
+            returning=True,
+        )
+    if updated is None:
+        # A concurrent transition moved the row out of an eligible status.
+        return ('ineligible', None)
+    return ('ok', updated.get('finish_time'))
+
+
+def auto_finalize_past_signups():
+    """Promote every past-date going sign-up to finished; return the count changed.
+
+    Tenant-agnostic: keyed on the event date and the going status only, so it needs
+    no club scoping. Mirrors the parent web app auto-finalize. ONLY a going row on a
+    past-date event is promoted (interested / maybe / withdraw and any future row are
+    untouched, and a row already resolved is left as-is). The CTE returns the affected
+    ids so db.execute can report a COUNT (it yields the first row, not a rowcount).
+    """
+    row = db.execute(
+        "WITH rp_finalized AS ("
+        "  UPDATE rp_event_signup "
+        "  SET status = %s, updated_at = NOW() "
+        "  WHERE status = %s "
+        "    AND event_id IN (SELECT id FROM rp_brevet_event WHERE date < CURRENT_DATE) "
+        "  RETURNING id"
+        ") SELECT COUNT(*) AS n FROM rp_finalized",
+        (RideStatus.FINISHED.value, RideStatus.GOING.value),
+        returning=True,
+    )
+    return row['n'] if row else 0
+
+
 def get_rider_signups(rider_id):
     """The active upcoming sign-ups (interested / maybe / going) for a rider, linked
     to the event, soonest first — for the dashboard "My upcoming sign-ups" section.
@@ -1005,6 +1095,24 @@ def get_rider_signups(rider_id):
         "ORDER BY e.date ASC, e.distance_km ASC",
         (rider_id, RideStatus.INTERESTED.value, RideStatus.MAYBE.value,
          RideStatus.GOING.value),
+    )
+
+
+def get_rider_past_results(rider_id):
+    """Past-event results (finished / dnf / dns / otl) for one rider, most recent
+    first, for the dashboard "My past results" card. Linked to the event for name /
+    date / distance; carries the official finish_time (NULL until the RUSA-sync cron
+    fills it). rp_ tables only, rider_id-scoped."""
+    return db.query(
+        "SELECT s.event_id, s.status, s.finish_time, "
+        "       e.name, e.date, e.distance_km, e.region "
+        "FROM rp_event_signup s "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "WHERE s.rider_id = %s AND s.status IN (%s, %s, %s, %s) "
+        "  AND e.date < CURRENT_DATE "
+        "ORDER BY e.date DESC, e.distance_km DESC",
+        (rider_id, RideStatus.FINISHED.value, RideStatus.DNF.value,
+         RideStatus.DNS.value, RideStatus.OTL.value),
     )
 
 

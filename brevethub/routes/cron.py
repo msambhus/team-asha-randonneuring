@@ -108,6 +108,39 @@ def refresh_calendar():
     return jsonify({'ok': True, 'refreshed': refreshed}), 200
 
 
+@cron_bp.route('/finalize-signups', methods=['GET', 'POST'])
+def finalize_signups():
+    """Auto-finalize past-date going sign-ups to finished (keyless logic).
+
+    Auth-gated (Bearer CRON_SECRET). Mirrors the parent web app auto-finalize:
+    flips every past-date ``going`` rp_event_signup to ``finished`` and returns
+    ``{"finalized": N}``. Tenant-agnostic — the promotion is keyed on the event date
+    and the going status only (no club scoping), and it never touches an
+    interested/maybe/withdraw row or a future-date row. A DB failure is logged and
+    returned as a non-500 JSON body so a flaky run never pages the maintainer.
+
+    Scheduling: this runs BEFORE /cron/sync-rusa-results in the daily Vercel cron so
+    the RUSA sync has freshly finished rows to back-fill (see brevethub/vercel.json).
+
+    Route contract (pinned, same as the other crons): the production URL is exactly
+    ``/cron/finalize-signups`` — the blueprint owns the ``/cron`` prefix and this
+    decorator is LEAF-ONLY, so a double ``/cron`` prefix cannot 404 the
+    Vercel-scheduled request. GET and POST are both accepted (Vercel cron issues GET).
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    try:
+        finalized = models.auto_finalize_past_signups()
+    except Exception as e:
+        current_app.logger.warning('Sign-up auto-finalize failed: %s', e)
+        return jsonify({'ok': False, 'error': 'finalize failed', 'finalized': 0}), 200
+
+    current_app.logger.info('Sign-up auto-finalize: finalized=%s', finalized)
+    return jsonify({'ok': True, 'finalized': finalized}), 200
+
+
 @cron_bp.route('/fetch-brevet-weather', methods=['GET', 'POST'])
 def fetch_brevet_weather():
     """Fetch Open-Meteo point forecasts for near-term brevets into the rp_* cache.

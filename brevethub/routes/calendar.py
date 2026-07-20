@@ -214,13 +214,26 @@ def calendar():
     # The current rider's OWN status per event — never another rider's, so the
     # guest/other-rider view stays free of any participation PII.
     my_status = {}
+    my_results = []
     if rider:
         my_status = {row['event_id']: row['status']
                      for row in models.get_rider_signup_statuses(rider['id'])}
+        # The rider's OWN past-event results, so the calendar carries the post-ride
+        # surface (result badge + read-only finish_time + a status-only correction)
+        # the upcoming grid cannot show. Failure-tolerant: a DB hiccup drops the
+        # section rather than 500-ing the whole calendar. rider_id-scoped -> a rider
+        # only ever sees and corrects their OWN results.
+        try:
+            my_results = models.get_rider_past_results(rider['id'])
+        except Exception as e:
+            current_app.logger.warning('past-result load failed for rider %s: %s',
+                                       rider['id'], e)
+            my_results = []
 
     return render_template(
         'calendar.html', events=events, months=months, my_status=my_status,
-        rider=rider, club=club, scope=scope, degraded=degraded, weather=weather,
+        my_results=my_results, rider=rider, club=club, scope=scope,
+        degraded=degraded, weather=weather,
     )
 
 
@@ -290,3 +303,46 @@ def unsignup(event_id):
     if outcome == 'post_ride':
         return jsonify({'error': 'Cannot remove a sign-up with a result'}), 400
     return jsonify({'ok': True, 'event_id': event_id, 'status': None}), 200
+
+
+@calendar_bp.route('/calendar/<int:event_id>/result', methods=['POST'])
+def set_result(event_id):
+    """Self-service post-ride result on the signed-in rider's OWN past sign-up.
+
+    The parent web app sets result states via a club-admin grid; BrevetHub has no
+    admin surface yet, so a rider self-reports the result of their own past ride
+    instead (see the web-parity notes). This is inherently tenant-safe: every
+    mutation binds rider_id, so a rider can NEVER touch another rider's row — a
+    result on a row that is not theirs reads as "no such sign-up" → 404.
+
+    STATUS-ONLY: the endpoint reads only ``status`` from the body. Any client-sent
+    ``finish_time`` is ignored — an official finish time comes from RUSA, not a rider
+    self-report (parity + anti-abuse). finish_time is reflected read-only in the
+    response.
+
+    Auth ladder / result guard:
+      - no session rider                          → 401
+      - a value that is not a result status       → 400 (a pre-ride value is rejected
+                                                     before any DB read)
+      - no sign-up for this rider on this event   → 404 (absorbs cross-rider probes)
+      - the event date has not passed             → 409
+      - a non-convertible current status          → 409
+      - own past going/post-ride row              → 200 (status set)
+    """
+    rider = current_rider()
+    if not rider:
+        return _login_required_json()
+
+    payload = request.get_json(silent=True) or request.form
+    status = (payload.get('status') or '').strip().lower()
+    if status not in _RESULT_STATUSES:
+        return jsonify({'error': 'Invalid result status'}), 400
+
+    # status-only: any client finish_time in the body is never read here.
+    outcome, finish_time = models.set_signup_result(rider['id'], event_id, status)
+    if outcome == 'not_found':
+        return jsonify({'error': 'No past sign-up to set a result on'}), 404
+    if outcome in ('not_past', 'ineligible'):
+        return jsonify({'error': 'This sign-up is not eligible for a result'}), 409
+    return jsonify({'ok': True, 'event_id': event_id, 'status': status,
+                    'finish_time': finish_time}), 200

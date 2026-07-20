@@ -204,6 +204,13 @@ def _login(client, rider_id=7):
         sess['rider_id'] = rider_id
 
 
+# One of the rider's OWN past-event results (a finished brevet with an official
+# RUSA finish time), for the post-ride surface on the calendar.
+_PAST_RESULT = {'event_id': 20, 'status': 'finished', 'finish_time': '13:37',
+                'name': 'Del Puerto Canyon 200', 'date': '2026-05-10',
+                'distance_km': 200, 'region': 'CA: San Francisco'}
+
+
 def test_rider_sees_own_status_and_signup_controls(client):
     _login(client)
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
@@ -211,6 +218,7 @@ def test_rider_sees_own_status_and_signup_controls(client):
          patch('brevethub.models.get_events_cache_freshness', return_value=_now()), \
          patch('brevethub.routes.calendar.get_rusa_events'), \
          patch('brevethub.models.get_upcoming_events', return_value=[_EVENT_NO_START]), \
+         patch('brevethub.models.get_rider_past_results', return_value=[]), \
          patch('brevethub.models.get_rider_signup_statuses',
                return_value=[{'event_id': 11, 'status': 'going'}]):
         resp = client.get('/calendar')
@@ -227,8 +235,64 @@ def test_rider_region_scope_filters_by_club_state(client):
          patch('brevethub.models.get_events_cache_freshness', return_value=_now()), \
          patch('brevethub.routes.calendar.get_rusa_events'), \
          patch('brevethub.models.get_upcoming_events', return_value=[_EVENT_NO_START]) as mock_upcoming, \
+         patch('brevethub.models.get_rider_past_results', return_value=[]), \
          patch('brevethub.models.get_rider_signup_statuses', return_value=[]):
         resp = client.get('/calendar?scope=club')
     assert resp.status_code == 200
     # The rider's club state is passed as the region filter.
     assert mock_upcoming.call_args.kwargs.get('state') == 'CA'
+
+
+# --------------------------------------------------------------------------- #
+# Post-ride result surface on the calendar (rider-only)
+# --------------------------------------------------------------------------- #
+def test_rider_sees_past_result_surface(client):
+    """A signed-in rider sees their OWN past results on the calendar: a result badge,
+    the read-only official finish_time, and a status-only correction dropdown."""
+    _login(client)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_club', return_value={'id': 3, 'name': 'SFR', 'state': 'CA'}), \
+         patch('brevethub.models.get_events_cache_freshness', return_value=_now()), \
+         patch('brevethub.routes.calendar.get_rusa_events'), \
+         patch('brevethub.models.get_upcoming_events', return_value=[_EVENT_NO_START]), \
+         patch('brevethub.models.get_rider_signup_statuses', return_value=[]), \
+         patch('brevethub.models.get_rider_past_results', return_value=[_PAST_RESULT]):
+        resp = client.get('/calendar')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'My recent results' in body
+    assert 'result-select' in body                  # status-only correction control
+    assert 'result-badge' in body                   # post-ride result badge
+    assert '13:37' in body                           # read-only official finish time
+    assert 'Del Puerto Canyon 200' in body
+    # finish time is DISPLAY-ONLY — no finish-time text input anywhere.
+    assert 'name="finish_time"' not in body
+    # finished is a RESULT, never a pre-ride sign-up button.
+    assert 'data-status="finished"' not in body
+
+
+def test_guest_calendar_has_no_result_controls(client):
+    """A guest never sees the post-ride result surface (server-rendered only for a
+    signed-in rider), keeping the public page free of participation PII."""
+    with patch('brevethub.models.get_events_cache_freshness', return_value=_now()), \
+         patch('brevethub.routes.calendar.get_rusa_events'), \
+         patch('brevethub.models.get_upcoming_events', return_value=[_EVENT_NO_START]):
+        resp = client.get('/calendar')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'result-select' not in body
+    assert 'My recent results' not in body
+
+
+def test_rider_with_no_past_results_hides_section(client):
+    _login(client)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_club', return_value={'id': 3, 'name': 'SFR', 'state': 'CA'}), \
+         patch('brevethub.models.get_events_cache_freshness', return_value=_now()), \
+         patch('brevethub.routes.calendar.get_rusa_events'), \
+         patch('brevethub.models.get_upcoming_events', return_value=[_EVENT_NO_START]), \
+         patch('brevethub.models.get_rider_signup_statuses', return_value=[]), \
+         patch('brevethub.models.get_rider_past_results', return_value=[]):
+        resp = client.get('/calendar')
+    assert resp.status_code == 200
+    assert 'My recent results' not in resp.get_data(as_text=True)
