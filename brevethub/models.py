@@ -332,6 +332,29 @@ def clear_ride_garmin_rp(rider_id, ride_id):
         return False
 
 
+def set_active_ride_rp(rider_id, ride_id):
+    """Point the SUBJECT rider live-tracking row at ``ride_id`` without disturbing a
+    registered Garmin session.
+
+    Self-scoped (keyed on rider_id). The phone beacon calls this to attach the rider
+    to the ride they are streaming to: it sets active_ride_id and leaves the master
+    opt-in flag plus any Garmin session URL/token exactly as they were, so a rider
+    who linked a Garmin device keeps that link while a browser beacon retargets the
+    active ride. A fresh row (no prior prefs) is created with tracking disabled —
+    consent is set separately by the sharing toggle. Returns True on success."""
+    try:
+        db.execute(
+            "INSERT INTO rp_live_tracking (rider_id, active_ride_id, updated_at) "
+            "VALUES (%s, %s, NOW()) "
+            "ON CONFLICT (rider_id) DO UPDATE "
+            "SET active_ride_id = EXCLUDED.active_ride_id, updated_at = NOW()",
+            (rider_id, ride_id),
+        )
+        return True
+    except Exception:
+        return False
+
+
 def get_enabled_live_tracking_rp():
     """All riders opted in WITH a Garmin session pointed at a specific ride.
 

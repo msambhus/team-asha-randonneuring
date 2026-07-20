@@ -96,6 +96,13 @@
     </div>
   </details>
 
+  {# ── No Garmin? Stream this phone's browser location to this ride's map. ── #}
+  <p class="mb-4 text-sm">
+    <a class="text-primary font-semibold hover:text-accent hover:underline"
+       href="{{ url_for('live.live_share', ride_id=ride.id) }}">📍 Share my phone location for this ride</a>
+    <span class="text-text-light">— no Garmin needed (keep the page open).</span>
+  </p>
+
   {% if mapbox_token %}
   <div id="live-map"></div>
   <div class="live-legend">
