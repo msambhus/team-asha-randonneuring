@@ -240,11 +240,12 @@ def test_beacon_malformed_ride_id_400(client):
 
 
 def test_beacon_no_ride_context_400(client):
-    """No explicit ride and no active ride → 400 (open a ride's map first)."""
+    """No explicit ride, no active ride, and no cold-start candidate → 400."""
     _login(client)
     tracking = dict(_ENABLED, active_ride_id=None)
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_live_tracking_rp', return_value=tracking), \
+         patch('brevethub.models.get_auto_attach_ride_rp', return_value=None), \
          patch('brevethub.models.insert_live_position_rp') as ins:
         resp = _post(client, {'lat': 37.5, 'lng': -122.3})
     assert resp.status_code == 400

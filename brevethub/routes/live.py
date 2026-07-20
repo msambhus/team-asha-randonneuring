@@ -433,9 +433,14 @@ def _resolve_beacon_ride(rider_id, payload, tracking):
          ride is refused (403). A malformed id is a 400.
       2. the rider's current active ride (a prior beacon/Garmin attach), re-gated
          defensively.
-      3. none accessible → 400 (open a ride live map to share for that ride).
+      3. cold-start auto-attach — deterministically pick the rider's nearest
+         accessible attached ride (owned, or a public ride they already stream to),
+         re-gated before persisting.
+      4. none accessible → 400 (open a ride live map to share for that ride).
     A newly picked ride is persisted to active_ride_id so the member poll surfaces
-    the rider on it (without clobbering a Garmin link)."""
+    the rider on it (without clobbering a Garmin link). If that attach write fails,
+    the fix is NOT stored (500) — a 200 whose point never appears on the map would
+    be a silent lie, because the member poll requires active_ride_id == ride_id."""
     explicit = payload.get('ride_id')
     if explicit is not None and str(explicit).strip() != '':
         try:
@@ -447,15 +452,40 @@ def _resolve_beacon_ride(rider_id, payload, tracking):
                 'live: rider %s beacon to inaccessible ride %s refused', rider_id, rid)
             return None, (jsonify({'error': 'You cannot share to that ride'}), 403)
         if (tracking or {}).get('active_ride_id') != rid:
-            models.set_active_ride_rp(rider_id, rid)
+            attach_error = _persist_attach(rider_id, rid)
+            if attach_error:
+                return None, attach_error
         return rid, None
 
     active = (tracking or {}).get('active_ride_id')
     if active and _accessible_ride(active, rider_id):
         return active, None
 
+    # Cold start: no explicit and no (still-accessible) active ride. Deterministically
+    # attach to the rider's nearest accessible ride, re-gated before the write so an
+    # inaccessible ride can never slip through even if the resolver widened.
+    picked = models.get_auto_attach_ride_rp(rider_id)
+    if picked and _accessible_ride(picked['id'], rider_id):
+        attach_error = _persist_attach(rider_id, picked['id'])
+        if attach_error:
+            return None, attach_error
+        return picked['id'], None
+
     return None, (jsonify(
         {'error': 'Open a ride live map to share for that ride'}), 400)
+
+
+def _persist_attach(rider_id, ride_id):
+    """Point the rider's active ride at ``ride_id``. Returns None on success or an
+    error ``(response, 500)`` tuple when the write fails — the caller must NOT store
+    the fix in that case, since the member poll only surfaces a rider whose
+    active_ride_id matches the point's ride."""
+    if models.set_active_ride_rp(rider_id, ride_id):
+        return None
+    current_app.logger.warning(
+        'live: could not attach rider %s to ride %s for beacon', rider_id, ride_id)
+    return (jsonify(
+        {'error': 'Could not start sharing for that ride. Please try again.'}), 500)
 
 
 @live_bp.route('/api/live/beacon', methods=['POST'])
