@@ -23,6 +23,11 @@ never touches the database, and it's stdlib-only (no extra dependencies).
    | `POLL_URL` | `https://team-asha-randonneuring.vercel.app/api/cron/poll-garmin-livetrack` |
    | `CRON_SECRET` | **the same secret** the Vercel app uses (copy from Vercel → project → Settings → Environment Variables) |
    | `POLL_INTERVAL_SECONDS` | `60` (optional; floor is 15) |
+   | `BREVETHUB_POLL_URL` | *(optional)* `https://brevethub.vercel.app/cron/poll-garmin-livetrack` — set this to also poll BrevetHub on the same tick |
+   | `BREVETHUB_CRON_SECRET` | *(optional)* BrevetHub's Vercel `CRON_SECRET`; **omit if it equals `CRON_SECRET`** (it falls back automatically) |
+
+   The one worker fans each tick out to every configured target and fails soft
+   per target — a BrevetHub outage never stops Team Asha polling, and vice versa.
 
 3. **Deploy.** Watch the service **Logs** — you should see lines like:
    ```

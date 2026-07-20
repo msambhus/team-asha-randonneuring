@@ -56,6 +56,45 @@ def test_summarize_compacts_json_and_tolerates_nonjson():
     assert 'HTTP 500' in poll_loop._summarize(500, '<html>oops</html>')
 
 
+def test_build_targets_primary_only():
+    targets = poll_loop.build_targets(
+        {'POLL_URL': 'https://ta/api/cron/poll', 'CRON_SECRET': 's'})
+    assert targets == [('team-asha', 'https://ta/api/cron/poll', 's')]
+
+
+def test_build_targets_adds_brevethub_with_own_secret():
+    targets = poll_loop.build_targets({
+        'POLL_URL': 'https://ta/api/cron/poll', 'CRON_SECRET': 's',
+        'BREVETHUB_POLL_URL': 'https://bh/cron/poll', 'BREVETHUB_CRON_SECRET': 'bh-s',
+    })
+    assert targets == [
+        ('team-asha', 'https://ta/api/cron/poll', 's'),
+        ('brevethub', 'https://bh/cron/poll', 'bh-s'),
+    ]
+
+
+def test_build_targets_brevethub_secret_falls_back_to_cron_secret():
+    # Two projects sharing one CRON_SECRET need only supply the extra URL.
+    targets = poll_loop.build_targets({
+        'POLL_URL': 'https://ta/api/cron/poll', 'CRON_SECRET': 'shared',
+        'BREVETHUB_POLL_URL': 'https://bh/cron/poll',
+    })
+    assert targets[1] == ('brevethub', 'https://bh/cron/poll', 'shared')
+
+
+def test_build_targets_empty_without_primary():
+    assert poll_loop.build_targets({'POLL_URL': '', 'CRON_SECRET': ''}) == []
+    assert poll_loop.build_targets(
+        {'BREVETHUB_POLL_URL': 'https://bh/cron/poll'}) == []  # BH alone is not enough
+
+
+def test_poll_target_is_fail_soft(capsys):
+    # A failing target must be logged and must NOT raise (so siblings still poll).
+    with patch('poll_loop.poll_once', side_effect=RuntimeError('boom')):
+        poll_loop.poll_target('brevethub', 'https://bh/cron/poll', 's')  # no raise
+    assert 'brevethub' in capsys.readouterr().out
+
+
 def test_main_exits_without_required_env():
     with patch.dict(os.environ, {'POLL_URL': '', 'CRON_SECRET': ''}, clear=False):
         with pytest.raises(SystemExit):
