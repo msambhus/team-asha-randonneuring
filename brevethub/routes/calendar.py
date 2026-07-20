@@ -62,11 +62,24 @@ calendar_bp = Blueprint('calendar', __name__)
 # warm; a present cache is NEVER re-scraped on the request path, only reported stale.
 CALENDAR_STALE_AFTER = timedelta(hours=40)
 
-# The statuses a rider may set from the calendar (BrevetHub's own enum values).
+# The pre-ride statuses a rider may set on the /signup endpoint (BrevetHub's own
+# lowercase enum values): the three active intents plus withdraw. Post-ride result
+# values (finished/dnf/dns/otl) are NOT settable here — they go through /result.
 _SIGNUP_STATUSES = {
     models.RideStatus.INTERESTED.value,
+    models.RideStatus.MAYBE.value,
     models.RideStatus.GOING.value,
     models.RideStatus.WITHDRAW.value,
+}
+
+# The post-ride result values a rider may self-report on their OWN past sign-up via
+# the /result endpoint. Kept distinct from _SIGNUP_STATUSES so a pre-ride value in a
+# /result body (or a result value in a /signup body) is rejected with 400.
+_RESULT_STATUSES = {
+    models.RideStatus.FINISHED.value,
+    models.RideStatus.DNF.value,
+    models.RideStatus.DNS.value,
+    models.RideStatus.OTL.value,
 }
 
 
@@ -211,22 +224,30 @@ def calendar():
     )
 
 
+def _login_required_json():
+    """Shared 401 body for the rider-only participation endpoints (no redirect)."""
+    return jsonify({
+        'error': 'Sign in to sign up for a brevet.',
+        'login_url': url_for('auth.login', next=url_for('calendar.calendar')),
+    }), 401
+
+
 @calendar_bp.route('/calendar/<int:event_id>/signup', methods=['POST'])
 def signup(event_id):
-    """Mark the signed-in rider interested / going / withdraw on a brevet.
+    """Mark the signed-in rider interested / maybe / going / withdraw on a brevet.
 
     JSON API (no redirects), auth ladder:
       - no session rider           → 401 (+ a login_url the client can send them to)
       - invalid status             → 400
       - unknown event              → 404
-    Only after all three pass is the sign-up upserted (one row per rider+event).
+    Then the pre-ride intent is applied (one row per rider+event). WITHDRAW is
+    UPDATE-only (mirrors the parent web app guard): withdrawing with no existing
+    sign-up → 404, so a rider cannot manufacture a withdraw row. Every mutation is
+    scoped to the signed-in rider, so a rider can only ever change their OWN row.
     """
     rider = current_rider()
     if not rider:
-        return jsonify({
-            'error': 'Sign in to sign up for a brevet.',
-            'login_url': url_for('auth.login', next=url_for('calendar.calendar')),
-        }), 401
+        return _login_required_json()
 
     payload = request.get_json(silent=True) or request.form
     status = (payload.get('status') or '').strip().lower()
@@ -237,5 +258,35 @@ def signup(event_id):
     if not event:
         return jsonify({'error': 'Event not found'}), 404
 
-    models.set_rider_signup(rider['id'], event_id, status)
+    if status == models.RideStatus.WITHDRAW.value:
+        # UPDATE-only: withdraw only succeeds against an existing sign-up row.
+        if not models.withdraw_rider_signup(rider['id'], event_id):
+            return jsonify({'error': 'No sign-up to withdraw'}), 404
+    else:
+        models.set_rider_signup(rider['id'], event_id, status)
     return jsonify({'ok': True, 'event_id': event_id, 'status': status}), 200
+
+
+@calendar_bp.route('/calendar/<int:event_id>/signup', methods=['DELETE'])
+def unsignup(event_id):
+    """Clear the signed-in rider's OWN pre-ride sign-up on a brevet.
+
+    JSON API (no redirects), mirroring the parent web app unsignup guard: only a
+    pre-ride intent (interested / maybe / going) may be cleared; a post-ride result
+    (or a withdraw) is retained as history.
+      - no session rider           → 401
+      - no sign-up row             → 404
+      - a non-clearable status     → 400
+      - a pre-ride row             → 200 (deleted)
+    rider_id-scoped, so a rider can only ever clear their OWN row.
+    """
+    rider = current_rider()
+    if not rider:
+        return _login_required_json()
+
+    outcome = models.clear_rider_signup(rider['id'], event_id)
+    if outcome == 'not_found':
+        return jsonify({'error': 'No sign-up to remove'}), 404
+    if outcome == 'post_ride':
+        return jsonify({'error': 'Cannot remove a sign-up with a result'}), 400
+    return jsonify({'ok': True, 'event_id': event_id, 'status': None}), 200

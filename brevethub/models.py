@@ -840,7 +840,7 @@ def get_upcoming_events(state=None, limit=200):
     returns every upcoming brevet (the general RUSA calendar).
 
     ``signup_count`` is the number of riders who are actively participating
-    (interested or going) — an AGGREGATE only, so the guest calendar can show
+    (interested / maybe / going) — an AGGREGATE only, so the guest calendar can show
     interest without exposing any rider identity. WITHDRAW rows are excluded so a
     withdrawn rider drops off the count. The count comes from a pre-aggregated
     sub-select LEFT-joined on the event id, so an event with zero sign-ups still
@@ -856,11 +856,12 @@ def get_upcoming_events(state=None, limit=200):
         "FROM rp_brevet_event e "
         "LEFT JOIN ("
         "  SELECT event_id, COUNT(*) AS signup_count "
-        "  FROM rp_event_signup WHERE status IN (%s, %s) GROUP BY event_id"
+        "  FROM rp_event_signup WHERE status IN (%s, %s, %s) GROUP BY event_id"
         ") sc ON sc.event_id = e.id "
         "WHERE e.date >= CURRENT_DATE AND (%s::text IS NULL OR e.region ILIKE %s) "
         "ORDER BY e.date ASC, e.distance_km ASC LIMIT %s",
-        (RideStatus.INTERESTED.value, RideStatus.GOING.value, state, like, limit),
+        (RideStatus.INTERESTED.value, RideStatus.MAYBE.value, RideStatus.GOING.value,
+         state, like, limit),
     )
 
 
@@ -943,18 +944,67 @@ def set_rider_signup(rider_id, event_id, status):
     )
 
 
+def withdraw_rider_signup(rider_id, event_id):
+    """Transition an EXISTING sign-up to withdraw; return True when a row changed.
+
+    UPDATE-only (never inserts), mirroring the parent web app withdraw guard: a
+    withdraw with no prior sign-up changes nothing and the caller reports 404, so a
+    guest cannot manufacture a withdraw row. Scoped by rider_id, so a rider can only
+    ever withdraw their OWN row. Uses RETURNING because db.execute yields the first
+    returned row (or None) rather than a rowcount.
+    """
+    row = db.execute(
+        "UPDATE rp_event_signup "
+        "SET status = %s, updated_at = NOW() "
+        "WHERE rider_id = %s AND event_id = %s "
+        "RETURNING id",
+        (RideStatus.WITHDRAW.value, rider_id, event_id),
+        returning=True,
+    )
+    return row is not None
+
+
+def clear_rider_signup(rider_id, event_id):
+    """Remove a rider OWN pre-ride sign-up; return a sentinel the route maps to HTTP.
+
+    Read-then-guarded-delete, mirroring the parent web app remove_signup:
+      not_found  no sign-up for this rider on this event -> 404
+      post_ride  the current status may not be cleared (a result, or withdraw) -> 400
+      deleted    a pre-ride row (interested / maybe / going) was removed -> 200
+    Scoped by rider_id throughout, so a rider can only ever clear their OWN row; the
+    DELETE re-asserts the pre-ride predicate so a concurrent transition cannot slip a
+    non-clearable row through.
+    """
+    row = db.query_one(
+        "SELECT status FROM rp_event_signup WHERE rider_id = %s AND event_id = %s",
+        (rider_id, event_id),
+    )
+    if not row:
+        return 'not_found'
+    if not RideStatus.can_remove(RideStatus.normalize(row['status'])):
+        return 'post_ride'
+    db.execute(
+        "DELETE FROM rp_event_signup "
+        "WHERE rider_id = %s AND event_id = %s AND status IN (%s, %s, %s)",
+        (rider_id, event_id, RideStatus.INTERESTED.value, RideStatus.MAYBE.value,
+         RideStatus.GOING.value),
+    )
+    return 'deleted'
+
+
 def get_rider_signups(rider_id):
-    """The active upcoming sign-ups (interested/going) for a rider, joined to the event,
-    soonest first — for the dashboard "My upcoming sign-ups" section. WITHDRAW
-    rows are excluded so a withdrawn brevet drops off the list."""
+    """The active upcoming sign-ups (interested / maybe / going) for a rider, linked
+    to the event, soonest first — for the dashboard "My upcoming sign-ups" section.
+    WITHDRAW rows are excluded so a withdrawn brevet drops off the list."""
     return db.query(
         "SELECT s.event_id, s.status, e.name, e.date, e.distance_km, e.region, "
         "       e.start_location, e.start_time "
         "FROM rp_event_signup s "
         "JOIN rp_brevet_event e ON e.id = s.event_id "
-        "WHERE s.rider_id = %s AND s.status IN (%s, %s) AND e.date >= CURRENT_DATE "
+        "WHERE s.rider_id = %s AND s.status IN (%s, %s, %s) AND e.date >= CURRENT_DATE "
         "ORDER BY e.date ASC, e.distance_km ASC",
-        (rider_id, RideStatus.INTERESTED.value, RideStatus.GOING.value),
+        (rider_id, RideStatus.INTERESTED.value, RideStatus.MAYBE.value,
+         RideStatus.GOING.value),
     )
 
 

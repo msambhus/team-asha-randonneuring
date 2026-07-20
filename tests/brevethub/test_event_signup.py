@@ -44,7 +44,7 @@ def test_anonymous_signup_unauthorized_no_write(client):
 
 
 # --------------------------------------------------------------------------- #
-# Interested → Going → Withdraw
+# Pre-ride matrix: interested / maybe / going (upsert) + withdraw (UPDATE-only)
 # --------------------------------------------------------------------------- #
 def test_rider_marks_interested(client):
     _login(client)
@@ -57,6 +57,18 @@ def test_rider_marks_interested(client):
     mock_set.assert_called_once_with(7, 11, 'interested')
 
 
+def test_rider_marks_maybe(client):
+    """maybe is a first-class pre-ride intent now (was rejected 400 before)."""
+    _login(client)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_brevet_event', return_value=_EVENT), \
+         patch('brevethub.models.set_rider_signup') as mock_set:
+        resp = client.post('/calendar/11/signup', json={'status': 'maybe'})
+    assert resp.status_code == 200
+    assert resp.get_json() == {'ok': True, 'event_id': 11, 'status': 'maybe'}
+    mock_set.assert_called_once_with(7, 11, 'maybe')
+
+
 def test_rider_changes_to_going(client):
     _login(client)
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
@@ -67,14 +79,31 @@ def test_rider_changes_to_going(client):
     mock_set.assert_called_once_with(7, 11, 'going')
 
 
-def test_rider_withdraws(client):
+def test_rider_withdraws_existing_signup(client):
+    """withdraw is UPDATE-only: it transitions an EXISTING row (parent-app guard)."""
     _login(client)
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_brevet_event', return_value=_EVENT), \
+         patch('brevethub.models.withdraw_rider_signup', return_value=True) as mock_wd, \
          patch('brevethub.models.set_rider_signup') as mock_set:
         resp = client.post('/calendar/11/signup', json={'status': 'withdraw'})
     assert resp.status_code == 200
-    mock_set.assert_called_once_with(7, 11, 'withdraw')
+    assert resp.get_json() == {'ok': True, 'event_id': 11, 'status': 'withdraw'}
+    mock_wd.assert_called_once_with(7, 11)
+    mock_set.assert_not_called()          # withdraw never inserts a new row
+
+
+def test_withdraw_with_no_existing_row_is_404(client):
+    """Withdrawing with no prior sign-up → 404, and no row is written."""
+    _login(client)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_brevet_event', return_value=_EVENT), \
+         patch('brevethub.models.withdraw_rider_signup', return_value=False) as mock_wd, \
+         patch('brevethub.models.set_rider_signup') as mock_set:
+        resp = client.post('/calendar/11/signup', json={'status': 'withdraw'})
+    assert resp.status_code == 404
+    mock_wd.assert_called_once_with(7, 11)
+    mock_set.assert_not_called()
 
 
 # --------------------------------------------------------------------------- #
@@ -109,6 +138,46 @@ def test_form_encoded_signup_also_works(client):
         resp = client.post('/calendar/11/signup', data={'status': 'going'})
     assert resp.status_code == 200
     mock_set.assert_called_once_with(7, 11, 'going')
+
+
+# --------------------------------------------------------------------------- #
+# Clear / unsignup (DELETE) — pre-ride only
+# --------------------------------------------------------------------------- #
+def test_clear_pre_ride_signup_deletes(client):
+    _login(client)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.clear_rider_signup', return_value='deleted') as mock_clear:
+        resp = client.delete('/calendar/11/signup')
+    assert resp.status_code == 200
+    assert resp.get_json() == {'ok': True, 'event_id': 11, 'status': None}
+    mock_clear.assert_called_once_with(7, 11)
+
+
+def test_clear_absent_signup_is_404(client):
+    _login(client)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.clear_rider_signup', return_value='not_found') as mock_clear:
+        resp = client.delete('/calendar/11/signup')
+    assert resp.status_code == 404
+    mock_clear.assert_called_once_with(7, 11)
+
+
+def test_clear_post_ride_signup_is_400(client):
+    """A finished/dnf/dns/otl (or withdraw) row cannot be cleared → 400."""
+    _login(client)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.clear_rider_signup', return_value='post_ride') as mock_clear:
+        resp = client.delete('/calendar/11/signup')
+    assert resp.status_code == 400
+    mock_clear.assert_called_once_with(7, 11)
+
+
+def test_clear_requires_login(client):
+    with patch('brevethub.models.clear_rider_signup') as mock_clear:
+        resp = client.delete('/calendar/11/signup')
+    assert resp.status_code == 401
+    assert 'login_url' in resp.get_json()
+    mock_clear.assert_not_called()
 
 
 # --------------------------------------------------------------------------- #
