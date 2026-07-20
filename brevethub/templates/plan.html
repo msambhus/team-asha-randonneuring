@@ -115,31 +115,32 @@
 {% endblock %}
 
 {% block content %}
-<div class="container section">
-<section class="plan-page">
-
 {% if real_plan %}
   {# ── Real RWGPS-backed plan (km / km-h) ─────────────────────────────────── #}
   {% set svg = real_plan.svg %}
-  <div class="plan-intro">
-    <p><a class="back-link" href="{{ url_for('calendar.calendar') }}">&larr; Back to calendar</a></p>
-    <h1>Ride plan</h1>
-    <h2 class="plan-event-name">{{ event.name }}</h2>
-    <div class="plan-event-meta">
-      <span>{{ event.distance_km }} km</span>
-      {% if real_plan.total_elevation_ft %}<span>{{ real_plan.total_elevation_ft }} ft climb</span>{% endif %}
-      {% if event.region %}<span>{{ event.region }}</span>{% endif %}
-      {% if event.date %}<span>{{ event.date }}</span>{% endif %}
-      <span>ACP time limit: {{ cutoff_hours }} h</span>
-      {% if real_plan.avg_moving_speed_kmh %}<span>Avg moving: {{ real_plan.avg_moving_speed_kmh }} km/h</span>{% endif %}
-    </div>
+  <div class="hero" style="padding:24px 20px;">
+    <p style="margin-bottom:8px;"><a href="{{ url_for('calendar.calendar') }}" style="color:rgba(255,255,255,0.9);text-decoration:none;">&larr; Back to calendar</a></p>
+    <h1>{{ event.name }}</h1>
+    <p style="opacity:0.9;">Ride plan{% if event.region %} &middot; {{ event.region }}{% endif %}{% if event.date %} &middot; {{ event.date }}{% endif %}</p>
+  </div>
+  <div class="stats-row">
+    <div class="stat-card"><div class="number">{{ event.distance_km }}</div><div class="label">Distance (km)</div></div>
+    {% if real_plan.total_elevation_ft %}<div class="stat-card"><div class="number">{{ real_plan.total_elevation_ft }}</div><div class="label">Climb (ft)</div></div>{% endif %}
+    {% if real_plan.avg_moving_speed_kmh %}<div class="stat-card"><div class="number">{{ real_plan.avg_moving_speed_kmh }}</div><div class="label">Avg moving (km/h)</div></div>{% endif %}
+    <div class="stat-card"><div class="number">{{ cutoff_hours }}</div><div class="label">ACP limit (h)</div></div>
+  </div>
+  <div class="container section">
+  <section class="plan-page">
     <p class="plan-real-note text-text-light">
       Real route plan generated from
       {% if real_plan.rwgps_url %}<a href="{{ real_plan.rwgps_url }}" rel="noopener" target="_blank" class="text-primary font-semibold hover:text-accent hover:underline">RideWithGPS</a>{% else %}RideWithGPS{% endif %}:
       controls, elevation and per-segment gradient pacing. Distances are shown in km,
       speeds in km/h; climb in feet.
     </p>
-  </div>
+    {# Terrain strip: each segment colored by its difficulty (mirrors the parent app). #}
+    <div style="display:flex;height:14px;border-radius:7px;overflow:hidden;margin:0 0 20px;border:1px solid var(--border);" title="Route segments colored by difficulty">
+      {% for s in real_plan.stops %}{% if s.seg_dist_km %}<div style="width:{{ (s.seg_dist_km / event.distance_km * 100)|round(1) }}%;background:{{ s.difficulty_color }};"></div>{% endif %}{% endfor %}
+    </div>
 
   {# Elevation profile (cumulative climb in feet vs distance in km) with per-stop
      difficulty-colored markers. Geometry is pre-computed in the route. #}
@@ -207,25 +208,29 @@
     </tbody>
   </table>
   </div>
+  </section>
+  </div>
 
 {% else %}
   {# ── Synthetic Scope-A pacing schedule (evenly spaced, target pace) ──────── #}
-  <div class="plan-intro">
-    <p><a class="back-link" href="{{ url_for('calendar.calendar') }}">&larr; Back to calendar</a></p>
-    <h1>Pacing plan</h1>
-    <h2 class="plan-event-name">{{ event.name }}</h2>
-    <div class="plan-event-meta">
-      <span>{{ event.distance_km }} km</span>
-      {% if event.region %}<span>{{ event.region }}</span>{% endif %}
-      {% if event.date %}<span>{{ event.date }}</span>{% endif %}
-      <span>ACP time limit: {{ cutoff_hours }} h</span>
-    </div>
+  <div class="hero" style="padding:24px 20px;">
+    <p style="margin-bottom:8px;"><a href="{{ url_for('calendar.calendar') }}" style="color:rgba(255,255,255,0.9);text-decoration:none;">&larr; Back to calendar</a></p>
+    <h1>{{ event.name }}</h1>
+    <p style="opacity:0.9;">Pacing plan{% if event.region %} &middot; {{ event.region }}{% endif %}{% if event.date %} &middot; {{ event.date }}{% endif %}</p>
+  </div>
+  <div class="stats-row">
+    <div class="stat-card"><div class="number">{{ event.distance_km }}</div><div class="label">Distance (km)</div></div>
+    <div class="stat-card"><div class="number">{{ cutoff_hours }}</div><div class="label">ACP limit (h)</div></div>
+    {% if speed_kmh %}<div class="stat-card"><div class="number">{{ speed_kmh }}</div><div class="label">Target pace (km/h)</div></div>{% endif %}
+    {% if finish_hours %}<div class="stat-card"><div class="number">{{ finish_hours }}</div><div class="label">Est. finish (h)</div></div>{% endif %}
+  </div>
+  <div class="container section">
+  <section class="plan-page">
     <p class="plan-scope-note text-text-light">
       Scope A pacing: stops are spaced evenly from the brevet distance (every 100&nbsp;km
       plus the finish). Arrival and time bank are computed against the ACP control
       cutoff.
     </p>
-  </div>
 
   {# Target picker — a simple GET form; submitting recomputes the schedule. Pick a
      target average speed OR a target finish time (speed wins if both are given). #}
@@ -299,9 +304,9 @@
       </p>
     {% endif %}
   </div>
+  </section>
+  </div>
 {% endif %}
-</section>
-</div>
 
 {% if not real_plan and rider %}
 <script>
