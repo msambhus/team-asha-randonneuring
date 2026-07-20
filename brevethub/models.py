@@ -15,15 +15,72 @@ from brevethub import db
 
 
 class RideStatus(str, Enum):
-    """BrevetHub's own ride-status enum — defined here so BrevetHub shares no
-    code with Team Asha's models. Kept as a str-Enum for direct SQL binding."""
+    """BrevetHub own ride-status enum — defined here so BrevetHub shares no code
+    with the parent web app models. Kept as a str-Enum for direct SQL binding.
+
+    Pre-ride:  interested / maybe / going / withdraw.
+    Post-ride: finished / dnf / dns / otl (a result, set once the event date passed).
+
+    The helper classmethods below mirror the parent web app state machine so the
+    routes can gate transitions without re-deriving the rules. BrevetHub stays
+    LOWERCASE where the parent web app uses uppercase status strings — a deliberate,
+    documented divergence (see the web-parity notes in the PR).
+    """
+    # Pre-ride statuses
     INTERESTED = 'interested'
+    MAYBE = 'maybe'
     GOING = 'going'
     WITHDRAW = 'withdraw'
+    # Post-ride result statuses (the event date has passed)
     FINISHED = 'finished'
     DNF = 'dnf'
     DNS = 'dns'
     OTL = 'otl'
+
+    @classmethod
+    def normalize(cls, value):
+        """Coerce a raw status string to a RideStatus member (lowercase).
+
+        Raises ValueError when the value is empty or not one of the eight members.
+        BrevetHub has no legacy status values, so there is no legacy remapping — the
+        one deliberate divergence versus the parent web app normalize, which carries
+        a YES / NO / SIGNED_UP legacy table BrevetHub never had.
+        """
+        if value is None or not str(value).strip():
+            raise ValueError('Status cannot be empty')
+        val = str(value).strip().lower()
+        try:
+            return cls(val)
+        except ValueError:
+            raise ValueError('Invalid status: ' + str(value))
+
+    @classmethod
+    def is_pre_ride(cls, status):
+        """True when the status is a pre-ride intent (interested / maybe / going).
+
+        Mirrors the parent web app: withdraw is deliberately NOT pre-ride here, so a
+        withdrawn row is never cleared or auto-finalized like an active intent.
+        """
+        return status in (cls.INTERESTED, cls.MAYBE, cls.GOING)
+
+    @classmethod
+    def is_post_ride(cls, status):
+        """True when the status is a post-ride result (finished / dnf / dns / otl)."""
+        return status in (cls.FINISHED, cls.DNF, cls.DNS, cls.OTL)
+
+    @classmethod
+    def is_successful(cls, status):
+        """True only when the status is a successful finish (finished)."""
+        return status == cls.FINISHED
+
+    @classmethod
+    def can_remove(cls, status):
+        """True when a sign-up in this status may be cleared by the rider.
+
+        Only a pre-ride intent (interested / maybe / going) may be removed; a
+        withdraw or any post-ride result is retained as history.
+        """
+        return status in (cls.INTERESTED, cls.MAYBE, cls.GOING)
 
 
 # --------------------------------------------------------------------------- #
