@@ -351,6 +351,152 @@ def post_position(ride_id):
 
 
 # --------------------------------------------------------------------------- #
+# Browser beacon (Mission 3, Feature 1) — a rider streams their OWN phone location
+# to a ride's member map. Two gates, both mandatory before any point is stored:
+#   - CONSENT: a persistent, revocable opt-in (rp_live_tracking.enabled). Without
+#     it the rider is never inserted and never appears in the member poll/map.
+#   - SELF-SCOPE: the rider is ALWAYS the trusted session identity; a client-
+#     supplied rider id is ignored, so a rider can only ever stream their own phone.
+# The beacon page mirrors the parent phone-share UI on the shared design system.
+# --------------------------------------------------------------------------- #
+@live_bp.route('/live/share')
+@profile_required
+def live_share():
+    """Phone beacon page: stream this device location to a ride's member map.
+
+    Opened standalone (the rider picks up their active ride) or from a ride's
+    member map with ``?ride_id=`` so the beacon streams to THAT ride — the
+    multi-rider public-ride join. @profile_required (a completed-profile rider);
+    the map appearance itself is still gated on the consent toggle below."""
+    rider_id = session['rider_id']
+    ride_id = request.args.get('ride_id', type=int)
+    tracking = models.get_live_tracking_rp(rider_id)
+    opted_in = bool(tracking and tracking.get('enabled'))
+    return render_template('live_beacon.html', opted_in=opted_in, ride_id=ride_id,
+                           poll_seconds=LIVE_POLL_SECONDS)
+
+
+@live_bp.route('/api/live/sharing', methods=['GET'])
+def live_sharing_status():
+    """Read the current rider's location-sharing consent flag (JSON).
+
+    Lets the beacon UI reflect the real server-side opt-in on open. 401 for an
+    anonymous caller, 403 for a signed-in rider whose profile is incomplete (the
+    same bar the member surface enforces)."""
+    rider = current_rider()
+    if not rider:
+        return jsonify({'error': 'Authentication required'}), 401
+    if not rider['profile_completed']:
+        return jsonify({'error': 'Complete your profile to share your location'}), 403
+    tracking = models.get_live_tracking_rp(rider['id'])
+    return jsonify({'enabled': bool(tracking and tracking.get('enabled'))})
+
+
+@live_bp.route('/api/live/sharing', methods=['POST'])
+def live_sharing_toggle():
+    """Set the current rider's location-sharing consent on/off (JSON).
+
+    Tapping "Start sharing" (with the on-page privacy note) is the consent act;
+    tapping stop, or POSTing enabled=false, revokes it and drops the rider off the
+    member map on the next poll. Preserves any registered Garmin session
+    (upsert_rider_live_tracking_rp touches only the enabled flag). Self-scoped to
+    the session rider. 401 anon / 403 incomplete profile."""
+    rider = current_rider()
+    if not rider:
+        return jsonify({'error': 'Authentication required'}), 401
+    if not rider['profile_completed']:
+        return jsonify({'error': 'Complete your profile to share your location'}), 403
+    enabled = bool((request.get_json(silent=True) or {}).get('enabled'))
+    ok = models.upsert_rider_live_tracking_rp(rider['id'], enabled)
+    return jsonify({'ok': ok, 'enabled': enabled})
+
+
+def _resolve_beacon_ride(rider_id, payload, tracking):
+    """Resolve (and persist) the ride a beacon fix attaches to, self-scoped and
+    accessibility-gated. Returns ``(ride_id, None)`` on success or
+    ``(None, (response, status))`` to reject.
+
+    Ladder — every resolved ride is re-checked through ``_accessible_ride`` (public
+    OR owned) before any write, so a rider can never beacon to a ride they cannot
+    access:
+      1. explicit ``ride_id`` in the body — the primary multi-rider join (a public
+         ride the rider opened the beacon from); an inaccessible/private non-owned
+         ride is refused (403). A malformed id is a 400.
+      2. the rider's current active ride (a prior beacon/Garmin attach), re-gated
+         defensively.
+      3. none accessible → 400 (open a ride live map to share for that ride).
+    A newly picked ride is persisted to active_ride_id so the member poll surfaces
+    the rider on it (without clobbering a Garmin link)."""
+    explicit = payload.get('ride_id')
+    if explicit is not None and str(explicit).strip() != '':
+        try:
+            rid = int(explicit)
+        except (TypeError, ValueError):
+            return None, (jsonify({'error': 'ride_id must be a ride id'}), 400)
+        if not _accessible_ride(rid, rider_id):
+            current_app.logger.warning(
+                'live: rider %s beacon to inaccessible ride %s refused', rider_id, rid)
+            return None, (jsonify({'error': 'You cannot share to that ride'}), 403)
+        if (tracking or {}).get('active_ride_id') != rid:
+            models.set_active_ride_rp(rider_id, rid)
+        return rid, None
+
+    active = (tracking or {}).get('active_ride_id')
+    if active and _accessible_ride(active, rider_id):
+        return active, None
+
+    return None, (jsonify(
+        {'error': 'Open a ride live map to share for that ride'}), 400)
+
+
+@live_bp.route('/api/live/beacon', methods=['POST'])
+def live_beacon():
+    """Ingest one geolocation fix for the SESSION rider (source='beacon').
+
+    Auth ladder (JSON API, no redirects): no session rider → 401; a signed-in
+    rider with an incomplete profile → 403; no location-sharing consent → 403;
+    lat/lng missing or out of range → 400. The rider is ALWAYS the trusted session
+    identity — a client-supplied rider id is ignored — so a rider can only stream
+    their own phone. The ride the fix attaches to is resolved + accessibility-gated
+    by ``_resolve_beacon_ride`` (an inaccessible ride → 403, no accessible ride →
+    400). Only after every gate passes is the point stored via
+    insert_live_position_rp with source='beacon'."""
+    rider = current_rider()
+    if not rider:
+        return jsonify({'error': 'Authentication required'}), 401
+    if not rider['profile_completed']:
+        return jsonify({'error': 'Complete your profile to share your location'}), 403
+    rider_id = rider['id']
+
+    tracking = models.get_live_tracking_rp(rider_id)
+    if not (tracking and tracking.get('enabled')):
+        return jsonify({'error': 'Turn on location sharing first'}), 403
+
+    payload = request.get_json(silent=True) or {}
+    lat = _valid_coord(payload.get('lat'), -90.0, 90.0)
+    lng = _valid_coord(payload.get('lng'), -180.0, 180.0)
+    if lat is None or lng is None:
+        return jsonify(
+            {'error': 'lat and lng are required and must be valid coordinates'}), 400
+
+    ride_id, error = _resolve_beacon_ride(rider_id, payload, tracking)
+    if ride_id is None:
+        return error
+
+    now = datetime.now(timezone.utc)
+    ok = models.insert_live_position_rp(
+        rider_id=rider_id,          # session only — a client value is never trusted
+        lat=lat, lng=lng,
+        accuracy=payload.get('accuracy'), speed=payload.get('speed'),
+        recorded_at=now, source='beacon', ride_id=ride_id,
+    )
+    if not ok:
+        return jsonify({'error': 'Invalid coordinates'}), 400
+    return jsonify({'ok': True, 'ride_id': ride_id,
+                    'recorded_at': now.isoformat()}), 200
+
+
+# --------------------------------------------------------------------------- #
 # Member live map (Surface B) — the multi-rider Mapbox map. PHYSICALLY SPLIT from
 # the anonymous guest surface (live_map / positions.json): those stay nameless and
 # world-viewable; everything named/telemetry lives here behind @profile_required +
