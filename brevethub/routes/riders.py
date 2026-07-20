@@ -77,6 +77,25 @@ def directory():
                            q=q, has_club=bool(viewer.get('club_id')))
 
 
+@riders_bp.route('/riders/leaderboard')
+@login_required
+def leaderboard():
+    """The viewer's club riders ranked by career km descending, with a
+    deterministic tie-break (display name ascending)."""
+    viewer = current_rider()
+    club = models.get_club(viewer['club_id']) if viewer.get('club_id') else None
+
+    riders = []
+    if viewer.get('club_id'):
+        today = date.today()
+        rows = models.get_club_riders_with_rusa(viewer['club_id'])
+        riders = [_career_row(r, today) for r in rows]
+        riders.sort(key=lambda r: (-r['total_km'], r['display_name'].lower()))
+
+    return render_template('career_leaderboard.html', club=club, riders=riders,
+                           has_club=bool(viewer.get('club_id')))
+
+
 @riders_bp.route('/riders/<rusa_id>')
 @login_required
 def rider_profile(rusa_id):

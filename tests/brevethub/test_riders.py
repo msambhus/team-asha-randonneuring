@@ -147,6 +147,21 @@ def test_directory_club_less_viewer_gets_join_state(client):
 
 
 # --------------------------------------------------------------------------- #
+# Leaderboard
+# --------------------------------------------------------------------------- #
+def test_leaderboard_orders_by_career_km_desc_with_tiebreak(client):
+    """Career km descending; a bob/carol tie at 600 km breaks deterministically by
+    display name ascending → alice, bob, carol."""
+    resp = _get(client, _ALICE['id'], '/riders/leaderboard')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    i_alice, i_bob, i_carol = body.index('alice'), body.index('bob'), body.index('carol')
+    assert i_alice < i_bob < i_carol
+    assert '1500' in body                       # alice career km
+    assert 'mallory' not in body                # cross-club isolation (leaderboard)
+
+
+# --------------------------------------------------------------------------- #
 # Public rider profile — access gate + privacy + career reuse
 # --------------------------------------------------------------------------- #
 def test_profile_same_club_returns_200(client):
