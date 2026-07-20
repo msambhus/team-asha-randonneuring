@@ -10,7 +10,9 @@
     { "path": "/cron/fetch-brevet-weather", "schedule": "30 8 * * *" },
     { "path": "/cron/warm-brevet-plans", "schedule": "0 9 * * *" },
     { "path": "/cron/warm-brevet-route-weather", "schedule": "30 9 * * *" },
-    { "path": "/cron/poll-garmin-livetrack", "schedule": "0 10 * * *" }
+    { "path": "/cron/poll-garmin-livetrack", "schedule": "0 10 * * *" },
+    { "path": "/cron/finalize-signups", "schedule": "0 11 * * *" },
+    { "path": "/cron/sync-rusa-results", "schedule": "30 11 * * *" }
   ],
   "routes": [
     { "src": "/static/(.*)", "dest": "/static/$1" },

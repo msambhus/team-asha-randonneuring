@@ -263,10 +263,13 @@
     </div>
   {% endif %}
 
+  {# Month-abbreviation lookup for the date badge. A date stringifies to ISO
+     ("YYYY-MM-DD") whether it is a datetime.date (psycopg2) or a plain string.
+     Defined ahead of both the upcoming grid AND the rider results section below so
+     it is always available even when there are no upcoming months. #}
+  {% set MONTH_ABBR = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] %}
+
   {% if months %}
-    {# Month-abbreviation lookup for the date badge. ev.date stringifies to ISO
-       ("YYYY-MM-DD") whether it is a datetime.date (psycopg2) or a plain string. #}
-    {% set MONTH_ABBR = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] %}
     <div data-signup-base="/calendar">
       {% for month_label, month_events in months %}
         <div class="month-section">
@@ -364,6 +367,8 @@
                       <button type="button" class="signup-btn"
                               data-event-id="{{ ev.id }}" data-status="interested">Interested</button>
                       <button type="button" class="signup-btn"
+                              data-event-id="{{ ev.id }}" data-status="maybe">Maybe</button>
+                      <button type="button" class="signup-btn"
                               data-event-id="{{ ev.id }}" data-status="going">Going</button>
                       <button type="button" class="signup-btn secondary"
                               data-event-id="{{ ev.id }}" data-status="withdraw">Withdraw</button>
@@ -378,6 +383,65 @@
     </div>
   {% else %}
     <p class="text-text-light text-center py-10">No upcoming brevets found right now.</p>
+  {% endif %}
+
+  {# Rider-only post-ride surface: the upcoming grid above can only show pre-ride
+     controls (its events are all future-dated), so a rider's OWN past results live
+     here — a result badge, the read-only official finish_time, and a status-only
+     result-correction dropdown. Guests never see this (server-rendered only for a
+     signed-in rider), and every row is this rider's own (rider_id-scoped). #}
+  {% if rider and my_results %}
+    <div class="month-section" style="margin-top:32px;">
+      <div class="month-header">My recent results</div>
+      <div class="events-grid">
+        {% for s in my_results %}
+          {% set ds = s.date|string %}
+          <article class="event-card" data-result-event-id="{{ s.event_id }}">
+            <div class="event-date">
+              <div class="event-day">{{ ds[8:10] }}</div>
+              <div class="event-month">{{ MONTH_ABBR[ds[5:7]|int] if ds[5:7]|int else ds[5:7] }}</div>
+            </div>
+
+            {% if s.region %}
+              <span class="event-region-badge">{{ s.region }}</span>
+            {% endif %}
+
+            <div class="event-distance-row">
+              <span class="event-distance">{{ s.distance_km }} km</span>
+            </div>
+
+            <h2 class="event-title">{{ s.name }}</h2>
+
+            {# Post-ride surface — DEDICATED result classes (not the signup-btn /
+               signup-status controls, which the sign-up POST handler binds): the
+               result dropdown is bound only by its own /result change handler.
+               Styled with the shared Tailwind design system (no hand-rolled CSS). #}
+            <div class="signup-section">
+              {# Result badge — the current post-ride status. #}
+              <span class="result-badge inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold uppercase tracking-wide text-primary bg-[#f0f9ff] border border-[#7dd3fc]"
+                    data-event-id="{{ s.event_id }}">
+                {{ s.status|upper }}
+              </span>
+              <span class="signup-actions">
+                {# Read-only official finish time — filled from RUSA by the daily
+                   sync cron; an honest placeholder until then. No finish-time input. #}
+                <span class="result-finish text-sm font-semibold text-text-light"
+                      data-event-id="{{ s.event_id }}">
+                  {{ s.finish_time or '—' }}
+                </span>
+                {# Status-only result correction (this rider's OWN past ride). #}
+                <select class="result-select border border-border rounded-md px-2 py-1 text-sm font-semibold text-primary bg-white"
+                        data-event-id="{{ s.event_id }}" aria-label="Correct result">
+                  {% for opt in ['finished', 'dnf', 'dns', 'otl'] %}
+                    <option value="{{ opt }}" {% if s.status == opt %}selected{% endif %}>{{ opt|upper }}</option>
+                  {% endfor %}
+                </select>
+              </span>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    </div>
   {% endif %}
 
   {% if not rider %}
@@ -415,6 +479,31 @@ document.querySelectorAll('.signup-btn').forEach(function (btn) {
           ? r.data.status.charAt(0).toUpperCase() + r.data.status.slice(1)
           : '—';
       }
+    });
+  });
+});
+
+// Post-ride result correction (this rider's OWN past ride only): a small fetch()
+// POST to the self-service /result API. Status-only — the finish time is never
+// sent, only reflected read-only from the JSON response.
+document.querySelectorAll('.result-select').forEach(function (sel) {
+  sel.addEventListener('change', function () {
+    var eventId = sel.getAttribute('data-event-id');
+    fetch('/calendar/' + eventId + '/result', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: sel.value}),
+    }).then(function (resp) {
+      return resp.json().then(function (data) { return {ok: resp.ok, data: data}; });
+    }).then(function (r) {
+      if (!r.ok) {
+        if (r.data && r.data.login_url) { window.location = r.data.login_url; }
+        return;
+      }
+      var badge = document.querySelector('.result-badge[data-event-id="' + eventId + '"]');
+      if (badge && r.data.status) { badge.textContent = r.data.status.toUpperCase(); }
+      var finish = document.querySelector('.result-finish[data-event-id="' + eventId + '"]');
+      if (finish) { finish.textContent = r.data.finish_time || '—'; }
     });
   });
 });

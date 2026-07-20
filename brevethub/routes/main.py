@@ -104,6 +104,19 @@ def load_signups(rider):
         return []
 
 
+def load_past_results(rider):
+    """The rider's past-event results (finished/dnf/dns/otl) for the dashboard.
+
+    Failure-tolerant like the sign-up/RUSA/Strava sections: a DB hiccup returns []
+    and logs a warning rather than 500-ing the whole dashboard over a secondary card.
+    """
+    try:
+        return models.get_rider_past_results(rider['id'])
+    except Exception as e:
+        current_app.logger.warning('past-result load failed for rider %s: %s', rider['id'], e)
+        return []
+
+
 @main_bp.route('/dashboard')
 @profile_required
 def dashboard():
@@ -112,8 +125,10 @@ def dashboard():
     rusa = load_rusa_section(rider)
     strava = load_strava_section(rider)
     signups = load_signups(rider)
+    past_results = load_past_results(rider)
     return render_template('dashboard.html', rider=rider, club=club,
-                           rusa=rusa, strava=strava, signups=signups)
+                           rusa=rusa, strava=strava, signups=signups,
+                           past_results=past_results)
 
 
 @main_bp.route('/profile')

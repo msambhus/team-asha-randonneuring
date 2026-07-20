@@ -64,6 +64,47 @@
   {% endif %}
 </div>
 
+<div class="card" id="past-results">
+  <h2 class="text-primary text-[1.3rem] mb-4 pb-2.5 border-b-[3px] border-accent inline-block font-bold">My past results</h2>
+  {% if past_results %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Date</th><th>Brevet</th><th>Distance</th><th>Result</th><th>Finish time</th></tr>
+        </thead>
+        <tbody>
+          {% for s in past_results %}
+            <tr>
+              <td>{{ s.date }}</td>
+              <td>{{ s.name }}</td>
+              <td>{{ s.distance_km }} km</td>
+              <td>
+                {# Self-service result correction (this rider's own past ride only).
+                   Status-only: an official finish time comes from RUSA, never typed. #}
+                <select class="result-select border border-border rounded-md px-2 py-1 text-sm"
+                        data-event-id="{{ s.event_id }}" aria-label="Result">
+                  {% for opt in ['finished', 'dnf', 'dns', 'otl'] %}
+                    <option value="{{ opt }}" {% if s.status == opt %}selected{% endif %}>{{ opt|upper }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              {# Finish time is DISPLAY-ONLY — filled from RUSA by the daily sync cron,
+                 an honest placeholder until then. No finish-time input anywhere. #}
+              <td class="result-finish" data-event-id="{{ s.event_id }}">{{ s.finish_time or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-text-light text-sm mt-2">
+      Official finish times are filled in automatically from RUSA — self-reported
+      results set your status only.
+    </p>
+  {% else %}
+    <p class="text-text-light">No past brevet results yet.</p>
+  {% endif %}
+</div>
+
 <div class="card">
   <h2 class="text-primary text-[1.3rem] mb-4 pb-2.5 border-b-[3px] border-accent inline-block font-bold">Live rides</h2>
   <p class="text-text-light">
@@ -170,4 +211,31 @@
 </div>
 
 </div>
+
+{% if past_results %}
+<script>
+// Progressive enhancement: a result correction is a small fetch() POST to the
+// self-service /result API (this rider's OWN past ride only). Status-only — the
+// finish time is never sent, only reflected read-only from the JSON response.
+document.querySelectorAll('.result-select').forEach(function (sel) {
+  sel.addEventListener('change', function () {
+    var eventId = sel.getAttribute('data-event-id');
+    fetch('/calendar/' + eventId + '/result', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: sel.value}),
+    }).then(function (resp) {
+      return resp.json().then(function (data) { return {ok: resp.ok, data: data}; });
+    }).then(function (r) {
+      if (!r.ok) {
+        if (r.data && r.data.login_url) { window.location = r.data.login_url; }
+        return;
+      }
+      var cell = document.querySelector('.result-finish[data-event-id="' + eventId + '"]');
+      if (cell) { cell.textContent = r.data.finish_time || '—'; }
+    });
+  });
+});
+</script>
+{% endif %}
 {% endblock %}
