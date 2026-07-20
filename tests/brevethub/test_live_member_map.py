@@ -26,7 +26,7 @@ def _login(client, rider_id=7):
 
 def _pos(rider_id, name, **tel):
     row = {'rider_id': rider_id, 'name': name, 'lat': 37.5, 'lng': -122.3,
-           'recorded_at': datetime(2026, 7, 20, 6, 5, tzinfo=timezone.utc),
+           'recorded_at': datetime.now(timezone.utc),
            'speed': None, 'heart_rate': None, 'power': None, 'cadence': None,
            'source': 'garmin'}
     row.update(tel)
@@ -159,7 +159,7 @@ def test_positions_api_returns_named_telemetry_payload(client):
     _login(client)
     rows = [_pos(7, 'alice', speed=8.3, heart_rate=142, power=210, cadence=88)]
     hist = [{'lat': 37.5, 'lng': -122.3, 'speed': 8.3,
-             'recorded_at': datetime(2026, 7, 20, 6, 5, tzinfo=timezone.utc)}]
+             'recorded_at': datetime.now(timezone.utc)}]
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_ride', return_value=_PUBLIC_RIDE), \
          patch('brevethub.models.get_live_positions_rp', return_value=rows), \
@@ -225,7 +225,7 @@ def test_anonymous_poll_never_uses_named_query(client):
     get_ride_positions, never the named get_live_positions_rp."""
     ride = {'id': 1, 'name': 'X', 'club_name': 'C'}
     rows = [{'lat': 37.77, 'lng': -122.41,
-             'recorded_at': datetime(2026, 7, 20, 6, 5, tzinfo=timezone.utc)}]
+             'recorded_at': datetime.now(timezone.utc)}]
     with patch('brevethub.models.get_public_ride', return_value=ride), \
          patch('brevethub.models.get_ride_positions', return_value=rows), \
          patch('brevethub.models.get_live_positions_rp') as named:
