@@ -36,9 +36,18 @@
 .rider-card .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .rider-card .head .nm { font-weight: 700; }
 .rider-card .head .ago { color: var(--text-light); font-size: 0.8rem; }
-.rider-card .metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 6px 12px; margin-top: 10px; }
+.rider-card .metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 6px 12px; margin-top: 6px; }
 .metric .v { font-weight: 700; font-size: 0.95rem; }
 .metric .l { font-size: 0.72rem; color: var(--text-light); }
+/* Plan-aware telemetry groups (Now / Remaining / Time banked / Next / To finish),
+   mirroring the parent web app live HUD on the shared navy/red design tokens. */
+.rider-card .tg { margin-top: 10px; }
+.rider-card .tg .grp-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-light); }
+.plan-badge { font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
+.plan-badge.ahead { background: rgba(22,163,74,0.12); color: var(--success); border-color: rgba(22,163,74,0.4); }
+.plan-badge.behind { background: rgba(220,38,38,0.10); color: var(--danger); border-color: rgba(220,38,38,0.4); }
+.plan-badge.on { background: var(--card-bg); color: var(--text-light); }
+.rider-card .after-ride { font-size: 0.72rem; color: var(--text-light); margin-top: 8px; font-style: italic; }
 </style>
 {% endblock %}
 {% block content %}
@@ -139,8 +148,6 @@
       return 'updated ' + min + ' min ago';
     }
 
-    function mph(ms) { return ms == null ? null : Math.round(ms * 2.23694 * 10) / 10; }
-
     // ── Map (Mapbox) — only when a token is configured; else dots-less fallback ──
     if (MAPBOX_TOKEN) {
       mapboxgl.accessToken = MAPBOX_TOKEN;
@@ -189,7 +196,9 @@
     function applyMarker(el, p) {
       el.className = 'rider-marker' + (p.stale ? ' stale' : '');
       var pin = el.querySelector('.pin');
-      pin.style.background = p.color || '#16a34a';
+      // Plan-timing color (ahead=green / behind=red / grey=unknown) when available,
+      // else the status color — so a ride with no plan never regresses.
+      pin.style.background = p.plan_color || p.color || '#16a34a';
       pin.textContent = initials(p.name);          // textContent — no HTML injection
     }
 
@@ -210,7 +219,33 @@
       }
     }
 
+    function fmtHM(min) {
+      // Minutes -> "Xh YYm" (>= 1h) or "Ym" (< 1h). null -> null so metric() shows
+      // the em-dash placeholder. Magnitude only (mirrors the parent web app).
+      if (min === null || min === undefined || min === '') { return null; }
+      var total = Math.round(Math.abs(min));
+      var h = Math.floor(total / 60), m = total % 60;
+      return h > 0 ? h + 'h ' + (m < 10 ? '0' : '') + m + 'm' : m + 'm';
+    }
+
+    function fmtBank(min) {
+      // Signed "time banked": +Xh YYm in hand, −Xh YYm behind. null -> null.
+      if (min === null || min === undefined || min === '') { return null; }
+      return (min < 0 ? '−' : '+') + fmtHM(min);
+    }
+
+    function fmtEta(iso) {
+      // The parent web app renders ETA in its club-local zone; BrevetHub is
+      // club-agnostic (no club timezone), so it renders the plan arrival clock in
+      // the VIEWER local time from the UTC eta_iso — a documented parity deviation.
+      if (!iso) { return null; }
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) { return null; }
+      return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    }
+
     function metric(label, value, unit) {
+      // Build a metric cell with textContent only (no HTML injection).
       var wrap = document.createElement('div'); wrap.className = 'metric';
       var v = document.createElement('div'); v.className = 'v';
       v.textContent = (value === null || value === undefined || value === '') ? '—'
@@ -218,6 +253,15 @@
       var l = document.createElement('div'); l.className = 'l'; l.textContent = label;
       wrap.appendChild(v); wrap.appendChild(l);
       return wrap;
+    }
+
+    function group(label, cells) {
+      var g = document.createElement('div'); g.className = 'tg';
+      var gl = document.createElement('div'); gl.className = 'grp-label'; gl.textContent = label;
+      var m = document.createElement('div'); m.className = 'metrics';
+      cells.filter(Boolean).forEach(function (c) { m.appendChild(c); });
+      g.appendChild(gl); g.appendChild(m);
+      return g;
     }
 
     function renderRiders(positions) {
@@ -231,13 +275,83 @@
         var ago = document.createElement('span'); ago.className = 'ago'; ago.textContent = fmtAgo(p.minutes_ago);
         head.appendChild(nm); head.appendChild(ago); card.appendChild(head);
 
-        var t = p.telemetry || {};
-        var metrics = document.createElement('div'); metrics.className = 'metrics';
-        metrics.appendChild(metric('speed', mph(t.speed), ' mph'));
-        metrics.appendChild(metric('HR', t.heart_rate, ' bpm'));
-        metrics.appendChild(metric('power', t.power, ' W'));
-        metrics.appendChild(metric('cadence', t.cadence, ' rpm'));
-        card.appendChild(metrics);
+        var t = p.telemetry;
+        if (!t) { wrap.appendChild(card); return; }
+        var n = t.now || {};
+
+        // Ahead/behind (or Off route) badge, mirroring the parent web app HUD.
+        if (t.on_route === false) {
+          var off = document.createElement('span');
+          off.className = 'plan-badge behind'; off.textContent = 'Off route';
+          head.appendChild(off);
+        } else if (t.plan) {
+          var badge = document.createElement('span');
+          badge.className = 'plan-badge ' + t.plan.status;
+          var d = t.plan.delta_min;
+          badge.textContent = t.plan.status === 'on' ? 'On plan'
+            : (t.plan.status === 'ahead' ? fmtHM(d) + ' ahead of plan' : fmtHM(-d) + ' behind plan');
+          head.appendChild(badge);
+        }
+
+        // Now — source-agnostic metrics always shown; route-relative ones on route.
+        card.appendChild(group('Now', [
+          (n.distance_mi != null ? metric('done', n.distance_mi, ' mi') : null),
+          metric('speed', n.speed_mph, ' mph'),
+          metric('avg (elapsed)', n.avg_elapsed_speed_mph, ' mph'),
+          metric('avg (moving)', n.avg_moving_speed_mph, ' mph'),
+          (n.activity ? metric('state', n.activity) : null),
+          metric('elapsed', fmtHM(n.elapsed_min)),
+          metric('moving', fmtHM(n.moving_min)),
+          metric('stopped', fmtHM(n.stopped_min)),
+          (n.ascent_done_ft != null ? metric('climb done', n.ascent_done_ft, ' ft') : null),
+          (n.heart_rate != null ? metric('HR', n.heart_rate, ' bpm') : null),
+          (n.power != null ? metric('power', n.power, ' W') : null),
+          (n.cadence != null ? metric('cadence', n.cadence, ' rpm') : null),
+          (n.grade_pct != null ? metric('grade', n.grade_pct, '%') : null)
+        ]));
+
+        if (t.remaining) {
+          card.appendChild(group('Remaining', [
+            metric('to go', t.remaining.distance_mi, ' mi'),
+            metric('climb left', t.remaining.ascent_left_ft, ' ft')
+          ]));
+        }
+
+        // Time banked — vs the ACP cutoff (OTL margin) AND vs the plan, alongside
+        // (not replacing) the ahead/behind badge above.
+        if (t.time_banked_cutoff_min != null || t.time_banked_plan_min != null) {
+          card.appendChild(group('Time banked', [
+            metric('vs cutoff', fmtBank(t.time_banked_cutoff_min)),
+            metric('vs plan', fmtBank(t.time_banked_plan_min))
+          ]));
+        }
+
+        if (t.next_control) {
+          var nc = t.next_control;
+          var ncName = (nc.name || 'control').replace(', CA', '');
+          card.appendChild(group('Next: ' + ncName, [
+            metric('ETA (arrival)', fmtEta(nc.eta_iso)),
+            metric('req speed', nc.required_mph, ' mph'),
+            (nc.dist_to_go_mi != null ? metric('to go', nc.dist_to_go_mi, ' mi') : null),
+            (nc.distance_mi != null ? metric('at', nc.distance_mi, ' mi') : null)
+          ]));
+        }
+
+        if (t.finish) {
+          var fin = t.finish;
+          card.appendChild(group('To finish', [
+            metric('ETA (arrival)', fmtEta(fin.eta_iso)),
+            metric('req speed', fin.required_mph, ' mph'),
+            (fin.dist_to_go_mi != null ? metric('to go', fin.dist_to_go_mi, ' mi') : null)
+          ]));
+        }
+
+        if (t.detailed_after_ride) {
+          var note = document.createElement('div');
+          note.className = 'after-ride';
+          note.textContent = 'Power, pedaling & coasting time available after the ride.';
+          card.appendChild(note);
+        }
         wrap.appendChild(card);
       });
     }
