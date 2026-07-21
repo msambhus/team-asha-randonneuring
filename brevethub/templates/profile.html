@@ -50,6 +50,13 @@
   {% if strava.stats and strava.stats.fitness is not none %}
   <div class="stat-card"><div class="number" style="color:{% if strava.stats.fitness >= 70 %}#38a169{% elif strava.stats.fitness >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ strava.stats.fitness }}</div><div class="label">Fitness Score</div></div>
   {% endif %}
+  {# Eddington: E = ridden >= E km on >= E days, from the rider own Strava history
+     (cached; computed off the request path). Only shown once a value exists — an
+     unconnected / not-yet-computed rider gets the prompt in the Strava card below,
+     never a fabricated 0. #}
+  {% if rider.eddington_km is not none %}
+  <div class="stat-card"><div class="number">{{ rider.eddington_km }}</div><div class="label">Eddington (km)</div></div>
+  {% endif %}
 </div>
 
 <div class="container section">
@@ -146,6 +153,17 @@
 
 <section class="card" id="strava">
   <h2 class="text-primary text-[1.3rem] font-bold mb-4">Strava</h2>
+  {# Eddington graceful state: prompt when there is no cached value yet, so the
+     number is never a fabricated 0. The value itself renders as the stat card above. #}
+  {% if rider.eddington_km is none %}
+    <p class="text-text-light">
+      {% if strava.connected %}
+        Your cycling Eddington number will appear after the next sync.
+      {% else %}
+        Connect Strava to see your Eddington number.
+      {% endif %}
+    </p>
+  {% endif %}
   {% if not strava.connected %}
     <p class="text-text-light">Connect Strava to see your recent activity and fitness score.</p>
     <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('strava.connect') }}">Connect Strava</a></p>

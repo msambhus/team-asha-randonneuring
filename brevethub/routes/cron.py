@@ -21,12 +21,14 @@ helper it reuses (brevethub.routes.calendar._scrape_and_upsert) touches only the
 rp_brevet_event table, so test_brevethub_isolation.py and test_rp_only.py stay green.
 """
 import hmac
+import time
 from datetime import date, datetime, timedelta
 
 from flask import Blueprint, current_app, jsonify, request
 
 from brevethub import models
 from brevethub.routes.calendar import _scrape_and_upsert
+from brevethub.routes.strava import compute_and_cache_eddington
 from brevethub.shared.garmin_livetrack import fetch_positions, parse_session
 from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
                                     extract_rwgps_route_id, fetch_route)
@@ -497,6 +499,66 @@ def warm_brevet_route_weather():
         warmed, skipped, failed, len(targets))
     return jsonify({'ok': True, 'warmed': warmed, 'skipped': skipped,
                     'failed': failed, 'considered': len(targets)}), 200
+
+
+# Short pause between riders in the Eddington refresh so a full-history fetch for
+# many riders does not burst the Strava rate limit. Kept small so the daily cron
+# still finishes well inside the serverless budget.
+EDDINGTON_REFRESH_SLEEP_SECONDS = 1
+
+
+@cron_bp.route('/refresh-eddington', methods=['GET', 'POST'])
+def refresh_eddington():
+    """Recompute every connected rider cycling Eddington number, OFF the request path.
+
+    Auth-gated (Bearer CRON_SECRET). Iterates every rp_strava_connection and, for
+    each, recomputes E from that rider own full Strava history with their own token
+    and caches it (compute_and_cache_eddington). Precomputing here keeps the PUBLIC
+    rider profile a pure cache read: a public viewer holds no token for the viewed
+    rider and must never fetch, so the number has to be ready before they look.
+
+    Fails SOFT per rider: a Strava error or rate-limit on one rider is logged and
+    counted as a failure without 500ing the cron or aborting the batch, and a short
+    backoff between riders keeps the run under the Strava rate limit. Returns
+    ``{ok, refreshed, failed, considered}`` for observability — a rising failed
+    signals Strava rate-limit/token trouble.
+
+    Route contract (pinned, same as the other crons): the production URL is exactly
+    ``/cron/refresh-eddington`` — the blueprint owns the ``/cron`` prefix and this
+    decorator is LEAF-ONLY, so a double ``/cron`` prefix cannot 404 the
+    Vercel-scheduled request. GET and POST are both accepted (Vercel cron issues GET).
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    try:
+        connections = models.get_strava_connections_for_eddington()
+    except Exception as e:
+        current_app.logger.warning('Eddington refresh: connection load failed: %s', e)
+        return jsonify({'ok': False, 'error': 'connection load failed',
+                        'refreshed': 0, 'failed': 0, 'considered': 0}), 200
+
+    refreshed = failed = 0
+    for idx, connection in enumerate(connections):
+        rider_id = connection.get('rider_id')
+        try:
+            compute_and_cache_eddington(rider_id, connection)
+            refreshed += 1
+        except Exception as e:
+            # Fail soft: one rider Strava/token error never aborts the batch.
+            current_app.logger.warning(
+                'Eddington refresh failed for rider %s: %s', rider_id, e)
+            failed += 1
+        # Backoff between riders (not after the last one) to respect the rate limit.
+        if idx < len(connections) - 1:
+            time.sleep(EDDINGTON_REFRESH_SLEEP_SECONDS)
+
+    current_app.logger.info(
+        'Eddington refresh: refreshed=%s failed=%s of %s considered',
+        refreshed, failed, len(connections))
+    return jsonify({'ok': True, 'refreshed': refreshed, 'failed': failed,
+                    'considered': len(connections)}), 200
 
 
 # Retention + downsample tuning (mirrors Team Asha's poll_garmin_livetrack).

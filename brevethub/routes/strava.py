@@ -29,6 +29,7 @@ from shared.strava import (deauthorize_strava, exchange_code_for_token,
                            fetch_activities, refresh_access_token,
                            summarize_activities, transform_activity)
 from shared.fitness import calculate_fitness_score
+from shared.eddington import calculate_eddington_number
 
 strava_bp = Blueprint('strava', __name__)
 
@@ -36,6 +37,14 @@ strava_bp = Blueprint('strava', __name__)
 # repeated dashboard loads do not re-hit the Strava API.
 STRAVA_STATS_TTL = 6 * 3600
 STRAVA_STATS_WINDOW = 28 * 24 * 3600  # 28-day activity window
+
+# The cycling Eddington is a LIFETIME stat, so its compute fetches the rider full
+# Strava history (not the 28-day dashboard window). ``after=0`` (the Unix epoch)
+# asks Strava for every activity, effectively all-time; the window is bounded only
+# by shared.strava.fetch_activities pagination and can be widened later without a
+# schema change. Compute runs OFF the request path (Strava connect + the daily
+# refresh cron), so this full fetch is never on a page load.
+EDDINGTON_HISTORY_AFTER_EPOCH = 0
 
 
 @strava_bp.route('/connect')
@@ -206,6 +215,13 @@ def callback():
             scope=scope,
         )
         flash('Strava connected!', 'success')
+        # The Eddington is computed OFF the request path by the daily
+        # /cron/refresh-eddington, never here. An all-time Strava history fetch on
+        # the connect redirect can exceed the serverless function timeout for an
+        # active rider (a platform kill the fail-soft try cannot catch, since
+        # fetch_activities paginates the full history with no page cap). The
+        # profile shows a "will appear after the next sync" note until the cron
+        # fills the value in.
     except Exception as e:
         current_app.logger.warning('Strava OAuth error for rider %s: %s', rider_id, e)
         flash('Failed to connect Strava. Please try again.', 'error')
@@ -352,6 +368,33 @@ def _compute_strava_stats(rider_id, connection):
     fitness = calculate_fitness_score(activities)
     summary['fitness'] = fitness['total'] if fitness else None
     return summary
+
+
+def compute_and_cache_eddington(rider_id, connection):
+    """Compute the rider all-time cycling Eddington (miles + km) and cache it.
+
+    Owner-context ONLY: uses the rider own live token to fetch their own full Strava
+    history, transforms each raw activity (raw ``type`` -> the engine's
+    ``activity_type`` filter key, via shared.strava.transform_activity), computes E
+    with the shared engine in both units, and persists them through
+    models.set_rider_eddington. Never called on a public-profile view (a public
+    viewer holds no token) — only on the Strava connect callback and the daily
+    /cron/refresh-eddington. Returns the computed ``{eddington_km, eddington_miles}``.
+    """
+    token = _valid_access_token(rider_id, connection)
+    raw = fetch_activities(
+        token,
+        api_base=current_app.config['STRAVA_API_BASE'],
+        after_epoch=EDDINGTON_HISTORY_AFTER_EPOCH,
+    )
+    # Transform first: the engine filters on ``activity_type``, but raw Strava
+    # activities carry ``type`` — feeding raw dicts would silently yield E=0.
+    activities = [transform_activity(a, rider_id) for a in raw]
+    eddington_miles = calculate_eddington_number(activities, unit='miles')
+    eddington_km = calculate_eddington_number(activities, unit='km')
+    models.set_rider_eddington(
+        rider_id, eddington_km=eddington_km, eddington_miles=eddington_miles)
+    return {'eddington_km': eddington_km, 'eddington_miles': eddington_miles}
 
 
 def load_strava_section(rider):
