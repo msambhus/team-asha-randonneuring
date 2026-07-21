@@ -118,9 +118,17 @@ def get_rider_by_google_id(google_id):
 
 
 def get_rider_by_id(rider_id):
+    """The rider row for the signed-in session (the own-profile loader).
+
+    Carries the cached Eddington columns (km + miles + calculated_at) so the own
+    profile renders the number without a second query; they are NULL until the
+    first compute (on Strava connect or the daily cron), which the template shows
+    as a graceful prompt rather than a fabricated zero.
+    """
     return db.query_one(
         "SELECT id, email, google_id, rusa_id, club_id, "
-        "       profile_completed, rusa_id_duplicate, created_at, last_login_at "
+        "       profile_completed, rusa_id_duplicate, created_at, last_login_at, "
+        "       eddington_km, eddington_miles, eddington_calculated_at "
         "FROM rp_rider WHERE id = %s",
         (rider_id,),
     )
@@ -170,6 +178,21 @@ def complete_rider_profile(rider_id, rusa_id, club_id, rusa_id_duplicate=False):
         "          profile_completed, rusa_id_duplicate, created_at, last_login_at",
         (rusa_id, club_id, rusa_id_duplicate, rider_id),
         returning=True,
+    )
+
+
+def set_rider_eddington(rider_id, *, eddington_km, eddington_miles):
+    """Cache the computed cycling Eddington number for one rider (both units) and
+    stamp the calculation time. Keyed by rider_id, so a rider only ever writes their
+    OWN value; the write is rp_-only and additive. Called OFF the request path (on
+    Strava connect and by the daily refresh cron), never at public-view time.
+    """
+    db.execute(
+        "UPDATE rp_rider "
+        "SET eddington_km = %s, eddington_miles = %s, "
+        "    eddington_calculated_at = NOW() "
+        "WHERE id = %s",
+        (eddington_km, eddington_miles, rider_id),
     )
 
 
@@ -649,7 +672,7 @@ def get_club_rider(club_id, rider_id):
     completed-profile rider.
     """
     return db.query_one(
-        "SELECT id, email, rusa_id, club_id, created_at, rusa_cache "
+        "SELECT id, email, rusa_id, club_id, created_at, rusa_cache, eddington_km "
         "FROM rp_rider "
         "WHERE club_id = %s AND id = %s AND profile_completed = TRUE",
         (club_id, rider_id),
@@ -686,6 +709,31 @@ def get_strava_connection(rider_id):
         row['stats_fetched_at'].timestamp() if row.get('stats_fetched_at') else None
     )
     return row
+
+
+def get_strava_connections_for_eddington():
+    """Every rider Strava connection, for the owner-context Eddington refresh cron.
+
+    Returns the same per-connection shape as get_strava_connection (expires_at as an
+    epoch float so the token-refresh decision stays numeric), one row per connected
+    rider ordered by rider_id. The cron recomputes each rider OWN Eddington with
+    their OWN token; it reads only rp_strava_connection here and never a parent-app
+    table.
+    """
+    rows = db.query(
+        "SELECT id, rider_id, strava_athlete_id, access_token, refresh_token, "
+        "       expires_at, scope, stats_cache, stats_fetched_at, created_at "
+        "FROM rp_strava_connection ORDER BY rider_id ASC",
+    )
+    result = []
+    for row in rows or []:
+        row = dict(row)
+        row['expires_at'] = row['expires_at'].timestamp() if row.get('expires_at') else None
+        row['stats_fetched_at'] = (
+            row['stats_fetched_at'].timestamp() if row.get('stats_fetched_at') else None
+        )
+        result.append(row)
+    return result
 
 
 def upsert_strava_connection(rider_id, *, strava_athlete_id, access_token,
