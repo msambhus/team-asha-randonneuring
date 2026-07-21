@@ -69,7 +69,7 @@
 {# Hero + stat-card row mirror the parent web app's rider profile: a full-width
    gradient banner with initials, then a row of headline career numbers. No email
    address or google id is ever rendered — only the display name and RUSA id. #}
-<div class="hero" style="padding:30px 20px;">
+<div class="hero" style="padding:30px 20px 64px;">
   <div class="w-[90px] h-[90px] md:w-[110px] md:h-[110px] rounded-full flex items-center justify-center"
        style="background:rgba(255,255,255,0.2);margin:0 auto 15px;font-size:2.6rem;color:white;font-weight:700;">
     {{ display_name[0]|upper }}
@@ -103,7 +103,7 @@
       No completed brevets in this rider's RUSA history yet.
     </p>
   {% else %}
-    <dl class="profile stats-grid">
+    <dl class="profile">
       <dt>Career distance</dt>
       <dd>{{ career.total_km }} km ({{ career.count }} brevets)</dd>
 
