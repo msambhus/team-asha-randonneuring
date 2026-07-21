@@ -252,6 +252,30 @@ def test_profile_career_numbers_reuse_shared_engine(client):
     assert '2024-2025' in body                            # the SR season
 
 
+def test_profile_shows_multiple_sr_award_count(client):
+    """A same-club rider with two complete SR series in one season reads "SR×2" on
+    their public profile — the shared engine's total_sr, not a per-season boolean."""
+    two_sr_cache = _ALICE_CACHE + [
+        {'date': '2024-12-01', 'distance_km': 200, 'finish_time': '13:00', 'route_name': 'Winter 200'},
+        {'date': '2025-03-15', 'distance_km': 300, 'finish_time': '19:00', 'route_name': 'Spring 300 II'},
+        {'date': '2025-04-15', 'distance_km': 400, 'finish_time': '26:30', 'route_name': 'Spring 400 II'},
+        {'date': '2025-06-15', 'distance_km': 600, 'finish_time': '38:30', 'route_name': 'Summer 600 II'},
+    ]
+    target = {**_ALICE, 'rusa_cache': two_sr_cache}
+
+    def club_rider(club_id, rider_id, **kwargs):
+        return target if (club_id == 1 and rider_id == 1) else None
+
+    _login(client, _BOB['id'])
+    with patch('brevethub.models.get_rider_by_id', side_effect=_fake_get_rider_by_id), \
+         patch('brevethub.models.get_club', side_effect=_fake_get_club), \
+         patch('brevethub.models.get_club_rider', side_effect=club_rider):
+        resp = client.get('/riders/1')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'SR&times;2' in body
+
+
 def test_profile_duplicate_rusa_ids_resolve_distinctly(client):
     """Two same-club riders sharing a RUSA id (BrevetHub soft-flags duplicate claims
     rather than rejecting them) each resolve to their OWN profile, because profiles

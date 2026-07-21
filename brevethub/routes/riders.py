@@ -50,7 +50,10 @@ def _career_row(rider_row, today):
         'display_name': _display_name(rider_row.get('email')),
         'total_km': career['total_km'],
         'count': career['count'],
-        'sr_count': len(career['sr_seasons']),
+        # SR awards across the career (a season with two full series counts twice),
+        # not the number of SR seasons — so the directory/leaderboard agree with
+        # the "SR×N" the profile pages now show.
+        'sr_count': career['total_sr'],
         'career': career,
     }
 
