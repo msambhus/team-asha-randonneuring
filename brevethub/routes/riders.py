@@ -163,9 +163,12 @@ def rider_profile(rider_id):
     brevets = target.get('rusa_cache') or []
     career = seasons.career_summary(brevets, today)
     season_groups = seasons.seasons_with_summaries(brevets, today)
+    # PBP Ancien years from this rider's RUSA history — derived and read-only, and
+    # (like every other career number here) no email or google_id crosses over.
+    pbp_years = seasons.pbp_ancien_years(brevets)
 
     return render_template('rider_profile.html',
                            display_name=_display_name(target.get('email')),
                            rusa_id=target.get('rusa_id'),
                            career=career, seasons=season_groups,
-                           is_self=is_self)
+                           pbp_years=pbp_years, is_self=is_self)

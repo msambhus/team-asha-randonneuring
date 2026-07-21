@@ -76,6 +76,11 @@
   </div>
   <h1>{{ display_name }}{% if is_self %} <span class="badge">you</span>{% endif %}</h1>
   {% if rusa_id %}<p>RUSA# {{ rusa_id }}</p>{% endif %}
+  {% if pbp_years %}
+  {# PBP Ancien: earned by finishing Paris-Brest-Paris. Reuses the shared
+     .pbp-badge treatment (inline gradient so it renders on the hero gradient). #}
+  <p style="margin-top:8px;"><span class="badge pbp-badge" style="background:linear-gradient(135deg,#805ad5,#b794f4);color:#fff;">PBP Ancien {{ pbp_years | join(', ') }}</span></p>
+  {% endif %}
 </div>
 
 <div class="stats-row">

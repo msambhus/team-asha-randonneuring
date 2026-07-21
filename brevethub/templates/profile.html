@@ -29,6 +29,11 @@
   </div>
   <h1>{{ display_name }}</h1>
   {% if rider.rusa_id %}<p>RUSA# {{ rider.rusa_id }}</p>{% endif %}
+  {% if pbp_years %}
+  {# PBP Ancien: earned by finishing Paris-Brest-Paris. Reuses the shared
+     .pbp-badge treatment (inline gradient so it renders on the hero gradient). #}
+  <p style="margin-top:8px;"><span class="badge pbp-badge" style="background:linear-gradient(135deg,#805ad5,#b794f4);color:#fff;">PBP Ancien {{ pbp_years | join(', ') }}</span></p>
+  {% endif %}
   <p style="font-size:0.9rem; opacity:0.85;">{{ rider.email }}</p>
 </div>
 

@@ -40,6 +40,14 @@ SEASON_START_MONTH = 11
 SR_TIERS = (200, 300, 400, 600)
 DISTANCE_BANDS = (200, 300, 400, 600, 1000)
 
+# Paris-Brest-Paris detection. PBP is the 1200 km ACP grande randonnee held every
+# four years; a finisher earns the title "Ancien"/"Ancienne". A record is treated
+# as PBP when its event name contains one of these fragments AND its distance
+# clears the floor (1200 km, with headroom for how sources round a grande
+# randonnee's official distance).
+PBP_NAME_FRAGMENTS = ('paris-brest', 'pbp')
+PBP_MIN_KM = 1100
+
 
 def sr_tier_for(distance_km):
     """SR series leg for a distance, or ``None`` if under 200 km. The 600 leg is
@@ -281,3 +289,35 @@ def career_summary(brevets, today):
         'r12_awards': r12_awards(brevets),
         'r12_streak': r12_current_streak(brevets, today),
     }
+
+
+def pbp_ancien_years(brevets):
+    """Sorted distinct years in which the rider FINISHED Paris-Brest-Paris, earning
+    the title Ancien(ne). Returns ``[]`` for a rider with no PBP finish.
+
+    Detection is by EVENT NAME: a record whose ``route_name`` contains
+    ``"paris-brest"`` or ``"pbp"`` (case-insensitive) and whose distance is at
+    least ``PBP_MIN_KM`` km. Every record in the RUSA history is a finished result,
+    so a matching record is a finish. Name-matching is preferred over a pure
+    year+distance rule because other ~1200 km grandes randonnees exist
+    (Boston-Montreal-Boston, London-Edinburgh-London, ...); matching on the name
+    keeps those from being mislabelled as PBP.
+
+    Limitation / fallback: if a data source ever stores PBP records without a
+    usable ``route_name``, name-matching yields ``[]`` (a miss, not a false hit).
+    The documented fallback — a >=1100 km finish dated in a PBP year
+    (2019/2023/2027...) — is intentionally NOT enabled here, because it would
+    misattribute those other 1200 km randonnees to PBP. Callers that know their
+    source lacks event names can layer that fallback on top with that
+    false-positive risk in mind; this helper stays conservative by default.
+    """
+    years = set()
+    for b in brevets or []:
+        if (b.get('distance_km') or 0) < PBP_MIN_KM:
+            continue
+        name = str(b.get('route_name') or '').lower()
+        if any(fragment in name for fragment in PBP_NAME_FRAGMENTS):
+            d = _coerce_date(b.get('date'))
+            if d is not None:
+                years.add(d.year)
+    return sorted(years)

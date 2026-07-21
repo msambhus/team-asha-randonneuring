@@ -234,6 +234,42 @@ def test_r12_current_streak_empty():
 
 
 # --------------------------------------------------------------------------- #
+# PBP Ancien detection (event-name match on a ~1200 km finish)
+# --------------------------------------------------------------------------- #
+def _pbp(iso, dist, name):
+    return {'date': iso, 'distance_km': dist, 'finish_time': '', 'route_name': name}
+
+
+def test_pbp_ancien_year_for_finished_pbp():
+    assert seasons.pbp_ancien_years([_pbp('2023-08-20', 1200, 'Paris-Brest-Paris')]) == [2023]
+    # The "PBP" abbreviation also matches.
+    assert seasons.pbp_ancien_years([_pbp('2019-08-18', 1200, 'PBP 2019')]) == [2019]
+
+
+def test_pbp_ancien_ignores_other_1200_randonnees_by_name():
+    # A different 1200 km grande randonnee is NOT PBP under the name-match rule.
+    assert seasons.pbp_ancien_years([_pbp('2023-08-20', 1200, 'Boston-Montreal-Boston')]) == []
+
+
+def test_pbp_ancien_empty_when_no_1200():
+    assert seasons.pbp_ancien_years([_pbp('2025-06-01', 600, 'Summer 600')]) == []
+    # A PBP-named ride under the distance floor does not qualify.
+    assert seasons.pbp_ancien_years([_pbp('2023-06-01', 200, 'PBP training 200')]) == []
+
+
+def test_pbp_ancien_multiple_finishes_sorted_and_deduped():
+    brevets = [_pbp('2027-08-16', 1200, 'Paris-Brest-Paris'),
+               _pbp('2019-08-18', 1210, 'PBP'),
+               _pbp('2019-08-18', 1200, 'Paris-Brest-Paris')]  # same-year duplicate
+    assert seasons.pbp_ancien_years(brevets) == [2019, 2027]
+
+
+def test_pbp_ancien_handles_empty_and_none():
+    assert seasons.pbp_ancien_years([]) == []
+    assert seasons.pbp_ancien_years(None) == []
+
+
+# --------------------------------------------------------------------------- #
 # Career summary
 # --------------------------------------------------------------------------- #
 def test_career_summary_totals_and_current_sr():
