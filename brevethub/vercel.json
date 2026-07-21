@@ -12,7 +12,8 @@
     { "path": "/cron/warm-brevet-route-weather", "schedule": "30 9 * * *" },
     { "path": "/cron/poll-garmin-livetrack", "schedule": "0 10 * * *" },
     { "path": "/cron/finalize-signups", "schedule": "0 11 * * *" },
-    { "path": "/cron/sync-rusa-results", "schedule": "30 11 * * *" }
+    { "path": "/cron/sync-rusa-results", "schedule": "30 11 * * *" },
+    { "path": "/cron/refresh-eddington", "schedule": "0 12 * * *" }
   ],
   "routes": [
     { "src": "/static/(.*)", "dest": "/static/$1" },
