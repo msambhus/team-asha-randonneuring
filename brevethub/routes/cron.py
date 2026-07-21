@@ -455,9 +455,22 @@ def warm_brevet_plans():
         try:
             route_data = fetch_route(route_id, api_key, auth_token)
             controls = extract_controls(route_data)
-            built = build_ride_plan(route_data, controls)
-            plan_id = models.upsert_brevet_route_plan(
-                event['id'], built['plan'], built['stops'])
+            # Warm BOTH variants per event: conservative + aggressive, each with
+            # clock-typed meal breaks (start_time drives the clock). Fetch the route
+            # once; the two builds differ only in their pacing profile. Counts stay
+            # PER EVENT (not per variant), so the {warmed,skipped,failed} shape is
+            # unchanged and re-runs are idempotent.
+            plan_id = None
+            for variant in ('conservative', 'aggressive'):
+                built = build_ride_plan(
+                    route_data, controls, profile=variant, insert_meals=True,
+                    start_time=event.get('start_time'))
+                plan_id = models.upsert_brevet_route_plan(
+                    event['id'], built['plan'], built['stops'], variant=variant)
+                if plan_id is None:
+                    # A club owner manages this brevet's plan — the guard blocks both
+                    # variants identically, so stop before the second write.
+                    break
             if plan_id is None:
                 # A club owner manages this brevet's plan — leave it, don't clobber.
                 skipped += 1

@@ -145,6 +145,112 @@ def test_upsert_sql_carries_ownership_guard(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# Variant — conflict key, variant-suffixed slug, both variants coexist
+# --------------------------------------------------------------------------- #
+def test_upsert_defaults_to_conservative_variant(monkeypatch):
+    """No variant → conservative is bound and the slug is variant-suffixed."""
+    conn = _FakeConn()
+    monkeypatch.setattr(db, 'get_db', lambda: conn)
+    models.upsert_brevet_route_plan(11, _PLAN, _STOPS, club_id=3)
+    insert_sql, params = conn.cur.calls[0]
+    # Conflict is re-keyed on (event_id, variant), not just event_id.
+    assert 'ON CONFLICT (event_id, variant)' in insert_sql
+    # event_id, club_id, variant are the first three bound params.
+    assert params[0] == 11 and params[1] == 3 and params[2] == 'conservative'
+    # slug is suffixed with BOTH the event id and the variant.
+    assert 'fixture-200-11-conservative' in params
+
+
+def test_upsert_aggressive_variant_binds_and_suffixes_slug(monkeypatch):
+    conn = _FakeConn()
+    monkeypatch.setattr(db, 'get_db', lambda: conn)
+    models.upsert_brevet_route_plan(11, _PLAN, _STOPS, club_id=3, variant='aggressive')
+    params = conn.cur.calls[0][1]
+    assert params[2] == 'aggressive'
+    assert 'fixture-200-11-aggressive' in params
+
+
+def test_both_variants_coexist_under_one_event(monkeypatch):
+    """Conservative + aggressive upsert independently (distinct slugs, same event)."""
+    conn = _FakeConn()
+    monkeypatch.setattr(db, 'get_db', lambda: conn)
+    cons = models.upsert_brevet_route_plan(11, _PLAN, _STOPS, variant='conservative')
+    agg = models.upsert_brevet_route_plan(11, _PLAN, _STOPS, variant='aggressive')
+    assert cons == agg == 42            # both write cleanly (own conflict target)
+    slugs = [c[1] for c in conn.cur.calls if 'INSERT INTO rp_brevet_route_plan ' in c[0]]
+    cons_slug = [p for p in slugs[0] if isinstance(p, str) and p.startswith('fixture-200-11')][0]
+    agg_slug = [p for p in slugs[1] if isinstance(p, str) and p.startswith('fixture-200-11')][0]
+    assert cons_slug != agg_slug         # distinct slugs, so no UNIQUE collision
+
+
+# --------------------------------------------------------------------------- #
+# Variant-aware event read (default conservative)
+# --------------------------------------------------------------------------- #
+def test_get_plan_reads_conservative_by_default(monkeypatch):
+    captured = {}
+
+    def _q1(sql, params=None):
+        captured['sql'] = sql
+        captured['params'] = params
+        return {'id': 5, 'variant': 'conservative'}
+
+    monkeypatch.setattr(db, 'query_one', _q1)
+    plan = models.get_brevet_route_plan(11)
+    assert plan['variant'] == 'conservative'
+    assert 'variant = %s' in captured['sql']
+    assert captured['params'] == (11, 'conservative')
+
+
+def test_get_plan_reads_requested_variant(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(db, 'query_one',
+                        lambda sql, params=None: captured.update(params=params) or {'id': 9})
+    models.get_brevet_route_plan(11, 'aggressive')
+    assert captured['params'] == (11, 'aggressive')
+
+
+def test_get_plan_with_stops_passes_variant(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(db, 'query_one',
+                        lambda sql, params=None: captured.update(params=params) or {'id': 5})
+    monkeypatch.setattr(db, 'query', lambda sql, params=None: _STOPS)
+    models.get_brevet_route_plan_with_stops(11, variant='aggressive')
+    assert captured['params'] == (11, 'aggressive')
+
+
+# --------------------------------------------------------------------------- #
+# Live readers pinned to conservative + warm-target start_time
+# --------------------------------------------------------------------------- #
+def test_route_id_reader_pins_conservative(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(db, 'query_one',
+                        lambda sql, params=None: captured.update(sql=sql, params=params))
+    models.get_brevet_route_plan_by_route_id_rp('123', 3)
+    assert 'variant = %s' in captured['sql']
+    assert captured['params'] == ('123', 3, 'conservative')
+
+
+def test_candidates_reader_pins_conservative(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(db, 'query',
+                        lambda sql, params=None: captured.update(sql=sql, params=params) or [])
+    models.get_brevet_route_plan_candidates_rp(9)
+    assert 'variant = %s' in captured['sql']
+    assert captured['params'] == (9, 'conservative')
+
+
+def test_warm_targets_return_start_time_and_filter_missing_variants(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(db, 'query',
+                        lambda sql, params=None: captured.update(sql=sql) or [])
+    models.get_route_plan_warm_targets()
+    sql = captured['sql']
+    assert 'start_time' in sql                       # cron needs it to clock meals
+    assert 'COUNT(DISTINCT p.variant)' in sql        # skip events already fully warmed
+    assert '< 2' in sql
+
+
+# --------------------------------------------------------------------------- #
 # Read — plan bundled with ordered stops
 # --------------------------------------------------------------------------- #
 def test_get_plan_with_stops(monkeypatch):

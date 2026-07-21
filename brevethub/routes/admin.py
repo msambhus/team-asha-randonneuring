@@ -96,12 +96,27 @@ def generate_plan():
 
     api_key = current_app.config.get('RWGPS_API_KEY')
     auth_token = current_app.config.get('RWGPS_AUTH_TOKEN')
+    start_time = event.get('start_time')
     try:
         route_data = fetch_route(route_id, api_key, auth_token)
         controls = extract_controls(route_data)
-        built = build_ride_plan(route_data, controls)
-        plan_id = models.upsert_brevet_route_plan(
-            event_id, built['plan'], built['stops'], club_id=owned['id'])
+        # Build + persist BOTH variants: conservative (the graded/display default) and
+        # aggressive (+1.5 mph, display-only), each with clock-typed meal breaks. Fetch
+        # the route once; the two builds differ only in their pacing profile.
+        plan_id = None
+        for variant in ('conservative', 'aggressive'):
+            built = build_ride_plan(route_data, controls, profile=variant,
+                                    insert_meals=True, start_time=start_time)
+            written = models.upsert_brevet_route_plan(
+                event_id, built['plan'], built['stops'],
+                club_id=owned['id'], variant=variant)
+            if written is None:
+                # Another club owns this brevet's plan — stop before the second variant
+                # so we never half-write; the guard blocks both identically.
+                plan_id = None
+                break
+            if variant == 'conservative':
+                plan_id = written
     except Exception as e:
         current_app.logger.warning(
             'Admin plan generation failed for event %s (route %s): %s',

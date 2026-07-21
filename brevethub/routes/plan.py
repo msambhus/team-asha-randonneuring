@@ -318,37 +318,51 @@ def _build_real_plan(plan, stops, stop_winds=None):
     display_stops = []
     for i, s in enumerate(stops):
         wind = stop_winds[i] if stop_winds and i < len(stop_winds) else None
+        is_meal = s['stop_type'] == 'meal'
+        # A meal-break row is a rest, not a control: no segment/speed/difficulty — just
+        # its clock-typed label (notes) and its dwell (stored in segment_time_min). Its
+        # cum_time_min is the break-inclusive ETA, so later ETAs already fold in the stop.
         display_stops.append({
             'stop_order': s['stop_order'],
             'location': s['location'],
             'stop_type': s['stop_type'],
+            'is_meal': is_meal,
+            'meal_label': s.get('notes') or '' if is_meal else '',
+            'dwell_min': s['segment_time_min'] if is_meal else None,
             'distance_km': _mi_to_km(s['distance_miles']),   # miles → km
-            'seg_dist_km': _mi_to_km(s['seg_dist']),         # miles → km
-            'elevation_gain': s['elevation_gain'],           # feet (unchanged)
-            'ft_per_mi': s['ft_per_mi'],                     # labeled ft/mi in UI
-            'avg_speed_kmh': _mph_to_kmh(s['avg_speed']),    # mph → km-h
-            'difficulty_score': s['difficulty_score'],
-            'difficulty_color': _difficulty_color(s['difficulty_score']),
+            'seg_dist_km': None if is_meal else _mi_to_km(s['seg_dist']),  # miles → km
+            'elevation_gain': None if is_meal else s['elevation_gain'],    # feet
+            'ft_per_mi': None if is_meal else s['ft_per_mi'],              # labeled ft/mi
+            'avg_speed_kmh': None if is_meal else _mph_to_kmh(s['avg_speed']),  # mph→km-h
+            'difficulty_score': None if is_meal else s['difficulty_score'],
+            'difficulty_color': None if is_meal else _difficulty_color(s['difficulty_score']),
             'arrival': _fmt_hm(s['cum_time_min']),
             'time_bank': _fmt_hm(s['time_bank_min']),
             'time_bank_positive': (s['time_bank_min'] is not None
                                    and s['time_bank_min'] >= 0),
             'time_bank_known': s['time_bank_min'] is not None,
-            'wind': wind,
+            'wind': None if is_meal else wind,
         })
 
-    final_km = display_stops[-1]['distance_km'] if display_stops else None
+    # The elevation profile + terrain strip are per-CONTROL; meal rows carry no segment
+    # geometry, so exclude them from the SVG (they'd double-mark a control's distance).
+    control_stops = [ds for ds in display_stops if not ds['is_meal']]
+    final_km = control_stops[-1]['distance_km'] if control_stops else None
+    total_break_min = plan.get('total_break_time_min') or 0
     return {
         'name': plan['name'],
+        'variant': plan.get('variant', 'conservative'),
         'rwgps_url': plan['rwgps_url'],
         'distance_km': _mi_to_km(plan['total_distance_miles']),
         'total_elevation_ft': plan['total_elevation_ft'],
         'overall_ft_per_mile': plan['overall_ft_per_mile'],
         'avg_moving_speed_kmh': _mph_to_kmh(plan['avg_moving_speed']),
+        'total_break_time_min': total_break_min,
+        'total_break_hm': _fmt_hm(total_break_min) if total_break_min else None,
         'final_distance_km': final_km,
         'stops': display_stops,
         'has_wind': any(ds['wind'] for ds in display_stops),
-        'svg': _build_elevation_svg(display_stops),
+        'svg': _build_elevation_svg(control_stops),
     }
 
 
@@ -383,15 +397,16 @@ def _forecast_stop_winds(event, plan, stops):
         return None
 
 
-def _load_real_plan(event_id, event=None):
-    """Fetch the persisted real plan for an event, or None. Fails SOFT: any DB error
-    (or no real plan) yields None so /plan falls back to the synthetic schedule and
-    never 500s on the read path.
+def _load_real_plan(event_id, event=None, variant='conservative'):
+    """Fetch the persisted real plan for an event + variant, or None. Fails SOFT: any
+    DB error (or no real plan) yields None so /plan falls back to the synthetic schedule
+    and never 500s on the read path.
 
-    When ``event`` is given, per-stop forecast wind is injected from the warm
-    route-weather cache (fail-soft — no wind on a miss)."""
+    ``variant`` selects the conservative (default) or aggressive stored plan. When
+    ``event`` is given, per-stop forecast wind is injected from the warm route-weather
+    cache (fail-soft — no wind on a miss)."""
     try:
-        bundle = models.get_brevet_route_plan_with_stops(event_id)
+        bundle = models.get_brevet_route_plan_with_stops(event_id, variant)
     except Exception as e:  # pragma: no cover - defensive; keep the page up
         current_app.logger.warning('Real plan lookup failed for event %s: %s',
                                     event_id, e)
@@ -420,17 +435,24 @@ def plan_view(event_id):
         abort(404)
 
     rider = current_rider()
-    real_plan = _load_real_plan(event_id, event)
+    # ?variant= picks the stored pacing plan: conservative (default, the realistic pace)
+    # or aggressive (+1.5 mph). Anything else falls back to conservative.
+    variant = request.args.get('variant', 'conservative')
+    if variant not in ('conservative', 'aggressive'):
+        variant = 'conservative'
+    real_plan = _load_real_plan(event_id, event, variant)
 
     total_km = float(event['distance_km'])
     cutoff_hours = _cutoff_hours(event)
 
     if real_plan:
-        # Real plan mode: the persisted plan is the schedule; no target picker.
+        # Real plan mode: the persisted plan is the schedule; no target picker. The
+        # conservative/aggressive toggle re-requests this route with ?variant=.
         return render_template(
             'plan.html',
             event=event,
             real_plan=real_plan,
+            variant=variant,
             schedule=None,
             cutoff_hours=cutoff_hours,
             rider=rider,

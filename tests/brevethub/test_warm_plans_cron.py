@@ -16,9 +16,11 @@ _SECRET = 'test-cron-secret-value'
 _PATH = '/cron/warm-brevet-plans'
 
 # One event WITH a valid RWGPS route, one WITHOUT (unparseable url → skipped).
+# start_time rides along (get_route_plan_warm_targets returns it) so the cron can
+# clock-type meal breaks.
 _TARGETS = [
-    {'id': 11, 'rwgps_url': 'https://ridewithgps.com/routes/123'},
-    {'id': 12, 'rwgps_url': 'https://example.com/not-a-route'},
+    {'id': 11, 'rwgps_url': 'https://ridewithgps.com/routes/123', 'start_time': '06:00'},
+    {'id': 12, 'rwgps_url': 'https://example.com/not-a-route', 'start_time': None},
 ]
 _BUILT = {'plan': {'name': 'R', 'slug': 'r'}, 'stops': [{'stop_order': 1}]}
 
@@ -64,16 +66,22 @@ def test_warms_events_with_url_skips_without(app, client):
     with patch('brevethub.models.get_route_plan_warm_targets', return_value=_TARGETS), \
          patch('brevethub.routes.cron.fetch_route', return_value={'name': 'r'}), \
          patch('brevethub.routes.cron.extract_controls', return_value=[{'x': 1}]), \
-         patch('brevethub.routes.cron.build_ride_plan', return_value=_BUILT), \
+         patch('brevethub.routes.cron.build_ride_plan', return_value=_BUILT) as mock_build, \
          patch('brevethub.models.upsert_brevet_route_plan', return_value=1) as mock_up:
         resp = client.post(_PATH, headers=_auth())
     assert resp.status_code == 200
     data = resp.get_json()
     assert data['ok'] is True
-    assert data['warmed'] == 1        # event 11 (valid RWGPS route)
+    assert data['warmed'] == 1        # event 11 counted ONCE (per event, not per variant)
     assert data['skipped'] == 1       # event 12 (unparseable url)
     assert data['considered'] == 2
-    mock_up.assert_called_once()
+    # Both variants are built + upserted for the one warmable event, with meals on.
+    assert mock_up.call_count == 2
+    upsert_variants = {c.kwargs.get('variant') for c in mock_up.call_args_list}
+    assert upsert_variants == {'conservative', 'aggressive'}
+    build_variants = {c.kwargs.get('profile') for c in mock_build.call_args_list}
+    assert build_variants == {'conservative', 'aggressive'}
+    assert all(c.kwargs.get('insert_meals') is True for c in mock_build.call_args_list)
 
 
 def test_get_verb_works(app, client):

@@ -111,6 +111,32 @@
   margin-right: 6px;
   vertical-align: middle;
 }
+
+/* Conservative/aggressive pace toggle — segmented control on the shared palette. */
+.plan-variant-toggle {
+  display: inline-flex;
+  gap: 0;
+  margin: 4px 0 18px;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  overflow: hidden;
+  background: var(--card-bg);
+}
+.plan-variant-option {
+  padding: 7px 18px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-light);
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.plan-variant-option:hover { background: rgba(0,0,0,0.04); }
+.plan-variant-option.is-active { background: var(--primary); color: #fff; }
+
+/* Meal-break rows — visually distinct from control rows (a rest, not a checkpoint). */
+.plan-meal-row { background: #fff7ed; }
+.plan-meal-row td.plan-meal-label { font-weight: 600; color: #9a3412; }
+.plan-meal-row td.plan-meal-dwell { color: #9a3412; font-style: italic; }
 </style>
 {% endblock %}
 
@@ -127,6 +153,7 @@
     <div class="stat-card"><div class="number">{{ event.distance_km }}</div><div class="label">Distance (km)</div></div>
     {% if real_plan.total_elevation_ft %}<div class="stat-card"><div class="number">{{ real_plan.total_elevation_ft }}</div><div class="label">Climb (ft)</div></div>{% endif %}
     {% if real_plan.avg_moving_speed_kmh %}<div class="stat-card"><div class="number">{{ real_plan.avg_moving_speed_kmh }}</div><div class="label">Avg moving (km/h)</div></div>{% endif %}
+    {% if real_plan.total_break_hm %}<div class="stat-card"><div class="number">{{ real_plan.total_break_hm }}</div><div class="label">Meal breaks</div></div>{% endif %}
     <div class="stat-card"><div class="number">{{ cutoff_hours }}</div><div class="label">ACP limit (h)</div></div>
   </div>
   <div class="container section">
@@ -137,6 +164,18 @@
       controls, elevation and per-segment gradient pacing. Distances are shown in km,
       speeds in km/h; climb in feet.
     </p>
+
+    {# Conservative/aggressive pace toggle — re-requests this route with ?variant=,
+       mirroring the synthetic speed picker on the shared design system. The active
+       variant is marked; aggressive is ~1.5 mph quicker across the board. #}
+    <div class="plan-variant-toggle" role="group" aria-label="Pacing variant">
+      <a href="{{ url_for('plan.plan_view', event_id=event.id, variant='conservative') }}"
+         class="plan-variant-option{% if variant == 'conservative' %} is-active{% endif %}"
+         {% if variant == 'conservative' %}aria-current="true"{% endif %}>Conservative</a>
+      <a href="{{ url_for('plan.plan_view', event_id=event.id, variant='aggressive') }}"
+         class="plan-variant-option{% if variant == 'aggressive' %} is-active{% endif %}"
+         {% if variant == 'aggressive' %}aria-current="true"{% endif %}>Aggressive</a>
+    </div>
     {# Terrain strip: each segment colored by its difficulty (mirrors the parent app). #}
     <div style="display:flex;height:14px;border-radius:7px;overflow:hidden;margin:0 0 20px;border:1px solid var(--border);" title="Route segments colored by difficulty">
       {% for s in real_plan.stops %}{% if s.seg_dist_km %}<div style="width:{{ (s.seg_dist_km / event.distance_km * 100)|round(1) }}%;background:{{ s.difficulty_color }};"></div>{% endif %}{% endfor %}
@@ -184,6 +223,19 @@
     </thead>
     <tbody>
       {% for s in real_plan.stops %}
+        {% if s.is_meal %}
+        {# Meal-break row: a rest, not a control — clock-typed label + dwell, spanning
+           the control/segment/climb/speed/difficulty columns. #}
+        <tr class="plan-meal-row">
+          <td class="plan-control-name plan-meal-label">🍽 {{ s.meal_label }}</td>
+          <td class="plan-dist">{{ s.distance_km }} km</td>
+          <td class="plan-meal-dwell"{% if real_plan.has_wind %} colspan="5"{% else %} colspan="4"{% endif %}>
+            Break · {{ s.dwell_min }} min
+          </td>
+          <td class="plan-arrival">{{ s.arrival or '—' }}</td>
+          <td class="plan-bank-cell">—</td>
+        </tr>
+        {% else %}
         <tr>
           <td class="plan-control-name">{{ s.location }}</td>
           <td class="plan-dist">{{ s.distance_km }} km</td>
@@ -204,6 +256,7 @@
             {% if s.time_bank_known %}{{ s.time_bank }}{% else %}—{% endif %}
           </td>
         </tr>
+        {% endif %}
       {% endfor %}
     </tbody>
   </table>

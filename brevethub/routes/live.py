@@ -697,14 +697,27 @@ def _ride_live_context(ride):
                                         if plan.get('cutoff_hours') else None)
             ctx['plan_total_mi'] = float(plan.get('total_distance_miles') or 0)
             stops = models.get_brevet_route_plan_stops(plan['id'])
-            ctx['plan_stops'] = [
-                {'distance_miles': float(s['distance_miles']),
-                 'cum_time_min': float(s['cum_time_min']),
-                 'location': s.get('location'),
-                 'stop_type': s.get('stop_type')}
-                for s in (stops or [])
-                if s.get('distance_miles') is not None and s.get('cum_time_min') is not None
-            ]
+            # Live grading is pinned to the conservative, MEAL-FREE checkpoints and
+            # timing — byte-for-byte what the single plan produced before the variant
+            # split. Exclude the stored meal-break rows (stop_type='meal', zero segment
+            # distance) and subtract the accumulated preceding dwell (each meal row
+            # carries its dwell in segment_time_min) from every control's cum_time_min,
+            # recovering the moving-elapsed series the interpolators expect. Meal breaks
+            # are display-only; they never feed banked-time / next-control / OTL grading.
+            graded = []
+            cum_dwell = 0.0
+            for s in (stops or []):
+                if s.get('stop_type') == 'meal':
+                    cum_dwell += float(s.get('segment_time_min') or 0)
+                    continue
+                if s.get('distance_miles') is None or s.get('cum_time_min') is None:
+                    continue
+                graded.append(
+                    {'distance_miles': float(s['distance_miles']),
+                     'cum_time_min': float(s['cum_time_min']) - cum_dwell,
+                     'location': s.get('location'),
+                     'stop_type': s.get('stop_type')})
+            ctx['plan_stops'] = graded
             ctx['has_plan'] = len(ctx['plan_stops']) >= 2
     except Exception as exc:  # noqa: BLE001 — plan is optional; degrade to base
         current_app.logger.warning('live: plan resolution failed for ride %s: %s',

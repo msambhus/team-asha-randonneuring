@@ -1473,16 +1473,21 @@ def is_club_owner(club_id, rider_id):
 # here, so the column names (distance_miles, avg_speed) stay honest. Every query
 # targets an rp_* table only.
 # --------------------------------------------------------------------------- #
-def get_brevet_route_plan(event_id):
-    """The persisted real ride plan for a brevet, or None. One row per event."""
+def get_brevet_route_plan(event_id, variant='conservative'):
+    """The persisted real ride plan for a brevet + variant, or None.
+
+    One row per (event, variant). ``variant`` defaults to 'conservative' — the legacy
+    single-plan rows migrate to conservative, so an unqualified read still resolves to
+    the same plan an event had before the conservative/aggressive split.
+    """
     return db.query_one(
-        "SELECT id, event_id, club_id, name, slug, total_distance_miles, "
+        "SELECT id, event_id, club_id, variant, name, slug, total_distance_miles, "
         "       total_elevation_ft, rwgps_url, rwgps_route_id, distance_km, "
         "       cutoff_hours, start_time, avg_moving_speed, avg_elapsed_speed, "
         "       total_moving_time_min, total_elapsed_time_min, total_break_time_min, "
         "       overall_ft_per_mile, created_at "
-        "FROM rp_brevet_route_plan WHERE event_id = %s",
-        (event_id,),
+        "FROM rp_brevet_route_plan WHERE event_id = %s AND variant = %s",
+        (event_id, variant),
     )
 
 
@@ -1499,19 +1504,20 @@ def get_brevet_route_plan_stops(ride_plan_id):
     )
 
 
-def get_brevet_route_plan_with_stops(event_id):
-    """The real plan for a brevet plus its ordered stops, or None when no real plan
-    exists (so the /plan route falls back to the synthetic schedule).
+def get_brevet_route_plan_with_stops(event_id, variant='conservative'):
+    """The real plan for a brevet + variant plus its ordered stops, or None when no
+    such plan exists (so the /plan route falls back to the synthetic schedule).
 
+    ``variant`` defaults to 'conservative' (the /plan default and the legacy plan).
     Returns ``{'plan': <row>, 'stops': [<row>, ...]}``.
     """
-    plan = get_brevet_route_plan(event_id)
+    plan = get_brevet_route_plan(event_id, variant)
     if not plan:
         return None
     return {'plan': plan, 'stops': get_brevet_route_plan_stops(plan['id'])}
 
 
-def get_brevet_route_plan_by_route_id_rp(rwgps_route_id, club_id):
+def get_brevet_route_plan_by_route_id_rp(rwgps_route_id, club_id, variant='conservative'):
     """The best in-tenant real plan for an RWGPS route id, or None.
 
     Tenant-scoped: matches only a plan owned by ``club_id`` OR a public club-less
@@ -1520,47 +1526,60 @@ def get_brevet_route_plan_by_route_id_rp(rwgps_route_id, club_id):
     club-less ride) only club-less plans match, since ``club_id = NULL`` is never
     true. Deterministic pick when a route id maps to more than one accepted plan:
     same-club before club-less, then newest, then highest id.
+
+    PINNED to the conservative variant (the default): after the conservative/aggressive
+    split an event has two plans sharing one route id, but live-tracking grades against
+    the conservative (legacy default, realistic-pace) plan only — so selection can never
+    depend on which variant was inserted last, and the aggressive plan is never graded.
     """
     if not rwgps_route_id:
         return None
     return db.query_one(
-        "SELECT id, event_id, club_id, name, slug, total_distance_miles, "
+        "SELECT id, event_id, club_id, variant, name, slug, total_distance_miles, "
         "       total_elevation_ft, rwgps_url, rwgps_route_id, distance_km, "
         "       cutoff_hours, start_time, created_at "
         "FROM rp_brevet_route_plan "
         "WHERE rwgps_route_id = %s AND (club_id = %s OR club_id IS NULL) "
+        "  AND variant = %s "
         "ORDER BY (club_id IS NULL), created_at DESC NULLS LAST, id DESC "
         "LIMIT 1",
-        (rwgps_route_id, club_id),
+        (rwgps_route_id, club_id, variant),
     )
 
 
-def get_brevet_route_plan_candidates_rp(club_id):
+def get_brevet_route_plan_candidates_rp(club_id, variant='conservative'):
     """In-tenant real plans as name-match candidates when no route id matches.
 
     Returns the id, name, slug, cutoff_hours and total distance of every plan owned
     by ``club_id`` OR club-less (club_id IS NULL), so the shared name matcher is fed
     ONLY same-club and public plans — never another club plan. A club-less ride
     (``club_id`` None) gets only club-less candidates.
+
+    PINNED to the conservative variant (the default) so the name matcher returns
+    exactly one plan per event — the same legacy plan it graded before the
+    conservative/aggressive split — never both variants of one event.
     """
     return db.query(
         "SELECT id, name, slug, rwgps_route_id, club_id, cutoff_hours, "
         "       total_distance_miles, created_at "
         "FROM rp_brevet_route_plan "
-        "WHERE club_id = %s OR club_id IS NULL "
+        "WHERE (club_id = %s OR club_id IS NULL) AND variant = %s "
         "ORDER BY (club_id IS NULL), created_at DESC NULLS LAST, id DESC",
-        (club_id,),
+        (club_id, variant),
     )
 
 
-def upsert_brevet_route_plan(event_id, plan, stops, club_id=None):
-    """Persist a real RWGPS-derived plan + its stops for a brevet, atomically.
+def upsert_brevet_route_plan(event_id, plan, stops, club_id=None,
+                             variant='conservative'):
+    """Persist a real RWGPS-derived plan + its stops for a brevet variant, atomically.
 
     One transaction on the per-request connection (the per-call ``db.execute`` can't
-    span the three statements): upsert the plan row keyed on the UNIQUE(event_id)
-    constraint (so re-warming/re-generating the same brevet refreshes it in place —
-    idempotent), delete the old stops, then re-insert the fresh ordered stops. Values
-    are stored VERBATIM in the engine's native miles / mph / feet.
+    span the three statements): upsert the plan row keyed on the
+    UNIQUE(event_id, variant) constraint (so re-warming/re-generating the same brevet
+    variant refreshes it in place — idempotent, and the conservative + aggressive
+    variants coexist as two rows under one event), delete the old stops, then re-insert
+    the fresh ordered stops. Values are stored VERBATIM in the engine's native
+    miles / mph / feet.
 
     OWNERSHIP GUARD (authorization): there is one public plan per brevet, so the
     ON CONFLICT clause writes a row only when the existing plan is UNOWNED
@@ -1576,22 +1595,23 @@ def upsert_brevet_route_plan(event_id, plan, stops, club_id=None):
     shared.rwgps.build_ride_plan (``{'plan': ..., 'stops': [...]}``). Returns the
     new/updated plan id, or ``None`` when a different club already owns the plan.
     """
-    # slug is UNIQUE; suffix with event_id so two brevets that share a route name
-    # never collide, while staying deterministic (idempotent) for the same event.
-    slug = f"{plan.get('slug') or 'route'}-{event_id}"
+    # slug is UNIQUE per (event_id, variant); suffix with BOTH the event id and the
+    # variant so two brevets that share a route name never collide AND the two variants
+    # of one event never collide, while staying deterministic (idempotent) per variant.
+    slug = f"{plan.get('slug') or 'route'}-{event_id}-{variant}"
 
     conn = db.get_db()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 "INSERT INTO rp_brevet_route_plan "
-                "  (event_id, club_id, name, slug, total_distance_miles, "
+                "  (event_id, club_id, variant, name, slug, total_distance_miles, "
                 "   total_elevation_ft, rwgps_url, rwgps_route_id, distance_km, "
                 "   cutoff_hours, start_time, avg_moving_speed, avg_elapsed_speed, "
                 "   total_moving_time_min, total_elapsed_time_min, "
                 "   total_break_time_min, overall_ft_per_mile) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
-                "ON CONFLICT (event_id) DO UPDATE "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (event_id, variant) DO UPDATE "
                 "SET club_id = EXCLUDED.club_id, name = EXCLUDED.name, "
                 "    slug = EXCLUDED.slug, "
                 "    total_distance_miles = EXCLUDED.total_distance_miles, "
@@ -1613,7 +1633,7 @@ def upsert_brevet_route_plan(event_id, plan, stops, club_id=None):
                 "WHERE rp_brevet_route_plan.club_id IS NULL "
                 "   OR rp_brevet_route_plan.club_id = EXCLUDED.club_id "
                 "RETURNING id",
-                (event_id, club_id, plan.get('name'), slug,
+                (event_id, club_id, variant, plan.get('name'), slug,
                  plan.get('total_distance_miles'), plan.get('total_elevation_ft'),
                  plan.get('rwgps_url'), plan.get('rwgps_route_id'),
                  plan.get('distance_km'), plan.get('cutoff_hours'),
@@ -1656,17 +1676,23 @@ def upsert_brevet_route_plan(event_id, plan, stops, club_id=None):
 
 
 def get_route_plan_warm_targets():
-    """Upcoming brevets with a non-NULL rwgps_url — the events the warm cron should
-    pre-fetch and persist a real plan for.
+    """Upcoming brevets with a non-NULL rwgps_url that are still MISSING a variant —
+    the events the warm cron should pre-fetch and persist both variants for.
 
-    Returns ``[{id, rwgps_url}, ...]`` for events dated today or later that carry an
-    RWGPS URL; events without one have no real route to build, so they are skipped
-    (the calendar falls back to the synthetic schedule). Touches only rp_brevet_event.
+    Returns ``[{id, rwgps_url, start_time}, ...]`` for events dated today or later that
+    carry an RWGPS URL AND do not yet have BOTH stored plan variants (conservative +
+    aggressive). ``start_time`` rides along so the cron can clock-type the meal breaks.
+    An event that already has both variants is not re-warmed (the daily cron is a
+    fill-in, not a rebuild); events without an RWGPS URL have no real route to build, so
+    they are skipped (the calendar falls back to the synthetic schedule). The
+    variant-count filter reads rp_brevet_route_plan; both tables are rp_*.
     """
     return db.query(
-        "SELECT id, rwgps_url FROM rp_brevet_event "
-        "WHERE date >= CURRENT_DATE AND rwgps_url IS NOT NULL "
-        "ORDER BY date ASC",
+        "SELECT e.id, e.rwgps_url, e.start_time FROM rp_brevet_event e "
+        "WHERE e.date >= CURRENT_DATE AND e.rwgps_url IS NOT NULL "
+        "  AND (SELECT COUNT(DISTINCT p.variant) FROM rp_brevet_route_plan p "
+        "       WHERE p.event_id = e.id) < 2 "
+        "ORDER BY e.date ASC",
     )
 
 
@@ -1736,6 +1762,11 @@ def get_route_weather_warm_targets(horizon_days=16):
     along the wrong course — or skip it entirely when only the plan carries a URL.
     Events without a persisted plan are skipped (no real plan → no Wind column → nothing
     to warm). Touches only rp_* tables.
+
+    PINNED to the conservative variant: after the conservative/aggressive split an event
+    has two plan rows, but the two variants map the SAME route, so filtering to
+    conservative keeps this ONE row per event — the weather cron fetches each course
+    once, not twice (the /plan wind overlay is variant-agnostic route geometry).
     """
     return db.query(
         "SELECT e.id AS id, e.date AS date, "
@@ -1745,8 +1776,9 @@ def get_route_weather_warm_targets(horizon_days=16):
         "JOIN rp_brevet_event e ON e.id = p.event_id "
         "WHERE e.date >= CURRENT_DATE "
         "  AND e.date <= CURRENT_DATE + make_interval(days => %s) "
+        "  AND p.variant = %s "
         "ORDER BY e.date ASC",
-        (horizon_days,),
+        (horizon_days, 'conservative'),
     )
 
 
