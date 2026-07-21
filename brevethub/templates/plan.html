@@ -928,6 +928,9 @@
 
 {% block extra_js %}
 {% if real_plan %}
+{# `plan` is set inside the content block; re-derive it here since a Jinja block has
+   its own scope (v2 is a global render-context var, available in every block). #}
+{% set plan = v2.plan %}
 <script>
 (function() {
     var tabs = document.querySelectorAll('.rpv2-tab');

@@ -342,7 +342,7 @@ def test_plan_wind_column_present_when_cached(client):
         resp = client.get('/plan/11')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'plan-wind-head' in body       # the Wind column header rendered
+    assert '>Wind</th>' in body            # the rpv2 Wind column header rendered
     assert 'wind-arrow' in body           # at least one wind-arrow SVG
 
 

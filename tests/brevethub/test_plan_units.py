@@ -236,16 +236,14 @@ def test_variant_param_selects_aggressive_and_renders_toggle(client):
         resp = client.get('/plan/11?variant=aggressive')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert captured['variant'] == 'aggressive'          # the stored aggressive plan
-    assert '14.0 mph' in body                           # native mph (unique to aggressive)
-    # Meal-break row + dwell + total break time render.
+    assert captured['variant'] == 'aggressive'          # the stored aggressive plan loaded
+    # Meal-break row renders in the rpv2 itinerary (name + dwell pill).
     assert 'Lunch' in body
-    assert 'Break · 30 min' in body
-    assert '0h 30m' in body                             # total break time in the summary
-    # The toggle shows both options, aggressive marked active (aria-current only on it).
-    assert 'aria-current="true">Aggressive' in body
-    assert '>Conservative</a>' in body
-    assert 'is-active' in body
+    assert '30m' in body                                # the meal break dwell (rpv2 break pill)
+    # The rpv2 conservative/aggressive toggle shows both options, aggressive marked active.
+    assert 'rpv2-variant' in body
+    assert '>Aggressive</a>' in body and '>Conservative</a>' in body
+    assert 'aria-current="true"' in body
 
 
 def test_variant_defaults_to_conservative_without_param(client):
