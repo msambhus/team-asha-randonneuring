@@ -237,25 +237,27 @@ def test_name_fallback_feeds_only_club_scoped_candidates(client):
     assert t['plan'] is not None
 
 
-def test_plan_by_route_id_query_is_club_scoped():
-    """The route-id plan SQL scopes to the ride club OR a club-less warm plan, and
-    passes both the route id and club id as bound params."""
+def test_plan_by_route_id_query_is_club_scoped_and_pins_conservative():
+    """The route-id plan SQL scopes to the ride club OR a club-less warm plan, PINS the
+    conservative variant, and passes the route id + club id + variant as bound params."""
     import brevethub.models as models
     with patch('brevethub.db.query_one', return_value=None) as q:
         models.get_brevet_route_plan_by_route_id_rp('123', 5)
     sql, params = q.call_args[0]
     assert 'club_id = %s OR club_id IS NULL' in sql
     assert 'rwgps_route_id = %s' in sql
-    assert params == ('123', 5)
+    assert 'variant = %s' in sql
+    assert params == ('123', 5, 'conservative')
 
 
-def test_plan_candidates_query_is_club_scoped():
+def test_plan_candidates_query_is_club_scoped_and_pins_conservative():
     import brevethub.models as models
     with patch('brevethub.db.query', return_value=[]) as q:
         models.get_brevet_route_plan_candidates_rp(9)
     sql, params = q.call_args[0]
     assert 'club_id = %s OR club_id IS NULL' in sql
-    assert params == (9,)
+    assert 'variant = %s' in sql
+    assert params == (9, 'conservative')
 
 
 def test_plan_by_route_id_none_route_returns_none_without_query():
