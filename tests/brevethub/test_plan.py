@@ -2,8 +2,9 @@
 
 Follows the established BrevetHub test pattern: monkeypatch `brevethub.models.*`,
 use the `client` fixture, never touch a real DB or network. First-class contracts:
-  - the guest view COMPUTES + renders a schedule (arrival, time bank, km/h) and the
-    ACP time limit — a real render-path assertion (proves NO missing-filter 500),
+  - the guest view COMPUTES + renders a schedule (arrival, time bank, distance in
+    miles, speed in mph — the ?speed= input is mph) and the ACP time limit — a real
+    render-path assertion (proves NO missing-filter 500),
   - the guest view exposes NO rider PII,
   - a guest SAVE is refused with 401 (+ a login_url), a signed-in rider's save is
     200 and persists a SERVER-computed plan_data,
@@ -47,10 +48,12 @@ def test_guest_plan_renders_schedule(client):
     # Event + ACP time limit render.
     assert 'Point Reyes Lighthouse 200' in body
     assert '13.5' in body                 # ACP time limit (h)
-    # Schedule cells: per-stop distance, avg speed (km/h), arrival, time bank.
-    assert '100 km' in body               # first evenly-spaced control
-    assert '200 km' in body               # final stop at the exact total
-    assert '20.0 km/h' in body            # avg speed emerges as km/h (unit-agnostic)
+    # Schedule cells: per-stop distance (miles), target pace (mph), arrival, time bank.
+    assert '62.1 mi' in body              # first evenly-spaced control (100 km → 62.1 mi)
+    assert '124.3 mi' in body             # final stop at the exact total (200 km → 124.3 mi)
+    assert '20.0 mph' in body             # target pace shown in mph (?speed=20 mph)
+    # The ride's TOTAL distance stays km (the brevet's nominal ACP distance).
+    assert '<div class="label">Distance (km)</div>' in body
     assert 'Time bank vs cutoff' in body  # the time-bank column renders
     # A signed-out guest can compute but not save, and sees no rider PII.
     assert 'rider@example.com' not in body
@@ -69,11 +72,11 @@ def test_guest_plan_no_missing_filter_500(client):
 
 
 def test_default_pace_used_when_no_target(client):
-    """No speed/finish -> the default 20 km/h target computes a schedule."""
+    """No speed/finish -> the default 20 km/h target computes a schedule, shown as mph."""
     with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT):
         resp = client.get('/plan/11')
     assert resp.status_code == 200
-    assert '20.0 km/h' in resp.get_data(as_text=True)
+    assert '12.4 mph' in resp.get_data(as_text=True)   # 20 km/h default → 12.4 mph
 
 
 def test_finish_time_param_recomputes_pace(client):
@@ -81,8 +84,8 @@ def test_finish_time_param_recomputes_pace(client):
     with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT):
         resp = client.get('/plan/11?finish=13.5')
     assert resp.status_code == 200
-    # 200 km / 13.5 h ~= 14.8 km/h.
-    assert '14.8 km/h' in resp.get_data(as_text=True)
+    # 200 km / 13.5 h ~= 14.8 km/h → 9.2 mph.
+    assert '9.2 mph' in resp.get_data(as_text=True)
 
 
 def test_missing_time_limit_falls_back_to_acp_mapping(client):
@@ -93,7 +96,7 @@ def test_missing_time_limit_falls_back_to_acp_mapping(client):
     body = resp.get_data(as_text=True)
     # Cutoff now renders in the TA-style ACP-limit stat card (value + label).
     assert '<div class="number">20</div><div class="label">ACP limit (h)</div>' in body  # 300 km -> 20 h band
-    assert '300 km' in body
+    assert '186.4 mi' in body             # 300 km final control → 186.4 mi (miles display)
 
 
 def test_unknown_event_404(client):
@@ -129,14 +132,16 @@ def test_rider_save_persists_server_computed_plan(client):
         resp = client.post('/plan/11/save', json={'speed': 20})
     assert resp.status_code == 200
     body = resp.get_json()
-    assert body['ok'] is True and body['target_speed_kmh'] == 20.0
+    # The ?speed= input is MPH; it is converted to km-h before the km-native engine
+    # runs and before storage (20 mph → 32.19 km/h). Storage stays km-h.
+    assert body['ok'] is True and body['target_speed_kmh'] == 32.19
     mock_up.assert_called_once()
     # The persisted plan is SERVER-computed (not trusted from the client).
     assert captured['rider_id'] == 7 and captured['event_id'] == 11
-    assert captured['target_speed_kmh'] == 20.0
+    assert captured['target_speed_kmh'] == 32.19
     plan_data = captured['plan_data']
-    assert plan_data['target_speed_kmh'] == 20.0
-    assert plan_data['total_km'] == 200
+    assert plan_data['target_speed_kmh'] == 32.19
+    assert plan_data['total_km'] == 200            # internal storage stays km
     assert plan_data['stops'], "server must compute a non-empty schedule"
     assert plan_data['stops'][-1]['distance_km'] == 200
 
