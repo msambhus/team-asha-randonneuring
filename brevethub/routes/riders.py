@@ -158,7 +158,7 @@ def rider_profile(rider_id):
             'rusa_cache': cache.get('rusa_cache'),
             # current_rider() (get_rider_by_id) carries the cached Eddington, so the
             # self-view fallback shows the owner own value without a Strava fetch.
-            'eddington_km': viewer.get('eddington_km'),
+            'eddington_miles': viewer.get('eddington_miles'),
         }
     if target is None:
         abort(404)
@@ -175,4 +175,4 @@ def rider_profile(rider_id):
                            rusa_id=target.get('rusa_id'),
                            career=career, seasons=season_groups,
                            pbp_years=pbp_years, is_self=is_self,
-                           eddington_km=target.get('eddington_km'))
+                           eddington_miles=target.get('eddington_miles'))
