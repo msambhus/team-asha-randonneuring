@@ -33,6 +33,7 @@ from brevethub.shared.garmin_livetrack import fetch_positions, parse_session
 from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
                                     extract_rwgps_route_id, fetch_route)
 from shared.rusa import fetch_rider_results
+from shared.rusa_calendar import get_rwgps_url_from_route
 from shared.weather import (FORECAST_HORIZON_DAYS, fetch_point_forecast,
                             fetch_route_weather, resolve_region_coordinates,
                             sample_track_points)
@@ -328,6 +329,83 @@ def fetch_brevet_weather():
         fetched, skipped, failed, len(targets))
     return jsonify({'ok': True, 'fetched': fetched, 'skipped': skipped,
                     'failed': failed, 'considered': len(targets)}), 200
+
+
+# Max RUSA route-page scrapes attempted per backfill run. Bounded so one run makes at
+# most BATCH_SIZE fetches (not the whole ~669-event backlog), keeping it well inside
+# the serverless budget; successive daily runs chip away at the remaining NULL
+# rwgps_url rows until they converge on the unresolvable-route floor. A mid-batch kill
+# is safe because the next run resumes on whatever NULLs are left.
+BATCH_SIZE = 25
+
+
+@cron_bp.route('/backfill-rwgps-urls', methods=['GET', 'POST'])
+def backfill_rwgps_urls():
+    """Backfill the NULL rwgps_url column on rp_brevet_event, OFF the request path.
+
+    Auth-gated (Bearer CRON_SECRET). The /calendar seed scrapes with
+    ``fetch_rwgps=False`` because following ~669 route pages on a page load would blow
+    the serverless timeout, so brevet rows land with a rusa_route_id but no rwgps_url
+    and /cron/warm-brevet-plans has nothing to warm. This cron closes that gap: it
+    loads a bounded batch of URL-less events that carry a rusa_route_id (upcoming
+    first) and, for each, scrapes the RUSA route-detail page via the shared
+    get_rwgps_url_from_route helper and writes back ONLY the rwgps_url column.
+
+    Bounded + idempotent + fail-soft: at most BATCH_SIZE fetches per run; the reader
+    selects only rows whose rwgps_url IS NULL and the writer re-asserts that guard, so
+    a filled row is never reselected or overwritten and a re-run yields stable counts.
+    A fetch that raises or returns None leaves that row NULL (a route page with no
+    RideWithGPS link is simply re-tried next run, cheaply) and the batch keeps going.
+    Runs daily BEFORE /cron/warm-brevet-plans so a URL filled in the morning is warmed
+    into a ride plan the same day (see brevethub/vercel.json). Returns
+    ``{ok, considered, filled, still_null, remaining}`` for observability — remaining
+    is the still-NULL backlog after this run (up to one batch; it saturates while more
+    than a batch is left) and trending it toward the unresolvable-route floor proves
+    convergence.
+
+    Route contract (pinned, same as the other crons): the production URL is exactly
+    ``/cron/backfill-rwgps-urls`` — the blueprint owns the ``/cron`` prefix and this
+    decorator is LEAF-ONLY, so the composed URL is single-prefixed and the
+    Vercel-scheduled GET reaches the handler (a double ``/cron`` prefix would 404).
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    try:
+        targets = models.get_events_needing_rwgps_url(BATCH_SIZE)
+    except Exception as e:
+        current_app.logger.warning('RWGPS backfill target load failed: %s', e)
+        return jsonify({'ok': False, 'error': 'target load failed',
+                        'considered': 0, 'filled': 0, 'still_null': 0,
+                        'remaining': 0}), 200
+
+    filled = 0
+    for event in targets:
+        route_id = event.get('rusa_route_id')
+        try:
+            rwgps_url = get_rwgps_url_from_route(route_id)
+            if rwgps_url and models.set_event_rwgps_url(event['id'], rwgps_url):
+                filled += 1
+            # A None result (route page has no RideWithGPS link) leaves the row NULL.
+        except Exception as e:
+            # Fail soft: one route-page scrape error never aborts the batch.
+            current_app.logger.warning(
+                'RWGPS backfill failed for event %s (route %s): %s',
+                event.get('id'), route_id, e)
+
+    considered = len(targets)
+    still_null = considered - filled
+    try:
+        remaining = len(models.get_events_needing_rwgps_url(BATCH_SIZE))
+    except Exception:
+        remaining = still_null
+
+    current_app.logger.info(
+        'RWGPS backfill: filled=%s of %s considered, ~%s still needing a URL',
+        filled, considered, remaining)
+    return jsonify({'ok': True, 'considered': considered, 'filled': filled,
+                    'still_null': still_null, 'remaining': remaining}), 200
 
 
 @cron_bp.route('/warm-brevet-plans', methods=['GET', 'POST'])

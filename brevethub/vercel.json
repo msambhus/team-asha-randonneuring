@@ -6,6 +6,7 @@
     { "src": "static/**", "use": "@vercel/static" }
   ],
   "crons": [
+    { "path": "/cron/backfill-rwgps-urls", "schedule": "30 7 * * *" },
     { "path": "/cron/refresh-calendar", "schedule": "0 8 * * *" },
     { "path": "/cron/fetch-brevet-weather", "schedule": "30 8 * * *" },
     { "path": "/cron/warm-brevet-plans", "schedule": "0 9 * * *" },
