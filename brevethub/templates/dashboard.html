@@ -131,7 +131,12 @@
     {% endif %}
 
     {% if rusa.stats %}
-      <div class="stats-row">
+      {# Keep the .stats-row class so the per-card .stat-card:nth-child colors apply,
+         but override the two hero-only behaviors inline (inline styles beat the
+         utility classes): the negative top margin — meant to pull the cards up over
+         a hero — would here overlap the section heading; and the fixed 5-column grid
+         leaves a 4-stat row short. auto-fit fills the card width for any count. #}
+      <div class="stats-row" style="margin-top:0;margin-left:0;margin-right:0;padding-left:0;padding-right:0;max-width:none;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
         <div class="stat-card"><div class="number">{{ rusa.stats.total_km }}</div><div class="label">Total km ({{ rusa.stats.count }} brevets)</div></div>
         <div class="stat-card"><div class="number">{{ rusa.stats.longest_km }}</div><div class="label">Longest km</div></div>
         <div class="stat-card">
@@ -189,7 +194,12 @@
     {% endif %}
 
     {% if strava.stats %}
-      <div class="stats-row">
+      {# Keep the .stats-row class so the per-card .stat-card:nth-child colors apply,
+         but override the two hero-only behaviors inline (inline styles beat the
+         utility classes): the negative top margin — meant to pull the cards up over
+         a hero — would here overlap the section heading; and the fixed 5-column grid
+         leaves a 4-stat row short. auto-fit fills the card width for any count. #}
+      <div class="stats-row" style="margin-top:0;margin-left:0;margin-right:0;padding-left:0;padding-right:0;max-width:none;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
         <div class="stat-card"><div class="number">{{ strava.stats.rides }}</div><div class="label">Rides (28 days)</div></div>
         <div class="stat-card"><div class="number">{{ strava.stats.distance_km }}</div><div class="label">Distance km</div></div>
         <div class="stat-card"><div class="number">{{ strava.stats.elevation_m }}</div><div class="label">Elevation m</div></div>
