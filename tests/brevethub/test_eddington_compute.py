@@ -5,8 +5,8 @@ or DB, per the BrevetHub test convention). These pin:
   - compute_and_cache_eddington transforms raw activities (raw ``type`` -> the
     engine ``activity_type`` key) and persists the expected E in BOTH miles and km,
   - a raw-``type`` activity list does NOT silently yield E=0 (the transform ran),
-  - a successful Strava connect invokes the compute once,
-  - a compute error on connect still flashes connect-SUCCESS (connect never blocked).
+  - a successful Strava connect does NOT compute synchronously (the all-time history
+    fetch is deferred to the daily cron, off the request path), yet still succeeds.
 """
 import time
 from datetime import datetime, timezone
@@ -113,38 +113,24 @@ def _flashes(client):
         return [msg for _cat, msg in sess.get('_flashes', [])]
 
 
-def test_connect_callback_computes_once(client):
-    client.application.config['STRAVA_CLIENT_SECRET'] = 'test-secret'
-    with client.session_transaction() as sess:
-        sess['strava_oauth_state'] = 'good'
-        sess['strava_connecting_rider_id'] = 7
-    with patch('brevethub.routes.strava.exchange_code_for_token', return_value=_TOKENS), \
-         patch('brevethub.models.upsert_strava_connection'), \
-         patch('brevethub.models.get_strava_connection', return_value=_CONNECTION), \
-         patch('brevethub.routes.strava.compute_and_cache_eddington') as mock_compute:
-        resp = client.get('/strava/callback?code=abc&state=good&scope=activity:read_all')
-    assert resp.status_code == 302
-    assert resp.headers['Location'].endswith('/dashboard')
-    mock_compute.assert_called_once()
-    assert mock_compute.call_args[0][0] == 7  # rider_id
-
-
-def test_connect_callback_compute_error_still_flashes_success(client):
-    """A compute failure must NOT block a successful connect: success is flashed,
-    the failure flash is not, and no 500 escapes."""
+def test_connect_callback_defers_eddington_to_cron(client):
+    """A successful connect persists the token and flashes success, but does NOT
+    compute Eddington on the request path: the all-time history fetch is deferred to
+    the daily /cron/refresh-eddington (an unbounded fetch on the connect redirect can
+    exceed the serverless timeout for an active rider). The profile shows the
+    "will appear after the next sync" note until the cron fills it in."""
     client.application.config['STRAVA_CLIENT_SECRET'] = 'test-secret'
     with client.session_transaction() as sess:
         sess['strava_oauth_state'] = 'good'
         sess['strava_connecting_rider_id'] = 7
     with patch('brevethub.routes.strava.exchange_code_for_token', return_value=_TOKENS), \
          patch('brevethub.models.upsert_strava_connection') as mock_upsert, \
-         patch('brevethub.models.get_strava_connection', return_value=_CONNECTION), \
-         patch('brevethub.routes.strava.compute_and_cache_eddington',
-               side_effect=Exception('strava boom')):
-        resp = client.get('/strava/callback?code=abc&state=good')
+         patch('brevethub.routes.strava.compute_and_cache_eddington') as mock_compute:
+        resp = client.get('/strava/callback?code=abc&state=good&scope=activity:read_all')
     assert resp.status_code == 302
     assert resp.headers['Location'].endswith('/dashboard')
-    mock_upsert.assert_called_once()  # the connect itself succeeded
+    mock_upsert.assert_called_once()          # the connect itself succeeded
+    mock_compute.assert_not_called()          # compute is deferred to the cron
     flashes = _flashes(client)
     assert 'Strava connected!' in flashes
     assert 'Failed to connect Strava. Please try again.' not in flashes

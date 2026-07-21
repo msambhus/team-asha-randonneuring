@@ -215,16 +215,13 @@ def callback():
             scope=scope,
         )
         flash('Strava connected!', 'success')
-        # Precompute the Eddington now that we hold a live token, so the profile
-        # shows it immediately. NESTED fail-soft try: a Strava/compute error here
-        # must never turn a successful connect into a failure flash.
-        try:
-            connection = models.get_strava_connection(rider_id)
-            if connection:
-                compute_and_cache_eddington(rider_id, connection)
-        except Exception as e:
-            current_app.logger.warning(
-                'Eddington compute on connect failed for rider %s: %s', rider_id, e)
+        # The Eddington is computed OFF the request path by the daily
+        # /cron/refresh-eddington, never here. An all-time Strava history fetch on
+        # the connect redirect can exceed the serverless function timeout for an
+        # active rider (a platform kill the fail-soft try cannot catch, since
+        # fetch_activities paginates the full history with no page cap). The
+        # profile shows a "will appear after the next sync" note until the cron
+        # fills the value in.
     except Exception as e:
         current_app.logger.warning('Strava OAuth error for rider %s: %s', rider_id, e)
         flash('Failed to connect Strava. Please try again.', 'error')
