@@ -11,6 +11,7 @@ tests pin the contract:
 All compute is mocked (no real Strava / DB). `time.sleep` is patched so the inter
 -rider backoff does not slow the suite. Follows the monkeypatch-models pattern.
 """
+import time
 from unittest.mock import patch
 
 _SECRET = 'test-cron-secret-value'
@@ -126,6 +127,33 @@ def test_refresh_connection_load_failure_no_500(app, client):
     assert resp.status_code == 200
     assert resp.get_json()['ok'] is False
     mock_compute.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# End-to-end token-type regression: the cron feeds get_strava_connections_for_eddington
+# rows (expires_at as an epoch FLOAT) straight into compute -> _valid_access_token.
+# Exercise the REAL token helper + compute (only Strava HTTP + the model write mocked)
+# to prove the float connection never raises a TypeError and every rider is refreshed.
+# --------------------------------------------------------------------------- #
+def test_refresh_end_to_end_epoch_float_connection_no_type_error(app, client):
+    _with_secret(app)
+    conns = [
+        {'rider_id': 1, 'access_token': 'A1', 'refresh_token': 'R1',
+         'expires_at': time.time() + 3600},
+        {'rider_id': 2, 'access_token': 'A2', 'refresh_token': 'R2',
+         'expires_at': time.time() + 3600},
+    ]
+    with patch('brevethub.models.get_strava_connections_for_eddington', return_value=conns), \
+         patch('brevethub.routes.strava.fetch_activities', return_value=[]), \
+         patch('brevethub.routes.strava.refresh_access_token') as mock_refresh, \
+         patch('brevethub.models.set_rider_eddington') as mock_set, \
+         patch('brevethub.routes.cron.time.sleep'):
+        resp = client.post(_PATH, headers=_auth())
+    assert resp.status_code == 200
+    # Both riders computed (no TypeError from the epoch-float expires_at compare).
+    assert resp.get_json() == {'ok': True, 'refreshed': 2, 'failed': 0, 'considered': 2}
+    mock_refresh.assert_not_called()  # valid future epoch → no refresh path taken
+    assert mock_set.call_count == 2
 
 
 # --------------------------------------------------------------------------- #
