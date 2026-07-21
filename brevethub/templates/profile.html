@@ -22,7 +22,7 @@
 {% set display_name = rider.email.split('@')[0] %}
 {# Hero + stat-card row mirror the parent app's my_profile: a full-width gradient
    banner then a row of headline numbers, before the detail cards. #}
-<div class="hero" style="padding:30px 20px;">
+<div class="hero" style="padding:30px 20px 64px;">
   <div class="w-[90px] h-[90px] md:w-[110px] md:h-[110px] rounded-full flex items-center justify-center"
        style="background:rgba(255,255,255,0.2);margin:0 auto 15px;font-size:2.6rem;color:white;font-weight:700;">
     {{ display_name[0]|upper }}
@@ -107,7 +107,7 @@
       brevet it will show up here. <a class="text-primary font-semibold hover:text-accent hover:underline" href="{{ url_for('main.rides_by_season') }}">See your rides by season</a>.
     </p>
   {% else %}
-    <dl class="profile stats-grid">
+    <dl class="profile">
       <dt>Career distance</dt>
       <dd>{{ career.total_km }} km ({{ career.count }} brevets)</dd>
 
