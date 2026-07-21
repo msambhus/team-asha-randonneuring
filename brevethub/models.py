@@ -1670,6 +1670,49 @@ def get_route_plan_warm_targets():
     )
 
 
+def get_events_needing_rwgps_url(limit):
+    """Brevet events still missing an rwgps_url that carry a rusa_route_id, upcoming first.
+
+    Returns ``[{id, rusa_route_id}, ...]`` for at most ``limit`` events WHERE the
+    rwgps_url column is NULL and a rusa_route_id is present (the backfill needs a
+    route id to scrape). Future-dated events sort ahead of past ones, then by date
+    ascending, so a bounded run resolves the events a rider is about to plan for
+    first. The ``limit`` (the caller BATCH_SIZE) keeps a run well within the
+    serverless budget; the NULL-only filter makes it idempotent — a row already
+    holding a URL is never reselected. Touches only rp_brevet_event.
+    """
+    return db.query(
+        "SELECT id, rusa_route_id FROM rp_brevet_event "
+        "WHERE rwgps_url IS NULL AND rusa_route_id IS NOT NULL "
+        "ORDER BY (date >= CURRENT_DATE) DESC, date ASC "
+        "LIMIT %s",
+        (limit,),
+    )
+
+
+def set_event_rwgps_url(event_id, rwgps_url):
+    """Write a scraped rwgps_url onto one brevet event, guarded on a still-NULL column.
+
+    A single-column writer used only by the backfill cron. The WHERE clause re-asserts
+    rwgps_url IS NULL, so a row already filled (by the calendar upsert or an earlier
+    run) is never overwritten and the backfill stays idempotent and safe. Returns True
+    when a row changed (RETURNING id, since db.execute yields the first row not a
+    rowcount). Touches only rp_brevet_event.
+
+    (The literal is split at ``UPDATE`` / ``SET`` for the same rp-only-scanner reason
+    documented on :func:`upsert_brevet_event`.)
+    """
+    row = db.execute(
+        "UPDATE rp_brevet_event "
+        "SET rwgps_url = %s "
+        "WHERE id = %s AND rwgps_url IS NULL "
+        "RETURNING id",
+        (rwgps_url, event_id),
+        returning=True,
+    )
+    return row is not None
+
+
 # --------------------------------------------------------------------------- #
 # Brevet route weather cache (rp_brevet_route_weather) — one dense per-sample
 # Open-Meteo forecast per (event, date), warmed OFF the request path by the
