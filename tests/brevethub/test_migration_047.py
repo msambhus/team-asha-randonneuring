@@ -27,6 +27,13 @@ def _sql():
         return fh.read()
 
 
+def _sql_code():
+    """The migration's executable SQL with `-- ...` comments stripped, so the
+    naive property scanners below match statements rather than doc prose (e.g. a
+    comment that says "references only rp_* tables" or "ADD COLUMN IF NOT EXISTS.")."""
+    return sqlparse.format(_sql(), strip_comments=True)
+
+
 def test_migration_exists():
     assert os.path.exists(MIGRATION_PATH), "migration 047 is missing"
 
@@ -78,7 +85,7 @@ def test_migration_slug_unique_re_keyed_per_variant():
 def test_migration_is_non_destructive():
     """No table/column drop: the ONLY DROPs are guarded constraint swaps, every
     ADD COLUMN is IF NOT EXISTS, and no ALTER COLUMN appears."""
-    sql = _sql()
+    sql = _sql_code()
     upper = sql.upper()
     assert 'DROP TABLE' not in upper, "migration 047 must not DROP TABLE"
     assert 'DROP COLUMN' not in upper, "migration 047 must not DROP COLUMN"
@@ -94,7 +101,7 @@ def test_migration_is_non_destructive():
 
 def test_migration_touches_only_rp_tables():
     """Every table the migration names is rp_-prefixed (reuses the 045/046 scanner)."""
-    sql = _sql()
+    sql = _sql_code()
     patterns = [
         r'ALTER\s+TABLE\s+([A-Za-z_][A-Za-z0-9_]*)',
         r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_][A-Za-z0-9_]*)',

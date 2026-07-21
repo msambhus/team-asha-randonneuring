@@ -55,7 +55,7 @@ def test_conservative_curve_anchor_and_floor():
     assert f(0, 'conservative') == 13.0        # flat cap
     assert f(40, 'conservative') == 13.0       # still flat at the flat anchor
     assert f(100, 'conservative') == 10.2      # ~10.25 anchor, rounded to 0.1
-    assert abs(f(100, 'conservative') - 10.25) <= 0.05
+    assert abs(f(100, 'conservative') - 10.25) <= 0.06   # within one 0.1 rounding step of spec anchor
     assert f(200, 'conservative') == 8.5       # steep pitch → floor
     assert f(1000, 'conservative') == 8.5      # never below the floor
     assert f(None, 'conservative') == 13.0     # unknown gradient → flat
@@ -65,7 +65,7 @@ def test_aggressive_curve_is_conservative_plus_offset():
     f = rwgps.profile_segment_speed
     assert f(40, 'aggressive') == 14.5         # +1.5 across the board
     assert f(100, 'aggressive') == 11.8        # ~11.75 anchor, rounded to 0.1
-    assert abs(f(100, 'aggressive') - 11.75) <= 0.05
+    assert abs(f(100, 'aggressive') - 11.75) <= 0.06   # within one 0.1 rounding step of spec anchor
     assert f(0, 'aggressive') == 14.5          # flat
     assert f(1000, 'aggressive') == 9.5        # floor 9.5
     assert f(-3, 'aggressive') == 14.5         # negative → flat
