@@ -4,12 +4,14 @@ A rider opens a brevet from the calendar, picks a target average speed (or a tar
 finish time), and sees a per-stop pacing schedule: cumulative distance, arrival
 time, time bank vs the ACP control cutoff, and average speed. The math is the
 REUSED, club-agnostic pacing engine (shared/pacing.py, extracted verbatim from Team
-Asha's proven ``recalculate_cumulative_values``) — BrevetHub passes kilometres
-straight through the engine's unit-agnostic ``distance_miles`` field and reads
-``avg_speed`` back as km/h with zero conversion.
+Asha's proven ``recalculate_cumulative_values``) — BrevetHub runs it in kilometres
+(passed straight through the engine's unit-agnostic ``distance_miles`` field, reading
+``avg_speed`` back as km/h). DISPLAY is miles / mph: per-stop distance and speed are
+converted at render time, while the ride's TOTAL distance stays km (a brevet is a
+200/300/400/600 km event). The ``?speed=`` input is mph, converted to km-h internally.
 
 Guest surface (NO account required):
-  GET  /plan/<event_id>[?speed=<km/h> | ?finish=<hours>]
+  GET  /plan/<event_id>[?speed=<mph> | ?finish=<hours>]
                                      — compute + render the schedule for a target
                                        pace. Guests can compute freely; the view
                                        exposes no rider PII.
@@ -46,30 +48,40 @@ DEFAULT_SPEED_KMH = 20.0
 # every STOP_STEP_KM plus a final stop at the exact total.
 STOP_STEP_KM = 100
 
-# ── Unit-conversion boundary (real RWGPS plans) ────────────────────────────
-# The reused shared/rwgps.py engine emits NATIVE miles / mph (and feet); it stores
-# them verbatim in rp_brevet_route_plan[_stop]. BrevetHub's /plan UI is km / km-h,
-# so THIS route is the single conversion boundary: every mile value becomes km and
-# every mph value becomes km-h HERE, before display rows or SVG geometry are built.
-# Elevation stays feet (BH brevet convention). Convert exactly once — relabeling
-# without converting would show ~0.62× the real distance and mph-as-km-h.
+# ── Display units: miles / mph ─────────────────────────────────────────────
+# The /plan page shows per-stop DISTANCE in miles and SPEED in mph (US convention),
+# while the ride's TOTAL distance stays km (a brevet is a 200/300/400/600 km event).
+#
+# Two data sources, one display unit:
+#   • Real RWGPS plans: the reused shared/rwgps.py engine emits NATIVE miles / mph /
+#     feet and stores them verbatim in rp_brevet_route_plan[_stop]. So the real-plan
+#     path DISPLAYS those native values directly (round only) — no conversion.
+#   • Synthetic Scope-A plans + the ACP cutoff math run internally in km / km-h (the
+#     km-native ACP model), and the saved rp_brevet_plan payload stays km. So the
+#     synthetic path CONVERTS km → miles and km-h → mph at display time only.
+# Elevation stays feet either way. The target-pace INPUT (?speed=) is mph and is
+# converted to km-h for the internal engine in _resolve_target.
 KM_PER_MILE = 1.609344
+MI_PER_KM = 1.0 / KM_PER_MILE
 
 
-def _mi_to_km(miles):
-    """Miles → km (or None). The engine's stored distance unit → BH's display unit.
-
-    Coerces to float first: the NUMERIC columns come back from psycopg2 as
-    ``Decimal``, and ``Decimal * float`` raises ``TypeError`` — so cast before the
-    multiply (also accepts int / numeric str)."""
-    return round(float(miles) * KM_PER_MILE, 1) if miles is not None else None
+def _round1(value):
+    """Round a native NUMERIC value to 1 dp (or None). Coerces to float first: the
+    NUMERIC columns come back from psycopg2 as ``Decimal`` and ``Decimal`` mixed with
+    float raises ``TypeError`` — so cast before rounding (also accepts int / str)."""
+    return round(float(value), 1) if value is not None else None
 
 
-def _mph_to_kmh(mph):
-    """mph → km-h (or None). The engine's stored speed unit → BH's display unit.
+def _km_to_mi(km):
+    """km → miles (or None), for the synthetic path's display distances. Coerces to
+    float first (NUMERIC → Decimal, and ``Decimal * float`` raises)."""
+    return round(float(km) * MI_PER_KM, 1) if km is not None else None
 
-    Coerces to float first (NUMERIC → Decimal, and ``Decimal * float`` raises)."""
-    return round(float(mph) * KM_PER_MILE, 1) if mph is not None else None
+
+def _kmh_to_mph(kmh):
+    """km-h → mph (or None), for the synthetic path's display speeds. Coerces to
+    float first (NUMERIC → Decimal, and ``Decimal * float`` raises)."""
+    return round(float(kmh) * MI_PER_KM, 1) if kmh is not None else None
 
 
 def _control_distances(total_km):
@@ -101,16 +113,17 @@ def _resolve_target(source, total_km):
     """Resolve the target average speed (km/h) from the request inputs.
 
     ``source`` is a mapping (request.args or a JSON/form body). Precedence:
-    an explicit ``speed`` (km/h) wins; else a ``finish`` time (hours) is converted
-    to a speed; else the default. Returns ``(speed_kmh, mode)`` where mode is
+    an explicit ``speed`` (MPH — the page's display unit) wins and is converted to
+    km-h for the km-native engine; else a ``finish`` time (hours) is converted to a
+    speed; else the default. Returns ``(speed_kmh, mode)`` where mode is
     'speed' | 'finish' | 'default'. Invalid/non-positive inputs fall through.
     """
     speed_raw = str(source.get('speed') or '').strip()
     if speed_raw:
         try:
-            speed = float(speed_raw)
-            if speed > 0:
-                return speed, 'speed'
+            speed_mph = float(speed_raw)
+            if speed_mph > 0:
+                return speed_mph * KM_PER_MILE, 'speed'   # mph input → km-h internal
         except (TypeError, ValueError):
             pass
 
@@ -175,9 +188,12 @@ def _display_rows(raw):
     for s in raw:
         tb = s.get('time_bank_min')
         rows.append({
-            'distance_km': int(round(s['distance_miles'])),
+            # The engine's unit-agnostic distance_miles field carries km here (Scope A
+            # passes km straight through); convert to miles for display. Speed comes
+            # back km-h; convert to mph.
+            'distance_mi': _km_to_mi(s['distance_miles']),
             'arrival': _fmt_hm(s.get('arrival_time_min')),
-            'avg_speed': s.get('avg_speed'),
+            'avg_speed_mph': _kmh_to_mph(s.get('avg_speed')),
             'time_bank': _fmt_hm(tb),
             'time_bank_positive': (tb is not None and tb >= 0),
             'time_bank_known': tb is not None,
@@ -204,7 +220,7 @@ def _serialize_plan(raw, speed_kmh, cutoff_hours, total_km):
     }
 
 
-# ── Real RWGPS plan rendering (km / km-h) ──────────────────────────────────
+# ── Real RWGPS plan rendering (native miles / mph; total distance in km) ────
 # Difficulty coloring bands (unit-agnostic 0-10 score → a green→red ramp). Mirrors
 # the intent of Team Asha's per-segment difficulty coloring; the score itself is
 # what the reused engine's _compute_difficulty_score produced.
@@ -226,31 +242,31 @@ def _difficulty_color(score):
     return _DIFFICULTY_BANDS[-1][1]
 
 
-def _build_elevation_svg(stops_km, *, width=940, height=200):
-    """Build SVG geometry for the cumulative-climb elevation profile (feet vs km).
+def _build_elevation_svg(stops_mi, *, width=940, height=200):
+    """Build SVG geometry for the cumulative-climb elevation profile (feet vs miles).
 
-    Consumes the ALREADY-converted km display stops (so the x-axis is km, matching
-    the tables) and the stored per-stop elevation gain (feet). Returns a dict of
-    pre-computed pixel paths / gridlines / markers so plan.html stays builtin-Jinja
-    only (no namespace math in the template). Modelled on TA's journey_svg macro.
+    Consumes the display stops (x in miles, matching the tables) and the stored
+    per-stop elevation gain (feet). Returns a dict of pre-computed pixel paths /
+    gridlines / markers so plan.html stays builtin-Jinja only (no namespace math in
+    the template). Modelled on TA's journey_svg macro.
     """
     padl, padr, padt, padb = 40, 16, 18, 26
     inner_w = width - padl - padr
     inner_h = height - padt - padb
 
-    total_km = stops_km[-1]['distance_km'] if stops_km else 0
-    span = total_km or 1
+    total_mi = stops_mi[-1]['distance_mi'] if stops_mi else 0
+    span = total_mi or 1
 
-    # Cumulative climb series (feet) at each stop's cumulative km position.
+    # Cumulative climb series (feet) at each stop's cumulative mile position.
     pts = []
     cum_ft = 0
-    for s in stops_km:
+    for s in stops_mi:
         cum_ft += (s['elevation_gain'] or 0)
-        pts.append({'km': s['distance_km'] or 0, 'ft': cum_ft})
+        pts.append({'mi': s['distance_mi'] or 0, 'ft': cum_ft})
     max_ft = max((p['ft'] for p in pts), default=0) or 1
 
-    def _px(km):
-        return round(padl + (km / span) * inner_w, 2)
+    def _px(mi):
+        return round(padl + (mi / span) * inner_w, 2)
 
     def _py(ft):
         return round(padt + inner_h - (ft / max_ft) * inner_h, 2)
@@ -258,7 +274,7 @@ def _build_elevation_svg(stops_km, *, width=940, height=200):
     # Line + filled area under it.
     line_cmds = []
     for i, p in enumerate(pts):
-        line_cmds.append(f"{'M' if i == 0 else 'L'} {_px(p['km'])} {_py(p['ft'])}")
+        line_cmds.append(f"{'M' if i == 0 else 'L'} {_px(p['mi'])} {_py(p['ft'])}")
     line_path = ' '.join(line_cmds)
     baseline_y = round(padt + inner_h, 2)
     area_path = (
@@ -266,14 +282,14 @@ def _build_elevation_svg(stops_km, *, width=940, height=200):
         + f" L {_px(span)} {baseline_y} Z"
     ) if pts else ''
 
-    # km gridlines every 50 km.
+    # Mile gridlines every 25 mi (minor unless a 50-mi line).
     gridlines = []
-    step = 50
-    km = 0
-    while km <= total_km + 0.001:
-        gridlines.append({'x': _px(km), 'label': int(km),
-                          'minor': (km % 100 != 0)})
-        km += step
+    step = 25
+    mi = 0
+    while mi <= total_mi + 0.001:
+        gridlines.append({'x': _px(mi), 'label': int(mi),
+                          'minor': (mi % 50 != 0)})
+        mi += step
 
     # Elevation axis labels (0, half, max).
     elev_labels = [
@@ -284,15 +300,15 @@ def _build_elevation_svg(stops_km, *, width=940, height=200):
 
     # Per-stop markers, colored by difficulty.
     markers = []
-    for i, s in enumerate(stops_km):
+    for i, s in enumerate(stops_mi):
         st = s['stop_type']
         markers.append({
-            'x': _px(s['distance_km'] or 0),
+            'x': _px(s['distance_mi'] or 0),
             'y': _py(pts[i]['ft']),
             'r': 7 if st in ('start', 'finish') else (5.5 if st == 'control' else 4),
             'color': s['difficulty_color'],
             'location': s['location'],
-            'distance_km': s['distance_km'],
+            'distance_mi': s['distance_mi'],
             'elevation_gain': s['elevation_gain'],
             'difficulty_score': s['difficulty_score'],
         })
@@ -301,19 +317,21 @@ def _build_elevation_svg(stops_km, *, width=940, height=200):
         'width': width, 'height': height,
         'line_path': line_path, 'area_path': area_path,
         'gridlines': gridlines, 'elev_labels': elev_labels, 'markers': markers,
-        'total_km': round(total_km, 1), 'max_ft': int(round(max_ft)),
+        'total_mi': round(total_mi, 1), 'max_ft': int(round(max_ft)),
     }
 
 
 def _build_real_plan(plan, stops, stop_winds=None):
-    """Turn a persisted real plan (native miles/mph/feet) into a km / km-h display
-    context for plan.html: converted per-stop rows, the SVG elevation profile, and
-    plan-level summary values. THE conversion happens here and nowhere else.
+    """Turn a persisted real plan (native miles/mph/feet) into a miles / mph display
+    context for plan.html: per-stop rows, the SVG elevation profile, and plan-level
+    summary values. The engine already stores miles / mph / feet, so this path shows
+    the NATIVE values directly (rounded) — no unit conversion.
 
     ``stop_winds`` (when present) is the per-stop forecast wind list from
     ``compute_stop_winds`` — SAME length + order as ``stops``, with ``None`` for a
     stop that has no forecast. Each stop's dict gets a ``wind`` field (its wind dict
-    or None); ``has_wind`` flags whether the Wind column should render at all.
+    or None; wind stays km-h, from the shared km-h wind macro); ``has_wind`` flags
+    whether the Wind column should render at all.
     """
     display_stops = []
     for i, s in enumerate(stops):
@@ -329,11 +347,11 @@ def _build_real_plan(plan, stops, stop_winds=None):
             'is_meal': is_meal,
             'meal_label': s.get('notes') or '' if is_meal else '',
             'dwell_min': s['segment_time_min'] if is_meal else None,
-            'distance_km': _mi_to_km(s['distance_miles']),   # miles → km
-            'seg_dist_km': None if is_meal else _mi_to_km(s['seg_dist']),  # miles → km
-            'elevation_gain': None if is_meal else s['elevation_gain'],    # feet
-            'ft_per_mi': None if is_meal else s['ft_per_mi'],              # labeled ft/mi
-            'avg_speed_kmh': None if is_meal else _mph_to_kmh(s['avg_speed']),  # mph→km-h
+            'distance_mi': _round1(s['distance_miles']),          # native miles
+            'seg_dist_mi': None if is_meal else _round1(s['seg_dist']),   # native miles
+            'elevation_gain': None if is_meal else s['elevation_gain'],   # feet
+            'ft_per_mi': None if is_meal else s['ft_per_mi'],             # labeled ft/mi
+            'avg_speed_mph': None if is_meal else _round1(s['avg_speed']),  # native mph
             'difficulty_score': None if is_meal else s['difficulty_score'],
             'difficulty_color': None if is_meal else _difficulty_color(s['difficulty_score']),
             'arrival': _fmt_hm(s['cum_time_min']),
@@ -347,19 +365,22 @@ def _build_real_plan(plan, stops, stop_winds=None):
     # The elevation profile + terrain strip are per-CONTROL; meal rows carry no segment
     # geometry, so exclude them from the SVG (they'd double-mark a control's distance).
     control_stops = [ds for ds in display_stops if not ds['is_meal']]
-    final_km = control_stops[-1]['distance_km'] if control_stops else None
+    final_mi = control_stops[-1]['distance_mi'] if control_stops else None
     total_break_min = plan.get('total_break_time_min') or 0
     return {
         'name': plan['name'],
         'variant': plan.get('variant', 'conservative'),
         'rwgps_url': plan['rwgps_url'],
-        'distance_km': _mi_to_km(plan['total_distance_miles']),
+        # The ride's TOTAL distance stays km (the brevet's nominal ACP distance is on
+        # event.distance_km); total_distance_mi is the route's measured length in miles,
+        # used only as the denominator for the per-segment difficulty strip.
+        'total_distance_mi': _round1(plan['total_distance_miles']),
         'total_elevation_ft': plan['total_elevation_ft'],
         'overall_ft_per_mile': plan['overall_ft_per_mile'],
-        'avg_moving_speed_kmh': _mph_to_kmh(plan['avg_moving_speed']),
+        'avg_moving_speed_mph': _round1(plan['avg_moving_speed']),   # native mph
         'total_break_time_min': total_break_min,
         'total_break_hm': _fmt_hm(total_break_min) if total_break_min else None,
-        'final_distance_km': final_km,
+        'final_distance_mi': final_mi,
         'stops': display_stops,
         'has_wind': any(ds['wind'] for ds in display_stops),
         'svg': _build_elevation_svg(control_stops),
@@ -423,8 +444,8 @@ def plan_view(event_id):
 
     If a real, RWGPS-backed plan has been persisted for this brevet, render THAT
     (real control names, SVG elevation profile, per-segment difficulty coloring and
-    gradient speed, all in km / km-h). Otherwise fall back to the synthetic
-    evenly-spaced Scope-A schedule at a target pace.
+    gradient speed, distances in miles / speeds in mph; total distance in km).
+    Otherwise fall back to the synthetic evenly-spaced Scope-A schedule at a target pace.
 
     Guest-readable either way: anyone can view; no rider PII is rendered. A signed-in
     rider additionally sees their previously-saved target (synthetic mode) and the
@@ -465,6 +486,7 @@ def plan_view(event_id):
 
     saved = models.get_rider_brevet_plan(rider['id'], event_id) if rider else None
 
+    # Target pace displays in mph (the engine ran in km-h); finish time is unit-neutral.
     finish_hours = round(total_km / speed_kmh, 2) if speed_kmh > 0 else None
     return render_template(
         'plan.html',
@@ -472,7 +494,7 @@ def plan_view(event_id):
         real_plan=None,
         schedule=schedule,
         cutoff_hours=cutoff_hours,
-        speed_kmh=round(speed_kmh, 1),
+        speed_mph=_kmh_to_mph(speed_kmh),
         finish_hours=finish_hours,
         finish_row=schedule[-1] if schedule else None,
         mode=mode,
