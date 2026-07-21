@@ -147,9 +147,14 @@ def profile():
     # Career/SR/R-12 come from the RUSA cache only (the official record), so a
     # self-logged rp_ride can never inflate them. seasons.career_summary is total
     # for an empty history, giving a graceful zero-state for a RUSA-less rider.
-    career = seasons.career_summary(rusa.get('brevets') or [], date.today())
+    brevets = rusa.get('brevets') or []
+    career = seasons.career_summary(brevets, date.today())
+    # PBP Ancien: years the rider finished Paris-Brest-Paris, derived from the same
+    # authorized RUSA history (read-only; no new input, key, or migration).
+    pbp_years = seasons.pbp_ancien_years(brevets)
     return render_template('profile.html', rider=rider, club=club,
-                           rusa=rusa, strava=strava, career=career)
+                           rusa=rusa, strava=strava, career=career,
+                           pbp_years=pbp_years)
 
 
 def _finished_rides_as_brevets(rides):

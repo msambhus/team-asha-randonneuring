@@ -56,7 +56,7 @@
             <td class="rs-num">{{ r.summary.total_km }}</td>
             <td class="rs-sr">
               {% if r.summary.is_sr %}
-                <span class="badge">SR complete</span>
+                <span class="badge">SR complete{% if r.summary.sr_count > 1 %} &times;{{ r.summary.sr_count }}{% endif %}</span>
               {% else %}
                 {% for leg in [200, 300, 400, 600] %}
                   <span class="sr-leg {% if r.summary.legs[leg] %}done{% else %}todo{% endif %}">{{ leg }}</span>

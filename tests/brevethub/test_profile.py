@@ -23,6 +23,20 @@ _CACHE_SR = [
     {'date': '2025-06-01', 'distance_km': 600, 'finish_time': '38:00', 'route_name': 'Summer 600'},
 ]
 
+# Two complete SR series in the same 2024-2025 season → career total_sr == 2, so
+# the profile shows "SR×2". Clock-independent (sums across all seasons).
+_CACHE_TWO_SR = _CACHE_SR + [
+    {'date': '2024-12-01', 'distance_km': 200, 'finish_time': '13:00', 'route_name': 'Winter 200'},
+    {'date': '2025-03-15', 'distance_km': 300, 'finish_time': '19:00', 'route_name': 'Spring 300 II'},
+    {'date': '2025-04-15', 'distance_km': 400, 'finish_time': '26:30', 'route_name': 'Spring 400 II'},
+    {'date': '2025-06-15', 'distance_km': 600, 'finish_time': '38:30', 'route_name': 'Summer 600 II'},
+]
+
+# A finished Paris-Brest-Paris in the RUSA history → PBP Ancien badge + year.
+_CACHE_PBP = _CACHE_SR + [
+    {'date': '2023-08-20', 'distance_km': 1200, 'finish_time': '82:00', 'route_name': 'Paris-Brest-Paris'},
+]
+
 
 def _login(client, rider_id=7):
     with client.session_transaction() as sess:
@@ -50,6 +64,55 @@ def test_profile_renders_with_rusa_history(client):
     assert 'R-12 streak' in body
     assert 'March 2024' in body         # member-since from created_at
     mock_scrape.assert_not_called()
+
+
+def test_profile_shows_multiple_sr_award_count(client):
+    """A rider with two complete SR series in a season shows "SR×2" (career
+    total_sr), not a single "SR"."""
+    _login(client)
+    fresh = datetime.now(timezone.utc)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_club', return_value={'id': 1, 'name': 'SF Rando'}), \
+         patch('brevethub.models.get_strava_connection', return_value=None), \
+         patch('brevethub.models.get_rider_rusa_cache',
+               return_value={'rusa_cache': _CACHE_TWO_SR, 'rusa_fetched_at': fresh}), \
+         patch('brevethub.routes.main.fetch_rider_results'):
+        resp = client.get('/profile')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'SR&times;2' in body            # two SR awards surfaced as the stat card
+    assert 'SR&times;3' not in body
+
+
+def test_profile_shows_pbp_ancien_badge_with_year(client):
+    """A rider who finished PBP shows a "PBP Ancien" badge carrying the year."""
+    _login(client)
+    fresh = datetime.now(timezone.utc)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_club', return_value={'id': 1, 'name': 'SF Rando'}), \
+         patch('brevethub.models.get_strava_connection', return_value=None), \
+         patch('brevethub.models.get_rider_rusa_cache',
+               return_value={'rusa_cache': _CACHE_PBP, 'rusa_fetched_at': fresh}), \
+         patch('brevethub.routes.main.fetch_rider_results'):
+        resp = client.get('/profile')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'PBP Ancien 2023' in body
+
+
+def test_profile_no_pbp_badge_without_a_pbp_finish(client):
+    """A rider with a full SR history but no PBP finish shows no Ancien badge."""
+    _login(client)
+    fresh = datetime.now(timezone.utc)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_club', return_value={'id': 1, 'name': 'SF Rando'}), \
+         patch('brevethub.models.get_strava_connection', return_value=None), \
+         patch('brevethub.models.get_rider_rusa_cache',
+               return_value={'rusa_cache': _CACHE_SR, 'rusa_fetched_at': fresh}), \
+         patch('brevethub.routes.main.fetch_rider_results'):
+        resp = client.get('/profile')
+    assert resp.status_code == 200
+    assert 'PBP Ancien' not in resp.get_data(as_text=True)
 
 
 def test_profile_renders_with_strava_only(client):

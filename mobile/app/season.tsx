@@ -24,6 +24,12 @@ export default function SeasonScreen() {
   // Default for deploy-ordering safety: OTA JS may briefly hit the pre-deploy API.
   const rides_done = data.rides_done ?? [];
   const doneTiers = new Set(sr.distances_done);
+  // Season-level SR *award* count, for parity with the web "SR×N" display: the
+  // number of complete {200,300,400,600} series = min across the per-tier counts
+  // the API already returns. Derived client-side, so no /api/me/season change.
+  const srAwards = sr.has_sr
+    ? Math.min(...SR_TIERS.map((tier) => sr.counts?.[String(tier)] ?? 0))
+    : 0;
 
   return (
     <ScrollView
@@ -44,7 +50,7 @@ export default function SeasonScreen() {
       {/* Super Randonneur */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>
-          Super Randonneur {sr.has_sr ? '✅' : ''}
+          Super Randonneur {sr.has_sr ? '✅' : ''}{srAwards > 1 ? ` SR×${srAwards}` : ''}
         </Text>
         <View style={styles.badgeRow}>
           {SR_TIERS.map((tier) => {

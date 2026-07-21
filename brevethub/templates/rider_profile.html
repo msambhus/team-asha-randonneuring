@@ -76,13 +76,18 @@
   </div>
   <h1>{{ display_name }}{% if is_self %} <span class="badge">you</span>{% endif %}</h1>
   {% if rusa_id %}<p>RUSA# {{ rusa_id }}</p>{% endif %}
+  {% if pbp_years %}
+  {# PBP Ancien: earned by finishing Paris-Brest-Paris. Reuses the shared
+     .pbp-badge treatment (inline gradient so it renders on the hero gradient). #}
+  <p style="margin-top:8px;"><span class="badge pbp-badge" style="background:linear-gradient(135deg,#805ad5,#b794f4);color:#fff;">PBP Ancien {{ pbp_years | join(', ') }}</span></p>
+  {% endif %}
 </div>
 
 <div class="stats-row">
   <div class="stat-card"><div class="number">{{ career.count }}</div><div class="label">Career Rides</div></div>
   <div class="stat-card"><div class="number">{{ career.total_km }}</div><div class="label">Career KMs</div></div>
-  {% set sr_count = career.sr_seasons | length %}
-  <div class="stat-card"><div class="number" style="color:var(--accent);">{% if sr_count > 1 %}SR&times;{{ sr_count }}{% elif sr_count == 1 %}SR{% else %}—{% endif %}</div><div class="label">Super Randonneur</div></div>
+  {% set sr_total = career.total_sr %}
+  <div class="stat-card"><div class="number" style="color:var(--accent);">{% if sr_total > 1 %}SR&times;{{ sr_total }}{% elif sr_total == 1 %}SR{% else %}—{% endif %}</div><div class="label">Super Randonneur</div></div>
   <div class="stat-card"><div class="number">{{ career.r12_streak.months }}</div><div class="label">R-12 Streak (mo)</div></div>
 </div>
 
@@ -101,7 +106,7 @@
       <dt>Super Randonneur ({{ career.current_season }})</dt>
       <dd>
         {% if career.current_sr.is_sr %}
-          <span class="badge">SR complete</span>
+          <span class="badge">SR complete{% if career.current_sr.sr_count > 1 %} &times;{{ career.current_sr.sr_count }}{% endif %}</span>
         {% else %}
           <span class="sr-legs">
             {% for leg in [200, 300, 400, 600] %}

@@ -40,6 +40,14 @@ SEASON_START_MONTH = 11
 SR_TIERS = (200, 300, 400, 600)
 DISTANCE_BANDS = (200, 300, 400, 600, 1000)
 
+# Paris-Brest-Paris detection. PBP is the 1200 km ACP grande randonnee held every
+# four years; a finisher earns the title "Ancien"/"Ancienne". A record is treated
+# as PBP when its event name contains one of these fragments AND its distance
+# clears the floor (1200 km, with headroom for how sources round a grande
+# randonnee's official distance).
+PBP_NAME_FRAGMENTS = ('paris-brest', 'pbp')
+PBP_MIN_KM = 1100
+
 
 def sr_tier_for(distance_km):
     """SR series leg for a distance, or ``None`` if under 200 km. The 600 leg is
@@ -122,17 +130,31 @@ def group_brevets_by_season(brevets):
 
 
 def sr_progress(brevets):
-    """Which SR legs (200/300/400/600) a set of brevets covers and whether they
-    form a Super Randonneur (all four legs present).
+    """Which SR legs (200/300/400/600) a set of brevets covers, how many rides
+    land in each leg, and how many *complete* Super Randonneur series they form.
 
-    Returns ``{'legs': {200: bool, 300: bool, 400: bool, 600: bool}, 'is_sr': bool}``.
+    ``counts`` is the number of rides in each SR tier (a >=600 ride, a 1000
+    included, counts once toward the 600 tier and never toward 400). ``sr_count``
+    is the number of complete {200, 300, 400, 600} sets = ``min`` across the four
+    tier counts, so a rider who rides the whole series twice in a season scores
+    ``sr_count == 2``. ``is_sr`` stays ``sr_count >= 1`` (all four legs present).
+
+    Returns ``{'legs': {200: bool, ...}, 'counts': {200: int, ...},
+    'is_sr': bool, 'sr_count': int}``. ``legs`` and ``is_sr`` are unchanged from
+    the original boolean contract so existing callers keep working.
     """
-    legs = {t: False for t in SR_TIERS}
+    counts = {t: 0 for t in SR_TIERS}
     for b in brevets or []:
         tier = sr_tier_for(b.get('distance_km') or 0)
         if tier is not None:
-            legs[tier] = True
-    return {'legs': legs, 'is_sr': all(legs.values())}
+            counts[tier] += 1
+    legs = {t: counts[t] > 0 for t in SR_TIERS}
+    return {
+        'legs': legs,
+        'counts': counts,
+        'is_sr': all(legs.values()),
+        'sr_count': min(counts.values()),
+    }
 
 
 def season_summary(brevets):
@@ -155,6 +177,7 @@ def season_summary(brevets):
         'bands': {str(b): bands[b] for b in DISTANCE_BANDS},
         'legs': sr['legs'],
         'is_sr': sr['is_sr'],
+        'sr_count': sr['sr_count'],
     }
 
 
@@ -244,18 +267,57 @@ def career_summary(brevets, today):
     Nov 1 season boundary as the rides-by-season view.
 
     Returns career totals, the current season's SR progress, every season that was
-    an SR, and R-12 (awards earned + current streak)."""
+    an SR, the total SR awards across the career (``total_sr``, which counts every
+    complete series — a season with two full series contributes 2), and R-12
+    (awards earned + current streak). ``sr_seasons``/``is_sr`` are unchanged:
+    ``sr_seasons`` still lists the seasons with at least one SR, so
+    ``len(sr_seasons)`` remains the count of SR *seasons* while ``total_sr`` is the
+    count of SR *awards*."""
     seasons = seasons_with_summaries(brevets, today)
     current = current_season_name(today)
     current_season = next((s for s in seasons if s['season'] == current), None)
     sr_seasons = [s['season'] for s in seasons if s['summary']['is_sr']]
+    total_sr = sum(s['summary']['sr_count'] for s in seasons)
     return {
         'total_km': sum((b.get('distance_km') or 0) for b in brevets or []),
         'count': len(brevets or []),
         'current_season': current,
         'current_sr': current_season['summary'] if current_season else sr_progress([]),
         'sr_seasons': sr_seasons,
+        'total_sr': total_sr,
         'is_sr': bool(sr_seasons),
         'r12_awards': r12_awards(brevets),
         'r12_streak': r12_current_streak(brevets, today),
     }
+
+
+def pbp_ancien_years(brevets):
+    """Sorted distinct years in which the rider FINISHED Paris-Brest-Paris, earning
+    the title Ancien(ne). Returns ``[]`` for a rider with no PBP finish.
+
+    Detection is by EVENT NAME: a record whose ``route_name`` contains
+    ``"paris-brest"`` or ``"pbp"`` (case-insensitive) and whose distance is at
+    least ``PBP_MIN_KM`` km. Every record in the RUSA history is a finished result,
+    so a matching record is a finish. Name-matching is preferred over a pure
+    year+distance rule because other ~1200 km grandes randonnees exist
+    (Boston-Montreal-Boston, London-Edinburgh-London, ...); matching on the name
+    keeps those from being mislabelled as PBP.
+
+    Limitation / fallback: if a data source ever stores PBP records without a
+    usable ``route_name``, name-matching yields ``[]`` (a miss, not a false hit).
+    The documented fallback — a >=1100 km finish dated in a PBP year
+    (2019/2023/2027...) — is intentionally NOT enabled here, because it would
+    misattribute those other 1200 km randonnees to PBP. Callers that know their
+    source lacks event names can layer that fallback on top with that
+    false-positive risk in mind; this helper stays conservative by default.
+    """
+    years = set()
+    for b in brevets or []:
+        if (b.get('distance_km') or 0) < PBP_MIN_KM:
+            continue
+        name = str(b.get('route_name') or '').lower()
+        if any(fragment in name for fragment in PBP_NAME_FRAGMENTS):
+            d = _coerce_date(b.get('date'))
+            if d is not None:
+                years.add(d.year)
+    return sorted(years)
