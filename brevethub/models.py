@@ -1163,6 +1163,26 @@ def auto_finalize_past_signups():
     return row['n'] if row else 0
 
 
+def get_event_going_riders(event_id):
+    """The pre-ride roster for a brevet plan page — riders who are interested / maybe
+    / going, exposed as EMAIL LOCAL-PART ONLY.
+
+    Guest-safety: the plan page is public, so this must never leak a full email address,
+    google_id, or rider_id. Only ``split_part(email, '@', 1)`` (the part before the '@')
+    and the pre-ride status are selected — the same local-part-only idiom the live map
+    uses. Ordered going-first, then interested / maybe, then by local-part. rp_* only.
+    """
+    return db.query(
+        "SELECT split_part(r.email, '@', 1) AS name, s.status "
+        "FROM rp_event_signup s "
+        "JOIN rp_rider r ON r.id = s.rider_id "
+        "WHERE s.event_id = %s AND s.status IN (%s, %s, %s) "
+        "ORDER BY CASE s.status WHEN %s THEN 0 WHEN %s THEN 1 ELSE 2 END, name ASC",
+        (event_id, RideStatus.GOING.value, RideStatus.INTERESTED.value,
+         RideStatus.MAYBE.value, RideStatus.GOING.value, RideStatus.INTERESTED.value),
+    )
+
+
 def get_rider_signups(rider_id):
     """The active upcoming sign-ups (interested / maybe / going) for a rider, linked
     to the event, soonest first — for the dashboard "My upcoming sign-ups" section.

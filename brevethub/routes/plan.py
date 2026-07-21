@@ -30,12 +30,17 @@ Isolation: imports only flask / stdlib / brevethub.* / shared.*, and every model
 call is on an rp_* table, so test_brevethub_isolation.py and test_rp_only.py stay
 green; the schedule is always recomputed server-side (never trusted from a client).
 """
+from datetime import date, datetime
+
 from flask import (Blueprint, abort, current_app, jsonify, render_template,
                    request, url_for)
 
 from brevethub import models
 from brevethub.decorators import current_rider
 from shared.pacing import recalculate_cumulative_values, _get_cutoff_hours
+from shared.plan_view import (_to_v2_stops, _weather_summary_from_stop_wind,
+                              compute_risk_zones)
+from shared.strategies import compute_pace_strategies
 from shared.weather import compute_stop_winds
 
 plan_bp = Blueprint('plan', __name__)
@@ -387,55 +392,252 @@ def _build_real_plan(plan, stops, stop_winds=None):
     }
 
 
-def _forecast_stop_winds(event, plan, stops):
-    """Per-stop forecast wind for a real plan, from the warm route-weather cache.
+# ── rpv2 3-tab plan view (rich visual parity with Team Asha) ────────────────
+# The real-plan page renders the same rich Plan / Strategies / Weather layout Team
+# Asha's /ride-plan/<slug>/v2 uses, driven by the SHARED pure functions (no fork):
+# BrevetHub's rp_brevet_route_plan_stop rows are normalized to the shape
+# shared._to_v2_stops expects, fed the cron-warmed forecast wind (never a live call),
+# and passed through the promoted toughness / strategy / risk math. Everything below
+# is server-computed and PII-free — the page stays guest-readable.
 
-    Reads the pre-fetched rp_brevet_route_weather row for (event, forecast_date) and
-    hands its stored forecast + sample points to the SHARED ``compute_stop_winds`` —
-    the SAME pure per-stop math Team Asha uses — so the guest page NEVER calls
-    Open-Meteo/RWGPS live (it only reads the cron-warmed cache). Returns a list the
-    same length as ``stops`` (None entries for unresolved stops), or None when no
-    forecast is cached (graceful miss: the plan renders with no Wind column). Fails
-    SOFT: any error yields None so the plan page never 500s on the wind path.
+
+def _event_date(raw):
+    """Coerce an event date (a ``datetime.date`` from the DB or an ISO string from a
+    test/JSON) to a ``date``, or None if it can't be parsed. Used both to date the
+    forecast lookup and to feed the solar sunrise/sunset math."""
+    if isinstance(raw, datetime):
+        return raw.date()
+    if isinstance(raw, date):
+        return raw
+    if isinstance(raw, str) and raw:
+        try:
+            return datetime.strptime(raw[:10], '%Y-%m-%d').date()
+        except ValueError:
+            return None
+    return None
+
+
+def _event_date_str(raw):
+    """A display 'YYYY-MM-DD' string for an event date (or '' when absent), so the
+    template never calls .isoformat() on a value that might be a plain string."""
+    d = _event_date(raw)
+    return d.isoformat() if d else ''
+
+
+def _to_v2_stop_rows(stops):
+    """Normalize BrevetHub real-plan stop rows into the shape shared._to_v2_stops wants.
+
+    BrevetHub's schema lacks the two per-stop fields Team Asha carries — an explicit
+    arrival time and a stop duration — so they are synthesized here in Python (no
+    migration):
+
+      * ``arrival_time_min`` — derived from the stored break-inclusive ``cum_time_min``
+        (a meal row's own dwell is subtracted so its ETA is the arrival BEFORE eating).
+      * ``stop_duration_min`` — a control's is 0; a meal-break row (``stop_type='meal'``,
+        whose ``segment_time_min`` holds the dwell) becomes a rest stop carrying that
+        dwell, so the itinerary shows the break without a schema change.
+
+    Returns a list aligned 1:1 with the rows the v2 itinerary + wind list render.
+    """
+    rows = []
+    for s in stops:
+        is_meal = (s.get('stop_type') or '').lower() == 'meal'
+        dwell = int(s.get('segment_time_min') or 0) if is_meal else 0
+        cum = int(s.get('cum_time_min') or 0)
+        tb = s.get('time_bank_min')
+        rows.append({
+            'location': s.get('location') or (s.get('notes') if is_meal else '') or '',
+            'stop_type': 'rest' if is_meal else s.get('stop_type'),
+            'distance_miles': float(s['distance_miles']) if s.get('distance_miles') is not None else 0.0,
+            'seg_dist': 0.0 if is_meal else (float(s['seg_dist']) if s.get('seg_dist') is not None else 0.0),
+            'elevation_gain': 0 if is_meal else int(s.get('elevation_gain') or 0),
+            'ft_per_mi': 0 if is_meal else int(s.get('ft_per_mi') or 0),
+            'segment_time_min': 0 if is_meal else int(s.get('segment_time_min') or 0),
+            'stop_duration_min': dwell,
+            # cum_time_min is break-inclusive; a meal's own dwell is folded out so its
+            # arrival ETA is before the break (later stops already include it).
+            'arrival_time_min': cum - dwell,
+            'time_bank_min': None if is_meal else (int(tb) if tb is not None else None),
+            'notes': s.get('notes'),
+        })
+    return rows
+
+
+def _route_latlon(weather_row):
+    """A representative (lat, lon) for the route from the cached weather sample points,
+    used to derive sunrise/sunset for the risk overlay. Picks the middle sample so the
+    coordinate is central to the route. Returns (None, None) when unavailable, which
+    makes compute_risk_zones fall back to its heuristic table (no crash)."""
+    if not weather_row:
+        return None, None
+    pts = weather_row.get('sample_points') or []
+    if not pts:
+        return None, None
+    mid = pts[len(pts) // 2]
+    try:
+        return float(mid['lat']), float(mid['lng'])
+    except (KeyError, TypeError, ValueError):
+        return None, None
+
+
+def _v2_stop_winds(v2_rows, weather_row, forecast_date, start_time_str):
+    """Per-stop forecast wind for the v2 rows, from the warm route-weather cache only.
+
+    Hands the cached forecast + sample points to the SHARED ``compute_stop_winds`` — the
+    SAME pure per-stop math Team Asha uses — so the guest page never calls Open-Meteo /
+    RWGPS live. Returns a list aligned with ``v2_rows`` (None per unresolved stop), or
+    None on any miss/error so the itinerary renders without the Wind column, never a 500.
     """
     try:
-        forecast_date = event.get('date')
-        if not forecast_date:
+        if not weather_row or not forecast_date:
             return None
-        row = models.get_brevet_route_weather(event['id'], forecast_date)
-        if not row:
-            return None
-        weather_data = row.get('weather_data')
-        sample_points = row.get('sample_points')
+        weather_data = weather_row.get('weather_data')
+        sample_points = weather_row.get('sample_points')
         if not weather_data or not sample_points:
             return None
-        start_time_str = plan.get('start_time') or '07:00'
-        return compute_stop_winds(stops, weather_data, sample_points,
+        return compute_stop_winds(v2_rows, weather_data, sample_points,
                                   forecast_date, start_time_str)
     except Exception as e:  # pragma: no cover - defensive; keep the page up
-        current_app.logger.warning('Forecast wind injection failed for event %s: %s',
-                                    event.get('id'), e)
+        current_app.logger.warning('v2 wind injection failed: %s', e)
         return None
 
 
-def _load_real_plan(event_id, event=None, variant='conservative'):
-    """Fetch the persisted real plan for an event + variant, or None. Fails SOFT: any
-    DB error (or no real plan) yields None so /plan falls back to the synthetic schedule
-    and never 500s on the read path.
+def _v2_weather_stops(v2_stops, stop_wind):
+    """The lean per-stop forecast list for the Weather tab (label / ETA / temp / wind).
 
-    ``variant`` selects the conservative (default) or aggressive stored plan. When
-    ``event`` is given, per-stop forecast wind is injected from the warm route-weather
-    cache (fail-soft — no wind on a miss)."""
+    Phase 1 is a text list from the cached forecast — no Mapbox, no live call. Reuses the
+    wind fields already resolved on each v2 stop and adds the per-stop temperature."""
+    out = []
+    for i, s in enumerate(v2_stops):
+        sw = stop_wind[i] if stop_wind and i < len(stop_wind) else None
+        out.append({
+            'name': s['name'],
+            'eta': s['eta'],
+            'cumul_mi': s['cumul_mi'],
+            'temp_f': sw.get('temperature_f') if sw else None,
+            'wind_mph': s['wind_mph'],
+            'wind_label': s['wind_label'],
+            'wind_arrow_deg': s['wind_arrow_deg'],
+            'wind_known': s['wind_known'],
+        })
+    return out
+
+
+def _v2_weighted_difficulty(v2_stops):
+    """Distance-weighted mean of the per-segment toughness (0-10) for the hero gauge,
+    or None when no segment carries a score."""
+    tot, wsum = 0.0, 0.0
+    for s in v2_stops:
+        if s['seg_mi'] > 0 and s['tough_known']:
+            tot += s['seg_mi']
+            wsum += s['tough'] * s['seg_mi']
+    return round(wsum / tot, 1) if tot > 0 else None
+
+
+def _build_v2_context(event, plan, stops, variant):
+    """Assemble the rpv2 render context for a real plan: the enriched itinerary, the
+    read-only pace strategies, the risk overlay, the weather summary + per-stop list,
+    and the PII-free roster. All server-computed; the page stays guest-readable."""
+    cutoff_hours = _cutoff_hours(event)
+    start_time = plan.get('start_time') or event.get('start_time') or '06:00'
+    if not isinstance(start_time, str):
+        start_time = start_time.strftime('%H:%M')
+    total_mi = float(plan.get('total_distance_miles') or 0)
+
+    plan_ctx = {
+        'name': plan['name'],
+        'distance_km': int(event['distance_km']),
+        'date_str': _event_date_str(event.get('date')),
+        'start_time': start_time,
+        'total_distance_miles': total_mi,
+        'total_elevation_ft': int(plan.get('total_elevation_ft') or 0),
+        'cutoff_hours': cutoff_hours,
+        'event_id': event['id'],
+    }
+
+    forecast_date = _event_date(event.get('date'))
+    weather_row = None
+    if forecast_date:
+        try:
+            weather_row = models.get_brevet_route_weather(event['id'], forecast_date)
+        except Exception as e:  # pragma: no cover - defensive; keep the page up
+            current_app.logger.warning('Route weather lookup failed for event %s: %s',
+                                        event.get('id'), e)
+
+    v2_rows = _to_v2_stop_rows(stops)
+    stop_wind = _v2_stop_winds(v2_rows, weather_row, forecast_date, start_time)
+    v2_stops = _to_v2_stops(v2_rows, plan_ctx, stop_wind)
+
+    fuel_stops_v2 = [s for s in v2_stops
+                     if s.get('break_min', 0) >= 5 or s.get('is_fuel')]
+    weather_summary = _weather_summary_from_stop_wind(stop_wind, v2_rows)
+
+    lat, lon = _route_latlon(weather_row)
+    risks = compute_risk_zones(v2_rows, v2_stops, plan_ctx, start_time,
+                               forecast_date, lat=lat, lon=lon)
+    weather_summary['sunrise'] = risks.get('sunrise_str')
+    weather_summary['sunset'] = risks.get('sunset_str')
+
+    # Per-segment wind/toughness for the strategy cards, from the enriched v2 stops.
+    # Keyed by rounded cumulative mile (route-constant) so it lines up across the
+    # variant stop sets — mirrors the parent web app so the Strategies tab flags the
+    # same tough/windy sections the Plan tab does (not a blank column).
+    seg_meta = {round(vs.get('cumul_mi') or 0, 1): {
+        'headwind_mph': vs.get('headwind_mph', 0),
+        'wind_label': vs.get('wind_label', ''),
+        'wind_arrow_deg': vs.get('wind_arrow_deg', 0),
+        'wind_known': vs.get('wind_known', False),
+        'tough_class': vs.get('tough_class', ''),
+        'tough_known': vs.get('tough_known', False),
+    } for vs in v2_stops}
+    paces = compute_pace_strategies(v2_rows, plan_ctx, start_time, cutoff_hours,
+                                    seg_meta=seg_meta)
+
+    # Hero aggregates — prefer the stored plan-level values, fall back to the derived
+    # rows so a plan with NULL summary columns still renders.
+    total_moving_time = int(plan.get('total_moving_time_min')
+                            or sum(s['seg_time_min'] for s in v2_stops))
+    total_break_time = int(plan.get('total_break_time_min')
+                           or sum(s['break_min'] for s in v2_stops))
+    total_time = int(plan.get('total_elapsed_time_min')
+                     or (v2_stops[-1]['cumul_time_min'] if v2_stops else 0)) \
+        or (total_moving_time + total_break_time)
+    overall_ft_per_mile = int(plan.get('overall_ft_per_mile')
+                              or (round(plan_ctx['total_elevation_ft'] / total_mi)
+                                  if total_mi > 0 else 0))
+    avg_elapsed = plan.get('avg_elapsed_speed')
+    if avg_elapsed is not None:
+        avg_elapsed_speed = round(float(avg_elapsed), 1)
+    else:
+        avg_elapsed_speed = round(total_mi / (total_time / 60.0), 1) if total_time > 0 else 0
+
     try:
-        bundle = models.get_brevet_route_plan_with_stops(event_id, variant)
+        riders = models.get_event_going_riders(event['id']) or []
     except Exception as e:  # pragma: no cover - defensive; keep the page up
-        current_app.logger.warning('Real plan lookup failed for event %s: %s',
-                                    event_id, e)
-        return None
-    if not bundle or not bundle.get('stops'):
-        return None
-    stop_winds = _forecast_stop_winds(event, bundle['plan'], bundle['stops']) if event else None
-    return _build_real_plan(bundle['plan'], bundle['stops'], stop_winds)
+        current_app.logger.warning('Roster lookup failed for event %s: %s',
+                                    event.get('id'), e)
+        riders = []
+    going_count = sum(1 for r in riders if r['status'] == models.RideStatus.GOING.value)
+
+    return {
+        'plan': plan_ctx,
+        'variant': variant,
+        'stops_v2': v2_stops,
+        'fuel_stops_v2': fuel_stops_v2,
+        'paces': paces,
+        'risks': risks,
+        'weather_summary': weather_summary,
+        'weather_stops': _v2_weather_stops(v2_stops, stop_wind),
+        'has_forecast': bool(stop_wind and any(stop_wind)),
+        'total_time': total_time,
+        'total_moving_time': total_moving_time,
+        'total_break_time': total_break_time,
+        'overall_ft_per_mile': overall_ft_per_mile,
+        'avg_elapsed_speed': avg_elapsed_speed,
+        'weighted_difficulty': _v2_weighted_difficulty(v2_stops),
+        'riders': riders,
+        'going_count': going_count,
+    }
 
 
 @plan_bp.route('/plan/<int:event_id>')
@@ -461,20 +663,31 @@ def plan_view(event_id):
     variant = request.args.get('variant', 'conservative')
     if variant not in ('conservative', 'aggressive'):
         variant = 'conservative'
-    real_plan = _load_real_plan(event_id, event, variant)
 
     total_km = float(event['distance_km'])
     cutoff_hours = _cutoff_hours(event)
 
-    if real_plan:
-        # Real plan mode: the persisted plan is the schedule; no target picker. The
-        # conservative/aggressive toggle re-requests this route with ?variant=.
+    # Real plan mode: render the rich rpv2 3-tab view (Plan / Strategies / Weather).
+    # Fail-soft — any DB error (or no stored plan) drops to the synthetic schedule and
+    # never 500s the read path.
+    bundle = None
+    try:
+        bundle = models.get_brevet_route_plan_with_stops(event_id, variant)
+    except Exception as e:  # pragma: no cover - defensive; keep the page up
+        current_app.logger.warning('Real plan lookup failed for event %s: %s',
+                                    event_id, e)
+    if bundle and bundle.get('stops'):
+        v2 = _build_v2_context(event, bundle['plan'], bundle['stops'], variant)
+        active_tab = request.args.get('tab', 'plan')
+        if active_tab not in ('plan', 'strategies', 'weather'):
+            active_tab = 'plan'
         return render_template(
             'plan.html',
             event=event,
-            real_plan=real_plan,
+            real_plan=True,
+            v2=v2,
             variant=variant,
-            schedule=None,
+            active_tab=active_tab,
             cutoff_hours=cutoff_hours,
             rider=rider,
             saved=None,
