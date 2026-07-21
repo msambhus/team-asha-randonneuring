@@ -30,5 +30,7 @@ from shared.rwgps import (  # noqa: F401  — re-export, names used by callers
     extract_controls,
     _compute_segment_elevation,
     calculate_segment_speed,
+    profile_segment_speed,
+    PACING_PROFILES,
     build_ride_plan,
 )
