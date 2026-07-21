@@ -237,6 +237,59 @@ def test_name_fallback_feeds_only_club_scoped_candidates(client):
     assert t['plan'] is not None
 
 
+# --------------------------------------------------------------------------- #
+# Live-grading regression (the redteam gate) — meal rows never corrupt grading
+# --------------------------------------------------------------------------- #
+def test_live_grading_excludes_meals_and_recovers_meal_free_timing():
+    """A conservative plan carrying meal-break rows grades BYTE-FOR-BYTE like the
+    meal-free plan: _ride_live_context excludes stop_type='meal' rows and subtracts the
+    accumulated preceding dwell from each control's cum_time_min, so plan_stops equals
+    the pre-change single meal-free series and no meal row reaches the graded set."""
+    from brevethub.routes import live
+
+    # The meal-free control series a single plan produced before the variant split.
+    meal_free = [
+        {'distance_miles': 0,  'cum_time_min': 0,   'location': 'Start',     'stop_type': 'start',   'segment_time_min': 0},
+        {'distance_miles': 20, 'cum_time_min': 92,  'location': 'Control A', 'stop_type': 'control', 'segment_time_min': 92},
+        {'distance_miles': 40, 'cum_time_min': 184, 'location': 'Control B', 'stop_type': 'control', 'segment_time_min': 92},
+        {'distance_miles': 60, 'cum_time_min': 276, 'location': 'Finish',    'stop_type': 'finish',  'segment_time_min': 92},
+    ]
+    # The stored conservative plan: same controls, plus a 30-min meal row after Control
+    # A that shifts every later control's stored cum_time_min by +30.
+    meal_laden = [
+        {'distance_miles': 0,  'cum_time_min': 0,   'location': 'Start',     'stop_type': 'start',   'segment_time_min': 0},
+        {'distance_miles': 20, 'cum_time_min': 92,  'location': 'Control A', 'stop_type': 'control', 'segment_time_min': 92},
+        {'distance_miles': 20, 'cum_time_min': 122, 'location': 'Lunch',     'stop_type': 'meal',    'segment_time_min': 30},
+        {'distance_miles': 40, 'cum_time_min': 214, 'location': 'Control B', 'stop_type': 'control', 'segment_time_min': 92},
+        {'distance_miles': 60, 'cum_time_min': 306, 'location': 'Finish',    'stop_type': 'finish',  'segment_time_min': 92},
+    ]
+    plan = {'id': 55, 'club_id': 3, 'cutoff_hours': 4, 'total_distance_miles': 60,
+            'rwgps_route_id': '123', 'name': 'X'}
+
+    def _ctx(stops):
+        with patch('brevethub.models.get_brevet_route_plan_by_route_id_rp',
+                   return_value=plan) as by_id, \
+             patch('brevethub.models.get_brevet_route_plan_stops', return_value=stops), \
+             patch('brevethub.routes.live.fetch_route', return_value={'track_points': []}):
+            return live._ride_live_context(dict(_RIDE)), by_id
+
+    laden_ctx, by_id = _ctx(meal_laden)
+    free_ctx, _ = _ctx(meal_free)
+
+    # No meal row survives into the graded checkpoints.
+    assert all(s['stop_type'] != 'meal' for s in laden_ctx['plan_stops'])
+    # Byte-for-byte identical graded series (distance + de-dwelled cum time).
+    assert laden_ctx['plan_stops'] == free_ctx['plan_stops']
+    assert laden_ctx['plan_stops'] == [
+        {'distance_miles': 0.0,  'cum_time_min': 0.0,   'location': 'Start',     'stop_type': 'start'},
+        {'distance_miles': 20.0, 'cum_time_min': 92.0,  'location': 'Control A', 'stop_type': 'control'},
+        {'distance_miles': 40.0, 'cum_time_min': 184.0, 'location': 'Control B', 'stop_type': 'control'},
+        {'distance_miles': 60.0, 'cum_time_min': 276.0, 'location': 'Finish',    'stop_type': 'finish'},
+    ]
+    # The route-id reader is pinned to conservative (default kwarg → no aggressive plan).
+    by_id.assert_called_once_with('123', 3)
+
+
 def test_plan_by_route_id_query_is_club_scoped_and_pins_conservative():
     """The route-id plan SQL scopes to the ride club OR a club-less warm plan, PINS the
     conservative variant, and passes the route id + club id + variant as bound params."""
