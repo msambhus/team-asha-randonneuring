@@ -157,3 +157,104 @@ def test_fallback_to_synthetic_when_no_real_plan(client):
     # specifically is absent in synthetic mode.
     assert 'class="plan-elev-svg"' not in body  # no elevation profile chart element
     assert '100 km' in body                     # evenly-spaced synthetic control
+
+
+# --------------------------------------------------------------------------- #
+# Conservative/aggressive variant toggle + meal-break rows
+# --------------------------------------------------------------------------- #
+# An aggressive plan (14.0 mph → 22.5 km/h, a value UNIQUE to it vs conservative's
+# 13.0 → 20.9) carrying a 30-min meal break after the midway control.
+_AGG_PLAN = {
+    'name': 'Fixture 200', 'variant': 'aggressive',
+    'rwgps_url': 'https://ridewithgps.com/routes/1',
+    'total_distance_miles': 124.3, 'total_elevation_ft': 3280,
+    'overall_ft_per_mile': 26.4, 'avg_moving_speed': 14.0,
+    'total_break_time_min': 30,
+}
+_AGG_STOPS = [
+    {'stop_order': 1, 'location': 'Downtown Start', 'stop_type': 'start',
+     'distance_miles': 0.0, 'seg_dist': 0.0, 'elevation_gain': 0, 'notes': '',
+     'ft_per_mi': None, 'avg_speed': None, 'segment_time_min': 0,
+     'cum_time_min': 0, 'time_bank_min': None, 'difficulty_score': 0.0},
+    {'stop_order': 2, 'location': 'Midway Control', 'stop_type': 'control',
+     'distance_miles': 62.1, 'seg_dist': 62.1, 'elevation_gain': 1600, 'notes': '',
+     'ft_per_mi': 26, 'avg_speed': 14.0, 'segment_time_min': 266,
+     'cum_time_min': 266, 'time_bank_min': 120, 'difficulty_score': 2.6},
+    {'stop_order': 3, 'location': 'Lunch', 'stop_type': 'meal',
+     'distance_miles': 62.1, 'seg_dist': 0.0, 'elevation_gain': 0, 'notes': 'Lunch',
+     'ft_per_mi': None, 'avg_speed': None, 'segment_time_min': 30,
+     'cum_time_min': 296, 'time_bank_min': None, 'difficulty_score': 0.0},
+    {'stop_order': 4, 'location': 'Downtown Finish', 'stop_type': 'finish',
+     'distance_miles': 124.3, 'seg_dist': 62.2, 'elevation_gain': 1680, 'notes': '',
+     'ft_per_mi': 27, 'avg_speed': 13.9, 'segment_time_min': 268,
+     'cum_time_min': 564, 'time_bank_min': 150, 'difficulty_score': 2.7},
+]
+
+
+def test_build_real_plan_renders_meal_rows_and_break_total():
+    real = _build_real_plan(_AGG_PLAN, _AGG_STOPS)
+    meals = [s for s in real['stops'] if s['is_meal']]
+    assert len(meals) == 1
+    m = meals[0]
+    assert m['meal_label'] == 'Lunch' and m['dwell_min'] == 30
+    assert m['avg_speed_kmh'] is None and m['seg_dist_km'] is None
+    # Plan-level break total surfaces for the summary.
+    assert real['total_break_time_min'] == 30
+    assert real['total_break_hm'] == '0h 30m'
+    assert real['variant'] == 'aggressive'
+    # The SVG excludes meal rows (3 control markers, not 4).
+    assert len(real['svg']['markers']) == 3
+
+
+def test_variant_param_selects_aggressive_and_renders_toggle(client):
+    captured = {}
+
+    def _bundle(event_id, variant='conservative'):
+        captured['variant'] = variant
+        return {'plan': _AGG_PLAN, 'stops': _AGG_STOPS}
+
+    with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT), \
+         patch('brevethub.models.get_brevet_route_plan_with_stops', side_effect=_bundle):
+        resp = client.get('/plan/11?variant=aggressive')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert captured['variant'] == 'aggressive'          # the stored aggressive plan
+    assert '22.5 km/h' in body                          # 14.0 mph → km-h (unique to aggressive)
+    # Meal-break row + dwell + total break time render.
+    assert 'Lunch' in body
+    assert 'Break · 30 min' in body
+    assert '0h 30m' in body                             # total break time in the summary
+    # The toggle shows both options, aggressive marked active (aria-current only on it).
+    assert 'aria-current="true">Aggressive' in body
+    assert '>Conservative</a>' in body
+    assert 'is-active' in body
+
+
+def test_variant_defaults_to_conservative_without_param(client):
+    captured = {}
+
+    def _bundle(event_id, variant='conservative'):
+        captured['variant'] = variant
+        return {'plan': dict(_AGG_PLAN, variant='conservative'), 'stops': _AGG_STOPS}
+
+    with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT), \
+         patch('brevethub.models.get_brevet_route_plan_with_stops', side_effect=_bundle):
+        resp = client.get('/plan/11')
+    assert resp.status_code == 200
+    assert captured['variant'] == 'conservative'
+    body = resp.get_data(as_text=True)
+    assert 'aria-current="true">Conservative' in body
+
+
+def test_bad_variant_param_falls_back_to_conservative(client):
+    captured = {}
+
+    def _bundle(event_id, variant='conservative'):
+        captured['variant'] = variant
+        return {'plan': dict(_AGG_PLAN, variant='conservative'), 'stops': _AGG_STOPS}
+
+    with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT), \
+         patch('brevethub.models.get_brevet_route_plan_with_stops', side_effect=_bundle):
+        resp = client.get('/plan/11?variant=nonsense')
+    assert resp.status_code == 200
+    assert captured['variant'] == 'conservative'        # invalid → conservative
