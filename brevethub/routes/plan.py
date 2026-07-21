@@ -578,7 +578,20 @@ def _build_v2_context(event, plan, stops, variant):
     weather_summary['sunrise'] = risks.get('sunrise_str')
     weather_summary['sunset'] = risks.get('sunset_str')
 
-    paces = compute_pace_strategies(v2_rows, plan_ctx, start_time, cutoff_hours)
+    # Per-segment wind/toughness for the strategy cards, from the enriched v2 stops.
+    # Keyed by rounded cumulative mile (route-constant) so it lines up across the
+    # variant stop sets — mirrors the parent web app so the Strategies tab flags the
+    # same tough/windy sections the Plan tab does (not a blank column).
+    seg_meta = {round(vs.get('cumul_mi') or 0, 1): {
+        'headwind_mph': vs.get('headwind_mph', 0),
+        'wind_label': vs.get('wind_label', ''),
+        'wind_arrow_deg': vs.get('wind_arrow_deg', 0),
+        'wind_known': vs.get('wind_known', False),
+        'tough_class': vs.get('tough_class', ''),
+        'tough_known': vs.get('tough_known', False),
+    } for vs in v2_stops}
+    paces = compute_pace_strategies(v2_rows, plan_ctx, start_time, cutoff_hours,
+                                    seg_meta=seg_meta)
 
     # Hero aggregates — prefer the stored plan-level values, fall back to the derived
     # rows so a plan with NULL summary columns still renders.

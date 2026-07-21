@@ -149,6 +149,18 @@ def test_strategies_tab_read_only_cards(client):
     assert 'Community plans' not in body
 
 
+def test_strategies_cards_carry_wind_when_forecast_cached(client):
+    """The strategy cards must surface the SAME per-stop wind/toughness the Plan tab
+    does — i.e. the route must pass seg_meta into compute_pace_strategies. Without it
+    the cards silently blank (wind_known=False), a parity regression: guard it."""
+    resp = _get(client, '/plan/11?tab=strategies', weather=_cached_weather())
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    # A per-stop wind arrow inside a strategy card (only rendered when seg_meta carries
+    # the resolved forecast wind through to the cards).
+    assert 'rpv2-pc-wind-arrow' in body
+
+
 # --------------------------------------------------------------------------- #
 # Weather tab
 # --------------------------------------------------------------------------- #
