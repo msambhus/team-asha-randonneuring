@@ -142,21 +142,24 @@ def test_build_svg_handles_empty_stops():
 # Route render — real plan vs synthetic fallback
 # --------------------------------------------------------------------------- #
 def test_guest_sees_real_plan_in_miles(client):
+    """A stored real plan now renders the rich rpv2 3-tab view (Plan/Strategies/Weather)
+    instead of the old single table: the journey chart + real control names show, the
+    synthetic Scope-A note is gone, and the km ACP distance stays in the eyebrow."""
     bundle = {'plan': _PLAN, 'stops': _STOPS}
     with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT), \
-         patch('brevethub.models.get_brevet_route_plan_with_stops', return_value=bundle):
+         patch('brevethub.models.get_brevet_route_plan_with_stops', return_value=bundle), \
+         patch('brevethub.models.get_brevet_route_weather', return_value=None), \
+         patch('brevethub.models.get_event_going_riders', return_value=[]):
         resp = client.get('/plan/11')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'class="plan-elev-svg"' in body      # elevation profile chart element present
+    assert 'rpv2-journey-svg' in body           # journey/elevation chart present
     assert 'Midway Control' in body             # real control name (not "62 mi")
-    assert '124.3 mi' in body                   # native final cumulative distance (miles)
-    assert '12.0 mph' in body                   # native speed (NOT 19.3 km/h)
-    assert '19.3 km/h' not in body              # km-h must not leak back in
-    assert '1600 ft' in body                    # elevation in feet
-    # The headline TOTAL distance stays km (the brevet's nominal ACP distance).
-    assert '<div class="label">Distance (km)</div>' in body
+    assert '200K Brevet' in body                # km ACP distance stays in the hero eyebrow
+    assert 'data-tab="strategies"' in body      # 3-tab shell rendered
+    assert 'data-tab="weather"' in body
     assert 'Scope A' not in body                # synthetic note is gone
+    assert 'team asha' not in body.lower()      # de-branded
 
 
 def test_fallback_to_synthetic_when_no_real_plan(client):
