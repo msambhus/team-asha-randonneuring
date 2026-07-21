@@ -118,7 +118,7 @@
 {% if real_plan %}
   {# ── Real RWGPS-backed plan (km / km-h) ─────────────────────────────────── #}
   {% set svg = real_plan.svg %}
-  <div class="hero" style="padding:24px 20px;">
+  <div class="hero" style="padding:24px 20px 60px;">
     <p style="margin-bottom:8px;"><a href="{{ url_for('calendar.calendar') }}" style="color:rgba(255,255,255,0.9);text-decoration:none;">&larr; Back to calendar</a></p>
     <h1>{{ event.name }}</h1>
     <p style="opacity:0.9;">Ride plan{% if event.region %} &middot; {{ event.region }}{% endif %}{% if event.date %} &middot; {{ event.date }}{% endif %}</p>
@@ -213,7 +213,7 @@
 
 {% else %}
   {# ── Synthetic Scope-A pacing schedule (evenly spaced, target pace) ──────── #}
-  <div class="hero" style="padding:24px 20px;">
+  <div class="hero" style="padding:24px 20px 60px;">
     <p style="margin-bottom:8px;"><a href="{{ url_for('calendar.calendar') }}" style="color:rgba(255,255,255,0.9);text-decoration:none;">&larr; Back to calendar</a></p>
     <h1>{{ event.name }}</h1>
     <p style="opacity:0.9;">Pacing plan{% if event.region %} &middot; {{ event.region }}{% endif %}{% if event.date %} &middot; {{ event.date }}{% endif %}</p>
