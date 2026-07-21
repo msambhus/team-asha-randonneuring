@@ -649,37 +649,6 @@
   </section>
   </div>
 {% endif %}
-
-{% if not real_plan and rider %}
-<script>
-  // Save the current target to the rider's account (server recomputes the schedule).
-  (function () {
-    var btn = document.getElementById('plan-save-btn');
-    var status = document.getElementById('plan-save-status');
-    if (!btn) return;
-    btn.addEventListener('click', function () {
-      btn.disabled = true;
-      fetch(btn.dataset.saveUrl, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({speed: btn.dataset.speed}),
-      }).then(function (r) {
-        if (r.status === 200) {
-          if (status) status.textContent = 'Plan saved.';
-        } else if (r.status === 401) {
-          if (status) status.textContent = 'Please sign in to save.';
-        } else {
-          if (status) status.textContent = 'Could not save — try again.';
-        }
-      }).catch(function () {
-        if (status) status.textContent = 'Could not save — try again.';
-      }).finally(function () {
-        btn.disabled = false;
-      });
-    });
-  })();
-</script>
-{% endif %}
 {% endblock %}
 
 {# ===== Macros (ported de-branded from the parent rpv2 page) ===== #}
@@ -1077,6 +1046,35 @@
         });
     }
 })();
+</script>
+{% elif rider %}
+<script>
+  // Save the current synthetic target to the rider's account (server recomputes).
+  (function () {
+    var btn = document.getElementById('plan-save-btn');
+    var status = document.getElementById('plan-save-status');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      fetch(btn.dataset.saveUrl, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({speed: btn.dataset.speed}),
+      }).then(function (r) {
+        if (r.status === 200) {
+          if (status) status.textContent = 'Plan saved.';
+        } else if (r.status === 401) {
+          if (status) status.textContent = 'Please sign in to save.';
+        } else {
+          if (status) status.textContent = 'Could not save — try again.';
+        }
+      }).catch(function () {
+        if (status) status.textContent = 'Could not save — try again.';
+      }).finally(function () {
+        btn.disabled = false;
+      });
+    });
+  })();
 </script>
 {% endif %}
 {% endblock %}
