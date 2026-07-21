@@ -98,10 +98,11 @@ def test_generate_success_persists_and_redirects(client):
                                  'rwgps_url': 'https://ridewithgps.com/routes/123'})
     assert resp.status_code == 302
     assert '/plan/11' in resp.headers['Location']
-    mock_up.assert_called_once()
-    # Persisted scoped to the OWNER's club.
-    _args, kwargs = mock_up.call_args
-    assert kwargs.get('club_id') == 3
+    # Both variants are built + persisted (conservative + aggressive), each scoped to
+    # the OWNER's club, with meal breaks on.
+    assert mock_up.call_count == 2
+    assert {c.kwargs.get('variant') for c in mock_up.call_args_list} == {'conservative', 'aggressive'}
+    assert all(c.kwargs.get('club_id') == 3 for c in mock_up.call_args_list)
 
 
 def test_generate_blocked_when_another_club_owns(client):
@@ -170,7 +171,7 @@ def test_generate_allowed_for_own_club_event(client):
     resp, mock_up = _mock_generate(client, own_club_event)
     assert resp.status_code == 302
     assert '/plan/11' in resp.headers['Location']
-    mock_up.assert_called_once()
+    assert mock_up.call_count == 2                    # both variants persisted
 
 
 def test_generate_allowed_for_national_null_club_event(client):
@@ -179,4 +180,4 @@ def test_generate_allowed_for_national_null_club_event(client):
     resp, mock_up = _mock_generate(client, national_event)
     assert resp.status_code == 302
     assert '/plan/11' in resp.headers['Location']
-    mock_up.assert_called_once()
+    assert mock_up.call_count == 2                    # both variants persisted
