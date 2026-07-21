@@ -87,6 +87,78 @@ def test_sr_1000_satisfies_the_600_leg():
 
 
 # --------------------------------------------------------------------------- #
+# Per-season SR count (multiple SR awards in one season)
+# --------------------------------------------------------------------------- #
+def test_sr_count_two_complete_sets():
+    """Two rides in each of the four tiers → two complete series → sr_count 2."""
+    brevets = [_brevet('2025-01-01', 200), _brevet('2025-01-15', 200),
+               _brevet('2025-02-01', 300), _brevet('2025-02-15', 300),
+               _brevet('2025-03-01', 400), _brevet('2025-03-15', 400),
+               _brevet('2025-04-01', 600), _brevet('2025-04-15', 600)]
+    sr = seasons.sr_progress(brevets)
+    assert sr['counts'] == {200: 2, 300: 2, 400: 2, 600: 2}
+    assert sr['sr_count'] == 2
+    assert sr['is_sr'] is True
+
+
+def test_sr_count_is_min_across_tiers():
+    """3x200/1x300/1x400/1x600 → only one complete set (min across tiers)."""
+    brevets = [_brevet('2025-01-01', 200), _brevet('2025-01-15', 200),
+               _brevet('2025-01-20', 200), _brevet('2025-02-01', 300),
+               _brevet('2025-03-01', 400), _brevet('2025-04-01', 600)]
+    sr = seasons.sr_progress(brevets)
+    assert sr['counts'] == {200: 3, 300: 1, 400: 1, 600: 1}
+    assert sr['sr_count'] == 1
+
+
+def test_sr_count_1000_is_one_600_tier_ride_not_also_a_400():
+    """A 1000 counts once toward the 600 tier and never the 400 tier. With a 300
+    and a 400 but no 200, the 200 tier is empty → sr_count 0."""
+    brevets = [_brevet('2025-02-01', 300), _brevet('2025-03-01', 400),
+               _brevet('2025-04-01', 1000)]
+    sr = seasons.sr_progress(brevets)
+    assert sr['counts'] == {200: 0, 300: 1, 400: 1, 600: 1}
+    assert sr['sr_count'] == 0
+
+
+def test_sr_count_zero_when_a_tier_is_missing():
+    """A season missing any one tier scores zero complete sets."""
+    brevets = [_brevet('2025-01-01', 200), _brevet('2025-02-01', 300),
+               _brevet('2025-03-01', 400)]  # no 600
+    assert seasons.sr_progress(brevets)['sr_count'] == 0
+
+
+def test_season_summary_carries_sr_count():
+    brevets = [_brevet('2025-01-01', 200), _brevet('2025-01-15', 200),
+               _brevet('2025-02-01', 300), _brevet('2025-02-15', 300),
+               _brevet('2025-03-01', 400), _brevet('2025-03-15', 400),
+               _brevet('2025-04-01', 600), _brevet('2025-04-15', 600)]
+    s = seasons.season_summary(brevets)
+    assert s['sr_count'] == 2
+    assert s['is_sr'] is True  # existing key unchanged
+
+
+def test_career_total_sr_sums_across_seasons():
+    """total_sr sums per-season sr_count: two sets in 2024-2025 + one set in
+    2023-2024 → total_sr 3, while sr_seasons/is_sr stay season-based."""
+    twentyfour = [  # two complete series in the 2024-2025 season
+        _brevet('2024-11-01', 200), _brevet('2024-11-15', 200),
+        _brevet('2024-12-01', 300), _brevet('2024-12-15', 300),
+        _brevet('2025-01-01', 400), _brevet('2025-01-15', 400),
+        _brevet('2025-02-01', 600), _brevet('2025-02-15', 600),
+    ]
+    twentythree = [  # one complete series in the 2023-2024 season
+        _brevet('2023-11-01', 200), _brevet('2023-12-01', 300),
+        _brevet('2024-01-01', 400), _brevet('2024-02-01', 600),
+    ]
+    career = seasons.career_summary(twentyfour + twentythree, date(2025, 7, 15))
+    assert career['total_sr'] == 3
+    # Back-compat: sr_seasons still counts SR *seasons*, not awards.
+    assert sorted(career['sr_seasons']) == ['2023-2024', '2024-2025']
+    assert career['is_sr'] is True
+
+
+# --------------------------------------------------------------------------- #
 # Per-season summary + seasons_with_summaries
 # --------------------------------------------------------------------------- #
 def test_season_summary_totals_and_bands():
@@ -180,6 +252,7 @@ def test_career_summary_empty_history_is_graceful():
     career = seasons.career_summary([], date(2025, 7, 15))
     assert career['total_km'] == 0
     assert career['count'] == 0
+    assert career['total_sr'] == 0
     assert career['is_sr'] is False
     assert career['current_sr']['is_sr'] is False
     assert career['r12_streak'] == {'months': 0, 'active': False}
