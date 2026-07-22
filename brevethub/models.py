@@ -225,7 +225,7 @@ def get_public_ride(ride_id):
     unknown ride is indistinguishable to a guest (both 404). No rider PII.
     """
     return db.query_one(
-        "SELECT r.id, r.name, r.distance_km, r.start_at, r.status, "
+        "SELECT r.id, r.name, r.distance_km, r.start_at, r.status, r.rwgps_url, "
         "       c.name AS club_name "
         "FROM rp_ride r LEFT JOIN rp_club c ON c.id = r.club_id "
         "WHERE r.id = %s AND r.is_public = TRUE",

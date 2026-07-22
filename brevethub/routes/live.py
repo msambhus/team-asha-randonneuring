@@ -125,13 +125,25 @@ def live_list():
 
 @live_bp.route('/live/<int:ride_id>')
 def live_map(ride_id):
-    """Public per-ride live map. 404 for a private or unknown ride so a guest can
-    never tell a private ride from a nonexistent one."""
+    """Public per-ride live map — the SHARED Mapbox GL Radial view (the retired
+    Leaflet map's replacement). 404 for a private or unknown ride so a guest can
+    never tell a private ride from a nonexistent one. The map, compact rider table
+    and altitude profile all come from the shared _radial_live.html partial, polling
+    the public, PII-safe roster.json. Degrades gracefully when the Mapbox token is
+    unset (BrevetHub's Vercel project has it set)."""
     ride = models.get_public_ride(ride_id)
     if not ride:
         abort(404)
-    return render_template('live_map.html', ride=ride,
-                           poll_seconds=LIVE_POLL_SECONDS)
+    track = _route_geometry(ride)
+    return render_template(
+        'live_public.html',
+        ride=ride,
+        mapbox_token=current_app.config.get('MAPBOX_ACCESS_TOKEN') or '',
+        route_polyline=_map_polyline(track),
+        elevation_profile=radial.build_elevation_profile(track or []),
+        roster_url=url_for('live.live_roster', ride_id=ride_id),
+        poll_seconds=LIVE_POLL_SECONDS,
+    )
 
 
 @live_bp.route('/live/<int:ride_id>/positions.json')
@@ -616,47 +628,54 @@ DEFAULT_COLOR = '#16a34a'
 _MAX_POLYLINE_POINTS = 1000
 
 
-def _build_route_polyline(ride):
-    """Return a downsampled [[lng, lat], ...] polyline for the ride's RWGPS route.
-
-    Fail-soft: returns None on any missing route / fetch error so the map still
-    renders with rider dots only (never 500s). Credentials fall back to the
-    BrevetHub config's RWGPS_* env inside the shared engine."""
-    rwgps_url = ride.get('rwgps_url') if ride else None
-    route_id = extract_rwgps_route_id(rwgps_url)
+def _route_geometry(ride):
+    """Fetch + downsample the ride's RWGPS route ONCE into a track
+    [{lat, lng, dist_m, e_m}] feeding BOTH the shared map polyline and the altitude
+    profile (so the page makes a single route fetch, not two). Fail-soft → None on
+    any missing route / fetch error, so the map still renders with rider dots only."""
+    route_id = extract_rwgps_route_id(ride.get('rwgps_url')) if ride else None
     if not route_id:
         return None
     try:
-        route_data = fetch_route(route_id)
+        route = fetch_route(route_id)
     except Exception as exc:  # noqa: BLE001 — fail-soft, route line is optional
         current_app.logger.warning('live: RWGPS route %s fetch failed: %s', route_id, exc)
         return None
-
-    track_points = (route_data or {}).get('track_points') or []
-    coords = [
-        [float(tp['x']), float(tp['y'])]
-        for tp in track_points
-        if tp.get('x') is not None and tp.get('y') is not None
-    ]
-    if not coords:
+    tps = [tp for tp in ((route or {}).get('track_points') or [])
+           if tp.get('x') is not None and tp.get('y') is not None]
+    if not tps:
         return None
+    step = max(1, len(tps) // _MAX_CONTEXT_TRACK_POINTS)
+    track = []
+    for tp in tps[::step]:
+        track.append({'lat': float(tp['y']), 'lng': float(tp['x']),
+                      'dist_m': float(tp.get('d') or 0),
+                      'e_m': float(tp['e']) if tp.get('e') is not None else None})
+    return track
 
+
+def _map_polyline(track):
+    """[[lng, lat], …] for the Mapbox route line from a _route_geometry track,
+    capped to _MAX_POLYLINE_POINTS. None when there's no track."""
+    if not track:
+        return None
+    coords = [[t['lng'], t['lat']] for t in track]
     if len(coords) > _MAX_POLYLINE_POINTS:
         step = len(coords) // _MAX_POLYLINE_POINTS + 1
-        downsampled = coords[::step]
-        if downsampled[-1] != coords[-1]:
-            downsampled.append(coords[-1])
-        coords = downsampled
+        coords = coords[::step]
     return coords
 
 
 @live_bp.route('/live/<int:ride_id>/map')
 @profile_required
 def live_ride_map(ride_id):
-    """Member multi-rider Mapbox map for a ride: named dots + telemetry + the RWGPS
-    route polyline. @profile_required + accessibility-gated (public OR own ride,
-    else 404). Renders even when MAPBOX_ACCESS_TOKEN is unset (graceful
-    "map unavailable" fallback — never a 500)."""
+    """Member map for a ride — the SAME shared Mapbox GL Radial view the guest map
+    uses, plus the member controls (Garmin link + phone beacon). @profile_required +
+    accessibility-gated (public OR own ride, else 404). Renders even when
+    MAPBOX_ACCESS_TOKEN is unset (graceful "map unavailable" fallback — never a
+    500). The map / table / profile come from the shared _radial_live.html partial,
+    polling the public roster.json (the authenticated live-positions.json remains for
+    the mobile client)."""
     rider_id = session['rider_id']
     ride = _accessible_ride(ride_id, rider_id)
     if not ride:
@@ -669,11 +688,14 @@ def live_ride_map(ride_id):
                        and tracking.get('active_ride_id') == ride_id)
     garmin_url = tracking.get('garmin_session_url') if garmin_here else ''
 
+    track = _route_geometry(ride)
     return render_template(
         'live_ride_map.html',
         ride=ride,
         mapbox_token=current_app.config.get('MAPBOX_ACCESS_TOKEN') or '',
-        route_polyline=_build_route_polyline(ride),
+        route_polyline=_map_polyline(track),
+        elevation_profile=radial.build_elevation_profile(track or []),
+        roster_url=url_for('live.live_roster', ride_id=ride_id),
         poll_seconds=LIVE_POLL_SECONDS,
         stale_after_minutes=STALE_AFTER_MINUTES,
         opted_in=bool(tracking and tracking.get('enabled')),

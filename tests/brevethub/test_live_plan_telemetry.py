@@ -323,7 +323,10 @@ def test_plan_by_route_id_none_route_returns_none_without_query():
 # --------------------------------------------------------------------------- #
 # Surface-B HUD render — the plan-aware readout is wired into the member map page.
 # --------------------------------------------------------------------------- #
-def test_map_page_renders_plan_aware_hud(app, client):
+def test_map_page_renders_shared_radial_partial(app, client):
+    """The member map is the SHARED Radial partial: its compact expandable table
+    exposes the plan-aware stat labels and polls the public roster.json (one map
+    implementation reused across guest + member)."""
     _login(client)
     app.config['MAPBOX_ACCESS_TOKEN'] = 'pk.test-token'
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
@@ -333,8 +336,9 @@ def test_map_page_renders_plan_aware_hud(app, client):
         resp = client.get('/live/1/map')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    # Plan-aware HUD labels (mirrored from the parent web app live HUD).
-    for label in ('vs plan', 'vs cutoff', 'Time banked', 'req speed',
-                  'Off route', 'to go', 'ahead of plan'):
-        assert label in body, f'missing HUD label: {label}'
-    assert 'live-positions.json' in body            # the member poll URL is wired
+    assert 'radial-live' in body and 'radial-table' in body
+    # The expandable row's plan-aware stat labels (mirrored from the parent live HUD).
+    for label in ('Banked vs plan', 'Banked vs cutoff', 'Next control', 'Finish ETA'):
+        assert label in body, f'missing radial label: {label}'
+    assert '/live/1/roster.json' in body            # the shared roster poll is wired
+    assert 'unpkg.com/leaflet' not in body          # Leaflet retired

@@ -5,7 +5,6 @@
 {% block extra_head %}
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
 .live-container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
 .live-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
@@ -366,705 +365,95 @@
   </details>
   {% endif %}
 
-  <div id="live-map"></div>
-  <div class="live-legend">
-    <span class="item"><span class="swatch" style="background:#16a34a;border-color:#16a34a"></span> Ahead / on plan</span>
-    <span class="item"><span class="swatch" style="background:#dc2626;border-color:#dc2626"></span> Behind plan</span>
-    <span class="item"><span class="swatch" style="background:#6b7280;border-color:#6b7280"></span> Off-route / no plan</span>
-  </div>
-  <div id="live-status" class="live-status"></div>
-
-  {# ── Plan selector (item 1): shown only when the ride has >1 plan ── #}
-  <div id="plan-selector-wrap" class="plan-selector-wrap" style="display:none;">
-    <label for="plan-selector">Plan</label>
-    <select id="plan-selector"></select>
-  </div>
-  <div id="plan-label" class="plan-label" style="display:none;">Plan: <strong>base plan</strong></div>
-
-  <div id="live-empty" class="live-empty" style="display:none;">
-    No riders are sharing their location right now.{% if not is_guest %} Riders can opt in from
-    <a href="{{ url_for('live.live_settings') }}">Live tracking settings</a>.{% endif %}
-  </div>
-  <div id="live-riders"></div>
-
-  <div id="live-charts" class="live-charts" style="display:none;">
-    <h2 class="charts-title">Route ahead</h2>
-    <p class="charts-sub">Conditions along the route — the vertical line marks each rider's current position.</p>
-    <div class="chart-card"><h3>Elevation (ft)</h3><canvas id="chartElev" height="120"></canvas></div>
-    <div class="chart-card" id="chartHeadwindCard"><h3>Headwind (mph) — + head / − tail</h3><canvas id="chartHeadwind" height="120"></canvas></div>
-    <div class="chart-card" id="chartTempCard"><h3>Temperature (°F)</h3><canvas id="chartTemp" height="120"></canvas></div>
-  </div>
-
-  {# ── Shared upcoming controls (item 2): one ride-level list — placed AFTER the weather charts ── #}
-  <div id="plan-own-note" class="plan-note" style="display:none;">
-    Upcoming controls use base-plan timing (each rider is graded against their own plan).
-  </div>
-  <div id="upcoming-controls" class="upcoming-controls" style="display:none;">
-    <h2 class="uc-title">Upcoming controls</h2>
-    <div id="uc-list" class="uc-list"></div>
-  </div>
+  {# ── The SHARED Radial live view: ONE Mapbox GL map + compact expandable rider
+       table + colour-graded altitude profile, reused byte-for-byte with BrevetHub.
+       Replaces this page's former bespoke Mapbox init + Chart.js elevation. It polls
+       the public, PII-safe roster (no rider_id/email leaves the server). ── #}
+  {% include '_radial_live.html' %}
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-  var MAPBOX_TOKEN = {{ mapbox_token | tojson }};
+  // Member-only: stream THIS phone's location to the ride (opt-in beacon). The map,
+  // rider table and elevation profile are driven by the shared _radial_live.html
+  // partial (which polls the public roster on its own); this only handles sharing.
   var RIDE_ID = {{ ride.id | tojson }};
-  var ROUTE_POLYLINE = {{ route_polyline | tojson }};   // [[lng,lat],...] or null
-  var STALE_AFTER_MIN = {{ stale_after_minutes | tojson }};
-  var POLL_MS = 60000;
-
   (function () {
-    var statusEl = document.getElementById('live-status');
-    var emptyEl = document.getElementById('live-empty');
-
-    if (!MAPBOX_TOKEN) {
-      statusEl.textContent = 'Map unavailable: Mapbox token is not configured.';
-      return;
-    }
-
-    mapboxgl.accessToken = MAPBOX_TOKEN;
-    var map = new mapboxgl.Map({
-      container: 'live-map',
-      style: 'mapbox://styles/mapbox/outdoors-v12',
-      center: [-122.27, 37.80],
-      zoom: 9
-    });
-    map.addControl(new mapboxgl.NavigationControl(), 'top-right');
-    map.addControl(new mapboxgl.FullscreenControl(), 'top-right');
-
-    var markers = {};   // rider_id -> { marker, el }
-    var follow = true;  // auto-frame riders until the user moves the map
-    var lastPositions = [];
-    // Currently selected plan lens (item 1): null until the rider picks one; sent as
-    // ?plan_id= on each poll so ALL riders re-grade against the chosen plan.
-    var selectedPlanId = null;
-    var plansBuilt = false;
-
-    // Disable auto-follow on ANY user-initiated camera move — pan, pinch-zoom,
-    // scroll-zoom, the +/- buttons. We key off `e.originalEvent`: our own
-    // programmatic fitBounds calls (frameRiders) have none, so they don't
-    // count as the user taking control. (Previously only `dragstart` was
-    // handled, so zooming out got yanked back on the next poll.)
-    function userMove(e) { if (e && e.originalEvent) follow = false; }
-    map.on('dragstart', userMove);
-    map.on('zoomstart', userMove);
-    map.on('rotatestart', userMove);
-
-    function frameRiders(positions) {
-      if (!positions.length) return;
-      var fb = new mapboxgl.LngLatBounds();
-      positions.forEach(function (p) { fb.extend([p.lng, p.lat]); });
-      map.fitBounds(fb, { maxZoom: 14, padding: 80, duration: 500 });
-    }
-
-    // Custom "recenter on riders" control — re-enables follow and reframes.
-    function RecenterControl() {}
-    RecenterControl.prototype.onAdd = function (m) {
-      this._map = m;
-      var div = document.createElement('div');
-      div.className = 'mapboxgl-ctrl mapboxgl-ctrl-group';
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.title = 'Recenter on riders';
-      btn.setAttribute('aria-label', 'Recenter on riders');
-      btn.textContent = '◎';
-      btn.style.fontSize = '16px';
-      btn.addEventListener('click', function () {
-        follow = true;
-        frameRiders(lastPositions);
-      });
-      div.appendChild(btn);
-      this._container = div;
-      return div;
-    };
-    RecenterControl.prototype.onRemove = function () {
-      if (this._container && this._container.parentNode) {
-        this._container.parentNode.removeChild(this._container);
-      }
-      this._map = undefined;
-    };
-    map.addControl(new RecenterControl(), 'top-left');
-
-    map.on('load', function () {
-      if (ROUTE_POLYLINE && ROUTE_POLYLINE.length > 1) {
-        map.addSource('ride-route', {
-          type: 'geojson',
-          data: { type: 'Feature', geometry: { type: 'LineString', coordinates: ROUTE_POLYLINE } }
-        });
-        map.addLayer({
-          id: 'ride-route-line', type: 'line', source: 'ride-route',
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: { 'line-color': '#2563eb', 'line-width': 4, 'line-opacity': 0.7 }
-        });
-        var bounds = new mapboxgl.LngLatBounds();
-        ROUTE_POLYLINE.forEach(function (c) { bounds.extend(c); });
-        map.fitBounds(bounds, { padding: 40, duration: 0 });
-      }
-      // Per-rider breadcrumb trails (where each rider has actually ridden).
-      map.addSource('rider-trails', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-      map.addLayer({
-        id: 'rider-trails-line', type: 'line', source: 'rider-trails',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': ['get', 'color'], 'line-width': 3, 'line-opacity': 0.85 }
-      });
-      poll();
-      setInterval(poll, POLL_MS);
-    });
-
-    function updateTrails(positions) {
-      var src = map.getSource('rider-trails');
-      if (!src) { return; }
-      var feats = positions
-        .filter(function (p) { return p.trail && p.trail.length > 1; })
-        .map(function (p) {
-          return { type: 'Feature', properties: { color: p.color },
-                   geometry: { type: 'LineString', coordinates: p.trail } };
-        });
-      src.setData({ type: 'FeatureCollection', features: feats });
-    }
-
-    function buildPopup(p) {
-      // Build DOM nodes (textContent) so rider names can never inject HTML.
-      var wrap = document.createElement('div');
-      wrap.className = 'live-popup';
-      var name = document.createElement('div');
-      name.className = 'name';
-      name.textContent = p.name || 'Rider';
-      var ago = document.createElement('div');
-      ago.className = 'ago';
-      ago.textContent = p.minutes_ago <= 0 ? 'updated just now'
-        : 'updated ' + fmtHM(p.minutes_ago) + ' ago';
-      var src = document.createElement('div');
-      src.className = 'src-line';
-      src.textContent = p.source === 'garmin'
-        ? '⌚ Garmin device' : '📱 Phone (browser)';
-      wrap.appendChild(name);
-      wrap.appendChild(ago);
-      wrap.appendChild(src);
-      return wrap;
-    }
-
-    var ACTIVITY_ICON = { paused: '⏸', walking: '🚶', cycling: '🚴', driving: '🚗' };
-
-    function initials(name) {
-      var parts = (name || '').trim().split(/\s+/).filter(Boolean);
-      if (!parts.length) return '?';
-      if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-    }
-
-    var SOURCE_ICON = { garmin: '⌚', beacon: '📱' };
-
-    function applyMarker(el, p) {
-      // Mutate the marker element in place (Mapbox keeps tracking the same node).
-      var src = p.source === 'garmin' ? 'garmin' : 'beacon';
-      el.className = 'rider-marker src-' + src + (p.stale ? ' stale' : '');
-      var pin = el.querySelector('.pin');
-      // Colour by plan timing (ahead=green / behind=red / grey=unknown); the
-      // server falls back to the signup-status colour when no plan is matched.
-      pin.style.background = p.plan_color || p.color;
-      pin.textContent = initials(p.name);           // textContent — no HTML injection
-      var oldBadge = el.querySelector('.act');
-      if (oldBadge) { oldBadge.remove(); }
-      var act = p.telemetry && p.telemetry.now && p.telemetry.now.activity;
-      if (act && ACTIVITY_ICON[act]) {
-        var badge = document.createElement('div');
-        badge.className = 'act';
-        badge.textContent = ACTIVITY_ICON[act];
-        badge.title = act;
-        el.appendChild(badge);
-      }
-      // Source emblem (⌚ Garmin device / 📱 phone beacon).
-      var oldSrc = el.querySelector('.src');
-      if (oldSrc) { oldSrc.remove(); }
-      var srcBadge = document.createElement('div');
-      srcBadge.className = 'src';
-      srcBadge.textContent = SOURCE_ICON[src];
-      srcBadge.title = src === 'garmin' ? 'Garmin device' : 'Phone (browser)';
-      el.appendChild(srcBadge);
-    }
-
-    function buildMarkerEl(p) {
-      var el = document.createElement('div');
-      var pin = document.createElement('div');
-      pin.className = 'pin';
-      el.appendChild(pin);
-      applyMarker(el, p);
-      return el;
-    }
-
-    function upsertMarker(p) {
-      var existing = markers[p.rider_id];
-      if (existing) {
-        existing.marker.setLngLat([p.lng, p.lat]);
-        applyMarker(existing.el, p);
-        existing.marker.getPopup().setDOMContent(buildPopup(p));
-      } else {
-        var el = buildMarkerEl(p);
-        var popup = new mapboxgl.Popup({ offset: 18, closeButton: false })
-          .setDOMContent(buildPopup(p));
-        var marker = new mapboxgl.Marker(el).setLngLat([p.lng, p.lat]).setPopup(popup).addTo(map);
-        markers[p.rider_id] = { marker: marker, el: el };
-      }
-    }
-
-    function fmtHM(min) {
-      // Minutes -> "Xh YYm" (>= 1h) or "Ym" (< 1h). null/undefined -> null so
-      // metric() renders the em-dash placeholder. Magnitude only (callers pass
-      // pre-normalized non-negative values; mirrors mobile hm()).
-      if (min === null || min === undefined || min === '') return null;
-      var total = Math.round(Math.abs(min));
-      var h = Math.floor(total / 60), m = total % 60;
-      return h > 0 ? h + 'h ' + (m < 10 ? '0' : '') + m + 'm' : m + 'm';
-    }
-
-    function fmtBank(min) {
-      // Signed "time banked": +Xh YYm in hand, −Xh YYm behind. null → null so the
-      // metric cell shows the em-dash placeholder. (mirrors mobile fmtBank)
-      if (min === null || min === undefined || min === '') return null;
-      return (min < 0 ? '−' : '+') + fmtHM(min);
-    }
-
-    function metric(label, value, unit) {
-      // Build a metric cell with textContent only (no HTML injection).
-      var wrap = document.createElement('div');
-      wrap.className = 'metric';
-      var v = document.createElement('div');
-      v.className = 'v';
-      v.textContent = (value === null || value === undefined || value === '')
-        ? '—' : (unit ? value + unit : '' + value);
-      var l = document.createElement('div');
-      l.className = 'l';
-      l.textContent = label;
-      wrap.appendChild(v); wrap.appendChild(l);
-      return wrap;
-    }
-
-    function group(label, cells) {
-      var g = document.createElement('div');
-      g.className = 'tg';
-      var gl = document.createElement('div');
-      gl.className = 'grp-label';
-      gl.textContent = label;
-      var m = document.createElement('div');
-      m.className = 'metrics';
-      cells.filter(Boolean).forEach(function (c) { m.appendChild(c); });
-      g.appendChild(gl); g.appendChild(m);
-      return g;
-    }
-
-    function renderRiders(positions) {
-      var wrap = document.getElementById('live-riders');
-      wrap.textContent = '';
-      positions.forEach(function (p) {
-        var card = document.createElement('div');
-        card.className = 'rider-card' + (p.stale ? ' stale' : '');
-
-        var head = document.createElement('div');
-        head.className = 'head';
-        var nm = document.createElement('span');
-        nm.className = 'nm'; nm.textContent = p.name || 'Rider';
-        var ago = document.createElement('span');
-        ago.className = 'ago';
-        ago.textContent = p.minutes_ago <= 0 ? 'updated just now' : 'updated ' + fmtHM(p.minutes_ago) + ' ago';
-        head.appendChild(nm); head.appendChild(ago);
-        card.appendChild(head);
-
-        var t = p.telemetry;
-        if (t) {
-          var n = t.now || {};
-          if (t.on_route === false) {
-            var off = document.createElement('span');
-            off.className = 'plan-badge behind';
-            off.textContent = 'Off route';
-            head.appendChild(off);
-          } else if (t.plan) {
-            var badge = document.createElement('span');
-            badge.className = 'plan-badge ' + t.plan.status;
-            var d = t.plan.delta_min;
-            badge.textContent = t.plan.status === 'on' ? 'On plan'
-              : (t.plan.status === 'ahead' ? fmtHM(d) + ' ahead of plan' : fmtHM(-d) + ' behind plan');
-            head.appendChild(badge);
-          }
-          // Source-agnostic metrics always shown; route-relative ones only when on route.
-          card.appendChild(group('Now', [
-            (n.distance_mi != null ? metric('done', n.distance_mi, ' mi') : null),
-            metric('speed', n.speed_mph, ' mph'),
-            metric('avg (elapsed)', n.avg_elapsed_speed_mph, ' mph'),
-            metric('avg (moving)', n.avg_moving_speed_mph, ' mph'),
-            (n.activity ? metric('state', n.activity) : null),
-            metric('elapsed', fmtHM(n.elapsed_min)),
-            metric('moving', fmtHM(n.moving_min)),
-            metric('stopped', fmtHM(n.stopped_min)),
-            (n.ascent_done_ft != null ? metric('climb done', n.ascent_done_ft, ' ft') : null),
-            (n.headwind_done_label ? metric('wind', n.headwind_done_label) : null),
-            (n.heart_rate != null ? metric('HR', n.heart_rate, ' bpm') : null),
-            (n.power != null ? metric('power', n.power, ' W') : null),
-            (n.cadence != null ? metric('cadence', n.cadence, ' rpm') : null),
-            (n.grade_pct != null ? metric('grade', n.grade_pct, '%') : null)
-          ]));
-          if (t.remaining) {
-            var r = t.remaining;
-            card.appendChild(group('Remaining', [
-              metric('to go', r.distance_mi, ' mi'),
-              metric('climb left', r.ascent_left_ft, ' ft'),
-              metric('time left', fmtHM(r.time_left_min)),
-              metric('toughness', r.toughness),
-              (r.headwind_ahead_label ? metric('wind ahead', r.headwind_ahead_label) : null)
-            ]));
-          }
-          // Time banked — both vs the brevet cutoff (OTL margin) and vs the plan,
-          // shown alongside (not replacing) the ahead/behind badge above.
-          if (t.time_banked_cutoff_min != null || t.time_banked_plan_min != null) {
-            card.appendChild(group('Time banked', [
-              metric('vs cutoff', fmtBank(t.time_banked_cutoff_min)),
-              metric('vs plan', fmtBank(t.time_banked_plan_min))
-            ]));
-          }
-          if (t.next_control) {
-            var nc = t.next_control;
-            var ncName = (nc.name || 'control').replace(', CA', '');
-            card.appendChild(group('Next: ' + ncName, [
-              metric('ETA (arrival)', nc.eta_label),
-              // Speed needed to hit the plan's arrival; null (em-dash) when behind.
-              metric('req speed', nc.required_mph, ' mph'),
-              (nc.dist_to_go_mi != null ? metric('to go', nc.dist_to_go_mi, ' mi') : null),
-              (nc.distance_mi != null ? metric('at', nc.distance_mi, ' mi') : null)
-            ]));
-          }
-          // Speed to reach the FINISH on time (item 3), alongside the next-control
-          // speed above; null (em-dash) + behind when the finish time has passed.
-          if (t.finish) {
-            var fin = t.finish;
-            card.appendChild(group('To finish', [
-              metric('ETA (arrival)', fin.eta_label),
-              metric('req speed', fin.required_mph, ' mph'),
-              (fin.dist_to_go_mi != null ? metric('to go', fin.dist_to_go_mi, ' mi') : null)
-            ]));
-          }
-          if (t.detailed_after_ride) {
-            var note = document.createElement('div');
-            note.className = 'after-ride';
-            note.textContent = 'Power, pedaling & coasting time available after the ride.';
-            card.appendChild(note);
-          }
-        }
-        wrap.appendChild(card);
-      });
-    }
-
-    // ── Plan selector (item 1) ──
-    // Built once from the server's allow-set (data.plans). A ride with a single plan
-    // sends only the base option → no selector, just a "base plan" label. Choosing a
-    // plan re-polls with ?plan_id= so ALL riders re-grade against it.
-    function renderPlans(data) {
-      var wrap = document.getElementById('plan-selector-wrap');
-      var label = document.getElementById('plan-label');
-      var ownNote = document.getElementById('plan-own-note');
-      var sel = document.getElementById('plan-selector');
-      var plans = (data && data.plans) || [];
-
-      if (plans.length <= 1) {
-        // Single-plan ride: no selector, just the "base plan" label.
-        wrap.style.display = 'none';
-        label.style.display = 'block';
-        ownNote.style.display = 'none';
-        return;
-      }
-      label.style.display = 'none';
-      wrap.style.display = 'flex';
-
-      if (!plansBuilt) {
-        sel.textContent = '';
-        plans.forEach(function (p) {
-          var opt = document.createElement('option');
-          opt.value = String(p.id);
-          opt.textContent = p.name + (p.owner ? ' · ' + p.owner : '');
-          sel.appendChild(opt);
-        });
-        sel.addEventListener('change', function () {
-          selectedPlanId = sel.value;
-          poll();   // re-grade everyone immediately against the new plan
-        });
-        plansBuilt = true;
-      }
-      // Keep the dropdown in sync with the APPLIED plan (a rejected id echoes 'base').
-      if (data.selected_plan_id != null) { sel.value = String(data.selected_plan_id); }
-      // 'own' grades each rider on their own plan; the shared list falls back to base.
-      ownNote.style.display = (String(data.selected_plan_id) === 'own') ? 'block' : 'none';
-    }
-
-    // ── Shared upcoming controls (item 2) ──
-    function renderUpcoming(data) {
-      var box = document.getElementById('upcoming-controls');
-      var list = document.getElementById('uc-list');
-      var controls = (data && data.upcoming_controls) || [];
-      list.textContent = '';
-      if (!controls.length) { box.style.display = 'none'; return; }
-      box.style.display = 'block';
-      controls.forEach(function (c) {
-        var row = document.createElement('div');
-        row.className = 'uc-row';
-        var name = document.createElement('span');
-        name.className = 'uc-name';
-        name.textContent = (c.name || 'control').replace(', CA', '');
-        var dist = document.createElement('span');
-        dist.className = 'uc-dist';
-        dist.textContent = (c.distance_mi != null ? c.distance_mi + ' mi' : '');
-        var eta = document.createElement('span');
-        eta.className = 'uc-eta';
-        eta.textContent = c.eta_label || '—';
-        row.appendChild(name); row.appendChild(dist); row.appendChild(eta);
-        list.appendChild(row);
-      });
-    }
-
-    // ── Route-ahead charts (elevation / headwind / temperature) ──
-    // chart_data is static per ride, so the charts are built once; each poll only
-    // repositions the per-rider markers. Degrades to hidden if Chart.js is blocked
-    // or the ride has no route.
-    var liveCharts = {};
-    var chartsBuilt = false;
-
-    // Per-rider dots (item 4): one labeled dot per on-route rider at their current
-    // mileage, colored by plan pace — a faint vertical guide line + a filled dot with
-    // the rider's initials near the top of each chart.
-    var riderMarkerPlugin = {
-      id: 'riderMarkers',
-      afterDatasetsDraw: function (chart) {
-        var markers = chart.$riderMarkers || [];
-        var xAxis = chart.scales.x, area = chart.chartArea;
-        if (!xAxis || !area || !markers.length) { return; }
-        var ctx = chart.ctx;
-        markers.forEach(function (m, i) {
-          if (m.index == null || m.index < 0) { return; }
-          var x = xAxis.getPixelForValue(m.index);
-          var color = m.color || '#1a365d';
-          ctx.save();
-          // Faint full-height guide line.
-          ctx.beginPath();
-          ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom);
-          ctx.lineWidth = 1.5; ctx.globalAlpha = 0.5; ctx.strokeStyle = color;
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-          // Dot near the top, stacked so dots at the same x don't fully overlap.
-          var cy = area.top + 7 + (i % 3) * 13;
-          ctx.beginPath();
-          ctx.arc(x, cy, 5, 0, 2 * Math.PI);
-          ctx.fillStyle = color; ctx.fill();
-          ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff'; ctx.stroke();
-          if (m.initials) {
-            ctx.font = '700 9px sans-serif';
-            ctx.fillStyle = '#1a365d'; ctx.textBaseline = 'middle';
-            ctx.fillText(m.initials, x + 8, cy);
-          }
-          ctx.restore();
-        });
-      }
-    };
-
-    function nearestIndex(labels, mi) {
-      if (mi == null || !labels || !labels.length) { return -1; }
-      var best = 0, bd = Infinity;
-      for (var i = 0; i < labels.length; i++) {
-        var d = Math.abs(labels[i] - mi);
-        if (d < bd) { bd = d; best = i; }
-      }
-      return best;
-    }
-
-    function chartInitials(name) {
-      var parts = (name || '').trim().split(/\s+/).filter(Boolean);
-      if (!parts.length) { return '?'; }
-      if (parts.length === 1) { return parts[0].slice(0, 2).toUpperCase(); }
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-    }
-
-    function buildCharts(cd) {
-      var labels = cd.labels || [];
-      var xScale = { ticks: { maxTicksLimit: 6, callback: function (v, i) { return Math.round(labels[i]) + ' mi'; } } };
-      var baseOpts = {
-        responsive: true, maintainAspectRatio: true, animation: false,
-        plugins: { legend: { display: false } },
-        scales: { x: xScale, y: { ticks: { font: { size: 9 } } } }
-      };
-      function areaSet(label, data, color) {
-        return { label: label, data: data, borderColor: color,
-                 backgroundColor: color + '33', borderWidth: 1.5, fill: true,
-                 tension: 0.3, pointRadius: 0, pointHitRadius: 6 };
-      }
-      function mk(id, cardId, datasets, data) {
-        var canvas = document.getElementById(id);
-        var card = document.getElementById(cardId);
-        if (!canvas) { return; }
-        if (!data || data.length < 2) { if (card) { card.style.display = 'none'; } return; }
-        liveCharts[id] = new Chart(canvas.getContext('2d'), {
-          type: 'line', data: { labels: labels, datasets: datasets },
-          options: baseOpts, plugins: [riderMarkerPlugin]
-        });
-      }
-      // Colors match the weather page exactly: elevation gray-green, headwind split
-      // into red (head, +) / green (tail, −) areas, temperature red.
-      mk('chartElev', null, [areaSet('Elevation (ft)', cd.elevation_ft, '#15803d')], cd.elevation_ft);
-      if (cd.headwind_mph && cd.headwind_mph.length >= 2) {
-        var headPos = cd.headwind_mph.map(function (v) { return v > 0 ? v : 0; });
-        var headNeg = cd.headwind_mph.map(function (v) { return v < 0 ? v : 0; });
-        mk('chartHeadwind', 'chartHeadwindCard',
-           [areaSet('Headwind (mph)', headPos, '#dc2626'),
-            areaSet('Tailwind (mph)', headNeg, '#16a34a')], cd.headwind_mph);
-      } else {
-        var hwCard = document.getElementById('chartHeadwindCard');
-        if (hwCard) { hwCard.style.display = 'none'; }
-      }
-      mk('chartTemp', 'chartTempCard', [areaSet('Temperature (°F)', cd.temperature_f, '#ef4444')], cd.temperature_f);
-    }
-
-    function updateCharts(data, positions) {
-      var wrap = document.getElementById('live-charts');
-      var cd = data.chart_data;
-      if (typeof Chart === 'undefined' || !cd || !cd.labels || cd.labels.length < 2) {
-        wrap.style.display = 'none';
-        return;
-      }
-      wrap.style.display = 'block';
-      if (!chartsBuilt) { buildCharts(cd); chartsBuilt = true; }
-      // Charts' x-axis is ABSOLUTE route distance, so place each marker at the rider's
-      // absolute route position (route_position_mi). It differs from distance_mi (the
-      // ridden odometer) only for a mid-route loop start; fall back for older payloads.
-      function chartDist(now) {
-        return now.route_position_mi != null ? now.route_position_mi : now.distance_mi;
-      }
-      var markers = positions
-        .filter(function (p) { return p.telemetry && p.telemetry.now && chartDist(p.telemetry.now) != null; })
-        .map(function (p) {
-          return { index: nearestIndex(cd.labels, chartDist(p.telemetry.now)),
-                   color: p.plan_color || p.color, initials: chartInitials(p.name) };
-        });
-      Object.keys(liveCharts).forEach(function (id) {
-        var c = liveCharts[id];
-        c.$riderMarkers = markers;
-        c.update('none');
-      });
-    }
-
-    function planQuery() {
-      // Only append plan_id once the rider has explicitly chosen a plan; absent →
-      // the backend applies the base plan (the default view).
-      return selectedPlanId ? ('&plan_id=' + encodeURIComponent(selectedPlanId)) : '';
-    }
-
-    function poll() {
-      fetch('/api/live/positions?ride_id=' + encodeURIComponent(RIDE_ID) + planQuery(),
-            { credentials: 'same-origin' })
-        .then(function (r) {
-          if (!r.ok) { throw new Error('status ' + r.status); }
-          return r.json();
-        })
-        .then(function (data) {
-          var positions = data.positions || [];
-          var seen = {};
-          lastPositions = positions;
-          positions.forEach(function (p) { seen[p.rider_id] = true; upsertMarker(p); });
-          // Remove markers for riders no longer in the window.
-          Object.keys(markers).forEach(function (rid) {
-            if (!seen[rid]) { markers[rid].marker.remove(); delete markers[rid]; }
-          });
-          renderPlans(data);
-          renderUpcoming(data);
-          renderRiders(positions);
-          updateTrails(positions);
-          updateCharts(data, positions);
-          // Keep the riders framed (close-up) until the user moves the map.
-          if (follow) { frameRiders(positions); }
-          emptyEl.style.display = positions.length ? 'none' : 'block';
-          var now = new Date();
-          statusEl.textContent = positions.length
-            ? positions.length + ' rider' + (positions.length === 1 ? '' : 's') +
-              ' sharing · refreshed ' + now.toLocaleTimeString()
-            : '';
-        })
-        .catch(function (err) {
-          statusEl.textContent = 'Could not refresh live positions (' + err.message + ').';
-        });
-    }
-
-    // ── Share my own location from this page (opted-in riders only) ──
     var shareBtn = document.getElementById('share-btn');
-    if (shareBtn) {
-      var SHARE_INTERVAL = 25000;   // set per-session in startShare()
-      var sharing = false, watchId = null, wakeLock = null, lastSent = 0;
-      var shareLabel = document.getElementById('share-btn-label');
-      var shareState = document.getElementById('share-state');
-      var lowPowerEl = document.getElementById('share-lowpower');
+    if (!shareBtn) { return; }   // guests / no beacon control on the page
+    var SHARE_INTERVAL = 25000;
+    var sharing = false, watchId = null, wakeLock = null, lastSent = 0;
+    var shareLabel = document.getElementById('share-btn-label');
+    var shareState = document.getElementById('share-state');
+    var lowPowerEl = document.getElementById('share-lowpower');
 
-      function acquireWake() {
-        try { if ('wakeLock' in navigator) { navigator.wakeLock.request('screen').then(function (w) { wakeLock = w; }).catch(function () {}); } } catch (e) {}
-      }
-      function releaseWake() { if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; } }
-      document.addEventListener('visibilitychange', function () {
-        if (sharing && document.visibilityState === 'visible' && !wakeLock) { acquireWake(); }
-      });
-
-      function sendShare(pos) {
-        var t = Date.now();
-        if (t - lastSent < SHARE_INTERVAL) { return; }
-        lastSent = t;
-        fetch('/api/live/beacon', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
-          body: JSON.stringify({ ride_id: RIDE_ID,
-                                 lat: pos.coords.latitude, lng: pos.coords.longitude,
-                                 accuracy: pos.coords.accuracy, speed: pos.coords.speed })
-        }).then(function (r) {
-          if (r.status === 403) { shareState.textContent = 'Tracking is off — enable it in settings.'; stopShare(); return null; }
-          if (!r.ok) { throw new Error('status ' + r.status); }
-          return r.json();
-        }).then(function (d) {
-          if (d) { shareState.textContent = 'Sharing · sent ' + new Date().toLocaleTimeString(); poll(); }
-        }).catch(function (e) { shareState.textContent = 'Could not send location (' + e.message + ').'; });
-      }
-      function onShareErr(err) {
-        shareState.textContent = (err.code === 1) ? 'Location permission denied.' : 'Location error.';
-      }
-      function beginWatch(lowPower) {
-        sharing = true; lastSent = 0;
-        shareBtn.className = 'share-btn stop';
-        if (shareLabel) { shareLabel.textContent = 'Stop sharing'; }
-        shareState.className = 'share-state live'; shareState.textContent = 'Sharing your location…';
-        acquireWake();   // screen must stay on — web pages can't share in the background
-        watchId = navigator.geolocation.watchPosition(sendShare, onShareErr, {
-          enableHighAccuracy: !lowPower,
-          maximumAge: lowPower ? 30000 : 10000,
-          timeout: 20000
-        });
-      }
-      function startShare() {
-        if (!('geolocation' in navigator)) { shareState.textContent = 'Geolocation not supported.'; return; }
-        var lowPower = lowPowerEl && lowPowerEl.checked;
-        SHARE_INTERVAL = lowPower ? 60000 : 25000;   // fewer pings in low power
-        shareState.className = 'share-state live'; shareState.textContent = 'Starting…';
-        // Opt in (one tap = consent) before sending — no detour to settings.
-        fetch('/api/live/sharing', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin', body: JSON.stringify({ enabled: true })
-        }).then(function (r) {
-          if (!r.ok) { throw new Error('status ' + r.status); }
-          beginWatch(lowPower);
-        }).catch(function (e) {
-          shareState.className = 'share-state'; shareState.textContent = 'Could not start (' + e.message + ').';
-        });
-      }
-      function stopShare() {
-        sharing = false;
-        if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
-        releaseWake();
-        shareBtn.className = 'share-btn start';
-        if (shareLabel) { shareLabel.textContent = 'Share my location'; }
-        shareState.className = 'share-state';
-      }
-      shareBtn.addEventListener('click', function () { sharing ? stopShare() : startShare(); });
-      window.addEventListener('pagehide', function () { if (sharing) { releaseWake(); } });
+    function acquireWake() {
+      try { if ('wakeLock' in navigator) { navigator.wakeLock.request('screen').then(function (w) { wakeLock = w; }).catch(function () {}); } } catch (e) {}
     }
+    function releaseWake() { if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; } }
+    document.addEventListener('visibilitychange', function () {
+      if (sharing && document.visibilityState === 'visible' && !wakeLock) { acquireWake(); }
+    });
+
+    function sendShare(pos) {
+      var t = Date.now();
+      if (t - lastSent < SHARE_INTERVAL) { return; }
+      lastSent = t;
+      fetch('/api/live/beacon', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+        body: JSON.stringify({ ride_id: RIDE_ID,
+                               lat: pos.coords.latitude, lng: pos.coords.longitude,
+                               accuracy: pos.coords.accuracy, speed: pos.coords.speed })
+      }).then(function (r) {
+        if (r.status === 403) { shareState.textContent = 'Tracking is off — enable it in settings.'; stopShare(); return null; }
+        if (!r.ok) { throw new Error('status ' + r.status); }
+        return r.json();
+      }).then(function (d) {
+        if (d) { shareState.textContent = 'Sharing · sent ' + new Date().toLocaleTimeString(); }
+      }).catch(function (e) { shareState.textContent = 'Could not send location (' + e.message + ').'; });
+    }
+    function onShareErr(err) {
+      shareState.textContent = (err.code === 1) ? 'Location permission denied.' : 'Location error.';
+    }
+    function beginWatch(lowPower) {
+      sharing = true; lastSent = 0;
+      shareBtn.className = 'share-btn stop';
+      if (shareLabel) { shareLabel.textContent = 'Stop sharing'; }
+      shareState.className = 'share-state live'; shareState.textContent = 'Sharing your location…';
+      acquireWake();   // screen must stay on — web pages can't share in the background
+      watchId = navigator.geolocation.watchPosition(sendShare, onShareErr, {
+        enableHighAccuracy: !lowPower,
+        maximumAge: lowPower ? 30000 : 10000,
+        timeout: 20000
+      });
+    }
+    function startShare() {
+      if (!('geolocation' in navigator)) { shareState.textContent = 'Geolocation not supported.'; return; }
+      var lowPower = lowPowerEl && lowPowerEl.checked;
+      SHARE_INTERVAL = lowPower ? 60000 : 25000;   // fewer pings in low power
+      shareState.className = 'share-state live'; shareState.textContent = 'Starting…';
+      // Opt in (one tap = consent) before sending — no detour to settings.
+      fetch('/api/live/sharing', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin', body: JSON.stringify({ enabled: true })
+      }).then(function (r) {
+        if (!r.ok) { throw new Error('status ' + r.status); }
+        beginWatch(lowPower);
+      }).catch(function (e) {
+        shareState.className = 'share-state'; shareState.textContent = 'Could not start (' + e.message + ').';
+      });
+    }
+    function stopShare() {
+      sharing = false;
+      if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+      releaseWake();
+      shareBtn.className = 'share-btn start';
+      if (shareLabel) { shareLabel.textContent = 'Share my location'; }
+      shareState.className = 'share-state';
+    }
+    shareBtn.addEventListener('click', function () { sharing ? stopShare() : startShare(); });
+    window.addEventListener('pagehide', function () { if (sharing) { releaseWake(); } });
   })();
 </script>
 {% endblock %}

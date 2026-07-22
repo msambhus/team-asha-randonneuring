@@ -120,16 +120,20 @@ def test_public_list_incomplete_profile_rider_has_no_member_map_link(client):
 # --------------------------------------------------------------------------- #
 # Guest browse — per-ride map
 # --------------------------------------------------------------------------- #
-def test_public_map_renders_for_public_ride(client):
+def test_public_map_renders_shared_radial_partial(client):
+    """The guest map is the SHARED Mapbox GL Radial partial (the retired Leaflet
+    map's replacement), polling the public PII-safe roster.json."""
     ride = {'id': 1, 'name': 'Public Night 300', 'distance_km': 300,
             'start_at': datetime(2026, 7, 20, 6, 0), 'status': 'going',
-            'club_name': 'Seattle International Randonneurs'}
+            'club_name': 'Seattle International Randonneurs', 'rwgps_url': None}
     with patch('brevethub.models.get_public_ride', return_value=ride):
         resp = client.get('/live/1')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'Public Night 300' in body
-    assert '/live/1/positions.json' in body  # the poll URL is wired
+    assert 'radial-live' in body                 # shared Mapbox Radial partial included
+    assert '/live/1/roster.json' in body         # polls the public PII-safe roster
+    assert 'unpkg.com/leaflet' not in body       # Leaflet is retired on the live path
 
 
 def test_public_map_404_for_private_ride(client):

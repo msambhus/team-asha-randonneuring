@@ -157,6 +157,45 @@ def _build_route_polyline(ride):
     return coords
 
 
+def _radial_track(ride):
+    """Fetch + downsample the ride's RWGPS route ONCE into a track
+    [{lat, lng, dist_m, e_m}] feeding BOTH the shared map polyline and the altitude
+    profile (one fetch, not two). Fail-soft → None on any missing route / fetch
+    error so the shared live view still renders with rider markers only."""
+    rwgps_url = (ride.get('rwgps_url_team') or ride.get('rwgps_url')) if ride else None
+    route_id = extract_rwgps_route_id(rwgps_url)
+    if not route_id:
+        return None
+    try:
+        route = fetch_route(route_id)
+    except Exception as exc:  # noqa: BLE001 — fail-soft, route line is optional
+        current_app.logger.warning('live: RWGPS route %s fetch failed: %s', route_id, exc)
+        return None
+    tps = [tp for tp in ((route or {}).get('track_points') or [])
+           if tp.get('x') is not None and tp.get('y') is not None]
+    if not tps:
+        return None
+    step = max(1, len(tps) // _MAX_CONTEXT_TRACK_POINTS)
+    track = []
+    for tp in tps[::step]:
+        track.append({'lat': float(tp['y']), 'lng': float(tp['x']),
+                      'dist_m': float(tp.get('d') or 0),
+                      'e_m': float(tp['e']) if tp.get('e') is not None else None})
+    return track
+
+
+def _radial_polyline(track):
+    """[[lng, lat], …] for the Mapbox route line from a _radial_track track, capped
+    to _MAX_POLYLINE_POINTS. None when there's no track."""
+    if not track:
+        return None
+    coords = [[t['lng'], t['lat']] for t in track]
+    if len(coords) > _MAX_POLYLINE_POINTS:
+        step = len(coords) // _MAX_POLYLINE_POINTS + 1
+        coords = coords[::step]
+    return coords
+
+
 @live_bp.route('/live')
 @profile_required
 def live_hub():
@@ -213,7 +252,7 @@ def ride_live_map(ride_id):
         abort(404)
 
     mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
-    route_polyline = _build_route_polyline(ride)
+    track = _radial_track(ride)
     opted_in = garmin_here = False
     garmin_url = ''
     if is_member:
@@ -230,7 +269,10 @@ def ride_live_map(ride_id):
         'live.html',
         ride=ride,
         mapbox_token=mapbox_token,
-        route_polyline=route_polyline,
+        route_polyline=_radial_polyline(track),
+        elevation_profile=radial.build_elevation_profile(track or []),
+        roster_url=url_for('live.ride_live_roster', ride_id=ride_id),
+        poll_seconds=RADIAL_POLL_SECONDS,
         stale_after_minutes=STALE_AFTER_MINUTES,
         opted_in=opted_in,
         garmin_here=garmin_here,

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ ride.name }} — live — {{ product_name }}{% endblock %}
+{# Guest per-ride live view — the SHARED Mapbox GL Radial partial (map + compact
+   rider table + altitude profile), replacing the retired Leaflet map. No account
+   needed; the roster it polls is public + PII-safe. #}
+{% block extra_head %}
+{% if mapbox_token %}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+{% endif %}
+{% endblock %}
+{% block content %}
+<div class="container section">
+<section class="card">
+  <h1 class="text-primary text-[1.6rem] font-bold mb-1">{{ ride.name }}</h1>
+  <p class="text-text-light text-sm mb-4">
+    {% if ride.distance_km %}{{ ride.distance_km }} km &middot; {% endif %}
+    {% if ride.club_name %}{{ ride.club_name }} &middot; {% endif %}
+    Live
+  </p>
+
+  {% include '_radial_live.html' %}
+
+  <p class="mt-4"><a class="back-link" href="{{ url_for('live.live_list') }}">← All live rides</a></p>
+</section>
+</div>
+{% endblock %}

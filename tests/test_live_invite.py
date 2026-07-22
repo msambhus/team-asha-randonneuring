@@ -168,12 +168,15 @@ def test_guest_can_view_ride_map(client):
     ride = {'id': 5, 'name': 'SCR 200', 'date': '2026-07-04'}
     with patch('routes.live.get_valid_ride_invite', return_value=inv), \
          patch('routes.live.get_ride_by_id', return_value=ride), \
-         patch('routes.live._build_route_polyline', return_value=[]):
+         patch('routes.live._radial_track', return_value=[]):
         resp = client.get('/ride/5/live')
     assert resp.status_code == 200
     assert b'SCR 200' in resp.data                   # ride loads for the guest
     # member-only controls hidden (the Garmin link form)
     assert b'Garmin LiveTrack link for this ride' not in resp.data
+    # The guest sees the SHARED Radial partial polling the public roster (no PII).
+    assert b'radial-live' in resp.data
+    assert b'/ride/5/live/roster.json' in resp.data
 
 
 def test_anonymous_without_code_is_sent_to_join(client):
