@@ -357,4 +357,6 @@ def test_live_map_styled(client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'style.css' in body
-    assert 'live-map' in body and 'live-timeline' in body
+    # The guest live page now renders the ONE shared Radial (Mapbox) partial — the
+    # old Leaflet live-map/live-timeline was retired in the Radial unification.
+    assert 'radial-live' in body and 'radial-map' in body

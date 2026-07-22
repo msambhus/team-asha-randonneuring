@@ -36,6 +36,12 @@
 .radial-elev-key { display: inline-flex; align-items: center; gap: 4px; }
 .radial-elev-key i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .radial-status { font-size: 0.8rem; color: var(--text-light, #6b7280); margin: 10px 0; min-height: 1.2em; }
+.radial-plan { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+.radial-plan label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-light, #6b7280); }
+.radial-plan-select { padding: 6px 10px; border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px; font-size: 0.85rem; background: var(--card-bg, #fff);
+  color: var(--text, #111); max-width: 260px; }
 .radial-marker { width: 30px; height: 30px; cursor: pointer; transition: opacity 0.2s; }
 .radial-marker.stale { opacity: 0.45; filter: grayscale(0.7); }
 .radial-pin { width: 30px; height: 30px; box-sizing: border-box; border-radius: 50%;
@@ -105,6 +111,11 @@
   </div>
   {% endif %}
 
+  <div class="radial-plan" id="radial-plan-wrap" style="display:none;">
+    <label for="radial-plan-select">Plan</label>
+    <select class="radial-plan-select" id="radial-plan-select"></select>
+  </div>
+
   <div class="radial-status" id="radial-status" aria-live="polite"></div>
 
   <table class="radial-table" id="radial-table">
@@ -136,6 +147,10 @@
   var map = null, mapReady = false, fitted = false;
   var markers = {};   // opaque key → mapboxgl.Marker
   var expanded = {};  // opaque key → bool (row expansion is opt-in, per rider)
+  var selectedPlanId = null;   // plan lens; null → server applies the base plan
+  var plansBuilt = false;
+  var planWrap = document.getElementById('radial-plan-wrap');
+  var planSelect = document.getElementById('radial-plan-select');
 
   // ---- Map (the ONE shared Mapbox GL implementation) ---------------------- //
   function initMap() {
@@ -330,10 +345,38 @@
     updateProfileDots(roster);
   }
 
+  function planQuery() {
+    // Append plan_id only once a plan is explicitly chosen; absent → server base plan.
+    if (!selectedPlanId) { return ''; }
+    return (ROSTER_URL.indexOf('?') >= 0 ? '&' : '?') + 'plan_id=' + encodeURIComponent(selectedPlanId);
+  }
+  function renderPlans(data) {
+    if (!planWrap || !planSelect) { return; }
+    var plans = (data && data.plans) || [];
+    if (plans.length <= 1) { planWrap.style.display = 'none'; return; }  // single-plan ride
+    planWrap.style.display = 'flex';
+    if (!plansBuilt) {
+      planSelect.textContent = '';
+      plans.forEach(function (p) {
+        var opt = document.createElement('option');
+        opt.value = String(p.id);
+        opt.textContent = p.name + (p.owner ? ' · ' + p.owner : '');
+        planSelect.appendChild(opt);
+      });
+      planSelect.addEventListener('change', function () {
+        selectedPlanId = planSelect.value;
+        poll();   // re-grade everyone immediately against the chosen plan
+      });
+      plansBuilt = true;
+    }
+    if (data.selected_plan_id != null) { planSelect.value = String(data.selected_plan_id); }
+  }
+
   function poll() {
-    fetch(ROSTER_URL, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+    fetch(ROSTER_URL + planQuery(), { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (data) {
+        renderPlans(data);
         var roster = (data && data.roster) || [];
         render(roster);
         if (statusEl) {

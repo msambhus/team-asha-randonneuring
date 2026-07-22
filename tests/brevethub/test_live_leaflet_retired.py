@@ -7,6 +7,7 @@ deleted and every live host now includes the shared Mapbox partial. This test fa
 if Leaflet creeps back onto any live template.
 """
 import os
+import re
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TEMPLATES = os.path.join(REPO_ROOT, 'brevethub', 'templates')
@@ -17,8 +18,10 @@ _LIVE_TEMPLATES = ['live_public.html', 'live_ride_map.html', '_radial_live.html'
 
 # Concrete Leaflet USAGE markers (not the mere word "leaflet", which appears in the
 # partial's docstring explaining the retirement).
-_LEAFLET_MARKERS = ['unpkg.com/leaflet', 'leaflet.js', 'leaflet.css',
-                    'l.map(', '.leaflet-container', 'l.tilelayer']
+_LEAFLET_SUBSTRINGS = ['unpkg.com/leaflet', 'leaflet.js', 'leaflet.css', '.leaflet-container']
+# Leaflet's global is `L` — `L.map(` / `L.tileLayer(`. Match with a word boundary so we
+# don't false-positive on Mapbox's `mapboxgl.Map(` (which lowercases to `...gl.map(`).
+_LEAFLET_API_REGEXES = [r'\bl\.map\(', r'\bl\.tilelayer']
 
 
 def test_leaflet_live_template_is_deleted():
@@ -32,7 +35,8 @@ def test_live_templates_load_no_leaflet():
         path = os.path.join(TEMPLATES, name)
         assert os.path.exists(path), f'missing live template {name}'
         low = open(path, 'r', encoding='utf-8').read().lower()
-        hits = [m for m in _LEAFLET_MARKERS if m in low]
+        hits = [m for m in _LEAFLET_SUBSTRINGS if m in low]
+        hits += [p for p in _LEAFLET_API_REGEXES if re.search(p, low)]
         if hits:
             offenders[name] = hits
     assert not offenders, f'Leaflet usage still present on the live path: {offenders}'

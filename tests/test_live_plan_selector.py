@@ -196,7 +196,9 @@ def _row():
 
 def _positions_json(client, ctx, query='', publics=None, own=None):
     """Run the endpoint with the heavy context patched out and the plan-lookup model
-    functions defaulted to empty (base_plan_id=5 in ctx would otherwise hit the DB)."""
+    functions defaulted to empty (base_plan_id=5 in ctx would otherwise hit the DB).
+    History is empty on purpose: a rider projects off its single current fix (the
+    stateless fallback), so telemetry appears on the very first position."""
     with patch('routes.live.get_latest_positions_for_ride', return_value=[_row()]), \
          patch('routes.live._ride_live_context', return_value=ctx), \
          patch('routes.live.get_positions_for_rider_since', return_value=[]), \

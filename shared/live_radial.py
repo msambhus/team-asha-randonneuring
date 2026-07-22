@@ -124,7 +124,15 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
             'next_control': None, 'finish': None, 'time_banked_cutoff_min': None,
             'time_banked_plan_min': None, 'plan': None, 'detailed_after_ride': True}
 
-    if not ctx.get('has_route') or len(history) < min_history:
+    # No route → only the source-agnostic 'now' block. Too few history fixes
+    # short-circuits ONLY when there is no stateless fallback (BrevetHub, min 2):
+    # with a stateless fallback (Team Asha) a rider that has a current fix but no
+    # stored trail still projects off that single latest point below, so telemetry
+    # appears on the rider's FIRST position rather than waiting for a second poll
+    # (this is the pre-promotion inline behaviour the shared builder must preserve).
+    if not ctx.get('has_route'):
+        return base
+    if len(history) < min_history and not stateless_fallback:
         return base
 
     # One leg-aware trajectory walk yields BOTH the current distance-done and the

@@ -180,9 +180,28 @@ def test_guest_can_view_ride_map(client):
 
 
 def test_anonymous_without_code_is_sent_to_join(client):
-    resp = client.get('/ride/5/live')
+    # A NON-public ride: an anonymous viewer with no invite is sent to the join page.
+    # (The gate now fetches the ride to check is_public_live, so stub it.)
+    ride = {'id': 5, 'name': 'SCR 200', 'date': '2026-07-04', 'is_public_live': False}
+    with patch('routes.live.get_ride_by_id', return_value=ride):
+        resp = client.get('/ride/5/live')
     assert resp.status_code == 302
     assert resp.headers['Location'].endswith('/live/join')
+
+
+def test_anonymous_can_view_public_live_ride(client):
+    """A ride opted public-live (is_public_live) is viewable by a fully anonymous
+    visitor with NO invite — read-only (member controls hidden), polling the public
+    roster. Non-public rides still redirect to /live/join (test above)."""
+    ride = {'id': 5, 'name': 'SCR 200', 'date': '2026-07-04', 'is_public_live': True}
+    with patch('routes.live.get_ride_by_id', return_value=ride), \
+         patch('routes.live._radial_track', return_value=[]):
+        resp = client.get('/ride/5/live')
+    assert resp.status_code == 200
+    assert b'SCR 200' in resp.data                    # ride loads for the anon guest
+    assert b'Garmin LiveTrack link for this ride' not in resp.data   # member controls hidden
+    assert b'radial-live' in resp.data
+    assert b'/ride/5/live/roster.json' in resp.data
 
 
 # ── guest access to the positions API is scoped to the granted ride ────────

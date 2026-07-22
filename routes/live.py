@@ -241,13 +241,19 @@ def ride_live_map(ride_id):
     is_member = bool(session.get('rider_id'))
     is_guest = (not is_member) and (_guest_ride_id() == ride_id)
     if not is_member and not is_guest:
-        # A half-logged-in member finishes profile setup; everyone else is sent
-        # to the guest join page to enter an invite code.
+        # A half-logged-in member finishes profile setup (no ride fetch needed).
         if session.get('user_id'):
             return redirect(url_for('auth.setup_profile'))
-        return redirect(url_for('live.live_join'))
-
-    ride = get_ride_by_id(ride_id)
+        # A fully anonymous viewer may still open a PUBLIC-live ride read-only, without
+        # an invite (the roster.json it polls is already public for such a ride);
+        # otherwise send them to the guest join page to enter an invite code.
+        ride = get_ride_by_id(ride_id)
+        if ride and ride.get('is_public_live'):
+            is_guest = True          # read-only public viewer — member controls hidden
+        else:
+            return redirect(url_for('live.live_join'))
+    else:
+        ride = get_ride_by_id(ride_id)
     if not ride:
         abort(404)
 
@@ -1096,6 +1102,15 @@ def ride_live_roster(ride_id):
         row['display_name'] = _public_display_name(row.get('name'))
 
     ctx = _ride_live_context(ride_id)
+
+    # Plan selector (item 1): resolve the requested plan STRICTLY from the allow-set,
+    # exactly like /api/live/positions — a guest gets base + public plans only, the
+    # 'own' lens is members-only, and a rejected id falls back to base (never a leak).
+    base_plan_id = ctx.get('base_plan_id') if ctx else None
+    plan_options, allowed_custom_ids = _available_plans(base_plan_id, session.get('rider_id'))
+    applied_plan_id, override_stops = _selected_plan_stops(
+        request.args.get('plan_id'), ctx, allowed_custom_ids, is_member=is_member)
+
     history_by = {}
     for row in rows:
         try:
@@ -1107,8 +1122,20 @@ def ride_live_roster(ride_id):
                 row['rider_id'], ride_id)
             history_by[row['rider_id']] = []
 
+    # A selected named plan (base or a custom) grades EVERY rider on one schedule
+    # (override_stops); the 'own' lens keeps each rider on their own custom plan
+    # (base fallback per rider) — mirrors /api/live/positions so they can't diverge.
+    if override_stops is not None:
+        plan_stops_by_rider = {row['rider_id']: override_stops for row in rows}
+    elif ctx:
+        plan_stops_by_rider = {row['rider_id']: _rider_plan_stops(ctx, row['rider_id'])
+                               for row in rows}
+    else:
+        plan_stops_by_rider = None
+
     roster = radial.build_radial_roster(
-        rows, ctx, now, history_by, ride_id=ride_id, anchor='ride_start', tz=CLUB_TZ,
+        rows, ctx, now, history_by, plan_stops_by_rider=plan_stops_by_rider,
+        ride_id=ride_id, anchor='ride_start', tz=CLUB_TZ,
         min_history=1, stateless_fallback=True, stale_after_minutes=STALE_AFTER_MINUTES)
 
     return jsonify({
@@ -1117,6 +1144,8 @@ def ride_live_roster(ride_id):
         'server_time': now.isoformat(),
         'stale_after_minutes': STALE_AFTER_MINUTES,
         'poll_seconds': RADIAL_POLL_SECONDS,
+        'plans': plan_options,
+        'selected_plan_id': applied_plan_id,
     })
 
 
