@@ -31,7 +31,7 @@ from services.weather import (sample_track_points, load_stored_route_weather,
                               crosswind_component, classify_wind,
                               wind_arrow_rotation, wind_arrow_glyph,
                               build_arrival_interpolator, build_weather_segments,
-                              build_chart_data)
+                              build_chart_data, build_live_weather_markers)
 
 live_bp = Blueprint('live', __name__)
 
@@ -196,6 +196,27 @@ def _radial_polyline(track):
     return coords
 
 
+def _build_weather_points(ride):
+    """Along-route weather markers for the live map: {lat,lng,temp_f,wind_speed_mph,
+    wind_type,arrow_deg,color} from the STORED route weather (route_weather_cache — a DB
+    read, never a live Open-Meteo fetch on the request path, per TA-237). The shared
+    build_live_weather_markers does all the wind math (same code as the plan page).
+    Fail-soft: no route / no forecast / any error → [] so the map just omits weather."""
+    try:
+        route_id = extract_rwgps_route_id(ride.get('rwgps_url_team') or ride.get('rwgps_url'))
+        rd = ride.get('date')
+        if isinstance(rd, str):
+            rd = date.fromisoformat(rd)
+        if not route_id or not rd:
+            return []
+        weather_data, sample_points = load_stored_route_weather(route_id, rd)
+        start_t = ride.get('plan_start_time') or ride.get('start_time') or '06:00'
+        return build_live_weather_markers(weather_data, sample_points, rd, str(start_t))
+    except Exception:  # noqa: BLE001 — the weather overlay is best-effort
+        current_app.logger.warning('live: weather_points build failed', exc_info=True)
+        return []
+
+
 @live_bp.route('/live')
 @profile_required
 def live_hub():
@@ -259,6 +280,7 @@ def ride_live_map(ride_id):
 
     mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
     track = _radial_track(ride)
+    weather_points = _build_weather_points(ride)   # [] when no stored forecast → map degrades
     opted_in = garmin_here = False
     garmin_url = ''
     if is_member:
@@ -277,6 +299,7 @@ def ride_live_map(ride_id):
         mapbox_token=mapbox_token,
         route_polyline=_radial_polyline(track),
         elevation_profile=radial.build_elevation_profile(track or []),
+        weather_points=weather_points,
         roster_url=url_for('live.ride_live_roster', ride_id=ride_id),
         poll_seconds=RADIAL_POLL_SECONDS,
         stale_after_minutes=STALE_AFTER_MINUTES,

@@ -1069,3 +1069,49 @@ def summarize_point_forecast(weather_data):
         'wind_travel_deg': wind_travel_rotation(wind_dir) if wind_dir is not None else None,
     }
     return summary
+
+
+# Live-map weather markers keyed by rider-relative wind type (rpv2 plan palette).
+_LIVE_WIND_MAP_COLORS = {'headwind': '#dc2626', 'tailwind': '#16a34a', 'crosswind': '#ca8a04'}
+
+
+def build_live_weather_markers(weather_data, sample_points, forecast_date,
+                               start_time_str, interval_mi=15.0):
+    """Along-route weather markers for the shared Radial live map.
+
+    Returns a list of {lat, lng, temp_f, wind_speed_mph, wind_type, arrow_deg, color}
+    subsampled from the STORED route weather about every ``interval_mi`` miles (the
+    stored samples are ~15 km apart, which would crowd the map). Reuses
+    ``compute_stop_winds`` — the SAME per-point wind math the plan page renders — so the
+    two surfaces can never drift, and ``wind_travel_rotation`` for a north-up map arrow
+    (where the wind actually blows), while the color keeps the rider-relative help/hurt
+    signal. Pure + fail-soft: any missing/empty input or error yields [] (the map simply
+    shows no weather overlay). No I/O, no network."""
+    if not weather_data or not sample_points:
+        return []
+    try:
+        pseudo_stops, coords, last_mi = [], [], None
+        for sp in sample_points:
+            mi = float(sp.get('distance_m') or 0) / 1609.344
+            if last_mi is not None and (mi - last_mi) < interval_mi:
+                continue
+            last_mi = mi
+            pseudo_stops.append({'distance_miles': mi})
+            coords.append((sp.get('lat'), sp.get('lng')))
+        winds = compute_stop_winds(pseudo_stops, weather_data, sample_points,
+                                   forecast_date, str(start_time_str))
+        out = []
+        for (lat, lng), w in zip(coords, winds):
+            if not w or lat is None or lng is None:
+                continue
+            out.append({
+                'lat': lat, 'lng': lng,
+                'temp_f': w.get('temperature_f'),
+                'wind_speed_mph': w.get('wind_speed_mph'),
+                'wind_type': w.get('wind_type'),
+                'arrow_deg': wind_travel_rotation(w.get('wind_direction_deg') or 0),
+                'color': _LIVE_WIND_MAP_COLORS.get(w.get('wind_type'), '#6b7280'),
+            })
+        return out
+    except Exception:  # noqa: BLE001 — the weather overlay is best-effort
+        return []

@@ -35,6 +35,17 @@
   font-size: 0.72rem; color: var(--text-light, #6b7280); }
 .radial-elev-key { display: inline-flex; align-items: center; gap: 4px; }
 .radial-elev-key i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+/* Along-route weather markers on the map (wind arrow rotated to travel direction + °F) */
+.radial-weather { display: flex; flex-direction: column; align-items: center; line-height: 1; pointer-events: none; }
+.radial-weather-arrow { font-size: 18px; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,0.55); }
+.radial-weather-temp { font-size: 10px; font-weight: 700; color: #1f2937; background: rgba(255,255,255,0.85);
+  border-radius: 4px; padding: 0 3px; margin-top: 1px; }
+/* Hover-scrub: crosshair on the profile + a matching dot on the map */
+.radial-elev { cursor: crosshair; }
+.radial-elev-cursor { stroke: var(--text-light, #6b7280); stroke-width: 1; stroke-dasharray: 3 2; opacity: 0.85; }
+.radial-elev-cursor-dot { fill: var(--primary, #1a365d); stroke: #fff; stroke-width: 1.5; }
+.radial-scrub { width: 16px; height: 16px; border-radius: 50%; background: var(--primary, #1a365d);
+  border: 3px solid #fff; box-shadow: 0 1px 6px rgba(0,0,0,0.5); pointer-events: none; }
 .radial-status { font-size: 0.8rem; color: var(--text-light, #6b7280); margin: 10px 0; min-height: 1.2em; }
 .radial-plan { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
 .radial-plan label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
@@ -141,6 +152,7 @@
   var MAPBOX_TOKEN = {{ mapbox_token | tojson }};
   var ROUTE_POLYLINE = {{ route_polyline | tojson }};   // [[lng,lat],…] or null
   var PROFILE = {{ elevation_profile | tojson }};         // build_elevation_profile(...)
+  var WEATHER_POINTS = {{ weather_points | default([]) | tojson }};  // [{lat,lng,temp_f,wind_speed_mph,wind_type,arrow_deg,color}]
 
   var statusEl = document.getElementById('radial-status');
   var tbody = document.getElementById('radial-tbody');
@@ -177,6 +189,7 @@
         ROUTE_POLYLINE.forEach(function (c) { b.extend(c); });
         if (!b.isEmpty()) { map.fitBounds(b, { padding: 40, maxZoom: 13 }); fitted = true; }
       }
+      addWeatherMarkers();   // static along-route wind arrows + °F (not in the poll loop)
       poll();
     });
   }
@@ -215,6 +228,107 @@
       roster.forEach(function (r) { if (r.lat != null && r.lng != null) { b.extend([r.lng, r.lat]); } });
       if (!b.isEmpty()) { map.fitBounds(b, { padding: 60, maxZoom: 13 }); fitted = true; }
     }
+  }
+
+  // ---- Along-route weather markers (static: wind arrow + °F) -------------- //
+  function addWeatherMarkers() {
+    if (!map || !WEATHER_POINTS || !WEATHER_POINTS.length) { return; }   // degrade: no overlay
+    WEATHER_POINTS.forEach(function (w) {
+      if (w.lat == null || w.lng == null) { return; }
+      var el = document.createElement('div');
+      el.className = 'radial-weather';
+      var arrow = document.createElement('span');
+      arrow.className = 'radial-weather-arrow';
+      arrow.style.color = w.color || '#6b7280';
+      arrow.style.transform = 'rotate(' + (w.arrow_deg || 0) + 'deg)';
+      arrow.textContent = '↑';   // ↑ rotated to the wind's travel direction
+      var spd = (w.wind_speed_mph != null) ? Math.round(w.wind_speed_mph) + ' mph' : '';
+      arrow.title = ((w.wind_type || '') + ' ' + spd).trim();
+      el.appendChild(arrow);
+      if (w.temp_f != null) {
+        var t = document.createElement('span');
+        t.className = 'radial-weather-temp';
+        t.textContent = Math.round(w.temp_f) + '°';
+        el.appendChild(t);
+      }
+      new mapboxgl.Marker({ element: el }).setLngLat([w.lng, w.lat]).addTo(map);
+    });
+  }
+
+  // ---- Hover-scrub: hovering the elevation profile moves a dot on the map -- //
+  var routeCum = null, routeTotalM = 0, scrubMarker = null, elevCursor = null;
+  function haversineM(a, b) {
+    var R = 6371000, toR = Math.PI / 180;
+    var dLat = (b[1] - a[1]) * toR, dLng = (b[0] - a[0]) * toR;
+    var s = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(a[1] * toR) * Math.cos(b[1] * toR) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+  }
+  function buildRouteIndex() {
+    if (!ROUTE_POLYLINE || ROUTE_POLYLINE.length < 2) { return; }
+    routeCum = [0];
+    for (var i = 1; i < ROUTE_POLYLINE.length; i++) {
+      routeCum[i] = routeCum[i - 1] + haversineM(ROUTE_POLYLINE[i - 1], ROUTE_POLYLINE[i]);
+    }
+    routeTotalM = routeCum[routeCum.length - 1];
+  }
+  function lngLatAtMile(mi) {
+    if (!routeCum || routeTotalM <= 0 || !PROFILE || !PROFILE.total_mi) { return null; }
+    var target = Math.max(0, Math.min(1, mi / PROFILE.total_mi)) * routeTotalM;
+    for (var i = 1; i < routeCum.length; i++) {
+      if (target <= routeCum[i]) {
+        var seg = routeCum[i] - routeCum[i - 1];
+        var t = seg > 0 ? (target - routeCum[i - 1]) / seg : 0;
+        var a = ROUTE_POLYLINE[i - 1], b = ROUTE_POLYLINE[i];
+        return [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+      }
+    }
+    return ROUTE_POLYLINE[ROUTE_POLYLINE.length - 1];
+  }
+  function scrubTo(mi) {
+    var ll = lngLatAtMile(mi);
+    if (ll && map && mapReady) {
+      if (!scrubMarker) {
+        var sel = document.createElement('div'); sel.className = 'radial-scrub';
+        scrubMarker = new mapboxgl.Marker({ element: sel });
+      }
+      scrubMarker.setLngLat(ll).addTo(map);
+    }
+    var svg = document.querySelector('.radial-elev');
+    if (svg && PROFILE && PROFILE.available) {
+      var x = profileX(mi), y = profileY(mi);
+      if (!elevCursor) {
+        elevCursor = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        var ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        ln.setAttribute('class', 'radial-elev-cursor');
+        var dt = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        dt.setAttribute('class', 'radial-elev-cursor-dot'); dt.setAttribute('r', '4');
+        elevCursor.appendChild(ln); elevCursor.appendChild(dt);
+        svg.appendChild(elevCursor);
+      }
+      var line = elevCursor.firstChild, dot = elevCursor.lastChild;
+      line.setAttribute('x1', x); line.setAttribute('x2', x);
+      line.setAttribute('y1', PROFILE.plot.y); line.setAttribute('y2', PROFILE.plot.y + PROFILE.plot.h);
+      if (y != null) { dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.style.display = ''; }
+      else { dot.style.display = 'none'; }
+      elevCursor.style.display = '';
+    }
+  }
+  function clearScrub() {
+    if (scrubMarker) { scrubMarker.remove(); }
+    if (elevCursor) { elevCursor.style.display = 'none'; }
+  }
+  function initElevHover() {
+    var svg = document.querySelector('.radial-elev');
+    if (!svg || !PROFILE || !PROFILE.available) { return; }
+    svg.addEventListener('mousemove', function (e) {
+      var r = svg.getBoundingClientRect();
+      if (r.width <= 0) { return; }
+      var svgX = (e.clientX - r.left) / r.width * PROFILE.width;   // viewBox is preserveAspectRatio=none
+      var frac = (svgX - PROFILE.plot.x) / PROFILE.plot.w;
+      scrubTo(Math.max(0, Math.min(1, frac)) * (PROFILE.total_mi || 0));
+    });
+    svg.addEventListener('mouseleave', clearScrub);
   }
 
   // ---- Elevation profile rider dots --------------------------------------- //
@@ -391,6 +505,8 @@
   }
 
   initMap();
+  buildRouteIndex();                // cumulative route distances for hover→map scrub
+  initElevHover();                  // hovering the elevation profile moves a map dot
   if (!map) { poll(); }             // static fallback: still poll table + profile
   setInterval(poll, POLL_MS);
 })();
