@@ -3708,30 +3708,56 @@ def get_route_weather_cache(route_id, forecast_date):
     ).fetchone()
 
 
-def save_route_weather_cache(route_id, forecast_date, weather_data, sample_points):
+def save_route_weather_cache(route_id, forecast_date, weather_data, sample_points,
+                             elevation_track=None):
     """Upsert one route's forecast for a date (idempotent on (route_id, forecast_date)).
 
-    Overwrites the payload + sample points and bumps fetched_at, so each hourly cron run
-    refreshes the last-good row in place. Only called from the fetch-route-weather cron —
-    never on a request path. On a cron fetch failure the caller simply skips this upsert,
-    leaving the previous last-good row untouched.
+    Overwrites the payload + sample points (+ the elevation track for the rpv2 gradient
+    elevation profile) and bumps fetched_at, so each hourly cron run refreshes the
+    last-good row in place. ``elevation_track`` is the downsampled
+    ``[{lat, lng, dist_m, e_m}, ...]`` route track (optional — None on a route with no
+    usable points; the plan render then draws an empty profile). Only called from the
+    fetch-route-weather cron — never on a request path. On a cron fetch failure the
+    caller simply skips this upsert, leaving the previous last-good row untouched.
     """
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
         """
         INSERT INTO route_weather_cache
-            (route_id, forecast_date, weather_data, sample_points, fetched_at)
-        VALUES (%s, %s, %s, %s, NOW())
+            (route_id, forecast_date, weather_data, sample_points, elevation_track,
+             fetched_at)
+        VALUES (%s, %s, %s, %s, %s, NOW())
         ON CONFLICT (route_id, forecast_date) DO UPDATE SET
             weather_data = EXCLUDED.weather_data,
             sample_points = EXCLUDED.sample_points,
+            elevation_track = EXCLUDED.elevation_track,
             fetched_at = NOW()
         """,
         (route_id, forecast_date,
-         psycopg2.extras.Json(weather_data), psycopg2.extras.Json(sample_points)),
+         psycopg2.extras.Json(weather_data), psycopg2.extras.Json(sample_points),
+         psycopg2.extras.Json(elevation_track) if elevation_track is not None else None),
     )
     conn.commit()
+
+
+def get_route_elevation_track(route_id):
+    """The cron-warmed elevation track for a route, or None — date-independent.
+
+    Returns the most recently warmed ``[{lat, lng, dist_m, e_m}, ...]`` track for the
+    route (route geometry is date-invariant, so any warmed row serves it), for the rpv2
+    plan-page gradient elevation profile to read from cache instead of fetching RWGPS
+    live on the request path (the TA-237 guest-safety invariant). None when no row has a
+    cached track yet (new route, pre-column rows, or the cron has not run) — the render
+    then degrades to an empty profile.
+    """
+    row = _execute(
+        "SELECT elevation_track FROM route_weather_cache "
+        "WHERE route_id = %s AND elevation_track IS NOT NULL "
+        "ORDER BY fetched_at DESC LIMIT 1",
+        (route_id,),
+    ).fetchone()
+    return row['elevation_track'] if row else None
 
 
 def get_upcoming_weather_targets(within_days=28):

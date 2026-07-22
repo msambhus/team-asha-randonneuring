@@ -56,8 +56,10 @@ class TestFetchRouteWeatherCron:
                     'rwgps_url': 'https://ridewithgps.com/routes/555', 'plan_id': 9}]
         saved = {}
 
-        def fake_save(route_id, forecast_date, weather_data, sample_points):
+        def fake_save(route_id, forecast_date, weather_data, sample_points,
+                      elevation_track=None, **kwargs):
             saved['call'] = (route_id, forecast_date, weather_data, sample_points)
+            saved['elevation_track'] = elevation_track
 
         with patch('models.get_upcoming_weather_targets', return_value=targets), \
              patch('services.rwgps.fetch_route', return_value={'track_points': _TRACK}), \

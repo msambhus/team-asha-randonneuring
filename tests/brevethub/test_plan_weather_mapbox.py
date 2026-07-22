@@ -59,6 +59,13 @@ _ROSTER = [{'name': 'alice', 'status': 'going'}]
 # The decimated route line the cron caches (matches migration 049's polyline column).
 _POLYLINE = [[44.0, -121.0], [44.1, -121.2], [44.2, -121.4]]
 
+# The downsampled elevation track the cron caches (migration 053's elevation_track
+# column) — [{lat, lng, dist_m, e_m}, ...], the shared.live_radial.track_from_route
+# shape build_elevation_profile consumes (needs dist_m + e_m).
+_ELEV_TRACK = [{'lat': 44.0, 'lng': -121.0, 'dist_m': 0, 'e_m': 100.0},
+               {'lat': 44.1, 'lng': -121.2, 'dist_m': 100000, 'e_m': 480.0},
+               {'lat': 44.2, 'lng': -121.4, 'dist_m': 200000, 'e_m': 220.0}]
+
 
 def _sample(ws, wd, tc):
     """A constant hourly forecast for one route sample so per-hour index selection is
@@ -79,9 +86,10 @@ def _sample(ws, wd, tc):
     }}
 
 
-def _cached_weather(polyline=_POLYLINE):
+def _cached_weather(polyline=_POLYLINE, elevation_track=None):
     """A warm rp_brevet_route_weather row: per-sample Open-Meteo forecast, the aligned
-    sample points, and the decimated polyline (nullable — pass None for an old row)."""
+    sample points, the decimated polyline, and the cached elevation track (all nullable
+    — pass None for an old row warmed before the column existed)."""
     row = {
         'event_id': 11, 'forecast_date': '2026-08-15',
         'weather_data': [_sample(20, 270, 28), _sample(25, 90, 30), _sample(10, 180, 24)],
@@ -89,6 +97,7 @@ def _cached_weather(polyline=_POLYLINE):
                           {'lat': 44.1, 'lng': -121.2, 'distance_m': 100000},
                           {'lat': 44.2, 'lng': -121.4, 'distance_m': 200000}],
         'polyline': polyline,
+        'elevation_track': elevation_track,
     }
     return row
 
@@ -256,6 +265,35 @@ def test_no_live_fetcher_on_guest_paths(app, client, url):
         resp = client.get(url)
     assert resp.status_code == 200
     mfw.assert_not_called()
+    mfr.assert_not_called()
+
+
+def test_elevation_profile_renders_from_cached_track_no_live_fetch(app, client):
+    """A cron-warmed elevation_track renders the gradient profile straight from the
+    weather cache row — the guest plan page draws the altitude profile WITHOUT ever
+    calling RWGPS live (the TA-237 guest-safety invariant for the elevation feature)."""
+    with _patch_models(weather=_cached_weather(elevation_track=_ELEV_TRACK)), \
+         patch('shared.rwgps.fetch_route') as mfr:
+        resp = client.get('/plan/11')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    # The gradient area path renders only when the profile is available (built from the
+    # cached track), and the "unavailable" placeholder is absent.
+    assert 'radial-elev-area' in body
+    assert 'rpv2-elev-empty' not in body
+    mfr.assert_not_called()  # served from cache — never a live fetch
+
+
+def test_elevation_profile_empty_when_no_cached_track(app, client):
+    """A row warmed before the elevation_track column (NULL track) degrades to the
+    empty-profile placeholder — still no live fetch, page stays up."""
+    with _patch_models(weather=_cached_weather(elevation_track=None)), \
+         patch('shared.rwgps.fetch_route') as mfr:
+        resp = client.get('/plan/11')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'rpv2-elev-empty' in body
+    assert 'radial-elev-area' not in body
     mfr.assert_not_called()
 
 

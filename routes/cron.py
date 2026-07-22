@@ -708,10 +708,12 @@ def fetch_route_weather_cron():
     from services.rwgps import fetch_route
     from services.weather import sample_track_points, fetch_route_weather
     from models import get_upcoming_weather_targets, save_route_weather_cache
+    from shared.live_radial import track_from_route
 
     FORECAST_HORIZON_DAYS = 16   # Open-Meteo forecasts at most 16 days ahead
     SELECT_WINDOW_DAYS = 28      # rides we consider (mission wording / calendar cutoff)
     SAMPLE_INTERVAL_M = 15000    # dense 15 km sampling (matches weather page / live charts)
+    ELEVATION_TRACK_POINTS = 800  # downsample cap for the cached rpv2 elevation track
 
     try:
         targets = get_upcoming_weather_targets(within_days=SELECT_WINDOW_DAYS)
@@ -791,7 +793,13 @@ def fetch_route_weather_cron():
                 entry['status'] = 'skip_no_data'
                 details.append(entry)
                 continue
-            save_route_weather_cache(route_id, forecast_date, weather_data, samples)
+            # Downsampled elevation track for the rpv2 gradient elevation profile, built
+            # from the SAME route_data already fetched here — so the plan render reads it
+            # from cache instead of fetching RWGPS live (TA-237). None → empty profile.
+            elevation_track = track_from_route(
+                route_data, max_points=ELEVATION_TRACK_POINTS) or None
+            save_route_weather_cache(route_id, forecast_date, weather_data, samples,
+                                     elevation_track)
             entry['status'] = 'ok'
             entry['samples'] = len(samples)
             succeeded += 1

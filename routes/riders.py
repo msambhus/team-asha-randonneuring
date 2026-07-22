@@ -27,7 +27,7 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_upcoming_rusa_events, update_rider_profile, update_strava_privacy,
                     get_pbp_finishers,
                     get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops, update_ride_plan_info,
-                    get_upcoming_ride_date_for_plan,
+                    get_upcoming_ride_date_for_plan, get_route_elevation_track,
                     get_signup_count, get_rider_signup_status, get_ride_by_id, update_ride_details, update_ride_core,
                     get_user_by_id, _execute,
                     get_strava_connection, get_strava_activities,
@@ -198,9 +198,7 @@ from shared.plan_view import (  # noqa: F401  (re-exported for callers/tests)
     _weather_summary_from_stop_wind,
 )
 from shared.strategies import _PACE_VARIANTS, compute_pace_strategies  # noqa: F401
-from shared.rwgps import fetch_route_cached
-from shared.live_radial import (build_elevation_profile, track_from_route,
-                                overlay_stop_markers)
+from shared.live_radial import build_elevation_profile, overlay_stop_markers
 
 # Stop-marker colours for the elevation-profile overlay — kept in step with the
 # STOP_TYPES colour map in the rpv2 plan templates so a control's dot matches its
@@ -2422,12 +2420,19 @@ def ride_plan_detail(slug):
         base_stops=base_stops_for_strategies, your_plan_name=your_plan_name,
         seg_meta=seg_meta)
 
-    # Live gradient altitude profile + control/break overlay for the Journey card
-    # and the snapshot. Fail-soft end-to-end: fetch_route_cached returns None on a
-    # missing route / creds / fetch error, track_from_route → [], build_elevation_profile
-    # → {'available': False}, and overlay_stop_markers → [] — the page never 500s.
-    elevation_profile = build_elevation_profile(
-        track_from_route(fetch_route_cached(weather_route_id)))
+    # Gradient altitude profile + control/break overlay for the Journey card and the
+    # snapshot, built from the cron-warmed elevation track (route_weather_cache) —
+    # NEVER a live RWGPS fetch on the plan render (the TA-237 read-from-cache
+    # invariant; the fetch-route-weather cron persists the track). Fail-soft: a route
+    # with no warmed track (or a cache read error) → empty list → build_elevation_profile
+    # returns {'available': False} and overlay_stop_markers returns [] — the page never
+    # 500s (mirrors the wind read above).
+    try:
+        elevation_track = get_route_elevation_track(weather_route_id) if weather_route_id else None
+    except Exception:
+        current_app.logger.exception("v2 elevation track read failed for plan %s", slug)
+        elevation_track = None
+    elevation_profile = build_elevation_profile(elevation_track or [])
     stop_markers = overlay_stop_markers(elevation_profile, v2_stops,
                                         _RPV2_STOP_MARKER_COLORS)
     # Pace payload for the inline "Choose your pace" live re-render: each pace card's
