@@ -25,6 +25,7 @@ from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled
 from services.garmin_livetrack import parse_session
 from services.rwgps import extract_rwgps_route_id, fetch_route
 from services import live_telemetry as tlm
+from services import live_radial as radial
 from services.weather import (sample_track_points, load_stored_route_weather,
                               calculate_bearing, headwind_component,
                               crosswind_component, classify_wind,
@@ -817,266 +818,53 @@ def _upcoming_controls(plan_stops, leader_dist_mi, start_utc):
     return out
 
 
+_WIND_SHORT = {'headwind': 'head', 'tailwind': 'tail', 'crosswind': 'cross'}
+
+
+def _wind_descriptor(head_kmh, cross_kmh):
+    """'↓ 8 mph head' — total wind magnitude (hypot of head+cross) in mph, a
+    head/cross/tail label, and a direction arrow. Crosswind defaults to 0 so a
+    head/tail-only context (legacy cache) still classifies; 'calm' below ~1 mph.
+    Promoted to module scope so the shared composer's wind hook can reuse it."""
+    if head_kmh is None:
+        return None, None
+    cross = cross_kmh or 0.0
+    speed_mph = round(math.hypot(head_kmh, cross) * KMH_TO_MPH, 1)
+    if speed_mph < 1:
+        return 'calm', speed_mph
+    glyph = wind_arrow_glyph(wind_arrow_rotation(head_kmh, cross))
+    short = _WIND_SHORT[classify_wind(head_kmh, cross)]
+    return f'{glyph} {speed_mph:g} mph {short}', speed_mph
+
+
 def _rider_telemetry(row, ctx, now, history, plan_stops=None):
-    """Assemble the telemetry block for one rider.
-
-    Source-agnostic fields (speed, activity, moving/stopped, elapsed, HR/power)
-    are always included. Route-relative fields (distance done/left, ascent,
-    headwinds, toughness, plan delta) are only included when the rider is
-    actually ON the route — otherwise `on_route` is False and they are omitted
-    so we never report a bogus mileage from snapping to the nearest line.
-    """
-    lat, lng = float(row['lat']), float(row['lng'])
-
-    # Ride start (Pacific→UTC) gates BOTH elapsed and moving/stopped: a Garmin
-    # session that began before the official start (warm-up / early recording)
-    # must not count, otherwise moving time can exceed elapsed time.
-    elapsed_min = None
+    """Assemble one rider's telemetry via the SHARED composer, then layer Team Asha's
+    wind/weather fields on top — the one thing the framework-free shared builder
+    can't compute. BOTH apps call shared.live_radial.compose_rider_telemetry so the
+    per-rider math (distance / ascent / plan delta / next control / finish / OTL
+    margin) can never fork. Team Asha anchors elapsed on the EVENT start, formats ETA
+    labels in the club timezone, and injects head/cross-wind through the hook;
+    BrevetHub degrades those fields it has no context for."""
     start = None
     if ctx.get('ride_start_iso'):
         try:
             start = datetime.fromisoformat(ctx['ride_start_iso'])
         except ValueError:
             start = None
-    if start is not None and start <= now:
-        elapsed_min = round((now - start).total_seconds() / 60)
 
-    # Moving/stopped only over history at/after the ride start (≤ elapsed).
-    ride_history = history
-    if start is not None:
-        ride_history = [h for h in history if _as_utc(h['recorded_at']) >= start]
-    moving_min, stopped_min = tlm.moving_stopped(ride_history)
-    # Make moving + stopped reconcile to elapsed: anything since the start that
-    # isn't moving (true stops, data gaps, time before the first fix) is stopped.
-    if elapsed_min is not None:
-        stopped_min = round(max(0.0, elapsed_min - moving_min), 1)
-    speed_ms = tlm.latest_speed_ms(history)
-    if speed_ms is None and row.get('speed') is not None:
-        try:
-            speed_ms = float(row['speed'])
-        except (TypeError, ValueError):
-            speed_ms = None
+    def wind_labeler(dist_m):
+        # Wind done/ahead split at the rider's ABSOLUTE route position (same as the
+        # pre-promotion behavior), from the ride context's stored current-hour wind.
+        hw_done, hw_ahead = tlm.headwinds_split(ctx.get('wind_by_dist'), dist_m)
+        cw_done, cw_ahead = tlm.crosswinds_split(ctx.get('wind_by_dist'), dist_m)
+        wd_label, wd_mph = _wind_descriptor(hw_done, cw_done)
+        wa_label, wa_mph = _wind_descriptor(hw_ahead, cw_ahead)
+        return {'headwind_done_mph': wd_mph, 'headwind_done_label': wd_label,
+                'headwind_ahead_mph': wa_mph, 'headwind_ahead_label': wa_label}
 
-    now_block = {
-        'speed_mph': round(speed_ms * MS_TO_MPH, 1) if speed_ms is not None else None,
-        'activity': tlm.activity_from_speed(speed_ms),
-        'elapsed_min': elapsed_min,
-        'moving_min': moving_min,
-        'stopped_min': stopped_min,
-        'heart_rate': row.get('heart_rate'),
-        'power': row.get('power'),
-        'cadence': row.get('cadence'),
-    }
-    base = {'on_route': None, 'now': now_block, 'remaining': None,
-            'plan': None, 'detailed_after_ride': True}
-
-    if not ctx.get('has_route'):
-        return base
-
-    # Project the rider's whole trajectory (since the ride start) onto the route
-    # in time order, so an out-and-back / looped route that passes the same place
-    # more than once resolves to the leg they're actually on and the distance is
-    # monotonic (never jumps backward). Falls back to a stateless match only when
-    # there's no in-ride trajectory yet (ride_history empty).
-    # One leg-aware trajectory walk yields BOTH the current distance-done and the
-    # rider's START position on the route (the seed), so the two are always matched
-    # consistently. Fall back to a stateless match only when there's no in-ride
-    # trajectory yet (ride_history empty) — then there's no offset.
-    dist_m, idx, off_by_m, start_dist_m, start_idx = tlm.project_history_to_route(
-        ride_history, ctx['track'], with_start=True)
-    if dist_m is None:
-        dist_m, idx, off_by_m = tlm.project_to_route(lat, lng, ctx['track'])
-        start_dist_m, start_idx = None, 0
-    on_route = (dist_m is not None and off_by_m is not None
-                and off_by_m <= tlm.ON_ROUTE_MAX_M)
-    if not on_route:
-        base['on_route'] = False
-        return base
-
-    # A loop permanent can be started PARTWAY round (rider begins at, say, route-mile
-    # 5 and finishes back there). Measure distance DONE from the rider's OWN start on
-    # the route, wrapping the loop — not from the route file's mile 0 — so "distance
-    # done", remaining, average speed and climbing done reflect THEIR ride. A start
-    # within START_OFFSET_MIN_M of mile 0 is an ordinary start: offset 0, and every
-    # number below is unchanged.
-    start_offset_m = (start_dist_m if (start_dist_m or 0) >= tlm.START_OFFSET_MIN_M
-                      else 0.0)
-    if not start_offset_m:
-        start_idx = 0
-    mid_route_start = start_offset_m > 0
-    progressed_m = tlm.distance_progressed_m(dist_m, start_offset_m, ctx['total_dist_m'])
-
-    remaining_m = tlm.remaining_distance_m(ctx['total_dist_m'], progressed_m)
-    ascent_done, ascent_left = tlm.ascent_progressed_split(
-        ctx['cum_ascent_ft'], start_idx, idx, ctx['total_ascent_ft'])
-    # Wind done/ahead split at the rider's ABSOLUTE route position (not the wrapped
-    # progressed distance). Known, accepted deviation for a mid-route loop start: the
-    # head/cross-wind partition is a soft advisory metric and keeping it on the route
-    # frame is self-consistent with the geometry.
-    hw_done, hw_ahead = tlm.headwinds_split(ctx.get('wind_by_dist'), dist_m)
-    cw_done, cw_ahead = tlm.crosswinds_split(ctx.get('wind_by_dist'), dist_m)
-    tuf = tlm.toughness_remaining(ascent_left, remaining_m)
-    # Two distances, deliberately distinct for a mid-route loop start:
-    #   dist_mi          = distance the rider has actually RIDDEN (progressed, wrapped)
-    #                      → the odometer, average speed, remaining, plan comparison.
-    #   route_position_mi = absolute position along the route file (mile 0 = route
-    #                      start) → aligns the rider's marker with the route-ahead
-    #                      charts, whose x-axis is absolute route distance.
-    # For an ordinary mile-0 start the two are equal.
-    dist_mi = progressed_m * M_TO_MI
-    route_position_mi = dist_m * M_TO_MI
-    remaining_mi = (remaining_m or 0) * M_TO_MI
-
-    # The rider's plan, re-expressed in THEIR frame when they started mid-route (a loop
-    # begun partway round): distances measured from their start, wrapping the loop, and
-    # times as elapsed since their start. This lets the ordinary plan_delta /
-    # next_control / finish logic compare a rider who did not start at the plan's mile 0.
-    # An ordinary start (offset 0) leaves the plan stops unchanged.
-    active_stops = plan_stops if plan_stops is not None else ctx.get('plan_stops')
-    plan_total_mi = ctx.get('plan_total_mi') or ((ctx['total_dist_m'] or 0) * M_TO_MI)
-    plan_frame = (tlm.rebase_plan_stops(active_stops, start_offset_m * M_TO_MI, plan_total_mi)
-                  if mid_route_start else active_stops)
-
-    # Time left = the brevet's overall time limit minus elapsed (e.g. 40h for a
-    # 600), not a pace ETA. Clamped at 0 once the time limit is blown.
-    time_left_min = None
-    limit_min = ctx.get('time_limit_min')
-    if limit_min is not None and elapsed_min is not None:
-        time_left_min = max(0, limit_min - elapsed_min)
-
-    # Grade against this rider's plan, in the rider's frame (plan_frame above), so a
-    # mid-route loop start is compared against the plan rotated to their own start.
-    delta = tlm.plan_delta(dist_mi, elapsed_min, plan_frame)
-
-    _WIND_SHORT = {'headwind': 'head', 'tailwind': 'tail', 'crosswind': 'cross'}
-
-    def wind_descriptor(head_kmh, cross_kmh):
-        """'↓ 8 mph head' — speed in mph, head/cross/tail, and a direction arrow.
-        Returns (label, speed_mph) where speed_mph is the TOTAL wind magnitude
-        (hypot of head+cross), i.e. what the label shows — the headwind_*_mph
-        fields below carry this magnitude, not the along-track component.
-        Crosswind defaults to 0 so a head/tail-only context (legacy cache) still
-        classifies. 'calm' below ~1 mph."""
-        if head_kmh is None:
-            return None, None
-        cross = cross_kmh or 0.0
-        speed_mph = round(math.hypot(head_kmh, cross) * KMH_TO_MPH, 1)
-        if speed_mph < 1:
-            return 'calm', speed_mph
-        glyph = wind_arrow_glyph(wind_arrow_rotation(head_kmh, cross))
-        short = _WIND_SHORT[classify_wind(head_kmh, cross)]
-        return f'{glyph} {speed_mph:g} mph {short}', speed_mph
-
-    now_block['distance_mi'] = round(dist_mi, 1)                 # ridden (odometer)
-    now_block['route_position_mi'] = round(route_position_mi, 1)  # absolute (chart marker)
-    # Current grade (%) from the route's elevation profile at the rider's
-    # position — Garmin LiveTrack sends altitude but no per-point gradient.
-    now_block['grade_pct'] = tlm.grade_at(ctx.get('track'), idx)
-    # Average speeds over the ride so far: elapsed (wall-clock, includes stops)
-    # and moving-only. Complements the instantaneous speed_mph above.
-    now_block['avg_elapsed_speed_mph'] = (
-        round(dist_mi / (elapsed_min / 60.0), 1) if elapsed_min and elapsed_min > 0 else None)
-    now_block['avg_moving_speed_mph'] = (
-        round(dist_mi / (moving_min / 60.0), 1) if moving_min and moving_min > 0 else None)
-    now_block['ascent_done_ft'] = ascent_done
-    wind_done_label, wind_done_mph = wind_descriptor(hw_done, cw_done)
-    now_block['headwind_done_mph'] = wind_done_mph
-    now_block['headwind_done_label'] = wind_done_label
-    wind_ahead_label, wind_ahead_mph = wind_descriptor(hw_ahead, cw_ahead)
-
-    # Next waypoint/control ahead, with the plan's expected arrival time there — in the
-    # rider's frame (plan_frame), so it's ordered against distance the rider has ridden.
-    nc = tlm.next_control(dist_mi, plan_frame)
-    next_control_block = None
-    if nc:
-        # ETA is the plan's ARRIVAL (reaching) time at the control — arrival_time_min,
-        # not cum_time_min, so a control with a break shows when you get there, not
-        # when you leave.
-        arrival_min = nc.get('arrival_time_min')
-        eta_iso = eta_label = None
-        if start is not None and arrival_min is not None:
-            eta_dt = start + timedelta(minutes=arrival_min)
-            eta_iso = eta_dt.isoformat()
-            eta_label = eta_dt.astimezone(CLUB_TZ).strftime('%I:%M %p').lstrip('0')
-        # Speed the rider must hold to make the plan's arrival. behind=True when that
-        # time has already passed → renderers show an em-dash / "behind", never a
-        # negative or divide-by-zero value.
-        req_mph, behind = tlm.required_speed_mph(
-            nc.get('dist_to_go_mi'), arrival_min, elapsed_min)
-        next_control_block = {
-            'name': nc.get('location'),
-            'type': nc.get('stop_type'),
-            'distance_mi': nc.get('distance_miles'),
-            'dist_to_go_mi': nc.get('dist_to_go_mi'),
-            'arrival_time_min': arrival_min,
-            'eta_iso': eta_iso,
-            'eta_label': eta_label,
-            'required_mph': req_mph,
-            'behind': behind,
-        }
-
-    # Speed to reach the FINISH on time (item 3), alongside the speed-to-next-control
-    # above. Both use the SAME plan (in the rider's frame) and the same
-    # required_speed_mph helper — behind → required_mph None + behind True (em-dash).
-    # For a mid-route start plan_frame carries a synthetic finish at the rider's own
-    # start (a full loop on), so this is their true finish, not the plan's loop node.
-    fin = tlm.finish_stop(plan_frame)
-    finish_block = None
-    if fin:
-        fin_arrival = fin.get('arrival_time_min')
-        dist_to_finish = round(max(0.0, fin['distance_miles'] - dist_mi), 1)
-        fin_req_mph, fin_behind = tlm.required_speed_mph(
-            dist_to_finish, fin_arrival, elapsed_min)
-        fin_eta_iso = fin_eta_label = None
-        if start is not None and fin_arrival is not None:
-            fin_eta_dt = start + timedelta(minutes=fin_arrival)
-            fin_eta_iso = fin_eta_dt.isoformat()
-            fin_eta_label = fin_eta_dt.astimezone(CLUB_TZ).strftime('%I:%M %p').lstrip('0')
-        finish_block = {
-            'name': fin.get('location'),
-            'type': fin.get('stop_type'),
-            'distance_mi': fin.get('distance_miles'),
-            'dist_to_go_mi': dist_to_finish,
-            'arrival_time_min': fin_arrival,
-            'eta_iso': fin_eta_iso,
-            'eta_label': fin_eta_label,
-            'required_mph': fin_req_mph,
-            'behind': fin_behind,
-        }
-
-    # Time banked, shown BOTH ways: vs the brevet CUTOFF (OTL margin at the rider's
-    # current distance) and vs the PLAN (= plan delta). Both are surfaced explicitly
-    # in addition to the ahead/behind badge (which stays driven by plan.status).
-    # For a mid-route loop start, "distance done" is measured round the whole route,
-    # so pro-rate the cutoff against the ROUTE total (the full loop the rider covers),
-    # not the plan's total which may not span the same distance.
-    cutoff_total_mi = ctx.get('plan_total_mi')
-    if mid_route_start and ctx.get('total_dist_m'):
-        cutoff_total_mi = ctx['total_dist_m'] * M_TO_MI
-    banked_cutoff = tlm.time_banked_cutoff_min(
-        dist_mi, elapsed_min, cutoff_total_mi, ctx.get('plan_cutoff_hours'))
-
-    return {
-        'on_route': True,
-        'now': now_block,
-        'next_control': next_control_block,
-        'finish': finish_block,
-        'remaining': {
-            'distance_mi': round(remaining_mi, 1),
-            'ascent_left_ft': ascent_left,
-            'headwind_ahead_mph': wind_ahead_mph,
-            'headwind_ahead_label': wind_ahead_label,
-            'time_left_min': time_left_min,
-            'toughness': tuf,
-        },
-        'time_banked_cutoff_min': banked_cutoff,
-        'time_banked_plan_min': delta,   # = plan.delta_min, surfaced explicitly
-        'plan': ({'delta_min': delta,
-                  'banked_min': delta,   # banked-vs-plan, alongside the badge
-                  'status': 'ahead' if delta > 2 else ('behind' if delta < -2 else 'on')}
-                 if delta is not None else None),
-        'detailed_after_ride': True,   # power / pedaling-vs-coasting come from Strava post-ride
-    }
+    return radial.compose_rider_telemetry(
+        row, ctx, now, history, plan_stops=plan_stops, start=start, tz=CLUB_TZ,
+        wind_labeler=wind_labeler, min_history=1, stateless_fallback=True)
 
 
 @live_bp.route('/api/live/positions')
@@ -1213,6 +1001,80 @@ def live_positions():
         'selected_plan_id': applied_plan_id,
         # Shared upcoming controls of the applied plan with club-local ETAs (item 2).
         'upcoming_controls': upcoming_controls,
+    })
+
+
+# Unified live poll cadence for the shared Radial view (TA + BrevetHub both 30s);
+# a rider who stops sharing disappears within one poll (≤ 30s).
+RADIAL_POLL_SECONDS = 30
+
+
+def _public_display_name(full_name):
+    """A privacy-reduced public name: first name + last initial ("Alice S."), or the
+    single name alone, or "Rider" when unknown. Never exposes a full surname / email
+    on the world-viewable roster."""
+    parts = [p for p in (full_name or '').split() if p]
+    if not parts:
+        return 'Rider'
+    if len(parts) == 1:
+        return parts[0]
+    return '{} {}.'.format(parts[0], parts[-1][0].upper())
+
+
+@live_bp.route('/ride/<int:ride_id>/live/roster.json')
+def ride_live_roster(ride_id):
+    """PUBLIC, PII-safe roster poll for the shared Radial live view.
+
+    Reachable by a guest when the ride owner has opted the ride public
+    (ride.is_public_live), by any logged-in member, or by a guest holding a valid
+    invite code for this ride. Returns ONLY a privacy-reduced display_name (first
+    name + last initial) + coarse position + derived stats + an opaque key — NEVER
+    rider_id / email / google_id (the shared build_radial_roster strips them).
+    Opted-in riders only (get_latest_positions_for_ride enforces enabled + per-ride
+    attach), so a rider who stops sharing disappears within one poll. Fail-soft —
+    never 500s the poll."""
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        abort(404)
+    is_member = bool(session.get('rider_id'))
+    is_public_live = bool(ride.get('is_public_live'))
+    is_guest_invite = (not is_member) and (_guest_ride_id() == ride_id)
+    if not (is_public_live or is_member or is_guest_invite):
+        abort(404)
+
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(hours=DISPLAY_WINDOW_HOURS)
+    try:
+        rows = get_latest_positions_for_ride(ride_id, since)
+    except Exception:  # noqa: BLE001 — never 500 the public poll
+        current_app.logger.exception('live roster: positions load failed for ride %s', ride_id)
+        rows = []
+    for row in rows:
+        # Feed the builder a privacy-reduced name; it never reads a member's email.
+        row['display_name'] = _public_display_name(row.get('name'))
+
+    ctx = _ride_live_context(ride_id)
+    history_by = {}
+    for row in rows:
+        try:
+            history_by[row['rider_id']] = get_positions_for_rider_since(
+                row['rider_id'], since, ride_id=ride_id)
+        except Exception:  # noqa: BLE001 — history is best-effort; base row instead
+            current_app.logger.exception(
+                'live roster: history load failed for rider %s on ride %s',
+                row['rider_id'], ride_id)
+            history_by[row['rider_id']] = []
+
+    roster = radial.build_radial_roster(
+        rows, ctx, now, history_by, ride_id=ride_id, anchor='ride_start', tz=CLUB_TZ,
+        min_history=1, stateless_fallback=True, stale_after_minutes=STALE_AFTER_MINUTES)
+
+    return jsonify({
+        'ride_id': ride_id,
+        'roster': roster,
+        'server_time': now.isoformat(),
+        'stale_after_minutes': STALE_AFTER_MINUTES,
+        'poll_seconds': RADIAL_POLL_SECONDS,
     })
 
 
