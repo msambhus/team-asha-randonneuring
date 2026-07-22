@@ -68,7 +68,8 @@
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
 
-  // Colors mirror the design-system tokens (--accent, --success); JS can't read CSS vars.
+  // Distinct route-trail blue (kept separate from the red --accent marker so the
+  // line reads against it); JS can't read CSS vars, so it is inlined here.
   var trail = L.polyline([], { color: '#4b7bec', weight: 3 }).addTo(map);
   var latestMarker = null;
   var fitted = false;
