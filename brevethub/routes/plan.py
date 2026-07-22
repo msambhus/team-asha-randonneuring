@@ -40,7 +40,7 @@ from brevethub.decorators import current_rider
 from shared.pacing import recalculate_cumulative_values, _get_cutoff_hours
 from shared.plan_view import (_to_v2_stops, _weather_summary_from_stop_wind,
                               compute_risk_zones)
-from shared.strategies import compute_pace_strategies
+from shared.strategies import _PACE_VARIANTS, compute_pace_strategies
 from shared.weather import compute_stop_winds
 
 plan_bp = Blueprint('plan', __name__)
@@ -534,10 +534,53 @@ def _v2_weighted_difficulty(v2_stops):
     return round(wsum / tot, 1) if tot > 0 else None
 
 
-def _build_v2_context(event, plan, stops, variant):
+def _save_community_state(event, rider, paces):
+    """The Strategies-tab save + community render state for one viewer.
+
+    Returns ``(save_state, saved_pace_id, saved_is_public, community_plans)``:
+
+      * ``save_state`` — ``'ready'`` for a signed-in rider, ``'logged_out'`` for a guest
+        (drives the per-card save button vs the sign-in prompt).
+      * ``saved_pace_id`` — the rider's stored ``strategy_pace`` for this event, or None.
+      * ``saved_is_public`` — whether that saved strategy is shared to the community.
+      * ``community_plans`` — the club-scoped, PII-safe public strategies for this event
+        (local-part name + pace id + the elapsed total looked up from ``paces``), or an
+        empty list for a guest / a club-less viewer / when there are none.
+
+    Fail-soft: any lookup error logs a warning and yields the empty/guest state, so a
+    schema or data problem never 500s the public plan page (same pattern as the roster
+    and weather lookups above).
+    """
+    save_state = 'ready' if rider else 'logged_out'
+    saved_pace_id = None
+    saved_is_public = False
+    community_plans = []
+    club_id = rider['club_id'] if rider else None
+    try:
+        if rider:
+            saved = models.get_rider_brevet_plan(rider['id'], event['id'])
+            if saved:
+                saved_pace_id = saved.get('strategy_pace')
+                saved_is_public = bool(saved.get('is_public'))
+        paces_by_id = {p['id']: p for p in paces}
+        community_plans = [
+            {'name': row['name'],
+             'pace_id': row['strategy_pace'],
+             'total': (paces_by_id.get(row['strategy_pace']) or {}).get('total')}
+            for row in (models.get_public_strategies(event['id'], club_id) or [])
+        ]
+    except Exception as e:  # pragma: no cover - defensive; keep the page up
+        current_app.logger.warning('Strategy save/community lookup failed for event %s: %s',
+                                    event.get('id'), e)
+        saved_pace_id, saved_is_public, community_plans = None, False, []
+    return save_state, saved_pace_id, saved_is_public, community_plans
+
+
+def _build_v2_context(event, plan, stops, variant, rider=None):
     """Assemble the rpv2 render context for a real plan: the enriched itinerary, the
-    read-only pace strategies, the risk overlay, the weather summary + per-stop list,
-    and the PII-free roster. All server-computed; the page stays guest-readable."""
+    pace strategies (with the viewer's save/share + community state), the risk overlay,
+    the weather summary + per-stop list, and the PII-free roster. All server-computed;
+    the page stays guest-readable."""
     cutoff_hours = _cutoff_hours(event)
     start_time = plan.get('start_time') or event.get('start_time') or '06:00'
     if not isinstance(start_time, str):
@@ -619,12 +662,19 @@ def _build_v2_context(event, plan, stops, variant):
         riders = []
     going_count = sum(1 for r in riders if r['status'] == models.RideStatus.GOING.value)
 
+    save_state, saved_pace_id, saved_is_public, community_plans = \
+        _save_community_state(event, rider, paces)
+
     return {
         'plan': plan_ctx,
         'variant': variant,
         'stops_v2': v2_stops,
         'fuel_stops_v2': fuel_stops_v2,
         'paces': paces,
+        'save_state': save_state,
+        'saved_pace_id': saved_pace_id,
+        'saved_is_public': saved_is_public,
+        'community_plans': community_plans,
         'risks': risks,
         'weather_summary': weather_summary,
         'weather_stops': _v2_weather_stops(v2_stops, stop_wind),
@@ -677,7 +727,8 @@ def plan_view(event_id):
         current_app.logger.warning('Real plan lookup failed for event %s: %s',
                                     event_id, e)
     if bundle and bundle.get('stops'):
-        v2 = _build_v2_context(event, bundle['plan'], bundle['stops'], variant)
+        v2 = _build_v2_context(event, bundle['plan'], bundle['stops'], variant,
+                               rider=rider)
         active_tab = request.args.get('tab', 'plan')
         if active_tab not in ('plan', 'strategies', 'weather'):
             active_tab = 'plan'
@@ -756,4 +807,64 @@ def save_plan(event_id):
         'ok': True,
         'event_id': event_id,
         'target_speed_kmh': round(speed_kmh, 2),
+    }), 200
+
+
+def _parse_is_public(raw):
+    """Parse the tri-state community share flag from a JSON/form payload.
+
+    Absent/None -> None (preserve the stored flag); a truthy token -> True (publish);
+    a falsey token -> False (unpublish). Accepts JSON booleans and the form strings
+    'true'/'1'/'on'/'yes' and 'false'/'0'/'off'/'no'/''. Anything unrecognized is
+    treated as None (preserve) so a malformed flag never silently (un)publishes.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return raw
+    token = str(raw).strip().lower()
+    if token in ('true', '1', 'on', 'yes'):
+        return True
+    if token in ('false', '0', 'off', 'no', ''):
+        return False
+    return None
+
+
+@plan_bp.route('/plan/<int:event_id>/strategy', methods=['POST'])
+def save_strategy(event_id):
+    """Persist the signed-in rider's chosen pace card + community share flag.
+
+    Auth ladder mirrors :func:`save_plan` exactly: no session rider -> 401 (with a
+    login_url the client can send them to). The JSON/form body carries a ``pace_id``
+    (comfort | standard | push) and an OPTIONAL tri-state ``is_public``; a bad pace ->
+    400, an unknown event -> 404. Only the pace id and the share flag are stored — a
+    client-posted schedule is never trusted (the plan tab recomputes the per-stop math
+    server-side). The response echoes the ``is_public`` the upsert actually persisted, so
+    a flagless re-pick reports the preserved value and the share toggle never desyncs.
+    """
+    rider = current_rider()
+    if not rider:
+        return jsonify({
+            'error': 'Sign in to save your plan.',
+            'login_url': url_for('auth.login',
+                                 next=url_for('plan.plan_view', event_id=event_id)),
+        }), 401
+
+    payload = request.get_json(silent=True) or request.form
+    pace_id = str(payload.get('pace_id') or '').strip().lower()
+    if pace_id not in _PACE_VARIANTS:
+        return jsonify({'error': 'Invalid pace.'}), 400
+
+    event = models.get_brevet_event_full(event_id)
+    if not event:
+        return jsonify({'error': 'Event not found'}), 404
+
+    is_public = _parse_is_public(payload.get('is_public'))
+    resolved_public = models.upsert_rider_brevet_strategy(
+        rider['id'], event_id, pace_id, is_public=is_public)
+    return jsonify({
+        'ok': True,
+        'event_id': event_id,
+        'pace_id': pace_id,
+        'is_public': bool(resolved_public),
     }), 200
