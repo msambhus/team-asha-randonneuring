@@ -18,7 +18,7 @@ a 500, not a silent pass):
     (401+login_url guest, 400 bad pace, 404 unknown event) and echoes the is_public the
     upsert actually persisted,
   * the Weather tab renders the lean per-stop forecast list from the cached route
-    weather via compute_stop_winds, with the "interactive map coming" note and NO Mapbox,
+    weather via compute_stop_winds (the fallback when no Mapbox token is set), NO Mapbox,
   * a guest sees rider local-parts only — no full email, no google_id,
   * all three tabs return 200 (no missing-filter 500).
 """
@@ -389,11 +389,11 @@ def test_weather_tab_per_stop_forecast(client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'id="rpv2-panel-weather"' in body
-    # The lean per-stop list + the "interactive map coming" note.
-    assert 'interactive weather map is coming' in body
+    # No Mapbox token in the test env → the lean per-stop fallback list renders.
     assert 'Midway Control' in body
     assert '°F' in body                 # per-stop temperature rendered
-    # No Mapbox in Phase 1.
+    # The full map only mounts when a token + warm cache both exist (covered in
+    # test_plan_weather_mapbox); with no token there is no Mapbox on the page.
     assert 'mapbox' not in body.lower()
 
 

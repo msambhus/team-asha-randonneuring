@@ -1866,43 +1866,53 @@ def get_route_weather_warm_targets(horizon_days=16):
     )
 
 
-def upsert_brevet_route_weather(event_id, forecast_date, weather_data, sample_points):
+def upsert_brevet_route_weather(event_id, forecast_date, weather_data,
+                                sample_points, polyline=None):
     """Insert or refresh one cached along-route forecast, keyed on
     (event_id, forecast_date).
 
     A single atomic upsert on the UNIQUE(event_id, forecast_date) constraint, so a
     repeated cron run refreshes the row in place (idempotent) instead of raising a
     unique-violation. ``weather_data`` is the raw Open-Meteo per-sample forecast list
-    and ``sample_points`` is the aligned ``[{lat, lng, distance_m}]``; both are
-    JSON-adapted with psycopg2's ``Json``. Only ever called by the cron with a
-    successful fetch, so a transient failure never overwrites a last-good row.
+    and ``sample_points`` is the aligned ``[{lat, lng, distance_m}]``; ``polyline`` is
+    the decimated ``[[lat, lng], ...]`` route line for the Mapbox map (optional — a
+    caller that has no track points passes None and the read path falls back to
+    sample_points). All three are JSON-adapted with psycopg2's ``Json``. Only ever
+    called by the cron with a successful fetch, so a transient failure never
+    overwrites a last-good row.
 
     (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner
     reason documented on :func:`upsert_brevet_event`.)
     """
     db.execute(
         "INSERT INTO rp_brevet_route_weather "
-        "  (event_id, forecast_date, weather_data, sample_points) "
-        "VALUES (%s, %s, %s, %s) "
+        "  (event_id, forecast_date, weather_data, sample_points, polyline) "
+        "VALUES (%s, %s, %s, %s, %s) "
         "ON CONFLICT (event_id, forecast_date) DO UPDATE "
         "SET weather_data = EXCLUDED.weather_data, "
-        "    sample_points = EXCLUDED.sample_points, fetched_at = NOW()",
-        (event_id, forecast_date, Json(weather_data), Json(sample_points)),
+        "    sample_points = EXCLUDED.sample_points, "
+        "    polyline = EXCLUDED.polyline, fetched_at = NOW()",
+        (event_id, forecast_date, Json(weather_data), Json(sample_points),
+         Json(polyline) if polyline is not None else None),
     )
 
 
 def get_brevet_route_weather(event_id, forecast_date):
     """The cached along-route forecast for a brevet on a date, or None.
 
-    Returns ``{weather_data, sample_points, forecast_date, fetched_at}`` (the raw
-    per-sample Open-Meteo list plus the aligned sample points) so the /plan route can
-    map each stop to the nearest sample and compute per-stop wind in-process
-    (shared/weather.py compute_stop_winds). Returns None when nothing is stored (new
-    route, beyond-horizon brevet, or the cron has not run yet), so the caller degrades
-    gracefully with no live fallback. Touches only rp_brevet_route_weather.
+    Returns ``{weather_data, sample_points, polyline, forecast_date, fetched_at}``
+    (the raw per-sample Open-Meteo list, the aligned sample points, and the decimated
+    route polyline for the Mapbox map) so the /plan route can map each stop to the
+    nearest sample and compute per-stop wind in-process (shared/weather.py
+    compute_stop_winds) and draw the route line. ``polyline`` is NULL on rows warmed
+    before it was cached — the read path falls back to sample_points. Returns None when
+    nothing is stored (new route, beyond-horizon brevet, or the cron has not run yet),
+    so the caller degrades gracefully with no live fallback. Touches only
+    rp_brevet_route_weather.
     """
     return db.query_one(
-        "SELECT event_id, forecast_date, weather_data, sample_points, fetched_at "
+        "SELECT event_id, forecast_date, weather_data, sample_points, polyline, "
+        "       fetched_at "
         "FROM rp_brevet_route_weather WHERE event_id = %s AND forecast_date = %s",
         (event_id, forecast_date),
     )

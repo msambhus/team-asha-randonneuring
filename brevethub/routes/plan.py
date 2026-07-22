@@ -41,9 +41,15 @@ from shared.pacing import recalculate_cumulative_values, _get_cutoff_hours
 from shared.plan_view import (_to_v2_stops, _weather_summary_from_stop_wind,
                               compute_risk_zones)
 from shared.strategies import _PACE_VARIANTS, compute_pace_strategies
-from shared.weather import compute_stop_winds
+from shared.weather import (build_chart_data, build_weather_segments,
+                            calculate_bearing, compute_stop_winds)
 
 plan_bp = Blueprint('plan', __name__)
+
+# Dense (15 km) map sampling vs the coarser (25 km) forecast table spacing — matches
+# the parent weather-map so the along-route table thins the dense samples the same way.
+_WEATHER_MAP_INTERVAL_M = 15000
+_WEATHER_TABLE_INTERVAL_M = 25000
 
 # Default target when the rider has not (yet) picked a pace — a conservative,
 # finishable brevet speed for every ACP distance.
@@ -662,8 +668,19 @@ def _build_v2_context(event, plan, stops, variant, rider=None):
         riders = []
     going_count = sum(1 for r in riders if r['status'] == models.RideStatus.GOING.value)
 
+    # Strategies-tab save/community state (Phase 2).
     save_state, saved_pace_id, saved_is_public, community_plans = \
         _save_community_state(event, rider, paces)
+
+    # Weather-tab (full Mapbox) wiring. The map is client-side JS keyed on the publishable
+    # Mapbox token; the forecast/segment DATA is served from the cron-warmed cache by the
+    # read-only /plan/<id>/weather-data endpoint (auto_fetch), never a live fetch. The
+    # embedded partials only render when BOTH a token and a warm cache exist — otherwise
+    # the panel degrades to the Phase-1 lean per-stop list (no broken map, no empty token).
+    mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN')
+    has_weather_cache = bool(
+        weather_row and weather_row.get('weather_data') and weather_row.get('sample_points'))
+    show_weather_map = bool(mapbox_token and has_weather_cache)
 
     return {
         'plan': plan_ctx,
@@ -679,6 +696,20 @@ def _build_v2_context(event, plan, stops, variant, rider=None):
         'weather_summary': weather_summary,
         'weather_stops': _v2_weather_stops(v2_stops, stop_wind),
         'has_forecast': bool(stop_wind and any(stop_wind)),
+        'mapbox_token': mapbox_token,
+        'has_weather_cache': has_weather_cache,
+        'show_weather_map': show_weather_map,
+        # Carry the selected variant so auto-fetch pulls the payload timed to THIS plan
+        # (aggressive vs conservative), matching the rest of the tabbed view.
+        'weather_data_url': url_for('plan.weather_data', event_id=event['id'],
+                                    variant=variant),
+        'prefill_plan_name': plan_ctx['name'],
+        'prefill_datetime': (f"{forecast_date.isoformat()}T{start_time}"
+                             if forecast_date else ''),
+        'prefill_speed': avg_elapsed_speed or '',
+        # auto_fetch pulls the CACHED data endpoint (not a live fetch) once the panel
+        # mounts; '1' only when the embedded map is actually shown.
+        'auto_fetch': '1' if show_weather_map else '',
         'total_time': total_time,
         'total_moving_time': total_moving_time,
         'total_break_time': total_break_time,
@@ -765,6 +796,145 @@ def plan_view(event_id):
         rider=rider,
         saved=saved,
     )
+
+
+def _weather_start_dt(event, plan):
+    """The ride start as a naive ``datetime`` for arrival-time estimation, from the
+    plan's (or event's) start time on the event date. Falls back to 06:00 and returns
+    None only when the event has no parseable date."""
+    d = _event_date(event.get('date'))
+    if not d:
+        return None
+    start_time = plan.get('start_time') or event.get('start_time') or '06:00'
+    if not isinstance(start_time, str):
+        start_time = start_time.strftime('%H:%M')
+    try:
+        hh, mm = (int(x) for x in start_time.split(':')[:2])
+    except (ValueError, TypeError):
+        hh, mm = 6, 0
+    return datetime(d.year, d.month, d.day, hh, mm)
+
+
+def _build_guest_weather_payload(event, plan, weather_row):
+    """Assemble the Mapbox weather-tab payload (map/table/chart segments + polyline)
+    ENTIRELY from the cron-warmed cache row via the shared, pure ``shared/weather.py``
+    formatters — no live Open-Meteo/RWGPS call on this guest path (the load-bearing
+    invariant). Mirrors the parent weather-map response shape the vendored partials
+    consume. ``ride_summary`` is intentionally empty (no OpenAI on the guest path) and
+    elevation flatlines (track points are not cached) — both accepted, flagged
+    degradations of the no-live-call rule."""
+    sample_points = weather_row.get('sample_points') or []
+    weather_data = weather_row.get('weather_data') or []
+    start_dt = _weather_start_dt(event, plan) or datetime.now()
+
+    # Forward bearings between consecutive samples for the wind head/tail math.
+    bearings = []
+    for i in range(len(sample_points) - 1):
+        a, b = sample_points[i], sample_points[i + 1]
+        bearings.append(calculate_bearing(a['lat'], a['lng'], b['lat'], b['lng']))
+
+    speed_mph = plan.get('avg_elapsed_speed') or plan.get('avg_moving_speed')
+    map_segments = build_weather_segments(
+        sample_points, weather_data, bearings, start_dt, speed_mph=speed_mph)
+
+    # Thin the dense map samples to ~table spacing for the along-route table.
+    table_step = max(
+        1,
+        (_WEATHER_TABLE_INTERVAL_M + _WEATHER_MAP_INTERVAL_M - 1) // _WEATHER_MAP_INTERVAL_M,
+    )
+    table_segments = [map_segments[i] for i in range(0, len(map_segments), table_step)]
+    if table_segments and map_segments and table_segments[-1] is not map_segments[-1]:
+        table_segments.append(map_segments[-1])
+
+    chart_data = build_chart_data(map_segments)
+    temps_f = [s['temperature_f'] for s in table_segments]
+
+    # Prefer the cached decimated polyline; fall back to the coarse sample points so an
+    # older cache row (warmed before the polyline column) still draws a route line.
+    polyline = weather_row.get('polyline')
+    if not polyline:
+        polyline = [[p['lat'], p['lng']] for p in sample_points]
+
+    return {
+        'available': True,
+        'route_name': plan.get('name') or event.get('name') or 'Route',
+        'total_distance_mi': round(float(plan.get('total_distance_miles') or 0), 1),
+        'total_elevation_ft': int(plan.get('total_elevation_ft') or 0),
+        'polyline': polyline,
+        'table_segments': table_segments,
+        'map_segments': map_segments,
+        'chart_data': chart_data,
+        'ride_summary': '',
+        'temp_range': {
+            'min_f': min(temps_f) if temps_f else 0,
+            'max_f': max(temps_f) if temps_f else 0,
+        },
+        'attribution': '*Weather data: Open-Meteo*',
+    }
+
+
+@plan_bp.route('/plan/<int:event_id>/weather-data')
+def weather_data(event_id):
+    """Guest-safe cached weather payload for the Mapbox weather tab (JSON).
+
+    Reads the event, its persisted real plan, and the cron-warmed
+    rp_brevet_route_weather cache, then builds the map/table/chart payload with the
+    shared pure formatters. It makes NO live Open-Meteo/RWGPS call — the guest page
+    reads the cache only (the #1 invariant; see routes/cron warm-brevet-route-weather).
+
+    Honors ``?variant=conservative|aggressive`` (default conservative, anything else
+    coerced to conservative) so the arrival timing / labeling in the payload matches the
+    plan variant the weather tab is embedded in — the two variants share one route
+    geometry but differ in pace, so /plan/<id>?variant=aggressive&tab=weather must time
+    its table + charts off the aggressive plan, not the conservative one.
+
+    Responses:
+      * 200 ``{available: true, ...}``  — a warm cache row exists.
+      * 200 ``{available: false, ...}`` — event/plan exist but no forecast is cached yet
+        (beyond Open-Meteo's ~16-day horizon or the cron has not run). The tab shows a
+        graceful "prepared closer to the ride" state, never a 500 or a broken map.
+      * 404 — unknown event, or an event with no persisted real plan (no route to map).
+    """
+    event = models.get_brevet_event_full(event_id)
+    if not event:
+        abort(404)
+
+    # Match plan_view's variant handling so the timing agrees with the embedded plan.
+    variant = request.args.get('variant', 'conservative')
+    if variant not in ('conservative', 'aggressive'):
+        variant = 'conservative'
+
+    bundle = None
+    try:
+        bundle = models.get_brevet_route_plan_with_stops(event_id, variant)
+    except Exception as e:  # pragma: no cover - defensive; keep the endpoint up
+        current_app.logger.warning('Weather-data plan lookup failed for event %s: %s',
+                                    event_id, e)
+    if not bundle or not bundle.get('plan'):
+        abort(404)
+    plan = bundle['plan']
+
+    forecast_date = _event_date(event.get('date'))
+    weather_row = None
+    if forecast_date:
+        try:
+            weather_row = models.get_brevet_route_weather(event_id, forecast_date)
+        except Exception as e:  # pragma: no cover - defensive; keep the endpoint up
+            current_app.logger.warning('Weather-data cache lookup failed for event %s: %s',
+                                        event_id, e)
+
+    if not weather_row or not weather_row.get('weather_data') \
+            or not weather_row.get('sample_points'):
+        current_app.logger.info('Weather-data cache miss for event %s', event_id)
+        return jsonify({
+            'available': False,
+            'reason': 'not_cached',
+            'message': ('Weather forecast is prepared closer to the ride — '
+                        'check back nearer the date.'),
+        }), 200
+
+    current_app.logger.info('Weather-data cache hit for event %s', event_id)
+    return jsonify(_build_guest_weather_payload(event, plan, weather_row)), 200
 
 
 @plan_bp.route('/plan/<int:event_id>/save', methods=['POST'])
