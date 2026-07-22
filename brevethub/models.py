@@ -1358,7 +1358,7 @@ def get_brevet_event_full(event_id):
 
 
 def get_rider_brevet_plan(rider_id, event_id):
-    """The rider's saved pacing plan for a brevet, or None. One row per pair.
+    """The saved pacing plan for a rider/brevet pair, or None. One row per pair.
 
     Widened for the Strategies tab to also return ``strategy_pace`` (the chosen pace
     card id, NULL until one is picked) and ``is_public`` (the community share flag), so
@@ -1398,7 +1398,7 @@ def upsert_rider_brevet_plan(rider_id, event_id, *, target_speed_kmh=None,
 
 
 def upsert_rider_brevet_strategy(rider_id, event_id, pace_id, is_public=None):
-    """Save the rider chosen pace card + community share flag for a brevet.
+    """Save the selected rider pace card + community share flag for a brevet.
 
     Writes only ``strategy_pace`` (comfort | standard | push) and the tri-state
     ``is_public`` onto the existing ``(rider_id, event_id)`` row, leaving any saved
@@ -1432,7 +1432,7 @@ def upsert_rider_brevet_strategy(rider_id, event_id, pace_id, is_public=None):
 
 
 def get_public_strategies(event_id, club_id):
-    """Other riders publicly-shared saved pace strategies for a brevet, scoped to one
+    """Other publicly-shared saved pace strategies for a brevet, scoped to one
     club and exposed as EMAIL LOCAL-PART ONLY.
 
     Guest-safety mirrors :func:`get_event_going_riders`: the plan page is public, so this
