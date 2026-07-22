@@ -228,11 +228,13 @@ def test_rider_sees_own_status_and_signup_controls(client):
     assert 'Going' in body                 # their own current status shows
 
 
-def test_calendar_region_chips_replace_scope_toggle(client):
-    """Region filtering is now client-side chips (state prefixes) derived from the loaded
-    events — NOT a server-side ?scope=club state narrowing (which rendered a lone
+def test_calendar_region_state_area_dropdowns(client):
+    """Region filtering is client-side cascading State -> Area dropdowns derived from the
+    loaded events — NOT a server-side ?scope=club state narrowing (which rendered a lone
     'Only CA' button only for signed-in riders). get_upcoming_events is called with no
-    state kwarg, and the page carries an 'All regions' chip + one chip per state prefix."""
+    state kwarg; the page carries a state <select> (option per state prefix), a dependent
+    area <select>, cards tagged with data-region + data-area, and the regions-by-state JSON
+    that powers the dependent area list."""
     _login(client)
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_club', return_value={'id': 3, 'name': 'SFR', 'state': 'CA'}), \
@@ -246,10 +248,15 @@ def test_calendar_region_chips_replace_scope_toggle(client):
     body = resp.get_data(as_text=True)
     # No server-side state narrowing anymore.
     assert not (mock_upcoming.call_args.kwargs or {}).get('state')
-    # Region chips: an "All regions" default (active) + a chip for the CA state prefix
-    # (from _EVENT_NO_START region "CA: San Francisco"); event cards are tagged too.
-    assert 'data-region="all"' in body and 'data-region="CA"' in body
-    assert 'region-filter active' in body
+    # Cascading dropdowns: a State select with a CA option + a dependent Area select
+    # (from _EVENT_NO_START region "CA: San Francisco").
+    assert 'id="region-state"' in body and 'id="region-area"' in body
+    assert '<option value="all">All states</option>' in body
+    assert '<option value="CA">CA</option>' in body
+    # Cards carry both axes, and the area is exposed to the client for the dependent list.
+    assert 'data-region="CA"' in body
+    assert 'data-area="San Francisco"' in body
+    assert 'San Francisco' in body  # regions_by_state JSON populates the area dropdown
 
 
 # --------------------------------------------------------------------------- #

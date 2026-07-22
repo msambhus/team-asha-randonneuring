@@ -21,32 +21,47 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
-.filter-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
-.region-filter {
+.region-selects { display: flex; gap: 16px; flex-wrap: wrap; }
+.region-select-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 200px;
+    flex: 1 1 200px;
+}
+.region-select-caption {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted, #64748b);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.region-select {
     cursor: pointer;
-    padding: 10px 18px;
+    padding: 10px 14px;
     border-radius: 8px;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     border: 2px solid var(--border);
     background: white;
     font-weight: 600;
-    font-size: 0.9rem;
-    white-space: nowrap;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
+    font-size: 0.95rem;
+    color: inherit;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%2364748b' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 34px;
 }
-.region-filter:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+.region-select:hover { border-color: var(--primary); }
+.region-select:focus-visible {
+    outline: none;
     border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(26, 54, 93, 0.18);
 }
-.region-filter.active {
-    border-color: var(--primary);
-    background: var(--primary);
-    color: white;
-    box-shadow: 0 4px 12px rgba(26, 54, 93, 0.3);
+.region-select:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+    background-color: var(--card-bg, #f8fafc);
 }
 .month-section { margin-bottom: 40px; }
 .month-header {
@@ -257,13 +272,23 @@
   {% if states %}
     <div class="filter-section">
       <div class="filter-label" id="region-filter-label">Region</div>
-      <div class="filter-buttons" role="group" aria-labelledby="region-filter-label">
-        <button type="button" class="region-filter active"
-                data-region="all" aria-pressed="true">All regions</button>
-        {% for st in states %}
-          <button type="button" class="region-filter"
-                  data-region="{{ st }}" aria-pressed="false">{{ st }}</button>
-        {% endfor %}
+      <div class="region-selects" role="group" aria-labelledby="region-filter-label">
+        <label class="region-select-wrap">
+          <span class="region-select-caption">State</span>
+          <select id="region-state" class="region-select" aria-label="Filter by state">
+            <option value="all">All states</option>
+            {% for st in states %}
+              <option value="{{ st }}">{{ st }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="region-select-wrap">
+          <span class="region-select-caption">Area</span>
+          <select id="region-area" class="region-select"
+                  aria-label="Filter by area" disabled>
+            <option value="all">All areas</option>
+          </select>
+        </label>
       </div>
     </div>
   {% endif %}
@@ -283,7 +308,8 @@
             {% for ev in month_events %}
               {% set ds = ev.date|string %}
               <article class="event-card" data-event-id="{{ ev.id }}"
-                       data-region="{{ (ev.region or '').split(':')[0]|trim }}">
+                       data-region="{{ (ev.region or '').split(':')[0]|trim }}"
+                       data-area="{{ ((ev.region or '') ~ ':').split(':')[1]|trim }}">
                 <div class="event-date">
                   <div class="event-day">{{ ds[8:10] }}</div>
                   <div class="event-month">{{ MONTH_ABBR[ds[5:7]|int] if ds[5:7]|int else ds[5:7] }}</div>
@@ -516,30 +542,56 @@ document.querySelectorAll('.result-select').forEach(function (sel) {
 </script>
 {% endif %}
 
-{# Client-side region filter (guests included): filter event cards by state prefix
-   and hide months that end up empty. Mirrors Team Asha's upcoming_brevets filter. #}
+{# Client-side region filter (guests included): cascading State -> Area dropdowns.
+   State picks the RUSA state prefix; Area picks the RBA area after the colon (events
+   carry no club data, so the area is the honest secondary axis). Filters event cards
+   and hides months that end up empty. #}
 <script>
 (function () {
-  var active = 'all';
+  var regionsByState = {{ regions_by_state|tojson }};
+  var stateSel = document.getElementById('region-state');
+  var areaSel = document.getElementById('region-area');
+  if (!stateSel || !areaSel) return;
+
   function apply() {
+    var st = stateSel.value;
+    var ar = areaSel.value;
     document.querySelectorAll('.event-card[data-region]').forEach(function (c) {
-      c.style.display = (active === 'all' || c.dataset.region === active) ? '' : 'none';
+      var stateOk = (st === 'all' || c.dataset.region === st);
+      var areaOk = (ar === 'all' || c.dataset.area === ar);
+      c.style.display = (stateOk && areaOk) ? '' : 'none';
     });
     document.querySelectorAll('.month-section').forEach(function (sec) {
-      var shown = sec.querySelectorAll('.event-card[data-region]:not([style*="display: none"])');
+      var shown = Array.prototype.filter.call(
+        sec.querySelectorAll('.event-card[data-region]'),
+        function (c) { return c.style.display !== 'none'; });
       sec.style.display = shown.length ? '' : 'none';
     });
   }
-  document.querySelectorAll('.region-filter[data-region]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      active = btn.dataset.region;
-      document.querySelectorAll('.region-filter[data-region]').forEach(function (b) {
-        b.classList.remove('active'); b.setAttribute('aria-pressed', 'false');
-      });
-      btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true');
-      apply();
+
+  function repopulateAreas() {
+    var st = stateSel.value;
+    var areas = (st !== 'all' && regionsByState[st]) ? regionsByState[st] : [];
+    areaSel.innerHTML = '';
+    var allOpt = document.createElement('option');
+    allOpt.value = 'all';
+    allOpt.textContent = 'All areas';
+    areaSel.appendChild(allOpt);
+    areas.forEach(function (a) {
+      var opt = document.createElement('option');
+      opt.value = a;
+      opt.textContent = a;
+      areaSel.appendChild(opt);
     });
-  });
+    areaSel.value = 'all';
+    areaSel.disabled = (areas.length === 0);
+  }
+
+  stateSel.addEventListener('change', function () { repopulateAreas(); apply(); });
+  areaSel.addEventListener('change', apply);
+
+  repopulateAreas();
+  apply();
 })();
 </script>
 {% endblock %}
