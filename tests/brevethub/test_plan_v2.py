@@ -323,7 +323,11 @@ def test_share_toggle_render_states(client):
     # No saved pace -> no toggle.
     body3 = _get_as_rider(client, '/plan/11?tab=strategies', saved=None).get_data(as_text=True)
     assert 'rpv2-public-toggle' not in body3
-    # Guest -> no toggle.
+    # Guest -> no toggle. Clear the signed-in session first — the prior _get_as_rider
+    # calls left rider_id in it, so without this the "guest" render resolves a rider and
+    # hits the unmocked get_rider_by_id (a real DB call).
+    with client.session_transaction() as sess:
+        sess.pop('rider_id', None)
     guest_body = _get(client, '/plan/11?tab=strategies', weather=None).get_data(as_text=True)
     assert 'rpv2-public-toggle' not in guest_body
 

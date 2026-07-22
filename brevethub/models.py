@@ -1358,7 +1358,7 @@ def get_brevet_event_full(event_id):
 
 
 def get_rider_brevet_plan(rider_id, event_id):
-    """The saved pacing plan for a rider/brevet pair, or None. One row per pair.
+    """The saved pacing plan for a rider's brevet, or None. One row per pair.
 
     Widened for the Strategies tab to also return ``strategy_pace`` (the chosen pace
     card id, NULL until one is picked) and ``is_public`` (the community share flag), so
