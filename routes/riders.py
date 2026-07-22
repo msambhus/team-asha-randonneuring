@@ -198,6 +198,17 @@ from shared.plan_view import (  # noqa: F401  (re-exported for callers/tests)
     _weather_summary_from_stop_wind,
 )
 from shared.strategies import _PACE_VARIANTS, compute_pace_strategies  # noqa: F401
+from shared.rwgps import fetch_route_cached
+from shared.live_radial import (build_elevation_profile, track_from_route,
+                                overlay_stop_markers)
+
+# Stop-marker colours for the elevation-profile overlay — kept in step with the
+# STOP_TYPES colour map in the rpv2 plan templates so a control's dot matches its
+# itinerary badge.
+_RPV2_STOP_MARKER_COLORS = {
+    'start': '#16a34a', 'control': '#1d4ed8', 'rest': '#ea580c',
+    'waypoint': '#64748b', 'finish': '#dc2626',
+}
 
 
 def _extract_distance_km(name):
@@ -2411,6 +2422,19 @@ def ride_plan_detail(slug):
         base_stops=base_stops_for_strategies, your_plan_name=your_plan_name,
         seg_meta=seg_meta)
 
+    # Live gradient altitude profile + control/break overlay for the Journey card
+    # and the snapshot. Fail-soft end-to-end: fetch_route_cached returns None on a
+    # missing route / creds / fetch error, track_from_route → [], build_elevation_profile
+    # → {'available': False}, and overlay_stop_markers → [] — the page never 500s.
+    elevation_profile = build_elevation_profile(
+        track_from_route(fetch_route_cached(weather_route_id)))
+    stop_markers = overlay_stop_markers(elevation_profile, v2_stops,
+                                        _RPV2_STOP_MARKER_COLORS)
+    # Pace payload for the inline "Choose your pace" live re-render: each pace card's
+    # per-stop pace-varying fields, keyed by card id (comfort/standard/push, or the
+    # rebaselined team/yours/… ids when viewing a custom plan).
+    pace_stops_map = {p['id']: p['stops'] for p in paces} if paces else {}
+
     # Risk overlay (wind / dark / bank)
     risks = compute_risk_zones(stops, v2_stops, plan, plan.get('start_time', '06:00'),
                                plan.get('linked_ride_date'))
@@ -2469,13 +2493,20 @@ def ride_plan_detail(slug):
         weather_share_url = url_for('weather.weather_page') + '?' + urlencode(params)
     mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
 
+    # Strategies moved inline into the Plan tab; ?tab=strategies still resolves
+    # (back-compat) but lands on the Plan panel where the pace cards now live.
     active_tab = request.args.get('tab', 'plan')
+    if active_tab not in ('plan', 'weather'):
+        active_tab = 'plan'
 
     return render_template('ride_plan_detail_v2.html',
                            plan=plan,
                            stops_v2=v2_stops,
                            fuel_stops_v2=fuel_stops_v2,
                            paces=paces,
+                           pace_stops_map=pace_stops_map,
+                           elevation_profile=elevation_profile,
+                           stop_markers=stop_markers,
                            risks=risks,
                            total_time=total_time,
                            total_moving_time=total_moving_time,

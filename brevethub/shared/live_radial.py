@@ -614,3 +614,87 @@ def place_x(dist_mi, profile):
     plot = profile['plot']
     frac = min(1.0, max(0.0, dist_mi / total_mi))
     return round(plot['x'] + frac * plot['w'], 2)
+
+
+def place_y(dist_mi, profile):
+    """The y pixel of the profile line at a distance-along-route (miles), by linear
+    interpolation between the built ``points`` — the SERVER twin of the live page's
+    ``profileY`` JS, so a server-computed overlay marker and a client re-position of
+    the same marker land on the identical pixel. None when unavailable."""
+    x = place_x(dist_mi, profile)
+    if x is None:
+        return None
+    pts = (profile or {}).get('points') or []
+    if not pts:
+        return None
+    for i in range(1, len(pts)):
+        if x <= pts[i][0]:
+            x0, y0 = pts[i - 1][0], pts[i - 1][1]
+            x1, y1 = pts[i][0], pts[i][1]
+            t = (x - x0) / (x1 - x0) if x1 > x0 else 0
+            return round(y0 + t * (y1 - y0), 2)
+    return pts[-1][1]
+
+
+# --------------------------------------------------------------------------- #
+# Route geometry + control/break overlay for the plan-page altitude profile.
+# --------------------------------------------------------------------------- #
+# A stop with no mapped colour falls back to a neutral slate.
+_MARKER_DEFAULT_COLOR = '#64748b'
+
+
+def track_from_route(route, max_points=2000):
+    """A downsampled [{lat, lng, dist_m, e_m}] track from an rwgps ``fetch_route``
+    result — the geometry ``build_elevation_profile`` consumes. Mirrors the private
+    ``_radial_track`` / ``_route_geometry`` extraction each app's ``routes/live.py``
+    already runs (track point x=lng, y=lat, d=dist_m, e=elev_m). Fail-soft: any
+    missing / malformed route yields ``[]`` so the caller degrades to an empty
+    profile rather than raising."""
+    tps = [tp for tp in ((route or {}).get('track_points') or [])
+           if tp.get('x') is not None and tp.get('y') is not None]
+    if not tps:
+        return []
+    step = max(1, len(tps) // max_points) if max_points and max_points > 0 else 1
+    track = []
+    for tp in tps[::step]:
+        try:
+            track.append({'lat': float(tp['y']), 'lng': float(tp['x']),
+                          'dist_m': float(tp.get('d') or 0),
+                          'e_m': float(tp['e']) if tp.get('e') is not None else None})
+        except (TypeError, ValueError):
+            continue
+    return track
+
+
+def overlay_stop_markers(profile, stops, colors=None):
+    """Server-computed control/break markers for the altitude profile overlay.
+
+    Each stop (a v2/pace stop dict carrying ``cumul_mi``/``type``/``name``/``eta``/
+    ``break_min``) is placed on the built ``profile`` at ``x = place_x(cumul_mi)`` and
+    ``y = place_y(cumul_mi)`` — the same distance→pixel mapping the client uses — and
+    coloured by ``colors.get(stop['type'])``. Returns
+    ``[{i, x, y, color, name, cumul_mi, eta, break_min, type}]``, or ``[]`` when the
+    profile is unavailable so the template simply omits the overlay."""
+    if not profile or not profile.get('available') or not stops:
+        return []
+    colors = colors or {}
+    markers = []
+    for i, s in enumerate(stops):
+        cumul_mi = s.get('cumul_mi')
+        x = place_x(cumul_mi, profile)
+        y = place_y(cumul_mi, profile)
+        if x is None or y is None:
+            continue
+        stype = s.get('type')
+        markers.append({
+            'i': s.get('i', i),
+            'x': x,
+            'y': y,
+            'color': colors.get(stype, _MARKER_DEFAULT_COLOR),
+            'name': s.get('name') or '',
+            'cumul_mi': cumul_mi,
+            'eta': s.get('eta') or '',
+            'break_min': int(s.get('break_min') or 0),
+            'type': stype,
+        })
+    return markers

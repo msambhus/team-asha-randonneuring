@@ -156,8 +156,11 @@ def test_guest_sees_real_plan_in_miles(client):
     assert 'rpv2-journey-svg' in body           # journey/elevation chart present
     assert 'Midway Control' in body             # real control name (not "62 mi")
     assert '200K Brevet' in body                # km ACP distance stays in the hero eyebrow
-    assert 'data-tab="strategies"' in body      # 3-tab shell rendered
+    # 2-tab shell (Strategies moved inline into the Plan tab).
+    assert 'data-tab="plan"' in body
     assert 'data-tab="weather"' in body
+    assert 'data-tab="strategies"' not in body
+    assert 'id="rpv2-choose-pace"' in body      # inline pace selector on the Plan tab
     assert 'Scope A' not in body                # synthetic note is gone
     assert 'team asha' not in body.lower()      # de-branded
 
@@ -224,7 +227,7 @@ def test_build_real_plan_renders_meal_rows_and_break_total():
     assert len(real['svg']['markers']) == 3
 
 
-def test_variant_param_selects_aggressive_and_renders_toggle(client):
+def test_variant_param_selects_aggressive(client):
     captured = {}
 
     def _bundle(event_id, variant='conservative'):
@@ -236,14 +239,14 @@ def test_variant_param_selects_aggressive_and_renders_toggle(client):
         resp = client.get('/plan/11?variant=aggressive')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert captured['variant'] == 'aggressive'          # the stored aggressive plan loaded
+    assert captured['variant'] == 'aggressive'          # the stored aggressive plan still loads
     # Meal-break row renders in the rpv2 itinerary (name + dwell pill).
     assert 'Lunch' in body
     assert '30m' in body                                # the meal break dwell (rpv2 break pill)
-    # The rpv2 conservative/aggressive toggle shows both options, aggressive marked active.
-    assert 'rpv2-variant' in body
-    assert '>Aggressive</a>' in body and '>Conservative</a>' in body
-    assert 'aria-current="true"' in body
+    # The conservative/aggressive toggle UI was removed — the page always shows the
+    # (conservative-default) variant selected by ?variant; no toggle markup.
+    assert 'rpv2-variant' not in body
+    assert '>Aggressive</a>' not in body and '>Conservative</a>' not in body
 
 
 def test_variant_defaults_to_conservative_without_param(client):
@@ -259,7 +262,9 @@ def test_variant_defaults_to_conservative_without_param(client):
     assert resp.status_code == 200
     assert captured['variant'] == 'conservative'
     body = resp.get_data(as_text=True)
-    assert 'aria-current="true">Conservative' in body
+    # Toggle UI removed; the page defaults to conservative with no variant chooser.
+    assert 'rpv2-variant' not in body
+    assert 'aria-current' not in body
 
 
 def test_bad_variant_param_falls_back_to_conservative(client):

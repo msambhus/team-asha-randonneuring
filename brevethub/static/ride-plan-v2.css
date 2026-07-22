@@ -1257,3 +1257,20 @@
     .rpv2-pb-2col { grid-template-columns: 1fr; }
     .rpv2-pb-toptube { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ── Live gradient altitude profile (rpv2 Journey card + snapshot) ─────────
+   The plan-page "Journey" chart and the snapshot mini-chart both render the
+   shared partials/_elevation_profile.html gradient SVG. These class rules were
+   promoted from templates/_radial_live.html so the plan page styles the same
+   Tour-de-France-style altitude profile the live view does. */
+.radial-elev-wrap { margin-top: 8px; }
+.radial-elev { display: block; }
+.radial-elev-area { fill: #e5e7eb; opacity: 0.35; }
+.radial-elev-grid { stroke: #e5e7eb; stroke-width: 0.5; opacity: 0.6; }
+.radial-elev-ylabel { fill: #6b7280; font-size: 9px; text-anchor: end; }
+.radial-elev-xlabel { fill: #6b7280; font-size: 9px; text-anchor: middle; }
+.radial-elev-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+.radial-elev-key { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: #64748b; }
+.radial-elev-key i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.radial-elev-empty { min-height: 0; }
+.rpv2-snap-elev-wrap { margin-bottom: 8px; }

@@ -16,6 +16,7 @@ The plan math (``extract_controls`` → ``build_ride_plan``) is unchanged from t
 proven implementation: distances are miles, speeds mph, elevation feet. Callers
 that display in km/km-h convert at their own boundary.
 """
+import functools
 import os
 import re
 import requests as http_requests
@@ -165,6 +166,33 @@ def fetch_route(route_id, api_key=None, auth_token=None):
     # The API may wrap route in a 'route' key or return it directly
     route = data.get('route', data) if isinstance(data, dict) else data
     return route
+
+
+@functools.lru_cache(maxsize=128)
+def _fetch_route_cached_inner(route_id, api_key, auth_token):
+    """lru_cache-backed geometry fetch. Only SUCCESSFUL fetches are cached: on any
+    failure ``fetch_route`` raises, the exception propagates out (lru_cache does not
+    cache exceptions), and the fail-soft wrapper below turns it into None."""
+    return fetch_route(route_id, api_key, auth_token)
+
+
+def fetch_route_cached(route_id, api_key=None, auth_token=None):
+    """Fail-soft, memoized ``fetch_route`` for the plan render path.
+
+    ``fetch_route`` *raises* on missing credentials, 404/401/429, and network errors
+    — it never returns None — so adding it to the guest-readable plan page uncaught
+    would 500 the page. This wrapper degrades every such failure to ``None`` (an empty
+    profile) and short-circuits a falsy ``route_id`` with no HTTP attempt, while
+    serving a successful geometry fetch from the process cache on subsequent views
+    (route geometry is immutable; a missing TTL is acceptable and refreshes on process
+    recycle). Only the plan render paths use this; admin/cron keep the raising
+    ``fetch_route``."""
+    if not route_id:
+        return None
+    try:
+        return _fetch_route_cached_inner(route_id, api_key, auth_token)
+    except Exception:  # noqa: BLE001 — fail-soft: a missing route never 500s the plan page
+        return None
 
 
 # ── Control extraction ─────────────────────────────────────────────────
