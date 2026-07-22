@@ -123,6 +123,13 @@ def live_list():
                            poll_seconds=LIVE_POLL_SECONDS)
 
 
+# NOTE: no along-route weather overlay on the BrevetHub live map yet. The shared
+# _radial_live.html partial supports it (weather_points), and Team Asha passes it, but
+# BrevetHub's weather cache (rp_brevet_route_weather) is keyed by EVENT id while an
+# rp_ride carries no event/route-id linkage (only rwgps_url + start_at) — so a live
+# ride can't resolve its cached forecast today. The partial degrades gracefully (no
+# weather_points -> route + rider dots only). Follow-up: add an rp_ride->event link (or
+# a route-id-keyed weather read) so BH can pass weather_points the same way TA does.
 @live_bp.route('/live/<int:ride_id>')
 def live_map(ride_id):
     """Public per-ride live map — the SHARED Mapbox GL Radial view (the retired
