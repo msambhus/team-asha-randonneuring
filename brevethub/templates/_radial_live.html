@@ -246,7 +246,8 @@
   // ---- Compact expandable rider table ------------------------------------- //
   function fmtDist(row) {
     if (row.dist_display == null) { return '—'; }
-    return row.dist_display + ' ' + (row.dist_unit || 'mi');
+    // Coerce to Number + whitelist the unit — this is embedded via innerHTML.
+    return Number(row.dist_display) + ' ' + (row.dist_unit === 'km' ? 'km' : 'mi');
   }
   function fmtMin(v) {
     if (v == null) { return '—'; }
@@ -259,18 +260,27 @@
            '</span><span class="radial-mv">' + value + '</span></div>';
   }
   function detailHtml(row) {
+    // Every value is embedded via innerHTML below, so ANY server-supplied string
+    // (control names, ETA labels) MUST be escaped — a malicious/compromised plan or
+    // control name must never execute script when a viewer expands a row. Numeric
+    // fields are coerced to Number so a non-numeric value can't inject markup.
     var nc = row.next_control || {};
-    var ncTxt = nc.name ? (nc.name + (nc.eta_label ? ' · ' + nc.eta_label : '') +
-      (nc.dist_to_go_mi != null ? ' · ' + nc.dist_to_go_mi + ' mi to go' : '') +
-      (nc.behind ? ' · behind' : (nc.required_mph != null ? ' · need ' + nc.required_mph + ' mph' : ''))) : '—';
+    var ncTxt = '—';
+    if (nc.name) {
+      ncTxt = escapeHtml(nc.name) +
+        (nc.eta_label ? ' · ' + escapeHtml(nc.eta_label) : '') +
+        (nc.dist_to_go_mi != null ? ' · ' + Number(nc.dist_to_go_mi) + ' mi to go' : '') +
+        (nc.behind ? ' · behind'
+                   : (nc.required_mph != null ? ' · need ' + Number(nc.required_mph) + ' mph' : ''));
+    }
     return '<div class="radial-detail">' +
-      metric('Speed', row.speed_mph != null ? row.speed_mph + ' mph' : '—') +
+      metric('Speed', row.speed_mph != null ? Number(row.speed_mph) + ' mph' : '—') +
       metric('Banked vs plan', fmtMin(row.banked_plan_min)) +
       metric('Banked vs cutoff', fmtMin(row.banked_cutoff_min)) +
       metric('Next control', ncTxt) +
-      metric('Ascent done', row.ascent_done_ft != null ? row.ascent_done_ft + ' ft' : '—') +
-      metric('Ascent left', row.ascent_left_ft != null ? row.ascent_left_ft + ' ft' : '—') +
-      metric('Finish ETA', row.eta_finish_label || '—') +
+      metric('Ascent done', row.ascent_done_ft != null ? Number(row.ascent_done_ft) + ' ft' : '—') +
+      metric('Ascent left', row.ascent_left_ft != null ? Number(row.ascent_left_ft) + ' ft' : '—') +
+      metric('Finish ETA', row.eta_finish_label ? escapeHtml(row.eta_finish_label) : '—') +
       '</div>';
   }
   function renderTable(roster) {
