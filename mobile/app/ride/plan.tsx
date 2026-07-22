@@ -12,11 +12,13 @@ import { useLocalSearchParams } from 'expo-router';
 import { useRidePlan } from '../../hooks/useRidePlan';
 import { useAllowRotation } from '../../hooks/useAllowRotation';
 import type { PlanStop, RidePlanAvailable } from '../../lib/types';
+import { colors } from '../../lib/theme';
+import { windColor } from '../../lib/format';
 
-const RED = '#dc2626', GREEN = '#16a34a', BLUE = '#2563eb';
+const RED = colors.red, GREEN = colors.green, BLUE = colors.blue;
 
 const TYPE_COLOR: Record<string, string> = {
-  start: GREEN, finish: '#1a365d', control: BLUE, rest: '#d97706', waypoint: '#9ca3af',
+  start: GREEN, finish: colors.navy, control: BLUE, rest: colors.amber, waypoint: colors.placeholder,
 };
 
 /** minutes → "3h15m" / "47m". */
@@ -24,13 +26,6 @@ function hm(min: number): string {
   const a = Math.abs(Math.round(min));
   const h = Math.floor(a / 60), m = a % 60;
   return h ? `${h}h${m.toString().padStart(2, '0')}m` : `${m}m`;
-}
-
-function windColor(label?: string | null): string {
-  if (!label) return '#6b7280';
-  if (label.includes('headwind')) return RED;
-  if (label.includes('tailwind')) return GREEN;
-  return BLUE;
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
@@ -49,7 +44,7 @@ function StopRow({ s, expanded, onToggle }: { s: PlanStop; expanded: boolean; on
   return (
     <View style={[styles.rowWrap, expanded && styles.rowWrapOpen]}>
       <Pressable onPress={onToggle} style={styles.tr}>
-        <View style={[styles.typeDot, { backgroundColor: TYPE_COLOR[s.stop_type] || '#9ca3af' }]} />
+        <View style={[styles.typeDot, { backgroundColor: TYPE_COLOR[s.stop_type] || colors.placeholder }]} />
         <Text style={[styles.td, styles.cLoc]} numberOfLines={1}>{s.location || 'Stop'}</Text>
         <Text style={[styles.td, styles.cNum]}>{Math.round(s.distance_mi)}</Text>
         <Text style={[styles.td, styles.cNum]}>{s.segment_time_min ? hm(s.segment_time_min) : '—'}</Text>
@@ -150,7 +145,9 @@ export default function RidePlanScreen() {
     return (
       <View style={styles.center}>
         <Text style={styles.muted}>Couldn't load the ride plan.</Text>
-        <Text style={styles.link} onPress={() => refetch()}>Retry</Text>
+        <Pressable onPress={() => refetch()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Retry loading the ride plan">
+          <Text style={styles.link}>Retry</Text>
+        </Pressable>
       </View>
     );
   }
@@ -189,7 +186,7 @@ const styles = StyleSheet.create({
   tr: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 2, gap: 4 },
   thead: { borderBottomWidth: 1, borderBottomColor: '#e5e7eb', paddingBottom: 6 },
   typeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'transparent' },
-  th: { fontSize: 10, fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase' },
+  th: { fontSize: 10, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase' },
   td: { fontSize: 12.5, color: '#1f2937' },
   cLoc: { flex: 1, fontWeight: '600' },
   cNum: { width: 40, textAlign: 'right' },
@@ -202,5 +199,5 @@ const styles = StyleSheet.create({
   detailLbl: { fontSize: 9, color: '#6b7280', textTransform: 'uppercase' },
   detailVal: { fontSize: 13, fontWeight: '700', color: '#1a365d' },
   notes: { marginTop: 8, color: '#374151', fontSize: 12.5, fontStyle: 'italic' },
-  foot: { color: '#9ca3af', fontSize: 11, textAlign: 'center', marginTop: 4 },
+  foot: { color: colors.textMuted, fontSize: 11, textAlign: 'center', marginTop: 4 },
 });

@@ -52,5 +52,5 @@ const styles = StyleSheet.create({
   msg: { color: '#6b7280' },
   error: { color: '#b91c1c', textAlign: 'center' },
   link: { paddingVertical: 6 },
-  linkText: { color: '#1a2a4f', textDecorationLine: 'underline' },
+  linkText: { color: '#1a365d', textDecorationLine: 'underline' },
 });
