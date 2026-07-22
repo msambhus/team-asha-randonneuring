@@ -549,16 +549,17 @@ def get_live_positions_rp(ride_id, since):
     (t.active_ride_id), and have points tagged to THIS ride (p.ride_id). That
     per-ride attach is the opt-in/consent, so clearing or moving the Garmin link
     drops the rider off the live map even if recent historical points remain.
-    Returns rider_id, a display `name` (email local-part — rp_rider carries no
-    first/last name), lat/lng, recorded_at, and telemetry
+    Returns rider_id, a display `name` (the rider's real display_name, COALESCEd to
+    a neutral 'Rider' token — NEVER the email local-part, so this row is safe to
+    privacy-shape for the public roster), lat/lng, recorded_at, and telemetry
     (speed/heart_rate/power/cadence) + source.
 
-    Consumed ONLY by the @profile_required member endpoint — the anonymous poll
-    (get_ride_positions) never selects a name."""
+    Consumed by the @profile_required member endpoint AND, privacy-shaped through
+    build_radial_roster (which drops rider_id), by the public roster.json poll."""
     return db.query(
         "SELECT DISTINCT ON (p.rider_id) "
         "       p.rider_id, "
-        "       split_part(r.email, '@', 1) AS name, "
+        "       COALESCE(NULLIF(r.display_name, ''), 'Rider') AS name, "
         "       p.lat, p.lng, p.recorded_at, "
         "       p.speed, p.heart_rate, p.power, p.cadence, p.source "
         "FROM rp_live_position p "
