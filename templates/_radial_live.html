@@ -1,0 +1,344 @@
+{# ===========================================================================
+   Shared Radial live view — ONE Mapbox GL map + compact expandable rider table +
+   colour-graded altitude profile, reused byte-for-byte by BOTH apps.
+
+   This is the SINGLE map implementation. Both apps include this exact partial (kept
+   byte-identical by tests/…/test_radial_partial_sync.py); the BrevetHub Leaflet
+   guest map is retired in favour of it. It drives markers from a
+   PUBLIC, privacy-shaped roster (display name + position + stats only — never a
+   rider id / email), so guests and members share the same code and the same map.
+
+   The host page must provide, before including this partial:
+     mapbox_token       – Mapbox access token ('' → static fallback: table+profile)
+     route_polyline      – [[lng,lat],…] or null (the RWGPS route line)
+     roster_url          – URL of this ride's public roster.json poll endpoint
+     poll_seconds        – poll cadence (seconds)
+     elevation_profile   – build_elevation_profile(...) dict (or {available:false})
+
+   Templates stay framework-builtin-only (no commafy / clean_name): the altitude
+   profile geometry is computed server-side and the numbers are formatted in JS.
+   =========================================================================== #}
+<style>
+.radial-live { margin-top: 8px; }
+#radial-map { height: 46vh; min-height: 300px; width: 100%; border-radius: 12px;
+  border: 1px solid var(--border, #e5e7eb); overflow: hidden; }
+.radial-map-unavailable { display: flex; align-items: center; justify-content: center;
+  text-align: center; padding: 24px; color: var(--text-light, #6b7280);
+  background: var(--card-bg, #f9fafb); }
+.radial-elev-wrap { margin-top: 14px; }
+.radial-elev { width: 100%; height: 160px; display: block; }
+.radial-elev-area { fill: var(--border, #e5e7eb); opacity: 0.35; }
+.radial-elev-grid { stroke: var(--border, #e5e7eb); stroke-width: 0.5; opacity: 0.6; }
+.radial-elev-ylabel { fill: var(--text-light, #6b7280); font-size: 9px; text-anchor: end; }
+.radial-elev-xlabel { fill: var(--text-light, #6b7280); font-size: 9px; text-anchor: middle; }
+.radial-elev-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px;
+  font-size: 0.72rem; color: var(--text-light, #6b7280); }
+.radial-elev-key { display: inline-flex; align-items: center; gap: 4px; }
+.radial-elev-key i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.radial-status { font-size: 0.8rem; color: var(--text-light, #6b7280); margin: 10px 0; min-height: 1.2em; }
+.radial-marker { width: 30px; height: 30px; cursor: pointer; transition: opacity 0.2s; }
+.radial-marker.stale { opacity: 0.45; filter: grayscale(0.7); }
+.radial-pin { width: 30px; height: 30px; box-sizing: border-box; border-radius: 50%;
+  border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.4); color: #fff;
+  font-size: 0.72rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.radial-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.radial-table thead th { text-align: left; font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-light, #6b7280); padding: 6px 8px;
+  border-bottom: 1px solid var(--border, #e5e7eb); }
+.radial-row td { padding: 8px; border-bottom: 1px solid var(--border, #e5e7eb); }
+.radial-row.stale { opacity: 0.6; }
+.radial-rank { width: 2ch; color: var(--text-light, #6b7280); }
+.radial-name { font-weight: 600; }
+.radial-swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block;
+  margin-right: 6px; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--border, #e5e7eb); vertical-align: middle; }
+.radial-stale { font-size: 0.68rem; color: var(--text-light, #6b7280); font-weight: 400; }
+.radial-dist { white-space: nowrap; }
+.radial-exp { width: 2.5ch; text-align: right; }
+.radial-toggle { background: none; border: none; cursor: pointer; font-size: 1rem;
+  color: var(--text-light, #6b7280); padding: 0 4px; }
+.radial-detailrow td { padding: 0 8px 10px; border-bottom: 1px solid var(--border, #e5e7eb); }
+.radial-detail { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px 14px; }
+.radial-m { display: flex; flex-direction: column; }
+.radial-ml { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--text-light, #6b7280); }
+.radial-mv { font-weight: 700; font-size: 0.92rem; }
+.radial-empty td { padding: 16px 8px; color: var(--text-light, #6b7280); text-align: center; }
+</style>
+<div class="radial-live" data-roster-url="{{ roster_url }}" data-poll-ms="{{ (poll_seconds or 30) * 1000 }}">
+  {% if mapbox_token %}
+  <div id="radial-map"></div>
+  {% else %}
+  <div id="radial-map" class="radial-map-unavailable">
+    Live map unavailable — the map access token is not configured. The rider list
+    and elevation profile below still update.
+  </div>
+  {% endif %}
+
+  {% if elevation_profile and elevation_profile.available %}
+  <div class="radial-elev-wrap">
+    <svg class="radial-elev" viewBox="0 0 {{ elevation_profile.width }} {{ elevation_profile.height }}"
+         preserveAspectRatio="none" role="img" aria-label="Route elevation profile">
+      <path d="{{ elevation_profile.area_path }}" class="radial-elev-area"></path>
+      {% for s in elevation_profile.segments %}
+      <path d="{{ s.d }}" stroke="{{ s.color }}" fill="none" stroke-width="2"
+            stroke-linecap="round"></path>
+      {% endfor %}
+      {% for t in elevation_profile.y_ticks %}
+      <line x1="{{ elevation_profile.plot.x }}" y1="{{ t.y }}"
+            x2="{{ elevation_profile.plot.x + elevation_profile.plot.w }}" y2="{{ t.y }}"
+            class="radial-elev-grid"></line>
+      <text x="{{ elevation_profile.plot.x - 4 }}" y="{{ t.y + 3 }}"
+            class="radial-elev-ylabel">{{ t.label }}</text>
+      {% endfor %}
+      {% for t in elevation_profile.x_ticks %}
+      <text x="{{ t.x }}" y="{{ elevation_profile.height - 6 }}"
+            class="radial-elev-xlabel">{{ t.label }}</text>
+      {% endfor %}
+      <g id="radial-elev-riders"></g>
+    </svg>
+    <div class="radial-elev-legend">
+      {% for b in elevation_profile.legend %}
+      <span class="radial-elev-key"><i style="background: {{ b.color }}"></i>{{ b.label }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="radial-status" id="radial-status" aria-live="polite"></div>
+
+  <table class="radial-table" id="radial-table">
+    <thead>
+      <tr><th class="radial-rank">#</th><th>Rider</th><th class="radial-dist">Distance</th><th class="radial-exp"></th></tr>
+    </thead>
+    <tbody id="radial-tbody">
+      <tr class="radial-empty"><td colspan="4">Waiting for riders to appear…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+(function () {
+  var root = document.currentScript.previousElementSibling;
+  while (root && !(root.classList && root.classList.contains('radial-live'))) {
+    root = root.previousElementSibling;
+  }
+  if (!root) { return; }
+
+  var ROSTER_URL = root.getAttribute('data-roster-url');
+  var POLL_MS = parseInt(root.getAttribute('data-poll-ms'), 10) || 30000;
+  var MAPBOX_TOKEN = {{ mapbox_token | tojson }};
+  var ROUTE_POLYLINE = {{ route_polyline | tojson }};   // [[lng,lat],…] or null
+  var PROFILE = {{ elevation_profile | tojson }};         // build_elevation_profile(...)
+
+  var statusEl = document.getElementById('radial-status');
+  var tbody = document.getElementById('radial-tbody');
+  var map = null, mapReady = false, fitted = false;
+  var markers = {};   // opaque key → mapboxgl.Marker
+  var expanded = {};  // opaque key → bool (row expansion is opt-in, per rider)
+
+  // ---- Map (the ONE shared Mapbox GL implementation) ---------------------- //
+  function initMap() {
+    if (!MAPBOX_TOKEN || typeof mapboxgl === 'undefined') { return; }  // static fallback
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+    map = new mapboxgl.Map({
+      container: 'radial-map',
+      style: 'mapbox://styles/mapbox/outdoors-v12',
+      center: [-122.2, 37.5], zoom: 8,
+    });
+    map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    map.on('load', function () {
+      mapReady = true;
+      if (ROUTE_POLYLINE && ROUTE_POLYLINE.length) {
+        map.addSource('radial-route', {
+          type: 'geojson',
+          data: { type: 'Feature', geometry: { type: 'LineString', coordinates: ROUTE_POLYLINE } },
+        });
+        map.addLayer({
+          id: 'radial-route', type: 'line', source: 'radial-route',
+          paint: { 'line-color': '#2563eb', 'line-width': 3, 'line-opacity': 0.7 },
+        });
+        var b = new mapboxgl.LngLatBounds();
+        ROUTE_POLYLINE.forEach(function (c) { b.extend(c); });
+        if (!b.isEmpty()) { map.fitBounds(b, { padding: 40, maxZoom: 13 }); fitted = true; }
+      }
+      poll();
+    });
+  }
+
+  function markerEl(row) {
+    var el = document.createElement('div');
+    el.className = 'radial-marker' + (row.stale ? ' stale' : '');
+    var pin = document.createElement('div');
+    pin.className = 'radial-pin';
+    pin.style.background = row.marker_color || '#9ca3af';
+    pin.textContent = row.initials || '?';
+    el.appendChild(pin);
+    return el;
+  }
+
+  function updateMarkers(roster) {
+    if (!map || !mapReady) { return; }
+    var seen = {};
+    roster.forEach(function (row) {
+      if (row.lat == null || row.lng == null) { return; }
+      seen[row.key] = true;
+      if (markers[row.key]) {
+        markers[row.key].setLngLat([row.lng, row.lat]);
+        markers[row.key].getElement().className = 'radial-marker' + (row.stale ? ' stale' : '');
+        markers[row.key].getElement().firstChild.style.background = row.marker_color || '#9ca3af';
+      } else {
+        markers[row.key] = new mapboxgl.Marker(markerEl(row))
+          .setLngLat([row.lng, row.lat]).addTo(map);
+      }
+    });
+    Object.keys(markers).forEach(function (k) {
+      if (!seen[k]) { markers[k].remove(); delete markers[k]; }
+    });
+    if (!fitted && roster.length) {
+      var b = new mapboxgl.LngLatBounds();
+      roster.forEach(function (r) { if (r.lat != null && r.lng != null) { b.extend([r.lng, r.lat]); } });
+      if (!b.isEmpty()) { map.fitBounds(b, { padding: 60, maxZoom: 13 }); fitted = true; }
+    }
+  }
+
+  // ---- Elevation profile rider dots --------------------------------------- //
+  function profileY(mi) {
+    if (!PROFILE || !PROFILE.available || !PROFILE.points || !PROFILE.points.length) { return null; }
+    var x = profileX(mi);
+    var pts = PROFILE.points;
+    for (var i = 1; i < pts.length; i++) {
+      if (x <= pts[i][0]) {
+        var x0 = pts[i - 1][0], y0 = pts[i - 1][1], x1 = pts[i][0], y1 = pts[i][1];
+        var t = (x1 > x0) ? (x - x0) / (x1 - x0) : 0;
+        return y0 + t * (y1 - y0);
+      }
+    }
+    return pts[pts.length - 1][1];
+  }
+  function profileX(mi) {
+    var total = PROFILE.total_mi || 0;
+    if (total <= 0) { return PROFILE.plot.x; }
+    var frac = Math.max(0, Math.min(1, mi / total));
+    return PROFILE.plot.x + frac * PROFILE.plot.w;
+  }
+  function updateProfileDots(roster) {
+    var g = document.getElementById('radial-elev-riders');
+    if (!g || !PROFILE || !PROFILE.available) { return; }
+    while (g.firstChild) { g.removeChild(g.firstChild); }
+    roster.forEach(function (row) {
+      if (row.route_position_mi == null) { return; }
+      var cx = profileX(row.route_position_mi);
+      var cy = profileY(row.route_position_mi);
+      if (cy == null) { return; }
+      var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', 4);
+      c.setAttribute('fill', row.marker_color || '#9ca3af');
+      c.setAttribute('stroke', '#fff'); c.setAttribute('stroke-width', '1.5');
+      if (row.stale) { c.setAttribute('opacity', '0.5'); }
+      var title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+      title.textContent = row.display_name + ' · ' + fmtDist(row);
+      c.appendChild(title);
+      g.appendChild(c);
+    });
+  }
+
+  // ---- Compact expandable rider table ------------------------------------- //
+  function fmtDist(row) {
+    if (row.dist_display == null) { return '—'; }
+    return row.dist_display + ' ' + (row.dist_unit || 'mi');
+  }
+  function fmtMin(v) {
+    if (v == null) { return '—'; }
+    var s = v < 0 ? '−' : '+';
+    var a = Math.abs(v);
+    return s + (a >= 60 ? Math.floor(a / 60) + 'h ' + (a % 60) + 'm' : a + 'm');
+  }
+  function metric(label, value) {
+    return '<div class="radial-m"><span class="radial-ml">' + label +
+           '</span><span class="radial-mv">' + value + '</span></div>';
+  }
+  function detailHtml(row) {
+    var nc = row.next_control || {};
+    var ncTxt = nc.name ? (nc.name + (nc.eta_label ? ' · ' + nc.eta_label : '') +
+      (nc.dist_to_go_mi != null ? ' · ' + nc.dist_to_go_mi + ' mi to go' : '') +
+      (nc.behind ? ' · behind' : (nc.required_mph != null ? ' · need ' + nc.required_mph + ' mph' : ''))) : '—';
+    return '<div class="radial-detail">' +
+      metric('Speed', row.speed_mph != null ? row.speed_mph + ' mph' : '—') +
+      metric('Banked vs plan', fmtMin(row.banked_plan_min)) +
+      metric('Banked vs cutoff', fmtMin(row.banked_cutoff_min)) +
+      metric('Next control', ncTxt) +
+      metric('Ascent done', row.ascent_done_ft != null ? row.ascent_done_ft + ' ft' : '—') +
+      metric('Ascent left', row.ascent_left_ft != null ? row.ascent_left_ft + ' ft' : '—') +
+      metric('Finish ETA', row.eta_finish_label || '—') +
+      '</div>';
+  }
+  function renderTable(roster) {
+    tbody.innerHTML = '';
+    if (!roster.length) {
+      var er = document.createElement('tr');
+      er.className = 'radial-empty';
+      er.innerHTML = '<td colspan="4">No riders are sharing their location yet.</td>';
+      tbody.appendChild(er);
+      return;
+    }
+    roster.forEach(function (row, i) {
+      var tr = document.createElement('tr');
+      tr.className = 'radial-row' + (row.stale ? ' stale' : '');
+      tr.innerHTML =
+        '<td class="radial-rank">' + (i + 1) + '</td>' +
+        '<td class="radial-name"><span class="radial-swatch" style="background:' +
+          (row.marker_color || '#9ca3af') + '"></span>' +
+          escapeHtml(row.display_name) + (row.stale ? ' <span class="radial-stale">stale</span>' : '') + '</td>' +
+        '<td class="radial-dist">' + fmtDist(row) + '</td>' +
+        '<td class="radial-exp"><button type="button" class="radial-toggle" aria-expanded="' +
+          (expanded[row.key] ? 'true' : 'false') + '">' + (expanded[row.key] ? '▾' : '▸') + '</button></td>';
+      tr.querySelector('.radial-toggle').addEventListener('click', function () {
+        expanded[row.key] = !expanded[row.key];
+        renderTable(lastRoster);
+      });
+      tbody.appendChild(tr);
+      if (expanded[row.key]) {
+        var dr = document.createElement('tr');
+        dr.className = 'radial-detailrow';
+        dr.innerHTML = '<td colspan="4">' + detailHtml(row) + '</td>';
+        tbody.appendChild(dr);
+      }
+    });
+  }
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  var lastRoster = [];
+  function render(roster) {
+    lastRoster = roster;
+    renderTable(roster);
+    updateMarkers(roster);
+    updateProfileDots(roster);
+  }
+
+  function poll() {
+    fetch(ROSTER_URL, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (data) {
+        var roster = (data && data.roster) || [];
+        render(roster);
+        if (statusEl) {
+          statusEl.textContent = roster.length
+            ? (roster.length + ' rider' + (roster.length === 1 ? '' : 's') + ' on course')
+            : 'No riders sharing right now.';
+        }
+      })
+      .catch(function () {
+        if (statusEl) { statusEl.textContent = 'Could not refresh live positions.'; }
+      });
+  }
+
+  initMap();
+  if (!map) { poll(); }             // static fallback: still poll table + profile
+  setInterval(poll, POLL_MS);
+})();
+</script>
