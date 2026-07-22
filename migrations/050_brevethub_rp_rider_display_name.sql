@@ -1,4 +1,4 @@
--- 049_brevethub_rp_rider_display_name.sql
+-- 050_brevethub_rp_rider_display_name.sql
 -- BrevetHub Radial live view: a real per-rider DISPLAY NAME for the public roster.
 --
 -- The public, guest-reachable roster (GET /live/<id>/roster.json) shows every

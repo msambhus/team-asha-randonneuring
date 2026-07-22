@@ -1,4 +1,4 @@
--- 050_ride_public_live.sql
+-- 051_ride_public_live.sql
 -- Team Asha Radial live view: a per-ride PUBLIC-LIVE flag for the guest roster.
 --
 -- Team Asha's live map is gated by a per-ride INVITE CODE today; it has no notion
