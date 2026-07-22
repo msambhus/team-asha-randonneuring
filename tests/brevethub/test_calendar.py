@@ -228,7 +228,11 @@ def test_rider_sees_own_status_and_signup_controls(client):
     assert 'Going' in body                 # their own current status shows
 
 
-def test_rider_region_scope_filters_by_club_state(client):
+def test_calendar_region_chips_replace_scope_toggle(client):
+    """Region filtering is now client-side chips (state prefixes) derived from the loaded
+    events — NOT a server-side ?scope=club state narrowing (which rendered a lone
+    'Only CA' button only for signed-in riders). get_upcoming_events is called with no
+    state kwarg, and the page carries an 'All regions' chip + one chip per state prefix."""
     _login(client)
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_club', return_value={'id': 3, 'name': 'SFR', 'state': 'CA'}), \
@@ -237,10 +241,15 @@ def test_rider_region_scope_filters_by_club_state(client):
          patch('brevethub.models.get_upcoming_events', return_value=[_EVENT_NO_START]) as mock_upcoming, \
          patch('brevethub.models.get_rider_past_results', return_value=[]), \
          patch('brevethub.models.get_rider_signup_statuses', return_value=[]):
-        resp = client.get('/calendar?scope=club')
+        resp = client.get('/calendar')
     assert resp.status_code == 200
-    # The rider's club state is passed as the region filter.
-    assert mock_upcoming.call_args.kwargs.get('state') == 'CA'
+    body = resp.get_data(as_text=True)
+    # No server-side state narrowing anymore.
+    assert not (mock_upcoming.call_args.kwargs or {}).get('state')
+    # Region chips: an "All regions" default (active) + a chip for the CA state prefix
+    # (from _EVENT_NO_START region "CA: San Francisco"); event cards are tagged too.
+    assert 'data-region="all"' in body and 'data-region="CA"' in body
+    assert 'region-filter active' in body
 
 
 # --------------------------------------------------------------------------- #
