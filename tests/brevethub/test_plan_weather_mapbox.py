@@ -102,13 +102,16 @@ def _cached_weather(polyline=_POLYLINE, elevation_track=None):
     return row
 
 
-def _patch_models(weather=None, event=_EVENT, bundle=_BUNDLE):
+def _patch_models(weather=None, event=_EVENT, bundle=_BUNDLE, elevation=None):
     return patch.multiple(
         'brevethub.models',
         get_brevet_event_full=lambda *a, **k: event,
         get_brevet_route_plan_with_stops=lambda *a, **k: bundle,
         get_brevet_route_weather=lambda *a, **k: weather,
         get_event_going_riders=lambda *a, **k: _ROSTER,
+        # Elevation now comes from the route-keyed rp_route_geometry_cache, not the
+        # weather row — the render reads it via get_rp_route_elevation_track(route_id).
+        get_rp_route_elevation_track=lambda *a, **k: elevation,
     )
 
 
@@ -269,10 +272,10 @@ def test_no_live_fetcher_on_guest_paths(app, client, url):
 
 
 def test_elevation_profile_renders_from_cached_track_no_live_fetch(app, client):
-    """A cron-warmed elevation_track renders the gradient profile straight from the
-    weather cache row — the guest plan page draws the altitude profile WITHOUT ever
-    calling RWGPS live (the TA-237 guest-safety invariant for the elevation feature)."""
-    with _patch_models(weather=_cached_weather(elevation_track=_ELEV_TRACK)), \
+    """A warmed route elevation track (from rp_route_geometry_cache, keyed by route id)
+    renders the gradient profile straight from cache — the guest plan page draws the
+    altitude profile WITHOUT ever calling RWGPS live (the TA-237 guest-safety invariant)."""
+    with _patch_models(weather=_cached_weather(), elevation=_ELEV_TRACK), \
          patch('shared.rwgps.fetch_route') as mfr:
         resp = client.get('/plan/11')
     assert resp.status_code == 200
@@ -285,15 +288,37 @@ def test_elevation_profile_renders_from_cached_track_no_live_fetch(app, client):
 
 
 def test_elevation_profile_empty_when_no_cached_track(app, client):
-    """A row warmed before the elevation_track column (NULL track) degrades to the
-    empty-profile placeholder — still no live fetch, page stays up."""
-    with _patch_models(weather=_cached_weather(elevation_track=None)), \
+    """A route with no warmed geometry (get_rp_route_elevation_track → None) degrades to
+    the empty-profile placeholder — still no live fetch, page stays up."""
+    with _patch_models(weather=_cached_weather(), elevation=None), \
          patch('shared.rwgps.fetch_route') as mfr:
         resp = client.get('/plan/11')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'rpv2-elev-empty' in body
     assert 'radial-elev-area' not in body
+    mfr.assert_not_called()
+
+
+def test_elevation_url_only_plan_resolves_route_id_from_url(app, client):
+    """A plan with NULL rwgps_route_id but a rwgps_url must still find its warmed track:
+    the render resolves the route id via the url the SAME way the warm cron keys it, so a
+    url-only plan renders the profile instead of silently missing the cache."""
+    url_only_plan = dict(_PLAN, rwgps_route_id=None,
+                         rwgps_url='https://ridewithgps.com/routes/1')
+    bundle = {'plan': url_only_plan, 'stops': _STOPS}
+    with patch('brevethub.models.get_brevet_event_full', lambda *a, **k: _EVENT), \
+         patch('brevethub.models.get_brevet_route_plan_with_stops', lambda *a, **k: bundle), \
+         patch('brevethub.models.get_brevet_route_weather', lambda *a, **k: _cached_weather()), \
+         patch('brevethub.models.get_event_going_riders', lambda *a, **k: _ROSTER), \
+         patch('brevethub.models.get_rp_route_elevation_track') as mget, \
+         patch('shared.rwgps.fetch_route') as mfr:
+        mget.return_value = _ELEV_TRACK
+        resp = client.get('/plan/11')
+    assert resp.status_code == 200
+    # Route id was resolved from the url ('1'), not the NULL column.
+    mget.assert_called_once_with('1')
+    assert 'radial-elev-area' in resp.get_data(as_text=True)
     mfr.assert_not_called()
 
 

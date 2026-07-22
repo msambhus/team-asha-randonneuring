@@ -1932,3 +1932,70 @@ def get_brevet_route_weather(event_id, forecast_date):
         "FROM rp_brevet_route_weather WHERE event_id = %s AND forecast_date = %s",
         (event_id, forecast_date),
     )
+
+
+def upsert_rp_route_geometry(route_id, elevation_track):
+    """Insert or refresh one route cached elevation track (idempotent on route_id).
+
+    Route geometry is date-invariant, so this is keyed on the RWGPS route id alone. Only
+    called by the warm-plan-elevation cron with a successful fetch, so a transient RWGPS
+    failure never overwrites a last-good row. The track is the downsampled
+    [{lat, lng, dist_m, e_m}, ...] shared.live_radial output that build_elevation_profile
+    consumes; None on a route with no usable points. Touches only rp_route_geometry_cache.
+
+    (The literal is split at DO UPDATE / SET for the same rp-only-scanner reason
+    documented on upsert_brevet_event.)
+    """
+    db.execute(
+        "INSERT INTO rp_route_geometry_cache (route_id, elevation_track, fetched_at) "
+        "VALUES (%s, %s, NOW()) "
+        "ON CONFLICT (route_id) DO UPDATE "
+        "SET elevation_track = EXCLUDED.elevation_track, fetched_at = NOW()",
+        (route_id, Json(elevation_track) if elevation_track is not None else None),
+    )
+
+
+def get_rp_route_elevation_track(route_id):
+    """The cron-warmed elevation track for a route, or None.
+
+    Returns the [{lat, lng, dist_m, e_m}, ...] track cached in the route-keyed
+    rp_route_geometry_cache (route geometry is date-invariant), for the rpv2 /plan
+    gradient elevation profile to read from cache instead of fetching RWGPS live on the
+    guest request path (the guest page NEVER fetches RWGPS live). The warm-plan-elevation
+    cron populates it for every route referenced by an rp_brevet_route_plan, so any plan
+    profile is served once warmed. None when the route has no cached track yet. Touches
+    only rp_route_geometry_cache.
+    """
+    row = db.query_one(
+        "SELECT elevation_track FROM rp_route_geometry_cache "
+        "WHERE route_id = %s AND elevation_track IS NOT NULL",
+        (route_id,),
+    )
+    return row['elevation_track'] if row else None
+
+
+def get_rp_route_geometry_freshness(route_id):
+    """The fetched_at of a route cached geometry, or None — for the cron fresh-skip.
+
+    Only counts a row that actually has a track: a NULL-track row (a fetch that yielded
+    no usable points) returns None so the cron re-warms it rather than pinning an empty
+    profile for the whole freshness window. Touches only rp_route_geometry_cache.
+    """
+    row = db.query_one(
+        "SELECT fetched_at FROM rp_route_geometry_cache "
+        "WHERE route_id = %s AND elevation_track IS NOT NULL",
+        (route_id,),
+    )
+    return row['fetched_at'] if row else None
+
+
+def get_brevet_route_plan_route_ids():
+    """Distinct RWGPS route references across every rp_brevet_route_plan.
+
+    Returns ``[{rwgps_route_id, rwgps_url}, ...]`` so the warm-plan-elevation cron can
+    enumerate every route that needs a cached elevation track (past and upcoming, not
+    just the weather-warm window). Touches only rp_brevet_route_plan.
+    """
+    return db.query(
+        "SELECT DISTINCT rwgps_route_id, rwgps_url FROM rp_brevet_route_plan"
+    )

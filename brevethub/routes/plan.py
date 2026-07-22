@@ -42,6 +42,7 @@ from shared.plan_view import (_to_v2_stops, _weather_summary_from_stop_wind,
                               compute_risk_zones)
 from shared.strategies import _PACE_VARIANTS, compute_pace_strategies
 from shared.live_radial import build_elevation_profile, overlay_stop_markers
+from shared.rwgps import extract_rwgps_route_id
 from shared.weather import (build_chart_data, build_weather_segments,
                             calculate_bearing, compute_stop_winds)
 
@@ -651,14 +652,23 @@ def _build_v2_context(event, plan, stops, variant, rider=None):
                                     seg_meta=seg_meta)
 
     # Gradient altitude profile + control/break overlay for the Journey card and the
-    # snapshot, built from the cron-warmed elevation track on the weather cache row —
-    # NEVER a live RWGPS fetch on this guest-readable page (the TA-237 guest-safety
-    # invariant; the warm-brevet-route-weather cron persists the track). Fail-soft:
-    # a missing row / pre-column NULL track → empty list → build_elevation_profile
-    # returns {'available': False} and overlay_stop_markers returns [], so the page
-    # degrades to an empty profile rather than 500ing.
-    elevation_profile = build_elevation_profile(
-        (weather_row or {}).get('elevation_track') or [])
+    # snapshot, built from the route-keyed rp_route_geometry_cache (warmed for EVERY plan
+    # route by /cron/warm-plan-elevation, past or upcoming) — NEVER a live RWGPS fetch on
+    # this guest-readable page (the TA-237 guest-safety invariant). Fail-soft: no cached
+    # track / a cache-read error → empty list → build_elevation_profile returns
+    # {'available': False} and overlay_stop_markers returns [], so the page degrades to
+    # an empty profile rather than 500ing.
+    try:
+        # Resolve the route id the SAME way the warm cron keys it — the stored numeric
+        # id, else extracted from the plan url — so a url-only plan (NULL rwgps_route_id)
+        # still finds its warmed track (they must match or the read silently misses).
+        _rid = plan.get('rwgps_route_id') or extract_rwgps_route_id(plan.get('rwgps_url'))
+        elevation_track = models.get_rp_route_elevation_track(_rid) if _rid else None
+    except Exception as e:  # pragma: no cover - defensive; keep the page up
+        current_app.logger.warning('Elevation track lookup failed for plan %s: %s',
+                                    plan.get('id'), e)
+        elevation_track = None
+    elevation_profile = build_elevation_profile(elevation_track or [])
     stop_markers = overlay_stop_markers(elevation_profile, v2_stops,
                                         _RPV2_STOP_MARKER_COLORS)
     # Pace payload for the inline "Choose your pace" live re-render: each pace card's

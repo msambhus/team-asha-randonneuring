@@ -827,6 +827,85 @@ def fetch_route_weather_cron():
     }), 200
 
 
+# Downsample cap + re-warm window for the route-geometry (elevation) cache. Route
+# geometry is near-static, so a generous freshness window keeps the cron cheap; ?force=1
+# bypasses it for an on-demand re-warm.
+ELEVATION_CACHE_POINTS = 800
+ELEVATION_CACHE_FRESH_DAYS = 30
+
+
+@cron_bp.route('/warm-plan-elevation', methods=['GET', 'POST'])
+def warm_plan_elevation_cron():
+    """Cache the RWGPS elevation track for EVERY route referenced by a ride_plan, so the
+    rpv2 plan-page gradient profile renders for ANY plan (past or upcoming) without a live
+    RWGPS fetch on the request path (the TA-237 read-from-cache invariant). Unlike
+    fetch-route-weather (upcoming events only), this warms all base-plan routes — custom
+    plans reuse their base route, so enumerating ride_plan covers them.
+
+    Auth-gated (Bearer CRON_SECRET). Idempotent: a route warmed within
+    ELEVATION_CACHE_FRESH_DAYS is skipped unless ?force=1. Fail-soft per route: an RWGPS
+    error keeps the last-good row and is counted, never 500s the cron. Returns
+    {ok, warmed, skipped, failed, considered}.
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    from datetime import datetime, timezone, timedelta
+    from services.rwgps import fetch_route
+    from shared.rwgps import extract_rwgps_route_id
+    from shared.live_radial import track_from_route
+    from models import (get_all_ride_plans, upsert_route_geometry,
+                        get_route_geometry_freshness)
+
+    force = request.args.get('force') in ('1', 'true', 'yes')
+
+    # Distinct RWGPS route ids across all base plans — from the stored numeric id and
+    # both url columns (the render may look up rwgps_url or rwgps_url_team).
+    try:
+        plans = get_all_ride_plans()
+    except Exception as e:
+        current_app.logger.warning('warm-plan-elevation: plan load failed: %s', e)
+        return jsonify({'ok': False, 'error': 'plan load failed',
+                        'warmed': 0, 'skipped': 0, 'failed': 0}), 200
+
+    route_ids = set()
+    for p in plans:
+        rid = p.get('rwgps_route_id')
+        if rid:
+            route_ids.add(str(rid))
+        for col in ('rwgps_url', 'rwgps_url_team'):
+            rid = extract_rwgps_route_id(p.get(col))
+            if rid:
+                route_ids.add(str(rid))
+
+    warmed = skipped = failed = 0
+    for route_id in sorted(route_ids):
+        try:
+            if not force:
+                fetched_at = get_route_geometry_freshness(route_id)
+                if fetched_at and (datetime.now(timezone.utc) - fetched_at
+                                   < timedelta(days=ELEVATION_CACHE_FRESH_DAYS)):
+                    skipped += 1
+                    continue
+            route_data = fetch_route(route_id)
+            elevation_track = track_from_route(
+                route_data, max_points=ELEVATION_CACHE_POINTS) or None
+            upsert_route_geometry(route_id, elevation_track)
+            warmed += 1
+            time.sleep(0.3)  # gentle rate limit on RWGPS
+        except Exception as e:
+            failed += 1
+            current_app.logger.warning(
+                'warm-plan-elevation: route %s failed (last-good kept): %s', route_id, e)
+
+    current_app.logger.info(
+        'warm-plan-elevation: %d warmed, %d skipped, %d failed (of %d routes)',
+        warmed, skipped, failed, len(route_ids))
+    return jsonify({'ok': True, 'warmed': warmed, 'skipped': skipped,
+                    'failed': failed, 'considered': len(route_ids)}), 200
+
+
 @cron_bp.route('/poll-garmin-livetrack', methods=['POST'])
 def poll_garmin_livetrack():
     """Poll Garmin LiveTrack for opted-in riders, store positions, purge old data.

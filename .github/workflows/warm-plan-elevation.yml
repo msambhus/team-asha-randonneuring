@@ -1,0 +1,43 @@
+name: Warm Plan Elevation
+
+on:
+  schedule:
+    # Daily — cache the RWGPS elevation track for EVERY route referenced by a ride_plan
+    # (past and upcoming), so the rpv2 plan-page gradient profile renders for ANY plan
+    # without a live RWGPS fetch on the request path (TA-237). Route geometry is static,
+    # so a route warmed within the cron's freshness window is skipped.
+    - cron: '45 12 * * *'
+
+  workflow_dispatch: {}
+
+jobs:
+  warm-plan-elevation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Warm plan-route elevation tracks
+        run: |
+          echo "Warming elevation tracks for all plan routes..."
+
+          response=$(curl -X POST https://team-asha-randonneuring.vercel.app/api/cron/warm-plan-elevation \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -w "\n%{http_code}" \
+            --max-time 300 \
+            -s)
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+
+          if [[ "$http_code" =~ ^2 ]]; then
+            echo "$body" | jq -r '"Elevation: \(.warmed) warmed, \(.skipped) skipped, \(.failed) failed of \(.considered) routes"' || echo "$body"
+            exit 0
+          else
+            echo "Warm plan elevation failed with status $http_code"
+            echo "$body"
+            exit 1
+          fi
