@@ -179,6 +179,11 @@ def test_route_weather_warms_with_url_skips_without(app, client):
     # Dense 15 km sampling — the pinned interval.
     _args, kwargs = msamp.call_args
     assert kwargs.get('interval_m') == 15000
+    # The decimated route polyline is passed through to the cache upsert (positional
+    # arg 5) so the guest Mapbox weather tab draws the line straight from cache.
+    up_args, _up_kwargs = mup.call_args
+    polyline = up_args[4]
+    assert polyline == [[37.0, -122.0]]
 
 
 def test_route_weather_uses_plan_route_not_event_url(app, client):

@@ -648,7 +648,10 @@ def _build_v2_context(event, plan, stops, variant):
         'mapbox_token': mapbox_token,
         'has_weather_cache': has_weather_cache,
         'show_weather_map': show_weather_map,
-        'weather_data_url': url_for('plan.weather_data', event_id=event['id']),
+        # Carry the selected variant so auto-fetch pulls the payload timed to THIS plan
+        # (aggressive vs conservative), matching the rest of the tabbed view.
+        'weather_data_url': url_for('plan.weather_data', event_id=event['id'],
+                                    variant=variant),
         'prefill_plan_name': plan_ctx['name'],
         'prefill_datetime': (f"{forecast_date.isoformat()}T{start_time}"
                              if forecast_date else ''),
@@ -783,7 +786,10 @@ def _build_guest_weather_payload(event, plan, weather_row):
         sample_points, weather_data, bearings, start_dt, speed_mph=speed_mph)
 
     # Thin the dense map samples to ~table spacing for the along-route table.
-    table_step = max(1, _WEATHER_TABLE_INTERVAL_M // _WEATHER_MAP_INTERVAL_M)
+    table_step = max(
+        1,
+        (_WEATHER_TABLE_INTERVAL_M + _WEATHER_MAP_INTERVAL_M - 1) // _WEATHER_MAP_INTERVAL_M,
+    )
     table_segments = [map_segments[i] for i in range(0, len(map_segments), table_step)]
     if table_segments and map_segments and table_segments[-1] is not map_segments[-1]:
         table_segments.append(map_segments[-1])
@@ -824,6 +830,12 @@ def weather_data(event_id):
     shared pure formatters. It makes NO live Open-Meteo/RWGPS call — the guest page
     reads the cache only (the #1 invariant; see routes/cron warm-brevet-route-weather).
 
+    Honors ``?variant=conservative|aggressive`` (default conservative, anything else
+    coerced to conservative) so the arrival timing / labeling in the payload matches the
+    plan variant the weather tab is embedded in — the two variants share one route
+    geometry but differ in pace, so /plan/<id>?variant=aggressive&tab=weather must time
+    its table + charts off the aggressive plan, not the conservative one.
+
     Responses:
       * 200 ``{available: true, ...}``  — a warm cache row exists.
       * 200 ``{available: false, ...}`` — event/plan exist but no forecast is cached yet
@@ -835,9 +847,14 @@ def weather_data(event_id):
     if not event:
         abort(404)
 
+    # Match plan_view's variant handling so the timing agrees with the embedded plan.
+    variant = request.args.get('variant', 'conservative')
+    if variant not in ('conservative', 'aggressive'):
+        variant = 'conservative'
+
     bundle = None
     try:
-        bundle = models.get_brevet_route_plan_with_stops(event_id, 'conservative')
+        bundle = models.get_brevet_route_plan_with_stops(event_id, variant)
     except Exception as e:  # pragma: no cover - defensive; keep the endpoint up
         current_app.logger.warning('Weather-data plan lookup failed for event %s: %s',
                                     event_id, e)
