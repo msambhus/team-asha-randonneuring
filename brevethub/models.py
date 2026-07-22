@@ -247,7 +247,7 @@ def get_ride(ride_id):
 
 
 def get_rider_rides(rider_id):
-    """A rider's own rides, for the create/flag page listing + share links.
+    """Own rides for one rider, for the create/flag page listing + share links.
 
     ``event_id`` is selected too so the manage page can show which calendar event
     each ride is currently linked to (NULL when unlinked).
@@ -292,13 +292,14 @@ def set_ride_public(ride_id, rider_id, is_public):
 
 
 def set_ride_event(ride_id, rider_id, event_id):
-    """Link (or unlink) one of the rider OWN rides to a calendar event.
+    """Link or unlink one ride owned by the rider to a calendar event.
 
     Owner-scoped: the write is filtered by rider_id too, so a non-owner can never
-    point another rider ride at an event. Pass ``event_id=None`` to unlink (clears
-    the FK back to NULL). Returns the updated row (id) or None when the ride is not
-    the rider (so the caller can report a non-owner no-op). The FK itself guarantees
-    a non-existent event cannot be stored; the route validates event existence too.
+    point another rider ride at an event. Pass ``event_id=None`` to unlink and
+    clear the FK back to NULL. Returns the updated row id or None when the ride is
+    not owned by the rider, so the caller can report a non-owner no-op. The FK
+    itself guarantees a missing event cannot be stored; the route validates event
+    existence too.
     """
     return db.execute(
         "UPDATE rp_ride SET event_id = %s WHERE id = %s AND rider_id = %s "
