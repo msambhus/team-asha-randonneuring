@@ -15,7 +15,7 @@
 #live-map { height: 46vh; min-height: 300px; width: 100%; border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
 .live-status { font-size: 0.8rem; color: var(--text-light); margin-top: 8px; min-height: 1.2em; }
 .live-empty {
-    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
     padding: 10px 14px; margin-top: 8px; font-size: 0.85rem; color: var(--text-light);
 }
 /* Fixed 30×30 box so Mapbox's center anchor lands the PIN on the rider's
@@ -65,7 +65,7 @@
 
 #live-riders { margin-top: 16px; display: grid; gap: 12px; }
 .rider-card {
-    background: var(--bg-card); border: 1px solid var(--border);
+    background: var(--card-bg); border: 1px solid var(--border);
     border-radius: 12px; padding: 14px 16px;
 }
 .rider-card.stale { opacity: 0.6; }
@@ -88,7 +88,7 @@
 .plan-selector-wrap label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-light); }
 .plan-selector-wrap select {
     padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
-    font-size: 0.85rem; background: var(--bg-card); color: var(--text); max-width: 260px;
+    font-size: 0.85rem; background: var(--card-bg); color: var(--text); max-width: 260px;
 }
 .plan-label { font-size: 0.8rem; color: var(--text-light); margin: 12px 0 6px; }
 .plan-note { font-size: 0.72rem; color: var(--text-light); margin: 2px 0 0; }
@@ -99,7 +99,7 @@
 .uc-list { display: flex; flex-direction: column; gap: 4px; }
 .uc-row {
     display: flex; align-items: baseline; gap: 10px; padding: 6px 10px;
-    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
 }
 .uc-row .uc-name { font-weight: 600; font-size: 0.85rem; flex: 1; }
 .uc-row .uc-dist { font-size: 0.75rem; color: var(--text-light); }
@@ -111,7 +111,7 @@
 .live-charts .charts-title { font-size: 1rem; margin: 0 0 4px; }
 .live-charts .charts-sub { font-size: 0.78rem; color: var(--text-light); margin: 0 0 10px; }
 .chart-card {
-    background: var(--bg-card); border: 1px solid var(--border);
+    background: var(--card-bg); border: 1px solid var(--border);
     border-radius: 12px; padding: 12px 14px; margin-bottom: 12px;
 }
 .chart-card h3 { font-size: 0.85rem; margin: 0 0 6px; color: var(--text); }
@@ -135,7 +135,7 @@
 
 /* "Appear on this map" — two ways to share, side by side (collapsible) */
 .track-setup {
-    background: var(--bg-card); border: 1px solid var(--border);
+    background: var(--card-bg); border: 1px solid var(--border);
     border-radius: 12px; padding: 0 18px; margin: 0 0 14px;
 }
 .track-setup > summary {

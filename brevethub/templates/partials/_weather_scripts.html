@@ -1,0 +1,1040 @@
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+(function() {
+    var MAPBOX_TOKEN = '{{ mapbox_token }}';
+    var map = null;
+    var AUTO_FETCH = '{{ auto_fetch }}';
+    // Read-only cached data endpoint — the guest plan page NEVER fetches live weather.
+    var WEATHER_DATA_URL = '{{ weather_data_url }}';
+    var PRODUCT_NAME = '{{ product_name }}';
+    var currentRouteData = null;
+
+    // Offset distance in degrees (~0.003 deg ≈ 300m at mid-latitudes)
+    var ARROW_OFFSET_DEG = 0.003;
+
+    // Fetch the pre-formatted forecast + map/table/chart payload from the cron-warmed
+    // cache (GET, read-only). No RWGPS/Open-Meteo call happens on this guest path.
+    function doFetch() {
+        if (!WEATHER_DATA_URL) return;
+
+        showLoading(true);
+        hideResults();
+
+        fetch(WEATHER_DATA_URL, { headers: {'Accept': 'application/json'} })
+        .then(function(resp) {
+            if (!resp.ok) {
+                return resp.text().then(function(text) {
+                    try { var d = JSON.parse(text); showError(d.error || d.message || 'Server error (' + resp.status + ')'); }
+                    catch(e) { showError('Could not load the forecast (' + resp.status + '). Please try again.'); }
+                    showLoading(false);
+                    throw new Error('handled');
+                });
+            }
+            return resp.json();
+        })
+        .then(function(data) {
+            showLoading(false);
+            if (!data || data.available === false) {
+                showError((data && data.message) || 'Weather forecast is prepared closer to the ride — check back nearer the date.');
+                return;
+            }
+            renderResults(data);
+        })
+        .catch(function(err) {
+            if (err && err.message === 'handled') return;
+            showLoading(false);
+            showError('Could not load the forecast. Please try again.');
+        });
+    }
+
+    var weatherForm = document.getElementById('weather-form');
+    if (weatherForm) {
+        weatherForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            doFetch();
+        });
+    }
+
+    // Auto-fetch the cached forecast once the panel mounts (token + warm cache present).
+    if (AUTO_FETCH === '1') {
+        doFetch();
+    }
+
+    // ── Helpers ────────────────────────────────────────────
+    function showLoading(on) {
+        document.getElementById('loading').style.display = on ? 'block' : 'none';
+        var btn = document.getElementById('btn-fetch');
+        if (btn) btn.disabled = on;
+    }
+    function showError(msg) {
+        var el = document.getElementById('error-alert');
+        el.textContent = msg;
+        el.style.display = 'block';
+    }
+    function hideResults() {
+        document.getElementById('error-alert').style.display = 'none';
+        document.getElementById('summary-bar').style.display = 'none';
+        document.getElementById('weather-table-wrap').style.display = 'none';
+        document.getElementById('map-charts-row').style.display = 'none';
+        document.getElementById('charts-section').style.display = 'none';
+        document.getElementById('attribution').style.display = 'none';
+        var toolbar = document.getElementById('share-toolbar');
+        if (toolbar) toolbar.style.display = 'none';
+    }
+
+    // ── Render ─────────────────────────────────────────────
+    function renderResults(data) {
+        currentRouteData = data;
+        renderSummary(data);
+        renderCharts(data);
+        renderMap(data);
+        renderTable(data);
+        if (data.attribution) {
+            var el = document.getElementById('attribution');
+            el.textContent = data.attribution;
+            el.style.display = 'block';
+        }
+        var toolbar = document.getElementById('share-toolbar');
+        if (toolbar) toolbar.style.display = 'flex';
+        var nativeBtn = document.getElementById('share-native');
+        if (nativeBtn && navigator.share && navigator.canShare) {
+            nativeBtn.style.display = '';
+        }
+    }
+
+    function renderSummary(data) {
+        document.getElementById('route-name').textContent = data.route_name;
+        var chips = document.getElementById('summary-chips');
+        chips.innerHTML = '';
+
+        addChip(chips, data.total_distance_mi + ' mi', '');
+        if (data.total_elevation_ft) {
+            addChip(chips, data.total_elevation_ft.toLocaleString() + ' ft', '');
+        }
+        if (data.temp_range) {
+            addChip(chips, data.temp_range.min_f + ' - ' + data.temp_range.max_f + ' °F', '');
+        }
+
+        // LLM ride summary
+        if (data.ride_summary) {
+            var summaryEl = document.createElement('p');
+            summaryEl.style.cssText = 'margin:8px 0 0;font-size:0.85rem;color:var(--text);line-height:1.4;';
+            summaryEl.textContent = data.ride_summary;
+            chips.parentNode.appendChild(summaryEl);
+        }
+
+        document.getElementById('summary-bar').style.display = 'block';
+    }
+
+    function addChip(parent, text, cls) {
+        var span = document.createElement('span');
+        span.className = 'chip' + (cls ? ' ' + cls : '');
+        span.textContent = text;
+        parent.appendChild(span);
+    }
+
+    function assessmentClass(label) {
+        if (!label) return '';
+        var l = label.toLowerCase();
+        if (l.indexOf('headwind') >= 0) return 'headwind';
+        if (l.indexOf('tailwind') >= 0) return 'tailwind';
+        return 'crosswind';
+    }
+
+    // ── Charts (synchronized hover across all charts + map) ─
+    var weatherCharts = {};
+    var chartMapSegments = null;  // store for map sync
+    var syncingHover = false;     // prevent infinite recursion
+
+    var CHART_DEFAULTS = {
+        responsive: true,
+        maintainAspectRatio: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: { display: true, position: 'bottom', labels: { color: '#64748b', boxWidth: 12, font: { size: 10 } } },
+            tooltip: { backgroundColor: 'white', titleColor: '#1e293b', bodyColor: '#475569', borderColor: '#e2e8f0', borderWidth: 1 },
+        },
+        scales: {
+            x: {
+                ticks: { color: '#64748b', font: { size: 9 }, maxTicksLimit: 8 },
+                grid: { color: 'rgba(226,232,240,0.6)' },
+            },
+            y: {
+                ticks: { color: '#64748b', font: { size: 9 } },
+                grid: { color: 'rgba(226,232,240,0.6)' },
+            },
+        },
+        onHover: function(event, elements, chart) {
+            if (syncingHover) return;
+            if (!elements || elements.length === 0) {
+                syncAllCharts(-1, chart);
+                return;
+            }
+            syncAllCharts(elements[0].index, chart);
+        },
+    };
+
+    function syncAllCharts(dataIndex, sourceChart) {
+        syncingHover = true;
+        var chartIds = ['chartWind', 'chartPrecip', 'chartHeadwind', 'chartTemp', 'chartElev', 'chartHumidity'];
+        chartIds.forEach(function(id) {
+            var c = weatherCharts[id];
+            if (!c || c === sourceChart) return;
+            if (dataIndex < 0) {
+                c.setActiveElements([]);
+                c.tooltip.setActiveElements([], {});
+                c.update('none');
+                return;
+            }
+            var activeEls = [];
+            c.data.datasets.forEach(function(ds, dsIdx) {
+                activeEls.push({ datasetIndex: dsIdx, index: dataIndex });
+            });
+            c.setActiveElements(activeEls);
+            c.tooltip.setActiveElements(activeEls, { x: 0, y: 0 });
+            c.update('none');
+        });
+        // Sync map popup
+        syncMapPopup(dataIndex);
+        syncingHover = false;
+    }
+
+    function syncMapPopup(dataIndex) {
+        if (!map || !chartMapSegments || dataIndex < 0 || dataIndex >= chartMapSegments.length) {
+            if (syncPopup) syncPopup.remove();
+            return;
+        }
+        var seg = chartMapSegments[dataIndex];
+        if (!seg) return;
+        var coords = offsetPoint(seg.lat, seg.lng, seg.rider_bearing_deg);
+        if (!syncPopup) {
+            syncPopup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 15 });
+        }
+        syncPopup.setLngLat(coords)
+            .setHTML('<strong>' + seg.wind_speed_mph + ' mph ' + seg.wind_label + '</strong><br>' +
+                     seg.temperature_f + '°F (feels ' + seg.feels_like_f + '°F) | ' +
+                     (seg.conditions_icon || '') + ' ' + seg.conditions)
+            .addTo(map);
+    }
+    var syncPopup = null;
+
+    function makeChart(canvasId, config) {
+        if (weatherCharts[canvasId]) { weatherCharts[canvasId].destroy(); }
+        var canvas = document.getElementById(canvasId);
+        var ctx = canvas.getContext('2d');
+        weatherCharts[canvasId] = new Chart(ctx, config);
+
+        // Clear all synced tooltips when mouse leaves the canvas
+        canvas.addEventListener('mouseleave', function() {
+            syncAllCharts(-1, null);
+            // Also clear tooltip on the source chart itself
+            var c = weatherCharts[canvasId];
+            if (c) {
+                c.setActiveElements([]);
+                c.tooltip.setActiveElements([], {});
+                c.update('none');
+            }
+        });
+    }
+
+    function chartLabels(cd) {
+        return cd.labels.map(function(mi, i) { return cd.times[i]; });
+    }
+
+    function areaDataset(label, data, borderColor, bgColor) {
+        return {
+            label: label,
+            data: data,
+            borderColor: borderColor,
+            backgroundColor: bgColor,
+            borderWidth: 1.5,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+            pointHitRadius: 8,
+        };
+    }
+
+    function renderCharts(data) {
+        if (!data.chart_data) return;
+        var cd = data.chart_data;
+        var labels = chartLabels(cd);
+        chartMapSegments = data.map_segments || [];
+
+        document.getElementById('map-charts-row').style.display = 'grid';
+        document.getElementById('charts-section').style.display = 'block';
+
+        // Temperature
+        makeChart('chartTemp', {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    areaDataset('Temperature (°F)', cd.temperature_f, '#60a5fa', 'rgba(96,165,250,0.25)'),
+                    areaDataset('Feels Like (°F)', cd.feels_like_f, '#fb923c', 'rgba(251,146,60,0.2)'),
+                ],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, title: { display: true, text: '°F', color: '#64748b', font: { size: 10 } } },
+                },
+                plugins: {
+                    ...CHART_DEFAULTS.plugins,
+                    tooltip: {
+                        ...CHART_DEFAULTS.plugins.tooltip,
+                        callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y + '°F'; } },
+                    },
+                },
+            },
+        });
+
+        // Wind
+        makeChart('chartWind', {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    areaDataset('Wind (mph)', cd.wind_speed_mph, '#60a5fa', 'rgba(96,165,250,0.25)'),
+                    areaDataset('Wind Gust (mph)', cd.wind_gust_mph, '#fb923c', 'rgba(251,146,60,0.2)'),
+                ],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'mph', color: '#64748b', font: { size: 10 } } },
+                },
+            },
+        });
+
+        // Precipitation, Cloud Cover & Rain Intensity (dual y-axis)
+        var rainDataset = areaDataset('Rain (mm)', cd.precipitation_mm, '#ea580c', 'rgba(234,88,12,0.2)');
+        rainDataset.yAxisID = 'yRain';
+        makeChart('chartPrecip', {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    areaDataset('Probability (%)', cd.precip_probability, '#60a5fa', 'rgba(96,165,250,0.3)'),
+                    areaDataset('Cloud Cover (%)', cd.cloud_cover, '#94a3b8', 'rgba(148,163,184,0.15)'),
+                    rainDataset,
+                ],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, position: 'left', min: 0, max: 100, title: { display: true, text: '%', color: '#64748b', font: { size: 10 } } },
+                    yRain: {
+                        position: 'right',
+                        min: 0,
+                        ticks: { color: '#ea580c', font: { size: 9 } },
+                        grid: { display: false },
+                        title: { display: true, text: 'mm', color: '#ea580c', font: { size: 10 } },
+                    },
+                },
+            },
+        });
+
+        // Headwind / Tailwind
+        var hwPositive = cd.headwind_mph.map(function(v) { return v > 0 ? v : 0; });
+        var hwNegative = cd.headwind_mph.map(function(v) { return v < 0 ? v : 0; });
+        makeChart('chartHeadwind', {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    areaDataset('Headwind (mph)', hwPositive, '#ef4444', 'rgba(239,68,68,0.25)'),
+                    areaDataset('Tailwind (mph)', hwNegative, '#22c55e', 'rgba(34,197,94,0.25)'),
+                ],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, title: { display: true, text: 'mph', color: '#64748b', font: { size: 10 } } },
+                },
+                plugins: {
+                    ...CHART_DEFAULTS.plugins,
+                    tooltip: {
+                        ...CHART_DEFAULTS.plugins.tooltip,
+                        callbacks: {
+                            label: function(ctx) {
+                                var v = ctx.parsed.y;
+                                if (v === 0) return null;
+                                return (v > 0 ? 'Headwind: ' : 'Tailwind: ') + Math.abs(v) + ' mph';
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        // Temperature
+        makeChart('chartTemp', {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    areaDataset('Temperature (°F)', cd.temperature_f, '#60a5fa', 'rgba(96,165,250,0.25)'),
+                    areaDataset('Feels Like (°F)', cd.feels_like_f, '#fb923c', 'rgba(251,146,60,0.2)'),
+                ],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, title: { display: true, text: '°F', color: '#64748b', font: { size: 10 } } },
+                },
+                plugins: {
+                    ...CHART_DEFAULTS.plugins,
+                    tooltip: {
+                        ...CHART_DEFAULTS.plugins.tooltip,
+                        callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y + '°F'; } },
+                    },
+                },
+            },
+        });
+
+        // Elevation
+        makeChart('chartElev', {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    areaDataset('Elevation (ft)', cd.elevation_ft, '#94a3b8', 'rgba(148,163,184,0.25)'),
+                ],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, min: 0, title: { display: true, text: 'ft', color: '#64748b', font: { size: 10 } } },
+                },
+                plugins: {
+                    ...CHART_DEFAULTS.plugins,
+                    legend: { display: false },
+                    subtitle: {
+                        display: true,
+                        text: data.total_elevation_ft ? 'Elevation Gain: ' + data.total_elevation_ft.toLocaleString() + ' ft | Distance: ' + data.total_distance_mi + ' mi' : '',
+                        color: '#64748b',
+                        font: { size: 10 },
+                        padding: { bottom: 4 },
+                    },
+                },
+            },
+        });
+
+        // Humidity
+        makeChart('chartHumidity', {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    areaDataset('Humidity (%)', cd.humidity, '#8b5cf6', 'rgba(139,92,246,0.2)'),
+                ],
+            },
+            options: {
+                ...CHART_DEFAULTS,
+                scales: {
+                    ...CHART_DEFAULTS.scales,
+                    y: { ...CHART_DEFAULTS.scales.y, min: 0, max: 100, title: { display: true, text: '%', color: '#64748b', font: { size: 10 } } },
+                },
+                plugins: {
+                    ...CHART_DEFAULTS.plugins,
+                    legend: { display: false },
+                },
+            },
+        });
+    }
+
+    // ── Table (uses table_segments — imperial units) ──────
+    function renderTable(data) {
+        var tbody = document.getElementById('weather-tbody');
+        tbody.innerHTML = '';
+        var segments = data.table_segments || [];
+
+        segments.forEach(function(seg) {
+            var tr = document.createElement('tr');
+            var hw = seg.headwind_mph || 0;
+            // Thresholds in mph: 3 mph ≈ 5 km/h
+            if (hw > 3) tr.className = 'row-headwind';
+            else if (hw < -3) tr.className = 'row-tailwind';
+            else tr.className = 'row-crosswind';
+
+            var arrowDeg = seg.wind_direction_deg || 0;
+            var arrowHtml = '<span class="wind-arrow-inline" style="transform:rotate(' + arrowDeg + 'deg);">&#x2193;</span>';
+
+            var badgeClass = hw > 3 ? 'badge-headwind' : (hw < -3 ? 'badge-tailwind' : 'badge-crosswind');
+
+            tr.innerHTML =
+                '<td>' + seg.distance_mi + ' mi</td>' +
+                '<td>' + (seg.arrival_time || '') + '</td>' +
+                '<td>' + seg.temperature_f + '°F</td>' +
+                '<td>' + seg.wind_speed_mph + ' mph</td>' +
+                '<td>' + arrowHtml + ' ' + seg.wind_direction_deg + '°</td>' +
+                '<td><span class="badge ' + badgeClass + '">' + seg.wind_label + '</span><br><small>' + Math.abs(hw) + ' mph</small></td>' +
+                '<td>' + (seg.conditions_icon || '') + ' ' + seg.conditions + '</td>' +
+                '<td>' + seg.precip_percent + '%</td>';
+
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('weather-table-wrap').style.display = 'block';
+    }
+
+    // ── Map (uses map_segments — dense points, imperial) ──
+    var currentMapData = null;
+
+    function addAllLayers(data) {
+        addRouteLayer(data);
+        addWindArrows(data);
+    }
+
+    function renderMap(data) {
+        if (!MAPBOX_TOKEN || !data.polyline || data.polyline.length === 0) {
+            document.getElementById('map-section').style.display = 'none';
+            return;
+        }
+
+        document.getElementById('map-section').style.display = 'block';
+        currentMapData = data;
+
+        mapboxgl.accessToken = MAPBOX_TOKEN;
+
+        // Remove existing map if re-fetching
+        if (map) {
+            map.remove();
+            map = null;
+        }
+
+        map = new mapboxgl.Map({
+            container: 'wind-map',
+            style: 'mapbox://styles/mapbox/streets-v12',
+            bounds: (function() {
+                var b = new mapboxgl.LngLatBounds();
+                data.polyline.forEach(function(p) { b.extend([p[1], p[0]]); });
+                return b;
+            })(),
+            fitBoundsOptions: { padding: 60 },
+            preserveDrawingBuffer: true,
+        });
+        map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+        map.addControl(new mapboxgl.FullscreenControl(), 'top-right');
+
+        map.on('load', function() {
+            addAllLayers(data);
+            fitBounds(data.polyline);
+            // Resize after flex layout settles so mapbox canvas fills container
+            setTimeout(function() { map.resize(); fitBounds(data.polyline); }, 300);
+        });
+
+        // Re-add layers after style change
+        map.on('style.load', function() {
+            if (currentMapData) {
+                addAllLayers(currentMapData);
+            }
+        });
+
+        // Style switcher
+        initStyleSwitcher();
+    }
+
+    function addRouteLayer(data) {
+        var coords = data.polyline.map(function(p) { return [p[1], p[0]]; });
+        map.addSource('route', {
+            type: 'geojson',
+            data: {
+                type: 'Feature',
+                geometry: { type: 'LineString', coordinates: coords }
+            }
+        });
+        // Dark casing for contrast
+        map.addLayer({
+            id: 'route-casing',
+            type: 'line',
+            source: 'route',
+            paint: {
+                'line-color': '#1e3a5f',
+                'line-width': 5,
+                'line-opacity': 0.4
+            }
+        });
+        map.addLayer({
+            id: 'route-line',
+            type: 'line',
+            source: 'route',
+            paint: {
+                'line-color': '#3b82f6',
+                'line-width': 3,
+                'line-opacity': 0.9
+            }
+        });
+    }
+
+    /**
+     * Offset a point perpendicular to the rider's bearing.
+     * Shifts the arrow to the right side of the route so it doesn't sit on the line.
+     */
+    function offsetPoint(lat, lng, bearingDeg) {
+        // Perpendicular = bearing + 90° (right side of direction of travel)
+        var perpRad = (bearingDeg + 90) * Math.PI / 180;
+        var offsetLat = lat + ARROW_OFFSET_DEG * Math.cos(perpRad);
+        var offsetLng = lng + ARROW_OFFSET_DEG * Math.sin(perpRad) / Math.cos(lat * Math.PI / 180);
+        return [offsetLng, offsetLat];
+    }
+
+    function addWindArrows(data) {
+        // Create arrow badge images: circle background + arrow
+        createWindBadge('wind-badge-red', '#ef4444', '#fef2f2');
+        createWindBadge('wind-badge-green', '#16a34a', '#f0fdf4');
+        createWindBadge('wind-badge-amber', '#d97706', '#fffbeb');
+
+        var segments = data.map_segments || [];
+
+        var features = segments.map(function(seg) {
+            var hw = seg.headwind_mph || 0;
+            var color;
+            if (hw > 3) color = 'red';
+            else if (hw < -3) color = 'green';
+            else color = 'amber';
+
+            // Offset arrow position to the side of the route
+            var offsetCoords = offsetPoint(seg.lat, seg.lng, seg.rider_bearing_deg);
+
+            return {
+                type: 'Feature',
+                geometry: {
+                    type: 'Point',
+                    coordinates: offsetCoords
+                },
+                properties: {
+                    wind_direction: seg.wind_direction_deg || 0,
+                    wind_speed: seg.wind_speed_mph || 0,
+                    speed_label: Math.round(seg.wind_speed_mph || 0) + '',
+                    headwind: hw,
+                    color: color,
+                    label: seg.wind_speed_mph + ' mph ' + seg.wind_label,
+                    detail: seg.temperature_f + '°F (feels ' + seg.feels_like_f + '°F) | ' + (seg.conditions_icon || '') + ' ' + seg.conditions + ' | ' + seg.wind_label + ' ' + Math.abs(seg.headwind_mph) + ' mph | Precip: ' + seg.precip_percent + '% | Gusts: ' + seg.wind_gust_mph + ' mph'
+                }
+            };
+        });
+
+        map.addSource('wind-points', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: features }
+        });
+
+        // Arrow icon layer
+        map.addLayer({
+            id: 'wind-arrows',
+            type: 'symbol',
+            source: 'wind-points',
+            layout: {
+                'icon-image': ['match', ['get', 'color'],
+                    'red', 'wind-badge-red',
+                    'green', 'wind-badge-green',
+                    'wind-badge-amber'
+                ],
+                'icon-rotate': ['get', 'wind_direction'],
+                'icon-size': ['interpolate', ['linear'], ['get', 'wind_speed'],
+                    0, 0.35,
+                    5, 0.45,
+                    12, 0.6,
+                    25, 0.8
+                ],
+                'icon-allow-overlap': true,
+                'icon-rotation-alignment': 'map',
+                'icon-anchor': 'center',
+            }
+        });
+
+        // Speed text label layer (stays upright, doesn't rotate)
+        map.addLayer({
+            id: 'wind-speed-labels',
+            type: 'symbol',
+            source: 'wind-points',
+            minzoom: 10,
+            layout: {
+                'text-field': ['concat', ['get', 'speed_label'], ' mph'],
+                'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
+                'text-size': 10,
+                'text-offset': [0, 2.2],
+                'text-anchor': 'top',
+                'text-allow-overlap': false,
+            },
+            paint: {
+                'text-color': ['match', ['get', 'color'],
+                    'red', '#991b1b',
+                    'green', '#166534',
+                    '#92400e'
+                ],
+                'text-halo-color': 'rgba(255,255,255,0.9)',
+                'text-halo-width': 1.5,
+            }
+        });
+
+        // Tooltip on hover
+        var popup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 15 });
+
+        map.on('mouseenter', 'wind-arrows', function(e) {
+            map.getCanvas().style.cursor = 'pointer';
+            var props = e.features[0].properties;
+            var coords = e.features[0].geometry.coordinates.slice();
+            popup.setLngLat(coords)
+                .setHTML('<strong>' + props.label + '</strong><br>' + props.detail)
+                .addTo(map);
+        });
+
+        map.on('mouseleave', 'wind-arrows', function() {
+            map.getCanvas().style.cursor = '';
+            popup.remove();
+        });
+    }
+
+    function createWindBadge(name, arrowColor, bgColor) {
+        var size = 64;
+        var canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        var ctx = canvas.getContext('2d');
+        var cx = size / 2, cy = size / 2, r = size / 2 - 2;
+
+        // Circle background with shadow
+        ctx.shadowColor = 'rgba(0,0,0,0.25)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetY = 1;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+        ctx.fillStyle = bgColor;
+        ctx.fill();
+        ctx.shadowColor = 'transparent';
+
+        // Circle border
+        ctx.strokeStyle = arrowColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Arrow pointing DOWN (wind "from" direction — 0° = from north = arrow points south)
+        ctx.fillStyle = arrowColor;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + 14);         // tip (bottom)
+        ctx.lineTo(cx + 11, cy - 10);    // top right
+        ctx.lineTo(cx + 3, cy - 4);      // inner right
+        ctx.lineTo(cx + 3, cy - 14);     // stem top right
+        ctx.lineTo(cx - 3, cy - 14);     // stem top left
+        ctx.lineTo(cx - 3, cy - 4);      // inner left
+        ctx.lineTo(cx - 11, cy - 10);    // top left
+        ctx.closePath();
+        ctx.fill();
+
+        map.addImage(name, { width: size, height: size, data: ctx.getImageData(0, 0, size, size).data });
+    }
+
+    function fitBounds(polyline) {
+        var bounds = new mapboxgl.LngLatBounds();
+        polyline.forEach(function(p) { bounds.extend([p[1], p[0]]); });
+        map.fitBounds(bounds, { padding: 60 });
+    }
+
+    function initStyleSwitcher() {
+        var switcher = document.getElementById('styleSwitcher');
+        if (!switcher) return;
+
+        switcher.querySelectorAll('.map-style-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var style = this.dataset.style;
+                if (!map || !style) return;
+
+                // Update active button
+                switcher.querySelectorAll('.map-style-btn').forEach(function(b) { b.classList.remove('active'); });
+                this.classList.add('active');
+
+                // Change map style — style.load event will re-add layers
+                map.setStyle(style);
+            });
+        });
+    }
+
+    // ── Share / export ────────────────────────────────────
+    // The plan page is the shareable surface — deep-link straight to this weather tab.
+    function buildShareLink() {
+        return location.origin + location.pathname + '?tab=weather';
+    }
+
+    var feedbackTimer = null;
+    function showShareFeedback(msg, kind) {
+        var el = document.getElementById('share-feedback');
+        if (!el) return;
+        el.textContent = msg || '';
+        el.className = 'share-feedback' + (kind ? ' ' + kind : '');
+        if (feedbackTimer) { clearTimeout(feedbackTimer); feedbackTimer = null; }
+        if (msg) {
+            feedbackTimer = setTimeout(function() {
+                el.textContent = ''; el.className = 'share-feedback';
+            }, 3500);
+        }
+    }
+
+    function copyShareLink() {
+        var link = buildShareLink();
+        var ok = function() { showShareFeedback('Link copied!', 'success'); };
+        var fallback = function() {
+            try {
+                var ta = document.createElement('textarea');
+                ta.value = link;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                var copied = document.execCommand('copy');
+                document.body.removeChild(ta);
+                if (copied) ok();
+                else showShareFeedback('Copy failed — long-press URL to copy', 'error');
+            } catch (e) {
+                showShareFeedback('Copy failed — long-press URL to copy', 'error');
+            }
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(link).then(ok).catch(fallback);
+        } else {
+            fallback();
+        }
+    }
+
+    function loadDataUrl(dataUrl) {
+        return new Promise(function(resolve, reject) {
+            var img = new Image();
+            img.onload = function() { resolve(img); };
+            img.onerror = function() { reject(new Error('image load failed')); };
+            img.src = dataUrl;
+        });
+    }
+
+    function chartImage(id) {
+        var c = weatherCharts[id];
+        if (!c) return Promise.resolve(null);
+        try {
+            return loadDataUrl(c.toBase64Image('image/png', 1.0));
+        } catch (e) {
+            return Promise.resolve(null);
+        }
+    }
+
+    function formatShareSubtitle(dt, data) {
+        var parts = [];
+        if (dt) {
+            var d = new Date(dt);
+            if (!isNaN(d.getTime())) {
+                parts.push(d.toLocaleString(undefined, {
+                    weekday: 'short', month: 'short', day: 'numeric',
+                    year: 'numeric', hour: 'numeric', minute: '2-digit',
+                }));
+            }
+        }
+        if (data && data.total_distance_mi) parts.push(data.total_distance_mi + ' mi');
+        if (data && data.total_elevation_ft) parts.push(data.total_elevation_ft.toLocaleString() + ' ft');
+        if (data && data.temp_range) parts.push(data.temp_range.min_f + '–' + data.temp_range.max_f + '°F');
+        return parts.join('  •  ');
+    }
+
+    function buildShareImage() {
+        if (!currentRouteData) return Promise.reject(new Error('No data yet'));
+
+        var W = 1200, pad = 24, gap = 16;
+        var headerH = 120;
+        var mapH = 480;
+        var chartH = 240;
+        var chartW = (W - pad * 2 - gap) / 2;
+        var rows = 3;
+        var footerH = 56;
+        var H = pad + headerH + gap + mapH + gap + rows * chartH + (rows - 1) * gap + gap + footerH + pad;
+
+        var canvas = document.createElement('canvas');
+        canvas.width = W;
+        canvas.height = H;
+        var ctx = canvas.getContext('2d');
+
+        function drawContain(src, x, y, w, h) {
+            var sw = src.width || src.naturalWidth;
+            var sh = src.height || src.naturalHeight;
+            if (!sw || !sh) return;
+            var sr = sw / sh, dr = w / h;
+            var dw, dh, dx, dy;
+            if (sr > dr) { dw = w; dh = w / sr; dx = x; dy = y + (h - dh) / 2; }
+            else { dh = h; dw = h * sr; dy = y; dx = x + (w - dw) / 2; }
+            ctx.drawImage(src, dx, dy, dw, dh);
+        }
+
+        var sources = [
+            { id: 'chartWind', label: 'Wind (mph)' },
+            { id: 'chartHeadwind', label: 'Headwind / Tailwind' },
+            { id: 'chartTemp', label: 'Temperature (°F)' },
+            { id: 'chartPrecip', label: 'Precipitation & Cloud' },
+            { id: 'chartHumidity', label: 'Humidity (%)' },
+            { id: 'chartElev', label: 'Elevation (ft)' },
+        ];
+
+        return Promise.all(sources.map(function(s) { return chartImage(s.id); })).then(function(imgs) {
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, W, H);
+
+            // Header bar (orange)
+            ctx.fillStyle = '#ff6b00';
+            ctx.fillRect(pad, pad, W - pad * 2, headerH);
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = 'bold 30px system-ui,-apple-system,Segoe UI,sans-serif';
+            var routeName = (currentRouteData.route_name || 'Route Weather');
+            ctx.fillText(routeName, W / 2, pad + 48);
+            ctx.font = '16px system-ui,-apple-system,Segoe UI,sans-serif';
+            var dtVal = (document.getElementById('start-datetime') || {}).value || '';
+            ctx.fillText(formatShareSubtitle(dtVal, currentRouteData), W / 2, pad + 88);
+
+            // Map row
+            var y = pad + headerH + gap;
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(pad, y, W - pad * 2, mapH);
+            var mapDrawn = false;
+            if (map) {
+                try {
+                    var mc = map.getCanvas();
+                    if (mc && mc.width && mc.height) {
+                        drawContain(mc, pad, y, W - pad * 2, mapH);
+                        mapDrawn = true;
+                    }
+                } catch (e) { /* tainted canvas — fall through to placeholder */ }
+            }
+            if (!mapDrawn) {
+                ctx.fillStyle = '#94a3b8';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.font = '15px system-ui,-apple-system,sans-serif';
+                ctx.fillText('Map unavailable', pad + (W - pad * 2) / 2, y + mapH / 2);
+            }
+            // Map label badge
+            ctx.fillStyle = 'rgba(255,255,255,0.92)';
+            ctx.fillRect(pad + 12, y + 12, 150, 32);
+            ctx.fillStyle = '#0f172a';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.font = 'bold 14px system-ui,-apple-system,sans-serif';
+            ctx.fillText('Wind Direction', pad + 22, y + 28);
+
+            // Chart grid (3 rows × 2 cols)
+            y += mapH + gap;
+            for (var r = 0; r < rows; r++) {
+                for (var c = 0; c < 2; c++) {
+                    var idx = r * 2 + c;
+                    var src = sources[idx];
+                    var img = imgs[idx];
+                    var x = pad + c * (chartW + gap);
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(x, y, chartW, chartH);
+                    ctx.strokeStyle = '#e2e8f0';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x + 0.5, y + 0.5, chartW - 1, chartH - 1);
+                    ctx.fillStyle = '#0f172a';
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'top';
+                    ctx.font = 'bold 14px system-ui,-apple-system,sans-serif';
+                    ctx.fillText(src.label, x + 14, y + 12);
+                    if (img) drawContain(img, x + 8, y + 36, chartW - 16, chartH - 44);
+                }
+                y += chartH + gap;
+            }
+
+            // Footer
+            ctx.fillStyle = '#475569';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = '13px system-ui,-apple-system,sans-serif';
+            ctx.fillText(PRODUCT_NAME + '  •  ' + location.host, W / 2, H - pad - footerH / 2 + 6);
+
+            return canvas;
+        });
+    }
+
+    function makeShareFilename() {
+        var name = (currentRouteData && currentRouteData.route_name) || 'route';
+        var slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'route';
+        var dt = (document.getElementById('start-datetime') || {}).value || '';
+        var dpart = (dt && dt.slice(0, 10)) || new Date().toISOString().slice(0, 10);
+        return 'weather-' + slug + '-' + dpart + '.png';
+    }
+
+    function triggerDownload(blob, filename) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 4000);
+    }
+
+    function withBusy(btnId, label, work) {
+        var btn = document.getElementById(btnId);
+        if (btn) btn.disabled = true;
+        showShareFeedback(label);
+        return work().finally(function() { if (btn) btn.disabled = false; });
+    }
+
+    function downloadShareImage() {
+        return withBusy('share-download-image', 'Building image…', function() {
+            return buildShareImage().then(function(canvas) {
+                return new Promise(function(resolve, reject) {
+                    canvas.toBlob(function(blob) {
+                        if (!blob) return reject(new Error('toBlob returned null'));
+                        triggerDownload(blob, makeShareFilename());
+                        showShareFeedback('Saved!', 'success');
+                        resolve();
+                    }, 'image/png');
+                });
+            }).catch(function(e) {
+                showShareFeedback('Image export failed', 'error');
+                if (window.console) console.error(e);
+            });
+        });
+    }
+
+    function shareNative() {
+        if (!navigator.share) { showShareFeedback('Share not supported here', 'error'); return; }
+        return withBusy('share-native', 'Building image…', function() {
+            return buildShareImage().then(function(canvas) {
+                return new Promise(function(resolve, reject) {
+                    canvas.toBlob(function(blob) { blob ? resolve(blob) : reject(new Error('toBlob returned null')); }, 'image/png');
+                });
+            }).then(function(blob) {
+                var file = new File([blob], makeShareFilename(), { type: 'image/png' });
+                var payload = {
+                    title: (currentRouteData && currentRouteData.route_name) || 'Route Weather',
+                    text: buildShareLink(),
+                    files: [file],
+                };
+                if (!navigator.canShare || !navigator.canShare(payload)) {
+                    payload = { title: payload.title, text: payload.text };
+                }
+                return navigator.share(payload);
+            }).then(function() {
+                showShareFeedback('Shared', 'success');
+            }).catch(function(e) {
+                if (e && e.name === 'AbortError') { showShareFeedback(''); return; }
+                showShareFeedback('Share failed', 'error');
+                if (window.console) console.error(e);
+            });
+        });
+    }
+
+    var copyBtn = document.getElementById('share-copy-link');
+    if (copyBtn) copyBtn.addEventListener('click', copyShareLink);
+    var dlBtn = document.getElementById('share-download-image');
+    if (dlBtn) dlBtn.addEventListener('click', downloadShareImage);
+    var natBtn = document.getElementById('share-native');
+    if (natBtn) natBtn.addEventListener('click', shareNative);
+})();
+</script>

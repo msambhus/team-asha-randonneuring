@@ -14,6 +14,7 @@
 import React from 'react';
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle, Line, Path, Polyline, Text as SvgText } from 'react-native-svg';
+import { colors } from '../lib/theme';
 
 export interface ChartSeries {
   data: number[];
@@ -132,11 +133,11 @@ export function WeatherChart({
           )) : null}
           <SvgText x={4} y={sy(yMax) + 3} fontSize={9} fill="#6b7280">{Math.round(yMax)}</SvgText>
           <SvgText x={4} y={sy(yMin) + 3} fontSize={9} fill="#6b7280">{Math.round(yMin)}</SvgText>
-          <SvgText x={padL} y={H - 6} fontSize={9} fill="#9ca3af">{Math.round(labels[0])}</SvgText>
-          <SvgText x={padL + plotW / 2 - 10} y={H - 6} fontSize={9} fill="#9ca3af">
+          <SvgText x={padL} y={H - 6} fontSize={9} fill={colors.textMuted}>{Math.round(labels[0])}</SvgText>
+          <SvgText x={padL + plotW / 2 - 10} y={H - 6} fontSize={9} fill={colors.textMuted}>
             {Math.round(labels[Math.floor(n / 2)])}
           </SvgText>
-          <SvgText x={W - padR - 18} y={H - 6} fontSize={9} fill="#9ca3af">{Math.round(labels[n - 1])}</SvgText>
+          <SvgText x={W - padR - 18} y={H - 6} fontSize={9} fill={colors.textMuted}>{Math.round(labels[n - 1])}</SvgText>
         </Svg>
       </View>
       <View style={styles.footer}>
@@ -164,5 +165,5 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   swatch: { width: 10, height: 10, borderRadius: 2 },
   legendText: { fontSize: 10, color: '#6b7280' },
-  axis: { fontSize: 9, color: '#9ca3af' },
+  axis: { fontSize: 9, color: colors.textMuted },
 });

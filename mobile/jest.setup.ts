@@ -42,3 +42,19 @@ jest.mock('expo-location', () => ({
   stopLocationUpdatesAsync: jest.fn(async () => undefined),
   hasStartedLocationUpdatesAsync: jest.fn(async () => false),
 }));
+
+// Screens read safe-area insets via useSafeAreaInsets(); production wraps them in
+// <SafeAreaProvider> (app/_layout.tsx) but unit tests render screens in isolation,
+// so provide zero insets instead of requiring a provider in every test.
+jest.mock('react-native-safe-area-context', () => {
+  const inset = { top: 0, right: 0, bottom: 0, left: 0 };
+  const frame = { x: 0, y: 0, width: 390, height: 844 };
+  return {
+    SafeAreaProvider: ({ children }: { children: unknown }) => children,
+    SafeAreaConsumer: ({ children }: { children: (i: typeof inset) => unknown }) => children(inset),
+    SafeAreaView: ({ children }: { children: unknown }) => children,
+    useSafeAreaInsets: () => inset,
+    useSafeAreaFrame: () => frame,
+    initialWindowMetrics: { insets: inset, frame },
+  };
+});

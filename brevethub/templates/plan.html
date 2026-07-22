@@ -6,6 +6,11 @@
 {% block extra_head %}
 {% if real_plan %}
 <link rel="stylesheet" href="{{ url_for('static', filename='ride-plan-v2.css') }}">
+{% if v2.show_weather_map %}
+{# Mapbox GL assets + weather-tab styles — only when a publishable token and a warm
+   cache both exist, so the guest page never loads a broken/empty map. #}
+{% include 'partials/_weather_head.html' %}
+{% endif %}
 {% else %}
 <style>
 /* Ride-plan page-specific styling (elevation profile, difficulty chips, pacing
@@ -555,18 +560,25 @@
         {% endif %}
     </section>
 
-    {# ===== Weather tab (lean, Phase 1) ===== #}
+    {# ===== Weather tab ===== #}
     <section class="rpv2-panel {% if active_tab == 'weather' %}is-active{% endif %}"
              id="rpv2-panel-weather" role="tabpanel" aria-labelledby="rpv2-tab-weather" data-panel="weather">
+        {% if v2.show_weather_map %}
+        {# Full Mapbox weather tab — interactive wind map + along-route forecast, all data
+           served from the cron-warmed cache via /plan/<id>/weather-data (no live fetch).
+           The vendored partial reads bare prefill_* names; bind them from v2 here. #}
+        {% with prefill_plan_name=v2.prefill_plan_name, prefill_url='',
+                prefill_datetime=v2.prefill_datetime, prefill_speed=v2.prefill_speed %}
+        {% include 'partials/_weather_content.html' %}
+        {% endwith %}
+        {% else %}
+        {# Lean per-stop forecast fallback — when no Mapbox token or no warm cache. #}
         <div class="rpv2-card">
             <div class="rpv2-card-h">
                 <div>
                     <div class="rpv2-card-title">Forecast along the route</div>
                     <div class="rpv2-card-sub">Per-stop wind + temperature from the cached forecast</div>
                 </div>
-            </div>
-            <div class="rpv2-coming" style="margin:0 0 12px;">
-                🗺 An interactive weather map is coming — for now this is the per-stop forecast list.
             </div>
             {% if v2.has_forecast %}
             <div class="rpv2-table-scroll">
@@ -598,6 +610,7 @@
             <div class="rpv2-empty">No forecast cached for this brevet yet — check back closer to the ride date.</div>
             {% endif %}
         </div>
+        {% endif %}
     </section>
 
 </div>
@@ -1100,6 +1113,15 @@
     }
 })();
 </script>
+{% if v2.show_weather_map %}
+{# Mapbox map init + cached-forecast render — auto-fetches /plan/<id>/weather-data (the
+   cron-warmed cache), never a live Open-Meteo/RWGPS call. Bind the bare names the
+   vendored partial reads from v2 (product_name is a global). #}
+{% with mapbox_token=v2.mapbox_token, auto_fetch=v2.auto_fetch,
+        weather_data_url=v2.weather_data_url %}
+{% include 'partials/_weather_scripts.html' %}
+{% endwith %}
+{% endif %}
 <script>
 // Strategies tab: save a pace pick and toggle community sharing. Progressive
 // enhancement only — the server render already reflects both states on reload, so a

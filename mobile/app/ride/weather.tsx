@@ -18,14 +18,10 @@ import { useRideWeather } from '../../hooks/useRideWeather';
 import { useAllowRotation } from '../../hooks/useAllowRotation';
 import { WeatherChart } from '../../components/WeatherChart';
 import type { RideWeatherAvailable, WeatherSegment } from '../../lib/types';
+import { colors } from '../../lib/theme';
+import { windColor } from '../../lib/format';
 
-const RED = '#dc2626', GREEN = '#16a34a', BLUE = '#2563eb';
-
-function windColor(label: string): string {
-  if (label.includes('headwind')) return RED;
-  if (label.includes('tailwind')) return GREEN;
-  return BLUE;
-}
+const RED = colors.red, GREEN = colors.green, BLUE = colors.blue;
 
 function regionForCoords(coords: { latitude: number; longitude: number }[]): Region | null {
   if (!coords.length) return null;
@@ -241,7 +237,9 @@ export default function RideWeatherScreen() {
     return (
       <View style={styles.center}>
         <Text style={styles.muted}>Couldn't load the weather.</Text>
-        <Text style={styles.link} onPress={() => refetch()}>Retry</Text>
+        <Pressable onPress={() => refetch()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Retry loading the weather forecast">
+          <Text style={styles.link}>Retry</Text>
+        </Pressable>
       </View>
     );
   }
@@ -288,7 +286,7 @@ const styles = StyleSheet.create({
   tr: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4, borderRadius: 6 },
   trActive: { backgroundColor: '#eff6ff' },
   thead: { borderBottomWidth: 1, borderBottomColor: '#e5e7eb', paddingBottom: 6 },
-  th: { fontSize: 10, fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase' },
+  th: { fontSize: 10, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase' },
   td: { fontSize: 13, color: '#1f2937' },
   cDist: { width: 32 },
   cTime: { flex: 1 },
@@ -297,5 +295,5 @@ const styles = StyleSheet.create({
   cHw: { width: 44, textAlign: 'right', fontWeight: '700' },
   cSky: { width: 30, textAlign: 'center' },
   cRain: { width: 40, textAlign: 'right' },
-  attribution: { color: '#9ca3af', fontSize: 11, textAlign: 'center', marginTop: 4 },
+  attribution: { color: colors.textMuted, fontSize: 11, textAlign: 'center', marginTop: 4 },
 });

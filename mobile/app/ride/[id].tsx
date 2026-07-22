@@ -18,6 +18,8 @@ import { useSharing } from '../../hooks/useSharing';
 import { startSharing, stopSharing, isSharing } from '../../location/backgroundLocation';
 import { WeatherChart } from '../../components/WeatherChart';
 import type { LivePosition, LiveChartData, LivePlanOption, LivePlanId, UpcomingControl } from '../../lib/types';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors } from '../../lib/theme';
 
 const FALLBACK_REGION: Region = {
   latitude: 37.3, longitude: -121.9, latitudeDelta: 0.4, longitudeDelta: 0.4,
@@ -242,6 +244,7 @@ export default function RideLiveScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const rideId = parseInt(String(params.id), 10);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [selectedPlanId, setSelectedPlanId] = useState<LivePlanId | null>(null);
   const { data, isLoading } = useLivePositions(rideId, selectedPlanId);
   const positions = data?.positions ?? null;
@@ -299,11 +302,13 @@ export default function RideLiveScreen() {
       <Stack.Screen options={{
         headerRight: () => (
           <View style={{ flexDirection: 'row', gap: 18 }}>
-            <Pressable onPress={() => router.push(`/ride/plan?id=${rideId}`)} hitSlop={12}>
-              <Feather name="list" size={22} color="#1a365d" />
+            <Pressable onPress={() => router.push(`/ride/plan?id=${rideId}`)} hitSlop={12}
+              accessibilityRole="button" accessibilityLabel="Ride plan">
+              <Feather name="list" size={22} color={colors.navy} />
             </Pressable>
-            <Pressable onPress={() => router.push(`/ride/weather?id=${rideId}`)} hitSlop={12}>
-              <Feather name="cloud-drizzle" size={22} color="#1a365d" />
+            <Pressable onPress={() => router.push(`/ride/weather?id=${rideId}`)} hitSlop={12}
+              accessibilityRole="button" accessibilityLabel="Ride weather">
+              <Feather name="cloud-drizzle" size={22} color={colors.navy} />
             </Pressable>
           </View>
         ),
@@ -366,7 +371,7 @@ export default function RideLiveScreen() {
         ) : null}
       </View>
 
-      <ScrollView style={styles.cards} contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
+      <ScrollView style={styles.cards} contentContainerStyle={{ padding: 12, paddingBottom: 24 + insets.bottom }}>
         {isLoading ? <ActivityIndicator style={{ marginTop: 16 }} /> : null}
         <PlanSelector plans={plans} applied={appliedPlanId} onSelect={setSelectedPlanId} />
         {(positions ?? []).map((p) => <RiderCard key={p.rider_id} p={p} />)}

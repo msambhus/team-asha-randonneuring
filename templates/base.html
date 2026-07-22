@@ -4,15 +4,27 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{% block title %}Team Asha Randonneuring{% endblock %}</title>
+<meta name="description" content="{% block meta_description %}Team Asha Randonneuring — brevet calendar, rider results, live tracking, and season awards for our randonneuring community raising funds for the education of underprivileged children in India.{% endblock %}">
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.svg') }}">
+<meta name="theme-color" content="#1a365d">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Team Asha Randonneuring">
+<meta property="og:title" content="{{ self.title() }}">
+<meta property="og:description" content="{{ self.meta_description() }}">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="{{ self.title() }}">
+<meta name="twitter:description" content="{{ self.meta_description() }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='output.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 {% block extra_head %}{% endblock %}
 </head>
 <body class="bg-bg text-text">
+<a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[300] focus:bg-white focus:text-primary focus:px-4 focus:py-2 focus:rounded-md focus:shadow-lg focus:font-semibold">Skip to content</a>
 <header class="bg-gradient-to-br from-primary to-primary-dark text-white sticky top-0 z-[100] shadow-[0_2px_10px_rgba(0,0,0,0.15)]">
 <div class="flex items-center justify-between py-3 px-4 md:px-5 max-w-[1200px] mx-auto">
 <div class="text-[1.2rem] md:text-[1.4rem] font-bold tracking-tight"><a href="{{ url_for('main.index') }}" class="text-inherit no-underline">Team <span class="text-accent-light">Asha</span> Randonneuring</a></div>
-<button id="nav-toggle" class="md:hidden text-white bg-white/15 border border-white/30 rounded-md p-1.5 cursor-pointer" aria-label="Toggle navigation">
+<button id="nav-toggle" class="md:hidden text-white bg-white/15 border border-white/30 rounded-md p-1.5 cursor-pointer" aria-label="Toggle navigation" aria-controls="mobile-nav" aria-expanded="false">
     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
 </button>
 <nav id="mobile-nav" class="hidden md:flex gap-1 flex-wrap justify-center">
@@ -22,7 +34,7 @@
     <a href="{{ url_for('riders.upcoming_brevets', season_name=current_season.name) }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'riders.upcoming_brevets' %}bg-white/15 text-white{% endif %}">Brevet Calendar</a>
     {% endif %}
     <div class="relative inline-block group">
-        <a href="{{ url_for('riders.riders_directory') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs {% if request.endpoint in ('riders.riders_directory', 'riders.season_riders') %}bg-white/15 text-white{% endif %}">Riders</a>
+        <a href="{{ url_for('riders.riders_directory') }}" class="dropdown-trigger text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs {% if request.endpoint in ('riders.riders_directory', 'riders.season_riders') %}bg-white/15 text-white{% endif %}" aria-haspopup="true" aria-expanded="false">Riders</a>
         <div class="hidden group-hover:block absolute top-full left-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[180px] z-[200] overflow-hidden pt-0">
             <a href="{{ url_for('riders.riders_directory') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">All Riders</a>
             {% for s in seasons %}
@@ -33,7 +45,7 @@
         </div>
     </div>
     <div class="relative inline-block group">
-        <a href="{{ url_for('main.resources') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs {% if request.endpoint in ('main.resources', 'tools.merge_fit_page') %}bg-white/15 text-white{% endif %}">Resources</a>
+        <a href="{{ url_for('main.resources') }}" class="dropdown-trigger text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs {% if request.endpoint in ('main.resources', 'tools.merge_fit_page') %}bg-white/15 text-white{% endif %}" aria-haspopup="true" aria-expanded="false">Resources</a>
         <div class="hidden group-hover:block absolute top-full left-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[200px] z-[200] overflow-hidden pt-0">
             <a href="{{ url_for('main.resources') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">All Resources</a>
             <a href="{{ url_for('tools.merge_fit_page') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">🛠️ Merge GPS Files</a>
@@ -42,7 +54,7 @@
     <a href="{{ url_for('weather.weather_page') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'weather.weather_page' %}bg-white/15 text-white{% endif %}">Weather</a>
     {% if user_logged_in %}
     <div class="relative inline-block group">
-        <a class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs">{{ rider_name or user_email }}</a>
+        <button type="button" class="dropdown-trigger bg-transparent border-0 text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs" aria-haspopup="true" aria-expanded="false">{{ rider_name or user_email }}</button>
         <div class="hidden group-hover:block absolute top-full right-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[180px] z-[200] overflow-hidden pt-0">
             <a href="{{ url_for('auth.my_profile') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My Profile</a>
             {% if rider_rusa_id %}<a href="{{ url_for('riders.rider_profile', rusa_id=rider_rusa_id) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My Rider Page</a>{% endif %}
@@ -60,15 +72,19 @@
 </div>
 </header>
 
+<div aria-live="polite" role="status">
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
 {% for category, message in messages %}
-<div class="py-3 px-5 rounded-lg mx-5 my-2.5 text-sm {% if category == 'success' %}bg-[#c6f6d5] text-[#22543d]{% elif category == 'warning' %}bg-[#fef3c7] text-[#78350f]{% elif category == 'info' %}bg-[#dbeafe] text-[#1e40af]{% else %}bg-[#fed7d7] text-[#9b2c2c]{% endif %}">{{ message }}</div>
+<div class="py-3 px-5 rounded-lg mx-5 my-2.5 text-sm {% if category == 'success' %}bg-[#c6f6d5] text-[#22543d]{% elif category == 'warning' %}bg-[#fef3c7] text-[#78350f]{% elif category == 'info' %}bg-[#dbeafe] text-[#1e40af]{% else %}bg-[#fed7d7] text-[#9b2c2c]{% endif %}"{% if category not in ('success', 'info') %} role="alert"{% endif %}>{{ message }}</div>
 {% endfor %}
 {% endif %}
 {% endwith %}
+</div>
 
+<main id="main" tabindex="-1">
 {% block content %}{% endblock %}
+</main>
 
 <footer class="bg-primary text-white/70 text-center py-5 mt-10 text-[0.85rem]">
 <div class="max-w-[1200px] mx-auto px-5">
@@ -202,6 +218,7 @@ document.addEventListener('DOMContentLoaded', function() {
             mobileNav.classList.toggle('w-full');
             mobileNav.classList.toggle('pb-3');
             var isOpen = !mobileNav.classList.contains('hidden');
+            navToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
             navToggle.innerHTML = isOpen
                 ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'
                 : '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>';
@@ -213,35 +230,36 @@ document.addEventListener('DOMContentLoaded', function() {
 document.addEventListener('DOMContentLoaded', function() {
     const dropdowns = document.querySelectorAll('.group');
 
+    function closeDropdown(dropdown) {
+        const t = dropdown.querySelector('.dropdown-trigger');
+        const m = dropdown.querySelector('div[class*="group-hover:block"]');
+        if (m) { m.classList.add('hidden'); m.classList.remove('block'); }
+        if (t) t.setAttribute('aria-expanded', 'false');
+    }
+
     dropdowns.forEach(dropdown => {
-        const trigger = dropdown.querySelector('a[class*="cursor-pointer"]');
+        const trigger = dropdown.querySelector('.dropdown-trigger');
         const menu = dropdown.querySelector('div[class*="group-hover:block"]');
 
         if (!trigger || !menu) return;
 
-        // Toggle dropdown on click/tap
+        // Toggle dropdown on click/tap (works for <a> and <button> triggers)
         trigger.addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
 
+            const willOpen = menu.classList.contains('hidden');
+
             // Close other dropdowns
-            dropdowns.forEach(other => {
-                if (other !== dropdown) {
-                    const otherMenu = other.querySelector('div[class*="group-hover:block"]');
-                    if (otherMenu) {
-                        otherMenu.classList.add('hidden');
-                        otherMenu.classList.remove('block');
-                    }
-                }
-            });
+            dropdowns.forEach(other => { if (other !== dropdown) closeDropdown(other); });
 
             // Toggle this dropdown
-            if (menu.classList.contains('hidden')) {
+            if (willOpen) {
                 menu.classList.remove('hidden');
                 menu.classList.add('block');
+                trigger.setAttribute('aria-expanded', 'true');
             } else {
-                menu.classList.add('hidden');
-                menu.classList.remove('block');
+                closeDropdown(dropdown);
             }
         });
     });
@@ -249,10 +267,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // Close dropdowns when clicking outside
     document.addEventListener('click', function(e) {
         dropdowns.forEach(dropdown => {
+            if (!dropdown.contains(e.target)) closeDropdown(dropdown);
+        });
+    });
+
+    // Close dropdowns on Escape and return focus to the trigger
+    document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Escape') return;
+        dropdowns.forEach(dropdown => {
             const menu = dropdown.querySelector('div[class*="group-hover:block"]');
-            if (menu && !dropdown.contains(e.target)) {
-                menu.classList.add('hidden');
-                menu.classList.remove('block');
+            if (menu && menu.classList.contains('block')) {
+                closeDropdown(dropdown);
+                const t = dropdown.querySelector('.dropdown-trigger');
+                if (t) t.focus();
             }
         });
     });

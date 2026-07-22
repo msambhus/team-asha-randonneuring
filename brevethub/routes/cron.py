@@ -56,6 +56,10 @@ ROUTE_WEATHER_SAMPLE_INTERVAL_M = 15000
 # Open-Meteo. The daily cadence means the row still refreshes every day.
 ROUTE_WEATHER_FRESH_HOURS = 12
 
+# Keep every Nth RWGPS track point for the cached map polyline — a compact route line
+# for the guest Mapbox weather tab (matches Team Asha's weather-map decimation).
+ROUTE_WEATHER_POLYLINE_DECIMATION = 20
+
 
 def _route_weather_is_fresh(fetched_at):
     """True when a cached route-weather row was fetched recently enough to reuse.
@@ -490,6 +494,32 @@ def warm_brevet_plans():
                     'failed': failed, 'considered': len(targets)}), 200
 
 
+def _decimate_track_polyline(track_points):
+    """Reduce a dense RWGPS track to a compact ``[[lat, lng], ...]`` map line.
+
+    Keeps every ``ROUTE_WEATHER_POLYLINE_DECIMATION``-th point plus the final one, so
+    the cached polyline stays small but the route still closes. RWGPS track points use
+    ``y`` for latitude and ``x`` for longitude; points missing either are skipped.
+    Returns None for an empty track so the caller stores SQL NULL (read path then falls
+    back to the sample points). Matches Team Asha's weather-map decimation.
+    """
+    if not track_points:
+        return None
+    polyline = []
+    for i, pt in enumerate(track_points):
+        if i % ROUTE_WEATHER_POLYLINE_DECIMATION != 0:
+            continue
+        lat, lng = pt.get('y'), pt.get('x')
+        if lat is not None and lng is not None:
+            polyline.append([lat, lng])
+    last = track_points[-1]
+    if last.get('y') is not None and last.get('x') is not None:
+        tail = [last['y'], last['x']]
+        if not polyline or polyline[-1] != tail:
+            polyline.append(tail)
+    return polyline or None
+
+
 @cron_bp.route('/warm-brevet-route-weather', methods=['GET', 'POST'])
 def warm_brevet_route_weather():
     """Pre-fetch + persist the dense along-route Open-Meteo forecast for near-term
@@ -575,8 +605,14 @@ def warm_brevet_route_weather():
                 skipped += 1
                 continue
 
+            # Decimate the RWGPS track into a compact [[lat, lng], ...] line for the
+            # guest Mapbox weather tab, drawn straight from cache (no live fetch on the
+            # guest page). None when the route has no usable points → read-path falls
+            # back to the coarser sample_points line.
+            polyline = _decimate_track_polyline(track_points)
+
             models.upsert_brevet_route_weather(
-                event['id'], forecast_date, weather_data, samples)
+                event['id'], forecast_date, weather_data, samples, polyline)
             warmed += 1
         except Exception as e:
             # Fail soft: keep the last-good row for this event, keep going.

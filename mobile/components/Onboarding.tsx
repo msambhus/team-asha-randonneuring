@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
     width: 240, height: 46, borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10,
     paddingHorizontal: 14, fontSize: 15, color: '#111827', backgroundColor: '#fff', marginTop: 4,
   },
-  btn: { backgroundColor: '#1a2a4f', width: 240, height: 48, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  btn: { backgroundColor: '#1a365d', width: 240, height: 48, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   btnDisabled: { opacity: 0.6 },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   error: { color: '#b91c1c', textAlign: 'center', width: 260 },
