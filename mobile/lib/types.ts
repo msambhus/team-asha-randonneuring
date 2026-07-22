@@ -152,6 +152,107 @@ export interface PlanStop {
   temperature_f?: number | null;
 }
 
+// ── Gradient elevation profile (PR #535, mobile parity with web PR #534) ──────
+// Server-computed SVG geometry from the cron-warmed route track
+// (shared/live_radial.py::build_elevation_profile). Colours are baked into each
+// segment server-side from the _GRADE_BUCKETS map (descent=blue → flat=green →
+// steep=dark red), so the client just renders them.
+export interface ElevationSegment {
+  d: string;                    // SVG path "M x1 y1L x2 y2"
+  color: string;                // gradient-bucket colour
+  grade: number | null;         // signed grade %
+}
+
+export interface ElevationTick {
+  x?: number;                   // x_ticks carry x; y_ticks carry y
+  y?: number;
+  label: string;
+}
+
+// Control/break dot overlaid on the profile (from overlay_stop_markers). The
+// client re-derives these from the selected pace's stops on pick (same x, updated
+// ETA/type) — no refetch.
+export interface ElevationMarker {
+  i: number;
+  x: number;
+  y: number;
+  color: string;
+  name: string;
+  cumul_mi: number;
+  eta: string;
+  break_min: number;
+  type: string;                 // start | control | rest | finish | waypoint
+}
+
+export interface ElevationProfileAvailable {
+  available: true;
+  width: number;
+  height: number;
+  plot: { x: number; y: number; w: number; h: number };
+  total_mi: number;
+  min_ft: number;
+  max_ft: number;
+  area_path: string;
+  segments: ElevationSegment[];
+  points: [number, number][];
+  x_ticks: ElevationTick[];
+  y_ticks: ElevationTick[];
+  legend: { color: string; label: string }[];
+  markers?: ElevationMarker[];  // seeded from the standard pace stops server-side
+}
+
+export interface ElevationProfileUnavailable {
+  available: false;
+}
+
+export type ElevationProfile = ElevationProfileAvailable | ElevationProfileUnavailable;
+
+// ── Pace strategies (Comfort / Standard / Push) ──────────────────────────────
+// Per-pace stop list from shared/strategies.py::compute_pace_strategies. Leaner
+// than PlanStop — it carries the pace-varying timing fields the itinerary + overlay
+// re-render from on pick.
+export interface PaceStop {
+  i: number;
+  type: string;                 // start | control | rest | finish | waypoint
+  name: string;
+  cumul_mi: number;             // route-constant across paces
+  eta: string;                  // clock time, e.g. "09:00" (24h, "+1" past midnight)
+  elapsed: string;              // cumulative elapsed at arrival, e.g. "3h05"
+  bank: string;                 // formatted "+2:05" cushion vs cutoff
+  bank_min: number;             // signed minutes (0 when no cutoff)
+  is_key: boolean;
+  seg_mi: number;
+  seg_time_min: number;         // varies with pace
+  break_min: number;
+  is_halt: boolean;
+  fpm: number;
+  seg_speed: number;
+  seg_speed_known: boolean;
+  headwind_mph: number;
+  wind_label: string;
+  wind_arrow_deg: number;
+  wind_known: boolean;
+  tough_class: string;
+  tough_known: boolean;
+}
+
+export type PaceStopsMap = Record<string, PaceStop[]>;   // keyed comfort/standard/push
+
+// A pace card's header labels — every compute_pace_strategies field except `stops`.
+export interface PaceCardMeta {
+  id: string;                   // comfort | standard | push
+  name: string;
+  color: string;
+  summary: string;
+  total: string;
+  sleep: string;
+  has_sleep: boolean;
+  bank: string;
+  bank_good: boolean;
+  risk: string;
+  recommended: boolean;
+}
+
 export interface RidePlanAvailable {
   available: true;
   plan: {
@@ -169,6 +270,11 @@ export interface RidePlanAvailable {
   custom_name: string | null;
   ride_date: string | null;
   stops: PlanStop[];
+  // Additive (PR #535): old clients ignore these. `elevation_profile` is
+  // {available:false} on a cache miss; `pace_stops_map` is {} when the ride has no plan.
+  elevation_profile?: ElevationProfile;
+  pace_stops_map?: PaceStopsMap;
+  pace_cards_meta?: PaceCardMeta[];
 }
 
 export interface RidePlanUnavailable {

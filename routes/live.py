@@ -21,11 +21,13 @@ from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled
                     get_latest_positions_for_ride, insert_live_position,
                     get_rider_upcoming_signups, get_ride_plan_stops,
                     get_positions_for_rider_since, get_default_time_limit,
-                    get_or_create_ride_invite, get_valid_ride_invite, RideStatus)
+                    get_or_create_ride_invite, get_valid_ride_invite,
+                    get_route_elevation_track, RideStatus)
 from services.garmin_livetrack import parse_session
 from services.rwgps import extract_rwgps_route_id, fetch_route
 from services import live_telemetry as tlm
 from services import live_radial as radial
+from shared.strategies import compute_pace_strategies
 from services.weather import (sample_track_points, load_stored_route_weather,
                               calculate_bearing, headwind_component,
                               crosswind_component, classify_wind,
@@ -1265,6 +1267,15 @@ def _resolve_base_plan(ride):
     return get_ride_plan_by_slug(m['slug']) if m else None
 
 
+# Stop-marker colours for the mobile plan-page elevation overlay. A local copy (not
+# an import of the web route's map) so the two surfaces stay decoupled; kept in step
+# with the rpv2 STOP_TYPES colours so a control's dot matches its itinerary badge.
+_PLAN_STOP_MARKER_COLORS = {
+    'start': '#16a34a', 'control': '#1d4ed8', 'rest': '#ea580c',
+    'waypoint': '#64748b', 'finish': '#dc2626',
+}
+
+
 def _emit_plan_stop(d, base_dt):
     """Serialize a stop dict that already carries computed timing fields
     (cum_time_min / arrival_time_min / time_bank_min / seg_dist / ft_per_mi)."""
@@ -1447,16 +1458,20 @@ def api_ride_plan(ride_id):
 
     stops = [_emit_plan_stop(d, base_dt) for d in raw]
 
+    # RWGPS route id + ride date, shared by the wind read and the elevation-profile
+    # read below. BOTH are cache-only (stored forecast / cron-warmed track) — never a
+    # live RWGPS or Open-Meteo fetch on the mobile plan path (TA-237).
+    route_id = extract_rwgps_route_id(
+        plan.get('rwgps_url_team') or plan.get('rwgps_url')
+        or ride.get('rwgps_url_team') or ride.get('rwgps_url'))
+    ride_date = ride.get('date')
+    if isinstance(ride_date, str):
+        ride_date = _date.fromisoformat(ride_date)
+
     # Best-effort per-stop wind + temperature (same service as the plan web page),
     # READ from the pre-fetched forecast for this route + ride date (no live Open-Meteo
     # on the mobile plan path — TA-237).
     try:
-        route_id = extract_rwgps_route_id(
-            plan.get('rwgps_url_team') or plan.get('rwgps_url')
-            or ride.get('rwgps_url_team') or ride.get('rwgps_url'))
-        ride_date = ride.get('date')
-        if isinstance(ride_date, str):
-            ride_date = _date.fromisoformat(ride_date)
         if route_id and ride_date:
             wind_stops = [{'distance_miles': st['distance_mi'],
                            'arrival_time_min': st['arrival_time_min']} for st in stops]
@@ -1469,6 +1484,39 @@ def api_ride_plan(ride_id):
                     st['temperature_f'] = w.get('temperature_f')
     except Exception:
         current_app.logger.warning('ride plan %s: stop wind unavailable', plan_slug)
+
+    # Per-pace-variant itineraries (comfort / standard / push) so the mobile client can
+    # swap the visible schedule + reposition the elevation overlay on pick — client-side,
+    # no refetch — using the SAME shared math as the web rpv2 pace cards. No `base_stops`
+    # is passed, so the ids are always comfort/standard/push: a stable mobile contract
+    # (the web's custom-plan rebaseline to team/yours/extra is deliberately not mirrored).
+    # Fail-soft: any error → empty map/meta, logged, and the base `stops` still serve.
+    pace_stops_map = {}
+    pace_cards_meta = []
+    try:
+        paces = compute_pace_strategies(raw, plan, start_str, cutoff_hours)
+        pace_stops_map = {p['id']: p['stops'] for p in paces}
+        pace_cards_meta = [{k: v for k, v in p.items() if k != 'stops'} for p in paces]
+    except Exception:
+        current_app.logger.warning('ride plan %s: pace strategies unavailable', plan_slug)
+
+    # Gradient elevation profile from the cron-warmed track (route_weather_cache,
+    # migration 052) — read from cache ONLY, never a live RWGPS fetch on the request
+    # path (TA-237), exactly like the web ride_plan_detail render. Control/break markers
+    # are placed from the STANDARD pace stops (which carry `cumul_mi`), not the mobile
+    # `stops` array (which uses `distance_mi`). Fail-soft: cold cache / no elevation /
+    # any error → {'available': False} so old and new clients both keep working.
+    elevation_profile = {'available': False}
+    try:
+        track = get_route_elevation_track(route_id) if route_id else None
+        elevation_profile = radial.build_elevation_profile(track or [])
+        if elevation_profile.get('available'):
+            elevation_profile['markers'] = radial.overlay_stop_markers(
+                elevation_profile, pace_stops_map.get('standard') or [],
+                _PLAN_STOP_MARKER_COLORS)
+    except Exception:
+        current_app.logger.warning('ride plan %s: elevation profile unavailable', plan_slug)
+        elevation_profile = {'available': False}
 
     return jsonify({
         'available': True,
@@ -1488,6 +1536,11 @@ def api_ride_plan(ride_id):
         'custom_name': custom.get('name') if custom else None,
         'ride_date': str(ride['date']) if ride.get('date') else None,
         'stops': stops,
+        # Additive (PR #535 mobile parity with web PR #534): old clients ignore these.
+        # Gradient elevation profile ({available:false} on cache miss) + per-pace stops.
+        'elevation_profile': elevation_profile,
+        'pace_stops_map': pace_stops_map,
+        'pace_cards_meta': pace_cards_meta,
     })
 
 
