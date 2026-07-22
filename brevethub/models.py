@@ -672,7 +672,8 @@ def get_club_rider(club_id, rider_id):
     completed-profile rider.
     """
     return db.query_one(
-        "SELECT id, email, rusa_id, club_id, created_at, rusa_cache, eddington_km "
+        "SELECT id, email, rusa_id, club_id, created_at, rusa_cache, "
+        "       eddington_km, eddington_miles "
         "FROM rp_rider "
         "WHERE club_id = %s AND id = %s AND profile_completed = TRUE",
         (club_id, rider_id),
