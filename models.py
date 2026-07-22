@@ -3742,22 +3742,61 @@ def save_route_weather_cache(route_id, forecast_date, weather_data, sample_point
 
 
 def get_route_elevation_track(route_id):
-    """The cron-warmed elevation track for a route, or None — date-independent.
+    """The cron-warmed elevation track for a route, or None.
 
-    Returns the most recently warmed ``[{lat, lng, dist_m, e_m}, ...]`` track for the
-    route (route geometry is date-invariant, so any warmed row serves it), for the rpv2
-    plan-page gradient elevation profile to read from cache instead of fetching RWGPS
-    live on the request path (the TA-237 guest-safety invariant). None when no row has a
-    cached track yet (new route, pre-column rows, or the cron has not run) — the render
-    then degrades to an empty profile.
+    Returns the ``[{lat, lng, dist_m, e_m}, ...]`` track cached in the route-keyed
+    route_geometry_cache (route geometry is date-invariant), for the rpv2 plan-page
+    gradient elevation profile to read from cache instead of fetching RWGPS live on the
+    request path (the TA-237 guest-safety invariant). The warm-plan-elevation cron
+    populates it for every route referenced by a ride_plan (past and upcoming), so any
+    plan's profile is served once warmed. None when the route has no cached track yet
+    (new route, or the cron has not run) — the render then degrades to an empty profile.
     """
     row = _execute(
-        "SELECT elevation_track FROM route_weather_cache "
-        "WHERE route_id = %s AND elevation_track IS NOT NULL "
-        "ORDER BY fetched_at DESC LIMIT 1",
+        "SELECT elevation_track FROM route_geometry_cache "
+        "WHERE route_id = %s AND elevation_track IS NOT NULL",
         (route_id,),
     ).fetchone()
     return row['elevation_track'] if row else None
+
+
+def upsert_route_geometry(route_id, elevation_track):
+    """Insert or refresh one route's cached elevation track (idempotent on route_id).
+
+    Route geometry is date-invariant, so this is keyed on the RWGPS route id alone.
+    Only called by the warm-plan-elevation cron with a successful fetch, so a transient
+    RWGPS failure never overwrites a last-good row (the caller skips the upsert). The
+    track is the downsampled ``[{lat, lng, dist_m, e_m}, ...]`` shared.live_radial
+    output that build_elevation_profile consumes; None on a route with no usable points.
+    """
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        """
+        INSERT INTO route_geometry_cache (route_id, elevation_track, fetched_at)
+        VALUES (%s, %s, NOW())
+        ON CONFLICT (route_id) DO UPDATE SET
+            elevation_track = EXCLUDED.elevation_track,
+            fetched_at = NOW()
+        """,
+        (route_id, psycopg2.extras.Json(elevation_track) if elevation_track is not None else None),
+    )
+    conn.commit()
+
+
+def get_route_geometry_freshness(route_id):
+    """The fetched_at of a route's cached geometry, or None — for the cron fresh-skip.
+
+    Only counts a row that actually has a track: a NULL-track row (a fetch that yielded
+    no usable points) returns None so the cron re-warms it rather than pinning an empty
+    profile for the whole freshness window.
+    """
+    row = _execute(
+        "SELECT fetched_at FROM route_geometry_cache "
+        "WHERE route_id = %s AND elevation_track IS NOT NULL",
+        (route_id,),
+    ).fetchone()
+    return row['fetched_at'] if row else None
 
 
 def get_upcoming_weather_targets(within_days=28):

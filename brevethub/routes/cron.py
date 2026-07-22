@@ -43,6 +43,10 @@ from shared.weather import (FORECAST_HORIZON_DAYS, fetch_point_forecast,
 # gradient profile SVG while keeping the JSONB row lean.
 ROUTE_WEATHER_ELEVATION_TRACK_POINTS = 800
 
+# Re-warm window for the route-keyed elevation cache. Route geometry is near-static, so a
+# generous freshness window keeps the warm-plan-elevation cron cheap; ?force=1 bypasses it.
+ELEVATION_CACHE_FRESH_DAYS = 30
+
 cron_bp = Blueprint('cron', __name__)
 
 # RUSA finish-time matching window — mirrors the parent web app sync tolerance: an
@@ -640,6 +644,70 @@ def warm_brevet_route_weather():
         warmed, skipped, failed, len(targets))
     return jsonify({'ok': True, 'warmed': warmed, 'skipped': skipped,
                     'failed': failed, 'considered': len(targets)}), 200
+
+
+@cron_bp.route('/warm-plan-elevation', methods=['GET', 'POST'])
+def warm_plan_elevation():
+    """Cache the RWGPS elevation track for EVERY route referenced by an rp_brevet_route_plan,
+    so the guest rpv2 /plan gradient profile renders for ANY plan (past or upcoming) with no
+    live RWGPS fetch on the request path. Unlike warm-brevet-route-weather (upcoming events
+    only), this warms all plan routes into the route-keyed rp_route_geometry_cache.
+
+    Auth-gated (Bearer CRON_SECRET). Idempotent: a route warmed within
+    ELEVATION_CACHE_FRESH_DAYS is skipped unless a truthy ?force is passed. Fail-soft per
+    route: an RWGPS error keeps the last-good row and is counted, never 500s the cron.
+    Returns {ok, warmed, skipped, failed, considered}.
+
+    Route contract: leaf-only decorator; the blueprint owns the /cron prefix, so the
+    production URL is exactly /cron/warm-plan-elevation (a double /cron would 404).
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    from datetime import datetime, timezone, timedelta
+
+    force = request.args.get('force') in ('1', 'true', 'yes')
+    api_key = current_app.config.get('RWGPS_API_KEY')
+    auth_token = current_app.config.get('RWGPS_AUTH_TOKEN')
+
+    try:
+        plans = models.get_brevet_route_plan_route_ids()
+    except Exception as e:
+        current_app.logger.warning('warm-plan-elevation: plan load failed: %s', e)
+        return jsonify({'ok': False, 'error': 'plan load failed',
+                        'warmed': 0, 'skipped': 0, 'failed': 0}), 200
+
+    route_ids = set()
+    for p in plans:
+        rid = p.get('rwgps_route_id') or extract_rwgps_route_id(p.get('rwgps_url'))
+        if rid:
+            route_ids.add(str(rid))
+
+    warmed = skipped = failed = 0
+    for route_id in sorted(route_ids):
+        try:
+            if not force:
+                fetched_at = models.get_rp_route_geometry_freshness(route_id)
+                if fetched_at and (datetime.now(timezone.utc) - fetched_at
+                                   < timedelta(days=ELEVATION_CACHE_FRESH_DAYS)):
+                    skipped += 1
+                    continue
+            route_data = fetch_route(route_id, api_key, auth_token)
+            elevation_track = track_from_route(
+                route_data, max_points=ROUTE_WEATHER_ELEVATION_TRACK_POINTS) or None
+            models.upsert_rp_route_geometry(route_id, elevation_track)
+            warmed += 1
+        except Exception as e:
+            failed += 1
+            current_app.logger.warning(
+                'warm-plan-elevation: route %s failed (last-good kept): %s', route_id, e)
+
+    current_app.logger.info(
+        'warm-plan-elevation: warmed=%s skipped=%s failed=%s of %s routes',
+        warmed, skipped, failed, len(route_ids))
+    return jsonify({'ok': True, 'warmed': warmed, 'skipped': skipped,
+                    'failed': failed, 'considered': len(route_ids)}), 200
 
 
 # Short pause between riders in the Eddington refresh so a full-history fetch for
