@@ -114,6 +114,10 @@
   {% set weighted_difficulty = v2.weighted_difficulty %}
   {% set avg_elapsed_speed = v2.avg_elapsed_speed %}
   {% set going_count = v2.going_count %}
+  {% set save_state = v2.save_state %}
+  {% set saved_pace_id = v2.saved_pace_id %}
+  {% set saved_is_public = v2.saved_is_public %}
+  {% set community_plans = v2.community_plans %}
   {% set STOP_TYPES = {
       'start':    {'label': 'Start',    'glyph': '🚩', 'color': '#16a34a'},
       'control':  {'label': 'Control',  'glyph': '◆',  'color': '#1d4ed8'},
@@ -441,19 +445,22 @@
         </div>
     </section>
 
-    {# ===== Strategies tab (read-only) ===== #}
+    {# ===== Strategies tab (save + community) ===== #}
     <section class="rpv2-panel {% if active_tab == 'strategies' %}is-active{% endif %}"
-             id="rpv2-panel-strategies" role="tabpanel" aria-labelledby="rpv2-tab-strategies" data-panel="strategies">
+             id="rpv2-panel-strategies" role="tabpanel" aria-labelledby="rpv2-tab-strategies" data-panel="strategies"
+             data-strategy-url="{{ url_for('plan.save_strategy', event_id=plan.event_id) }}">
         {% if paces %}
         <div class="rpv2-pc-intro">
             <div class="rpv2-pc-eyebrow">3 ways to ride it</div>
             <div class="rpv2-pc-sub">
                 Times below are derived from the plan with adjusted segment speed and night halt.
+                {% if save_state == 'ready' %}Pick the pace you plan to ride and save it as your plan for this brevet.{% endif %}
             </div>
         </div>
         <div class="rpv2-pc-grid">
             {% for p in paces %}
-            <div class="rpv2-pc-col" data-pace-id="{{ p.id }}" style="--pc-color:{{ p.color }};">
+            <div class="rpv2-pc-col {% if save_state == 'ready' and p.id == saved_pace_id %}is-on{% endif %}"
+                 data-pace-id="{{ p.id }}" style="--pc-color:{{ p.color }};">
                 <div class="rpv2-pc-col-h">
                     {% if p.recommended %}<span class="rpv2-pc-rec">★ RECOMMENDED</span>{% endif %}
                     <div class="rpv2-pc-name">{{ p.name }}</div>
@@ -495,9 +502,52 @@
                     {% endfor %}
                 </div>
                 <div class="rpv2-pc-risk">⚠ {{ p.risk }}</div>
+                {# ── Save control: pick this pace as the rider's plan ── #}
+                {% if save_state == 'ready' %}
+                    {% if p.id == saved_pace_id %}
+                    <button type="button" class="rpv2-pc-btn rpv2-pc-btn-saved" data-pace-pick="{{ p.id }}" disabled>✓ Saved</button>
+                    {% elif saved_pace_id %}
+                    <button type="button" class="rpv2-pc-btn" data-pace-pick="{{ p.id }}">Switch to this plan</button>
+                    {% else %}
+                    <button type="button" class="rpv2-pc-btn" data-pace-pick="{{ p.id }}">Choose this plan</button>
+                    {% endif %}
+                {% else %}
+                <a class="rpv2-pc-btn rpv2-pc-btn-link"
+                   href="{{ url_for('auth.login', next=url_for('plan.plan_view', event_id=plan.event_id, tab='strategies')) }}">Sign in to save</a>
+                {% endif %}
             </div>
             {% endfor %}
         </div>
+
+        {# ── Share-to-community toggle: shown once a pace is saved ── #}
+        {% if save_state == 'ready' and saved_pace_id %}
+        <div class="rpv2-pc-share">
+            <button type="button"
+                    class="rpv2-custom-banner-link rpv2-public-toggle {% if saved_is_public %}is-public{% endif %}"
+                    data-share-toggle data-pace-id="{{ saved_pace_id }}"
+                    aria-pressed="{{ 'true' if saved_is_public else 'false' }}">
+                {% if saved_is_public %}● Shared to community{% else %}○ Share to community{% endif %}
+            </button>
+        </div>
+        {% endif %}
+
+        {# ── Community plans: other riders' publicly-shared strategies (club-scoped) ── #}
+        {% if community_plans %}
+        <div class="rpv2-community-wrap">
+            <div class="rpv2-pc-eyebrow">Community plans</div>
+            <div class="rpv2-community">
+                {% for c in community_plans %}
+                <div class="rpv2-community-row">
+                    <span>
+                        <span class="rpv2-community-name">{{ c.name }}</span>
+                        <span class="rpv2-community-meta">{{ c.pace_id|capitalize }}{% if c.total %} · {{ c.total }}{% endif %}</span>
+                    </span>
+                    <span class="rpv2-community-arrow">›</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
         {% else %}
         <div class="rpv2-coming">
             <b>Strategies unavailable</b> — this plan doesn't have enough segment timing data.
@@ -1046,6 +1096,54 @@
                 shareBtn.disabled = false;
                 setTimeout(function() { shareBtn.textContent = orig; }, 2200);
             });
+        });
+    }
+})();
+</script>
+<script>
+// Strategies tab: save a pace pick and toggle community sharing. Progressive
+// enhancement only — the server render already reflects both states on reload, so a
+// no-JS rider still gets a working sign-in prompt and (once saved) the correct cards.
+(function () {
+    var panel = document.getElementById('rpv2-panel-strategies');
+    if (!panel || !panel.dataset.strategyUrl) return;
+    var url = panel.dataset.strategyUrl;
+
+    function post(body) {
+        return fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body),
+        }).then(function (r) { return r.ok ? r.json() : null; });
+    }
+
+    // Pick / switch the saved pace, then reload so every card reflects the new state.
+    panel.querySelectorAll('[data-pace-pick]').forEach(function (btn) {
+        if (btn.disabled) return;   // the already-saved card
+        btn.addEventListener('click', function () {
+            btn.disabled = true;
+            post({pace_id: btn.dataset.pacePick}).then(function (data) {
+                if (data && data.ok) window.location.search = '?tab=strategies';
+                else btn.disabled = false;
+            }).catch(function () { btn.disabled = false; });
+        });
+    });
+
+    // Toggle share-to-community in place (no reload needed).
+    var toggle = panel.querySelector('[data-share-toggle]');
+    if (toggle) {
+        toggle.addEventListener('click', function () {
+            var next = toggle.getAttribute('aria-pressed') !== 'true';
+            toggle.disabled = true;
+            post({pace_id: toggle.dataset.paceId, is_public: next}).then(function (data) {
+                if (data && data.ok) {
+                    toggle.setAttribute('aria-pressed', data.is_public ? 'true' : 'false');
+                    toggle.classList.toggle('is-public', !!data.is_public);
+                    toggle.textContent = data.is_public
+                        ? '● Shared to community' : '○ Share to community';
+                }
+                toggle.disabled = false;
+            }).catch(function () { toggle.disabled = false; });
         });
     }
 })();

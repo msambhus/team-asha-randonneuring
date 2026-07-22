@@ -9,8 +9,14 @@ a 500, not a silent pass):
   * the Plan tab renders the 11-column itinerary, the journey SVG, the info trio, a
     risks callout, and the snapshot/share card with a de-branded `product_name · /plan/<id>`
     footer (never "Team Asha"),
-  * the Strategies tab renders three read-only Comfort/Standard/Push cards with NO save
-    button and NO community list,
+  * the Strategies tab renders three Comfort/Standard/Push cards with a per-card save
+    button (data-pace-pick / "Choose this plan") for a signed-in rider and a sign-in
+    prompt for a guest; the saved card flips to "✓ Saved"; once a pace is saved a
+    share-to-community toggle appears; and other riders' publicly-shared, club-scoped
+    strategies render in a PII-safe (local-part only) "Community plans" block,
+  * the save/share route (POST /plan/<id>/strategy) enforces the save_plan auth ladder
+    (401+login_url guest, 400 bad pace, 404 unknown event) and echoes the is_public the
+    upsert actually persisted,
   * the Weather tab renders the lean per-stop forecast list from the cached route
     weather via compute_stop_winds, with the "interactive map coming" note and NO Mapbox,
   * a guest sees rider local-parts only — no full email, no google_id,
@@ -19,6 +25,8 @@ a 500, not a silent pass):
 from unittest.mock import patch
 
 import pytest
+
+from brevethub import models
 
 
 _EVENT = {
@@ -91,6 +99,39 @@ def _get(client, url, *, weather=None):
         return client.get(url)
 
 
+# A signed-in rider (email carries a full address; only the local-part may ever render).
+# club_id scopes the community read.
+_RIDER = {'id': 7, 'email': 'dave@example.com', 'google_id': 'g-dave',
+          'club_id': 3, 'profile_completed': True}
+
+
+def _get_as_rider(client, url, *, rider=None, saved=None, community=None, weather=None):
+    """GET a plan URL as a signed-in rider: seed the session, resolve current_rider via
+    a mocked get_rider_by_id, and mock the saved-plan + community reads. All mocks accept
+    **kwargs so a signature tweak never silently breaks the fake."""
+    rider = rider if rider is not None else _RIDER
+
+    def _rider_by_id(*a, **k):
+        return rider
+
+    def _rider_plan(*a, **k):
+        return saved
+
+    def _public(*a, **k):
+        return community or []
+
+    with client.session_transaction() as sess:
+        sess['rider_id'] = rider['id']
+    with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT), \
+         patch('brevethub.models.get_brevet_route_plan_with_stops', return_value=_BUNDLE), \
+         patch('brevethub.models.get_brevet_route_weather', return_value=weather), \
+         patch('brevethub.models.get_event_going_riders', return_value=_ROSTER), \
+         patch('brevethub.models.get_rider_by_id', side_effect=_rider_by_id), \
+         patch('brevethub.models.get_rider_brevet_plan', side_effect=_rider_plan), \
+         patch('brevethub.models.get_public_strategies', side_effect=_public):
+        return client.get(url)
+
+
 # --------------------------------------------------------------------------- #
 # Plan tab
 # --------------------------------------------------------------------------- #
@@ -134,19 +175,194 @@ def test_plan_tab_survives_no_forecast(client):
 # --------------------------------------------------------------------------- #
 # Strategies tab
 # --------------------------------------------------------------------------- #
-def test_strategies_tab_read_only_cards(client):
-    resp = _get(client, '/plan/11?tab=strategies', weather=None)
-    assert resp.status_code == 200
-    body = resp.get_data(as_text=True)
-    assert 'id="rpv2-panel-strategies"' in body
-    # Three pace cards.
-    assert 'rpv2-pc-grid' in body
+def test_strategies_tab_cards_for_rider_and_guest(client):
+    """Signed-in rider (no saved pace yet) sees a per-card save button; a guest sees a
+    sign-in prompt instead and no Community block. (Phase-1 read-only asserts flipped.)"""
+    # Three pace cards render in both states.
+    guest_body = _get(client, '/plan/11?tab=strategies', weather=None).get_data(as_text=True)
+    assert 'id="rpv2-panel-strategies"' in guest_body
+    assert 'rpv2-pc-grid' in guest_body
     for name in ('>Comfort<', '>Standard<', '>Push<'):
-        assert name in body, name
-    # Read-only: no save button, no community list.
-    assert 'data-pace-pick' not in body
+        assert name in guest_body, name
+
+    # Signed-in rider with no saved pace: per-card save button present. (Key off the
+    # rendered attribute form `data-pace-pick="…"`, since the bare `[data-pace-pick]`
+    # selector also appears in the progressive-enhancement JS on every real plan.)
+    rider_resp = _get_as_rider(client, '/plan/11?tab=strategies', saved=None)
+    assert rider_resp.status_code == 200
+    rider_body = rider_resp.get_data(as_text=True)
+    assert 'data-pace-pick="' in rider_body
+    assert 'Choose this plan' in rider_body
+    assert 'Sign in to save' not in rider_body
+
+    # Guest: NO save button — a sign-in prompt instead — and no Community block.
+    assert 'data-pace-pick="' not in guest_body
+    assert 'Choose this plan' not in guest_body
+    assert 'Sign in to save' in guest_body
+    assert 'Community plans' not in guest_body
+
+
+# --------------------------------------------------------------------------- #
+# Save / share route — the auth ladder + the resolved-flag echo
+# --------------------------------------------------------------------------- #
+def _post_strategy(client, event_id, payload, *, rider=_RIDER, upsert_returns=False,
+                   event=_EVENT):
+    """POST the save/share route with the model layer mocked. Returns (resp, upsert_mock).
+    `rider=None` posts as a guest; `event=None` simulates an unknown event."""
+    with patch('brevethub.models.get_rider_by_id', return_value=rider), \
+         patch('brevethub.models.get_brevet_event_full', return_value=event), \
+         patch('brevethub.models.upsert_rider_brevet_strategy',
+               return_value=upsert_returns) as upsert:
+        if rider is not None:
+            with client.session_transaction() as sess:
+                sess['rider_id'] = rider['id']
+        resp = client.post(f'/plan/{event_id}/strategy', json=payload)
+    return resp, upsert
+
+
+def test_save_strategy_guest_401_with_login_url(client):
+    resp, upsert = _post_strategy(client, 11, {'pace_id': 'standard'}, rider=None)
+    assert resp.status_code == 401
+    data = resp.get_json()
+    assert 'login_url' in data and data['login_url']
+    upsert.assert_not_called()
+
+
+def test_save_strategy_bad_pace_400(client):
+    resp, upsert = _post_strategy(client, 11, {'pace_id': 'sprint'})
+    assert resp.status_code == 400
+    upsert.assert_not_called()
+
+
+def test_save_strategy_unknown_event_404(client):
+    resp, upsert = _post_strategy(client, 999, {'pace_id': 'standard'}, event=None)
+    assert resp.status_code == 404
+    upsert.assert_not_called()
+
+
+def test_save_strategy_valid_preserves_flag_new_private_rider(client):
+    """A flagless save (pace only) calls upsert with is_public=None (preserve) and echoes
+    the resolved flag the upsert returns — here False for a new/private rider."""
+    resp, upsert = _post_strategy(client, 11, {'pace_id': 'standard'},
+                                  upsert_returns=False)
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data == {'ok': True, 'event_id': 11, 'pace_id': 'standard', 'is_public': False}
+    upsert.assert_called_once_with(7, 11, 'standard', is_public=None)
+
+
+def test_save_strategy_flagless_repick_preserves_true(client):
+    """The corrected assertion: a flagless re-pick by an already-sharing rider echoes the
+    upsert's returned is_public=True (not a hardcoded false), so the toggle stays in sync."""
+    resp, upsert = _post_strategy(client, 11, {'pace_id': 'push'},
+                                  upsert_returns=True)
+    assert resp.status_code == 200
+    assert resp.get_json()['is_public'] is True
+    upsert.assert_called_once_with(7, 11, 'push', is_public=None)
+
+
+def test_save_strategy_publish_and_unpublish(client):
+    """Explicit is_public true/false flows to upsert and is echoed from its return."""
+    resp, upsert = _post_strategy(client, 11, {'pace_id': 'standard', 'is_public': True},
+                                  upsert_returns=True)
+    assert resp.status_code == 200 and resp.get_json()['is_public'] is True
+    upsert.assert_called_once_with(7, 11, 'standard', is_public=True)
+
+    resp2, upsert2 = _post_strategy(client, 11, {'pace_id': 'standard', 'is_public': False},
+                                    upsert_returns=False)
+    assert resp2.status_code == 200 and resp2.get_json()['is_public'] is False
+    upsert2.assert_called_once_with(7, 11, 'standard', is_public=False)
+
+
+def test_upsert_strategy_returns_persisted_is_public(client):
+    """Model unit: upsert_rider_brevet_strategy returns the RETURNING is_public value the
+    DB reports (the resolved flag), proving it flows back to the route echo."""
+    with patch('brevethub.db.execute', return_value={'is_public': True}) as ex:
+        got = models.upsert_rider_brevet_strategy(7, 11, 'standard', is_public=None)
+    assert got is True
+    # It runs one upsert with RETURNING is_public, binding pace + tri-state flag twice.
+    sql, params = ex.call_args[0][0], ex.call_args[0][1]
+    assert 'RETURNING is_public' in sql
+    assert params == (7, 11, 'standard', None, None)
+    assert ex.call_args[1].get('returning') is True
+
+
+# --------------------------------------------------------------------------- #
+# Saved-state + share-toggle render
+# --------------------------------------------------------------------------- #
+def test_saved_state_renders_saved_on_one_card_only(client):
+    """strategy_pace='standard' flips ONLY the Standard card to '✓ Saved'; the others show
+    an enabled 'Switch to this plan' button."""
+    saved = {'strategy_pace': 'standard', 'is_public': False}
+    body = _get_as_rider(client, '/plan/11?tab=strategies', saved=saved).get_data(as_text=True)
+    # Exactly one card is the saved card ('✓ Saved' also appears in the snapshot-share JS,
+    # so key off the save-button class, which is unique to the picked card).
+    assert body.count('rpv2-pc-btn-saved') == 1
+    assert '✓ Saved' in body
+    assert 'Switch to this plan' in body
+    # A picked pace means no card offers the first-time "Choose this plan" label.
     assert 'Choose this plan' not in body
-    assert 'Community plans' not in body
+
+
+def test_share_toggle_render_states(client):
+    """The share toggle appears once a pace is saved and reflects the stored is_public via
+    aria-pressed. It is absent with no saved pace and for a guest. (Key off the
+    `rpv2-public-toggle` class + `aria-pressed="…"` attribute — the toggle glyph text and
+    the `[data-share-toggle]` selector also live in the always-present enhancement JS.)"""
+    unshared = {'strategy_pace': 'standard', 'is_public': False}
+    body = _get_as_rider(client, '/plan/11?tab=strategies', saved=unshared).get_data(as_text=True)
+    assert 'rpv2-public-toggle' in body
+    assert 'aria-pressed="false"' in body
+    assert 'aria-pressed="true"' not in body
+
+    shared = {'strategy_pace': 'standard', 'is_public': True}
+    body2 = _get_as_rider(client, '/plan/11?tab=strategies', saved=shared).get_data(as_text=True)
+    assert 'rpv2-public-toggle' in body2
+    assert 'aria-pressed="true"' in body2
+
+    # No saved pace -> no toggle.
+    body3 = _get_as_rider(client, '/plan/11?tab=strategies', saved=None).get_data(as_text=True)
+    assert 'rpv2-public-toggle' not in body3
+    # Guest -> no toggle.
+    guest_body = _get(client, '/plan/11?tab=strategies', weather=None).get_data(as_text=True)
+    assert 'rpv2-public-toggle' not in guest_body
+
+
+# --------------------------------------------------------------------------- #
+# Community render — PII-safe + club-scoped
+# --------------------------------------------------------------------------- #
+def test_community_render_local_part_only(client):
+    """A shared strategy renders the local-part name + the pace + the pace total from the
+    computed cards — never a full email or a google_id."""
+    community = [{'name': 'carol', 'strategy_pace': 'comfort'}]
+    body = _get_as_rider(client, '/plan/11?tab=strategies',
+                         saved={'strategy_pace': 'standard', 'is_public': True},
+                         community=community).get_data(as_text=True)
+    assert 'Community plans' in body
+    assert 'carol' in body and 'Comfort' in body
+    # PII-safe: no full email, no google_id leak.
+    assert 'carol@' not in body
+    assert 'google_id' not in body
+
+
+def test_community_absent_for_guest_null_club(client):
+    """A guest (NULL viewer club) asks get_public_strategies with club_id=None and gets [],
+    so no Community block renders."""
+    captured = {}
+
+    def _public(event_id, club_id, *a, **k):
+        captured['club_id'] = club_id
+        return []
+
+    with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT), \
+         patch('brevethub.models.get_brevet_route_plan_with_stops', return_value=_BUNDLE), \
+         patch('brevethub.models.get_brevet_route_weather', return_value=None), \
+         patch('brevethub.models.get_event_going_riders', return_value=_ROSTER), \
+         patch('brevethub.models.get_public_strategies', side_effect=_public):
+        resp = client.get('/plan/11?tab=strategies')
+    assert resp.status_code == 200
+    assert captured['club_id'] is None
+    assert 'Community plans' not in resp.get_data(as_text=True)
 
 
 def test_strategies_cards_carry_wind_when_forecast_cached(client):
