@@ -199,13 +199,28 @@ def calendar():
     events = models.get_upcoming_events()
     months = _group_by_month(events)
 
-    # Distinct state prefixes present on the page, for the client-side region chips
-    # (RUSA region labels look like "CA: San Francisco" -> state "CA"). Derived from the
-    # already-loaded events, so no extra query and no club<->region map is needed. This
-    # replaces the old server-side "Only <my state>" toggle: it works for guests too and
-    # filters instantly, with one chip per state instead of a lone "Only CA" button.
-    states = sorted({ev['region'].split(':')[0].strip()
-                     for ev in events if ev.get('region')})
+    # State -> sorted RBA areas map for the cascading region dropdowns. RUSA region
+    # labels look like "CA: San Francisco" -> state "CA", area "San Francisco". Derived
+    # from the already-loaded events (no extra query, no club<->region map). Events carry
+    # no club data (club_id is NULL for the national feed), so the RBA area after the
+    # colon is the honest secondary axis. This powers the client-side State -> Area
+    # dropdowns (replacing the flat chip row): works for guests, filters instantly.
+    regions_by_state = {}
+    for ev in events:
+        region = (ev.get('region') or '').strip()
+        if not region:
+            continue
+        state, _, area = region.partition(':')
+        state = state.strip()
+        area = area.strip()
+        if not state:
+            continue
+        regions_by_state.setdefault(state, set())
+        if area:
+            regions_by_state[state].add(area)
+    regions_by_state = {st: sorted(areas)
+                        for st, areas in sorted(regions_by_state.items())}
+    states = list(regions_by_state.keys())
 
     # Weather badges are CACHE-READ-ONLY: one query for every event on the page,
     # then summarize the stored raw forecast in-process. NO Open-Meteo/RWGPS fetch
@@ -237,6 +252,7 @@ def calendar():
     return render_template(
         'calendar.html', events=events, months=months, my_status=my_status,
         my_results=my_results, rider=rider, club=club, states=states,
+        regions_by_state=regions_by_state,
         degraded=degraded, weather=weather,
     )
 
