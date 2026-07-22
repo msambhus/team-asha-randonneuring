@@ -187,6 +187,13 @@ def live_roster(ride_id):
         current_app.logger.exception('live roster: positions load failed for ride %s', ride_id)
         rows = []
 
+    # PUBLIC name = the rider's real display_name (never the email local-part the
+    # authenticated `name` field falls back to), defaulting a NULL to a neutral token.
+    # Setting it explicitly means the shared builder never reads the email-bearing
+    # `name`, so no email can reach the world-viewable payload.
+    for row in rows:
+        row['display_name'] = (row.get('display_name') or '').strip() or 'Rider'
+
     ctx = _ride_live_context(ride)
     history_by = {}
     for row in rows:

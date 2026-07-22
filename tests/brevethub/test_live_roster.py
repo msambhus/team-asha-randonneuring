@@ -27,9 +27,13 @@ def _login(client, rider_id=7):
         sess['rider_id'] = rider_id
 
 
-def _pos(rider_id, name, **tel):
-    row = {'rider_id': rider_id, 'name': name, 'lat': 37.5, 'lng': -122.3,
-           'recorded_at': datetime.now(timezone.utc),
+def _pos(rider_id, name, display_name=None, **tel):
+    # `name` = the authenticated member-tier name (display_name-or-email-local-part);
+    # `display_name` = the raw column the PUBLIC roster uses. Default display_name to
+    # `name` so a friendly-named fixture reads friendly in the public output.
+    row = {'rider_id': rider_id, 'name': name,
+           'display_name': name if display_name is None else display_name,
+           'lat': 37.5, 'lng': -122.3, 'recorded_at': datetime.now(timezone.utc),
            'speed': 5.0, 'heart_rate': None, 'power': None, 'cadence': None,
            'source': 'garmin'}
     row.update(tel)
@@ -84,6 +88,24 @@ def test_public_roster_has_no_pii_identifiers(client):
         assert 'key' in row and len(row['key']) == 12
         for leaked in ('rider_id', 'email', 'google_id'):
             assert leaked not in row
+
+
+def test_null_display_name_falls_back_to_rider_never_email(client):
+    """A rider with no display_name set: the PUBLIC roster shows the neutral 'Rider'
+    token, NEVER the email local-part that the authenticated `name` field falls back
+    to. Guards the two-tier name contract at the endpoint boundary."""
+    # display_name NULL; `name` carries the email local-part (member-tier fallback).
+    rows = [_pos(7, 'aliceonymous', display_name='')]
+    with patch('brevethub.models.get_ride', return_value=_PUBLIC_RIDE), \
+         patch('brevethub.models.get_live_positions_rp', return_value=rows), \
+         patch('brevethub.models.get_rider_position_history_rp', return_value=[]), \
+         patch('brevethub.models.get_brevet_route_plan_by_route_id_rp', return_value=None), \
+         patch('brevethub.models.get_brevet_route_plan_candidates_rp', return_value=[]):
+        resp = client.get('/live/1/roster.json')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert resp.get_json()['roster'][0]['display_name'] == 'Rider'
+    assert 'aliceonymous' not in body        # the email local-part never leaks
 
 
 def test_public_roster_uses_opted_in_query_only(client):
