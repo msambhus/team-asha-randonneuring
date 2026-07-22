@@ -5,7 +5,7 @@
     --bg: #f7fafc;
     --card-bg: #ffffff;
     --text: #2d3748;
-    --text-light: #718096;
+    --text-light: #5a6b80; /* darkened from #718096 to meet WCAG AA 4.5:1 on light backgrounds */
     --border: #e2e8f0;
     --success: #38a169;
     --warning: #d69e2e;
@@ -835,4 +835,25 @@ th.sortable:active {
     .checklist-grid { gap: 12px; }
     .clubs-grid { gap: 12px; }
     .club-card { padding: 16px; }
+}
+
+/* --- Accessibility: visible keyboard focus (WCAG 2.4.7) --- */
+:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+/* On the dark gradient header, use a light ring so focus stays visible */
+header :focus-visible {
+    outline-color: #ffffff;
+}
+
+/* --- Accessibility: respect reduced-motion (WCAG 2.3.3 / 2.2.2) --- */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
 }

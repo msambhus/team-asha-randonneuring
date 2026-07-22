@@ -24,7 +24,7 @@ module.exports = {
         'card-bg': '#ffffff',
         text: {
           DEFAULT: '#2d3748',
-          light: '#718096',
+          light: '#5a6b80',
         },
         border: '#e2e8f0',
         success: '#38a169',
