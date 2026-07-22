@@ -225,7 +225,7 @@ def get_public_ride(ride_id):
     unknown ride is indistinguishable to a guest (both 404). No rider PII.
     """
     return db.query_one(
-        "SELECT r.id, r.name, r.distance_km, r.start_at, r.status, "
+        "SELECT r.id, r.name, r.distance_km, r.start_at, r.status, r.rwgps_url, "
         "       c.name AS club_name "
         "FROM rp_ride r LEFT JOIN rp_club c ON c.id = r.club_id "
         "WHERE r.id = %s AND r.is_public = TRUE",
@@ -549,16 +549,24 @@ def get_live_positions_rp(ride_id, since):
     (t.active_ride_id), and have points tagged to THIS ride (p.ride_id). That
     per-ride attach is the opt-in/consent, so clearing or moving the Garmin link
     drops the rider off the live map even if recent historical points remain.
-    Returns rider_id, a display `name` (email local-part — rp_rider carries no
-    first/last name), lat/lng, recorded_at, and telemetry
-    (speed/heart_rate/power/cadence) + source.
+    Returns rider_id, TWO name fields, lat/lng, recorded_at, and telemetry
+    (speed/heart_rate/power/cadence) + source:
+      - `name` — the AUTHENTICATED member/mobile card name: the rider's display_name
+        when set, else the email local-part. Shown ONLY behind authentication (the
+        @profile_required member endpoint / bearer mobile poll), where it is not a
+        public leak — so members stay distinguishable until display_name is set.
+      - `display_name` — the raw display_name (NULL when unset). The PUBLIC roster
+        uses THIS (never the email local-part), defaulting a NULL to a neutral token
+        at the route layer, so no email ever reaches the world-viewable payload.
 
-    Consumed ONLY by the @profile_required member endpoint — the anonymous poll
-    (get_ride_positions) never selects a name."""
+    Consumed by the @profile_required member endpoint AND, privacy-shaped through
+    build_radial_roster (which drops rider_id + reads display_name), by the public
+    roster.json poll."""
     return db.query(
         "SELECT DISTINCT ON (p.rider_id) "
         "       p.rider_id, "
-        "       split_part(r.email, '@', 1) AS name, "
+        "       COALESCE(NULLIF(r.display_name, ''), split_part(r.email, '@', 1)) AS name, "
+        "       NULLIF(r.display_name, '') AS display_name, "
         "       p.lat, p.lng, p.recorded_at, "
         "       p.speed, p.heart_rate, p.power, p.cadence, p.source "
         "FROM rp_live_position p "

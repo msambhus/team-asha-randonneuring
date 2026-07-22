@@ -70,11 +70,11 @@ def test_map_page_renders_mapbox_with_token(app, client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'style.css' in body
-    assert 'live-map' in body and 'mapbox-gl' in body
+    # The member map is the SHARED Mapbox GL Radial partial (one map implementation).
+    assert 'radial-live' in body and 'radial-map' in body and 'mapbox-gl' in body
     assert 'pk.test-token' in body
-    assert 'live-positions.json' in body      # the named poll URL is wired
-    # Telemetry readout labels present (Mission-1 subset).
-    assert 'cadence' in body and 'power' in body
+    assert '/live/1/roster.json' in body      # polls the shared public roster
+    assert 'unpkg.com/leaflet' not in body    # no Leaflet on the live path
 
 
 def test_map_page_no_token_renders_unavailable_without_500(app, client):
@@ -86,7 +86,7 @@ def test_map_page_no_token_renders_unavailable_without_500(app, client):
         resp = client.get('/live/1/map')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'Map unavailable' in body
+    assert 'Live map unavailable' in body      # shared partial's token-less fallback
     assert 'mapbox-gl.js' not in body          # the Mapbox script is not loaded
 
 

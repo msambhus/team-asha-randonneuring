@@ -58,6 +58,7 @@ from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
 from brevethub import models
 from brevethub.auth_api import bearer_or_session_rider
 from brevethub.decorators import current_rider, profile_required
+from brevethub.shared import live_radial as radial
 from brevethub.shared import live_telemetry as tlm
 from brevethub.shared.garmin_livetrack import parse_session
 from brevethub.shared.plan_match import match_plan
@@ -124,13 +125,25 @@ def live_list():
 
 @live_bp.route('/live/<int:ride_id>')
 def live_map(ride_id):
-    """Public per-ride live map. 404 for a private or unknown ride so a guest can
-    never tell a private ride from a nonexistent one."""
+    """Public per-ride live map — the SHARED Mapbox GL Radial view (the retired
+    Leaflet map's replacement). 404 for a private or unknown ride so a guest can
+    never tell a private ride from a nonexistent one. The map, compact rider table
+    and altitude profile all come from the shared _radial_live.html partial, polling
+    the public, PII-safe roster.json. Degrades gracefully when the Mapbox token is
+    unset (BrevetHub's Vercel project has it set)."""
     ride = models.get_public_ride(ride_id)
     if not ride:
         abort(404)
-    return render_template('live_map.html', ride=ride,
-                           poll_seconds=LIVE_POLL_SECONDS)
+    track = _route_geometry(ride)
+    return render_template(
+        'live_public.html',
+        ride=ride,
+        mapbox_token=current_app.config.get('MAPBOX_ACCESS_TOKEN') or '',
+        route_polyline=_map_polyline(track),
+        elevation_profile=radial.build_elevation_profile(track or []),
+        roster_url=url_for('live.live_roster', ride_id=ride_id),
+        poll_seconds=LIVE_POLL_SECONDS,
+    )
 
 
 @live_bp.route('/live/<int:ride_id>/positions.json')
@@ -148,6 +161,63 @@ def live_positions(ride_id):
         for r in rows
     ]
     return jsonify({'ride_id': ride_id, 'positions': points})
+
+
+@live_bp.route('/live/<int:ride_id>/roster.json')
+def live_roster(ride_id):
+    """PUBLIC, PII-safe roster poll for the shared Radial live view.
+
+    Guest-reachable: gated on rp_ride.is_public (or the ride's owner for a private
+    preview). Returns ONLY a display_name + coarse position + derived stats + an
+    opaque per-view key — NEVER rider_id / email / google_id (the shared
+    build_radial_roster strips them). Opted-in riders only (get_live_positions_rp
+    enforces enabled + attach), so a rider who stops sharing disappears within one
+    poll. Fail-soft: a load/telemetry error degrades to an empty/base roster, never
+    a 500."""
+    ride = models.get_ride(ride_id)
+    rider_id = session.get('rider_id')
+    if not ride or not (ride.get('is_public') or ride.get('rider_id') == rider_id):
+        abort(404)
+
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(hours=DISPLAY_WINDOW_HOURS)
+    try:
+        rows = models.get_live_positions_rp(ride_id, since)
+    except Exception:  # noqa: BLE001 — never 500 the public poll
+        current_app.logger.exception('live roster: positions load failed for ride %s', ride_id)
+        rows = []
+
+    # PUBLIC name = the rider's real display_name (never the email local-part the
+    # authenticated `name` field falls back to), defaulting a NULL to a neutral token.
+    # Setting it explicitly means the shared builder never reads the email-bearing
+    # `name`, so no email can reach the world-viewable payload.
+    for row in rows:
+        row['display_name'] = (row.get('display_name') or '').strip() or 'Rider'
+
+    ctx = _ride_live_context(ride)
+    history_by = {}
+    for row in rows:
+        try:
+            history_by[row['rider_id']] = models.get_rider_position_history_rp(
+                ride_id, row['rider_id'], since) or []
+        except Exception:  # noqa: BLE001 — history is best-effort; base row instead
+            current_app.logger.exception(
+                'live roster: history load failed for rider %s on ride %s',
+                row['rider_id'], ride_id)
+            history_by[row['rider_id']] = []
+
+    roster = radial.build_radial_roster(
+        rows, ctx, now, history_by, ride_id=ride_id, anchor='first_fix',
+        min_history=MIN_HISTORY_FOR_PLAN, stateless_fallback=False,
+        stale_after_minutes=STALE_AFTER_MINUTES)
+
+    return jsonify({
+        'ride_id': ride_id,
+        'roster': roster,
+        'server_time': now.isoformat(),
+        'stale_after_minutes': STALE_AFTER_MINUTES,
+        'poll_seconds': LIVE_POLL_SECONDS,
+    })
 
 
 # --------------------------------------------------------------------------- #
@@ -565,47 +635,54 @@ DEFAULT_COLOR = '#16a34a'
 _MAX_POLYLINE_POINTS = 1000
 
 
-def _build_route_polyline(ride):
-    """Return a downsampled [[lng, lat], ...] polyline for the ride's RWGPS route.
-
-    Fail-soft: returns None on any missing route / fetch error so the map still
-    renders with rider dots only (never 500s). Credentials fall back to the
-    BrevetHub config's RWGPS_* env inside the shared engine."""
-    rwgps_url = ride.get('rwgps_url') if ride else None
-    route_id = extract_rwgps_route_id(rwgps_url)
+def _route_geometry(ride):
+    """Fetch + downsample the ride's RWGPS route ONCE into a track
+    [{lat, lng, dist_m, e_m}] feeding BOTH the shared map polyline and the altitude
+    profile (so the page makes a single route fetch, not two). Fail-soft → None on
+    any missing route / fetch error, so the map still renders with rider dots only."""
+    route_id = extract_rwgps_route_id(ride.get('rwgps_url')) if ride else None
     if not route_id:
         return None
     try:
-        route_data = fetch_route(route_id)
+        route = fetch_route(route_id)
     except Exception as exc:  # noqa: BLE001 — fail-soft, route line is optional
         current_app.logger.warning('live: RWGPS route %s fetch failed: %s', route_id, exc)
         return None
-
-    track_points = (route_data or {}).get('track_points') or []
-    coords = [
-        [float(tp['x']), float(tp['y'])]
-        for tp in track_points
-        if tp.get('x') is not None and tp.get('y') is not None
-    ]
-    if not coords:
+    tps = [tp for tp in ((route or {}).get('track_points') or [])
+           if tp.get('x') is not None and tp.get('y') is not None]
+    if not tps:
         return None
+    step = max(1, len(tps) // _MAX_CONTEXT_TRACK_POINTS)
+    track = []
+    for tp in tps[::step]:
+        track.append({'lat': float(tp['y']), 'lng': float(tp['x']),
+                      'dist_m': float(tp.get('d') or 0),
+                      'e_m': float(tp['e']) if tp.get('e') is not None else None})
+    return track
 
+
+def _map_polyline(track):
+    """[[lng, lat], …] for the Mapbox route line from a _route_geometry track,
+    capped to _MAX_POLYLINE_POINTS. None when there's no track."""
+    if not track:
+        return None
+    coords = [[t['lng'], t['lat']] for t in track]
     if len(coords) > _MAX_POLYLINE_POINTS:
         step = len(coords) // _MAX_POLYLINE_POINTS + 1
-        downsampled = coords[::step]
-        if downsampled[-1] != coords[-1]:
-            downsampled.append(coords[-1])
-        coords = downsampled
+        coords = coords[::step]
     return coords
 
 
 @live_bp.route('/live/<int:ride_id>/map')
 @profile_required
 def live_ride_map(ride_id):
-    """Member multi-rider Mapbox map for a ride: named dots + telemetry + the RWGPS
-    route polyline. @profile_required + accessibility-gated (public OR own ride,
-    else 404). Renders even when MAPBOX_ACCESS_TOKEN is unset (graceful
-    "map unavailable" fallback — never a 500)."""
+    """Member map for a ride — the SAME shared Mapbox GL Radial view the guest map
+    uses, plus the member controls (Garmin link + phone beacon). @profile_required +
+    accessibility-gated (public OR own ride, else 404). Renders even when
+    MAPBOX_ACCESS_TOKEN is unset (graceful "map unavailable" fallback — never a
+    500). The map / table / profile come from the shared _radial_live.html partial,
+    polling the public roster.json (the authenticated live-positions.json remains for
+    the mobile client)."""
     rider_id = session['rider_id']
     ride = _accessible_ride(ride_id, rider_id)
     if not ride:
@@ -618,11 +695,14 @@ def live_ride_map(ride_id):
                        and tracking.get('active_ride_id') == ride_id)
     garmin_url = tracking.get('garmin_session_url') if garmin_here else ''
 
+    track = _route_geometry(ride)
     return render_template(
         'live_ride_map.html',
         ride=ride,
         mapbox_token=current_app.config.get('MAPBOX_ACCESS_TOKEN') or '',
-        route_polyline=_build_route_polyline(ride),
+        route_polyline=_map_polyline(track),
+        elevation_profile=radial.build_elevation_profile(track or []),
+        roster_url=url_for('live.live_roster', ride_id=ride_id),
         poll_seconds=LIVE_POLL_SECONDS,
         stale_after_minutes=STALE_AFTER_MINUTES,
         opted_in=bool(tracking and tracking.get('enabled')),
@@ -805,114 +885,20 @@ def _base_telemetry(row, history, now):
 
 
 def _rider_telemetry(row, ctx, now, history):
-    """Assemble one rider plan-aware telemetry block, mirroring the parent app field
-    shapes (minus the deferred wind / toughness readouts).
+    """Assemble one rider's plan-aware telemetry block via the SHARED composer.
 
-    Source-agnostic 'now' metrics are always present. Route-relative fields
-    (distance done / remaining / ascent / grade) appear only when the rider is ON
-    the route; plan-relative fields (banked-vs-plan, banked-vs-cutoff, next control +
-    ETA + required speed, finish) appear only when an in-tenant plan (>= 2 stops)
-    resolved. Anything missing degrades gracefully — never a 500."""
-    start, elapsed_min, now_block = _base_now_block(row, history, now)
-    base = _base_telemetry(row, history, now)
-    base['now'] = now_block
-
-    if not ctx.get('has_route') or len(history) < MIN_HISTORY_FOR_PLAN:
-        return base
-
-    # One leg-aware trajectory walk yields distance-done AND the rider start on the
-    # route (the seed), so the two are matched consistently.
-    dist_m, idx, off_by_m, start_dist_m, start_idx = tlm.project_history_to_route(
-        history, ctx['track'], with_start=True)
-    if dist_m is None:
-        return base
-    on_route = (off_by_m is not None and off_by_m <= tlm.ON_ROUTE_MAX_M)
-    if not on_route:
-        base['on_route'] = False
-        return base
-
-    # A loop permanent can be begun partway round: measure distance done from the
-    # rider OWN start on the route (wrapping the loop), not the route file mile 0.
-    start_offset_m = (start_dist_m if (start_dist_m or 0) >= tlm.START_OFFSET_MIN_M
-                      else 0.0)
-    if not start_offset_m:
-        start_idx = 0
-    mid_route_start = start_offset_m > 0
-    progressed_m = tlm.distance_progressed_m(dist_m, start_offset_m, ctx['total_dist_m'])
-    remaining_m = tlm.remaining_distance_m(ctx['total_dist_m'], progressed_m)
-    ascent_done, ascent_left = tlm.ascent_progressed_split(
-        ctx['cum_ascent_ft'], start_idx, idx, ctx['total_ascent_ft'])
-
-    dist_mi = progressed_m * M_TO_MI
-    remaining_mi = (remaining_m or 0) * M_TO_MI
-
-    now_block['distance_mi'] = round(dist_mi, 1)
-    now_block['grade_pct'] = tlm.grade_at(ctx.get('track'), idx)
-    now_block['avg_elapsed_speed_mph'] = (
-        round(dist_mi / (elapsed_min / 60.0), 1) if elapsed_min and elapsed_min > 0 else None)
-    now_block['avg_moving_speed_mph'] = (
-        round(dist_mi / (now_block['moving_min'] / 60.0), 1)
-        if now_block['moving_min'] else None)
-    now_block['ascent_done_ft'] = ascent_done
-
-    result = {
-        'on_route': True, 'now': now_block,
-        'remaining': {'distance_mi': round(remaining_mi, 1), 'ascent_left_ft': ascent_left},
-        'next_control': None, 'finish': None,
-        'time_banked_cutoff_min': None, 'time_banked_plan_min': None,
-        'plan': None, 'detailed_after_ride': True,
-    }
-
-    active_stops = ctx.get('plan_stops')
-    if not active_stops or len(active_stops) < 2:
-        return result   # on route but no in-tenant plan: route basics only
-
-    plan_total_mi = ctx.get('plan_total_mi') or ((ctx['total_dist_m'] or 0) * M_TO_MI)
-    plan_frame = (tlm.rebase_plan_stops(active_stops, start_offset_m * M_TO_MI, plan_total_mi)
-                  if mid_route_start else active_stops)
-
-    delta = tlm.plan_delta(dist_mi, elapsed_min, plan_frame)
-    result['time_banked_plan_min'] = delta
-    if delta is not None:
-        result['plan'] = {
-            'delta_min': delta, 'banked_min': delta,
-            'status': 'ahead' if delta > 2 else ('behind' if delta < -2 else 'on')}
-
-    nc = tlm.next_control(dist_mi, plan_frame)
-    if nc:
-        arrival_min = nc.get('arrival_time_min')
-        eta_iso = ((start + timedelta(minutes=arrival_min)).isoformat()
-                   if start is not None and arrival_min is not None else None)
-        req_mph, behind = tlm.required_speed_mph(
-            nc.get('dist_to_go_mi'), arrival_min, elapsed_min)
-        result['next_control'] = {
-            'name': nc.get('location'), 'type': nc.get('stop_type'),
-            'distance_mi': nc.get('distance_miles'), 'dist_to_go_mi': nc.get('dist_to_go_mi'),
-            'arrival_time_min': arrival_min, 'eta_iso': eta_iso, 'eta_label': None,
-            'required_mph': req_mph, 'behind': behind}
-
-    fin = tlm.finish_stop(plan_frame)
-    if fin:
-        fin_arrival = fin.get('arrival_time_min')
-        dist_to_finish = round(max(0.0, fin['distance_miles'] - dist_mi), 1)
-        fin_req_mph, fin_behind = tlm.required_speed_mph(
-            dist_to_finish, fin_arrival, elapsed_min)
-        fin_eta_iso = ((start + timedelta(minutes=fin_arrival)).isoformat()
-                       if start is not None and fin_arrival is not None else None)
-        result['finish'] = {
-            'name': fin.get('location'), 'type': fin.get('stop_type'),
-            'distance_mi': fin.get('distance_miles'), 'dist_to_go_mi': dist_to_finish,
-            'arrival_time_min': fin_arrival, 'eta_iso': fin_eta_iso, 'eta_label': None,
-            'required_mph': fin_req_mph, 'behind': fin_behind}
-
-    # OTL margin (banked vs the ACP cutoff). For a mid-route loop start, distance
-    # done spans the whole route, so pro-rate the cutoff against the route total.
-    cutoff_total_mi = ctx.get('plan_total_mi')
-    if mid_route_start and ctx.get('total_dist_m'):
-        cutoff_total_mi = ctx['total_dist_m'] * M_TO_MI
-    result['time_banked_cutoff_min'] = tlm.time_banked_cutoff_min(
-        dist_mi, elapsed_min, cutoff_total_mi, ctx.get('plan_cutoff_hours'))
-    return result
+    This delegates to shared.live_radial.compose_rider_telemetry — the single rich
+    assembler both apps use — so BrevetHub and the parent app can never fork the
+    per-rider math. BrevetHub anchors elapsed on the rider's FIRST fix (its ride
+    start_at is the creation time, not the brevet start — a documented parity
+    deviation), needs >= MIN_HISTORY_FOR_PLAN fixes before projecting, and carries no
+    weather context (so it passes no wind hook and no club timezone). Everything
+    still degrades gracefully — route-relative fields only when on route, plan-
+    relative fields only when a >= 2-stop in-tenant plan resolved — never a 500."""
+    start = _as_utc_dt(history[0]['recorded_at']) if history else None
+    return radial.compose_rider_telemetry(
+        row, ctx, now, history, plan_stops=ctx.get('plan_stops'), start=start,
+        tz=None, min_history=MIN_HISTORY_FOR_PLAN, stateless_fallback=False)
 
 
 def _plan_dot_color(telemetry):
