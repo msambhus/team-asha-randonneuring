@@ -195,13 +195,17 @@ def calendar():
     if rider and rider.get('club_id'):
         club = models.get_club(rider['club_id'])
 
-    # Optional state-level narrowing (only meaningful when the rider has a club).
-    scope = request.args.get('scope', 'all')
-    state = club['state'] if (scope == 'club' and club and club.get('state')) else None
-
     degraded = _seed_calendar_cache_if_empty()
-    events = models.get_upcoming_events(state=state)
+    events = models.get_upcoming_events()
     months = _group_by_month(events)
+
+    # Distinct state prefixes present on the page, for the client-side region chips
+    # (RUSA region labels look like "CA: San Francisco" -> state "CA"). Derived from the
+    # already-loaded events, so no extra query and no club<->region map is needed. This
+    # replaces the old server-side "Only <my state>" toggle: it works for guests too and
+    # filters instantly, with one chip per state instead of a lone "Only CA" button.
+    states = sorted({ev['region'].split(':')[0].strip()
+                     for ev in events if ev.get('region')})
 
     # Weather badges are CACHE-READ-ONLY: one query for every event on the page,
     # then summarize the stored raw forecast in-process. NO Open-Meteo/RWGPS fetch
@@ -232,7 +236,7 @@ def calendar():
 
     return render_template(
         'calendar.html', events=events, months=months, my_status=my_status,
-        my_results=my_results, rider=rider, club=club, scope=scope,
+        my_results=my_results, rider=rider, club=club, states=states,
         degraded=degraded, weather=weather,
     )
 

@@ -254,14 +254,16 @@
     </p>
   {% endif %}
 
-  {% if club and club.state %}
+  {% if states %}
     <div class="filter-section">
-      <div class="filter-label">Region</div>
-      <div class="filter-buttons">
-        <a class="region-filter {% if scope != 'club' %}active{% endif %}"
-           href="{{ url_for('calendar.calendar') }}">All regions</a>
-        <a class="region-filter {% if scope == 'club' %}active{% endif %}"
-           href="{{ url_for('calendar.calendar', scope='club') }}">Only {{ club.state }}</a>
+      <div class="filter-label" id="region-filter-label">Region</div>
+      <div class="filter-buttons" role="group" aria-labelledby="region-filter-label">
+        <button type="button" class="region-filter active"
+                data-region="all" aria-pressed="true">All regions</button>
+        {% for st in states %}
+          <button type="button" class="region-filter"
+                  data-region="{{ st }}" aria-pressed="false">{{ st }}</button>
+        {% endfor %}
       </div>
     </div>
   {% endif %}
@@ -280,7 +282,8 @@
           <div class="events-grid">
             {% for ev in month_events %}
               {% set ds = ev.date|string %}
-              <article class="event-card" data-event-id="{{ ev.id }}">
+              <article class="event-card" data-event-id="{{ ev.id }}"
+                       data-region="{{ (ev.region or '').split(':')[0]|trim }}">
                 <div class="event-date">
                   <div class="event-day">{{ ds[8:10] }}</div>
                   <div class="event-month">{{ MONTH_ABBR[ds[5:7]|int] if ds[5:7]|int else ds[5:7] }}</div>
@@ -512,4 +515,31 @@ document.querySelectorAll('.result-select').forEach(function (sel) {
 });
 </script>
 {% endif %}
+
+{# Client-side region filter (guests included): filter event cards by state prefix
+   and hide months that end up empty. Mirrors Team Asha's upcoming_brevets filter. #}
+<script>
+(function () {
+  var active = 'all';
+  function apply() {
+    document.querySelectorAll('.event-card[data-region]').forEach(function (c) {
+      c.style.display = (active === 'all' || c.dataset.region === active) ? '' : 'none';
+    });
+    document.querySelectorAll('.month-section').forEach(function (sec) {
+      var shown = sec.querySelectorAll('.event-card[data-region]:not([style*="display: none"])');
+      sec.style.display = shown.length ? '' : 'none';
+    });
+  }
+  document.querySelectorAll('.region-filter[data-region]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      active = btn.dataset.region;
+      document.querySelectorAll('.region-filter[data-region]').forEach(function (b) {
+        b.classList.remove('active'); b.setAttribute('aria-pressed', 'false');
+      });
+      btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true');
+      apply();
+    });
+  });
+})();
+</script>
 {% endblock %}
