@@ -54,8 +54,8 @@
      (cached; computed off the request path). Only shown once a value exists — an
      unconnected / not-yet-computed rider gets the prompt in the Strava card below,
      never a fabricated 0. #}
-  {% if rider.eddington_km is not none %}
-  <div class="stat-card"><div class="number">{{ rider.eddington_km }}</div><div class="label">Eddington (km)</div></div>
+  {% if rider.eddington_miles is not none %}
+  <div class="stat-card"><div class="number">{{ rider.eddington_miles }}</div><div class="label">Eddington (mi)</div></div>
   {% endif %}
 </div>
 
@@ -155,7 +155,7 @@
   <h2 class="text-primary text-[1.3rem] font-bold mb-4">Strava</h2>
   {# Eddington graceful state: prompt when there is no cached value yet, so the
      number is never a fabricated 0. The value itself renders as the stat card above. #}
-  {% if rider.eddington_km is none %}
+  {% if rider.eddington_miles is none %}
     <p class="text-text-light">
       {% if strava.connected %}
         Your cycling Eddington number will appear after the next sync.

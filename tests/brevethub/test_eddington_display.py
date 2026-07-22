@@ -3,7 +3,7 @@
 The crux privacy invariant: a PUBLIC rider profile viewer holds no token for the
 viewed rider, so that render must read ONLY the cached scalar and issue ZERO Strava
 calls. These tests assert the public render never touches the Strava fetch/compute
-path, shows the cached km value (or an honest dash), and that the own profile shows
+path, shows the cached miles value (or an honest dash), and that the own profile shows
 the value card when computed and a graceful prompt (never a fabricated 0) when not.
 
 Everything is mocked (no real DB / network), per the BrevetHub test convention.
@@ -14,15 +14,16 @@ from unittest.mock import patch
 _UTC = timezone.utc
 _MADE = datetime(2024, 3, 1, tzinfo=_UTC)
 
-# A club-A viewer and a same-club target with a cached Eddington of 42 km.
+# A club-A viewer and a same-club target with a cached Eddington of 42 km / 26 mi.
 _VIEWER = {'id': 1, 'email': 'alice@ex.com', 'google_id': 'g-alice', 'rusa_id': '100',
            'club_id': 1, 'profile_completed': True, 'created_at': _MADE,
            'rusa_id_duplicate': False, 'eddington_km': 55, 'eddington_miles': 34,
            'eddington_calculated_at': _MADE}
 _TARGET = {'id': 2, 'email': 'bob@ex.com', 'rusa_id': '200', 'club_id': 1,
            'profile_completed': True, 'created_at': _MADE, 'rusa_cache': [],
-           'eddington_km': 42}
-_TARGET_NO_EDD = {**_TARGET, 'id': 3, 'email': 'carol@ex.com', 'eddington_km': None}
+           'eddington_km': 42, 'eddington_miles': 26}
+_TARGET_NO_EDD = {**_TARGET, 'id': 3, 'email': 'carol@ex.com',
+                  'eddington_km': None, 'eddington_miles': None}
 
 
 def _login(client, rider_id):
@@ -51,7 +52,7 @@ def test_public_profile_shows_cached_value_with_zero_strava_fetch(client):
         resp = client.get('/riders/2')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert '42' in body
+    assert '26' in body               # miles value (eddington_miles), not km
     assert 'Eddington' in body
     # The whole point: a public viewer never fetches the viewed rider's Strava data.
     mock_fetch.assert_not_called()
@@ -68,7 +69,7 @@ def test_public_profile_absent_value_shows_dash_not_zero(client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     # The Eddington card specifically renders an em dash, never a fabricated 0.
-    assert '<div class="number">—</div><div class="label">Eddington (km)</div>' in body
+    assert '<div class="number">—</div><div class="label">Eddington (mi)</div>' in body
     mock_fetch.assert_not_called()
     mock_compute.assert_not_called()
 
@@ -87,11 +88,11 @@ def _own_profile(client, rider):
 
 
 def test_own_profile_shows_eddington_card_when_computed(client):
-    resp = _own_profile(client, _VIEWER)  # eddington_km = 55
+    resp = _own_profile(client, _VIEWER)  # eddington_miles = 34
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert '55' in body
-    assert 'Eddington (km)' in body
+    assert '34' in body               # eddington_miles (34), not km (55)
+    assert 'Eddington (mi)' in body
 
 
 def test_own_profile_unconnected_shows_prompt_not_zero(client):
@@ -102,4 +103,4 @@ def test_own_profile_unconnected_shows_prompt_not_zero(client):
     body = resp.get_data(as_text=True)
     assert 'Connect Strava to see your Eddington number.' in body
     # No fabricated Eddington stat card when there is no value.
-    assert 'Eddington (km)' not in body
+    assert 'Eddington (mi)' not in body
