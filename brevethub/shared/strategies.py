@@ -72,6 +72,12 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours,
         h, m = divmod(int(min_total), 60)
         return f"{h}:{m:02d}"
 
+    def fmt_elapsed(min_total):
+        # Cumulative elapsed at arrival, "Hh MM" — mirrors shared.plan_view._to_v2_stops
+        # so the live pace re-render swaps in strings shaped like the initial render.
+        h, m = divmod(int(min_total or 0), 60)
+        return f"{h}h{m:02d}"
+
     def stop_design_type(s, idx, total):
         if idx == 0:
             return 'start'
@@ -99,8 +105,10 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours,
         prev_mi = 0.0
         for i, s in enumerate(src):
             seg = int(round((s.get('segment_time_min') or 0) * factor))
-            break_m = s.get('stop_duration_min') or 0
-            if break_m >= 120:
+            raw_break = s.get('stop_duration_min') or 0
+            is_halt = raw_break >= 120
+            break_m = raw_break
+            if is_halt:
                 break_m = sleep_min_override
                 halt_min_used = break_m
             cum += seg
@@ -128,10 +136,14 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours,
                 'name': s.get('location') or s.get('name') or '',
                 'cumul_mi': round(mi, 1),
                 'eta': fmt_eta(start_minutes + arrival),
+                'elapsed': fmt_elapsed(arrival),
                 'bank': fmt_bank(bank),
                 'bank_min': bank if bank is not None else 0,
                 'is_key': stype in ('start', 'control', 'finish'),
                 'seg_mi': seg_dist,
+                'seg_time_min': seg,
+                'break_min': int(break_m or 0),
+                'is_halt': is_halt,
                 'fpm': fpm,
                 'seg_speed': seg_speed if seg_speed is not None else 0,
                 'seg_speed_known': seg_speed is not None,

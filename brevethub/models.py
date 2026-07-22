@@ -1875,7 +1875,8 @@ def get_route_weather_warm_targets(horizon_days=16):
 
 
 def upsert_brevet_route_weather(event_id, forecast_date, weather_data,
-                                sample_points, polyline=None):
+                                sample_points, polyline=None,
+                                elevation_track=None):
     """Insert or refresh one cached along-route forecast, keyed on
     (event_id, forecast_date).
 
@@ -1883,10 +1884,12 @@ def upsert_brevet_route_weather(event_id, forecast_date, weather_data,
     repeated cron run refreshes the row in place (idempotent) instead of raising a
     unique-violation. ``weather_data`` is the raw Open-Meteo per-sample forecast list
     and ``sample_points`` is the aligned ``[{lat, lng, distance_m}]``; ``polyline`` is
-    the decimated ``[[lat, lng], ...]`` route line for the Mapbox map (optional — a
-    caller that has no track points passes None and the read path falls back to
-    sample_points). All three are JSON-adapted with psycopg2's ``Json``. Only ever
-    called by the cron with a successful fetch, so a transient failure never
+    the decimated ``[[lat, lng], ...]`` route line for the Mapbox map; ``elevation_track``
+    is the downsampled ``[{lat, lng, dist_m, e_m}, ...]`` route track for the rpv2
+    gradient elevation profile (all optional — a caller that has no track points passes
+    None and the read paths degrade: polyline falls back to sample_points, the
+    elevation profile renders empty). All are JSON-adapted with psycopg2's ``Json``.
+    Only ever called by the cron with a successful fetch, so a transient failure never
     overwrites a last-good row.
 
     (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner
@@ -1894,33 +1897,38 @@ def upsert_brevet_route_weather(event_id, forecast_date, weather_data,
     """
     db.execute(
         "INSERT INTO rp_brevet_route_weather "
-        "  (event_id, forecast_date, weather_data, sample_points, polyline) "
-        "VALUES (%s, %s, %s, %s, %s) "
+        "  (event_id, forecast_date, weather_data, sample_points, polyline, "
+        "   elevation_track) "
+        "VALUES (%s, %s, %s, %s, %s, %s) "
         "ON CONFLICT (event_id, forecast_date) DO UPDATE "
         "SET weather_data = EXCLUDED.weather_data, "
         "    sample_points = EXCLUDED.sample_points, "
-        "    polyline = EXCLUDED.polyline, fetched_at = NOW()",
+        "    polyline = EXCLUDED.polyline, "
+        "    elevation_track = EXCLUDED.elevation_track, fetched_at = NOW()",
         (event_id, forecast_date, Json(weather_data), Json(sample_points),
-         Json(polyline) if polyline is not None else None),
+         Json(polyline) if polyline is not None else None,
+         Json(elevation_track) if elevation_track is not None else None),
     )
 
 
 def get_brevet_route_weather(event_id, forecast_date):
     """The cached along-route forecast for a brevet on a date, or None.
 
-    Returns ``{weather_data, sample_points, polyline, forecast_date, fetched_at}``
-    (the raw per-sample Open-Meteo list, the aligned sample points, and the decimated
-    route polyline for the Mapbox map) so the /plan route can map each stop to the
+    Returns ``{weather_data, sample_points, polyline, elevation_track, forecast_date,
+    fetched_at}`` (the raw per-sample Open-Meteo list, the aligned sample points, the
+    decimated route polyline for the Mapbox map, and the downsampled elevation track for
+    the rpv2 gradient elevation profile) so the /plan route can map each stop to the
     nearest sample and compute per-stop wind in-process (shared/weather.py
-    compute_stop_winds) and draw the route line. ``polyline`` is NULL on rows warmed
-    before it was cached — the read path falls back to sample_points. Returns None when
-    nothing is stored (new route, beyond-horizon brevet, or the cron has not run yet),
-    so the caller degrades gracefully with no live fallback. Touches only
-    rp_brevet_route_weather.
+    compute_stop_winds), draw the route line, and build the elevation profile — all from
+    cache, no live fetch. ``polyline`` / ``elevation_track`` are NULL on rows warmed
+    before they were cached — the polyline read path falls back to sample_points and the
+    elevation profile renders empty. Returns None when nothing is stored (new route,
+    beyond-horizon brevet, or the cron has not run yet), so the caller degrades
+    gracefully with no live fallback. Touches only rp_brevet_route_weather.
     """
     return db.query_one(
         "SELECT event_id, forecast_date, weather_data, sample_points, polyline, "
-        "       fetched_at "
+        "       elevation_track, fetched_at "
         "FROM rp_brevet_route_weather WHERE event_id = %s AND forecast_date = %s",
         (event_id, forecast_date),
     )

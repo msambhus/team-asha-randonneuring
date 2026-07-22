@@ -32,11 +32,16 @@ from brevethub.routes.strava import compute_and_cache_eddington
 from brevethub.shared.garmin_livetrack import fetch_positions, parse_session
 from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
                                     extract_rwgps_route_id, fetch_route)
+from shared.live_radial import track_from_route
 from shared.rusa import fetch_rider_results
 from shared.rusa_calendar import get_rwgps_url_from_route
 from shared.weather import (FORECAST_HORIZON_DAYS, fetch_point_forecast,
                             fetch_route_weather, resolve_region_coordinates,
                             sample_track_points)
+
+# Downsample cap for the cached elevation track — plenty for the ~1000px-wide rpv2
+# gradient profile SVG while keeping the JSONB row lean.
+ROUTE_WEATHER_ELEVATION_TRACK_POINTS = 800
 
 cron_bp = Blueprint('cron', __name__)
 
@@ -611,8 +616,17 @@ def warm_brevet_route_weather():
             # back to the coarser sample_points line.
             polyline = _decimate_track_polyline(track_points)
 
+            # Downsampled elevation track ([{lat, lng, dist_m, e_m}, ...]) for the rpv2
+            # gradient elevation profile — built from the SAME route_data already
+            # fetched here, so the guest /plan render reads it from cache instead of
+            # calling RWGPS live. Empty [] when the route has no usable points →
+            # build_elevation_profile renders an empty profile.
+            elevation_track = track_from_route(
+                route_data, max_points=ROUTE_WEATHER_ELEVATION_TRACK_POINTS) or None
+
             models.upsert_brevet_route_weather(
-                event['id'], forecast_date, weather_data, samples, polyline)
+                event['id'], forecast_date, weather_data, samples, polyline,
+                elevation_track)
             warmed += 1
         except Exception as e:
             # Fail soft: keep the last-good row for this event, keep going.

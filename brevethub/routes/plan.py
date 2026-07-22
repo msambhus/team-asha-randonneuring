@@ -41,10 +41,18 @@ from shared.pacing import recalculate_cumulative_values, _get_cutoff_hours
 from shared.plan_view import (_to_v2_stops, _weather_summary_from_stop_wind,
                               compute_risk_zones)
 from shared.strategies import _PACE_VARIANTS, compute_pace_strategies
+from shared.live_radial import build_elevation_profile, overlay_stop_markers
 from shared.weather import (build_chart_data, build_weather_segments,
                             calculate_bearing, compute_stop_winds)
 
 plan_bp = Blueprint('plan', __name__)
+
+# Stop-marker colours for the elevation-profile overlay — kept in step with the
+# STOP_TYPES colour map in the rpv2 plan template.
+_RPV2_STOP_MARKER_COLORS = {
+    'start': '#16a34a', 'control': '#1d4ed8', 'rest': '#ea580c',
+    'waypoint': '#64748b', 'finish': '#dc2626',
+}
 
 # Dense (15 km) map sampling vs the coarser (25 km) forecast table spacing — matches
 # the parent weather-map so the along-route table thins the dense samples the same way.
@@ -642,6 +650,21 @@ def _build_v2_context(event, plan, stops, variant, rider=None):
     paces = compute_pace_strategies(v2_rows, plan_ctx, start_time, cutoff_hours,
                                     seg_meta=seg_meta)
 
+    # Gradient altitude profile + control/break overlay for the Journey card and the
+    # snapshot, built from the cron-warmed elevation track on the weather cache row —
+    # NEVER a live RWGPS fetch on this guest-readable page (the TA-237 guest-safety
+    # invariant; the warm-brevet-route-weather cron persists the track). Fail-soft:
+    # a missing row / pre-column NULL track → empty list → build_elevation_profile
+    # returns {'available': False} and overlay_stop_markers returns [], so the page
+    # degrades to an empty profile rather than 500ing.
+    elevation_profile = build_elevation_profile(
+        (weather_row or {}).get('elevation_track') or [])
+    stop_markers = overlay_stop_markers(elevation_profile, v2_stops,
+                                        _RPV2_STOP_MARKER_COLORS)
+    # Pace payload for the inline "Choose your pace" live re-render: each pace card's
+    # per-stop pace-varying fields, keyed by card id (comfort/standard/push).
+    pace_stops_map = {p['id']: p['stops'] for p in paces} if paces else {}
+
     # Hero aggregates — prefer the stored plan-level values, fall back to the derived
     # rows so a plan with NULL summary columns still renders.
     total_moving_time = int(plan.get('total_moving_time_min')
@@ -688,6 +711,9 @@ def _build_v2_context(event, plan, stops, variant, rider=None):
         'stops_v2': v2_stops,
         'fuel_stops_v2': fuel_stops_v2,
         'paces': paces,
+        'pace_stops_map': pace_stops_map,
+        'elevation_profile': elevation_profile,
+        'stop_markers': stop_markers,
         'save_state': save_state,
         'saved_pace_id': saved_pace_id,
         'saved_is_public': saved_is_public,
@@ -760,8 +786,10 @@ def plan_view(event_id):
     if bundle and bundle.get('stops'):
         v2 = _build_v2_context(event, bundle['plan'], bundle['stops'], variant,
                                rider=rider)
+        # Strategies moved inline into the Plan tab; ?tab=strategies still resolves
+        # (back-compat) but lands on the Plan panel where the pace cards now live.
         active_tab = request.args.get('tab', 'plan')
-        if active_tab not in ('plan', 'strategies', 'weather'):
+        if active_tab not in ('plan', 'weather'):
             active_tab = 'plan'
         return render_template(
             'plan.html',

@@ -27,7 +27,7 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_upcoming_rusa_events, update_rider_profile, update_strava_privacy,
                     get_pbp_finishers,
                     get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops, update_ride_plan_info,
-                    get_upcoming_ride_date_for_plan,
+                    get_upcoming_ride_date_for_plan, get_route_elevation_track,
                     get_signup_count, get_rider_signup_status, get_ride_by_id, update_ride_details, update_ride_core,
                     get_user_by_id, _execute,
                     get_strava_connection, get_strava_activities,
@@ -198,6 +198,15 @@ from shared.plan_view import (  # noqa: F401  (re-exported for callers/tests)
     _weather_summary_from_stop_wind,
 )
 from shared.strategies import _PACE_VARIANTS, compute_pace_strategies  # noqa: F401
+from shared.live_radial import build_elevation_profile, overlay_stop_markers
+
+# Stop-marker colours for the elevation-profile overlay — kept in step with the
+# STOP_TYPES colour map in the rpv2 plan templates so a control's dot matches its
+# itinerary badge.
+_RPV2_STOP_MARKER_COLORS = {
+    'start': '#16a34a', 'control': '#1d4ed8', 'rest': '#ea580c',
+    'waypoint': '#64748b', 'finish': '#dc2626',
+}
 
 
 def _extract_distance_km(name):
@@ -2411,6 +2420,26 @@ def ride_plan_detail(slug):
         base_stops=base_stops_for_strategies, your_plan_name=your_plan_name,
         seg_meta=seg_meta)
 
+    # Gradient altitude profile + control/break overlay for the Journey card and the
+    # snapshot, built from the cron-warmed elevation track (route_weather_cache) —
+    # NEVER a live RWGPS fetch on the plan render (the TA-237 read-from-cache
+    # invariant; the fetch-route-weather cron persists the track). Fail-soft: a route
+    # with no warmed track (or a cache read error) → empty list → build_elevation_profile
+    # returns {'available': False} and overlay_stop_markers returns [] — the page never
+    # 500s (mirrors the wind read above).
+    try:
+        elevation_track = get_route_elevation_track(weather_route_id) if weather_route_id else None
+    except Exception:
+        current_app.logger.exception("v2 elevation track read failed for plan %s", slug)
+        elevation_track = None
+    elevation_profile = build_elevation_profile(elevation_track or [])
+    stop_markers = overlay_stop_markers(elevation_profile, v2_stops,
+                                        _RPV2_STOP_MARKER_COLORS)
+    # Pace payload for the inline "Choose your pace" live re-render: each pace card's
+    # per-stop pace-varying fields, keyed by card id (comfort/standard/push, or the
+    # rebaselined team/yours/… ids when viewing a custom plan).
+    pace_stops_map = {p['id']: p['stops'] for p in paces} if paces else {}
+
     # Risk overlay (wind / dark / bank)
     risks = compute_risk_zones(stops, v2_stops, plan, plan.get('start_time', '06:00'),
                                plan.get('linked_ride_date'))
@@ -2469,13 +2498,20 @@ def ride_plan_detail(slug):
         weather_share_url = url_for('weather.weather_page') + '?' + urlencode(params)
     mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
 
+    # Strategies moved inline into the Plan tab; ?tab=strategies still resolves
+    # (back-compat) but lands on the Plan panel where the pace cards now live.
     active_tab = request.args.get('tab', 'plan')
+    if active_tab not in ('plan', 'weather'):
+        active_tab = 'plan'
 
     return render_template('ride_plan_detail_v2.html',
                            plan=plan,
                            stops_v2=v2_stops,
                            fuel_stops_v2=fuel_stops_v2,
                            paces=paces,
+                           pace_stops_map=pace_stops_map,
+                           elevation_profile=elevation_profile,
+                           stop_markers=stop_markers,
                            risks=risks,
                            total_time=total_time,
                            total_moving_time=total_moving_time,

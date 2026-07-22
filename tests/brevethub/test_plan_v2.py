@@ -139,8 +139,9 @@ def test_plan_tab_renders_itinerary_and_snapshot(client):
     resp = _get(client, '/plan/11', weather=_cached_weather())
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    # 3-tab shell.
-    assert 'data-tab="plan"' in body and 'data-tab="strategies"' in body and 'data-tab="weather"' in body
+    # 2-tab shell (Strategies moved inline into the Plan tab).
+    assert 'data-tab="plan"' in body and 'data-tab="weather"' in body
+    assert 'data-tab="strategies"' not in body
     # 11-column itinerary headers.
     for head in ('>Stop<', '>Seg<', '>Cumul<', '>Climb<', '>Pace<', '>Elapsed<',
                  '>ETA<', '>Bank<', '>Wind<'):
@@ -177,10 +178,12 @@ def test_plan_tab_survives_no_forecast(client):
 # --------------------------------------------------------------------------- #
 def test_strategies_tab_cards_for_rider_and_guest(client):
     """Signed-in rider (no saved pace yet) sees a per-card save button; a guest sees a
-    sign-in prompt instead and no Community block. (Phase-1 read-only asserts flipped.)"""
-    # Three pace cards render in both states.
+    sign-in prompt instead and no Community block. The pace cards now live inline on the
+    Plan tab (the separate Strategies panel is gone); ?tab=strategies resolves to Plan."""
+    # The inline "Choose your pace" card + three pace cards render in both states.
     guest_body = _get(client, '/plan/11?tab=strategies', weather=None).get_data(as_text=True)
-    assert 'id="rpv2-panel-strategies"' in guest_body
+    assert 'id="rpv2-panel-strategies"' not in guest_body
+    assert 'id="rpv2-choose-pace"' in guest_body
     assert 'rpv2-pc-grid' in guest_body
     for name in ('>Comfort<', '>Standard<', '>Push<'):
         assert name in guest_body, name
