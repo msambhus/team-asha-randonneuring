@@ -260,7 +260,7 @@ def test_no_live_fetcher_on_guest_paths(app, client, url):
 
 
 # --------------------------------------------------------------------------- #
-# Migration 048 — additive, rp_*-only ADD COLUMN
+# Migration 049 — additive, rp_*-only ADD COLUMN
 # --------------------------------------------------------------------------- #
 def test_migration_049_is_additive_polyline_column():
     import re

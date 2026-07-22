@@ -1359,9 +1359,15 @@ def get_brevet_event_full(event_id):
 
 
 def get_rider_brevet_plan(rider_id, event_id):
-    """The rider's saved pacing plan for a brevet, or None. One row per pair."""
+    """The saved pacing plan for a rider's brevet, or None. One row per pair.
+
+    Widened for the Strategies tab to also return ``strategy_pace`` (the chosen pace
+    card id, NULL until one is picked) and ``is_public`` (the community share flag), so
+    the render context can show the saved/shared state without a second query.
+    """
     return db.query_one(
-        "SELECT rider_id, event_id, target_speed_kmh, target_finish_min, plan_data "
+        "SELECT rider_id, event_id, target_speed_kmh, target_finish_min, plan_data, "
+        "       strategy_pace, is_public "
         "FROM rp_brevet_plan WHERE rider_id = %s AND event_id = %s",
         (rider_id, event_id),
     )
@@ -1389,6 +1395,63 @@ def upsert_rider_brevet_plan(rider_id, event_id, *, target_speed_kmh=None,
         "    target_finish_min = EXCLUDED.target_finish_min, "
         "    plan_data = EXCLUDED.plan_data, updated_at = NOW()",
         (rider_id, event_id, target_speed_kmh, target_finish_min, Json(plan_data)),
+    )
+
+
+def upsert_rider_brevet_strategy(rider_id, event_id, pace_id, is_public=None):
+    """Save the selected rider pace card + community share flag for a brevet.
+
+    Writes only ``strategy_pace`` (comfort | standard | push) and the tri-state
+    ``is_public`` onto the existing ``(rider_id, event_id)`` row, leaving any saved
+    ``target_speed_kmh`` / ``plan_data`` untouched. A single atomic upsert on the
+    UNIQUE(rider_id, event_id) constraint, so a re-pick transitions the row in place
+    (last write wins) instead of raising a unique-violation.
+
+    Tri-state ``is_public``: None means preserve the existing flag (COALESCE keeps the
+    stored value on update, and a brand-new row falls back to FALSE = private, matching
+    the NOT NULL DEFAULT); True publishes; False unpublishes. The upsert RETURNS the
+    ``is_public`` it actually persisted, so a re-pick that omits the flag reports the
+    preserved value rather than a guessed literal and the client share toggle stays in
+    sync. Returns that resolved boolean.
+
+    (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner reason
+    documented on :func:`upsert_brevet_event`.)
+    """
+    row = db.execute(
+        "INSERT INTO rp_brevet_plan "
+        "  (rider_id, event_id, strategy_pace, is_public) "
+        "VALUES (%s, %s, %s, COALESCE(%s, FALSE)) "
+        "ON CONFLICT (rider_id, event_id) DO UPDATE "
+        "SET strategy_pace = EXCLUDED.strategy_pace, "
+        "    is_public = COALESCE(%s, rp_brevet_plan.is_public), "
+        "    updated_at = NOW() "
+        "RETURNING is_public",
+        (rider_id, event_id, pace_id, is_public, is_public),
+        returning=True,
+    )
+    return bool(row['is_public']) if row else False
+
+
+def get_public_strategies(event_id, club_id):
+    """Other publicly-shared saved pace strategies for a brevet, scoped to one
+    club and exposed as EMAIL LOCAL-PART ONLY.
+
+    Guest-safety mirrors :func:`get_event_going_riders`: the plan page is public, so this
+    must never leak a full email address, google_id, or rider_id. Only the local-part of
+    the email (via split_part on the at-sign) and the chosen pace are selected. Scoped by
+    ``club_id`` so a viewer only ever sees co-club strategies; a NULL scope (a guest, or a
+    rider with no club) returns an empty list without touching the DB. rp_* only.
+    """
+    if club_id is None:
+        return []
+    return db.query(
+        "SELECT split_part(r.email, '@', 1) AS name, p.strategy_pace "
+        "FROM rp_brevet_plan p "
+        "JOIN rp_rider r ON r.id = p.rider_id "
+        "WHERE p.event_id = %s AND p.is_public = TRUE "
+        "  AND p.strategy_pace IS NOT NULL AND r.club_id = %s "
+        "ORDER BY name ASC",
+        (event_id, club_id),
     )
 
 
