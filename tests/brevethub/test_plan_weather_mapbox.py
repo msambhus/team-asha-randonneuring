@@ -12,7 +12,7 @@ Proves the load-bearing invariant and the graceful degradations:
     endpoint (the #1 guest-safety invariant),
   * a missing token, or a cache miss with a token set, degrades to the lean per-stop
     list / empty state — no broken map, no empty token leaked, no 500,
-  * migration 048 is an additive, rp_*-only ADD COLUMN.
+  * migration 049 is an additive, rp_*-only ADD COLUMN.
 
 Follows the BrevetHub test pattern: monkeypatch `brevethub.models.*`, use the
 `client` fixture, never touch a real DB, network, or Mapbox.
@@ -56,7 +56,7 @@ _STOPS = [
 _BUNDLE = {'plan': _PLAN, 'stops': _STOPS}
 _ROSTER = [{'name': 'alice', 'status': 'going'}]
 
-# The decimated route line the cron caches (matches migration 048's polyline column).
+# The decimated route line the cron caches (matches migration 049's polyline column).
 _POLYLINE = [[44.0, -121.0], [44.1, -121.2], [44.2, -121.4]]
 
 
@@ -262,10 +262,10 @@ def test_no_live_fetcher_on_guest_paths(app, client, url):
 # --------------------------------------------------------------------------- #
 # Migration 048 — additive, rp_*-only ADD COLUMN
 # --------------------------------------------------------------------------- #
-def test_migration_048_is_additive_polyline_column():
+def test_migration_049_is_additive_polyline_column():
     import re
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    path = os.path.join(root, 'migrations', '048_brevethub_route_weather_polyline.sql')
+    path = os.path.join(root, 'migrations', '049_brevethub_route_weather_polyline.sql')
     with open(path, 'r', encoding='utf-8') as fh:
         raw = fh.read()
     # Strip `-- ...` comment prose so the property scanners match executable SQL, not
@@ -280,4 +280,4 @@ def test_migration_048_is_additive_polyline_column():
     for ref in re.findall(r'\b(?:TABLE|INTO|UPDATE|FROM|JOIN)\s+("?\w+"?)',
                           code, re.IGNORECASE):
         assert ref.strip('"').lower().startswith('rp_'), \
-            f"non-rp table {ref!r} in migration 048"
+            f"non-rp table {ref!r} in migration 049"
