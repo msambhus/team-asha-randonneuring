@@ -11,6 +11,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../lib/queryClient';
+import { colors } from '../lib/theme';
 import { SessionProvider, useSession } from '../contexts/SessionContext';
 import { useOtaUpdates } from '../hooks/useOtaUpdates';
 // Register the background location task at app ENTRY (side-effect import), so
@@ -22,8 +23,9 @@ import '../location/backgroundLocation';
 function SettingsButton() {
   const router = useRouter();
   return (
-    <Pressable onPress={() => router.push('/settings')} hitSlop={12} style={{ paddingHorizontal: 4 }}>
-      <Feather name="settings" size={22} color="#1a365d" />
+    <Pressable onPress={() => router.push('/settings')} hitSlop={12} style={{ paddingHorizontal: 4 }}
+      accessibilityRole="button" accessibilityLabel="Settings">
+      <Feather name="settings" size={22} color={colors.navy} />
     </Pressable>
   );
 }

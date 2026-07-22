@@ -4,6 +4,7 @@
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Link, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRides } from '../hooks/useRides';
 import { useSession } from '../contexts/SessionContext';
 import { getSharingRideId } from '../location/backgroundLocation';
@@ -13,6 +14,7 @@ import type { RideSummary } from '../lib/types';
 export default function RidesScreen() {
   const { data: rides, isLoading, isError, refetch, isRefetching } = useRides();
   const { signOut, profileComplete } = useSession();
+  const insets = useSafeAreaInsets();
   const [sharingRideId, setSharingRideId] = useState<number | null>(null);
 
   // Re-check on every focus so the badge reflects starting/stopping sharing on
@@ -72,7 +74,8 @@ export default function RidesScreen() {
           </Link>
         )}
       />
-      <Pressable style={styles.signOut} onPress={() => signOut()}>
+      <Pressable style={[styles.signOut, { paddingBottom: 14 + insets.bottom }]} onPress={() => signOut()}
+        accessibilityRole="button" accessibilityLabel="Sign out">
         <Text style={styles.link}>Sign out</Text>
       </Pressable>
     </View>
