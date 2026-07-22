@@ -275,7 +275,14 @@ def live_new():
         return redirect(url_for('live.live_new'))
 
     rides = models.get_rider_rides(rider_id)
-    return render_template('live_new.html', rides=rides)
+    # Upcoming brevets the rider can point a ride at (the per-ride "link to event"
+    # control). Fail-soft: a load error just omits the linker, never 500s the page.
+    try:
+        events = models.get_upcoming_events()
+    except Exception as e:  # noqa: BLE001 — the linker is optional; never 500 here
+        current_app.logger.warning('live_new: upcoming events load failed: %s', e)
+        events = []
+    return render_template('live_new.html', rides=rides, events=events)
 
 
 @live_bp.route('/live/<int:ride_id>/public', methods=['POST'])
@@ -291,6 +298,43 @@ def set_public(ride_id):
     else:
         flash('Ride is now public — share its link.' if make_public
               else 'Ride is no longer public.', 'success')
+    return redirect(url_for('live.live_new'))
+
+
+@live_bp.route('/live/<int:ride_id>/link-event', methods=['POST'])
+@profile_required
+def link_event(ride_id):
+    """Link (or unlink) one of the rider OWN rides to a calendar event.
+
+    This is the association entry point for the per-event calendar Live link: an
+    owner points their live ride at an rp_brevet_event, so that event resolves to a
+    public Live button (models.get_live_ride_id_for_event). Owner-scoped in the
+    model UPDATE (rider_id-filtered), so a non-owner POST changes nothing. An empty
+    event_id unlinks (clears the FK). A non-empty event_id must name an existing
+    event (else 404), so a ride is never linked to a phantom event; a malformed id
+    is rejected with a flash rather than a 500."""
+    rider_id = session['rider_id']
+    raw = (request.form.get('event_id') or '').strip()
+
+    if raw == '':
+        event_id = None                       # unlink — clear the FK back to NULL
+    else:
+        try:
+            event_id = int(raw)
+        except ValueError:
+            flash('That is not a valid brevet to link to.', 'error')
+            return redirect(url_for('live.live_new'))
+        if not models.get_brevet_event(event_id):
+            abort(404)
+
+    updated = models.set_ride_event(ride_id, rider_id, event_id)
+    if not updated:
+        flash('That ride is not one of yours.', 'error')
+    elif event_id is None:
+        flash('Ride unlinked from its brevet.', 'success')
+    else:
+        flash('Ride linked to the brevet — it now shows a Live link on the calendar.',
+              'success')
     return redirect(url_for('live.live_new'))
 
 

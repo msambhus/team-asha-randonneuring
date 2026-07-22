@@ -39,7 +39,7 @@
     <div class="table-wrap">
     <table class="live-rides">
       <thead>
-        <tr><th>Ride</th><th>Distance</th><th>Public</th><th>Share link</th><th></th></tr>
+        <tr><th>Ride</th><th>Distance</th><th>Public</th><th>Share link</th><th>Brevet</th><th></th></tr>
       </thead>
       <tbody>
         {% for ride in rides %}
@@ -60,6 +60,29 @@
                 </a>
               {% else %}
                 <span class="text-text-light">make public to share</span>
+              {% endif %}
+            </td>
+            <td>
+              {# Link this ride to a calendar brevet so that event shows a Live
+                 link on the calendar. Owner-scoped server-side; "Not linked"
+                 clears the link. Only surfaced when the ride is public, since the
+                 calendar Live link resolves public rides only. #}
+              {% if ride.is_public %}
+                <form method="post" action="{{ url_for('live.link_event', ride_id=ride.id) }}"
+                      class="flex items-center gap-2">
+                  <select name="event_id" aria-label="Link to brevet"
+                          class="border border-border rounded-md px-2 py-1 text-sm bg-white">
+                    <option value="">Not linked</option>
+                    {% for ev in events %}
+                      <option value="{{ ev.id }}" {% if ride.event_id == ev.id %}selected{% endif %}>
+                        {{ ev.date }} · {{ ev.name }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                  <button class="btn btn-sm bg-white text-primary border border-border hover:opacity-90" type="submit">Save</button>
+                </form>
+              {% else %}
+                <span class="text-text-light">make public to link</span>
               {% endif %}
             </td>
             <td>

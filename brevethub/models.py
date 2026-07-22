@@ -247,9 +247,13 @@ def get_ride(ride_id):
 
 
 def get_rider_rides(rider_id):
-    """A rider's own rides, for the create/flag page listing + share links."""
+    """Own rides for one rider, for the create/flag page listing + share links.
+
+    ``event_id`` is selected too so the manage page can show which calendar event
+    each ride is currently linked to (NULL when unlinked).
+    """
     return db.query(
-        "SELECT id, name, distance_km, start_at, status, is_public "
+        "SELECT id, name, distance_km, start_at, status, is_public, event_id "
         "FROM rp_ride WHERE rider_id = %s ORDER BY start_at DESC NULLS LAST",
         (rider_id,),
     )
@@ -283,6 +287,24 @@ def set_ride_public(ride_id, rider_id, is_public):
         "UPDATE rp_ride SET is_public = %s WHERE id = %s AND rider_id = %s "
         "RETURNING id",
         (is_public, ride_id, rider_id),
+        returning=True,
+    )
+
+
+def set_ride_event(ride_id, rider_id, event_id):
+    """Link or unlink one ride owned by the rider to a calendar event.
+
+    Owner-scoped: the write is filtered by rider_id too, so a non-owner can never
+    point another rider ride at an event. Pass ``event_id=None`` to unlink and
+    clear the FK back to NULL. Returns the updated row id or None when the ride is
+    not owned by the rider, so the caller can report a non-owner no-op. The FK
+    itself guarantees a missing event cannot be stored; the route validates event
+    existence too.
+    """
+    return db.execute(
+        "UPDATE rp_ride SET event_id = %s WHERE id = %s AND rider_id = %s "
+        "RETURNING id",
+        (event_id, ride_id, rider_id),
         returning=True,
     )
 
@@ -1339,6 +1361,83 @@ def get_brevet_weather_for_events(event_ids):
         'forecast_date': row['forecast_date'],
         'fetched_at': row['fetched_at'],
     } for row in rows}
+
+
+# --------------------------------------------------------------------------- #
+# Event -> live-ride resolution (Closes #538). A calendar event resolves to an
+# associated PUBLIC live ride so the calendar can render a per-event "Live" link
+# pointing at the shared Radial view (/live/<ride_id>). Two tiers, in priority
+# order and both PUBLIC-only (is_public = TRUE) so no private ride can ever leak:
+#   1. the explicit FK link (rp_ride.event_id), set by the ride owner — the
+#      authoritative path; and
+#   2. a name+date fallback for a public ride that predates the FK (same date,
+#      same normalized name) and is NOT explicitly linked elsewhere.
+# On a tie the pick is deterministic (most-recently-started, then highest id), and
+# only a bare ride id (never PII) is returned. Both tiers touch only rp_ride and
+# rp_brevet_event.
+# --------------------------------------------------------------------------- #
+
+# Shared match clause both resolvers build on: a PUBLIC ride matches an event
+# either by the explicit FK (event_id) OR, when it has no explicit link, by same-date +
+# normalized-name equality. Restricting the fallback to event_id IS NULL means a
+# ride explicitly linked to ANOTHER event can never be name-matched here, so the
+# owner FK always wins. Ordering puts the FK tier first, then the deterministic
+# tie-break, so DISTINCT ON / LIMIT 1 pick one stable ride per event.
+_EVENT_LIVE_RIDE_MATCH = (
+    "  ON r.is_public = TRUE AND ("
+    "       r.event_id = e.id"
+    "       OR (r.event_id IS NULL"
+    "           AND lower(btrim(r.name)) = lower(btrim(e.name))"
+    "           AND r.start_at::date = e.date)"
+    "     ) "
+)
+_EVENT_LIVE_RIDE_ORDER = (
+    "(r.event_id = e.id) DESC, r.start_at DESC NULLS LAST, r.id DESC "
+)
+
+
+def get_live_ride_id_for_event(event_id):
+    """The associated PUBLIC live ride id for one calendar event, or None.
+
+    Resolves via the explicit FK first (rp_ride.event_id), then a public-ride
+    name+date fallback, and returns only the ride id — never any rider identity.
+    None when no PUBLIC ride is associated, so a private or unlinked event surfaces
+    no Live link. Touches only rp_ride and rp_brevet_event.
+    """
+    row = db.query_one(
+        "SELECT r.id AS ride_id "
+        "FROM rp_brevet_event e JOIN rp_ride r "
+        + _EVENT_LIVE_RIDE_MATCH +
+        "WHERE e.id = %s "
+        "ORDER BY " + _EVENT_LIVE_RIDE_ORDER +
+        "LIMIT 1",
+        (event_id,),
+    )
+    return row['ride_id'] if row else None
+
+
+def get_live_ride_ids_for_events(events):
+    """Map each event id to its associated PUBLIC live ride id, as ``{event_id:
+    ride_id}`` (the calendar page-bulk variant of get_live_ride_id_for_event).
+
+    One query per calendar page, mirroring get_brevet_weather_for_events. Events
+    with no associated public ride simply do not appear in the map, so the template
+    renders no Live link for them. Returns ``{}`` immediately for an empty list (no
+    query). ``events`` is the get_upcoming_events row list (only each id is read
+    here). Touches only rp_ride and rp_brevet_event; never returns PII.
+    """
+    ids = [ev['id'] for ev in events]
+    if not ids:
+        return {}
+    rows = db.query(
+        "SELECT DISTINCT ON (e.id) e.id AS event_id, r.id AS ride_id "
+        "FROM rp_brevet_event e JOIN rp_ride r "
+        + _EVENT_LIVE_RIDE_MATCH +
+        "WHERE e.id = ANY(%s) "
+        "ORDER BY e.id, " + _EVENT_LIVE_RIDE_ORDER,
+        (ids,),
+    )
+    return {row['event_id']: row['ride_id'] for row in rows}
 
 
 # --------------------------------------------------------------------------- #
