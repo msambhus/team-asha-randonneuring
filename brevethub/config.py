@@ -34,6 +34,11 @@ class Config:
     DATABASE_URL = os.environ.get('DATABASE_URL')
     SECRET_KEY = _SECRET_KEY
 
+    # FIT merge uploads are parsed with a route-local limit. Keep this below
+    # Vercel's request-body ceiling and keep every uploaded part in memory.
+    FIT_MERGE_MAX_FILES = 20
+    FIT_MERGE_MAX_BYTES = 4 * 1024 * 1024
+
     # Google OAuth — reuse Team Asha's existing web client. The owner registers
     # BrevetHub's redirect URIs on that same client (see brevethub/README.md).
     GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')

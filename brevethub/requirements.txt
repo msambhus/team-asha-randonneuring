@@ -8,4 +8,5 @@ authlib==1.3.0
 requests==2.31.0
 beautifulsoup4==4.12.3
 python-dotenv==1.2.1
-
+fitdecode==0.10.0
+fit-tool==0.9.15

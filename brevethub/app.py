@@ -51,6 +51,7 @@ def create_app():
     from brevethub.routes.calendar import calendar_bp
     from brevethub.routes.plan import plan_bp
     from brevethub.routes.analysis import analysis_bp
+    from brevethub.routes.tools import tools_bp
     from brevethub.routes.cron import cron_bp
     from brevethub.routes.admin import admin_bp
     # Community surfaces (club directory / leaderboard / season rosters / public
@@ -69,6 +70,7 @@ def create_app():
     app.register_blueprint(calendar_bp)
     app.register_blueprint(plan_bp)
     app.register_blueprint(analysis_bp)
+    app.register_blueprint(tools_bp, url_prefix='/tools')
     app.register_blueprint(riders_bp)
     # cron_bp OWNS the '/cron' segment; the route decorator is leaf-only
     # ('/refresh-calendar') so the composed URL is exactly '/cron/refresh-calendar'
