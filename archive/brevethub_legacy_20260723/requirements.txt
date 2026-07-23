@@ -1,0 +1,12 @@
+# BrevetHub runtime dependencies. Pinned to the same versions the monorepo's
+# root requirements.txt uses so the shared/ package behaves identically in both
+# apps. BrevetHub deliberately depends on far less than Team Asha.
+Flask==3.0.0
+Werkzeug==3.0.1
+psycopg2-binary==2.9.9
+authlib==1.3.0
+requests==2.31.0
+beautifulsoup4==4.12.3
+python-dotenv==1.2.1
+fitdecode==0.10.0
+fit-tool==0.9.15
