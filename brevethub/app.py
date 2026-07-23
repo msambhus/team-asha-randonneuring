@@ -25,7 +25,7 @@ _REPO_ROOT = _BREVETHUB_DIR.parent
 
 
 class _BrevetHubNeutralizingLoader(BaseLoader):
-    """Reuse Team Asha templates while neutralizing product labels for BrevetHub."""
+    """Reuse Team Asha templates while neutralizing labels and brand colors."""
 
     _REPLACEMENTS = (
         ('Team <span class="text-accent-light">Asha</span> Randonneuring',
@@ -39,6 +39,63 @@ class _BrevetHubNeutralizingLoader(BaseLoader):
         ('Team Asha rider', 'randonneur'),
         ('Team Asha', 'BrevetHub'),
     )
+    _COLOR_REPLACEMENTS = (
+        ('#1a365d', '#0088ce'),
+        ('#234878', '#006aa3'),
+        ('#2a4a7f', '#006aa3'),
+        ('#2d5a87', '#006aa3'),
+        ('#e53e3e', '#c01700'),
+        ('#fc8181', '#ec0000'),
+        ('#ff6b6b', '#ec0000'),
+        ('#ee5a6f', '#a01300'),
+        ('#0891b2', '#0088ce'),
+        ('#0e7490', '#006aa3'),
+        ('#0f766e', '#006aa3'),
+        ('#0369a1', '#006aa3'),
+        ('#38bdf8', '#79D1FF'),
+        ('#7dd3fc', '#0088ce'),
+        ('#805ad5', '#0088ce'),
+        ('#b794f4', '#e6f7ff'),
+        ('#7c3aed', '#0088ce'),
+        ('#6d28d9', '#0088ce'),
+        ('#4338ca', '#006aa3'),
+        ('#c7d2fe', '#0088ce'),
+        ('#d1fae5', '#e6f7ff'),
+        ('#ecfdf5', '#e6f7ff'),
+        ('#e6fffa', '#e6f7ff'),
+        ('#f0fff4', '#e6f7ff'),
+        ('#38a169', '#0088ce'),
+        ('#48bb78', '#79D1FF'),
+        ('#16a34a', '#0088ce'),
+        ('#059669', '#006aa3'),
+        ('#065f46', '#006aa3'),
+        ('#fb923c', '#c01700'),
+        ('#f97316', '#a01300'),
+        ('#ff6b00', '#c01700'),
+        ('#ff8c42', '#ec0000'),
+        ('#c2410c', '#c01700'),
+        ('#9a3412', '#a01300'),
+        ('#f0f9ff', '#e6f7ff'),
+        ('#e0f2fe', '#e6f7ff'),
+        ('#ebf8ff', '#e6f7ff'),
+        ('#e8f0fe', '#e6f7ff'),
+        ('#f0f4ff', '#e6f7ff'),
+        ('#fff7ed', '#fff0f3'),
+        ('#ffedd5', '#fff0f3'),
+        ('#fed7aa', '#c01700'),
+        ('#fff5f0', '#fff0f3'),
+        ('#fff5f5', '#fff0f3'),
+        ('#fed7d7', '#fff0f3'),
+        ('#fef5e7', '#fff0f3'),
+        ('#fefcbf', '#fff0f3'),
+        ('#fef3c7', '#fff0f3'),
+        ('#fde68a', '#fff0f3'),
+        ('#fbbf24', '#c01700'),
+        ('#dd6b20', '#c01700'),
+        ('#ed8936', '#ec0000'),
+        ('#d69e2e', '#c01700'),
+        ('#f6ad55', '#ec0000'),
+    )
 
     def __init__(self, wrapped):
         self._wrapped = wrapped
@@ -47,6 +104,8 @@ class _BrevetHubNeutralizingLoader(BaseLoader):
         source, filename, uptodate = self._wrapped.get_source(environment, template)
         for old, new in self._REPLACEMENTS:
             source = source.replace(old, new)
+        for old, new in self._COLOR_REPLACEMENTS:
+            source = source.replace(old, new).replace(old.upper(), new)
         return source, filename, uptodate
 
 

@@ -7,7 +7,7 @@
 .home-hero {
     position: relative;
     overflow: hidden;
-    background: linear-gradient(135deg, #1a365d 0%, #234878 52%, #0f766e 100%);
+    background: linear-gradient(135deg, var(--rusa-blue) 0%, var(--rusa-blue-dark) 62%, var(--rusa-red) 100%);
     color: white;
     padding: 72px 20px;
 }
@@ -16,8 +16,8 @@
     position: absolute;
     inset: 0;
     background:
-        radial-gradient(circle at 15% 15%, rgba(252,129,129,0.28), transparent 28%),
-        radial-gradient(circle at 82% 18%, rgba(125,211,252,0.20), transparent 32%),
+        radial-gradient(circle at 15% 15%, rgba(255,255,255,0.22), transparent 28%),
+        radial-gradient(circle at 82% 18%, rgba(192,23,0,0.34), transparent 32%),
         linear-gradient(120deg, rgba(255,255,255,0.08), transparent 45%);
     pointer-events: none;
 }
@@ -182,7 +182,7 @@
                 activities against the plan after the finish.
             </p>
             <div class="hero-actions">
-                <a href="{{ url_for('brevethub_overrides.calendar_alias') }}" class="btn btn-primary" style="background:#fff;color:#1a365d;border-color:#fff;">Browse brevet calendar</a>
+                <a href="{{ url_for('brevethub_overrides.calendar_alias') }}" class="btn btn-primary" style="background:var(--rusa-white);color:var(--rusa-blue);border-color:var(--rusa-white);">Browse brevet calendar</a>
                 <a href="{{ url_for('riders.riders_directory') }}" class="btn" style="background:rgba(255,255,255,.12);color:white;border:1px solid rgba(255,255,255,.35);">View riders</a>
                 <a href="{{ url_for('main.resources') }}" class="btn" style="background:rgba(255,255,255,.12);color:white;border:1px solid rgba(255,255,255,.35);">Resources</a>
             </div>

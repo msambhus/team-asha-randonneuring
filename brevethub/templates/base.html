@@ -7,7 +7,7 @@
 <meta name="description" content="{% block meta_description %}BrevetHub — brevet calendars, rider results, live tracking, weather, ride plans, and randonneuring tools for clubs and riders.{% endblock %}">
 <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.svg') }}">
-<meta name="theme-color" content="#1a365d">
+<meta name="theme-color" content="#0088ce">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="BrevetHub">
 <meta property="og:title" content="{{ self.title() }}">
@@ -17,6 +17,88 @@
 <meta name="twitter:description" content="{{ self.meta_description() }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='output.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+:root {
+    --rusa-blue: #0088ce;
+    --rusa-blue-dark: #006aa3;
+    --rusa-blue-soft: #e6f7ff;
+    --rusa-red: #c01700;
+    --rusa-red-dark: #a01300;
+    --rusa-red-light: #ec0000;
+    --rusa-red-soft: #fff0f3;
+    --rusa-white: #ffffff;
+
+    --primary: var(--rusa-blue);
+    --primary-dark: var(--rusa-blue-dark);
+    --accent: var(--rusa-red);
+    --accent-light: var(--rusa-red-light);
+    --bg: #f7f9fc;
+    --card-bg: var(--rusa-white);
+    --text: #17233c;
+    --text-light: #4d5f7c;
+    --border: #d8e2f0;
+    --danger: var(--rusa-red);
+}
+
+.bg-primary,
+footer {
+    background-color: var(--rusa-blue) !important;
+}
+
+.bg-gradient-to-br.from-primary,
+.hero {
+    background-image: linear-gradient(135deg, var(--rusa-blue) 0%, var(--rusa-blue-dark) 100%) !important;
+}
+
+.from-primary {
+    --tw-gradient-from: var(--rusa-blue) var(--tw-gradient-from-position) !important;
+    --tw-gradient-to: rgba(0, 136, 206, 0) var(--tw-gradient-to-position) !important;
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+.via-primary-dark {
+    --tw-gradient-to: rgba(0, 106, 163, 0) var(--tw-gradient-to-position) !important;
+    --tw-gradient-stops: var(--tw-gradient-from), var(--rusa-blue-dark) var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
+}
+
+.to-primary,
+.to-primary-dark {
+    --tw-gradient-to: var(--rusa-blue-dark) var(--tw-gradient-to-position) !important;
+}
+
+.text-primary,
+.hover\:text-primary:hover {
+    color: var(--rusa-blue) !important;
+}
+
+.text-accent,
+.hover\:text-accent:hover {
+    color: var(--rusa-red) !important;
+}
+
+.text-accent-light {
+    color: var(--rusa-red-light) !important;
+}
+
+.border-accent {
+    border-color: var(--rusa-red) !important;
+}
+
+.btn-primary {
+    background: var(--rusa-blue) !important;
+    color: var(--rusa-white) !important;
+    border-color: var(--rusa-blue) !important;
+}
+
+.btn-accent {
+    background: var(--rusa-red) !important;
+    color: var(--rusa-white) !important;
+}
+
+a {
+    text-decoration-color: var(--rusa-red);
+}
+</style>
 {% block extra_head %}{% endblock %}
 </head>
 <body class="bg-bg text-text">
@@ -70,7 +152,7 @@
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
 {% for category, message in messages %}
-<div class="py-3 px-5 rounded-lg mx-5 my-2.5 text-sm {% if category == 'success' %}bg-[#c6f6d5] text-[#22543d]{% elif category == 'warning' %}bg-[#fef3c7] text-[#78350f]{% elif category == 'info' %}bg-[#dbeafe] text-[#1e40af]{% else %}bg-[#fed7d7] text-[#9b2c2c]{% endif %}"{% if category not in ('success', 'info') %} role="alert"{% endif %}>{{ message }}</div>
+<div class="py-3 px-5 rounded-lg mx-5 my-2.5 text-sm {% if category in ('success', 'info') %}bg-[#e6f7ff] text-[#006aa3]{% else %}bg-[#fff0f3] text-[#a01300]{% endif %}"{% if category not in ('success', 'info') %} role="alert"{% endif %}>{{ message }}</div>
 {% endfor %}
 {% endif %}
 {% endwith %}

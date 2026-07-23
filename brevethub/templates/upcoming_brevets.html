@@ -5,7 +5,7 @@
 {% block extra_head %}
 <style>
 .calendar-hero {
-    background: linear-gradient(135deg, #1a365d, #234878);
+    background: linear-gradient(135deg, var(--rusa-blue), var(--rusa-blue-dark) 70%, var(--rusa-red));
     color: white;
     padding: 44px 20px;
     text-align: center;
@@ -91,7 +91,7 @@
     display: inline-block;
     margin-bottom: 14px;
     color: white;
-    background: linear-gradient(135deg, #0891b2, #0e7490);
+    background: linear-gradient(135deg, var(--rusa-blue), var(--rusa-blue-dark));
     border-radius: 8px;
     padding: 9px 16px;
     font-size: 1.05rem;
@@ -121,7 +121,7 @@
     position: absolute;
     top: 14px;
     right: 16px;
-    background: linear-gradient(135deg, #1e40af, #1e3a8a);
+    background: linear-gradient(135deg, var(--rusa-red), var(--rusa-red-dark));
     color: white;
     border-radius: 9px;
     padding: 6px 10px;
@@ -134,7 +134,7 @@
     line-height: 1;
 }
 .event-month {
-    color: #fb923c;
+    color: var(--rusa-white);
     font-size: .62rem;
     font-weight: 900;
     letter-spacing: .06em;
@@ -156,16 +156,16 @@
     padding: 4px 9px;
     font-size: .72rem;
     font-weight: 900;
-    background: #eef2ff;
-    color: #3730a3;
+    background: var(--rusa-blue-soft);
+    color: var(--rusa-blue-dark);
 }
 .pill.state {
-    background: #ecfeff;
-    color: #155e75;
+    background: var(--rusa-blue);
+    color: var(--rusa-white);
 }
 .pill.club {
-    background: #fff7ed;
-    color: #9a3412;
+    background: var(--rusa-red-soft);
+    color: var(--rusa-red-dark);
 }
 .event-distance {
     color: var(--accent);
@@ -271,14 +271,14 @@
     color: #dc2626;
     border-top: 1px solid var(--border);
 }
-.signed-up { background:#dcfce7; color:#166534; border-color:#86efac; }
-.interested { background:#fef9c3; color:#854d0e; border-color:#fde047; }
-.maybe { background:#ffedd5; color:#9a3412; border-color:#fb923c; }
+.signed-up { background:var(--rusa-blue-soft); color:var(--rusa-blue-dark); border-color:var(--rusa-blue); }
+.interested { background:var(--rusa-white); color:var(--rusa-red); border-color:var(--rusa-red); }
+.maybe { background:var(--rusa-red-soft); color:var(--rusa-red-dark); border-color:var(--rusa-red); }
 .withdraw { background:#f3f4f6; color:#374151; border-color:#9ca3af; }
 .finished {
-    background:#dbeafe;
-    color:#1e40af;
-    border:1px solid #93c5fd;
+    background:var(--rusa-blue);
+    color:var(--rusa-white);
+    border:1px solid var(--rusa-blue-dark);
     border-radius:7px;
     padding:6px 11px;
     font-size:.76rem;
@@ -356,7 +356,7 @@
     align-items: center;
     padding: 14px 16px;
     margin-bottom: 18px;
-    border-left: 4px solid #7c3aed;
+    border-left: 4px solid var(--rusa-red);
 }
 @media (max-width: 780px) {
     .filter-grid { grid-template-columns: 1fr; }
@@ -374,10 +374,10 @@
 
 <div class="calendar-shell">
     {% if wind_warnings %}
-    <div class="calendar-card" style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-color:#f59e0b;padding:16px 20px;margin-bottom:18px;">
-        <div style="font-weight:900;color:#92400e;margin-bottom:8px;">&#9888;&#65039; Heavy winds forecast</div>
+    <div class="calendar-card" style="background:linear-gradient(135deg,var(--rusa-red-soft),var(--rusa-white));border-color:var(--rusa-red);padding:16px 20px;margin-bottom:18px;">
+        <div style="font-weight:900;color:var(--rusa-red-dark);margin-bottom:8px;">&#9888;&#65039; Heavy winds forecast</div>
         {% for w in wind_warnings %}
-        <div style="color:#78350f;font-size:.9rem;margin-bottom:5px;"><strong>{{ w.ride_name }}</strong> &mdash; {{ w.ride_date }}: {{ w.description }}</div>
+        <div style="color:var(--rusa-red-dark);font-size:.9rem;margin-bottom:5px;"><strong>{{ w.ride_name }}</strong> &mdash; {{ w.ride_date }}: {{ w.description }}</div>
         {% endfor %}
     </div>
     {% endif %}
@@ -458,7 +458,7 @@
                      data-start-location="{{ event.start_location or '' }}"
                      data-time-limit-hours="{{ event.time_limit_hours or '' }}"
                      data-plan-rwgps-url-team="{{ event.plan_rwgps_url_team or '' }}"
-                     style="--event-color:#0891b2;">
+                     style="--event-color:var(--rusa-red);">
                 <div class="event-date">
                     <div class="event-day">{{ date_str[8:10] }}</div>
                     <div class="event-month">{{ ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][date_str[5:7]|int] }}</div>
@@ -476,7 +476,7 @@
                     {% else %}
                         {{ event.distance_km }} km
                     {% endif %}
-                    {% if event.signup_count and event.signup_count >= 5 %}<span class="pill" style="background:#fef3c7;color:#92400e;margin-left:5px;">Popular</span>{% endif %}
+                    {% if event.signup_count and event.signup_count >= 5 %}<span class="pill" style="background:var(--rusa-red-soft);color:var(--rusa-red-dark);margin-left:5px;">Popular</span>{% endif %}
                 </div>
                 {% if event.elevation_ft %}
                 {% set miles = event.distance_miles if event.distance_miles else (event.distance_km * 0.621371) %}
@@ -487,26 +487,26 @@
                     {{ event.route_name|clean_name }}
                     {% if event.ride_type %}<span style="color:var(--text-light);font-size:.72rem;font-weight:800;">[{{ event.ride_type }}]</span>{% endif %}
                     {% if can_edit_rides %}
-                    <button type="button" onclick="openEditModalFromCard(this)" title="Edit ride details" style="border:0;background:transparent;color:#6d28d9;cursor:pointer;font-size:.9rem;margin-left:4px;">✏️</button>
+                    <button type="button" onclick="openEditModalFromCard(this)" title="Edit ride details" style="border:0;background:transparent;color:var(--rusa-red);cursor:pointer;font-size:.9rem;margin-left:4px;">✏️</button>
                     {% endif %}
                 </h3>
 
                 <div class="event-links">
                     {% if display_rwgps %}
-                    <a href="{{ display_rwgps }}" target="_blank" rel="noopener" class="event-link-btn" style="background:#e0f2fe;color:#0369a1;border-color:#7dd3fc;">Route</a>
+                    <a href="{{ display_rwgps }}" target="_blank" rel="noopener" class="event-link-btn" style="background:var(--rusa-blue-soft);color:var(--rusa-blue-dark);border-color:var(--rusa-blue);">Route</a>
                     {% endif %}
                     {% if alternate_rwgps %}
-                    <a href="{{ alternate_rwgps }}" target="_blank" rel="noopener" class="event-link-btn" style="background:#ffedd5;color:#c2410c;border-color:#fdba74;">Alternate route</a>
+                    <a href="{{ alternate_rwgps }}" target="_blank" rel="noopener" class="event-link-btn" style="background:var(--rusa-red-soft);color:var(--rusa-red-dark);border-color:var(--rusa-red);">Alternate route</a>
                     {% endif %}
                     <span class="weather-map-link" style="display:none;">
-                        <a href="#" class="event-link-btn" style="background:#d1fae5;color:#065f46;border-color:#6ee7b7;">Weather</a>
+                        <a href="#" class="event-link-btn" style="background:var(--rusa-white);color:var(--rusa-blue);border-color:var(--rusa-blue);">Weather</a>
                     </span>
                     {% if event.plan_slug %}
                         {% if event.has_custom_plan %}
-                        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug, view='custom') }}" class="event-link-btn" style="background:#e8f0fe;color:#4338ca;border-color:#c7d2fe;">My Ride Plan</a>
+                        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug, view='custom') }}" class="event-link-btn" style="background:var(--rusa-blue-soft);color:var(--rusa-blue-dark);border-color:var(--rusa-blue);">My Ride Plan</a>
                         <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug, view='base') }}" class="event-link-btn">Base Plan</a>
                         {% else %}
-                        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug, view='base') }}" class="event-link-btn" style="background:#e8f0fe;color:#4338ca;border-color:#c7d2fe;">Ride Plan</a>
+                        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug, view='base') }}" class="event-link-btn" style="background:var(--rusa-blue-soft);color:var(--rusa-blue-dark);border-color:var(--rusa-blue);">Ride Plan</a>
                         {% endif %}
                     {% endif %}
                 </div>
@@ -579,7 +579,7 @@
                         <td style="padding:9px 12px;">
                             {% set evt_rwgps = event.rwgps_url or event.plan_rwgps_url %}
                             {% if event.plan_slug %}<a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug) }}" style="color:var(--accent);font-weight:700;margin-right:9px;">Plan</a>{% endif %}
-                            {% if evt_rwgps %}<a href="{{ evt_rwgps }}" target="_blank" rel="noopener" style="color:#c2410c;font-weight:700;">Route</a>{% endif %}
+                            {% if evt_rwgps %}<a href="{{ evt_rwgps }}" target="_blank" rel="noopener" style="color:var(--rusa-red);font-weight:700;">Route</a>{% endif %}
                             {% if not event.plan_slug and not evt_rwgps %}<span style="color:#94a3b8;">—</span>{% endif %}
                         </td>
                     </tr>
