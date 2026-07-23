@@ -70,6 +70,23 @@
   .strava-data-card {
     border-top: 4px solid #fc4c02;
   }
+  .brevet-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: #fff;
+    color: #c2410c;
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .cell-stack { display: flex; flex-direction: column; gap: 1px; text-align: right; }
+  .val-plan { color: #2563eb; font-weight: 700; }
+  .val-actual { color: #c2410c; font-weight: 800; }
+  .delta-faster { color: #16a34a; }
+  .delta-slower { color: #dc2626; }
+  .extra-row { border-left: 4px solid #f59e0b; }
   .analysis-legs thead th,
   .analysis-stops thead th {
     background: #1e293b;
@@ -110,7 +127,7 @@
     computes the breakdown — it may take a few seconds.
   </p>
   <form method="post" action="{{ url_for('analysis.compute', activity_id=activity_id) }}">
-    <button class="btn btn-strava" type="submit">Analyze this ride</button>
+    <button class="btn btn-strava" type="submit">Stats</button>
   </form>
   <p class="mt-4"><a class="back-link" href="{{ url_for('analysis.analysis_list') }}">← Back to your rides</a></p>
 </section>
@@ -119,6 +136,7 @@
   <h1 class="text-[1.8rem] font-bold">Strava Ride Analysis</h1>
   <p>{{ analysis.activity.name }}{% if analysis.activity.date %} - {{ analysis.activity.date }}{% endif %}</p>
   <div class="strava-hero-actions">
+    {% if analysis.brevet %}<span class="brevet-pill">Brevet stats</span>{% endif %}
     <a class="btn btn-strava" href="{{ analysis.activity.strava_url or ('https://www.strava.com/activities/' ~ activity_id) }}" target="_blank" rel="noopener">View on Strava</a>
     <a class="btn strava-outline" href="{{ url_for('analysis.analysis_list') }}">Back to your rides</a>
     <div class="strava-attribution">
@@ -128,8 +146,18 @@
 </div>
 
 <section class="strava-summary">
-  <div class="strava-summary-title">Strava Ride Summary</div>
+  <div class="strava-summary-title">{% if analysis.comparison %}Plan vs Actual Stats{% else %}Strava Ride Summary{% endif %}</div>
   <div class="strava-summary-grid">
+    {% if analysis.comparison %}
+      {% set s = analysis.comparison.summary %}
+      <div class="strava-summary-item"><div class="strava-summary-label">Distance</div>{% if s.plan_distance_km %}<div class="summary-plan">Plan: {{ s.plan_distance_km }} km</div>{% endif %}<div class="strava-summary-value">{{ s.actual_distance_km }} km</div>{% if s.distance_delta_km is not none %}<div class="{% if s.distance_delta_km > 0 %}delta-slower{% else %}delta-faster{% endif %}">{{ "%+.1f"|format(s.distance_delta_km) }} km</div>{% endif %}</div>
+      <div class="strava-summary-item"><div class="strava-summary-label">Elevation</div>{% if s.plan_elevation_ft %}<div class="summary-plan">Plan: {{ s.plan_elevation_ft }} ft</div>{% endif %}<div class="strava-summary-value">{{ s.actual_elevation_ft }} ft</div></div>
+      <div class="strava-summary-item"><div class="strava-summary-label">Elapsed time</div>{% if s.plan_total_time_min %}<div class="summary-plan">Plan: {{ (s.plan_total_time_min // 60)|int }}h{{ "%02d"|format(s.plan_total_time_min % 60) }}m</div>{% endif %}<div class="strava-summary-value">{{ (s.actual_elapsed_time_min // 60)|int }}h{{ "%02d"|format(s.actual_elapsed_time_min % 60) }}m</div></div>
+      <div class="strava-summary-item"><div class="strava-summary-label">Moving time</div><div class="strava-summary-value">{{ (s.actual_moving_time_min // 60)|int }}h{{ "%02d"|format(s.actual_moving_time_min % 60) }}m</div></div>
+      <div class="strava-summary-item"><div class="strava-summary-label">Stopped time</div>{% if s.plan_break_time_min %}<div class="summary-plan">Plan: {{ s.plan_break_time_min }} min</div>{% endif %}<div class="strava-summary-value">{{ s.actual_stopped_time_min }} min</div></div>
+      <div class="strava-summary-item"><div class="strava-summary-label">Stops</div><div class="strava-summary-value">{{ s.stops_detected }}</div>{% if s.stops_planned is not none %}<div class="summary-plan">Planned: {{ s.stops_planned }}</div>{% endif %}</div>
+      {% if s.stops_extra > 0 %}<div class="strava-summary-item"><div class="strava-summary-label">Unplanned stops</div><div class="strava-summary-value" style="color:#d97706;">{{ s.stops_extra }}</div></div>{% endif %}
+    {% else %}
     <div class="strava-summary-item"><div class="strava-summary-label">Distance</div><div class="strava-summary-value">{{ analysis.activity.distance_km }} km</div></div>
     <div class="strava-summary-item"><div class="strava-summary-label">Elevation</div><div class="strava-summary-value">{{ analysis.activity.elevation_ft }} ft</div></div>
     <div class="strava-summary-item"><div class="strava-summary-label">Moving time</div><div class="strava-summary-value">{{ analysis.activity.moving_time }}</div></div>
@@ -145,6 +173,7 @@
       <div class="strava-summary-item"><div class="strava-summary-label">Avg / max power</div><div class="strava-summary-value">{{ analysis.summary.avg_watts }}{% if analysis.summary.max_watts is not none %} / {{ analysis.summary.max_watts }}{% endif %} W</div></div>
     {% endif %}
     <div class="strava-summary-item"><div class="strava-summary-label">Stops detected</div><div class="strava-summary-value">{{ analysis.stop_count }}</div></div>
+    {% endif %}
   </div>
 </section>
 
@@ -154,10 +183,44 @@
   <div id="analysis-map" style="height:55vh;width:100%;border-radius:8px;margin:16px 0;"
        data-track="{{ analysis.map.track|tojson }}"
        data-bounds="{{ analysis.map.bounds|tojson }}"
-       data-stops="{{ analysis.stops|tojson }}"></div>
+       data-segments="{{ (analysis.map.segments or [])|tojson }}"
+       data-stops="{{ (analysis.map.stops or analysis.stops)|tojson }}"></div>
 </section>
 {% endif %}
 
+{% if analysis.comparison %}
+<section class="card strava-data-card">
+  <h2 class="text-primary text-[1.3rem] font-bold mb-2">Detailed Brevet Segments</h2>
+  <p class="text-text-light text-sm mb-4">Blue values are planned; orange values are actual Strava stats.</p>
+  <div class="table-wrap">
+  <table class="analysis-legs">
+    <thead>
+      <tr>
+        <th>Stop</th><th>Km</th><th>Segment</th><th>Speed</th><th>Stop</th>
+        <th>Cumul</th><th>HR</th><th>Power</th><th>Cadence</th><th>Climb</th><th>Delta</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in analysis.comparison.rows %}
+      <tr class="{% if row.is_extra %}extra-row{% endif %}">
+        <td>{% if row.is_extra %}<strong>Extra</strong> {% endif %}{{ row.location }}</td>
+        <td>{{ row.distance_km }}</td>
+        <td><div class="cell-stack">{% if row.plan_segment_min %}<span class="val-plan">{{ row.plan_segment_min }} min</span>{% endif %}{% if row.actual_segment_min is not none %}<span class="val-actual">{{ row.actual_segment_min }} min</span>{% endif %}</div></td>
+        <td><div class="cell-stack">{% if row.plan_speed_mph %}<span class="val-plan">{{ row.plan_speed_mph }} mph</span>{% endif %}{% if row.actual_speed_mph is not none %}<span class="val-actual">{{ row.actual_speed_mph }} mph</span>{% endif %}</div></td>
+        <td><div class="cell-stack">{% if row.plan_stop_duration_min is not none %}<span class="val-plan">{{ row.plan_stop_duration_min }} min</span>{% endif %}{% if row.actual_stop_duration_min is not none %}<span class="val-actual">{{ row.actual_stop_duration_min }} min</span>{% endif %}</div></td>
+        <td><div class="cell-stack">{% if row.plan_cum_time_min %}<span class="val-plan">{{ (row.plan_cum_time_min // 60)|int }}:{{ "%02d"|format(row.plan_cum_time_min % 60) }}</span>{% endif %}{% if row.actual_cum_time_min is not none %}<span class="val-actual">{{ (row.actual_cum_time_min // 60)|int }}:{{ "%02d"|format(row.actual_cum_time_min % 60) }}</span>{% endif %}</div></td>
+        <td>{% if row.actual_avg_hr %}{{ row.actual_avg_hr }} bpm{% else %}—{% endif %}</td>
+        <td>{% if row.actual_avg_watts %}{{ row.actual_avg_watts }} W{% else %}—{% endif %}</td>
+        <td>{% if row.actual_avg_cadence %}{{ row.actual_avg_cadence }} rpm{% else %}—{% endif %}</td>
+        <td>{% if row.actual_elev_gain_ft is not none and not row.is_extra %}{{ row.actual_elev_gain_ft }} ft{% else %}—{% endif %}</td>
+        <td>{% if row.cum_time_delta_min is not none %}{% set d = row.cum_time_delta_min %}<span class="{% if d > 0 %}delta-slower{% else %}delta-faster{% endif %}">{% if d > 0 %}+{% endif %}{{ d }} min</span>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% else %}
 <section class="card strava-data-card">
   <h2 class="text-primary text-[1.3rem] font-bold mb-2">Segments</h2>
   {% if analysis.legs %}
@@ -191,6 +254,18 @@
     <p class="text-text-light">Not enough stream data to break this ride into segments.</p>
   {% endif %}
 </section>
+{% if analysis.brevet and not analysis.plan %}
+<section class="card strava-data-card">
+  <h2 class="text-primary text-[1.3rem] font-bold mb-2">Plan comparison unavailable</h2>
+  <p class="text-text-light">This activity matched a brevet, but BrevetHub does not have a generated route plan for that brevet yet.</p>
+</section>
+{% elif not analysis.brevet %}
+<section class="card strava-data-card">
+  <h2 class="text-primary text-[1.3rem] font-bold mb-2">Regular ride</h2>
+  <p class="text-text-light">This is not matched to a finished brevet, so BrevetHub shows Strava ride stats without brevet plan comparison.</p>
+</section>
+{% endif %}
+{% endif %}
 
 <section class="card strava-data-card">
   <h2 class="text-primary text-[1.3rem] font-bold mb-2">Stops</h2>
@@ -233,6 +308,7 @@
   var track = JSON.parse(el.getAttribute('data-track') || '[]');
   var bounds = JSON.parse(el.getAttribute('data-bounds') || 'null');
   var stops = JSON.parse(el.getAttribute('data-stops') || '[]');
+  var segments = JSON.parse(el.getAttribute('data-segments') || '[]');
   if (!track.length) return;
 
   var map = L.map('analysis-map');
@@ -241,8 +317,13 @@
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
 
-  // Colors mirror the design-system tokens (--accent, --warning); JS can't read CSS vars.
   var line = L.polyline(track, { color: '#fc4c02', weight: 3 }).addTo(map);
+  segments.forEach(function (seg) {
+    if (!seg.points || seg.points.length < 2) return;
+    L.polyline(seg.points, { color: '#c2410c', weight: 5, opacity: 0.85 })
+      .addTo(map)
+      .bindPopup((seg.location || 'Segment') + (seg.speed_mph ? ' · ' + seg.speed_mph + ' mph' : ''));
+  });
   if (bounds && bounds.length === 2) {
     map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
   } else {
@@ -251,7 +332,8 @@
 
   stops.forEach(function (s) {
     if (s.lat == null || s.lng == null) return;
-    var label = s.distance_km + ' km';
+    var km = s.distance_km || (s.distance_miles ? Math.round(s.distance_miles * 1.609344 * 10) / 10 : '');
+    var label = (s.location || 'Stop') + (km ? ' · ' + km + ' km' : '');
     if (s.duration_min != null) label += ' · ' + s.duration_min + ' min stop';
     L.circleMarker([s.lat, s.lng], {
       radius: 6, color: '#c2410c', fillColor: '#fc4c02', fillOpacity: 0.9

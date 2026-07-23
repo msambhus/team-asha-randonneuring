@@ -83,6 +83,7 @@ def test_list_renders_owned_activities(client):
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_strava_connection', return_value=_CONN), \
          patch('brevethub.models.get_analyzed_activity_ids', return_value=set()), \
+         patch('brevethub.models.get_rider_past_results', return_value=[]), \
          patch('brevethub.routes.analysis._valid_access_token', return_value='tok'), \
          patch('brevethub.routes.analysis.fetch_activities', return_value=[_ACTIVITY]):
         resp = client.get('/analysis')
@@ -90,7 +91,7 @@ def test_list_renders_owned_activities(client):
     body = resp.get_data(as_text=True)
     assert 'Morning Loop' in body
     assert '50.0 km' in body              # distance converted to km at the view boundary
-    assert 'Analyze' in body              # per-row Analyze control
+    assert 'Stats' in body                # per-row stats control
     assert 'btn-strava' in body           # Strava-colored analyze action
     assert 'powered_by_strava.svg' in body
     assert '/analysis/555' in body        # links to the detail view
@@ -103,11 +104,31 @@ def test_list_marks_already_analyzed_rides(client):
     with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
          patch('brevethub.models.get_strava_connection', return_value=_CONN), \
          patch('brevethub.models.get_analyzed_activity_ids', return_value={555}), \
+         patch('brevethub.models.get_rider_past_results', return_value=[]), \
          patch('brevethub.routes.analysis._valid_access_token', return_value='tok'), \
          patch('brevethub.routes.analysis.fetch_activities', return_value=[_ACTIVITY]):
         resp = client.get('/analysis')
     assert resp.status_code == 200
-    assert 'View analysis' in resp.get_data(as_text=True)
+    assert 'Stats' in resp.get_data(as_text=True)
+
+
+def test_list_marks_finished_brevets_differently(client):
+    _login(client)
+    brevet = {'event_id': 11, 'status': 'finished', 'name': 'Morning 50K Brevet',
+              'date': '2026-07-01', 'distance_km': 50, 'finish_time': '3:10',
+              'region': 'SFR'}
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_strava_connection', return_value=_CONN), \
+         patch('brevethub.models.get_analyzed_activity_ids', return_value=set()), \
+         patch('brevethub.models.get_rider_past_results', return_value=[brevet]), \
+         patch('brevethub.routes.analysis._valid_access_token', return_value='tok'), \
+         patch('brevethub.routes.analysis.fetch_activities', return_value=[_ACTIVITY]):
+        resp = client.get('/analysis')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'Brevet' in body
+    assert 'Morning 50K Brevet' in body
+    assert '<tr class="brevet-row">' in body
 
 
 def test_list_prompts_when_not_connected(client):
@@ -216,7 +237,7 @@ def test_detail_owner_scoped_read(client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "hasn't been analyzed yet" in body        # not-analyzed state, never other data
-    assert 'Analyze this ride' in body
+    assert 'Stats' in body
     # The read was scoped by the session rider id (7), not the URL alone.
     mock_get.assert_called_once_with(7, 555)
 
@@ -228,7 +249,30 @@ def test_detail_renders_cached_breakdown(client):
     sample = {
         'activity': {'name': 'Coastal 200', 'date': '2026-06-20', 'distance_km': 203.4,
                      'elevation_ft': 6800, 'moving_time': '9h 12m',
-                     'elapsed_time': '11h 40m', 'avg_speed_kmh': 22.1},
+                     'elapsed_time': '11h 40m', 'avg_speed_kmh': 22.1,
+                     'strava_url': 'https://www.strava.com/activities/555'},
+        'brevet': {'event_id': 11, 'name': 'Coastal 200 Brevet', 'date': '2026-06-20',
+                   'distance_km': 200},
+        'plan': {'name': 'Coastal 200 Plan'},
+        'comparison': {
+            'summary': {'plan_name': 'Coastal 200 Plan', 'plan_distance_km': 200.0,
+                        'actual_distance_km': 203.4, 'distance_delta_km': 3.4,
+                        'plan_elevation_ft': 6600, 'actual_elevation_ft': 6800,
+                        'plan_total_time_min': 720, 'actual_elapsed_time_min': 700,
+                        'actual_moving_time_min': 552, 'plan_break_time_min': 60,
+                        'actual_stopped_time_min': 148, 'stops_planned': 2,
+                        'stops_detected': 2, 'stops_extra': 0},
+            'rows': [{'location': 'Control A', 'stop_type': 'control',
+                      'distance_miles': 62.1, 'distance_km': 100.0,
+                      'plan_segment_min': 270, 'actual_segment_min': 260,
+                      'plan_speed_mph': 13.8, 'actual_speed_mph': 14.3,
+                      'plan_stop_duration_min': 15, 'actual_stop_duration_min': 18.0,
+                      'plan_cum_time_min': 285, 'actual_cum_time_min': 278,
+                      'actual_avg_hr': 140, 'actual_avg_watts': 170,
+                      'actual_avg_cadence': 84, 'actual_elev_gain_ft': 2100,
+                      'cum_time_delta_min': -7, 'is_extra': False}],
+            'hr_power': True,
+        },
         'summary': {'moving_speed_kmh': 23.4, 'avg_hr': 138, 'max_hr': 171,
                     'avg_watts': 165, 'max_watts': 520},
         'stop_count': 2,
@@ -251,13 +295,18 @@ def test_detail_renders_cached_breakdown(client):
     body = resp.get_data(as_text=True)
     assert 'Coastal 200' in body
     assert '203.4 km' in body
-    assert '22.2 km/h' in body           # per-leg speed
+    assert '14.3 mph' in body            # actual per-leg speed in brevet comparison
     assert '84 rpm' in body              # per-leg cadence
-    assert '178 W' in body               # per-leg normalized power (reused engine metric)
-    assert '45 ft/mi' in body            # per-leg climb rate
+    assert '170 W' in body               # per-leg power
+    assert '2100 ft' in body             # per-leg climb
     assert '18.0 min' in body            # stop duration
     assert 'analysis-map' in body        # the map container renders when GPS is present
-    assert 'Strava Ride Summary' in body
+    assert 'Plan vs Actual Stats' in body
     assert 'View on Strava' in body
     assert 'https://www.strava.com/activities/555' in body
     assert 'powered_by_strava.svg' in body
+    assert 'Plan vs Actual Stats' in body
+    assert 'Detailed Brevet Segments' in body
+    assert 'Brevet stats' in body
+    assert 'Control A' in body
+    assert '13.8 mph' in body and '14.3 mph' in body

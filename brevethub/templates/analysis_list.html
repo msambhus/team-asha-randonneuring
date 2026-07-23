@@ -24,6 +24,20 @@
 .analysis-list tbody tr:hover { background: #fff7ed; }
 .strava-activity-link { color: #c2410c; }
 .strava-activity-link:hover { color: #fc4c02; }
+.brevet-row { background: #fff7ed; border-left: 4px solid #fc4c02; }
+.brevet-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fc4c02;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.regular-row { opacity: 0.72; }
+.regular-row .btn-strava { background: #64748b; border-color: #64748b; }
 </style>
 {% endblock %}
 {% block content %}
@@ -53,16 +67,26 @@
       <table class="analysis-list">
         <thead>
           <tr>
-            <th>Date</th><th>Ride</th><th>Distance</th><th>Elevation</th>
+            <th>Date</th><th>Ride</th><th>Type</th><th>Distance</th><th>Elevation</th>
             <th>Moving time</th><th></th>
           </tr>
         </thead>
         <tbody>
           {% for a in activities %}
-            <tr>
+            <tr class="{% if a.is_brevet %}brevet-row{% else %}regular-row{% endif %}">
               <td>{{ a.date }}</td>
               <td>
                 <a class="strava-activity-link font-semibold hover:underline" href="{{ url_for('analysis.analysis_detail', activity_id=a.id) }}">{{ a.name }}</a>
+                {% if a.is_brevet %}
+                  <div class="text-xs text-text-light mt-1">{{ a.brevet.name }}{% if a.brevet.distance_km %} - {{ a.brevet.distance_km }} km{% endif %}</div>
+                {% endif %}
+              </td>
+              <td>
+                {% if a.is_brevet %}
+                  <span class="brevet-pill">Brevet</span>
+                {% else %}
+                  <span class="text-xs text-text-light">Regular ride</span>
+                {% endif %}
               </td>
               <td>{{ a.distance_km }} km</td>
               <td>{{ a.elevation_ft }} ft</td>
@@ -70,11 +94,11 @@
               <td>
                 {% if a.analyzed %}
                   <a class="btn btn-strava btn-sm"
-                     href="{{ url_for('analysis.analysis_detail', activity_id=a.id) }}">View analysis</a>
+                     href="{{ url_for('analysis.analysis_detail', activity_id=a.id) }}">Stats</a>
                 {% else %}
                   <form method="post"
                         action="{{ url_for('analysis.compute', activity_id=a.id) }}">
-                    <button class="btn btn-strava btn-sm" type="submit">Analyze</button>
+                    <button class="btn btn-strava btn-sm" type="submit">Stats</button>
                   </form>
                 {% endif %}
               </td>
