@@ -58,6 +58,9 @@ def create_app():
     app.config.from_object(Config)
     app_dir = Path(__file__).resolve().parent
     team_asha_template_dirs = [
+        # BrevetHub-owned packaging copy for Vercel root-directory deployments.
+        # Guardrail tests keep these byte-for-byte identical to the Team Asha source.
+        app_dir / '_team_asha_templates',
         # Normal repo checkout: <repo>/brevethub/app.py -> <repo>/templates.
         app_dir.parent / 'templates',
         # Flat Vercel layout: app.py and included root templates live together.
@@ -133,6 +136,7 @@ def create_app():
             'product_name': 'BrevetHub',
             'user_logged_in': bool(session.get('rider_id')),
             'user_email': session.get('email'),
+            'user_rider_id': session.get('rider_id'),
             # Seasons for the Riders nav dropdown. Clock-derived, club-agnostic.
             'nav_seasons': _nav_seasons(),
         }
