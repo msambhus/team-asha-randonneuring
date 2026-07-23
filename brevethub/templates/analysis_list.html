@@ -1,18 +1,48 @@
 {% extends "base.html" %}
 {% block title %}Ride analysis — {{ product_name }}{% endblock %}
+{% block extra_head %}
+<style>
+.strava-hero {
+  background: linear-gradient(135deg, #fc4c02, #c2410c);
+  color: #fff;
+  border-radius: 12px;
+  padding: 28px;
+  margin-bottom: 24px;
+  box-shadow: 0 8px 24px rgba(252, 76, 2, 0.18);
+}
+.strava-hero h1 { color: #fff; margin: 0 0 8px; }
+.strava-hero p { color: rgba(255, 255, 255, 0.88); margin: 0; max-width: 760px; }
+.strava-attribution { display: flex; align-items: center; justify-content: flex-end; margin-top: 14px; }
+.strava-attribution img { height: 30px; background: #fff; border-radius: 6px; padding: 5px 8px; }
+.btn-strava {
+  background: #fc4c02;
+  color: #fff;
+  border: 1px solid #fc4c02;
+}
+.btn-strava:hover { background: #c2410c; border-color: #c2410c; opacity: 1; }
+.analysis-list thead th { background: #1e293b; color: #fff; }
+.analysis-list tbody tr:hover { background: #fff7ed; }
+.strava-activity-link { color: #c2410c; }
+.strava-activity-link:hover { color: #fc4c02; }
+</style>
+{% endblock %}
 {% block content %}
 <div class="container section">
-<section class="card">
-  <h1 class="text-primary text-[1.6rem] font-bold mb-4">Ride analysis</h1>
-  <p class="text-text-light mb-4">
-    Pick one of your recent Strava rides for a detailed breakdown — stops, per-leg
+<div class="strava-hero">
+  <h1 class="text-[1.8rem] font-bold">Strava Ride Analysis</h1>
+  <p>
+    Pick one of your recent Strava rides for a detailed breakdown: stops, per-leg
     pace and effort, and a map. Analyzing a ride fetches its data from Strava once,
     then every later view is served from your saved analysis.
   </p>
-
+  <div class="strava-attribution">
+    <img src="{{ url_for('static', filename='img/powered_by_strava.svg') }}" alt="Powered by Strava">
+  </div>
+</div>
+<section class="card">
   {% if not connected %}
     <p class="text-text-light">Connect Strava to analyze your rides.</p>
-    <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('strava.connect') }}">Connect Strava</a></p>
+    <p class="mt-4"><a class="btn btn-strava" href="{{ url_for('strava.connect') }}">Connect Strava</a></p>
   {% else %}
     {% if error %}
       <p class="py-3 px-4 rounded-lg text-sm bg-[#fef3c7] text-[#78350f] mb-4">{{ error }}</p>
@@ -32,19 +62,19 @@
             <tr>
               <td>{{ a.date }}</td>
               <td>
-                <a class="text-primary font-semibold hover:text-accent hover:underline" href="{{ url_for('analysis.analysis_detail', activity_id=a.id) }}">{{ a.name }}</a>
+                <a class="strava-activity-link font-semibold hover:underline" href="{{ url_for('analysis.analysis_detail', activity_id=a.id) }}">{{ a.name }}</a>
               </td>
               <td>{{ a.distance_km }} km</td>
               <td>{{ a.elevation_ft }} ft</td>
               <td>{{ a.moving_time }}</td>
               <td>
                 {% if a.analyzed %}
-                  <a class="btn btn-primary btn-sm"
+                  <a class="btn btn-strava btn-sm"
                      href="{{ url_for('analysis.analysis_detail', activity_id=a.id) }}">View analysis</a>
                 {% else %}
                   <form method="post"
                         action="{{ url_for('analysis.compute', activity_id=a.id) }}">
-                    <button class="btn btn-primary btn-sm" type="submit">Analyze</button>
+                    <button class="btn btn-strava btn-sm" type="submit">Analyze</button>
                   </form>
                 {% endif %}
               </td>

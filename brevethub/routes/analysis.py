@@ -105,6 +105,7 @@ def _summarize_for_list(activity, analyzed_ids=frozenset()):
         'distance_km': round((activity.get('distance') or 0) / _METERS_PER_KM, 1),
         'elevation_ft': round((activity.get('total_elevation_gain') or 0) * _M_TO_FT),
         'moving_time': _fmt_hm((activity.get('moving_time') or 0) / 60),
+        'strava_url': f"https://www.strava.com/activities/{activity['id']}",
         'analyzed': activity['id'] in analyzed_ids,
     }
 
@@ -167,6 +168,7 @@ def _build_analysis(activity, streams):
             'moving_time': _fmt_hm((activity.get('moving_time') or 0) / 60),
             'elapsed_time': _fmt_hm((activity.get('elapsed_time') or 0) / 60),
             'avg_speed_kmh': round((activity.get('average_speed') or 0) * _M_PER_S_TO_KMH, 1),
+            'strava_url': f"https://www.strava.com/activities/{activity.get('id')}",
         },
         'summary': {
             'moving_speed_kmh': round(moving_mph * _MPH_TO_KMH, 1) if moving_mph else None,
