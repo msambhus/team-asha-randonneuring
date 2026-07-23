@@ -236,6 +236,11 @@ def _auto_generate_plans_for_rwgps_rides():
 
 def create_app():
     os.environ.setdefault('BREVETHUB_MODE', '1')
+    # Team Asha's shared Config validates SECRET_KEY at import time. BrevetHub
+    # intentionally has its own secret, so bridge the BrevetHub-specific env var
+    # before loading that shared module instead of making production startup fail.
+    if os.environ.get('BREVETHUB_SECRET_KEY') and not os.environ.get('SECRET_KEY'):
+        os.environ['SECRET_KEY'] = os.environ['BREVETHUB_SECRET_KEY']
 
     # Do not use ``from app import ...`` here. In Vercel's flat root-directory
     # deployment, that name can resolve back to this BrevetHub shell and recurse
