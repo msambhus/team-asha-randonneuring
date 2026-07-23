@@ -115,6 +115,30 @@ def _fmt_hm(minutes):
     return f"{h}h {m:02d}m"
 
 
+def _fmt_clock(start_time, elapsed_min):
+    if elapsed_min is None:
+        return None
+    try:
+        parts = str(start_time or '06:00').split(':')
+        start_total = int(parts[0]) * 60 + int(parts[1])
+        total = (start_total + int(round(elapsed_min))) % (24 * 60)
+    except (TypeError, ValueError, IndexError):
+        return None
+    hour, minute = divmod(total, 60)
+    suffix = 'am' if hour < 12 else 'pm'
+    display_hour = hour % 12 or 12
+    return f"{display_hour}:{minute:02d}{suffix}"
+
+
+def _fmt_signed_hm(minutes):
+    if minutes is None:
+        return None
+    total = int(round(minutes))
+    sign = '-' if total < 0 else ''
+    h, m = divmod(abs(total), 60)
+    return f"{sign}{h}:{m:02d}"
+
+
 def _owned_cycling_activities(token):
     """The current rider's OWN recent cycling activities as ``{activity_id: raw}``.
 
@@ -295,6 +319,7 @@ def _build_plan_comparison(plan, plan_stops, raw, activity, streams):
     actual_moving_min = (activity.get('moving_time') or 0) / 60
     actual_distance_mi = (activity.get('distance') or 0) / METERS_PER_MILE
     actual_elevation_ft = round((activity.get('total_elevation_gain') or 0) * _M_TO_FT)
+    start_time = (plan or {}).get('start_time') or '06:00'
     prev_dist = 0.0
     prev_actual_cum = 0
 
@@ -305,6 +330,10 @@ def _build_plan_comparison(plan, plan_stops, raw, activity, streams):
         plan_seg = stop.get('segment_time_min') or 0
         plan_stop = stop.get('stop_duration_min') or 0
         plan_cum = stop.get('cum_time_min') or 0
+        plan_arrival = stop.get('arrival_time_min')
+        if plan_arrival is None and plan_cum is not None:
+            plan_arrival = max((plan_cum or 0) - (plan_stop or 0), 0)
+        plan_time_bank = stop.get('time_bank_min')
         actual_stop = matched_by_name.get(stop.get('location'))
         actual_stop_min = actual_stop.get('duration_min') if actual_stop else 0
         if stop_type == 'start':
@@ -320,10 +349,20 @@ def _build_plan_comparison(plan, plan_stops, raw, activity, streams):
 
         actual_segment_min = None
         actual_speed_mph = None
+        actual_arrival = None
         if actual_cum is not None and idx > 0:
+            actual_arrival = max(0, actual_cum - (actual_stop_min or 0))
             actual_segment_min = max(0, round(actual_cum - prev_actual_cum - (actual_stop_min or 0)))
             if actual_segment_min and seg_dist:
                 actual_speed_mph = round(seg_dist / (actual_segment_min / 60), 1)
+        elif actual_cum is not None:
+            actual_arrival = actual_cum
+
+        actual_time_bank = None
+        if plan_time_bank is not None and plan_arrival is not None and actual_arrival is not None:
+            actual_time_bank = round(plan_time_bank + (plan_arrival - actual_arrival))
+
+        actual_elev_gain_ft = _stream_elevation_gain_ft(streams, prev_dist, distance_mi)
 
         row = {
             'location': stop.get('location') or '',
@@ -333,15 +372,25 @@ def _build_plan_comparison(plan, plan_stops, raw, activity, streams):
             'plan_segment_min': plan_seg,
             'plan_stop_duration_min': plan_stop,
             'plan_cum_time_min': plan_cum,
+            'plan_arrival_time_min': plan_arrival,
+            'plan_time_of_day': _fmt_clock(start_time, plan_cum),
+            'plan_time_bank': plan_time_bank,
+            'plan_time_bank_fmt': _fmt_signed_hm(plan_time_bank),
             'plan_speed_mph': round(seg_dist / (plan_seg / 60), 1) if plan_seg and seg_dist else None,
             'actual_stop_duration_min': actual_stop_min,
             'actual_cum_time_min': actual_cum,
+            'actual_arrival_time_min': actual_arrival,
+            'actual_time_of_day': _fmt_clock(start_time, actual_cum),
+            'actual_time_bank': actual_time_bank,
+            'actual_time_bank_fmt': _fmt_signed_hm(actual_time_bank),
             'actual_segment_min': actual_segment_min,
             'actual_speed_mph': actual_speed_mph,
+            'actual_speed_kmh': round(actual_speed_mph * _MPH_TO_KMH, 1) if actual_speed_mph else None,
             'actual_avg_hr': _stream_avg(streams, 'heartrate', prev_dist, distance_mi),
             'actual_avg_watts': _stream_avg(streams, 'watts', prev_dist, distance_mi),
             'actual_avg_cadence': _stream_avg(streams, 'cadence', prev_dist, distance_mi),
-            'actual_elev_gain_ft': _stream_elevation_gain_ft(streams, prev_dist, distance_mi),
+            'actual_elev_gain_ft': actual_elev_gain_ft,
+            'actual_climb_ft_per_mi': round(actual_elev_gain_ft / seg_dist) if actual_elev_gain_ft is not None and seg_dist else None,
             'cum_time_delta_min': round(actual_cum - plan_cum) if actual_cum is not None and plan_cum else None,
             'is_extra': False,
         }
@@ -725,6 +774,13 @@ def analysis_detail(activity_id):
         except Exception as e:  # noqa: BLE001
             current_app.logger.warning('analysis detail: cached comparison rebuild failed: %s', e)
     stop_winds = _historical_stop_winds(analysis) if analysis else None
+    stop_wind_by_location = {}
+    if analysis and stop_winds and (analysis.get('comparison') or {}).get('detected_stops'):
+        for stop, wind in zip(analysis['comparison']['detected_stops'], stop_winds):
+            name = stop.get('matched_stop_name')
+            if name and wind:
+                stop_wind_by_location[name] = wind
     return render_template('analysis_detail.html', analysis=analysis,
-                           stop_winds=stop_winds, activity_id=activity_id,
+                           stop_winds=stop_winds, stop_wind_by_location=stop_wind_by_location,
+                           activity_id=activity_id,
                            analyzed=analysis is not None)
