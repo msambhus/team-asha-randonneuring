@@ -98,3 +98,9 @@ def logout():
     session.clear()
     flash('You have been logged out.', 'info')
     return redirect(url_for('main.landing'))
+
+
+@auth_bp.route('/my-profile')
+def my_profile():
+    """Compatibility endpoint for reused Team Asha profile/analysis templates."""
+    return redirect(url_for('main.profile'))

@@ -86,6 +86,16 @@ def test_detail_reuses_exact_team_asha_template(client):
     assert source == expected
 
 
+def test_brevet_index_reuses_exact_team_asha_template(client):
+    source, _, _ = client.application.jinja_env.loader.get_source(
+        client.application.jinja_env, 'my_strava_analysis.html')
+    expected = (
+        Path(__file__).resolve().parents[2] /
+        'templates' / 'my_strava_analysis.html'
+    ).read_text(encoding='utf-8')
+    assert source == expected
+
+
 # --------------------------------------------------------------------------- #
 # List — renders the rider's own recent rides with an Analyze control.
 # --------------------------------------------------------------------------- #
@@ -191,6 +201,97 @@ def test_list_sorts_latest_to_oldest_across_brevet_and_regular(client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert body.index('Newer Regular Ride') < body.index('Older Brevet Activity')
+
+
+def test_my_strava_analysis_renders_team_asha_completed_brevet_index(client):
+    """BrevetHub's profile analysis page reuses Team Asha's completed-brevet card
+    UX: finished brevets only, matched Strava metrics, and plan-vs-actual link."""
+    _login(client)
+    rider = {**_RIDER, 'rusa_id': 14680}
+    brevet = {'event_id': 11, 'status': 'finished', 'name': 'Morning 50K Brevet',
+              'date': '2026-07-01', 'distance_km': 50, 'finish_time': '3:10',
+              'region': 'SFR'}
+    with patch('brevethub.models.get_rider_by_id', return_value=rider), \
+         patch('brevethub.models.get_strava_connection', return_value=_CONN), \
+         patch('brevethub.models.get_rider_ride_analyses', return_value=[]), \
+         patch('brevethub.models.get_brevet_route_plan_event_ids', return_value={11}), \
+         patch('brevethub.routes.riders._rider_finished_brevets', return_value=[brevet]), \
+         patch('brevethub.routes.riders._valid_access_token', return_value='tok'), \
+         patch('brevethub.routes.riders._owned_cycling_activities',
+               return_value={555: _ACTIVITY}):
+        resp = client.get('/my/strava-analysis')
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'Completed Brevet Analysis' in body
+    assert 'Morning 50K Brevet' in body
+    assert '2025-2026 Season' in body
+    assert 'Has Ride Plan' in body
+    assert '31.1 mi' in body
+    assert '2h05m' in body
+    assert 'Plan vs Actual Comparison' in body
+    assert '/rider/14680/ride/555/strava-analysis' in body
+    assert 'View on Strava' in body
+    assert 'Compare with Cohort' in body
+
+
+def test_my_strava_analysis_only_shows_finished_brevets_not_regular_rides(client):
+    _login(client)
+    rider = {**_RIDER, 'rusa_id': 14680}
+    regular = {**_ACTIVITY, 'id': 556, 'name': 'Regular Training Ride',
+               'start_date_local': '2026-07-03T08:00:00Z'}
+    brevet = {'event_id': 11, 'status': 'finished', 'name': 'Morning 50K Brevet',
+              'date': '2026-07-01', 'distance_km': 50, 'finish_time': '3:10'}
+    with patch('brevethub.models.get_rider_by_id', return_value=rider), \
+         patch('brevethub.models.get_strava_connection', return_value=_CONN), \
+         patch('brevethub.models.get_rider_ride_analyses', return_value=[]), \
+         patch('brevethub.models.get_brevet_route_plan_event_ids', return_value=set()), \
+         patch('brevethub.routes.riders._rider_finished_brevets', return_value=[brevet]), \
+         patch('brevethub.routes.riders._valid_access_token', return_value='tok'), \
+         patch('brevethub.routes.riders._owned_cycling_activities',
+               return_value={555: _ACTIVITY, 556: regular}):
+        resp = client.get('/my/strava-analysis')
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'Morning 50K Brevet' in body
+    assert 'Regular Training Ride' not in body
+    assert 'View Strava Analysis' in body
+
+
+def test_team_asha_brevet_card_link_computes_missing_analysis(client):
+    """The reused Team Asha card link behaves like Team Asha's GET detail path:
+    when BrevetHub has no cached analysis yet, it fetches streams once and saves
+    the owner-scoped rp_ride_analysis row before redirecting to the exact detail
+    template route."""
+    _login(client)
+    rider = {**_RIDER, 'rusa_id': 14680}
+    captured = {}
+
+    def _fake_upsert(rider_id, activity_id, analysis, compressed_streams=None):
+        captured['rider_id'] = rider_id
+        captured['activity_id'] = activity_id
+        captured['analysis'] = analysis
+        captured['compressed'] = compressed_streams
+
+    with patch('brevethub.models.get_rider_by_id', return_value=rider), \
+         patch('brevethub.models.get_ride_analysis', return_value=None), \
+         patch('brevethub.models.get_strava_connection', return_value=_CONN), \
+         patch('brevethub.routes.riders._valid_access_token', return_value='tok'), \
+         patch('brevethub.routes.riders._owned_cycling_activities',
+               return_value={555: _ACTIVITY}), \
+         patch('brevethub.routes.riders.fetch_activity_streams',
+               return_value=_streams()), \
+         patch('brevethub.routes.riders._rider_finished_brevets', return_value=[]), \
+         patch('brevethub.models.upsert_ride_analysis', side_effect=_fake_upsert):
+        resp = client.get('/rider/14680/ride/555/strava-analysis')
+
+    assert resp.status_code == 302
+    assert resp.headers['Location'].endswith('/analysis/555')
+    assert captured['rider_id'] == 7
+    assert captured['activity_id'] == 555
+    assert captured['analysis']['activity']['name'] == 'Morning Loop'
+    assert captured['compressed'] is not None
 
 
 def test_list_prompts_when_not_connected(client):

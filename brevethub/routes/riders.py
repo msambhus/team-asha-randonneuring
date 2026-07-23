@@ -19,20 +19,353 @@ never a full email address or ``google_id``.
 """
 from datetime import date
 
-from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
+from flask import (
+    Blueprint, abort, current_app, flash, jsonify, redirect, render_template,
+    request, url_for,
+)
 
 from brevethub import models
-from brevethub.decorators import current_rider, login_required
+from brevethub.decorators import current_rider, login_required, profile_required
+from brevethub.routes.analysis import (
+    _build_analysis,
+    _compress_streams,
+    _event_date,
+    _match_activity_to_brevet,
+    _owned_cycling_activities,
+    _parse_hm,
+    _rider_finished_brevets,
+)
+from brevethub.routes.strava import _valid_access_token
 from shared import seasons
+from shared.strava import fetch_activity_streams
 
 riders_bp = Blueprint('riders', __name__)
 
+_METERS_PER_KM = 1000.0
+_METERS_PER_MILE = 1609.34
+_M_TO_FT = 3.28084
+_M_PER_S_TO_MPH = 2.23694
+_KMH_TO_MPH = 0.621371
+
+
+def _activity_date(activity):
+    return (activity.get('start_date_local') or activity.get('date') or '')[:10]
+
+
+def _activity_distance_km(activity):
+    if activity.get('distance') is not None:
+        try:
+            return float(activity.get('distance') or 0) / _METERS_PER_KM
+        except (TypeError, ValueError):
+            return 0.0
+    try:
+        return float(activity.get('distance_km') or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _brevet_distance_km(brevet):
+    try:
+        return float(brevet.get('distance_km') or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _brevet_name(brevet):
+    return (
+        brevet.get('name') or brevet.get('route_name') or brevet.get('route') or
+        brevet.get('permanent_name') or 'RUSA brevet'
+    )
+
+
+def _activity_brevet_delta_km(activity, brevet):
+    activity_date = _activity_date(activity)
+    brevet_date = _event_date(brevet.get('date'))
+    if not activity_date or activity_date != brevet_date:
+        return None
+    brevet_km = _brevet_distance_km(brevet)
+    activity_km = _activity_distance_km(activity)
+    if not brevet_km or not activity_km:
+        return None
+    delta = abs(activity_km - brevet_km)
+    tolerance = max(8.0, brevet_km * 0.10)
+    return delta if delta <= tolerance else None
+
+
+def _split_minutes(minutes):
+    total = int(round(minutes or 0))
+    hours, mins = divmod(max(total, 0), 60)
+    return hours, mins
+
+
+def _cached_activity_from_analysis(row):
+    analysis = (row or {}).get('analysis') or {}
+    activity = analysis.get('activity') or {}
+    if not activity:
+        return None
+    activity_id = row.get('strava_activity_id')
+    return {
+        'id': activity_id,
+        'name': activity.get('name') or 'Strava ride',
+        'date': activity.get('date'),
+        'start_date_local': (activity.get('date') or '') + 'T00:00:00',
+        'distance_km': activity.get('distance_km'),
+        'total_elevation_gain_ft': activity.get('elevation_ft'),
+        'strava_url': (
+            activity.get('strava_url') or
+            f'https://www.strava.com/activities/{activity_id}'
+        ),
+        '_cached_analysis': analysis,
+    }
+
+
+def _activity_metrics(activity):
+    cached = activity.get('_cached_analysis') or {}
+    cached_activity = cached.get('activity') or {}
+    cached_summary = cached.get('summary') or {}
+
+    if cached_activity:
+        distance_km = float(cached_activity.get('distance_km') or 0)
+        moving_min = _parse_hm(cached_activity.get('moving_time')) or 0
+        elapsed_min = _parse_hm(cached_activity.get('elapsed_time')) or moving_min
+        elevation_ft = cached_activity.get('elevation_ft') or 0
+        avg_speed_mph = None
+        if elapsed_min and distance_km:
+            avg_speed_mph = round((distance_km * _KMH_TO_MPH) / (elapsed_min / 60), 1)
+        elif cached_activity.get('avg_speed_kmh') is not None:
+            avg_speed_mph = round(cached_activity['avg_speed_kmh'] * _KMH_TO_MPH, 1)
+        average_hr = cached_summary.get('avg_hr')
+        average_watts = cached_summary.get('avg_watts')
+        max_watts = cached_summary.get('max_watts')
+        return {
+            'distance_miles': round(distance_km * _KMH_TO_MPH, 1),
+            'moving_time_hrs': _split_minutes(moving_min)[0],
+            'moving_time_min': _split_minutes(moving_min)[1],
+            'elapsed_time_hrs': _split_minutes(elapsed_min)[0],
+            'elapsed_time_min': _split_minutes(elapsed_min)[1],
+            'stopped_time_min': round(max(0, elapsed_min - moving_min)),
+            'elevation_ft': round(elevation_ft),
+            'avg_speed_mph': avg_speed_mph,
+            'strava_url': (
+                cached_activity.get('strava_url') or
+                f"https://www.strava.com/activities/{activity.get('id')}"
+            ),
+            'has_heartrate': average_hr is not None,
+            'average_heartrate': average_hr,
+            'max_heartrate': cached_summary.get('max_hr'),
+            'device_watts': average_watts is not None or max_watts is not None,
+            'average_watts': average_watts,
+            'suffer_score': cached_summary.get('suffer_score'),
+        }
+
+    moving_min = (activity.get('moving_time') or 0) / 60
+    elapsed_min = (activity.get('elapsed_time') or 0) / 60
+    distance_miles = (activity.get('distance') or 0) / _METERS_PER_MILE
+    elevation_ft = (activity.get('total_elevation_gain') or 0) * _M_TO_FT
+    moving_hours, moving_remainder = _split_minutes(moving_min)
+    elapsed_hours, elapsed_remainder = _split_minutes(elapsed_min)
+    return {
+        'distance_miles': round(distance_miles, 1),
+        'moving_time_hrs': moving_hours,
+        'moving_time_min': moving_remainder,
+        'elapsed_time_hrs': elapsed_hours,
+        'elapsed_time_min': elapsed_remainder,
+        'stopped_time_min': round(max(0, elapsed_min - moving_min)),
+        'elevation_ft': round(elevation_ft),
+        'avg_speed_mph': round((activity.get('average_speed') or 0) * _M_PER_S_TO_MPH, 1),
+        'strava_url': (
+            activity.get('strava_url') or
+            f"https://www.strava.com/activities/{activity.get('id')}"
+        ),
+        'has_heartrate': bool(activity.get('has_heartrate') or activity.get('average_heartrate')),
+        'average_heartrate': activity.get('average_heartrate'),
+        'max_heartrate': activity.get('max_heartrate'),
+        'device_watts': bool(activity.get('device_watts') or activity.get('average_watts')),
+        'average_watts': activity.get('average_watts'),
+        'suffer_score': activity.get('suffer_score'),
+    }
+
+
+def _load_analysis_index_activities(rider_id, connection):
+    """Live Strava activities plus any cached BrevetHub analyses.
+
+    Team Asha renders this index from its Strava tables. BrevetHub does not keep a
+    full activity table, so the reusable template receives live owner activities
+    where available and falls back to existing rp_ride_analysis cache rows.
+    """
+    activities = {}
+    try:
+        for row in models.get_rider_ride_analyses(rider_id):
+            cached = _cached_activity_from_analysis(row)
+            if cached and cached.get('id') is not None:
+                activities[cached['id']] = cached
+    except Exception as e:  # noqa: BLE001 - index should not 500 over cache extras
+        current_app.logger.warning(
+            'brevet analysis index: cached analyses failed for rider %s: %s',
+            rider_id, e)
+
+    if connection:
+        try:
+            token = _valid_access_token(rider_id, connection)
+            activities.update(_owned_cycling_activities(token))
+        except Exception as e:  # noqa: BLE001 - render finished brevets without matches
+            current_app.logger.warning(
+                'brevet analysis index: Strava activity fetch failed for rider %s: %s',
+                rider_id, e)
+            flash('Could not refresh Strava activities right now. Showing cached matches if available.',
+                  'warning')
+
+    return activities
+
+
+def _match_brevets_to_activities(brevets, activities):
+    matched = []
+    used_activity_ids = set()
+    activity_rows = list((activities or {}).values())
+    for brevet in brevets or []:
+        best = None
+        best_delta = None
+        for activity in activity_rows:
+            activity_id = activity.get('id')
+            if activity_id in used_activity_ids:
+                continue
+            delta = _activity_brevet_delta_km(activity, brevet)
+            if delta is not None and (best_delta is None or delta < best_delta):
+                best = activity
+                best_delta = delta
+        if best is not None and best.get('id') is not None:
+            used_activity_ids.add(best['id'])
+        matched.append((brevet, best))
+    return matched
+
+
+def _plan_event_ids(brevets):
+    event_ids = [b.get('event_id') for b in brevets or [] if b.get('event_id')]
+    try:
+        return models.get_brevet_route_plan_event_ids(event_ids)
+    except Exception as e:  # noqa: BLE001 - plan badges are additive
+        current_app.logger.warning('brevet analysis index: plan lookup failed: %s', e)
+        return set()
+
+
+def _season_analysis_cards(rider_id, connection):
+    brevets = _rider_finished_brevets(rider_id)
+    brevets.sort(key=lambda b: _event_date(b.get('date')), reverse=True)
+    activities = _load_analysis_index_activities(rider_id, connection)
+    plan_ids = _plan_event_ids(brevets)
+
+    by_season = {}
+    for brevet, activity in _match_brevets_to_activities(brevets, activities):
+        season_name = seasons.season_name_for_date(_event_date(brevet.get('date')))
+        if not season_name:
+            continue
+        has_comparison = bool(activity and (activity.get('_cached_analysis') or {}).get('comparison'))
+        event_id = brevet.get('event_id')
+        card = {
+            'ride_id': activity.get('id') if activity else event_id,
+            'ride_name': _brevet_name(brevet),
+            'date': _event_date(brevet.get('date')),
+            'distance_km': brevet.get('distance_km'),
+            'elevation_ft': brevet.get('elevation_ft'),
+            'finish_time': brevet.get('finish_time'),
+            'has_plan': bool((event_id and event_id in plan_ids) or has_comparison),
+            'has_match': activity is not None,
+            'activity': _activity_metrics(activity) if activity else None,
+        }
+        by_season.setdefault(season_name, []).append(card)
+
+    current = seasons.current_season_name(date.today())
+    season_analysis = []
+    for name in sorted(by_season, reverse=True):
+        ride_cards = sorted(by_season[name], key=lambda c: c.get('date') or '', reverse=True)
+        season_analysis.append({
+            'season': {'name': name},
+            'is_current': name == current,
+            'ride_cards': ride_cards,
+        })
+    return season_analysis
+
+
+def _team_asha_rider_context(rider):
+    display_name = _display_name(rider.get('email'))
+    return {
+        'id': rider.get('id'),
+        'first_name': display_name,
+        'last_name': '',
+        # BrevetHub riders may not have a RUSA id. The compatibility route accepts
+        # either the real RUSA id or this rider id fallback.
+        'rusa_id': rider.get('rusa_id') or rider.get('id'),
+    }
+
+
+def _ensure_cached_ride_analysis(rider, activity_id):
+    if models.get_ride_analysis(rider['id'], activity_id):
+        return True
+
+    connection = models.get_strava_connection(rider['id'])
+    if not connection:
+        flash('Connect Strava to analyze your rides.', 'error')
+        return False
+
+    try:
+        token = _valid_access_token(rider['id'], connection)
+        owned = _owned_cycling_activities(token)
+    except Exception as e:  # noqa: BLE001
+        current_app.logger.warning(
+            'brevet analysis detail: owned-list fetch failed for rider %s: %s',
+            rider['id'], e)
+        flash('Could not reach Strava right now. Please try again later.', 'error')
+        return False
+
+    activity = owned.get(activity_id)
+    if activity is None:
+        abort(404)
+
+    try:
+        streams = fetch_activity_streams(
+            token, activity_id, api_base=current_app.config['STRAVA_API_BASE'])
+    except Exception as e:  # noqa: BLE001
+        current_app.logger.warning(
+            'brevet analysis detail: stream fetch failed for rider %s activity %s: %s',
+            rider['id'], activity_id, e)
+        flash('Could not fetch this activity from Strava. Please try again later.', 'error')
+        return False
+
+    brevets = _rider_finished_brevets(rider['id'])
+    analysis = _build_analysis(activity, streams,
+                               _match_activity_to_brevet(activity, brevets))
+    models.upsert_ride_analysis(
+        rider['id'], activity_id, analysis,
+        compressed_streams=_compress_streams(streams))
+    return True
+
 
 @riders_bp.route('/my/strava-analysis')
-@login_required
+@profile_required
 def my_strava_analysis():
-    """Compatibility endpoint for the reused Team Asha Strava template."""
-    return redirect(url_for('analysis.analysis_list'))
+    """Private page: the reused Team Asha completed-brevet analysis UX."""
+    rider = current_rider()
+    connection = models.get_strava_connection(rider['id'])
+    return render_template(
+        'my_strava_analysis.html',
+        rider=_team_asha_rider_context(rider),
+        season_analysis=_season_analysis_cards(rider['id'], connection),
+    )
+
+
+@riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/strava-analysis')
+@profile_required
+def ride_strava_analysis(rusa_id, ride_id):
+    """Compatibility endpoint for Team Asha's brevet-card analysis links."""
+    rider = current_rider()
+    allowed_ids = {rider['id']}
+    if rider.get('rusa_id'):
+        allowed_ids.add(rider['rusa_id'])
+    if rusa_id not in allowed_ids:
+        abort(404)
+    if not _ensure_cached_ride_analysis(rider, ride_id):
+        return redirect(url_for('riders.my_strava_analysis'))
+    return redirect(url_for('analysis.analysis_detail', activity_id=ride_id))
 
 
 @riders_bp.route('/brevets/comparison')
