@@ -7,9 +7,12 @@ sibling `shared/` package and its own `brevethub` package. The
 `tests/brevethub/test_brevethub_isolation.py` scan enforces that boundary.
 """
 import os
+import html as html_mod
 from datetime import date
+from pathlib import Path
 
 from flask import Flask, session
+from jinja2 import BaseLoader, ChoiceLoader, FileSystemLoader, TemplateNotFound
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from brevethub.config import Config
@@ -24,9 +27,33 @@ def _nav_seasons(today=None):
     return [f'{y}-{y + 1}' for y in range(start, start - 3, -1)]
 
 
+class _TeamAshaStravaAnalysisLoader(BaseLoader):
+    """Expose exactly the Team Asha Strava analysis template to BrevetHub.
+
+    This is intentionally narrow: BrevetHub can render the real
+    ``templates/strava_ride_analysis.html`` file, but the rest of Team Asha's
+    templates cannot shadow BrevetHub templates such as ``base.html``.
+    """
+
+    _TEMPLATE_NAME = 'strava_ride_analysis.html'
+
+    def __init__(self, repo_templates_dir):
+        self._loader = FileSystemLoader(str(repo_templates_dir))
+
+    def get_source(self, environment, template):
+        if template != self._TEMPLATE_NAME:
+            raise TemplateNotFound(template)
+        return self._loader.get_source(environment, template)
+
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+    repo_templates_dir = Path(__file__).resolve().parents[1] / 'templates'
+    app.jinja_loader = ChoiceLoader([
+        app.jinja_loader,
+        _TeamAshaStravaAnalysisLoader(repo_templates_dir),
+    ])
 
     # Vercel terminates TLS at the edge; trust one proxy hop so `_external`
     # URLs (OAuth redirect URIs) are built with the real https host.
@@ -96,6 +123,19 @@ def create_app():
             # Seasons for the Riders nav dropdown. Clock-derived, club-agnostic.
             'nav_seasons': _nav_seasons(),
         }
+
+    @app.template_filter('clean_name')
+    def clean_name_filter(value):
+        if not value:
+            return value
+        return html_mod.unescape(str(value)).replace('\xa0', ' ')
+
+    @app.template_filter('commafy')
+    def commafy_filter(value):
+        try:
+            return f"{int(value):,}"
+        except (ValueError, TypeError):
+            return value
 
     return app
 
