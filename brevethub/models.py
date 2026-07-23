@@ -1396,48 +1396,28 @@ _EVENT_LIVE_RIDE_ORDER = (
 )
 
 
-def get_live_ride_id_for_event(event_id):
-    """The associated PUBLIC live ride id for one calendar event, or None.
+def get_live_ride_ids_for_event(event_id):
+    """The PUBLIC live ride ids associated with one calendar event, as an ordered
+    ``[ride_id, ...]`` list (best match first).
 
-    Resolves via the explicit FK first (rp_ride.event_id), then a public-ride
-    name+date fallback, and returns only the ride id — never any rider identity.
-    None when no PUBLIC ride is associated, so a private or unlinked event surfaces
-    no Live link. Touches only rp_ride and rp_brevet_event.
+    The event-scoped live view aggregates the rider rosters of EVERY public ride
+    linked to a brevet, so this returns all matches, not just one: the explicit FK
+    (rp_ride.event_id) first, then a public-ride name+date fallback, ordered so an
+    explicitly-linked ride ranks ahead of a name-matched one. Only ride ids are
+    returned — never any rider identity. Empty list when no PUBLIC ride is
+    associated, so a future or quiet event resolves to an empty roster (the view
+    still renders the route and a "waiting for riders" state). Touches only rp_ride
+    and rp_brevet_event; never returns PII.
     """
-    row = db.query_one(
+    rows = db.query(
         "SELECT r.id AS ride_id "
         "FROM rp_brevet_event e JOIN rp_ride r "
         + _EVENT_LIVE_RIDE_MATCH +
         "WHERE e.id = %s "
-        "ORDER BY " + _EVENT_LIVE_RIDE_ORDER +
-        "LIMIT 1",
+        "ORDER BY " + _EVENT_LIVE_RIDE_ORDER,
         (event_id,),
     )
-    return row['ride_id'] if row else None
-
-
-def get_live_ride_ids_for_events(events):
-    """Map each event id to its associated PUBLIC live ride id, as ``{event_id:
-    ride_id}`` (the calendar page-bulk variant of get_live_ride_id_for_event).
-
-    One query per calendar page, mirroring get_brevet_weather_for_events. Events
-    with no associated public ride simply do not appear in the map, so the template
-    renders no Live link for them. Returns ``{}`` immediately for an empty list (no
-    query). ``events`` is the get_upcoming_events row list (only each id is read
-    here). Touches only rp_ride and rp_brevet_event; never returns PII.
-    """
-    ids = [ev['id'] for ev in events]
-    if not ids:
-        return {}
-    rows = db.query(
-        "SELECT DISTINCT ON (e.id) e.id AS event_id, r.id AS ride_id "
-        "FROM rp_brevet_event e JOIN rp_ride r "
-        + _EVENT_LIVE_RIDE_MATCH +
-        "WHERE e.id = ANY(%s) "
-        "ORDER BY e.id, " + _EVENT_LIVE_RIDE_ORDER,
-        (ids,),
-    )
-    return {row['event_id']: row['ride_id'] for row in rows}
+    return [row['ride_id'] for row in rows]
 
 
 # --------------------------------------------------------------------------- #

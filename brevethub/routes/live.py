@@ -187,6 +187,25 @@ def live_roster(ride_id):
         abort(404)
 
     now = datetime.now(timezone.utc)
+    roster = _ride_roster(ride, now)
+
+    return jsonify({
+        'ride_id': ride_id,
+        'roster': roster,
+        'server_time': now.isoformat(),
+        'stale_after_minutes': STALE_AFTER_MINUTES,
+        'poll_seconds': LIVE_POLL_SECONDS,
+    })
+
+
+def _ride_roster(ride, now):
+    """The PUBLIC, PII-safe roster list for a single ride, built with the shared
+    radial builder. Extracted so both the per-ride roster.json and the event-scoped
+    roster poll (which aggregates several rides) share the exact same privacy-shaped
+    build — display_name + coarse position + derived stats + an opaque per-view key,
+    never rider_id / email. Fail-soft: a positions/history load error degrades that
+    ride to an empty/base contribution, never a 500."""
+    ride_id = ride['id']
     since = now - timedelta(hours=DISPLAY_WINDOW_HOURS)
     try:
         rows = models.get_live_positions_rp(ride_id, since)
@@ -213,14 +232,105 @@ def live_roster(ride_id):
                 row['rider_id'], ride_id)
             history_by[row['rider_id']] = []
 
-    roster = radial.build_radial_roster(
+    return radial.build_radial_roster(
         rows, ctx, now, history_by, ride_id=ride_id, anchor='first_fix',
         min_history=MIN_HISTORY_FOR_PLAN, stateless_fallback=False,
         stale_after_minutes=STALE_AFTER_MINUTES)
 
+
+# --------------------------------------------------------------------------- #
+# Event-scoped live view — every calendar brevet gets a Live link, keyed by the
+# event rather than a single ride. BrevetHub events (rp_brevet_event) and rides
+# (rp_ride) are disjoint tables (unlike Team Asha, where event.id == ride.id), so
+# the calendar cannot point at a ride directly; this view resolves the event to any
+# public rides linked to it and shows the SAME shared Radial map. A future or quiet
+# event shows its route with an empty "waiting for riders" roster (no ride needed).
+# --------------------------------------------------------------------------- #
+def _event_route_track(event):
+    """Elevation track [{lat,lng,dist_m,e_m}] for an event's route, feeding the
+    event live view's map polyline + altitude profile. Reads the cron-warmed,
+    route-keyed rp_route_geometry_cache first (guest-safe — no RWGPS fetch on the
+    request path for a warmed route); only a cold cache falls back to a best-effort
+    live fetch so an un-warmed event still draws its route. None when the event has
+    no route or nothing resolves."""
+    route_id = extract_rwgps_route_id(event.get('rwgps_url')) if event else None
+    if not route_id:
+        return None
+    try:
+        track = models.get_rp_route_elevation_track(route_id)
+    except Exception as exc:  # noqa: BLE001 — cache read is optional; degrade to fetch
+        current_app.logger.warning(
+            'event live: cached geometry read failed for route %s: %s', route_id, exc)
+        track = None
+    if track:
+        return track
+    return _route_geometry({'rwgps_url': event.get('rwgps_url')})
+
+
+@live_bp.route('/live/event/<int:event_id>')
+def event_live_map(event_id):
+    """Public event-scoped live map — the SHARED Mapbox GL Radial view keyed by a
+    calendar brevet, so EVERY event card can carry a Live link. Renders the event's
+    route (cache-warmed geometry) plus the combined PII-safe roster of any public
+    rides linked to the event; an event with no live rides simply shows the route and
+    an empty rider table. 404 for an unknown event. Degrades gracefully when the
+    Mapbox token is unset."""
+    event = models.get_brevet_event_full(event_id)
+    if not event:
+        abort(404)
+    track = _event_route_track(event)
+    return render_template(
+        'event_live.html',
+        event=event,
+        mapbox_token=current_app.config.get('MAPBOX_ACCESS_TOKEN') or '',
+        route_polyline=_map_polyline(track),
+        elevation_profile=radial.build_elevation_profile(track or []),
+        roster_url=url_for('live.event_live_roster', event_id=event_id),
+        poll_seconds=LIVE_POLL_SECONDS,
+    )
+
+
+@live_bp.route('/live/event/<int:event_id>/roster.json')
+def event_live_roster(event_id):
+    """PUBLIC, PII-safe roster poll for the event-scoped live view — the union of the
+    rosters of EVERY public ride linked to the event (explicit FK or a public-ride
+    name+date match), so all riders on the brevet appear on one map. 404 for an
+    unknown event (so a phantom id cannot be probed). Each ride is gated on
+    is_public again (defense in depth) and built with the shared per-ride builder, so
+    no rider id / email ever reaches the payload. Fail-soft: a resolution or per-ride
+    error drops that contribution rather than 500-ing the public poll. Riders are
+    ordered by route progress so the combined list reads as one leaderboard."""
+    event = models.get_brevet_event(event_id)
+    if not event:
+        abort(404)
+
+    now = datetime.now(timezone.utc)
+    try:
+        ride_ids = models.get_live_ride_ids_for_event(event_id)
+    except Exception:  # noqa: BLE001 — never 500 the public poll
+        current_app.logger.exception(
+            'event roster: ride resolution failed for event %s', event_id)
+        ride_ids = []
+
+    combined = []
+    for ride_id in ride_ids:
+        try:
+            ride = models.get_ride(ride_id)
+            if not ride or not ride.get('is_public'):
+                continue
+            combined.extend(_ride_roster(ride, now))
+        except Exception:  # noqa: BLE001 — one bad ride never sinks the public poll
+            current_app.logger.exception(
+                'event roster: ride %s contribution failed', ride_id)
+            continue
+
+    # One leaderboard across rides: furthest-along first, un-positioned riders last.
+    combined.sort(key=lambda r: (r.get('route_position_mi') is not None,
+                                 r.get('route_position_mi') or 0), reverse=True)
+
     return jsonify({
-        'ride_id': ride_id,
-        'roster': roster,
+        'event_id': event_id,
+        'roster': combined,
         'server_time': now.isoformat(),
         'stale_after_minutes': STALE_AFTER_MINUTES,
         'poll_seconds': LIVE_POLL_SECONDS,
@@ -306,10 +416,10 @@ def set_public(ride_id):
 def link_event(ride_id):
     """Link (or unlink) one of the rider OWN rides to a calendar event.
 
-    This is the association entry point for the per-event calendar Live link: an
-    owner points their live ride at an rp_brevet_event, so that event resolves to a
-    public Live button (models.get_live_ride_id_for_event). Owner-scoped in the
-    model UPDATE (rider_id-filtered), so a non-owner POST changes nothing. An empty
+    This is the association entry point for the event-scoped live view: an owner
+    points their live ride at an rp_brevet_event, so the ride's rider appears on that
+    event's Live map (models.get_live_ride_ids_for_event). Owner-scoped in the model
+    UPDATE (rider_id-filtered), so a non-owner POST changes nothing. An empty
     event_id unlinks (clears the FK). A non-empty event_id must name an existing
     event (else 404), so a ride is never linked to a phantom event; a malformed id
     is rejected with a flash rather than a 500."""
@@ -333,7 +443,7 @@ def link_event(ride_id):
     elif event_id is None:
         flash('Ride unlinked from its brevet.', 'success')
     else:
-        flash('Ride linked to the brevet — it now shows a Live link on the calendar.',
+        flash('Ride linked to the brevet — you now appear on its Live map.',
               'success')
     return redirect(url_for('live.live_new'))
 
