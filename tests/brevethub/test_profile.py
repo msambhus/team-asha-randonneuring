@@ -137,6 +137,11 @@ def test_profile_renders_with_strava_only(client):
     assert 'Strava Ride Analysis' in body
     assert 'View Ride Analysis' in body
     assert '/my/strava-analysis' in body
+    assert 'My Profile' in body
+    assert 'My Rider Page' in body
+    assert '/riders/7' in body
+    assert 'Logout' in body
+    assert 'Sign out' not in body
 
 
 def test_profile_renders_with_neither(client):
