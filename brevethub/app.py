@@ -14,6 +14,8 @@ BrevetHub-specific behavior lives here as a thin shell:
   RWGPS URL, reusing the existing RWGPS plan engine.
 """
 import os
+import importlib.util
+import sys
 from pathlib import Path
 
 from flask import Blueprint, abort, current_app, flash, jsonify, redirect, request, session, url_for
@@ -234,8 +236,31 @@ def _auto_generate_plans_for_rwgps_rides():
 
 def create_app():
     os.environ.setdefault('BREVETHUB_MODE', '1')
+    # Team Asha's shared Config validates SECRET_KEY at import time. BrevetHub
+    # intentionally has its own secret, so bridge the BrevetHub-specific env var
+    # before loading that shared module instead of making production startup fail.
+    if os.environ.get('BREVETHUB_SECRET_KEY') and not os.environ.get('SECRET_KEY'):
+        os.environ['SECRET_KEY'] = os.environ['BREVETHUB_SECRET_KEY']
 
-    from app import create_app as create_team_asha_app
+    # Do not use ``from app import ...`` here. In Vercel's flat root-directory
+    # deployment, that name can resolve back to this BrevetHub shell and recurse
+    # through ``create_app``. Load the Team Asha root module from its file path
+    # instead, while retaining the normal repo-root path for its sibling imports.
+    root_app_path = _REPO_ROOT / 'app.py'
+    if root_app_path.resolve() == Path(__file__).resolve() or not root_app_path.exists():
+        root_app_path = _REPO_ROOT.parent / 'app.py'
+    if not root_app_path.exists():
+        raise ImportError(f'Team Asha root app.py not found near {_BREVETHUB_DIR}')
+    module_name = '_brevethub_team_asha_root_app'
+    root_app_module = sys.modules.get(module_name)
+    if root_app_module is None:
+        spec = importlib.util.spec_from_file_location(module_name, root_app_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f'Unable to load Team Asha app factory from {root_app_path}')
+        root_app_module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = root_app_module
+        spec.loader.exec_module(root_app_module)
+    create_team_asha_app = root_app_module.create_app
 
     app = create_team_asha_app()
 
