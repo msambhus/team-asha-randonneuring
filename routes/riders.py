@@ -24,7 +24,8 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_rider_season_stats, get_all_seasons, get_current_season,
                     detect_sr_for_rider_season, get_rider_total_srs,
                     get_all_rider_season_stats, detect_sr_for_all_riders_in_season,
-                    get_upcoming_rusa_events, update_rider_profile, update_strava_privacy,
+                    get_upcoming_rusa_events, get_all_upcoming_events,
+                    update_rider_profile, update_strava_privacy,
                     get_pbp_finishers,
                     get_all_ride_plans, get_ride_plan_by_slug, get_ride_plan_stops, update_ride_plan_info,
                     get_upcoming_ride_date_for_plan, get_route_elevation_track,
@@ -440,7 +441,13 @@ def upcoming_brevets(season_name):
     if not is_current:
         return redirect(url_for('riders.season_riders', season_name=season_name))
 
-    rusa_events = get_upcoming_rusa_events()
+    # All upcoming events, INCLUDING Team Asha club rides. Team rides are rendered
+    # hidden by default and revealed only by the "Team Asha" filter button (see the
+    # template's applyFilters); keeping them in this one list means they reuse all the
+    # same per-event processing (signup counts, plan matching, custom plans) as the
+    # external RUSA events. get_upcoming_rusa_events() (external-only) is unchanged for
+    # its other callers.
+    rusa_events = get_all_upcoming_events()
 
     rides = get_rides_for_season(season['id'])
     today = date.today()
@@ -459,6 +466,11 @@ def upcoming_brevets(season_name):
     wind_deadline = time.monotonic() + _WIND_WARNING_BUDGET_S
     wind_warnings = []
     for event in rusa_events:
+        # Team Asha rides are hidden by default on the page, so they must not raise a
+        # wind banner (which renders ungated at the top). They can carry a plan_slug
+        # via the ride_plan_id JOIN or a name match, so skip them explicitly.
+        if event.get('is_team_ride'):
+            continue
         event_date = event.get('date')
         if not event_date or event_date > cutoff:
             continue
@@ -551,8 +563,11 @@ def upcoming_brevets(season_name):
         'San Luis Obispo': '#f39c12',
     }
 
-    # Build distance filter from actual event data
-    distances = sorted(set(e['distance_km'] for e in rusa_events if e.get('distance_km')))
+    # Build distance filter from actual event data. Team Asha rides are excluded so a
+    # non-standard perm distance (e.g. 205) never adds an oddball distance button; they
+    # are reached via the "Team Asha" club filter, not the distance filter.
+    distances = sorted(set(e['distance_km'] for e in rusa_events
+                           if e.get('distance_km') and not e.get('is_team_ride')))
 
     label = SEASON_LABELS.get(season_name, f'{season_name} Season')
 
@@ -568,10 +583,15 @@ def upcoming_brevets(season_name):
     _match_plans_to_events(completed_events, all_ride_plans,
                            name_field='name', only_if_missing=True)
 
+    # Whether any EXTERNAL (non-Team-Asha) event exists — drives the empty-state, since
+    # rusa_events now also carries hidden team rides that must not suppress the message.
+    has_external_events = any(not e.get('is_team_ride') for e in rusa_events)
+
     return render_template('upcoming_brevets.html',
                            season=season,
                            season_label=label,
                            rusa_events=rusa_events,
+                           has_external_events=has_external_events,
                            future_rides=future_rides,
                            completed_events=completed_events,
                            is_current=is_current,
