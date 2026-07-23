@@ -17,7 +17,11 @@
          role="img" aria-label="Route elevation profile">
         {% if profile and profile.available %}
         {% set baseline = profile.plot.y + profile.plot.h %}
-        <path d="{{ profile.area_path }}" class="radial-elev-area"></path>
+        {# Area fill graded by the line colour (Radial-style): one filled area per
+           segment, in that segment's grade colour, under the semi-transparent line. #}
+        {% for s in profile.segments %}
+        <path d="{{ s.area_d }}" fill="{{ s.color }}" stroke="none" class="radial-elev-fill"></path>
+        {% endfor %}
         {% if big %}
         {% for t in profile.y_ticks %}
         <line x1="{{ profile.plot.x }}" y1="{{ t.y }}"

@@ -28,6 +28,22 @@
 .radial-elev-wrap { margin-top: 14px; }
 .radial-elev { width: 100%; height: 160px; display: block; }
 .radial-elev-area { fill: var(--border, #e5e7eb); opacity: 0.35; }
+.radial-elev-fill { opacity: 0.22; }
+/* Profile + plan-snapshot side by side; the profile takes the wider column. */
+.radial-elev-row { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin-top: 14px; }
+.radial-elev-row .radial-elev-wrap { flex: 1 1 60%; min-width: 260px; margin-top: 0; }
+.radial-plan-snapshot { flex: 1 1 32%; min-width: 190px; border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px; padding: 12px 14px; background: var(--card-bg, #f9fafb); box-sizing: border-box; }
+.rps-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.rps-label { font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-light, #6b7280); }
+.rps-name { font-weight: 700; font-size: 0.98rem; color: var(--primary, #1a365d); text-decoration: none; line-height: 1.2; }
+.rps-name:hover { text-decoration: underline; }
+.rps-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 12px; }
+.rps-stat { display: flex; flex-direction: column; }
+.rps-v { font-weight: 700; font-size: 0.95rem; color: var(--text, #111); }
+.rps-l { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-light, #6b7280); }
+.rps-open { display: inline-block; margin-top: 10px; font-size: 0.8rem; font-weight: 600; color: var(--primary, #1a365d); text-decoration: none; }
+.rps-open:hover { text-decoration: underline; }
 .radial-elev-grid { stroke: var(--border, #e5e7eb); stroke-width: 0.5; opacity: 0.6; }
 .radial-elev-ylabel { fill: var(--text-light, #6b7280); font-size: 9px; text-anchor: end; }
 .radial-elev-xlabel { fill: var(--text-light, #6b7280); font-size: 9px; text-anchor: middle; }
@@ -92,11 +108,17 @@
   </div>
   {% endif %}
 
-  {% if elevation_profile and elevation_profile.available %}
-  <div class="radial-elev-wrap">
+  {% if (elevation_profile and elevation_profile.available) or plan_snapshot %}
+  <div class="radial-elev-row">
+    {% if elevation_profile and elevation_profile.available %}
+    <div class="radial-elev-wrap">
     <svg class="radial-elev" viewBox="0 0 {{ elevation_profile.width }} {{ elevation_profile.height }}"
          preserveAspectRatio="none" role="img" aria-label="Route elevation profile">
-      <path d="{{ elevation_profile.area_path }}" class="radial-elev-area"></path>
+      {# Area fill graded by the line colour (Radial-style): one filled area per
+         segment in its grade colour, under the line drawn on top. #}
+      {% for s in elevation_profile.segments %}
+      <path d="{{ s.area_d }}" fill="{{ s.color }}" stroke="none" class="radial-elev-fill"></path>
+      {% endfor %}
       {% for s in elevation_profile.segments %}
       <path d="{{ s.d }}" stroke="{{ s.color }}" fill="none" stroke-width="2"
             stroke-linecap="round"></path>
@@ -119,6 +141,24 @@
       <span class="radial-elev-key"><i style="background: {{ b.color }}"></i>{{ b.label }}</span>
       {% endfor %}
     </div>
+    </div>
+    {% endif %}
+    {% if plan_snapshot %}
+    <aside class="radial-plan-snapshot">
+      <div class="rps-head">
+        <span class="rps-label">Selected plan</span>
+        <a class="rps-name" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">{{ plan_snapshot.name }}</a>
+      </div>
+      <div class="rps-stats">
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.distance_mi }}</span><span class="rps-l">miles</span></div>
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.elevation_ft }}</span><span class="rps-l">ft climb</span></div>
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.controls }}</span><span class="rps-l">controls</span></div>
+        {% if plan_snapshot.cutoff_hours %}<div class="rps-stat"><span class="rps-v">{{ plan_snapshot.cutoff_hours }}</span><span class="rps-l">h limit</span></div>{% endif %}
+        {% if plan_snapshot.start_time %}<div class="rps-stat"><span class="rps-v">{{ plan_snapshot.start_time }}</span><span class="rps-l">start</span></div>{% endif %}
+      </div>
+      <a class="rps-open" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">Open full plan →</a>
+    </aside>
+    {% endif %}
   </div>
   {% endif %}
 
