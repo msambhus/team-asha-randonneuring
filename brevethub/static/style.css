@@ -1,15 +1,15 @@
 :root {
-    --primary: #1a365d;
-    --accent: #e53e3e;
-    --accent-light: #fc8181;
+    --primary: #0088ce;
+    --accent: #c01700;
+    --accent-light: #ec0000;
     --bg: #f7fafc;
     --card-bg: #ffffff;
     --text: #2d3748;
     --text-light: #5a6b80; /* darkened from #718096 to meet WCAG AA 4.5:1 on light backgrounds */
     --border: #e2e8f0;
-    --success: #38a169;
-    --warning: #d69e2e;
-    --danger: #e53e3e;
+    --success: #0088ce;
+    --warning: #c01700;
+    --danger: #c01700;
 }
 /* Base resets, layout, nav, hero, stats-row, stat-card base: MIGRATED to input.css + Tailwind classes */
 /* Keep .hero-img for legacy usage */
@@ -47,7 +47,7 @@ tbody tr:hover {
 
 /* Enhanced badge hover effects */
 .badge-dnf {
-    background: linear-gradient(135deg, #fef5e7, #fefcbf);
+    background: linear-gradient(135deg, #fff0f3, #fff0f3);
     box-shadow: 0 2px 8px rgba(116, 66, 16, 0.2);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -88,7 +88,7 @@ th.sortable:active {
 }
 
 /* Coach box (used by about + resources) */
-.coach-box { background: linear-gradient(135deg, #faf5ff, #ebf8ff); border: 2px solid #805ad5; border-radius: 12px; padding: 24px; margin: 20px 0; scroll-margin-top: 240px; }
+.coach-box { background: linear-gradient(135deg, #e6f7ff, #e6f7ff); border: 2px solid #0088ce; border-radius: 12px; padding: 24px; margin: 20px 0; scroll-margin-top: 240px; }
 .coach-box h3 { color: #553c9a; margin-bottom: 10px; }
 
 /* Resource Grid */
@@ -146,11 +146,11 @@ th.sortable:active {
     text-transform: uppercase;
 }
 .resource-badge.video {
-    background: linear-gradient(135deg, #e53e3e, #fc8181);
+    background: linear-gradient(135deg, #c01700, #ec0000);
     color: white;
 }
 .resource-badge.pdf {
-    background: linear-gradient(135deg, #dd6b20, #ed8936);
+    background: linear-gradient(135deg, #c01700, #ec0000);
     color: white;
 }
 .resource-badge.blog {
@@ -162,11 +162,11 @@ th.sortable:active {
     color: white;
 }
 .resource-badge.tool {
-    background: linear-gradient(135deg, #805ad5, #b794f4);
+    background: linear-gradient(135deg, #0088ce, #e6f7ff);
     color: white;
 }
 .resource-badge.product {
-    background: linear-gradient(135deg, #d69e2e, #f6ad55);
+    background: linear-gradient(135deg, #c01700, #ec0000);
     color: white;
 }
 
@@ -177,7 +177,7 @@ th.sortable:active {
     border-radius: 6px;
     font-size: 0.7rem;
     font-weight: 700;
-    background: linear-gradient(135deg, #ff6b00, #ff8c42);
+    background: linear-gradient(135deg, #c01700, #ec0000);
     color: white;
     margin-bottom: 12px;
     margin-left: 6px;
@@ -323,7 +323,7 @@ th.sortable:active {
 .club-card.sfr::before { background: #e74c3c; }
 .club-card.dbc::before { background: #2ecc71; }
 .club-card.scr::before { background: #3498db; }
-.club-card.rusa::before { background: #ff6b00; }
+.club-card.rusa::before { background: #c01700; }
 .club-name {
     color: var(--primary);
     font-size: 1.2rem;
@@ -491,16 +491,16 @@ th.sortable:active {
 .brm-card:hover::before {
     transform: scaleX(1);
 }
-.brm-card.brm-200::before { background: linear-gradient(90deg, #48bb78, #68d391); }
-.brm-card.brm-200:hover { border-color: #48bb78; }
+.brm-card.brm-200::before { background: linear-gradient(90deg, #79D1FF, #68d391); }
+.brm-card.brm-200:hover { border-color: #79D1FF; }
 .brm-card.brm-300::before { background: linear-gradient(90deg, #4299e1, #63b3ed); }
 .brm-card.brm-300:hover { border-color: #4299e1; }
-.brm-card.brm-400::before { background: linear-gradient(90deg, #ed8936, #f6ad55); }
-.brm-card.brm-400:hover { border-color: #ed8936; }
-.brm-card.brm-600::before { background: linear-gradient(90deg, #e53e3e, #fc8181); }
-.brm-card.brm-600:hover { border-color: #e53e3e; }
-.brm-card.brm-1000::before { background: linear-gradient(90deg, #805ad5, #b794f4); }
-.brm-card.brm-1000:hover { border-color: #805ad5; }
+.brm-card.brm-400::before { background: linear-gradient(90deg, #ec0000, #ec0000); }
+.brm-card.brm-400:hover { border-color: #ec0000; }
+.brm-card.brm-600::before { background: linear-gradient(90deg, #c01700, #ec0000); }
+.brm-card.brm-600:hover { border-color: #c01700; }
+.brm-card.brm-1000::before { background: linear-gradient(90deg, #0088ce, #e6f7ff); }
+.brm-card.brm-1000:hover { border-color: #0088ce; }
 .brm-card.brm-1200::before { background: linear-gradient(90deg, #d53f8c, #f687b3); }
 .brm-card.brm-1200:hover { border-color: #d53f8c; }
 .brm-distance {
@@ -529,7 +529,7 @@ th.sortable:active {
 
 /* Info Box */
 .info-box {
-    background: linear-gradient(135deg, #ebf8ff, #e9d8fd);
+    background: linear-gradient(135deg, #e6f7ff, #fff0f3);
     border-left: 4px solid var(--primary);
     padding: 20px 24px;
     border-radius: 0 12px 12px 0;
@@ -543,8 +543,8 @@ th.sortable:active {
 
 /* SR Highlight */
 .sr-highlight {
-    background: linear-gradient(135deg, #fef5e7, #fefcbf);
-    border: 3px solid #d69e2e;
+    background: linear-gradient(135deg, #fff0f3, #fff0f3);
+    border: 3px solid #c01700;
     border-radius: 16px;
     padding: 40px;
     margin: 30px 0;
@@ -555,7 +555,7 @@ th.sortable:active {
     align-items: center;
 }
 .sr-badge-large {
-    background: linear-gradient(135deg, #d69e2e, #f6ad55);
+    background: linear-gradient(135deg, #c01700, #ec0000);
     color: white;
     font-size: 3rem;
     font-weight: 800;
@@ -593,13 +593,13 @@ th.sortable:active {
     border-radius: 8px;
     font-weight: 600;
     color: var(--primary);
-    border: 2px solid #d69e2e;
+    border: 2px solid #c01700;
 }
 
 /* PBP Hero */
 .pbp-hero {
-    background: linear-gradient(135deg, #f7fafc 0%, #e6fffa 100%);
-    border: 3px solid #805ad5;
+    background: linear-gradient(135deg, #f7fafc 0%, #e6f7ff 100%);
+    border: 3px solid #0088ce;
     border-radius: 16px;
     padding: 40px;
     margin: 30px 0;
@@ -635,8 +635,8 @@ th.sortable:active {
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }
 .pbp-stat.highlight {
-    background: linear-gradient(135deg, #ff6b00, #ff8c42);
-    border-color: #ff6b00;
+    background: linear-gradient(135deg, #c01700, #ec0000);
+    border-color: #c01700;
 }
 .pbp-stat.highlight .pbp-stat-number,
 .pbp-stat.highlight .pbp-stat-label {
@@ -657,8 +657,8 @@ th.sortable:active {
 
 /* Achievement Banner */
 .achievement-banner {
-    background: linear-gradient(135deg, #faf5ff, #e9d8fd);
-    border: 2px solid #805ad5;
+    background: linear-gradient(135deg, #e6f7ff, #fff0f3);
+    border: 2px solid #0088ce;
     border-radius: 12px;
     padding: 24px 30px;
     margin: 30px 0;
@@ -726,8 +726,8 @@ th.sortable:active {
     padding: 30px;
 }
 .team-section.purpose-section {
-    background: linear-gradient(135deg, #fff5f5, #fed7d7);
-    border-color: #fc8181;
+    background: linear-gradient(135deg, #fff5f5, #fff0f3);
+    border-color: #ec0000;
 }
 .team-section-title {
     font-size: 1.4rem;
@@ -774,7 +774,7 @@ th.sortable:active {
 /* Purpose Highlight */
 .purpose-highlight {
     background: white;
-    border: 2px solid #fc8181;
+    border: 2px solid #ec0000;
     border-radius: 12px;
     padding: 20px;
     display: flex;

@@ -8,7 +8,7 @@
     padding: 14px 18px 24px;
 }
 
-.rpv2 a { color: #1a365d; }
+.rpv2 a { color: #0088ce; }
 
 /* ===== Tab bar ===== */
 .rpv2-tabs {
@@ -37,8 +37,8 @@
     white-space: nowrap;
     transition: color 0.12s, border-color 0.12s;
 }
-.rpv2-tab:hover { color: #1a365d; }
-.rpv2-tab.is-active { color: #1a365d; border-bottom-color: #1a365d; }
+.rpv2-tab:hover { color: #0088ce; }
+.rpv2-tab.is-active { color: #0088ce; border-bottom-color: #0088ce; }
 .rpv2-tab .rpv2-tab-pill {
     display: inline-block;
     background: #e2e8f0;
@@ -66,7 +66,7 @@
     font-size: 0.85rem;
     font-weight: 600;
 }
-.rpv2-coming b { color: #1a365d; }
+.rpv2-coming b { color: #0088ce; }
 
 /* ===== Hero ===== */
 .rpv2-hero {
@@ -90,7 +90,7 @@
 }
 .rpv2-title {
     font: 800 1.3rem/1.1 inherit;
-    color: #1a365d;
+    color: #0088ce;
     margin-bottom: 4px;
 }
 .rpv2-admin-edit {
@@ -99,14 +99,14 @@
     padding: 2px 8px;
     font: 700 0.6rem -apple-system, 'Segoe UI', system-ui, sans-serif;
     letter-spacing: 0.04em;
-    background: #fef3c7;
+    background: #fff0f3;
     color: #78350f;
     border-radius: 4px;
     text-decoration: none;
     vertical-align: middle;
     border: 1px solid #fcd34d;
 }
-.rpv2-admin-edit:hover { background: #fde68a; }
+.rpv2-admin-edit:hover { background: #fff0f3; }
 .rpv2-custom-banner {
     display: flex;
     align-items: center;
@@ -191,7 +191,7 @@
 .rpv2-gauge-stat { padding: 0 6px; }
 .rpv2-gauge-bignum {
     font: 800 1.3rem/1 inherit;
-    color: #1a365d;
+    color: #0088ce;
     padding-top: 14px;
 }
 .rpv2-gauge-bignum.good { color: #16a34a; }
@@ -225,7 +225,7 @@
     font: 800 0.82rem inherit;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: #1a365d;
+    color: #0088ce;
 }
 .rpv2-card-sub { font-size: 0.66rem; color: #94a3b8; font-weight: 600; }
 
@@ -317,7 +317,7 @@
 .rpv2-table tbody tr:hover { background: #f8fafc; }
 .rpv2-table tbody tr.is-sel {
     background: #eff6ff;
-    box-shadow: inset 3px 0 0 #1a365d;
+    box-shadow: inset 3px 0 0 #0088ce;
 }
 .rpv2-table tbody tr.is-halt { background: #f5f3ff; }
 .rpv2-table tbody tr.is-halt.is-sel { background: #ede9fe; }
@@ -332,7 +332,7 @@
 .rpv2-stoptop { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .rpv2-name {
     font-weight: 600;
-    color: #1a365d;
+    color: #0088ce;
     min-width: 0;
     flex: 1 1 auto;
     overflow: hidden;
@@ -365,7 +365,7 @@
 .rpv2-fpm.t4 { color: #dc2626; }
 .rpv2-table small { color: #94a3b8; font-size: 0.62rem; margin-left: 2px; }
 .rpv2-break {
-    background: #fef3c7;
+    background: #fff0f3;
     color: #78350f;
     padding: 1px 6px;
     border-radius: 3px;
@@ -493,7 +493,7 @@
 }
 .rpv2-wx-val {
     font: 800 0.95rem inherit;
-    color: #1a365d;
+    color: #0088ce;
     margin-top: 2px;
 }
 .rpv2-wx-sub { font-size: 0.6rem; color: #64748b; margin-top: 1px; }
@@ -527,7 +527,7 @@
 .rpv2-fuel-stop:last-child { border-bottom: 0; }
 .rpv2-fuel-time {
     font: 800 0.76rem inherit;
-    color: #1a365d;
+    color: #0088ce;
     font-variant-numeric: tabular-nums;
 }
 .rpv2-fuel-name { color: #2d3748; font-weight: 600; }
@@ -549,7 +549,7 @@
     color: #2d3748;
 }
 .rpv2-rchip.s-going { border-color: #16a34a; color: #166534; }
-.rpv2-rchip.s-int { border-color: #fbbf24; opacity: 0.9; }
+.rpv2-rchip.s-int { border-color: #c01700; opacity: 0.9; }
 .rpv2-rchip.s-maybe { border-color: #cbd5e1; color: #64748b; }
 .rpv2-group-note {
     font-size: 0.7rem;
@@ -558,7 +558,7 @@
     border-top: 1px dashed #e2e8f0;
     line-height: 1.4;
 }
-.rpv2-group-note b { color: #1a365d; }
+.rpv2-group-note b { color: #0088ce; }
 
 /* ===== Right rail / snapshot card ===== */
 .rpv2-aside { position: sticky; top: 60px; }
@@ -576,7 +576,7 @@
     color: #94a3b8;
 }
 .rpv2-share-btn {
-    background: #1a365d;
+    background: #0088ce;
     color: #fff;
     border: 0;
     border-radius: 6px;
@@ -584,7 +584,7 @@
     font: 700 0.7rem inherit;
     cursor: pointer;
 }
-.rpv2-share-btn:hover { background: #2a4a7f; }
+.rpv2-share-btn:hover { background: #006aa3; }
 
 .rpv2-snap {
     background: #fff;
@@ -608,7 +608,7 @@
 }
 .rpv2-snap-title {
     font: 800 1.05rem/1.15 inherit;
-    color: #1a365d;
+    color: #0088ce;
 }
 .rpv2-snap-hero {
     display: grid;
@@ -619,7 +619,7 @@
 }
 .rpv2-snap-big {
     font: 800 2.2rem/1 inherit;
-    color: #1a365d;
+    color: #0088ce;
 }
 .rpv2-snap-big small {
     font-size: 0.85rem;
@@ -669,7 +669,7 @@
 }
 .rpv2-snap-times-val {
     font: 800 0.85rem/1 inherit;
-    color: #1a365d;
+    color: #0088ce;
     margin-top: 3px;
 }
 .rpv2-snap-times-val.good { color: #16a34a; }
@@ -724,13 +724,13 @@
 .rpv2-snap-stop-name {
     font-size: 0.74rem;
     font-weight: 500;
-    color: #1a365d;
+    color: #0088ce;
     line-height: 1.25;
 }
 .rpv2-snap-stop-note { font-size: 0.62rem; color: #64748b; margin-top: 2px; }
 .rpv2-snap-break-badge {
     display: inline-block;
-    background: #fef3c7;
+    background: #fff0f3;
     color: #78350f;
     font-size: 0.55rem;
     font-weight: 700;
@@ -743,7 +743,7 @@
 .rpv2-snap-stop-r { text-align: right; line-height: 1.2; }
 .rpv2-snap-stop-eta {
     font: 800 0.78rem inherit;
-    color: #1a365d;
+    color: #0088ce;
 }
 .rpv2-snap-stop-bank {
     font-size: 0.6rem;
@@ -867,7 +867,7 @@
 .rpv2-pc-stat { text-align: center; }
 .rpv2-pc-stat-num {
     font: 800 1.05rem/1 inherit;
-    color: #1a365d;
+    color: #0088ce;
     font-variant-numeric: tabular-nums;
 }
 .rpv2-pc-stat-num.good { color: #16a34a; }
@@ -932,13 +932,13 @@
 }
 .rpv2-pc-stop-eta {
     font: 800 0.78rem inherit;
-    color: #1a365d;
+    color: #0088ce;
     font-variant-numeric: tabular-nums;
 }
 .rpv2-pc-risk {
     font-size: 0.7rem;
     color: #78350f;
-    background: #fef3c7;
+    background: #fff0f3;
     padding: 7px 9px;
     border-radius: 6px;
     line-height: 1.4;
@@ -949,7 +949,7 @@
     border-radius: 8px;
     padding: 9px;
     font: 700 0.78rem inherit;
-    color: #1a365d;
+    color: #0088ce;
     cursor: pointer;
     transition: background 0.12s, border-color 0.12s;
 }
@@ -1017,7 +1017,7 @@
 .rpv2-community-row:hover { background: #f8fafc; }
 .rpv2-community-name {
     font-weight: 700;
-    color: #1a365d;
+    color: #0088ce;
     font-size: 0.82rem;
 }
 .rpv2-community-meta {
@@ -1065,7 +1065,7 @@
     flex-shrink: 0;
     height: fit-content;
 }
-.rpv2-ro-callout b { color: #1a365d; }
+.rpv2-ro-callout b { color: #0088ce; }
 
 /* ===== Race-day companion ===== */
 .rpv2-rd {
@@ -1089,7 +1089,7 @@
     padding: 4px 8px;
     font-size: 0.7rem;
 }
-.rpv2-rd-back { color: #1a365d; font-weight: 700; text-decoration: none; }
+.rpv2-rd-back { color: #0088ce; font-weight: 700; text-decoration: none; }
 .rpv2-rd-back:hover { text-decoration: underline; }
 .rpv2-rd-eyebrow {
     font: 700 0.62rem inherit;
@@ -1106,7 +1106,7 @@
     overflow: hidden;
 }
 .rpv2-rd-progress-bar > div {
-    background: linear-gradient(90deg, #1a365d, #1d4ed8);
+    background: linear-gradient(90deg, #0088ce, #1d4ed8);
     height: 100%;
     transition: width 0.3s;
 }
@@ -1118,13 +1118,13 @@
     font-size: 0.72rem;
     color: #64748b;
 }
-.rpv2-rd-progress-text b { color: #1a365d; font-weight: 800; }
+.rpv2-rd-progress-text b { color: #0088ce; font-weight: 800; }
 .rpv2-rd-progress-bank { font-weight: 800; }
 .rpv2-rd-progress-bank.good { color: #16a34a; }
 .rpv2-rd-progress-bank.bad { color: #dc2626; }
 
 .rpv2-rd-here {
-    background: #1a365d;
+    background: #0088ce;
     color: #fff;
     border-radius: 14px;
     padding: 18px;
@@ -1136,7 +1136,7 @@
 .rpv2-rd-checkin {
     display: block;
     background: #fff;
-    color: #1a365d;
+    color: #0088ce;
     border: 0;
     padding: 12px 22px;
     border-radius: 999px;
@@ -1162,13 +1162,13 @@
     color: #94a3b8;
     margin-bottom: 8px;
 }
-.rpv2-rd-next-name { font: 800 1.05rem/1.2 inherit; color: #1a365d; margin-bottom: 10px; }
+.rpv2-rd-next-name { font: 800 1.05rem/1.2 inherit; color: #0088ce; margin-bottom: 10px; }
 .rpv2-rd-next-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; text-align: center; }
 .rpv2-rd-next-grid > div { font-size: 0.62rem; color: #64748b; }
 .rpv2-rd-next-grid b {
     display: block;
     font: 800 1.15rem inherit;
-    color: #1a365d;
+    color: #0088ce;
     font-variant-numeric: tabular-nums;
     margin-bottom: 2px;
 }
@@ -1176,7 +1176,7 @@
 .rpv2-rd-next-grid b.bad { color: #dc2626; }
 .rpv2-rd-next-grid span { display: block; font-size: 0.6rem; }
 .rpv2-rd-next-note {
-    background: #fef3c7;
+    background: #fff0f3;
     color: #78350f;
     font-size: 0.72rem;
     padding: 7px 9px;
@@ -1191,7 +1191,7 @@
 .rpv2-rd-now-cell b {
     display: block;
     font: 800 0.9rem inherit;
-    color: #1a365d;
+    color: #0088ce;
     margin-top: 4px;
     font-variant-numeric: tabular-nums;
 }
@@ -1215,7 +1215,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.rpv2-rd-upcoming-eta { font: 800 0.78rem inherit; color: #1a365d; font-variant-numeric: tabular-nums; }
+.rpv2-rd-upcoming-eta { font: 800 0.78rem inherit; color: #0088ce; font-variant-numeric: tabular-nums; }
 
 .rpv2-rd-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .rpv2-rd-act {
@@ -1239,7 +1239,7 @@
     padding: 4px 8px;
     color: #94a3b8;
 }
-.rpv2-rd-nav a { color: #1a365d; font-weight: 700; text-decoration: none; }
+.rpv2-rd-nav a { color: #0088ce; font-weight: 700; text-decoration: none; }
 .rpv2-rd-nav-count { font-variant-numeric: tabular-nums; }
 
 /* ===== Mobile ===== */

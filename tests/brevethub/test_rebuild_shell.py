@@ -55,6 +55,54 @@ def test_base_menu_matches_requested_brevethub_shape():
     assert "main.about" not in source
 
 
+def test_brevethub_shell_uses_rusa_blue_white_red_palette():
+    combined_source = "\n".join(
+        (BREVETHUB_DIR / "templates" / name).read_text().lower()
+        for name in ("base.html", "index.html", "upcoming_brevets.html")
+    )
+    combined_static_source = "\n".join(
+        (BREVETHUB_DIR / "static" / name).read_text().lower()
+        for name in ("favicon.svg", "style.css", "ride-plan-v2.css")
+    )
+    combined_brevethub_source = f"{combined_source}\n{combined_static_source}"
+
+    assert "--rusa-blue: #0088ce" in combined_brevethub_source
+    assert "--rusa-red: #c01700" in combined_brevethub_source
+    assert "--rusa-red-dark: #a01300" in combined_brevethub_source
+    assert "var(--rusa-white)" in combined_brevethub_source
+
+    replaced_team_asha_or_old_brevethub_colors = {
+        "#002868",
+        "#bf0a30",
+        "#1a365d",
+        "#234878",
+        "#0f766e",
+        "#0891b2",
+        "#0e7490",
+        "#fb923c",
+        "#9a3412",
+        "#c2410c",
+        "#4338ca",
+        "#6d28d9",
+        "#7c3aed",
+    }
+    for color in replaced_team_asha_or_old_brevethub_colors:
+        assert color not in combined_brevethub_source
+
+
+def test_inherited_team_asha_templates_are_color_neutralized_for_brevethub():
+    from brevethub.app import app
+
+    source, _, _ = app.jinja_loader.get_source(app.jinja_env, "rider_profile.html")
+    source = source.lower()
+
+    assert "#0088ce" in source
+    assert "#c01700" in source
+    assert "#1a365d" not in source
+    assert "#e53e3e" not in source
+    assert "#7c3aed" not in source
+
+
 def test_inherited_templates_are_product_neutralized():
     from brevethub.app import app
 
