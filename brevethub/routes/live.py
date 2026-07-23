@@ -279,15 +279,84 @@ def event_live_map(event_id):
     if not event:
         abort(404)
     track = _event_route_track(event)
+
+    # Viewer-aware share surface: a logged-in rider can put THEMSELVES on this
+    # event's map. Resolve their own ride for the event (if any) + sharing state, so
+    # the template can offer the Garmin link / phone-beacon controls (or a one-tap
+    # "join" when they have not joined yet). Fail-soft — the share surface is
+    # optional, so a resolution error just hides it and never 500s the public view.
+    my_ride = None
+    opted_in = garmin_here = False
+    garmin_url = ''
+    rider_id = session.get('rider_id')
+    if rider_id:
+        try:
+            my_ride = models.get_rider_ride_for_event(rider_id, event_id)
+            if my_ride:
+                tracking = models.get_live_tracking_rp(rider_id)
+                opted_in = bool(tracking and tracking.get('enabled'))
+                garmin_here = bool(tracking and tracking.get('garmin_session_url')
+                                   and tracking.get('active_ride_id') == my_ride['id'])
+                garmin_url = tracking.get('garmin_session_url') if garmin_here else ''
+        except Exception:  # noqa: BLE001 — share surface is optional; never 500 the view
+            current_app.logger.exception(
+                'event live: share-surface resolution failed for event %s', event_id)
+            my_ride = None
+            opted_in = garmin_here = False
+            garmin_url = ''
+
     return render_template(
         'event_live.html',
         event=event,
+        my_ride=my_ride,
+        signed_in=bool(rider_id),
+        opted_in=opted_in,
+        garmin_here=garmin_here,
+        garmin_url=garmin_url,
         mapbox_token=current_app.config.get('MAPBOX_ACCESS_TOKEN') or '',
         route_polyline=_map_polyline(track),
         elevation_profile=radial.build_elevation_profile(track or []),
         roster_url=url_for('live.event_live_roster', event_id=event_id),
         poll_seconds=LIVE_POLL_SECONDS,
     )
+
+
+@live_bp.route('/live/event/<int:event_id>/join', methods=['POST'])
+@profile_required
+def event_live_join(event_id):
+    """One-tap "appear on this map": create a PUBLIC ride for this event owned by the
+    session rider and link it to the event, so the rider can then share location and
+    show on the event's Live map. Reuses an existing own-ride for the event rather
+    than creating a duplicate. Owner-scoped throughout (create_ride + set_ride_event
+    take the session rider_id). 404 for an unknown event. Redirects back to the event
+    view where the share controls now render."""
+    rider_id = session['rider_id']
+    event = models.get_brevet_event_full(event_id)
+    if not event:
+        abort(404)
+
+    existing = models.get_rider_ride_for_event(rider_id, event_id)
+    if existing:
+        flash('You are already on this ride live map — pick how to share below.',
+              'success')
+        return redirect(url_for('live.event_live_map', event_id=event_id))
+
+    rider = models.get_rider_by_id(rider_id)
+    ride_id = models.create_ride(
+        rider_id,
+        name=event.get('name') or 'Live ride',
+        distance_km=event.get('distance_km'),
+        is_public=True,
+        club_id=(rider.get('club_id') if rider else None),
+        status=models.RideStatus.GOING.value,
+    )
+    if not ride_id:
+        flash('Could not join the live map. Please try again.', 'error')
+        return redirect(url_for('live.event_live_map', event_id=event_id))
+
+    models.set_ride_event(ride_id, rider_id, event_id)
+    flash('You are on this ride live map — pick how to share below.', 'success')
+    return redirect(url_for('live.event_live_map', event_id=event_id))
 
 
 @live_bp.route('/live/event/<int:event_id>/roster.json')

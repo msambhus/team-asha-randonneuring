@@ -259,6 +259,23 @@ def get_rider_rides(rider_id):
     )
 
 
+def get_rider_ride_for_event(rider_id, event_id):
+    """The rider OWN ride linked to a calendar event, or None (most recent first).
+
+    Backs the event-scoped live view share surface: a logged-in rider appears on the
+    event Live map through a ride they own that is linked to the event (event_id FK).
+    Scoped to the session rider, so it never reveals another rider ride. Returns the
+    ride row (id, is_public, name, event_id) or None when the rider has not joined
+    this event yet. Touches only rp_ride.
+    """
+    return db.query_one(
+        "SELECT id, name, distance_km, is_public, event_id "
+        "FROM rp_ride WHERE rider_id = %s AND event_id = %s "
+        "ORDER BY start_at DESC NULLS LAST LIMIT 1",
+        (rider_id, event_id),
+    )
+
+
 def create_ride(rider_id, *, name, distance_km=None, is_public=False,
                 club_id=None, status=None):
     """Create a ride owned by ``rider_id`` and return its new id.

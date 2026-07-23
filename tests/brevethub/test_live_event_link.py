@@ -60,8 +60,8 @@ def test_calendar_renders_live_link_for_every_event(client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'href="/live/event/11"' in body     # event-scoped view, not a ride id
-    # The Live button carries the shared event-link-btn styling and the "Live" label.
-    assert re.search(r'href="/live/event/11"[^>]*>\s*Live\s*<', body)
+    # The Live button carries the shared event-link-btn styling, a pin icon, and "Live".
+    assert re.search(r'href="/live/event/11".*?>\s*Live\s*<', body, re.DOTALL)
 
 
 def test_calendar_live_link_needs_no_ride_resolution(client):
@@ -264,6 +264,147 @@ def test_event_roster_survives_resolution_failure(client):
         resp = client.get('/live/event/11/roster.json')
     assert resp.status_code == 200
     assert resp.get_json()['roster'] == []
+
+
+# --------------------------------------------------------------------------- #
+# Event live view — "Appear on this map" share surface (parity with TA live view)
+# --------------------------------------------------------------------------- #
+_EVENT_NOROUTE = dict(_EVENT_FULL, rwgps_url=None)   # no geometry fetch in unit tests
+
+
+def test_event_live_map_guest_sees_signin_prompt(client):
+    """A logged-out viewer gets a 'Sign in to appear on this map' link, not the
+    share controls or the join form."""
+    with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT_NOROUTE), \
+         patch('brevethub.models.get_rp_route_elevation_track', return_value=None):
+        resp = client.get('/live/event/11')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'Sign in to appear on this map' in body
+    assert '/live/event/11/join' not in body
+    assert 'id="evl-beacon"' not in body
+
+
+def test_event_live_map_signed_in_no_ride_shows_join(client):
+    """A signed-in rider with no ride on the event sees the one-tap join form."""
+    _login(client, rider_id=7)
+    with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT_NOROUTE), \
+         patch('brevethub.models.get_rp_route_elevation_track', return_value=None), \
+         patch('brevethub.models.get_rider_ride_for_event', return_value=None):
+        resp = client.get('/live/event/11')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert '/live/event/11/join' in body
+    assert "Join this ride" in body
+    assert 'id="evl-beacon"' not in body     # no share controls until they join
+
+
+def test_event_live_map_signed_in_with_ride_shows_share_controls(client):
+    """A rider who has joined the event sees the Garmin form + phone-beacon control,
+    wired to THEIR ride id."""
+    _login(client, rider_id=7)
+    my_ride = {'id': 55, 'name': 'SonoMendo', 'distance_km': 300,
+               'is_public': True, 'event_id': 11}
+    with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT_NOROUTE), \
+         patch('brevethub.models.get_rp_route_elevation_track', return_value=None), \
+         patch('brevethub.models.get_rider_ride_for_event', return_value=my_ride), \
+         patch('brevethub.models.get_live_tracking_rp', return_value={'enabled': False}):
+        resp = client.get('/live/event/11')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'Appear on this map' in body
+    assert '/live/55/garmin' in body          # Garmin form posts to the rider's ride
+    assert 'id="evl-beacon"' in body         # phone-beacon control present
+    assert 'EVL_RIDE_ID = 55' in body         # beacon JS wired to the ride id
+
+
+def test_event_live_map_garmin_linked_state(client):
+    """When the rider's Garmin is linked to THIS ride, the summary shows the linked
+    badge, the input is pre-filled, and the clear button renders."""
+    _login(client, rider_id=7)
+    my_ride = {'id': 55, 'name': 'SonoMendo', 'distance_km': 300,
+               'is_public': True, 'event_id': 11}
+    tracking = {'enabled': True,
+                'garmin_session_url': 'https://livetrack.garmin.com/session/abc/token/xyz',
+                'active_ride_id': 55}
+    with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT_NOROUTE), \
+         patch('brevethub.models.get_rp_route_elevation_track', return_value=None), \
+         patch('brevethub.models.get_rider_ride_for_event', return_value=my_ride), \
+         patch('brevethub.models.get_live_tracking_rp', return_value=tracking):
+        resp = client.get('/live/event/11')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'Garmin linked' in body                       # summary badge
+    assert 'livetrack.garmin.com/session/abc' in body    # input pre-filled
+    assert 'Stop tracking this ride' in body             # clear button
+
+
+def test_event_live_map_share_surface_failsoft(client):
+    """A DB error resolving the rider's ride/tracking hides the share surface but
+    still renders the public view (never 500) — the anon roster stays pollable."""
+    _login(client, rider_id=7)
+    with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT_NOROUTE), \
+         patch('brevethub.models.get_rp_route_elevation_track', return_value=None), \
+         patch('brevethub.models.get_rider_ride_for_event',
+               side_effect=RuntimeError('db down')):
+        resp = client.get('/live/event/11')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'radial-live' in body                 # the map/roster still render
+    assert 'id="evl-beacon"' not in body         # share controls degraded off
+
+
+def test_event_join_creates_and_links_public_ride(client):
+    """Join creates a PUBLIC ride named for the event and links it, owner-scoped,
+    then redirects back to the event view."""
+    _login(client, rider_id=7)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_brevet_event_full', return_value=_EVENT_NOROUTE), \
+         patch('brevethub.models.get_rider_ride_for_event', return_value=None), \
+         patch('brevethub.models.create_ride', return_value=55) as mock_create, \
+         patch('brevethub.models.set_ride_event', return_value={'id': 55}) as mock_link:
+        resp = client.post('/live/event/11/join')
+    assert resp.status_code == 302
+    assert resp.headers['Location'].endswith('/live/event/11')
+    assert mock_create.call_args.kwargs['is_public'] is True
+    assert mock_create.call_args.kwargs['name'] == _EVENT_NOROUTE['name']
+    mock_link.assert_called_once_with(55, 7, 11)
+
+
+def test_event_join_reuses_existing_ride(client):
+    """Join is idempotent — a rider who already has a ride for the event does not
+    get a duplicate (no create/link)."""
+    _login(client, rider_id=7)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_brevet_event_full', return_value=_EVENT_NOROUTE), \
+         patch('brevethub.models.get_rider_ride_for_event', return_value={'id': 55}), \
+         patch('brevethub.models.create_ride') as mock_create, \
+         patch('brevethub.models.set_ride_event') as mock_link:
+        resp = client.post('/live/event/11/join')
+    assert resp.status_code == 302
+    mock_create.assert_not_called()
+    mock_link.assert_not_called()
+
+
+def test_event_join_unknown_event_404(client):
+    """Joining an unknown event is a 404 before any write."""
+    _login(client, rider_id=7)
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_brevet_event_full', return_value=None), \
+         patch('brevethub.models.create_ride') as mock_create:
+        resp = client.post('/live/event/999999/join')
+    assert resp.status_code == 404
+    mock_create.assert_not_called()
+
+
+def test_event_join_requires_login(client):
+    """The join route is profile-gated; an anon user is bounced to login."""
+    with patch('brevethub.models.get_rider_by_id', return_value=None), \
+         patch('brevethub.models.create_ride') as mock_create:
+        resp = client.post('/live/event/11/join')
+    assert resp.status_code == 302
+    assert '/auth/login' in resp.headers['Location']
+    mock_create.assert_not_called()
 
 
 # --------------------------------------------------------------------------- #

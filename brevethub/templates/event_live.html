@@ -3,33 +3,278 @@
 {# Guest event-scoped live view — the SHARED Mapbox GL Radial partial (map + compact
    rider table + altitude profile), keyed by a calendar brevet rather than a single
    ride. Every event card links here; a future or quiet event shows its route with an
-   empty "waiting for riders" state (the shared partial's status line + table handle
-   the empty vs populated states). No account needed; the roster it polls is public +
-   PII-safe. #}
+   empty "waiting for riders" state (handled by the shared partial). Signed-in riders
+   also get the "Appear on this map" share surface (Garmin LiveTrack + phone beacon). #}
 {% block extra_head %}
 {% if mapbox_token %}
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
 {% endif %}
+<style>
+.evl-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.evl-sub { color: var(--text-light, #6b7280); font-size: 0.85rem; }
+.evl-share-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+  border: none; border-radius: 8px; font-weight: 600; font-size: 0.8rem; color: #fff;
+  background: var(--primary, #1a365d); cursor: pointer; white-space: nowrap; }
+.evl-signin { display: inline-block; margin: 4px 0 12px; font-size: 0.82rem;
+  color: var(--primary, #1a365d); }
+/* "Appear on this map" — collapsible share setup */
+.evl-setup { background: var(--card-bg, #f9fafb); border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px; padding: 0 18px; margin: 4px 0 16px; }
+.evl-setup > summary { cursor: pointer; list-style: none; padding: 14px 0; font-weight: 700;
+  font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+.evl-setup > summary::-webkit-details-marker { display: none; }
+.evl-setup > summary .ts-linked { color: #166534; font-size: 0.8rem; font-weight: 700; }
+.evl-setup > summary .chev { margin-left: auto; transition: transform 0.15s; color: var(--text-light, #6b7280); }
+.evl-setup[open] > summary .chev { transform: rotate(90deg); }
+.evl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 2px 0 18px; }
+@media (max-width: 720px) { .evl-grid { grid-template-columns: 1fr; } }
+.evl-card { border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 16px; background: var(--bg, #fff); }
+.evl-ch { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 0.98rem; margin-bottom: 6px; }
+.evl-num { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%; background: var(--primary, #1a365d);
+  color: #fff; font-size: 0.78rem; display: flex; align-items: center; justify-content: center; }
+.evl-tag { margin-left: auto; font-size: 0.68rem; font-weight: 700; white-space: nowrap;
+  padding: 3px 8px; border-radius: 20px; background: #eef2f7; color: #475569; }
+.evl-lead { color: var(--text-light, #6b7280); font-size: 0.83rem; line-height: 1.45; margin: 0 0 12px; }
+.evl-callout { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+  padding: 10px 13px; font-size: 0.82rem; line-height: 1.45; margin: 0 0 14px; }
+.evl-callout strong { color: #92400e; }
+.evl-steps { margin: 0 0 14px; padding: 0; list-style: none; counter-reset: gstep; }
+.evl-steps > li { position: relative; padding: 0 0 12px 34px; font-size: 0.85rem; line-height: 1.45; }
+.evl-steps > li::before { counter-increment: gstep; content: counter(gstep); position: absolute; left: 0; top: -1px;
+  width: 24px; height: 24px; border-radius: 50%; background: var(--primary, #1a365d); color: #fff;
+  font-weight: 700; font-size: 0.78rem; display: flex; align-items: center; justify-content: center; }
+.evl-steps .sub { display: block; color: var(--text-light, #6b7280); font-size: 0.8rem; margin-top: 2px; }
+.evl-steps code { background: var(--bg, #f3f4f6); border: 1px solid var(--border, #e5e7eb); border-radius: 4px;
+  padding: 1px 5px; font-size: 0.78rem; word-break: break-all; }
+.evl-form { display: flex; flex-direction: column; gap: 8px; }
+.evl-form label { font-weight: 600; font-size: 0.85rem; }
+.evl-form input[type="url"] { padding: 10px 13px; border: 1px solid var(--border, #e5e7eb); border-radius: 8px;
+  font-size: 0.88rem; background: var(--bg, #fff); color: var(--text, #111); }
+.evl-save { padding: 9px 20px; background: var(--primary, #1a365d); color: #fff; border: none;
+  border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer; }
+.evl-clear { padding: 9px 14px; background: transparent; color: #b91c1c; border: 1px solid #fecaca;
+  border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer; }
+.evl-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.evl-linked { color: #166534; font-weight: 600; font-size: 0.85rem; margin: 0 0 12px; }
+.evl-beacon-btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border: none;
+  border-radius: 8px; font-weight: 600; font-size: 0.85rem; color: #fff; cursor: pointer; }
+.evl-beacon-btn.start { background: #16a34a; }
+.evl-beacon-btn.stop { background: #dc2626; }
+.evl-lowpower { display: inline-flex; align-items: center; gap: 5px; font-size: 0.78rem; color: var(--text-light, #6b7280); cursor: pointer; }
+.evl-beacon-state { font-size: 0.78rem; color: var(--text-light, #6b7280); margin-top: 8px; }
+.evl-beacon-state.live { color: #166534; font-weight: 600; }
+.evl-join { padding: 10px 18px; background: var(--primary, #1a365d); color: #fff; border: none;
+  border-radius: 8px; font-weight: 700; font-size: 0.9rem; cursor: pointer; }
+</style>
 {% endblock %}
 {% block content %}
 <div class="container section">
 <section class="card">
-  <h1 class="text-primary text-[1.6rem] font-bold mb-1">{{ event.name }}</h1>
-  <p class="text-text-light text-sm mb-1">
-    {% if event.distance_km %}{{ event.distance_km }} km &middot; {% endif %}
-    {% if event.region %}{{ event.region }} &middot; {% endif %}
-    {% if event.date %}{{ event.date }} &middot; {% endif %}
-    Live
-  </p>
-  <p class="text-text-light text-sm mb-4">
+  <div class="evl-header">
+    <div>
+      <h1 class="text-primary text-[1.6rem] font-bold mb-1">{{ event.name }}</h1>
+      <p class="evl-sub mb-1">
+        {% if event.distance_km %}{{ event.distance_km }} km &middot; {% endif %}
+        {% if event.region %}{{ event.region }} &middot; {% endif %}
+        {% if event.date %}{{ event.date }} &middot; {% endif %}
+        Live
+      </p>
+    </div>
+    <button type="button" id="evl-share" class="evl-share-btn"
+            data-url="{{ url_for('live.event_live_map', event_id=event.id, _external=True) }}">🔗 Share</button>
+  </div>
+  <p class="evl-sub mb-4">
     Follow riders live on ride day — anyone sharing their location appears on the map
     below automatically.
   </p>
+
+  {% if signed_in %}
+    {% if my_ride %}
+    {# Full share surface — the rider has a ride on this event; let them pick how to share. #}
+    <details class="evl-setup"{% if not opted_in and not garmin_here %} open{% endif %}>
+      <summary>
+        Appear on this map — pick how you'll share
+        {% if garmin_here %}<span class="ts-linked">· ⌚ Garmin linked</span>{% endif %}
+        <span class="chev">›</span>
+      </summary>
+      <div class="evl-grid">
+
+        {# Option 1 — Garmin LiveTrack (works screen-off) #}
+        <section class="evl-card">
+          <div class="evl-ch"><span class="evl-num">1</span> ⌚ Garmin LiveTrack <span class="evl-tag">works screen-off</span></div>
+          <p class="evl-lead">Best for the actual ride — your watch or bike computer broadcasts
+            through the Garmin Connect app, so it keeps working with your phone locked.</p>
+          {% if garmin_here %}
+          <p class="evl-linked">● This ride is linked — you'll appear with the ⌚ marker. Started a new activity? Paste the new link below.</p>
+          {% endif %}
+          <div class="evl-callout">
+            ⚠️ <strong>Garmin makes a new link every ride.</strong> Each time you start an activity
+            it creates a fresh LiveTrack session and the old link stops working — paste a new one for <em>this</em> ride.
+          </div>
+          <ol class="evl-steps">
+            <li><strong>One-time:</strong> in <strong>Garmin Connect</strong>, go to <strong>More → LiveTrack</strong>,
+              turn it on, and enable <strong>Auto Start</strong>.
+              <span class="sub">Sometimes under <em>Safety &amp; Tracking</em>; menu names vary by app version.</span></li>
+            <li><strong>Start your ride</strong> on your Garmin so a LiveTrack session goes live.</li>
+            <li>In Garmin Connect, open the live session and <strong>copy the share link</strong>.
+              <span class="sub">It looks like <code>https://livetrack.garmin.com/session/…/token/…</code></span></li>
+            <li><strong>Paste it below and Save.</strong> You'll show up on this map after the next tracking poll.</li>
+          </ol>
+          <form class="evl-form" method="POST" action="{{ url_for('live.ride_garmin_link', ride_id=my_ride.id) }}">
+            <label for="garmin_session_url">Garmin LiveTrack link for this ride</label>
+            <input type="url" id="garmin_session_url" name="garmin_session_url"
+                   placeholder="https://livetrack.garmin.com/session/.../token/..."
+                   value="{{ garmin_url }}">
+            <div class="evl-actions">
+              <button type="submit" name="action" value="save" class="evl-save">Save link</button>
+              {% if garmin_here %}
+              <button type="submit" name="action" value="clear" class="evl-clear">Stop tracking this ride</button>
+              {% endif %}
+            </div>
+          </form>
+        </section>
+
+        {# Option 2 — phone beacon (screen-on) #}
+        <section class="evl-card">
+          <div class="evl-ch"><span class="evl-num">2</span> 📱 Share from this phone <span class="evl-tag">keep screen on</span></div>
+          <p class="evl-lead">No setup — good for a quick check or a short stretch. Your phone does the GPS,
+            so it only works while this page is open and awake.</p>
+          <ol class="evl-steps">
+            <li>Tap <strong>Share my location</strong> below and allow location access when asked.</li>
+            <li><strong>Keep this page open with your screen on.</strong> Phone browsers can't share in the
+              background — sharing pauses if the screen sleeps or you switch apps.
+              <span class="sub">Optional: turn on <em>Low power</em> for coarser GPS that updates every 60s.</span></li>
+            <li>Tap <strong>Stop sharing</strong> when you're done.</li>
+          </ol>
+          <div class="evl-actions">
+            <button id="evl-beacon" class="evl-beacon-btn start" data-ride="{{ my_ride.id }}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+              </svg>
+              <span id="evl-beacon-label">Share my location</span>
+            </button>
+            <label class="evl-lowpower"><input type="checkbox" id="evl-lowpower"> Low power</label>
+          </div>
+          <div id="evl-beacon-state" class="evl-beacon-state"></div>
+        </section>
+
+      </div>
+    </details>
+    {% else %}
+    {# The rider hasn't joined this event's live map yet — one-tap create+link. #}
+    <div class="evl-card" style="margin: 4px 0 16px;">
+      <div class="evl-ch"><span class="evl-num">＋</span> Appear on this map</div>
+      <p class="evl-lead">Riding this brevet? Join its live map, then share your location by
+        Garmin LiveTrack or from your phone.</p>
+      <form method="POST" action="{{ url_for('live.event_live_join', event_id=event.id) }}">
+        <button type="submit" class="evl-join">Join this ride's live map</button>
+      </form>
+    </div>
+    {% endif %}
+  {% else %}
+    <a class="evl-signin" href="{{ url_for('auth.login', next=url_for('live.event_live_map', event_id=event.id)) }}">
+      Sign in to appear on this map →
+    </a>
+  {% endif %}
 
   {% include '_radial_live.html' %}
 
   <p class="mt-4"><a class="back-link" href="{{ url_for('calendar.calendar') }}">← Back to calendar</a></p>
 </section>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// "🔗 Share" — copy this event's live URL (BrevetHub live rides are public, so there
+// is no invite code; the URL itself is the shareable link).
+(function () {
+  var btn = document.getElementById('evl-share');
+  if (!btn) { return; }
+  btn.addEventListener('click', function () {
+    var url = btn.getAttribute('data-url') || window.location.href;
+    var done = function () { var t = btn.textContent; btn.textContent = '✓ Link copied'; setTimeout(function () { btn.textContent = t; }, 1800); };
+    if (navigator.clipboard) { navigator.clipboard.writeText(url).then(done).catch(done); }
+    else { try { var i = document.createElement('input'); i.value = url; document.body.appendChild(i); i.select(); document.execCommand('copy'); document.body.removeChild(i); } catch (e) {} done(); }
+  });
+})();
+</script>
+{% if my_ride %}
+<script>
+// Phone-beacon sharing for THIS rider's ride on this event — streams this device's
+// location to the ride (opt-in). The map/table/profile come from the shared partial;
+// this only handles sharing. Posts to the same /api/live/sharing + /api/live/beacon
+// endpoints the per-ride member map uses, with this event-ride's id.
+var EVL_RIDE_ID = {{ my_ride.id | tojson }};
+(function () {
+  var shareBtn = document.getElementById('evl-beacon');
+  if (!shareBtn) { return; }
+  var SHARE_INTERVAL = 25000;
+  var sharing = false, watchId = null, wakeLock = null, lastSent = 0;
+  var label = document.getElementById('evl-beacon-label');
+  var state = document.getElementById('evl-beacon-state');
+  var lowPowerEl = document.getElementById('evl-lowpower');
+
+  function acquireWake() { try { if ('wakeLock' in navigator) { navigator.wakeLock.request('screen').then(function (w) { wakeLock = w; }).catch(function () {}); } } catch (e) {} }
+  function releaseWake() { if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; } }
+  document.addEventListener('visibilitychange', function () {
+    if (sharing && document.visibilityState === 'visible' && !wakeLock) { acquireWake(); }
+  });
+
+  function sendShare(pos) {
+    var t = Date.now();
+    if (t - lastSent < SHARE_INTERVAL) { return; }
+    lastSent = t;
+    fetch('/api/live/beacon', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+      body: JSON.stringify({ ride_id: EVL_RIDE_ID, lat: pos.coords.latitude, lng: pos.coords.longitude,
+                             accuracy: pos.coords.accuracy, speed: pos.coords.speed })
+    }).then(function (r) {
+      if (r.status === 403) { state.textContent = 'Tracking is off — enable it in settings.'; stopShare(); return null; }
+      if (!r.ok) { throw new Error('status ' + r.status); }
+      return r.json();
+    }).then(function (d) {
+      if (d) { state.textContent = 'Sharing · sent ' + new Date().toLocaleTimeString(); }
+    }).catch(function (e) { state.textContent = 'Could not send location (' + e.message + ').'; });
+  }
+  function onErr(err) { state.textContent = (err.code === 1) ? 'Location permission denied.' : 'Location error.'; }
+  function beginWatch(lowPower) {
+    sharing = true; lastSent = 0;
+    shareBtn.className = 'evl-beacon-btn stop';
+    if (label) { label.textContent = 'Stop sharing'; }
+    state.className = 'evl-beacon-state live'; state.textContent = 'Sharing your location…';
+    acquireWake();
+    watchId = navigator.geolocation.watchPosition(sendShare, onErr, {
+      enableHighAccuracy: !lowPower, maximumAge: lowPower ? 30000 : 10000, timeout: 20000 });
+  }
+  function startShare() {
+    if (!('geolocation' in navigator)) { state.textContent = 'Geolocation not supported.'; return; }
+    var lowPower = lowPowerEl && lowPowerEl.checked;
+    SHARE_INTERVAL = lowPower ? 60000 : 25000;
+    state.className = 'evl-beacon-state live'; state.textContent = 'Starting…';
+    fetch('/api/live/sharing', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin', body: JSON.stringify({ enabled: true })
+    }).then(function (r) {
+      if (!r.ok) { throw new Error('status ' + r.status); }
+      beginWatch(lowPower);
+    }).catch(function (e) {
+      state.className = 'evl-beacon-state'; state.textContent = 'Could not start (' + e.message + ').';
+    });
+  }
+  function stopShare() {
+    sharing = false;
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    releaseWake();
+    shareBtn.className = 'evl-beacon-btn start';
+    if (label) { label.textContent = 'Share my location'; }
+    state.className = 'evl-beacon-state';
+  }
+  shareBtn.addEventListener('click', function () { sharing ? stopShare() : startShare(); });
+  window.addEventListener('pagehide', function () { if (sharing) { releaseWake(); } });
+})();
+</script>
+{% endif %}
 {% endblock %}
