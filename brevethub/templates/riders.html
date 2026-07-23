@@ -1,0 +1,1041 @@
+{% extends "base.html" %}
+{% block title %}{{ season_label }} - Team Asha Randonneuring{% endblock %}
+
+{% block extra_head %}
+<style>
+/* ============================================================
+   Season Riders — redesigned matrix + card views
+   Drop-in replacement for the old wide horizontal-scroll table.
+   ============================================================ */
+
+:root {
+  --ta-primary: #1a365d;
+  --ta-primary-dark: #2a4a7f;
+  --ta-accent: #e53e3e;
+  --ta-text: #2d3748;
+  --ta-text-light: #718096;
+  --ta-border: #e2e8f0;
+  --ta-card-bg: #ffffff;
+  --ta-bg: #f7fafc;
+
+  /* Distance color tokens — soft fills + deep text + gradients */
+  --d200-soft: #c6f6d5; --d200-deep: #22543d; --d200-grad: linear-gradient(90deg,#48bb78,#68d391);
+  --d300-soft: #dbeafe; --d300-deep: #1d4ed8; --d300-grad: linear-gradient(90deg,#4299e1,#63b3ed);
+  --d400-soft: #feebc8; --d400-deep: #7b341e; --d400-grad: linear-gradient(90deg,#ed8936,#f6ad55);
+  --d600-soft: #fed7d7; --d600-deep: #742a2a; --d600-grad: linear-gradient(90deg,#e53e3e,#fc8181);
+  --d1000-soft:#e9d8fd; --d1000-deep:#553c9a; --d1000-grad:linear-gradient(90deg,#805ad5,#b794f4);
+  --d1200-soft:#fbb6ce; --d1200-deep:#702459; --d1200-grad:linear-gradient(90deg,#d53f8c,#f687b3);
+}
+
+/* ===== Toolbar ===== */
+.season-toolbar {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  padding: 14px 16px; margin: 16px 0 14px;
+  background: var(--ta-card-bg);
+  border: 1px solid var(--ta-border);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+.season-toolbar .label {
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--ta-text-light); margin-right: 4px;
+}
+.view-pills {
+  display: inline-flex; background: var(--ta-bg);
+  border-radius: 10px; padding: 3px; gap: 2px;
+}
+.view-pill {
+  border: 0; background: transparent; padding: 7px 14px;
+  font-size: 0.82rem; font-weight: 600; color: var(--ta-text-light);
+  border-radius: 7px; cursor: pointer; transition: all 0.15s;
+  font-family: inherit;
+}
+.view-pill:hover { color: var(--ta-text); }
+.view-pill.active {
+  background: var(--ta-primary); color: #fff;
+  box-shadow: 0 1px 3px rgba(26,54,93,0.2);
+}
+.season-search {
+  flex: 1; min-width: 180px; max-width: 280px;
+  padding: 8px 12px; border: 1px solid var(--ta-border);
+  border-radius: 8px; font-size: 0.88rem; font-family: inherit;
+  background: var(--ta-bg);
+}
+.season-search:focus { outline: 2px solid var(--ta-primary); outline-offset: -1px; background: #fff; }
+.toolbar-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 10px; background: var(--ta-bg);
+  border: 1px solid var(--ta-border); border-radius: 7px;
+  font-size: 0.78rem; font-weight: 600; color: var(--ta-text-light);
+  cursor: pointer; user-select: none;
+}
+.toolbar-toggle input { margin: 0; cursor: pointer; }
+.toolbar-toggle:hover { color: var(--ta-text); }
+
+/* ===== Status row (count + scroll hint) ===== */
+.matrix-status {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 4px 8px; font-size: 0.85rem; color: var(--ta-text-light);
+}
+.matrix-status strong { color: var(--ta-text); font-variant-numeric: tabular-nums; }
+
+/* ===== MATRIX ===== */
+.matrix-wrap {
+  background: #fff; border: 1px solid var(--ta-border);
+  border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  overflow-x: auto; overflow-y: visible; position: relative;
+}
+.matrix-grid {
+  display: grid; min-width: max-content;
+  /* Column widths are CSS variables so the media queries below can shrink the
+     matrix on small screens. The inline grid-template-columns and the pinned
+     totals' `right` offsets both reference these vars. Desktop values match the
+     previous hard-coded px, so desktop layout is unchanged. */
+  --mx-rider-w: 220px;
+  --mx-cell-w: 64px;
+  --mx-rides-w: 52px;
+  --mx-km-w: 64px;
+  --mx-gap: 8px;
+}
+
+/* Header cells */
+.mx-h {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--ta-primary); color: #fff;
+  height: 124px; display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-end;
+  padding: 8px 2px 6px;
+  border-right: 1px solid rgba(255,255,255,0.22);
+  cursor: help; transition: background 0.15s;
+  overflow: hidden;
+}
+.mx-h.col-hover { background: var(--ta-primary-dark); }
+.mx-h-rider {
+  position: sticky; top: 0; left: 0; z-index: 30;
+  background: var(--ta-primary); color: #fff;
+  height: 124px; padding: 0 14px;
+  display: flex; align-items: flex-end; padding-bottom: 12px;
+  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-right: 2px solid var(--ta-primary-dark);
+  box-shadow: 2px 0 4px rgba(0,0,0,0.04);
+}
+.mx-h-totals {
+  position: sticky; top: 0; z-index: 22;
+  background: var(--ta-primary); color: #fff;
+  height: 124px; display: flex; align-items: flex-end;
+  justify-content: center; padding-bottom: 12px;
+  font-size: 0.74rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mx-h-totals.rides {
+  border-left: 2px solid var(--ta-primary-dark);
+  box-shadow: -2px 0 4px rgba(0,0,0,0.04);
+}
+
+/* Sortable header affordance — applies to .mx-h-rider and .mx-h-totals */
+.mx-sortable { cursor: pointer; user-select: none; }
+.mx-sortable:hover { background: var(--ta-primary-dark); }
+.mx-sortable:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }
+.mx-sort-ind {
+  display: inline-block; margin-left: 4px;
+  font-size: 0.7em; opacity: 0.45; transition: opacity 0.1s;
+}
+.mx-sortable.sort-active .mx-sort-ind { opacity: 1; }
+.mx-sort-ind::before { content: '\25B2\FE0E'; }
+.mx-sortable.sort-desc .mx-sort-ind::before { content: '\25BC\FE0E'; }
+.mx-h-accent {
+  position: absolute; top: 0; left: 0; right: 0; height: 3px;
+}
+.mx-h-name {
+  writing-mode: vertical-rl; transform: rotate(180deg);
+  font-size: 0.78rem; font-weight: 600; color: #fff;
+  text-decoration: none; line-height: 1.1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-height: 72px; margin-bottom: 4px;
+}
+.mx-h-name:hover { text-decoration: underline; }
+.mx-h-date {
+  font-size: 0.66rem; color: rgba(255,255,255,0.7);
+  font-weight: 600; letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums; margin-top: 4px;
+  white-space: nowrap;
+}
+.mx-h-chip {
+  margin-top: 4px; color: #fff;
+  padding: 2px 7px; border-radius: 8px;
+  font-size: 0.65rem; font-weight: 800; letter-spacing: 0.03em;
+}
+.mx-h-gap {
+  position: sticky; top: 0; z-index: 19;
+  background: var(--ta-bg); height: 124px;
+  border-bottom: 1px solid var(--ta-border);
+}
+
+/* Rider name cell (pinned left) */
+.mx-rider {
+  position: sticky; left: 0; z-index: 10;
+  height: 48px; display: flex; align-items: center;
+  gap: 10px; padding: 0 14px;
+  border-bottom: 1px solid #edf0f4;
+  border-right: 2px solid var(--ta-border);
+  box-shadow: 2px 0 4px rgba(0,0,0,0.03);
+  transition: background 0.1s;
+  min-width: 0;
+}
+.mx-rider .avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 0.72rem; flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+.mx-rider a {
+  font-size: 0.92rem; font-weight: 600; color: var(--ta-primary);
+  text-decoration: none; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
+}
+.mx-rider a:hover { color: var(--ta-accent); text-decoration: underline; }
+.mx-rider .sr-star {
+  background: linear-gradient(135deg,#d69e2e,#f6ad55);
+  color: #fff; padding: 1px 6px; border-radius: 6px;
+  font-size: 0.66rem; font-weight: 800; letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+/* Result cells */
+.mx-cell {
+  height: 48px; display: flex; align-items: center; justify-content: center;
+  border-bottom: 1px solid #edf0f4;
+  border-right: 1px solid #f1f4f7;
+  transition: background 0.1s;
+}
+.mx-cell-gap {
+  background: var(--ta-bg) !important;
+  border-bottom: 1px solid #edf0f4;
+}
+.mx-pill {
+  padding: 4px 7px; border-radius: 6px;
+  font-size: 0.84rem; font-weight: 500;
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.mx-pill.t { font-size: 0.78rem; }
+.mx-pill.dnf { background: #fefcbf; color: #744210; padding: 3px 6px; }
+.mx-dot-signup {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #dbeafe; border: 2px solid #1d4ed8;
+}
+.mx-dot-empty {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: #cbd5e0;
+}
+.mx-pill.d200  { background: var(--d200-soft);  color: var(--d200-deep); }
+.mx-pill.d300  { background: var(--d300-soft);  color: var(--d300-deep); }
+.mx-pill.d400  { background: var(--d400-soft);  color: var(--d400-deep); }
+.mx-pill.d600  { background: var(--d600-soft);  color: var(--d600-deep); }
+.mx-pill.d1000 { background: var(--d1000-soft); color: var(--d1000-deep); }
+.mx-pill.d1200 { background: var(--d1200-soft); color: var(--d1200-deep); }
+
+.mx-h-chip.d200  { background: var(--d200-grad); }
+.mx-h-chip.d300  { background: var(--d300-grad); }
+.mx-h-chip.d400  { background: var(--d400-grad); }
+.mx-h-chip.d600  { background: var(--d600-grad); }
+.mx-h-chip.d1000 { background: var(--d1000-grad); }
+.mx-h-chip.d1200 { background: var(--d1200-grad); }
+
+.mx-h-accent.d200  { background: var(--d200-grad); }
+.mx-h-accent.d300  { background: var(--d300-grad); }
+.mx-h-accent.d400  { background: var(--d400-grad); }
+.mx-h-accent.d600  { background: var(--d600-grad); }
+.mx-h-accent.d1000 { background: var(--d1000-grad); }
+.mx-h-accent.d1200 { background: var(--d1200-grad); }
+
+/* Hover state — applied via JS */
+.mx-row.row-hover .mx-rider,
+.mx-row.row-hover .mx-totals { background: #edf4fc !important; }
+.mx-row.row-hover .mx-cell:not(.mx-cell-gap):not(.cell-hover) { background: #f0f5fb; }
+.mx-cell.cell-hover { background: #e6efff !important; }
+.mx-cell.col-hover { background: #f0f5fb; }
+
+/* Totals cells (pinned right) */
+.mx-totals {
+  position: sticky; z-index: 11;
+  height: 48px; display: flex; align-items: center; justify-content: center;
+  border-bottom: 1px solid #edf0f4;
+  font-size: 0.95rem; font-weight: 500; color: var(--ta-primary);
+  font-variant-numeric: tabular-nums;
+  transition: background 0.1s;
+}
+.mx-totals.rides {
+  border-left: 2px solid var(--ta-border);
+  box-shadow: -2px 0 4px rgba(0,0,0,0.03);
+}
+
+/* Empty state */
+.matrix-empty {
+  padding: 48px 24px; text-align: center;
+  color: var(--ta-text-light); background: #fff;
+  border: 1px dashed var(--ta-border); border-radius: 12px;
+}
+.matrix-empty strong { display: block; color: var(--ta-text); font-size: 1.05rem; margin-bottom: 6px; }
+
+/* ===== BY RIDER cards ===== */
+.rider-grid {
+  display: grid; gap: 14px; margin-top: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+.rider-card {
+  background: #fff; border: 1px solid var(--ta-border);
+  border-radius: 12px; padding: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  display: flex; flex-direction: column; gap: 12px;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.rider-card:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,0.08); }
+.rider-card.is-hidden { display: none; }
+.rider-card-head { display: flex; align-items: center; gap: 12px; }
+.rider-card-head .avatar {
+  width: 44px; height: 44px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 0.95rem; flex-shrink: 0;
+}
+.rider-card-name {
+  font-size: 1.02rem; font-weight: 700; color: var(--ta-primary);
+  text-decoration: none; line-height: 1.2;
+}
+.rider-card-name:hover { color: var(--ta-accent); text-decoration: underline; }
+.rider-card-rusa { font-size: 0.72rem; color: var(--ta-text-light); margin-top: 2px; }
+.rider-card-stats {
+  display: flex; gap: 12px; padding: 10px 0;
+  border-top: 1px solid var(--ta-border);
+  border-bottom: 1px solid var(--ta-border);
+}
+.rider-stat {
+  flex: 1; text-align: center;
+}
+.rider-stat .num {
+  font-size: 1.3rem; font-weight: 800; color: var(--ta-primary);
+  line-height: 1; font-variant-numeric: tabular-nums;
+}
+.rider-stat .lbl {
+  font-size: 0.62rem; font-weight: 700; color: var(--ta-text-light);
+  text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px;
+}
+.rider-card-rides {
+  display: flex; flex-wrap: wrap; gap: 5px;
+}
+.ride-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 6px;
+  font-size: 0.72rem; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ride-pill .km { font-size: 0.62rem; opacity: 0.65; font-weight: 600; }
+.ride-pill.dnf { background: #fefcbf; color: #744210; }
+.ride-pill.signup {
+  background: #fff; color: #1d4ed8; border: 1px dashed #1d4ed8;
+}
+
+/* ===== BY BREVET cards ===== */
+.brevet-grid {
+  display: grid; gap: 14px; margin-top: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+}
+.brevet-card {
+  background: #fff; border: 1px solid var(--ta-border);
+  border-radius: 12px; padding: 0; overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.brevet-card-head {
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 6px;
+  position: relative;
+}
+.brevet-card-head::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+}
+.brevet-card-head.d200::before  { background: var(--d200-grad); }
+.brevet-card-head.d300::before  { background: var(--d300-grad); }
+.brevet-card-head.d400::before  { background: var(--d400-grad); }
+.brevet-card-head.d600::before  { background: var(--d600-grad); }
+.brevet-card-head.d1000::before { background: var(--d1000-grad); }
+.brevet-card-head.d1200::before { background: var(--d1200-grad); }
+.brevet-card-title {
+  display: flex; align-items: center; gap: 8px;
+}
+.brevet-card-title h3 {
+  margin: 0; font-size: 1.0rem; font-weight: 700;
+  color: var(--ta-primary); line-height: 1.25;
+}
+.brevet-card-title h3 a { color: inherit; text-decoration: none; }
+.brevet-card-title h3 a:hover { color: var(--ta-accent); text-decoration: underline; }
+.brevet-card-meta {
+  font-size: 0.74rem; color: var(--ta-text-light);
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.brevet-card-meta .dot { color: #cbd5e0; }
+.dist-chip {
+  padding: 2px 8px; border-radius: 10px;
+  font-size: 0.66rem; font-weight: 800; color: #fff;
+  letter-spacing: 0.04em;
+}
+.dist-chip.d200  { background: var(--d200-grad); }
+.dist-chip.d300  { background: var(--d300-grad); }
+.dist-chip.d400  { background: var(--d400-grad); }
+.dist-chip.d600  { background: var(--d600-grad); }
+.dist-chip.d1000 { background: var(--d1000-grad); }
+.dist-chip.d1200 { background: var(--d1200-grad); }
+.brevet-card-body {
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--ta-border);
+  background: var(--ta-bg);
+}
+.brevet-section-label {
+  font-size: 0.62rem; font-weight: 700; color: var(--ta-text-light);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+.finisher-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 0;
+  font-size: 0.82rem;
+}
+.finisher-row + .finisher-row { border-top: 1px dashed var(--ta-border); }
+.finisher-row .avatar {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 0.55rem; flex-shrink: 0;
+}
+.finisher-row .name {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--ta-primary); text-decoration: none; font-weight: 600;
+}
+.finisher-row .name:hover { color: var(--ta-accent); text-decoration: underline; }
+.finisher-row .time {
+  font-variant-numeric: tabular-nums; font-size: 0.76rem;
+  color: var(--ta-text-light); font-weight: 600;
+}
+.finisher-row.dnf .name { color: #744210; }
+.finisher-row.dnf .badge-dnf-mini {
+  background: #fefcbf; color: #744210;
+  padding: 1px 6px; border-radius: 5px;
+  font-size: 0.62rem; font-weight: 700;
+}
+.cohort-icon-btn {
+  margin-left: auto; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 6px;
+  background: #93c5fd; color: #1d4ed8; text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+.cohort-icon-btn:hover {
+  background: var(--ta-primary); color: white;
+}
+.cohort-icon-btn svg { display: block; }
+
+/* Mobile tuning */
+@media (max-width: 768px) {
+  .season-toolbar { padding: 12px; gap: 8px; }
+  .season-search { max-width: none; flex-basis: 100%; order: 99; }
+  .matrix-wrap { max-height: calc(100vh - 60px); }
+  /* Shrink the matrix so the pinned rider + totals columns don't eat the whole
+     viewport, leaving room for the scrollable brevet cells. */
+  .matrix-grid { --mx-rider-w: 150px; --mx-cell-w: 50px; --mx-rides-w: 42px; --mx-km-w: 52px; --mx-gap: 6px; }
+  .mx-h, .mx-h-rider, .mx-h-totals, .mx-h-gap { height: 96px !important; }
+  .mx-h-rider { padding: 0 8px; font-size: 0.6rem; }
+  .mx-rider { padding: 0 8px; gap: 6px; }
+  .mx-rider a { font-size: 0.72rem; }
+}
+@media (max-width: 480px) {
+  /* Phone: tighten further. The pinned rider column drops to ~112px and both
+     totals shrink, so the frozen chrome is ~194px of the viewport instead of
+     336px — the brevet results finally get usable scroll space. */
+  .matrix-grid { --mx-rider-w: 112px; --mx-cell-w: 40px; --mx-rides-w: 36px; --mx-km-w: 46px; --mx-gap: 4px; }
+  .mx-h, .mx-h-rider, .mx-h-totals, .mx-h-gap { height: 84px !important; }
+  .mx-h-rider { padding: 0 6px; font-size: 0.56rem; }
+  .mx-h-name { font-size: 0.6rem; }
+  .mx-rider { padding: 0 6px; gap: 5px; }
+  .mx-rider a { font-size: 0.68rem; }
+  .mx-rider .avatar { width: 22px; height: 22px; font-size: 0.6rem; }
+  .mx-totals { font-size: 0.8rem; }
+  .mx-pill { padding: 3px 4px; font-size: 0.7rem; }
+  .mx-pill.t { font-size: 0.6rem; }
+}
+</style>
+{% endblock %}
+
+{# ============================================================
+   STATUS BADGE MACRO — same semantics as the original
+   ============================================================ #}
+{% macro badge(status, finish_time='', signed_up_at=None) %}
+{% set v = status|string|upper|trim %}
+{% if v in ('YES', '1', 'FINISHED') %}
+<span class="badge badge-yes">&#x2713;</span>
+{% if finish_time %}<br><span style="font-size:0.7rem;color:#666;">{{ finish_time }}</span>{% endif %}
+{% elif v == 'DNF' %}
+<span class="badge badge-dnf">DNF</span>
+{% elif v == 'DNS' %}
+{% if signed_up_at %}<span class="badge badge-dns">DNS</span>{% endif %}
+{% elif v == 'OTL' %}
+<span class="badge badge-otl">OTL</span>
+{% elif v in ('GOING', 'SIGNED_UP') %}
+<span class="badge badge-signup">&#x2192;</span>
+{% elif v == 'INTERESTED' %}
+<span class="badge badge-interested">?</span>
+{% elif v == 'MAYBE' %}
+<span class="badge badge-maybe">Maybe</span>
+{% elif v not in ('NO', '0', '', 'NAN', 'NONE') %}
+<span class="badge">{{ status }}</span>
+{% endif %}
+{% endmacro %}
+
+{# Helper: bucket distance into one of the known classes for color coding #}
+{% macro dist_class(km) -%}
+{%- if km is none -%}d200
+{%- elif km <= 220 -%}d200
+{%- elif km <= 320 -%}d300
+{%- elif km <= 450 -%}d400
+{%- elif km <= 700 -%}d600
+{%- elif km <= 1100 -%}d1000
+{%- else -%}d1200
+{%- endif -%}
+{%- endmacro %}
+
+{# Helper: HSL hue from a string (deterministic) — used for avatar tint via inline style #}
+
+{% block content %}
+
+{# ===== HERO ===== #}
+<div class="hero" style="padding:40px 20px;">
+  <h1>{{ season_label }}</h1>
+  <p>Season participation</p>
+</div>
+
+{# ===== STATS ROW ===== #}
+<div class="stats-row is-compact">
+  <div class="stat-card"><div class="number stat-number" data-target="{{ stats.active_riders }}">0</div><div class="label">Active Riders</div></div>
+  <div class="stat-card"><div class="number stat-number" data-target="{{ stats.total_rides }}">0</div><div class="label">Brevets Completed</div></div>
+  <div class="stat-card"><div class="number stat-number" data-target="{{ stats.total_kms }}">0</div><div class="label">Total Kilometers</div></div>
+  {% if stats.sr_rider_count > 0 %}
+  <div class="stat-card"><div class="number stat-number" data-target="{{ stats.sr_rider_count }}">0</div><div class="label">Super Randonneurs</div></div>
+  {% endif %}
+  {% if pbp_finishers %}
+  <div class="stat-card"><div class="number stat-number" data-target="{{ pbp_finishers|length }}" style="font-size:1.6rem;"><span class="pbp-badge" style="font-size:1rem;">PBP 2023</span></div><div class="label">{{ pbp_finishers|length }} Finishers</div></div>
+  {% endif %}
+  {% if is_current and upcoming_count > 0 %}
+  <a href="{{ url_for('riders.upcoming_brevets', season_name=season.name) }}" class="stat-card" style="text-decoration:none;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;">
+    <div class="number stat-number" data-target="{{ upcoming_count }}">0</div><div class="label">Upcoming Brevets &rarr;</div>
+  </a>
+  {% endif %}
+</div>
+
+{# ===== PBP FINISHERS (unchanged from original) ===== #}
+{% if pbp_finishers %}
+<div class="container section" style="padding-top:20px;padding-bottom:10px;">
+  <h2>Paris-Brest-Paris 2023 Finishers</h2>
+  <p style="margin-bottom:20px;color:var(--text-light);">{{ pbp_finishers|length }} Team Asha riders completed the legendary 1,200 km Paris-Brest-Paris randonn&eacute;e in August 2023.</p>
+  <div class="pbp-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    {% for f in pbp_finishers %}
+    <a href="{{ url_for('riders.rider_profile', rusa_id=f.rusa_id) }}" class="card flex items-center gap-3 p-4" style="text-decoration:none;color:inherit;transition:transform 0.15s,box-shadow 0.15s;border-left:4px solid #805ad5;">
+      {% if f.photo_filename %}
+      <img src="{{ url_for('static', filename='riders/' + f.photo_filename) }}" alt="{{ f.first_name }}" class="w-12 h-12 rounded-full object-cover flex-shrink-0">
+      {% else %}
+      <div class="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0" style="background:linear-gradient(135deg,#805ad5,#b794f4);">{{ f.first_name[0] }}</div>
+      {% endif %}
+      <div class="flex-1 min-w-0">
+        <div class="font-bold break-words" style="color:var(--primary);">{{ f.first_name }} {{ f.last_name }}</div>
+        <div class="text-sm" style="color:var(--text-light);">{{ f.finish_time }}h</div>
+      </div>
+      <span class="pbp-badge">PBP</span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ===== MAIN PARTICIPATION SECTION ===== #}
+<div class="container section">
+  <h2>{% if is_current %}Rider Participation{% else %}Ride Details{% endif %}</h2>
+
+  {# ===== TOOLBAR ===== #}
+  <div class="season-toolbar" role="toolbar" aria-label="Season views">
+    <span class="label">View</span>
+    <div class="view-pills">
+      <button type="button" class="view-pill active" data-view="matrix">Matrix</button>
+      <button type="button" class="view-pill" data-view="riders">By Rider</button>
+      <button type="button" class="view-pill" data-view="brevets">By Brevet</button>
+    </div>
+    <input type="search" class="season-search" placeholder="Search riders…" aria-label="Search riders">
+    <label class="toolbar-toggle" title="Show finish times in matrix"><input type="checkbox" id="times-toggle" checked> Times</label>
+  </div>
+
+  {# ===== MATRIX VIEW ===== #}
+  <section data-view-panel="matrix">
+    <div class="matrix-status">
+      <span><strong>{{ riders|length }}</strong> riders &times; <strong>{{ past_rides|length }}</strong> brevets</span>
+    </div>
+
+    {% if riders|length == 0 or past_rides|length == 0 %}
+    <div class="matrix-empty">
+      <strong>No participation data to display</strong>
+      {% if riders|length == 0 %}
+      No riders have participation records for this season yet.
+      {% else %}
+      Riders are recorded for this season, but no brevets show finishers or OTL results yet.
+      {% endif %}
+    </div>
+    {% else %}
+
+    {% set rider_col_w = 220 %}
+    {% set totals_w = 52 %}
+    {% set km_w = 64 %}
+    {% set cell_w = 64 %}
+
+    {# Compute groups by adjacent equal distance_km (preserve date order from server) #}
+    {% set ns = namespace(prev=-1, groups=[]) %}
+    {% for ride in past_rides %}
+      {% if ride.distance_km == ns.prev %}
+        {% set _ = ns.groups[-1].rides.append(ride) %}
+      {% else %}
+        {% set _ = ns.groups.append({'km': ride.distance_km, 'rides': [ride]}) %}
+        {% set ns.prev = ride.distance_km %}
+      {% endif %}
+    {% endfor %}
+
+    {# Build CSS grid template-columns: rider | (group cells, gap)+ | rides | km #}
+    {% set col_template = [] %}
+    {% set _ = col_template.append('var(--mx-rider-w)') %}
+    {% for g in ns.groups %}
+      {% if not loop.first %}{% set _ = col_template.append('var(--mx-gap)') %}{% endif %}
+      {% set _ = col_template.append('repeat(' + g.rides|length|string + ', var(--mx-cell-w))') %}
+    {% endfor %}
+    {% set _ = col_template.append('var(--mx-rides-w)') %}
+    {% set _ = col_template.append('var(--mx-km-w)') %}
+
+    <div class="matrix-wrap" id="matrix-scroll">
+      <div class="matrix-grid" id="matrix-grid"
+           style="grid-template-columns: {{ col_template|join(' ') }};"
+           data-cell-w="{{ cell_w }}" data-rider-col-w="{{ rider_col_w }}"
+           data-totals-w="{{ totals_w }}" data-km-w="{{ km_w }}">
+
+        {# ---- Header row ---- #}
+        <div class="mx-h-rider mx-sortable" data-sort-key="name" tabindex="0" role="button" aria-label="Sort by rider name">Rider <span class="mx-sort-ind"></span></div>
+        {% set ride_idx = namespace(i=0) %}
+        {% for g in ns.groups %}
+          {% if not loop.first %}<div class="mx-h-gap"></div>{% endif %}
+          {% set dc = dist_class(g.km) %}
+          {% for ride in g.rides %}
+          <div class="mx-h" data-col="{{ ride_idx.i }}"
+               title="{{ ride.name }} — {{ ride.date }}{% if ride.elevation_ft %} · {{ '{:,}'.format(ride.elevation_ft) }} ft{% endif %}">
+            <div class="mx-h-accent {{ dc }}"></div>
+            {% if ride.plan_slug %}
+            <a class="mx-h-name" href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}">{{ ride.name }}</a>
+            {% elif ride.rwgps_url %}
+            <a class="mx-h-name" href="{{ ride.rwgps_url }}" target="_blank" rel="noopener">{{ ride.name }}</a>
+            {% else %}
+            <span class="mx-h-name">{{ ride.name }}</span>
+            {% endif %}
+            <div class="mx-h-date">{{ ride.date.strftime('%m-%d-%y') if ride.date.strftime is defined else ride.date }}</div>
+            <span class="mx-h-chip {{ dc }}">{{ g.km }}K</span>
+          </div>
+          {% set ride_idx.i = ride_idx.i + 1 %}
+          {% endfor %}
+        {% endfor %}
+        <div class="mx-h-totals rides mx-sortable" data-sort-key="rides" tabindex="0" role="button" aria-label="Sort by rides" style="right: var(--mx-km-w);">Rides <span class="mx-sort-ind"></span></div>
+        <div class="mx-h-totals mx-sortable" data-sort-key="kms" tabindex="0" role="button" aria-label="Sort by kilometers" style="right:0;">KM <span class="mx-sort-ind"></span></div>
+
+        {# ---- Data rows ---- #}
+        {% for rd in riders %}
+        {% set row_bg = '#fafbfc' if loop.index0 % 2 else '#fff' %}
+        <div class="mx-row" data-row="{{ loop.index0 }}"
+             data-name="{{ rd.rider.first_name|lower }} {{ rd.rider.last_name|lower }} {{ rd.rider.rusa_id }}"
+             data-sort-name="{{ rd.rider.first_name|lower }} {{ rd.rider.last_name|lower }}"
+             data-sort-rides="{{ rd.rides }}" data-sort-kms="{{ rd.kms }}"
+             style="display:contents;">
+          <div class="mx-rider" style="background:{{ row_bg }};">
+            {# avatar tint hash #}
+            {% set hue = (rd.rider.first_name + rd.rider.last_name)|hash if false else range(0, 360)|random %}
+            {# Jinja can't hash easily — fall back to RUSA id mod 360 #}
+            {% set hue = (rd.rider.rusa_id|int) % 360 %}
+            <div class="avatar" style="background:hsl({{ hue }},45%,88%);color:hsl({{ hue }},50%,28%);">{{ rd.rider.first_name[0] }}{{ rd.rider.last_name[0] }}</div>
+            <a href="{{ url_for('riders.rider_profile', rusa_id=rd.rider.rusa_id) }}">{{ rd.rider.first_name }} {{ rd.rider.last_name }}</a>
+            {% if rd.sr_count > 0 %}<span class="sr-star" title="Super Randonneur{% if rd.sr_count > 1 %} &times; {{ rd.sr_count }}{% endif %}">{% if rd.sr_count > 1 %}SR&times;{{ rd.sr_count }}{% else %}SR{% endif %}</span>{% endif %}
+          </div>
+
+          {% set ride_idx2 = namespace(i=0) %}
+          {% for g in ns.groups %}
+            {% if not loop.first %}<div class="mx-cell mx-cell-gap"></div>{% endif %}
+            {% set dc = dist_class(g.km) %}
+            {% for ride in g.rides %}
+              {% set p = rd.participation.get(ride.id, {}) %}
+              {% set status = (p.get('status') or '')|upper %}
+              <div class="mx-cell" data-col="{{ ride_idx2.i }}" style="background:{{ row_bg }};">
+                {% if status == 'FINISHED' %}
+                  <span class="mx-pill {{ dc }}{% if p.get('finish_time') %} t{% endif %}"
+                        title="{{ rd.rider.first_name }} {{ rd.rider.last_name }} — {{ ride.name }}{% if p.get('finish_time') %} · {{ p.get('finish_time') }}{% endif %}">
+                    <span class="mx-pill-time">{% if p.get('finish_time') %}{{ p.get('finish_time') }}{% else %}&#10003;{% endif %}</span>
+                  </span>
+                {% elif status == 'DNF' %}
+                  <span class="mx-pill dnf">DNF</span>
+                {% elif status == 'OTL' %}
+                  <span class="mx-pill dnf" title="Off Time Limit">OTL</span>
+                {% elif status in ('GOING', 'SIGNED_UP') %}
+                  <span class="mx-dot-signup" title="Signed up"></span>
+                {% else %}
+                  <span class="mx-dot-empty"></span>
+                {% endif %}
+              </div>
+              {% set ride_idx2.i = ride_idx2.i + 1 %}
+            {% endfor %}
+          {% endfor %}
+
+          <div class="mx-totals rides" style="background:{{ row_bg }}; right: var(--mx-km-w);">{{ rd.rides }}</div>
+          <div class="mx-totals" style="background:{{ row_bg }}; right: 0;">{{ rd.kms|commafy }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  {# ===== BY RIDER VIEW ===== #}
+  <section data-view-panel="riders" hidden>
+    <div class="rider-grid">
+      {% for rd in riders %}
+      {% set hue = (rd.rider.rusa_id|int) % 360 %}
+      <article class="rider-card" data-name="{{ rd.rider.first_name|lower }} {{ rd.rider.last_name|lower }} {{ rd.rider.rusa_id }}">
+        <header class="rider-card-head">
+          <div class="avatar" style="background:hsl({{ hue }},45%,88%);color:hsl({{ hue }},50%,28%);">{{ rd.rider.first_name[0] }}{{ rd.rider.last_name[0] }}</div>
+          <div style="flex:1;min-width:0;">
+            <a href="{{ url_for('riders.rider_profile', rusa_id=rd.rider.rusa_id) }}" class="rider-card-name">{{ rd.rider.first_name }} {{ rd.rider.last_name }}</a>
+            <div class="rider-card-rusa">RUSA #{{ rd.rider.rusa_id }}</div>
+          </div>
+          {% if rd.sr_count > 0 %}<span class="sr-badge" title="Super Randonneur">{% if rd.sr_count > 1 %}SR&times;{{ rd.sr_count }}{% else %}SR{% endif %}</span>{% endif %}
+        </header>
+
+        <div class="rider-card-stats">
+          <div class="rider-stat"><div class="num">{{ rd.rides }}</div><div class="lbl">Rides</div></div>
+          <div class="rider-stat"><div class="num">{{ rd.kms|commafy }}</div><div class="lbl">Kilometers</div></div>
+        </div>
+
+        <div class="rider-card-rides">
+          {% for ride in past_rides %}
+            {% set p = rd.participation.get(ride.id, {}) %}
+            {% set status = (p.get('status') or '')|upper %}
+            {% set dc = dist_class(ride.distance_km) %}
+            {% if status == 'FINISHED' %}
+              <span class="ride-pill" style="background:var(--{{ dc }}-soft);color:var(--{{ dc }}-deep);" title="{{ ride.name }} — {{ ride.date }}">
+                <span class="km">{{ ride.distance_km }}K</span>
+                {% if p.get('finish_time') %}{{ p.get('finish_time') }}{% else %}&#10003;{% endif %}
+              </span>
+            {% elif status == 'DNF' %}
+              <span class="ride-pill dnf" title="{{ ride.name }} — DNF"><span class="km">{{ ride.distance_km }}K</span> DNF</span>
+            {% elif status == 'OTL' %}
+              <span class="ride-pill dnf" title="{{ ride.name }} — Off Time Limit"><span class="km">{{ ride.distance_km }}K</span> OTL</span>
+            {% elif status in ('GOING', 'SIGNED_UP') %}
+              <span class="ride-pill signup" title="{{ ride.name }} — Signed up"><span class="km">{{ ride.distance_km }}K</span> &rarr;</span>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# ===== BY BREVET VIEW ===== #}
+  <section data-view-panel="brevets" hidden>
+    <div class="brevet-grid">
+      {% for ride in past_rides %}
+        {% set dc = dist_class(ride.distance_km) %}
+        {# Collect finishers + DNFs for this ride #}
+        {% set finishers = [] %}
+        {% set dnfs = [] %}
+        {% for rd in riders %}
+          {% set p = rd.participation.get(ride.id, {}) %}
+          {% set status = (p.get('status') or '')|upper %}
+          {% if status == 'FINISHED' %}
+            {% set _ = finishers.append({'rd': rd, 'time': p.get('finish_time')}) %}
+          {% elif status in ('DNF', 'OTL') %}
+            {% set _ = dnfs.append({'rd': rd, 'status': status}) %}
+          {% endif %}
+        {% endfor %}
+        {# Sort finishers by time string (HH:MM); riders without a recorded time go last #}
+        {% set finishers_sorted = (finishers|selectattr('time')|sort(attribute='time')|list) + (finishers|rejectattr('time')|list) %}
+
+        <article class="brevet-card">
+          <header class="brevet-card-head {{ dc }}">
+            <div class="brevet-card-title">
+              <span class="dist-chip {{ dc }}">{{ ride.distance_km }}K</span>
+              <h3>
+                {% if ride.plan_slug %}
+                  <a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}">{{ ride.name }}</a>
+                {% elif ride.rwgps_url %}
+                  <a href="{{ ride.rwgps_url }}" target="_blank" rel="noopener">{{ ride.name }}</a>
+                {% else %}{{ ride.name }}{% endif %}
+              </h3>
+              {% if finishers|length >= 2 %}
+              <a href="{{ url_for('riders.ride_cohort_comparison', ride_id=ride.id, back=season.name) }}"
+                 class="cohort-icon-btn"
+                 title="Compare cohort — {{ finishers|length }} finishers">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="9" cy="7" r="3"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+                  <circle cx="17" cy="7" r="3"/><path d="M21 21v-2a4 4 0 0 0-2-3.46"/>
+                </svg>
+              </a>
+              {% endif %}
+              {% if user_logged_in %}
+              <a href="{{ url_for('live.ride_live_map', ride_id=ride.id) }}"
+                 class="cohort-icon-btn"
+                 title="Live map — track riders on this ride">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+                </svg>
+              </a>
+              {% endif %}
+            </div>
+            <div class="brevet-card-meta">
+              <span>{{ ride.date }}</span>
+              {% if ride.elevation_ft %}<span class="dot">&middot;</span><span>{{ '{:,}'.format(ride.elevation_ft) }} ft</span>{% endif %}
+              {% if ride.ft_per_mile %}<span class="dot">&middot;</span><span>{{ ride.ft_per_mile }} ft/mi</span>{% endif %}
+              <span class="dot">&middot;</span><span><strong>{{ finishers|length }}</strong> finisher{% if finishers|length != 1 %}s{% endif %}</span>
+            </div>
+          </header>
+
+          <div class="brevet-card-body">
+            {% if finishers_sorted %}
+              <div class="brevet-section-label">Finishers ({{ finishers_sorted|length }})</div>
+              {% for f in finishers_sorted %}
+                {% set rd = f.rd %}
+                {% set hue = (rd.rider.rusa_id|int) % 360 %}
+                <div class="finisher-row">
+                  <div class="avatar" style="background:hsl({{ hue }},45%,88%);color:hsl({{ hue }},50%,28%);">{{ rd.rider.first_name[0] }}{{ rd.rider.last_name[0] }}</div>
+                  <a class="name" href="{{ url_for('riders.rider_profile', rusa_id=rd.rider.rusa_id) }}">{{ rd.rider.first_name }} {{ rd.rider.last_name }}</a>
+                  <span class="time">{% if f.time %}{{ f.time }}{% else %}&#10003;{% endif %}</span>
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="brevet-section-label" style="margin:0;">No finishers recorded yet.</div>
+            {% endif %}
+
+            {% if dnfs %}
+              <div class="brevet-section-label" style="margin-top:12px;">Did Not Finish ({{ dnfs|length }})</div>
+              {% for d in dnfs %}
+                {% set rd = d.rd %}
+                {% set hue = (rd.rider.rusa_id|int) % 360 %}
+                <div class="finisher-row dnf">
+                  <div class="avatar" style="background:hsl({{ hue }},45%,88%);color:hsl({{ hue }},50%,28%);">{{ rd.rider.first_name[0] }}{{ rd.rider.last_name[0] }}</div>
+                  <a class="name" href="{{ url_for('riders.rider_profile', rusa_id=rd.rider.rusa_id) }}">{{ rd.rider.first_name }} {{ rd.rider.last_name }}</a>
+                  <span class="badge-dnf-mini">{{ d.status }}</span>
+                </div>
+              {% endfor %}
+            {% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/* ============================================================
+   Animated stat counter (kept from original)
+   ============================================================ */
+function animateCounter(el, target, duration = 400) {
+  const inc = target / (duration / 16);
+  let cur = 0;
+  const tick = () => {
+    cur += inc;
+    if (cur < target) {
+      el.textContent = Math.floor(cur).toLocaleString();
+      requestAnimationFrame(tick);
+    } else {
+      el.textContent = target.toLocaleString();
+    }
+  };
+  requestAnimationFrame(tick);
+}
+const statObserver = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting && !e.target.classList.contains('animated')) {
+      e.target.classList.add('animated');
+      e.target.querySelectorAll('.stat-number').forEach(c => {
+        const t = parseInt(c.getAttribute('data-target'));
+        if (!isNaN(t)) animateCounter(c, t);
+      });
+      statObserver.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.3 });
+document.addEventListener('DOMContentLoaded', () => {
+  const sr = document.querySelector('.stats-row');
+  if (sr) statObserver.observe(sr);
+});
+</script>
+
+<script>
+/* ============================================================
+   View toggle, search, hover cross-hair
+   ============================================================ */
+(function () {
+  const pills = document.querySelectorAll('.view-pill');
+  const panels = {
+    matrix: document.querySelector('[data-view-panel="matrix"]'),
+    riders: document.querySelector('[data-view-panel="riders"]'),
+    brevets: document.querySelector('[data-view-panel="brevets"]'),
+  };
+  const searchInput = document.querySelector('.season-search');
+  const timesToggle = document.getElementById('times-toggle');
+  const grid = document.getElementById('matrix-grid');
+
+  // Restore last view. On phones, default first-time visitors to the
+  // mobile-friendly "By Rider" cards instead of the wide matrix (the matrix is
+  // still one tap away, and is itself responsive now). An explicit saved choice
+  // always wins, and we only persist a view the user actively picks so the
+  // mobile default stays adaptive if they later switch devices.
+  const stored = localStorage.getItem('ta_riders_view');
+  const isNarrow = window.matchMedia('(max-width: 480px)').matches;
+  setView(stored || (isNarrow ? 'riders' : 'matrix'));
+
+  function setView(name, persist) {
+    pills.forEach(p => p.classList.toggle('active', p.dataset.view === name));
+    Object.entries(panels).forEach(([k, el]) => {
+      if (!el) return;
+      el.hidden = (k !== name);
+    });
+    if (persist) localStorage.setItem('ta_riders_view', name);
+  }
+  pills.forEach(p => p.addEventListener('click', () => setView(p.dataset.view, true)));
+
+  /* ---- Search filter (riders + matrix rows) ---- */
+  function applyFilter(q) {
+    const norm = (q || '').toLowerCase().trim();
+    // Rider cards
+    document.querySelectorAll('.rider-card').forEach(card => {
+      const hay = card.dataset.name || '';
+      card.classList.toggle('is-hidden', !!norm && hay.indexOf(norm) === -1);
+    });
+    // Matrix rows (display:contents wrappers — toggle visibility on children)
+    document.querySelectorAll('.mx-row').forEach(row => {
+      const hay = row.dataset.name || '';
+      const hidden = !!norm && hay.indexOf(norm) === -1;
+      row.querySelectorAll('.mx-rider, .mx-cell, .mx-totals').forEach(el => {
+        el.style.display = hidden ? 'none' : '';
+      });
+    });
+  }
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => applyFilter(e.target.value));
+  }
+
+  /* ---- Matrix sort (Rider name, Rides, KM) ---- */
+  if (grid) {
+    const sortHeaders = grid.querySelectorAll('.mx-sortable');
+    let sortState = { key: 'name', dir: 'asc' };
+
+    function applySort() {
+      const rows = Array.from(grid.querySelectorAll('.mx-row'));
+      const dataKey = 'sort' + sortState.key.charAt(0).toUpperCase() + sortState.key.slice(1);
+      const isNumeric = sortState.key !== 'name';
+      rows.sort((a, b) => {
+        let av = a.dataset[dataKey] || '';
+        let bv = b.dataset[dataKey] || '';
+        if (isNumeric) { av = parseFloat(av) || 0; bv = parseFloat(bv) || 0; return sortState.dir === 'asc' ? av - bv : bv - av; }
+        if (av < bv) return sortState.dir === 'asc' ? -1 : 1;
+        if (av > bv) return sortState.dir === 'asc' ? 1 : -1;
+        return 0;
+      });
+      // Reattach in new order. Background stripe is row-index based, so we need
+      // to recompute it after sort.
+      rows.forEach((row, i) => {
+        grid.appendChild(row);
+        const bg = (i % 2) ? '#fafbfc' : '#fff';
+        row.querySelectorAll('.mx-rider, .mx-cell:not(.mx-cell-gap), .mx-totals').forEach(el => {
+          el.style.background = bg;
+        });
+      });
+      sortHeaders.forEach(h => {
+        const active = h.dataset.sortKey === sortState.key;
+        h.classList.toggle('sort-active', active);
+        h.classList.toggle('sort-desc', active && sortState.dir === 'desc');
+      });
+    }
+
+    sortHeaders.forEach(h => {
+      const handler = () => {
+        const k = h.dataset.sortKey;
+        if (sortState.key === k) {
+          sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortState.key = k;
+          sortState.dir = (k === 'name') ? 'asc' : 'desc';
+        }
+        applySort();
+      };
+      h.addEventListener('click', handler);
+      h.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); }
+      });
+    });
+
+    applySort();
+  }
+
+  /* ---- Times toggle (hide finish-time text in matrix) ---- */
+  function applyTimes() {
+    const show = timesToggle ? timesToggle.checked : true;
+    document.querySelectorAll('.mx-pill .mx-pill-time').forEach(el => {
+      const orig = el.getAttribute('data-orig') || el.textContent;
+      if (!el.getAttribute('data-orig')) el.setAttribute('data-orig', orig);
+      // If text is purely a finish time (contains digits + colon), suppress to ✓
+      if (!show && /\d/.test(orig) && orig.indexOf(':') !== -1) {
+        el.textContent = '\u2713';
+      } else {
+        el.textContent = orig;
+      }
+    });
+  }
+  if (timesToggle) {
+    const saved = localStorage.getItem('ta_riders_times');
+    if (saved !== null) timesToggle.checked = (saved === '1');
+    applyTimes();
+    timesToggle.addEventListener('change', () => {
+      localStorage.setItem('ta_riders_times', timesToggle.checked ? '1' : '0');
+      applyTimes();
+    });
+  }
+
+  /* ---- Cross-hair hover for matrix ---- */
+  if (grid) {
+    grid.addEventListener('mouseover', onHover);
+    grid.addEventListener('mouseout', clearHover);
+
+    function onHover(e) {
+      const cell = e.target.closest('.mx-cell, .mx-rider, .mx-totals, .mx-h');
+      if (!cell) return;
+      const row = cell.closest('.mx-row');
+      const colAttr = cell.getAttribute('data-col');
+      clearHover();
+      if (row) row.classList.add('row-hover');
+      if (colAttr !== null && colAttr !== undefined) {
+        document.querySelectorAll('.mx-h[data-col="' + colAttr + '"]').forEach(h => h.classList.add('col-hover'));
+        document.querySelectorAll('.mx-cell[data-col="' + colAttr + '"]').forEach(c => c.classList.add('col-hover'));
+        if (cell.classList.contains('mx-cell')) cell.classList.add('cell-hover');
+      }
+    }
+    function clearHover() {
+      document.querySelectorAll('.row-hover').forEach(r => r.classList.remove('row-hover'));
+      document.querySelectorAll('.col-hover').forEach(r => r.classList.remove('col-hover'));
+      document.querySelectorAll('.cell-hover').forEach(r => r.classList.remove('cell-hover'));
+    }
+  }
+})();
+</script>
+
+{% endblock %}

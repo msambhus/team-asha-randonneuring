@@ -1,0 +1,1447 @@
+{% extends "base.html" %}
+{% block title %}Strava Analysis - {{ ride.name }} - Team Asha Randonneuring{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+/* Ride map */
+#rideMap { height: clamp(440px, 68vh, 720px); border-radius: 10px; z-index: 0; }
+.map-stop-popup textarea {
+    width: 100%; min-height: 60px; box-sizing: border-box; font-size: 0.8rem;
+    border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px; resize: vertical;
+}
+.map-stop-popup button {
+    margin-top: 6px; padding: 5px 12px; background: #fc4c02; color: #fff;
+    border: none; border-radius: 6px; font-size: 0.78rem; font-weight: 600; cursor: pointer;
+}
+.map-stop-popup .save-status { font-size: 0.72rem; color: #16a34a; margin-left: 8px; }
+/* Summary Card */
+.analysis-summary {
+    background: linear-gradient(135deg, #fff5f0, #fed7aa);
+    border: 2px solid #fc4c02;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 30px;
+}
+.analysis-summary .summary-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #c2410c;
+    margin-bottom: 16px;
+    text-align: center;
+}
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+    gap: 12px;
+}
+.summary-item {
+    text-align: center;
+    padding: 12px 8px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #fed7aa;
+}
+.summary-label {
+    font-size: 0.7rem;
+    color: #9a3412;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+.summary-row {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+.summary-plan {
+    font-size: 0.8rem;
+    color: #64748b;
+    font-weight: 500;
+}
+.summary-actual {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #c2410c;
+}
+.summary-delta {
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-top: 2px;
+}
+.delta-faster { color: #16a34a; }
+.delta-slower { color: #dc2626; }
+.delta-neutral { color: #64748b; }
+
+/* HR/Power Card */
+.hr-power-card {
+    background: white;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 30px;
+}
+.hr-power-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+}
+.hr-power-item {
+    text-align: center;
+    padding: 10px;
+}
+.hr-power-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+}
+.hr-value { color: #dc2626; }
+.power-value { color: #7c3aed; }
+.suffer-value { color: #ea580c; }
+.hr-power-label {
+    font-size: 0.7rem;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+}
+
+/* Comparison Table */
+.analysis-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.8rem;
+}
+.analysis-table thead th {
+    background: #1e293b;
+    color: white;
+    font-weight: 600;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding: 10px 8px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    white-space: nowrap;
+}
+.analysis-table thead th:first-child { border-radius: 8px 0 0 0; }
+.analysis-table thead th:last-child { border-radius: 0 8px 0 0; }
+
+.analysis-table tbody td {
+    padding: 8px;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: top;
+    font-variant-numeric: tabular-nums;
+}
+/* Alternating shade groups: a segment's main + analysis + note rows share one
+   shade so the note/coach block reads as part of that segment; adjacent
+   segments differ. Stamped in the Jinja loop (nth-child can't span the 3 rows). */
+.analysis-table tbody tr.seg-grp-a { background: #ffffff; }
+.analysis-table tbody tr.seg-grp-b { background: #f1f5f9; }
+.analysis-table tbody tr.seg-grp-a:hover,
+.analysis-table tbody tr.seg-grp-b:hover { background: #e2e8f0; }
+.analysis-table tbody tr:hover { background: #f8fafc; }
+
+.stop-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.stop-icon {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    flex-shrink: 0;
+}
+.stop-icon.start { background: #dcfce7; color: #166534; }
+.stop-icon.finish { background: #fee2e2; color: #991b1b; }
+.stop-icon.control { background: #dbeafe; color: #1e40af; }
+.stop-icon.rest { background: #fef3c7; color: #92400e; }
+.stop-icon.waypoint { background: #f1f5f9; color: #64748b; }
+.stop-icon.extra { background: #fef3c7; color: #92400e; border: 2px dashed #f59e0b; }
+
+.extra-badge {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: #f59e0b;
+    color: white;
+    margin-left: 4px;
+}
+
+/* Unplanned stops keep their amber identity as a left-border accent only, so it
+   doesn't fight the alternating group shade (which now owns the background). */
+.extra-row { border-left: 3px solid #f59e0b; }
+
+/* Per-row map affordance: click/tap opens the shared modal (all devices); on
+   fine-pointer devices a hover also reveals the lightweight preview popover. */
+.seg-map-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+    margin-top: 5px; padding: 5px 8px; min-height: 30px;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
+    color: #475569; font-size: 0.62rem; font-weight: 600; line-height: 1;
+    cursor: pointer;
+}
+.seg-map-btn:hover { background: #eef2f7; border-color: #cbd5e1; color: #0369a1; }
+.seg-map-btn:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
+.seg-map-btn svg { width: 12px; height: 12px; display: block; }
+
+/* Shared enlarged-map overlay (one element, populated on click). */
+.seg-map-overlay {
+    position: fixed; inset: 0; z-index: 1000; padding: 16px;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(15, 23, 42, 0.55);
+}
+.seg-map-overlay.open { display: flex; }
+.seg-map-card {
+    position: relative; background: #fff; border-radius: 12px; padding: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3); width: 360px; max-width: 92vw;
+}
+.seg-map-card h3 { margin: 0 0 8px; padding-right: 28px; font-size: 0.85rem; color: #1e293b; }
+.seg-map-close {
+    position: absolute; top: 8px; right: 12px; padding: 4px 8px;
+    background: none; border: none; font-size: 1.3rem; line-height: 1;
+    color: #64748b; cursor: pointer;
+}
+.seg-map-close:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
+.seg-map-leaflet {
+    width: 100%; height: 300px; background: #f8fafc;
+    border: 1px solid #eef2f7; border-radius: 8px;
+}
+
+/* Hover-reveal preview: a non-modal, button-anchored popover (fine-pointer
+   devices only — bound in JS via matchMedia). No full-screen backdrop, so it
+   never covers the triggering button and the cursor can move onto it without
+   the preview self-cancelling. Positioned with position:fixed so the scrollable
+   .table-wrap can't clip it. Touch devices never see it (tap opens the modal). */
+.seg-map-hover {
+    position: fixed; top: 0; left: 0; z-index: 900; display: none;
+    width: 320px; max-width: 92vw;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.28); padding: 12px;
+}
+.seg-map-hover.open { display: block; }
+.seg-map-hover h3 { margin: 0 0 8px; font-size: 0.8rem; color: #1e293b; }
+.seg-map-hover-pane { height: 220px; }
+
+.stop-name {
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
+    font-size: 0.7rem;
+    cursor: default;
+}
+.stop-name:hover {
+    overflow: visible;
+    white-space: normal;
+    max-width: none;
+    position: relative;
+    z-index: 5;
+    background: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    border-radius: 4px;
+    padding: 2px 6px;
+}
+
+/* Stacked cell values */
+.cell-stack { display: flex; flex-direction: column; gap: 1px; text-align: right; }
+.cell-stack .val-plan { font-size: 0.75rem; color: #2563eb; font-weight: 600; }
+.cell-stack .val-base { font-size: 0.7rem; color: #94a3b8; }
+.cell-stack .val-actual { font-size: 0.8rem; color: #c2410c; font-weight: 700; }
+
+/* Charts */
+.chart-container {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-bottom: 24px;
+}
+.chart-container h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 12px;
+    text-align: center;
+}
+
+/* Legend */
+.analysis-legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 12px;
+    background: #f8fafc;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    margin-bottom: 20px;
+}
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+}
+
+/* Error/No-match states */
+.analysis-message {
+    text-align: center;
+    padding: 40px 20px;
+    background: white;
+    border-radius: 12px;
+    border: 2px dashed #e2e8f0;
+    margin: 20px 0;
+}
+.analysis-message h3 {
+    color: var(--text-light);
+    margin-bottom: 10px;
+}
+.analysis-message p {
+    color: var(--text-light);
+    font-size: 0.9rem;
+}
+
+/* Responsive */
+@media (max-width: 968px) {
+    .summary-grid { grid-template-columns: repeat(2, 1fr); }
+    .hr-power-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+    .analysis-table { font-size: 0.7rem; }
+    .analysis-table thead th, .analysis-table tbody td { padding: 6px 3px; }
+    .summary-grid { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+    .hr-power-grid { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
+}
+</style>
+{% endblock %}
+
+{# Wind arrow macro #}
+{% macro wind_arrow(w, show_speed=true) %}
+{% if w %}
+{% set color = '#dc2626' if w.wind_type == 'headwind' else '#16a34a' if w.wind_type == 'tailwind' else '#1e293b' %}
+{% set mph = (w.wind_speed_mph if w.wind_speed_mph is defined else w.wind_speed_kmh * 0.621371)|round(0)|int %}
+{% set sz = 14 if mph < 8 else 18 if mph < 15 else 22 if mph < 25 else 26 %}
+{% set sw = 1.5 if mph < 8 else 2 if mph < 15 else 2.5 if mph < 25 else 3 %}
+{# Exact continuous arrow angle from headwind/crosswind components; 3-bucket fallback #}
+{% set rotation = w.wind_arrow_deg if w.wind_arrow_deg is defined else (180 if w.wind_type == 'headwind' else 0 if w.wind_type == 'tailwind' else 90) %}
+<span class="wind-arrow" style="display:inline-block;vertical-align:middle;" title="{{ mph }} mph {{ w.wind_type }}">
+<svg width="{{ sz }}" height="{{ sz }}" viewBox="0 0 24 24" fill="none" stroke="{{ color }}" stroke-width="{{ sw }}" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate({{ rotation }}deg)">
+<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+</svg>
+</span>
+{% if show_speed %}<span style="color:{{ color }};font-size:0.7rem;font-weight:600;">{{ mph }}</span>{% endif %}
+{% endif %}
+{% endmacro %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px 50px;">
+    <h1>Strava Ride Analysis</h1>
+    <p style="opacity:0.85;margin-top:8px;">
+        {{ ride.name|clean_name }} &mdash; {{ ride.date }}
+    </p>
+    {% if activity %}
+    <div style="margin-top:12px;">
+        <a href="{{ activity.strava_url }}" target="_blank" rel="noopener"
+           style="display:inline-flex; align-items:center; gap:6px; padding:8px 16px; background:#fc4c02; color:white; border-radius:8px; text-decoration:none; font-weight:600; font-size:0.85rem;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+            View on Strava
+        </a>
+        <a href="{{ url_for('riders.ride_cohort_comparison', ride_id=ride.id) }}"
+           style="display:inline-flex; align-items:center; gap:6px; margin-left:12px; padding:8px 16px; background:rgba(186,230,253,0.2); color:white; border:1px solid rgba(186,230,253,0.55); border-radius:8px; text-decoration:none; font-size:0.85rem; font-weight:600;">
+            &#x1F465; Compare with Cohort
+        </a>
+        {% if is_own_profile %}
+        <a href="{{ url_for('riders.my_strava_analysis') }}"
+           style="display:inline-flex; align-items:center; gap:4px; margin-left:12px; padding:8px 16px; background:rgba(255,255,255,0.2); color:white; border-radius:8px; text-decoration:none; font-size:0.85rem;">
+            &larr; Back to Brevet Analysis
+        </a>
+        <a href="{{ url_for('riders.brevet_comparison') }}"
+           style="display:inline-flex; align-items:center; gap:4px; margin-left:12px; padding:8px 16px; background:rgba(252,76,2,0.2); color:white; border:1px solid rgba(252,76,2,0.55); border-radius:8px; text-decoration:none; font-size:0.85rem; font-weight:600;">
+            Compare My Brevets
+        </a>
+        {% else %}
+        <a href="{{ url_for('riders.rider_profile', rusa_id=rider.rusa_id) }}"
+           style="display:inline-flex; align-items:center; gap:4px; margin-left:12px; padding:8px 16px; background:rgba(255,255,255,0.2); color:white; border-radius:8px; text-decoration:none; font-size:0.85rem;">
+            &larr; Back to Profile
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<div class="container section">
+
+{% if error %}
+{# ===== ERROR STATE ===== #}
+<div class="analysis-message">
+    <h3>Analysis Error</h3>
+    <p>{{ error }}</p>
+    <form method="post" action="{{ url_for('riders.retry_strava_analysis', rusa_id=rider.rusa_id, ride_id=ride.id) }}" style="margin-top:16px;">
+        <button type="submit" class="btn btn-primary">Retry Analysis</button>
+    </form>
+</div>
+
+{% elif not activity %}
+{# ===== NO MATCH STATE ===== #}
+<div class="analysis-message">
+    <h3>No Matching Strava Activity</h3>
+    <p>No Strava activity found matching this ride's date ({{ ride.date }}) and distance ({{ ride.distance_km }} km).</p>
+    <p style="margin-top:8px; font-size:0.8rem;">Make sure the activity is synced and is a "Ride" type activity.</p>
+</div>
+
+{% else %}
+{# ===== ANALYSIS VIEW ===== #}
+
+{# --- Summary Card --- #}
+<div class="analysis-summary">
+    <div class="summary-title">Plan vs Actual Summary</div>
+    <div class="summary-grid">
+        {# Distance #}
+        <div class="summary-item">
+            <div class="summary-label">Distance</div>
+            {% if comparison.summary.plan_distance_miles %}
+            <div class="summary-plan">Plan: {{ "%.1f"|format(comparison.summary.plan_distance_miles) }} mi</div>
+            {% endif %}
+            <div class="summary-actual">{{ "%.1f"|format(comparison.summary.actual_distance_miles) }} mi</div>
+            {% if comparison.summary.distance_delta_miles is not none %}
+            <div class="summary-delta {% if comparison.summary.distance_delta_miles > 0.5 %}delta-slower{% elif comparison.summary.distance_delta_miles < -0.5 %}delta-faster{% else %}delta-neutral{% endif %}">
+                &Delta; {{ "%+.1f"|format(comparison.summary.distance_delta_miles) }} mi
+            </div>
+            {% endif %}
+        </div>
+
+        {# Elevation #}
+        <div class="summary-item">
+            <div class="summary-label">Elevation</div>
+            {% if comparison.summary.plan_elevation_ft %}
+            <div class="summary-plan">Plan: {{ "{:,}".format(comparison.summary.plan_elevation_ft) }} ft</div>
+            {% endif %}
+            <div class="summary-actual">{{ "{:,}".format(comparison.summary.actual_elevation_ft) }} ft</div>
+            {% if comparison.summary.elevation_delta_ft is not none %}
+            <div class="summary-delta {% if comparison.summary.elevation_delta_ft > 100 %}delta-slower{% elif comparison.summary.elevation_delta_ft < -100 %}delta-faster{% else %}delta-neutral{% endif %}">
+                &Delta; {% if comparison.summary.elevation_delta_ft >= 0 %}+{% endif %}{{ "{:,}".format(comparison.summary.elevation_delta_ft) }} ft
+            </div>
+            {% endif %}
+        </div>
+
+        {# Total Time #}
+        <div class="summary-item">
+            <div class="summary-label">Total Time</div>
+            {% if comparison.summary.plan_total_time_min %}
+            <div class="summary-plan">{% if has_custom %}Your Plan{% else %}Plan{% endif %}: {{ (comparison.summary.plan_total_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.plan_total_time_min % 60) }}m</div>
+            {% endif %}
+            {% if comparison.summary.base_total_time_min %}
+            <div class="summary-plan" style="color:#94a3b8;">Base: {{ (comparison.summary.base_total_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.base_total_time_min % 60) }}m</div>
+            {% endif %}
+            <div class="summary-actual">{{ (comparison.summary.actual_elapsed_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.actual_elapsed_time_min % 60) }}m</div>
+            {% if comparison.summary.time_delta_min is not none %}
+            {% set td = comparison.summary.time_delta_min %}
+            <div class="summary-delta {% if td > 5 %}delta-slower{% elif td < -5 %}delta-faster{% else %}delta-neutral{% endif %}">
+                &Delta; {% if td >= 0 %}+{% endif %}{{ (td // 60)|int }}h{{ "%02d"|format((td|abs) % 60) }}m
+            </div>
+            {% endif %}
+        </div>
+
+        {# Moving Time #}
+        <div class="summary-item">
+            <div class="summary-label">Moving Time</div>
+            <div class="summary-actual">{{ (comparison.summary.actual_moving_time_min // 60)|int }}h{{ "%02d"|format(comparison.summary.actual_moving_time_min % 60) }}m</div>
+        </div>
+
+        {# Stopped Time #}
+        <div class="summary-item">
+            <div class="summary-label">Stopped Time</div>
+            {% if comparison.summary.plan_break_time_min %}
+            <div class="summary-plan">Plan: {{ comparison.summary.plan_break_time_min }} min</div>
+            {% endif %}
+            <div class="summary-actual">{{ comparison.summary.actual_stopped_time_min }} min</div>
+            {% if comparison.summary.break_delta_min is not none %}
+            <div class="summary-delta {% if comparison.summary.break_delta_min > 5 %}delta-slower{% elif comparison.summary.break_delta_min < -5 %}delta-faster{% else %}delta-neutral{% endif %}">
+                &Delta; {{ "%+d"|format(comparison.summary.break_delta_min) }} min
+            </div>
+            {% endif %}
+        </div>
+
+        {# Avg Speed #}
+        <div class="summary-item">
+            <div class="summary-label">Avg Speed</div>
+            {% if comparison.summary.plan_avg_speed_mph %}
+            <div class="summary-plan">Plan: {{ comparison.summary.plan_avg_speed_mph }} mph</div>
+            {% endif %}
+            <div class="summary-actual">{{ comparison.summary.actual_avg_speed_mph }} mph</div>
+            {% if comparison.summary.speed_delta_mph is not none %}
+            <div class="summary-delta {% if comparison.summary.speed_delta_mph > 0.5 %}delta-faster{% elif comparison.summary.speed_delta_mph < -0.5 %}delta-slower{% else %}delta-neutral{% endif %}">
+                &Delta; {{ "%+.1f"|format(comparison.summary.speed_delta_mph) }} mph
+            </div>
+            {% endif %}
+        </div>
+
+        {# Stops Found #}
+        <div class="summary-item">
+            <div class="summary-label">Stops Found</div>
+            <div class="summary-actual">{{ comparison.summary.stops_detected }}</div>
+            {% if comparison.summary.stops_planned %}
+            <div class="summary-plan">Planned: {{ comparison.summary.stops_planned }}</div>
+            {% endif %}
+        </div>
+
+        {# Extra Stops #}
+        {% if comparison.summary.stops_extra > 0 %}
+        <div class="summary-item" style="border-color:#f59e0b;">
+            <div class="summary-label" style="color:#92400e;">Extra Stops</div>
+            <div class="summary-actual" style="color:#d97706;">{{ comparison.summary.stops_extra }}</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{# --- HR/Power Card --- #}
+{% if comparison.hr_power %}
+<div class="hr-power-card">
+    <div style="font-size:1.1rem; font-weight:700; color:var(--text); margin-bottom:16px; text-align:center;">Performance Metrics</div>
+    <div class="hr-power-grid">
+        {% if comparison.hr_power.avg_hr %}
+        <div class="hr-power-item">
+            <div class="hr-power-value hr-value">{{ comparison.hr_power.avg_hr|round(0)|int }}</div>
+            <div class="hr-power-label">Avg HR (bpm)</div>
+        </div>
+        {% endif %}
+        {% if comparison.hr_power.max_hr %}
+        <div class="hr-power-item">
+            <div class="hr-power-value hr-value">{{ comparison.hr_power.max_hr|round(0)|int }}</div>
+            <div class="hr-power-label">Max HR (bpm)</div>
+        </div>
+        {% endif %}
+        {% if comparison.hr_power.avg_watts %}
+        <div class="hr-power-item">
+            <div class="hr-power-value power-value">{{ comparison.hr_power.avg_watts|round(0)|int }}</div>
+            <div class="hr-power-label">Avg Power (W)</div>
+        </div>
+        {% endif %}
+        {% if comparison.hr_power.weighted_avg_watts %}
+        <div class="hr-power-item">
+            <div class="hr-power-value power-value">{{ comparison.hr_power.weighted_avg_watts|round(0)|int }}</div>
+            <div class="hr-power-label">NP (W)</div>
+        </div>
+        {% endif %}
+        {% if comparison.hr_power.max_watts %}
+        <div class="hr-power-item">
+            <div class="hr-power-value power-value">{{ comparison.hr_power.max_watts|round(0)|int }}</div>
+            <div class="hr-power-label">Max Power (W)</div>
+        </div>
+        {% endif %}
+        {% if comparison.hr_power.kilojoules %}
+        <div class="hr-power-item">
+            <div class="hr-power-value power-value">{{ comparison.hr_power.kilojoules|round(0)|int }}</div>
+            <div class="hr-power-label">Energy (kJ)</div>
+        </div>
+        {% endif %}
+        {% if comparison.hr_power.suffer_score %}
+        <div class="hr-power-item">
+            <div class="hr-power-value suffer-value">{{ comparison.hr_power.suffer_score }}</div>
+            <div class="hr-power-label">Suffer Score</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{# --- Interactive Route Map --- #}
+{% if map_data and map_data.track %}
+<div class="chart-container" style="margin-bottom:24px;">
+    <h3>Route Map</h3>
+    <div id="rideMap"></div>
+    <div style="margin-top:8px;font-size:0.72rem;color:var(--text-light,#94a3b8);">
+        Track coloured by segment speed. Markers show detected stops.
+    </div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+    const mapData = {{ map_data|tojson }};
+    if (!mapData || !mapData.track || mapData.track.length < 2) return;
+
+    const map = L.map('rideMap', { scrollWheelZoom: false });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: '&copy; OpenStreetMap contributors',
+    }).addTo(map);
+
+    // Base track (neutral) — always drawn so the ride shows even without segments.
+    L.polyline(mapData.track, { color: '#94a3b8', weight: 3, opacity: 0.7 }).addTo(map);
+
+    // Fit to bounds.
+    if (mapData.bounds) {
+        map.fitBounds(mapData.bounds, { padding: [20, 20] });
+    } else {
+        map.fitBounds(L.polyline(mapData.track).getBounds(), { padding: [20, 20] });
+    }
+
+    function escapeHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s == null ? '' : s;
+        return d.innerHTML;
+    }
+
+    // Colour a segment by its average speed (mph) — slow=red, fast=green.
+    function speedColor(mph) {
+        if (mph == null) return '#64748b';
+        if (mph < 10) return '#dc2626';
+        if (mph < 13) return '#f59e0b';
+        if (mph < 16) return '#65a30d';
+        return '#16a34a';
+    }
+
+    (mapData.segments || []).forEach(function(seg) {
+        const line = L.polyline(seg.points, {
+            color: speedColor(seg.speed_mph), weight: 5, opacity: 0.9,
+        }).addTo(map);
+        const spd = seg.speed_mph != null ? seg.speed_mph + ' mph' : 'n/a';
+        // seg.location may carry scraped HTML entities — escape it (Leaflet
+        // tooltips render their content as HTML).
+        line.bindTooltip(escapeHtml(seg.location) + ': ' + spd, { sticky: true });
+    });
+
+    // Stop markers — informational only (notes live in the segment table +
+    // the overall note box below, not on the map).
+    (mapData.stops || []).forEach(function(stop) {
+        const marker = L.marker([stop.lat, stop.lng]).addTo(map);
+        const where = stop.location ? escapeHtml(stop.location) : (stop.distance_miles + ' mi');
+        const dur = stop.duration_min != null ? stop.duration_min + ' min stop' : '';
+        const html = '<div class="map-stop-popup" style="min-width:160px;">'
+            + '<div style="font-weight:700;">' + where + '</div>'
+            + '<div style="font-size:0.72rem;color:#64748b;">' + stop.distance_miles + ' mi &middot; ' + dur + '</div>'
+            + '</div>';
+        marker.bindPopup(html);
+    });
+})();
+</script>
+{% endif %}
+
+{# --- Chart --- #}
+{% if comparison.rows %}
+<div class="chart-container" style="margin-bottom:24px;">
+    <h3>Ride Timeline</h3>
+    <canvas id="rideChart" height="160"></canvas>
+</div>
+
+{# --- Comparison Table --- #}
+<div class="analysis-legend">
+    <span style="font-weight:600;color:var(--text);">Color key:</span>
+    <div class="legend-item"><div class="legend-color" style="background:#2563eb;"></div><span>{% if has_custom %}Your Plan{% else %}Plan{% endif %}</span></div>
+    {% if has_custom %}
+    <div class="legend-item"><div class="legend-color" style="background:#94a3b8;"></div><span>Base Plan</span></div>
+    {% endif %}
+    <div class="legend-item"><div class="legend-color" style="background:#c2410c;"></div><span>Actual</span></div>
+    <div class="legend-item"><div class="legend-color" style="background:#dcfce7;"></div><span>Ahead</span></div>
+    <div class="legend-item"><div class="legend-color" style="background:#fee2e2;"></div><span>Behind</span></div>
+</div>
+
+<div class="table-wrap" style="background:white;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+<table class="analysis-table">
+<thead>
+<tr>
+    <th style="text-align:left;max-width:120px;">Stop</th>
+    <th style="text-align:right;">Mi</th>
+    <th style="text-align:right;">Seg</th>
+    <th style="text-align:right;">Spd</th>
+    <th style="text-align:right;">Stop</th>
+    <th style="text-align:right;" title="Unplanned stopped time between stops, including at waypoints and controls (traffic lights, mechanicals, navigation, etc.)">Enroute Stops</th>
+    <th style="text-align:right;">Cumul</th>
+    <th style="text-align:right;">Clock</th>
+    <th style="text-align:right;">Bank</th>
+    {% if comparison.hr_power %}
+    <th style="text-align:right;">HR</th>
+    <th style="text-align:right;" title="Average power (normalized power shown below)">W</th>
+    <th style="text-align:right;" title="Average cadence (rpm)">Cad</th>
+    {% endif %}
+    <th style="text-align:right;" title="Elevation gain and average gradient for the segment">Climb</th>
+    <th style="text-align:right;">&Delta;</th>
+    {% if stop_wind %}<th style="text-align:center;">Actual Wind</th><th style="text-align:center;">Temp</th>{% endif %}
+</tr>
+</thead>
+<tbody>
+{% for row in comparison.rows %}
+{# Alternating group shade: main + analysis + note rows of a segment share _grp. #}
+{% set _grp = 'seg-grp-a' if loop.index0 % 2 == 0 else 'seg-grp-b' %}
+<tr class="{{ _grp }}{% if row.is_extra %} extra-row{% endif %}">
+    {# Stop name — truncated with hover #}
+    <td style="max-width:120px;">
+        <div class="stop-cell">
+            <div class="stop-icon {{ row.stop_type }}">
+                {% if row.stop_type == 'start' %}&#x1f6a9;{% elif row.stop_type == 'finish' %}&#x1f3c1;{% elif row.stop_type == 'control' %}&#x25c6;{% elif row.stop_type == 'rest' %}&#x2615;{% elif row.stop_type == 'extra' %}&#x26a0;{% else %}&#x2022;{% endif %}
+            </div>
+            <span class="stop-name" title="{{ row.location }}">{{ row.location }}</span>
+            {% if row.is_extra %}<span class="extra-badge">Extra</span>{% endif %}
+        </div>
+        {# Map affordance: opens the shared overlay with this leg (bold) + a pin.
+           Shown for any row that has a pin — planned segments and unplanned stops. #}
+        {% set _mapkey = ('%.1f'|format(row.distance_miles)) if row.is_extra else row.location %}
+        {% if map_data and map_data.thumb and ((row.is_extra and map_data.thumb.stop_pins.get(_mapkey)) or (not row.is_extra and map_data.thumb.pins.get(row.location))) %}
+        <button type="button" class="seg-map-btn" data-mapkey="{{ _mapkey }}"
+                data-isstop="{{ '1' if row.is_extra else '0' }}" data-label="{{ row.location }}"
+                aria-label="Show map for {{ row.location }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>
+            </svg>
+            map
+        </button>
+        {% endif %}
+    </td>
+
+    {# Distance #}
+    <td style="text-align:right;font-weight:600;color:#64748b;font-size:0.7rem;">{{ "%.1f"|format(row.distance_miles) }}</td>
+
+    {# Segment time — order: base / your plan / actual #}
+    <td>
+        <div class="cell-stack">
+            {% if has_custom and row.custom and row.custom.segment_time_min %}<span class="val-base">{{ row.custom.segment_time_min }}</span>{% endif %}
+            {% if row.plan_segment_min %}<span class="val-plan">{{ row.plan_segment_min }}</span>{% endif %}
+            {% if row.actual_segment_min is not none %}<span class="val-actual">{{ row.actual_segment_min }}</span>{% endif %}
+        </div>
+    </td>
+
+    {# Speed — order: base / your plan / actual #}
+    <td>
+        <div class="cell-stack">
+            {% if has_custom and row.custom and row.custom.speed_mph %}<span class="val-base">{{ row.custom.speed_mph }}</span>{% endif %}
+            {% if row.plan_speed_mph %}<span class="val-plan">{{ row.plan_speed_mph }}</span>{% endif %}
+            {% if row.actual_speed_mph is not none %}<span class="val-actual">{{ row.actual_speed_mph }}</span>{% endif %}
+        </div>
+    </td>
+
+    {# Stop duration (min:sec) — order: base / your plan / actual #}
+    <td>
+        <div class="cell-stack">
+            {% if has_custom and row.custom and row.custom.stop_duration_min is not none %}<span class="val-base">{{ row.custom.stop_duration_min|int }}:00</span>{% endif %}
+            {% if row.plan_stop_duration_min is not none %}<span class="val-plan">{{ row.plan_stop_duration_min|int }}:00</span>{% endif %}
+            {% if row.actual_stop_duration_min is not none %}{% set am = row.actual_stop_duration_min %}<span class="val-actual">{{ am|int }}:{{ "%02d"|format(((am - am|int) * 60)|round|int) }}</span>{% endif %}
+        </div>
+    </td>
+
+    {# Enroute: unplanned stops between waypoints (min:sec) #}
+    <td style="text-align:right;font-size:0.65rem;">
+        {% if row.actual_seg_break_min is not none %}{% set sb = row.actual_seg_break_min %}<span class="val-actual">{{ sb|int }}:{{ "%02d"|format(((sb - sb|int) * 60)|round|int) }}</span>{% endif %}
+    </td>
+
+    {# Cumulative — order: base / your plan / actual #}
+    <td>
+        <div class="cell-stack">
+            {% if has_custom and row.custom and row.custom.cum_time_min %}<span class="val-base">{{ (row.custom.cum_time_min // 60)|int }}:{{ "%02d"|format(row.custom.cum_time_min % 60) }}</span>{% endif %}
+            {% if row.plan_cum_time_min %}<span class="val-plan">{{ (row.plan_cum_time_min // 60)|int }}:{{ "%02d"|format(row.plan_cum_time_min % 60) }}</span>{% endif %}
+            {% if row.actual_cum_time_min is not none %}<span class="val-actual">{{ (row.actual_cum_time_min // 60)|int }}:{{ "%02d"|format(row.actual_cum_time_min % 60) }}</span>{% endif %}
+        </div>
+    </td>
+
+    {# Time of day — order: base / your plan / actual #}
+    <td>
+        <div class="cell-stack">
+            {% if has_custom and row.custom and row.custom.time_of_day %}<span class="val-base">{{ row.custom.time_of_day }}</span>{% endif %}
+            {% if row.plan_time_of_day %}<span class="val-plan">{{ row.plan_time_of_day }}</span>{% endif %}
+            {% if row.actual_time_of_day %}<span class="val-actual">{{ row.actual_time_of_day }}</span>{% endif %}
+        </div>
+    </td>
+
+    {# Time bank (h:mm) — order: base / your plan / actual #}
+    <td>
+        <div class="cell-stack">
+            {% if has_custom and row.custom and row.custom.time_bank is not none %}{% set tb = row.custom.time_bank %}<span class="val-base">{% if tb >= 0 %}{{ (tb // 60)|int }}:{{ "%02d"|format(tb % 60) }}{% else %}-{{ ((-tb) // 60)|int }}:{{ "%02d"|format((-tb) % 60) }}{% endif %}</span>{% endif %}
+            {% if row.plan_time_bank is not none %}{% set tb = row.plan_time_bank %}<span class="val-plan">{% if tb >= 0 %}{{ (tb // 60)|int }}:{{ "%02d"|format(tb % 60) }}{% else %}-{{ ((-tb) // 60)|int }}:{{ "%02d"|format((-tb) % 60) }}{% endif %}</span>{% endif %}
+            {% if row.actual_time_bank is not none %}{% set tb = row.actual_time_bank %}
+                <span class="{% if tb >= 0 %}val-actual{% else %}delta-slower{% endif %}" style="font-weight:700;">{% if tb >= 0 %}{{ (tb // 60)|int }}:{{ "%02d"|format(tb % 60) }}{% else %}-{{ ((-tb) // 60)|int }}:{{ "%02d"|format((-tb) % 60) }}{% endif %}</span>
+            {% endif %}
+        </div>
+    </td>
+
+    {# HR & Power (if available) #}
+    {% if comparison.hr_power %}
+    <td style="text-align:right;font-size:0.7rem;color:#dc2626;">
+        {% if row.actual_avg_hr %}{{ row.actual_avg_hr }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+    </td>
+    <td style="text-align:right;font-size:0.7rem;color:#7c3aed;">
+        {% if row.actual_avg_watts %}{{ row.actual_avg_watts }}{% if row.actual_np_watts %}<div style="font-size:0.6rem;color:#a78bfa;" title="Normalized power">NP {{ row.actual_np_watts }}</div>{% endif %}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+    </td>
+    <td style="text-align:right;font-size:0.7rem;color:#0891b2;">
+        {% if row.actual_avg_cadence %}{{ row.actual_avg_cadence }}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+    </td>
+    {% endif %}
+
+    {# Climb: elevation gain + climbing rate (ft/mile) for the segment #}
+    <td style="text-align:right;font-size:0.7rem;color:#65a30d;">
+        {% if row.actual_elev_gain_ft is not none and not row.is_extra %}{{ row.actual_elev_gain_ft }}&nbsp;ft{% if row.actual_climb_ft_per_mi is not none %}<div style="font-size:0.6rem;color:#84cc16;">{{ row.actual_climb_ft_per_mi }} ft/mi</div>{% endif %}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+    </td>
+
+    {# Delta (h:mm against custom/primary plan) #}
+    <td style="text-align:right;font-weight:700;">
+        {% if row.cum_time_delta_min is not none %}{% set d = row.cum_time_delta_min|round(0)|int %}
+            {% if d > 0 %}<span class="delta-slower">+{{ (d // 60)|int }}:{{ "%02d"|format(d % 60) }}</span>
+            {% elif d < 0 %}{% set ad = -d %}<span class="delta-faster">-{{ (ad // 60)|int }}:{{ "%02d"|format(ad % 60) }}</span>
+            {% else %}<span class="delta-neutral">0:00</span>{% endif %}
+        {% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
+    </td>
+
+    {# Actual Wind #}
+    {% if stop_wind %}
+    {% set w = stop_wind.get(row.location) %}
+    <td style="text-align:center;padding:4px 8px;">
+        {% if w %}
+        {{ wind_arrow(w) }}
+        {# Peak gust for the segment, shown only when notably above sustained. #}
+        {% if w.wind_gust_peak_mph and w.wind_speed_mph and w.wind_gust_peak_mph >= w.wind_speed_mph + 8 and w.wind_gust_peak_mph >= w.wind_speed_mph * 1.25 %}
+        <div style="font-size:0.58rem;color:#b45309;" title="Peak gust over this segment">gust {{ w.wind_gust_peak_mph|round|int }}</div>
+        {% endif %}
+        {% else %}
+        &mdash;
+        {% endif %}
+    </td>
+    <td style="text-align:center;padding:4px 8px;font-size:0.7rem;color:#64748b;">
+        {% if w and w.temp_min_f is defined and w.temp_min_f is not none and w.temp_max_f is not none and (w.temp_max_f - w.temp_min_f) >= 5 %}
+        {{ w.temp_min_f }}&ndash;{{ w.temp_max_f }}&deg;F
+        {% elif w and w.temperature_c is defined and w.temperature_c is not none %}
+        {% set temp_f = (w.temperature_c * 9 / 5 + 32)|round(0)|int %}
+        {{ temp_f }}&deg;F
+        {% else %}&mdash;{% endif %}
+    </td>
+    {% endif %}
+</tr>
+{# Per-segment analysis: rule-based narrative + LLM coach note (best-effort) #}
+{% set ev = segment_eval.get(row.location) if segment_eval else None %}
+{% if ev and (ev.narrative or ev.coach) and not row.is_extra %}
+<tr class="segment-analysis-row {{ _grp }}">
+    <td colspan="20" style="padding:6px 12px 10px;border-bottom:1px solid #eef2f7;">
+        {% if ev.narrative %}<div style="font-size:0.78rem;color:#334155;line-height:1.45;">{{ ev.narrative }}</div>{% endif %}
+        {% if ev.coach %}<div style="font-size:0.78rem;color:#0369a1;line-height:1.45;margin-top:3px;"><span style="font-weight:600;">Coach:</span> {{ ev.coach }}</div>{% endif %}
+    </td>
+</tr>
+{% endif %}
+{# Owner-editable note (feeds the coach): per-segment for planned rows, per
+   unplanned-stop for extra rows. Add / edit / delete affordances. #}
+{% if is_own_profile %}
+{% set _is_stop = row.is_extra %}
+{% set _ident = ('%.1f'|format(row.distance_miles)) if _is_stop else row.location %}
+{% set _note = (stop_notes.get('%.1f'|format(row.distance_miles), '')) if _is_stop else segment_notes.get(row.location, '') %}
+<tr class="segment-note-row {{ _grp }}{% if row.is_extra %} extra-row{% endif %}">
+    <td colspan="20" style="padding:2px 12px 10px;border-bottom:1px solid #eef2f7;">
+        <div class="row-note" data-scope="{{ 'stop' if _is_stop else 'segment' }}" data-ident="{{ _ident }}"
+             style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;font-size:0.75rem;">
+            {# Saved-note view (shown when a note exists) #}
+            <div class="note-display" style="display:{{ 'flex' if _note else 'none' }};gap:8px;align-items:flex-start;flex:1;">
+                <span style="color:#64748b;white-space:nowrap;">&#x1f4dd; note:</span>
+                <span class="note-text" style="color:#334155;flex:1;white-space:pre-wrap;">{{ _note }}</span>
+                <button type="button" class="note-edit-btn" style="font-size:0.7rem;padding:3px 8px;">Edit</button>
+                <button type="button" class="note-del-btn" style="font-size:0.7rem;padding:3px 8px;color:#dc2626;">Delete</button>
+            </div>
+            {# Add affordance (shown when there is no note) #}
+            <button type="button" class="note-add-btn" style="display:{{ 'none' if _note else 'inline-block' }};font-size:0.7rem;padding:4px 10px;color:#0369a1;">
+                &#43; Add note {{ 'for this stop' if _is_stop else 'for this segment' }}
+            </button>
+            {# Editor (hidden until add/edit) #}
+            <div class="note-editor" style="display:none;gap:8px;align-items:flex-start;flex:1;width:100%;">
+                <textarea class="note-input" rows="1"
+                    placeholder="What happened here? (fuel, mechanical, how you felt&hellip;) &mdash; feeds the coach"
+                    style="flex:1;min-height:32px;font-size:0.78rem;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;resize:vertical;">{{ _note }}</textarea>
+                <button type="button" class="note-save-btn" style="white-space:nowrap;font-size:0.72rem;padding:6px 10px;">Save</button>
+                <button type="button" class="note-cancel-btn" style="white-space:nowrap;font-size:0.72rem;padding:6px 10px;">Cancel</button>
+            </div>
+            <span class="note-status" style="color:#64748b;min-width:56px;align-self:center;"></span>
+        </div>
+    </td>
+</tr>
+{% endif %}
+{% endfor %}
+</tbody>
+</table>
+{% if stop_wind %}
+<div style="margin-top:12px;padding:8px 12px;background:var(--surface-raised,#f8fafc);border-radius:6px;font-size:0.85rem;color:var(--text-muted,#64748b);">
+    <strong>Wind Legend:</strong>
+    <span style="color:#16a34a;">↑</span> Tailwind &nbsp;
+    <span style="color:#dc2626;">↓</span> Headwind &nbsp;
+    <span style="color:#1e293b;">→</span> Crosswind
+    &nbsp; | Arrow size = wind speed (mph)
+</div>
+{% endif %}
+
+{# --- Coach's Read: overall observations + LLM recommendations --- #}
+{% if ride_recommendations or overall_narrative %}
+<div class="analysis-summary" style="margin-top:24px;background:white;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <h3 style="margin-top:0;">&#x1f9ed; Coach's Read</h3>
+    {% if ride_recommendations and ride_recommendations.summary %}
+    <p style="color:var(--text);line-height:1.5;">{{ ride_recommendations.summary }}</p>
+    {% endif %}
+    {% if overall_narrative %}
+    <ul style="margin:8px 0;padding-left:20px;color:var(--text-muted,#475569);font-size:0.9rem;">
+        {% for obs in overall_narrative %}<li style="margin-bottom:4px;">{{ obs }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if ride_recommendations and ride_recommendations.recommendations %}
+    <div style="margin-top:12px;">
+        <div style="font-weight:600;color:var(--text);margin-bottom:6px;">Recommendations to improve</div>
+        <ul style="margin:0;padding-left:20px;color:var(--text);font-size:0.9rem;line-height:1.5;">
+            {% for rec in ride_recommendations.recommendations %}<li style="margin-bottom:5px;">{{ rec }}</li>{% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+    <div style="margin-top:12px;font-size:0.72rem;color:var(--text-light,#94a3b8);">Automated analysis &mdash; use your own judgment.</div>
+</div>
+{% endif %}
+
+{# --- Owner's ride notes: overall note box + save/delete wiring for all notes --- #}
+{% if is_own_profile %}
+<div class="analysis-summary" style="margin-top:16px;background:white;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <h3 style="margin-top:0;">&#x1f4dd; Your notes on this ride</h3>
+    <p style="font-size:0.8rem;color:var(--text-muted,#64748b);margin-top:0;">These feed the AI coach &mdash; save to refresh the coaching above on your next visit. You can also add a note to any segment or unplanned stop in the table.</p>
+    <textarea id="overallNote" placeholder="How did the ride go overall? Nutrition, sleep, weather, how you felt&hellip;"
+        style="width:100%;min-height:90px;font-size:0.85rem;padding:10px;border:1px solid #e2e8f0;border-radius:8px;resize:vertical;box-sizing:border-box;">{{ overall_note }}</textarea>
+    <div style="margin-top:8px;display:flex;align-items:center;gap:10px;">
+        <button type="button" id="overallNoteSave" style="font-size:0.8rem;padding:7px 14px;">Save note</button>
+        <button type="button" id="overallNoteDelete" style="font-size:0.8rem;padding:7px 14px;color:#dc2626;">Delete</button>
+        <span id="overallNoteStatus" style="font-size:0.75rem;"></span>
+    </div>
+</div>
+<script>
+(function() {
+    const saveUrl = "{{ url_for('riders.save_ride_notes', rusa_id=rider.rusa_id, ride_id=ride.id) }}";
+
+    // POST one note change; resolves with the server's stored note (trimmed/capped).
+    function post(body, statusEl) {
+        if (statusEl) { statusEl.style.color = '#64748b'; statusEl.textContent = 'Saving…'; }
+        return fetch(saveUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        }).then(function(r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+          .then(function(d) {
+              if (statusEl) { statusEl.style.color = '#16a34a'; statusEl.textContent = (d && d.note) ? 'Saved' : 'Deleted'; }
+              return d || {};
+          })
+          .catch(function(e) {
+              if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = 'Failed'; }
+              throw e;
+          });
+    }
+
+    // Per-row notes: add / edit / delete (segment rows and unplanned-stop rows).
+    document.querySelectorAll('.row-note').forEach(function(cell) {
+        const scope = cell.getAttribute('data-scope');
+        const ident = cell.getAttribute('data-ident');
+        const display = cell.querySelector('.note-display');
+        const textEl = cell.querySelector('.note-text');
+        const addBtn = cell.querySelector('.note-add-btn');
+        const editor = cell.querySelector('.note-editor');
+        const input = cell.querySelector('.note-input');
+        const status = cell.querySelector('.note-status');
+
+        function showEditor() {
+            display.style.display = 'none';
+            addBtn.style.display = 'none';
+            editor.style.display = 'flex';
+            input.focus();
+        }
+        function showResting() {
+            editor.style.display = 'none';
+            const has = (textEl.textContent || '').trim().length > 0;
+            display.style.display = has ? 'flex' : 'none';
+            addBtn.style.display = has ? 'none' : 'inline-block';
+        }
+
+        addBtn.addEventListener('click', showEditor);
+        cell.querySelector('.note-edit-btn').addEventListener('click', showEditor);
+        cell.querySelector('.note-cancel-btn').addEventListener('click', function() {
+            input.value = textEl.textContent;
+            status.textContent = '';
+            showResting();
+        });
+        cell.querySelector('.note-save-btn').addEventListener('click', function() {
+            post({ scope: scope, ident: ident, note: input.value }, status).then(function(d) {
+                textEl.textContent = d.note || '';
+                input.value = d.note || '';
+                showResting();
+            }).catch(function() {});
+        });
+        cell.querySelector('.note-del-btn').addEventListener('click', function() {
+            post({ scope: scope, ident: ident, note: '' }, status).then(function() {
+                textEl.textContent = '';
+                input.value = '';
+                showResting();
+            }).catch(function() {});
+        });
+    });
+
+    // Overall ride note (persistent box + delete).
+    const oTa = document.getElementById('overallNote');
+    const oStatus = document.getElementById('overallNoteStatus');
+    const oSave = document.getElementById('overallNoteSave');
+    const oDel = document.getElementById('overallNoteDelete');
+    if (oSave) oSave.addEventListener('click', function() {
+        post({ scope: 'overall', note: oTa.value }, oStatus).catch(function() {});
+    });
+    if (oDel) oDel.addEventListener('click', function() {
+        post({ scope: 'overall', note: '' }, oStatus).then(function() { oTa.value = ''; }).catch(function() {});
+    });
+})();
+</script>
+{% endif %}
+
+{# --- Segment/stop map preview. Two surfaces sharing one render core + one
+      Leaflet lifecycle: a modal (click/tap/keyboard) and a hover popover
+      (fine-pointer only). At most one Leaflet map is alive at a time. --- #}
+{% if map_data and map_data.thumb %}
+<div class="seg-map-overlay" id="segMapOverlay" role="dialog" aria-modal="true"
+     aria-label="Segment map" aria-hidden="true">
+    <div class="seg-map-card">
+        <button type="button" class="seg-map-close" aria-label="Close map">&times;</button>
+        <h3 id="segMapTitle"></h3>
+        <div class="seg-map-leaflet" id="segMapLeaflet" role="img"
+             aria-label="Segment map"></div>
+    </div>
+</div>
+{# Non-modal hover preview — anchored beside the button, no backdrop, supplementary
+   (never steals focus). Only shown on fine-pointer devices (JS matchMedia gate). #}
+<div class="seg-map-hover" id="segMapHover" role="presentation" aria-hidden="true">
+    <h3 id="segMapHoverTitle"></h3>
+    <div class="seg-map-leaflet seg-map-hover-pane" id="segMapHoverLeaflet"
+         role="img" aria-label="Segment map preview"></div>
+</div>
+<script>
+(function () {
+    // Real basemap (OpenStreetMap tiles) behind the route, driven by the same
+    // lat/lng map_data the main #rideMap uses: the full track (faint) + the
+    // selected leg/stop (bold) over actual streets.
+    var mapData = {{ map_data|tojson }};
+    var overlay = document.getElementById('segMapOverlay');
+    if (!overlay || !mapData || !mapData.track || mapData.track.length < 2) return;
+
+    var modalTitle = document.getElementById('segMapTitle');
+    var modalPane = document.getElementById('segMapLeaflet');
+    var closeBtn = overlay.querySelector('.seg-map-close');
+    var hover = document.getElementById('segMapHover');
+    var hoverTitle = document.getElementById('segMapHoverTitle');
+    var hoverPane = document.getElementById('segMapHoverLeaflet');
+
+    // data-mapkey is the leg's arrival location (planned segment) or the stop's
+    // distance ('%.1f', unplanned stop) — look those up in map_data by the same key.
+    var segByLoc = {};
+    (mapData.segments || []).forEach(function (s) { if (s.location) segByLoc[s.location] = s; });
+    var stopByDist = {};
+    (mapData.stops || []).forEach(function (s) {
+        if (s.distance_miles != null) stopByDist[Number(s.distance_miles).toFixed(1)] = s;
+    });
+
+    // ---- Single live Leaflet instance shared across both surfaces ----------
+    // Only one map is ever alive (single-instance invariant / no eager N maps).
+    var lmap = null, layers = null, mapPane = null;
+
+    function destroyMap() {
+        if (lmap) lmap.remove();
+        lmap = null; layers = null; mapPane = null;
+    }
+
+    function drawSelection(key, isStop) {
+        layers.clearLayers();
+        // Faint full track for context (same neutral grey as the main map).
+        L.polyline(mapData.track, { color: '#cbd5e1', weight: 3, opacity: 0.8 }).addTo(layers);
+        var focus = null;
+        if (!isStop && segByLoc[key]) {
+            var seg = segByLoc[key];
+            focus = L.polyline(seg.points, { color: '#c2410c', weight: 5, opacity: 0.95 }).addTo(layers);
+            var end = seg.points[seg.points.length - 1];
+            L.circleMarker(end, { radius: 6, color: '#fff', weight: 2, fillColor: '#dc2626', fillOpacity: 1 }).addTo(layers);
+        } else if (isStop && stopByDist[key]) {
+            var st = stopByDist[key];
+            focus = L.circleMarker([st.lat, st.lng], { radius: 7, color: '#fff', weight: 2, fillColor: '#dc2626', fillOpacity: 1 }).addTo(layers);
+        }
+        return focus;
+    }
+
+    // Build a fresh map into an already-visible pane. The container must be
+    // displayed BEFORE L.map() runs: creating a map on a 0-width node makes
+    // Leaflet read offsetWidth === 0 and never request tiles (the "only the
+    // route shows up" bug). So we create + add the tile layer inside rAF, once
+    // the pane has non-zero size, then invalidateSize()/fitBounds(). Destroying
+    // on every hide (not reusing) also kills the stale-tile-on-reopen case.
+    function buildMap(pane, key, isStop, label, titleEl) {
+        destroyMap();            // enforce single-instance before creating
+        mapPane = pane;
+        if (titleEl) titleEl.textContent = label || '';
+        requestAnimationFrame(function () {
+            if (mapPane !== pane) return;   // superseded/hidden before this frame
+            lmap = L.map(pane, { scrollWheelZoom: false });
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 18, attribution: '&copy; OpenStreetMap contributors',
+            }).addTo(lmap);
+            layers = L.layerGroup().addTo(lmap);
+            var focus = drawSelection(key, isStop);
+            lmap.invalidateSize();
+            try {
+                if (focus && focus.getBounds) {
+                    lmap.fitBounds(focus.getBounds(), { padding: [30, 30], maxZoom: 15 });
+                } else if (focus && focus.getLatLng) {
+                    lmap.setView(focus.getLatLng(), 14);
+                } else {
+                    lmap.fitBounds(L.latLngBounds(mapData.track), { padding: [20, 20] });
+                }
+            } catch (e) { /* ignore fit errors on degenerate geometry */ }
+        });
+    }
+
+    // ---- Modal surface (click / tap / keyboard) ----------------------------
+    var lastFocus = null;
+    function openModal(key, isStop, label) {
+        hideHover(true);         // a click supersedes any hover popover
+        lastFocus = document.activeElement;
+        overlay.classList.add('open');
+        overlay.setAttribute('aria-hidden', 'false');
+        buildMap(modalPane, key, isStop, label, modalTitle);
+        closeBtn.focus();
+    }
+    function closeModal() {
+        overlay.classList.remove('open');
+        overlay.setAttribute('aria-hidden', 'true');
+        if (mapPane === modalPane) destroyMap();
+        if (lastFocus && lastFocus.focus) lastFocus.focus();
+    }
+    document.querySelectorAll('.seg-map-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            openModal(btn.getAttribute('data-mapkey'),
+                      btn.getAttribute('data-isstop') === '1',
+                      btn.getAttribute('data-label'));
+        });
+    });
+    closeBtn.addEventListener('click', closeModal);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) closeModal(); });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal();
+    });
+
+    // ---- Hover surface (fine-pointer only) ---------------------------------
+    // Button + popover are treated as ONE hover region sharing one close timer,
+    // so the cursor can cross the small gap from button to popover without it
+    // closing. Bound only when the device actually has a fine hover pointer.
+    var fine = window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+    function positionHover(btn) {
+        var r = btn.getBoundingClientRect();
+        var gap = 8, margin = 8;
+        var pw = hover.offsetWidth, ph = hover.offsetHeight;
+        var left = r.right + gap;                       // prefer right of the button
+        if (left + pw > window.innerWidth - margin) {   // flip left if it would overflow
+            left = r.left - gap - pw;
+        }
+        left = Math.max(margin, Math.min(left, window.innerWidth - margin - pw));
+        var top = Math.max(margin, Math.min(r.top, window.innerHeight - margin - ph));
+        hover.style.left = left + 'px';
+        hover.style.top = top + 'px';
+    }
+    function showHover(btn) {
+        if (overlay.classList.contains('open')) return; // modal wins; skip popover
+        hover.style.visibility = 'hidden';              // place before revealing
+        hover.classList.add('open');
+        positionHover(btn);
+        hover.style.visibility = '';
+        hover.setAttribute('aria-hidden', 'false');
+        buildMap(hoverPane, btn.getAttribute('data-mapkey'),
+                 btn.getAttribute('data-isstop') === '1',
+                 btn.getAttribute('data-label'), hoverTitle);
+    }
+    function hideHover(immediate) {
+        clearTimers();
+        hover.classList.remove('open');
+        hover.setAttribute('aria-hidden', 'true');
+        if (mapPane === hoverPane) destroyMap();
+    }
+
+    var openTimer = null, closeTimer = null;
+    function clearOpen() { if (openTimer) { clearTimeout(openTimer); openTimer = null; } }
+    function clearClose() { if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; } }
+    function clearTimers() { clearOpen(); clearClose(); }
+    function scheduleClose() {
+        clearClose();
+        closeTimer = setTimeout(function () { closeTimer = null; hideHover(); }, 200);
+    }
+
+    if (fine && hover) {
+        document.querySelectorAll('.seg-map-btn').forEach(function (btn) {
+            // ~120ms open-intent debounce so sweeping the cursor down the table
+            // doesn't thrash map create/destroy.
+            btn.addEventListener('mouseenter', function () {
+                clearClose();
+                clearOpen();
+                openTimer = setTimeout(function () { openTimer = null; showHover(btn); }, 120);
+            });
+            btn.addEventListener('mouseleave', function () {
+                clearOpen();
+                scheduleClose();
+            });
+        });
+        // Moving onto the popover keeps it open; leaving it restarts the timer.
+        hover.addEventListener('mouseenter', clearClose);
+        hover.addEventListener('mouseleave', scheduleClose);
+    }
+})();
+</script>
+{% endif %}
+
+{# --- Chart.js --- #}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3"></script>
+<script>
+(function() {
+    const rows = {{ comparison.rows|tojson }};
+    const hasCustom = {{ has_custom|tojson }};
+    const planRows = rows.filter(r => !r.is_extra);
+
+    function fmtTime(mins) {
+        if (mins == null) return '--';
+        const h = Math.floor(mins / 60);
+        const m = Math.round(mins % 60);
+        return h + 'h' + String(m).padStart(2, '0') + 'm';
+    }
+
+    // Build line with break drops (arrival→departure vertical segments)
+    function buildBreakLine(dataRows, getCum, getArrival, getStopDur) {
+        const points = [];
+        for (const r of dataRows) {
+            const cum = getCum(r);
+            const arrival = getArrival(r);
+            const stopDur = getStopDur(r);
+            if (cum === null || cum === undefined) continue;
+            const dist = r.distance_miles;
+            if (arrival !== null && arrival !== undefined && stopDur > 0) {
+                points.push({ x: dist, y: arrival / 60 });
+                points.push({ x: dist, y: cum / 60 });
+            } else {
+                points.push({ x: dist, y: cum / 60 });
+            }
+        }
+        return points;
+    }
+
+    const ctx = document.getElementById('rideChart').getContext('2d');
+    const datasets = [];
+
+    // --- Time lines (single Y-axis) ---
+    datasets.push({
+        label: hasCustom ? 'Your Plan' : 'Plan',
+        data: buildBreakLine(planRows,
+            r => r.plan_cum_time_min, r => r.plan_arrival_time_min, r => r.plan_stop_duration_min || 0),
+        borderColor: '#2563eb', borderWidth: 2, tension: 0,
+        pointRadius: 0, pointHitRadius: 8, fill: false,
+    });
+
+    if (hasCustom) {
+        datasets.push({
+            label: 'Base Plan',
+            data: buildBreakLine(planRows,
+                r => r.custom && r.custom.cum_time_min ? r.custom.cum_time_min : null,
+                r => r.custom && r.custom.arrival_time_min ? r.custom.arrival_time_min : null,
+                r => r.custom && r.custom.stop_duration_min ? r.custom.stop_duration_min : 0),
+            borderColor: '#94a3b8', borderDash: [6, 3], borderWidth: 1.5, tension: 0,
+            pointRadius: 0, pointHitRadius: 8, fill: false,
+        });
+    }
+
+    const actualDataRows = rows.filter(r => r.actual_cum_time_min !== null);
+    datasets.push({
+        label: 'Actual',
+        data: buildBreakLine(actualDataRows,
+            r => r.actual_cum_time_min, r => r.actual_arrival_time_min, r => r.actual_stop_duration_min || 0),
+        borderColor: '#c2410c', borderWidth: 3, tension: 0,
+        pointRadius: 0, pointHitRadius: 8, fill: false,
+    });
+
+    // --- Annotations: control markers + speed labels along lines ---
+    const annotations = {};
+
+    // Control markers at bottom
+    planRows.forEach((r, i) => {
+        if (['start', 'finish', 'control', 'rest'].includes(r.stop_type)) {
+            annotations['ctrl' + i] = {
+                type: 'line',
+                xMin: r.distance_miles, xMax: r.distance_miles,
+                borderColor: r.stop_type === 'control' ? 'rgba(30,64,175,0.3)' : (r.stop_type === 'rest' ? 'rgba(146,64,14,0.2)' : 'rgba(100,116,139,0.2)'),
+                borderWidth: 1, borderDash: [3, 3],
+                label: {
+                    display: true,
+                    content: (r.stop_type === 'start' ? '🚩' : r.stop_type === 'finish' ? '🏁' : r.stop_type === 'control' ? '◆' : '☕') + ' ' + Math.round(r.distance_miles),
+                    position: 'start',
+                    font: { size: 8 }, color: '#475569',
+                    backgroundColor: 'rgba(255,255,255,0.8)', padding: 2, rotation: -45,
+                }
+            };
+        }
+    });
+
+    // Speed labels along lines (at segment midpoints)
+    let prevDist = 0;
+    planRows.forEach((r, i) => {
+        if (i === 0) { prevDist = r.distance_miles; return; }
+        const midX = (prevDist + r.distance_miles) / 2;
+
+        // Your Plan speed label
+        if (r.plan_speed_mph) {
+            const midY = r.plan_arrival_time_min ? (r.plan_arrival_time_min / 60 + (planRows[i-1].plan_cum_time_min || 0) / 60) / 2 : null;
+            if (midY !== null) {
+                annotations['spd_plan_' + i] = {
+                    type: 'label', xValue: midX, yValue: midY,
+                    content: r.plan_speed_mph + '', font: { size: 9, weight: '700' },
+                    color: '#2563eb', backgroundColor: 'rgba(255,255,255,0.8)', padding: 2,
+                };
+            }
+        }
+        // Base plan speed label
+        if (hasCustom && r.custom && r.custom.speed_mph) {
+            const baseCum = r.custom.arrival_time_min || r.custom.cum_time_min;
+            const prevBaseCum = planRows[i-1].custom ? (planRows[i-1].custom.cum_time_min || 0) : 0;
+            if (baseCum) {
+                const midY = (prevBaseCum / 60 + baseCum / 60) / 2;
+                annotations['spd_base_' + i] = {
+                    type: 'label', xValue: midX, yValue: midY,
+                    content: r.custom.speed_mph + '', font: { size: 8 },
+                    color: '#94a3b8', backgroundColor: 'rgba(255,255,255,0.7)', padding: 1,
+                };
+            }
+        }
+        // Actual speed label
+        if (r.actual_speed_mph) {
+            const prevActual = planRows[i-1].actual_cum_time_min || 0;
+            const curActual = r.actual_arrival_time_min || r.actual_cum_time_min;
+            if (curActual != null) {
+                const midY = (prevActual / 60 + curActual / 60) / 2;
+                annotations['spd_act_' + i] = {
+                    type: 'label', xValue: midX, yValue: midY,
+                    content: r.actual_speed_mph + '', font: { size: 9, weight: '700' },
+                    color: '#c2410c', backgroundColor: 'rgba(255,255,255,0.8)', padding: 2,
+                };
+            }
+        }
+        prevDist = r.distance_miles;
+    });
+
+    // --- Build tooltip that shows segment time + break for the nearest stop ---
+    const stopLookup = {};
+    rows.forEach(r => { stopLookup[r.distance_miles] = r; });
+
+    new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        options: {
+            responsive: true,
+            interaction: { mode: 'nearest', intersect: false },
+            scales: {
+                x: { type: 'linear', title: { display: true, text: 'Distance (mi)' },
+                     ticks: { stepSize: 20 } },
+                y: { title: { display: true, text: 'Elapsed Time (hrs)' },
+                     ticks: { callback: v => v.toFixed(1) + 'h' } },
+            },
+            plugins: {
+                annotation: { annotations },
+                tooltip: {
+                    callbacks: {
+                        title: ctxs => {
+                            const x = ctxs[0].parsed.x;
+                            return 'Mile ' + x.toFixed(1);
+                        },
+                        afterTitle: ctxs => {
+                            const x = ctxs[0].parsed.x;
+                            // Find nearest stop
+                            let nearest = null, minDiff = Infinity;
+                            rows.forEach(r => {
+                                const diff = Math.abs(r.distance_miles - x);
+                                if (diff < minDiff) { minDiff = diff; nearest = r; }
+                            });
+                            if (nearest && minDiff < 5) return nearest.location;
+                            return '';
+                        },
+                        label: ctx => {
+                            const label = ctx.dataset.label;
+                            if (ctx.dataset.yAxisID === 'y1') return label + ': ' + ctx.parsed.y.toFixed(1) + ' mph';
+                            return label + ': ' + fmtTime(ctx.parsed.y * 60);
+                        },
+                        afterBody: ctxs => {
+                            const x = ctxs[0].parsed.x;
+                            let nearest = null, minDiff = Infinity;
+                            rows.forEach(r => {
+                                const diff = Math.abs(r.distance_miles - x);
+                                if (diff < minDiff) { minDiff = diff; nearest = r; }
+                            });
+                            if (!nearest || minDiff > 5) return [];
+                            const lines = [];
+                            // Segment time
+                            if (nearest.plan_segment_min || nearest.actual_segment_min != null) {
+                                let seg = 'Seg: ';
+                                if (nearest.plan_segment_min) seg += nearest.plan_segment_min + 'm';
+                                if (hasCustom && nearest.custom && nearest.custom.segment_time_min) seg += ' / ' + nearest.custom.segment_time_min + 'm base';
+                                if (nearest.actual_segment_min != null) seg += ' / ' + nearest.actual_segment_min + 'm actual';
+                                lines.push(seg);
+                            }
+                            // Speed
+                            if (nearest.plan_speed_mph || nearest.actual_speed_mph) {
+                                let spd = 'Speed: ';
+                                if (nearest.plan_speed_mph) spd += nearest.plan_speed_mph + ' mph';
+                                if (hasCustom && nearest.custom && nearest.custom.speed_mph) spd += ' / ' + nearest.custom.speed_mph + ' base';
+                                if (nearest.actual_speed_mph != null) spd += ' / ' + nearest.actual_speed_mph + ' actual';
+                                lines.push(spd);
+                            }
+                            // Break
+                            if (nearest.plan_stop_duration_min || nearest.actual_stop_duration_min) {
+                                let brk = 'Break: ';
+                                if (nearest.plan_stop_duration_min) brk += nearest.plan_stop_duration_min + 'm';
+                                if (hasCustom && nearest.custom && nearest.custom.stop_duration_min) brk += ' / ' + nearest.custom.stop_duration_min + 'm base';
+                                if (nearest.actual_stop_duration_min != null) brk += ' / ' + Math.round(nearest.actual_stop_duration_min) + 'm actual';
+                                lines.push(brk);
+                            }
+                            // Time bank
+                            if (nearest.actual_time_bank != null) {
+                                lines.push('Bank: ' + (nearest.actual_time_bank >= 0 ? '+' : '') + nearest.actual_time_bank + 'm');
+                            }
+                            return lines.length ? ['───────────', ...lines] : [];
+                        }
+                    }
+                }
+            }
+        }
+    });
+})();
+</script>
+
+{% elif not has_plan %}
+{# --- No Plan State --- #}
+<div class="analysis-message" style="border-color:#fed7aa;">
+    <h3>Summary Only</h3>
+    <p>No ride plan is linked to this brevet. Only Strava summary metrics are shown above.</p>
+    <p style="margin-top:8px; font-size:0.8rem; color:var(--text-light);">Ask an admin to link a ride plan for per-stop comparison.</p>
+</div>
+{% endif %}
+
+{# --- Back Link --- #}
+<div style="text-align:center;margin-top:30px;">
+    {% if is_own_profile %}
+    <a href="{{ url_for('riders.my_strava_analysis') }}" class="back-link">&larr; Back to Brevet Analysis</a>
+    {% else %}
+    <a href="{{ url_for('riders.rider_profile', rusa_id=rider.rusa_id) }}" class="back-link">&larr; Back to Profile</a>
+    {% endif %}
+    {% if has_plan and plan_slug %}
+    <a href="{{ url_for('riders.ride_plan_detail', slug=plan_slug) }}" class="back-link" style="margin-left:20px;">&larr; View Ride Plan</a>
+    {% endif %}
+</div>
+
+{% endif %}
+</div>
+{% endblock %}

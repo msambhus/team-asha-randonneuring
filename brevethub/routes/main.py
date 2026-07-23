@@ -1,0 +1,203 @@
+"""Main routes: home, about, resources, feedback."""
+import requests as http_requests
+from flask import Blueprint, render_template, request, jsonify, current_app, session
+from models import (get_all_time_stats, get_all_seasons, get_current_season,
+                    get_season_stats, get_upcoming_rusa_events, get_upcoming_rides)
+from cache import cache, CACHE_TIMEOUT
+
+
+def _home_cache_key():
+    """Cache key for home page — varies by login state so nav renders correctly."""
+    uid = session.get('user_id')
+    return f'home_page_u{uid}' if uid else 'home_page_anon'
+
+main_bp = Blueprint('main', __name__)
+
+
+def get_mock_data():
+    """Return mock data for testing without database."""
+    return {
+        'stats': {
+            'riders': 42,
+            'rides': 156,
+            'kms': 87500,
+            'srs': 18
+        },
+        'season_summaries': [
+            {
+                'name': '2025-2026',
+                'active_riders': 25,
+                'total_rides': 48,
+                'total_kms': 28500,
+                'sr_count': 5,
+                'sr_rider_count': 8,
+                'is_current': True,
+            },
+            {
+                'name': '2022-2023',
+                'active_riders': 22,
+                'total_rides': 62,
+                'total_kms': 35200,
+                'sr_count': 7,
+                'sr_rider_count': 11,
+                'is_current': False,
+            },
+            {
+                'name': '2021-2022',
+                'active_riders': 18,
+                'total_rides': 46,
+                'total_kms': 23800,
+                'sr_count': 4,
+                'sr_rider_count': 6,
+                'is_current': False,
+            }
+        ],
+        'current_stats': {}
+    }
+
+
+@main_bp.route('/')
+@cache.cached(timeout=CACHE_TIMEOUT, key_prefix=_home_cache_key)
+def index():
+    try:
+        stats = get_all_time_stats()
+        seasons = get_all_seasons()
+        current = get_current_season()
+        current_stats = get_season_stats(current['id'], past_only=True) if current else {}
+
+        # Season summaries for cards (exclude Pune Randonneurs pre-2021 seasons)
+        season_summaries = []
+        for s in seasons:
+            if s['name'] < '2021':
+                continue
+            ss = get_season_stats(s['id'])
+            season_summaries.append({
+                'name': s['name'],
+                'active_riders': ss['active_riders'],
+                'total_rides': ss['total_rides'],
+                'total_kms': ss['total_kms'],
+                'sr_count': ss['sr_count'],
+                'sr_rider_count': ss['sr_rider_count'],
+                'is_current': current and s['id'] == current['id'],
+            })
+
+        return render_template('index.html',
+                               stats=stats,
+                               current_stats=current_stats,
+                               season_summaries=season_summaries)
+    except Exception as e:
+        # Use mock data if database is not available
+        print(f"Database not available, using mock data: {e}")
+        mock = get_mock_data()
+        return render_template('index.html',
+                               stats=mock['stats'],
+                               current_stats=mock['current_stats'],
+                               season_summaries=mock['season_summaries'])
+
+
+@main_bp.route('/about')
+@cache.cached(timeout=CACHE_TIMEOUT, key_prefix='about_page')
+def about():
+    return render_template('about.html')
+
+
+@main_bp.route('/resources')
+@cache.cached(timeout=CACHE_TIMEOUT, key_prefix='resources_page')
+def resources():
+    return render_template('resources.html')
+
+
+@main_bp.route('/privacy')
+@cache.cached(timeout=CACHE_TIMEOUT, key_prefix='privacy_page')
+def privacy():
+    return render_template('privacy.html')
+
+
+@main_bp.route('/upcoming')
+@cache.cached(timeout=CACHE_TIMEOUT, key_prefix='upcoming_page')
+def upcoming():
+    rides = get_upcoming_rides()
+    rusa_events = get_upcoming_rusa_events()
+    return render_template('upcoming.html', rides=rides, rusa_events=rusa_events)
+
+
+@main_bp.route('/api/feedback', methods=['POST'])
+def submit_feedback():
+    """Create a Linear ticket from website feedback form."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid request'}), 400
+
+    name = (data.get('name') or '').strip()
+    email = (data.get('email') or '').strip()  # optional, only present for logged-in users
+    text = (data.get('feedback') or '').strip()
+    fb_type = (data.get('type') or 'feature').strip().lower()
+
+    if not name or not text:
+        return jsonify({'error': 'Name and description are required'}), 400
+
+    if fb_type not in ('feature', 'bug'):
+        fb_type = 'feature'
+
+    api_key = current_app.config.get('LINEAR_API_KEY')
+    team_id = current_app.config.get('LINEAR_TEAM_ID')
+    if not api_key or not team_id:
+        return jsonify({'error': 'Feedback service is temporarily unavailable'}), 503
+
+    # Map type to Linear label ID
+    label_id = (current_app.config.get('LINEAR_LABEL_BUG') if fb_type == 'bug'
+                else current_app.config.get('LINEAR_LABEL_FEATURE'))
+
+    # Build title with type prefix
+    type_label = 'Bug' if fb_type == 'bug' else 'Feature'
+    short_text = text[:60] + ('...' if len(text) > 60 else '')
+    title = f"[{type_label}] {short_text}"
+
+    # Build description with optional email
+    from_line = f"**From:** {name}"
+    if email:
+        from_line += f" ({email})"
+    description = f"{from_line}\n\n{text}"
+
+    mutation = """
+    mutation($title: String!, $description: String!, $teamId: String!, $labelIds: [String!]) {
+      issueCreate(input: {
+        teamId: $teamId
+        title: $title
+        description: $description
+        labelIds: $labelIds
+      }) {
+        success
+        issue { id identifier url }
+      }
+    }
+    """
+
+    variables = {
+        'title': title,
+        'description': description,
+        'teamId': team_id,
+        'labelIds': [label_id] if label_id else [],
+    }
+
+    try:
+        resp = http_requests.post(
+            'https://api.linear.app/graphql',
+            json={'query': mutation, 'variables': variables},
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': api_key,
+            },
+            timeout=10,
+        )
+        result = resp.json()
+        if result.get('data', {}).get('issueCreate', {}).get('success'):
+            issue = result['data']['issueCreate']['issue']
+            print(f"Feedback ticket created: {issue['identifier']} — {title}")
+            return jsonify({'success': True, 'ticket': issue['identifier']})
+        else:
+            print(f"Linear API error: {result}")
+            return jsonify({'error': 'Failed to create ticket'}), 500
+    except Exception as e:
+        print(f"Feedback submission error: {e}")
+        return jsonify({'error': 'Failed to create ticket'}), 500

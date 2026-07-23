@@ -1,0 +1,625 @@
+{% extends "base.html" %}
+{% block title %}Compare My Brevets - Team Asha Randonneuring{% endblock %}
+
+{% block extra_head %}
+<style>
+.compare-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 24px;
+    align-items: start;
+}
+@media (max-width: 768px) {
+    .compare-layout { grid-template-columns: 1fr; }
+}
+
+/* Selector panel */
+.selector-panel {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px;
+    position: sticky;
+    top: 80px;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+}
+.selector-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 12px;
+}
+.selector-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.selector-actions button {
+    font-size: 0.7rem;
+    padding: 3px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #f8fafc;
+    color: #475569;
+    cursor: pointer;
+}
+.selector-actions button:hover { background: #e2e8f0; }
+.season-group { margin-bottom: 14px; }
+.season-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #f1f5f9;
+}
+.ride-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 0;
+    cursor: pointer;
+}
+.ride-check input[type="checkbox"] {
+    margin-top: 2px;
+    accent-color: #c2410c;
+}
+.ride-check-label {
+    font-size: 0.8rem;
+    color: #334155;
+    line-height: 1.3;
+}
+.ride-check-meta {
+    font-size: 0.7rem;
+    color: #94a3b8;
+}
+
+/* Right column — prevent grid blowout */
+.compare-right {
+    min-width: 0;
+}
+
+/* Chart area */
+.chart-panel {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    min-height: 400px;
+}
+.chart-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 16px;
+    text-align: center;
+}
+.chart-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 350px;
+    color: #94a3b8;
+    font-size: 0.9rem;
+    text-align: center;
+}
+
+/* Summary strip */
+.compare-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #f1f5f9;
+}
+.compare-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+}
+.compare-chip .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.compare-chip .chip-detail {
+    color: #64748b;
+}
+
+/* Stats comparison table */
+.stats-table-wrap { overflow-x: auto; margin-top: 24px; }
+.stats-table {
+    width: 100%; border-collapse: collapse; font-size: 0.82rem;
+}
+.stats-table th {
+    background: #f8fafc; padding: 10px 14px; text-align: left;
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; color: #64748b; white-space: nowrap;
+    border-bottom: 2px solid #e2e8f0;
+}
+.stats-table td {
+    padding: 10px 14px; border-bottom: 1px solid #f1f5f9; color: #334155;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.stats-table .ride-color-dot {
+    width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+    margin-right: 6px; vertical-align: middle;
+}
+.stats-table-empty {
+    text-align: center; padding: 24px; color: #94a3b8; font-size: 0.85rem;
+}
+
+/* Distribution bar cards */
+.dist-cards { margin-top: 24px; }
+.dist-card {
+    border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 20px; margin-bottom: 16px; background: white;
+}
+.dist-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+}
+.dist-card-title { font-size: 0.95rem; font-weight: 700; color: #1e293b; }
+.dist-badge {
+    font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.6px; padding: 3px 8px; border-radius: 20px;
+}
+.dist-track-wrap { padding: 4px 8px 16px; }
+.dist-track {
+    height: 6px; background: #e2e8f0; border-radius: 3px;
+    position: relative; margin: 50px 0 50px;
+}
+.dist-dot {
+    width: 13px; height: 13px;
+    border: 2.5px solid white; border-radius: 50%;
+    position: absolute; top: -4px;
+    transform: translateX(-50%);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+    z-index: 1;
+}
+.dist-connector {
+    position: absolute; width: 1px;
+    transform: translateX(-50%);
+    opacity: 0.3; pointer-events: none; z-index: 0;
+}
+.dist-dot-label {
+    position: absolute; transform: translateX(-50%);
+    font-size: 0.62rem; white-space: nowrap; font-weight: 600;
+    pointer-events: none; z-index: 2;
+    background: rgba(255,255,255,0.85); padding: 0 2px; border-radius: 2px;
+}
+.dist-dot-value {
+    position: absolute; transform: translateX(-50%);
+    font-size: 0.62rem; white-space: nowrap; font-weight: 500;
+    pointer-events: none; z-index: 2; color: #94a3b8;
+    background: rgba(255,255,255,0.85); padding: 0 2px; border-radius: 2px;
+}
+.dist-median-line {
+    position: absolute; top: -8px; width: 2px; height: 22px;
+    background: #475569; opacity: 0.4;
+    transform: translateX(-50%); z-index: 0;
+}
+.dist-median-label {
+    position: absolute; top: 10px; transform: translateX(-50%);
+    font-size: 0.6rem; color: #64748b; opacity: 0.75;
+    white-space: nowrap; font-weight: 600; pointer-events: none; z-index: 0;
+}
+.dist-end-labels {
+    display: flex; justify-content: space-between;
+    font-size: 0.7rem; color: #94a3b8; margin-top: 2px;
+}
+.dist-group-stats {
+    font-size: 0.8rem; color: #64748b; text-align: center; margin-top: 10px;
+}
+.dist-group-stats strong { color: #334155; }
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #64748b;
+}
+.empty-state h3 {
+    color: #1e293b;
+    margin-bottom: 8px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:30px 20px;">
+    <h1 style="margin-bottom:4px;">Compare My Brevets</h1>
+    <p style="opacity:0.85;">{{ rider.first_name }} {{ rider.last_name }} &mdash; Overlay your rides on one chart</p>
+</div>
+
+<div class="container section">
+
+<div style="margin-bottom:20px;">
+    <a href="{{ url_for('riders.my_strava_analysis') }}" style="color:var(--primary); text-decoration:none; font-size:0.9rem;">&larr; Back to Brevet Analysis</a>
+</div>
+
+{% if rides_meta|length < 2 %}
+<div class="empty-state">
+    <h3>Not Enough Rides to Compare</h3>
+    <p>You need at least 2 finished brevets with Strava data to use this page.</p>
+    <p style="margin-top:8px; font-size:0.8rem;">
+        View your <a href="{{ url_for('riders.my_strava_analysis') }}">Brevet Analysis</a> page first
+        to trigger Strava matching and stream caching for each ride.
+    </p>
+</div>
+{% else %}
+
+<div class="compare-layout">
+    {# Selector panel #}
+    <div class="selector-panel">
+        <div class="selector-title">Select Rides to Compare</div>
+        <div class="selector-actions">
+            <button onclick="selectAll()">Select All</button>
+            <button onclick="selectNone()">Clear All</button>
+        </div>
+        <div id="rideSelector">
+        {% set ns = namespace(current_season='') %}
+        {% for ride in rides_meta %}
+            {% if ride.season_name != ns.current_season %}
+                {% set ns.current_season = ride.season_name %}
+                <div class="season-group">
+                <div class="season-label">{{ ride.season_name }}</div>
+            {% endif %}
+            <label class="ride-check">
+                <input type="checkbox" value="{{ ride.ride_id }}" onchange="updateChart()">
+                <div>
+                    <div class="ride-check-label">{{ ride.ride_name|clean_name }}</div>
+                    <div class="ride-check-meta">{{ ride.date }} &mdash; {{ ride.distance_km }} km &mdash; {{ (ride.strava_distance_m / 1609.34)|round(1) }} mi, {{ (ride.elapsed_time / 3600)|round(2) }}h</div>
+                </div>
+            </label>
+            {% if loop.last or rides_meta[loop.index0 + 1].season_name != ns.current_season %}
+                </div>
+            {% endif %}
+        {% endfor %}
+        </div>
+    </div>
+
+    {# Right column: chart + stats + distribution #}
+    <div class="compare-right">
+        <div class="chart-panel">
+            <div class="chart-title">Distance vs Elapsed Time</div>
+            <div id="chartEmpty" class="chart-empty">Select 2 or more rides to compare</div>
+            <canvas id="compareChart" style="display:none;"></canvas>
+            <div id="compareSummary" class="compare-summary"></div>
+        </div>
+
+        {# Stats comparison table #}
+        <div id="statsSection" style="display:none; margin-top:24px;">
+            <h3 style="font-size:1rem; font-weight:700; color:#1e293b; margin-bottom:12px;">Ride Stats Comparison</h3>
+            <div class="stats-table-wrap">
+                <table class="stats-table" id="statsTable">
+                    <thead>
+                        <tr>
+                            <th>Ride</th>
+                            <th>Date</th>
+                            <th>Distance</th>
+                            <th>Elapsed</th>
+                            <th>Moving</th>
+                            <th>Stopped</th>
+                            <th>Avg Speed</th>
+                            <th>Elevation</th>
+                            <th>Avg HR</th>
+                            <th>Avg W</th>
+                            <th>Suffer</th>
+                        </tr>
+                    </thead>
+                    <tbody id="statsBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        {# Distribution bar cards #}
+        <div id="distSection" class="dist-cards" style="display:none;"></div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+(function() {
+    const rideCache = {};  // Cache fetched ride data by ID
+    const COLORS = [
+        '#c2410c', '#2563eb', '#16a34a', '#7c3aed', '#db2777',
+        '#ca8a04', '#0891b2', '#4f46e5', '#059669', '#e11d48'
+    ];
+
+    const canvas = document.getElementById('compareChart');
+    const ctx = canvas.getContext('2d');
+    let chart = null;
+
+    function fmtTime(hrs) {
+        const h = Math.floor(hrs);
+        const m = Math.round((hrs - h) * 60);
+        return h + 'h' + String(m).padStart(2, '0') + 'm';
+    }
+
+    function getSelectedRideIds() {
+        const checks = document.querySelectorAll('#rideSelector input[type="checkbox"]:checked');
+        return Array.from(checks).map(c => parseInt(c.value));
+    }
+
+    window.selectAll = function() {
+        document.querySelectorAll('#rideSelector input[type="checkbox"]').forEach(c => c.checked = true);
+        updateChart();
+    };
+    window.selectNone = function() {
+        document.querySelectorAll('#rideSelector input[type="checkbox"]').forEach(c => c.checked = false);
+        updateChart();
+    };
+
+    function val(v, suffix) { return v != null ? v + (suffix || '') : '\u2014'; }
+
+    function fmtTimeSec(s) {
+        if (s == null) return '\u2014';
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        return h + 'h ' + String(m).padStart(2, '0') + 'm';
+    }
+
+    const METRICS = [
+        { key: 'elapsed_time_hrs', title: 'Elapsed Time', badge: 'Performance', badgeColor: '#d1fae5;color:#065f46',
+          fmt: v => fmtTime(v), unit: 'hrs' },
+        { key: 'avg_speed_mph', title: 'Average Speed', badge: 'Fitness', badgeColor: '#fef3c7;color:#92400e',
+          fmt: v => v != null ? v + ' mph' : '\u2014', unit: 'mph' },
+        { key: 'stopped_time_sec', title: 'Stopped Time', badge: 'Efficiency', badgeColor: '#fef3c7;color:#92400e',
+          fmt: v => fmtTimeSec(v), unit: '' },
+        { key: 'elevation_ft', title: 'Elevation Gain', badge: 'Route', badgeColor: '#e0e7ff;color:#3730a3',
+          fmt: v => v != null ? v.toLocaleString() + ' ft' : '\u2014', unit: 'ft' },
+        { key: 'avg_hr', title: 'Average Heart Rate', badge: 'Physiological', badgeColor: '#f3e8ff;color:#6b21a8',
+          fmt: v => v != null ? v + ' bpm' : '\u2014', unit: 'bpm' },
+        { key: 'avg_watts', title: 'Average Power', badge: 'Power', badgeColor: '#e0e7ff;color:#3730a3',
+          fmt: v => v != null ? v + ' W' : '\u2014', unit: 'W' },
+        { key: 'suffer_score', title: 'Suffer Score', badge: 'Effort', badgeColor: '#f3e8ff;color:#6b21a8',
+          fmt: v => v != null ? '' + v : '\u2014', unit: '' },
+    ];
+
+    function buildDistCards(selectedRides, colorMap) {
+        const distEl = document.getElementById('distSection');
+        if (selectedRides.length < 2) { distEl.style.display = 'none'; return; }
+        distEl.style.display = 'block';
+
+        // Compute stopped_time_sec from elapsed - moving (in seconds via hrs * 3600)
+        selectedRides.forEach(r => {
+            if (r.elapsed_time_str && r.moving_time_str) {
+                const eMatch = r.elapsed_time_str.match(/(\d+)h\s*(\d+)m/);
+                const mMatch = r.moving_time_str.match(/(\d+)h\s*(\d+)m/);
+                if (eMatch && mMatch) {
+                    const eSec = parseInt(eMatch[1]) * 3600 + parseInt(eMatch[2]) * 60;
+                    const mSec = parseInt(mMatch[1]) * 3600 + parseInt(mMatch[2]) * 60;
+                    r.stopped_time_sec = eSec - mSec;
+                }
+            }
+        });
+
+        const ABOVE = [-28, -46, -64, -82];
+        const BELOW = [26, 44, 62, 80];
+        let html = '';
+
+        for (const metric of METRICS) {
+            const values = selectedRides.filter(r => r[metric.key] != null).map(r => r[metric.key]);
+            if (values.length < 2) continue;
+
+            const sorted = [...values].sort((a, b) => a - b);
+            const min = sorted[0], max = sorted[sorted.length - 1];
+            if (max === min) continue;
+            const median = sorted.length % 2 === 0
+                ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+                : sorted[Math.floor(sorted.length / 2)];
+            const mean = values.reduce((a, b) => a + b, 0) / values.length;
+
+            const range = max - min;
+            const pad = range * 0.05;
+            const dMin = min - pad, dMax = max + pad;
+            const dRange = dMax - dMin;
+
+            const medPct = Math.max(2, Math.min(98, Math.round((median - dMin) / dRange * 100)));
+
+            let dots = '';
+            selectedRides.forEach((ride, idx) => {
+                const v = ride[metric.key];
+                if (v == null) return;
+                const color = colorMap[ride.ride_id];
+                const pos = Math.max(2, Math.min(98, Math.round((v - dMin) / dRange * 100)));
+                const tier = idx % 4;
+                const lblTop = ABOVE[tier], valTop = BELOW[tier];
+                const connAboveH = Math.abs(lblTop) - 4;
+                const connBelowH = valTop - 9;
+                const name = ride.ride_name.length > 20 ? ride.ride_name.substring(0, 18) + '..' : ride.ride_name;
+
+                dots += '<div class="dist-connector" style="left:' + pos + '%;top:' + lblTop + 'px;height:' + connAboveH + 'px;background:' + color + ';"></div>';
+                dots += '<div class="dist-dot-label" style="left:' + pos + '%;top:' + (lblTop - 14) + 'px;color:' + color + ';font-size:0.58rem;">' + name + '</div>';
+                dots += '<div class="dist-dot" style="left:' + pos + '%;background:' + color + ';"></div>';
+                dots += '<div class="dist-connector" style="left:' + pos + '%;top:9px;height:' + connBelowH + 'px;background:' + color + ';"></div>';
+                dots += '<div class="dist-dot-value" style="left:' + pos + '%;top:' + valTop + 'px;color:' + color + ';">' + metric.fmt(v) + '</div>';
+            });
+
+            html += '<div class="dist-card">';
+            html += '<div class="dist-card-header"><span class="dist-card-title">' + metric.title + '</span>';
+            html += '<span class="dist-badge" style="background:' + metric.badgeColor + '">' + metric.badge + '</span></div>';
+            html += '<div class="dist-track-wrap"><div class="dist-track">';
+            html += '<div class="dist-median-line" style="left:' + medPct + '%;"></div>';
+            html += '<div class="dist-median-label" style="left:' + medPct + '%;">\u25B2 ' + metric.fmt(median) + '</div>';
+            html += dots;
+            html += '</div><div class="dist-end-labels"><span>' + metric.fmt(dMin > 0 ? Math.round(dMin) : min) + '</span>';
+            html += '<span>' + metric.fmt(Math.round(dMax)) + '</span></div></div>';
+            html += '<div class="dist-group-stats">Avg <strong>' + metric.fmt(Math.round(mean * 10) / 10) + '</strong></div>';
+            html += '</div>';
+        }
+
+        distEl.innerHTML = html;
+    }
+
+    let fetchTimeout = null;
+    window.updateChart = function() {
+        // Debounce rapid checkbox changes
+        clearTimeout(fetchTimeout);
+        fetchTimeout = setTimeout(_doUpdateChart, 150);
+    };
+
+    async function _doUpdateChart() {
+        const selectedIds = getSelectedRideIds();
+        const emptyEl = document.getElementById('chartEmpty');
+        const summaryEl = document.getElementById('compareSummary');
+        const statsSection = document.getElementById('statsSection');
+        const statsBody = document.getElementById('statsBody');
+        const distEl = document.getElementById('distSection');
+
+        if (selectedIds.length < 2) {
+            canvas.style.display = 'none';
+            emptyEl.style.display = 'flex';
+            summaryEl.innerHTML = '';
+            statsSection.style.display = 'none';
+            distEl.style.display = 'none';
+            if (chart) { chart.destroy(); chart = null; }
+            return;
+        }
+
+        // Check which IDs need fetching
+        const needFetch = selectedIds.filter(id => !rideCache[id]);
+        if (needFetch.length > 0) {
+            emptyEl.textContent = 'Loading ride data...';
+            emptyEl.style.display = 'flex';
+            canvas.style.display = 'none';
+            try {
+                const params = needFetch.map(id => 'ids=' + id).join('&');
+                const resp = await fetch('/api/brevet-comparison/rides?' + params);
+                const data = await resp.json();
+                if (Array.isArray(data)) {
+                    data.forEach(ride => { rideCache[ride.ride_id] = ride; });
+                }
+            } catch (e) {
+                emptyEl.textContent = 'Failed to load ride data. Please retry.';
+                return;
+            }
+        }
+
+        canvas.style.display = 'block';
+        emptyEl.style.display = 'none';
+        statsSection.style.display = 'block';
+
+        const datasets = [];
+        const chips = [];
+        const tableRows = [];
+        const selectedRides = [];
+        const colorMap = {};
+
+        selectedIds.forEach((rideId, idx) => {
+            const ride = rideCache[rideId];
+            if (!ride) return;
+            const color = COLORS[idx % COLORS.length];
+            selectedRides.push(ride);
+            colorMap[ride.ride_id] = color;
+
+            datasets.push({
+                label: ride.ride_name + ' (' + ride.date + ')',
+                data: ride.points,
+                borderColor: color,
+                borderWidth: 2,
+                tension: 0,
+                pointRadius: 0,
+                pointHitRadius: 8,
+                fill: false,
+            });
+
+            chips.push(
+                '<span class="compare-chip">' +
+                '<span class="dot" style="background:' + color + ';"></span>' +
+                '<span>' + ride.ride_name + '</span>' +
+                '<span class="chip-detail">' + ride.distance_miles + ' mi, ' + fmtTime(ride.elapsed_time_hrs) + '</span>' +
+                '</span>'
+            );
+
+            tableRows.push(
+                '<tr>' +
+                '<td><span class="ride-color-dot" style="background:' + color + ';"></span>' + ride.ride_name + '</td>' +
+                '<td>' + ride.date + '</td>' +
+                '<td>' + ride.distance_miles + ' mi</td>' +
+                '<td>' + val(ride.elapsed_time_str) + '</td>' +
+                '<td>' + val(ride.moving_time_str) + '</td>' +
+                '<td>' + val(ride.stopped_time_str) + '</td>' +
+                '<td>' + val(ride.avg_speed_mph, ' mph') + '</td>' +
+                '<td>' + (ride.elevation_ft != null ? ride.elevation_ft.toLocaleString() + ' ft' : '\u2014') + '</td>' +
+                '<td>' + val(ride.avg_hr, ' bpm') + '</td>' +
+                '<td>' + val(ride.avg_watts, ' W') + '</td>' +
+                '<td>' + val(ride.suffer_score) + '</td>' +
+                '</tr>'
+            );
+        });
+
+        summaryEl.innerHTML = chips.join('');
+        statsBody.innerHTML = tableRows.join('');
+        buildDistCards(selectedRides, colorMap);
+
+        if (chart) {
+            chart.data.datasets = datasets;
+            chart.update();
+        } else {
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: { datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    interaction: { mode: 'nearest', intersect: false },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: { display: true, text: 'Distance (mi)' },
+                            ticks: { stepSize: 20 },
+                        },
+                        y: {
+                            title: { display: true, text: 'Elapsed Time (hrs)' },
+                            ticks: { callback: v => v.toFixed(1) + 'h' },
+                        },
+                    },
+                    plugins: {
+                        legend: { display: true, position: 'bottom',
+                            labels: { boxWidth: 12, font: { size: 11 } },
+                            onHover: function(e, item, legend) {
+                                legend.chart.data.datasets.forEach((ds, i) => {
+                                    ds.borderWidth = i === item.datasetIndex ? 4 : 1;
+                                    ds.borderColor = i === item.datasetIndex ? ds.borderColor :
+                                        ds.borderColor.replace(/[\d.]+\)$/, '0.3)') || ds.borderColor;
+                                });
+                                legend.chart.update('none');
+                            },
+                            onLeave: function(e, item, legend) {
+                                legend.chart.data.datasets.forEach(ds => {
+                                    ds.borderWidth = 2;
+                                });
+                                legend.chart.update('none');
+                            },
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: ctxs => 'Mile ' + ctxs[0].parsed.x.toFixed(1),
+                                label: ctx => {
+                                    return ctx.dataset.label + ': ' + fmtTime(ctx.parsed.y);
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+        }
+    };
+})();
+</script>
+
+{% endif %}
+</div>
+{% endblock %}

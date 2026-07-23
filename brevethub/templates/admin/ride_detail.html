@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}{{ ride.name }} - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>{{ ride.name|clean_name }}</h1>
+<p>{{ ride.date }} &mdash; {{ ride.distance_km }} km</p>
+</div>
+
+<div class="container section" style="max-width:900px;">
+
+{# Quick links #}
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px;">
+    {% if plan %}
+    <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug) }}" class="btn" style="background:#f0f4ff;color:#4338ca;border:1px solid #c7d2fe;">Ride Plan</a>
+    {% endif %}
+    {% set rwgps = ride.rwgps_url or (plan.rwgps_url if plan else none) %}
+    {% set rwgps_team = ride.rwgps_url_team or (plan.rwgps_url_team if plan else none) %}
+    {% if rwgps %}
+    <a href="{{ rwgps }}" target="_blank" class="btn" style="background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;">Route (RWGPS)</a>
+    {% endif %}
+    {% if rwgps_team %}
+    <a href="{{ rwgps_team }}" target="_blank" class="btn" style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;">Team Asha Route</a>
+    {% endif %}
+    {% if rwgps_team or rwgps %}
+    {% set weather_rwgps = rwgps_team or rwgps %}
+    <a href="{{ url_for('weather.weather_page', rwgps_url=weather_rwgps, start_datetime=ride.date|string + 'T' + (ride.start_time or '06:00'), plan_slug=plan.slug if plan else '', auto='1') }}" class="btn" style="background:#ecfdf5;color:#065f46;border:1px solid #6ee7b7;">Weather</a>
+    {% endif %}
+    {% if can_edit %}
+    <a href="{{ url_for('admin.mark_status', ride_id=ride.id) }}" class="btn" style="background:#f8fafc;color:#475569;border:1px solid #cbd5e1;">Edit Status</a>
+    <a href="{{ url_for('admin.ride_edit', ride_id=ride.id) }}" class="btn" style="background:#f8fafc;color:#475569;border:1px solid #cbd5e1;">Edit Ride</a>
+    {% endif %}
+</div>
+
+{# Ride info #}
+<div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:24px;">
+    {% if ride.distance_km %}<div style="font-size:0.85rem;color:#64748b;"><strong>{{ ride.distance_km }}km</strong></div>{% endif %}
+    {% if ride.elevation_ft %}<div style="font-size:0.85rem;color:#64748b;"><strong>{{ "{:,}".format(ride.elevation_ft) }}ft</strong> elevation</div>{% endif %}
+    {% if ride.time_limit_hours %}<div style="font-size:0.85rem;color:#64748b;">Time limit: <strong>{{ ride.time_limit_hours }}h</strong></div>{% endif %}
+    {% if ride.start_time %}<div style="font-size:0.85rem;color:#64748b;">Start: <strong>{{ ride.start_time }}</strong></div>{% endif %}
+    {% if ride.start_location %}<div style="font-size:0.85rem;color:#64748b;">Location: <strong>{{ ride.start_location }}</strong></div>{% endif %}
+</div>
+
+{# Participants table #}
+{% set finishers = participants|selectattr('status', 'eq', 'FINISHED')|list %}
+{% set dnfs = participants|selectattr('status', 'eq', 'DNF')|list %}
+{% set others = participants|rejectattr('status', 'eq', 'FINISHED')|rejectattr('status', 'eq', 'DNF')|list %}
+
+<h2 style="font-size:1.1rem;color:#1e293b;margin-bottom:12px;">
+    Finishers <span style="color:#16a34a;font-weight:700;">({{ finishers|length }})</span>
+    {% if dnfs %}<span style="color:#94a3b8;font-weight:400;font-size:0.9rem;margin-left:8px;">DNF: {{ dnfs|length }}</span>{% endif %}
+</h2>
+
+{% if finishers %}
+<div style="overflow-x:auto;margin-bottom:24px;">
+<table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+<thead>
+<tr style="border-bottom:2px solid #e2e8f0;">
+    <th style="padding:10px 12px;text-align:left;color:#64748b;font-size:0.75rem;text-transform:uppercase;">#</th>
+    <th style="padding:10px 12px;text-align:left;color:#64748b;font-size:0.75rem;text-transform:uppercase;">Rider</th>
+    <th style="padding:10px 12px;text-align:right;color:#64748b;font-size:0.75rem;text-transform:uppercase;">Finish Time</th>
+</tr>
+</thead>
+<tbody>
+{% for p in finishers %}
+<tr style="border-bottom:1px solid #f1f5f9;">
+    <td style="padding:8px 12px;color:#94a3b8;">{{ loop.index }}</td>
+    <td style="padding:8px 12px;">
+        <a href="{{ url_for('riders.rider_profile', rusa_id=p.rusa_id) }}" style="text-decoration:none;color:#1e293b;font-weight:500;">{{ p.first_name }} {{ p.last_name }}</a>
+        {% if p.rusa_id %}<span style="color:#94a3b8;font-size:0.75rem;margin-left:4px;">#{{ p.rusa_id }}</span>{% endif %}
+    </td>
+    <td style="padding:8px 12px;text-align:right;font-weight:600;{% if p.finish_time %}color:#1e293b;{% else %}color:#cbd5e1;{% endif %}">
+        {{ p.finish_time or '-' }}
+    </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% else %}
+<p style="color:#94a3b8;margin-bottom:24px;">No finishers recorded.</p>
+{% endif %}
+
+{% if dnfs %}
+<h3 style="font-size:0.95rem;color:#64748b;margin-bottom:8px;">Did Not Finish ({{ dnfs|length }})</h3>
+<div style="margin-bottom:24px;font-size:0.85rem;">
+{% for p in dnfs %}
+<span style="display:inline-block;padding:4px 10px;margin:2px;background:#fef2f2;color:#991b1b;border-radius:6px;">
+    {{ p.first_name }} {{ p.last_name }}
+</span>
+{% endfor %}
+</div>
+{% endif %}
+
+{% if others %}
+<h3 style="font-size:0.95rem;color:#64748b;margin-bottom:8px;">Other ({{ others|length }})</h3>
+<div style="margin-bottom:24px;font-size:0.85rem;">
+{% for p in others %}
+<span style="display:inline-block;padding:4px 10px;margin:2px;background:#f1f5f9;color:#64748b;border-radius:6px;">
+    {{ p.first_name }} {{ p.last_name }} ({{ p.status }})
+</span>
+{% endfor %}
+</div>
+{% endif %}
+
+</div>
+{% endblock %}

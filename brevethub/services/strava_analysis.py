@@ -1,0 +1,1331 @@
+"""Strava ride performance analysis.
+
+Matches Strava activities to brevet rides, fetches stream data,
+detects stoppages, and builds plan-vs-actual comparison data.
+
+The club-agnostic engine (stream (de)compression, stop detection + coalescing,
+the map payload, the distance→time interpolator, stream summary, and the analysis
+constants) was extracted to ``shared/strava_analysis.py`` so both this app and
+BrevetHub share one proven implementation. This module is now a PARTIAL re-export
+shim: it re-imports every moved name at module top (so every existing import path
+and ``mock.patch('services.strava_analysis.<name>')`` target keeps resolving) and
+keeps only the Team-Asha-specific pieces — the ride↔activity matching, the Strava
+HTTP fetch, the plan-vs-actual comparison, and the cohort/brevet overlays — which
+need the plan, the ``strava_activity`` DB rows, or Flask config.
+"""
+
+import difflib
+import html as html_mod
+import statistics
+from datetime import timedelta
+from flask import current_app
+import requests as http_requests
+
+# Re-export the extracted engine so `services.strava_analysis.<name>` still
+# resolves for every importer and in-module patch target (the shim's own
+# functions below also reference these names through this module namespace).
+from shared.strava_analysis import (  # noqa: F401
+    _compress_streams,
+    _decompress_streams,
+    _latlng_at,
+    detect_stops,
+    _coalesce_stops,
+    _nearest_time_index,
+    _backfill_stop_coords,
+    _segment_thumbnails,
+    build_map_data,
+    _build_stream_interpolator,
+    _build_stream_summary,
+    _fmt_seconds,
+    VELOCITY_THRESHOLD,
+    MIN_STOP_DURATION,
+    METERS_PER_MILE,
+    METERS_PER_KM,
+    STOP_MERGE_GAP_S,
+    STOP_ABSORPTION_RADIUS_MILES,
+    _STREAM_KEYS,
+)
+
+
+def find_matching_activity(rider_id, ride_date, ride_distance_km, ride_name):
+    """Match a brevet ride to a Strava activity for a rider.
+
+    Matching criteria:
+    1. Date: activity within +-1 day of ride date
+    2. Distance: within +-20% of ride distance
+    3. Tiebreaker: fuzzy name match
+
+    Returns:
+        strava_activity row dict or None
+    """
+    from models import get_strava_activities_in_date_range
+
+    date_start = ride_date - timedelta(days=1)
+    date_end = ride_date + timedelta(days=1)
+
+    current_app.logger.info(
+        f'find_matching_activity: rider={rider_id} date={ride_date} '
+        f'dist_km={ride_distance_km} name="{ride_name}" '
+        f'range={date_start} to {date_end}'
+    )
+
+    activities = get_strava_activities_in_date_range(rider_id, date_start, date_end)
+    current_app.logger.info(
+        f'find_matching_activity: {len(activities) if activities else 0} activities in date range'
+    )
+    if not activities:
+        return None
+
+    target_distance_m = ride_distance_km * METERS_PER_KM
+    tolerance = target_distance_m * 0.20
+
+    # Filter by distance
+    candidates = []
+    for a in activities:
+        dist = a.get('distance') or 0
+        diff = abs(dist - target_distance_m)
+        current_app.logger.info(
+            f'  activity {a.get("strava_activity_id")}: '
+            f'dist={dist:.0f}m diff={diff:.0f}m tol={tolerance:.0f}m '
+            f'match={diff <= tolerance}'
+        )
+        if diff <= tolerance:
+            candidates.append(a)
+
+    if not candidates:
+        current_app.logger.info('find_matching_activity: no candidates after distance filter')
+        return None
+
+    if len(candidates) == 1:
+        return dict(candidates[0])
+
+    # Multiple candidates — use fuzzy name matching as tiebreaker
+    clean_ride_name = html_mod.unescape(ride_name or '').lower().strip()
+
+    best_match = None
+    best_score = -1
+
+    for a in candidates:
+        activity_name = (a.get('name') or '').lower().strip()
+        score = difflib.SequenceMatcher(None, clean_ride_name, activity_name).ratio()
+        # Also factor in distance closeness (prefer closer distance match)
+        dist_diff = abs((a.get('distance') or 0) - target_distance_m) / target_distance_m
+        combined_score = score * 0.7 + (1 - dist_diff) * 0.3
+
+        if combined_score > best_score:
+            best_score = combined_score
+            best_match = a
+
+    return dict(best_match) if best_match else None
+
+
+def batch_match_rides(rider_id, participation_list):
+    """Batch detect Strava matches for a list of FINISHED rides.
+
+    Only queries local DB — no Strava API calls.
+
+    Args:
+        rider_id: int
+        participation_list: list of ride dicts with ride_id, date, distance_km, ride_name, status
+
+    Returns:
+        dict: {ride_id: {strava_activity_id, strava_url}}
+    """
+    from models import (get_all_strava_ride_matches, create_strava_ride_match,
+                        get_strava_connection)
+
+    # Only match finished rides
+    finished_rides = [
+        p for p in participation_list
+        if p.get('status', '').upper() == 'FINISHED' and p.get('ride_id')
+    ]
+    if not finished_rides:
+        current_app.logger.debug(f'batch_match_rides: no finished rides for rider {rider_id}')
+        return {}
+
+    # Check if rider has Strava connected
+    conn = get_strava_connection(rider_id)
+    if not conn:
+        current_app.logger.debug(f'batch_match_rides: no strava connection for rider {rider_id}')
+        return {}
+
+    ride_ids = [p['ride_id'] for p in finished_rides]
+    current_app.logger.info(f'batch_match_rides: rider {rider_id}, {len(finished_rides)} finished rides, ride_ids={ride_ids}')
+
+    # Get existing matches
+    existing = get_all_strava_ride_matches(rider_id, ride_ids)
+    current_app.logger.info(f'batch_match_rides: {len(existing)} existing matches')
+
+    # Try to match unmatched rides
+    for p in finished_rides:
+        rid = p['ride_id']
+        if rid in existing:
+            continue
+
+        try:
+            match = find_matching_activity(
+                rider_id=rider_id,
+                ride_date=p['date'],
+                ride_distance_km=p['distance_km'],
+                ride_name=p.get('ride_name', ''),
+            )
+            current_app.logger.info(
+                f'batch_match_rides: ride {rid} ({p.get("ride_name")}) '
+                f'date={p["date"]} dist={p["distance_km"]}km -> '
+                f'match={"YES " + str(match.get("strava_activity_id")) if match else "NONE"}'
+            )
+            if match:
+                create_strava_ride_match(rider_id, rid, match['strava_activity_id'])
+                existing[rid] = {
+                    'ride_id': rid,
+                    'strava_activity_id': match['strava_activity_id'],
+                    'strava_url': match.get('strava_url'),
+                }
+        except Exception as e:
+            current_app.logger.error(f'batch_match_rides: error matching ride {rid}: {e}', exc_info=True)
+
+    return existing
+
+
+def fetch_and_analyze(rider_id, match_id, strava_activity_id, plan_stops=None):
+    """Fetch Strava streams and run stop detection analysis.
+
+    Streams are fetched from Strava once and cached as compressed BYTEA in the
+    ``strava_ride_analysis`` table.  Subsequent page loads decompress from the
+    DB and skip the Strava API entirely.
+
+    Returns:
+        dict with 'detected_stops', 'stream_summary', 'streams', 'error'
+    """
+    from models import (get_strava_ride_analysis, upsert_strava_ride_analysis,
+                        get_strava_connection)
+
+    # ── 1. Check DB cache ────────────────────────────────────────────
+    cached = get_strava_ride_analysis(match_id)
+
+    # If we have cached streams (and no error), serve from DB — no API call
+    if cached and cached.get('activity_streams') and not cached.get('strava_api_error'):
+        streams = _decompress_streams(cached['activity_streams'])
+        detected_stops = cached.get('detected_stops') or detect_stops(streams)
+        # Normalize cached stops at render (non-destructive): merge split-up
+        # duplicates and backfill coords for rows analyzed before stops carried
+        # lat/lng — so old rides get de-duped breaks and map pins without a
+        # re-analysis. Idempotent / no-op for freshly-detected stops.
+        detected_stops = _coalesce_stops(detected_stops)
+        detected_stops = _backfill_stop_coords(detected_stops, streams)
+        if plan_stops and detected_stops:
+            detected_stops = match_stops_to_plan(detected_stops, plan_stops)
+        stream_summary = cached.get('stream_summary') or _build_stream_summary(streams)
+        return {
+            'detected_stops': detected_stops,
+            'stream_summary': stream_summary,
+            'streams': streams,
+            'error': None,
+        }
+
+    # ── 2. No cached streams — fetch from Strava API ─────────────────
+    cached_stops = cached['detected_stops'] if cached and not cached.get('strava_api_error') else None
+
+    connection = get_strava_connection(rider_id)
+    if not connection:
+        error_msg = 'No Strava connection found'
+        upsert_strava_ride_analysis(match_id, [], {}, error=error_msg)
+        return {'detected_stops': [], 'stream_summary': {}, 'error': error_msg}
+
+    try:
+        from services.strava import _get_valid_token
+        token = _get_valid_token(connection)
+
+        resp = http_requests.get(
+            f"{current_app.config['STRAVA_API_BASE']}/activities/{strava_activity_id}/streams",
+            headers={'Authorization': f'Bearer {token}'},
+            params={
+                'keys': _STREAM_KEYS,
+                'key_type': 'time',
+            },
+            timeout=15,
+        )
+
+        if resp.status_code == 429:
+            error_msg = 'Strava rate limit reached. Try again in 15 minutes.'
+            upsert_strava_ride_analysis(match_id, [], {}, error=error_msg)
+            return {'detected_stops': [], 'stream_summary': {}, 'error': error_msg}
+
+        if resp.status_code == 404:
+            error_msg = 'Strava activity not found or is private.'
+            upsert_strava_ride_analysis(match_id, [], {}, error=error_msg)
+            return {'detected_stops': [], 'stream_summary': {}, 'error': error_msg}
+
+        if not resp.ok:
+            error_msg = f'Strava API error ({resp.status_code})'
+            upsert_strava_ride_analysis(match_id, [], {}, error=error_msg)
+            return {'detected_stops': [], 'stream_summary': {}, 'error': error_msg}
+
+        # Parse streams response — Strava returns list of {type, data, ...}
+        streams_raw = resp.json()
+        streams = {}
+        for s in streams_raw:
+            streams[s['type']] = s['data']
+
+    except Exception as e:
+        error_msg = f'Failed to fetch streams: {str(e)}'
+        upsert_strava_ride_analysis(match_id, [], {}, error=error_msg)
+        return {'detected_stops': [], 'stream_summary': {}, 'error': error_msg}
+
+    # ── 3. Detect stops + build summary ──────────────────────────────
+    if cached_stops is not None:
+        detected_stops = _coalesce_stops(cached_stops)
+        detected_stops = _backfill_stop_coords(detected_stops, streams)
+        if plan_stops and detected_stops:
+            detected_stops = match_stops_to_plan(detected_stops, plan_stops)
+        stream_summary = (cached.get('stream_summary') or {}) if cached else {}
+    else:
+        detected_stops = detect_stops(streams)
+        if plan_stops and detected_stops:
+            detected_stops = match_stops_to_plan(detected_stops, plan_stops)
+        stream_summary = _build_stream_summary(streams)
+
+    # ── 4. Persist everything (stops + summary + compressed streams) ─
+    compressed = _compress_streams(streams)
+    upsert_strava_ride_analysis(
+        match_id, detected_stops, stream_summary,
+        compressed_streams=compressed,
+    )
+
+    return {
+        'detected_stops': detected_stops,
+        'stream_summary': stream_summary,
+        'streams': streams,
+        'error': None,
+    }
+
+
+def match_stops_to_plan(detected_stops, plan_stops):
+    """Match detected Strava stops to planned control/rest points by distance.
+
+    Uses plan-first greedy matching: each plan stop claims the nearest unmatched
+    detected stop. After matching, extra detected stops within
+    STOP_ABSORPTION_RADIUS_MILES of a matched plan waypoint are absorbed into
+    that waypoint's duration and removed from the returned list.
+
+    Absorption prevents double-subtraction in segment arithmetic: if a GPS drift
+    produces a brief velocity drop just before a real control, that extra stop
+    would otherwise appear in both `actual_stop_duration` (via merge) and
+    `stops_in_seg` (because it falls inside the segment range). By absorbing it
+    into the matched control's duration and removing it from the list entirely,
+    the segment calculation stays correct.
+
+    Tolerance for matching: min(3% of total distance, 3.0 miles).
+
+    Returns:
+        enriched detected_stops with matched_stop_name, matched_stop_type, is_extra
+        (absorbed stops removed from the list)
+    """
+    if not plan_stops or not detected_stops:
+        for stop in detected_stops:
+            stop['matched_stop_name'] = None
+            stop['matched_stop_type'] = None
+            stop['is_extra'] = True
+        return detected_stops
+
+    # Get total distance for tolerance calculation
+    total_dist = max((float(s.get('distance_miles') or 0) for s in plan_stops), default=0)
+    tolerance = min(total_dist * 0.03, 3.0) if total_dist > 0 else 3.0
+
+    # Initialise all detected stops as unmatched extras
+    for ds in detected_stops:
+        ds['_matched'] = False
+        ds['matched_stop_name'] = None
+        ds['matched_stop_type'] = None
+        ds['planned_duration_min'] = 0
+        ds['is_extra'] = True
+
+    # Build matchable plan stops (exclude start — finish is a real control)
+    matchable = []
+    for ps in plan_stops:
+        stop_type = (ps.get('stop_type') or '').lower()
+        if stop_type == 'start':
+            continue
+        matchable.append({
+            'distance_miles': float(ps.get('distance_miles') or 0),
+            'location': ps.get('location', ''),
+            'stop_type': stop_type,
+            'stop_duration_min': ps.get('stop_duration_min') or 0,
+            'matched_ds': None,
+        })
+
+    # Plan-first matching: each plan stop claims the nearest unmatched detected stop
+    for ps in matchable:
+        best_ds = None
+        best_diff = float('inf')
+        for ds in detected_stops:
+            if ds['_matched']:
+                continue
+            diff = abs(ds['distance_miles'] - ps['distance_miles'])
+            if diff <= tolerance and diff < best_diff:
+                best_diff = diff
+                best_ds = ds
+
+        if best_ds:
+            best_ds['_matched'] = True
+            best_ds['matched_stop_name'] = ps['location']
+            best_ds['matched_stop_type'] = ps['stop_type']
+            best_ds['planned_duration_min'] = ps['stop_duration_min']
+            best_ds['is_extra'] = False
+            ps['matched_ds'] = best_ds
+
+    # Absorption pass: extra stops within STOP_ABSORPTION_RADIUS_MILES of a matched
+    # waypoint are folded into that waypoint's duration and dropped from the list.
+    absorbed_indices = set()
+    for ps in matchable:
+        if ps['matched_ds'] is None:
+            continue
+        matched_ds = ps['matched_ds']
+        wp_dist = ps['distance_miles']
+        for i, ds in enumerate(detected_stops):
+            if ds['_matched']:
+                continue
+            if abs(ds['distance_miles'] - wp_dist) <= STOP_ABSORPTION_RADIUS_MILES:
+                matched_ds['duration_s'] = matched_ds.get('duration_s', 0) + ds.get('duration_s', 0)
+                matched_ds['duration_min'] = round(matched_ds['duration_s'] / 60, 1)
+                absorbed_indices.add(i)
+
+    # Clean up temp field and remove absorbed stops
+    for ds in detected_stops:
+        ds.pop('_matched', None)
+
+    if absorbed_indices:
+        detected_stops = [ds for i, ds in enumerate(detected_stops) if i not in absorbed_indices]
+
+    return detected_stops
+
+
+def build_comparison(plan_stops, detected_stops, activity, custom_stops=None,
+                     plan_start_time=None, actual_start_time=None, streams=None):
+    """Build comparison data structure for template rendering.
+
+    Merges plan stops with detected actual stops into a unified timeline.
+
+    Args:
+        plan_stops: base plan stops list
+        detected_stops: list from detect_stops() with matching info
+        activity: strava activity dict (distance, moving_time, elapsed_time, etc.)
+        custom_stops: optional custom plan stops
+        plan_start_time: string like "07:00" from ride_plan.start_time
+        actual_start_time: datetime from strava_activity.start_date_local
+        streams: optional Strava streams dict with 'distance' and 'time' arrays
+
+    Returns:
+        dict with 'rows' (list of comparison rows), 'summary' (metrics dict)
+    """
+    from datetime import datetime as _dt
+
+    actual_distance_miles = (activity.get('distance') or 0) / METERS_PER_MILE
+    actual_moving_time_min = (activity.get('moving_time') or 0) / 60
+    actual_elapsed_time_min = (activity.get('elapsed_time') or 0) / 60
+    actual_stopped_time_min = actual_elapsed_time_min - actual_moving_time_min
+
+    # Build stream interpolator for actual time at any distance
+    interp = _build_stream_interpolator(streams)
+
+    # Build segment HR/power averager from streams
+    hr_stream = streams.get('heartrate', []) if streams else []
+    watts_stream = streams.get('watts', []) if streams else []
+    dist_stream_mi = [d / METERS_PER_MILE for d in streams.get('distance', [])] if streams else []
+
+    def avg_stream_in_range(stream, start_mi, end_mi):
+        """Average a stream array between two mile markers."""
+        if not stream or not dist_stream_mi or len(stream) != len(dist_stream_mi):
+            return None
+        vals = [stream[i] for i in range(len(dist_stream_mi))
+                if start_mi <= dist_stream_mi[i] <= end_mi and stream[i] is not None and stream[i] > 0]
+        return round(sum(vals) / len(vals)) if vals else None
+
+    velocity_stream = streams.get('velocity_smooth', []) if streams else []
+    time_stream = streams.get('time', []) if streams else []
+
+    def stopped_time_in_range(start_mi, end_mi):
+        """Total stopped time (minutes) between two mile markers from velocity stream."""
+        if not velocity_stream or not dist_stream_mi or not time_stream:
+            return None
+        if len(velocity_stream) != len(dist_stream_mi) or len(time_stream) != len(dist_stream_mi):
+            return None
+        stopped = 0.0
+        for i in range(1, len(dist_stream_mi)):
+            if not (start_mi <= dist_stream_mi[i] <= end_mi):
+                continue
+            if velocity_stream[i] < VELOCITY_THRESHOLD:
+                dt = time_stream[i] - time_stream[i - 1]
+                stopped += dt
+        return round(stopped / 60, 1) if stopped > 0 else None
+
+    # Extra per-segment streams (cadence/altitude/grade are fetched + cached but
+    # were previously unused). All are index-aligned with dist_stream_mi.
+    cadence_stream = streams.get('cadence', []) if streams else []
+    altitude_stream = streams.get('altitude', []) if streams else []
+    grade_stream = streams.get('grade_smooth', []) if streams else []
+
+    def avg_grade_in_range(start_mi, end_mi):
+        """Average (signed) grade percent over a mile range. Unlike
+        avg_stream_in_range this keeps negatives (descents)."""
+        if not grade_stream or not dist_stream_mi or len(grade_stream) != len(dist_stream_mi):
+            return None
+        vals = [grade_stream[i] for i in range(len(dist_stream_mi))
+                if start_mi <= dist_stream_mi[i] <= end_mi and grade_stream[i] is not None]
+        return round(sum(vals) / len(vals), 1) if vals else None
+
+    def elev_gain_in_range(start_mi, end_mi):
+        """Sum of positive altitude deltas (feet) — the climbing done in a segment."""
+        if not altitude_stream or not dist_stream_mi or len(altitude_stream) != len(dist_stream_mi):
+            return None
+        idx = [i for i in range(len(dist_stream_mi)) if start_mi <= dist_stream_mi[i] <= end_mi]
+        if len(idx) < 2:
+            return None
+        gain_m = 0.0
+        for a, b in zip(idx, idx[1:]):
+            d = altitude_stream[b] - altitude_stream[a]
+            if d and d > 0:
+                gain_m += d
+        return round(gain_m * 3.28084)
+
+    def normalized_power_in_range(start_mi, end_mi):
+        """Approximate normalized power (W): 4th-root of the mean of 30-sample
+        rolling-average power^4. Needs >=30 power samples in the segment."""
+        if not watts_stream or not dist_stream_mi or len(watts_stream) != len(dist_stream_mi):
+            return None
+        seg = [watts_stream[i] for i in range(len(dist_stream_mi))
+               if start_mi <= dist_stream_mi[i] <= end_mi and watts_stream[i] is not None]
+        if len(seg) < 30:
+            return None
+        from collections import deque
+        window, run, q, rolling = 30, 0.0, deque(), []
+        for w in seg:
+            q.append(w); run += w
+            if len(q) > window:
+                run -= q.popleft()
+            if len(q) == window:
+                rolling.append(run / window)
+        if not rolling:
+            return None
+        return round((sum(p ** 4 for p in rolling) / len(rolling)) ** 0.25)
+
+    actual_elevation_ft = (activity.get('total_elevation_gain') or 0) * 3.28084
+    actual_avg_speed_mph = (activity.get('average_speed') or 0) * 2.23694
+
+    # Parse plan start time for TOD calculations
+    plan_start_dt = None
+    if plan_start_time:
+        try:
+            h, m = map(int, str(plan_start_time).split(':'))
+            plan_start_dt = _dt(2000, 1, 1, h, m)
+        except (ValueError, AttributeError):
+            plan_start_dt = None
+
+    # Build a map of detected stops by approximate distance for matching
+    detected_by_dist = {}
+    for ds in (detected_stops or []):
+        detected_by_dist[ds['distance_miles']] = ds
+
+    # Build matched stop lookup: plan stop location → detected stop
+    matched_stops_by_name = {}
+    for ds in (detected_stops or []):
+        if ds.get('matched_stop_name'):
+            matched_stops_by_name[ds['matched_stop_name']] = ds
+
+    # Build custom stop lookup if available (keyed by rounded distance for fuzzy match)
+    custom_by_dist = {}
+    custom_stops_list = list(custom_stops) if custom_stops else []
+    if custom_stops_list:
+        for cs in custom_stops_list:
+            dist = round(float(cs.get('distance_miles') or 0), 1)
+            custom_by_dist[dist] = cs
+
+    # Build comparison rows from plan stops
+    rows = []
+
+    for ps in plan_stops:
+        location = ps.get('location', '')
+        stop_type = (ps.get('stop_type') or '').lower()
+        distance_miles = float(ps.get('distance_miles') or 0)
+        plan_segment_min = ps.get('segment_time_min') or 0
+        plan_stop_duration = ps.get('stop_duration_min') or 0
+        plan_cum_time = ps.get('cum_time_min') or 0
+
+        # Look for matched actual stop
+        actual_stop = matched_stops_by_name.get(location)
+        actual_stop_duration = actual_stop['duration_min'] if actual_stop else None
+
+        # Actual cumulative time — ALWAYS use interpolated time at exact mile marker.
+        # This avoids skew when a detected stop is at a slightly different distance
+        # than the planned waypoint (e.g., Taco Bell at 148mi matched to Shell at 145mi).
+        actual_cum_time = None
+        cum_time_delta = None
+
+        if stop_type == 'start':
+            actual_cum_time = 0
+            actual_stop_duration = 0
+        elif stop_type == 'finish':
+            actual_cum_time = round(actual_elapsed_time_min)
+            actual_stop_duration = 0
+            if plan_cum_time:
+                cum_time_delta = round(actual_cum_time - plan_cum_time)
+        elif interp and distance_miles > 0:
+            # Use stream interpolation at exact mile marker
+            actual_cum_time = round(interp(distance_miles))
+            if not actual_stop:
+                actual_stop_duration = 0
+            if plan_cum_time:
+                cum_time_delta = round(actual_cum_time - plan_cum_time)
+
+        # Time of day calculations
+        plan_tod = None
+        if plan_start_dt and plan_cum_time:
+            plan_tod_dt = plan_start_dt + timedelta(minutes=plan_cum_time)
+            plan_tod = plan_tod_dt.strftime('%-I:%M%p').lower()
+        elif stop_type == 'start' and plan_start_dt:
+            plan_tod = plan_start_dt.strftime('%-I:%M%p').lower()
+
+        actual_tod = None
+        if actual_cum_time is not None and actual_start_time:
+            actual_tod_dt = actual_start_time + timedelta(minutes=actual_cum_time)
+            actual_tod = actual_tod_dt.strftime('%-I:%M%p').lower()
+
+        # Custom plan data (base plan when custom exists, via the swap)
+        custom_data = None
+        if custom_stops_list:
+            cs = custom_by_dist.get(round(distance_miles, 1))
+            if cs:
+                cs_seg_time = cs.get('segment_time_min') or 0
+                cs_seg_dist = float(cs.get('seg_dist') or 0)
+                cs_speed = round(cs_seg_dist / (cs_seg_time / 60), 1) if cs_seg_time and cs_seg_dist else None
+                cs_cum = cs.get('cum_time_min') or 0
+                cs_stop_dur = cs.get('stop_duration_min') or 0
+                cs_arrival = (cs_cum - cs_stop_dur) if cs_cum and cs_stop_dur else cs_cum
+                cs_tod = None
+                if plan_start_dt and cs_cum:
+                    cs_tod = (plan_start_dt + timedelta(minutes=cs_cum)).strftime('%-I:%M%p').lower()
+                elif stop_type == 'start' and plan_start_dt:
+                    cs_tod = plan_start_dt.strftime('%-I:%M%p').lower()
+                cs_bookend = cs.get('bookend_time_min')
+                cs_time_bank = cs.get('time_bank_min')
+                custom_data = {
+                    'segment_time_min': cs_seg_time,
+                    'stop_duration_min': cs_stop_dur,
+                    'cum_time_min': cs_cum,
+                    'arrival_time_min': cs_arrival,
+                    'speed_mph': cs_speed,
+                    'time_of_day': cs_tod,
+                    'time_bank': cs_time_bank,
+                }
+
+        # Arrival time = cumulative time before the break at this stop
+        plan_arrival_time = (plan_cum_time - plan_stop_duration) if plan_cum_time and plan_stop_duration else plan_cum_time
+        actual_arrival_time = None
+        if actual_cum_time is not None and actual_stop_duration is not None:
+            actual_arrival_time = max(0, round(actual_cum_time - actual_stop_duration))
+
+        # Segment speed (mph) from plan
+        plan_seg_dist = ps.get('seg_dist') or 0
+        plan_speed_mph = round(float(plan_seg_dist) / (plan_segment_min / 60), 1) if plan_segment_min and plan_seg_dist else None
+
+        # Time bank from plan
+        plan_time_bank = ps.get('time_bank_min')
+        plan_bookend = ps.get('bookend_time_min')
+        actual_time_bank = None
+        if plan_bookend and actual_arrival_time is not None:
+            actual_time_bank = round(plan_bookend - actual_arrival_time)
+
+        row = {
+            'location': location,
+            'stop_type': stop_type,
+            'distance_miles': distance_miles,
+            'plan_segment_min': plan_segment_min,
+            'plan_stop_duration_min': plan_stop_duration,
+            'plan_cum_time_min': plan_cum_time,
+            'plan_arrival_time_min': plan_arrival_time,
+            'plan_speed_mph': plan_speed_mph,
+            'plan_time_bank': plan_time_bank,
+            'actual_stop_duration_min': actual_stop_duration,
+            'actual_cum_time_min': actual_cum_time,
+            'actual_arrival_time_min': actual_arrival_time,
+            'actual_time_bank': actual_time_bank,
+            'cum_time_delta_min': cum_time_delta,
+            'plan_time_of_day': plan_tod,
+            'actual_time_of_day': actual_tod,
+            'is_extra': False,
+            'custom': custom_data,
+        }
+
+        # Time delta for stop duration
+        if actual_stop_duration is not None and plan_stop_duration:
+            row['stop_delta_min'] = round(actual_stop_duration - plan_stop_duration, 1)
+        else:
+            row['stop_delta_min'] = None
+
+        rows.append(row)
+
+    # Insert extra (unplanned) stops — includes:
+    # 1. Stops not matched to any waypoint (is_extra=True)
+    # 2. Matched stops >10 min that are >3 mi from their matched waypoint
+    #    (e.g., Taco Bell at 148mi matched to Shell at 145mi)
+    waypoint_dists = {float(ps.get('distance_miles') or 0) for ps in plan_stops}
+    extra_stops = []
+    for ds in (detected_stops or []):
+        if ds.get('is_extra'):
+            extra_stops.append(ds)
+        elif ds.get('matched_stop_name') and ds['duration_min'] >= 4:
+            # Check if the detected stop is far from the matched waypoint
+            matched_wp_dist = None
+            for ps in plan_stops:
+                if ps.get('location') == ds['matched_stop_name']:
+                    matched_wp_dist = float(ps.get('distance_miles') or 0)
+                    break
+            if matched_wp_dist is not None and abs(ds['distance_miles'] - matched_wp_dist) > 3:
+                extra_stops.append(ds)
+
+    for es in extra_stops:
+        es_dist = es['distance_miles']
+        # Use interpolated time at exact distance for consistency
+        if interp:
+            actual_cum_time = round(interp(es_dist))
+        elif es.get('start_time_s') is not None:
+            actual_cum_time = round(es['start_time_s'] / 60)
+        else:
+            actual_cum_time = None
+
+        actual_tod = None
+        if actual_cum_time is not None and actual_start_time:
+            actual_tod_dt = actual_start_time + timedelta(minutes=actual_cum_time)
+            actual_tod = actual_tod_dt.strftime('%-I:%M%p').lower()
+
+        extra_arrival = max(0, round(actual_cum_time - es['duration_min'])) if actual_cum_time is not None else None
+
+        # Label: show matched name if it was a mislocated match, otherwise generic
+        label = f"Unplanned stop @ {es_dist:.1f}mi"
+        if es.get('matched_stop_name'):
+            label = f"Break near {es['matched_stop_name'][:30]}"
+
+        # Compute delta: interpolate plan cum_time at this distance
+        extra_plan_cum = None
+        extra_delta = None
+        for j in range(1, len(plan_stops)):
+            d0 = float(plan_stops[j-1].get('distance_miles') or 0)
+            d1 = float(plan_stops[j].get('distance_miles') or 0)
+            if d0 <= es_dist <= d1 and d1 > d0:
+                t0 = plan_stops[j-1].get('cum_time_min') or 0
+                t1 = plan_stops[j].get('cum_time_min') or 0
+                frac = (es_dist - d0) / (d1 - d0)
+                extra_plan_cum = round(t0 + frac * (t1 - t0))
+                break
+        if extra_plan_cum and actual_cum_time is not None:
+            extra_delta = round(actual_cum_time - extra_plan_cum)
+
+        row = {
+            'location': label,
+            'stop_type': 'extra',
+            'distance_miles': es['distance_miles'],
+            'plan_segment_min': None,
+            'plan_stop_duration_min': None,
+            'plan_cum_time_min': extra_plan_cum,
+            'plan_arrival_time_min': extra_plan_cum,
+            'plan_speed_mph': None,
+            'plan_time_bank': None,
+            'actual_stop_duration_min': es['duration_min'],
+            'actual_cum_time_min': actual_cum_time,
+            'actual_arrival_time_min': extra_arrival,
+            'actual_time_bank': None,
+            'cum_time_delta_min': extra_delta,
+            'plan_time_of_day': None,
+            'actual_time_of_day': actual_tod,
+            'is_extra': True,
+            'stop_delta_min': None,
+            'custom': None,
+        }
+        rows.append(row)
+
+    # Sort all rows by distance
+    rows.sort(key=lambda r: r['distance_miles'])
+
+    # Build lookup of all detected stops for segment break calculation
+    all_detected = detected_stops or []
+
+    # Calculate actual segment times, speeds, HR, power, and enroute breaks.
+    #
+    # Two "previous" pointers are maintained:
+    #   prev_dist / prev_actual_departure  — advances for every row (extras + planned)
+    #   prev_planned_dist / prev_planned_departure — advances only for planned rows
+    #
+    # For EXTRA rows: segment spans from the adjacent previous row (small sub-segment).
+    # For PLANNED rows: segment spans from the last PLANNED row, so distance/time/speed
+    #   reflect the full leg between waypoints even when an extra stop sits in between.
+    prev_actual_departure = 0   # departure after any stop, advances every row
+    prev_planned_departure = 0  # same, but only for planned rows
+    prev_dist = 0.0
+    prev_planned_dist = 0.0
+    prev_seg_metrics = {}  # last planned segment's power/speed/cadence for vs_prev
+    for row in rows:
+        cur_dist = row['distance_miles']
+        is_extra = row.get('is_extra', False)
+
+        # Choose the correct "from" anchor based on row type
+        from_dist = prev_dist if is_extra else prev_planned_dist
+        from_departure = prev_actual_departure if is_extra else prev_planned_departure
+
+        seg_dist = cur_dist - from_dist
+
+        # Location used to exclude this row's matched stop from stops_in_seg.
+        # A matched stop can sit slightly before cur_dist (GPS drift) and would
+        # otherwise be double-subtracted — once via actual_arrival calculation
+        # and again via stops_in_seg.
+        row_location = row.get('location') if not is_extra else None
+
+        # Per-segment HR, power, cadence, climb + gradient from Strava streams
+        row['actual_avg_hr'] = avg_stream_in_range(hr_stream, from_dist, cur_dist) if seg_dist > 0 else None
+        row['actual_avg_watts'] = avg_stream_in_range(watts_stream, from_dist, cur_dist) if seg_dist > 0 else None
+        row['actual_avg_cadence'] = avg_stream_in_range(cadence_stream, from_dist, cur_dist) if seg_dist > 0 else None
+        row['actual_np_watts'] = normalized_power_in_range(from_dist, cur_dist) if seg_dist > 0 else None
+        row['actual_elev_gain_ft'] = elev_gain_in_range(from_dist, cur_dist) if seg_dist > 0 else None
+        row['actual_grade_pct'] = avg_grade_in_range(from_dist, cur_dist) if seg_dist > 0 else None
+        # Climbing rate in ft/mile — the display metric (grade% is kept above for
+        # gradient-band history). None on the start row / zero-length segments.
+        row['actual_climb_ft_per_mi'] = (
+            round(row['actual_elev_gain_ft'] / seg_dist)
+            if row['actual_elev_gain_ft'] is not None and seg_dist > 0
+            else None
+        )
+
+        if row['actual_cum_time_min'] is not None:
+            # Segment elapsed = interpolated reach-time at this row minus the reach-time
+            # departing the anchor row. Both endpoints use actual_cum_time_min (the
+            # stream-interpolated time at the exact mile marker), which is monotonic and
+            # reliable. Do NOT use actual_arrival_time_min here: it subtracts THIS row's
+            # own stop from its reach-time, so a long control stop (e.g. a multi-hour
+            # sleep at a staffed control) yields an "arrival" earlier than prior
+            # waypoints, collapsing the segment to an impossible speed. The endpoint's
+            # own stop is excluded correctly without that subtraction — it is counted in
+            # the NEXT segment, where its distance falls inside (from_dist, cur_dist).
+            seg_elapsed = row['actual_cum_time_min'] - from_departure
+            # Subtract every detected stop whose location falls strictly inside this leg.
+            # Each stop is thus counted exactly once across the whole ride (legs
+            # partition the route by distance), so a break never leaks into the adjacent
+            # segment and is never double-counted.
+            stops_in_seg = sum(
+                ds['duration_min'] for ds in all_detected
+                if from_dist < ds['distance_miles'] < cur_dist
+            )
+            actual_riding = seg_elapsed - stops_in_seg
+            row['actual_segment_min'] = max(0, round(actual_riding))
+            row['actual_speed_mph'] = round(seg_dist / (actual_riding / 60), 1) if actual_riding > 0 and seg_dist > 0 else None
+            # Always advance the every-row pointer
+            prev_actual_departure = row['actual_cum_time_min']
+            # Only advance the planned pointer for planned rows
+            if not is_extra:
+                prev_planned_departure = row['actual_cum_time_min']
+        else:
+            row['actual_segment_min'] = None
+            row['actual_speed_mph'] = None
+
+        # Enroute: unplanned stopped time in this row's range (from_dist → cur_dist).
+        # Subtract ALL detected stops in the range (they appear as their own rows).
+        raw_stopped = stopped_time_in_range(from_dist, cur_dist)
+        known_stops_in_seg = sum(
+            ds['duration_min'] for ds in all_detected
+            if from_dist <= ds['distance_miles'] <= cur_dist
+            and ds.get('matched_stop_name') != row_location
+        )
+        unplanned = (raw_stopped - known_stops_in_seg) if raw_stopped else None
+        row['actual_seg_break_min'] = round(unplanned, 1) if unplanned and unplanned > 0.5 else None
+
+        # Comparison vs the previous (non-extra) segment: % change in the rider's
+        # power / speed / cadence. Drives the "X% lower than the previous segment"
+        # narrative. Only planned segments participate (extras are tiny sub-legs).
+        row['vs_prev'] = None
+        if not is_extra and seg_dist > 0:
+            vp = {}
+            for key, cur in (('watts', row.get('actual_avg_watts')),
+                             ('speed', row.get('actual_speed_mph')),
+                             ('cadence', row.get('actual_avg_cadence'))):
+                prev = prev_seg_metrics.get(key)
+                if prev and cur:
+                    vp[f'{key}_pct'] = round((cur - prev) / prev * 100)
+            row['vs_prev'] = vp or None
+            prev_seg_metrics = {'watts': row.get('actual_avg_watts'),
+                                'speed': row.get('actual_speed_mph'),
+                                'cadence': row.get('actual_avg_cadence')}
+
+        # Always advance prev_dist; advance prev_planned_dist only for planned rows
+        prev_dist = cur_dist
+        if not is_extra:
+            prev_planned_dist = cur_dist
+
+    # Plan total time
+    plan_total_time_min = plan_stops[-1].get('cum_time_min', 0) if plan_stops else 0
+    plan_total_distance = float(plan_stops[-1].get('distance_miles', 0)) if plan_stops else 0
+    plan_total_elevation = plan_stops[-1].get('elevation_gain', 0) if plan_stops else 0
+
+    # Base plan total time (when custom_stops provided, that's the base plan)
+    base_total_time_min = custom_stops[-1].get('cum_time_min', 0) if custom_stops else None
+
+    # Planned avg speed
+    plan_moving_time = sum(s.get('segment_time_min', 0) or 0 for s in plan_stops)
+    plan_avg_speed = (plan_total_distance / (plan_moving_time / 60)) if plan_moving_time > 0 else 0
+
+    # Total planned break time
+    plan_break_time = sum(s.get('stop_duration_min', 0) or 0 for s in plan_stops)
+    actual_total_stops_min = sum(ds['duration_min'] for ds in (detected_stops or []))
+
+    summary = {
+        'plan_distance_miles': round(plan_total_distance, 1),
+        'actual_distance_miles': round(actual_distance_miles, 1),
+        'plan_elevation_ft': plan_total_elevation,
+        'actual_elevation_ft': round(actual_elevation_ft),
+        'plan_total_time_min': plan_total_time_min,
+        'actual_elapsed_time_min': round(actual_elapsed_time_min),
+        'actual_moving_time_min': round(actual_moving_time_min),
+        'plan_break_time_min': plan_break_time,
+        'actual_stopped_time_min': round(actual_stopped_time_min),
+        'actual_stops_from_streams_min': round(actual_total_stops_min, 1),
+        'plan_avg_speed_mph': round(plan_avg_speed, 1),
+        'actual_avg_speed_mph': round(actual_avg_speed_mph, 1),
+        'stops_planned': len([s for s in plan_stops if (s.get('stop_duration_min') or 0) > 0]),
+        'stops_detected': len(detected_stops or []),
+        'base_total_time_min': base_total_time_min,
+        'stops_extra': len(extra_stops),
+        # Deltas (positive = over plan, negative = under plan)
+        'distance_delta_miles': round(actual_distance_miles - plan_total_distance, 1) if plan_total_distance else None,
+        'elevation_delta_ft': round(actual_elevation_ft - (plan_total_elevation or 0)) if plan_total_elevation else None,
+        'time_delta_min': round(actual_elapsed_time_min - plan_total_time_min) if plan_total_time_min else None,
+        'speed_delta_mph': round(actual_avg_speed_mph - plan_avg_speed, 1) if plan_avg_speed else None,
+        'break_delta_min': round(actual_stopped_time_min - plan_break_time) if plan_break_time else None,
+    }
+
+    # HR/Power data from activity
+    hr_power = {}
+    if activity.get('has_heartrate'):
+        hr_power['avg_hr'] = activity.get('average_heartrate')
+        hr_power['max_hr'] = activity.get('max_heartrate')
+    if activity.get('device_watts'):
+        hr_power['avg_watts'] = activity.get('average_watts')
+        hr_power['max_watts'] = activity.get('max_watts')
+        hr_power['weighted_avg_watts'] = activity.get('weighted_average_watts')
+        hr_power['kilojoules'] = activity.get('kilojoules')
+    if activity.get('suffer_score'):
+        hr_power['suffer_score'] = activity['suffer_score']
+
+    return {
+        'rows': rows,
+        'summary': summary,
+        'hr_power': hr_power,
+    }
+
+
+def _dynamic_display_range(metric, min_val, max_val):
+    """Compute a padded display range from actual data values.
+
+    Adds ~15% of the data spread as padding on each side (subject to a
+    per-metric minimum so the chart has breathing room even when all riders
+    have nearly identical values).  A floor is applied so axes never go
+    below a physically meaningful minimum.
+    """
+    spread = max_val - min_val
+    # Minimum absolute padding (used when 15% of spread would be too small)
+    MIN_PAD = {
+        'average_heartrate':      4.0,
+        'max_heartrate':          4.0,
+        'average_speed':          0.224,   # ~0.5 mph in m/s
+        'average_watts':          10.0,
+        'weighted_average_watts': 10.0,
+        'elapsed_time':           900.0,   # 15 min in seconds
+        'moving_time':            900.0,
+        'stopped_time':           300.0,   # 5 min
+        'total_elevation_gain':   200.0,
+        'suffer_score':           25.0,
+        'average_cadence':        5.0,     # 5 rpm
+    }
+    # Axis can never go below this value
+    FLOOR = {
+        'average_heartrate':      50.0,
+        'max_heartrate':          80.0,
+        'average_speed':          1.0,
+        'average_watts':          0.0,
+        'weighted_average_watts': 0.0,
+        'elapsed_time':           0.0,
+        'moving_time':            0.0,
+        'stopped_time':           0.0,
+        'total_elevation_gain':   0.0,
+        'suffer_score':           0.0,
+        'average_cadence':        40.0,    # below 40 rpm is physiologically implausible
+    }
+    pad = max(spread * 0.15, MIN_PAD.get(metric, max(spread * 0.1, 1.0)))
+    d_min = max(FLOOR.get(metric, 0.0), min_val - pad)
+    d_max = max_val + pad
+    return d_min, d_max
+
+
+def build_cohort_stats(riders, current_rider_id, ride_distance_km=None):
+    """Compute per-metric group statistics and insight callouts for cohort comparison.
+
+    Args:
+        riders: list of dicts from get_ride_cohort_stats()
+        current_rider_id: int or None (logged-in rider's DB id)
+
+    Returns:
+        dict keyed by metric name:
+        {has_data, min, max, mean, median, user_value, bar_position,
+         percentile, direction, values_sorted, insight}
+    """
+    # (metric_key, better_direction) — 'lower'/'higher'/None(reference)
+    METRICS = [
+        ('elapsed_time',           'lower'),
+        ('moving_time',            'lower'),
+        ('stopped_time',           'lower'),
+        ('average_speed',          'higher'),
+        ('average_cadence',        'higher'),
+        ('average_heartrate',      None),
+        ('max_heartrate',          None),
+        ('total_elevation_gain',   None),
+        ('suffer_score',           None),
+        ('average_watts',          'higher'),
+        ('weighted_average_watts', 'higher'),
+    ]
+
+    result = {}
+    for metric, direction in METRICS:
+        values = [float(r[metric]) for r in riders if r.get(metric) is not None]
+        if not values:
+            result[metric] = {'has_data': False}
+            continue
+
+        user_value = None
+        for r in riders:
+            if r['rider_id'] == current_rider_id and r.get(metric) is not None:
+                user_value = float(r[metric])
+                break
+
+        sorted_vals = sorted(values)
+        n = len(sorted_vals)
+        median_val = statistics.median(sorted_vals)
+        mean_val = statistics.mean(sorted_vals)
+        min_val = sorted_vals[0]
+        max_val = sorted_vals[-1]
+
+        # Compute display range dynamically from actual data values
+        d_min, d_max = _dynamic_display_range(metric, min_val, max_val)
+
+        # Percentile: % of cohort the user beats on this metric
+        percentile = None
+        if user_value is not None and n > 1:
+            if direction == 'lower':
+                percentile = round(sum(1 for v in sorted_vals if v > user_value) / n * 100)
+            elif direction == 'higher':
+                percentile = round(sum(1 for v in sorted_vals if v < user_value) / n * 100)
+
+        # Bar position: 0-100 along the min-max range (for the visual percentile bar)
+        bar_position = None
+        if user_value is not None and max_val > min_val:
+            bar_position = round((user_value - min_val) / (max_val - min_val) * 100)
+        elif user_value is not None:
+            bar_position = 50
+
+        result[metric] = {
+            'has_data': True,
+            'min': min_val,
+            'max': max_val,
+            'display_min': d_min,
+            'display_max': d_max,
+            'mean': round(mean_val, 1),
+            'median': median_val,
+            'user_value': user_value,
+            'bar_position': bar_position,
+            'percentile': percentile,
+            'direction': direction,
+            'values_sorted': sorted_vals,
+            'insight': _get_cohort_insight(metric, user_value, median_val),
+        }
+
+    # Normalize HR display range so avg and max charts share the same axis,
+    # making the two distributions visually comparable.
+    hr_avg = result.get('average_heartrate', {})
+    hr_max = result.get('max_heartrate', {})
+    if hr_avg.get('has_data') and hr_max.get('has_data'):
+        shared_min = min(hr_avg['display_min'], hr_max['display_min'])
+        shared_max = max(hr_avg['display_max'], hr_max['display_max'])
+        hr_avg['display_min'] = hr_max['display_min'] = shared_min
+        hr_avg['display_max'] = hr_max['display_max'] = shared_max
+
+    # Add pre-formatted display strings so templates don't need format functions
+    _add_cohort_display_strings(result)
+    return result
+
+
+def _add_cohort_display_strings(cohort_stats):
+    """Mutate cohort_stats in place to add min_str/max_str/mean_str/median_str/user_str."""
+    def _fmt_time(s):
+        if s is None:
+            return '\u2014'
+        h = int(s // 3600)
+        m = int((s % 3600) // 60)
+        return f'{h}h {m:02d}m'
+
+    def _fmt_speed(ms):
+        if ms is None:
+            return '\u2014'
+        return f'{ms * 2.23694:.1f} mph'
+
+    def _fmt_bpm(v):
+        if v is None:
+            return '\u2014'
+        return f'{int(v)} bpm'
+
+    def _fmt_watts(v):
+        if v is None:
+            return '\u2014'
+        return f'{int(v)} W'
+
+    def _fmt_elev(v):
+        if v is None:
+            return '\u2014'
+        return f'{int(v * 3.28084):,} ft'
+
+    def _fmt_int(v):
+        if v is None:
+            return '\u2014'
+        return str(int(v))
+
+    def _fmt_cadence(v):
+        if v is None:
+            return '\u2014'
+        return f'{int(round(v))} rpm'
+
+    formatters = {
+        'elapsed_time':           _fmt_time,
+        'moving_time':            _fmt_time,
+        'stopped_time':           _fmt_time,
+        'average_speed':          _fmt_speed,
+        'average_cadence':        _fmt_cadence,
+        'average_heartrate':      _fmt_bpm,
+        'max_heartrate':          _fmt_bpm,
+        'total_elevation_gain':   _fmt_elev,
+        'suffer_score':           _fmt_int,
+        'average_watts':          _fmt_watts,
+        'weighted_average_watts': _fmt_watts,
+    }
+
+    for metric, stat in cohort_stats.items():
+        if not stat.get('has_data'):
+            continue
+        fmt = formatters.get(metric, _fmt_int)
+        stat['min_str']         = fmt(stat['min'])
+        stat['max_str']         = fmt(stat['max'])
+        stat['display_min_str'] = fmt(stat['display_min'])
+        stat['display_max_str'] = fmt(stat['display_max'])
+        stat['mean_str']        = fmt(stat['mean'])
+        stat['median_str']      = fmt(stat['median'])
+        stat['user_str']        = fmt(stat['user_value']) if stat['user_value'] is not None else None
+
+
+def _get_cohort_insight(metric, user_value, median_val):
+    """Return an improvement insight string if user is meaningfully off the median."""
+    if user_value is None:
+        return None
+
+    diff = user_value - median_val
+
+    if metric == 'stopped_time':
+        if diff > 900:  # > 15 min more than median
+            extra_min = round(diff / 60)
+            return (f"You spent {extra_min} more minutes stopped than the average finisher. "
+                    "Faster control check-ins and pre-planned food drops can recover this time.")
+
+    elif metric == 'average_speed':
+        if diff < -0.45:  # > ~1 mph below median
+            mph_diff = round(abs(diff) * 2.23694, 1)
+            return (f"Your moving speed was {mph_diff} mph below the group average — "
+                    "a targeted base training block can close this gap over the season.")
+
+    elif metric == 'average_cadence':
+        if diff < -5:  # > 5 rpm below median
+            rpm_diff = round(abs(diff))
+            return (f"Your cadence was {rpm_diff} rpm below the group average. "
+                    "Spinning at 90+ rpm reduces quad muscle fatigue on sustained climbs "
+                    "and helps maintain power in the final hours of a brevet.")
+
+    elif metric == 'average_heartrate':
+        if diff > 10:  # > 10 bpm above median
+            bpm_diff = round(diff)
+            return (f"Your average HR was {bpm_diff} bpm above the group average. "
+                    "More base miles typically lower HR at the same effort level.")
+
+    return None
+
+
+# ── Brevet comparison ──────────────────────────────────────────────────
+
+def build_brevet_comparison_data(rides_with_streams, max_points=500):
+    """Build chart-ready comparison data for multiple rides.
+
+    Decompresses cached Strava streams for each ride, downsamples to
+    *max_points* for chart performance, and detects stops.
+
+    Args:
+        rides_with_streams: list of dicts from get_rider_rides_with_cached_streams()
+        max_points: max data points per ride line (downsampled if longer)
+
+    Returns:
+        list of dicts each containing:
+        {ride_id, ride_name, date, distance_km, season_name,
+         elapsed_time_hrs, distance_miles, points: [{x, y}],
+         stops: [{distance_miles, duration_min}]}
+    """
+    import math
+
+    results = []
+
+    for ride in rides_with_streams:
+        blob = ride.get('activity_streams')
+        if not blob:
+            continue
+
+        try:
+            streams = _decompress_streams(blob)
+        except Exception:
+            continue
+
+        distance_m = streams.get('distance', [])
+        time_s = streams.get('time', [])
+        if not distance_m or not time_s or len(distance_m) != len(time_s):
+            continue
+
+        n = len(distance_m)
+        velocity = streams.get('velocity_smooth', [])
+
+        # Build set of stop-boundary indices to preserve during downsampling
+        preserve = set()
+        if velocity and len(velocity) == n:
+            for i in range(1, n):
+                was_stopped = velocity[i - 1] < VELOCITY_THRESHOLD
+                is_stopped = velocity[i] < VELOCITY_THRESHOLD
+                if was_stopped != is_stopped:
+                    preserve.add(i)
+                    preserve.add(i - 1)
+
+        # Downsample: pick every Nth point plus preserved stop boundaries
+        if n > max_points:
+            step = math.ceil(n / max_points)
+            indices = set(range(0, n, step))
+            indices.add(n - 1)  # always include last point
+            indices |= preserve
+            indices = sorted(indices)
+        else:
+            indices = list(range(n))
+
+        points = []
+        for i in indices:
+            points.append({
+                'x': round(distance_m[i] / METERS_PER_MILE, 2),
+                'y': round(time_s[i] / 3600, 4),
+            })
+
+        # Detect stops for annotation
+        stops_raw = detect_stops(streams)
+        stops = [{'distance_miles': s['distance_miles'], 'duration_min': s['duration_min']}
+                 for s in stops_raw]
+
+        total_distance_miles = round(distance_m[-1] / METERS_PER_MILE, 1) if distance_m else 0
+        total_time_hrs = round(time_s[-1] / 3600, 2) if time_s else 0
+
+        ride_date = ride.get('date')
+        if hasattr(ride_date, 'isoformat'):
+            ride_date = ride_date.isoformat()
+
+        # Activity summary stats (from strava_activity table)
+        elapsed_s = ride.get('elapsed_time') or 0
+        moving_s = ride.get('moving_time') or 0
+        stopped_s = elapsed_s - moving_s
+        avg_speed_ms = ride.get('average_speed') or 0
+        elevation_m = ride.get('total_elevation_gain') or 0
+
+        results.append({
+            'ride_id': ride['ride_id'],
+            'ride_name': ride['ride_name'],
+            'date': str(ride_date),
+            'distance_km': ride.get('distance_km'),
+            'season_name': ride.get('season_name', ''),
+            'elapsed_time_hrs': total_time_hrs,
+            'distance_miles': total_distance_miles,
+            'points': points,
+            'stops': stops,
+            # Summary stats for comparison table
+            'moving_time_str': _fmt_seconds(moving_s),
+            'elapsed_time_str': _fmt_seconds(elapsed_s),
+            'stopped_time_str': _fmt_seconds(stopped_s),
+            'avg_speed_mph': round(avg_speed_ms * 2.23694, 1) if avg_speed_ms else None,
+            'elevation_ft': round(elevation_m * 3.28084) if elevation_m else None,
+            'avg_hr': round(ride['average_heartrate']) if ride.get('average_heartrate') else None,
+            'max_hr': round(ride['max_heartrate']) if ride.get('max_heartrate') else None,
+            'avg_watts': round(ride['average_watts']) if ride.get('average_watts') else None,
+            'suffer_score': ride.get('suffer_score'),
+            'strava_url': ride.get('strava_url'),
+        })
+
+    return results
+
+
+def build_cohort_chart_data(riders_with_streams, max_points=500):
+    """Build chart-ready overlay data for all riders in a cohort.
+
+    Similar to build_brevet_comparison_data but keyed by rider instead of ride.
+
+    Returns:
+        list of dicts: {rider_id, label, points: [{x, y}]}
+    """
+    import math
+
+    results = []
+    for rider in riders_with_streams:
+        blob = rider.get('activity_streams')
+        if not blob:
+            continue
+        try:
+            streams = _decompress_streams(blob)
+        except Exception:
+            continue
+
+        distance_m = streams.get('distance', [])
+        time_s = streams.get('time', [])
+        if not distance_m or not time_s or len(distance_m) != len(time_s):
+            continue
+
+        n = len(distance_m)
+        velocity = streams.get('velocity_smooth', [])
+
+        # Preserve stop-boundary indices
+        preserve = set()
+        if velocity and len(velocity) == n:
+            for i in range(1, n):
+                was_stopped = velocity[i - 1] < VELOCITY_THRESHOLD
+                is_stopped = velocity[i] < VELOCITY_THRESHOLD
+                if was_stopped != is_stopped:
+                    preserve.add(i)
+                    preserve.add(i - 1)
+
+        if n > max_points:
+            step = math.ceil(n / max_points)
+            indices = set(range(0, n, step))
+            indices.add(n - 1)
+            indices |= preserve
+            indices = sorted(indices)
+        else:
+            indices = list(range(n))
+
+        points = [{'x': round(distance_m[i] / METERS_PER_MILE, 2),
+                    'y': round(time_s[i] / 3600, 4)} for i in indices]
+
+        label = f"{rider['first_name']} {rider['last_name'][0]}."
+        results.append({
+            'rider_id': rider['rider_id'],
+            'label': label,
+            'points': points,
+        })
+
+    return results

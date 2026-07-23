@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}Complete Your Profile - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+    <h1>Complete Your Profile</h1>
+    <p>Enter your RUSA ID to automatically fetch your information</p>
+</div>
+
+<div class="container section">
+    <div class="max-w-[600px] mx-auto">
+        <div class="card">
+            <h2 style="color: var(--primary); margin-bottom: 20px;">RUSA Membership Verification</h2>
+            
+            <form method="POST" action="{{ url_for('auth.setup_profile') }}" id="profile-form">
+                <!-- RUSA ID Field (First) -->
+                <div class="form-group">
+                    <label for="rusa_id">RUSA ID <span style="color: var(--danger);">*</span></label>
+                    <div style="display: flex; gap: 10px; align-items: start;">
+                        <div style="flex: 1;">
+                            <input type="text" 
+                                   id="rusa_id" 
+                                   name="rusa_id" 
+                                   value="{{ rusa_id or '' }}"
+                                   required 
+                                   placeholder="e.g., 905030"
+                                   pattern="[0-9]+"
+                                   style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 1rem;">
+                        </div>
+                        <button type="button" id="fetch-btn" class="btn btn-primary" style="white-space: nowrap; padding: 10px 20px;">
+                            Fetch Info
+                        </button>
+                    </div>
+                    <small style="color: var(--text-light); font-size: 0.85rem; margin-top: 4px; display: block;">
+                        Enter your RUSA membership ID and click "Fetch Info"
+                        <a href="https://rusa.org/pages/members" target="_blank" rel="noopener" style="color: var(--primary); text-decoration: none; font-weight: 600;">
+                            (Find your RUSA ID)
+                        </a>
+                    </small>
+                </div>
+                
+                <!-- Loading Indicator -->
+                <div id="loading" style="display: none; padding: 15px; background: #EFF6FF; border-radius: 6px; margin-bottom: 20px; text-align: center;">
+                    <svg style="display: inline-block; width: 20px; height: 20px; animation: spin 1s linear infinite;" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" opacity="0.25"></circle>
+                        <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" opacity="0.75"></path>
+                    </svg>
+                    <span style="margin-left: 8px; color: #1E40AF;">Fetching information from RUSA.org...</span>
+                </div>
+                
+                <!-- Info Display -->
+                <div id="info-display" style="display: none; background-color: #D1FAE5; border-left: 4px solid #10B981; padding: 15px; margin-bottom: 20px; border-radius: 6px;">
+                    <strong style="color: #065F46;">✓ Information Retrieved from RUSA.org:</strong>
+                    <p style="margin: 8px 0 0 0; color: #047857; font-size: 1.1rem; font-weight: 600;" id="display-name"></p>
+                    <p style="margin: 4px 0 0 0; color: #047857; font-size: 0.9rem;" id="display-club"></p>
+                </div>
+                
+                <!-- Error Display -->
+                <div id="error-display" style="display: none; background-color: #FEE2E2; border-left: 4px solid #EF4444; padding: 15px; margin-bottom: 20px; border-radius: 6px;">
+                    <strong style="color: #991B1B;">Error:</strong>
+                    <p style="margin: 8px 0 0 0; color: #991B1B;" id="error-message"></p>
+                </div>
+                
+                <!-- Hidden Name Fields -->
+                <input type="hidden" id="first_name" name="first_name" value="">
+                <input type="hidden" id="last_name" name="last_name" value="">
+                
+                <div style="margin-top: 25px; padding-top: 20px; border-top: 1px solid var(--border);">
+                    <button type="submit" id="submit-btn" class="btn btn-primary" style="width: 100%; font-size: 1rem; padding: 12px;" disabled>
+                        Complete Profile
+                    </button>
+                    <p style="text-align: center; margin-top: 10px; color: var(--text-light); font-size: 0.85rem;">
+                        Click "Fetch Info" to retrieve your name from RUSA.org
+                    </p>
+                </div>
+            </form>
+        </div>
+        
+        <div class="card" style="margin-top: 20px;">
+            <h3 style="color: var(--primary); margin-bottom: 15px; font-size: 1.1rem;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width: 20px; height: 20px; display: inline-block; vertical-align: middle; margin-right: 8px;">
+                    <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 01.67 1.34l-.04.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 11-.671-1.34l.041-.022zM12 9a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" />
+                </svg>
+                How Verification Works
+            </h3>
+            <ul style="color: var(--text-light); line-height: 1.8; margin: 0; padding-left: 20px; font-size: 0.95rem;">
+                <li>We check your information against RUSA.org records</li>
+                <li>Your name must match exactly as it appears on RUSA</li>
+                <li>Each RUSA ID can only be registered once</li>
+                <li>If verification fails, we'll show you the name from RUSA records</li>
+            </ul>
+        </div>
+        
+        <div class="card" style="margin-top: 20px;">
+            <h3 style="color: var(--primary); margin-bottom: 15px; font-size: 1.1rem;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width: 20px; height: 20px; display: inline-block; vertical-align: middle; margin-right: 8px;">
+                    <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 01.67 1.34l-.04.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 11-.671-1.34l.041-.022zM12 9a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" />
+                </svg>
+                How It Works
+            </h3>
+            <ul style="color: var(--text-light); line-height: 1.8; margin: 0; padding-left: 20px; font-size: 0.95rem;">
+                <li>Enter your RUSA ID and click "Fetch Info"</li>
+                <li>We'll automatically retrieve your name from RUSA.org</li>
+                <li>Review the information and click "Complete Profile"</li>
+                <li>Your name must match RUSA records exactly</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<style>
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const rusaIdInput = document.getElementById('rusa_id');
+    const fetchBtn = document.getElementById('fetch-btn');
+    const submitBtn = document.getElementById('submit-btn');
+    const loading = document.getElementById('loading');
+    const infoDisplay = document.getElementById('info-display');
+    const errorDisplay = document.getElementById('error-display');
+    const firstNameInput = document.getElementById('first_name');
+    const lastNameInput = document.getElementById('last_name');
+    
+    fetchBtn.addEventListener('click', function() {
+        const rusaId = rusaIdInput.value.trim();
+        
+        if (!rusaId || !/^\d+$/.test(rusaId)) {
+            showError('Please enter a valid RUSA ID (numbers only)');
+            return;
+        }
+        
+        // Hide previous messages
+        infoDisplay.style.display = 'none';
+        errorDisplay.style.display = 'none';
+        loading.style.display = 'block';
+        submitBtn.disabled = true;
+        fetchBtn.disabled = true;
+        
+        // Fetch from API
+        fetch(`/auth/validate-rusa-id/${rusaId}`)
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(data => {
+                        throw new Error(data.error || 'Failed to fetch RUSA information');
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                loading.style.display = 'none';
+                fetchBtn.disabled = false;
+                
+                if (data.valid) {
+                    // Display the info
+                    document.getElementById('display-name').textContent = data.full_name;
+                    document.getElementById('display-club').textContent = 'Club: ' + data.club;
+                    infoDisplay.style.display = 'block';
+                    
+                    // Store in hidden fields
+                    firstNameInput.value = data.first_name;
+                    lastNameInput.value = data.last_name;
+                    
+                    // Enable submit button
+                    submitBtn.disabled = false;
+                } else {
+                    showError(data.error);
+                }
+            })
+            .catch(error => {
+                loading.style.display = 'none';
+                fetchBtn.disabled = false;
+                showError(error.message);
+            });
+    });
+    
+    // Allow Enter key to trigger fetch
+    rusaIdInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            fetchBtn.click();
+        }
+    });
+    
+    // Reset validation when RUSA ID changes
+    rusaIdInput.addEventListener('input', function() {
+        submitBtn.disabled = true;
+        infoDisplay.style.display = 'none';
+        errorDisplay.style.display = 'none';
+    });
+    
+    function showError(message) {
+        document.getElementById('error-message').textContent = message;
+        errorDisplay.style.display = 'block';
+        submitBtn.disabled = true;
+    }
+});
+</script>
+{% endblock %}

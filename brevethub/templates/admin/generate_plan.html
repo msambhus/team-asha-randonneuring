@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Generate Ride Plan - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Generate Ride Plan from RWGPS</h1>
+<p>Paste a RideWithGPS route URL to auto-generate a base ride plan</p>
+</div>
+<div class="container section" style="max-width:600px;">
+
+<form method="post" action="{{ url_for('admin.generate_plan_preview') }}">
+<div class="form-group">
+<label for="rwgps_url">RideWithGPS Route URL *</label>
+<input type="url" id="rwgps_url" name="rwgps_url" required
+       placeholder="https://ridewithgps.com/routes/12345"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+<small style="color:var(--text-light);display:block;margin-top:6px;">
+    The route must have waypoints/POIs for control points.
+</small>
+</div>
+
+<div style="display:flex;gap:15px;margin-top:20px;">
+<button type="submit" class="btn btn-primary">Fetch &amp; Preview Plan</button>
+<a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:var(--text-light);color:#fff;">Cancel</a>
+</div>
+</form>
+
+</div>
+{% endblock %}

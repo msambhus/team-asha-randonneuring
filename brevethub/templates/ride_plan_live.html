@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}{{ plan.name }} (live) - Team Asha Randonneuring{% endblock %}
+
+{% block extra_head %}
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="stylesheet" href="{{ url_for('static', filename='ride-plan-v2.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="rpv2-rd">
+    {% if cur %}
+    <div class="rpv2-rd-shell">
+        {# Tiny header — links back to the plan #}
+        <div class="rpv2-rd-topbar">
+            <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug) }}" class="rpv2-rd-back">← Plan</a>
+            <span class="rpv2-rd-eyebrow">Race day · {{ plan.name|truncate(28, true, '…') }}</span>
+        </div>
+
+        {# Progress bar #}
+        <div class="rpv2-rd-progress">
+            <div class="rpv2-rd-progress-bar"><div style="width:{{ progress|round(1) }}%;"></div></div>
+            <div class="rpv2-rd-progress-text">
+                <span><b>{{ "%.0f"|format(cur.cumul_mi) }}</b> / {{ "%.0f"|format(plan.total_distance_miles) }} mi · {{ progress|round|int }}%</span>
+                {% if cur.bank %}
+                <span class="rpv2-rd-progress-bank {{ 'good' if cur.bank_min >= 0 else 'bad' }}">Bank {{ cur.bank }}</span>
+                {% endif %}
+            </div>
+        </div>
+
+        {# You are here #}
+        <div class="rpv2-rd-here">
+            <div class="rpv2-rd-here-lbl">YOU ARE HERE</div>
+            <div class="rpv2-rd-here-name">{{ cur.name|replace('Open Control #', 'OC#')|replace(', CA', '') }}</div>
+            <div class="rpv2-rd-here-meta">
+                {% if cur.type == 'control' %}Control · sign card{% elif cur.type == 'rest' %}Rest stop{% elif cur.type == 'start' %}Start{% elif cur.type == 'finish' %}Finish{% else %}Waypoint{% endif %}
+                 · Mile {{ "%.0f"|format(cur.cumul_mi) }}
+            </div>
+            {% if at_index + 1 < total_stops %}
+            <a class="rpv2-rd-checkin"
+               href="{{ url_for('riders.ride_plan_live', slug=plan.slug) }}?at={{ at_index + 1 }}">
+                📍 Check in &amp; advance
+            </a>
+            {% else %}
+            <div class="rpv2-rd-finished">🏁 Finish — ride complete</div>
+            {% endif %}
+        </div>
+
+        {# Next stop #}
+        {% if next_stop %}
+        {% set delta_mi = next_stop.cumul_mi - cur.cumul_mi %}
+        <div class="rpv2-rd-card">
+            <div class="rpv2-rd-card-lbl">NEXT STOP — {{ "%.0f"|format(delta_mi) }} MI</div>
+            <div class="rpv2-rd-next-name">{{ next_stop.name|replace('Open Control #', 'OC#')|replace(', CA', '') }}</div>
+            <div class="rpv2-rd-next-grid">
+                <div><b>{{ next_stop.eta }}</b><span>ETA</span></div>
+                <div><b class="{{ 'good' if next_stop.bank_min >= 0 else 'bad' }}">{{ next_stop.bank or '—' }}</b><span>Bank</span></div>
+                <div><b>{{ next_stop.fpm }}</b><span>ft/mi</span></div>
+            </div>
+            {% if next_stop.note %}
+            <div class="rpv2-rd-next-note">💡 {{ next_stop.note }}</div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {# Now conditions #}
+        <div class="rpv2-rd-card">
+            <div class="rpv2-rd-card-lbl">NOW</div>
+            <div class="rpv2-rd-now-grid">
+                <div class="rpv2-rd-now-cell">
+                    <div class="rpv2-rd-now-icon">💨</div>
+                    <div>
+                        <b>{% if cur.wind_known %}{{ cur.wind_label }} {{ cur.wind_mph }}{% else %}—{% endif %}</b>
+                        <span>{% if cur.wind_known %}mph wind{% else %}wind data pending{% endif %}</span>
+                    </div>
+                </div>
+                <div class="rpv2-rd-now-cell">
+                    <div class="rpv2-rd-now-icon">🕕</div>
+                    <div>
+                        <b>{{ cur.eta }}</b>
+                        <span>planned ETA</span>
+                    </div>
+                </div>
+                <div class="rpv2-rd-now-cell">
+                    <div class="rpv2-rd-now-icon">⛰</div>
+                    <div>
+                        <b>{{ "{:,}".format(cur.elev) }}</b>
+                        <span>ft last seg</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# Upcoming peek #}
+        {% if upcoming %}
+        <div class="rpv2-rd-card">
+            <div class="rpv2-rd-card-lbl">UPCOMING</div>
+            {% for s in upcoming %}
+            <div class="rpv2-rd-upcoming-row">
+                <span class="rpv2-rd-upcoming-mi">{{ "%.0f"|format(s.cumul_mi - cur.cumul_mi) }}mi</span>
+                <span class="rpv2-rd-upcoming-name">{{ s.name|replace('Open Control #', 'OC#')|replace(', CA', '')|truncate(28, true, '…') }}</span>
+                <span class="rpv2-rd-upcoming-eta">{{ s.eta }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {# Action bar #}
+        <div class="rpv2-rd-actions">
+            <a href="tel:911" class="rpv2-rd-act rpv2-rd-act-emer">🆘 Emergency</a>
+            <a href="#" class="rpv2-rd-act rpv2-rd-act-grp">👥 Group chat</a>
+        </div>
+
+        {# Quick jump (for testing — shown in preview, easy to strip later) #}
+        <div class="rpv2-rd-nav">
+            {% if at_index > 0 %}
+            <a href="?at={{ at_index - 1 }}">← Prev stop</a>
+            {% else %}<span></span>{% endif %}
+            <span class="rpv2-rd-nav-count">{{ at_index + 1 }} / {{ total_stops }}</span>
+            {% if at_index + 1 < total_stops %}
+            <a href="?at={{ at_index + 1 }}">Next stop →</a>
+            {% else %}<span></span>{% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="rpv2-coming">
+        <b>No stops on this plan</b><br>
+        Race-day mode needs at least one stop. Edit the base plan to add stops.
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

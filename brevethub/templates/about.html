@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}About Randonneuring - Team Asha Randonneuring{% endblock %}
+
+{% block extra_head %}
+<style>
+@media (max-width: 768px) {
+    .brm-grid { grid-template-columns: 1fr !important; }
+    .feature-grid { grid-template-columns: 1fr !important; }
+    .pbp-stats { grid-template-columns: repeat(2, 1fr) !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero">
+<h1>About Randonneuring</h1>
+<p>The art of ultra-distance endurance cycling</p>
+</div>
+<div class="container py-6 md:py-10">
+
+<div class="intro-card">
+<div class="intro-icon">🚴</div>
+<h2 class="intro-title">What is Randonneuring?</h2>
+<p class="intro-text"><strong>Randonneuring</strong> is long-distance unsupported endurance cycling. Organized globally by <strong>Audax Club Parisien (ACP)</strong> and in the US by <strong>Randonneurs USA (RUSA)</strong>, riders complete long distances within strict time limits, passing through control checkpoints.</p>
+</div>
+
+<div class="section-header">
+<h2 class="section-title">📏 Brevets de Randonneurs Mondiaux (BRM)</h2>
+<p class="section-subtitle">Standard distances with strict time limits based on 15 km/h minimum average</p>
+</div>
+
+<div class="brm-grid">
+<div class="brm-card brm-200">
+<div class="brm-distance">200<span class="brm-unit">km</span></div>
+<div class="brm-time">13.5 hours</div>
+<div class="brm-label">Entry Distance</div>
+</div>
+<div class="brm-card brm-300">
+<div class="brm-distance">300<span class="brm-unit">km</span></div>
+<div class="brm-time">20 hours</div>
+<div class="brm-label">Building Endurance</div>
+</div>
+<div class="brm-card brm-400">
+<div class="brm-distance">400<span class="brm-unit">km</span></div>
+<div class="brm-time">27 hours</div>
+<div class="brm-label">Overnight Challenge</div>
+</div>
+<div class="brm-card brm-600">
+<div class="brm-distance">600<span class="brm-unit">km</span></div>
+<div class="brm-time">40 hours</div>
+<div class="brm-label">Ultra Distance</div>
+</div>
+<div class="brm-card brm-1000">
+<div class="brm-distance">1000<span class="brm-unit">km</span></div>
+<div class="brm-time">75 hours</div>
+<div class="brm-label">Epic Journey</div>
+</div>
+<div class="brm-card brm-1200">
+<div class="brm-distance">1200<span class="brm-unit">km</span></div>
+<div class="brm-time">90 hours</div>
+<div class="brm-label">Ultimate Test</div>
+</div>
+</div>
+
+<div class="info-box">
+<p>Riders must pass through designated <strong>control points</strong> (checkpoints) within specified opening and closing times. Controls ensure riders maintain proper pace&mdash;neither too slow nor too fast.</p>
+</div>
+
+<div class="achievement-banner">
+<span class="achievement-icon">🎉</span>
+<p>In 2023, <strong>11 Team Asha riders</strong> completed PBP, representing months of training and thousands of qualifying kilometers.</p>
+</div>
+
+<div class="section-header">
+<h2 class="section-title">🏅 Super Randonneur (SR)</h2>
+<p class="section-subtitle">The prestigious title earned through dedication and consistency</p>
+</div>
+
+<div class="sr-highlight">
+<div class="sr-content">
+<div class="sr-badge-large">SR</div>
+<div class="sr-text">
+<h3 class="sr-title">What It Takes</h3>
+<p class="sr-description">Complete the full BRM series — <strong>200km, 300km, 400km, and 600km</strong> — all within a single ACP calendar year (November to October). This requires not just physical fitness but consistent commitment across months of training and riding.</p>
+<div class="sr-requirements">
+<div class="sr-req">✓ 4 different distances</div>
+<div class="sr-req">✓ Within one season</div>
+<div class="sr-req">✓ 1,500+ km total</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="section-header">
+<h2 class="section-title">🏆 Paris-Brest-Paris (PBP)</h2>
+<p class="section-subtitle">The oldest and most prestigious cycling event, since 1891</p>
+</div>
+
+<div class="pbp-hero">
+<div class="pbp-main">
+<h3 class="pbp-title">The Ultimate Goal</h3>
+<p class="pbp-description"><strong>Paris-Brest-Paris</strong> is a 1,200km ride from Paris to Brest and back, completed within 90 hours. Held every four years, PBP is the ultimate goal for randonneurs worldwide. To qualify, riders must complete a full Super Randonneur series in the qualifying year.</p>
+</div>
+<div class="pbp-stats">
+<div class="pbp-stat">
+<div class="pbp-stat-number">1,200</div>
+<div class="pbp-stat-label">Kilometers</div>
+</div>
+<div class="pbp-stat">
+<div class="pbp-stat-number">90</div>
+<div class="pbp-stat-label">Hour Limit</div>
+</div>
+<div class="pbp-stat">
+<div class="pbp-stat-number">4</div>
+<div class="pbp-stat-label">Year Cycle</div>
+</div>
+<div class="pbp-stat highlight">
+<div class="pbp-stat-number">11</div>
+<div class="pbp-stat-label">Team Asha 2023</div>
+</div>
+</div>
+</div>
+
+<div class="section-header">
+<h2 class="section-title">💫 The Spirit of Randonneuring</h2>
+<p class="section-subtitle">More than just riding — it's a community and a philosophy</p>
+</div>
+
+<div class="feature-grid">
+<div class="feature-card">
+<div class="feature-icon">🎯</div>
+<h4 class="feature-title">Self-Sufficiency</h4>
+<p class="feature-desc">Riders carry their own supplies, navigate independently, and solve problems on the road. No support vehicles or team cars.</p>
+</div>
+<div class="feature-card">
+<div class="feature-icon">🤝</div>
+<h4 class="feature-title">Camaraderie</h4>
+<p class="feature-desc">Supporting fellow riders along the way. There are no winners or losers — only those who finish within the time limit.</p>
+</div>
+<div class="feature-card">
+<div class="feature-icon">🌄</div>
+<h4 class="feature-title">Beautiful Routes</h4>
+<p class="feature-desc">Rides traverse scenic countryside, often through the night, showcasing California's most beautiful and challenging terrain.</p>
+</div>
+<div class="feature-card">
+<div class="feature-icon">💪</div>
+<h4 class="feature-title">Mental Resilience</h4>
+<p class="feature-desc">Managing nutrition, hydration, sleep deprivation, equipment issues, and weather — all while maintaining pace.</p>
+</div>
+</div>
+
+<div class="coach-box bg-gradient-to-br from-[#faf5ff] to-[#ebf8ff] border-2 border-[#805ad5] rounded-xl p-4 md:p-6 my-8 flex flex-col items-center text-center md:flex-row md:items-start md:text-left gap-4 md:gap-5">
+<img src="https://ta.ashanet.org/siliconvalley/marathon/images/coach_mani.jpg" alt="Coach Mani" class="w-[80px] h-[80px] md:w-[140px] md:h-[140px] object-cover rounded-[10px] flex-shrink-0">
+<div>
+<h3 class="text-[#553c9a] mb-2.5 text-xl font-bold">Coach Mani — Pioneer of Randonneuring</h3>
+<p class="mt-2.5">Long before the current generation of Team Asha riders took up randonneuring, <strong>Coach Mani</strong> blazed the trail by completing <strong>Paris-Brest-Paris in 2007</strong>. Mani pioneered Team Asha's randonneuring culture, inspiring everything that followed.</p>
+<p class="mt-2.5">
+<a href="https://drive.google.com/drive/folders/1H16EtK2AQqXKS1K2lSUDiLBkk3FojjGd" class="text-primary no-underline font-semibold hover:text-accent hover:underline inline-flex items-center gap-1" target="_blank">
+<span>📹 Watch Mani's Randonneuring Talk</span>
+<span>&rarr;</span>
+</a>
+</p>
+</div>
+</div>
+
+<div class="section-header">
+<h2 class="section-title">🌉 Team Asha's Journey</h2>
+<p class="section-subtitle">Bay Area riders supporting education in India</p>
+</div>
+
+<div class="team-info">
+<div class="team-section">
+<h4 class="team-section-title">Where We Ride</h4>
+<p class="team-section-text">Team Asha's randonneuring group is based in the San Francisco Bay Area, riding events organized by local clubs:</p>
+<div class="clubs-list">
+<a href="https://sfrandonneurs.org/" target="_blank" class="club-badge sfr">San Francisco Randonneurs</a>
+<a href="https://www.davisbikeclub.org/ultracycling" target="_blank" class="club-badge dbc">Davis Bike Club</a>
+<a href="https://www.santacruzrandonneurs.org/" target="_blank" class="club-badge scr">Santa Cruz Randonneurs</a>
+</div>
+<p class="team-section-text mt-3">Our riders tackle routes through some of California's most beautiful and challenging terrain.</p>
+</div>
+
+<div class="team-section purpose-section">
+<h4 class="team-section-title">Our Purpose</h4>
+<p class="team-section-text">Beyond the physical challenge, our riders raise funds for <strong>Asha for Education</strong>, supporting the education of underprivileged children in India.</p>
+<div class="purpose-highlight">
+<span class="purpose-icon">❤️</span>
+<span class="purpose-text">Every kilometer ridden carries purpose beyond the brevet card</span>
+</div>
+</div>
+</div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Pretext.js — balance BRM card grid heights
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof PretextUtils !== 'undefined' && PretextUtils.balanceCardGrid) {
+        PretextUtils.balanceCardGrid('.brm-card', '.brm-label');
+    }
+});
+</script>
+{% endblock %}
