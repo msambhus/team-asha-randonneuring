@@ -10,6 +10,8 @@ def test_merge_page_is_public_and_branded(client):
     assert 'Merge GPS Files' in body
     assert 'processed in memory' in body
     assert 'Team Asha' not in body
+    assert 'Resources</button>' in body
+    assert 'href="/tools/merge-fit"' in body
 
 
 def test_merge_requires_two_files(client):

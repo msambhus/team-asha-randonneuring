@@ -91,6 +91,8 @@ def test_list_renders_owned_activities(client):
     assert 'Morning Loop' in body
     assert '50.0 km' in body              # distance converted to km at the view boundary
     assert 'Analyze' in body              # per-row Analyze control
+    assert 'btn-strava' in body           # Strava-colored analyze action
+    assert 'powered_by_strava.svg' in body
     assert '/analysis/555' in body        # links to the detail view
 
 
@@ -160,6 +162,7 @@ def test_compute_fetches_once_then_caches(client):
     analysis = captured['analysis']
     assert analysis['activity']['name'] == 'Morning Loop'
     assert analysis['activity']['distance_km'] == 50.0
+    assert analysis['activity']['strava_url'] == 'https://www.strava.com/activities/555'
     assert analysis['stop_count'] == 1               # the 150 s stop detected
     assert analysis['legs'], "expected inter-stop legs"
 
@@ -177,6 +180,9 @@ def test_compute_fetches_once_then_caches(client):
     body = resp.get_data(as_text=True)
     assert 'Morning Loop' in body
     assert 'Segments' in body and 'Stops' in body
+    assert 'View on Strava' in body
+    assert 'https://www.strava.com/activities/555' in body
+    assert 'powered_by_strava.svg' in body
     mock_streams_get.assert_not_called()             # cache-on-read: no recompute
 
 
@@ -251,3 +257,7 @@ def test_detail_renders_cached_breakdown(client):
     assert '45 ft/mi' in body            # per-leg climb rate
     assert '18.0 min' in body            # stop duration
     assert 'analysis-map' in body        # the map container renders when GPS is present
+    assert 'Strava Ride Summary' in body
+    assert 'View on Strava' in body
+    assert 'https://www.strava.com/activities/555' in body
+    assert 'powered_by_strava.svg' in body

@@ -4,6 +4,84 @@
   {% if analyzed %}{{ analysis.activity.name }} — analysis{% else %}Ride analysis{% endif %} — {{ product_name }}
 {% endblock %}
 {% block extra_head %}
+  <style>
+  .strava-hero {
+    background: linear-gradient(135deg, #fc4c02, #c2410c);
+    color: #fff;
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 8px 24px rgba(252, 76, 2, 0.18);
+  }
+  .strava-hero h1 { color: #fff; margin: 0 0 8px; }
+  .strava-hero p { color: rgba(255, 255, 255, 0.88); margin: 0; }
+  .strava-hero-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+  .btn-strava {
+    background: #fc4c02;
+    color: #fff;
+    border: 1px solid #fc4c02;
+  }
+  .btn-strava:hover { background: #c2410c; border-color: #c2410c; opacity: 1; }
+  .strava-outline {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+  }
+  .strava-attribution { margin-left: auto; display: flex; align-items: center; }
+  .strava-attribution img { height: 30px; background: #fff; border-radius: 6px; padding: 5px 8px; }
+  .strava-summary {
+    background: linear-gradient(135deg, #fff7ed, #fed7aa);
+    border: 2px solid #fc4c02;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .strava-summary-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #c2410c;
+    margin-bottom: 16px;
+    text-align: center;
+  }
+  .strava-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }
+  .strava-summary-item {
+    text-align: center;
+    padding: 12px 8px;
+    background: #fff;
+    border: 1px solid #fed7aa;
+    border-radius: 8px;
+  }
+  .strava-summary-label {
+    font-size: 0.7rem;
+    color: #9a3412;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  .strava-summary-value {
+    color: #c2410c;
+    font-size: 1.12rem;
+    font-weight: 700;
+  }
+  .strava-data-card {
+    border-top: 4px solid #fc4c02;
+  }
+  .analysis-legs thead th,
+  .analysis-stops thead th {
+    background: #1e293b;
+    color: #fff;
+  }
+  .analysis-legs tbody tr:hover,
+  .analysis-stops tbody tr:hover { background: #fff7ed; }
+  @media (max-width: 640px) {
+    .strava-hero-actions { align-items: stretch; }
+    .strava-attribution { width: 100%; margin-left: 0; }
+  }
+  </style>
   {% if analyzed and analysis.map %}
   <link rel="stylesheet"
         href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -17,43 +95,61 @@
 {% block content %}
 <div class="container section">
 {% if not analyzed %}
-<section class="card">
-  <h1 class="text-primary text-[1.6rem] font-bold mb-4">Ride analysis</h1>
+<div class="strava-hero">
+  <h1 class="text-[1.8rem] font-bold">Strava Ride Analysis</h1>
+  <p>Analyze this Strava activity for stops, segments, pacing, and ride-map context.</p>
+  <div class="strava-hero-actions">
+    <div class="strava-attribution">
+      <img src="{{ url_for('static', filename='img/powered_by_strava.svg') }}" alt="Powered by Strava">
+    </div>
+  </div>
+</div>
+<section class="card strava-data-card">
   <p class="text-text-light mb-4">
     This ride hasn't been analyzed yet. Analyzing fetches its data from Strava and
     computes the breakdown — it may take a few seconds.
   </p>
   <form method="post" action="{{ url_for('analysis.compute', activity_id=activity_id) }}">
-    <button class="btn btn-primary" type="submit">Analyze this ride</button>
+    <button class="btn btn-strava" type="submit">Analyze this ride</button>
   </form>
   <p class="mt-4"><a class="back-link" href="{{ url_for('analysis.analysis_list') }}">← Back to your rides</a></p>
 </section>
 {% else %}
-<section class="card">
-  <h1 class="text-primary text-[1.6rem] font-bold">{{ analysis.activity.name }}</h1>
-  <p class="text-text-light mb-4">{{ analysis.activity.date }}</p>
+<div class="strava-hero">
+  <h1 class="text-[1.8rem] font-bold">Strava Ride Analysis</h1>
+  <p>{{ analysis.activity.name }}{% if analysis.activity.date %} - {{ analysis.activity.date }}{% endif %}</p>
+  <div class="strava-hero-actions">
+    <a class="btn btn-strava" href="{{ analysis.activity.strava_url or ('https://www.strava.com/activities/' ~ activity_id) }}" target="_blank" rel="noopener">View on Strava</a>
+    <a class="btn strava-outline" href="{{ url_for('analysis.analysis_list') }}">Back to your rides</a>
+    <div class="strava-attribution">
+      <img src="{{ url_for('static', filename='img/powered_by_strava.svg') }}" alt="Powered by Strava">
+    </div>
+  </div>
+</div>
 
-  <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-    <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Distance</div><div class="font-semibold text-lg">{{ analysis.activity.distance_km }} km</div></div>
-    <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Elevation</div><div class="font-semibold text-lg">{{ analysis.activity.elevation_ft }} ft</div></div>
-    <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Moving time</div><div class="font-semibold text-lg">{{ analysis.activity.moving_time }}</div></div>
-    <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Elapsed time</div><div class="font-semibold text-lg">{{ analysis.activity.elapsed_time }}</div></div>
-    <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Average speed</div><div class="font-semibold text-lg">{{ analysis.activity.avg_speed_kmh }} km/h</div></div>
+<section class="strava-summary">
+  <div class="strava-summary-title">Strava Ride Summary</div>
+  <div class="strava-summary-grid">
+    <div class="strava-summary-item"><div class="strava-summary-label">Distance</div><div class="strava-summary-value">{{ analysis.activity.distance_km }} km</div></div>
+    <div class="strava-summary-item"><div class="strava-summary-label">Elevation</div><div class="strava-summary-value">{{ analysis.activity.elevation_ft }} ft</div></div>
+    <div class="strava-summary-item"><div class="strava-summary-label">Moving time</div><div class="strava-summary-value">{{ analysis.activity.moving_time }}</div></div>
+    <div class="strava-summary-item"><div class="strava-summary-label">Elapsed time</div><div class="strava-summary-value">{{ analysis.activity.elapsed_time }}</div></div>
+    <div class="strava-summary-item"><div class="strava-summary-label">Average speed</div><div class="strava-summary-value">{{ analysis.activity.avg_speed_kmh }} km/h</div></div>
     {% if analysis.summary.moving_speed_kmh is not none %}
-      <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Moving speed</div><div class="font-semibold text-lg">{{ analysis.summary.moving_speed_kmh }} km/h</div></div>
+      <div class="strava-summary-item"><div class="strava-summary-label">Moving speed</div><div class="strava-summary-value">{{ analysis.summary.moving_speed_kmh }} km/h</div></div>
     {% endif %}
     {% if analysis.summary.avg_hr is not none %}
-      <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Avg / max HR</div><div class="font-semibold text-lg">{{ analysis.summary.avg_hr }}{% if analysis.summary.max_hr is not none %} / {{ analysis.summary.max_hr }}{% endif %} bpm</div></div>
+      <div class="strava-summary-item"><div class="strava-summary-label">Avg / max HR</div><div class="strava-summary-value">{{ analysis.summary.avg_hr }}{% if analysis.summary.max_hr is not none %} / {{ analysis.summary.max_hr }}{% endif %} bpm</div></div>
     {% endif %}
     {% if analysis.summary.avg_watts is not none %}
-      <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Avg / max power</div><div class="font-semibold text-lg">{{ analysis.summary.avg_watts }}{% if analysis.summary.max_watts is not none %} / {{ analysis.summary.max_watts }}{% endif %} W</div></div>
+      <div class="strava-summary-item"><div class="strava-summary-label">Avg / max power</div><div class="strava-summary-value">{{ analysis.summary.avg_watts }}{% if analysis.summary.max_watts is not none %} / {{ analysis.summary.max_watts }}{% endif %} W</div></div>
     {% endif %}
-    <div><div class="text-[0.7rem] text-text-light uppercase tracking-wider">Stops detected</div><div class="font-semibold text-lg">{{ analysis.stop_count }}</div></div>
+    <div class="strava-summary-item"><div class="strava-summary-label">Stops detected</div><div class="strava-summary-value">{{ analysis.stop_count }}</div></div>
   </div>
 </section>
 
 {% if analysis.map %}
-<section class="card">
+<section class="card strava-data-card">
   <h2 class="text-primary text-[1.3rem] font-bold mb-2">Route</h2>
   <div id="analysis-map" style="height:55vh;width:100%;border-radius:8px;margin:16px 0;"
        data-track="{{ analysis.map.track|tojson }}"
@@ -62,7 +158,7 @@
 </section>
 {% endif %}
 
-<section class="card">
+<section class="card strava-data-card">
   <h2 class="text-primary text-[1.3rem] font-bold mb-2">Segments</h2>
   {% if analysis.legs %}
     <div class="table-wrap">
@@ -96,7 +192,7 @@
   {% endif %}
 </section>
 
-<section class="card">
+<section class="card strava-data-card">
   <h2 class="text-primary text-[1.3rem] font-bold mb-2">Stops</h2>
   {# Wind arrows render only when the historical fetch produced at least one per-stop
      forecast; a coordinate-less stop keeps its cell blank via the list index. #}
@@ -146,7 +242,7 @@
   }).addTo(map);
 
   // Colors mirror the design-system tokens (--accent, --warning); JS can't read CSS vars.
-  var line = L.polyline(track, { color: '#4b7bec', weight: 3 }).addTo(map);
+  var line = L.polyline(track, { color: '#fc4c02', weight: 3 }).addTo(map);
   if (bounds && bounds.length === 2) {
     map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
   } else {
@@ -158,7 +254,7 @@
     var label = s.distance_km + ' km';
     if (s.duration_min != null) label += ' · ' + s.duration_min + ' min stop';
     L.circleMarker([s.lat, s.lng], {
-      radius: 6, color: '#b7791f', fillColor: '#b7791f', fillOpacity: 0.9
+      radius: 6, color: '#c2410c', fillColor: '#fc4c02', fillOpacity: 0.9
     }).addTo(map).bindPopup(label);
   });
 })();
