@@ -1266,6 +1266,8 @@
 .radial-elev-wrap { margin-top: 8px; }
 .radial-elev { display: block; }
 .radial-elev-area { fill: #e5e7eb; opacity: 0.35; }
+/* Radial-style graded area fill: each segment's area painted in its grade colour. */
+.radial-elev-fill { opacity: 0.22; }
 .radial-elev-grid { stroke: #e5e7eb; stroke-width: 0.5; opacity: 0.6; }
 .radial-elev-ylabel { fill: #6b7280; font-size: 9px; text-anchor: end; }
 .radial-elev-xlabel { fill: #6b7280; font-size: 9px; text-anchor: middle; }

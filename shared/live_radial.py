@@ -557,16 +557,21 @@ def build_elevation_profile(track, *, width=1000, height=200, pad_left=44,
         idxs.append(n - 1)
 
     points = [[px(pts[i]['dist_m']), py(elevs_ft[i])] for i in idxs]
+    baseline = round(plot_y + plot_h, 2)
     segments = []
     for a, b in zip(idxs, idxs[1:]):
         run_m = pts[b]['dist_m'] - pts[a]['dist_m']
         grade = round(((pts[b]['e_m'] - pts[a]['e_m']) / run_m) * 100, 1) if run_m > 0 else None
         x1, y1 = px(pts[a]['dist_m']), py(elevs_ft[a])
         x2, y2 = px(pts[b]['dist_m']), py(elevs_ft[b])
+        # ``area_d`` closes the segment down to the baseline so the template can fill
+        # the area under each segment in that segment's grade colour (the Radial-style
+        # gradient fill), instead of one flat area under the whole line.
         segments.append({'d': 'M{} {}L{} {}'.format(x1, y1, x2, y2),
+                         'area_d': 'M{} {}L{} {}L{} {}L{} {}Z'.format(
+                             x1, y1, x2, y2, x2, baseline, x1, baseline),
                          'color': _grade_color(grade), 'grade': grade})
 
-    baseline = round(plot_y + plot_h, 2)
     area_path = ('M{} {}'.format(points[0][0], baseline)
                  + ''.join('L{} {}'.format(x, y) for x, y in points)
                  + 'L{} {}Z'.format(points[-1][0], baseline))

@@ -168,6 +168,17 @@ def _radial_track(ride):
     route_id = extract_rwgps_route_id(rwgps_url)
     if not route_id:
         return None
+    # Prefer the cron-warmed geometry (route_geometry_cache): it renders the route
+    # line + altitude profile without a live RWGPS fetch on the request path (TA-237),
+    # and it works for routes the authenticated RWGPS API can't serve (which would
+    # otherwise leave the live map with no route line or profile). The cached track is
+    # already the [{lat, lng, dist_m, e_m}] shape this function returns.
+    try:
+        cached = get_route_elevation_track(route_id)
+    except Exception:  # noqa: BLE001 — cache read is best-effort; fall back to fetch
+        cached = None
+    if cached:
+        return cached
     try:
         route = fetch_route(route_id)
     except Exception as exc:  # noqa: BLE001 — fail-soft, route line is optional
@@ -217,6 +228,42 @@ def _build_weather_points(ride):
     except Exception:  # noqa: BLE001 — the weather overlay is best-effort
         current_app.logger.warning('live: weather_points build failed', exc_info=True)
         return []
+
+
+def _build_plan_snapshot(ride):
+    """A compact summary of the ride's resolved plan for the live page — the plan
+    name (linked to its plan page), distance, climb, control count, start time — shown
+    beside the climb profile. Resolves the plan the SAME way the live grading does
+    (FK then route-name match), so it matches the selector's base plan. Fail-soft:
+    returns None on no plan / any error so the live page simply omits the panel."""
+    try:
+        plan = _resolve_base_plan(ride)
+        if not plan:
+            return None
+        try:
+            stops = get_ride_plan_stops(plan['id']) or []
+        except Exception:  # noqa: BLE001 — count is best-effort
+            stops = []
+        controls = sum(1 for s in stops
+                       if (s.get('stop_type') or '').lower() == 'control')
+        # A malformed cutoff must only drop the "h limit" stat, not the whole panel.
+        try:
+            raw_cutoff = ride.get('time_limit_hours') or plan.get('cutoff_hours')
+            cutoff = round(float(raw_cutoff), 1) if raw_cutoff else None
+        except (TypeError, ValueError):
+            cutoff = None
+        return {
+            'name': plan.get('name'),
+            'slug': plan.get('slug'),
+            'distance_mi': round(float(plan.get('total_distance_miles') or 0)),
+            'elevation_ft': int(plan.get('total_elevation_ft') or 0),
+            'controls': controls,
+            'cutoff_hours': cutoff,
+            'start_time': (ride.get('start_time') or plan.get('start_time') or None),
+        }
+    except Exception:  # noqa: BLE001 — the snapshot panel is best-effort
+        current_app.logger.warning('live: plan snapshot build failed', exc_info=True)
+        return None
 
 
 @live_bp.route('/live')
@@ -283,6 +330,7 @@ def ride_live_map(ride_id):
     mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
     track = _radial_track(ride)
     weather_points = _build_weather_points(ride)   # [] when no stored forecast → map degrades
+    plan_snapshot = _build_plan_snapshot(ride)     # None when the ride resolves no plan
     opted_in = garmin_here = False
     garmin_url = ''
     if is_member:
@@ -309,6 +357,7 @@ def ride_live_map(ride_id):
         garmin_here=garmin_here,
         garmin_url=garmin_url,
         is_guest=is_guest,
+        plan_snapshot=plan_snapshot,
     )
 
 
