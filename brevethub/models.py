@@ -1593,6 +1593,22 @@ def get_analyzed_activity_ids(rider_id):
     return {row['strava_activity_id'] for row in rows}
 
 
+def get_rider_ride_analyses(rider_id):
+    """All cached ride analyses for one rider, newest cache first.
+
+    Used by the reused Team Asha brevet-analysis index so analyzed brevet cards
+    can still render when the Strava activity is older than the live activity
+    picker's fetch window. Rider-scoped, and it reads only the existing analysis
+    JSON plus the Strava activity id needed by the detail link.
+    """
+    return db.query(
+        "SELECT strava_activity_id, analysis, computed_at "
+        "FROM rp_ride_analysis WHERE rider_id = %s "
+        "ORDER BY computed_at DESC NULLS LAST",
+        (rider_id,),
+    )
+
+
 def upsert_ride_analysis(rider_id, strava_activity_id, analysis,
                          compressed_streams=None):
     """Create or replace the rider's cached analysis for one activity.
@@ -1754,6 +1770,24 @@ def get_brevet_route_plan_with_stops(event_id, variant='conservative'):
     if not plan:
         return None
     return {'plan': plan, 'stops': get_brevet_route_plan_stops(plan['id'])}
+
+
+def get_brevet_route_plan_event_ids(event_ids, variant='conservative'):
+    """Event ids that currently have a cached BrevetHub route plan.
+
+    The Team Asha brevet-analysis index distinguishes the plain Strava view and
+    the plan-vs-actual comparison. BrevetHub makes that decision by checking the
+    rp_brevet_route_plan cache instead of assuming every finished event has a plan.
+    """
+    ids = [int(e) for e in (event_ids or []) if e is not None]
+    if not ids:
+        return set()
+    rows = db.query(
+        "SELECT event_id FROM rp_brevet_route_plan "
+        "WHERE variant = %s AND event_id = ANY(%s)",
+        (variant, ids),
+    )
+    return {row['event_id'] for row in rows}
 
 
 def get_brevet_route_plan_by_route_id_rp(rwgps_route_id, club_id, variant='conservative'):

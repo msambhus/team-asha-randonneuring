@@ -12,7 +12,7 @@ from datetime import date
 from pathlib import Path
 
 from flask import Flask, session
-from jinja2 import BaseLoader, ChoiceLoader, FileSystemLoader, TemplateNotFound
+from jinja2 import BaseLoader, ChoiceLoader, TemplateNotFound
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from brevethub.config import Config
@@ -27,32 +27,45 @@ def _nav_seasons(today=None):
     return [f'{y}-{y + 1}' for y in range(start, start - 3, -1)]
 
 
-class _TeamAshaStravaAnalysisLoader(BaseLoader):
-    """Expose exactly the Team Asha Strava analysis template to BrevetHub.
+class _TeamAshaTemplateLoader(BaseLoader):
+    """Expose selected Team Asha templates to BrevetHub.
 
     This is intentionally narrow: BrevetHub can render the real
-    ``templates/strava_ride_analysis.html`` file, but the rest of Team Asha's
-    templates cannot shadow BrevetHub templates such as ``base.html``.
+    ``templates/strava_ride_analysis.html`` and ``templates/my_strava_analysis.html``
+    files, but the rest of Team Asha's templates cannot shadow BrevetHub templates
+    such as ``base.html``.
     """
 
-    _TEMPLATE_NAME = 'strava_ride_analysis.html'
+    _TEMPLATE_NAMES = {'strava_ride_analysis.html', 'my_strava_analysis.html'}
 
-    def __init__(self, repo_templates_dir):
-        self._loader = FileSystemLoader(str(repo_templates_dir))
+    def __init__(self, template_dirs):
+        self._template_dirs = [Path(p) for p in template_dirs]
 
     def get_source(self, environment, template):
-        if template != self._TEMPLATE_NAME:
+        if template not in self._TEMPLATE_NAMES:
             raise TemplateNotFound(template)
-        return self._loader.get_source(environment, template)
+        for directory in self._template_dirs:
+            path = directory / template
+            if path.is_file():
+                source = path.read_text(encoding='utf-8')
+                mtime = path.stat().st_mtime
+                return source, str(path), lambda: path.is_file() and path.stat().st_mtime == mtime
+        raise TemplateNotFound(template)
 
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
-    repo_templates_dir = Path(__file__).resolve().parents[1] / 'templates'
+    app_dir = Path(__file__).resolve().parent
+    team_asha_template_dirs = [
+        # Normal repo checkout: <repo>/brevethub/app.py -> <repo>/templates.
+        app_dir.parent / 'templates',
+        # Flat Vercel layout: app.py and included root templates live together.
+        app_dir / 'templates',
+    ]
     app.jinja_loader = ChoiceLoader([
         app.jinja_loader,
-        _TeamAshaStravaAnalysisLoader(repo_templates_dir),
+        _TeamAshaTemplateLoader(team_asha_template_dirs),
     ])
 
     # Vercel terminates TLS at the edge; trust one proxy hop so `_external`

@@ -2,7 +2,7 @@
   "version": 2,
   "buildCommand": "cd .. && npm ci && npm run build:css",
   "builds": [
-    { "src": "api/index.py", "use": "@vercel/python", "config": { "includeFiles": "shared/**" } },
+    { "src": "api/index.py", "use": "@vercel/python", "config": { "includeFiles": ["shared/**", "../templates/strava_ride_analysis.html", "../templates/my_strava_analysis.html"] } },
     { "src": "static/**", "use": "@vercel/static" }
   ],
   "crons": [

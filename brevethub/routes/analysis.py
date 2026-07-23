@@ -56,9 +56,10 @@ from shared.weather import (_AVG_SPEED_KMH, _safe_get, calculate_bearing,
 analysis_bp = Blueprint('analysis', __name__)
 
 # The recent window (days) the activity picker + the ownership gate resolve over.
-# Only a rider's own rides in this window are listable and analyzable — a bounded,
-# honest definition of "recent" that keeps each owned-list fetch to a page or two.
-ANALYSIS_WINDOW_DAYS = 90
+# Team Asha's analysis index works from roughly a year of synced activities; keep
+# BrevetHub's owner fetch in the same range so completed brevets under the reused
+# profile UX are matchable without maintaining a duplicate activity table.
+ANALYSIS_WINDOW_DAYS = 370
 
 # Unit conversions — the engine is imperial internally; BrevetHub converts to km /
 # km/h / feet at this view boundary (US-imperial display is a Team-Asha-specific

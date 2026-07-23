@@ -134,6 +134,9 @@ def test_profile_renders_with_strava_only(client):
     assert '72/100' in body             # fitness score from the cached summary
     assert '480 km' in body
     assert 'Add a RUSA ID' in body      # career section graceful w/o RUSA
+    assert 'Strava Ride Analysis' in body
+    assert 'View Ride Analysis' in body
+    assert '/my/strava-analysis' in body
 
 
 def test_profile_renders_with_neither(client):
