@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block title %}Compare Plans - {{ base_plan.name }} - Team Asha Randonneuring{% endblock %}
+
+{% block extra_head %}
+<style>
+.cmp-page { background: #eef2f7; padding: 28px 0 48px; }
+.cmp-wrap { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+.cmp-eyebrow {
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: #718096;
+}
+.cmp-h1 {
+  font-size: 1.6rem; font-weight: 800; letter-spacing: -0.01em;
+  margin: 4px 0 0; color: #1a365d; line-height: 1.2;
+}
+.cmp-sub { margin: 6px 0 0; font-size: 0.9rem; color: #64748b; }
+.cmp-back {
+  display: inline-block; margin-top: 6px;
+  font-size: 0.82rem; color: #1a365d; text-decoration: none;
+  font-weight: 600;
+}
+.cmp-back:hover { color: #e53e3e; }
+
+.cmp-toolbar {
+  margin-top: 20px;
+  background: #fff; border: 1px solid #cbd5e0;
+  border-radius: 12px; padding: 14px 18px;
+  box-shadow: 0 2px 6px rgba(15,23,42,0.06);
+}
+.cmp-toolbar-label {
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: #94a3b8;
+  margin-bottom: 8px; display: block;
+}
+.cmp-options {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  align-items: center;
+}
+.cmp-opt {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 8px;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  font-size: 0.85rem; color: #334155;
+  cursor: pointer; user-select: none;
+  transition: background 0.1s, border-color 0.1s;
+}
+.cmp-opt input { margin: 0; }
+.cmp-opt:hover { background: #f1f5f9; border-color: #cbd5e0; }
+.cmp-opt.is-selected {
+  background: #1a365d; color: #fff; border-color: #1a365d;
+}
+.cmp-submit {
+  padding: 7px 16px; border-radius: 8px;
+  border: 0; cursor: pointer;
+  background: #1a365d; color: #fff;
+  font-weight: 700; font-size: 0.85rem;
+  margin-left: auto;
+}
+.cmp-submit:hover { background: #142a4d; }
+
+.cmp-empty {
+  margin-top: 24px; padding: 48px 24px; text-align: center;
+  background: #fff; border: 1px dashed #cbd5e0; border-radius: 12px;
+  color: #64748b;
+}
+
+.cmp-table-wrap {
+  margin-top: 20px;
+  background: #fff; border: 1px solid #cbd5e0;
+  border-radius: 12px; overflow-x: auto;
+  box-shadow: 0 2px 6px rgba(15,23,42,0.08);
+}
+.cmp-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 0.82rem;
+  table-layout: fixed;
+}
+.cmp-table thead th {
+  background: #1a365d; color: #fff;
+  text-align: left; padding: 9px 10px;
+  font-size: 0.7rem; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  border-right: 1px solid rgba(255,255,255,0.12);
+}
+.cmp-table thead th:last-child { border-right: 0; }
+.cmp-table thead th.th-stop { width: 28%; }
+.cmp-table thead th.th-plan {
+  /* equal share among the plan columns; truncate long names */
+  max-width: 0;            /* let the column compute its share */
+}
+.cmp-th-name {
+  display: block;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cmp-th-sub {
+  display: block; font-size: 0.6rem; opacity: 0.75;
+  letter-spacing: 0.04em; font-weight: 500;
+  text-transform: none;
+  margin-top: 2px;
+}
+.cmp-table tbody tr { border-top: 1px solid #edf0f4; }
+.cmp-table tbody tr:nth-child(even) { background: #fafbfc; }
+.cmp-table tbody tr:hover { background: #f1f5f9; }
+.cmp-table td {
+  padding: 8px 10px;
+  font-variant-numeric: tabular-nums;
+  vertical-align: top;
+}
+.cmp-stop-name {
+  font-weight: 600; color: #1a365d;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cmp-distance {
+  display: inline-block;
+  font-size: 0.68rem; color: #64748b;
+  margin-top: 2px;
+}
+.cmp-cell {
+  font-size: 0.84rem;
+  color: #334155;
+  border-left: 4px solid transparent;
+  padding-left: 8px;
+}
+.cmp-cell .cmp-time {
+  font-weight: 700; color: #1a365d;
+}
+.cmp-cell .cmp-meta {
+  font-size: 0.68rem; color: #94a3b8;
+  margin-top: 2px;
+}
+.cmp-cell .cmp-delta {
+  font-size: 0.68rem; font-weight: 700;
+  margin-left: 4px; color: #94a3b8;
+}
+.cmp-cell.is-missing { color: #cbd5e0; font-style: italic; }
+/* Fastest cell — green left border only; slowest — red left border.
+   No background fill so it stays subtle on top of striped rows. */
+.cmp-cell.is-fastest { border-left-color: #16a34a; }
+.cmp-cell.is-fastest .cmp-delta { color: #16a34a; }
+.cmp-cell.is-slowest { border-left-color: #dc2626; }
+.cmp-cell.is-slowest .cmp-delta { color: #dc2626; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cmp-page">
+  <div class="cmp-wrap">
+    <div class="cmp-eyebrow">{{ base_plan.name }}</div>
+    <h1 class="cmp-h1">📊 Compare Plans</h1>
+    <p class="cmp-sub">Pick which plans to lay side-by-side. Cumulative times reflect each plan's pace, breaks, and stop choices.</p>
+    <a class="cmp-back" href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug) }}">&larr; Back to ride plan</a>
+
+    {# ===== Plan picker ===== #}
+    <form method="get" class="cmp-toolbar">
+      <span class="cmp-toolbar-label">Plans to compare</span>
+      <div class="cmp-options">
+        {% for opt in available_plans %}
+        <label class="cmp-opt {% if opt.selected %}is-selected{% endif %}">
+          <input type="checkbox" name="plans" value="{{ opt.token }}" {% if opt.selected %}checked{% endif %}>
+          {{ opt.label }}
+        </label>
+        {% endfor %}
+        <button type="submit" class="cmp-submit">Compare</button>
+      </div>
+    </form>
+
+    {% if not selected_plans %}
+    <div class="cmp-empty">
+      <strong>No plans selected.</strong>
+      <p style="margin-top:6px;font-size:0.88rem;">Tick at least one box above and click Update.</p>
+    </div>
+    {% elif rows|length == 0 %}
+    <div class="cmp-empty">No stops to compare in the selected plans.</div>
+    {% else %}
+    <div class="cmp-table-wrap">
+      <table class="cmp-table">
+        <thead>
+          <tr>
+            <th class="th-stop">Stop</th>
+            {% for p in selected_plans %}
+            <th class="th-plan" title="{{ p.label }}">
+              <span class="cmp-th-name">{{ p.label }}</span>
+              <span class="cmp-th-sub">cum · seg · break</span>
+            </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td>
+              <div class="cmp-stop-name" title="{{ row.name or '' }}">{{ row.name or '—' }}</div>
+              <span class="cmp-distance">{{ "%.1f"|format(row.distance) }} mi</span>
+            </td>
+            {% for cell in row.cells %}
+            <td class="cmp-cell{% if not cell.present %} is-missing{% endif %}{% if cell.is_fastest %} is-fastest{% endif %}{% if cell.is_slowest %} is-slowest{% endif %}">
+              {% if cell.present %}
+                {% set h = (cell.cum_time_min or 0) // 60 %}
+                {% set m = (cell.cum_time_min or 0) % 60 %}
+                <div>
+                  <span class="cmp-time">{{ h }}h {{ "%02d"|format(m) }}m</span>
+                  {% if cell.delta_min is not none and cell.delta_min > 0 %}
+                  <span class="cmp-delta">+{{ cell.delta_min }}m</span>
+                  {% elif cell.is_fastest and cell.delta_min == 0 %}
+                  <span class="cmp-delta">⚡</span>
+                  {% endif %}
+                </div>
+                <div class="cmp-meta">
+                  {% if cell.segment_time_min %}seg {{ cell.segment_time_min }}m{% endif %}
+                  {% if cell.segment_time_min and cell.stop_duration_min %} &middot; {% endif %}
+                  {% if cell.stop_duration_min %}break {{ cell.stop_duration_min }}m{% endif %}
+                </div>
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Toggle the .is-selected style on the label as the checkbox state changes
+document.querySelectorAll('.cmp-opt input[type="checkbox"]').forEach(function (cb) {
+  cb.addEventListener('change', function () {
+    cb.closest('.cmp-opt').classList.toggle('is-selected', cb.checked);
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,459 @@
+{% extends "base.html" %}
+
+{% block title %}Live Map — {{ ride.name | clean_name }}{% endblock %}
+
+{% block extra_head %}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<style>
+.live-container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+.live-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.live-header h1 { font-size: 1.4rem; margin: 0; }
+.live-sub { color: var(--text-light); font-size: 0.85rem; }
+/* Height in vh (not a tall fixed px) so the rider stat cards below peek above
+   the fold — otherwise users don't realize there's data to scroll to. */
+#live-map { height: 46vh; min-height: 300px; width: 100%; border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
+.live-status { font-size: 0.8rem; color: var(--text-light); margin-top: 8px; min-height: 1.2em; }
+.live-empty {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; margin-top: 8px; font-size: 0.85rem; color: var(--text-light);
+}
+/* Fixed 30×30 box so Mapbox's center anchor lands the PIN on the rider's
+   coordinate. Without an explicit size this block div stretches to the marker
+   container's width, pushing the pin to the left edge and the corner badges to
+   the right edge (and making the dot appear to drift as you zoom). */
+.rider-marker {
+    position: relative; width: 30px; height: 30px;
+    cursor: pointer; transition: opacity 0.2s;
+}
+.rider-marker .pin {
+    width: 30px; height: 30px; box-sizing: border-box; border-radius: 50%;
+    border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    color: #fff; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em;
+    display: flex; align-items: center; justify-content: center;
+}
+.rider-marker .act {
+    position: absolute; top: -6px; right: -6px;
+    width: 16px; height: 16px; border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    font-size: 10px; line-height: 16px; text-align: center;
+}
+/* Source emblem (bottom-right): ⌚ Garmin device vs 📱 phone beacon. */
+.rider-marker .src {
+    position: absolute; bottom: -5px; right: -7px;
+    width: 16px; height: 16px; border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    font-size: 9px; line-height: 16px; text-align: center;
+}
+/* Phone-beacon pins use a dashed ring; Garmin device pins stay solid. */
+.rider-marker.src-beacon .pin { border-style: dashed; }
+.rider-marker.stale { opacity: 0.45; filter: grayscale(0.7); }
+.live-popup { font-size: 0.85rem; line-height: 1.3; }
+.live-popup .name { font-weight: 600; }
+.live-popup .ago { color: #6b7280; }
+.live-popup .src-line { color: #374151; font-size: 0.78rem; margin-top: 2px; }
+
+.live-legend {
+    display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+    margin-top: 8px; font-size: 0.78rem; color: var(--text-light);
+}
+.live-legend .item { display: inline-flex; align-items: center; gap: 5px; }
+.live-legend .swatch {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid #9ca3af; box-sizing: border-box;
+}
+
+#live-riders { margin-top: 16px; display: grid; gap: 12px; }
+.rider-card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px;
+}
+.rider-card.stale { opacity: 0.6; }
+.rider-card .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.rider-card .head .nm { font-weight: 700; }
+.rider-card .head .ago { color: var(--text-light); font-size: 0.8rem; }
+.plan-badge { font-size: 0.72rem; font-weight: 700; padding: 3px 9px; border-radius: 20px; }
+.plan-badge.ahead { background: #dcfce7; color: #166534; }
+.plan-badge.behind { background: #fee2e2; color: #991b1b; }
+.plan-badge.on { background: #e0e7ff; color: #3730a3; }
+.tg { margin-top: 10px; }
+.tg .grp-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-light); margin-bottom: 4px; }
+.tg .metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 6px 12px; }
+.metric .v { font-weight: 700; font-size: 0.95rem; }
+.metric .l { font-size: 0.72rem; color: var(--text-light); }
+.after-ride { margin-top: 10px; font-size: 0.75rem; color: var(--text-light); font-style: italic; }
+
+/* Plan selector (item 1) — a global viewing lens; overrides each rider's own plan. */
+.plan-selector-wrap { display: flex; align-items: center; gap: 8px; margin: 12px 0 6px; flex-wrap: wrap; }
+.plan-selector-wrap label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-light); }
+.plan-selector-wrap select {
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 0.85rem; background: var(--card-bg); color: var(--text); max-width: 260px;
+}
+.plan-label { font-size: 0.8rem; color: var(--text-light); margin: 12px 0 6px; }
+.plan-note { font-size: 0.72rem; color: var(--text-light); margin: 2px 0 0; }
+
+/* Shared upcoming-controls list (item 2) — one ride-level list, not per rider. */
+.upcoming-controls { margin: 8px 0 14px; }
+.upcoming-controls .uc-title { font-size: 0.95rem; margin: 0 0 6px; }
+.uc-list { display: flex; flex-direction: column; gap: 4px; }
+.uc-row {
+    display: flex; align-items: baseline; gap: 10px; padding: 6px 10px;
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+}
+.uc-row .uc-name { font-weight: 600; font-size: 0.85rem; flex: 1; }
+.uc-row .uc-dist { font-size: 0.75rem; color: var(--text-light); }
+.uc-row .uc-eta { font-weight: 700; font-size: 0.85rem; color: #1a365d; }
+
+/* Route-ahead charts (elevation / headwind / temperature) — mirror the weather
+   page, with a vertical marker at each rider's current mileage. */
+.live-charts { margin-top: 18px; }
+.live-charts .charts-title { font-size: 1rem; margin: 0 0 4px; }
+.live-charts .charts-sub { font-size: 0.78rem; color: var(--text-light); margin: 0 0 10px; }
+.chart-card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px; margin-bottom: 12px;
+}
+.chart-card h3 { font-size: 0.85rem; margin: 0 0 6px; color: var(--text); }
+
+.share-control { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.share-btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px;
+    border: none; border-radius: 8px; font-weight: 600; font-size: 0.85rem;
+    color: #fff; cursor: pointer;
+}
+.share-btn.start { background: #16a34a; }
+.share-btn.start:hover { background: #15803d; }
+.share-btn.stop { background: #dc2626; }
+.share-btn.stop:hover { background: #b91c1c; }
+.share-state { font-size: 0.78rem; color: var(--text-light); }
+.share-state.live { color: #166534; font-weight: 600; }
+.lowpower { display: inline-flex; align-items: center; gap: 5px; font-size: 0.78rem; color: var(--text-light); cursor: pointer; }
+.garmin-link { font-size: 0.78rem; color: #2563eb; text-decoration: none; }
+.garmin-link:hover { text-decoration: underline; }
+.share-note { font-size: 0.72rem; color: var(--text-light); margin-top: 6px; }
+
+/* "Appear on this map" — two ways to share, side by side (collapsible) */
+.track-setup {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 0 18px; margin: 0 0 14px;
+}
+.track-setup > summary {
+    cursor: pointer; list-style: none; padding: 14px 0; font-weight: 700;
+    font-size: 0.95rem; display: flex; align-items: center; gap: 8px;
+}
+.track-setup > summary::-webkit-details-marker { display: none; }
+.track-setup > summary .ts-linked { color: #166534; font-size: 0.8rem; font-weight: 700; }
+.track-setup > summary .chev { margin-left: auto; transition: transform 0.15s; color: var(--text-light); }
+.track-setup[open] > summary .chev { transform: rotate(90deg); }
+.track-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 2px 0 18px;
+}
+@media (max-width: 720px) { .track-grid { grid-template-columns: 1fr; } }
+.track-card {
+    border: 1px solid var(--border); border-radius: 10px; padding: 16px;
+    background: var(--bg);
+}
+.tc-head { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 0.98rem; margin-bottom: 6px; }
+.tc-num {
+    flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--primary); color: #fff; font-size: 0.78rem;
+    display: flex; align-items: center; justify-content: center;
+}
+.tc-tag {
+    margin-left: auto; font-size: 0.68rem; font-weight: 700; white-space: nowrap;
+    padding: 3px 8px; border-radius: 20px; background: #eef2f7; color: #475569;
+}
+.tc-lead { color: var(--text-light); font-size: 0.83rem; line-height: 1.45; margin: 0 0 12px; }
+.gp-linked { color: #166534; font-weight: 600; font-size: 0.85rem; margin: 0 0 12px; }
+.gp-callout {
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+    padding: 10px 13px; font-size: 0.82rem; line-height: 1.45; margin: 0 0 16px;
+}
+.gp-callout strong { color: #92400e; }
+.gp-steps { margin: 0 0 16px; padding: 0; list-style: none; counter-reset: gstep; }
+.gp-steps > li { position: relative; padding: 0 0 12px 34px; font-size: 0.85rem; line-height: 1.45; }
+.gp-steps > li::before {
+    counter-increment: gstep; content: counter(gstep);
+    position: absolute; left: 0; top: -1px; width: 24px; height: 24px;
+    border-radius: 50%; background: var(--primary); color: #fff;
+    font-weight: 700; font-size: 0.78rem;
+    display: flex; align-items: center; justify-content: center;
+}
+.gp-steps .sub { display: block; color: var(--text-light); font-size: 0.8rem; margin-top: 2px; }
+.gp-steps code { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: 0.78rem; word-break: break-all; }
+.gp-form { display: flex; flex-direction: column; gap: 8px; }
+.gp-form label { font-weight: 600; font-size: 0.85rem; }
+.gp-form input[type="url"] {
+    padding: 10px 13px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 0.88rem; background: var(--bg); color: var(--text);
+}
+.gp-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.gp-save {
+    padding: 9px 20px; background: var(--primary); color: #fff; border: none;
+    border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer;
+}
+.gp-clear {
+    padding: 9px 14px; background: transparent; color: #b91c1c; border: 1px solid #fecaca;
+    border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer;
+}
+.share-invite { margin: 0; }
+.invite-btn {
+    padding: 5px 10px; background: var(--primary, #2563eb); color: #fff; border: none;
+    border-radius: 6px; font-weight: 600; font-size: 0.75rem; cursor: pointer; white-space: nowrap;
+}
+.invite-btn:disabled { opacity: 0.6; cursor: default; }
+.invite-result {
+    margin-top: 10px; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0;
+    border-radius: 8px;
+}
+.invite-code {
+    font-family: ui-monospace, Menlo, monospace; font-size: 1.4rem; font-weight: 700;
+    letter-spacing: 2px; color: #0f172a;
+}
+.invite-link { display: flex; gap: 8px; align-items: stretch; }
+.invite-url {
+    flex: 1; min-width: 0; padding: 9px 11px; font-size: 0.85rem;
+    font-family: ui-monospace, Menlo, monospace; border: 1px solid #cbd5e1;
+    border-radius: 8px; background: #fff; color: #0f172a;
+}
+.invite-copy {
+    padding: 9px 14px; background: var(--primary, #2563eb); color: #fff; border: none;
+    border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer; white-space: nowrap;
+}
+.invite-hint { font-size: 0.78rem; color: var(--text-light, #64748b); margin-top: 6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="live-container">
+  <div class="live-header">
+    <div>
+      <h1>{{ ride.name | clean_name }}</h1>
+      {% if ride.date %}<div class="live-sub">{{ ride.date }}</div>{% endif %}
+    </div>
+    {% if not is_guest %}
+    <div class="share-invite">
+      <button type="button" id="invite-btn" class="invite-btn" data-ride="{{ ride.id }}">🔗 Share</button>
+      <div id="invite-result" class="invite-result" hidden></div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if not is_guest %}
+  <script>
+  (function () {
+    var btn = document.getElementById('invite-btn');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      btn.disabled = true; btn.textContent = 'Creating…';
+      fetch('/ride/' + btn.dataset.ride + '/live/invite', { method: 'POST', credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var box = document.getElementById('invite-result');
+          box.hidden = false; box.textContent = '';
+          if (d.code) {
+            btn.hidden = true;
+            var url = d.join_url || (location.origin + '/live/join?code=' + encodeURIComponent(d.code));
+            var row = document.createElement('div');
+            row.className = 'invite-link';
+            var field = document.createElement('input');
+            field.type = 'text'; field.readOnly = true; field.value = url;
+            field.className = 'invite-url';
+            field.addEventListener('focus', function () { field.select(); });
+            var copy = document.createElement('button');
+            copy.type = 'button'; copy.className = 'invite-copy'; copy.textContent = 'Copy';
+            copy.addEventListener('click', function () {
+              field.select();
+              if (navigator.clipboard) { navigator.clipboard.writeText(url); }
+              else { try { document.execCommand('copy'); } catch (e) {} }
+              copy.textContent = 'Copied';
+            });
+            row.appendChild(field); row.appendChild(copy);
+            var hint = document.createElement('div');
+            hint.className = 'invite-hint';
+            hint.textContent = 'Send this link — it opens the live map directly. Code: ' + d.code;
+            box.appendChild(row); box.appendChild(hint);
+          } else {
+            btn.disabled = false; btn.textContent = '🔗 Share';
+            box.textContent = d.error || 'Could not create a code.';
+          }
+        })
+        .catch(function () { btn.disabled = false; btn.textContent = '🔗 Share'; });
+    });
+  })();
+  </script>
+  {% endif %}
+
+  {% if not is_guest %}
+  <details class="track-setup">
+    <summary>
+      Appear on this map — pick how you'll share
+      {% if garmin_here %}<span class="ts-linked">· ⌚ Garmin linked</span>{% endif %}
+      <span class="chev">›</span>
+    </summary>
+    <div class="track-grid">
+
+      {# ── Option 1: Garmin LiveTrack (screen-off) ───────────────────── #}
+      <section class="track-card">
+        <div class="tc-head"><span class="tc-num">1</span> ⌚ Garmin LiveTrack <span class="tc-tag">works screen-off</span></div>
+        <p class="tc-lead">Best for the actual ride — your watch or bike computer broadcasts
+          through the Garmin Connect app, so it keeps working with your phone locked in your pocket.</p>
+
+        {% if garmin_here %}
+          <p class="gp-linked">● This ride is linked — you'll appear with the ⌚ marker. Started a new activity? Paste the new link below.</p>
+        {% endif %}
+
+        <div class="gp-callout">
+          ⚠️ <strong>Garmin makes a new link every ride.</strong> Each time you start an
+          activity it creates a fresh LiveTrack session and the old link stops working —
+          paste a new one for <em>this</em> ride.
+        </div>
+
+        <ol class="gp-steps">
+          <li><strong>One-time:</strong> in the <strong>Garmin Connect</strong> app, go to
+            <strong>More → LiveTrack</strong>, turn it on, and enable <strong>Auto Start</strong>.
+            <span class="sub">Sometimes under <em>Safety &amp; Tracking</em>; menu names vary by app version.</span></li>
+          <li><strong>Start your ride</strong> on your Garmin so a LiveTrack session goes live.</li>
+          <li>In Garmin Connect, open the live session and <strong>copy the share link</strong>.
+            <span class="sub">It looks like <code>https://livetrack.garmin.com/session/…/token/…</code></span></li>
+          <li><strong>Paste it below and Save.</strong> You'll show up on this map within a few minutes.</li>
+        </ol>
+
+        <form class="gp-form" method="POST" action="{{ url_for('live.ride_garmin_link', ride_id=ride.id) }}">
+          <label for="garmin_session_url">Garmin LiveTrack link for this ride</label>
+          <input type="url" id="garmin_session_url" name="garmin_session_url"
+                 placeholder="https://livetrack.garmin.com/session/.../token/..."
+                 value="{{ garmin_url }}">
+          <div class="gp-actions">
+            <button type="submit" name="action" value="save" class="gp-save">Save link</button>
+            {% if garmin_here %}
+            <button type="submit" name="action" value="clear" class="gp-clear">Stop tracking this ride</button>
+            {% endif %}
+          </div>
+        </form>
+      </section>
+
+      {# ── Option 2: Share from this phone (screen-on) ───────────────── #}
+      <section class="track-card">
+        <div class="tc-head"><span class="tc-num">2</span> 📱 Share from this phone <span class="tc-tag">keep screen on</span></div>
+        <p class="tc-lead">No setup — good for a quick check or a short stretch. Your phone does
+          the GPS, so it only works while this page is open and awake.</p>
+
+        <ol class="gp-steps">
+          <li>Tap <strong>Share my location</strong> below and allow location access when asked.</li>
+          <li><strong>Keep this page open with your screen on.</strong> Phone browsers can't share
+            in the background — sharing pauses if the screen sleeps or you switch apps.
+            <span class="sub">Optional: turn on <em>Low power</em> for coarser GPS that updates every 60s.</span></li>
+          <li>Tap <strong>Stop sharing</strong> when you're done.</li>
+        </ol>
+
+        <div class="share-control">
+          <button id="share-btn" class="share-btn start">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+            </svg>
+            <span id="share-btn-label">Share my location</span>
+          </button>
+          <label class="lowpower"><input type="checkbox" id="share-lowpower"> Low power</label>
+        </div>
+        <div id="share-state" class="share-state" style="margin-top:8px;"></div>
+      </section>
+
+    </div>
+  </details>
+  {% endif %}
+
+  {# ── The SHARED Radial live view: ONE Mapbox GL map + compact expandable rider
+       table + colour-graded altitude profile, reused byte-for-byte with BrevetHub.
+       Replaces this page's former bespoke Mapbox init + Chart.js elevation. It polls
+       the public, PII-safe roster (no rider_id/email leaves the server). ── #}
+  {% include '_radial_live.html' %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Member-only: stream THIS phone's location to the ride (opt-in beacon). The map,
+  // rider table and elevation profile are driven by the shared _radial_live.html
+  // partial (which polls the public roster on its own); this only handles sharing.
+  var RIDE_ID = {{ ride.id | tojson }};
+  (function () {
+    var shareBtn = document.getElementById('share-btn');
+    if (!shareBtn) { return; }   // guests / no beacon control on the page
+    var SHARE_INTERVAL = 25000;
+    var sharing = false, watchId = null, wakeLock = null, lastSent = 0;
+    var shareLabel = document.getElementById('share-btn-label');
+    var shareState = document.getElementById('share-state');
+    var lowPowerEl = document.getElementById('share-lowpower');
+
+    function acquireWake() {
+      try { if ('wakeLock' in navigator) { navigator.wakeLock.request('screen').then(function (w) { wakeLock = w; }).catch(function () {}); } } catch (e) {}
+    }
+    function releaseWake() { if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; } }
+    document.addEventListener('visibilitychange', function () {
+      if (sharing && document.visibilityState === 'visible' && !wakeLock) { acquireWake(); }
+    });
+
+    function sendShare(pos) {
+      var t = Date.now();
+      if (t - lastSent < SHARE_INTERVAL) { return; }
+      lastSent = t;
+      fetch('/api/live/beacon', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+        body: JSON.stringify({ ride_id: RIDE_ID,
+                               lat: pos.coords.latitude, lng: pos.coords.longitude,
+                               accuracy: pos.coords.accuracy, speed: pos.coords.speed })
+      }).then(function (r) {
+        if (r.status === 403) { shareState.textContent = 'Tracking is off — enable it in settings.'; stopShare(); return null; }
+        if (!r.ok) { throw new Error('status ' + r.status); }
+        return r.json();
+      }).then(function (d) {
+        if (d) { shareState.textContent = 'Sharing · sent ' + new Date().toLocaleTimeString(); }
+      }).catch(function (e) { shareState.textContent = 'Could not send location (' + e.message + ').'; });
+    }
+    function onShareErr(err) {
+      shareState.textContent = (err.code === 1) ? 'Location permission denied.' : 'Location error.';
+    }
+    function beginWatch(lowPower) {
+      sharing = true; lastSent = 0;
+      shareBtn.className = 'share-btn stop';
+      if (shareLabel) { shareLabel.textContent = 'Stop sharing'; }
+      shareState.className = 'share-state live'; shareState.textContent = 'Sharing your location…';
+      acquireWake();   // screen must stay on — web pages can't share in the background
+      watchId = navigator.geolocation.watchPosition(sendShare, onShareErr, {
+        enableHighAccuracy: !lowPower,
+        maximumAge: lowPower ? 30000 : 10000,
+        timeout: 20000
+      });
+    }
+    function startShare() {
+      if (!('geolocation' in navigator)) { shareState.textContent = 'Geolocation not supported.'; return; }
+      var lowPower = lowPowerEl && lowPowerEl.checked;
+      SHARE_INTERVAL = lowPower ? 60000 : 25000;   // fewer pings in low power
+      shareState.className = 'share-state live'; shareState.textContent = 'Starting…';
+      // Opt in (one tap = consent) before sending — no detour to settings.
+      fetch('/api/live/sharing', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin', body: JSON.stringify({ enabled: true })
+      }).then(function (r) {
+        if (!r.ok) { throw new Error('status ' + r.status); }
+        beginWatch(lowPower);
+      }).catch(function (e) {
+        shareState.className = 'share-state'; shareState.textContent = 'Could not start (' + e.message + ').';
+      });
+    }
+    function stopShare() {
+      sharing = false;
+      if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+      releaseWake();
+      shareBtn.className = 'share-btn start';
+      if (shareLabel) { shareLabel.textContent = 'Share my location'; }
+      shareState.className = 'share-state';
+    }
+    shareBtn.addEventListener('click', function () { sharing ? stopShare() : startShare(); });
+    window.addEventListener('pagehide', function () { if (sharing) { releaseWake(); } });
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Coach Roster - Admin{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Coach Roster</h1>
+<p>{{ coaches|length }} coach{{ 'es' if coaches|length != 1 else '' }}</p>
+</div>
+<div class="container section">
+
+<div style="margin-bottom:20px;display:flex;gap:12px;">
+<a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Dashboard</a>
+<a href="{{ url_for('admin.add_coach') }}" class="btn" style="background:var(--primary);color:#fff;">+ Add Coach</a>
+</div>
+
+{% if coaches %}
+{% for cid, coach in coaches.items() %}
+<div style="margin-bottom:24px;padding:16px;background:#f7fafc;border-radius:8px;border:1px solid #e2e8f0;">
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+<h3 style="margin:0;">
+{% if coach.rider %}
+{{ coach.rider.first_name }} {{ coach.rider.last_name }}
+{% else %}
+Coach #{{ cid }}
+{% endif %}
+</h3>
+{% if coach.has_profile %}
+<span style="background:#c6f6d5;color:#276749;padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:600;">Profile: complete</span>
+{% else %}
+<span style="background:#fefcbf;color:#975a16;padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:600;">Profile: incomplete</span>
+{% endif %}
+{% if coach.is_default %}
+<span style="background:#bee3f8;color:#2a4365;padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:600;">FALLBACK</span>
+{% endif %}
+</div>
+
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Domain</th>
+<th>Active</th>
+<th>Routing Keywords</th>
+</tr>
+</thead>
+<tbody>
+{% for a in coach.assignments %}
+<tr{% if not a.is_active %} style="opacity:0.5;"{% endif %}>
+<td style="font-weight:600;">{{ a.topic_domain }}</td>
+<td>
+<form method="POST" action="{{ url_for('admin.toggle_coach', coach_rider_id=cid, topic_domain=a.topic_domain) }}" style="display:inline;">
+{% if a.is_active %}
+<button type="submit" style="background:#38a169;color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-weight:600;">ON</button>
+{% else %}
+<button type="submit" style="background:#a0aec0;color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;">OFF</button>
+{% endif %}
+</form>
+</td>
+<td style="font-size:0.85rem;color:var(--text-light);">
+{% if a.routing_keywords %}
+{{ a.routing_keywords|join(', ') }}
+{% else %}
+—
+{% endif %}
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</div>
+{% endfor %}
+{% else %}
+<p style="color:var(--text-light);">No coach assignments configured yet.</p>
+{% endif %}
+
+</div>
+{% endblock %}

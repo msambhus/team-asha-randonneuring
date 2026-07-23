@@ -1,0 +1,2612 @@
+{% extends "base.html" %}
+{% block title %}Custom Plan - {{ base_plan.name }} - Team Asha Randonneuring{% endblock %}
+
+{% block extra_head %}
+<style>
+/* Layout */
+.editor-container {
+    max-width: 1200px;
+    margin: 0 auto 30px;
+}
+
+.plan-column {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 2px solid var(--border);
+}
+
+.plan-column.base {
+    opacity: 0.8;
+}
+
+.plan-column.custom {
+    border-color: var(--primary);
+}
+
+.column-header {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* Pace Slider */
+.pace-control {
+    background: #f0f9ff;
+    border: 2px solid #0ea5e9;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.pace-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #0369a1;
+    margin-bottom: 8px;
+}
+
+.pace-slider {
+    width: 100%;
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #ef4444, #f59e0b, #22c55e);
+    outline: none;
+    -webkit-appearance: none;
+}
+
+.pace-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: white;
+    border: 3px solid #0369a1;
+    cursor: pointer;
+}
+
+.pace-value {
+    text-align: center;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #0369a1;
+    margin-top: 8px;
+}
+
+/* Stop Rows */
+.stop-row {
+    padding: 12px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    transition: all 0.2s;
+    position: relative;
+}
+
+.stop-row:hover {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+}
+
+.stop-row.modified {
+    background: #fef9e7;
+    border-color: #fbbf24;
+}
+
+.stop-row.hidden {
+    opacity: 0.6;
+    background: #fef3c7;
+    border-left: 4px solid #f59e0b;
+}
+
+.stop-row.hidden .stop-location {
+    color: #94a3b8;
+}
+
+.hidden-badge {
+    display: inline-block;
+    background: #f59e0b;
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+.btn-delete {
+    background: #fee;
+    border-color: #ef4444;
+    color: #dc2626;
+}
+
+.btn-delete:hover {
+    background: #ef4444;
+    color: white;
+}
+
+.stop-row.custom-added {
+    background: #f0fdf4;
+    border-color: #22c55e;
+}
+
+/* ===== TIMELINE LAYOUT ===== */
+#custom-stops-container.timeline-container {
+    position: relative;
+    padding-left: 0;
+}
+#custom-stops-container.timeline-container .stop-row {
+    position: relative;
+    z-index: 1;
+}
+/* Controls as section headers — bold divider above */
+.stop-row.level-control {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 2px solid #e2e8f0;
+}
+.stop-row.level-control .stop-name { font-weight: 700; font-size: 1.02rem; }
+/* Waypoints — lighter styling */
+.stop-row.level-waypoint .stop-name { color: #475569; font-weight: 500; }
+/* Start/Finish — bold treatment */
+.stop-row.level-start .stop-name,
+.stop-row.level-finish .stop-name { font-weight: 700; font-size: 1.02rem; }
+
+/* Hidden break rows (keep in DOM for JS indexing) */
+.break-hidden-row { display: none !important; }
+
+/* Break chip pills */
+.break-chips-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    margin-left: 15px;
+}
+.break-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 0.73rem;
+    font-weight: 600;
+    white-space: nowrap;
+    border: 1px solid #fcd34d;
+}
+.break-chip .break-icon { font-size: 0.7rem; }
+.break-time-edit {
+    width: 50px;
+    padding: 1px 4px;
+    border: 1px solid #d97706;
+    border-radius: 4px;
+    font-size: 0.73rem;
+    font-weight: 600;
+    color: #92400e;
+    background: white;
+    text-align: center;
+}
+.break-delete-btn {
+    background: none;
+    border: none;
+    color: #92400e;
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 0 2px;
+    opacity: 0.6;
+}
+.break-delete-btn:hover { opacity: 1; color: #dc2626; }
+.add-break-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: transparent;
+    color: #d97706;
+    font-size: 0.73rem;
+    font-weight: 600;
+    border: 1px dashed #d97706;
+    cursor: pointer;
+    white-space: nowrap;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+.add-break-btn:hover { opacity: 1; background: #fffbeb; }
+.seg-time-break-note {
+    font-size: 0.6rem;
+    color: #92400e;
+    font-weight: 500;
+}
+@media (max-width: 768px) {
+    #custom-stops-container.timeline-container { padding-left: 0; }
+}
+
+.stop-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.stop-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    flex-shrink: 0;
+}
+
+.stop-icon.start { background: #dcfce7; color: #166534; }
+.stop-icon.finish { background: #fee2e2; color: #991b1b; }
+.stop-icon.control { background: #dbeafe; color: #1e40af; }
+.stop-icon.rest { background: #fef3c7; color: #92400e; }
+.stop-icon.waypoint { background: #f1f5f9; color: #64748b; }
+
+.stop-location {
+    flex: 1;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text);
+}
+
+.stop-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.btn-icon {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.15s;
+    font-weight: 500;
+}
+
+.btn-icon:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    transform: translateY(-1px);
+}
+
+.stop-metrics {
+    display: grid;
+    grid-template-columns: 80px 80px 75px 85px 70px 85px 90px 90px 70px;
+    gap: 8px;
+    margin-top: 8px;
+    margin-left: 34px;
+    font-size: 0.75rem;
+}
+
+.metric-box {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.metric-label {
+    color: var(--text-light);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.metric-value {
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* Inline Editing */
+.inline-edit {
+    width: 70px;
+    padding: 4px 8px;
+    border: 1px solid var(--primary);
+    border-radius: 4px;
+    font-weight: 600;
+    color: var(--primary);
+    font-size: 0.85rem;
+}
+
+.inline-edit:focus {
+    outline: none;
+    border-color: #0284c7;
+}
+
+/* Settings Panel */
+.settings-panel {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.settings-row {
+    margin-bottom: 12px;
+}
+
+.settings-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+}
+
+.settings-input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+
+.settings-input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.settings-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Save Button Inline - matches btn-icon style */
+.btn-save-inline {
+    display: inline-flex;
+    gap: 6px;
+}
+
+.btn-save-inline.saving {
+    background: #f59e0b !important;
+    border-color: #f59e0b !important;
+    color: white !important;
+    cursor: wait;
+}
+
+.btn-save-inline.saved {
+    background: #22c55e !important;
+    border-color: #22c55e !important;
+    color: white !important;
+}
+
+.btn-save-inline:disabled {
+    background: #f1f5f9 !important;
+    border-color: #cbd5e1 !important;
+    color: #94a3b8 !important;
+    cursor: not-allowed;
+}
+
+/* Create Plan CTA */
+.create-plan-form {
+    padding: 40px 20px;
+    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+    border-radius: 16px;
+    border: 2px solid #0ea5e9;
+}
+
+.create-plan-form h2 {
+    font-size: 2rem;
+    color: #0369a1;
+    margin-bottom: 8px;
+    text-align: center;
+}
+
+/* View Tabs */
+.view-tabs {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+.tab-link {
+    padding: 10px 24px;
+    background: white;
+    color: var(--text);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.tab-link:hover {
+    border-color: var(--primary);
+    background: #f0f9ff;
+    transform: translateY(-2px);
+}
+
+.tab-link.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.btn-create {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-create:hover {
+    background: var(--primary-dark);
+    transform: translateY(-2px);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* Diff indicators */
+.diff-indicator {
+    font-size: 0.65rem;
+    color: #64748b;
+    font-style: italic;
+    min-height: 14px;
+}
+
+/* Responsive */
+@media (max-width: 968px) {
+    .stop-metrics {
+        grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+        gap: 6px;
+    }
+}
+@media (max-width: 640px) {
+    .stop-metrics {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 4px;
+        margin-left: 0 !important;
+    }
+    .stop-metrics .inline-edit { width: 100%; }
+    .stop-row { padding: 8px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>🛠️ Custom Plan Editor</h1>
+    <p style="opacity:0.85;margin-top:8px;">{{ base_plan.name }}</p>
+    
+    {% if custom_plan %}
+    {# View Tabs #}
+    <div class="view-tabs">
+        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=base_plan.slug) }}" class="tab-link active">
+            📝 My Custom Plan
+        </a>
+        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug) }}?view=base" class="tab-link">
+            📋 Base Plan
+        </a>
+        <a href="{{ url_for('riders.compare_ride_plans', slug=base_plan.slug) }}" class="tab-link">
+            📊 Compare
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<div class="container section">
+    {# Always show editor - whether creating new or editing existing #}
+    <div class="editor-container">
+        {# Custom Plan Editor - Full Width #}
+        <div class="plan-column custom">
+            <div class="column-header">
+                <span>✏️ {% if custom_plan %}My Custom Plan{% else %}Create Your Custom Plan{% endif %}</span>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-icon" style="background:#f1f5f9;border-color:#cbd5e1;color:#64748b;" onclick="resetToBasePlan()">
+                        ↶ Reset
+                    </button>
+                    <button class="btn-icon btn-save-inline" id="save-button-top" onclick="saveAllChanges()" disabled>
+                        <span id="save-icon-top">💾</span>
+                        <span id="save-text-top">Save</span>
+                    </button>
+                    {% if custom_plan %}
+                    <button class="btn-icon" onclick="deleteCustomPlan()">🗑️ Delete</button>
+                    {% endif %}
+                </div>
+            </div>
+            
+            {# Settings Panel #}
+            <div class="settings-panel">
+                <div class="settings-row">
+                    <div class="settings-label">Plan Name</div>
+                    <input type="text" class="settings-input" id="plan-name" 
+                           value="{{ custom_plan.name if custom_plan else 'My ' + base_plan.name }}"
+                           oninput="markDirty()">
+                </div>
+                <div class="settings-row">
+                    <div class="settings-label">Description (Optional)</div>
+                    <textarea class="settings-input" id="plan-description" 
+                              rows="2" oninput="markDirty()">{{ custom_plan.description or '' }}</textarea>
+                </div>
+                <div class="settings-row settings-checkbox">
+                    <input type="checkbox" id="plan-public" onchange="markDirty()"
+                           {% if custom_plan and custom_plan.is_public %}checked{% endif %}>
+                    <label for="plan-public" style="font-size:0.85rem;">Make this plan public (other riders can view/copy)</label>
+                </div>
+            </div>
+            
+            {# Pace Adjustment #}
+            <div class="pace-control">
+                <div class="pace-label">Average Moving Speed</div>
+                <input type="range" class="pace-slider" id="pace-slider" 
+                       min="10" max="20" step="0.5" 
+                       value="{{ custom_plan.avg_moving_speed|float if custom_plan and custom_plan.avg_moving_speed else 13 }}" 
+                       oninput="updatePaceDisplay()">
+                <div class="pace-value" id="pace-value">{{ custom_plan.avg_moving_speed|float if custom_plan and custom_plan.avg_moving_speed else 13 }} mph</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+                    <button class="btn-icon" onclick="applyPaceAdjustment()">
+                        🔄 Apply Pace
+                    </button>
+                    <button class="btn-icon" style="background:#f1f5f9;border-color:#cbd5e1;color:#64748b;" onclick="undoPaceAdjustment()">
+                        ↶ Undo
+                    </button>
+                </div>
+            </div>
+            
+            {# Plan Summary Stats #}
+            <div style="background:#f0f9ff;border:2px solid #0ea5e9;border-radius:10px;padding:16px;margin-bottom:20px;">
+                <div style="font-size:0.85rem;font-weight:600;color:#0369a1;margin-bottom:12px;">Plan Summary</div>
+                <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:12px;font-size:0.85rem;margin-bottom:12px;">
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Elapsed Time</div>
+                        <div id="summary-elapsed-time" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Moving Time</div>
+                        <div id="summary-moving-time" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Stop Time</div>
+                        <div id="summary-stop-time" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Time Bank</div>
+                        <div id="summary-time-bank" style="font-weight:700;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Elapsed Speed</div>
+                        <div id="summary-avg-elapsed-speed" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Moving Speed</div>
+                        <div id="summary-avg-moving-speed" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Difficulty</div>
+                        <div id="summary-difficulty" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;font-size:0.85rem;padding-top:10px;border-top:1px solid #bae6fd;">
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Total Miles</div>
+                        <div id="summary-miles" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Total Elevation</div>
+                        <div id="summary-elevation" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.7rem;margin-bottom:3px;">Avg Ft/Mile</div>
+                        <div id="summary-ft-per-mi" style="font-weight:700;color:#0369a1;">—</div>
+                    </div>
+                </div>
+            </div>
+            
+            {# Custom Stops — Timeline layout with break merging #}
+            <div id="custom-stops-container" {% if use_timeline %}class="timeline-container"{% endif %}>
+                {% for stop in (custom_stops if custom_plan else base_stops) %}
+                {% set base_stop = base_stops|selectattr('id', 'equalto', stop.id if not stop.is_custom_stop else 0)|list|first %}
+                {% set is_break = stop.get('_is_merged_break', false) %}
+                {% set level_class = '' %}
+                {% if use_timeline and not is_break %}
+                    {% set level_class = 'level-start' if stop.stop_type == 'start' else 'level-finish' if stop.stop_type == 'finish' else 'level-control' if stop.stop_type == 'control' else 'level-waypoint' %}
+                {% endif %}
+                <div class="stop-row {% if is_break and use_timeline %}break-hidden-row{% endif %} {{ level_class }} {% if stop.is_custom_stop %}custom-added{% elif stop.is_modified %}modified{% endif %}"
+                     data-stop-id="{{ stop.custom_stop_id or stop.id }}"
+                     data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
+                     data-distance="{{ stop.distance_miles or 0 }}"
+                     data-elevation="{{ stop.elevation_gain or 0 }}"
+                     data-stop-type="{{ stop.stop_type }}"
+                     data-base-distance="{{ base_stop.distance_miles if base_stop else '' }}"
+                     data-base-seg-miles="{{ base_stop.seg_dist if base_stop else '' }}"
+                     data-base-time="{{ base_stop.segment_time_min if base_stop else '' }}"
+                     data-base-stop-duration="{{ base_stop.stop_duration_min if base_stop else '0' }}"
+                     data-base-elevation="{{ base_stop.elevation_gain if base_stop else '' }}"
+                     data-base-avg-speed="{{ base_stop.avg_speed if base_stop else '' }}"
+                     data-base-ft-per-mi="{{ base_stop.ft_per_mi if base_stop else '' }}"
+                     data-base-cum-time="{{ base_stop.cum_time_min if base_stop else '' }}"
+                     data-base-time-bank="{{ base_stop.time_bank_min if base_stop else '' }}">
+                    <div class="stop-header">
+                        <div class="stop-icon {{ stop.stop_type }}">
+                            {% if stop.stop_type == 'start' %}🚩{% elif stop.stop_type == 'finish' %}🏁{% elif stop.stop_type == 'control' %}◆{% elif stop.stop_type == 'rest' %}☕{% else %}•{% endif %}
+                        </div>
+                        <div class="stop-location">{{ stop.location }}</div>
+                        <div class="stop-actions" style="display:none;">
+                            {# Add/Delete disabled - only timing edits allowed #}
+                            <button class="btn-icon" onclick="showAddStopForm({{ loop.index0 }}, {{ stop.distance_miles or 0 }})"
+                                    title="Add a custom stop after this one" style="display:none;">
+                                ➕
+                            </button>
+                            {% if stop.is_custom_stop %}
+                            <button class="btn-icon btn-delete" onclick="deleteStop(this, {{ stop.custom_stop_id }}, true)"
+                                    title="Delete this custom stop permanently" style="display:none;">
+                                🗑️
+                            </button>
+                            {% elif stop.stop_type == 'rest' %}
+                            <button class="btn-icon btn-delete" onclick="deleteStop(this, {{ stop.id }}, false)"
+                                    title="Remove this rest stop from your custom plan" style="display:none;">
+                                🗑️
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="stop-metrics">
+                        <div class="metric-box">
+                            <div class="metric-label">Cumul Dist</div>
+                            <div style="display:flex;flex-direction:column;gap:2px;">
+                                <input type="number" class="inline-edit"
+                                       step="0.1"
+                                       value="{{ "%.1f"|format(stop.distance_miles or 0) }}"
+                                       data-stop-id="{{ stop.custom_stop_id or stop.id }}"
+                                       data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
+                                       onchange="trackDistanceChange(this)"
+                                       readonly
+                                       style="background:#f8fafc;cursor:not-allowed;">
+                                <span class="diff-indicator diff-distance"></span>
+                            </div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Seg Miles</div>
+                            <div style="display:flex;flex-direction:column;gap:2px;">
+                                <input type="number" class="inline-edit seg-miles"
+                                       step="0.1"
+                                       value="{{ "%.1f"|format(stop.get('seg_dist', 0) or 0) }}"
+                                       data-stop-id="{{ stop.custom_stop_id or stop.id }}"
+                                       data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
+                                       onchange="trackSegMilesChange(this)"
+                                       readonly
+                                       style="background:#f8fafc;cursor:not-allowed;">
+                                <span class="diff-indicator diff-seg-miles"></span>
+                            </div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Seg Time</div>
+                            <div style="display:flex;flex-direction:column;gap:2px;">
+                                <input type="number" class="inline-edit"
+                                       value="{{ stop.segment_time_min or 0 }}"
+                                       data-stop-id="{{ stop.custom_stop_id or stop.id }}"
+                                       data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
+                                       onchange="trackTimeChange(this)">
+                                <span class="diff-indicator diff-time"></span>
+                            </div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Avg Speed</div>
+                            <div style="display:flex;flex-direction:column;gap:2px;">
+                                <input type="number" class="inline-edit avg-speed"
+                                       step="0.1"
+                                       value="{{ "%.1f"|format(stop.get('avg_speed', 0)) if stop.get('avg_speed') else '' }}"
+                                       data-stop-id="{{ stop.custom_stop_id or stop.id }}"
+                                       data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
+                                       onchange="trackAvgSpeedChange(this)">
+                                <span class="diff-indicator diff-avg-speed"></span>
+                            </div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Elev (ft)</div>
+                            <input type="number" class="inline-edit elevation"
+                                   value="{{ stop.elevation_gain or 0 }}"
+                                   data-stop-id="{{ stop.custom_stop_id or stop.id }}"
+                                   data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
+                                   onchange="trackElevationChange(this)"
+                                   readonly
+                                   style="background:#f8fafc;cursor:not-allowed;">
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Ft/Mi</div>
+                            <input type="number" class="inline-edit ft-per-mi"
+                                   value="{{ stop.get('ft_per_mi', '') or '' }}"
+                                   data-stop-id="{{ stop.custom_stop_id or stop.id }}"
+                                   data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
+                                   onchange="trackFtPerMiChange(this)"
+                                   readonly
+                                   style="background:#f8fafc;cursor:not-allowed;">
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Cumul Time</div>
+                            <div style="display:flex;flex-direction:column;gap:2px;">
+                                <div class="metric-value cumulative-time" style="font-weight:700;color:var(--primary);">
+                                    {% if stop.cum_time_min %}
+                                    {{ (stop.cum_time_min // 60)|int }}:{{ "%02d"|format(stop.cum_time_min % 60) }}
+                                    {% else %}
+                                    0:00
+                                    {% endif %}
+                                </div>
+                                <span class="diff-indicator diff-cum-time"></span>
+                            </div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">ETA</div>
+                            <div class="metric-value wall-time" style="font-weight:700;color:#7c3aed;"
+                                 data-cum-min="{{ ((stop.cum_time_min or 0) - (stop.stop_duration_min or 0))|int }}">--:--</div>
+                        </div>
+                        {% if stop.stop_duration_min and stop.stop_duration_min > 0 %}
+                        <div class="metric-box">
+                            <div class="metric-label">Break</div>
+                            <div class="metric-value" style="color:#92400e;">
+                                {{ stop.stop_duration_min }}m{% if stop.stop_name %} <span style="font-size:0.7rem;font-weight:400;">({{ stop.stop_name }})</span>{% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        <div class="metric-box">
+                            <div class="metric-label">Time Bank</div>
+                            <div style="display:flex;flex-direction:column;gap:2px;">
+                                <div class="metric-value time-bank" style="font-weight:700;">
+                                    {% if stop.get('time_bank_min') is not none %}
+                                    {% set abs_bank = stop.time_bank_min if stop.time_bank_min >= 0 else -stop.time_bank_min %}
+                                    <span style="color:{% if stop.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
+                                        {% if stop.time_bank_min >= 0 %}+{% else %}−{% endif %}{{ (abs_bank // 60)|int }}:{{ "%02d"|format(abs_bank % 60) }}
+                                    </span>
+                                    {% else %}
+                                    —
+                                    {% endif %}
+                                </div>
+                                <span class="diff-indicator diff-time-bank"></span>
+                            </div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Difficulty</div>
+                            <div class="metric-value difficulty-score" style="font-weight:600;" data-score="{{ stop.difficulty_score or 0 }}">
+                                {% if stop.difficulty_score %}
+                                {% set color = '#94a3b8' if stop.difficulty_label == 'flat' else '#22c55e' if stop.difficulty_label == 'easy' else '#f59e0b' if stop.difficulty_label == 'moderate' else '#ef4444' %}
+                                <span style="color:{{color}};">{{ "%.1f"|format(stop.difficulty_score) }}</span>
+                                {% else %}
+                                —
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {# Break chips and Add Break button #}
+                    {% if stop.stop_type != 'start' and stop.stop_type != 'finish' %}
+                    <div class="break-chips-row">
+                        {% if stop.stop_name and stop.stop_duration_min and stop.stop_duration_min > 0 and stop.stop_duration_min != -1 %}
+                        <div class="break-chip" title="{{ stop.stop_name }}{% if stop.notes %} — {{ stop.notes }}{% endif %}">
+                            <span class="break-icon">☕</span>
+                            <span class="break-name">{{ stop.stop_name }}</span>
+                            <input type="number" class="break-time-edit stop-duration"
+                                   value="{{ stop.stop_duration_min }}"
+                                   data-stop-id="{{ stop.custom_stop_id or stop.id }}"
+                                   data-base-stop-id="{{ stop.id if not stop.is_custom_stop else '' }}"
+                                   onchange="trackStopDurationChange(this)"
+                                   title="Break duration (minutes)">
+                            <span style="font-size:0.65rem;">min</span>
+                            <button class="break-delete-btn" onclick="deleteBreakInfo(this, '{{ stop.custom_stop_id or stop.id }}')" title="Remove break">✕</button>
+                        </div>
+                        {% else %}
+                        <button class="add-break-btn" onclick="showAddBreakForm(this)" title="Add a break at this stop">+ break</button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            
+            {# Save Button - Bottom #}
+            <div style="text-align:center;margin-top:20px;padding-top:16px;border-top:2px solid var(--border);">
+                <div style="display:flex;gap:12px;justify-content:center;">
+                    <button class="btn-icon" style="background:#f1f5f9;border-color:#cbd5e1;color:#64748b;" onclick="resetToBasePlan()">
+                        ↶ Reset to Base Plan
+                    </button>
+                    <button class="btn-icon btn-save-inline" id="save-button" onclick="saveAllChanges()" disabled>
+                        <span id="save-icon">💾</span>
+                        <span id="save-text">Save Changes</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {# Add Custom Stop Modal #}
+    <div id="add-stop-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;" onclick="event.target === this && hideAddStopForm()">
+        <div style="background:white;border-radius:12px;padding:24px;max-width:500px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+            <h3 style="margin:0 0 20px 0;">Add Custom Stop</h3>
+            
+            <div style="margin-bottom:16px;">
+                <label style="display:block;font-weight:600;margin-bottom:6px;">Stop Location *</label>
+                <input type="text" id="new-stop-location" placeholder="e.g., Coffee Shop" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+            </div>
+            
+            <div style="margin-bottom:16px;">
+                <label style="display:block;font-weight:600;margin-bottom:6px;">Insert After Stop</label>
+                <input type="text" id="new-stop-after-name" readonly style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;background:#f9fafb;">
+                <input type="hidden" id="new-stop-after-distance">
+            </div>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                <div>
+                    <label style="display:block;font-weight:600;margin-bottom:6px;">Distance (miles) *</label>
+                    <input type="number" id="new-stop-distance" step="0.1" placeholder="0.0" oninput="calculateNewStopMetrics()" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+                </div>
+                <div>
+                    <label style="display:block;font-weight:600;margin-bottom:6px;">Segment Time (min)</label>
+                    <input type="number" id="new-stop-time" placeholder="30" oninput="calculateNewStopMetrics()" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+                </div>
+            </div>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                <div>
+                    <label style="display:block;font-weight:600;margin-bottom:6px;">Elevation Gain (ft)</label>
+                    <input type="number" id="new-stop-elevation" placeholder="0" oninput="calculateNewStopMetrics()" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+                </div>
+                <div>
+                    <label style="display:block;font-weight:600;margin-bottom:6px;">Stop Type</label>
+                    <select id="new-stop-type" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+                        <option value="control">Control</option>
+                        <option value="rest">Rest/Info</option>
+                        <option value="intermediate">Intermediate</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div style="background:#f8fafc;border-radius:6px;padding:12px;margin-bottom:16px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:12px;font-size:0.85rem;">
+                    <div>
+                        <div style="color:#64748b;font-size:0.75rem;margin-bottom:4px;">Avg Speed</div>
+                        <div id="new-stop-avg-speed" style="font-weight:600;color:var(--primary);">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.75rem;margin-bottom:4px;">Ft/Mile</div>
+                        <div id="new-stop-ft-per-mi" style="font-weight:600;color:var(--primary);">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.75rem;margin-bottom:4px;">Difficulty</div>
+                        <div id="new-stop-difficulty" style="font-weight:600;color:var(--primary);">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.75rem;margin-bottom:4px;">Cumul Time</div>
+                        <div id="new-stop-cumul-time" style="font-weight:600;color:var(--primary);">—</div>
+                    </div>
+                    <div>
+                        <div style="color:#64748b;font-size:0.75rem;margin-bottom:4px;">Time Bank</div>
+                        <div id="new-stop-time-bank" style="font-weight:600;">—</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:6px;">Notes</label>
+                <textarea id="new-stop-notes" rows="3" placeholder="Optional notes..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></textarea>
+            </div>
+            
+            <div style="display:flex;gap:12px;justify-content:flex-end;">
+                <button class="btn-icon" onclick="hideAddStopForm()" style="background:#f1f5f9;">Cancel</button>
+                <button class="btn-icon" onclick="addCustomStop()" style="background:var(--primary);color:white;">Add Stop</button>
+            </div>
+        </div>
+    </div>
+
+    {# Add Break Modal #}
+    <div id="add-break-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;" onclick="event.target === this && hideAddBreakForm()">
+        <div style="background:white;border-radius:12px;padding:24px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+            <h3 style="margin:0 0 16px 0;">☕ Add Break</h3>
+            <input type="hidden" id="new-break-parent-stop-id">
+
+            <div style="margin-bottom:14px;">
+                <label style="display:block;font-weight:600;margin-bottom:6px;">Break Name *</label>
+                <input type="text" id="new-break-name" placeholder="e.g., Lunch stop, Coffee break" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+            </div>
+
+            <div style="margin-bottom:14px;">
+                <label style="display:block;font-weight:600;margin-bottom:6px;">Duration (minutes) *</label>
+                <input type="number" id="new-break-duration" placeholder="15" min="1" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+            </div>
+
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:6px;">Notes</label>
+                <textarea id="new-break-notes" rows="2" placeholder="Optional notes..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"></textarea>
+            </div>
+
+            <div style="display:flex;gap:12px;justify-content:flex-end;">
+                <button class="btn-icon" onclick="hideAddBreakForm()" style="background:#f1f5f9;">Cancel</button>
+                <button class="btn-icon" onclick="addBreakStop()" style="background:#d97706;color:white;">Add Break</button>
+            </div>
+        </div>
+    </div>
+
+    {# Action Buttons #}
+    <div style="text-align:center;margin-top:30px;">
+        <a href="{{ url_for('riders.ride_plan_detail', slug=base_plan.slug) }}"
+           class="back-link" style="margin-right:20px;">← Back to Base Plan</a>
+        {% if custom_plan %}
+        <a href="{{ url_for('riders.compare_ride_plans', slug=base_plan.slug) }}" 
+           class="btn-create">📊 Compare Plans</a>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let customPlanId = {{ custom_plan.id if custom_plan else 'null' }};
+const basePlanId = {{ base_plan.id }};
+const isCreateMode = !customPlanId;
+let hasUnsavedChanges = isCreateMode; // Mark dirty if creating new plan
+let pendingChanges = {
+    settings: {},
+    stopTimes: {},
+    stopDurations: {},
+    stopNames: {},
+    stopDistances: {},
+    stopElevations: {},
+    addedStops: [],
+    deletedStops: []
+};
+
+// Store the original pace from the current plan (custom or base)
+const originalPace = {{ custom_plan.avg_moving_speed|float if custom_plan and custom_plan.avg_moving_speed else 13 }};
+
+// Store original segment times on page load to support undo
+const originalSegmentTimes = {};
+
+let nextTempStopId = -1;
+
+// Enable save button immediately in create mode
+if (isCreateMode) {
+    document.getElementById('save-button').disabled = false;
+    document.getElementById('save-button-top').disabled = false;
+}
+
+// Calculate initial cumulative times on page load
+document.addEventListener('DOMContentLoaded', () => {
+    // Capture original segment times for undo functionality
+    const allStops = document.querySelectorAll('.stop-row');
+    allStops.forEach(stop => {
+        const stopId = stop.dataset.stopId || stop.dataset.tempStopId;
+        const allInputs = stop.querySelectorAll('.inline-edit');
+        const timeInput = allInputs[2]; // Index 2 = seg time
+        if (timeInput && stopId) {
+            originalSegmentTimes[stopId] = parseInt(timeInput.value);
+        }
+    });
+    
+    recalculateTimes();
+});
+
+// Helper to update all save buttons
+function updateSaveButtons(state, icon, text) {
+    const buttons = [document.getElementById('save-button'), document.getElementById('save-button-top')];
+    buttons.forEach(btn => {
+        if (!btn) return;
+        
+        if (state === 'disabled') btn.disabled = true;
+        else if (state === 'enabled') btn.disabled = false;
+        
+        if (state === 'saving') btn.classList.add('saving');
+        else btn.classList.remove('saving');
+        
+        if (state === 'saved') btn.classList.add('saved');
+        else btn.classList.remove('saved');
+        
+        const iconEl = btn.querySelector('[id^="save-icon"]');
+        const textEl = btn.querySelector('[id^="save-text"]');
+        if (iconEl && icon) iconEl.textContent = icon;
+        if (textEl && text) textEl.textContent = text;
+    });
+}
+
+function markDirty() {
+    hasUnsavedChanges = true;
+    
+    // Update both save buttons
+    const saveBtns = [document.getElementById('save-button'), document.getElementById('save-button-top')];
+    saveBtns.forEach(btn => {
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.remove('saved');
+        }
+    });
+    
+    // Update button text
+    const saveTextElements = document.querySelectorAll('[id^="save-text"]');
+    saveTextElements.forEach(el => {
+        if (el) el.textContent = 'Save Changes';
+    });
+}
+
+function trackTimeChange(input) {
+    const stopId = input.dataset.stopId;
+    const time = parseInt(input.value);
+    
+    // Only track changes in edit mode (when custom plan already exists)
+    // In create mode, user should use "Apply This Pace" button
+    if (!isCreateMode) {
+        pendingChanges.stopTimes[stopId] = time;
+    }
+    
+    // Recalculate cumulative times for all stops
+    recalculateTimes();
+    
+    markDirty();
+}
+
+/* ── Break chip helpers (timeline mode) ── */
+
+function trackBreakTimeChange(chipInput) {
+    // Sync the editable break chip's time value back to the hidden .break-hidden-row
+    const breakStopId = chipInput.dataset.breakStopId;
+    if (!breakStopId) return;
+
+    // Find the hidden break row by matching data-stop-id
+    const hiddenRow = document.querySelector(
+        `.break-hidden-row[data-stop-id="${breakStopId}"]`
+    );
+    if (!hiddenRow) return;
+
+    const newTime = parseInt(chipInput.value) || 0;
+
+    // Update the hidden row's time input (index 2: distance, seg-miles, time, ...)
+    const hiddenInputs = hiddenRow.querySelectorAll('.inline-edit');
+    const hiddenTimeInput = hiddenInputs[2];
+    if (hiddenTimeInput) {
+        hiddenTimeInput.value = newTime;
+
+        // Track the change so it persists on save
+        const stopId = hiddenTimeInput.dataset.stopId || breakStopId;
+        if (!isCreateMode) {
+            pendingChanges.stopTimes[stopId] = newTime;
+        }
+    }
+
+    // Recalculate cumulative times / time banks for all rows (including hidden)
+    recalculateTimes();
+    markDirty();
+}
+
+function deleteBreakStop(button, stopId, isCustomStop) {
+    // Remove the visible chip
+    const chip = button.closest('.break-chip');
+    const chipRow = chip ? chip.closest('.break-chips-row') : null;
+
+    // Remove the hidden break row from the DOM
+    const hiddenRow = document.querySelector(
+        `.break-hidden-row[data-stop-id="${stopId}"]`
+    );
+    if (hiddenRow) {
+        hiddenRow.remove();
+    }
+
+    // Remove the visible chip
+    if (chip) chip.remove();
+
+    // If no break chips remain, show/re-create the + break button
+    if (chipRow && chipRow.querySelectorAll('.break-chip').length === 0) {
+        let addBtn = chipRow.querySelector('.add-break-btn');
+        if (addBtn) {
+            addBtn.style.display = 'inline-flex'; // Show button
+        } else {
+            // Re-create button for stops that had server-rendered breaks
+            const stopRow = chipRow.closest('.stop-row');
+            const stopType = stopRow ? stopRow.dataset.stopType : '';
+            if (stopType !== 'start' && stopType !== 'finish') {
+                addBtn = document.createElement('button');
+                addBtn.className = 'add-break-btn';
+                addBtn.onclick = function() { showAddBreakForm(this); };
+                addBtn.title = 'Add a break at this stop';
+                addBtn.textContent = '+ break';
+                chipRow.appendChild(addBtn);
+            }
+        }
+    }
+
+    // Track the deletion for the save payload
+    pendingChanges.deletedStops.push({
+        stopId: stopId,
+        isCustomStop: isCustomStop
+    });
+
+    // Recalculate everything
+    recalculateTimes();
+    markDirty();
+}
+
+function deleteBreakInfo(button, stopId) {
+    // Clear stop_name and stop_duration_min for this stop
+    const chip = button.closest('.break-chip');
+    const chipRow = chip ? chip.closest('.break-chips-row') : null;
+    
+    console.log('deleteBreakInfo called:', {stopId, isCreateMode});
+    
+    // Track the change - use -1 as sentinel value for "explicitly removed"
+    if (!isCreateMode) {
+        pendingChanges.stopDurations[stopId] = -1;  // -1 means "explicitly removed"
+        pendingChanges.stopNames[stopId] = null;    // NULL means clear the name
+        console.log('Updated pendingChanges:', {
+            stopNames: pendingChanges.stopNames,
+            stopDurations: pendingChanges.stopDurations
+        });
+    }
+    
+    // Remove the chip and show the "+ break" button
+    if (chip) chip.remove();
+    
+    if (chipRow) {
+        let addBtn = chipRow.querySelector('.add-break-btn');
+        if (!addBtn) {
+            addBtn = document.createElement('button');
+            addBtn.className = 'add-break-btn';
+            addBtn.onclick = function() { showAddBreakForm(this); };
+            addBtn.title = 'Add a break at this stop';
+            addBtn.textContent = '+ break';
+            chipRow.appendChild(addBtn);
+        } else {
+            addBtn.style.display = 'inline-flex';
+        }
+    }
+    
+    recalculateTimes();
+    markDirty();
+}
+
+/* ── Add Break helpers ── */
+
+function showAddBreakForm(button) {
+    const stopRow = button.closest('.stop-row');
+    if (!stopRow) return;
+    document.getElementById('new-break-parent-stop-id').value = stopRow.dataset.stopId;
+    const modal = document.getElementById('add-break-modal');
+    modal.style.display = 'flex';
+    setTimeout(() => document.getElementById('new-break-name').focus(), 100);
+}
+
+function hideAddBreakForm() {
+    document.getElementById('add-break-modal').style.display = 'none';
+    document.getElementById('new-break-name').value = '';
+    document.getElementById('new-break-duration').value = '';
+    document.getElementById('new-break-notes').value = '';
+    document.getElementById('new-break-parent-stop-id').value = '';
+}
+
+function addBreakStop() {
+    const breakName = document.getElementById('new-break-name').value.trim();
+    const duration = parseInt(document.getElementById('new-break-duration').value) || 0;
+    const notes = document.getElementById('new-break-notes').value.trim();
+    const parentStopId = document.getElementById('new-break-parent-stop-id').value;
+
+    if (!breakName) { alert('Please enter a break name'); return; }
+    if (duration <= 0) { alert('Please enter a valid duration'); return; }
+
+    const parentRow = document.querySelector(`.stop-row[data-stop-id="${parentStopId}"]`);
+    if (!parentRow) { alert('Could not find the parent stop'); return; }
+    
+    console.log('addBreakStop called:', {parentStopId, breakName, duration, isCreateMode});
+    
+    // Track the changes - set stop_name and stop_duration_min for this stop
+    if (!isCreateMode) {
+        pendingChanges.stopNames[parentStopId] = breakName;
+        pendingChanges.stopDurations[parentStopId] = duration;
+        console.log('Updated pendingChanges:', {
+            stopNames: pendingChanges.stopNames,
+            stopDurations: pendingChanges.stopDurations
+        });
+    }
+    
+    // Update the UI - replace "+ break" button with break chip
+    const chipRow = parentRow.querySelector('.break-chips-row');
+    if (chipRow) {
+        chipRow.innerHTML = `
+            <div class="break-chip" title="${breakName}${notes ? ' — ' + notes : ''}">
+                <span class="break-icon">☕</span>
+                <span class="break-name">${breakName}</span>
+                <input type="number" class="break-time-edit stop-duration"
+                       value="${duration}"
+                       data-stop-id="${parentStopId}"
+                       onchange="trackStopDurationChange(this)"
+                       title="Break duration (minutes)">
+                <span style="font-size:0.65rem;">min</span>
+                <button class="break-delete-btn" onclick="deleteBreakInfo(this, '${parentStopId}')" title="Remove break">✕</button>
+            </div>
+        `;
+    }
+    
+    // Close modal
+    hideAddBreakForm();
+    
+    // Recalculate everything
+    recalculateTimes();
+    markDirty();
+}
+
+function trackDistanceChange(input) {
+    const stopId = input.dataset.stopId;
+    const distance = parseFloat(input.value);
+    
+    // Track distance changes in edit mode
+    if (!isCreateMode) {
+        pendingChanges.stopDistances[stopId] = distance;
+    }
+    
+    // Update the data-distance attribute on the stop row
+    const stopRow = input.closest('.stop-row');
+    if (stopRow) {
+        stopRow.dataset.distance = distance;
+    }
+    
+    // Recalculate all derived metrics (seg miles, ft/mi, time bank, etc.)
+    recalculateTimes();
+    
+    markDirty();
+}
+
+function trackSegMilesChange(input) {
+    const stopRow = input.closest('.stop-row');
+    const segMiles = parseFloat(input.value) || 0;
+    
+    // Update cumulative distance based on seg miles
+    const allStops = Array.from(document.querySelectorAll('.stop-row'));
+    const currentIndex = allStops.indexOf(stopRow);
+    
+    let prevDistance = 0;
+    if (currentIndex > 0) {
+        const prevStop = allStops[currentIndex - 1];
+        prevDistance = parseFloat(prevStop.dataset.distance) || 0;
+    }
+    
+    const newDistance = prevDistance + segMiles;
+    
+    // Update the distance input (first inline-edit)
+    const distanceInput = stopRow.querySelector('.inline-edit');
+    if (distanceInput) {
+        distanceInput.value = newDistance.toFixed(1);
+        stopRow.dataset.distance = newDistance;
+        
+        const stopId = distanceInput.dataset.stopId;
+        if (!isCreateMode) {
+            pendingChanges.stopDistances[stopId] = newDistance;
+        }
+    }
+    
+    // Recalculate all subsequent stops
+    recalculateTimes();
+    markDirty();
+}
+
+function trackAvgSpeedChange(input) {
+    const stopRow = input.closest('.stop-row');
+    const avgSpeed = parseFloat(input.value);
+    
+    if (!avgSpeed || avgSpeed <= 0) {
+        recalculateTimes();
+        return;
+    }
+    
+    // Get segment miles
+    const segMilesInput = stopRow.querySelector('.seg-miles');
+    const segMiles = parseFloat(segMilesInput?.value) || 0;
+    
+    if (segMiles > 0) {
+        // Calculate new segment time: (distance / speed) * 60 minutes
+        const newSegTime = Math.round((segMiles / avgSpeed) * 60);
+        
+        // Update segment time input (find the time input that's not seg-miles or avg-speed)
+        const allInputs = stopRow.querySelectorAll('.inline-edit');
+        const timeInput = allInputs[2]; // Index 0=distance, 1=seg-miles, 2=time, 3=avg-speed
+        if (timeInput) {
+            timeInput.value = newSegTime;
+            trackTimeChange(timeInput);
+        }
+    }
+}
+
+function trackStopDurationChange(input) {
+    const stopId = input.dataset.stopId;
+    const duration = parseInt(input.value) || 0;
+    
+    console.log('trackStopDurationChange called:', {stopId, duration, isCreateMode});
+    
+    // Track the change
+    if (!isCreateMode) {
+        pendingChanges.stopDurations[stopId] = duration;
+        
+        // Also track the stop_name from the break chip
+        const breakChip = input.closest('.break-chip');
+        if (breakChip) {
+            const stopNameElem = breakChip.querySelector('.break-name');
+            if (stopNameElem) {
+                pendingChanges.stopNames[stopId] = stopNameElem.textContent;
+            }
+        }
+        
+        console.log('Updated pendingChanges:', {
+            stopDurations: pendingChanges.stopDurations,
+            stopNames: pendingChanges.stopNames
+        });
+    }
+    
+    // Recalculate cumulative times
+    recalculateTimes();
+    markDirty();
+}
+
+
+function trackElevationChange(input) {
+    const stopRow = input.closest('.stop-row');
+    const newElevation = parseFloat(input.value) || 0;
+    const oldElevation = parseFloat(stopRow.dataset.elevation) || 0;
+    const elevationDiff = newElevation - oldElevation;
+    const stopId = input.dataset.stopId;
+    
+    // Update dataset
+    stopRow.dataset.elevation = newElevation;
+    
+    // Track the change
+    if (!isCreateMode) {
+        if (!pendingChanges.stopElevations) {
+            pendingChanges.stopElevations = {};
+        }
+        pendingChanges.stopElevations[stopId] = newElevation;
+    }
+    
+    // Get segment miles and update ft/mi
+    const segMilesInput = stopRow.querySelector('.seg-miles');
+    const segMiles = parseFloat(segMilesInput?.value) || 0;
+    
+    const ftPerMiInput = stopRow.querySelector('.ft-per-mi');
+    if (ftPerMiInput && segMiles > 0) {
+        const ftPerMi = Math.round(newElevation / segMiles);
+        ftPerMiInput.value = ftPerMi;
+    } else if (ftPerMiInput) {
+        ftPerMiInput.value = '';
+    }
+    
+    // Auto-adjust next stop's elevation (subtract the added elevation)
+    if (Math.abs(elevationDiff) > 0) {
+        const allStops = Array.from(document.querySelectorAll('.stop-row'));
+        const currentIndex = allStops.indexOf(stopRow);
+        
+        if (currentIndex >= 0 && currentIndex < allStops.length - 1) {
+            const nextStop = allStops[currentIndex + 1];
+            const nextElevInput = nextStop.querySelector('.elevation');
+            
+            if (nextElevInput) {
+                const nextElevation = parseFloat(nextElevInput.value) || 0;
+                const adjustedNextElevation = Math.max(0, nextElevation - elevationDiff);
+                nextElevInput.value = adjustedNextElevation;
+                
+                // Update the next stop's dataset and tracking
+                nextStop.dataset.elevation = adjustedNextElevation;
+                const nextStopId = nextElevInput.dataset.stopId;
+                if (!isCreateMode) {
+                    if (!pendingChanges.stopElevations) {
+                        pendingChanges.stopElevations = {};
+                    }
+                    pendingChanges.stopElevations[nextStopId] = adjustedNextElevation;
+                }
+                
+                // Update next stop's ft/mi
+                const nextSegMilesInput = nextStop.querySelector('.seg-miles');
+                const nextSegMiles = parseFloat(nextSegMilesInput?.value) || 0;
+                const nextFtPerMiInput = nextStop.querySelector('.ft-per-mi');
+                if (nextFtPerMiInput && nextSegMiles > 0 && adjustedNextElevation > 0) {
+                    const nextFtPerMi = Math.round(adjustedNextElevation / nextSegMiles);
+                    nextFtPerMiInput.value = nextFtPerMi;
+                } else if (nextFtPerMiInput) {
+                    nextFtPerMiInput.value = '';
+                }
+            }
+        }
+    }
+    
+    recalculateTimes();
+    markDirty();
+}
+
+function trackFtPerMiChange(input) {
+    const stopRow = input.closest('.stop-row');
+    const ftPerMi = parseFloat(input.value);
+    
+    if (!ftPerMi || ftPerMi <= 0) {
+        recalculateTimes();
+        return;
+    }
+    
+    // Get segment miles
+    const segMilesInput = stopRow.querySelector('.seg-miles');
+    const segMiles = parseFloat(segMilesInput?.value) || 0;
+    
+    if (segMiles > 0) {
+        // Calculate new elevation: ft/mi * seg_miles
+        const newElevation = Math.round(ftPerMi * segMiles);
+        
+        // Update elevation input
+        const elevInput = stopRow.querySelector('.elevation');
+        if (elevInput) {
+            elevInput.value = newElevation;
+            trackElevationChange(elevInput);
+        }
+    }
+}
+
+function updatePaceDisplay() {
+    const pace = document.getElementById('pace-slider').value;
+    document.getElementById('pace-value').textContent = pace + ' mph';
+}
+
+function applyPaceAdjustment() {
+    const pace = parseFloat(document.getElementById('pace-slider').value);
+    
+    // Store the pace change
+    pendingChanges.settings.avg_moving_speed = pace;
+    
+    // Recalculate all segment times based on new pace
+    const allStops = document.querySelectorAll('.stop-row');
+    let prevDistance = 0;
+    
+    allStops.forEach((stop, index) => {
+        const distance = parseFloat(stop.dataset.distance || 0);
+        const segmentDistance = distance - prevDistance; // miles
+        
+        if (index > 0 && segmentDistance > 0) {
+            // Calculate segment time: (distance / speed) * 60 minutes
+            const segmentTimeMin = Math.round((segmentDistance / pace) * 60);
+            
+            // Update the segment time input field
+            // Order: 0=distance, 1=seg miles, 2=seg time, 3=avg speed, 4=elevation, 5=ft/mi
+            const allInputs = stop.querySelectorAll('.inline-edit');
+            const timeInput = allInputs[2]; // Index 2 = seg time
+            if (timeInput) {
+                timeInput.value = segmentTimeMin;
+            }
+        }
+        
+        prevDistance = distance;
+    });
+    
+    // Show feedback to user
+    const applyBtn = event.target;
+    const originalText = applyBtn.textContent;
+    applyBtn.textContent = '✓ Times Recalculated';
+    applyBtn.disabled = true;
+    
+    setTimeout(() => {
+        applyBtn.textContent = originalText;
+        applyBtn.disabled = false;
+    }, 2000);
+    
+    // Recalculate cumulative times after pace adjustment
+    recalculateTimes();
+    
+    markDirty();
+}
+
+function undoPaceAdjustment() {
+    // Restore all segment times to original values from when page loaded
+    const allStops = document.querySelectorAll('.stop-row');
+    
+    allStops.forEach(stop => {
+        const stopId = stop.dataset.stopId || stop.dataset.tempStopId;
+        const originalTime = originalSegmentTimes[stopId];
+        
+        // Restore if we have the original time stored
+        if (originalTime !== undefined) {
+            const allInputs = stop.querySelectorAll('.inline-edit');
+            const timeInput = allInputs[2]; // Index 2 = seg time
+            if (timeInput) {
+                timeInput.value = originalTime;
+            }
+        }
+    });
+    
+    // Reset the slider to the original pace from current plan
+    const slider = document.getElementById('pace-slider');
+    slider.value = originalPace;
+    document.getElementById('pace-value').textContent = originalPace + ' mph';
+    
+    // Clear the pending pace adjustment
+    delete pendingChanges.settings.avg_moving_speed;
+    
+    // Show feedback to user
+    const undoBtn = event.target;
+    const originalText = undoBtn.textContent;
+    undoBtn.textContent = '✓ Restored';
+    undoBtn.disabled = true;
+    
+    setTimeout(() => {
+        undoBtn.textContent = originalText;
+        undoBtn.disabled = false;
+    }, 2000);
+    
+    // Recalculate all derived metrics
+    recalculateTimes();
+    
+    markDirty();
+}
+
+function deleteStop(button, stopId, isCustomStop) {
+    const stopRow = button.closest('.stop-row');
+    
+    // Get segment time and elevation from this stop before removing it
+    const allInputs = stopRow.querySelectorAll('.inline-edit');
+    const distInput = allInputs[0]; // Index 0 is cumulative distance
+    const timeInput = allInputs[2]; // Index 2 is segment time
+    const elevInput = allInputs[4]; // Index 4 is elevation
+    
+    const distance = parseFloat(distInput?.value || 0);
+    const segmentTime = parseInt(timeInput?.value || 0);
+    const elevation = parseInt(elevInput?.value || 0);
+    
+    // Remove from DOM
+    stopRow.remove();
+    
+    // Track deletion (will be processed on save)
+    // IMPORTANT: Track deletions even in create mode so they're applied after plan creation
+    pendingChanges.deletedStops.push({
+        stopId: stopId,
+        isCustomStop: isCustomStop
+    });
+    
+    // Find the next stop and add back segment time and elevation
+    // NOTE: Do NOT change cumulative distance - it's an absolute position!
+    // Segment miles will be recalculated automatically by recalculateTimes()
+    const allStops = document.querySelectorAll('.stop-row');
+    for (let stop of allStops) {
+        const stopDist = parseFloat(stop.dataset.distance || 0);
+        if (stopDist > distance) {
+            // This is the next stop - add back segment time and elevation
+            const nextInputs = stop.querySelectorAll('.inline-edit');
+            
+            // Add back segment time
+            const nextTimeInput = nextInputs[2]; // Index 2 is segment time
+            if (nextTimeInput && segmentTime > 0) {
+                const currentTime = parseInt(nextTimeInput.value || 0);
+                const newTime = currentTime + segmentTime;
+                nextTimeInput.value = newTime;
+                
+                // Track the change
+                const nextStopId = nextTimeInput.dataset.stopId;
+                if (nextStopId) {
+                    pendingChanges.stopTimes[nextStopId] = newTime;
+                }
+            }
+            
+            // Add back elevation
+            const nextElevInput = nextInputs[4]; // Index 4 is elevation
+            if (nextElevInput && elevation > 0) {
+                const currentElev = parseInt(nextElevInput.value) || 0;
+                const newElev = currentElev + elevation;
+                nextElevInput.value = newElev;
+                stop.dataset.elevation = newElev;
+                
+                // Track the change
+                const nextStopId = nextElevInput.dataset.stopId;
+                if (nextStopId) {
+                    if (!pendingChanges.stopElevations) {
+                        pendingChanges.stopElevations = {};
+                    }
+                    pendingChanges.stopElevations[nextStopId] = newElev;
+                }
+            }
+            
+            break;
+        }
+    }
+    
+    // Recalculate times for remaining stops
+    recalculateTimes();
+    
+    markDirty();
+}
+
+function showAddStopForm(stopIndex, afterStopDistance) {
+    const modal = document.getElementById('add-stop-modal');
+    modal.style.display = 'flex';
+    
+    // Get the stop information from the DOM
+    const stops = document.querySelectorAll('.stop-row');
+    if (stopIndex >= 0 && stopIndex < stops.length) {
+        const stopRow = stops[stopIndex];
+        const stopName = stopRow.querySelector('.stop-location').textContent.trim();
+        document.getElementById('new-stop-after-name').value = stopName;
+        document.getElementById('new-stop-after-distance').value = afterStopDistance;
+    }
+    
+    // Pre-fill distance with the next mile marker (round up to next mile)
+    if (afterStopDistance !== undefined) {
+        const nextMile = Math.ceil(afterStopDistance) + 1;
+        document.getElementById('new-stop-distance').value = nextMile;
+    }
+}
+
+function hideAddStopForm() {
+    const modal = document.getElementById('add-stop-modal');
+    modal.style.display = 'none';
+    
+    // Clear form
+    document.getElementById('new-stop-location').value = '';
+    document.getElementById('new-stop-distance').value = '';
+    document.getElementById('new-stop-after-name').value = '';
+    document.getElementById('new-stop-after-distance').value = '';
+    document.getElementById('new-stop-elevation').value = '';
+    document.getElementById('new-stop-time').value = '';
+    document.getElementById('new-stop-notes').value = '';
+    // Clear calculated metrics
+    document.getElementById('new-stop-avg-speed').textContent = '—';
+    document.getElementById('new-stop-ft-per-mi').textContent = '—';
+    document.getElementById('new-stop-difficulty').textContent = '—';
+    document.getElementById('new-stop-cumul-time').textContent = '—';
+    document.getElementById('new-stop-time-bank').textContent = '—';
+}
+
+function calculateNewStopMetrics() {
+    const distance = parseFloat(document.getElementById('new-stop-distance').value) || 0;
+    const afterDistance = parseFloat(document.getElementById('new-stop-after-distance').value) || 0;
+    const segTime = parseInt(document.getElementById('new-stop-time').value) || 0;
+    const elevation = parseInt(document.getElementById('new-stop-elevation').value) || 0;
+    
+    const segMiles = distance - afterDistance;
+    
+    // Avg Speed
+    const avgSpeedEl = document.getElementById('new-stop-avg-speed');
+    if (segMiles > 0 && segTime > 0) {
+        const avgSpeed = segMiles / (segTime / 60.0);
+        avgSpeedEl.textContent = avgSpeed.toFixed(1) + ' mph';
+    } else {
+        avgSpeedEl.textContent = '—';
+    }
+    
+    // Ft/Mile
+    const ftPerMiEl = document.getElementById('new-stop-ft-per-mi');
+    let ftPerMi = 0;
+    if (segMiles > 0 && elevation > 0) {
+        ftPerMi = Math.round(elevation / segMiles);
+        ftPerMiEl.textContent = ftPerMi + ' ft/mi';
+    } else {
+        ftPerMiEl.textContent = '—';
+    }
+    
+    // Difficulty Score
+    const difficultyEl = document.getElementById('new-stop-difficulty');
+    if (ftPerMi > 0) {
+        const difficultyScore = calculateDifficultyScore(ftPerMi, null);
+        const color = difficultyScore >= 7 ? '#ef4444' : difficultyScore >= 4 ? '#f59e0b' : difficultyScore >= 1.5 ? '#22c55e' : '#94a3b8';
+        const label = difficultyScore >= 7 ? 'Hard' : difficultyScore >= 4 ? 'Moderate' : difficultyScore >= 1.5 ? 'Easy' : 'Flat';
+        difficultyEl.innerHTML = `<span style="color:${color};">${difficultyScore.toFixed(1)} - ${label}</span>`;
+    } else {
+        difficultyEl.textContent = '—';
+    }
+    
+    // Calculate cumulative time up to the previous stop
+    const allStops = document.querySelectorAll('.stop-row');
+    let prevCumTime = 0;
+    for (const stop of allStops) {
+        const stopDist = parseFloat(stop.dataset.distance || 0);
+        if (stopDist <= afterDistance) {
+            const cumTimeEl = stop.querySelector('.cumulative-time');
+            if (cumTimeEl) {
+                const timeText = cumTimeEl.textContent.trim();
+                const [hours, mins] = timeText.split(':').map(s => parseInt(s) || 0);
+                prevCumTime = hours * 60 + mins;
+            }
+        }
+    }
+    
+    // Cumul Time
+    const newCumTime = prevCumTime + segTime;
+    const cumTimeEl = document.getElementById('new-stop-cumul-time');
+    const hours = Math.floor(newCumTime / 60);
+    const mins = newCumTime % 60;
+    cumTimeEl.textContent = `${hours}:${mins.toString().padStart(2, '0')}`;
+    
+    // Time Bank
+    const totalDistance = {{ base_plan.total_distance_miles }};
+    const cutoffHours = {{ base_plan.cutoff_hours or 0 }};
+    const timeBankEl = document.getElementById('new-stop-time-bank');
+    
+    if (cutoffHours > 0 && totalDistance > 0 && distance > 0) {
+        const fraction = distance / totalDistance;
+        const bookendTime = Math.round(fraction * cutoffHours * 60);
+        const timeBank = bookendTime - newCumTime;
+        const absBank = Math.abs(timeBank);
+        const tbHours = Math.floor(absBank / 60);
+        const tbMins = absBank % 60;
+        const sign = timeBank >= 0 ? '+' : '−';
+        const color = timeBank >= 0 ? '#16a34a' : '#dc2626';
+        timeBankEl.innerHTML = `<span style="color:${color};">${sign}${tbHours}:${tbMins.toString().padStart(2, '0')}</span>`;
+    } else {
+        timeBankEl.textContent = '—';
+    }
+}
+
+function addCustomStop() {
+    const location = document.getElementById('new-stop-location').value.trim();
+    const distance = parseFloat(document.getElementById('new-stop-distance').value);
+    const elevation = parseInt(document.getElementById('new-stop-elevation').value) || 0;
+    const segmentTime = parseInt(document.getElementById('new-stop-time').value) || 0;
+    const stopType = document.getElementById('new-stop-type').value;
+    const notes = document.getElementById('new-stop-notes').value.trim();
+    
+    if (!location) {
+        alert('Please enter a stop location');
+        return;
+    }
+    
+    if (!distance || distance <= 0) {
+        alert('Please enter a valid distance');
+        return;
+    }
+    
+    // Create temporary stop ID
+    const tempStopId = nextTempStopId--;
+    
+    // Track the addition
+    pendingChanges.addedStops.push({
+        tempId: tempStopId,
+        location: location,
+        distance_miles: distance,
+        elevation_gain: elevation,
+        segment_time_min: segmentTime,
+        stop_type: stopType,
+        notes: notes
+    });
+    
+    // Create new stop row in DOM
+    const stopIcon = stopType === 'control' ? '◆' : stopType === 'rest' ? '☕' : '•';
+    const stopRow = document.createElement('div');
+    stopRow.className = 'stop-row custom-added';
+    stopRow.dataset.stopId = tempStopId;
+    stopRow.dataset.distance = distance;
+    stopRow.dataset.elevation = elevation;
+    stopRow.dataset.isNewStop = 'true';
+    stopRow.innerHTML = `
+        <div class="stop-header">
+            <div class="stop-icon ${stopType}">${stopIcon}</div>
+            <div class="stop-location">${location}</div>
+            <div class="stop-actions" style="display:none;">
+                <button class="btn-icon" onclick="showAddStopForm(getStopIndex(this), ${distance})" title="Add a custom stop after this one" style="display:none;">➕</button>
+                <button class="btn-icon btn-delete" onclick="removeNewStop(this, ${tempStopId})" title="Remove this stop" style="display:none;">🗑️</button>
+            </div>
+        </div>
+        <div class="stop-metrics" style="margin-left:34px;">
+            <div class="metric-box">
+                <div class="metric-label">Cumul Dist</div>
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                    <input type="number" class="inline-edit" step="0.1" value="${distance.toFixed(1)}" data-stop-id="${tempStopId}" onchange="trackDistanceChange(this)" readonly style="background:#f8fafc;cursor:not-allowed;">
+                    <span class="diff-indicator diff-distance"></span>
+                </div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Seg Miles</div>
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                    <input type="number" class="inline-edit seg-miles" step="0.1" value="0.0" data-stop-id="${tempStopId}" onchange="trackSegMilesChange(this)" readonly style="background:#f8fafc;cursor:not-allowed;">
+                    <span class="diff-indicator diff-seg-miles"></span>
+                </div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Seg Time</div>
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                    <input type="number" class="inline-edit" value="${segmentTime}" data-stop-id="${tempStopId}" onchange="trackTimeChange(this)">
+                    <span class="diff-indicator diff-time"></span>
+                </div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Avg Speed</div>
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                    <input type="number" class="inline-edit avg-speed" step="0.1" value="" data-stop-id="${tempStopId}" onchange="trackAvgSpeedChange(this)">
+                    <span class="diff-indicator diff-avg-speed"></span>
+                </div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Elev (ft)</div>
+                <input type="number" class="inline-edit elevation" value="${elevation}" data-stop-id="${tempStopId}" onchange="trackElevationChange(this)" readonly style="background:#f8fafc;cursor:not-allowed;">
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Ft/Mi</div>
+                <input type="number" class="inline-edit ft-per-mi" value="" data-stop-id="${tempStopId}" onchange="trackFtPerMiChange(this)" readonly style="background:#f8fafc;cursor:not-allowed;">
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Cumul Time</div>
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                    <div class="metric-value cumulative-time" style="font-weight:700;color:var(--primary);">0:00</div>
+                    <span class="diff-indicator diff-cum-time"></span>
+                </div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Time Bank</div>
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                    <div class="metric-value time-bank" style="font-weight:700;">—</div>
+                    <span class="diff-indicator diff-time-bank"></span>
+                </div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Difficulty</div>
+                <div class="metric-value difficulty-score" style="font-weight:600;">—</div>
+            </div>
+        </div>
+    `;
+    
+    // Insert in correct position based on distance
+    const container = document.getElementById('custom-stops-container');
+    const allStops = container.querySelectorAll('.stop-row');
+    let inserted = false;
+    
+    for (let i = 0; i < allStops.length; i++) {
+        const existingDistance = parseFloat(allStops[i].dataset.distance || 0);
+        if (distance < existingDistance) {
+            container.insertBefore(stopRow, allStops[i]);
+            inserted = true;
+            break;
+        }
+    }
+    
+    if (!inserted) {
+        container.appendChild(stopRow);
+    }
+    
+    // Adjust timing of next stop
+    if (segmentTime > 0) {
+        adjustNextStopTime(distance, segmentTime);
+    }
+    
+    // Adjust next stop's elevation (subtract the new stop's elevation)
+    // NOTE: Do NOT change cumulative distance - it's an absolute position!
+    // Segment miles will be recalculated automatically by recalculateTimes()
+    const allStopsAfterInsert = Array.from(document.querySelectorAll('.stop-row'));
+    for (let i = 0; i < allStopsAfterInsert.length; i++) {
+        const stopDist = parseFloat(allStopsAfterInsert[i].dataset.distance || 0);
+        if (stopDist > distance) {
+            // This is the next stop after the newly added one
+            const nextStop = allStopsAfterInsert[i];
+            const nextInputs = nextStop.querySelectorAll('.inline-edit');
+            
+            // Adjust elevation (subtract this stop's elevation)
+            const nextElevInput = nextInputs[4]; // Index 4 is elevation
+            if (nextElevInput && elevation > 0) {
+                const currentNextElev = parseFloat(nextElevInput.value) || 0;
+                const adjustedElev = Math.max(0, currentNextElev - elevation);
+                nextElevInput.value = adjustedElev;
+                nextStop.dataset.elevation = adjustedElev;
+                
+                // Track the change
+                const nextStopId = nextElevInput.dataset.stopId;
+                if (!isCreateMode && nextStopId) {
+                    if (!pendingChanges.stopElevations) {
+                        pendingChanges.stopElevations = {};
+                    }
+                    pendingChanges.stopElevations[nextStopId] = adjustedElev;
+                }
+            }
+            break;
+        }
+    }
+    
+    // Recalculate cumulative times for all stops
+    recalculateTimes();
+    
+    hideAddStopForm();
+    markDirty();
+}
+
+function getStopIndex(button) {
+    const stopRow = button.closest('.stop-row');
+    const allStops = document.querySelectorAll('.stop-row');
+    return Array.from(allStops).indexOf(stopRow);
+}
+
+function removeNewStop(button, tempStopId) {
+    const stopRow = button.closest('.stop-row');
+    
+    // Get segment time and elevation from the correct inputs before removing
+    const allInputs = stopRow.querySelectorAll('.inline-edit');
+    const distInput = allInputs[0]; // Index 0 is cumulative distance
+    const timeInput = allInputs[2]; // Index 2 is segment time
+    const elevInput = allInputs[4]; // Index 4 is elevation
+    
+    const distance = parseFloat(distInput?.value || 0);
+    const segmentTime = parseInt(timeInput?.value || 0);
+    const elevation = parseInt(elevInput?.value || 0);
+    
+    // Remove from pending additions
+    pendingChanges.addedStops = pendingChanges.addedStops.filter(s => s.tempId !== tempStopId);
+    
+    // Remove from DOM
+    stopRow.remove();
+    
+    // Find the next stop and add back segment time and elevation
+    // NOTE: Do NOT change cumulative distance - it's an absolute position!
+    // Segment miles will be recalculated automatically by recalculateTimes()
+    const allStops = document.querySelectorAll('.stop-row');
+    for (let stop of allStops) {
+        const stopDist = parseFloat(stop.dataset.distance || 0);
+        if (stopDist > distance) {
+            // This is the next stop - add back segment time and elevation
+            const nextInputs = stop.querySelectorAll('.inline-edit');
+            
+            // Add back segment time
+            const nextTimeInput = nextInputs[2]; // Index 2 is segment time
+            if (nextTimeInput && segmentTime > 0) {
+                const currentTime = parseInt(nextTimeInput.value || 0);
+                const newTime = currentTime + segmentTime;
+                nextTimeInput.value = newTime;
+                
+                // Track the change
+                const nextStopId = nextTimeInput.dataset.stopId;
+                if (nextStopId && !isCreateMode) {
+                    pendingChanges.stopTimes[nextStopId] = newTime;
+                }
+            }
+            
+            // Add back elevation
+            const nextElevInput = nextInputs[4]; // Index 4 is elevation
+            if (nextElevInput && elevation > 0) {
+                const currentElev = parseInt(nextElevInput.value) || 0;
+                const newElev = currentElev + elevation;
+                nextElevInput.value = newElev;
+                stop.dataset.elevation = newElev;
+                
+                // Track the change
+                const nextStopId = nextElevInput.dataset.stopId;
+                if (nextStopId && !isCreateMode) {
+                    if (!pendingChanges.stopElevations) {
+                        pendingChanges.stopElevations = {};
+                    }
+                    pendingChanges.stopElevations[nextStopId] = newElev;
+                }
+            }
+            
+            break;
+        }
+    }
+    
+    // Recalculate cumulative times
+    recalculateTimes();
+    
+    markDirty();
+}
+
+function adjustNextStopTime(afterDistance, timeChange) {
+    // Find the next stop after the given distance
+    const allStops = document.querySelectorAll('.stop-row');
+    let nextStop = null;
+    
+    for (let stop of allStops) {
+        const stopDistance = parseFloat(stop.dataset.distance || 0);
+        if (stopDistance > afterDistance) {
+            nextStop = stop;
+            break;
+        }
+    }
+    
+    if (nextStop) {
+        // Get the segment time input (3rd inline-edit: 0=distance, 1=seg miles, 2=seg time)
+        const allInputs = nextStop.querySelectorAll('.inline-edit');
+        const timeInput = allInputs[2]; // Index 2 is segment time
+        
+        if (timeInput) {
+            const currentTime = parseInt(timeInput.value || 0);
+            const newTime = Math.max(1, currentTime - timeChange);
+            timeInput.value = newTime;
+            
+            // Track the change
+            const stopId = timeInput.dataset.stopId;
+            pendingChanges.stopTimes[stopId] = newTime;
+        }
+    }
+}
+
+function calculateDifficultyScore(ftPerMi, notes) {
+    // Difficulty score 0-10. Base from ft/mile, modifiers from notes keywords.
+    if (!ftPerMi || ftPerMi <= 0) {
+        return 0.0;
+    }
+    
+    let base = Math.min(ftPerMi / 10.0, 7.0);
+    
+    if (notes) {
+        const n = notes.toLowerCase();
+        if (n.includes('headwind')) base += 1.5;
+        if (n.includes('steep') || n.includes('steep climb')) base += 1.0;
+        if (n.includes('exposed') || n.includes('gravel')) base += 0.5;
+        if (n.includes('tailwind')) base -= 0.5;
+    }
+    
+    return Math.round(Math.min(Math.max(base, 0), 10) * 10) / 10; // Round to 1 decimal
+}
+
+function updateSummaryPanel(movingTime, elapsedTime, movingDistance, totalElev, weightedDiffSum, timeBank) {
+    // Elapsed Time
+    const elapsedHours = Math.floor(elapsedTime / 60);
+    const elapsedMins = elapsedTime % 60;
+    document.getElementById('summary-elapsed-time').textContent = `${elapsedHours}:${elapsedMins.toString().padStart(2, '0')}`;
+    
+    // Moving Time
+    const movingHours = Math.floor(movingTime / 60);
+    const movingMins = movingTime % 60;
+    document.getElementById('summary-moving-time').textContent = `${movingHours}:${movingMins.toString().padStart(2, '0')}`;
+    
+    // Stop Time (elapsed - moving)
+    const stopTime = elapsedTime - movingTime;
+    const stopHours = Math.floor(stopTime / 60);
+    const stopMins = stopTime % 60;
+    document.getElementById('summary-stop-time').textContent = `${stopHours}:${stopMins.toString().padStart(2, '0')}`;
+    
+    // Final Time Bank
+    const timeBankEl = document.getElementById('summary-time-bank');
+    if (timeBank !== null) {
+        const absBank = Math.abs(timeBank);
+        const tbHours = Math.floor(absBank / 60);
+        const tbMins = absBank % 60;
+        const sign = timeBank >= 0 ? '+' : '−';
+        const color = timeBank >= 0 ? '#16a34a' : '#dc2626';
+        timeBankEl.innerHTML = `<span style="color:${color};">${sign}${tbHours}:${tbMins.toString().padStart(2, '0')}</span>`;
+    } else {
+        timeBankEl.textContent = '—';
+    }
+    
+    // Avg Elapsed Speed (includes stops)
+    const totalDistance = {{ base_plan.total_distance_miles }};
+    const avgElapsedSpeed = totalDistance > 0 && elapsedTime > 0 ? totalDistance / (elapsedTime / 60.0) : 0;
+    document.getElementById('summary-avg-elapsed-speed').textContent = avgElapsedSpeed > 0 ? avgElapsedSpeed.toFixed(1) + ' mph' : '—';
+    
+    // Avg Moving Speed
+    const avgMovingSpeed = movingDistance > 0 && movingTime > 0 ? movingDistance / (movingTime / 60.0) : 0;
+    document.getElementById('summary-avg-moving-speed').textContent = avgMovingSpeed > 0 ? avgMovingSpeed.toFixed(1) + ' mph' : '—';
+    
+    // Weighted Difficulty Score
+    const weightedDifficulty = movingDistance > 0 ? weightedDiffSum / movingDistance : 0;
+    const diffEl = document.getElementById('summary-difficulty');
+    if (weightedDifficulty > 0) {
+        const color = weightedDifficulty >= 7 ? '#ef4444' : weightedDifficulty >= 4 ? '#f59e0b' : weightedDifficulty >= 1.5 ? '#22c55e' : '#94a3b8';
+        const label = weightedDifficulty >= 7 ? 'Hard' : weightedDifficulty >= 4 ? 'Moderate' : weightedDifficulty >= 1.5 ? 'Easy' : 'Flat';
+        diffEl.innerHTML = `<span style="color:${color};">${weightedDifficulty.toFixed(1)} - ${label}</span>`;
+    } else {
+        diffEl.textContent = '—';
+    }
+    
+    // Total Miles
+    document.getElementById('summary-miles').textContent = movingDistance > 0 ? movingDistance.toFixed(1) + ' mi' : '—';
+    
+    // Total Elevation
+    document.getElementById('summary-elevation').textContent = totalElev > 0 ? totalElev.toLocaleString() + ' ft' : '—';
+    
+    // Avg Ft/Mile
+    const avgFtPerMi = movingDistance > 0 ? totalElev / movingDistance : 0;
+    document.getElementById('summary-ft-per-mi').textContent = avgFtPerMi > 0 ? avgFtPerMi.toFixed(0) + ' ft/mi' : '—';
+}
+
+function recalculateTimes() {
+    // Recalculate all derived metrics for all stops
+    const allStops = document.querySelectorAll('.stop-row');
+    const totalDistance = {{ base_plan.total_distance_miles }};
+    const cutoffHours = {{ base_plan.cutoff_hours or 0 }};
+    
+    let cumulativeTime = 0;
+    let prevDistance = 0;
+    
+    // Summary tracking variables
+    let totalMovingTime = 0;
+    let totalElapsedTime = 0;
+    let totalMovingDistance = 0;
+    let totalElevation = 0;
+    let weightedDifficultySum = 0;
+    let finalTimeBank = null;
+    
+    allStops.forEach(stop => {
+        // Get all inline-edit inputs in order:
+        // 0: distance, 1: seg miles, 2: seg time, 3: avg speed, 4: elevation, 5: ft/mi
+        const allInputs = stop.querySelectorAll('.inline-edit');
+        const distanceInput = allInputs[0];
+        const segMilesInput = allInputs[1];
+        const timeInput = allInputs[2];
+        const avgSpeedInput = allInputs[3];
+        const elevationInput = allInputs[4];
+        const ftPerMiInput = allInputs[5];
+        
+        // Get stop duration from break chip input (if exists)
+        const stopDurationInput = stop.querySelector('.stop-duration');
+        
+        const distance = parseFloat(distanceInput?.value || 0);
+        const segmentTime = parseInt(timeInput?.value || 0);
+        const rawStopDuration = parseInt(stopDurationInput?.value || 0);
+        // Treat -1 (sentinel for removed) as 0 in calculations
+        const stopDuration = rawStopDuration === -1 ? 0 : rawStopDuration;
+        const segMiles = distance - prevDistance;
+        
+        // Get elevation from input (not data attribute)
+        const elevGain = parseInt(elevationInput?.value || 0);
+        
+        // Update seg miles input
+        if (segMilesInput) {
+            segMilesInput.value = segMiles.toFixed(1);
+        }
+        
+        // Calculate and update avg speed (only for moving segments, based on segment time not including stop duration)
+        if (avgSpeedInput && segMiles > 0 && segmentTime > 0) {
+            const avgSpeed = segMiles / (segmentTime / 60.0);
+            avgSpeedInput.value = avgSpeed.toFixed(1);
+        } else if (avgSpeedInput) {
+            avgSpeedInput.value = '';
+        }
+        
+        // Calculate and update ft/mile
+        if (ftPerMiInput && segMiles > 0 && elevGain > 0) {
+            const ftPerMi = Math.round(elevGain / segMiles);
+            ftPerMiInput.value = ftPerMi;
+        } else if (ftPerMiInput) {
+            ftPerMiInput.value = '';
+        }
+        
+        // Add this segment's time and stop duration to cumulative
+        cumulativeTime += segmentTime;
+        cumulativeTime += stopDuration;
+        
+        // Update cumulative time display
+        const cumulativeDisplay = stop.querySelector('.cumulative-time');
+        if (cumulativeDisplay) {
+            const hours = Math.floor(cumulativeTime / 60);
+            const mins = cumulativeTime % 60;
+            cumulativeDisplay.textContent = `${hours}:${mins.toString().padStart(2, '0')}`;
+        }
+        
+        // Calculate time bank (based on arrival time, not including stop duration)
+        let timeBank = null;
+        const timeBankDisplay = stop.querySelector('.time-bank');
+        if (timeBankDisplay && cutoffHours > 0 && totalDistance > 0 && distance > 0) {
+            const fraction = distance / totalDistance;
+            const bookendTime = Math.round(fraction * cutoffHours * 60);
+            const arrivalTime = cumulativeTime - stopDuration; // Time bank calculated on arrival, before resting
+            timeBank = bookendTime - arrivalTime;
+            const absBank = Math.abs(timeBank);
+            const hours = Math.floor(absBank / 60);
+            const mins = absBank % 60;
+            const sign = timeBank >= 0 ? '+' : '−';
+            const color = timeBank >= 0 ? '#16a34a' : '#dc2626';
+            timeBankDisplay.innerHTML = `<span style="color:${color};">${sign}${hours}:${mins.toString().padStart(2, '0')}</span>`;
+        } else if (timeBankDisplay) {
+            timeBankDisplay.textContent = '—';
+        }
+
+        // Update wall time (ETA)
+        const wallTimeEl = stop.querySelector('.wall-time');
+        if (wallTimeEl) {
+            const arrivalMin = cumulativeTime - stopDuration;
+            wallTimeEl.dataset.cumMin = arrivalMin;
+        }
+
+        // Calculate difficulty score
+        const difficultyDisplay = stop.querySelector('.difficulty-score');
+        let difficultyScore = 0;
+        if (difficultyDisplay) {
+            const ftPerMi = ftPerMiInput?.value ? parseFloat(ftPerMiInput.value) : 0;
+            difficultyScore = calculateDifficultyScore(ftPerMi, null); // notes not available in DOM
+            difficultyDisplay.dataset.score = difficultyScore;
+            
+            if (difficultyScore > 0) {
+                const color = difficultyScore >= 7 ? '#ef4444' : difficultyScore >= 4 ? '#f59e0b' : difficultyScore >= 1.5 ? '#22c55e' : '#94a3b8';
+                difficultyDisplay.innerHTML = `<span style="color:${color};">${difficultyScore.toFixed(1)}</span>`;
+            } else {
+                difficultyDisplay.textContent = '—';
+            }
+        }
+        
+        // Track summary metrics
+        totalElapsedTime += segmentTime;
+        totalElapsedTime += stopDuration;
+        totalElevation += elevGain;
+        if (segMiles > 0) {
+            // This is a moving segment (not a zero-distance stop)
+            totalMovingTime += segmentTime;
+            totalMovingDistance += segMiles;
+            weightedDifficultySum += difficultyScore * segMiles;
+        }
+        finalTimeBank = timeBank;
+        
+        // Update diff indicators (show base plan values in parentheses)
+        updateDiffIndicators(stop, distance, segMiles, segmentTime, avgSpeedInput?.value, elevGain, ftPerMiInput?.value, cumulativeTime, timeBank);
+        
+        prevDistance = distance;
+    });
+    
+    // Update summary panel
+    updateSummaryPanel(totalMovingTime, totalElapsedTime, totalMovingDistance, totalElevation, weightedDifficultySum, finalTimeBank);
+
+    // Update wall times (ETAs)
+    recalcWallTimes();
+}
+
+function recalcWallTimes() {
+    const startTime = '{{ base_plan.start_time|default("07:00") }}';
+    const parts = startTime.split(':');
+    const startHour = parseInt(parts[0]) || 7;
+    const startMin = parseInt(parts[1]) || 0;
+
+    document.querySelectorAll('.wall-time').forEach(function(el) {
+        const cumMin = parseInt(el.dataset.cumMin, 10);
+        if (isNaN(cumMin)) { el.textContent = '--:--'; return; }
+        const totalMin = startHour * 60 + startMin + cumMin;
+        const h = Math.floor(totalMin / 60) % 24;
+        const m = totalMin % 60;
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        const displayH = h % 12 || 12;
+        el.textContent = displayH + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
+    });
+}
+
+function updateDiffIndicators(stop, distance, segMiles, segTime, avgSpeed, elevation, ftPerMi, cumTime, timeBank) {
+    const isCustomStop = !stop.dataset.baseStopId;
+    
+    // For custom stops or when no base data, no diff needed
+    if (isCustomStop || !stop.dataset.baseDistance) {
+        stop.querySelectorAll('.diff-indicator').forEach(el => el.textContent = '');
+        return;
+    }
+    
+    // Get base values from data attributes
+    const baseDistance = parseFloat(stop.dataset.baseDistance);
+    const baseSegMiles = parseFloat(stop.dataset.baseSegMiles);
+    const baseTime = parseInt(stop.dataset.baseTime);
+    const baseAvgSpeed = parseFloat(stop.dataset.baseAvgSpeed);
+    const baseCumTime = parseInt(stop.dataset.baseCumTime);
+    const baseTimeBank = parseInt(stop.dataset.baseTimeBank);
+    
+    // Distance diff
+    const diffDistanceEl = stop.querySelector('.diff-distance');
+    if (diffDistanceEl && !isNaN(baseDistance)) {
+        const diff = distance - baseDistance;
+        if (Math.abs(diff) > 0.05) {
+            diffDistanceEl.textContent = `(${diff > 0 ? '+' : ''}${diff.toFixed(1)})`;
+            diffDistanceEl.style.color = diff > 0 ? '#059669' : '#dc2626';
+        } else {
+            diffDistanceEl.textContent = '';
+        }
+    }
+    
+    // Seg miles diff
+    const diffSegMilesEl = stop.querySelector('.diff-seg-miles');
+    if (diffSegMilesEl && !isNaN(baseSegMiles)) {
+        const diff = segMiles - baseSegMiles;
+        if (Math.abs(diff) > 0.05) {
+            diffSegMilesEl.textContent = `(${diff > 0 ? '+' : ''}${diff.toFixed(1)})`;
+            diffSegMilesEl.style.color = diff > 0 ? '#059669' : '#dc2626';
+        } else {
+            diffSegMilesEl.textContent = '';
+        }
+    }
+    
+    // Seg time diff
+    const diffTimeEl = stop.querySelector('.diff-time');
+    if (diffTimeEl && !isNaN(baseTime)) {
+        const diff = segTime - baseTime;
+        if (Math.abs(diff) > 0) {
+            diffTimeEl.textContent = `(${diff > 0 ? '+' : ''}${diff})`;
+            diffTimeEl.style.color = diff > 0 ? '#dc2626' : '#059669';
+        } else {
+            diffTimeEl.textContent = '';
+        }
+    }
+    
+    // Avg speed diff
+    const diffAvgSpeedEl = stop.querySelector('.diff-avg-speed');
+    if (diffAvgSpeedEl && !isNaN(baseAvgSpeed) && avgSpeed) {
+        const diff = parseFloat(avgSpeed) - baseAvgSpeed;
+        if (Math.abs(diff) > 0.05) {
+            diffAvgSpeedEl.textContent = `(${diff > 0 ? '+' : ''}${diff.toFixed(1)})`;
+            diffAvgSpeedEl.style.color = diff > 0 ? '#059669' : '#dc2626';
+        } else {
+            diffAvgSpeedEl.textContent = '';
+        }
+    }
+    
+    // Cumulative time diff
+    const diffCumTimeEl = stop.querySelector('.diff-cum-time');
+    if (diffCumTimeEl && !isNaN(baseCumTime)) {
+        const diff = cumTime - baseCumTime;
+        if (Math.abs(diff) > 0) {
+            diffCumTimeEl.textContent = `(${diff > 0 ? '+' : ''}${diff})`;
+            diffCumTimeEl.style.color = diff > 0 ? '#dc2626' : '#059669';
+        } else {
+            diffCumTimeEl.textContent = '';
+        }
+    }
+    
+    // Time bank diff
+    const diffTimeBankEl = stop.querySelector('.diff-time-bank');
+    if (diffTimeBankEl && !isNaN(baseTimeBank) && timeBank !== null) {
+        const diff = timeBank - baseTimeBank;
+        if (Math.abs(diff) > 0) {
+            diffTimeBankEl.textContent = `(${diff > 0 ? '+' : ''}${diff})`;
+            diffTimeBankEl.style.color = diff > 0 ? '#059669' : '#dc2626';
+        } else {
+            diffTimeBankEl.textContent = '';
+        }
+    }
+}
+
+async function saveAllChanges() {
+    if (!hasUnsavedChanges) return;
+    
+    console.log('saveAllChanges called. pendingChanges:', JSON.stringify(pendingChanges, null, 2));
+    
+    updateSaveButtons('disabled', '⏳', 'Saving...');
+    
+    try {
+        // Get basic settings
+        const name = document.getElementById('plan-name').value.trim();
+        const description = document.getElementById('plan-description').value.trim();
+        const isPublic = document.getElementById('plan-public').checked;
+        const pace = parseFloat(document.getElementById('pace-slider').value);
+        
+        if (!name) {
+            alert('Please enter a plan name');
+            updateSaveButtons('enabled', '💾', 'Save Changes');
+            return;
+        }
+        
+        // Step 1: Create plan if in create mode
+        if (isCreateMode) {
+            updateSaveButtons('disabled', '⏳', 'Creating plan...');
+            const createResponse = await fetch('/api/custom-plan/create', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    base_plan_id: basePlanId,
+                    name: name,
+                    description: description,
+                    avg_moving_speed: pace
+                })
+            });
+            
+            const createData = await createResponse.json();
+            if (!createData.success) {
+                throw new Error(createData.error || 'Failed to create plan');
+            }
+            
+            // Store the new plan ID for subsequent operations
+            customPlanId = createData.custom_plan_id;
+            
+            // Step 1b: Apply deletions immediately after plan creation
+            // This is important so deleted stops are removed before any other operations
+            if (pendingChanges.deletedStops.length > 0) {
+                updateSaveButtons('disabled', '⏳', 'Removing stops...');
+                const deletePromises = pendingChanges.deletedStops.map(del =>
+                    fetch(`/api/custom-plan/${customPlanId}/stop/${del.stopId}/delete`, {
+                        method: 'DELETE',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({is_custom_stop: del.isCustomStop})
+                    })
+                );
+                await Promise.all(deletePromises);
+            }
+        }
+        
+        // Step 2: If pace was applied (button clicked), persist all recalculated times
+        if (pendingChanges.settings.avg_moving_speed !== undefined) {
+            updateSaveButtons('disabled', '⏳', 'Applying pace...');
+            const paceResponse = await fetch(`/api/custom-plan/${customPlanId}/apply-pace`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({avg_moving_speed: pendingChanges.settings.avg_moving_speed})
+            });
+            
+            if (!paceResponse.ok) {
+                throw new Error('Failed to apply pace');
+            }
+        }
+        
+        // Step 3: Save all other changes in parallel
+        updateSaveButtons('disabled', '⏳', 'Saving changes...');
+        const promises = [];
+        
+        // Helper: fetch that rejects on non-ok responses
+        function checkedFetch(url, opts) {
+            return fetch(url, opts).then(r => {
+                if (!r.ok) throw new Error(`${opts.method || 'GET'} ${url} failed (${r.status})`);
+                return r;
+            });
+        }
+
+        // Save settings (name, description, public)
+        const settingsPayload = {name, description, is_public: isPublic};
+
+        // Only update pace in settings if we didn't already apply it above
+        if (!isCreateMode && pendingChanges.settings.avg_moving_speed === undefined) {
+            const currentPace = parseFloat(document.getElementById('pace-slider').value);
+            settingsPayload.avg_moving_speed = currentPace;
+        }
+
+        if (!isCreateMode) {
+            promises.push(
+                checkedFetch(`/api/custom-plan/${customPlanId}/settings`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(settingsPayload)
+                })
+            );
+        }
+
+        // Save added stops
+        pendingChanges.addedStops.forEach(stop => {
+            promises.push(
+                checkedFetch(`/api/custom-plan/${customPlanId}/stop/add`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        location: stop.location,
+                        distance_miles: stop.distance_miles,
+                        after_stop_order: 0,
+                        elevation_gain: stop.elevation_gain,
+                        segment_time_min: stop.segment_time_min,
+                        stop_type: stop.stop_type,
+                        notes: stop.notes
+                    })
+                })
+            );
+        });
+
+        // Save deleted stops (only if not in create mode, as they were already deleted above)
+        if (!isCreateMode) {
+            pendingChanges.deletedStops.forEach(del => {
+                promises.push(
+                    checkedFetch(`/api/custom-plan/${customPlanId}/stop/${del.stopId}/delete`, {
+                        method: 'DELETE',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({is_custom_stop: del.isCustomStop})
+                    })
+                );
+            });
+        }
+
+        // Save manually edited stop times (only in edit mode)
+        if (!isCreateMode && Object.keys(pendingChanges.stopTimes).length > 0 && pendingChanges.settings.avg_moving_speed === undefined) {
+            Object.entries(pendingChanges.stopTimes).forEach(([stopId, time]) => {
+                promises.push(
+                    checkedFetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({segment_time_min: time})
+                    })
+                );
+            });
+        }
+
+        // Save manually edited stop distances
+        if (!isCreateMode && Object.keys(pendingChanges.stopDistances).length > 0) {
+            Object.entries(pendingChanges.stopDistances).forEach(([stopId, distance]) => {
+                promises.push(
+                    checkedFetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({distance_miles: distance})
+                    })
+                );
+            });
+        }
+
+        // Save manually edited stop elevations
+        if (!isCreateMode && Object.keys(pendingChanges.stopElevations).length > 0) {
+            Object.entries(pendingChanges.stopElevations).forEach(([stopId, elevation]) => {
+                promises.push(
+                    checkedFetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({elevation_gain: elevation})
+                    })
+                );
+            });
+        }
+
+        // Save stop durations and names (combined to avoid duplicate API calls)
+        if (!isCreateMode) {
+            const allStopUpdates = new Set([
+                ...Object.keys(pendingChanges.stopDurations || {}),
+                ...Object.keys(pendingChanges.stopNames || {})
+            ]);
+
+            allStopUpdates.forEach(stopId => {
+                const payload = {};
+
+                if (pendingChanges.stopDurations && stopId in pendingChanges.stopDurations) {
+                    payload.stop_duration_min = pendingChanges.stopDurations[stopId];
+                }
+
+                if (pendingChanges.stopNames && stopId in pendingChanges.stopNames) {
+                    payload.stop_name = pendingChanges.stopNames[stopId];
+                }
+
+                if (Object.keys(payload).length > 0) {
+                    promises.push(
+                        checkedFetch(`/api/custom-plan/${customPlanId}/stop/${stopId}`, {
+                            method: 'PUT',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(payload)
+                        })
+                    );
+                }
+            });
+        }
+
+        const results = await Promise.allSettled(promises);
+        const failures = results.filter(r => r.status === 'rejected');
+
+        if (failures.length > 0) {
+            console.error('Save failures:', failures.map(f => f.reason?.message));
+            throw new Error(`${failures.length} save(s) failed. Please retry.`);
+        }
+
+        // Success!
+        updateSaveButtons('saved', '✓', 'Saved!');
+        hasUnsavedChanges = false;
+
+        // Auto-reload to show updated calculations
+        setTimeout(() => window.location.reload(), 800);
+        
+    } catch (error) {
+        console.error('Save error:', error);
+        updateSaveButtons('enabled', '💾', 'Save Failed - Retry');
+        alert('Error saving changes: ' + error.message);
+    }
+}
+
+function resetToBasePlan() {
+    // Disable the unsaved changes warning for this reload
+    hasUnsavedChanges = false;
+    
+    // Reload the page to discard all pending changes
+    window.location.reload();
+}
+
+function deleteCustomPlan() {
+    if (isCreateMode) {
+        // In create mode, just navigate back - nothing to delete
+        window.location.href = '{{ url_for("riders.ride_plan_detail", slug=base_plan.slug) }}';
+        return;
+    }
+    
+    if (!confirm('Are you sure you want to delete this custom plan? This cannot be undone.')) return;
+    
+    fetch(`/api/custom-plan/${customPlanId}`, {
+        method: 'DELETE'
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            window.location.href = '{{ url_for("riders.ride_plan_detail", slug=base_plan.slug) }}';
+        }
+    });
+}
+
+// Warn before leaving with unsaved changes
+window.addEventListener('beforeunload', (e) => {
+    if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,65 @@
+{# Shared rpv2 plan-page altitude profile — the live gradient elevation chart with
+   control/break overlays, used in BOTH the main "Journey" card (big=True) and the
+   small snapshot panel (big=False). Rendered from the server-computed `profile`
+   (shared.live_radial.build_elevation_profile) + `markers`
+   (shared.live_radial.overlay_stop_markers). Framework builtins only — BrevetHub
+   registers no commafy / clean_name — so the file is byte-identical across both apps
+   (guarded by tests/brevethub/test_elevation_partial_sync.py). Params via context:
+   `profile`, `markers`, `big`.
+
+   The SVG container (class rpv2-journey-svg / rpv2-snap-elev) renders EITHER way —
+   the click-sync JS + tests key off it — while the gradient content + overlay only
+   render when a route geometry resolved. #}
+<div class="{{ 'radial-elev-wrap' if big else 'rpv2-snap-elev-wrap' }}">
+    <svg viewBox="0 0 {{ profile.width if (profile and profile.available) else 1000 }} {{ profile.height if (profile and profile.available) else 200 }}"
+         class="{{ 'rpv2-journey-svg radial-elev' if big else 'rpv2-snap-elev' }}"
+         preserveAspectRatio="{{ 'xMidYMid meet' if big else 'none' }}"
+         role="img" aria-label="Route elevation profile">
+        {% if profile and profile.available %}
+        {% set baseline = profile.plot.y + profile.plot.h %}
+        {# Area fill graded by the line colour (Radial-style): one filled area per
+           segment, in that segment's grade colour, under the semi-transparent line. #}
+        {% for s in profile.segments %}
+        <path d="{{ s.area_d }}" fill="{{ s.color }}" stroke="none" class="radial-elev-fill"></path>
+        {% endfor %}
+        {% if big %}
+        {% for t in profile.y_ticks %}
+        <line x1="{{ profile.plot.x }}" y1="{{ t.y }}"
+              x2="{{ profile.plot.x + profile.plot.w }}" y2="{{ t.y }}"
+              class="radial-elev-grid"></line>
+        <text x="{{ profile.plot.x - 4 }}" y="{{ t.y + 3 }}" class="radial-elev-ylabel">{{ t.label }}</text>
+        {% endfor %}
+        {% endif %}
+        {% for s in profile.segments %}
+        <path d="{{ s.d }}" stroke="{{ s.color }}" fill="none"
+              stroke-width="{{ 2 if big else 1.5 }}" stroke-linecap="round"></path>
+        {% endfor %}
+        {% if big %}
+        {% for t in profile.x_ticks %}
+        <text x="{{ t.x }}" y="{{ profile.height - 6 }}" class="radial-elev-xlabel">{{ t.label }}</text>
+        {% endfor %}
+        {% endif %}
+        {# Control / break overlay — one group per stop, keyed by data-stop-i so the
+           plan page's click-sync JS and the live pace re-render can target it. #}
+        {% for m in markers %}
+        <g class="stop" data-stop-i="{{ m.i }}">
+            <line x1="{{ m.x }}" y1="{{ m.y }}" x2="{{ m.x }}" y2="{{ baseline }}"
+                  stroke="{{ m.color }}" stroke-width="{{ 0.8 if big else 0.6 }}" opacity="0.4"></line>
+            <circle cx="{{ m.x }}" cy="{{ m.y }}" r="{{ 6 if big else 2.5 }}"
+                    fill="{{ m.color }}" stroke="#fff" stroke-width="{{ 2 if big else 1 }}">
+                <title>{{ m.name }} · {{ "%.0f"|format(m.cumul_mi or 0) }}mi · ETA {{ m.eta }}{% if m.break_min %} · {{ m.break_min }}m{% endif %}</title>
+            </circle>
+        </g>
+        {% endfor %}
+        {% endif %}
+    </svg>
+    {% if big and profile and profile.available and profile.legend %}
+    <div class="radial-elev-legend">
+        {% for b in profile.legend %}
+        <span class="radial-elev-key"><i style="background: {{ b.color }}"></i>{{ b.label }}</span>
+        {% endfor %}
+    </div>
+    {% elif big and not (profile and profile.available) %}
+    <div class="rpv2-empty rpv2-elev-empty">Elevation profile unavailable — no route geometry for this plan.</div>
+    {% endif %}
+</div>

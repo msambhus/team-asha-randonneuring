@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}Preview Plan: {{ plan.name }} - Team Asha Randonneuring{% endblock %}
+
+{% block extra_head %}
+<style>
+.plan-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+}
+.plan-stat {
+    background: #f7fafc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    text-align: center;
+}
+.plan-stat .label {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+.plan-stat .value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text);
+}
+.stops-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+.stops-table th {
+    background: #f7fafc;
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-light);
+    border-bottom: 2px solid var(--border);
+    white-space: nowrap;
+}
+.stops-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+.stops-table tr:hover {
+    background: #f7fafc;
+}
+.stops-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.type-badge.start { background: #c6f6d5; color: #22543d; }
+.type-badge.finish { background: #fed7d7; color: #9b2c2c; }
+.type-badge.control { background: #dbeafe; color: #1e40af; }
+.type-badge.rest { background: #fef3c7; color: #78350f; }
+.type-badge.waypoint { background: #e2e8f0; color: #4a5568; }
+.existing-warning {
+    background: #fef3c7;
+    border: 1px solid #f6ad55;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    color: #78350f;
+}
+.time-bank-positive { color: #22543d; }
+.time-bank-negative { color: #9b2c2c; font-weight: 600; }
+@media (max-width: 768px) {
+    .stops-table { font-size: 0.78rem; }
+    .stops-table th, .stops-table td { padding: 6px 6px; }
+    .table-scroll { overflow-x: auto; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Preview Ride Plan</h1>
+<p>Review the generated plan, then save</p>
+</div>
+<div class="container section">
+
+{% if existing %}
+<div class="existing-warning">
+    A ride plan already exists for this RWGPS route
+    (<a href="{{ url_for('riders.ride_plan_detail', slug=existing.slug) }}">{{ existing.name }}</a>).
+    Saving will <strong>update</strong> the existing plan.
+</div>
+{% endif %}
+
+<!-- Plan Summary -->
+<div class="plan-summary">
+<div class="plan-stat">
+    <div class="label">Distance</div>
+    <div class="value">{{ plan.total_distance_miles }} mi</div>
+</div>
+<div class="plan-stat">
+    <div class="label">Brevet</div>
+    <div class="value">{{ plan.distance_km }}k</div>
+</div>
+<div class="plan-stat">
+    <div class="label">Elevation</div>
+    <div class="value">{{ "{:,}".format(plan.total_elevation_ft) }} ft</div>
+</div>
+<div class="plan-stat">
+    <div class="label">Ft/Mile</div>
+    <div class="value">{{ plan.overall_ft_per_mile }}</div>
+</div>
+<div class="plan-stat">
+    <div class="label">Avg Speed</div>
+    <div class="value">{{ plan.avg_moving_speed or '—' }} mph</div>
+</div>
+<div class="plan-stat">
+    <div class="label">Moving Time</div>
+    <div class="value">{{ '%d:%02d' % (plan.total_moving_time_min // 60, plan.total_moving_time_min % 60) }}</div>
+</div>
+{% if plan.cutoff_hours %}
+<div class="plan-stat">
+    <div class="label">Cutoff</div>
+    <div class="value">{{ plan.cutoff_hours }}h</div>
+</div>
+{% endif %}
+</div>
+
+<!-- Stops Table -->
+<h2 style="margin-bottom:12px;">Stops ({{ stops|length }})</h2>
+<div class="table-scroll">
+<table class="stops-table">
+<thead>
+<tr>
+    <th>#</th>
+    <th>Location</th>
+    <th>Type</th>
+    <th class="num">Dist (mi)</th>
+    <th class="num">Seg (mi)</th>
+    <th class="num">Elev (ft)</th>
+    <th class="num">Ft/Mi</th>
+    <th class="num">Speed</th>
+    <th class="num">Seg Time</th>
+    <th class="num">Cum Time</th>
+    {% if plan.cutoff_hours %}
+    <th class="num">Time Bank</th>
+    {% endif %}
+</tr>
+</thead>
+<tbody>
+{% for stop in stops %}
+<tr>
+    <td>{{ stop.stop_order }}</td>
+    <td>{{ stop.location }}</td>
+    <td><span class="type-badge {{ stop.stop_type }}">{{ stop.stop_type }}</span></td>
+    <td class="num">{{ stop.distance_miles }}</td>
+    <td class="num">{{ stop.seg_dist }}</td>
+    <td class="num">{{ "{:,}".format(stop.elevation_gain) if stop.elevation_gain else '—' }}</td>
+    <td class="num">{{ stop.ft_per_mi if stop.ft_per_mi else '—' }}</td>
+    <td class="num">{{ stop.avg_speed if stop.avg_speed else '—' }}</td>
+    <td class="num">{{ '%d:%02d' % (stop.segment_time_min // 60, stop.segment_time_min % 60) if stop.segment_time_min else '—' }}</td>
+    <td class="num">{{ '%d:%02d' % (stop.cum_time_min // 60, stop.cum_time_min % 60) if stop.cum_time_min else '—' }}</td>
+    {% if plan.cutoff_hours %}
+    <td class="num">
+        {% if stop.time_bank_min is not none %}
+        <span class="{{ 'time-bank-positive' if stop.time_bank_min >= 0 else 'time-bank-negative' }}">
+            {{ '%+d:%02d' % (stop.time_bank_min // 60, stop.time_bank_min % 60) if stop.time_bank_min >= 0 else '-%d:%02d' % ((-stop.time_bank_min) // 60, (-stop.time_bank_min) % 60) }}
+        </span>
+        {% else %}—{% endif %}
+    </td>
+    {% endif %}
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+
+<!-- Save Form -->
+<form method="post" action="{{ url_for('admin.generate_plan_save') }}" style="margin-top:30px;">
+<div class="form-group" style="max-width:500px;">
+<label for="plan_name">Plan Name</label>
+<input type="text" id="plan_name" name="plan_name" value="{{ plan.name }}"
+       style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">
+<small style="color:var(--text-light);display:block;margin-top:4px;">
+    Slug: <code>{{ plan.slug }}</code> &bull;
+    RWGPS: <a href="{{ plan.rwgps_url }}" target="_blank">{{ plan.rwgps_route_id }}</a>
+</small>
+</div>
+<input type="hidden" name="plan_json" value="{{ plan_json|e }}">
+
+<div style="display:flex;gap:15px;margin-top:20px;">
+<button type="submit" class="btn btn-primary">Save Ride Plan</button>
+<a href="{{ url_for('admin.generate_plan_form') }}" class="btn" style="background:var(--text-light);color:#fff;">Back</a>
+</div>
+</form>
+
+</div>
+{% endblock %}

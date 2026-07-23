@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Privacy Policy - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero">
+<h1>Privacy Policy</h1>
+<p>Last updated: March 23, 2026</p>
+</div>
+<div class="container py-6 md:py-10" style="max-width:800px;">
+
+<div style="line-height:1.7;color:#334155;">
+
+<h2 style="color:var(--primary);margin:2rem 0 0.75rem;font-size:1.25rem;">1. Who We Are</h2>
+<p>Team Asha Randonneuring is a volunteer cycling team that raises funds for the education of underprivileged children in India through <a href="https://ashanet.org" target="_blank" rel="noopener" style="color:var(--accent);">Asha for Education</a>. This website helps our riders plan rides, track progress, and coordinate as a team.</p>
+
+<h2 style="color:var(--primary);margin:2rem 0 0.75rem;font-size:1.25rem;">2. Information We Collect</h2>
+<p><strong>Account &amp; Profile:</strong> When you sign in with Google, we receive your name, email address, and profile photo. We store these to identify your account.</p>
+<p><strong>Strava Data:</strong> If you connect your Strava account, we access your public profile and activity data (ride routes, times, distances, power, heart rate). We use this to display ride analysis and track brevet completions. We do not post to your Strava account or modify your data.</p>
+<p><strong>Ride Plan Data:</strong> Information you enter about ride plans, stops, and schedules is stored to power the planning and analysis features.</p>
+<p><strong>Usage Data:</strong> We use standard server logs (IP address, browser type, pages visited) for debugging and keeping the site running. We do not use third-party analytics or tracking cookies.</p>
+
+<h2 style="color:var(--primary);margin:2rem 0 0.75rem;font-size:1.25rem;">3. How We Use Your Information</h2>
+<ul style="padding-left:1.5rem;margin:0.5rem 0;">
+<li>Display your rider profile, ride history, and brevet completions to the team</li>
+<li>Provide ride planning tools, weather forecasts, and post-ride analysis</li>
+<li>Show team leaderboards and season statistics</li>
+<li>Send ride-related notifications (if enabled)</li>
+</ul>
+
+<h2 style="color:var(--primary);margin:2rem 0 0.75rem;font-size:1.25rem;">4. Information Sharing</h2>
+<p>We do not sell, rent, or share your personal information with third parties. Your data is only visible to:</p>
+<ul style="padding-left:1.5rem;margin:0.5rem 0;">
+<li><strong>Other team members:</strong> Your name, ride history, and season stats are visible to signed-in team members</li>
+<li><strong>Service providers:</strong> We use Vercel (hosting), Supabase (database), and Strava (activity data) to operate the site. These providers process data under their own privacy policies</li>
+</ul>
+
+<h2 style="color:var(--primary);margin:2rem 0 0.75rem;font-size:1.25rem;">5. Data Retention</h2>
+<p>We retain your account and ride data for as long as your account is active. Strava activity data is synced for the most recent 12 months. You may request deletion of your account and associated data at any time by contacting us.</p>
+
+<h2 style="color:var(--primary);margin:2rem 0 0.75rem;font-size:1.25rem;">6. Cookies</h2>
+<p>We use a single session cookie to keep you signed in. We do not use advertising cookies, tracking pixels, or third-party analytics cookies.</p>
+
+<h2 style="color:var(--primary);margin:2rem 0 0.75rem;font-size:1.25rem;">7. Third-Party Services</h2>
+<ul style="padding-left:1.5rem;margin:0.5rem 0;">
+<li><strong>Google Sign-In:</strong> Authentication only. <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" style="color:var(--accent);">Google Privacy Policy</a></li>
+<li><strong>Strava:</strong> Activity data access with your authorization. <a href="https://www.strava.com/legal/privacy" target="_blank" rel="noopener" style="color:var(--accent);">Strava Privacy Policy</a></li>
+<li><strong>Open-Meteo:</strong> Weather data for ride planning (no personal data sent). <a href="https://open-meteo.com/en/terms" target="_blank" rel="noopener" style="color:var(--accent);">Open-Meteo Terms</a></li>
+</ul>
+
+<h2 style="color:var(--primary);margin:2rem 0 0.75rem;font-size:1.25rem;">8. Your Rights</h2>
+<p>You may:</p>
+<ul style="padding-left:1.5rem;margin:0.5rem 0;">
+<li>Disconnect your Strava account at any time through Strava's settings</li>
+<li>Request a copy of your data</li>
+<li>Request deletion of your account and data</li>
+<li>Contact us with any privacy concerns</li>
+</ul>
+
+<h2 style="color:var(--primary);margin:2rem 0 0.75rem;font-size:1.25rem;">9. Security</h2>
+<p>We use HTTPS encryption for all traffic, secure session management, and follow industry-standard practices to protect your data. Database access is restricted and credentials are stored securely as environment variables.</p>
+
+<h2 style="color:var(--primary);margin:2rem 0 0.75rem;font-size:1.25rem;">10. Changes to This Policy</h2>
+<p>We may update this policy from time to time. Material changes will be noted on this page with an updated date.</p>
+
+<h2 style="color:var(--primary);margin:2rem 0 0.75rem;font-size:1.25rem;">11. Contact</h2>
+<p>For privacy questions or data requests, use the <strong>Send Feedback</strong> button in the footer or reach out to the team captain directly.</p>
+
+</div>
+</div>
+{% endblock %}

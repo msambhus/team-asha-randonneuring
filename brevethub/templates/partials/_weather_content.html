@@ -1,0 +1,132 @@
+<div class="weather-container">
+    <div class="input-card">
+        {% if prefill_plan_name %}
+        <h2>{{ prefill_plan_name }} — Weather Forecast</h2>
+        <p style="font-size:0.85rem; color:var(--text-light); margin:0 0 12px;">
+            Using ride plan timing for arrival estimates. Adjust the start to recompute.
+        </p>
+        <form id="weather-form">
+            <input type="hidden" id="rwgps-url" value="{{ prefill_url }}">
+            <input type="hidden" id="speed-mph" value="">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="start-datetime">Start Date/Time</label>
+                    <input type="datetime-local" id="start-datetime" value="{{ prefill_datetime }}">
+                </div>
+            </div>
+        </form>
+        {% else %}
+        <h2>Route Weather Forecast</h2>
+        <form id="weather-form">
+            <div class="form-row">
+                <div class="form-group" style="flex:1; min-width: 280px;">
+                    <label for="rwgps-url">RideWithGPS Route URL</label>
+                    <input type="text" id="rwgps-url" placeholder="https://ridewithgps.com/routes/12345" value="{{ prefill_url }}" required>
+                </div>
+                <div class="form-group">
+                    <label for="start-datetime">Start Date/Time</label>
+                    <input type="datetime-local" id="start-datetime" value="{{ prefill_datetime }}">
+                </div>
+                <div class="form-group" style="width:100px;">
+                    <label for="speed-mph">Speed (mph)</label>
+                    <input type="number" id="speed-mph" placeholder="14" step="0.5" min="5" max="25" value="{{ prefill_speed }}">
+                </div>
+                <button type="submit" class="btn-fetch" id="btn-fetch">Get Weather</button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+
+    <div class="error-alert" id="error-alert"></div>
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <div style="color:var(--text-light); font-size:0.9rem;">Fetching route & weather data...</div>
+    </div>
+
+    <div class="summary-bar" id="summary-bar">
+        <h3 id="route-name"></h3>
+        <div class="summary-chips" id="summary-chips"></div>
+        <div class="share-toolbar" id="share-toolbar" style="display:none;">
+            <button type="button" class="share-btn" id="share-copy-link">🔗 Copy link</button>
+            <button type="button" class="share-btn" id="share-download-image">🖼️ Save image</button>
+            <button type="button" class="share-btn" id="share-native" style="display:none;">📤 Share…</button>
+            <span class="share-feedback" id="share-feedback" role="status" aria-live="polite"></span>
+        </div>
+    </div>
+
+    {# Row 1: Map (left) + Wind & Headwind charts (right) #}
+    <div class="map-charts-row" id="map-charts-row">
+        <div class="map-section" id="map-section">
+            <h3>Wind Map</h3>
+            <div id="wind-map">
+                <div class="map-style-switcher" id="styleSwitcher">
+                    <button class="map-style-btn active" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
+                    <button class="map-style-btn" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
+                    <button class="map-style-btn" data-style="mapbox://styles/mapbox/light-v11">Light</button>
+                    <button class="map-style-btn" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite</button>
+                </div>
+            </div>
+            <div class="map-legend">
+                <div class="legend-item"><div class="legend-dot" style="background:#ef4444;"></div> Headwind</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#22c55e;"></div> Tailwind</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;"></div> Crosswind / Light</div>
+                <div class="legend-item" style="margin-left:auto; color:var(--text-light);">Arrow size = wind speed</div>
+            </div>
+        </div>
+        <div id="map-right-col" style="display:flex;flex-direction:column;gap:16px;">
+            <div class="chart-card">
+                <h4>Wind <span style="font-weight:400;font-size:0.7rem;color:var(--text-light);">— total wind speed</span></h4>
+                <canvas id="chartWind"></canvas>
+            </div>
+            <div class="chart-card">
+                <h4>Headwind / Tailwind <span style="font-weight:400;font-size:0.7rem;color:var(--text-light);">— along riding direction</span></h4>
+                <canvas id="chartHeadwind"></canvas>
+            </div>
+        </div>
+    </div>
+
+    {# Row 2: Precip+Humidity (left) | Elevation+Temperature (right) #}
+    <div class="charts-section" id="charts-section" style="display:none;">
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h4>Precipitation, Cloud Cover & Rain</h4>
+                <canvas id="chartPrecip"></canvas>
+            </div>
+            <div class="chart-card">
+                <h4>Elevation</h4>
+                <canvas id="chartElev"></canvas>
+            </div>
+            <div class="chart-card">
+                <h4>Humidity</h4>
+                <canvas id="chartHumidity"></canvas>
+            </div>
+            <div class="chart-card">
+                <h4>Temperature</h4>
+                <canvas id="chartTemp"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="weather-table-wrap" id="weather-table-wrap">
+        <h3>Weather Along Route</h3>
+        <div style="overflow-x:auto;">
+            <table class="weather-table">
+                <thead>
+                    <tr>
+                        <th>Distance</th>
+                        <th>Time</th>
+                        <th>Temp</th>
+                        <th>Wind</th>
+                        <th>Direction</th>
+                        <th>Head/Tail</th>
+                        <th>Conditions</th>
+                        <th>Precip</th>
+                    </tr>
+                </thead>
+                <tbody id="weather-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="attribution" id="attribution"></div>
+</div>

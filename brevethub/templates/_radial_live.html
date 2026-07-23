@@ -1,0 +1,553 @@
+{# ===========================================================================
+   Shared Radial live view — ONE Mapbox GL map + compact expandable rider table +
+   colour-graded altitude profile, reused byte-for-byte by BOTH apps.
+
+   This is the SINGLE map implementation. Both apps include this exact partial (kept
+   byte-identical by tests/…/test_radial_partial_sync.py); the BrevetHub Leaflet
+   guest map is retired in favour of it. It drives markers from a
+   PUBLIC, privacy-shaped roster (display name + position + stats only — never a
+   rider id / email), so guests and members share the same code and the same map.
+
+   The host page must provide, before including this partial:
+     mapbox_token       – Mapbox access token ('' → static fallback: table+profile)
+     route_polyline      – [[lng,lat],…] or null (the RWGPS route line)
+     roster_url          – URL of this ride's public roster.json poll endpoint
+     poll_seconds        – poll cadence (seconds)
+     elevation_profile   – build_elevation_profile(...) dict (or {available:false})
+
+   Templates stay framework-builtin-only (no commafy / clean_name): the altitude
+   profile geometry is computed server-side and the numbers are formatted in JS.
+   =========================================================================== #}
+<style>
+.radial-live { margin-top: 8px; }
+#radial-map { height: 46vh; min-height: 300px; width: 100%; border-radius: 12px;
+  border: 1px solid var(--border, #e5e7eb); overflow: hidden; }
+.radial-map-unavailable { display: flex; align-items: center; justify-content: center;
+  text-align: center; padding: 24px; color: var(--text-light, #6b7280);
+  background: var(--card-bg, #f9fafb); }
+.radial-elev-wrap { margin-top: 14px; }
+.radial-elev { width: 100%; height: 160px; display: block; }
+.radial-elev-area { fill: var(--border, #e5e7eb); opacity: 0.35; }
+.radial-elev-fill { opacity: 0.22; }
+/* Profile + plan-snapshot side by side; the profile takes the wider column. */
+.radial-elev-row { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin-top: 14px; }
+.radial-elev-row .radial-elev-wrap { flex: 1 1 60%; min-width: 260px; margin-top: 0; }
+.radial-plan-snapshot { flex: 1 1 32%; min-width: 190px; border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px; padding: 12px 14px; background: var(--card-bg, #f9fafb); box-sizing: border-box; }
+.rps-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.rps-label { font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-light, #6b7280); }
+.rps-name { font-weight: 700; font-size: 0.98rem; color: var(--primary, #1a365d); text-decoration: none; line-height: 1.2; }
+.rps-name:hover { text-decoration: underline; }
+.rps-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 12px; }
+.rps-stat { display: flex; flex-direction: column; }
+.rps-v { font-weight: 700; font-size: 0.95rem; color: var(--text, #111); }
+.rps-l { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-light, #6b7280); }
+.rps-open { display: inline-block; margin-top: 10px; font-size: 0.8rem; font-weight: 600; color: var(--primary, #1a365d); text-decoration: none; }
+.rps-open:hover { text-decoration: underline; }
+.radial-elev-grid { stroke: var(--border, #e5e7eb); stroke-width: 0.5; opacity: 0.6; }
+.radial-elev-ylabel { fill: var(--text-light, #6b7280); font-size: 9px; text-anchor: end; }
+.radial-elev-xlabel { fill: var(--text-light, #6b7280); font-size: 9px; text-anchor: middle; }
+.radial-elev-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px;
+  font-size: 0.72rem; color: var(--text-light, #6b7280); }
+.radial-elev-key { display: inline-flex; align-items: center; gap: 4px; }
+.radial-elev-key i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+/* Along-route weather markers on the map (wind arrow rotated to travel direction + °F) */
+.radial-weather { display: flex; flex-direction: column; align-items: center; line-height: 1; pointer-events: none; }
+.radial-weather-arrow { font-size: 18px; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,0.55); }
+.radial-weather-temp { font-size: 10px; font-weight: 700; color: #1f2937; background: rgba(255,255,255,0.85);
+  border-radius: 4px; padding: 0 3px; margin-top: 1px; }
+/* Hover-scrub: crosshair on the profile + a matching dot on the map */
+.radial-elev { cursor: crosshair; }
+.radial-elev-cursor { stroke: var(--text-light, #6b7280); stroke-width: 1; stroke-dasharray: 3 2; opacity: 0.85; }
+.radial-elev-cursor-dot { fill: var(--primary, #1a365d); stroke: #fff; stroke-width: 1.5; }
+.radial-scrub { width: 16px; height: 16px; border-radius: 50%; background: var(--primary, #1a365d);
+  border: 3px solid #fff; box-shadow: 0 1px 6px rgba(0,0,0,0.5); pointer-events: none; }
+.radial-status { font-size: 0.8rem; color: var(--text-light, #6b7280); margin: 10px 0; min-height: 1.2em; }
+.radial-plan { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+.radial-plan label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-light, #6b7280); }
+.radial-plan-select { padding: 6px 10px; border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px; font-size: 0.85rem; background: var(--card-bg, #fff);
+  color: var(--text, #111); max-width: 260px; }
+.radial-marker { width: 30px; height: 30px; cursor: pointer; transition: opacity 0.2s; }
+.radial-marker.stale { opacity: 0.45; filter: grayscale(0.7); }
+.radial-pin { width: 30px; height: 30px; box-sizing: border-box; border-radius: 50%;
+  border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.4); color: #fff;
+  font-size: 0.72rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.radial-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.radial-table thead th { text-align: left; font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-light, #6b7280); padding: 6px 8px;
+  border-bottom: 1px solid var(--border, #e5e7eb); }
+.radial-row td { padding: 8px; border-bottom: 1px solid var(--border, #e5e7eb); }
+.radial-row.stale { opacity: 0.6; }
+.radial-rank { width: 2ch; color: var(--text-light, #6b7280); }
+.radial-name { font-weight: 600; }
+.radial-swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block;
+  margin-right: 6px; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--border, #e5e7eb); vertical-align: middle; }
+.radial-stale { font-size: 0.68rem; color: var(--text-light, #6b7280); font-weight: 400; }
+.radial-dist { white-space: nowrap; }
+.radial-exp { width: 2.5ch; text-align: right; }
+.radial-toggle { background: none; border: none; cursor: pointer; font-size: 1rem;
+  color: var(--text-light, #6b7280); padding: 0 4px; }
+.radial-detailrow td { padding: 0 8px 10px; border-bottom: 1px solid var(--border, #e5e7eb); }
+.radial-detail { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px 14px; }
+.radial-m { display: flex; flex-direction: column; }
+.radial-ml { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--text-light, #6b7280); }
+.radial-mv { font-weight: 700; font-size: 0.92rem; }
+.radial-empty td { padding: 16px 8px; color: var(--text-light, #6b7280); text-align: center; }
+</style>
+<div class="radial-live" data-roster-url="{{ roster_url }}" data-poll-ms="{{ (poll_seconds or 30) * 1000 }}">
+  {% if mapbox_token %}
+  <div id="radial-map"></div>
+  {% else %}
+  <div id="radial-map" class="radial-map-unavailable">
+    Live map unavailable — the map access token is not configured. The rider list
+    and elevation profile below still update.
+  </div>
+  {% endif %}
+
+  {% if (elevation_profile and elevation_profile.available) or plan_snapshot %}
+  <div class="radial-elev-row">
+    {% if elevation_profile and elevation_profile.available %}
+    <div class="radial-elev-wrap">
+    <svg class="radial-elev" viewBox="0 0 {{ elevation_profile.width }} {{ elevation_profile.height }}"
+         preserveAspectRatio="none" role="img" aria-label="Route elevation profile">
+      {# Area fill graded by the line colour (Radial-style): one filled area per
+         segment in its grade colour, under the line drawn on top. #}
+      {% for s in elevation_profile.segments %}
+      <path d="{{ s.area_d }}" fill="{{ s.color }}" stroke="none" class="radial-elev-fill"></path>
+      {% endfor %}
+      {% for s in elevation_profile.segments %}
+      <path d="{{ s.d }}" stroke="{{ s.color }}" fill="none" stroke-width="2"
+            stroke-linecap="round"></path>
+      {% endfor %}
+      {% for t in elevation_profile.y_ticks %}
+      <line x1="{{ elevation_profile.plot.x }}" y1="{{ t.y }}"
+            x2="{{ elevation_profile.plot.x + elevation_profile.plot.w }}" y2="{{ t.y }}"
+            class="radial-elev-grid"></line>
+      <text x="{{ elevation_profile.plot.x - 4 }}" y="{{ t.y + 3 }}"
+            class="radial-elev-ylabel">{{ t.label }}</text>
+      {% endfor %}
+      {% for t in elevation_profile.x_ticks %}
+      <text x="{{ t.x }}" y="{{ elevation_profile.height - 6 }}"
+            class="radial-elev-xlabel">{{ t.label }}</text>
+      {% endfor %}
+      <g id="radial-elev-riders"></g>
+    </svg>
+    <div class="radial-elev-legend">
+      {% for b in elevation_profile.legend %}
+      <span class="radial-elev-key"><i style="background: {{ b.color }}"></i>{{ b.label }}</span>
+      {% endfor %}
+    </div>
+    </div>
+    {% endif %}
+    {% if plan_snapshot %}
+    <aside class="radial-plan-snapshot">
+      <div class="rps-head">
+        <span class="rps-label">Selected plan</span>
+        <a class="rps-name" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">{{ plan_snapshot.name }}</a>
+      </div>
+      <div class="rps-stats">
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.distance_mi }}</span><span class="rps-l">miles</span></div>
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.elevation_ft }}</span><span class="rps-l">ft climb</span></div>
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.controls }}</span><span class="rps-l">controls</span></div>
+        {% if plan_snapshot.cutoff_hours %}<div class="rps-stat"><span class="rps-v">{{ plan_snapshot.cutoff_hours }}</span><span class="rps-l">h limit</span></div>{% endif %}
+        {% if plan_snapshot.start_time %}<div class="rps-stat"><span class="rps-v">{{ plan_snapshot.start_time }}</span><span class="rps-l">start</span></div>{% endif %}
+      </div>
+      <a class="rps-open" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">Open full plan →</a>
+    </aside>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="radial-plan" id="radial-plan-wrap" style="display:none;">
+    <label for="radial-plan-select">Plan</label>
+    <select class="radial-plan-select" id="radial-plan-select"></select>
+  </div>
+
+  <div class="radial-status" id="radial-status" aria-live="polite"></div>
+
+  <table class="radial-table" id="radial-table">
+    <thead>
+      <tr><th class="radial-rank">#</th><th>Rider</th><th class="radial-dist">Distance</th><th class="radial-exp"></th></tr>
+    </thead>
+    <tbody id="radial-tbody">
+      <tr class="radial-empty"><td colspan="4">Waiting for riders to appear…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+(function () {
+  var root = document.currentScript.previousElementSibling;
+  while (root && !(root.classList && root.classList.contains('radial-live'))) {
+    root = root.previousElementSibling;
+  }
+  if (!root) { return; }
+
+  var ROSTER_URL = root.getAttribute('data-roster-url');
+  var POLL_MS = parseInt(root.getAttribute('data-poll-ms'), 10) || 30000;
+  var MAPBOX_TOKEN = {{ mapbox_token | tojson }};
+  var ROUTE_POLYLINE = {{ route_polyline | tojson }};   // [[lng,lat],…] or null
+  var PROFILE = {{ elevation_profile | tojson }};         // build_elevation_profile(...)
+  var WEATHER_POINTS = {{ weather_points | default([]) | tojson }};  // [{lat,lng,temp_f,wind_speed_mph,wind_type,arrow_deg,color}]
+
+  var statusEl = document.getElementById('radial-status');
+  var tbody = document.getElementById('radial-tbody');
+  var map = null, mapReady = false, fitted = false;
+  var markers = {};   // opaque key → mapboxgl.Marker
+  var expanded = {};  // opaque key → bool (row expansion is opt-in, per rider)
+  var selectedPlanId = null;   // plan lens; null → server applies the base plan
+  var plansBuilt = false;
+  var planWrap = document.getElementById('radial-plan-wrap');
+  var planSelect = document.getElementById('radial-plan-select');
+
+  // ---- Map (the ONE shared Mapbox GL implementation) ---------------------- //
+  function initMap() {
+    if (!MAPBOX_TOKEN || typeof mapboxgl === 'undefined') { return; }  // static fallback
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+    map = new mapboxgl.Map({
+      container: 'radial-map',
+      style: 'mapbox://styles/mapbox/outdoors-v12',
+      center: [-122.2, 37.5], zoom: 8,
+    });
+    map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    map.on('load', function () {
+      mapReady = true;
+      if (ROUTE_POLYLINE && ROUTE_POLYLINE.length) {
+        map.addSource('radial-route', {
+          type: 'geojson',
+          data: { type: 'Feature', geometry: { type: 'LineString', coordinates: ROUTE_POLYLINE } },
+        });
+        map.addLayer({
+          id: 'radial-route', type: 'line', source: 'radial-route',
+          paint: { 'line-color': '#2563eb', 'line-width': 3, 'line-opacity': 0.7 },
+        });
+        var b = new mapboxgl.LngLatBounds();
+        ROUTE_POLYLINE.forEach(function (c) { b.extend(c); });
+        if (!b.isEmpty()) { map.fitBounds(b, { padding: 40, maxZoom: 13 }); fitted = true; }
+      }
+      addWeatherMarkers();   // static along-route wind arrows + °F (not in the poll loop)
+      poll();
+    });
+  }
+
+  function markerEl(row) {
+    var el = document.createElement('div');
+    el.className = 'radial-marker' + (row.stale ? ' stale' : '');
+    var pin = document.createElement('div');
+    pin.className = 'radial-pin';
+    pin.style.background = row.marker_color || '#9ca3af';
+    pin.textContent = row.initials || '?';
+    el.appendChild(pin);
+    return el;
+  }
+
+  function updateMarkers(roster) {
+    if (!map || !mapReady) { return; }
+    var seen = {};
+    roster.forEach(function (row) {
+      if (row.lat == null || row.lng == null) { return; }
+      seen[row.key] = true;
+      if (markers[row.key]) {
+        markers[row.key].setLngLat([row.lng, row.lat]);
+        markers[row.key].getElement().className = 'radial-marker' + (row.stale ? ' stale' : '');
+        markers[row.key].getElement().firstChild.style.background = row.marker_color || '#9ca3af';
+      } else {
+        markers[row.key] = new mapboxgl.Marker(markerEl(row))
+          .setLngLat([row.lng, row.lat]).addTo(map);
+      }
+    });
+    Object.keys(markers).forEach(function (k) {
+      if (!seen[k]) { markers[k].remove(); delete markers[k]; }
+    });
+    if (!fitted && roster.length) {
+      var b = new mapboxgl.LngLatBounds();
+      roster.forEach(function (r) { if (r.lat != null && r.lng != null) { b.extend([r.lng, r.lat]); } });
+      if (!b.isEmpty()) { map.fitBounds(b, { padding: 60, maxZoom: 13 }); fitted = true; }
+    }
+  }
+
+  // ---- Along-route weather markers (static: wind arrow + °F) -------------- //
+  function addWeatherMarkers() {
+    if (!map || !WEATHER_POINTS || !WEATHER_POINTS.length) { return; }   // degrade: no overlay
+    WEATHER_POINTS.forEach(function (w) {
+      if (w.lat == null || w.lng == null) { return; }
+      var el = document.createElement('div');
+      el.className = 'radial-weather';
+      var arrow = document.createElement('span');
+      arrow.className = 'radial-weather-arrow';
+      arrow.style.color = w.color || '#6b7280';
+      arrow.style.transform = 'rotate(' + (w.arrow_deg || 0) + 'deg)';
+      arrow.textContent = '↑';   // ↑ rotated to the wind's travel direction
+      var spd = (w.wind_speed_mph != null) ? Math.round(w.wind_speed_mph) + ' mph' : '';
+      arrow.title = ((w.wind_type || '') + ' ' + spd).trim();
+      el.appendChild(arrow);
+      if (w.temp_f != null) {
+        var t = document.createElement('span');
+        t.className = 'radial-weather-temp';
+        t.textContent = Math.round(w.temp_f) + '°';
+        el.appendChild(t);
+      }
+      new mapboxgl.Marker({ element: el }).setLngLat([w.lng, w.lat]).addTo(map);
+    });
+  }
+
+  // ---- Hover-scrub: hovering the elevation profile moves a dot on the map -- //
+  var routeCum = null, routeTotalM = 0, scrubMarker = null, elevCursor = null;
+  function haversineM(a, b) {
+    var R = 6371000, toR = Math.PI / 180;
+    var dLat = (b[1] - a[1]) * toR, dLng = (b[0] - a[0]) * toR;
+    var s = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(a[1] * toR) * Math.cos(b[1] * toR) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+  }
+  function buildRouteIndex() {
+    if (!ROUTE_POLYLINE || ROUTE_POLYLINE.length < 2) { return; }
+    routeCum = [0];
+    for (var i = 1; i < ROUTE_POLYLINE.length; i++) {
+      routeCum[i] = routeCum[i - 1] + haversineM(ROUTE_POLYLINE[i - 1], ROUTE_POLYLINE[i]);
+    }
+    routeTotalM = routeCum[routeCum.length - 1];
+  }
+  function lngLatAtMile(mi) {
+    if (!routeCum || routeTotalM <= 0 || !PROFILE || !PROFILE.total_mi) { return null; }
+    var target = Math.max(0, Math.min(1, mi / PROFILE.total_mi)) * routeTotalM;
+    for (var i = 1; i < routeCum.length; i++) {
+      if (target <= routeCum[i]) {
+        var seg = routeCum[i] - routeCum[i - 1];
+        var t = seg > 0 ? (target - routeCum[i - 1]) / seg : 0;
+        var a = ROUTE_POLYLINE[i - 1], b = ROUTE_POLYLINE[i];
+        return [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+      }
+    }
+    return ROUTE_POLYLINE[ROUTE_POLYLINE.length - 1];
+  }
+  function scrubTo(mi) {
+    var ll = lngLatAtMile(mi);
+    if (ll && map && mapReady) {
+      if (!scrubMarker) {
+        var sel = document.createElement('div'); sel.className = 'radial-scrub';
+        scrubMarker = new mapboxgl.Marker({ element: sel });
+      }
+      scrubMarker.setLngLat(ll).addTo(map);
+    }
+    var svg = document.querySelector('.radial-elev');
+    if (svg && PROFILE && PROFILE.available) {
+      var x = profileX(mi), y = profileY(mi);
+      if (!elevCursor) {
+        elevCursor = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        var ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        ln.setAttribute('class', 'radial-elev-cursor');
+        var dt = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        dt.setAttribute('class', 'radial-elev-cursor-dot'); dt.setAttribute('r', '4');
+        elevCursor.appendChild(ln); elevCursor.appendChild(dt);
+        svg.appendChild(elevCursor);
+      }
+      var line = elevCursor.firstChild, dot = elevCursor.lastChild;
+      line.setAttribute('x1', x); line.setAttribute('x2', x);
+      line.setAttribute('y1', PROFILE.plot.y); line.setAttribute('y2', PROFILE.plot.y + PROFILE.plot.h);
+      if (y != null) { dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.style.display = ''; }
+      else { dot.style.display = 'none'; }
+      elevCursor.style.display = '';
+    }
+  }
+  function clearScrub() {
+    if (scrubMarker) { scrubMarker.remove(); }
+    if (elevCursor) { elevCursor.style.display = 'none'; }
+  }
+  function initElevHover() {
+    var svg = document.querySelector('.radial-elev');
+    if (!svg || !PROFILE || !PROFILE.available) { return; }
+    svg.addEventListener('mousemove', function (e) {
+      var r = svg.getBoundingClientRect();
+      if (r.width <= 0) { return; }
+      var svgX = (e.clientX - r.left) / r.width * PROFILE.width;   // viewBox is preserveAspectRatio=none
+      var frac = (svgX - PROFILE.plot.x) / PROFILE.plot.w;
+      scrubTo(Math.max(0, Math.min(1, frac)) * (PROFILE.total_mi || 0));
+    });
+    svg.addEventListener('mouseleave', clearScrub);
+  }
+
+  // ---- Elevation profile rider dots --------------------------------------- //
+  function profileY(mi) {
+    if (!PROFILE || !PROFILE.available || !PROFILE.points || !PROFILE.points.length) { return null; }
+    var x = profileX(mi);
+    var pts = PROFILE.points;
+    for (var i = 1; i < pts.length; i++) {
+      if (x <= pts[i][0]) {
+        var x0 = pts[i - 1][0], y0 = pts[i - 1][1], x1 = pts[i][0], y1 = pts[i][1];
+        var t = (x1 > x0) ? (x - x0) / (x1 - x0) : 0;
+        return y0 + t * (y1 - y0);
+      }
+    }
+    return pts[pts.length - 1][1];
+  }
+  function profileX(mi) {
+    var total = PROFILE.total_mi || 0;
+    if (total <= 0) { return PROFILE.plot.x; }
+    var frac = Math.max(0, Math.min(1, mi / total));
+    return PROFILE.plot.x + frac * PROFILE.plot.w;
+  }
+  function updateProfileDots(roster) {
+    var g = document.getElementById('radial-elev-riders');
+    if (!g || !PROFILE || !PROFILE.available) { return; }
+    while (g.firstChild) { g.removeChild(g.firstChild); }
+    roster.forEach(function (row) {
+      if (row.route_position_mi == null) { return; }
+      var cx = profileX(row.route_position_mi);
+      var cy = profileY(row.route_position_mi);
+      if (cy == null) { return; }
+      var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', 4);
+      c.setAttribute('fill', row.marker_color || '#9ca3af');
+      c.setAttribute('stroke', '#fff'); c.setAttribute('stroke-width', '1.5');
+      if (row.stale) { c.setAttribute('opacity', '0.5'); }
+      var title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+      title.textContent = row.display_name + ' · ' + fmtDist(row);
+      c.appendChild(title);
+      g.appendChild(c);
+    });
+  }
+
+  // ---- Compact expandable rider table ------------------------------------- //
+  function fmtDist(row) {
+    if (row.dist_display == null) { return '—'; }
+    // Coerce to Number + whitelist the unit — this is embedded via innerHTML.
+    return Number(row.dist_display) + ' ' + (row.dist_unit === 'km' ? 'km' : 'mi');
+  }
+  function fmtMin(v) {
+    if (v == null) { return '—'; }
+    var s = v < 0 ? '−' : '+';
+    var a = Math.abs(v);
+    return s + (a >= 60 ? Math.floor(a / 60) + 'h ' + (a % 60) + 'm' : a + 'm');
+  }
+  function metric(label, value) {
+    return '<div class="radial-m"><span class="radial-ml">' + label +
+           '</span><span class="radial-mv">' + value + '</span></div>';
+  }
+  function detailHtml(row) {
+    // Every value is embedded via innerHTML below, so ANY server-supplied string
+    // (control names, ETA labels) MUST be escaped — a malicious/compromised plan or
+    // control name must never execute script when a viewer expands a row. Numeric
+    // fields are coerced to Number so a non-numeric value can't inject markup.
+    var nc = row.next_control || {};
+    var ncTxt = '—';
+    if (nc.name) {
+      ncTxt = escapeHtml(nc.name) +
+        (nc.eta_label ? ' · ' + escapeHtml(nc.eta_label) : '') +
+        (nc.dist_to_go_mi != null ? ' · ' + Number(nc.dist_to_go_mi) + ' mi to go' : '') +
+        (nc.behind ? ' · behind'
+                   : (nc.required_mph != null ? ' · need ' + Number(nc.required_mph) + ' mph' : ''));
+    }
+    return '<div class="radial-detail">' +
+      metric('Speed', row.speed_mph != null ? Number(row.speed_mph) + ' mph' : '—') +
+      metric('Banked vs plan', fmtMin(row.banked_plan_min)) +
+      metric('Banked vs cutoff', fmtMin(row.banked_cutoff_min)) +
+      metric('Next control', ncTxt) +
+      metric('Ascent done', row.ascent_done_ft != null ? Number(row.ascent_done_ft) + ' ft' : '—') +
+      metric('Ascent left', row.ascent_left_ft != null ? Number(row.ascent_left_ft) + ' ft' : '—') +
+      metric('Finish ETA', row.eta_finish_label ? escapeHtml(row.eta_finish_label) : '—') +
+      '</div>';
+  }
+  function renderTable(roster) {
+    tbody.innerHTML = '';
+    if (!roster.length) {
+      var er = document.createElement('tr');
+      er.className = 'radial-empty';
+      er.innerHTML = '<td colspan="4">No riders are sharing their location yet.</td>';
+      tbody.appendChild(er);
+      return;
+    }
+    roster.forEach(function (row, i) {
+      var tr = document.createElement('tr');
+      tr.className = 'radial-row' + (row.stale ? ' stale' : '');
+      tr.innerHTML =
+        '<td class="radial-rank">' + (i + 1) + '</td>' +
+        '<td class="radial-name"><span class="radial-swatch" style="background:' +
+          (row.marker_color || '#9ca3af') + '"></span>' +
+          escapeHtml(row.display_name) + (row.stale ? ' <span class="radial-stale">stale</span>' : '') + '</td>' +
+        '<td class="radial-dist">' + fmtDist(row) + '</td>' +
+        '<td class="radial-exp"><button type="button" class="radial-toggle" aria-expanded="' +
+          (expanded[row.key] ? 'true' : 'false') + '">' + (expanded[row.key] ? '▾' : '▸') + '</button></td>';
+      tr.querySelector('.radial-toggle').addEventListener('click', function () {
+        expanded[row.key] = !expanded[row.key];
+        renderTable(lastRoster);
+      });
+      tbody.appendChild(tr);
+      if (expanded[row.key]) {
+        var dr = document.createElement('tr');
+        dr.className = 'radial-detailrow';
+        dr.innerHTML = '<td colspan="4">' + detailHtml(row) + '</td>';
+        tbody.appendChild(dr);
+      }
+    });
+  }
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  var lastRoster = [];
+  function render(roster) {
+    lastRoster = roster;
+    renderTable(roster);
+    updateMarkers(roster);
+    updateProfileDots(roster);
+  }
+
+  function planQuery() {
+    // Append plan_id only once a plan is explicitly chosen; absent → server base plan.
+    if (!selectedPlanId) { return ''; }
+    return (ROSTER_URL.indexOf('?') >= 0 ? '&' : '?') + 'plan_id=' + encodeURIComponent(selectedPlanId);
+  }
+  function renderPlans(data) {
+    if (!planWrap || !planSelect) { return; }
+    var plans = (data && data.plans) || [];
+    if (plans.length <= 1) { planWrap.style.display = 'none'; return; }  // single-plan ride
+    planWrap.style.display = 'flex';
+    if (!plansBuilt) {
+      planSelect.textContent = '';
+      plans.forEach(function (p) {
+        var opt = document.createElement('option');
+        opt.value = String(p.id);
+        opt.textContent = p.name + (p.owner ? ' · ' + p.owner : '');
+        planSelect.appendChild(opt);
+      });
+      planSelect.addEventListener('change', function () {
+        selectedPlanId = planSelect.value;
+        poll();   // re-grade everyone immediately against the chosen plan
+      });
+      plansBuilt = true;
+    }
+    if (data.selected_plan_id != null) { planSelect.value = String(data.selected_plan_id); }
+  }
+
+  function poll() {
+    fetch(ROSTER_URL + planQuery(), { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (data) {
+        renderPlans(data);
+        var roster = (data && data.roster) || [];
+        render(roster);
+        if (statusEl) {
+          statusEl.textContent = roster.length
+            ? (roster.length + ' rider' + (roster.length === 1 ? '' : 's') + ' on course')
+            : 'No riders sharing right now.';
+        }
+      })
+      .catch(function () {
+        if (statusEl) { statusEl.textContent = 'Could not refresh live positions.'; }
+      });
+  }
+
+  initMap();
+  buildRouteIndex();                // cumulative route distances for hover→map scrub
+  initElevHover();                  // hovering the elevation profile moves a map dot
+  if (!map) { poll(); }             // static fallback: still poll table + profile
+  setInterval(poll, POLL_MS);
+})();
+</script>

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Live Tracking{% endblock %}
+
+{% block extra_head %}
+<style>
+.hub-container { max-width: 720px; margin: 0 auto; padding: 24px 16px; }
+.hub-container h1 { font-size: 1.5rem; margin: 0 0 4px; }
+.hub-container .sub { color: var(--text-light); font-size: 0.9rem; margin: 0 0 20px; }
+.hub-card {
+    display: flex; align-items: center; gap: 16px;
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px; margin-bottom: 14px;
+    text-decoration: none; color: var(--text); transition: border-color 0.15s, box-shadow 0.15s;
+}
+.hub-card:hover { border-color: var(--primary); box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+.hub-card .icon {
+    flex: 0 0 44px; width: 44px; height: 44px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; color: #fff;
+}
+.hub-card .icon.beacon { background: #16a34a; }
+.hub-card .icon.garmin { background: #2563eb; }
+.hub-card .body { flex: 1; }
+.hub-card .body .t { font-weight: 700; font-size: 1rem; }
+.hub-card .body .d { color: var(--text-light); font-size: 0.85rem; margin-top: 2px; }
+.hub-chip { font-size: 0.72rem; font-weight: 700; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
+.hub-chip.on { background: #dcfce7; color: #166534; }
+.hub-chip.off { background: #f1f5f9; color: #64748b; }
+.hub-section-title { font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--text-light); margin: 26px 0 10px; }
+.ride-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 8px;
+    text-decoration: none; color: var(--text);
+}
+.ride-row:hover { border-color: var(--primary); }
+.ride-row .meta { color: var(--text-light); font-size: 0.8rem; }
+.ride-row .go {
+    display: inline-flex; align-items: center; gap: 5px; color: var(--primary); font-weight: 600; font-size: 0.85rem;
+}
+.hub-empty { color: var(--text-light); font-size: 0.88rem; padding: 6px 2px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hub-container">
+  <h1>Live Tracking</h1>
+  <p class="sub">Share your location with the club during a ride, or open a ride's live map.
+     Location history is deleted after 7 days.</p>
+
+  <a class="hub-card" href="{{ url_for('live.live_share') }}">
+    <span class="icon beacon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+      </svg>
+    </span>
+    <span class="body">
+      <span class="t">Share from this phone</span>
+      <span class="d">Stream your live location from this device while you ride.</span>
+    </span>
+    <span class="hub-chip {{ 'on' if opted_in else 'off' }}">{{ 'ON' if opted_in else 'OFF' }}</span>
+  </a>
+
+  <a class="hub-card" href="{{ url_for('live.live_settings') }}">
+    <span class="icon garmin">
+      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+      </svg>
+    </span>
+    <span class="body">
+      <span class="t">Live tracking settings</span>
+      <span class="d">Your master on/off switch. The Garmin LiveTrack link is set per-ride on each ride's live map below.</span>
+    </span>
+    <span class="hub-chip {{ 'on' if opted_in else 'off' }}">{{ 'ON' if opted_in else 'OFF' }}</span>
+  </a>
+
+  <div class="hub-section-title">Set up &amp; view a ride's live map</div>
+  {% if upcoming %}
+    {% for ride in upcoming %}
+    <a class="ride-row" href="{{ url_for('live.ride_live_map', ride_id=ride.id) }}">
+      <span>
+        <span style="font-weight:600;">{{ ride.name | clean_name }}</span>
+        <span class="meta"> · {{ ride.date }} · {{ ride.signup_status | title }}</span>
+      </span>
+      <span class="go">
+        Live map
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14"/><path d="M12 5l7 7-7 7"/>
+        </svg>
+      </span>
+    </a>
+    {% endfor %}
+  {% else %}
+    <p class="hub-empty">You have no upcoming rides. Find one on the
+      <a href="{{ url_for('riders.upcoming_brevets', season_name=current_season.name) if current_season else '#' }}">Brevet Calendar</a>.</p>
+  {% endif %}
+</div>
+{% endblock %}

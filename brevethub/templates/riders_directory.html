@@ -1,0 +1,733 @@
+{% extends "base.html" %}
+{% block title %}Riders - Team Asha Randonneuring{% endblock %}
+
+{#
+  Drop-in replacement for /riders/directory.
+
+  Required context (added by routes/riders.py — see notes at bottom):
+    - riders : list of rider dicts. Each rider dict needs:
+        id, first_name, last_name, rusa_id, photo_filename
+        total_rides, total_kms, eddington_number_miles
+        season_rides, season_kms
+        sr_200, sr_300, sr_400, sr_600           (counts, not booleans)
+        upcoming   : list of {ride_id, name, date, distance_km, status, plan_slug}
+                     ordered by date asc
+    - season   : current season dict (.name, e.g. '2025-2026')
+    - sr_year  : 2026
+    - pbp_year : 2027
+#}
+
+{% block extra_head %}
+<style>
+/* ============================================================
+   Riders Directory — light, matches base.html visual vocabulary.
+   Same tokens as season-riders cards: --primary #1a365d, --accent #e53e3e,
+   --bg #f7fafc, --border #e2e8f0, --text #2d3748, --text-light #718096
+   ============================================================ */
+.rd {
+  --rd-primary:    #1a365d;
+  --rd-primary-d:  #2a4a7f;
+  --rd-accent:     #e53e3e;
+  --rd-text:       #2d3748;
+  --rd-muted:      #718096;
+  --rd-border:     #e2e8f0;
+  --rd-card:       #ffffff;
+  --rd-bg:         #f7fafc;
+
+  /* Distance tokens (from season-riders) */
+  --d200-soft:#c6f6d5; --d200-deep:#22543d; --d200-grad:linear-gradient(90deg,#48bb78,#68d391);
+  --d300-soft:#dbeafe; --d300-deep:#1d4ed8; --d300-grad:linear-gradient(90deg,#4299e1,#63b3ed);
+  --d400-soft:#feebc8; --d400-deep:#7b341e; --d400-grad:linear-gradient(90deg,#ed8936,#f6ad55);
+  --d600-soft:#fed7d7; --d600-deep:#742a2a; --d600-grad:linear-gradient(90deg,#e53e3e,#fc8181);
+  --d1000-soft:#e9d8fd;--d1000-deep:#553c9a;--d1000-grad:linear-gradient(90deg,#805ad5,#b794f4);
+  --d1200-soft:#fbb6ce;--d1200-deep:#702459;--d1200-grad:linear-gradient(90deg,#d53f8c,#f687b3);
+}
+.rd-page { background: #eef2f7; padding: 28px 0 48px; }
+.rd-wrap { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+
+/* Hero */
+.rd-hero { padding: 8px 0 16px; }
+.rd-eyebrow { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--rd-muted); }
+.rd-h1 { font-size: 1.75rem; font-weight: 800; letter-spacing: -0.01em;
+  margin: 4px 0 0; color: var(--rd-primary); line-height: 1.15; }
+.rd-sub { margin: 6px 0 0; font-size: 0.92rem; color: var(--rd-muted); }
+
+/* Toolbar */
+.rd-toolbar {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  padding: 12px 14px; margin: 16px 0 18px;
+  background: var(--rd-card); border: 1px solid var(--rd-border);
+  border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+.rd-toolbar .rd-tlabel {
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--rd-muted);
+}
+.rd-search {
+  flex: 1; min-width: 200px; max-width: 320px;
+  padding: 8px 12px; border: 1px solid var(--rd-border);
+  border-radius: 8px; font-size: 0.88rem; font-family: inherit;
+  background: var(--rd-bg); color: var(--rd-text);
+}
+.rd-search:focus { outline: 2px solid var(--rd-primary); outline-offset: -1px; background: #fff; }
+
+/* Section header */
+.rd-section-h {
+  display: flex; align-items: baseline; gap: 10px;
+  margin: 22px 0 10px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--rd-border);
+}
+.rd-section-title {
+  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--rd-text);
+}
+.rd-section-count { font-size: 0.78rem; color: var(--rd-muted); font-weight: 600; }
+
+/* Collapsible past-riders section — styled as a clickable bar so it
+   reads as an action, not just a section header. */
+.rd-collapsible { margin: 22px 0 0; }
+.rd-collapsible > .rd-section-summary {
+  cursor: pointer; list-style: none; user-select: none;
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 18px;
+  margin: 0;
+  background: #fff;
+  border: 1px solid #cbd5e0;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(15,23,42,0.08), 0 1px 2px rgba(15,23,42,0.05);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.rd-collapsible > .rd-section-summary::-webkit-details-marker { display: none; }
+.rd-collapsible > .rd-section-summary:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  box-shadow: 0 4px 12px rgba(15,23,42,0.10);
+}
+.rd-collapsible > .rd-section-summary:focus-visible {
+  outline: 2px solid var(--rd-primary); outline-offset: 2px;
+}
+.rd-collapsible > .rd-section-summary .rd-section-title {
+  font-size: 0.85rem; color: var(--rd-primary);
+}
+.rd-collapsible > .rd-section-summary .rd-section-count {
+  font-size: 0.85rem; font-weight: 700;
+}
+.rd-section-chevron {
+  margin-left: auto; color: var(--rd-primary);
+  font-size: 1rem; transition: transform 0.15s ease;
+  display: inline-block; line-height: 1;
+}
+.rd-collapsible[open] > .rd-section-summary {
+  margin-bottom: 12px;
+  border-bottom-left-radius: 0; border-bottom-right-radius: 0;
+}
+.rd-collapsible[open] > .rd-section-summary .rd-section-chevron {
+  transform: rotate(180deg);
+}
+.rd-collapsible > .rd-grid { margin-top: 0; }
+
+/* Grid */
+.rd-grid {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+}
+
+/* Card */
+.rd-card {
+  background: var(--rd-card); border: 1px solid #cbd5e0;
+  border-radius: 12px; padding: 16px;
+  display: flex; flex-direction: column;
+  text-decoration: none; color: inherit;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.05);
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.rd-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12), 0 2px 4px rgba(15, 23, 42, 0.06);
+  border-color: #94a3b8;
+}
+.rd-card.is-hidden { display: none; }
+
+/* Card head */
+.rd-head { display: flex; align-items: center; gap: 11px; margin-bottom: 12px; }
+.rd-avatar {
+  width: 44px; height: 44px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.92rem; font-weight: 700; flex-shrink: 0;
+  background-size: cover; background-position: center;
+}
+.rd-name {
+  font-size: 1.0rem; font-weight: 700; color: var(--rd-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.2;
+}
+.rd-card:hover .rd-name { color: var(--rd-accent); }
+.rd-pbp-tag {
+  display: inline-block; vertical-align: middle;
+  padding: 1px 6px; border-radius: 8px;
+  background: linear-gradient(135deg,#553c9a,#805ad5);
+  color: #fff;
+  font-size: 0.56rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-right: 4px;
+  box-shadow: 0 1px 2px rgba(85,60,154,0.25);
+}
+.rd-sub-meta {
+  font-size: 0.7rem; color: var(--rd-muted); font-weight: 600;
+  margin-top: 3px;
+}
+
+/* SR cluster */
+.rd-sr {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  margin-left: auto; flex-shrink: 0;
+}
+.rd-sr-bars { display: flex; gap: 4px; }
+.rd-sr-bar {
+  width: 16px; height: 22px; border-radius: 3px;
+  background: #edf2f7;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.62rem; font-weight: 800;
+  color: transparent;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.rd-sr-bar.is-200 { background: #48bb78; color: rgba(255,255,255,0.95); }
+.rd-sr-bar.is-300 { background: #4299e1; color: rgba(255,255,255,0.95); }
+.rd-sr-bar.is-400 { background: #ed8936; color: rgba(255,255,255,0.95); }
+.rd-sr-bar.is-600 { background: #e53e3e; color: rgba(255,255,255,0.95); }
+.rd-sr-label {
+  font-size: 0.55rem; font-weight: 800; letter-spacing: 0.08em;
+  color: var(--rd-muted);
+}
+.rd-sr-label.is-sr {
+  background: linear-gradient(135deg,#d69e2e,#f6ad55);
+  color: #fff; padding: 1px 6px; border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+/* Eddington stat in head */
+.rd-edd-head {
+  display: flex; flex-direction: column; align-items: center;
+  flex-shrink: 0; padding: 4px 8px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: var(--rd-text); border-radius: 8px;
+  min-width: 38px; text-align: center;
+  position: relative; cursor: help;
+}
+.rd-edd-head-num {
+  font-size: 0.95rem; font-weight: 800; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--rd-primary);
+}
+.rd-edd-head-lbl {
+  font-size: 0.5rem; font-weight: 800; letter-spacing: 0.04em;
+  margin-top: 2px; color: var(--rd-muted);
+  text-transform: uppercase;
+}
+/* Eddington tooltip */
+.rd-edd-tip {
+  position: absolute; top: calc(100% + 8px); right: 0;
+  width: 240px;
+  background: #1a202c; color: #fff;
+  border-radius: 8px; padding: 10px 12px;
+  font-size: 0.72rem; line-height: 1.45;
+  font-weight: 500; letter-spacing: 0;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  opacity: 0; visibility: hidden; transform: translateY(-4px);
+  transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
+  z-index: 30; text-align: left; pointer-events: none;
+  white-space: normal;
+}
+.rd-edd-tip::before {
+  content: ''; position: absolute; top: -5px; right: 14px;
+  border: 5px solid transparent; border-top: 0;
+  border-bottom-color: #1a202c;
+}
+.rd-edd-head:hover .rd-edd-tip,
+.rd-edd-head:focus .rd-edd-tip { opacity: 1; visibility: visible; transform: translateY(0); }
+.rd-edd-tip-h {
+  font-size: 0.7rem; font-weight: 800; letter-spacing: 0.05em;
+  text-transform: uppercase; color: #f6ad55; margin-bottom: 5px;
+}
+.rd-edd-tip-num {
+  font-size: 1rem; font-weight: 800; color: #fff;
+}
+.rd-edd-tip-next {
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.85); font-weight: 600;
+}
+.rd-edd-tip-next strong { color: #f6ad55; font-weight: 800; }
+
+/* Track header */
+.rd-track-h {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--rd-muted); margin: 4px 0 6px;
+}
+.rd-track-h-r {
+  color: var(--rd-text); letter-spacing: 0; text-transform: none;
+  font-weight: 600; font-size: 0.7rem;
+}
+
+
+/* Upcoming pills */
+.rd-upcoming { display: flex; flex-direction: column; gap: 5px; }
+.rd-pill {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 9px; border-radius: 6px;
+  border-left: 3px solid var(--rd-border);
+  background: var(--rd-bg); font-size: 0.8rem;
+}
+.rd-pill.is-going.d200  { background: var(--d200-soft);  border-left-color:#48bb78; }
+.rd-pill.is-going.d300  { background: var(--d300-soft);  border-left-color:#4299e1; }
+.rd-pill.is-going.d400  { background: var(--d400-soft);  border-left-color:#ed8936; }
+.rd-pill.is-going.d600  { background: var(--d600-soft);  border-left-color:#e53e3e; }
+.rd-pill.is-going.d1000 { background: var(--d1000-soft); border-left-color:#805ad5; }
+.rd-pill.is-going.d1200 { background: var(--d1200-soft); border-left-color:#d53f8c; }
+.rd-pill.is-maybe { background: #fef3c7; border-left-color: #d69e2e; }
+.rd-pill.is-interested {
+  background: #fff; border: 1px dashed var(--rd-border); border-left: 3px dashed #cbd5e0;
+}
+.rd-km {
+  font-size: 0.66rem; font-weight: 800; min-width: 34px;
+  letter-spacing: 0.02em;
+  padding: 2px 5px; border-radius: 4px; text-align: center;
+}
+.rd-km.d200  { background:#48bb78; color:#fff; }
+.rd-km.d300  { background:#4299e1; color:#fff; }
+.rd-km.d400  { background:#ed8936; color:#fff; }
+.rd-km.d600  { background:#e53e3e; color:#fff; }
+.rd-km.d1000 { background:#805ad5; color:#fff; }
+.rd-km.d1200 { background:#d53f8c; color:#fff; }
+.rd-pill.is-interested .rd-km,
+.rd-pill.is-maybe .rd-km { background: transparent; color: var(--rd-text); border: 1px solid currentColor; }
+.rd-rname {
+  flex: 1; font-weight: 600; color: var(--rd-text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rd-rdate {
+  font-size: 0.7rem; font-weight: 700; color: var(--rd-muted);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.rd-pill-more {
+  font-size: 0.7rem; font-weight: 700; color: var(--rd-primary);
+  text-align: center; padding: 6px 0; cursor: pointer;
+  background: transparent; border: 0; font-family: inherit;
+  border-radius: 4px;
+}
+.rd-pill-more:hover { background: var(--rd-bg); color: var(--rd-accent); }
+.rd-pill.is-hidden-more { display: none; }
+.rd-empty {
+  font-size: 0.75rem; font-style: italic; color: var(--rd-muted);
+  text-align: center; padding: 10px;
+  border: 1px dashed var(--rd-border); border-radius: 6px;
+}
+
+/* Footer with km stats */
+.rd-foot {
+  margin-top: 12px; padding-top: 10px;
+  border-top: 1px solid var(--rd-border);
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 8px; align-items: center;
+}
+.rd-stat-block { min-width: 0; }
+.rd-stat-num {
+  font-size: 1.05rem; font-weight: 800; color: var(--rd-primary);
+  line-height: 1; font-variant-numeric: tabular-nums;
+}
+.rd-stat-num .rd-stat-unit {
+  font-size: 0.62rem; color: var(--rd-muted); font-weight: 700;
+  margin-left: 2px;
+}
+.rd-stat-lbl {
+  font-size: 0.58rem; font-weight: 700; color: var(--rd-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin-top: 3px;
+}
+.rd-empty-state {
+  padding: 60px 20px; text-align: center; color: var(--rd-muted);
+  background: var(--rd-card); border: 1px dashed var(--rd-border);
+  border-radius: 12px;
+}
+
+@media (max-width: 600px) {
+  .rd-page { padding: 16px 0 28px; }
+  .rd-wrap { padding: 0 14px; }
+  .rd-grid { grid-template-columns: 1fr; }
+  .rd-card { padding: 14px; }
+  .rd-toolbar { padding: 10px; gap: 8px; }
+  .rd-search { max-width: none; flex-basis: 100%; order: 99; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rd-page rd">
+  <div class="rd-wrap">
+
+    {% set sr_year_eff   = sr_year or (season.name[:4]|int + 1) %}
+    {% set pbp_year_eff  = pbp_year or (sr_year_eff + 1) %}
+
+    {# ===== HERO ===== #}
+    <header class="rd-hero">
+      <div class="rd-eyebrow">Team Asha · Roster</div>
+      <h1 class="rd-h1">Who&rsquo;s riding what</h1>
+      <p class="rd-sub">{{ riders|length }} riders &middot; tracking SR {{ sr_year_eff }} &amp; PBP {{ pbp_year_eff }} qualification &middot; <a href="{{ url_for('riders.career_leaderboard') }}" style="color:var(--rd-primary);font-weight:600;text-decoration:underline;">Career leaderboard &rarr;</a></p>
+    </header>
+
+    {# ===== TOOLBAR ===== #}
+    <div class="rd-toolbar" role="toolbar" aria-label="Filter riders">
+      <input type="search" class="rd-search" data-rd-search
+             placeholder="Search rider, RUSA #, brevet…" aria-label="Search riders" />
+    </div>
+
+    {# ===== Helper macros ===== #}
+    {% macro dist_class(km) -%}
+      {%- if km is none -%}d200
+      {%- elif km <= 220 -%}d200
+      {%- elif km <= 320 -%}d300
+      {%- elif km <= 450 -%}d400
+      {%- elif km <= 700 -%}d600
+      {%- elif km <= 1100 -%}d1000
+      {%- else -%}d1200
+      {%- endif -%}
+    {%- endmacro %}
+
+    {% macro rider_card(r) %}
+      {% set going_count = (r.upcoming or [])|selectattr('status', 'equalto', 'GOING')|list|length %}
+      {% set sr_done = ([r.sr_200, r.sr_300, r.sr_400, r.sr_600]|select|list|length) %}
+      {% set sr_complete = (r.sr_200 and r.sr_300 and r.sr_400 and r.sr_600) %}
+      {% set hue = ((r.rusa_id or 0)|int) % 360 %}
+
+      <a class="rd-card"
+         href="{{ url_for('riders.rider_profile', rusa_id=r.rusa_id) }}"
+         data-name="{{ (r.first_name ~ ' ' ~ r.last_name)|lower }}"
+         data-rusa="{{ r.rusa_id or '' }}"
+         data-search="{{ (r.upcoming or [])|map(attribute='name')|join(' ')|lower }}">
+
+        {# ----- Head: avatar / name+meta / SR ----- #}
+        <div class="rd-head">
+          {% if r.photo_filename %}
+            <span class="rd-avatar"
+                  style="background-image:url('{{ url_for('static', filename='riders/' ~ r.photo_filename) }}');"></span>
+          {% else %}
+            <span class="rd-avatar"
+                  style="background:hsl({{ hue }},45%,88%);color:hsl({{ hue }},50%,28%);">
+              {{ (r.first_name or '?')[0] }}{{ (r.last_name or '')[0] }}
+            </span>
+          {% endif %}
+          <div style="flex:1;min-width:0;">
+            <div class="rd-name">{{ r.first_name }} {{ r.last_name }}</div>
+            <div class="rd-sub-meta">
+              {% if r.is_pbp_ancien %}<span class="rd-pbp-tag" title="PBP Ancien — finished Paris-Brest-Paris">PBP Ancien</span>{% endif %}
+              {{ r.season_rides or 0 }} done &middot;
+              {{ going_count }} planned
+              {% if r.rusa_id %}&middot; RUSA #{{ r.rusa_id }}{% endif %}
+            </div>
+          </div>
+          <div class="rd-sr" title="SR series 200/300/400/600">
+            <div class="rd-sr-bars">
+              {% for d, key in [(200,'sr_200'),(300,'sr_300'),(400,'sr_400'),(600,'sr_600')] %}
+                {% set n = r[key] or 0 %}
+                <span class="rd-sr-bar {% if n %}is-{{ d }}{% endif %}"
+                      title="{{ d }}K {% if n %}× {{ n }} completed{% else %}— not yet{% endif %}">{% if n > 1 %}{{ n }}{% endif %}</span>
+              {% endfor %}
+            </div>
+            <span class="rd-sr-label {% if sr_complete %}is-sr{% endif %}">
+              {%- if sr_complete %}SR{% else %}SR {{ sr_done }}/4{% endif -%}
+            </span>
+          </div>
+          {% if r.eddington and r.eddington.miles %}
+          {% set edd = r.eddington %}
+          {% set e = edd.miles %}
+          {% set next_e = edd.next_target or (e + 1) %}
+          {% set days_completed = edd.days_completed %}
+          {% set days_needed = edd.days_needed %}
+          <div class="rd-edd-head" tabindex="0">
+            <span class="rd-edd-head-num">{{ e }}</span>
+            <span class="rd-edd-head-lbl">Eddington</span>
+            <div class="rd-edd-tip" role="tooltip">
+              <div class="rd-edd-tip-h">Eddington Number</div>
+              {{ e }}+ miles on <span class="rd-edd-tip-num">{{ e }}+</span> different days.
+              {% if days_completed is not none %}
+              <div class="rd-edd-tip-next">
+                Next milestone: <strong>E{{ next_e }}</strong> &mdash;
+                {% if days_needed and days_needed > 0 -%}
+                  <strong>{{ days_completed }}</strong> / {{ next_e }} days &middot;
+                  <strong>{{ days_needed }}</strong> more day{{ '' if days_needed == 1 else 's' }} of <strong>{{ next_e }}+&nbsp;mi</strong> needed
+                {%- else -%}
+                  ready to advance once recorded
+                {%- endif -%}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+
+        {# ----- Upcoming brevets ----- #}
+        <div class="rd-track-h">
+          <span>Upcoming</span>
+          <span class="rd-track-h-r">
+            {%- if r.upcoming %}{{ r.upcoming|length }} signed up{% else %}&mdash;{% endif -%}
+          </span>
+        </div>
+        {% if r.upcoming %}
+          <div class="rd-upcoming" data-rd-upcoming>
+            {% for s in r.upcoming %}
+              {% set km = s.distance_km or 0 %}
+              {% set st = (s.status or '')|upper %}
+              {% set dc = dist_class(km) %}
+              <span class="rd-pill {% if loop.index0 >= 5 %}is-hidden-more{% endif %}
+                           {%- if st == 'GOING' %} is-going {{ dc }}
+                           {%- elif st == 'MAYBE' %} is-maybe
+                           {%- else %} is-interested{% endif %}"
+                    title="{{ s.name }}{% if st %} — {{ st|capitalize }}{% endif %}">
+                <span class="rd-km {{ dc }}">{{ km }}k</span>
+                <span class="rd-rname">{{ s.name }}</span>
+                <span class="rd-rdate">
+                  {%- if s.date %}{{ s.date.strftime('%b %d') if s.date.strftime is defined else s.date }}{% endif -%}
+                </span>
+              </span>
+            {% endfor %}
+            {% if r.upcoming|length > 5 %}
+              <button type="button" class="rd-pill-more" data-rd-more="{{ r.upcoming|length - 5 }}">
+                + {{ r.upcoming|length - 5 }} more
+              </button>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="rd-empty">No upcoming brevets signed up</div>
+        {% endif %}
+
+        {# ----- Footer: season km / career km ----- #}
+        <div class="rd-foot">
+          <div class="rd-stat-block">
+            <div class="rd-stat-num">{{ (r.season_kms or 0)|int|commafy }}<span class="rd-stat-unit">km</span></div>
+            <div class="rd-stat-lbl">Season &middot; {{ r.season_rides or 0 }} ride{{ '' if r.season_rides == 1 else 's' }}</div>
+          </div>
+          <div class="rd-stat-block">
+            <div class="rd-stat-num">{{ (r.total_kms or 0)|int|commafy }}<span class="rd-stat-unit">km</span></div>
+            <div class="rd-stat-lbl">Career &middot; {{ r.total_rides or 0 }} ride{{ '' if r.total_rides == 1 else 's' }}</div>
+          </div>
+        </div>
+      </a>
+    {% endmacro %}
+
+    {# ===== Sectioning ===== #}
+    {% set active_riders   = riders|selectattr('season_rides', 'gt', 0)|list %}
+    {% set planning_riders = riders|rejectattr('season_rides', 'gt', 0)|selectattr('upcoming')|list %}
+    {% set past_riders     = riders|rejectattr('season_rides', 'gt', 0)|rejectattr('upcoming')|list %}
+
+    {% if active_riders %}
+      <div class="rd-section-h">
+        <span class="rd-section-title">Active &middot; {{ sr_year_eff }} season</span>
+        <span class="rd-section-count">({{ active_riders|length }})</span>
+      </div>
+      <div class="rd-grid" data-rd-grid>
+        {% for r in active_riders|sort(attribute='first_name') %}{{ rider_card(r) }}{% endfor %}
+      </div>
+    {% endif %}
+
+    {% if planning_riders %}
+      <div class="rd-section-h">
+        <span class="rd-section-title">Signed up &middot; not yet ridden this season</span>
+        <span class="rd-section-count">({{ planning_riders|length }})</span>
+      </div>
+      <div class="rd-grid" data-rd-grid>
+        {% for r in planning_riders|sort(attribute='first_name') %}{{ rider_card(r) }}{% endfor %}
+      </div>
+    {% endif %}
+
+    {% if past_riders %}
+      <details class="rd-collapsible">
+        <summary class="rd-section-h rd-section-summary">
+          <span class="rd-section-title">Past brevet riders</span>
+          <span class="rd-section-count">({{ past_riders|length }})</span>
+          <span class="rd-section-chevron" aria-hidden="true">&#x25BE;</span>
+        </summary>
+        <div class="rd-grid" data-rd-grid>
+          {% for r in past_riders|sort(attribute='first_name') %}{{ rider_card(r) }}{% endfor %}
+        </div>
+      </details>
+    {% endif %}
+
+    {% if not riders %}
+      <div class="rd-empty-state">No riders found.</div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var search = document.querySelector('[data-rd-search]');
+  var grids  = document.querySelectorAll('[data-rd-grid]');
+
+  /* ---- Search filter ---- */
+  function applyFilter() {
+    var q = (search.value || '').trim().toLowerCase();
+    grids.forEach(function (grid) {
+      var visible = 0;
+      grid.querySelectorAll('.rd-card').forEach(function (c) {
+        var hay = (c.dataset.name || '') + ' ' +
+                  (c.dataset.rusa || '') + ' ' +
+                  (c.dataset.search || '');
+        var ok = !q || hay.indexOf(q) !== -1;
+        c.classList.toggle('is-hidden', !ok);
+        if (ok) visible++;
+      });
+      // Past-riders section is wrapped in <details> so we toggle the
+      // whole element. For other sections, toggle just the header.
+      var details = grid.closest('details.rd-collapsible');
+      if (details) {
+        details.style.display = visible ? '' : 'none';
+        if (q) details.open = visible > 0;
+      } else {
+        var header = grid.previousElementSibling;
+        if (header && header.classList.contains('rd-section-h')) {
+          header.style.display = visible ? '' : 'none';
+        }
+      }
+    });
+  }
+  if (search) search.addEventListener('input', applyFilter);
+
+  /* ---- "+ N more" expand toggle (also stop it bubbling to the card link) ---- */
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-rd-more]');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var box = btn.closest('[data-rd-upcoming]');
+    if (!box) return;
+    var hidden = box.querySelectorAll('.rd-pill.is-hidden-more');
+    if (hidden.length) {
+      hidden.forEach(function (p) { p.classList.remove('is-hidden-more'); });
+      btn.style.display = 'none';
+    }
+  });
+})();
+</script>
+{% endblock %}
+
+{#
+═══════════════════════════════════════════════════════════════════════════════
+  REQUIRED CHANGES TO routes/riders.py
+═══════════════════════════════════════════════════════════════════════════════
+
+  Replace the existing riders_directory() route. It augments each rider with
+  (a) upcoming signups (GOING / MAYBE / INTERESTED, future-dated), and (b) a
+  12-element r12_months array — count of >=200 km finished brevets in each of
+  the last 12 rolling months, index 0 = current month, 11 = 11 months ago.
+
+    @riders_bp.route('/riders/directory')
+    def riders_directory():
+        from models import (
+            get_all_riders_with_career_stats, get_current_season, _execute,
+        )
+        from collections import defaultdict
+        from datetime import date as _date
+
+        current_season = get_current_season()
+        season_id = current_season['id'] if current_season else None
+        riders = get_all_riders_with_career_stats(current_season_id=season_id)
+
+        rider_ids = [r['id'] for r in riders]
+
+        # ---- Upcoming signups (one batched query) ----
+        upcoming_by_rider = defaultdict(list)
+        if rider_ids:
+            placeholders = ','.join(['%s'] * len(rider_ids))
+            rows = _execute(f"""
+                SELECT rr.rider_id, rr.status,
+                       ri.id AS ride_id,
+                       COALESCE(rp.name, ri.name) AS name,
+                       ri.date,
+                       COALESCE(rp.distance_km, ri.distance_km) AS distance_km,
+                       rp.slug AS plan_slug
+                FROM rider_ride rr
+                JOIN ride ri ON ri.id = rr.ride_id
+                LEFT JOIN ride_plan rp ON rp.id = ri.ride_plan_id
+                WHERE rr.rider_id IN ({placeholders})
+                  AND rr.status IN ('GOING','MAYBE','INTERESTED')
+                  AND ri.date >= CURRENT_DATE
+                ORDER BY ri.date ASC
+            """, tuple(rider_ids)).fetchall()
+            for row in rows:
+                upcoming_by_rider[row['rider_id']].append(dict(row))
+
+        # ---- R-12: count of >=200k finished brevets per rolling month ----
+        # We pull all FINISHED rides >= 200km in the past 12 months, then
+        # bucket them by (year, month) per rider on the Python side.
+        r12_by_rider = defaultdict(lambda: [0]*12)
+        if rider_ids:
+            placeholders = ','.join(['%s'] * len(rider_ids))
+            rows = _execute(f"""
+                SELECT rr.rider_id, ri.date,
+                       COALESCE(rp.distance_km, ri.distance_km) AS distance_km
+                FROM rider_ride rr
+                JOIN ride ri ON ri.id = rr.ride_id
+                LEFT JOIN ride_plan rp ON rp.id = ri.ride_plan_id
+                WHERE rr.rider_id IN ({placeholders})
+                  AND rr.status = 'FINISHED'
+                  AND COALESCE(rp.distance_km, ri.distance_km) >= 200
+                  AND ri.date >= (CURRENT_DATE - INTERVAL '13 months')
+            """, tuple(rider_ids)).fetchall()
+
+            today = _date.today()
+            cur_y, cur_m = today.year, today.month
+            for row in rows:
+                d = row['date']
+                # months ago (0 = current month)
+                idx = (cur_y - d.year) * 12 + (cur_m - d.month)
+                if 0 <= idx < 12:
+                    r12_by_rider[row['rider_id']][idx] += 1
+
+        # ---- Stitch together ----
+        riders_out = []
+        for r in riders:
+            d = dict(r)
+            d['upcoming']   = upcoming_by_rider.get(d['id'], [])
+            d['r12_months'] = r12_by_rider.get(d['id'], [0]*12)
+            # Eddington next-milestone progress: how many of the rider's career
+            # rides are already at or above (E+1) miles. The template uses this
+            # to render "X more rides of (E+1)+ mi to advance".
+            # If `total_rides_by_distance` (a list/dict of mile-counts) isn't
+            # available, compute it server-side once. Cheapest path:
+            #
+            #   SELECT COUNT(*) FROM rider_ride rr JOIN ride ri ON ri.id=rr.ride_id
+            #   WHERE rr.rider_id=%s AND rr.status='FINISHED'
+            #     AND COALESCE(rp.distance_km, ri.distance_km) * 0.621371 >= %s
+            #
+            # ...with %s = (eddington_number_miles + 1). Or run one batched
+            # query that returns (rider_id, count_at_e_plus_1) and merge.
+            d['eddington_next_count'] = r.get('eddington_next_count', 0)
+            riders_out.append(d)
+
+        # Default sort by first name; the template re-sorts client-side too.
+        riders_out.sort(key=lambda x: ((x.get('first_name') or '').lower(),
+                                       (x.get('last_name')  or '').lower()))
+
+        return render_template(
+            'riders_directory.html',
+            riders=riders_out,
+            season=current_season,
+            sr_year=2026,
+            pbp_year=2027,
+        )
+
+  ─── ALSO INCLUDE PLANNING-ONLY RIDERS (optional but recommended) ───────────────
+
+  get_all_riders_with_career_stats() uses a HAVING clause that excludes anyone
+  who has never finished a brevet. To show riders who have signed up for 2026
+  but haven't finished anything yet, drop that HAVING clause OR fetch signed-
+  up-only riders separately and merge with the main list.
+═══════════════════════════════════════════════════════════════════════════════
+#}

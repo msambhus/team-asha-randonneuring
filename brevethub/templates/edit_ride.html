@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Edit Ride: {{ ride.name }} - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+<h1>Edit Ride Details</h1>
+<p>{{ ride.name }} &mdash; {{ ride.date }} &mdash; {{ ride.distance_km }} km</p>
+</div>
+<div class="container section" style="max-width:640px;">
+
+<form method="post">
+
+<div style="margin-bottom:16px;">
+<label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.9rem;">Ride Plan</label>
+<select name="ride_plan_id" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;">
+<option value="">-- None --</option>
+{% for plan in ride_plans %}
+<option value="{{ plan.id }}" {{ 'selected' if ride.ride_plan_id == plan.id }}>{{ plan.name }}</option>
+{% endfor %}
+</select>
+<p style="font-size:0.78rem;color:var(--text-light);margin:4px 0 0;">Links this ride to a route plan for Strava analysis comparison.</p>
+</div>
+
+<div style="margin-bottom:16px;">
+<label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.9rem;">RWGPS Route URL</label>
+<input type="url" name="rwgps_url" value="{{ ride.rwgps_url or '' }}" placeholder="https://ridewithgps.com/routes/12345" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;">
+</div>
+
+<div style="margin-bottom:16px;">
+<label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.9rem;">Start Time</label>
+<input type="text" disabled value="{{ ride.plan_start_time or '' }}" placeholder="Set on ride plan" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;background:#f1f5f9;color:var(--text-light);">
+<span style="font-size:0.75rem;color:var(--text-light);">Edit start time on the ride plan</span>
+</div>
+
+<div style="margin-bottom:16px;">
+<label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.9rem;">Start Location</label>
+<input type="text" name="start_location" value="{{ ride.start_location or '' }}" placeholder="e.g. Healdsburg Community Center" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;">
+</div>
+
+<div style="margin-bottom:16px;">
+<label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.9rem;">Time Limit (hours)</label>
+<input type="number" name="time_limit_hours" value="{{ ride.time_limit_hours or '' }}" step="0.5" placeholder="e.g. 13.5" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;">
+</div>
+
+<div style="display:flex;gap:15px;margin-top:24px;">
+<button type="submit" class="btn btn-primary">Save Changes</button>
+<a href="javascript:history.back()" class="btn" style="background:var(--text-light);color:#fff;">Cancel</a>
+</div>
+
+</form>
+</div>
+{% endblock %}

@@ -1,0 +1,1085 @@
+{% extends "base.html" %}
+{% block title %}{{ plan.name }} (v2 preview) - Team Asha Randonneuring{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='ride-plan-v2.css') }}">
+{# Weather tab embeds the /weather page UI — pull in its CSS + Mapbox assets #}
+{% include 'partials/_weather_head.html' %}
+{% endblock %}
+
+{# ===== Macros ===== #}
+
+{% macro gauge(value, max, label, sub='', color='#1a365d', precision=0) %}
+{% set pct = (value / max) if max and value is not none else 0 %}
+{% set pct = 1 if pct > 1 else (0 if pct < 0 else pct) %}
+{% set r = 24 %}
+{% set c = 150.7964 %}{# 2 * pi * 24, rounded #}
+<div class="rpv2-gauge">
+    <svg width="58" height="58" viewBox="0 0 58 58" aria-hidden="true">
+        <circle cx="29" cy="29" r="24" fill="none" stroke="#e2e8f0" stroke-width="4.5"></circle>
+        <circle cx="29" cy="29" r="24" fill="none" stroke="{{ color }}" stroke-width="4.5"
+                stroke-dasharray="{{ c }}" stroke-dashoffset="{{ (c * (1 - pct))|round(2) }}"
+                stroke-linecap="round" transform="rotate(-90 29 29)"></circle>
+        <text x="29" y="33" text-anchor="middle" fill="#1a365d" font-size="12" font-weight="800">
+            {%- if precision > 0 -%}{{ "%.1f"|format(value or 0) }}{%- else -%}{{ (value or 0)|int }}{%- endif -%}
+        </text>
+    </svg>
+    <div class="rpv2-gauge-lbl">{{ label }}</div>
+    {% if sub %}<div class="rpv2-gauge-sub">{{ sub }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% set STOP_TYPES = {
+    'start':    {'label': 'Start',    'glyph': '🚩', 'color': '#16a34a'},
+    'control':  {'label': 'Control',  'glyph': '◆',  'color': '#1d4ed8'},
+    'rest':     {'label': 'Rest',     'glyph': '☕', 'color': '#ea580c'},
+    'waypoint': {'label': 'Waypoint', 'glyph': '•',  'color': '#64748b'},
+    'finish':   {'label': 'Finish',   'glyph': '🏁', 'color': '#dc2626'},
+} %}
+
+{% block content %}
+<div class="rpv2">
+
+    {# ===== Tab bar ===== #}
+    <nav class="rpv2-tabs" role="tablist" aria-label="Ride plan sections">
+        {% set tabs = [
+            ('plan', 'Plan', ''),
+            ('weather', 'Weather', ''),
+        ] %}
+        {% for key, label, pill in tabs %}
+        <button type="button" class="rpv2-tab {% if (active_tab or 'plan') == key %}is-active{% endif %}"
+                role="tab" id="rpv2-tab-{{ key }}"
+                aria-selected="{{ 'true' if (active_tab or 'plan') == key else 'false' }}"
+                aria-controls="rpv2-panel-{{ key }}"
+                data-tab="{{ key }}">
+            {{ label }}{% if pill %}<span class="rpv2-tab-pill">{{ pill }}</span>{% endif %}
+        </button>
+        {% endfor %}
+    </nav>
+
+    {# ===== Custom plan banner ===== #}
+    {% if viewing_custom and custom_plan_for_view %}
+    <div class="rpv2-custom-banner">
+        <div>
+            <strong>
+                {% if is_custom_owner %}Viewing your custom plan{% else %}Viewing {{ custom_plan_owner_name or 'another rider' }}'s plan{% endif %}{% if custom_plan_for_view.name %}: {{ custom_plan_for_view.name }}{% endif %}
+            </strong>
+            <div class="rpv2-custom-banner-sub">Times and breaks reflect this plan's overrides.</div>
+        </div>
+        <div class="rpv2-custom-banner-actions">
+            <a class="rpv2-custom-banner-link" href="{{ url_for('riders.ride_plan_detail', slug=plan.slug) }}">← Base plan</a>
+            {% if is_custom_owner %}
+            {# Publish toggle: share this plan to the Community list. #}
+            <button type="button" class="rpv2-custom-banner-link rpv2-public-toggle {{ 'is-public' if custom_plan_for_view.is_public else '' }}"
+                    id="rpv2-public-toggle"
+                    data-public="{{ '1' if custom_plan_for_view.is_public else '0' }}"
+                    aria-pressed="{{ 'true' if custom_plan_for_view.is_public else 'false' }}">
+                {% if custom_plan_for_view.is_public %}● Public{% else %}○ Make public{% endif %}
+            </button>
+            <a class="rpv2-custom-banner-link primary" href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}">Edit</a>
+            {% endif %}
+        </div>
+    </div>
+    {% elif user_custom_plan_v2 %}
+    {# Viewing the base plan but the rider has their own custom plan — give them
+       a way back to it. #}
+    <div class="rpv2-custom-banner rpv2-custom-banner-base">
+        <div>
+            <strong>You have a custom plan for this route{% if user_custom_plan_v2.name %}: {{ user_custom_plan_v2.name|clean_name }}{% endif %}</strong>
+            <div class="rpv2-custom-banner-sub">You're viewing the base team plan.</div>
+        </div>
+        <div class="rpv2-custom-banner-actions">
+            <a class="rpv2-custom-banner-link primary" href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}">View your plan →</a>
+            <a class="rpv2-custom-banner-link" href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}">Edit</a>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ===== Hero ===== #}
+    {% set going_count = signups | selectattr('status', 'equalto', 'GOING') | list | length if signups else 0 %}
+    {% set start_dt_str = (plan.linked_ride_date.isoformat() if plan.linked_ride_date else '') %}
+    <header class="rpv2-hero">
+        <div>
+            <div class="rpv2-eyebrow">
+                {% if plan.distance_km %}{{ plan.distance_km }}K Brevet{% endif %}
+                {%- if start_dt_str %} · {{ start_dt_str }}{% endif %}
+                {%- if plan.start_time %} · Start {{ plan.start_time }}{% endif %}
+            </div>
+            <h1 class="rpv2-title">
+                {% if viewing_custom and custom_plan_for_view and custom_plan_for_view.name %}{{ custom_plan_for_view.name }}{% else %}{{ plan.name }}{% endif %}
+                {% if is_admin and not viewing_custom %}
+                <a class="rpv2-admin-edit" href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}" title="Edit base plan (admin)">✎ Edit</a>
+                <a class="rpv2-admin-edit" href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}" title="Edit plan info (admin)">⚙ Info</a>
+                {% endif %}
+            </h1>
+            <div class="rpv2-sub">
+                {{ "%.0f"|format(plan.total_distance_miles or 0) }} mi ·
+                {{ "{:,}".format(plan.total_elevation_ft or 0) }} ft
+                {%- if plan.cutoff_hours %} · ACP cutoff {{ plan.cutoff_hours }}h{% endif %}
+                {%- if going_count %} · {{ going_count }} rider{{ '' if going_count == 1 else 's' }} going{% endif %}
+            </div>
+        </div>
+        <div class="rpv2-gauges">
+            {{ gauge(plan.total_distance_miles, 400, 'Miles', color='#1d4ed8') }}
+            {{ gauge((plan.total_elevation_ft or 0) / 1000, 20, 'K ft', color='#ea580c') }}
+            {{ gauge(weighted_difficulty or 0, 5, 'Difficulty', color='#dc2626', precision=1) }}
+            {{ gauge(avg_elapsed_speed or 0, 18, 'Avg mph', color='#16a34a', precision=1) }}
+            {# Controls + total stops #}
+            {% set hero_controls = stops_v2 | selectattr('type', 'equalto', 'control') | list | length %}
+            <div class="rpv2-gauge rpv2-gauge-stat">
+                <div class="rpv2-gauge-bignum">{{ hero_controls }}</div>
+                <div class="rpv2-gauge-lbl">Controls</div>
+                <div class="rpv2-gauge-sub">{{ stops_v2|length }} stops</div>
+            </div>
+            {# Headwind segment count from the forecast #}
+            {% set hw_segs = weather_summary.headwind_segs or 0 %}
+            <div class="rpv2-gauge rpv2-gauge-stat">
+                <div class="rpv2-gauge-bignum {{ 'bad' if hw_segs else '' }}">{{ hw_segs }}</div>
+                <div class="rpv2-gauge-lbl">Headwind</div>
+                <div class="rpv2-gauge-sub">segments</div>
+            </div>
+            {# Total elapsed (with moving time as the sub) #}
+            <div class="rpv2-gauge rpv2-gauge-stat">
+                <div class="rpv2-gauge-bignum">{{ (total_time // 60)|int }}h{{ '%02d'|format((total_time % 60)|int) }}</div>
+                <div class="rpv2-gauge-lbl">Elapsed</div>
+                <div class="rpv2-gauge-sub">{{ (total_moving_time // 60)|int }}h{{ '%02d'|format((total_moving_time % 60)|int) }} moving</div>
+            </div>
+            {% set bank_total_min = stops_v2[-1].bank_min if stops_v2 else 0 %}
+            {% set bank_sign = '+' if bank_total_min >= 0 else '-' %}
+            {% set bank_abs = bank_total_min if bank_total_min >= 0 else -bank_total_min %}
+            <div class="rpv2-gauge rpv2-gauge-stat">
+                <div class="rpv2-gauge-bignum {{ 'good' if bank_total_min >= 0 else 'bad' }}">
+                    {{ bank_sign }}{{ (bank_abs // 60)|int }}:{{ '%02d'|format((bank_abs % 60)|int) }}
+                </div>
+                <div class="rpv2-gauge-lbl">Time bank</div>
+                <div class="rpv2-gauge-sub">{% if plan.cutoff_hours %}cutoff {{ plan.cutoff_hours }}h{% endif %}</div>
+            </div>
+        </div>
+    </header>
+
+    {# ===== Plan tab ===== #}
+    <section class="rpv2-panel {% if (active_tab or 'plan') == 'plan' %}is-active{% endif %}"
+             id="rpv2-panel-plan" role="tabpanel" aria-labelledby="rpv2-tab-plan" data-panel="plan">
+        <div class="rpv2-grid">
+            <div class="rpv2-main">
+
+                {# Journey SVG #}
+                <div class="rpv2-card">
+                    <div class="rpv2-card-h">
+                        <div>
+                            <div class="rpv2-card-title">Journey</div>
+                            <div class="rpv2-card-sub">Hover or click a stop — table below stays in sync</div>
+                        </div>
+                        <div class="rpv2-legend">
+                            {% for key, t in STOP_TYPES.items() %}
+                            <span class="rpv2-leg"><i style="background:{{ t.color }};"></i>{{ t.label }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% with profile=elevation_profile, markers=stop_markers, big=True %}
+                    {% include 'partials/_elevation_profile.html' %}
+                    {% endwith %}
+                </div>
+
+                {# Itinerary #}
+                {% set control_count = stops_v2 | selectattr('type', 'equalto', 'control') | list | length %}
+                {% set halt_stop = (stops_v2 | selectattr('is_halt', 'equalto', true) | first) %}
+                <div class="rpv2-card rpv2-card-tight">
+                    <div class="rpv2-card-h">
+                        <div class="rpv2-card-title">Itinerary · {{ stops_v2|length }} stops</div>
+                        <div class="rpv2-card-sub">
+                            {{ control_count }} control{{ '' if control_count == 1 else 's' }}{% if halt_stop %} · 1 night halt{% endif %}
+                        </div>
+                    </div>
+                    <div class="rpv2-table-scroll">
+                    <table class="rpv2-table rpv2-table-fixed" id="rpv2-itinerary">
+                        {# Fixed layout: numeric columns get tight content widths;
+                           the Stop column (no width) absorbs all remaining space. #}
+                        <colgroup>
+                            <col class="rpv2-cg-num"><col class="rpv2-cg-stop">
+                            <col class="rpv2-cg-n"><col class="rpv2-cg-n">
+                            <col class="rpv2-cg-climb"><col class="rpv2-cg-pace">
+                            <col class="rpv2-cg-n"><col class="rpv2-cg-n">
+                            <col class="rpv2-cg-bank"><col class="rpv2-cg-wind">
+                            <col class="rpv2-cg-tuf">
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th class="rpv2-col-num">#</th><th class="rpv2-stophead">Stop</th>
+                                <th class="r rpv2-grp">Seg</th><th class="r">Cumul</th>
+                                <th class="r rpv2-grp">Climb</th><th class="r">Pace</th>
+                                <th class="r">Elapsed</th><th class="r rpv2-grp">ETA</th>
+                                <th class="r">Bank</th><th class="r rpv2-grp">Wind</th>
+                                <th class="r rpv2-col-tough">Tuf<span class="rpv2-help" tabindex="0" role="img" aria-label="What the toughness score means">?<span class="rpv2-help-bub">
+                                    <b>Toughness (0–10)</b> — how hard each segment is, combining:
+                                    <br>• <b>Climbing</b> (ft per mile)
+                                    <br>• <b>Headwind</b> — counted as the climb it physically equals (≈12 ft/mi per mph), ×1.25 for the mental drain of a relentless headwind (≈15 ft/mi per mph applied)
+                                    <br>• <b>Temperature</b> — 0 in a ~50–68°F comfort band; rising penalty in heat (the bigger effect) and a smaller one in cold
+                                    <span class="rpv2-help-tiers"><i style="background:#16a34a;"></i>0–3 easy <i style="background:#ca8a04;"></i>3–5 moderate <i style="background:#ea580c;"></i>5–7 hard <i style="background:#dc2626;"></i>7+ brutal</span>
+                                </span></span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for s in stops_v2 %}
+                            {% set t = STOP_TYPES[s.type] %}
+                            {% set bank_good = s.bank_min >= 0 %}
+                            {% set is_fuel_override = s.is_fuel and s.type not in ('start', 'finish') %}
+                            {% set dot_color = '#ea580c' if is_fuel_override else t.color %}
+                            {% set dot_glyph = '☕' if is_fuel_override else t.glyph %}
+                            <tr data-stop-i="{{ s.i }}" class="{{ 'is-halt' if s.is_halt else '' }}">
+                                <td class="rpv2-col-num">
+                                    <span class="rpv2-stopdot" style="background:{{ dot_color }};">{{ dot_glyph }}</span>
+                                </td>
+                                {# Whole-cell tooltip: hovering anywhere in the Stop cell shows full name + note #}
+                                <td class="rpv2-stopcell" title="{{ s.name|clean_name }}{% if s.note %} — {{ s.note|clean_name }}{% endif %}">
+                                    <div class="rpv2-stoptop">
+                                        <span class="rpv2-name">{{ s.name|clean_name }}</span>
+                                        <span data-cell="break">{% if s.is_halt %}<span class="rpv2-break rpv2-break-sm rpv2-halt-pill">🌙 {{ (s.break_min // 60) }}h</span>{% elif s.break_min > 0 %}<span class="rpv2-break rpv2-break-sm">{{ s.break_min }}m</span>{% endif %}</span>
+                                    </div>
+                                    {% if s.note %}<div class="rpv2-note">{{ s.note|clean_name }}</div>{% endif %}
+                                </td>
+                                {# Seg / Cumul distance (miles) — Distance group #}
+                                <td class="r mono rpv2-grp">{% if s.seg_mi > 0 %}{{ "%.1f"|format(s.seg_mi) }}{% else %}—{% endif %}</td>
+                                <td class="r mono">{{ "%.0f"|format(s.cumul_mi) }}</td>
+                                {# Climb: ft/mile, colored by gradient tier — Effort group #}
+                                <td class="r mono rpv2-grp">
+                                    {% if s.seg_mi > 0 %}<span class="rpv2-fpm {{ s.fpm_class }}">{{ s.fpm }}</span><small>/mi</small>{% else %}—{% endif %}
+                                </td>
+                                {# Pace: segment moving time · implied speed #}
+                                <td class="r mono rpv2-pace" data-cell="pace">
+                                    {% if s.seg_time_min > 0 %}
+                                        {%- if s.seg_time_min >= 60 -%}{{ s.seg_time_min // 60 }}h{{ '%02d'|format(s.seg_time_min % 60) }}{%- else -%}{{ s.seg_time_min }}m{%- endif -%}
+                                        {%- if s.seg_speed_known %}<small>· {{ "%.1f"|format(s.seg_speed) }}</small>{% endif %}
+                                    {% else %}—{% endif %}
+                                </td>
+                                {# Elapsed: cumulative time since start (Hh MM) #}
+                                <td class="r mono" data-cell="elapsed">{{ s.elapsed }}</td>
+                                {# ETA / Bank — Schedule group #}
+                                <td class="r mono rpv2-grp" data-cell="eta">{{ s.eta }}</td>
+                                <td class="r mono {{ 'good' if bank_good else 'bad' }}" data-cell="bank">{{ s.bank }}</td>
+                                {# Wind: colored direction arrow + mph (no word) — Conditions group #}
+                                <td class="r rpv2-grp">
+                                    {% if s.wind_known %}
+                                    {% set wcolor = '#16a34a' if s.wind_label == 'Tail' else ('#dc2626' if s.wind_label == 'Head' else '#ca8a04') %}
+                                    <span class="rpv2-wind" style="color:{{ wcolor }};" title="{{ s.wind_label }} · {{ s.wind_mph }} mph" aria-label="{{ s.wind_label }}wind {{ s.wind_mph }} mph">
+                                        <span class="rpv2-wind-arrow" style="transform:rotate({{ s.wind_arrow_deg }}deg);">↑</span>{{ s.wind_mph }}
+                                    </span>
+                                    {% else %}
+                                    <span class="rpv2-wind unknown">—</span>
+                                    {% endif %}
+                                </td>
+                                {# Toughness: headwind (weighted higher) + climbing, 0-10, colored #}
+                                <td class="r rpv2-col-tough">
+                                    {% if s.tough_known %}<span class="rpv2-tough {{ s.tough_class }}" title="Toughness {{ "%.1f"|format(s.tough) }}/10 — climbing + headwind + temperature">{{ "%.1f"|format(s.tough) }}</span>{% else %}<span class="rpv2-tough unknown">—</span>{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+
+                {# ===== Choose your pace (inline, was the Strategies tab) ===== #}
+                {# Picking a card re-times the itinerary above + the elevation
+                   overlay tooltips live (see extra_js), and still saves. #}
+                <div class="rpv2-card" id="rpv2-choose-pace">
+                    <div class="rpv2-card-h">
+                        <div>
+                            <div class="rpv2-card-title">Choose your pace</div>
+                            <div class="rpv2-card-sub">Pick a pace — the itinerary above re-times live</div>
+                        </div>
+                    </div>
+                    {% if paces %}
+                    {% if user_custom_plan_v2 and not viewing_custom %}
+                    <a class="rpv2-pc-yours-link" href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}">
+                        ★ You've saved a custom plan{% if user_custom_plan_v2.name %} — {{ user_custom_plan_v2.name|clean_name }}{% endif %} · View it →
+                    </a>
+                    {% endif %}
+                    <div class="rpv2-pc-intro">
+                        <div class="rpv2-pc-eyebrow">{% if viewing_custom %}Your plan vs the team{% else %}3 ways to ride it{% endif %}</div>
+                        <div class="rpv2-pc-sub">
+                            {% if viewing_custom %}Rebaselined to <b>your</b> plan (centre). The real team plan and a {% if paces and paces[0].id == 'team' %}faster{% else %}slower{% endif %} variant are shown for comparison.{% else %}Pick the strategy that fits your goal — the times below are derived from the base plan with adjusted segment speed and night halt.{% endif %}
+                        </div>
+                    </div>
+                    <div class="rpv2-pc-grid">
+                        {% for p in paces %}
+                        {% set is_saved = (saved_pace_id == p.id) and not viewing_custom %}
+                        {% set is_yours = viewing_custom and p.id == 'yours' %}
+                        <div class="rpv2-pc-col {{ 'is-on' if (is_saved or is_yours) else '' }}" data-pace-id="{{ p.id }}"
+                             style="--pc-color:{{ p.color }};">
+                            <div class="rpv2-pc-col-h">
+                                {% if p.recommended %}<span class="rpv2-pc-rec">★ TEAM PLAN</span>{% endif %}
+                                <div class="rpv2-pc-name">{{ p.name }}</div>
+                                <div class="rpv2-pc-summary">{{ p.summary }}</div>
+                            </div>
+                            <div class="rpv2-pc-stats {{ 'rpv2-pc-stats-2' if not p.has_sleep else '' }}">
+                                <div class="rpv2-pc-stat">
+                                    <div class="rpv2-pc-stat-num">{{ p.total }}</div>
+                                    <div class="rpv2-pc-stat-lbl">Total elapsed</div>
+                                </div>
+                                {% if p.has_sleep %}
+                                <div class="rpv2-pc-stat">
+                                    <div class="rpv2-pc-stat-num">{{ p.sleep }}</div>
+                                    <div class="rpv2-pc-stat-lbl">Sleep</div>
+                                </div>
+                                {% endif %}
+                                <div class="rpv2-pc-stat">
+                                    <div class="rpv2-pc-stat-num {{ 'good' if p.bank_good else 'bad' }}">{{ p.bank or '—' }}</div>
+                                    <div class="rpv2-pc-stat-lbl">Time bank</div>
+                                </div>
+                            </div>
+                            <div class="rpv2-pc-stops">
+                                {% for s in p.stops if s.is_key %}
+                                {% set wc = '#16a34a' if s.wind_label == 'Tail' else ('#dc2626' if s.wind_label == 'Head' else '#ca8a04') %}
+                                <div class="rpv2-pc-stop" title="{{ s.name }}">
+                                    <span class="rpv2-pc-stop-top">
+                                        <span class="rpv2-pc-tough {{ s.tough_class if s.tough_known else 'unknown' }}"
+                                              title="{% if s.tough_known %}Toughness tier{% else %}No forecast{% endif %}"></span>
+                                        <span class="rpv2-pc-stop-name">{{ s.name|replace('Open Control #', 'OC#')|replace(', CA', '') }}</span>
+                                        <span class="rpv2-pc-stop-mi">{{ "%.0f"|format(s.cumul_mi) }}mi</span>
+                                        <span class="rpv2-pc-stop-eta">{{ s.eta }}</span>
+                                    </span>
+                                    {# Per-segment signals so riders can see which sections are tough. #}
+                                    <span class="rpv2-pc-stop-meta">
+                                        {%- if s.seg_speed_known %}{{ "%.1f"|format(s.seg_speed) }} mph{% endif -%}
+                                        {%- if s.fpm %} · {{ s.fpm }}/mi{% endif -%}
+                                        {%- if s.wind_known %} · <span class="rpv2-pc-wind" style="color:{{ wc }};"><span class="rpv2-pc-wind-arrow" style="transform:rotate({{ s.wind_arrow_deg }}deg);">↑</span>{{ s.headwind_mph|round|int if s.headwind_mph and s.headwind_mph > 0 else s.wind_label }}</span>{% endif -%}
+                                    </span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="rpv2-pc-risk">⚠ {{ p.risk }}</div>
+                            {# Save flow is for the base view only. When viewing a custom
+                               plan the cards (team / your plan / variant) are comparison-
+                               only — the centre card is already the saved custom plan. #}
+                            {% if viewing_custom %}
+                            {% if is_yours %}<div class="rpv2-pc-btn rpv2-pc-btn-saved" aria-disabled="true">✓ Your custom plan</div>{% endif %}
+                            {% elif save_state == 'logged_out' %}
+                            <a class="rpv2-pc-btn rpv2-pc-btn-link"
+                               href="{{ url_for('auth.login') }}?next={{ url_for('riders.ride_plan_detail', slug=plan.slug) }}">
+                                Sign in to save
+                            </a>
+                            {% elif save_state == 'no_rider' %}
+                            <a class="rpv2-pc-btn rpv2-pc-btn-link" href="{{ url_for('riders.season_riders', season_name='2025-2026') }}" title="Link your rider profile">
+                                Link rider profile to save
+                            </a>
+                            {% else %}
+                            {% if is_saved %}
+                            <button type="button" class="rpv2-pc-btn rpv2-pc-btn-saved" data-pace-pick="{{ p.id }}" disabled>
+                                ✓ Saved as your custom plan
+                            </button>
+                            {% else %}
+                            <button type="button" class="rpv2-pc-btn" data-pace-pick="{{ p.id }}">
+                                {% if saved_pace_id %}Switch to this plan{% else %}Choose this plan{% endif %}
+                            </button>
+                            {% endif %}
+                            {% endif %}
+                            <div class="rpv2-pc-feedback {{ 'ok' if is_saved else '' }}" data-pace-feedback="{{ p.id }}" {% if not is_saved %}hidden{% endif %}>
+                                {% if is_saved %}
+                                Saved. <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}">View</a>
+                                · <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}">Edit</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    {# Community: public custom plans from other riders for this base. #}
+                    {% if public_custom_plans_v2 %}
+                    <div class="rpv2-card" style="margin-top:14px;">
+                        <div class="rpv2-card-h">
+                            <div class="rpv2-card-title">Community plans · {{ public_custom_plans_v2|length }}</div>
+                            <div class="rpv2-card-sub">Public custom plans from other riders</div>
+                        </div>
+                        <div class="rpv2-community">
+                            {% for cp in public_custom_plans_v2 %}
+                            <a class="rpv2-community-row"
+                               href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom', plan=cp.id) }}">
+                                <div>
+                                    <div class="rpv2-community-name">{{ cp.name or 'Custom plan' }}</div>
+                                    <div class="rpv2-community-meta">
+                                        by {{ cp.first_name or 'Anonymous' }}
+                                        {%- if cp.last_name %} {{ cp.last_name[0] }}.{% endif %}
+                                        {%- if cp.avg_moving_speed %} · {{ "%.1f"|format(cp.avg_moving_speed) }} mph{% endif %}
+                                    </div>
+                                </div>
+                                <span class="rpv2-community-arrow">→</span>
+                            </a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <div class="rpv2-coming">
+                        <b>Strategies unavailable</b> — this plan doesn't have enough segment timing data.
+                        Add segment times in the
+                        <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}">base plan editor</a> first.
+                    </div>
+                    {% endif %}
+                </div>
+
+                {# 3-up info row #}
+                <div class="rpv2-trio">
+                    {# Weather #}
+                    <div class="rpv2-card">
+                        <div class="rpv2-card-h"><div class="rpv2-card-title">Weather</div></div>
+                        <div class="rpv2-wx-grid">
+                            <div class="rpv2-wx-cell">
+                                <div class="rpv2-wx-lbl">Temp</div>
+                                <div class="rpv2-wx-val">
+                                    {% if weather_summary.temp_low is not none and weather_summary.temp_high is not none %}
+                                        {{ weather_summary.temp_low }}–{{ weather_summary.temp_high }}°F
+                                    {% else %}—{% endif %}
+                                </div>
+                            </div>
+                            <div class="rpv2-wx-cell">
+                                <div class="rpv2-wx-lbl">Wind</div>
+                                <div class="rpv2-wx-val">
+                                    {% if weather_summary.wind_max %}to {{ weather_summary.wind_max }} mph{% else %}—{% endif %}
+                                </div>
+                                {% if weather_summary.headwind_segs or weather_summary.crosswind_segs %}
+                                <div class="rpv2-wx-sub">
+                                    {%- if weather_summary.headwind_segs -%}
+                                        {{ weather_summary.headwind_segs }} head
+                                    {%- endif -%}
+                                    {%- if weather_summary.headwind_segs and weather_summary.crosswind_segs %} · {% endif -%}
+                                    {%- if weather_summary.crosswind_segs -%}
+                                        {{ weather_summary.crosswind_segs }} cross
+                                    {%- endif -%}
+                                </div>
+                                {% endif %}
+                            </div>
+                            <div class="rpv2-wx-cell">
+                                <div class="rpv2-wx-lbl">Sunrise</div>
+                                <div class="rpv2-wx-val">{{ weather_summary.sunrise or '—' }}</div>
+                            </div>
+                            <div class="rpv2-wx-cell">
+                                <div class="rpv2-wx-lbl">Sunset</div>
+                                <div class="rpv2-wx-val">{{ weather_summary.sunset or '—' }}</div>
+                            </div>
+                        </div>
+                        {% if halt_stop %}
+                        <div class="rpv2-halt-info">
+                            <b>🌙 Night halt</b> · {{ halt_stop.name }} · arrive {{ halt_stop.eta }} · {{ (halt_stop.break_min // 60) }}h sleep
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    {# Fuel + food #}
+                    <div class="rpv2-card">
+                        <div class="rpv2-card-h">
+                            <div class="rpv2-card-title">Fuel + breaks</div>
+                            <div class="rpv2-card-sub">All stops with a planned break</div>
+                        </div>
+                        <div class="rpv2-fuel">
+                            {% if fuel_stops_v2 %}
+                                {% for s in fuel_stops_v2 %}
+                                <div class="rpv2-fuel-stop">
+                                    <div class="rpv2-fuel-time">{{ s.eta }}</div>
+                                    <div>
+                                        {% if s.note %}
+                                            {% if '—' in s.note %}
+                                                {% set parts = s.note.split('—', 1) %}
+                                            {% else %}
+                                                {% set parts = s.note.split('-', 1) %}
+                                            {% endif %}
+                                            <div class="rpv2-fuel-name">{{ parts[0]|trim }}</div>
+                                            <div class="rpv2-fuel-detail">{{ (parts[1]|trim) if parts|length > 1 else s.name|truncate(40, true, '…') }}</div>
+                                        {% else %}
+                                            <div class="rpv2-fuel-name">{{ s.name|replace('Open Control #', 'OC#')|replace(', CA', '')|truncate(36, true, '…') }}</div>
+                                            <div class="rpv2-fuel-detail">{{ s.break_min }}m break · {{ s.type|capitalize }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="rpv2-fuel-mi">
+                                        {{ "%.0f"|format(s.cumul_mi) }}mi
+                                        {% if s.break_min %}<br><small style="color:#78350f;">{{ s.break_min }}m</small>{% endif %}
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="rpv2-empty">No breaks scheduled — add stop durations in the base plan editor</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {# Riders #}
+                    <div class="rpv2-card">
+                        <div class="rpv2-card-h">
+                            {% if signups %}
+                                <div class="rpv2-card-title">Riders · {{ signups|length }}</div>
+                                <div class="rpv2-card-sub">{{ going_count }} going</div>
+                            {% else %}
+                                <div class="rpv2-card-title">Riders</div>
+                            {% endif %}
+                        </div>
+                        {% if signups %}
+                            <div class="rpv2-roster">
+                                {% for r in signups %}
+                                {% set cls = 's-going' if r.status == 'GOING' else ('s-int' if r.status == 'INTERESTED' else 's-maybe') %}
+                                <span class="rpv2-rchip {{ cls }}">
+                                    {{ r.first_name }}{% if r.last_name %} {{ r.last_name[0] }}.{% endif %}
+                                </span>
+                                {% endfor %}
+                            </div>
+                            {% if upcoming_event %}
+                            <div class="rpv2-group-note">
+                                <b>Event:</b> {{ upcoming_event.route_name }} on {{ upcoming_event.date }} —
+                                {{ going_count }} going at brevet pace.
+                            </div>
+                            {% endif %}
+                        {% else %}
+                            <div class="rpv2-empty">No upcoming event signups yet</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {# Risk callouts — wind/dark/bank derived from the ride's
+                   weather + cutoff data. Inline here so riders see them
+                   without needing a separate tab. #}
+                {% if risks.has_data and risks.callouts %}
+                <div class="rpv2-card">
+                    <div class="rpv2-card-h">
+                        <div class="rpv2-card-title">Risks to watch</div>
+                        <div class="rpv2-card-sub">
+                            {% if weather_share_url %}wind from <a href="{{ weather_share_url }}">forecast</a>{% else %}wind from forecast{% endif %} · light from seasonal heuristic · bank from cutoff
+                        </div>
+                    </div>
+                    <div class="rpv2-ro-callouts">
+                        {% for c in risks.callouts %}
+                        <div class="rpv2-ro-callout">
+                            <div class="rpv2-ro-callout-tag" style="background:{{ c.color }};">{{ c.tag }}</div>
+                            <div><b>{{ c.lead }}</b> {{ c.body }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            {# Snapshot card #}
+            <aside class="rpv2-aside">
+                <div class="rpv2-aside-h">
+                    <div class="rpv2-aside-lbl">Snapshot — share or screenshot</div>
+                    <button type="button" class="rpv2-share-btn" id="rpv2-share">↗ Share</button>
+                </div>
+                {{ snapshot_card(plan, stops_v2, weighted_difficulty, weather_summary, total_time, STOP_TYPES, elevation_profile, stop_markers) }}
+            </aside>
+        </div>
+    </section>
+
+    {# ===== Weather tab — inlines the same content/scripts as /weather ===== #}
+    <section class="rpv2-panel {% if active_tab == 'weather' %}is-active{% endif %}"
+             id="rpv2-panel-weather" role="tabpanel" aria-labelledby="rpv2-tab-weather" data-panel="weather">
+        {% if prefill_url %}
+        {% include 'partials/_weather_content.html' %}
+        {% else %}
+        <div class="rpv2-coming">
+            <b>Forecast unavailable</b> — this plan has no RWGPS route attached.
+            Add one in the
+            <a href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}">plan info editor</a>.
+        </div>
+        {% endif %}
+    </section>
+
+</div>
+{% endblock %}
+
+{# ===== Snapshot card macro ===== #}
+{% macro snapshot_card(plan, stops, difficulty, weather, total_time, types, profile, markers) %}
+{% set diff = (difficulty or 0)|round|int %}
+{% set diff_label = 'Easy' if diff < 2 else ('Moderate' if diff == 2 else ('Hard' if diff == 3 else ('Very hard' if diff == 4 else 'Extreme'))) %}
+{% set finish = stops[-1] if stops else None %}
+<div class="rpv2-snap">
+    <div class="rpv2-snap-head">
+        <div class="rpv2-snap-eyebrow">
+            {%- if plan.distance_km %}{{ plan.distance_km }}K Brevet{% endif -%}
+            {%- if plan.linked_ride_date %} · {{ plan.linked_ride_date.isoformat() }}{% endif -%}
+        </div>
+        <div class="rpv2-snap-title">{{ plan.name }}</div>
+    </div>
+
+    <div class="rpv2-snap-hero">
+        <div>
+            <div class="rpv2-snap-big">{{ "%.0f"|format(plan.total_distance_miles or 0) }}<small>mi</small></div>
+            <div class="rpv2-snap-sub">
+                {{ "%.1f"|format((plan.total_elevation_ft or 0) / 1000) }}k ft
+                {%- if plan.total_distance_miles %} · {{ ((plan.total_elevation_ft or 0) / plan.total_distance_miles)|round|int }}/mi{% endif %}
+            </div>
+        </div>
+        <div class="rpv2-snap-tough">
+            <div class="rpv2-snap-tough-bar">
+                {% for n in range(1, 6) %}
+                <span class="rpv2-snap-tough-pip {% if n <= diff %}on{% endif %} {% if n == 5 %}t5{% endif %}"></span>
+                {% endfor %}
+            </div>
+            <div class="rpv2-snap-tough-lbl">{{ diff_label }}</div>
+        </div>
+    </div>
+
+    {% with profile=profile, markers=markers, big=False %}
+    {% include 'partials/_elevation_profile.html' %}
+    {% endwith %}
+
+    <div class="rpv2-snap-times">
+        <div>
+            <div class="rpv2-snap-times-lbl">Start</div>
+            <div class="rpv2-snap-times-val">{{ plan.start_time or '—' }}</div>
+        </div>
+        <div>
+            <div class="rpv2-snap-times-lbl">Cutoff</div>
+            <div class="rpv2-snap-times-val">{{ plan.cutoff_hours or '—' }}h</div>
+        </div>
+        <div>
+            <div class="rpv2-snap-times-lbl">Finish ETA</div>
+            <div class="rpv2-snap-times-val good">{{ finish.eta if finish else '—' }}</div>
+        </div>
+        <div>
+            <div class="rpv2-snap-times-lbl">Time bank</div>
+            {% if finish %}
+                {% set bgood = finish.bank_min >= 0 %}
+                <div class="rpv2-snap-times-val {{ 'good' if bgood else 'bad' }}">{{ finish.bank }}</div>
+            {% else %}
+                <div class="rpv2-snap-times-val">—</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="rpv2-snap-stops">
+        <div class="rpv2-snap-stops-lbl">Itinerary</div>
+        {# Include controls, rest, finish — plus any waypoint with a planned
+           break OR a food/refuel note. #}
+        {% for s in stops if s.type not in ('start', 'waypoint') or s.break_min > 0 or s.is_fuel %}
+        {% set t = types[s.type] %}
+        {# Fuel-stop visual override: ☕ icon + orange dot for any control
+           or waypoint with a food keyword. Start/finish keep their own
+           identity even if their note mentions food. #}
+        {% set is_fuel_override = s.is_fuel and s.type not in ('start', 'finish') %}
+        {% set dot_color = '#ea580c' if is_fuel_override else t.color %}
+        {% set dot_glyph = '☕' if is_fuel_override else t.glyph %}
+        <div class="rpv2-snap-stop {% if s.is_halt %}is-halt{% endif %}">
+            <span class="rpv2-snap-stop-dot" style="background:{{ dot_color }};">{{ dot_glyph }}</span>
+            <div>
+                <div class="rpv2-snap-stop-name">
+                    {% if s.is_halt %}<span class="rpv2-snap-halt-badge">🌙 Sleep</span>{% endif %}
+                    {{ s.name|clean_name|replace('Open Control #', 'OC#')|replace(', CA', '') }}
+                    {% if s.break_min and not s.is_halt %}
+                    <span class="rpv2-snap-break-badge">{{ s.break_min }}m break</span>
+                    {% endif %}
+                </div>
+                {% if s.note %}<div class="rpv2-snap-stop-note">{{ s.note|clean_name }}</div>{% endif %}
+            </div>
+            <div class="rpv2-snap-stop-r">
+                <div class="rpv2-snap-stop-eta">{{ s.eta }} <span class="rpv2-snap-stop-elapsed">{{ s.elapsed }}</span></div>
+                <div class="rpv2-snap-stop-bank">
+                    <span class="rpv2-snap-stop-mi">{{ "%.0f"|format(s.cumul_mi) }}mi</span>
+                    {% if s.bank %}
+                    · <span class="{{ 'good' if s.bank_min >= 0 else 'bad' }}">{{ s.bank }}</span>
+                    {% endif %}
+                </div>
+                {# Segment time · ft/mi · toughness · headwind — the detail
+                   riders asked to see on the share card too. #}
+                <div class="rpv2-snap-stop-meta">
+                    {% if s.seg_time_min > 0 %}<span>seg {% if s.seg_time_min >= 60 %}{{ s.seg_time_min // 60 }}h{{ '%02d'|format(s.seg_time_min % 60) }}{% else %}{{ s.seg_time_min }}m{% endif %}</span>{% endif %}
+                    {% if s.fpm %} · <span>{{ s.fpm }}/mi</span>{% endif %}
+                    {% if s.tough_known %} · <span class="rpv2-snap-tough {{ s.tough_class }}">T{{ "%.1f"|format(s.tough) }}</span>{% endif %}
+                    {% if s.wind_known %}{% set wc = '#16a34a' if s.wind_label == 'Tail' else ('#dc2626' if s.wind_label == 'Head' else '#ca8a04') %} · <span class="rpv2-snap-wind" style="color:{{ wc }};"><span class="rpv2-snap-wind-arrow" style="transform:rotate({{ s.wind_arrow_deg }}deg);">↑</span>{{ s.wind_mph|round|int }}</span>{% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if weather and (weather.temp_low is not none or weather.wind_max) %}
+    <div class="rpv2-snap-weather">
+        <div class="rpv2-snap-stops-lbl">Weather along route</div>
+        <div class="rpv2-snap-weather-row">
+            {% if weather.temp_low is not none and weather.temp_high is not none %}
+                <span>🌡 {{ weather.temp_low }}–{{ weather.temp_high }}°F</span>
+            {% endif %}
+            {% if weather.wind_max %}<span>💨 to {{ weather.wind_max }} mph</span>{% endif %}
+            {% if weather.sunrise %}<span>🌅 {{ weather.sunrise }}</span>{% endif %}
+            {% if weather.sunset %}<span>🌇 {{ weather.sunset }}</span>{% endif %}
+        </div>
+        <div class="rpv2-snap-wx-spark">
+            {% for s in stops %}
+                {% if s.wind_known %}
+                    {% set wc = '#16a34a' if s.wind_label == 'Tail' else ('#dc2626' if s.wind_label == 'Head' else '#ca8a04') %}
+                    {% set wo = 0.35 + ((s.wind_mph if s.wind_mph < 25 else 25) / 25) * 0.65 %}
+                {% else %}
+                    {% set wc = '#cbd5e1' %}{% set wo = 0.4 %}
+                {% endif %}
+                <span class="rpv2-snap-wx-bar" style="background:{{ wc }};opacity:{{ wo|round(2) }};"
+                      title="{{ '%.0f'|format(s.cumul_mi) }}mi · {% if s.wind_known %}{{ s.wind_label }} {{ s.wind_mph }}mph{% else %}—{% endif %}"></span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="rpv2-snap-foot">
+        Team Asha Randonneuring · /ride-plan/{{ plan.slug }}
+    </div>
+</div>
+{% endmacro %}
+
+
+{% block extra_js %}
+<script>
+(function() {
+    var tabs = document.querySelectorAll('.rpv2-tab');
+    var panels = document.querySelectorAll('.rpv2-panel');
+
+    function activate(tabKey, pushState) {
+        tabs.forEach(function(t) {
+            var on = t.dataset.tab === tabKey;
+            t.classList.toggle('is-active', on);
+            t.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        panels.forEach(function(p) {
+            p.classList.toggle('is-active', p.dataset.panel === tabKey);
+        });
+        if (pushState) {
+            var url = new URL(window.location);
+            if (tabKey === 'plan') url.searchParams.delete('tab');
+            else url.searchParams.set('tab', tabKey);
+            window.history.replaceState({}, '', url);
+        }
+    }
+    tabs.forEach(function(t) {
+        t.addEventListener('click', function() { activate(t.dataset.tab, true); });
+    });
+
+    // Bidirectional click-to-select between journey markers and itinerary rows
+    var svgStops = document.querySelectorAll('.rpv2-journey-svg .stop');
+    var tableRows = document.querySelectorAll('#rpv2-itinerary tbody tr');
+
+    function setSelected(idx) {
+        svgStops.forEach(function(g) {
+            g.classList.toggle('is-sel', g.dataset.stopI === String(idx));
+        });
+        tableRows.forEach(function(row) {
+            row.classList.toggle('is-sel', row.dataset.stopI === String(idx));
+        });
+    }
+
+    svgStops.forEach(function(g) {
+        g.addEventListener('click', function() { setSelected(g.dataset.stopI); });
+    });
+    tableRows.forEach(function(row) {
+        row.addEventListener('click', function() {
+            setSelected(row.dataset.stopI);
+            row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+    });
+
+    // Pace strategy — highlight the picked column AND live re-time the itinerary.
+    // Each pace variant's per-stop pace fields are keyed by card id; picking a
+    // card swaps the pace-varying itinerary cells (Pace / Elapsed / ETA / Bank +
+    // break pill) and re-labels the elevation overlay markers, with no reload.
+    var PACE_STOPS = {{ pace_stops_map | tojson | safe }};
+    var paceCols = document.querySelectorAll('.rpv2-pc-col');
+
+    function fmtPace(st) {
+        if (!st || !(st.seg_time_min > 0)) return '—';
+        var t = st.seg_time_min;
+        var s = t >= 60 ? (Math.floor(t / 60) + 'h' + ('0' + (t % 60)).slice(-2)) : (t + 'm');
+        if (st.seg_speed_known) s += '<small>· ' + Number(st.seg_speed).toFixed(1) + '</small>';
+        return s;
+    }
+    function breakPill(st) {
+        if (st.is_halt) return '<span class="rpv2-break rpv2-break-sm rpv2-halt-pill">🌙 ' + Math.floor(st.break_min / 60) + 'h</span>';
+        if (st.break_min > 0) return '<span class="rpv2-break rpv2-break-sm">' + st.break_min + 'm</span>';
+        return '';
+    }
+    function applyPace(id) {
+        var stops = PACE_STOPS[id];
+        if (!stops) return;
+        var byI = {};
+        stops.forEach(function(st) { byI[String(st.i)] = st; });
+        tableRows.forEach(function(row) {
+            var st = byI[row.dataset.stopI];
+            if (!st) return;
+            var pace = row.querySelector('[data-cell="pace"]');
+            if (pace) pace.innerHTML = fmtPace(st);
+            var el = row.querySelector('[data-cell="elapsed"]');
+            if (el) el.textContent = st.elapsed;
+            var eta = row.querySelector('[data-cell="eta"]');
+            if (eta) eta.textContent = st.eta;
+            var bank = row.querySelector('[data-cell="bank"]');
+            if (bank) {
+                bank.textContent = st.bank;
+                bank.classList.toggle('good', st.bank_min >= 0);
+                bank.classList.toggle('bad', st.bank_min < 0);
+            }
+            var brk = row.querySelector('[data-cell="break"]');
+            if (brk) brk.innerHTML = breakPill(st);
+        });
+        // Re-label the elevation overlay markers' tooltips for the new pace (the
+        // marker positions are pace-invariant — distance/elevation don't change).
+        svgStops.forEach(function(g) {
+            var st = byI[g.dataset.stopI];
+            if (!st) return;
+            var title = g.querySelector('title');
+            if (title) {
+                title.textContent = st.name + ' · ' + Math.round(st.cumul_mi) + 'mi · ETA ' + st.eta
+                    + (st.break_min ? ' · ' + st.break_min + 'm' : '');
+            }
+        });
+    }
+    function highlightPick(id) {
+        paceCols.forEach(function(col) {
+            col.classList.toggle('is-on', col.dataset.paceId === id);
+        });
+        applyPace(id);
+    }
+    paceCols.forEach(function(col) {
+        col.addEventListener('click', function(e) {
+            if (e.target.closest('a, button')) return;
+            highlightPick(col.dataset.paceId);
+        });
+    });
+
+    // "Choose this plan" — POST to save endpoint. There is one custom plan
+    // per rider per base, so saving a new pace REPLACES whatever was there
+    // before. Reset OTHER cards' UI back to the "Switch to this plan" state
+    // and clear their feedback so only the new pick shows as saved.
+    var saveUrl = '{{ url_for("riders.ride_plan_v2_save_strategy", slug=plan.slug) }}';
+    var customEditUrl = '{{ url_for("riders.custom_ride_plan_editor", slug=plan.slug) }}';
+
+    function resetCard(col) {
+        var btn = col.querySelector('button.rpv2-pc-btn[data-pace-pick]');
+        if (btn) {
+            btn.textContent = 'Switch to this plan';
+            btn.disabled = false;
+            btn.classList.remove('rpv2-pc-btn-saved');
+        }
+        var fb = col.querySelector('.rpv2-pc-feedback');
+        if (fb) {
+            fb.hidden = true;
+            fb.className = 'rpv2-pc-feedback';
+            fb.innerHTML = '';
+        }
+    }
+
+    function markSaved(col, viewUrl) {
+        var btn = col.querySelector('button.rpv2-pc-btn[data-pace-pick]');
+        if (btn) {
+            btn.textContent = '✓ Saved as your custom plan';
+            btn.disabled = true;
+            btn.classList.add('rpv2-pc-btn-saved');
+        }
+        var fb = col.querySelector('.rpv2-pc-feedback');
+        if (fb) {
+            fb.hidden = false;
+            fb.className = 'rpv2-pc-feedback ok';
+            fb.innerHTML = 'Saved. <a href="' + viewUrl + '">View</a> · <a href="' + customEditUrl + '">Edit</a>';
+        }
+    }
+
+    document.querySelectorAll('button.rpv2-pc-btn[data-pace-pick]').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (btn.disabled) return;
+            var paceId = btn.dataset.pacePick;
+            var col = btn.closest('.rpv2-pc-col');
+            var fb = col.querySelector('.rpv2-pc-feedback');
+            highlightPick(paceId);
+            btn.disabled = true;
+            var origText = btn.textContent;
+            btn.textContent = 'Saving…';
+            if (fb) { fb.hidden = true; fb.className = 'rpv2-pc-feedback'; fb.innerHTML = ''; }
+            fetch(saveUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pace_id: paceId })
+            }).then(function(resp) {
+                return resp.json().then(function(body) { return { status: resp.status, body: body }; });
+            }).then(function(r) {
+                if (r.status === 200 && r.body.ok) {
+                    // Reset every other card, then mark this one as saved.
+                    paceCols.forEach(function(other) {
+                        if (other !== col) resetCard(other);
+                    });
+                    markSaved(col, r.body.view_url);
+                } else {
+                    btn.textContent = origText;
+                    btn.disabled = false;
+                    if (fb) {
+                        fb.hidden = false;
+                        fb.className = 'rpv2-pc-feedback err';
+                        fb.textContent = r.body.message || 'Could not save. Try again.';
+                    }
+                }
+            }).catch(function() {
+                btn.textContent = origText;
+                btn.disabled = false;
+                if (fb) {
+                    fb.hidden = false;
+                    fb.className = 'rpv2-pc-feedback err';
+                    fb.textContent = 'Network error. Try again.';
+                }
+            });
+        });
+    });
+
+    // Share button — composites the snapshot card into a PNG poster (like
+    // the Weather page Save-image flow). Falls back to copying the page URL
+    // if html2canvas fails to load.
+    var H2C_URL = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+    var h2cPromise = null;
+    function loadH2C() {
+        if (window.html2canvas) return Promise.resolve(window.html2canvas);
+        if (h2cPromise) return h2cPromise;
+        h2cPromise = new Promise(function(resolve, reject) {
+            var s = document.createElement('script');
+            s.src = H2C_URL;
+            s.async = true;
+            s.onload = function() { resolve(window.html2canvas); };
+            s.onerror = function() { reject(new Error('html2canvas failed to load')); };
+            document.head.appendChild(s);
+        });
+        return h2cPromise;
+    }
+
+    function shareFilename() {
+        var slug = '{{ plan.slug }}';
+        var d = new Date().toISOString().slice(0, 10);
+        return 'plan-' + slug + '-' + d + '.png';
+    }
+
+    function triggerDownload(blob, filename) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 4000);
+    }
+
+    function copyShareUrl() {
+        var url = window.location.origin + window.location.pathname;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(url);
+        }
+        return Promise.reject();
+    }
+
+    var shareBtn = document.getElementById('rpv2-share');
+    if (shareBtn) {
+        shareBtn.addEventListener('click', function() {
+            var snap = document.querySelector('.rpv2-snap');
+            if (!snap) { copyShareUrl(); return; }
+            var orig = shareBtn.textContent;
+            shareBtn.disabled = true;
+            shareBtn.textContent = 'Building image…';
+            loadH2C().then(function(html2canvas) {
+                return html2canvas(snap, { backgroundColor: '#fff', scale: 2, useCORS: true, logging: false });
+            }).then(function(canvas) {
+                return new Promise(function(resolve, reject) {
+                    canvas.toBlob(function(blob) { blob ? resolve(blob) : reject(new Error('toBlob null')); }, 'image/png');
+                });
+            }).then(function(blob) {
+                var filename = shareFilename();
+                var shareUrl = window.location.origin + window.location.pathname;
+                if (navigator.share && navigator.canShare) {
+                    var file = new File([blob], filename, { type: 'image/png' });
+                    var payload = { title: '{{ plan.name|replace("'", "\\'") }}', text: shareUrl, files: [file] };
+                    if (!navigator.canShare(payload)) payload = { title: payload.title, text: payload.text };
+                    return navigator.share(payload).then(function() {
+                        shareBtn.textContent = '✓ Shared';
+                    }).catch(function(e) {
+                        if (e && e.name !== 'AbortError') triggerDownload(blob, filename);
+                        shareBtn.textContent = orig;
+                    });
+                }
+                triggerDownload(blob, filename);
+                shareBtn.textContent = '✓ Saved';
+            }).catch(function() {
+                // Fallback: copy URL
+                copyShareUrl().then(function() {
+                    shareBtn.textContent = '✓ URL copied';
+                }).catch(function() {
+                    shareBtn.textContent = 'Share failed';
+                });
+            }).finally(function() {
+                shareBtn.disabled = false;
+                setTimeout(function() { shareBtn.textContent = orig; }, 2200);
+            });
+        });
+    }
+
+    // Toughness "?" help bubble. The bubble lives inside the itinerary table,
+    // whose .rpv2-table-scroll (overflow-x:auto) and .rpv2-card-tight
+    // (overflow:hidden) ancestors clip an absolutely-positioned child. Switch
+    // it to position:fixed and anchor it to the "?" on open so it escapes those
+    // clipping contexts and is fully visible.
+    document.querySelectorAll('.rpv2-help').forEach(function(help) {
+        var bub = help.querySelector('.rpv2-help-bub');
+        if (!bub) return;
+        function place() {
+            // Switch to fixed first, then measure — the bubble must be laid out
+            // (display:block via :hover) for offsetHeight to be accurate.
+            bub.style.position = 'fixed';
+            bub.style.right = 'auto';
+            var r = help.getBoundingClientRect();
+            var w = bub.offsetWidth || 250;
+            var h = bub.offsetHeight || 160;
+            var left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8));
+            // Prefer opening below the "?"; only flip above when below lacks room
+            // AND above has more. Always clamp so the bubble stays fully on-screen
+            // — never pinned to the very top where it looks cut off.
+            var spaceBelow = window.innerHeight - r.bottom;
+            var top;
+            if (spaceBelow >= h + 8 || spaceBelow >= r.top) {
+                top = Math.min(r.bottom + 6, window.innerHeight - h - 8);
+            } else {
+                top = r.top - h - 6;
+            }
+            bub.style.top = Math.max(8, top) + 'px';
+            bub.style.left = left + 'px';
+        }
+        help.addEventListener('mouseenter', place);
+        help.addEventListener('focus', place);
+        help.addEventListener('touchstart', place, { passive: true });
+    });
+
+    // "Make public" toggle in the custom-plan banner — publishes/unpublishes
+    // the rider's own custom plan to the Community list.
+    var publicToggle = document.getElementById('rpv2-public-toggle');
+    if (publicToggle) {
+        var publicUrl = '{{ url_for("riders.ride_plan_v2_toggle_public", slug=plan.slug) }}';
+        publicToggle.addEventListener('click', function() {
+            if (publicToggle.disabled) return;
+            var makePublic = publicToggle.dataset.public !== '1';
+            publicToggle.disabled = true;
+            var orig = publicToggle.textContent;
+            publicToggle.textContent = '…';
+            fetch(publicUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_public: makePublic })
+            }).then(function(r) { return r.json().then(function(b) { return { ok: r.ok, body: b }; }); })
+              .then(function(res) {
+                if (res.ok && res.body.ok) {
+                    publicToggle.dataset.public = makePublic ? '1' : '0';
+                    publicToggle.setAttribute('aria-pressed', makePublic ? 'true' : 'false');
+                    publicToggle.classList.toggle('is-public', makePublic);
+                    publicToggle.textContent = makePublic ? '● Public' : '○ Make public';
+                } else {
+                    publicToggle.textContent = orig;
+                    alert((res.body && res.body.message) || 'Could not update visibility.');
+                }
+            }).catch(function() {
+                publicToggle.textContent = orig;
+                alert('Network error. Try again.');
+            }).finally(function() { publicToggle.disabled = false; });
+        });
+    }
+})();
+</script>
+{# Weather-tab JS (Chart.js + Mapbox + fetch flow) — same partial /weather uses #}
+{% if prefill_url %}
+{% include 'partials/_weather_scripts.html' %}
+{% endif %}
+{% endblock %}

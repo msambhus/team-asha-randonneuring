@@ -279,7 +279,7 @@ def create_app():
     # Prefer BrevetHub overrides for templates we deliberately neutralize, while
     # every other template falls through to the Team Asha template tree.
     app.jinja_loader = ChoiceLoader([
-        FileSystemLoader(str(_BREVETHUB_DIR / 'templates')),
+        _BrevetHubNeutralizingLoader(FileSystemLoader(str(_BREVETHUB_DIR / 'templates'))),
         _BrevetHubNeutralizingLoader(app.jinja_loader),
     ])
 

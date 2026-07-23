@@ -1,0 +1,1898 @@
+{% extends "base.html" %}
+{% block title %}{{ plan.name }} - Team Asha Randonneuring{% endblock %}
+
+{% block extra_head %}
+<style>
+/* ===== JOURNEY STRIP ===== */
+.journey-strip {
+    display: flex;
+    align-items: flex-start;
+    overflow-x: auto;
+    padding: 16px 0 8px;
+    gap: 0;
+    scrollbar-width: thin;
+}
+.journey-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 72px;
+    max-width: 110px;
+    position: relative;
+    flex: 1;
+}
+.journey-node:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 9px;
+    left: 50%;
+    width: 100%;
+    height: 2px;
+    background: var(--border);
+    z-index: 0;
+}
+.journey-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2.5px solid white;
+    z-index: 1;
+    flex-shrink: 0;
+}
+.journey-node.start .journey-dot,
+.journey-node.finish .journey-dot,
+.journey-node.control .journey-dot {
+    width: 16px;
+    height: 16px;
+}
+.journey-label {
+    font-size: 0.65rem;
+    color: var(--text);
+    text-align: center;
+    margin-top: 6px;
+    font-weight: 500;
+    line-height: 1.2;
+    word-break: break-word;
+    padding: 0 2px;
+}
+.journey-dist {
+    font-size: 0.6rem;
+    color: var(--text-light);
+    margin-top: 1px;
+    font-variant-numeric: tabular-nums;
+}
+.journey-eta {
+    font-size: 0.7rem;
+    color: #0369a1;
+    margin-top: 3px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+/* ===== WIND ARROWS ===== */
+.wind-arrow {
+    display: inline-block;
+    font-size: 0;
+    line-height: 1;
+    vertical-align: middle;
+}
+.wind-arrow svg {
+    display: block;
+}
+.journey-wind {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    margin-top: 3px;
+    font-size: 0.6rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* ===== TERRAIN DIFFICULTY STRIP ===== */
+.terrain-strip {
+    display: flex;
+    height: 10px;
+    border-radius: 5px;
+    overflow: hidden;
+    background: var(--border);
+}
+.terrain-seg {
+    height: 100%;
+    transition: opacity 0.15s;
+    position: relative;
+    cursor: default;
+}
+.terrain-seg:hover { opacity: 0.7; }
+
+/* ===== SEGMENT CARDS ===== */
+.segment-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+}
+.segment-card {
+    padding: 14px 18px;
+    border-left: 4px solid var(--border);
+    position: relative;
+    transition: background 0.12s;
+    border-bottom: 1px solid #f1f5f9;
+}
+.segment-card:last-child { border-bottom: none; }
+.segment-card:hover { background: #fafbfc; }
+
+.segment-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.stop-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+}
+.stop-icon.start { background: #dcfce7; color: #166534; }
+.stop-icon.finish { background: #fee2e2; color: #991b1b; }
+.stop-icon.control { background: #dbeafe; color: #1e40af; }
+.stop-icon.rest { background: #fef3c7; color: #92400e; }
+.stop-icon.waypoint { background: #f1f5f9; color: #64748b; }
+
+.segment-loc { flex: 1; min-width: 0; }
+.segment-loc-name {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 0.9rem;
+    line-height: 1.3;
+}
+.segment-loc-notes {
+    font-size: 0.78rem;
+    color: var(--text-light);
+    margin-top: 2px;
+    line-height: 1.4;
+}
+.segment-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    margin-top: 14px;
+    margin-left: 15px;
+    padding-top: 14px;
+    border-top: 1px solid #e2e8f0;
+}
+.metric { 
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+    min-width: 60px;
+}
+.metric-value {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+.metric-value.elev { color: #dc2626; }
+.metric-label {
+    font-size: 0.65rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    font-weight: 600;
+}
+
+/* Difficulty stripe on right edge */
+.diff-stripe {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 3px;
+}
+
+/* ===== TIMELINE LAYOUT ===== */
+.timeline-container {
+    position: relative;
+    padding-left: 0;
+    border: none;
+    border-radius: 0;
+    overflow: visible;
+}
+/* Timeline node connector */
+.timeline-container .segment-card {
+    position: relative;
+    z-index: 1;
+    border-radius: 8px;
+    margin-bottom: 4px;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--border);
+    background: white;
+}
+/* Controls as section headers — bold divider above */
+.timeline-container .segment-card.level-control {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 2px solid #e2e8f0;
+}
+.timeline-container .segment-card.level-control .stop-name {
+    font-weight: 700;
+    font-size: 1.02rem;
+}
+/* Waypoints — subordinate, lighter styling */
+.timeline-container .segment-card.level-waypoint .stop-name {
+    color: #475569;
+    font-weight: 500;
+}
+/* Start/Finish — bold treatment */
+.timeline-container .segment-card.level-start .stop-name,
+.timeline-container .segment-card.level-finish .stop-name {
+    font-weight: 700;
+    font-size: 1.02rem;
+}
+/* Break chip pills */
+.break-chips-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    margin-left: 15px;
+}
+.break-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 0.73rem;
+    font-weight: 600;
+    white-space: nowrap;
+    border: 1px solid #fcd34d;
+}
+.break-chip .break-icon { font-size: 0.7rem; }
+/* Seg time combined annotation */
+.seg-time-break-note {
+    font-size: 0.65rem;
+    color: #92400e;
+    font-weight: 500;
+    margin-left: 2px;
+}
+@media (max-width: 768px) {
+    .timeline-container { padding-left: 0; }
+}
+
+/* ===== TIME-OF-DAY CHART (grid layout) ===== */
+.tod-grid {
+    display: grid;
+    grid-template-columns: minmax(180px, 2.5fr) 75px 60px 50px 70px 55px 1fr;
+    gap: 2px 10px;
+    align-items: center;
+    font-size: 0.8rem;
+}
+.tod-header {
+    font-size: 0.65rem;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-weight: 600;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2px;
+}
+.tod-label {
+    font-weight: 500;
+    color: var(--text);
+    padding: 4px 0;
+    line-height: 1.3;
+}
+.tod-time {
+    font-weight: 600;
+    color: var(--primary);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    padding: 4px 0;
+}
+.tod-dist {
+    text-align: right;
+    font-weight: 500;
+    color: var(--text-light);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem;
+    padding: 4px 0;
+}
+.tod-bank {
+    text-align: right;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    padding: 4px 0;
+}
+.tod-bar-bg {
+    height: 7px;
+    background: #f1f5f9;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.tod-bar {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+/* ===== VIEW TOGGLE ===== */
+.view-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-light);
+    background: white;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.view-toggle:hover { border-color: var(--primary); color: var(--primary); }
+.view-toggle.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+/* ===== DATA TABLE ===== */
+.plan-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.82rem;
+}
+.plan-table thead th {
+    background: var(--primary);
+    color: white;
+    font-weight: 600;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 9px 10px;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+.plan-table thead th:first-child { border-radius: 8px 0 0 0; }
+.plan-table thead th:last-child { border-radius: 0 8px 0 0; }
+.plan-table tbody td {
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+.plan-table tbody tr:last-child td { border-bottom: none; }
+.plan-table tbody tr:hover { background: #f7fafc; }
+.type-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+.type-badge.start { background: #dcfce7; color: #166534; }
+.type-badge.finish { background: #fee2e2; color: #991b1b; }
+.type-badge.control { background: #dbeafe; color: #1e40af; }
+.type-badge.rest { background: #fef3c7; color: #92400e; }
+.type-badge.waypoint { background: #f1f5f9; color: #475569; }
+.num-cell {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.num-cell.highlight { font-weight: 700; color: var(--primary); }
+.plan-table tfoot td {
+    padding: 10px;
+    font-weight: 700;
+    background: #f8fafc;
+    border-top: 2px solid var(--border);
+    font-size: 0.82rem;
+}
+
+/* Difficulty badge */
+.diff-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* ===== LEGEND ===== */
+.plan-legend {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 8px 14px;
+    background: #f8fafc;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    color: var(--text-light);
+}
+.plan-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.plan-legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+/* ===== ROUTE LINKS ===== */
+.route-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: box-shadow 0.15s, transform 0.15s;
+}
+.route-link:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transform: translateY(-1px);
+}
+.route-link img { width: 18px; height: 18px; }
+
+/* ===== SECTION HEADERS ===== */
+.section-label {
+    font-size: 0.78rem;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+/* ===== WEATHER ===== */
+.weather-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 8px;
+}
+.weather-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: #0284c7;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s;
+}
+.weather-btn:hover { background: #0369a1; }
+.weather-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+
+/* ===== START TIME INPUT ===== */
+.start-time-input {
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--primary);
+    background: white;
+}
+
+/* ===== COLLAPSIBLE SECTIONS ===== */
+.collapsible-section {
+    margin-bottom: 20px;
+}
+.collapsible-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid var(--border);
+    user-select: none;
+}
+.collapsible-header:hover {
+    background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+}
+.collapsible-title {
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.collapsible-icon {
+    font-size: 1.2rem;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.collapsible-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.collapsible-section.expanded .collapsible-icon {
+    transform: rotate(180deg);
+}
+.collapsible-section.expanded .collapsible-content {
+    max-height: 10000px;
+}
+
+/* ===== QUICK ACTION BUTTONS ===== */
+.quick-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+.quick-action-btn {
+    flex: 1;
+    min-width: 140px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, white, #f9fafb);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--primary);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
+}
+.quick-action-btn:hover {
+    border-color: var(--primary);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+
+/* ===== ENHANCED CARD ANIMATIONS ===== */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+.segment-card {
+    animation: fadeInUp 0.5s ease forwards;
+    opacity: 0;
+}
+.segment-card:nth-child(1) { animation-delay: 0.05s; }
+.segment-card:nth-child(2) { animation-delay: 0.1s; }
+.segment-card:nth-child(3) { animation-delay: 0.15s; }
+.segment-card:nth-child(4) { animation-delay: 0.2s; }
+.segment-card:nth-child(5) { animation-delay: 0.25s; }
+.segment-card:nth-child(n+6) { animation-delay: 0.3s; }
+
+/* ===== SIGNUP MODAL ===== */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    animation: fadeIn 0.2s;
+}
+.modal-content {
+    background: white;
+    margin: 5% auto;
+    padding: 0;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 80vh;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    animation: slideIn 0.3s;
+}
+.modal-header {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    padding: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.modal-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin: 0;
+}
+.modal-close {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #000;
+    cursor: pointer;
+    border: 2px solid #000;
+    background: #fff;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+.modal-close:hover {
+    background: #f3f4f6;
+    border-color: #000;
+    transform: rotate(90deg) scale(1.1);
+}
+.modal-body {
+    padding: 20px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+.rider-list-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+}
+.rider-list-item:last-child {
+    border-bottom: none;
+}
+.rider-list-item:hover {
+    background: #f8fafc;
+}
+.rider-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+.rider-info {
+    flex: 1;
+}
+.rider-name {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 0.95rem;
+}
+.rider-rusa {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    margin-top: 2px;
+}
+.rider-status-badge {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.rider-status-badge.signed-up {
+    background: #dcfce7;
+    color: #166534;
+}
+.rider-status-badge.finished {
+    background: #dbeafe;
+    color: #1e40af;
+}
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes slideIn {
+    from { transform: translateY(-50px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+/* ===== CUSTOM PLAN BANNER (clean text-link style on light blue card) ===== */
+.cp-banner-wrap {
+    /* Counter-balance the stats-row's -40px margin-top so the banner
+       doesn't get clipped by the cards underneath. */
+    padding-bottom: 50px;
+}
+.custom-plan-banner {
+    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+    border: 1px solid #7dd3fc;
+    border-radius: 12px;
+    padding: 14px 18px;
+    box-shadow: 0 1px 3px rgba(14,165,233,0.08);
+}
+
+.custom-plan-banner h3 {
+    margin: 0;
+    color: #0c4a6e;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.custom-plan-banner p {
+    margin: 3px 0 0 0;
+    color: #0369a1;
+    font-size: 0.82rem;
+}
+
+.cp-banner-row {
+    display: flex; flex-wrap: wrap; gap: 16px;
+    align-items: flex-start; justify-content: space-between;
+}
+
+.cp-links {
+    display: flex; flex-wrap: wrap; gap: 6px 14px;
+    align-items: center;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(14,165,233,0.25);
+}
+
+.cp-link {
+    display: inline-flex; align-items: center; gap: 4px;
+    color: #0c4a6e;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+.cp-link:hover { color: #e53e3e; text-decoration: underline; }
+
+.cp-link.cp-action {
+    padding: 4px 10px;
+    background: #0c4a6e;
+    color: #fff;
+    border-radius: 6px;
+    border: 0; cursor: pointer; font-family: inherit;
+}
+.cp-link.cp-action:hover { background: #082f49; color: #fff; text-decoration: none; }
+.cp-link.cp-action.cp-copy { background: #16a34a; }
+.cp-link.cp-action.cp-copy:hover { background: #15803d; }
+
+.cp-section-label {
+    font-size: 0.7rem; font-weight: 700;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    color: #0369a1; opacity: 0.8;
+    margin-right: 2px;
+}
+
+.cp-sep {
+    color: rgba(14,165,233,0.35);
+    margin: 0 2px;
+}
+
+.btn-custom-plan {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.9rem;
+}
+
+.btn-custom-plan:hover {
+    background: #142a4d;
+    color: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.btn-custom-plan.active {
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.9), 0 0 0 5px currentColor;
+    transform: scale(1.05);
+    font-weight: 700;
+}
+
+.btn-custom-plan.create {
+    background: #22c55e;
+}
+
+.btn-custom-plan.create:hover {
+    background: #16a34a;
+}
+
+.shared-plans-info {
+    font-size: 0.8rem;
+    color: #0284c7;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+    .elevation-chart {
+        height: 140px;
+    }
+    .elevation-chart-container {
+        padding: 16px;
+        margin-bottom: 20px;
+    }
+    .quick-action-btn {
+        min-width: 120px;
+        font-size: 0.8rem;
+        padding: 10px 14px;
+    }
+    .collapsible-header {
+        padding: 12px 14px;
+    }
+    .segment-card {
+        padding: 14px 16px;
+        border-radius: 10px;
+    }
+    .plan-table { font-size: 0.75rem; }
+    .plan-table thead th, .plan-table tbody td { padding: 7px 6px; }
+    .segment-metrics { gap: 10px; }
+    .metric { min-width: 44px; }
+    .metric-value { font-size: 0.85rem; }
+    .tod-grid { grid-template-columns: minmax(100px, 2fr) 60px 50px 40px 55px 45px 1fr; font-size: 0.75rem; gap: 2px 6px; }
+    .journey-node { min-width: 60px; }
+    .modal-content {
+        width: 95%;
+        margin: 10% auto;
+    }
+}
+@media (max-width: 480px) {
+    .elevation-chart {
+        height: 120px;
+    }
+}
+</style>
+{% endblock %}
+
+{# Wind arrow macro: direction arrow colored by wind_type, sized by speed #}
+{% macro wind_arrow(w, show_speed=true) %}
+{% if w %}
+{% set color = '#dc2626' if w.wind_type == 'headwind' else '#16a34a' if w.wind_type == 'tailwind' else '#1e293b' %}
+{% set mph = w.wind_speed_mph|default(w.wind_speed_kmh * 0.621371)|round(0)|int %}
+{% set sz = 14 if mph < 8 else 18 if mph < 15 else 22 if mph < 25 else 26 %}
+{% set sw = 1.5 if mph < 8 else 2 if mph < 15 else 2.5 if mph < 25 else 3 %}
+{# Arrow points where wind travels in rider's frame — exact angle from wind_arrow_deg #}
+{# headwind=↓ (from front), tailwind=↑ (from behind), diagonal/crosswind proportional #}
+{% set rotation = w.wind_arrow_deg if w.wind_arrow_deg is defined else (180 if w.wind_type == 'headwind' else 0 if w.wind_type == 'tailwind' else 90) %}
+<span class="wind-arrow" title="{{ mph }} mph {{ w.wind_type }}">
+<svg width="{{ sz }}" height="{{ sz }}" viewBox="0 0 24 24" fill="none" stroke="{{ color }}" stroke-width="{{ sw }}" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate({{ rotation }}deg)">
+<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+</svg>
+</span>
+{% if show_speed %}<span style="color:{{ color }};font-size:0.7rem;font-weight:600;">{{ mph }}</span>{% endif %}
+{% endif %}
+{% endmacro %}
+
+{% block content %}
+{# ===== A. ENHANCED HERO ===== #}
+<div class="hero" style="padding-bottom:60px;" id="hero-section">
+    <div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <svg viewBox="0 0 20 20" width="24" height="24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 1C7.2 1 5 3.2 5 6c0 3.5 5 8 5 8s5-4.5 5-8c0-2.8-2.2-5-5-5z"/>
+          <circle cx="10" cy="6" r="1.5" fill="white"/>
+          <path d="M6 16h8" stroke-dasharray="2 2"/>
+          <circle cx="6" cy="16" r="1" fill="white"/>
+          <circle cx="14" cy="16" r="1" fill="white"/>
+        </svg>
+        {% if plan.distance_km %}
+        <span style="background:rgba(255,255,255,0.2);padding:4px 14px;border-radius:20px;font-size:0.85rem;font-weight:600;">{{ plan.distance_km }}K Brevet</span>
+        {% endif %}
+        {% if viewed_plan_owner %}
+        <span style="background:linear-gradient(135deg,#553c9a,#805ad5);padding:4px 14px;border-radius:20px;font-size:0.78rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">{{ viewed_plan_owner.first_name }}'s Plan &middot; Community</span>
+        {% elif is_custom_view %}
+        <span style="background:#16a34a;padding:4px 14px;border-radius:20px;font-size:0.78rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">My Custom Plan</span>
+        {% else %}
+        <span style="background:rgba(255,255,255,0.18);padding:4px 14px;border-radius:20px;font-size:0.78rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">Base Plan</span>
+        {% endif %}
+    </div>
+    <h1>{% if is_custom_view and plan.custom_name %}{{ plan.custom_name }}{% else %}{{ plan.name }}{% endif %}</h1>
+    <p style="opacity:0.85;margin-top:8px;">{{ stops|length }} stops &middot; {{ "%.1f"|format(plan.total_distance_miles) }} miles &middot; {{ "{:,}".format(plan.total_elevation_ft) }} ft of climbing</p>
+    {% if plan.cutoff_hours %}
+    <p style="opacity:0.65;font-size:0.88rem;margin-top:4px;">ACP time limit: {{ plan.cutoff_hours }}h &middot; Start: <span id="hero-start-time">{{ plan.start_time }}</span></p>
+    {% endif %}
+</div>
+
+{# ===== PLAN NAVIGATION BANNER (right under hero) ===== #}
+{% if session.user_id %}
+<div class="container cp-banner-wrap" style="padding-top:20px;">
+<div class="custom-plan-banner">
+    <div class="cp-banner-row">
+        <div>
+        {% if viewed_plan_owner %}
+            <h3>👀 Viewing {{ viewed_plan_owner.first_name }} {{ viewed_plan_owner.last_name }}'s plan</h3>
+            <p>Shared by {{ viewed_plan_owner.first_name }}. Copy it to start your own from this.</p>
+        {% elif is_custom_view %}
+            <h3>📋 You're viewing your custom plan</h3>
+            <p>Your personalized version of this brevet</p>
+        {% elif user_custom_plan %}
+            <h3>✏️ You have a custom plan for this ride</h3>
+            <p>Switch to your custom version, compare, or edit it</p>
+        {% else %}
+            <h3>🛠️ Create Your Own Plan</h3>
+            <p>Personalize this ride plan with your own pace, timing, and stops</p>
+        {% endif %}
+        </div>
+        {% if viewed_plan_owner and viewed_plan_id %}
+        <button type="button"
+                onclick="clonePlan({{ viewed_plan_id }}, {{ (plan.custom_name or plan.name)|tojson }})"
+                class="cp-link cp-action cp-copy">
+            📥 Copy This Plan
+        </button>
+        {% endif %}
+    </div>
+
+    <div class="cp-links">
+        {# Plan view links — hide the one you're already on #}
+        {% if not (is_custom_view and not viewed_plan_owner) and user_custom_plan %}
+        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom') }}" class="cp-link">📋 My Plan</a>
+        {% endif %}
+        {% if viewed_plan_owner or is_custom_view %}
+        <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='base') }}" class="cp-link">📄 Base Plan</a>
+        {% endif %}
+        {% if user_custom_plan or viewed_plan_owner %}
+        <a href="{{ url_for('riders.compare_ride_plans', slug=plan.slug) }}" class="cp-link">📊 Compare</a>
+        {% endif %}
+        {% if is_custom_view and not viewed_plan_owner %}
+        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}" class="cp-link">✏️ Edit</a>
+        {% endif %}
+        {% if not user_custom_plan and not viewed_plan_owner and not is_custom_view %}
+        <a href="{{ url_for('riders.custom_ride_plan_editor', slug=plan.slug) }}" class="cp-link cp-action">➕ Create Custom Plan</a>
+        {% endif %}
+        {% if is_admin and not is_custom_view and not viewed_plan_owner %}
+        <span class="cp-sep">·</span>
+        <a href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}" class="cp-link">✏️ Edit Stops</a>
+        <a href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}" class="cp-link">⚙️ Edit Info</a>
+        {% endif %}
+
+        {# Community plans — inline links to others' plans for this brevet #}
+        {% set _community = public_custom_plans|rejectattr('rider_id', 'equalto', session.rider_id|default(None))|list if public_custom_plans else [] %}
+        {% if public_custom_plans %}
+        <span class="cp-sep">·</span>
+        <span class="cp-section-label">Community Plans:</span>
+        {% for cp in public_custom_plans %}
+            {% if not viewed_plan_id or cp.id != viewed_plan_id %}
+            <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom', plan=cp.id) }}" class="cp-link">{{ cp.first_name }}'s</a>
+            {% endif %}
+        {% endfor %}
+        {% endif %}
+    </div>
+</div>
+</div>
+{% endif %}
+
+{# ===== B. STATS ROW - Plan Summary ===== #}
+<div class="stats-row">
+<div class="stat-card" style="background:linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);border-color:#bfdbfe;">
+    <div class="number" style="color:#1e40af;">{{ "%.1f"|format(plan.total_distance_miles) }}</div>
+    <div class="label" style="color:#1e3a8a;">Miles</div>
+</div>
+<div class="stat-card" style="background:linear-gradient(135deg, #ecfeff 0%, #cffafe 100%);border-color:#a5f3fc;">
+    <div class="number" style="color:#0e7490;">{{ "{:,}".format(plan.total_elevation_ft) }}</div>
+    <div class="label" style="color:#164e63;">Elevation (ft)</div>
+</div>
+<div class="stat-card" style="background:linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%);border-color:#99f6e4;">
+    <div class="number" style="color:#0f766e;">{{ "%.0f"|format(overall_ft_per_mile) }}</div>
+    <div class="label" style="color:#134e4a;">Ft / Mile</div>
+</div>
+{% if total_time > 0 %}
+<div class="stat-card" style="background:linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);border-color:#e9d5ff;">
+    <div class="number" style="color:#7c3aed;">{{ (total_time // 60) }}:{{ "%02d"|format(total_time % 60) }}</div>
+    <div class="label" style="color:#5b21b6;">Elapsed Time</div>
+</div>
+{% endif %}
+{% if total_moving_time > 0 %}
+<div class="stat-card" style="background:linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);border-color:#ddd6fe;">
+    <div class="number" style="color:#6d28d9;">{{ (total_moving_time // 60) }}:{{ "%02d"|format(total_moving_time % 60) }}</div>
+    <div class="label" style="color:#4c1d95;">Moving Time</div>
+</div>
+{% endif %}
+{% if total_break_time > 0 %}
+<div class="stat-card" style="background:linear-gradient(135deg, #fdf4ff 0%, #fae8ff 100%);border-color:#f5d0fe;">
+    <div class="number" style="color:#a21caf;">{{ (total_break_time // 60) }}:{{ "%02d"|format(total_break_time % 60) }}</div>
+    <div class="label" style="color:#701a75;">Stop Time</div>
+</div>
+{% endif %}
+{% if plan.cutoff_hours and total_time > 0 %}
+{% set banked_min = (plan.cutoff_hours * 60) - total_time %}
+<div class="stat-card" style="background:linear-gradient(135deg, {% if banked_min >= 0 %}#ecfdf5 0%, #d1fae5 100%);border-color:#a7f3d0{% else %}#fef2f2 0%, #fee2e2 100%);border-color:#fecaca{% endif %};">
+    <div class="number" style="color:{% if banked_min >= 0 %}#047857{% else %}#b91c1c{% endif %};">
+        {% if banked_min >= 0 %}+{% endif %}{{ (banked_min // 60)|int }}:{{ "%02d"|format((banked_min % 60)|abs|int) }}
+    </div>
+    <div class="label" style="color:{% if banked_min >= 0 %}#065f46{% else %}#7f1d1d{% endif %};">Time Bank</div>
+</div>
+{% endif %}
+{% if avg_elapsed_speed or avg_moving_speed %}
+<div class="stat-card" style="background:linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);border-color:#a7f3d0;">
+    <div class="number" style="color:#059669;">
+        {% if avg_elapsed_speed %}{{ "%.1f"|format(avg_elapsed_speed) }}{% endif %}
+        {% if avg_elapsed_speed and avg_moving_speed %}<span style="color:#94a3b8;font-size:0.6em;"> / </span>{% endif %}
+        {% if avg_moving_speed %}<span style="font-size:0.75em;color:#16a34a;">{{ "%.1f"|format(avg_moving_speed) }}</span>{% endif %}
+    </div>
+    <div class="label" style="color:#047857;">Speed (elapsed / moving) mph</div>
+</div>
+{% endif %}
+{% if weighted_difficulty %}
+{% set diff_base = weighted_difficulty %}
+{% set diff_val = [weighted_difficulty + (weather_difficulty_mod or 0), 10] | min %}
+<div class="stat-card" style="background:linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);border-color:#fed7aa;">
+    {% if diff_val >= 7 %}
+        {% set diff_num_color = '#991b1b' %}
+        {% set diff_label_color = '#7f1d1d' %}
+    {% elif diff_val >= 4 %}
+        {% set diff_num_color = '#92400e' %}
+        {% set diff_label_color = '#78350f' %}
+    {% elif diff_val >= 1.5 %}
+        {% set diff_num_color = '#166534' %}
+        {% set diff_label_color = '#14532d' %}
+    {% else %}
+        {% set diff_num_color = '#475569' %}
+        {% set diff_label_color = '#334155' %}
+    {% endif %}
+    <div class="number" style="color:{{ diff_num_color }};">{{ "%.1f"|format(diff_val) }}</div>
+    <div class="label" style="color:{{ diff_label_color }};">Difficulty{% if weather_difficulty_mod and weather_difficulty_mod > 0 %} <span style="font-size:0.7rem;color:#dc2626;">(+{{ "%.1f"|format(weather_difficulty_mod) }} weather)</span>{% endif %}</div>
+</div>
+{% endif %}
+{% if upcoming_event %}
+<div class="stat-card" style="background:linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);border-color:#c7d2fe;{% if signup_count and signup_count > 0 %}cursor:pointer;{% else %}opacity:0.5;cursor:not-allowed;{% endif %}" {% if signup_count and signup_count > 0 %}onclick="showSignupsModal()" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 8px 20px rgba(0,0,0,0.12)';" onmouseout="this.style.transform='';this.style.boxShadow='';"{% endif %}>
+    <div class="number" style="color:#4338ca;">
+        <svg viewBox="0 0 20 20" width="24" height="24" fill="currentColor" style="display:inline-block;vertical-align:middle;margin-right:4px;">
+            <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+        </svg>
+        <span id="signup-count-display">{{ signup_count or 0 }}</span>
+    </div>
+    <div class="label" style="color:#312e81;">Riders Signed Up</div>
+</div>
+{% endif %}
+</div>
+
+<div class="container section">
+
+{# ===== WEATHER SUMMARY ALERT ===== #}
+{% set weather_rwgps = plan.rwgps_url_team or plan.rwgps_url %}
+{% if upcoming_event and weather_rwgps %}
+<div id="weather-summary-alert" style="display:none; background:linear-gradient(135deg,#eff6ff,#dbeafe); border:1px solid #93c5fd; border-radius:10px; padding:14px 18px; margin-bottom:16px;">
+    <div style="display:flex; align-items:flex-start; gap:10px;">
+        <span style="font-size:1.3rem;">🌤️</span>
+        <div>
+            <div style="font-weight:700; font-size:0.85rem; color:#1e40af; margin-bottom:4px;">Weather Forecast</div>
+            <div id="weather-summary-text" style="font-size:0.85rem; color:#1e3a5f; line-height:1.4;"></div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ===== QUICK ACTION BUTTONS ===== #}
+<div class="quick-actions">
+    {# Route (official RWGPS) #}
+    {% if plan.rwgps_url %}
+    <a href="{{ plan.rwgps_url }}" target="_blank" class="quick-action-btn" style="background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border-color:#7dd3fc;color:#0369a1;">
+        <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:20px;height:20px;">
+        <span>Route</span>
+    </a>
+    {% endif %}
+
+    {# Team Asha Route (if different from official) #}
+    {% if plan.rwgps_url_team and plan.rwgps_url_team != plan.rwgps_url %}
+    <a href="{{ plan.rwgps_url_team }}" target="_blank" class="quick-action-btn" style="background:linear-gradient(135deg,#fff7ed,#ffedd5);border-color:#ff6b00;color:#c2410c;">
+        <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:20px;height:20px;">
+        <span>Team Asha Route</span>
+    </a>
+    {% endif %}
+
+    {# Weather Map (our page) — primary weather action #}
+    {% if upcoming_event and weather_rwgps %}
+    <a href="{{ url_for('weather.weather_page', rwgps_url=weather_rwgps, start_datetime=upcoming_event.date|string + 'T' + (plan.start_time or '06:00'), plan_slug=plan.slug, auto='1') }}" class="quick-action-btn" style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);border-color:#6ee7b7;color:#065f46;">
+        <span>🗺️</span>
+        <span>Weather</span>
+    </a>
+    {% elif weather_rwgps %}
+    <a href="{{ url_for('weather.weather_page', rwgps_url=weather_rwgps, plan_slug=plan.slug) }}" class="quick-action-btn" style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);border-color:#6ee7b7;color:#065f46;">
+        <span>🗺️</span>
+        <span>Weather</span>
+    </a>
+    {% endif %}
+
+    
+    <a href="#time-bank-section" class="quick-action-btn" onclick="document.getElementById('time-bank-section').classList.add('expanded'); return true;">
+        <span>⏱️</span>
+        <span>Time Bank</span>
+    </a>
+    <a href="#journey-view" class="quick-action-btn">
+        <span>🗺️</span>
+        <span>Journey</span>
+    </a>
+    {% if session.user_id and recent_past_event %}
+    <a href="{{ url_for('riders.ride_all_strava_analysis', ride_id=recent_past_event.id) }}" class="quick-action-btn"
+       style="background:linear-gradient(135deg,#fff5f0,#fed7aa);border-color:#fc4c02;color:#9a3412;">
+        <span>📊</span>
+        <span>All Riders' Strava Analysis</span>
+    </a>
+    {% endif %}
+</div>
+
+
+
+{# ===== E. LEGEND ===== #}
+<div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:20px;">
+<div class="plan-legend" style="flex:1;">
+<span style="font-weight:600;color:var(--text);margin-right:4px;">Stop Types:</span>
+<span class="plan-legend-item"><span class="plan-legend-dot" style="background:#22c55e;"></span> Start</span>
+<span class="plan-legend-item"><span class="plan-legend-dot" style="background:#e53e3e;"></span> Finish</span>
+<span class="plan-legend-item"><span class="plan-legend-dot" style="background:#3b82f6;"></span> Control</span>
+<span class="plan-legend-item"><span class="plan-legend-dot" style="background:#f59e0b;"></span> Rest / Food / Water</span>
+<span class="plan-legend-item"><span class="plan-legend-dot" style="background:#94a3b8;"></span> Waypoint</span>
+</div>
+<div class="plan-legend" style="flex:1;">
+<span style="font-weight:600;color:var(--text);margin-right:4px;">Difficulty (ft/mi):</span>
+<div style="display:flex;align-items:center;gap:6px;flex:1;">
+    <span style="font-size:0.7rem;color:var(--text-light);">0</span>
+    <div style="flex:1;height:10px;border-radius:5px;background:linear-gradient(90deg, #94a3b8 0%, #22c55e 25%, #f59e0b 50%, #ef4444 75%, #991b1b 100%);"></div>
+    <span style="font-size:0.7rem;color:var(--text-light);">100+</span>
+</div>
+</div>
+</div>
+
+{# ===== F. TERRAIN DIFFICULTY STRIP (gradient colors) ===== #}
+{% if plan.total_distance_miles > 0 %}
+<div class="section-label">Terrain Difficulty Profile</div>
+<div class="terrain-strip" style="margin-bottom:24px;" title="Segments colored by difficulty (ft/mile gradient)">
+{% for s in stops %}
+{% if s.seg_dist and s.seg_dist > 0 %}
+<div class="terrain-seg"
+     style="width:{{ (s.seg_dist / plan.total_distance_miles * 100)|round(1) }}%;background:{{ s.difficulty_color }};"
+     title="{{ s.location }}: {{ s.ft_per_mi or 0 }} ft/mi — {{ s.difficulty_label }}{% if s.difficulty_score %} ({{ s.difficulty_score }}){% endif %}">
+</div>
+{% endif %}
+{% endfor %}
+</div>
+{% endif %}
+
+{# ===== G. ROUTE OVERVIEW / JOURNEY STRIP with ETA ===== #}
+<div class="section-label">Route Overview</div>
+<div class="journey-strip" style="margin-bottom:24px;">
+{% for n in journey_nodes %}
+<div class="journey-node {{ n.node_type }}">
+    <div class="journey-dot" style="background:{{ n.difficulty_color }};box-shadow:0 0 0 2px {{ n.difficulty_color }};"></div>
+    <div class="journey-label">
+        {{ n.label }}{% if n.stop_name and n.stop_duration_min and n.stop_duration_min > 0 %}<span style="font-weight:400;color:#64748b;font-size:0.65rem;"> — {{ n.stop_name }}</span>{% endif %}
+    </div>
+    <div class="journey-dist">{{ "%.1f"|format(n.distance_miles) }} mi</div>
+    <div class="journey-eta arrival-time" data-cum-min="{{ (n['arrival_time_min']|default(0))|int }}">{% if n.distance_miles > 0 %}--:--{% endif %}</div>
+    {% if stop_wind and n.stop_index is defined and stop_wind[n.stop_index] is defined %}
+    {% set jw = stop_wind[n.stop_index] %}
+    <div class="journey-wind">
+        {{ wind_arrow(jw) }}
+    </div>
+    {% if jw and jw.temperature_f is defined %}
+    <div style="font-size:0.6rem;color:#64748b;margin-top:1px;">{{ jw.temperature_f }}&deg;F</div>
+    {% endif %}
+    {% endif %}
+</div>
+{% endfor %}
+</div>
+
+{# ===== H. TIME-OF-DAY & TIME BANK CHART (Collapsible) ===== #}
+{% if plan.cutoff_hours %}
+<div class="collapsible-section expanded" id="time-bank-section" style="margin-bottom:24px;">
+    <div class="collapsible-header" onclick="toggleSection('time-bank-section')">
+        <div class="collapsible-title">
+            <span>⏱️</span>
+            <span>Time Bank & Arrival Times</span>
+        </div>
+        <span class="collapsible-icon">▼</span>
+    </div>
+    <div class="collapsible-content">
+        <div class="card" style="margin-top:12px;padding:16px 20px;border-radius:10px;">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <div class="section-label" style="margin-bottom:0;">Estimated Arrival Times & Time Bank</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+            <label for="start-time-input" style="font-size:0.78rem;color:var(--text-light);font-weight:500;">Start Time:</label>
+            <input type="time" id="start-time-input" value="{{ plan.start_time }}" class="start-time-input">
+        </div>
+    </div>
+    <div id="tod-start-label" style="font-size:0.75rem;color:var(--text-light);margin-bottom:10px;">
+        Based on {{ plan.start_time }} start. Time banked (+) or lost (&minus;) against {{ plan.cutoff_hours }}h cutoff.
+    </div>
+    {# Column headers #}
+    <div class="tod-grid" style="margin-bottom:4px;">
+        <span class="tod-header">Location</span>
+        <span class="tod-header" style="text-align:right;">ETA</span>
+        <span class="tod-header" style="text-align:right;">Dist</span>
+        <span class="tod-header" style="text-align:right;">Ft/Mi</span>
+        <span class="tod-header" style="text-align:right;">Time Bank</span>
+        <span class="tod-header" style="text-align:center;">Wind</span>
+        <span class="tod-header"></span>
+    </div>
+    {# Data rows #}
+    {% for s in stops %}
+    {% if s.time_bank_min is not none and (s.stop_name or s.stop_type in ['control', 'rest', 'finish', 'start', 'waypoint']) and s.distance_miles and s.distance_miles > 0 %}
+    <div class="tod-grid">
+        <span class="tod-label">
+            {{ s.location }}{% if s.stop_name and s.stop_duration_min and s.stop_duration_min > 0 %} <span style="color:#64748b;font-size:0.8rem;font-weight:400;">— {{ s.stop_name }}</span>{% endif %}
+        </span>
+        <span class="tod-time arrival-time" data-cum-min="{{ (s['arrival_time_min']|default(0))|int }}">
+            &mdash;
+        </span>
+        <span class="tod-dist">{{ "%.1f"|format(s.distance_miles) }} mi</span>
+        <span style="text-align:right;font-size:0.75rem;color:var(--text-light);padding:4px 0;font-variant-numeric:tabular-nums;">
+            {% if s.ft_per_mi %}{{ s.ft_per_mi }}{% else %}&mdash;{% endif %}
+        </span>
+        <span class="tod-bank" style="font-weight:600;color:{% if s.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
+            {% if s.time_bank_min >= 0 %}+{% endif %}{% set abs_min = s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min %}{{ (abs_min // 60)|int }}h{{ "%02d"|format(abs_min % 60) }}m
+        </span>
+        <span style="text-align:center;padding:4px 0;">
+            {% if stop_wind and stop_wind[loop.index0] is defined %}
+            {{ wind_arrow(stop_wind[loop.index0]) }}
+            {% endif %}
+        </span>
+    </div>
+    {% endif %}
+    {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ===== I. VIEW TOGGLE ===== #}
+<div style="display:flex;gap:8px;margin-bottom:16px;">
+    <button class="view-toggle active" data-view="cards" onclick="toggleView('cards')">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><rect x="1" y="1" width="14" height="4" rx="1"/><rect x="1" y="7" width="14" height="4" rx="1"/><rect x="1" y="13" width="14" height="2" rx="1"/></svg>
+        Journey View
+    </button>
+    <button class="view-toggle" data-view="table" onclick="toggleView('table')">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><rect x="1" y="1" width="14" height="2"/><rect x="1" y="5" width="14" height="2"/><rect x="1" y="9" width="14" height="2"/><rect x="1" y="13" width="14" height="2"/></svg>
+        Table View
+    </button>
+</div>
+
+{# ===== J. SEGMENT CARDS (timeline layout with break merging) ===== #}
+<div id="cards-view">
+{% if use_timeline %}
+<div class="segment-cards timeline-container">
+{% for s in stops %}
+{# Skip zero-distance rest stops — they are merged as break chips on the preceding card #}
+{% if s.get('_is_merged_break') %}
+{% else %}
+{% set level_class = 'level-start' if s.stop_type == 'start' else 'level-finish' if s.stop_type == 'finish' else 'level-control' if s.stop_type == 'control' else 'level-waypoint' %}
+<div class="segment-card {{ level_class }}" style="border-left-color:{{ s.difficulty_color }};">
+    {% if s.difficulty_label and s.difficulty_label != 'flat' %}<div class="diff-stripe" style="background:{{ s.difficulty_color }};"></div>{% endif %}
+    <div class="segment-header">
+        <div class="stop-icon {{ s.stop_type }}">
+            {% if s.stop_type == 'start' %}&#x1F6A9;{% elif s.stop_type == 'finish' %}&#x1F3C1;{% elif s.stop_type == 'control' %}&#x25C6;{% else %}&#x2022;{% endif %}
+        </div>
+        <div class="segment-loc">
+            <div class="segment-loc-name">
+                {{ s.location }}{% if s.stop_name and s.stop_duration_min and s.stop_duration_min > 0 %} <span style="color:#64748b;font-weight:400;font-size:0.8rem;">— {{ s.stop_name }}</span>{% endif %}
+            </div>
+            {% if s.notes %}<div class="segment-loc-notes">{{ s.notes }}</div>{% endif %}
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+            {% if s.difficulty_score and s.difficulty_score > 0 %}
+            <span class="diff-badge" style="background:{{ s.difficulty_color }};color:white;">{{ s.difficulty_score }}</span>
+            {% endif %}
+            <span class="type-badge {{ s.stop_type }}">{{ s.stop_type }}</span>
+        </div>
+    </div>
+    {% if s.seg_dist and s.seg_dist > 0 %}
+    <div class="segment-metrics">
+        <div class="metric">
+            <div class="metric-value">{{ "%.1f"|format(s.seg_dist) }}</div>
+            <div class="metric-label">Seg Mi</div>
+        </div>
+        <div class="metric">
+            <div class="metric-value" style="color:var(--primary);">{{ "%.1f"|format(s.distance_miles) if s.distance_miles else '—' }}</div>
+            <div class="metric-label">Cumul Mi</div>
+        </div>
+        {% if s.avg_speed %}
+        <div class="metric">
+            <div class="metric-value">{{ "%.1f"|format(s.avg_speed) }}</div>
+            <div class="metric-label">Avg MPH</div>
+        </div>
+        {% endif %}
+        {% if s.elevation_gain and s.elevation_gain > 0 %}
+        <div class="metric">
+            <div class="metric-value elev">{{ "{:,}".format(s.elevation_gain) }}</div>
+            <div class="metric-label">Elev Ft</div>
+        </div>
+        {% endif %}
+        {% if s.ft_per_mi %}
+        <div class="metric">
+            <div class="metric-value">{{ s.ft_per_mi }}</div>
+            <div class="metric-label">Ft/Mi</div>
+        </div>
+        {% endif %}
+        {% if s.segment_time_min and s.segment_time_min > 0 %}
+        <div class="metric">
+            <div class="metric-value">
+                {# Segment time only (riding time, not including stop duration) #}
+                {% if s.segment_time_min >= 60 %}{{ s.segment_time_min // 60 }}h{{ "%02d"|format(s.segment_time_min % 60) }}m{% else %}{{ s.segment_time_min }}m{% endif %}
+            </div>
+            <div class="metric-label">Seg Time</div>
+        </div>
+        {% endif %}
+        {% if s.cum_time_min and s.cum_time_min > 0 %}
+        <div class="metric">
+            <div class="metric-value" style="color:var(--primary);">
+                {% if s.cum_time_min >= 60 %}{{ s.cum_time_min // 60 }}h{{ "%02d"|format(s.cum_time_min % 60) }}m{% else %}{{ s.cum_time_min }}m{% endif %}
+            </div>
+            <div class="metric-label">Cumul Time</div>
+        </div>
+        {% endif %}
+        {% if s.arrival_time_min is defined %}
+        <div class="metric">
+            <div class="metric-value arrival-time" style="color:#7c3aed;font-weight:700;" data-cum-min="{{ (s.arrival_time_min|default(0))|int }}">--:--</div>
+            <div class="metric-label">ETA</div>
+        </div>
+        {% endif %}
+        {# Break metric removed — the break chip below already shows stop name + duration #}
+        {# Wind #}
+        {% if stop_wind and stop_wind[loop.index0] is defined %}
+        {% set cw = stop_wind[loop.index0] %}
+        {% if cw %}
+        <div class="metric">
+            <div class="metric-value">{{ wind_arrow(cw) }}</div>
+            <div class="metric-label">Wind</div>
+        </div>
+        {% if cw.temperature_f is defined %}
+        <div class="metric">
+            <div class="metric-value" style="color:#64748b;">{{ cw.temperature_f }}&deg;F</div>
+            <div class="metric-label">Temp</div>
+        </div>
+        {% endif %}
+        {% endif %}
+        {% endif %}
+        {# Time Bank: use this stop's time_bank #}
+        {% if s.time_bank_min is not none %}
+        <div class="metric">
+            {% set abs_bank = s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min %}
+            <div class="metric-value" style="color:{% if s.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
+                {% if s.time_bank_min >= 0 %}+{% else %}&minus;{% endif %}{{ (abs_bank // 60)|int }}:{{ "%02d"|format(abs_bank % 60) }}
+            </div>
+            <div class="metric-label">Time Bank</div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    {# Break chip — rest stop info via stop_name and stop_duration_min #}
+    {% if s.stop_name and s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
+    <div class="break-chips-row">
+        <div class="break-chip" title="{{ s.stop_name }}{% if s.notes %} — {{ s.notes }}{% endif %}">
+            <span class="break-icon">&#x2615;</span>
+            {{ s.stop_name }}
+            ({{ s.stop_duration_min }}m)
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+{% endfor %}
+</div>
+{% else %}
+{# Fallback: original flat card view when stop types are unknown #}
+<div class="segment-cards">
+{% for s in stops %}
+<div class="segment-card" style="border-left-color:{{ s.difficulty_color }};">
+    {% if s.difficulty_label and s.difficulty_label != 'flat' %}<div class="diff-stripe" style="background:{{ s.difficulty_color }};"></div>{% endif %}
+    <div class="segment-header">
+        <div class="stop-icon {{ s.stop_type }}">
+            {% if s.stop_type == 'start' %}&#x1F6A9;{% elif s.stop_type == 'finish' %}&#x1F3C1;{% elif s.stop_type == 'control' %}&#x25C6;{% elif s.stop_type == 'rest' %}&#x2615;{% else %}&#x2022;{% endif %}
+        </div>
+        <div class="segment-loc">
+            <div class="segment-loc-name">
+                {{ s.location }}{% if s.stop_name and s.stop_duration_min and s.stop_duration_min > 0 %} <span style="color:#64748b;font-weight:400;font-size:0.8rem;">— {{ s.stop_name }}</span>{% endif %}
+            </div>
+            {% if s.notes %}<div class="segment-loc-notes">{{ s.notes }}</div>{% endif %}
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+            {% if s.difficulty_score and s.difficulty_score > 0 %}
+            <span class="diff-badge" style="background:{{ s.difficulty_color }};color:white;">{{ s.difficulty_score }}</span>
+            {% endif %}
+            <span class="type-badge {{ s.stop_type }}">{{ s.stop_type }}</span>
+        </div>
+    </div>
+    {% if s.seg_dist and s.seg_dist > 0 %}
+    <div class="segment-metrics">
+        <div class="metric">
+            <div class="metric-value">{{ "%.1f"|format(s.seg_dist) }}</div>
+            <div class="metric-label">Seg Mi</div>
+        </div>
+        <div class="metric">
+            <div class="metric-value" style="color:var(--primary);">{{ "%.1f"|format(s.distance_miles) if s.distance_miles else '—' }}</div>
+            <div class="metric-label">Cumul Mi</div>
+        </div>
+        {% if s.avg_speed %}
+        <div class="metric">
+            <div class="metric-value">{{ "%.1f"|format(s.avg_speed) }}</div>
+            <div class="metric-label">Avg MPH</div>
+        </div>
+        {% endif %}
+        {% if s.elevation_gain and s.elevation_gain > 0 %}
+        <div class="metric">
+            <div class="metric-value elev">{{ "{:,}".format(s.elevation_gain) }}</div>
+            <div class="metric-label">Elev Ft</div>
+        </div>
+        {% endif %}
+        {% if s.ft_per_mi %}
+        <div class="metric">
+            <div class="metric-value">{{ s.ft_per_mi }}</div>
+            <div class="metric-label">Ft/Mi</div>
+        </div>
+        {% endif %}
+        {% if s.segment_time_min and s.segment_time_min > 0 %}
+        <div class="metric">
+            <div class="metric-value">
+                {# Segment time only (riding time, not including stop duration) #}
+                {% if s.segment_time_min >= 60 %}{{ s.segment_time_min // 60 }}h{{ "%02d"|format(s.segment_time_min % 60) }}m{% else %}{{ s.segment_time_min }}m{% endif %}
+            </div>
+            <div class="metric-label">Seg Time</div>
+        </div>
+        {% endif %}
+        {% if s.cum_time_min and s.cum_time_min > 0 %}
+        <div class="metric">
+            <div class="metric-value" style="color:var(--primary);">
+                {% if s.cum_time_min >= 60 %}{{ s.cum_time_min // 60 }}h{{ "%02d"|format(s.cum_time_min % 60) }}m{% else %}{{ s.cum_time_min }}m{% endif %}
+            </div>
+            <div class="metric-label">Cumul Time</div>
+        </div>
+        {% endif %}
+        {% if s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
+        <div class="metric">
+            <div class="metric-value">
+                {# Stop duration (time spent at this stop) #}
+                {% if s.stop_duration_min >= 60 %}{{ s.stop_duration_min // 60 }}h{{ "%02d"|format(s.stop_duration_min % 60) }}m{% else %}{{ s.stop_duration_min }}m{% endif %}
+            </div>
+            <div class="metric-label">Stop Time</div>
+        </div>
+        {% endif %}
+        {% if s.time_bank_min is not none %}
+        <div class="metric">
+            {% set abs_bank = s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min %}
+            <div class="metric-value" style="color:{% if s.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};">
+                {% if s.time_bank_min >= 0 %}+{% else %}&minus;{% endif %}{{ (abs_bank // 60)|int }}:{{ "%02d"|format(abs_bank % 60) }}
+            </div>
+            <div class="metric-label">Time Bank</div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    {# Break chip — rest stop info via stop_name and stop_duration_min #}
+    {% if s.stop_name and s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
+    <div class="break-chips-row">
+        <div class="break-chip" title="{{ s.stop_name }}{% if s.notes %} — {{ s.notes }}{% endif %}">
+            <span class="break-icon">&#x2615;</span>
+            {{ s.stop_name }}
+            ({{ s.stop_duration_min }}m)
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+</div>
+{% endif %}
+</div>
+
+{# ===== K. DATA TABLE (gradient difficulty colors) ===== #}
+<div id="table-view" style="display:none;">
+<div class="table-wrap">
+<table class="plan-table">
+<thead>
+<tr>
+    <th style="text-align:center;width:32px;">#</th>
+    <th style="text-align:left;">Type</th>
+    <th style="text-align:left;">Location</th>
+    <th style="text-align:right;">Seg. Dist</th>
+    <th style="text-align:right;">Cumul. Dist</th>
+    <th style="text-align:right;">Elev. Gain</th>
+    <th style="text-align:right;">Ft/Mi</th>
+    <th style="text-align:right;">Seg. Time</th>
+    <th style="text-align:right;">ETA</th>
+    <th style="text-align:right;">Break</th>
+    <th style="text-align:right;">Avg Speed</th>
+    {% if stop_wind %}<th style="text-align:center;">Wind</th><th style="text-align:center;">Temp</th>{% endif %}
+    {% if plan.cutoff_hours %}<th style="text-align:right;">Time Bank</th>{% endif %}
+    <th style="text-align:center;">Diff.</th>
+    <th style="text-align:left;">Notes</th>
+</tr>
+</thead>
+<tbody>
+{% for s in stops %}
+<tr style="border-left:3px solid {{ s.difficulty_color }};">
+    <td style="text-align:center;color:var(--text-light);font-size:0.72rem;">{{ loop.index }}</td>
+    <td><span class="type-badge {{ s.stop_type }}">{{ s.stop_type }}</span></td>
+    <td>
+        <div style="font-weight:600;color:var(--primary);font-size:0.82rem;display:flex;flex-direction:column;gap:4px;">
+            <div>
+                {% if s.stop_name %}
+                    {{ s.stop_name }} <span style="color:#94a3b8;font-weight:400;">({{ s.location }})</span>
+                {% else %}
+                    {{ s.location }}
+                {% endif %}
+            </div>
+            {% if s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
+            <div>
+                <span style="color:#92400e;background:#fef3c7;border:1px solid #fbbf24;border-radius:3px;padding:2px 6px;font-size:0.7rem;font-weight:600;white-space:nowrap;">Stop: {{ s.stop_duration_min }}m</span>
+            </div>
+            {% endif %}
+        </div>
+    </td>
+    <td class="num-cell">
+        {% if s.seg_dist and s.seg_dist > 0 %}{{ "%.1f"|format(s.seg_dist) }}{% else %}&mdash;{% endif %}
+    </td>
+    <td class="num-cell highlight">
+        {% if s.distance_miles is not none %}{{ "%.1f"|format(s.distance_miles) }}{% else %}&mdash;{% endif %}
+    </td>
+    <td class="num-cell" style="color:#dc2626;">
+        {% if s.elevation_gain and s.elevation_gain > 0 %}{{ "{:,}".format(s.elevation_gain) }}{% else %}&mdash;{% endif %}
+    </td>
+    <td class="num-cell">
+        {% if s.ft_per_mi %}{{ s.ft_per_mi }}{% else %}&mdash;{% endif %}
+    </td>
+    <td class="num-cell">
+        {% if s.segment_time_min and s.segment_time_min > 0 %}
+            {% if s.segment_time_min >= 60 %}{{ (s.segment_time_min // 60) }}h {{ "%02d"|format(s.segment_time_min % 60) }}m{% else %}{{ s.segment_time_min }}m{% endif %}
+        {% else %}&mdash;{% endif %}
+    </td>
+    <td class="num-cell">
+        <span class="arrival-time" style="color:#7c3aed;font-weight:600;" data-cum-min="{{ (s.arrival_time_min|default(0))|int }}">--:--</span>
+    </td>
+    <td class="num-cell">
+        {% if s.stop_duration_min and s.stop_duration_min > 0 and s.stop_duration_min != -1 %}
+            <span style="color:#92400e;">{{ s.stop_duration_min }}m</span>{% if s.stop_name %} <span style="font-size:0.7rem;color:#64748b;">{{ s.stop_name }}</span>{% endif %}
+        {% else %}&mdash;{% endif %}
+    </td>
+    <td class="num-cell">
+        {% if s.avg_speed %}{{ "%.1f"|format(s.avg_speed) }} mph{% else %}&mdash;{% endif %}
+    </td>
+    {% if stop_wind %}
+    {% set w = stop_wind[loop.index0] %}
+    <td style="text-align:center;padding:4px 8px;">
+      {% if w %}
+      {{ wind_arrow(w) }}
+      {% else %}
+      &mdash;
+      {% endif %}
+    </td>
+    <td style="text-align:center;padding:4px 8px;font-size:0.75rem;color:#64748b;">
+      {% if w and w.temperature_f is defined %}{{ w.temperature_f }}&deg;F{% else %}&mdash;{% endif %}
+    </td>
+    {% endif %}
+    {% if plan.cutoff_hours %}
+    <td class="num-cell">
+        {% if s.time_bank_min is not none %}
+        {% set abs_bank = s.time_bank_min if s.time_bank_min >= 0 else -s.time_bank_min %}
+        <span style="color:{% if s.time_bank_min >= 0 %}#16a34a{% else %}#dc2626{% endif %};font-weight:600;">
+            {% if s.time_bank_min >= 0 %}+{% else %}&minus;{% endif %}{{ (abs_bank // 60)|int }}:{{ "%02d"|format(abs_bank % 60) }}
+        </span>
+        {% else %}&mdash;{% endif %}
+    </td>
+    {% endif %}
+    <td style="text-align:center;">
+        {% if s.difficulty_score and s.difficulty_score > 0 %}
+        <span class="diff-badge" style="background:{{ s.difficulty_color }};color:white;">{{ s.difficulty_score }}</span>
+        {% else %}&mdash;{% endif %}
+    </td>
+    <td>
+        {% if s.notes %}<div style="font-size:0.75rem;color:var(--text-light);max-width:240px;line-height:1.35;">{{ s.notes }}</div>{% endif %}
+    </td>
+</tr>
+{% endfor %}
+</tbody>
+<tfoot>
+<tr>
+    <td colspan="3" style="text-align:right;">Totals</td>
+    <td class="num-cell">&mdash;</td>
+    <td class="num-cell">{{ "%.1f"|format(plan.total_distance_miles) }} mi</td>
+    <td class="num-cell" style="color:#dc2626;">{{ "{:,}".format(plan.total_elevation_ft) }} ft</td>
+    <td class="num-cell">{{ "%.0f"|format(overall_ft_per_mile) }}</td>
+    <td class="num-cell">
+        {% if total_time > 0 %}
+            {{ (total_time // 60) }}h {{ "%02d"|format(total_time % 60) }}m
+        {% endif %}
+    </td>
+    <td class="num-cell">
+        {% if avg_elapsed_speed %}
+            {{ "%.1f"|format(avg_elapsed_speed) }} mph
+        {% endif %}
+    </td>
+    {% if stop_wind %}<td></td><td></td>{% endif %}
+    {% if plan.cutoff_hours %}<td></td>{% endif %}
+    <td></td>
+    <td></td>
+</tr>
+</tfoot>
+</table>
+{% if stop_wind %}
+<div style="margin-top:12px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:0.75rem;color:var(--text-light);">
+  <span style="font-weight:600;color:var(--text);">Wind legend:</span>
+  <span>
+    <span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#16A34A;vertical-align:middle;margin-right:3px;"></span>
+    Tailwind
+  </span>
+  <span>
+    <span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#DC2626;vertical-align:middle;margin-right:3px;"></span>
+    Headwind
+  </span>
+  <span>
+    <span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#2563EB;vertical-align:middle;margin-right:3px;"></span>
+    Crosswind
+  </span>
+</div>
+{% endif %}
+</div>
+</div>
+
+{# ===== L. COMMUNITY PLANS ===== #}
+{% if public_custom_plans %}
+<div style="margin-top:30px;padding:20px;background:white;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);border:1px solid var(--border);">
+    <h3 style="margin:0 0 4px 0;font-size:1rem;">Community Plans</h3>
+    <p style="color:var(--text-light);font-size:0.82rem;margin:0 0 16px 0;">Custom plans shared by other riders. Copy one to use as your starting point.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+    {% for cp in public_custom_plans %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+            <div>
+                <div style="font-weight:600;font-size:0.9rem;color:var(--text);">{{ cp.name }}</div>
+                <div style="font-size:0.78rem;color:var(--text-light);margin-top:2px;">
+                    by {{ cp.first_name }} {{ cp.last_name }}
+                    {% if cp.description %}&middot; {{ cp.description }}{% endif %}
+                    {% if cp.avg_moving_speed %}&middot; {{ "%.1f"|format(cp.avg_moving_speed) }} mph moving{% endif %}
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;">
+                <a href="{{ url_for('riders.ride_plan_detail', slug=plan.slug, view='custom', plan=cp.id) }}" class="btn" style="background:#f1f5f9;color:var(--text);padding:6px 16px;font-size:0.82rem;white-space:nowrap;text-decoration:none;border:1px solid #e2e8f0;">
+                    View
+                </a>
+                <button class="btn" style="background:var(--primary);color:white;padding:6px 16px;font-size:0.82rem;white-space:nowrap;"
+                        onclick="clonePlan({{ cp.id }}, '{{ cp.name|replace("'", "\\'") }}')">
+                    Copy
+                </button>
+            </div>
+        </div>
+    {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{# ===== M. BACK LINK ===== #}
+<div style="margin-top:25px;">
+<a href="javascript:history.back()" class="back-link">&larr; Back</a>
+</div>
+
+</div>
+
+<!-- Signups Modal -->
+{% if upcoming_event %}
+<div id="signups-modal" class="modal" onclick="closeSignupsModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2 class="modal-title" id="signups-modal-title">Riders List</h2>
+            <button class="modal-close" onclick="closeSignupsModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="signups-modal-body">
+            <p style="text-align:center;color:var(--text-light);padding:20px;">Loading...</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleView(view) {
+    document.getElementById('cards-view').style.display = view === 'cards' ? 'block' : 'none';
+    document.getElementById('table-view').style.display = view === 'table' ? 'block' : 'none';
+    document.querySelectorAll('.view-toggle').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.view === view);
+    });
+}
+
+// Shared function to recalculate all arrival times from a given start time
+function recalcArrivalTimes(startTimeStr) {
+    var parts = startTimeStr.split(':');
+    var startHour = parseInt(parts[0]) || 6;
+    var startMin = parseInt(parts[1]) || 0;
+
+    // Update all .arrival-time elements (time bank chart + journey strip ETAs)
+    document.querySelectorAll('.arrival-time').forEach(function(el) {
+        var cumMin = parseInt(el.dataset.cumMin, 10);
+        if (isNaN(cumMin)) cumMin = 0;
+        var totalMin = startHour * 60 + startMin + cumMin;
+        var h = Math.floor(totalMin / 60) % 24;
+        var m = totalMin % 60;
+        var ampm = h >= 12 ? 'PM' : 'AM';
+        var displayH = h % 12 || 12;
+        el.textContent = displayH + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
+    });
+
+    // Update hero start time display
+    var heroEl = document.getElementById('hero-start-time');
+    if (heroEl) heroEl.textContent = startTimeStr;
+
+    // Update subtitle text
+    var subtitleEl = document.getElementById('tod-start-label');
+    if (subtitleEl) {
+        subtitleEl.textContent = 'Based on ' + startTimeStr + ' start. Time banked (+) or lost (\u2212) against {{ plan.cutoff_hours or 0 }}h cutoff.';
+    }
+}
+
+// Initial calculation on page load
+recalcArrivalTimes('{{ plan.start_time }}');
+
+// Start time input change handler
+(function() {
+    var startInput = document.getElementById('start-time-input');
+    if (startInput) {
+        startInput.addEventListener('change', function() {
+            recalcArrivalTimes(this.value);
+        });
+    }
+
+})();
+
+// Async weather summary for upcoming events
+{% if upcoming_event and weather_rwgps %}
+(function() {
+    var rwgpsUrl = '{{ weather_rwgps|replace("'", "\\'") }}';
+    var eventDate = '{{ upcoming_event.date if upcoming_event.date is defined else "" }}';
+    var startTime = '{{ plan.start_time or "06:00" }}';
+    var planSlug = '{{ plan.slug }}';
+    if (!rwgpsUrl || !eventDate) return;
+
+    var startDt = eventDate + 'T' + startTime;
+
+    fetch('/api/weather-map', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ rwgps_url: rwgpsUrl, start_datetime: startDt, plan_slug: planSlug })
+    })
+    .then(function(resp) { return resp.ok ? resp.json() : null; })
+    .then(function(data) {
+        if (!data || !data.ride_summary) return;
+        var alert = document.getElementById('weather-summary-alert');
+        var text = document.getElementById('weather-summary-text');
+        if (alert && text) {
+            text.textContent = data.ride_summary;
+            alert.style.display = 'block';
+        }
+    })
+    .catch(function() { /* silently ignore — summary is optional */ });
+})();
+{% endif %}
+
+// Toggle collapsible sections
+function toggleSection(sectionId) {
+    var section = document.getElementById(sectionId);
+    if (section) {
+        section.classList.toggle('expanded');
+    }
+}
+
+// Signups modal functions
+{% if upcoming_event %}
+function showSignupsModal() {
+    var countElement = document.getElementById('signup-count-display');
+    var count = parseInt(countElement.textContent);
+    if (count === 0) return;
+    
+    var modal = document.getElementById('signups-modal');
+    var modalTitle = document.getElementById('signups-modal-title');
+    var modalBody = document.getElementById('signups-modal-body');
+    
+    modalTitle.innerHTML = '<span style="color:#fbbf24;">Riders List</span> <span style="margin-left:12px;background:#ffffff;color:#0369a1;padding:4px 12px;border-radius:20px;font-size:0.9rem;font-weight:700;">' + count + '</span>';
+    modalBody.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">Loading...</p>';
+    modal.style.display = 'block';
+    
+    fetch('/signup/api/{{ upcoming_event.id }}/signups')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Update modal title with count
+                modalTitle.innerHTML = '<span style="color:#fbbf24;">Riders List</span> <span style="margin-left:12px;background:#ffffff;color:#0369a1;padding:4px 12px;border-radius:20px;font-size:0.9rem;font-weight:700;">' + data.count + '</span>';
+                
+                if (data.count === 0) {
+                    modalBody.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">No riders signed up yet.</p>';
+                } else {
+                    var html = '';
+                    data.riders.forEach(rider => {
+                        var initials = rider.first_name.charAt(0) + rider.last_name.charAt(0);
+                        
+                        html += '<div class="rider-list-item">' +
+                                '<div class="rider-avatar">' + initials + '</div>' +
+                                '<div class="rider-info">' +
+                                '<div class="rider-name">' + rider.first_name + ' ' + rider.last_name + ' <span style="color:var(--text-light);font-weight:500;font-size:0.85rem;">(#' + rider.rusa_id + ')</span></div>' +
+                                '</div>' +
+                                '</div>';
+                    });
+                    modalBody.innerHTML = html;
+                }
+            } else {
+                modalBody.innerHTML = '<p style="text-align:center;color:#dc2626;padding:20px;">Failed to load signups.</p>';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            modalBody.innerHTML = '<p style="text-align:center;color:#dc2626;padding:20px;">Failed to load signups.</p>';
+        });
+}
+
+function closeSignupsModal(event) {
+    var modal = document.getElementById('signups-modal');
+    if (!event || event.target === modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// Close modal on ESC key
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape' || event.key === 'Esc') {
+        var modal = document.getElementById('signups-modal');
+        if (modal && modal.style.display === 'block') {
+            modal.style.display = 'none';
+        }
+    }
+});
+{% endif %}
+
+async function clonePlan(planId, planName) {
+    if (!confirm('Copy "' + planName + '" as your custom plan?')) return;
+    try {
+        const resp = await fetch('/api/custom-plan/' + planId + '/clone', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: planName + ' (My Copy)'})
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert('Plan copied! Redirecting to your custom plan editor.');
+            window.location.href = '/ride-plan/{{ plan.slug }}/custom';
+        } else {
+            alert('Error: ' + (data.error || 'Could not copy plan'));
+        }
+    } catch (e) {
+        alert('Error copying plan: ' + e.message);
+    }
+}
+</script>
+{% endblock %}

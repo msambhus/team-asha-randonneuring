@@ -1,27 +1,11 @@
 {
   "version": 2,
-  "buildCommand": "cd .. && npm ci && npm run build:css",
   "builds": [
     {
       "src": "api/index.py",
       "use": "@vercel/python",
       "config": {
-        "includeFiles": [
-          "templates/**",
-          "static/**",
-          "../app.py",
-          "../auth.py",
-          "../cache.py",
-          "../config.py",
-          "../db.py",
-          "../models.py",
-          "../redirects.py",
-          "../routes/**",
-          "../services/**",
-          "../shared/**",
-          "../templates/**",
-          "../static/**"
-        ]
+        "includeFiles": ["templates/**", "static/**", "routes/**", "services/**", "shared/**"]
       }
     },
     { "src": "static/**", "use": "@vercel/static" }

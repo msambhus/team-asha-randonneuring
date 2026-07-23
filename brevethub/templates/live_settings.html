@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Live Tracking Settings{% endblock %}
+
+{% block extra_head %}
+<style>
+.settings-container { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
+.settings-card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; margin-top: 12px;
+}
+.settings-card h1 { font-size: 1.4rem; margin: 0 0 4px; }
+.settings-card p.help { color: var(--text-light); font-size: 0.9rem; margin: 0 0 20px; }
+.form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+.form-group label { font-weight: 600; font-size: 0.9rem; }
+.form-group input[type="url"] {
+    padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 0.9rem; background: var(--bg); color: var(--text);
+}
+.toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.btn-save {
+    padding: 10px 24px; background: var(--primary); color: white; border: none;
+    border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+}
+.btn-save:hover { background: var(--primary-dark); }
+.status-line { font-size: 0.85rem; margin-top: 14px; }
+.status-on { color: #166534; font-weight: 600; }
+.status-off { color: var(--text-light); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+  <div class="settings-card">
+    <h1>Live Tracking</h1>
+    <p class="help">
+      This is your master switch for sharing your live location with the club. Only
+      logged-in club members can see the live map, position history is automatically
+      deleted after 7 days, and you can turn this off at any time.
+    </p>
+
+    <form method="POST" action="{{ url_for('live.live_settings') }}">
+      <div class="toggle-row">
+        <input type="checkbox" id="enabled" name="enabled"
+               {% if tracking and tracking.enabled %}checked{% endif %}>
+        <label for="enabled">Enable live tracking</label>
+      </div>
+      <button type="submit" class="btn-save">Save settings</button>
+    </form>
+
+    <div class="status-line">
+      {% if tracking and tracking.enabled %}
+        <span class="status-on">● Live tracking is ON.</span>
+        Set up <strong>each ride</strong> from its
+        <a href="{{ url_for('live.live_hub') }}">live map</a> — your
+        <a href="https://www.garmin.com/en-US/livetrack/" target="_blank" rel="noopener">Garmin LiveTrack</a>
+        link changes every ride, so you register a fresh one there.
+      {% else %}
+        <span class="status-off">○ Live tracking is off.</span>
+      {% endif %}
+    </div>
+
+    <p class="help" style="margin-top:18px;">
+      <strong>Where do I paste my Garmin link?</strong> On the ride's own live map
+      (open it from the <a href="{{ url_for('live.live_hub') }}">Live</a> page →
+      “View a ride's live map”). Garmin creates a new LiveTrack link every ride, so
+      it's set per-ride there rather than once here.
+    </p>
+  </div>
+</div>
+{% endblock %}

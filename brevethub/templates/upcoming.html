@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Upcoming Rides - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div class="hero">
+<h1>Upcoming Rides</h1>
+<p>Team rides and RUSA events in the Bay Area</p>
+</div>
+<div class="container section">
+
+{% if rides %}
+<h2>Team Rides</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Date</th><th>Name</th><th>Distance</th><th>Club</th><th>Signups</th><th></th></tr></thead>
+<tbody>
+{% for r in rides %}
+<tr>
+<td>{{ r.date }}</td>
+<td>
+{{ r.name }}
+{% if r.plan_slug %}<a href="{{ url_for('riders.ride_plan_detail', slug=r.plan_slug) }}" title="View ride plan" class="ml-1.5 no-underline">&#x1F4CB;</a>{% endif %}
+</td>
+<td>{{ r.distance_km }} km</td>
+<td>{{ r.club_code or '' }}</td>
+<td class="text-center">{{ r.signup_count }}</td>
+<td><a href="{{ url_for('signup.ride_signup', ride_id=r.id) }}" class="rider-link">Sign Up &rarr;</a></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+
+{% if rusa_events %}
+<h2 class="mt-6 md:mt-8">RUSA Calendar Events</h2>
+<p class="text-xs md:text-sm text-text-light mb-3 md:mb-4">Upcoming brevets from San Francisco, Davis, Santa Cruz, Santa Rosa, and San Luis Obispo regions.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Date</th><th>Region</th><th>Route</th><th>Start</th><th>Time Limit</th><th>Distance</th><th>Elevation</th><th>Link</th></tr></thead>
+<tbody>
+{% for e in rusa_events %}
+<tr>
+<td>{{ e.date }}</td>
+<td>{{ e.region }}</td>
+<td>
+  <div>{% if 'DART' in e.route_name or 'Dart' in e.route_name or 'Fleche' in e.route_name or (e.rwgps_url and ('dart' in e.rwgps_url.lower() or 'fleche' in e.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in e.rwgps_url.lower())) %}[DART] {% endif %}{{ e.route_name }}</div>
+  {% if e.start_location %}
+  <div class="text-[0.7rem] md:text-xs text-text-light mt-0.5">{{ e.start_location }}</div>
+  {% endif %}
+</td>
+<td>{{ e.start_time or '' }}</td>
+<td>{{ e.time_limit_hours|string + 'h' if e.time_limit_hours else '' }}</td>
+<td>
+  {% if e.distance_miles %}
+    {{ "%.1f"|format(e.distance_miles) }} mi
+  {% else %}
+    {{ e.distance_km }} km
+  {% endif %}
+</td>
+<td>
+  {% if e.elevation_ft %}
+    {{ "{:,}".format(e.elevation_ft) }} ft
+  {% else %}
+    {{ e.climbing or '' }}
+  {% endif %}
+</td>
+<td>
+  {% if e.rwgps_url %}
+    <a href="{{ e.rwgps_url }}" target="_blank" class="rider-link">
+      {% if 'Fleche' in e.route_name or (e.rwgps_url and ('fleche' in e.rwgps_url.lower() or 'sfrandonneurs.org/fleche' in e.rwgps_url.lower())) %}
+        Event &rarr;
+      {% else %}
+        Route &rarr;
+      {% endif %}
+    </a>
+  {% endif %}
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+
+</div>
+{% endblock %}
