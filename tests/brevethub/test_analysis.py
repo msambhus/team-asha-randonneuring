@@ -84,6 +84,8 @@ def test_list_renders_owned_activities(client):
          patch('brevethub.models.get_strava_connection', return_value=_CONN), \
          patch('brevethub.models.get_analyzed_activity_ids', return_value=set()), \
          patch('brevethub.models.get_rider_past_results', return_value=[]), \
+         patch('brevethub.models.get_rider_rusa_cache',
+               return_value={'rusa_cache': [], 'rusa_fetched_at': None}), \
          patch('brevethub.routes.analysis._valid_access_token', return_value='tok'), \
          patch('brevethub.routes.analysis.fetch_activities', return_value=[_ACTIVITY]):
         resp = client.get('/analysis')
@@ -105,6 +107,8 @@ def test_list_marks_already_analyzed_rides(client):
          patch('brevethub.models.get_strava_connection', return_value=_CONN), \
          patch('brevethub.models.get_analyzed_activity_ids', return_value={555}), \
          patch('brevethub.models.get_rider_past_results', return_value=[]), \
+         patch('brevethub.models.get_rider_rusa_cache',
+               return_value={'rusa_cache': [], 'rusa_fetched_at': None}), \
          patch('brevethub.routes.analysis._valid_access_token', return_value='tok'), \
          patch('brevethub.routes.analysis.fetch_activities', return_value=[_ACTIVITY]):
         resp = client.get('/analysis')
@@ -121,6 +125,8 @@ def test_list_marks_finished_brevets_differently(client):
          patch('brevethub.models.get_strava_connection', return_value=_CONN), \
          patch('brevethub.models.get_analyzed_activity_ids', return_value=set()), \
          patch('brevethub.models.get_rider_past_results', return_value=[brevet]), \
+         patch('brevethub.models.get_rider_rusa_cache',
+               return_value={'rusa_cache': [], 'rusa_fetched_at': None}), \
          patch('brevethub.routes.analysis._valid_access_token', return_value='tok'), \
          patch('brevethub.routes.analysis.fetch_activities', return_value=[_ACTIVITY]):
         resp = client.get('/analysis')
@@ -129,6 +135,51 @@ def test_list_marks_finished_brevets_differently(client):
     assert 'Brevet' in body
     assert 'Morning 50K Brevet' in body
     assert '<tr class="brevet-row">' in body
+
+
+def test_list_marks_rusa_cache_brevets_differently(client):
+    """A rider's official cached RUSA history classifies matching Strava rides as
+    brevets even when no local BrevetHub signup/result row exists."""
+    _login(client)
+    cache_brevet = {'date': '2026-07-01', 'distance_km': 50,
+                    'finish_time': '3:10', 'route_name': 'RUSA Cache 50K'}
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_strava_connection', return_value=_CONN), \
+         patch('brevethub.models.get_analyzed_activity_ids', return_value=set()), \
+         patch('brevethub.models.get_rider_past_results', return_value=[]), \
+         patch('brevethub.models.get_rider_rusa_cache',
+               return_value={'rusa_cache': [cache_brevet], 'rusa_fetched_at': None}), \
+         patch('brevethub.routes.analysis._valid_access_token', return_value='tok'), \
+         patch('brevethub.routes.analysis.fetch_activities', return_value=[_ACTIVITY]):
+        resp = client.get('/analysis')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'Brevet' in body
+    assert 'RUSA Cache 50K' in body
+    assert '<tr class="brevet-row">' in body
+
+
+def test_list_sorts_latest_to_oldest_across_brevet_and_regular(client):
+    _login(client)
+    newer_regular = {**_ACTIVITY, 'id': 556, 'name': 'Newer Regular Ride',
+                     'distance': 30000.0,
+                     'start_date_local': '2026-07-03T08:00:00Z'}
+    older_brevet = {**_ACTIVITY, 'name': 'Older Brevet Activity'}
+    cache_brevet = {'date': '2026-07-01', 'distance_km': 50,
+                    'finish_time': '3:10', 'route_name': 'Older RUSA 50K'}
+    with patch('brevethub.models.get_rider_by_id', return_value=_RIDER), \
+         patch('brevethub.models.get_strava_connection', return_value=_CONN), \
+         patch('brevethub.models.get_analyzed_activity_ids', return_value=set()), \
+         patch('brevethub.models.get_rider_past_results', return_value=[]), \
+         patch('brevethub.models.get_rider_rusa_cache',
+               return_value={'rusa_cache': [cache_brevet], 'rusa_fetched_at': None}), \
+         patch('brevethub.routes.analysis._valid_access_token', return_value='tok'), \
+         patch('brevethub.routes.analysis.fetch_activities',
+               return_value=[older_brevet, newer_regular]):
+        resp = client.get('/analysis')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert body.index('Newer Regular Ride') < body.index('Older Brevet Activity')
 
 
 def test_list_prompts_when_not_connected(client):
