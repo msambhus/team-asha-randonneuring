@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "mkdir -p routes services shared && cp ../config.py ../auth.py ../cache.py ../db.py ../models.py ../redirects.py . && cp -R ../routes/. routes/ && cp -R ../services/. services/ && cp -R ../shared/. shared/ && cp -R ../templates/. templates/ && cp -R ../static/. static/ && cd .. && npm ci && npm run build:css",
+  "buildCommand": "mkdir -p routes services shared && cp ../config.py ../auth.py ../cache.py ../db.py ../models.py . && cp -R ../routes/. routes/ && cp -R ../services/. services/ && cp -R ../shared/. shared/ && cp -R ../templates/. templates/ && cp -R ../static/. static/ && cd .. && npm ci && npm run build:css",
   "builds": [
     {
       "src": "api/index.py",
