@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ event.name }} — live — {{ product_name }}{% endblock %}
+{# Guest event-scoped live view — the SHARED Mapbox GL Radial partial (map + compact
+   rider table + altitude profile), keyed by a calendar brevet rather than a single
+   ride. Every event card links here; a future or quiet event shows its route with an
+   empty "waiting for riders" state (the shared partial's status line + table handle
+   the empty vs populated states). No account needed; the roster it polls is public +
+   PII-safe. #}
+{% block extra_head %}
+{% if mapbox_token %}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+{% endif %}
+{% endblock %}
+{% block content %}
+<div class="container section">
+<section class="card">
+  <h1 class="text-primary text-[1.6rem] font-bold mb-1">{{ event.name }}</h1>
+  <p class="text-text-light text-sm mb-1">
+    {% if event.distance_km %}{{ event.distance_km }} km &middot; {% endif %}
+    {% if event.region %}{{ event.region }} &middot; {% endif %}
+    {% if event.date %}{{ event.date }} &middot; {% endif %}
+    Live
+  </p>
+  <p class="text-text-light text-sm mb-4">
+    Follow riders live on ride day — anyone sharing their location appears on the map
+    below automatically.
+  </p>
+
+  {% include '_radial_live.html' %}
+
+  <p class="mt-4"><a class="back-link" href="{{ url_for('calendar.calendar') }}">← Back to calendar</a></p>
+</section>
+</div>
+{% endblock %}

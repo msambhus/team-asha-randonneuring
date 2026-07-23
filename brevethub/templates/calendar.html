@@ -343,17 +343,13 @@
                       Route map
                     </a>
                   {% endif %}
-                  {# Per-event Live link — shown only when the event resolves to an
-                     associated PUBLIC live ride (via the explicit FK or a name+date
-                     match). Points at the EXISTING shared Radial view (/live/<id>);
-                     a private/unlinked event has no entry in live_rides, so no link
-                     renders (no broken placeholder). #}
-                  {% set live_ride_id = live_rides.get(ev.id) %}
-                  {% if live_ride_id %}
-                    <a class="event-link-btn" href="{{ url_for('live.live_map', ride_id=live_ride_id) }}">
-                      Live
-                    </a>
-                  {% endif %}
+                  {# Per-event Live link — always shown. Opens the shared event-scoped
+                     Radial live view: the event route plus any riders currently
+                     sharing their location, or an empty "waiting for riders" state
+                     for a future/quiet brevet. #}
+                  <a class="event-link-btn" href="{{ url_for('live.event_live_map', event_id=ev.id) }}">
+                    Live
+                  </a>
                 </div>
 
                 <div class="event-details-info">

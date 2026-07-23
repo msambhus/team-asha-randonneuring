@@ -186,23 +186,6 @@ def _weather_by_event(events):
     return result
 
 
-def _live_rides_by_event(events):
-    """Map each event id to its associated PUBLIC live ride id (``{event_id:
-    ride_id}``), so the calendar can render a per-event "Live" link to the shared
-    Radial view (/live/<ride_id>).
-
-    One cache-cheap query for every event on the page (mirrors _weather_by_event).
-    Fail-soft: a DB hiccup drops the Live links rather than 500-ing the calendar —
-    an event simply shows no Live link, never a broken page. The resolver enforces
-    is_public = TRUE, so only a public ride id can ever appear here.
-    """
-    try:
-        return models.get_live_ride_ids_for_events(events)
-    except Exception as e:
-        current_app.logger.warning('live-ride resolution failed for calendar: %s', e)
-        return {}
-
-
 @calendar_bp.route('/calendar')
 def calendar():
     """Public upcoming-brevets calendar. Guests browse freely; a signed-in rider
@@ -247,12 +230,6 @@ def calendar():
     # "forecast not available yet" state (handled in the template).
     weather = _weather_by_event(events)
 
-    # Per-event Live link: resolve each event to an associated PUBLIC live ride id
-    # (explicit FK first, else a public-ride name+date match). Cache-cheap single
-    # query, fail-soft — a resolution error drops the links, never 500s the page.
-    # Only public ride ids surface, so a private ride is never reachable this way.
-    live_rides = _live_rides_by_event(events)
-
     # The current rider's OWN status per event — never another rider's, so the
     # guest/other-rider view stays free of any participation PII.
     my_status = {}
@@ -276,7 +253,7 @@ def calendar():
         'calendar.html', events=events, months=months, my_status=my_status,
         my_results=my_results, rider=rider, club=club, states=states,
         regions_by_state=regions_by_state,
-        degraded=degraded, weather=weather, live_rides=live_rides,
+        degraded=degraded, weather=weather,
     )
 
 

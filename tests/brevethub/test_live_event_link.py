@@ -42,55 +42,39 @@ def _now():
     return datetime.now(timezone.utc)
 
 
-def _render_calendar(client, live_rides):
-    """Render /calendar as a guest with one upcoming event and the given
-    ``{event_id: ride_id}`` live-ride resolution, everything else mocked."""
+def _render_calendar(client):
+    """Render /calendar as a guest with one upcoming event, everything else mocked."""
     with patch('brevethub.models.get_events_cache_freshness', return_value=_now()), \
          patch('brevethub.models.get_upcoming_events', return_value=[_EVENT]), \
-         patch('brevethub.models.get_brevet_weather_for_events', return_value={}), \
-         patch('brevethub.models.get_live_ride_ids_for_events', return_value=live_rides):
+         patch('brevethub.models.get_brevet_weather_for_events', return_value={}):
         return client.get('/calendar')
 
 
 # --------------------------------------------------------------------------- #
-# Calendar Live link — renders only for an event that resolves to a public ride
+# Calendar Live link — always shown, pointing at the event-scoped live view
 # --------------------------------------------------------------------------- #
-def test_calendar_renders_live_link_when_event_resolves(client):
-    """An event that resolves to a public live ride shows a Live link pointing at
-    the shared Radial view (/live/<ride_id>)."""
-    resp = _render_calendar(client, {11: 55})
+def test_calendar_renders_live_link_for_every_event(client):
+    """EVERY event card carries a Live link pointing at the shared event-scoped
+    live view (/live/event/<id>), independent of whether any ride is live yet."""
+    resp = _render_calendar(client)
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'href="/live/55"' in body          # links to the existing Radial view
+    assert 'href="/live/event/11"' in body     # event-scoped view, not a ride id
     # The Live button carries the shared event-link-btn styling and the "Live" label.
-    assert re.search(r'href="/live/55"[^>]*>\s*Live\s*<', body)
+    assert re.search(r'href="/live/event/11"[^>]*>\s*Live\s*<', body)
 
 
-def test_calendar_no_live_link_when_event_unresolved(client):
-    """An event with no associated public ride shows NO Live link and no broken
-    placeholder (the resolver simply omits it from the map)."""
-    resp = _render_calendar(client, {})
+def test_calendar_live_link_needs_no_ride_resolution(client):
+    """The calendar no longer resolves events to rides to decide the link — the
+    Live link is always present, so a future/quiet event still shows it and the
+    page renders without any live-ride query."""
+    resp = _render_calendar(client)
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    # No per-ride Live button href for this event. The Plan link is still there.
-    assert 'href="/live/55"' not in body
+    assert 'href="/live/event/11"' in body
+    # No per-RIDE Live href leaks onto the calendar (the view is event-keyed).
     assert not re.search(r'href="/live/\d+"', body)
     assert 'Plan' in body
-
-
-def test_calendar_survives_resolution_failure(client):
-    """A DB hiccup in resolution drops the Live links rather than 500-ing the page
-    (fail-soft, mirroring the my_results guard)."""
-    with patch('brevethub.models.get_events_cache_freshness', return_value=_now()), \
-         patch('brevethub.models.get_upcoming_events', return_value=[_EVENT]), \
-         patch('brevethub.models.get_brevet_weather_for_events', return_value={}), \
-         patch('brevethub.models.get_live_ride_ids_for_events',
-               side_effect=RuntimeError('db down')):
-        resp = client.get('/calendar')
-    assert resp.status_code == 200
-    body = resp.get_data(as_text=True)
-    assert not re.search(r'href="/live/\d+"', body)  # links dropped, page intact
-    assert 'Point Reyes Lighthouse 200' in body
 
 
 # --------------------------------------------------------------------------- #
@@ -170,29 +154,136 @@ def test_manage_page_shows_event_linker_for_public_ride(client):
 
 
 # --------------------------------------------------------------------------- #
+# Event-scoped live view — every event gets a Live link to this shared Radial view
+# --------------------------------------------------------------------------- #
+_EVENT_FULL = dict(_EVENT, rwgps_url='https://ridewithgps.com/routes/20392003',
+                   start_location=None, start_time=None, club_id=None)
+
+
+def test_event_live_map_renders_for_guest(client):
+    """The event live view renders for a guest: the shared Radial partial (map +
+    roster table + profile), polling the event-scoped roster endpoint, with no route
+    geometry fetched live (the warmed cache track is read)."""
+    with patch('brevethub.models.get_brevet_event_full', return_value=_EVENT_FULL), \
+         patch('brevethub.models.get_rp_route_elevation_track',
+               return_value=[{'lat': 38.6, 'lng': -122.8, 'dist_m': 0.0, 'e_m': 30.0},
+                             {'lat': 38.7, 'lng': -122.9, 'dist_m': 5000.0, 'e_m': 120.0}]):
+        resp = client.get('/live/event/11')
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'Point Reyes Lighthouse 200' in body
+    assert '/live/event/11/roster.json' in body     # the poll endpoint the partial reads
+    assert 'radial-live' in body                     # the shared partial is included
+
+
+def test_event_live_map_unknown_event_404(client):
+    """An unknown event id is a 404 (a phantom event cannot be probed)."""
+    with patch('brevethub.models.get_brevet_event_full', return_value=None):
+        resp = client.get('/live/event/999999')
+    assert resp.status_code == 404
+
+
+def test_event_live_map_cold_cache_still_renders(client):
+    """A cold geometry cache degrades to no route line but still renders the view
+    (empty profile), never 500-ing — the fetch fallback is best-effort."""
+    with patch('brevethub.models.get_brevet_event_full',
+               return_value=dict(_EVENT_FULL, rwgps_url=None)), \
+         patch('brevethub.models.get_rp_route_elevation_track', return_value=None):
+        resp = client.get('/live/event/11')
+    assert resp.status_code == 200
+
+
+def test_event_roster_empty_when_no_rides(client):
+    """An event with no linked public ride returns an empty roster (the view shows a
+    'waiting for riders' state) — a 200 with roster == []."""
+    with patch('brevethub.models.get_brevet_event', return_value=_EVENT), \
+         patch('brevethub.models.get_live_ride_ids_for_event', return_value=[]):
+        resp = client.get('/live/event/11/roster.json')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['event_id'] == 11
+    assert data['roster'] == []
+
+
+def test_event_roster_aggregates_public_rides(client):
+    """The event roster is the union of its public rides' rosters; a resolved ride
+    that is not public is skipped (defense in depth)."""
+    ride_pub = {'id': 55, 'is_public': True, 'rwgps_url': None, 'club_id': 3, 'name': 'A'}
+    ride_priv = {'id': 66, 'is_public': False, 'rwgps_url': None, 'club_id': 3, 'name': 'B'}
+
+    def _fake_ride_roster(ride, now):
+        return [{'key': 'k%s' % ride['id'], 'display_name': 'R',
+                 'route_position_mi': 10.0 if ride['id'] == 55 else None}]
+
+    with patch('brevethub.models.get_brevet_event', return_value=_EVENT), \
+         patch('brevethub.models.get_live_ride_ids_for_event', return_value=[55, 66]), \
+         patch('brevethub.models.get_ride',
+               side_effect=lambda rid: {55: ride_pub, 66: ride_priv}.get(rid)), \
+         patch('brevethub.routes.live._ride_roster', side_effect=_fake_ride_roster):
+        resp = client.get('/live/event/11/roster.json')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    keys = [r['key'] for r in data['roster']]
+    assert keys == ['k55']                 # only the PUBLIC ride contributed
+
+
+def test_event_roster_survives_per_ride_failure(client):
+    """A per-ride DB hiccup mid-loop drops that ride's contribution rather than
+    500-ing the public poll — the surviving public ride still appears."""
+    ride_ok = {'id': 55, 'is_public': True, 'rwgps_url': None, 'club_id': 3, 'name': 'A'}
+
+    def _get_ride(rid):
+        if rid == 66:
+            raise RuntimeError('connection reset')
+        return ride_ok
+
+    with patch('brevethub.models.get_brevet_event', return_value=_EVENT), \
+         patch('brevethub.models.get_live_ride_ids_for_event', return_value=[55, 66]), \
+         patch('brevethub.models.get_ride', side_effect=_get_ride), \
+         patch('brevethub.routes.live._ride_roster',
+               side_effect=lambda ride, now: [{'key': 'k55', 'display_name': 'R',
+                                               'route_position_mi': 5.0}]):
+        resp = client.get('/live/event/11/roster.json')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert [r['key'] for r in data['roster']] == ['k55']   # bad ride 66 dropped
+
+
+def test_event_roster_unknown_event_404(client):
+    """The roster poll 404s for an unknown event (never reveals a phantom id)."""
+    with patch('brevethub.models.get_brevet_event', return_value=None):
+        resp = client.get('/live/event/999999/roster.json')
+    assert resp.status_code == 404
+
+
+def test_event_roster_survives_resolution_failure(client):
+    """A DB hiccup resolving rides degrades to an empty roster, never a 500."""
+    with patch('brevethub.models.get_brevet_event', return_value=_EVENT), \
+         patch('brevethub.models.get_live_ride_ids_for_event',
+               side_effect=RuntimeError('db down')):
+        resp = client.get('/live/event/11/roster.json')
+    assert resp.status_code == 200
+    assert resp.get_json()['roster'] == []
+
+
+# --------------------------------------------------------------------------- #
 # Model contracts — public-only gating + owner-scoping, asserted statically
 # --------------------------------------------------------------------------- #
-def test_bulk_resolver_returns_empty_for_no_events():
-    """The page-bulk resolver short-circuits an empty list with no DB query."""
-    from brevethub import models
-    assert models.get_live_ride_ids_for_events([]) == {}
-
-
-def test_resolvers_gate_on_public_and_touch_only_rp_tables():
-    """Both event->ride resolvers MUST filter is_public = TRUE (so no private ride
+def test_resolver_gates_on_public_and_touches_only_rp_tables():
+    """The event->rides resolver MUST filter is_public = TRUE (so no private ride
     can surface) and reference only rp_ tables — verified statically since the
     mocked route cannot exercise the SQL (no DB in unit tests)."""
     with open(MODELS_PATH, 'r', encoding='utf-8') as fh:
         src = fh.read()
-    # The shared join both resolvers build on enforces the public gate.
+    # The shared join the resolver builds on enforces the public gate.
     match_body = re.search(r'_EVENT_LIVE_RIDE_MATCH\s*=\s*\((.*?)\)\n', src, re.DOTALL)
     assert match_body, "shared event->ride match clause not found"
     assert re.search(r'is_public\s*=\s*TRUE', match_body.group(1))
-    # Both resolvers exist and select from rp_ tables only.
-    for fn in ('get_live_ride_id_for_event', 'get_live_ride_ids_for_events'):
-        body = re.search(r'def %s\(.*?\n(?=def |# ---)' % fn, src, re.DOTALL)
-        assert body, "resolver %s not found" % fn
-        assert 'rp_ride' in body.group(0) and 'rp_brevet_event' in body.group(0)
+    # The resolver exists and selects from rp_ tables only.
+    body = re.search(r'def get_live_ride_ids_for_event\(.*?\n(?=def |# ---)',
+                     src, re.DOTALL)
+    assert body, "resolver get_live_ride_ids_for_event not found"
+    assert 'rp_ride' in body.group(0) and 'rp_brevet_event' in body.group(0)
 
 
 def test_setter_is_owner_scoped():
