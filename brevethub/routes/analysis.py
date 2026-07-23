@@ -78,6 +78,30 @@ def _event_date(value):
     return str(value)[:10]
 
 
+def _brevet_history_key(brevet):
+    event_date = _event_date(brevet.get('date'))
+    try:
+        distance_km = round(float(brevet.get('distance_km') or 0))
+    except (TypeError, ValueError):
+        distance_km = 0
+    return (event_date, distance_km)
+
+
+def _normalize_rusa_cache_brevet(brevet):
+    """Convert one cached RUSA history row to the analysis brevet-match shape."""
+    return {
+        'event_id': brevet.get('event_id'),
+        'status': models.RideStatus.FINISHED.value,
+        'name': (brevet.get('name') or brevet.get('route_name') or
+                 brevet.get('route') or brevet.get('permanent_name') or 'RUSA brevet'),
+        'date': _event_date(brevet.get('date')),
+        'distance_km': brevet.get('distance_km'),
+        'finish_time': brevet.get('finish_time'),
+        'region': brevet.get('region'),
+        'source': 'rusa_cache',
+    }
+
+
 def _fmt_hm(minutes):
     """Format a minute count as ``'Hh MMm'`` (e.g. 95 -> '1h 35m'), or None.
 
@@ -107,14 +131,37 @@ def _owned_cycling_activities(token):
 
 
 def _rider_finished_brevets(rider_id):
+    """Finished brevet history used to classify Strava activities.
+
+    BrevetHub event-signup results carry ``event_id`` and can unlock route-plan
+    comparison, so they win on duplicates. The rider's cached RUSA history is still
+    authoritative for official completed brevets, and many riders have RUSA cache
+    rows without matching local event signups; those must still render as brevets.
+    """
+    finished = {}
     try:
-        return [
-            b for b in models.get_rider_past_results(rider_id)
-            if b.get('status') == models.RideStatus.FINISHED.value
-        ]
+        for brevet in models.get_rider_past_results(rider_id):
+            if brevet.get('status') != models.RideStatus.FINISHED.value:
+                continue
+            finished[_brevet_history_key(brevet)] = brevet
     except Exception as e:  # noqa: BLE001 - brevet matching is additive
-        current_app.logger.warning('analysis brevet match load failed for rider %s: %s', rider_id, e)
-        return []
+        current_app.logger.warning(
+            'analysis event-result brevet match load failed for rider %s: %s',
+            rider_id, e)
+
+    try:
+        cache_row = models.get_rider_rusa_cache(rider_id) or {}
+        for brevet in cache_row.get('rusa_cache') or []:
+            normalized = _normalize_rusa_cache_brevet(brevet)
+            key = _brevet_history_key(normalized)
+            if key[0] and key[1]:
+                finished.setdefault(key, normalized)
+    except Exception as e:  # noqa: BLE001 - brevet matching is additive
+        current_app.logger.warning(
+            'analysis RUSA-cache brevet match load failed for rider %s: %s',
+            rider_id, e)
+
+    return list(finished.values())
 
 
 def _match_activity_to_brevet(activity, brevet_events):
@@ -581,7 +628,6 @@ def analysis_list():
             for a in owned.values()
         ]
         activities.sort(key=lambda a: a['date'], reverse=True)
-        activities.sort(key=lambda a: not a['is_brevet'])
     except Exception as e:  # noqa: BLE001 — degrade, never 500 the picker
         current_app.logger.warning(
             'analysis list: Strava fetch failed for rider %s: %s', rider_id, e)
