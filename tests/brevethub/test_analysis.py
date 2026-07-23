@@ -15,6 +15,7 @@ First-class contracts (the mission's verification list):
   - read owner-only: rider A requesting another rider's id sees the not-analyzed
     state, never the other rider's data.
 """
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -73,6 +74,16 @@ def test_compute_requires_login(client):
     resp = client.post('/analysis/555/compute')
     assert resp.status_code == 302
     assert '/auth/login' in resp.headers['Location']
+
+
+def test_detail_reuses_exact_team_asha_template(client):
+    source, _, _ = client.application.jinja_env.loader.get_source(
+        client.application.jinja_env, 'strava_ride_analysis.html')
+    expected = (
+        Path(__file__).resolve().parents[2] /
+        'templates' / 'strava_ride_analysis.html'
+    ).read_text(encoding='utf-8')
+    assert source == expected
 
 
 # --------------------------------------------------------------------------- #
@@ -251,10 +262,11 @@ def test_compute_fetches_once_then_caches(client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'Morning Loop' in body
-    assert 'Segments' in body and 'Stops' in body
+    assert 'Plan vs Actual Summary' in body
+    assert 'Summary Only' in body
+    assert 'Route Map' in body
     assert 'View on Strava' in body
     assert 'https://www.strava.com/activities/555' in body
-    assert 'powered_by_strava.svg' in body
     mock_streams_get.assert_not_called()             # cache-on-read: no recompute
 
 
@@ -345,25 +357,24 @@ def test_detail_renders_cached_breakdown(client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'Coastal 200' in body
-    assert '203.4 km' in body
-    assert '14.3 mph' in body            # actual per-leg speed in brevet comparison
-    assert '84 rpm' in body              # per-leg cadence
-    assert '170 W' in body               # per-leg power
-    assert '2100 ft' in body             # per-leg climb
-    assert '18.0 min' in body            # stop duration
-    assert 'analysis-map' in body        # the map container renders when GPS is present
-    assert 'Plan vs Actual Stats' in body
+    assert '126.4 mi' in body            # Team Asha template displays miles
+    assert '14.3' in body                # actual per-leg speed in brevet comparison
+    assert '84' in body                  # per-leg cadence
+    assert '170' in body                 # per-leg power
+    assert '2100' in body                # per-leg climb
+    assert '18:00' in body               # Team Asha stop-duration format
+    assert 'rideMap' in body             # exact Team Asha map container id
+    assert 'Plan vs Actual Summary' in body
     assert 'View on Strava' in body
     assert 'https://www.strava.com/activities/555' in body
-    assert 'powered_by_strava.svg' in body
-    assert 'Plan vs Actual Stats' in body
+    assert 'Compare with Cohort' in body
+    assert 'Back to Brevet Analysis' in body
     assert 'Route Map' in body
     assert 'Ride Timeline' in body
     assert 'Color key:' in body
     assert 'Enroute Stops' in body
-    assert '<th style="text-align:right;">Clock</th>' in body
-    assert '<th style="text-align:right;">Bank</th>' in body
+    assert 'Clock' in body
+    assert 'Bank' in body
     assert 'Add note for this segment' in body
-    assert 'Brevet stats' in body
     assert 'Control A' in body
-    assert '13.8 mph' in body and '14.3 mph' in body
+    assert '13.8' in body and '14.3' in body

@@ -19,13 +19,52 @@ never a full email address or ``google_id``.
 """
 from datetime import date
 
-from flask import Blueprint, abort, render_template, request
+from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 
 from brevethub import models
 from brevethub.decorators import current_rider, login_required
 from shared import seasons
 
 riders_bp = Blueprint('riders', __name__)
+
+
+@riders_bp.route('/my/strava-analysis')
+@login_required
+def my_strava_analysis():
+    """Compatibility endpoint for the reused Team Asha Strava template."""
+    return redirect(url_for('analysis.analysis_list'))
+
+
+@riders_bp.route('/brevets/comparison')
+@login_required
+def brevet_comparison():
+    """Compatibility endpoint for the reused Team Asha Strava template."""
+    return redirect(url_for('analysis.analysis_list'))
+
+
+@riders_bp.route('/analysis/<int:ride_id>/cohort-comparison')
+@login_required
+def ride_cohort_comparison(ride_id):
+    """Compatibility endpoint for the reused Team Asha Strava template."""
+    return redirect(url_for('analysis.analysis_detail', activity_id=ride_id))
+
+
+@riders_bp.route('/analysis/<int:ride_id>/notes', methods=['POST'])
+@login_required
+def save_ride_notes(ride_id):
+    """Persist owner notes from the reused Team Asha Strava template."""
+    rider = current_rider()
+    payload = request.get_json(silent=True) or {}
+    saved = models.save_ride_analysis_note(
+        rider['id'],
+        ride_id,
+        payload.get('scope'),
+        payload.get('ident'),
+        payload.get('note'),
+    )
+    if saved is None:
+        return jsonify({'error': 'note not saved'}), 404
+    return jsonify({'note': saved})
 
 
 def _display_name(email):

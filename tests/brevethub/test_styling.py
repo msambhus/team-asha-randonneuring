@@ -59,7 +59,7 @@ _EVENT = {
 }
 
 # A fully-populated cached analysis (mirrors test_analysis.py) so the detail page
-# renders its map + segment/stop tables, exercising the mirrored classes.
+# renders the reused Team Asha map + timeline + segment table.
 _ANALYSIS = {
     'activity': {'name': 'Coastal 200', 'date': '2026-06-20', 'distance_km': 203.4,
                  'elevation_ft': 6800, 'moving_time': '9h 12m',
@@ -71,6 +71,24 @@ _ANALYSIS = {
     'legs': [{'to_km': 100.0, 'distance_km': 100.0, 'riding_time': '4h 30m',
               'speed_kmh': 22.2, 'avg_hr': 140, 'avg_watts': 170, 'np_watts': 178,
               'avg_cadence': 84, 'grade_pct': 1.2, 'climb_ft_per_mi': 45}],
+    'comparison': {
+        'summary': {'plan_distance_km': 200.0, 'actual_distance_km': 203.4,
+                    'distance_delta_km': 3.4, 'plan_elevation_ft': 6600,
+                    'actual_elevation_ft': 6800, 'plan_total_time_min': 720,
+                    'actual_elapsed_time_min': 700, 'actual_moving_time_min': 552,
+                    'plan_break_time_min': 60, 'actual_stopped_time_min': 148,
+                    'stops_planned': 1, 'stops_detected': 1, 'stops_extra': 0},
+        'rows': [{'location': 'Control A', 'stop_type': 'control',
+                  'distance_miles': 62.1, 'distance_km': 100.0,
+                  'plan_segment_min': 270, 'actual_segment_min': 260,
+                  'plan_speed_mph': 13.8, 'actual_speed_mph': 14.3,
+                  'plan_stop_duration_min': 15, 'actual_stop_duration_min': 18.0,
+                  'plan_cum_time_min': 285, 'actual_cum_time_min': 278,
+                  'actual_avg_hr': 140, 'actual_avg_watts': 170,
+                  'actual_avg_cadence': 84, 'actual_elev_gain_ft': 2100,
+                  'cum_time_delta_min': -7, 'is_extra': False}],
+        'detected_stops': [{'matched_stop_name': 'Control A'}],
+    },
     'map': {'track': [[37.5, -122.3], [37.6, -122.4]],
             'bounds': [[37.5, -122.4], [37.6, -122.3]]},
 }
@@ -334,9 +352,10 @@ def test_analysis_detail_styled(client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'style.css' in body
-    # The segment/stop tables + map container keep their mirrored class hooks.
-    assert 'analysis-legs' in body and 'analysis-stops' in body
-    assert 'analysis-map' in body
+    # The exact Team Asha analysis template hooks render in BrevetHub.
+    assert 'analysis-table' in body
+    assert 'rideMap' in body
+    assert 'rideChart' in body
 
 
 def test_live_list_styled(client):

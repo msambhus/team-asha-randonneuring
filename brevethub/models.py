@@ -1620,6 +1620,57 @@ def upsert_ride_analysis(rider_id, strava_activity_id, analysis,
     )
 
 
+def save_ride_analysis_note(rider_id, strava_activity_id, scope, ident, note):
+    """Persist a Team-Asha-template note inside the rider-owned analysis JSON.
+
+    The reused Strava-analysis template can save an overall ride note, a planned
+    segment note, or an unplanned-stop note. BrevetHub stores those in the existing
+    rp_ride_analysis.analysis JSONB payload, scoped by rider/activity; no Team Asha
+    table is touched.
+    """
+    row = get_ride_analysis(rider_id, strava_activity_id)
+    if not row or not row.get('analysis'):
+        return None
+
+    analysis = dict(row['analysis'])
+    notes = dict(analysis.get('notes') or {})
+    notes.setdefault('segments', {})
+    notes.setdefault('stops', {})
+
+    text = (note or '').strip()[:2000]
+    if scope == 'overall':
+        if text:
+            notes['overall'] = text
+        else:
+            notes.pop('overall', None)
+    elif scope == 'segment':
+        key = (ident or '').strip()[:200]
+        if not key:
+            return None
+        if text:
+            notes['segments'][key] = text
+        else:
+            notes['segments'].pop(key, None)
+    elif scope == 'stop':
+        key = (ident or '').strip()[:40]
+        if not key:
+            return None
+        if text:
+            notes['stops'][key] = text
+        else:
+            notes['stops'].pop(key, None)
+    else:
+        return None
+
+    analysis['notes'] = notes
+    db.execute(
+        "UPDATE rp_ride_analysis SET analysis = %s "
+        "WHERE rider_id = %s AND strava_activity_id = %s",
+        (Json(analysis), rider_id, strava_activity_id),
+    )
+    return text
+
+
 # --------------------------------------------------------------------------- #
 # Club ownership (rp_club.owner_rider_id) — who may generate real RWGPS ride
 # plans for a club. The club-admin route gates real-plan generation on these

@@ -438,7 +438,7 @@ class TestHistoricalStopWinds:
 
 
 def test_analysis_detail_injects_wind_arrows(client):
-    """The completed-ride detail view renders per-stop wind arrows in the Stops table."""
+    """The reused Team Asha detail template renders per-stop wind in the segment table."""
     _login(client)
     stops = [{'distance_km': 100.0, 'duration_min': 18.0, 'lat': 37.5, 'lng': -122.3},
              {'distance_km': 150.0, 'duration_min': 7.5, 'lat': 37.7, 'lng': -122.1}]
@@ -448,6 +448,23 @@ def test_analysis_detail_injects_wind_arrows(client):
                      'elapsed_time': '11h 40m', 'avg_speed_kmh': 22.1},
         'summary': {'moving_speed_kmh': 23.4, 'avg_hr': 138, 'max_hr': 171,
                     'avg_watts': 165, 'max_watts': 520},
+        'comparison': {
+            'summary': {'plan_distance_km': 200.0, 'actual_distance_km': 203.4,
+                        'plan_elevation_ft': 6600, 'actual_elevation_ft': 6800,
+                        'plan_total_time_min': 720, 'actual_elapsed_time_min': 700,
+                        'actual_moving_time_min': 552, 'plan_break_time_min': 60,
+                        'actual_stopped_time_min': 148, 'stops_planned': 1,
+                        'stops_detected': 2, 'stops_extra': 0},
+            'rows': [{'location': 'Control A', 'stop_type': 'control',
+                      'distance_miles': 62.1, 'distance_km': 100.0,
+                      'plan_segment_min': 270, 'actual_segment_min': 260,
+                      'plan_speed_mph': 13.8, 'actual_speed_mph': 14.3,
+                      'plan_stop_duration_min': 15, 'actual_stop_duration_min': 18.0,
+                      'plan_cum_time_min': 285, 'actual_cum_time_min': 278,
+                      'is_extra': False}],
+            'detected_stops': [{'matched_stop_name': 'Control A'},
+                               {'matched_stop_name': 'Control B'}],
+        },
         'stop_count': 2, 'stops': stops, 'legs': [], 'map': None,
     }
     ride_date = date(2026, 7, 1)
@@ -461,7 +478,7 @@ def test_analysis_detail_injects_wind_arrows(client):
         resp = client.get('/analysis/555')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'analysis-wind-head' in body   # the Wind column header rendered
+    assert 'Actual Wind' in body          # Team Asha wind column header rendered
     assert 'wind-arrow' in body           # per-stop arrow SVG injected
 
 
@@ -486,7 +503,7 @@ def test_analysis_detail_no_wind_still_renders(client):
         resp = client.get('/analysis/555')
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'analysis-wind-head' not in body
+    assert 'Actual Wind' not in body
     assert 'Coastal 200' in body
 
 
