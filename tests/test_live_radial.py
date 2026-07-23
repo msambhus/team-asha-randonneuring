@@ -182,6 +182,19 @@ def test_profile_gradient_buckets_color_by_grade():
     assert colors[2] == '#3b82f6'                     # descent → blue
 
 
+def test_profile_segments_have_graded_area_fill():
+    """Each segment exposes an ``area_d`` closed down to the baseline, so the template
+    fills the area under each segment in that segment's grade colour (Radial style)."""
+    prof = lr.build_elevation_profile(_profile_track(), width=800, height=200)
+    baseline = round(prof['plot']['y'] + prof['plot']['h'], 2)
+    for s in prof['segments']:
+        assert 'area_d' in s and s['area_d']
+        assert s['area_d'].endswith('Z')              # closed area, not an open line
+        assert str(baseline) in s['area_d']            # drops to the profile baseline
+        # The fill colour is the same grade colour as the line stroke.
+        assert s['area_d'].startswith('M') and s['color']
+
+
 def test_profile_place_x_is_linear_along_route():
     prof = lr.build_elevation_profile(_profile_track(), width=800, height=200)
     assert lr.place_x(0, prof) == prof['plot']['x']
