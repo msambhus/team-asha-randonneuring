@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Merge GPS Files - {{ product_name }}{% endblock %}
+{% block meta_description %}Combine overlapping or consecutive FIT activity files without uploading your GPS data to a third party.{% endblock %}
+
+{% block content %}
+<div class="hero">
+  <h1>Merge GPS Files</h1>
+  <p class="mt-2 text-white/85 text-sm md:text-base">Combine FIT recordings into one activity. Files are processed in memory and never stored.</p>
+</div>
+
+<div class="container max-w-[720px]">
+  {% if error %}<div class="py-3 px-5 rounded-lg my-4 text-sm bg-[#fed7d7] text-[#9b2c2c]" role="alert">{{ error }}</div>{% endif %}
+  <form method="post" action="{{ url_for('tools.merge_fit_submit') }}" enctype="multipart/form-data"
+        class="bg-card-bg rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.06)] p-6 md:p-8 my-6">
+    <label for="files" class="block font-semibold text-primary mb-2">Activity files (.fit)</label>
+    <input type="file" id="files" name="files" accept=".fit" multiple required
+           class="block w-full text-sm text-text file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary file:text-white file:font-medium file:cursor-pointer">
+    <p class="mt-2 mb-6 text-xs text-text-light">2-{{ max_files }} files - {{ max_mb }} MB total - processed in memory</p>
+
+    <fieldset class="mb-6">
+      <legend class="font-semibold text-primary mb-3">Merge mode</legend>
+      <label class="flex items-start gap-3 p-3 rounded-lg border border-border mb-2 cursor-pointer">
+        <input type="radio" name="mode" value="concat" class="mt-1">
+        <span><strong class="block">Concatenation</strong><span class="text-sm text-text-light">Stitch consecutive recordings end-to-end, such as after changing devices mid-ride.</span></span>
+      </label>
+      <label class="flex items-start gap-3 p-3 rounded-lg border border-border cursor-pointer">
+        <input type="radio" name="mode" value="overlay" class="mt-1" checked>
+        <span><strong class="block">Overlay</strong><span class="text-sm text-text-light">Combine overlapping recordings by time. The first file supplies the GPS track; others can add heart rate, power, or cadence.</span></span>
+      </label>
+    </fieldset>
+    <button type="submit" class="inline-block py-2.5 px-6 bg-accent text-white border-0 rounded-md font-semibold cursor-pointer hover:opacity-90">Merge and download</button>
+  </form>
+  <p class="text-text-light text-xs mb-8">The output is a standard FIT file ready for Garmin Connect or Strava. GPX and TCX input are not currently supported.</p>
+</div>
+{% endblock %}
