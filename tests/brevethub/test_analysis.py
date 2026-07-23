@@ -357,7 +357,13 @@ def test_detail_renders_cached_breakdown(client):
     assert 'https://www.strava.com/activities/555' in body
     assert 'powered_by_strava.svg' in body
     assert 'Plan vs Actual Stats' in body
-    assert 'Detailed Brevet Segments' in body
+    assert 'Route Map' in body
+    assert 'Ride Timeline' in body
+    assert 'Color key:' in body
+    assert 'Enroute Stops' in body
+    assert '<th style="text-align:right;">Clock</th>' in body
+    assert '<th style="text-align:right;">Bank</th>' in body
+    assert 'Add note for this segment' in body
     assert 'Brevet stats' in body
     assert 'Control A' in body
     assert '13.8 mph' in body and '14.3 mph' in body
