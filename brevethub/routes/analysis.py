@@ -39,7 +39,14 @@ from brevethub.decorators import profile_required
 from brevethub.routes.strava import _valid_access_token
 from shared.strava import (CYCLING_TYPES, fetch_activities,
                            fetch_activity_streams)
-from shared.strava_analysis import build_activity_analysis, _compress_streams
+from shared.strava_analysis import (
+    METERS_PER_MILE,
+    build_activity_analysis,
+    build_map_data,
+    _build_stream_interpolator,
+    _compress_streams,
+    _decompress_streams,
+)
 from shared.weather import (_AVG_SPEED_KMH, _safe_get, calculate_bearing,
                             classify_wind, compass_label, crosswind_component,
                             fetch_historical_wind, get_hour_index,
@@ -61,6 +68,14 @@ _MPH_TO_KMH = 1.609344
 _M_PER_S_TO_KMH = 3.6
 _M_TO_FT = 3.28084
 _MILES_TO_KM = 1.609344
+
+
+def _event_date(value):
+    if not value:
+        return ''
+    if hasattr(value, 'date'):
+        return value.date().isoformat()
+    return str(value)[:10]
 
 
 def _fmt_hm(minutes):
@@ -91,7 +106,45 @@ def _owned_cycling_activities(token):
     return {a['id']: a for a in raw if a.get('type') in CYCLING_TYPES}
 
 
-def _summarize_for_list(activity, analyzed_ids=frozenset()):
+def _rider_finished_brevets(rider_id):
+    try:
+        return [
+            b for b in models.get_rider_past_results(rider_id)
+            if b.get('status') == models.RideStatus.FINISHED.value
+        ]
+    except Exception as e:  # noqa: BLE001 - brevet matching is additive
+        current_app.logger.warning('analysis brevet match load failed for rider %s: %s', rider_id, e)
+        return []
+
+
+def _match_activity_to_brevet(activity, brevet_events):
+    activity_date = (activity.get('start_date_local') or '')[:10]
+    activity_km = (activity.get('distance') or 0) / _METERS_PER_KM
+    best = None
+    best_delta = None
+    for event in brevet_events or []:
+        event_date = _event_date(event.get('date'))
+        event_km = float(event.get('distance_km') or 0)
+        if not event_date or event_date != activity_date or not event_km:
+            continue
+        delta = abs(activity_km - event_km)
+        tolerance = max(8.0, event_km * 0.10)
+        if delta <= tolerance and (best_delta is None or delta < best_delta):
+            best = event
+            best_delta = delta
+    if not best:
+        return None
+    return {
+        'event_id': best.get('event_id'),
+        'name': best.get('name'),
+        'date': _event_date(best.get('date')),
+        'distance_km': best.get('distance_km'),
+        'finish_time': best.get('finish_time'),
+        'region': best.get('region'),
+    }
+
+
+def _summarize_for_list(activity, analyzed_ids=frozenset(), brevet=None):
     """A JSON-safe, de-branded, km/feet summary row for the activity picker.
 
     ``analyzed_ids`` is the set of the rider's already-analyzed activity ids, so the
@@ -106,7 +159,188 @@ def _summarize_for_list(activity, analyzed_ids=frozenset()):
         'elevation_ft': round((activity.get('total_elevation_gain') or 0) * _M_TO_FT),
         'moving_time': _fmt_hm((activity.get('moving_time') or 0) / 60),
         'strava_url': f"https://www.strava.com/activities/{activity['id']}",
+        'is_brevet': brevet is not None,
+        'brevet': brevet,
         'analyzed': activity['id'] in analyzed_ids,
+    }
+
+
+def _stream_avg(streams, key, start_mi, end_mi):
+    values = streams.get(key) or []
+    dist_m = streams.get('distance') or []
+    if not values or not dist_m or len(values) != len(dist_m):
+        return None
+    vals = [
+        values[i] for i, meters in enumerate(dist_m)
+        if start_mi <= meters / METERS_PER_MILE <= end_mi
+        and values[i] is not None and values[i] > 0
+    ]
+    return round(sum(vals) / len(vals)) if vals else None
+
+
+def _stream_elevation_gain_ft(streams, start_mi, end_mi):
+    altitude = streams.get('altitude') or []
+    dist_m = streams.get('distance') or []
+    if not altitude or not dist_m or len(altitude) != len(dist_m):
+        return None
+    idx = [i for i, meters in enumerate(dist_m)
+           if start_mi <= meters / METERS_PER_MILE <= end_mi]
+    if len(idx) < 2:
+        return None
+    gain_m = 0.0
+    for a, b in zip(idx, idx[1:]):
+        delta = altitude[b] - altitude[a]
+        if delta and delta > 0:
+            gain_m += delta
+    return round(gain_m * _M_TO_FT)
+
+
+def _match_stops_to_plan(detected_stops, plan_stops):
+    stops = [dict(s) for s in detected_stops or []]
+    if not plan_stops:
+        for stop in stops:
+            stop['matched_stop_name'] = None
+            stop['matched_stop_type'] = None
+            stop['is_extra'] = True
+        return stops
+
+    total_mi = max((float(s.get('distance_miles') or 0) for s in plan_stops), default=0)
+    tolerance = min(total_mi * 0.03, 3.0) if total_mi else 3.0
+    for stop in stops:
+        stop['_matched'] = False
+        stop['matched_stop_name'] = None
+        stop['matched_stop_type'] = None
+        stop['is_extra'] = True
+
+    for ps in plan_stops:
+        stop_type = (ps.get('stop_type') or '').lower()
+        if stop_type == 'start':
+            continue
+        ps_dist = float(ps.get('distance_miles') or 0)
+        best = None
+        best_delta = None
+        for stop in stops:
+            if stop.get('_matched'):
+                continue
+            delta = abs((stop.get('distance_miles') or 0) - ps_dist)
+            if delta <= tolerance and (best_delta is None or delta < best_delta):
+                best = stop
+                best_delta = delta
+        if best:
+            best['_matched'] = True
+            best['matched_stop_name'] = ps.get('location')
+            best['matched_stop_type'] = stop_type
+            best['is_extra'] = False
+
+    for stop in stops:
+        stop.pop('_matched', None)
+    return stops
+
+
+def _build_plan_comparison(plan, plan_stops, raw, activity, streams):
+    detected = _match_stops_to_plan(raw.get('stops') or [], plan_stops)
+    interp = _build_stream_interpolator(streams)
+    rows = []
+    matched_by_name = {
+        s.get('matched_stop_name'): s for s in detected if s.get('matched_stop_name')
+    }
+    actual_elapsed_min = (activity.get('elapsed_time') or 0) / 60
+    actual_moving_min = (activity.get('moving_time') or 0) / 60
+    actual_distance_mi = (activity.get('distance') or 0) / METERS_PER_MILE
+    actual_elevation_ft = round((activity.get('total_elevation_gain') or 0) * _M_TO_FT)
+    prev_dist = 0.0
+    prev_actual_cum = 0
+
+    for idx, stop in enumerate(plan_stops or []):
+        stop_type = (stop.get('stop_type') or '').lower()
+        distance_mi = float(stop.get('distance_miles') or 0)
+        seg_dist = float(stop.get('seg_dist') or max(distance_mi - prev_dist, 0))
+        plan_seg = stop.get('segment_time_min') or 0
+        plan_stop = stop.get('stop_duration_min') or 0
+        plan_cum = stop.get('cum_time_min') or 0
+        actual_stop = matched_by_name.get(stop.get('location'))
+        actual_stop_min = actual_stop.get('duration_min') if actual_stop else 0
+        if stop_type == 'start':
+            actual_cum = 0
+            actual_stop_min = 0
+        elif stop_type == 'finish':
+            actual_cum = round(actual_elapsed_min)
+            actual_stop_min = 0
+        elif interp:
+            actual_cum = round(interp(distance_mi))
+        else:
+            actual_cum = None
+
+        actual_segment_min = None
+        actual_speed_mph = None
+        if actual_cum is not None and idx > 0:
+            actual_segment_min = max(0, round(actual_cum - prev_actual_cum - (actual_stop_min or 0)))
+            if actual_segment_min and seg_dist:
+                actual_speed_mph = round(seg_dist / (actual_segment_min / 60), 1)
+
+        row = {
+            'location': stop.get('location') or '',
+            'stop_type': stop_type or 'waypoint',
+            'distance_miles': distance_mi,
+            'distance_km': round(distance_mi * _MILES_TO_KM, 1),
+            'plan_segment_min': plan_seg,
+            'plan_stop_duration_min': plan_stop,
+            'plan_cum_time_min': plan_cum,
+            'plan_speed_mph': round(seg_dist / (plan_seg / 60), 1) if plan_seg and seg_dist else None,
+            'actual_stop_duration_min': actual_stop_min,
+            'actual_cum_time_min': actual_cum,
+            'actual_segment_min': actual_segment_min,
+            'actual_speed_mph': actual_speed_mph,
+            'actual_avg_hr': _stream_avg(streams, 'heartrate', prev_dist, distance_mi),
+            'actual_avg_watts': _stream_avg(streams, 'watts', prev_dist, distance_mi),
+            'actual_avg_cadence': _stream_avg(streams, 'cadence', prev_dist, distance_mi),
+            'actual_elev_gain_ft': _stream_elevation_gain_ft(streams, prev_dist, distance_mi),
+            'cum_time_delta_min': round(actual_cum - plan_cum) if actual_cum is not None and plan_cum else None,
+            'is_extra': False,
+        }
+        rows.append(row)
+        prev_dist = distance_mi
+        if actual_cum is not None:
+            prev_actual_cum = actual_cum
+
+    for stop in detected:
+        if not stop.get('is_extra'):
+            continue
+        rows.append({
+            'location': f"Unplanned stop @ {round(stop.get('distance_miles') or 0, 1)} mi",
+            'stop_type': 'extra',
+            'distance_miles': stop.get('distance_miles') or 0,
+            'distance_km': round((stop.get('distance_miles') or 0) * _MILES_TO_KM, 1),
+            'actual_stop_duration_min': stop.get('duration_min'),
+            'is_extra': True,
+        })
+    rows.sort(key=lambda r: r.get('distance_miles') or 0)
+
+    plan_distance_mi = float((plan or {}).get('total_distance_miles') or 0)
+    plan_total_min = (plan or {}).get('total_elapsed_time_min') or (
+        rows[-1].get('plan_cum_time_min') if rows else None
+    )
+    plan_break_min = (plan or {}).get('total_break_time_min')
+    return {
+        'summary': {
+            'plan_name': (plan or {}).get('name'),
+            'plan_distance_km': round(plan_distance_mi * _MILES_TO_KM, 1) if plan_distance_mi else None,
+            'actual_distance_km': round(actual_distance_mi * _MILES_TO_KM, 1),
+            'distance_delta_km': round((actual_distance_mi - plan_distance_mi) * _MILES_TO_KM, 1) if plan_distance_mi else None,
+            'plan_elevation_ft': (plan or {}).get('total_elevation_ft'),
+            'actual_elevation_ft': actual_elevation_ft,
+            'plan_total_time_min': plan_total_min,
+            'actual_elapsed_time_min': round(actual_elapsed_min),
+            'actual_moving_time_min': round(actual_moving_min),
+            'plan_break_time_min': plan_break_min,
+            'actual_stopped_time_min': round(actual_elapsed_min - actual_moving_min),
+            'stops_planned': len([s for s in plan_stops or [] if (s.get('stop_type') or '').lower() not in ('start', 'finish')]),
+            'stops_detected': len(detected),
+            'stops_extra': len([s for s in detected if s.get('is_extra')]),
+        },
+        'rows': rows,
+        'hr_power': any(r.get('actual_avg_hr') or r.get('actual_avg_watts') for r in rows),
+        'detected_stops': detected,
     }
 
 
@@ -133,7 +367,7 @@ def _leg_row(seg):
     }
 
 
-def _build_analysis(activity, streams):
+def _build_analysis(activity, streams, brevet=None):
     """Assemble the JSON-safe, de-branded (km/km-h/feet) analysis payload.
 
     Delegates the whole computation to the REUSED shared entrypoint
@@ -146,6 +380,13 @@ def _build_analysis(activity, streams):
     """
     raw = build_activity_analysis(streams, activity)
     summary = raw['summary']
+    plan_bundle = None
+    comparison = None
+    if brevet and brevet.get('event_id'):
+        plan_bundle = models.get_brevet_route_plan_with_stops(brevet['event_id'])
+        if plan_bundle:
+            comparison = _build_plan_comparison(
+                plan_bundle['plan'], plan_bundle['stops'], raw, activity, streams)
 
     stops = [{
         'distance_km': round((s.get('distance_miles') or 0) * _MILES_TO_KM, 1),
@@ -155,8 +396,11 @@ def _build_analysis(activity, streams):
     } for s in raw['stops']]
 
     ride_map = None
-    if raw['map'] and raw['map'].get('track'):
-        ride_map = {'track': raw['map']['track'], 'bounds': raw['map'].get('bounds')}
+    if comparison:
+        ride_map = build_map_data(streams, comparison, comparison.get('detected_stops'))
+    elif raw['map'] and raw['map'].get('track'):
+        ride_map = {'track': raw['map']['track'], 'bounds': raw['map'].get('bounds'),
+                    'stops': stops, 'segments': []}
 
     moving_mph = summary.get('avg_moving_speed_mph')
     return {
@@ -170,6 +414,9 @@ def _build_analysis(activity, streams):
             'avg_speed_kmh': round((activity.get('average_speed') or 0) * _M_PER_S_TO_KMH, 1),
             'strava_url': f"https://www.strava.com/activities/{activity.get('id')}",
         },
+        'brevet': brevet,
+        'plan': plan_bundle['plan'] if plan_bundle else None,
+        'comparison': comparison,
         'summary': {
             'moving_speed_kmh': round(moving_mph * _MPH_TO_KMH, 1) if moving_mph else None,
             'avg_hr': summary.get('avg_hr'),
@@ -328,8 +575,13 @@ def analysis_list():
         token = _valid_access_token(rider_id, connection)
         owned = _owned_cycling_activities(token)
         analyzed = models.get_analyzed_activity_ids(rider_id)
-        activities = [_summarize_for_list(a, analyzed) for a in owned.values()]
+        brevets = _rider_finished_brevets(rider_id)
+        activities = [
+            _summarize_for_list(a, analyzed, _match_activity_to_brevet(a, brevets))
+            for a in owned.values()
+        ]
         activities.sort(key=lambda a: a['date'], reverse=True)
+        activities.sort(key=lambda a: not a['is_brevet'])
     except Exception as e:  # noqa: BLE001 — degrade, never 500 the picker
         current_app.logger.warning(
             'analysis list: Strava fetch failed for rider %s: %s', rider_id, e)
@@ -360,6 +612,7 @@ def compute(activity_id):
     try:
         token = _valid_access_token(rider_id, connection)
         owned = _owned_cycling_activities(token)
+        brevets = _rider_finished_brevets(rider_id)
     except Exception as e:  # noqa: BLE001
         current_app.logger.warning(
             'analysis compute: owned-list fetch failed for rider %s: %s', rider_id, e)
@@ -384,7 +637,8 @@ def compute(activity_id):
         flash('Could not fetch this activity from Strava. Please try again later.', 'error')
         return redirect(url_for('analysis.analysis_list'))
 
-    analysis = _build_analysis(activity, streams)
+    analysis = _build_analysis(activity, streams,
+                               _match_activity_to_brevet(activity, brevets))
     models.upsert_ride_analysis(
         rider_id, activity_id, analysis,
         compressed_streams=_compress_streams(streams))
@@ -404,6 +658,26 @@ def analysis_detail(activity_id):
     rider_id = session['rider_id']
     cached = models.get_ride_analysis(rider_id, activity_id)
     analysis = cached['analysis'] if cached and cached.get('analysis') else None
+    if analysis and analysis.get('brevet') and not analysis.get('comparison') and cached.get('activity_streams'):
+        try:
+            streams = _decompress_streams(cached['activity_streams'])
+            activity = {
+                'id': activity_id,
+                'name': (analysis.get('activity') or {}).get('name'),
+                'start_date_local': ((analysis.get('activity') or {}).get('date') or '') + 'T00:00:00',
+                'distance': ((analysis.get('activity') or {}).get('distance_km') or 0) * _METERS_PER_KM,
+                'total_elevation_gain': ((analysis.get('activity') or {}).get('elevation_ft') or 0) / _M_TO_FT,
+                'moving_time': 0,
+                'elapsed_time': 0,
+                'average_speed': 0,
+            }
+            rebuilt = _build_analysis(activity, streams, analysis.get('brevet'))
+            if rebuilt.get('comparison'):
+                analysis['plan'] = rebuilt.get('plan')
+                analysis['comparison'] = rebuilt.get('comparison')
+                analysis['map'] = rebuilt.get('map') or analysis.get('map')
+        except Exception as e:  # noqa: BLE001
+            current_app.logger.warning('analysis detail: cached comparison rebuild failed: %s', e)
     stop_winds = _historical_stop_winds(analysis) if analysis else None
     return render_template('analysis_detail.html', analysis=analysis,
                            stop_winds=stop_winds, activity_id=activity_id,
