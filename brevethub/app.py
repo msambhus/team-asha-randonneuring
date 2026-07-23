@@ -246,20 +246,32 @@ def create_app():
     # deployment, that name can resolve back to this BrevetHub shell and recurse
     # through ``create_app``. Load the Team Asha root module from its file path
     # instead, while retaining the normal repo-root path for its sibling imports.
+    bundled_factory = _BREVETHUB_DIR / 'team_asha_factory.py'
     root_app_path = _REPO_ROOT / 'app.py'
-    if root_app_path.resolve() == Path(__file__).resolve() or not root_app_path.exists():
-        root_app_path = _REPO_ROOT.parent / 'app.py'
-    if not root_app_path.exists():
-        raise ImportError(f'Team Asha root app.py not found near {_BREVETHUB_DIR}')
-    module_name = '_brevethub_team_asha_root_app'
-    root_app_module = sys.modules.get(module_name)
-    if root_app_module is None:
-        spec = importlib.util.spec_from_file_location(module_name, root_app_path)
-        if spec is None or spec.loader is None:
-            raise ImportError(f'Unable to load Team Asha app factory from {root_app_path}')
-        root_app_module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = root_app_module
-        spec.loader.exec_module(root_app_module)
+    if bundled_factory.exists():
+        module_name = '_brevethub_team_asha_factory'
+        root_app_module = sys.modules.get(module_name)
+        if root_app_module is None:
+            spec = importlib.util.spec_from_file_location(module_name, bundled_factory)
+            if spec is None or spec.loader is None:
+                raise ImportError(f'Unable to load bundled Team Asha factory from {bundled_factory}')
+            root_app_module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = root_app_module
+            spec.loader.exec_module(root_app_module)
+    else:
+        if root_app_path.resolve() == Path(__file__).resolve() or not root_app_path.exists():
+            root_app_path = _REPO_ROOT.parent / 'app.py'
+        if not root_app_path.exists():
+            raise ImportError(f'Team Asha root app.py not found near {_BREVETHUB_DIR}')
+        module_name = '_brevethub_team_asha_root_app'
+        root_app_module = sys.modules.get(module_name)
+        if root_app_module is None:
+            spec = importlib.util.spec_from_file_location(module_name, root_app_path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f'Unable to load Team Asha app factory from {root_app_path}')
+            root_app_module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = root_app_module
+            spec.loader.exec_module(root_app_module)
     create_team_asha_app = root_app_module.create_app
 
     app = create_team_asha_app()
