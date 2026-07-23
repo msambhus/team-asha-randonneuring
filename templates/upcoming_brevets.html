@@ -719,6 +719,11 @@
             <span class="region-dot" style="background:{{ color }};"></span>{{ region }}
         </button>
         {% endfor %}
+        {# Team Asha club rides are hidden under every other filter (including "All
+           Clubs") and shown only when this button is selected. #}
+        <button type="button" class="region-filter" data-region="team-asha" aria-pressed="false" onclick="filterByRegion('team-asha')">
+            <span class="region-dot" style="background:#1a365d;"></span>★ Team Asha
+        </button>
     </div>
 
     {% if distances %}
@@ -734,7 +739,7 @@
 
 <div id="events-container">
 {% for event in rusa_events %}
-<div class="event-card" data-event-card-id="{{ event.id }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.plan_start_time or event.start_time or '06:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-plan-avg-speed="{{ event.plan_avg_speed or '' }}" data-plan-slug="{{ event.plan_slug or '' }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
+<div class="event-card{% if event.is_team_ride %} hidden{% endif %}" data-event-card-id="{{ event.id }}" data-team-ride="{{ 'true' if event.is_team_ride else 'false' }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.plan_start_time or event.start_time or '06:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-plan-avg-speed="{{ event.plan_avg_speed or '' }}" data-plan-slug="{{ event.plan_slug or '' }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
 
     <div class="event-date">
         <div class="event-day">{{ event.date_str[8:10] }}</div>
@@ -894,7 +899,7 @@
 {% endfor %}
 </div>
 
-{% if not rusa_events %}
+{% if not has_external_events %}
 <p style="padding:40px;color:var(--text-light);text-align:center;font-size:1.1rem;">No upcoming RUSA events found.</p>
 {% endif %}
 </div>{# end upcoming-section #}
@@ -1264,7 +1269,15 @@ function groupEventsByMonth() {
 
 function applyFilters() {
     document.querySelectorAll('.event-card').forEach(function(event) {
-        var regionMatch = activeRegion === 'all' || event.dataset.region === activeRegion;
+        var isTeam = event.dataset.teamRide === 'true';
+        var regionMatch;
+        if (activeRegion === 'team-asha') {
+            regionMatch = isTeam;                 // Team Asha filter: only team rides
+        } else if (activeRegion === 'all') {
+            regionMatch = !isTeam;                // All Clubs hides Team Asha rides
+        } else {
+            regionMatch = !isTeam && event.dataset.region === activeRegion;
+        }
         var distanceMatch = activeDistance === 'all' || event.dataset.distance === activeDistance;
         if (regionMatch && distanceMatch) {
             event.classList.remove('hidden');
@@ -1303,6 +1316,7 @@ function filterByDistance(distance) {
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     groupEventsByMonth();
+    applyFilters();   // enforce the default view (Team Asha rides hidden) + collapse empty months
 });
 
 // Dropdown menu management
