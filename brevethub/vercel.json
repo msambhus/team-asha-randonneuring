@@ -2,20 +2,35 @@
   "version": 2,
   "buildCommand": "cd .. && npm ci && npm run build:css",
   "builds": [
-    { "src": "api/index.py", "use": "@vercel/python", "config": { "includeFiles": ["shared/**", "_team_asha_templates/**", "../templates/strava_ride_analysis.html", "../templates/my_strava_analysis.html"] } },
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": [
+          "templates/**",
+          "static/**",
+          "../app.py",
+          "../auth.py",
+          "../cache.py",
+          "../config.py",
+          "../db.py",
+          "../models.py",
+          "../redirects.py",
+          "../routes/**",
+          "../services/**",
+          "../shared/**",
+          "../templates/**",
+          "../static/**"
+        ]
+      }
+    },
     { "src": "static/**", "use": "@vercel/static" }
   ],
   "crons": [
-    { "path": "/cron/backfill-rwgps-urls", "schedule": "30 7 * * *" },
-    { "path": "/cron/refresh-calendar", "schedule": "0 8 * * *" },
-    { "path": "/cron/fetch-brevet-weather", "schedule": "30 8 * * *" },
-    { "path": "/cron/warm-brevet-plans", "schedule": "0 9 * * *" },
-    { "path": "/cron/warm-brevet-route-weather", "schedule": "30 9 * * *" },
-    { "path": "/cron/poll-garmin-livetrack", "schedule": "0 10 * * *" },
-    { "path": "/cron/finalize-signups", "schedule": "0 11 * * *" },
-    { "path": "/cron/sync-rusa-results", "schedule": "30 11 * * *" },
-    { "path": "/cron/refresh-eddington", "schedule": "0 12 * * *" },
-    { "path": "/cron/warm-plan-elevation", "schedule": "30 12 * * *" }
+    { "path": "/api/cron/auto-generate-plans", "schedule": "30 7 * * *" },
+    { "path": "/api/cron/backfill-wind", "schedule": "0 8 * * *" },
+    { "path": "/api/cron/fetch-route-weather", "schedule": "30 8 * * *" },
+    { "path": "/api/cron/warm-plan-elevation", "schedule": "0 9 * * *" }
   ],
   "routes": [
     { "src": "/static/(.*)", "dest": "/static/$1" },

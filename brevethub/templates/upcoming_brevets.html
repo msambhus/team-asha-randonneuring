@@ -1,0 +1,1064 @@
+{% extends "base.html" %}
+{% block title %}Brevet Calendar - {{ season_label }} - BrevetHub{% endblock %}
+{% block meta_description %}Browse upcoming and completed brevets by state, club, distance, and route name on BrevetHub.{% endblock %}
+
+{% block extra_head %}
+<style>
+.calendar-hero {
+    background: linear-gradient(135deg, #1a365d, #234878);
+    color: white;
+    padding: 44px 20px;
+    text-align: center;
+}
+.calendar-shell {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 28px 20px 0;
+}
+.calendar-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 6px 20px rgba(15,23,42,.07);
+}
+.filter-panel {
+    padding: 18px;
+    margin-bottom: 24px;
+}
+.filter-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    align-items: end;
+}
+.filter-field label {
+    display: block;
+    color: var(--primary);
+    font-size: .76rem;
+    font-weight: 900;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+.filter-field select,
+.filter-field input {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 10px 12px;
+    font: inherit;
+    background: #fff;
+    color: var(--text);
+}
+.filter-summary {
+    margin-top: 12px;
+    color: var(--text-light);
+    font-size: .86rem;
+}
+.tab-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+}
+.tab-buttons {
+    display: inline-flex;
+    background: #e2e8f0;
+    border-radius: 10px;
+    padding: 4px;
+}
+.tab-button {
+    border: 0;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-weight: 800;
+    font-size: .86rem;
+    cursor: pointer;
+    color: #64748b;
+    background: transparent;
+}
+.tab-button.active {
+    background: #fff;
+    color: #1e293b;
+    box-shadow: 0 1px 3px rgba(0,0,0,.12);
+}
+.month-section {
+    margin-bottom: 32px;
+}
+.month-header {
+    display: inline-block;
+    margin-bottom: 14px;
+    color: white;
+    background: linear-gradient(135deg, #0891b2, #0e7490);
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-size: 1.05rem;
+    font-weight: 900;
+}
+.events-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: 18px;
+}
+.event-card {
+    position: relative;
+    padding: 16px;
+    overflow: hidden;
+}
+.event-card::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 5px;
+    background: var(--event-color, #64748b);
+}
+.event-card.hidden {
+    display: none !important;
+}
+.event-date {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    background: linear-gradient(135deg, #1e40af, #1e3a8a);
+    color: white;
+    border-radius: 9px;
+    padding: 6px 10px;
+    text-align: center;
+    min-width: 48px;
+}
+.event-day {
+    font-size: 1.35rem;
+    font-weight: 900;
+    line-height: 1;
+}
+.event-month {
+    color: #fb923c;
+    font-size: .62rem;
+    font-weight: 900;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    margin-top: 2px;
+}
+.event-badge-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-right: 62px;
+    margin-bottom: 10px;
+}
+.pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 4px 9px;
+    font-size: .72rem;
+    font-weight: 900;
+    background: #eef2ff;
+    color: #3730a3;
+}
+.pill.state {
+    background: #ecfeff;
+    color: #155e75;
+}
+.pill.club {
+    background: #fff7ed;
+    color: #9a3412;
+}
+.event-distance {
+    color: var(--accent);
+    font-size: 1.28rem;
+    font-weight: 900;
+    margin-bottom: 3px;
+}
+.event-elevation,
+.event-meta {
+    color: var(--text-light);
+    font-size: .8rem;
+}
+.event-title {
+    color: var(--primary);
+    font-size: 1rem;
+    font-weight: 900;
+    line-height: 1.35;
+    margin: 10px 62px 8px 0;
+}
+.event-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 10px;
+}
+.event-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    font-size: .74rem;
+    font-weight: 800;
+    text-decoration: none;
+}
+.signup-section {
+    margin-top: 13px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.signup-count,
+.signup-btn,
+.signup-dropdown-btn,
+.signup-btn-sm {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 7px;
+    padding: 6px 11px;
+    font-size: .78rem;
+    font-weight: 800;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    background: #f8fafc;
+    color: var(--primary);
+    cursor: pointer;
+}
+.signup-count.disabled {
+    opacity: .5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+.signup-dropdown-container {
+    position: relative;
+}
+.signup-dropdown-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    bottom: 100%;
+    margin-bottom: 5px;
+    min-width: 165px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    z-index: 80;
+    box-shadow: 0 12px 28px rgba(15,23,42,.14);
+}
+.signup-dropdown-menu.show {
+    display: block;
+}
+.signup-dropdown-item {
+    width: 100%;
+    padding: 10px 13px;
+    border: 0;
+    background: white;
+    color: var(--text);
+    text-align: left;
+    font-weight: 800;
+    cursor: pointer;
+}
+.signup-dropdown-item:hover {
+    background: #f8fafc;
+}
+.signup-dropdown-item.danger {
+    color: #dc2626;
+    border-top: 1px solid var(--border);
+}
+.signed-up { background:#dcfce7; color:#166534; border-color:#86efac; }
+.interested { background:#fef9c3; color:#854d0e; border-color:#fde047; }
+.maybe { background:#ffedd5; color:#9a3412; border-color:#fb923c; }
+.withdraw { background:#f3f4f6; color:#374151; border-color:#9ca3af; }
+.finished {
+    background:#dbeafe;
+    color:#1e40af;
+    border:1px solid #93c5fd;
+    border-radius:7px;
+    padding:6px 11px;
+    font-size:.76rem;
+    font-weight:900;
+}
+.modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(15,23,42,.55);
+    align-items: flex-start;
+    justify-content: center;
+    padding: 7vh 16px;
+}
+.modal-content {
+    background: white;
+    border-radius: 14px;
+    width: min(680px, 100%);
+    max-height: 84vh;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,.24);
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 20px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+}
+.modal-title {
+    margin: 0;
+    font-size: 1.1rem;
+}
+.modal-close {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    border: 0;
+    background: white;
+    color: #111827;
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+}
+.modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    max-height: 68vh;
+}
+.rider-list-item {
+    display: grid;
+    grid-template-columns: 42px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+}
+.rider-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--primary);
+    color: white;
+    font-weight: 900;
+}
+.admin-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 14px 16px;
+    margin-bottom: 18px;
+    border-left: 4px solid #7c3aed;
+}
+@media (max-width: 780px) {
+    .filter-grid { grid-template-columns: 1fr; }
+    .tab-row { align-items: flex-start; }
+    .events-grid { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="calendar-hero">
+    <h1 style="margin:0 0 8px;font-size:clamp(2rem,4vw,3rem);font-weight:900;">Brevet Calendar</h1>
+    <p style="margin:0;color:rgba(255,255,255,.84);">{{ season_label }} &mdash; filter by state, club, distance, and route.</p>
+</section>
+
+<div class="calendar-shell">
+    {% if wind_warnings %}
+    <div class="calendar-card" style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-color:#f59e0b;padding:16px 20px;margin-bottom:18px;">
+        <div style="font-weight:900;color:#92400e;margin-bottom:8px;">&#9888;&#65039; Heavy winds forecast</div>
+        {% for w in wind_warnings %}
+        <div style="color:#78350f;font-size:.9rem;margin-bottom:5px;"><strong>{{ w.ride_name }}</strong> &mdash; {{ w.ride_date }}: {{ w.description }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if can_edit_rides %}
+    <div class="calendar-card admin-actions">
+        <form action="{{ url_for('brevethub_overrides.auto_generate_plans') }}" method="post" onsubmit="return confirm('Generate ride plans for every ride that has an RWGPS URL and no linked plan?');">
+            <button type="submit" class="btn btn-primary">Auto-generate plans from RWGPS</button>
+        </form>
+        <span style="color:var(--text-light);font-size:.86rem;">Uses the existing RWGPS plan engine for rides that already have route links.</span>
+    </div>
+    {% endif %}
+
+    <div class="tab-row">
+        <h2 style="margin:0;color:var(--primary);">Ride Calendar</h2>
+        <div class="tab-buttons" role="tablist" aria-label="Calendar sections">
+            <button type="button" id="tab-upcoming" class="tab-button active" onclick="switchTab('upcoming')" role="tab" aria-selected="true">Upcoming</button>
+            <button type="button" id="tab-completed" class="tab-button" onclick="switchTab('completed')" role="tab" aria-selected="false">Completed ({{ completed_events|length }})</button>
+        </div>
+    </div>
+
+    <section id="upcoming-section">
+        <div class="calendar-card filter-panel">
+            <div class="filter-grid">
+                <div class="filter-field">
+                    <label for="state-filter">State</label>
+                    <select id="state-filter" onchange="onStateFilterChange()">
+                        <option value="all">All states</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="club-filter">Club</label>
+                    <select id="club-filter" onchange="applyFilters()">
+                        <option value="all">All clubs</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="distance-filter">Distance</label>
+                    <select id="distance-filter" onchange="applyFilters()">
+                        <option value="all">All distances</option>
+                        {% for d in distances %}
+                        <option value="{{ d }}">{{ d }} km</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="search-filter">Search</label>
+                    <input id="search-filter" type="search" placeholder="Route, club, city..." oninput="applyFilters()">
+                </div>
+            </div>
+            <div class="filter-summary"><span id="visible-count">{{ rusa_events|length }}</span> of {{ rusa_events|length }} upcoming brevets shown.</div>
+        </div>
+
+        <div id="events-container">
+        {% for event in rusa_events %}
+            {% set date_str = event.date_str or event.date|string %}
+            {% set region_label = event.region or event.club_name or event.club_code or 'Other' %}
+            {% set state_label = region_label.split(':')[0].strip() if ':' in region_label else '' %}
+            {% set area_label = region_label.split(':', 1)[1].strip() if ':' in region_label else region_label %}
+            {% set club_label = event.club_name or event.club_code or area_label or 'Other club' %}
+            {% set display_start_time = event.plan_start_time or event.start_time %}
+            {% set display_rwgps = event.rwgps_url %}
+            {% set alternate_rwgps = event.rwgps_url_team %}
+            <article class="event-card calendar-card"
+                     data-event-card-id="{{ event.id }}"
+                     data-state="{{ state_label|e }}"
+                     data-club="{{ club_label|e }}"
+                     data-distance="{{ event.distance_km }}"
+                     data-month="{{ date_str[0:7] }}"
+                     data-event-date="{{ date_str[0:10] }}"
+                     data-event-time="{{ display_start_time or '06:00' }}"
+                     data-rwgps-url="{{ display_rwgps or '' }}"
+                     data-weather-rwgps-url="{{ alternate_rwgps or display_rwgps or '' }}"
+                     data-route-name="{{ event.route_name|e }}"
+                     data-plan-avg-speed="{{ event.plan_avg_speed or '' }}"
+                     data-plan-slug="{{ event.plan_slug or '' }}"
+                     data-ride-plan-id="{{ event.ride_plan_id or '' }}"
+                     data-start-location="{{ event.start_location or '' }}"
+                     data-time-limit-hours="{{ event.time_limit_hours or '' }}"
+                     data-plan-rwgps-url-team="{{ event.plan_rwgps_url_team or '' }}"
+                     style="--event-color:#0891b2;">
+                <div class="event-date">
+                    <div class="event-day">{{ date_str[8:10] }}</div>
+                    <div class="event-month">{{ ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][date_str[5:7]|int] }}</div>
+                </div>
+
+                <div class="event-badge-row">
+                    {% if state_label %}<span class="pill state">{{ state_label }}</span>{% endif %}
+                    <span class="pill club">{{ club_label }}</span>
+                    {% if area_label and area_label != club_label %}<span class="pill">{{ area_label }}</span>{% endif %}
+                </div>
+
+                <div class="event-distance">
+                    {% if event.distance_miles %}
+                        {{ "%.1f"|format(event.distance_miles) }} mi
+                    {% else %}
+                        {{ event.distance_km }} km
+                    {% endif %}
+                    {% if event.signup_count and event.signup_count >= 5 %}<span class="pill" style="background:#fef3c7;color:#92400e;margin-left:5px;">Popular</span>{% endif %}
+                </div>
+                {% if event.elevation_ft %}
+                {% set miles = event.distance_miles if event.distance_miles else (event.distance_km * 0.621371) %}
+                <div class="event-elevation">{{ "{:,}".format(event.elevation_ft) }} ft{% if miles > 0 %} &middot; {{ "%.0f"|format(event.elevation_ft / miles) }} ft/mi{% endif %}</div>
+                {% endif %}
+
+                <h3 class="event-title">
+                    {{ event.route_name|clean_name }}
+                    {% if event.ride_type %}<span style="color:var(--text-light);font-size:.72rem;font-weight:800;">[{{ event.ride_type }}]</span>{% endif %}
+                    {% if can_edit_rides %}
+                    <button type="button" onclick="openEditModalFromCard(this)" title="Edit ride details" style="border:0;background:transparent;color:#6d28d9;cursor:pointer;font-size:.9rem;margin-left:4px;">✏️</button>
+                    {% endif %}
+                </h3>
+
+                <div class="event-links">
+                    {% if display_rwgps %}
+                    <a href="{{ display_rwgps }}" target="_blank" rel="noopener" class="event-link-btn" style="background:#e0f2fe;color:#0369a1;border-color:#7dd3fc;">Route</a>
+                    {% endif %}
+                    {% if alternate_rwgps %}
+                    <a href="{{ alternate_rwgps }}" target="_blank" rel="noopener" class="event-link-btn" style="background:#ffedd5;color:#c2410c;border-color:#fdba74;">Alternate route</a>
+                    {% endif %}
+                    <span class="weather-map-link" style="display:none;">
+                        <a href="#" class="event-link-btn" style="background:#d1fae5;color:#065f46;border-color:#6ee7b7;">Weather</a>
+                    </span>
+                    {% if event.plan_slug %}
+                        {% if event.has_custom_plan %}
+                        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug, view='custom') }}" class="event-link-btn" style="background:#e8f0fe;color:#4338ca;border-color:#c7d2fe;">My Ride Plan</a>
+                        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug, view='base') }}" class="event-link-btn">Base Plan</a>
+                        {% else %}
+                        <a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug, view='base') }}" class="event-link-btn" style="background:#e8f0fe;color:#4338ca;border-color:#c7d2fe;">Ride Plan</a>
+                        {% endif %}
+                    {% endif %}
+                </div>
+
+                {% if display_start_time or event.time_limit_hours or event.start_location %}
+                <div class="event-meta" style="margin-top:10px;display:grid;gap:3px;">
+                    {% if display_start_time %}<div><strong>Start:</strong> {{ display_start_time }}</div>{% endif %}
+                    {% if event.time_limit_hours %}<div><strong>Time limit:</strong> {{ event.time_limit_hours }}h</div>{% endif %}
+                    {% if event.start_location %}<div><strong>Location:</strong> {{ event.start_location }}</div>{% endif %}
+                </div>
+                {% endif %}
+
+                <div class="signup-section">
+                    <div class="signup-count {% if not event.signup_count or event.signup_count == 0 %}disabled{% endif %}"
+                         {% if event.signup_count and event.signup_count > 0 %}onclick="showSignups({{ event.id }})"{% endif %}>
+                        <span id="signup-count-{{ event.id }}">{{ event.signup_count or 0 }}</span> Riders
+                    </div>
+                    <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;">
+                        {% if current_rider_id %}
+                            {% set user_status = user_signups.get(event.id) %}
+                            {% if user_status in ['FINISHED', 'DNF', 'DNS', 'OTL'] %}
+                            <span class="finished">{{ user_status }}</span>
+                            {% else %}
+                            <div class="signup-dropdown-container">
+                                <button type="button" class="signup-dropdown-btn {% if user_status == 'GOING' %}signed-up{% elif user_status == 'INTERESTED' %}interested{% elif user_status == 'MAYBE' %}maybe{% elif user_status == 'WITHDRAW' %}withdraw{% endif %}" onclick="toggleSignupDropdown({{ event.id }}, event)">
+                                    {% if user_status == 'GOING' %}✓ Going{% elif user_status == 'INTERESTED' %}★ Interested{% elif user_status == 'MAYBE' %}? Maybe{% elif user_status == 'WITHDRAW' %}⊝ Withdraw{% else %}Going{% endif %} ▾
+                                </button>
+                                <div class="signup-dropdown-menu" id="dropdown-{{ event.id }}"></div>
+                            </div>
+                            {% endif %}
+                            <a href="{{ url_for('live.ride_live_map', ride_id=event.id) }}" class="signup-btn-sm" title="Live map">Live</a>
+                        {% else %}
+                            <a href="{{ url_for('auth.login', next=request.path) }}" class="signup-btn">Going</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </article>
+        {% endfor %}
+        </div>
+
+        {% if not rusa_events %}
+        <p style="padding:40px;color:var(--text-light);text-align:center;font-size:1.05rem;">No upcoming brevets found.</p>
+        {% endif %}
+    </section>
+
+    <section id="completed-section" style="display:none;">
+        {% if completed_events %}
+        <div class="calendar-card" style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:.9rem;">
+                <thead>
+                    <tr style="border-bottom:2px solid #e2e8f0;text-align:left;">
+                        <th style="padding:11px 12px;color:#64748b;font-size:.75rem;text-transform:uppercase;">Date</th>
+                        <th style="padding:11px 12px;color:#64748b;font-size:.75rem;text-transform:uppercase;">Event</th>
+                        <th style="padding:11px 12px;color:#64748b;font-size:.75rem;text-transform:uppercase;">Club</th>
+                        <th style="padding:11px 12px;color:#64748b;font-size:.75rem;text-transform:uppercase;text-align:right;">Distance</th>
+                        <th style="padding:11px 12px;color:#64748b;font-size:.75rem;text-transform:uppercase;text-align:right;">Finishers</th>
+                        <th style="padding:11px 12px;color:#64748b;font-size:.75rem;text-transform:uppercase;">Plan / Route</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for event in completed_events %}
+                    <tr style="border-bottom:1px solid #f1f5f9;">
+                        <td style="padding:9px 12px;white-space:nowrap;">{{ event.date }}</td>
+                        <td style="padding:9px 12px;font-weight:700;">
+                            {% if can_edit_rides %}<a href="{{ url_for('admin.ride_detail', ride_id=event.id) }}" style="color:#1e293b;text-decoration:none;">{{ event.name|clean_name }}</a>{% else %}{{ event.name|clean_name }}{% endif %}
+                        </td>
+                        <td style="padding:9px 12px;">{{ event.club_name or event.club_code or event.region }}</td>
+                        <td style="padding:9px 12px;text-align:right;">{{ event.distance_km }} km</td>
+                        <td style="padding:9px 12px;text-align:right;">{{ event.finisher_count or 0 }}</td>
+                        <td style="padding:9px 12px;">
+                            {% set evt_rwgps = event.rwgps_url or event.plan_rwgps_url %}
+                            {% if event.plan_slug %}<a href="{{ url_for('riders.ride_plan_detail', slug=event.plan_slug) }}" style="color:var(--accent);font-weight:700;margin-right:9px;">Plan</a>{% endif %}
+                            {% if evt_rwgps %}<a href="{{ evt_rwgps }}" target="_blank" rel="noopener" style="color:#c2410c;font-weight:700;">Route</a>{% endif %}
+                            {% if not event.plan_slug and not evt_rwgps %}<span style="color:#94a3b8;">—</span>{% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p style="padding:40px;color:var(--text-light);text-align:center;font-size:1.05rem;">No completed brevets yet this season.</p>
+        {% endif %}
+    </section>
+</div>
+
+<div id="signups-modal" class="modal" onclick="closeModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2 class="modal-title" id="modal-title">Riders</h2>
+            <button class="modal-close" onclick="closeModal()" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body" id="modal-body">
+            <p style="text-align:center;color:var(--text-light);padding:20px;">Loading...</p>
+        </div>
+    </div>
+</div>
+
+{% if can_edit_rides %}
+<div id="edit-modal" class="modal" onclick="closeEditModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2 class="modal-title" id="edit-modal-title">Edit Brevet</h2>
+            <button class="modal-close" onclick="closeEditModal()" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="edit-ride-form" onsubmit="submitEditForm(event)">
+                <input type="hidden" id="edit-ride-id" name="ride_id">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+                    <div>
+                        <label style="display:block;font-weight:800;margin-bottom:5px;">Ride Date</label>
+                        <input type="date" id="edit-ride-date" name="ride_date" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;">
+                    </div>
+                    <div>
+                        <label style="display:block;font-weight:800;margin-bottom:5px;">Start Time</label>
+                        <input type="text" id="edit-start-time" name="start_time" placeholder="06:00" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+                    <div>
+                        <label style="display:block;font-weight:800;margin-bottom:5px;">Start Location</label>
+                        <input type="text" id="edit-start-location" name="start_location" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;">
+                    </div>
+                    <div>
+                        <label style="display:block;font-weight:800;margin-bottom:5px;">Time Limit</label>
+                        <input type="number" id="edit-time-limit" name="time_limit_hours" step="0.5" min="0" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;">
+                    </div>
+                </div>
+                <div style="margin-bottom:14px;">
+                    <label style="display:block;font-weight:800;margin-bottom:5px;">Ride Plan</label>
+                    <select id="edit-ride-plan" name="ride_plan_id" onchange="updatePlanEditLink()" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;">
+                        <option value="" data-slug="">-- None --</option>
+                        {% for plan in all_ride_plans %}
+                        <option value="{{ plan.id }}" data-slug="{{ plan.slug }}">{{ plan.name }}{% if plan.distance_km %} ({{ plan.distance_km }} km){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    <div id="edit-plan-link" style="display:none;margin-top:7px;"><a id="edit-plan-info-link" href="#" target="_blank" style="color:var(--accent);font-weight:700;">Edit plan details &rarr;</a></div>
+                </div>
+                <div style="margin-bottom:14px;">
+                    <label style="display:block;font-weight:800;margin-bottom:5px;">Official RWGPS URL</label>
+                    <input type="url" id="edit-rwgps-url" name="rwgps_url" placeholder="https://ridewithgps.com/routes/..." style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;">
+                </div>
+                <div style="margin-bottom:18px;">
+                    <label style="display:block;font-weight:800;margin-bottom:5px;">Alternate RWGPS URL</label>
+                    <input type="url" id="edit-rwgps-url-team" name="rwgps_url_team" placeholder="https://ridewithgps.com/routes/..." style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;">
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <button type="submit" class="btn btn-primary" style="flex:1;">Save Changes</button>
+                    <button type="button" onclick="closeEditModal()" class="btn" style="background:var(--text-light);color:white;flex:1;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var activeState = 'all';
+var activeClub = 'all';
+var activeDistance = 'all';
+
+function switchTab(tab) {
+    var upcoming = document.getElementById('upcoming-section');
+    var completed = document.getElementById('completed-section');
+    var tabUp = document.getElementById('tab-upcoming');
+    var tabDone = document.getElementById('tab-completed');
+    var completedActive = tab === 'completed';
+    upcoming.style.display = completedActive ? 'none' : 'block';
+    completed.style.display = completedActive ? 'block' : 'none';
+    tabUp.classList.toggle('active', !completedActive);
+    tabDone.classList.toggle('active', completedActive);
+    tabUp.setAttribute('aria-selected', completedActive ? 'false' : 'true');
+    tabDone.setAttribute('aria-selected', completedActive ? 'true' : 'false');
+}
+
+function monthName(monthKey) {
+    var months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    var parts = monthKey.split('-');
+    return months[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
+}
+
+function groupEventsByMonth() {
+    var container = document.getElementById('events-container');
+    if (!container) return;
+    var events = Array.from(container.querySelectorAll('.event-card'));
+    var groups = {};
+    events.forEach(function(card) {
+        var key = card.dataset.month || 'Other';
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(card);
+    });
+    container.innerHTML = '';
+    Object.keys(groups).sort().forEach(function(key) {
+        var section = document.createElement('section');
+        section.className = 'month-section';
+        section.dataset.month = key;
+        var header = document.createElement('h3');
+        header.className = 'month-header';
+        header.textContent = key === 'Other' ? 'Other' : monthName(key);
+        var grid = document.createElement('div');
+        grid.className = 'events-grid';
+        groups[key].forEach(function(card) { grid.appendChild(card); });
+        section.appendChild(header);
+        section.appendChild(grid);
+        container.appendChild(section);
+    });
+}
+
+function uniqueSorted(values) {
+    return Array.from(new Set(values.filter(Boolean))).sort(function(a, b) { return a.localeCompare(b); });
+}
+
+function populateSelect(select, values, allLabel) {
+    var current = select.value || 'all';
+    select.innerHTML = '';
+    var all = document.createElement('option');
+    all.value = 'all';
+    all.textContent = allLabel;
+    select.appendChild(all);
+    values.forEach(function(value) {
+        var option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        select.appendChild(option);
+    });
+    select.value = Array.from(select.options).some(function(opt) { return opt.value === current; }) ? current : 'all';
+}
+
+function populateFilters() {
+    var cards = Array.from(document.querySelectorAll('.event-card'));
+    populateSelect(document.getElementById('state-filter'), uniqueSorted(cards.map(function(card) { return card.dataset.state; })), 'All states');
+    updateClubOptions();
+}
+
+function updateClubOptions() {
+    var cards = Array.from(document.querySelectorAll('.event-card'));
+    var clubs = cards
+        .filter(function(card) { return activeState === 'all' || card.dataset.state === activeState; })
+        .map(function(card) { return card.dataset.club; });
+    populateSelect(document.getElementById('club-filter'), uniqueSorted(clubs), 'All clubs');
+    activeClub = document.getElementById('club-filter').value;
+}
+
+function onStateFilterChange() {
+    activeState = document.getElementById('state-filter').value;
+    updateClubOptions();
+    applyFilters();
+}
+
+function applyFilters() {
+    activeState = document.getElementById('state-filter').value;
+    activeClub = document.getElementById('club-filter').value;
+    activeDistance = document.getElementById('distance-filter').value;
+    var query = (document.getElementById('search-filter').value || '').trim().toLowerCase();
+    var visible = 0;
+    document.querySelectorAll('.event-card').forEach(function(card) {
+        var text = (card.dataset.routeName + ' ' + card.dataset.club + ' ' + card.dataset.state + ' ' + card.textContent).toLowerCase();
+        var show =
+            (activeState === 'all' || card.dataset.state === activeState) &&
+            (activeClub === 'all' || card.dataset.club === activeClub) &&
+            (activeDistance === 'all' || card.dataset.distance === activeDistance) &&
+            (!query || text.indexOf(query) !== -1);
+        card.classList.toggle('hidden', !show);
+        if (show) visible += 1;
+    });
+    document.querySelectorAll('.month-section').forEach(function(section) {
+        section.style.display = section.querySelector('.event-card:not(.hidden)') ? 'block' : 'none';
+    });
+    var visibleCount = document.getElementById('visible-count');
+    if (visibleCount) visibleCount.textContent = visible;
+}
+
+function statusFromButton(button) {
+    if (button.classList.contains('signed-up')) return 'GOING';
+    if (button.classList.contains('interested')) return 'INTERESTED';
+    if (button.classList.contains('maybe')) return 'MAYBE';
+    if (button.classList.contains('withdraw')) return 'WITHDRAW';
+    return null;
+}
+
+function toggleSignupDropdown(rideId, event) {
+    event.stopPropagation();
+    var dropdown = document.getElementById('dropdown-' + rideId);
+    var button = dropdown.closest('.signup-dropdown-container').querySelector('.signup-dropdown-btn');
+    var current = statusFromButton(button);
+    document.querySelectorAll('.signup-dropdown-menu.show').forEach(function(menu) {
+        if (menu !== dropdown) menu.classList.remove('show');
+    });
+    if (dropdown.classList.contains('show')) {
+        dropdown.classList.remove('show');
+        return;
+    }
+    var items = [];
+    if (!current || current === 'WITHDRAW') items.push(['INTERESTED', '★ Interested'], ['MAYBE', '? Maybe'], ['GOING', '✓ Going']);
+    if (current === 'INTERESTED') items.push(['MAYBE', '? Maybe'], ['GOING', '✓ Going'], ['CLEAR', '✕ Clear status']);
+    if (current === 'MAYBE') items.push(['INTERESTED', '★ Interested'], ['GOING', '✓ Going'], ['CLEAR', '✕ Clear status']);
+    if (current === 'GOING') items.push(['MAYBE', '? Maybe'], ['WITHDRAW', '⊝ Withdraw']);
+    dropdown.innerHTML = items.map(function(item) {
+        var danger = item[0] === 'CLEAR' || item[0] === 'WITHDRAW' ? ' danger' : '';
+        return `<button type="button" class="signup-dropdown-item${danger}" onclick="handleStatusChange(${rideId}, '${item[0]}', event)">${item[1]}</button>`;
+    }).join('');
+    dropdown.classList.add('show');
+}
+
+function handleStatusChange(rideId, status, event) {
+    event.stopPropagation();
+    var dropdown = document.getElementById('dropdown-' + rideId);
+    dropdown.classList.remove('show');
+    var button = dropdown.closest('.signup-dropdown-container').querySelector('.signup-dropdown-btn');
+    var current = statusFromButton(button);
+    if (status === 'CLEAR') {
+        clearStatus(rideId, button, current);
+        return;
+    }
+    performStatusChange(rideId, status, button, current);
+}
+
+function performStatusChange(rideId, status, button, current) {
+    var endpoints = { GOING: 'signup', INTERESTED: 'interested', MAYBE: 'maybe', WITHDRAW: 'withdraw' };
+    var endpoint = endpoints[status];
+    if (!endpoint) return;
+    var original = button.innerHTML;
+    button.innerHTML = '...';
+    button.disabled = true;
+    fetch('/signup/api/' + rideId + '/' + endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin'
+    }).then(function(response) {
+        if (!response.ok) return response.json().then(function(data) { throw data; });
+        return response.json();
+    }).then(function(data) {
+        if (data.redirect) {
+            window.location.href = data.redirect;
+            return;
+        }
+        if (!data.success) throw data;
+        updateSignupCount(rideId, current, status);
+        updateButtonStatus(button, status);
+    }).catch(function(error) {
+        if (error && error.redirect) {
+            window.location.href = error.redirect;
+            return;
+        }
+        alert((error && error.error) || 'Failed to update status.');
+        button.innerHTML = original;
+        button.disabled = false;
+    });
+}
+
+function clearStatus(rideId, button, current) {
+    if (!confirm('Clear your status for this brevet?')) return;
+    var original = button.innerHTML;
+    button.innerHTML = '...';
+    button.disabled = true;
+    fetch('/signup/api/' + rideId + '/unsignup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin'
+    }).then(function(response) {
+        if (!response.ok) return response.json().then(function(data) { throw data; });
+        return response.json();
+    }).then(function(data) {
+        if (!data.success) throw data;
+        updateSignupCount(rideId, current, null);
+        updateButtonStatus(button, null);
+    }).catch(function(error) {
+        alert((error && error.error) || 'Failed to clear status.');
+        button.innerHTML = original;
+        button.disabled = false;
+    });
+}
+
+function updateSignupCount(rideId, fromStatus, toStatus) {
+    var el = document.getElementById('signup-count-' + rideId);
+    if (!el) return;
+    var delta = 0;
+    if ((!fromStatus || fromStatus === 'WITHDRAW') && toStatus && toStatus !== 'WITHDRAW') delta = 1;
+    if (fromStatus && fromStatus !== 'WITHDRAW' && (!toStatus || toStatus === 'WITHDRAW')) delta = -1;
+    if (!delta) return;
+    var next = Math.max(0, parseInt(el.textContent || '0', 10) + delta);
+    el.textContent = next;
+    var badge = el.closest('.signup-count');
+    if (badge) badge.classList.toggle('disabled', next === 0);
+}
+
+function updateButtonStatus(button, status) {
+    button.disabled = false;
+    button.classList.remove('signed-up', 'interested', 'maybe', 'withdraw');
+    if (status === 'GOING') {
+        button.classList.add('signed-up');
+        button.innerHTML = '✓ Going ▾';
+    } else if (status === 'INTERESTED') {
+        button.classList.add('interested');
+        button.innerHTML = '★ Interested ▾';
+    } else if (status === 'MAYBE') {
+        button.classList.add('maybe');
+        button.innerHTML = '? Maybe ▾';
+    } else if (status === 'WITHDRAW') {
+        button.classList.add('withdraw');
+        button.innerHTML = '⊝ Withdraw ▾';
+    } else {
+        button.innerHTML = 'Going ▾';
+    }
+}
+
+function showSignups(rideId) {
+    var modal = document.getElementById('signups-modal');
+    var title = document.getElementById('modal-title');
+    var body = document.getElementById('modal-body');
+    title.textContent = 'Riders';
+    body.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">Loading...</p>';
+    modal.style.display = 'flex';
+    fetch('/signup/api/' + rideId + '/signups')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            title.textContent = 'Riders (' + (data.count || 0) + ')';
+            if (!data.success || !data.riders || data.riders.length === 0) {
+                body.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">No riders signed up yet.</p>';
+                return;
+            }
+            var order = { GOING: 1, INTERESTED: 2, MAYBE: 3, WITHDRAW: 4 };
+            data.riders.sort(function(a, b) { return (order[a.status] || 99) - (order[b.status] || 99); });
+            body.innerHTML = data.riders.map(function(rider) {
+                var initials = (rider.first_name || '?').charAt(0) + (rider.last_name || '?').charAt(0);
+                return '<div class="rider-list-item"><div class="rider-avatar">' + initials + '</div><div><div style="font-weight:900;">' + rider.first_name + ' ' + rider.last_name + '</div><div style="color:var(--text-light);font-size:.78rem;">RUSA #' + rider.rusa_id + '</div></div><span class="pill">' + rider.status + '</span></div>';
+            }).join('');
+        })
+        .catch(function() {
+            body.innerHTML = '<p style="text-align:center;color:#dc2626;padding:20px;">Failed to load signups.</p>';
+        });
+}
+
+function closeModal(event) {
+    var modal = document.getElementById('signups-modal');
+    if (!event || event.target === modal || event.target.classList.contains('modal-close')) {
+        modal.style.display = 'none';
+    }
+}
+
+function openEditModalFromCard(button) {
+    var card = button.closest('.event-card');
+    document.getElementById('edit-modal-title').textContent = 'Edit: ' + card.dataset.routeName;
+    document.getElementById('edit-ride-id').value = card.dataset.eventCardId;
+    document.getElementById('edit-ride-date').value = card.dataset.eventDate || '';
+    document.getElementById('edit-start-time').value = card.dataset.eventTime || '';
+    document.getElementById('edit-start-location').value = card.dataset.startLocation || '';
+    document.getElementById('edit-time-limit').value = card.dataset.timeLimitHours || '';
+    document.getElementById('edit-rwgps-url').value = card.dataset.rwgpsUrl || '';
+    document.getElementById('edit-rwgps-url-team').value = card.dataset.planRwgpsUrlTeam || '';
+    document.getElementById('edit-ride-plan').value = card.dataset.ridePlanId || '';
+    updatePlanEditLink();
+    document.getElementById('edit-modal').style.display = 'flex';
+}
+
+function updatePlanEditLink() {
+    var select = document.getElementById('edit-ride-plan');
+    if (!select) return;
+    var option = select.options[select.selectedIndex];
+    var slug = option ? option.dataset.slug : '';
+    var wrapper = document.getElementById('edit-plan-link');
+    if (!wrapper) return;
+    if (slug) {
+        document.getElementById('edit-plan-info-link').href = '/ride-plan/' + slug + '/edit-info';
+        wrapper.style.display = 'block';
+    } else {
+        wrapper.style.display = 'none';
+    }
+}
+
+function closeEditModal(event) {
+    var modal = document.getElementById('edit-modal');
+    if (!modal) return;
+    if (!event || event.target === modal || event.target.classList.contains('modal-close')) {
+        modal.style.display = 'none';
+    }
+}
+
+function submitEditForm(event) {
+    event.preventDefault();
+    var form = document.getElementById('edit-ride-form');
+    var rideId = document.getElementById('edit-ride-id').value;
+    var button = form.querySelector('button[type="submit"]');
+    var original = button.textContent;
+    button.textContent = 'Saving...';
+    button.disabled = true;
+    fetch('/ride/' + rideId + '/edit', {
+        method: 'POST',
+        body: new FormData(form),
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    }).then(function(response) {
+        return response.json();
+    }).then(function(data) {
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert(data.error || 'Failed to update ride.');
+            button.textContent = original;
+            button.disabled = false;
+        }
+    }).catch(function() {
+        alert('Failed to update ride.');
+        button.textContent = original;
+        button.disabled = false;
+    });
+}
+
+function addWeatherLinks() {
+    var now = new Date();
+    var tenDays = new Date(now.getTime() + (10 * 24 * 60 * 60 * 1000));
+    document.querySelectorAll('.event-card').forEach(function(card) {
+        var eventDate = card.dataset.eventDate;
+        var eventTime = card.dataset.eventTime || '07:00';
+        var weatherRwgpsUrl = card.dataset.weatherRwgpsUrl;
+        if (!eventDate || !weatherRwgpsUrl) return;
+        var dateParts = eventDate.split('-').map(Number);
+        var timeParts = eventTime.split(':').map(Number);
+        var eventDateTime = new Date(dateParts[0], dateParts[1] - 1, dateParts[2], timeParts[0] || 7, timeParts[1] || 0);
+        if (eventDateTime < now || eventDateTime > tenDays) return;
+        var startDt = eventDate + 'T' + eventTime;
+        var url = '/weather?rwgps_url=' + encodeURIComponent(weatherRwgpsUrl) + '&start_datetime=' + encodeURIComponent(startDt) + '&auto=1';
+        if (card.dataset.planAvgSpeed) url += '&speed_mph=' + encodeURIComponent(card.dataset.planAvgSpeed);
+        if (card.dataset.planSlug) url += '&plan_slug=' + encodeURIComponent(card.dataset.planSlug);
+        var container = card.querySelector('.weather-map-link');
+        if (container) {
+            container.querySelector('a').href = url;
+            container.style.display = 'inline-flex';
+        }
+    });
+}
+
+document.addEventListener('click', function(event) {
+    if (!event.target.closest('.signup-dropdown-container')) {
+        document.querySelectorAll('.signup-dropdown-menu.show').forEach(function(menu) { menu.classList.remove('show'); });
+    }
+});
+
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeModal();
+        closeEditModal();
+        document.querySelectorAll('.signup-dropdown-menu.show').forEach(function(menu) { menu.classList.remove('show'); });
+    }
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    groupEventsByMonth();
+    populateFilters();
+    applyFilters();
+    addWeatherLinks();
+});
+</script>
+{% endblock %}

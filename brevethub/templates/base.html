@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{% block title %}{{ product_name }}{% endblock %}</title>
-<meta name="description" content="{% block meta_description %}{{ product_name }} — brevet calendar, rider results, live tracking, and season awards for randonneuring clubs.{% endblock %}">
+<title>{% block title %}BrevetHub{% endblock %}</title>
+<meta name="description" content="{% block meta_description %}BrevetHub — brevet calendars, rider results, live tracking, weather, ride plans, and randonneuring tools for clubs and riders.{% endblock %}">
 <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.svg') }}">
 <meta name="theme-color" content="#1a365d">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="{{ product_name }}">
+<meta property="og:site_name" content="BrevetHub">
 <meta property="og:title" content="{{ self.title() }}">
 <meta property="og:description" content="{{ self.meta_description() }}">
 <meta name="twitter:card" content="summary">
@@ -23,46 +23,44 @@
 <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[300] focus:bg-white focus:text-primary focus:px-4 focus:py-2 focus:rounded-md focus:shadow-lg focus:font-semibold">Skip to content</a>
 <header class="bg-gradient-to-br from-primary to-primary-dark text-white sticky top-0 z-[100] shadow-[0_2px_10px_rgba(0,0,0,0.15)]">
 <div class="flex items-center justify-between py-3 px-4 md:px-5 max-w-[1200px] mx-auto">
-<div class="text-[1.2rem] md:text-[1.4rem] font-bold tracking-tight"><a href="{{ url_for('main.landing') }}" class="text-inherit no-underline">Brevet<span class="text-accent-light">Hub</span></a></div>
+<div class="text-[1.2rem] md:text-[1.4rem] font-bold tracking-tight"><a href="{{ url_for('main.index') }}" class="text-inherit no-underline">Brevet<span class="text-accent-light">Hub</span></a></div>
 <button id="nav-toggle" class="md:hidden text-white bg-white/15 border border-white/30 rounded-md p-1.5 cursor-pointer" aria-label="Toggle navigation" aria-controls="mobile-nav" aria-expanded="false">
     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
 </button>
 <nav id="mobile-nav" class="hidden md:flex gap-1 flex-wrap justify-center">
-    <a href="{{ url_for('main.landing') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'main.landing' %}bg-white/15 text-white{% endif %}">Home</a>
-    <a href="{{ url_for('calendar.calendar') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'calendar.calendar' %}bg-white/15 text-white{% endif %}">Brevet Calendar</a>
-    <a href="{{ url_for('live.live_list') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'live.live_list' %}bg-white/15 text-white{% endif %}">Live</a>
+    <a href="{{ url_for('main.index') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'main.index' %}bg-white/15 text-white{% endif %}">Home</a>
+    <a href="{{ url_for('brevethub_overrides.calendar_alias') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'riders.upcoming_brevets' %}bg-white/15 text-white{% endif %}">Brevet Calendar</a>
     <div class="relative inline-block group">
-        <button type="button" class="dropdown-trigger bg-transparent border-0 text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs {% if request.blueprint == 'tools' %}bg-white/15 text-white{% endif %}" aria-haspopup="true" aria-expanded="false">Resources</button>
-        <div class="hidden group-hover:block absolute top-full left-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[200px] z-[200] overflow-hidden pt-0">
-            <a href="{{ url_for('tools.merge_fit_page') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Merge GPS Files</a>
-        </div>
-    </div>
-    {% if user_logged_in %}
-    <div class="relative inline-block group">
-        <button type="button" class="dropdown-trigger bg-transparent border-0 text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs {% if request.blueprint == 'riders' %}bg-white/15 text-white{% endif %}" aria-haspopup="true" aria-expanded="false">Riders</button>
+        <a href="{{ url_for('riders.riders_directory') }}" class="dropdown-trigger text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs {% if request.endpoint in ('riders.riders_directory', 'riders.season_riders') %}bg-white/15 text-white{% endif %}" aria-haspopup="true" aria-expanded="false">Riders</a>
         <div class="hidden group-hover:block absolute top-full left-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[180px] z-[200] overflow-hidden pt-0">
-            <a href="{{ url_for('riders.directory') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Directory</a>
-            <a href="{{ url_for('riders.leaderboard') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Career Leaderboard</a>
-            {% for season in nav_seasons %}
-            <a href="{{ url_for('riders.season_roster', season_name=season) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">{{ season }} Season</a>
+            <a href="{{ url_for('riders.riders_directory') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">All Riders</a>
+            {% for s in seasons %}
+            {% if s.name >= '2021' %}
+            <a href="{{ url_for('riders.season_riders', season_name=s.name) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">{{ s.name[:4] }}-{{ s.name[-2:] }} Season</a>
+            {% endif %}
             {% endfor %}
         </div>
     </div>
-    {% endif %}
+    <div class="relative inline-block group">
+        <a href="{{ url_for('main.resources') }}" class="dropdown-trigger text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs {% if request.endpoint in ('main.resources', 'tools.merge_fit_page') %}bg-white/15 text-white{% endif %}" aria-haspopup="true" aria-expanded="false">Resources</a>
+        <div class="hidden group-hover:block absolute top-full left-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[200px] z-[200] overflow-hidden pt-0">
+            <a href="{{ url_for('main.resources') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">All Resources</a>
+            <a href="{{ url_for('tools.merge_fit_page') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Merge GPS Files</a>
+        </div>
+    </div>
+    <a href="{{ url_for('weather.weather_page') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'weather.weather_page' %}bg-white/15 text-white{% endif %}">Weather</a>
     {% if user_logged_in %}
     <div class="relative inline-block group">
-        <button type="button" class="dropdown-trigger bg-transparent border-0 text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs" aria-haspopup="true" aria-expanded="false">{{ user_email }}</button>
+        <button type="button" class="dropdown-trigger bg-transparent border-0 text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs" aria-haspopup="true" aria-expanded="false">{{ rider_name or user_email }}</button>
         <div class="hidden group-hover:block absolute top-full right-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[180px] z-[200] overflow-hidden pt-0">
-            <a href="{{ url_for('main.profile') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My Profile</a>
-            {% if user_rider_id %}
-            <a href="{{ url_for('riders.rider_profile', rider_id=user_rider_id) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My Rider Page</a>
-            {% endif %}
-            <a href="{{ url_for('live.live_list') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Live</a>
+            <a href="{{ url_for('auth.my_profile') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My Profile</a>
+            {% if rider_rusa_id %}<a href="{{ url_for('riders.rider_profile', rusa_id=rider_rusa_id) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My Rider Page</a>{% endif %}
+            <a href="{{ url_for('live.live_hub') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Live</a>
             <a href="{{ url_for('auth.logout') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Logout</a>
         </div>
     </div>
     {% else %}
-    <a href="{{ url_for('auth.login') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white bg-white/10">Sign in</a>
+    <a href="{{ url_for('auth.login') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white bg-white/10">Login</a>
     {% endif %}
 </nav>
 </div>
@@ -84,35 +82,15 @@
 
 <footer class="bg-primary text-white/70 text-center py-5 mt-10 text-[0.85rem]">
 <div class="max-w-[1200px] mx-auto px-5">
-{{ product_name }} &middot; a club-agnostic randonneuring platform
+BrevetHub &copy; 2026 &bull; Tools for randonneurs and randonneuring clubs
+<div class="mt-2 text-[0.75rem] text-white/50"><a href="/privacy" class="text-white/50 hover:text-white/80 transition-colors">Privacy Policy</a></div>
 </div>
 </footer>
 
+{% if user_logged_in %}{% include 'chat_widget.html' ignore missing %}{% endif %}
 {% block extra_js %}{% endblock %}
 
 <script>
-// Scroll animations with Intersection Observer
-document.addEventListener('DOMContentLoaded', function() {
-    const observerOptions = {
-        threshold: 0.1,
-        rootMargin: '0px 0px -50px 0px'
-    };
-
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                entry.target.classList.add('visible');
-                observer.unobserve(entry.target);
-            }
-        });
-    }, observerOptions);
-
-    // Observe fade-in elements
-    document.querySelectorAll('.fade-in-up').forEach(el => observer.observe(el));
-    document.querySelectorAll('.stagger-item').forEach(el => observer.observe(el));
-});
-
-// Mobile hamburger nav toggle
 document.addEventListener('DOMContentLoaded', function() {
     var navToggle = document.getElementById('nav-toggle');
     var mobileNav = document.getElementById('mobile-nav');
@@ -123,43 +101,26 @@ document.addEventListener('DOMContentLoaded', function() {
             mobileNav.classList.toggle('flex-col');
             mobileNav.classList.toggle('w-full');
             mobileNav.classList.toggle('pb-3');
-            var isOpen = !mobileNav.classList.contains('hidden');
-            navToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-            navToggle.innerHTML = isOpen
-                ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'
-                : '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>';
+            navToggle.setAttribute('aria-expanded', mobileNav.classList.contains('hidden') ? 'false' : 'true');
         });
     }
-});
 
-// Mobile-friendly dropdown navigation
-document.addEventListener('DOMContentLoaded', function() {
-    const dropdowns = document.querySelectorAll('.group');
-
+    var dropdowns = document.querySelectorAll('.group');
     function closeDropdown(dropdown) {
-        const t = dropdown.querySelector('.dropdown-trigger');
-        const m = dropdown.querySelector('div[class*="group-hover:block"]');
-        if (m) { m.classList.add('hidden'); m.classList.remove('block'); }
-        if (t) t.setAttribute('aria-expanded', 'false');
+        var trigger = dropdown.querySelector('.dropdown-trigger');
+        var menu = dropdown.querySelector('div[class*="group-hover:block"]');
+        if (menu) { menu.classList.add('hidden'); menu.classList.remove('block'); }
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
     }
-
-    dropdowns.forEach(dropdown => {
-        const trigger = dropdown.querySelector('.dropdown-trigger');
-        const menu = dropdown.querySelector('div[class*="group-hover:block"]');
-
+    dropdowns.forEach(function(dropdown) {
+        var trigger = dropdown.querySelector('.dropdown-trigger');
+        var menu = dropdown.querySelector('div[class*="group-hover:block"]');
         if (!trigger || !menu) return;
-
-        // Toggle dropdown on click/tap (works for <a> and <button> triggers)
         trigger.addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
-
-            const willOpen = menu.classList.contains('hidden');
-
-            // Close other dropdowns
-            dropdowns.forEach(other => { if (other !== dropdown) closeDropdown(other); });
-
-            // Toggle this dropdown
+            var willOpen = menu.classList.contains('hidden');
+            dropdowns.forEach(function(other) { if (other !== dropdown) closeDropdown(other); });
             if (willOpen) {
                 menu.classList.remove('hidden');
                 menu.classList.add('block');
@@ -169,32 +130,12 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
-
-    // Close dropdowns when clicking outside
     document.addEventListener('click', function(e) {
-        dropdowns.forEach(dropdown => {
+        dropdowns.forEach(function(dropdown) {
             if (!dropdown.contains(e.target)) closeDropdown(dropdown);
-        });
-    });
-
-    // Close dropdowns on Escape and return focus to the trigger
-    document.addEventListener('keydown', function(e) {
-        if (e.key !== 'Escape') return;
-        dropdowns.forEach(dropdown => {
-            const menu = dropdown.querySelector('div[class*="group-hover:block"]');
-            if (menu && menu.classList.contains('block')) {
-                closeDropdown(dropdown);
-                const t = dropdown.querySelector('.dropdown-trigger');
-                if (t) t.focus();
-            }
         });
     });
 });
 </script>
-
-<script>
-window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
-</script>
-<script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>
