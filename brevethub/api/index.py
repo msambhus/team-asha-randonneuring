@@ -23,9 +23,13 @@ import types
 _BREVETHUB_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _REPO_ROOT = os.path.dirname(_BREVETHUB_DIR)
 
-# Make both layouts importable: repo root first (so a real `brevethub` package and
-# the sibling `shared` package win when present), then the brevethub dir itself.
-for _p in (_REPO_ROOT, _BREVETHUB_DIR):
+# Make both layouts importable: repo root must stay ahead of the BrevetHub
+# directory.  `brevethub/app.py` imports the Team Asha factory as ``from app``;
+# if the BrevetHub directory is first, that import resolves back to this shell
+# and recursively calls ``create_app`` until the Vercel function crashes.
+# Iterating in reverse while inserting at index zero preserves the documented
+# order in both repo-root and flat Vercel deployments.
+for _p in reversed((_REPO_ROOT, _BREVETHUB_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
