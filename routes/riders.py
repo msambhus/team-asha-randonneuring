@@ -615,6 +615,10 @@ def riders_directory():
     from collections import defaultdict
 
     current_season = get_current_season()
+    selected_season_name = (request.args.get('season') or '').strip()
+    selected_season = get_season_by_name(selected_season_name) if selected_season_name else None
+    if selected_season:
+        current_season = selected_season
     season_id = current_season['id'] if current_season else None
     riders = get_all_riders_with_career_stats(current_season_id=season_id)
 
@@ -691,6 +695,8 @@ def riders_directory():
     return render_template('riders_directory.html',
                            riders=riders_out,
                            season=current_season,
+                           all_seasons=get_all_seasons(),
+                           selected_season_name=selected_season_name,
                            sr_year=2026,
                            pbp_year=2027)
 

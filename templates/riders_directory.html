@@ -383,6 +383,14 @@
     <div class="rd-toolbar" role="toolbar" aria-label="Filter riders">
       <input type="search" class="rd-search" data-rd-search
              placeholder="Search rider, RUSA #, brevet…" aria-label="Search riders" />
+      <label class="rd-tlabel" for="directory-season">Season
+        <select id="directory-season" onchange="if (this.value) window.location.href=this.value">
+          <option value="{{ url_for('riders.riders_directory') }}">All seasons</option>
+          {% for s in all_seasons or [] %}
+            <option value="{{ url_for('riders.riders_directory', season=s.name) }}"{% if selected_season_name == s.name or (not selected_season_name and season and season.id == s.id) %} selected{% endif %}>{{ s.name }}{% if s.is_current %} (current){% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
     </div>
 
     {# ===== Helper macros ===== #}
