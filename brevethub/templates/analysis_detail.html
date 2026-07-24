@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Ride analysis — {{ product_name }}{% endblock %}
+{% block extra_head %}
+  <style>
+  .strava-hero {
+    background: linear-gradient(135deg, #fc4c02, #c2410c);
+    color: #fff;
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 8px 24px rgba(252, 76, 2, 0.18);
+  }
+  .strava-hero h1 { color: #fff; margin: 0 0 8px; }
+  .strava-hero p { color: rgba(255, 255, 255, 0.88); margin: 0; }
+  .strava-hero-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+  .btn-strava {
+    background: #fc4c02;
+    color: #fff;
+    border: 1px solid #fc4c02;
+  }
+  .btn-strava:hover { background: #c2410c; border-color: #c2410c; opacity: 1; }
+  .strava-attribution { margin-left: auto; display: flex; align-items: center; }
+  .strava-attribution img { height: 30px; background: #fff; border-radius: 6px; padding: 5px 8px; }
+  .strava-data-card { border-top: 4px solid #fc4c02; }
+  @media (max-width: 640px) {
+    .strava-hero-actions { align-items: stretch; }
+    .strava-attribution { width: 100%; margin-left: 0; }
+  }
+  </style>
+{% endblock %}
+{% block content %}
+<div class="container section">
+  <div class="strava-hero">
+    <h1 class="text-[1.8rem] font-bold">Strava Ride Analysis</h1>
+    <p>Analyze this Strava activity for stops, segments, pacing, and ride-map context.</p>
+    <div class="strava-hero-actions">
+      <div class="strava-attribution">
+        <img src="{{ url_for('static', filename='img/powered_by_strava.svg') }}" alt="Powered by Strava">
+      </div>
+    </div>
+  </div>
+  <section class="card strava-data-card">
+    <p class="text-text-light mb-4">
+      This ride hasn't been analyzed yet. Analyzing fetches its data from Strava and
+      computes the breakdown — it may take a few seconds.
+    </p>
+    <form method="post" action="{{ url_for('analysis.compute', activity_id=activity_id) }}">
+      <button class="btn btn-strava" type="submit">Stats</button>
+    </form>
+    <p class="mt-4"><a class="back-link" href="{{ url_for('analysis.analysis_list') }}">← Back to your rides</a></p>
+  </section>
+</div>
+{% endblock %}

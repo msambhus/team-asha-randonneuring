@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Finishers — {{ event.name }}{% endblock %}
+{% block content %}
+<div class="hero" style="padding:28px 20px;">
+  <p class="eyebrow">Official RUSA results</p>
+  <h1>{{ event.name }}</h1>
+  <p>{{ event.date }} · {{ event.distance_km }} km</p>
+</div>
+<div class="container section">
+  <section class="card">
+    <h2 class="text-primary text-[1.3rem] font-bold mb-4">Finishers and times</h2>
+    {% if finishers %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Rider</th><th>RUSA ID</th><th>Finish time</th></tr></thead>
+      <tbody>{% for finisher in finishers %}<tr>
+        <td>{{ finisher.name }}</td><td>{{ finisher.rusa_id or '—' }}</td><td>{{ finisher.finish_time }}</td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}<p class="text-text-light">No official finish times have been imported from RUSA yet.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

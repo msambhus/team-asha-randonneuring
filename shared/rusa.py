@@ -59,6 +59,7 @@ def fetch_rider_results(rusa_id):
                     'distance_km': distance_km,
                     'finish_time': time_str,
                     'route_name': route_name,
+                    'event_type': _type,
                 })
             except (ValueError, TypeError):
                 continue

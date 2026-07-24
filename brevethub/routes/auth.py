@@ -1,319 +1,106 @@
-"""Authentication routes - Google OAuth login and profile setup."""
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify
+"""BrevetHub authentication — Google OAuth via Authlib.
+
+Reuses Team Asha's existing Google OAuth *client* (same GOOGLE_CLIENT_ID /
+SECRET); the owner registers BrevetHub's own redirect URIs on that client. On
+first sign-in a `rp_rider` row is created and the user is sent to /signup to add
+an optional RUSA ID and pick a club; returning users with a completed profile go
+straight to the dashboard.
+"""
 from authlib.integrations.flask_client import OAuth
-from werkzeug.security import gen_salt
-from werkzeug.utils import redirect as werkzeug_redirect
-import models
-from utils.rusa_validator import validate_rusa_id, get_rusa_info
+from flask import (
+    Blueprint, current_app, flash, redirect, render_template, request,
+    session, url_for,
+)
+
+from brevethub import models
+from brevethub.redirects import safe_redirect
 
 auth_bp = Blueprint('auth', __name__)
 
-# OAuth will be initialized in the app factory
+# OAuth client, initialized against the app in the factory.
 oauth = OAuth()
 
 
-def _safe_redirect(url, fallback='main.index'):
-    """Redirect to `url` only if it is a relative path on this host.
-
-    Prevents open-redirect attacks where an attacker sets
-    `?next=https://evil.com` and the app blindly redirects there.
-    """
-    from urllib.parse import urlparse
-    if url:
-        parsed = urlparse(url)
-        # Allow only relative paths (no scheme, no netloc)
-        if not parsed.scheme and not parsed.netloc:
-            return redirect(url)
-    return redirect(url_for(fallback))
-
-
 def init_oauth(app):
-    """Initialize OAuth with Flask app."""
+    """Register the Google provider on the BrevetHub app."""
     oauth.init_app(app)
     oauth.register(
         name='google',
         client_id=app.config['GOOGLE_CLIENT_ID'],
         client_secret=app.config['GOOGLE_CLIENT_SECRET'],
         server_metadata_url=app.config['GOOGLE_DISCOVERY_URL'],
-        client_kwargs={
-            'scope': 'openid email profile'
-        }
+        client_kwargs={'scope': 'openid email profile'},
     )
 
 
 @auth_bp.route('/login')
 def login():
-    """Display login page."""
-    # If already logged in, redirect to home
-    if session.get('user_id'):
-        return redirect(url_for('main.index'))
-    
-    # Store the next URL if provided
+    """Login page with the 'Sign in with Google' entry point."""
+    if session.get('rider_id'):
+        return redirect(url_for('main.dashboard'))
     next_url = request.args.get('next')
     if next_url:
         session['next_url'] = next_url
-    
     return render_template('login.html')
 
 
 @auth_bp.route('/google/login')
 def google_login():
-    """Initiate Google OAuth login."""
+    """Kick off the Google OAuth redirect."""
     redirect_uri = url_for('auth.google_callback', _external=True)
     return oauth.google.authorize_redirect(redirect_uri)
 
 
 @auth_bp.route('/google/callback')
 def google_callback():
-    """Handle Google OAuth callback."""
+    """Handle the Google OAuth callback: upsert the rider, set the session, and
+    route new riders to signup / returning riders to the dashboard."""
     try:
         token = oauth.google.authorize_access_token()
-        user_info = token.get('userinfo')
-        
-        if not user_info:
-            flash('Failed to get user info from Google', 'error')
-            return redirect(url_for('auth.login'))
-        
-        google_id = user_info.get('sub')
-        email = user_info.get('email')
-        
-        if not google_id or not email:
-            flash('Missing required information from Google', 'error')
-            return redirect(url_for('auth.login'))
-        
-        # Check if user exists
-        user = models.get_user_by_google_id(google_id)
-        
-        if not user:
-            # Create new user
-            user = models.create_user(email, google_id)
-            if not user:
-                flash('Failed to create user account', 'error')
-                return redirect(url_for('auth.login'))
-        else:
-            # Update last login time
-            models.update_user_login_time(user['id'])
-            user = models.get_user_by_id(user['id'])
-        
-        # Set session. permanent + PERMANENT_SESSION_LIFETIME (config, 30d) make
-        # this a persistent cookie so mobile browsers/PWAs don't drop the login
-        # on backgrounding — the cause of frequent "session timed out" logouts.
-        session.permanent = True
-        session['user_id'] = user['id']
-        session['email'] = user['email']
-        session['google_id'] = user['google_id']
-        
-        # If profile not completed, redirect to profile setup
-        if not user['profile_completed']:
-            return redirect(url_for('auth.setup_profile'))
-        
-        # Store rider_id in session for convenience
-        if user['rider_id']:
-            session['rider_id'] = user['rider_id']
-            rider = models.get_rider_by_rusa(
-                models._execute("SELECT rusa_id FROM rider WHERE id = %s", 
-                               (user['rider_id'],)).fetchone()['rusa_id']
-            )
-            session['rider_name'] = f"{rider['first_name']} {rider['last_name']}"
-            session['rider_rusa_id'] = rider['rusa_id']
-        
-        flash('Successfully logged in!', 'success')
-        
-        # Redirect to stored next URL or home
-        next_url = session.pop('next_url', None)
-        return _safe_redirect(next_url, fallback='main.index')
-        
-    except Exception as e:
-        flash(f'Login failed: {str(e)}', 'error')
+    except Exception as exc:  # noqa: BLE001 — any OAuth failure → back to login
+        current_app.logger.warning("BrevetHub Google OAuth failed: %s", exc)
+        flash('Login failed. Please try again.', 'error')
         return redirect(url_for('auth.login'))
 
+    user_info = token.get('userinfo') if token else None
+    if not user_info:
+        flash('Could not read your Google account info.', 'error')
+        return redirect(url_for('auth.login'))
 
-@auth_bp.route('/validate-rusa-id/<int:rusa_id>')
-def validate_rusa_id_api(rusa_id):
-    """API endpoint to fetch RUSA information by ID."""
-    if not session.get('user_id'):
-        return jsonify({'error': 'Unauthorized'}), 401
-    
-    # Check if RUSA ID exists and if it's already linked to a user
-    existing_rider = models.get_rider_by_rusa_id(rusa_id)
-    if existing_rider:
-        # Check if this rider is already linked to a user account
-        linked_user = models.is_rider_linked_to_user(existing_rider['id'])
-        if linked_user:
-            return jsonify({
-                'valid': False,
-                'error': 'This RUSA ID is already registered by another user'
-            }), 400
-        # Rider exists but not linked - will be claimed by this user
-    
-    # Fetch info from RUSA.org
-    info = get_rusa_info(rusa_id)
-    
-    if info['valid']:
-        return jsonify({
-            'valid': True,
-            'first_name': info['first_name'],
-            'last_name': info['last_name'],
-            'full_name': info['rusa_name'],
-            'club': info['rusa_club']
-        })
+    google_id = user_info.get('sub')
+    email = user_info.get('email')
+    if not google_id or not email:
+        flash('Google did not return the required account details.', 'error')
+        return redirect(url_for('auth.login'))
+
+    rider = models.get_rider_by_google_id(google_id)
+    if not rider:
+        rider = models.create_rider(email, google_id)
+        current_app.logger.info("BrevetHub created rp_rider id=%s", rider['id'])
     else:
-        return jsonify({
-            'valid': False,
-            'error': info['error']
-        }), 404
+        models.update_rider_login(rider['id'])
 
+    session.permanent = True
+    session['rider_id'] = rider['id']
+    session['email'] = rider['email']
+    session['google_id'] = google_id
 
-@auth_bp.route('/setup-profile', methods=['GET', 'POST'])
-def setup_profile():
-    """Profile setup page for first-time users."""
-    if not session.get('user_id'):
-        return redirect(url_for('auth.login'))
-    
-    user = models.get_user_by_id(session['user_id'])
-    if not user:
-        flash('User not found', 'error')
-        return redirect(url_for('auth.login'))
-    
-    # If profile already completed, redirect to home
-    if user['profile_completed']:
-        return redirect(url_for('main.index'))
-    
-    if request.method == 'POST':
-        rusa_id = request.form.get('rusa_id', '').strip()
-        first_name = request.form.get('first_name', '').strip()
-        last_name = request.form.get('last_name', '').strip()
-        
-        # Validate input
-        if not rusa_id:
-            flash('RUSA ID is required', 'error')
-            return render_template('setup_profile.html', rusa_id=rusa_id)
-        
-        try:
-            rusa_id = int(rusa_id)
-        except ValueError:
-            flash('RUSA ID must be a number', 'error')
-            return render_template('setup_profile.html', rusa_id=rusa_id)
-        
-        # Names should have been fetched automatically, but validate them
-        if not first_name or not last_name:
-            flash('Unable to retrieve rider information. Please try again.', 'error')
-            return render_template('setup_profile.html', rusa_id=rusa_id)
-        
-        # Check if RUSA ID exists and if it's already linked to another user
-        existing_rider = models.get_rider_by_rusa_id(rusa_id)
-        if existing_rider:
-            # Check if this rider is already linked to a user account
-            linked_user = models.is_rider_linked_to_user(existing_rider['id'])
-            if linked_user:
-                flash('This RUSA ID is already registered by another user', 'error')
-                return render_template('setup_profile.html', rusa_id=rusa_id)
-            # Rider exists but not linked - we'll use this existing rider
-        
-        # Validate with RUSA website one final time
-        validation = validate_rusa_id(rusa_id, first_name, last_name)
-        
-        if not validation['valid']:
-            flash(validation['error'], 'error')
-            return render_template('setup_profile.html', rusa_id=rusa_id)
-        
-        # Use existing rider or create new one
-        rider = existing_rider or models.get_rider_by_name_and_rusa(first_name, last_name, rusa_id)
-        
-        if not rider:
-            # Create new rider
-            rider = models.create_rider(first_name, last_name, rusa_id)
-            if not rider:
-                flash('Failed to create rider profile', 'error')
-                return render_template('setup_profile.html', rusa_id=rusa_id)
-        
-        # Link user to rider
-        success = models.complete_user_profile(user['id'], rider['id'])
-        if not success:
-            flash('Failed to complete profile setup', 'error')
-            return render_template('setup_profile.html', rusa_id=rusa_id)
-        
-        # Update session
-        session['rider_id'] = rider['id']
-        session['rider_name'] = f"{rider['first_name']} {rider['last_name']}"
-        session['rider_rusa_id'] = rider['rusa_id']
-        
-        flash(f'Welcome, {rider["first_name"]}! Your profile has been set up successfully.', 'success')
-        
-        # Redirect to stored next URL or home
-        next_url = session.pop('next_url', None)
-        return _safe_redirect(next_url, fallback='main.index')
-    
-    return render_template('setup_profile.html')
+    if not rider['profile_completed']:
+        return redirect(url_for('signup.signup'))
 
-
-@auth_bp.route('/my-profile')
-def my_profile():
-    """My Profile page — shows name, email, photo, Strava integration, fitness score."""
-    if not session.get('user_id'):
-        flash('Please log in to view your profile.', 'warning')
-        return redirect(url_for('auth.login', next=request.path))
-
-    rider_id = session.get('rider_id')
-    if not rider_id:
-        flash('Please complete your profile setup first.', 'warning')
-        return redirect(url_for('auth.setup_profile'))
-
-    # Get rider info (with profile data — photo, bio, PBP, strava privacy)
-    rider_row = models._execute("""
-        SELECT r.*, rp.photo_filename, rp.bio, rp.pbp_2023_registered, rp.pbp_2023_status, rp.strava_data_private
-        FROM rider r LEFT JOIN rider_profile rp ON r.id = rp.rider_id
-        WHERE r.id = %s
-    """, (rider_id,)).fetchone()
-
-    if not rider_row:
-        flash('Rider not found.', 'error')
-        return redirect(url_for('main.index'))
-
-    rider = dict(rider_row)
-
-    # Career stats
-    career = models.get_rider_career_stats(rider_id)
-
-    # Total SR count
-    total_srs = models.get_rider_total_srs(rider_id)
-
-    # Strava integration
-    strava_connection = models.get_strava_connection(rider_id)
-    strava_activities = []
-    fitness_score = None
-
-    if strava_connection:
-        # Auto-sync if stale (> 6 hours since last sync)
-        import time
-        last_sync = strava_connection.get('last_sync_at')
-        if not last_sync or (time.time() - last_sync.timestamp()) > 6 * 3600:
-            try:
-                from services.strava import sync_rider_activities
-                sync_rider_activities(rider_id)
-                strava_connection = models.get_strava_connection(rider_id)
-            except Exception:
-                pass  # Silent failure — stale data is better than no page
-
-        strava_activities = models.get_strava_activities_for_calendar(rider_id, days=28)
-        if strava_activities:
-            from services.fitness import calculate_fitness_score
-            fitness_score = calculate_fitness_score(strava_activities)
-
-    return render_template('my_profile.html',
-                           rider=rider,
-                           email=session.get('email'),
-                           career_rides=career['total_rides'],
-                           career_kms=career['total_kms'],
-                           total_srs=total_srs,
-                           strava_connection=strava_connection,
-                           strava_activities=strava_activities,
-                           fitness_score=fitness_score)
+    next_url = session.pop('next_url', None)
+    return safe_redirect(next_url, 'main.dashboard')
 
 
 @auth_bp.route('/logout')
 def logout():
-    """Log out the current user."""
+    """Clear the session."""
     session.clear()
-    flash('You have been logged out', 'info')
-    return redirect(url_for('main.index'))
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('main.landing'))
+
+
+@auth_bp.route('/my-profile')
+def my_profile():
+    """Compatibility endpoint for reused Team Asha profile/analysis templates."""
+    return redirect(url_for('main.profile'))

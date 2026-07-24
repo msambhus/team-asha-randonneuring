@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Rides by Season — {{ product_name }}{% endblock %}
+{% block extra_head %}
+<style>
+/* Season page-specific components (SR-leg pips, per-season totals row). No
+   parent-app counterpart component, so styled inline with shared tokens. */
+.sr-legs, .sr-progress { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.sr-leg { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; border: 1px solid var(--border); }
+.sr-leg.done { background: #2a4a7f; color: #fff; border-color: #2a4a7f; }
+.sr-leg.todo { color: var(--text-light); }
+.badge-warn { background: #fef3c7; color: #78350f; }
+.season { margin-bottom: 20px; }
+.season-current { border-left: 4px solid #2a4a7f; }
+.season-totals { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+.season-past { margin-bottom: 10px; }
+.season-past > summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+.season-past > summary:hover { color: var(--primary); }
+</style>
+{% endblock %}
+
+{% macro season_block(s) %}
+  <div class="season-totals">
+    <span>{{ s.summary.total_km }} km &middot; {{ s.summary.count }} ride{{ '' if s.summary.count == 1 else 's' }}</span>
+    <span class="text-text-light">
+      200: {{ s.summary.bands['200'] }} &middot;
+      300: {{ s.summary.bands['300'] }} &middot;
+      400: {{ s.summary.bands['400'] }} &middot;
+      600: {{ s.summary.bands['600'] }} &middot;
+      1000: {{ s.summary.bands['1000'] }}
+    </span>
+    <span class="sr-progress">
+      SR:
+      {% if s.summary.is_sr %}
+        <span class="badge">complete</span>
+      {% else %}
+        {% for leg in [200, 300, 400, 600] %}
+          <span class="sr-leg {% if s.summary.legs[leg] %}done{% else %}todo{% endif %}">{{ leg }}</span>
+        {% endfor %}
+      {% endif %}
+    </span>
+  </div>
+  <div class="table-wrap">
+  <table class="rusa-history">
+    <thead>
+      <tr><th>Date</th><th>Distance</th><th>Event</th><th>Time</th></tr>
+    </thead>
+    <tbody>
+      {% for b in s.brevets %}
+        <tr>
+          <td>{{ b.date }}</td>
+          <td>{{ b.distance_km }} km</td>
+          <td>
+            {{ b.route_name }}
+            {% if b.source == 'ride' %}<span class="badge badge-warn" title="Your own logged ride">logged</span>{% endif %}
+          </td>
+          <td>{{ b.finish_time }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endmacro %}
+
+{% block content %}
+<div class="container section">
+<section class="card">
+  <h1 class="text-primary text-[1.6rem] font-bold">Rides by Season</h1>
+  <p class="text-text-light">
+    Your brevets grouped by randonneuring season (Nov 1 – Oct 31), from your RUSA
+    history merged with any rides you've logged here.
+  </p>
+
+  {% if not seasons %}
+    {% if not rusa.has_id %}
+      <p class="text-text-light">
+        Add your RUSA ID to see your brevet history grouped by season.
+      </p>
+      <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('signup.signup') }}">Add a RUSA ID</a></p>
+    {% else %}
+      <p class="text-text-light">
+        No brevets to show yet. Once you finish a brevet — or log a ride here — it
+        will appear under its season.
+      </p>
+    {% endif %}
+  {% endif %}
+</section>
+
+{% for s in seasons %}
+  {% if s.is_current %}
+    <section class="card season season-current" id="season-{{ s.season }}">
+      <h2 class="text-primary text-[1.3rem] font-bold mb-4">{{ s.season }} <span class="badge">current season</span></h2>
+      {{ season_block(s) }}
+    </section>
+  {% endif %}
+{% endfor %}
+
+{% set past = seasons | rejectattr('is_current') | list %}
+{% if past %}
+  <section class="card">
+    <h2 class="text-primary text-[1.3rem] font-bold mb-4">Past seasons</h2>
+    {% for s in past %}
+      <details class="season season-past" id="season-{{ s.season }}">
+        <summary>{{ s.season }} — {{ s.summary.total_km }} km, {{ s.summary.count }} ride{{ '' if s.summary.count == 1 else 's' }}{% if s.summary.is_sr %} &middot; SR{% endif %}</summary>
+        {{ season_block(s) }}
+      </details>
+    {% endfor %}
+  </section>
+{% endif %}
+</div>
+{% endblock %}

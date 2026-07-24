@@ -1,0 +1,621 @@
+{% extends "base.html" %}
+{% block title %}Brevet calendar — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+<style>
+/* Event-card / month-header / region-filter treatment mirrored from the parent
+   app's brevet calendar (page-specific CSS lives inline there too). */
+.filter-section {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid var(--border);
+}
+.filter-label {
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 12px;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.region-selects { display: flex; gap: 16px; flex-wrap: wrap; }
+.region-select-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 200px;
+    flex: 1 1 200px;
+}
+.region-select-caption {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted, #64748b);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.region-select {
+    cursor: pointer;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 2px solid var(--border);
+    background: white;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: inherit;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%2364748b' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 34px;
+}
+.region-select:hover { border-color: var(--primary); }
+.region-select:focus-visible {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(26, 54, 93, 0.18);
+}
+.region-select:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+    background-color: var(--card-bg, #f8fafc);
+}
+.month-section { margin-bottom: 40px; }
+.month-header {
+    background: linear-gradient(135deg, #0891b2, #0e7490);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 1.3rem;
+    font-weight: 800;
+    margin-bottom: 20px;
+    display: inline-block;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.events-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+}
+.event-card {
+    background: white;
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.event-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    border-color: var(--primary);
+}
+.event-date {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    text-align: center;
+    background: linear-gradient(135deg, #1e40af, #1e3a8a);
+    color: white;
+    border-radius: 8px;
+    padding: 6px 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.event-day { font-size: 1.4rem; font-weight: 800; line-height: 1; color: white; }
+.event-month { font-size: 0.62rem; font-weight: 600; text-transform: uppercase; margin-top: 2px; color: #fb923c; }
+.event-region-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: white;
+    background: var(--primary);
+    margin-bottom: 8px;
+    width: fit-content;
+}
+.event-distance-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.event-distance { font-size: 1.25rem; font-weight: 800; color: var(--accent); }
+.event-elevation { font-size: 0.75rem; color: var(--text-light); font-weight: 500; }
+.event-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin: 8px 0 4px 0;
+    line-height: 1.3;
+    padding-right: 70px;
+}
+.event-title a { color: var(--primary); text-decoration: none; }
+.event-title a:hover { color: var(--accent); text-decoration: underline; }
+.event-links { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.event-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+    border: 1px solid var(--border);
+    background: linear-gradient(135deg, #f0f4ff, #e8f0fe);
+    color: #4338ca;
+}
+.event-link-btn:hover { transform: translateY(-2px); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.event-details-info {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: var(--text-light);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+/* Weather badge — BrevetHub-specific card feature (no parent-app calendar
+   counterpart); styled inline like the parent app's other page-specific rules. */
+.event-weather {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    font-size: 0.78rem;
+    color: var(--text);
+}
+.event-weather .wx-condition { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--primary); }
+.event-weather .wx-metric { color: var(--text-light); }
+.event-weather-none .wx-metric { font-style: italic; }
+.signup-section {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+.signup-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.signup-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+    border: 1px solid #7dd3fc;
+    color: #0369a1;
+}
+.signup-status {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--primary);
+}
+.signup-btn {
+    padding: 6px 14px;
+    min-height: 44px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-family: inherit;
+    border: 2px solid var(--primary);
+    background: white;
+    color: var(--primary);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+.signup-btn:hover {
+    background: var(--primary);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(26, 54, 93, 0.2);
+}
+.signup-btn.secondary { border-color: var(--text-light); color: var(--text-light); }
+.signup-btn.secondary:hover { background: var(--text-light); color: white; }
+
+@media (max-width: 768px) {
+    .events-grid { grid-template-columns: 1fr; }
+    .event-title { font-size: 0.95rem; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding:40px 20px;">
+  <h1>Upcoming brevets</h1>
+  <p>Upcoming ACP/RUSA brevets from RUSA's national calendar</p>
+</div>
+
+<div class="container section">
+
+  <p class="text-text-light mb-5">
+    Start location and time are shown only when a source provides them.
+  </p>
+
+  {% if degraded %}
+    <p class="py-3 px-4 rounded-lg text-sm bg-[#fef3c7] text-[#78350f] mb-5">
+      {% if degraded == 'empty' %}
+        No brevets to show right now — RUSA may be temporarily unavailable. Please
+        check back shortly.
+      {% else %}
+        Couldn't refresh from RUSA just now — showing the most recent cached calendar.
+      {% endif %}
+    </p>
+  {% endif %}
+
+  {% if states %}
+    <div class="filter-section">
+      <div class="filter-label" id="region-filter-label">Region</div>
+      <div class="region-selects" role="group" aria-labelledby="region-filter-label">
+        <label class="region-select-wrap">
+          <span class="region-select-caption">State</span>
+          <select id="region-state" class="region-select" aria-label="Filter by state">
+            <option value="all">All states</option>
+            {% for st in states %}
+              <option value="{{ st }}">{{ st }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="region-select-wrap">
+          <span class="region-select-caption">Area</span>
+          <select id="region-area" class="region-select"
+                  aria-label="Filter by area" disabled>
+            <option value="all">All areas</option>
+          </select>
+        </label>
+        <label class="region-select-wrap">
+          <span class="region-select-caption">Club</span>
+          <select id="club-filter" class="region-select" aria-label="Filter by club">
+            <option value="all">All clubs</option>
+            {% for club_name in clubs or [] %}<option value="{{ club_name|e }}">{{ club_name }}</option>{% endfor %}
+          </select>
+        </label>
+      </div>
+    </div>
+  {% endif %}
+
+  {# Month-abbreviation lookup for the date badge. A date stringifies to ISO
+     ("YYYY-MM-DD") whether it is a datetime.date (psycopg2) or a plain string.
+     Defined ahead of both the upcoming grid AND the rider results section below so
+     it is always available even when there are no upcoming months. #}
+  {% set MONTH_ABBR = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] %}
+
+  {% if months %}
+    <div data-signup-base="/calendar">
+      {% for month_label, month_events in months %}
+        <div class="month-section">
+          <div class="month-header">{{ month_label }}</div>
+          <div class="events-grid">
+            {% for ev in month_events %}
+              {% set ds = ev.date|string %}
+                <article class="event-card" data-event-id="{{ ev.id }}"
+                       data-region="{{ (ev.region or '').split(':')[0]|trim }}"
+                       data-area="{{ ((ev.region or '') ~ ':').split(':')[1]|trim }}"
+                       data-club="{{ (ev.club_name or '')|e }}">
+                <div class="event-date">
+                  <div class="event-day">{{ ds[8:10] }}</div>
+                  <div class="event-month">{{ MONTH_ABBR[ds[5:7]|int] if ds[5:7]|int else ds[5:7] }}</div>
+                </div>
+
+                {% if ev.region %}
+                  <span class="event-region-badge">{{ ev.region }}</span>
+                {% endif %}
+
+                <div class="event-distance-row">
+                  <span class="event-distance">{{ ev.distance_km }} km</span>
+                  {% if ev.elevation_ft %}
+                    <span class="event-elevation">{{ ev.elevation_ft }} ft climbing</span>
+                  {% endif %}
+                </div>
+
+                <h2 class="event-title">
+                  {% if ev.rwgps_url %}
+                    <a href="{{ ev.rwgps_url }}" rel="noopener" target="_blank">{{ ev.name }}</a>
+                  {% else %}
+                    {{ ev.name }}
+                  {% endif %}
+                </h2>
+
+                <div class="event-links">
+                  <a class="event-link-btn" href="{{ url_for('plan.plan_view', event_id=ev.id) }}">
+                    Plan
+                  </a>
+                  {% if ev.rwgps_url %}
+                    <a class="event-link-btn" href="{{ ev.rwgps_url }}" rel="noopener" target="_blank">
+                      Route map
+                    </a>
+                  {% endif %}
+                  {# Per-event Live link — always shown. Opens the shared event-scoped
+                     Radial live view: the event route plus any riders currently
+                     sharing their location, or an empty "waiting for riders" state
+                     for a future/quiet brevet. #}
+                  <a class="event-link-btn" href="{{ url_for('live.event_live_map', event_id=ev.id) }}"
+                     title="Live map — track riders on this brevet">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+                    </svg>
+                    Live
+                  </a>
+                </div>
+
+                <div class="event-details-info">
+                  {% if ev.ride_type %}<span>{{ ev.ride_type }}</span>{% endif %}
+                  <span>
+                    Start:
+                    {# National-feed events have no start location/time — show an
+                       honest placeholder, never a fabricated value. #}
+                    {{ ev.start_location or '—' }}{% if ev.start_time %} · {{ ev.start_time }}{% endif %}
+                  </span>
+                  {% if ev.time_limit_hours %}
+                    <span>Time limit: {{ ev.time_limit_hours }} h</span>
+                  {% endif %}
+                </div>
+
+                {# Weather badge — cache-read-only. A near-term event with a
+                   resolvable region shows a compact forecast (from the warmed
+                   rp_brevet_weather cache, region-approximate); a far-out or
+                   region-less event has no cache row and shows the honest
+                   "forecast not available yet" note. Values are preformatted by
+                   the shared summarizer, so only builtin Jinja filters are used
+                   (no commafy/clean_name — this app does not register them). #}
+                {% set wx = weather.get(ev.id) %}
+                {% if wx %}
+                  <div class="event-weather" title="Approximate region forecast for this date">
+                    <span class="wx-condition">
+                      {% if wx.condition_icon %}<span class="wx-icon">{{ wx.condition_icon }}</span>{% endif %}
+                      {{ wx.condition }}
+                    </span>
+                    {% if wx.temp_min_f is not none and wx.temp_max_f is not none %}
+                      <span class="wx-metric">{{ wx.temp_min_f }}–{{ wx.temp_max_f }}°F</span>
+                    {% endif %}
+                    {% if wx.wind_speed_mph is not none %}
+                      <span class="wx-metric">Wind {{ wx.wind_speed_mph }} mph{% if wx.wind_dir_label %} {{ wx.wind_dir_label }}{% endif %}</span>
+                    {% endif %}
+                    {% if wx.precip_prob is not none %}
+                      <span class="wx-metric">{{ wx.precip_prob }}% precip</span>
+                    {% endif %}
+                  </div>
+                {% else %}
+                  <div class="event-weather event-weather-none">
+                    <span class="wx-metric">Forecast not available yet</span>
+                  </div>
+                {% endif %}
+
+                <div class="signup-section">
+                  <span class="signup-count">{{ ev.signup_count or 0 }} going</span>
+                  {% if rider %}
+                    <span class="signup-actions">
+                      {% set status = my_status.get(ev.id) %}
+                      <span class="signup-status" data-event-id="{{ ev.id }}">
+                        {% if status and status != 'withdraw' %}{{ status|capitalize }}{% else %}—{% endif %}
+                      </span>
+                      <button type="button" class="signup-btn"
+                              data-event-id="{{ ev.id }}" data-status="going">Going</button>
+                      <button type="button" class="signup-btn secondary"
+                              data-event-id="{{ ev.id }}" data-status="interested">Interested</button>
+                      <button type="button" class="signup-btn secondary"
+                              data-event-id="{{ ev.id }}" data-status="withdraw">Withdraw</button>
+                    </span>
+                    <small class="club-registration-note">Going here is an intent only; complete registration on the organizing club&rsquo;s site.</small>
+                  {% endif %}
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-text-light text-center py-10">No upcoming brevets found right now.</p>
+  {% endif %}
+
+  {# Rider-only post-ride surface: the upcoming grid above can only show pre-ride
+     controls (its events are all future-dated), so a rider's OWN past results live
+     here — a result badge, the read-only official finish_time, and a status-only
+     result-correction dropdown. Guests never see this (server-rendered only for a
+     signed-in rider), and every row is this rider's own (rider_id-scoped). #}
+  {% if rider and my_results %}
+    <div class="month-section" style="margin-top:32px;">
+      <div class="month-header">My recent results</div>
+      <div class="events-grid">
+        {% for s in my_results %}
+          {% set ds = s.date|string %}
+          <article class="event-card" data-result-event-id="{{ s.event_id }}">
+            <div class="event-date">
+              <div class="event-day">{{ ds[8:10] }}</div>
+              <div class="event-month">{{ MONTH_ABBR[ds[5:7]|int] if ds[5:7]|int else ds[5:7] }}</div>
+            </div>
+
+            {% if s.region %}
+              <span class="event-region-badge">{{ s.region }}</span>
+            {% endif %}
+
+            <div class="event-distance-row">
+              <span class="event-distance">{{ s.distance_km }} km</span>
+            </div>
+
+            <h2 class="event-title">{{ s.name }}</h2>
+            <p><a class="event-link-btn" href="{{ url_for('calendar.event_finishers', event_id=s.event_id) }}">View all finishers</a></p>
+
+            {# Post-ride surface — DEDICATED result classes (not the signup-btn /
+               signup-status controls, which the sign-up POST handler binds): the
+               result dropdown is bound only by its own /result change handler.
+               Styled with the shared Tailwind design system (no hand-rolled CSS). #}
+            <div class="signup-section">
+              {# Result badge — the current post-ride status. #}
+              <span class="result-badge inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold uppercase tracking-wide text-primary bg-[#f0f9ff] border border-[#7dd3fc]"
+                    data-event-id="{{ s.event_id }}">
+                {{ s.status|upper }}
+              </span>
+              <span class="signup-actions">
+                {# Read-only official finish time — filled from RUSA by the daily
+                   sync cron; an honest placeholder until then. No finish-time input. #}
+                <span class="result-finish text-sm font-semibold text-text-light"
+                      data-event-id="{{ s.event_id }}">
+                  {{ s.finish_time or '—' }}
+                </span>
+                {# Status-only result correction (this rider's OWN past ride). #}
+                <select class="result-select border border-border rounded-md px-2 py-1 text-sm font-semibold text-primary bg-white"
+                        data-event-id="{{ s.event_id }}" aria-label="Correct result">
+                  {% for opt in ['finished', 'dnf', 'dns', 'otl'] %}
+                    <option value="{{ opt }}" {% if s.status == opt %}selected{% endif %}>{{ opt|upper }}</option>
+                  {% endfor %}
+                </select>
+              </span>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  {% if not rider %}
+    <p class="mt-6">
+      <a class="btn btn-primary" href="{{ url_for('auth.login', next=url_for('calendar.calendar')) }}">Sign in</a>
+      to mark yourself interested or going on a brevet.
+    </p>
+  {% endif %}
+
+</div>
+
+{% if rider %}
+<script>
+// Progressive enhancement: sign-up is a small fetch() POST to the JSON API. No
+// page reload — the card's "My status" cell updates in place. Guests never see
+// these controls (server-rendered only when a rider is signed in).
+document.querySelectorAll('.signup-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var eventId = btn.getAttribute('data-event-id');
+    var status = btn.getAttribute('data-status');
+    fetch('/calendar/' + eventId + '/signup', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: status}),
+    }).then(function (resp) {
+      return resp.json().then(function (data) { return {ok: resp.ok, data: data}; });
+    }).then(function (r) {
+      if (!r.ok) {
+        if (r.data && r.data.login_url) { window.location = r.data.login_url; }
+        return;
+      }
+      var cell = document.querySelector('.signup-status[data-event-id="' + eventId + '"]');
+      if (cell) {
+        cell.textContent = (r.data.status && r.data.status !== 'withdraw')
+          ? r.data.status.charAt(0).toUpperCase() + r.data.status.slice(1)
+          : '—';
+      }
+    });
+  });
+});
+
+// Post-ride result correction (this rider's OWN past ride only): a small fetch()
+// POST to the self-service /result API. Status-only — the finish time is never
+// sent, only reflected read-only from the JSON response.
+document.querySelectorAll('.result-select').forEach(function (sel) {
+  sel.addEventListener('change', function () {
+    var eventId = sel.getAttribute('data-event-id');
+    fetch('/calendar/' + eventId + '/result', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: sel.value}),
+    }).then(function (resp) {
+      return resp.json().then(function (data) { return {ok: resp.ok, data: data}; });
+    }).then(function (r) {
+      if (!r.ok) {
+        if (r.data && r.data.login_url) { window.location = r.data.login_url; }
+        return;
+      }
+      var badge = document.querySelector('.result-badge[data-event-id="' + eventId + '"]');
+      if (badge && r.data.status) { badge.textContent = r.data.status.toUpperCase(); }
+      var finish = document.querySelector('.result-finish[data-event-id="' + eventId + '"]');
+      if (finish) { finish.textContent = r.data.finish_time || '—'; }
+    });
+  });
+});
+</script>
+{% endif %}
+
+{# Client-side region filter (guests included): cascading State -> Area dropdowns.
+   State picks the RUSA state prefix; Area picks the RBA area after the colon (events
+   carry no club data, so the area is the honest secondary axis). Filters event cards
+   and hides months that end up empty. #}
+<script>
+(function () {
+  var regionsByState = {{ regions_by_state|tojson }};
+  var stateSel = document.getElementById('region-state');
+  var areaSel = document.getElementById('region-area');
+  var clubSel = document.getElementById('club-filter');
+  if (!stateSel || !areaSel) return;
+
+  function apply() {
+    var st = stateSel.value;
+    var ar = areaSel.value;
+    var club = clubSel ? clubSel.value : 'all';
+    document.querySelectorAll('.event-card[data-region]').forEach(function (c) {
+      var stateOk = (st === 'all' || c.dataset.region === st);
+      var areaOk = (ar === 'all' || c.dataset.area === ar);
+      var clubOk = (club === 'all' || c.dataset.club === club);
+      c.style.display = (stateOk && areaOk && clubOk) ? '' : 'none';
+    });
+    document.querySelectorAll('.month-section').forEach(function (sec) {
+      var shown = Array.prototype.filter.call(
+        sec.querySelectorAll('.event-card[data-region]'),
+        function (c) { return c.style.display !== 'none'; });
+      sec.style.display = shown.length ? '' : 'none';
+    });
+  }
+
+  function repopulateAreas() {
+    var st = stateSel.value;
+    var areas = (st !== 'all' && regionsByState[st]) ? regionsByState[st] : [];
+    areaSel.innerHTML = '';
+    var allOpt = document.createElement('option');
+    allOpt.value = 'all';
+    allOpt.textContent = 'All areas';
+    areaSel.appendChild(allOpt);
+    areas.forEach(function (a) {
+      var opt = document.createElement('option');
+      opt.value = a;
+      opt.textContent = a;
+      areaSel.appendChild(opt);
+    });
+    areaSel.value = 'all';
+    areaSel.disabled = (areas.length === 0);
+  }
+
+  stateSel.addEventListener('change', function () { repopulateAreas(); apply(); });
+  areaSel.addEventListener('change', apply);
+  if (clubSel) clubSel.addEventListener('change', apply);
+
+  repopulateAreas();
+  apply();
+})();
+</script>
+{% endblock %}

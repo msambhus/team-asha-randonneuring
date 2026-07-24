@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ ride.name }} — live map — {{ product_name }}{% endblock %}
+{# Member per-ride live view — the SAME shared Mapbox GL Radial partial the guest
+   map uses (map + compact rider table + altitude profile), plus the member-only
+   controls (Garmin link + phone beacon). One map implementation, reused. #}
+{% block extra_head %}
+{% if mapbox_token %}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+{% endif %}
+{% endblock %}
+{% block content %}
+<div class="container section">
+<section class="card">
+  <h1 class="text-primary text-[1.6rem] font-bold mb-1">{{ ride.name }}</h1>
+  <p class="text-text-light text-sm mb-4">
+    {% if ride.distance_km %}{{ ride.distance_km }} km &middot; {% endif %}
+    {% if ride.start_at %}{{ ride.start_at.strftime('%Y-%m-%d %H:%M') }} &middot; {% endif %}
+    Live member map
+  </p>
+
+  {# ── Appear on this map: register your Garmin LiveTrack link for this ride ── #}
+  <details class="mb-4 border border-border rounded-xl px-4">
+    <summary class="cursor-pointer py-3 font-bold">
+      Appear on this map — link your Garmin LiveTrack
+      {% if garmin_here %}<span class="text-success font-semibold text-sm">· ⌚ linked</span>{% endif %}
+    </summary>
+    <div class="pb-4">
+      <div class="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm mb-3">
+        ⚠️ <strong>Garmin makes a new link every ride.</strong> Each activity creates a
+        fresh LiveTrack session, so paste a new link for <em>this</em> ride.
+      </div>
+      {% if not opted_in %}
+      <p class="text-text-light text-sm mb-3">
+        Enable live tracking first in
+        <a class="text-primary font-semibold hover:text-accent hover:underline" href="{{ url_for('live.live_settings') }}">settings</a>,
+        then paste your LiveTrack link here.
+      </p>
+      {% endif %}
+      <form method="post" action="{{ url_for('live.ride_garmin_link', ride_id=ride.id) }}">
+        <div class="form-group">
+          <label for="garmin_session_url">Garmin LiveTrack link for this ride</label>
+          <input type="url" id="garmin_session_url" name="garmin_session_url"
+                 placeholder="https://livetrack.garmin.com/session/.../token/..."
+                 value="{{ garmin_url }}" />
+        </div>
+        <div class="flex gap-2 flex-wrap items-center">
+          <button class="btn btn-primary btn-sm" type="submit" name="action" value="save">Save link</button>
+          {% if garmin_here %}
+          <button class="btn btn-sm bg-white text-danger border border-border hover:opacity-90"
+                  type="submit" name="action" value="clear">Stop tracking this ride</button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </details>
+
+  {# ── No Garmin? Stream this phone's browser location to this ride's map. ── #}
+  <p class="mb-4 text-sm">
+    <a class="text-primary font-semibold hover:text-accent hover:underline"
+       href="{{ url_for('live.live_share', ride_id=ride.id) }}">📍 Share my phone location for this ride</a>
+    <span class="text-text-light">— no Garmin needed (keep the page open).</span>
+  </p>
+
+  {% include '_radial_live.html' %}
+
+  <p class="mt-4"><a class="back-link" href="{{ url_for('live.live_list') }}">← All live rides</a></p>
+</section>
+</div>
+{% endblock %}

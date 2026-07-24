@@ -1,58 +1,38 @@
 {% extends "base.html" %}
-{% block title %}Sign Up - {{ ride.name }} - Team Asha Randonneuring{% endblock %}
-
+{% block title %}Complete your profile — {{ product_name }}{% endblock %}
 {% block content %}
-<div class="hero">
-<h1>Ride Signup</h1>
-<p>{{ ride.name }} &mdash; {{ ride.date }} &mdash; {{ ride.distance_km }} km</p>
-</div>
 <div class="container section">
-<a href="{{ url_for('main.upcoming') }}" class="back-link">&larr; Back to upcoming rides</a>
+<div class="max-w-[600px] mx-auto">
+<section class="card">
+  <h1 class="text-primary text-[1.6rem] font-bold mb-2">Complete your profile</h1>
+  <p class="text-text-light mb-4">Pick your club to finish setting up your {{ product_name }} account. Your
+     RUSA ID is optional — add it to link your randonneuring history later.</p>
 
-<div class="card">
-<h3 style="color:var(--primary);margin-bottom:15px;">{{ signups|length }} rider{{ 's' if signups|length != 1 }} signed up</h3>
-{% if signups %}
-<div class="table-wrap">
-<table>
-<thead><tr><th>Rider</th><th>Action</th></tr></thead>
-<tbody>
-{% for r in signups %}
-<tr>
-<td><a href="{{ url_for('riders.rider_profile', rusa_id=r.rusa_id) }}" class="rider-link">{{ r.first_name }} {{ r.last_name }}</a></td>
-<td>
-<form method="POST" style="display:inline;">
-<input type="hidden" name="rider_id" value="{{ r.id }}">
-<input type="hidden" name="action" value="remove">
-<button type="submit" class="btn btn-sm" style="background:var(--danger);color:white;">Remove</button>
-</form>
-</td>
-</tr>
-{% endfor %}
-</tbody>
-</table>
-</div>
-{% else %}
-<p style="color:var(--text-light);">No riders signed up yet. Be the first!</p>
-{% endif %}
-</div>
+  <form method="post" action="{{ url_for('signup.signup') }}">
+    <div class="form-group">
+      <label for="club_id">Club <span style="color: var(--accent);">*</span></label>
+      <select id="club_id" name="club_id" required>
+        <option value="">— select your club —</option>
+        {% for club in clubs %}
+        <option value="{{ club.id }}"
+          {% if selected_club_id and selected_club_id == club.id %}selected{% endif %}>
+          {{ club.name }}{% if club.state %} ({{ club.state }}){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
 
-<div class="card">
-<h3 style="color:var(--primary);margin-bottom:15px;">Add Signup</h3>
-<form method="POST">
-<div class="form-group">
-<label>Select Rider</label>
-<select name="rider_id" required>
-<option value="">-- Choose a rider --</option>
-{% for r in all_riders %}
-{% if r.id not in signup_ids %}
-<option value="{{ r.id }}">{{ r.first_name }} {{ r.last_name }}</option>
-{% endif %}
-{% endfor %}
-</select>
-</div>
-<input type="hidden" name="action" value="signup">
-<button type="submit" class="btn btn-primary">Sign Up</button>
-</form>
+    <div class="form-group">
+      <label for="rusa_id">RUSA ID <span class="text-text-light font-normal">(optional)</span></label>
+      <input type="text" id="rusa_id" name="rusa_id" inputmode="numeric"
+             pattern="[0-9]*" value="{{ rusa_id }}"
+             placeholder="e.g. 12345">
+      <p class="text-text-light text-[0.85rem] mt-1">We store this as-is; we do not verify ownership in this version.</p>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save and continue</button>
+  </form>
+</section>
 </div>
 </div>
 {% endblock %}

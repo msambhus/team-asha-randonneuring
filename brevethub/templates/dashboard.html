@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — {{ product_name }}{% endblock %}
+{% block content %}
+<div class="hero" style="padding:30px 20px;">
+<h1>Welcome to {{ product_name }}</h1>
+<p style="font-size:0.9rem; opacity:0.8;">{{ rider.email }}</p>
+</div>
+
+<div class="container section">
+
+<div class="card">
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div>
+      <div class="text-[0.7rem] text-text-light uppercase tracking-wider">Club</div>
+      <div class="font-semibold">{% if club %}{{ club.name }}{% else %}—{% endif %}</div>
+    </div>
+    <div>
+      <div class="text-[0.7rem] text-text-light uppercase tracking-wider">RUSA ID</div>
+      <div class="font-semibold">
+        {% if rider.rusa_id %}
+          {{ rider.rusa_id }}
+          {% if rider.rusa_id_duplicate %}
+            <span class="badge bg-[#fef3c7] text-[#78350f]" title="Another rider has claimed this RUSA ID">
+              also claimed by another rider
+            </span>
+          {% endif %}
+        {% else %}
+          <span class="text-text-light">not provided</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="mt-4 flex flex-wrap gap-2.5">
+    <a class="btn btn-primary" href="{{ url_for('main.profile') }}">My Profile</a>
+    <a class="btn bg-white text-primary border border-border hover:opacity-90" href="{{ url_for('main.rides_by_season') }}">Rides by Season</a>
+  </div>
+</div>
+
+<div class="card" id="signups">
+  <h2 class="text-primary text-[1.3rem] mb-4 pb-2.5 border-b-[3px] border-accent inline-block font-bold">My upcoming sign-ups</h2>
+  {% if signups %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Date</th><th>Brevet</th><th>Distance</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for s in signups %}
+            <tr>
+              <td>{{ s.date }}</td>
+              <td>{{ s.name }}</td>
+              <td>{{ s.distance_km }} km</td>
+              <td>{{ s.status|capitalize }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-text-light">
+      You haven't signed up for any upcoming brevets yet.
+      <a href="{{ url_for('calendar.calendar') }}" class="text-primary font-semibold hover:text-accent hover:underline">Browse the calendar</a>.
+    </p>
+  {% endif %}
+</div>
+
+<div class="card" id="past-results">
+  <h2 class="text-primary text-[1.3rem] mb-4 pb-2.5 border-b-[3px] border-accent inline-block font-bold">My past results</h2>
+  {% if past_results %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Date</th><th>Brevet</th><th>Distance</th><th>Result</th><th>Finish time</th></tr>
+        </thead>
+        <tbody>
+          {% for s in past_results %}
+            <tr>
+              <td>{{ s.date }}</td>
+              <td>{{ s.name }}</td>
+              <td>{{ s.distance_km }} km</td>
+              <td>
+                {# Self-service result correction (this rider's own past ride only).
+                   Status-only: an official finish time comes from RUSA, never typed. #}
+                <select class="result-select border border-border rounded-md px-2 py-1 text-sm"
+                        data-event-id="{{ s.event_id }}" aria-label="Result">
+                  {% for opt in ['finished', 'dnf', 'dns', 'otl'] %}
+                    <option value="{{ opt }}" {% if s.status == opt %}selected{% endif %}>{{ opt|upper }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              {# Finish time is DISPLAY-ONLY — filled from RUSA by the daily sync cron,
+                 an honest placeholder until then. No finish-time input anywhere. #}
+              <td class="result-finish" data-event-id="{{ s.event_id }}">{{ s.finish_time or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-text-light text-sm mt-2">
+      Official finish times are filled in automatically from RUSA — self-reported
+      results set your status only.
+    </p>
+  {% else %}
+    <p class="text-text-light">No past brevet results yet.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2 class="text-primary text-[1.3rem] mb-4 pb-2.5 border-b-[3px] border-accent inline-block font-bold">Live rides</h2>
+  <p class="text-text-light">
+    Follow public rides on the map, or share one of your own so anyone can
+    watch you live.
+  </p>
+  <div class="mt-4 flex flex-wrap gap-2.5">
+    <a class="btn btn-primary" href="{{ url_for('live.live_list') }}">Browse live rides</a>
+    <a class="btn bg-white text-primary border border-border hover:opacity-90" href="{{ url_for('live.live_new') }}">Share a live ride</a>
+  </div>
+</div>
+
+<div class="card" id="rusa">
+  <h2 class="text-primary text-[1.3rem] mb-4 pb-2.5 border-b-[3px] border-accent inline-block font-bold">RUSA brevet history</h2>
+
+  {% if not rusa.has_id %}
+    <p class="text-text-light">
+      Add your RUSA ID to see your official brevet history and stats here.
+    </p>
+    <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('signup.signup') }}">Add a RUSA ID</a></p>
+  {% else %}
+    {% if rusa.error %}
+      <p class="py-3 px-4 rounded-lg text-sm bg-[#fef3c7] text-[#78350f] mb-4">{{ rusa.error }}</p>
+    {% endif %}
+
+    {% if rusa.stats %}
+      {# Keep the .stats-row class so the per-card .stat-card:nth-child colors apply,
+         but override the two hero-only behaviors inline (inline styles beat the
+         utility classes): the negative top margin — meant to pull the cards up over
+         a hero — would here overlap the section heading; and the fixed 5-column grid
+         leaves a 4-stat row short. auto-fit fills the card width for any count. #}
+      <div class="stats-row" style="margin-top:0;margin-left:0;margin-right:0;padding-left:0;padding-right:0;max-width:none;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+        <div class="stat-card"><div class="number">{{ rusa.stats.total_km }}</div><div class="label">Total km ({{ rusa.stats.count }} brevets)</div></div>
+        <div class="stat-card"><div class="number">{{ rusa.stats.longest_km }}</div><div class="label">Longest km</div></div>
+        <div class="stat-card">
+          <div class="number" style="color:var(--accent);">{% if rusa.stats.is_sr %}SR{% else %}—{% endif %}</div>
+          <div class="label">{% if rusa.stats.is_sr %}Super Randonneur {{ rusa.stats.sr_year }}{% else %}Super Randonneur{% endif %}</div>
+        </div>
+        <div class="stat-card"><div class="number">{{ rusa.stats.season_total_km }}</div><div class="label">{{ rusa.stats.season_year }} season ({{ rusa.stats.season_count }})</div></div>
+      </div>
+      <p class="text-text-light text-sm mb-4">
+        By distance — 200: {{ rusa.stats.bands['200'] }} &middot;
+        300: {{ rusa.stats.bands['300'] }} &middot;
+        400: {{ rusa.stats.bands['400'] }} &middot;
+        600: {{ rusa.stats.bands['600'] }} &middot;
+        1000: {{ rusa.stats.bands['1000'] }}
+      </p>
+    {% endif %}
+
+    {% if rusa.brevets %}
+      <div class="table-wrap">
+        <table class="rusa-history">
+          <thead>
+            <tr><th>Date</th><th>Distance</th><th>Event</th><th>Time</th></tr>
+          </thead>
+          <tbody>
+            {% for b in rusa.brevets %}
+              <tr>
+                <td>{{ b.date }}</td>
+                <td>{{ b.distance_km }} km</td>
+                <td>{{ b.route_name }}</td>
+                <td>{{ b.finish_time }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% elif not rusa.error %}
+      <p class="text-text-light">No completed brevets found yet.</p>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('main.rusa_refresh') }}" class="mt-4">
+      <button class="btn btn-primary" type="submit">Refresh from RUSA</button>
+    </form>
+  {% endif %}
+</div>
+
+<div class="card" id="strava">
+  <h2 class="text-primary text-[1.3rem] mb-4 pb-2.5 border-b-[3px] border-accent inline-block font-bold">Strava</h2>
+
+  {% if not strava.connected %}
+    <p class="text-text-light">Connect Strava to see your recent activity and fitness score.</p>
+    <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('strava.connect') }}">Connect Strava</a></p>
+  {% else %}
+    {% if strava.error %}
+      <p class="py-3 px-4 rounded-lg text-sm bg-[#fef3c7] text-[#78350f] mb-4">{{ strava.error }}</p>
+    {% endif %}
+
+    {% if strava.stats %}
+      {# Keep the .stats-row class so the per-card .stat-card:nth-child colors apply,
+         but override the two hero-only behaviors inline (inline styles beat the
+         utility classes): the negative top margin — meant to pull the cards up over
+         a hero — would here overlap the section heading; and the fixed 5-column grid
+         leaves a 4-stat row short. auto-fit fills the card width for any count. #}
+      <div class="stats-row" style="margin-top:0;margin-left:0;margin-right:0;padding-left:0;padding-right:0;max-width:none;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+        <div class="stat-card"><div class="number">{{ strava.stats.rides }}</div><div class="label">Rides (28 days)</div></div>
+        <div class="stat-card"><div class="number">{{ strava.stats.distance_km }}</div><div class="label">Distance km</div></div>
+        <div class="stat-card"><div class="number">{{ strava.stats.elevation_m }}</div><div class="label">Elevation m</div></div>
+        <div class="stat-card"><div class="number">{{ strava.stats.moving_hours }}</div><div class="label">Moving hours</div></div>
+        <div class="stat-card"><div class="number">{% if strava.stats.fitness is not none %}{{ strava.stats.fitness }}{% else %}—{% endif %}</div><div class="label">Fitness /100</div></div>
+      </div>
+    {% else %}
+      <p class="text-text-light">Connected — activity summary will appear shortly.</p>
+    {% endif %}
+
+    <div class="mt-4 flex flex-wrap gap-2.5">
+      <a class="btn btn-primary" href="{{ url_for('analysis.analysis_list') }}">Analyze a ride</a>
+    </div>
+
+    <form method="post" action="{{ url_for('strava.disconnect') }}" class="mt-4">
+      <button class="btn bg-white text-primary border border-border hover:opacity-90" type="submit">Disconnect Strava</button>
+    </form>
+  {% endif %}
+</div>
+
+</div>
+
+{% if past_results %}
+<script>
+// Progressive enhancement: a result correction is a small fetch() POST to the
+// self-service /result API (this rider's OWN past ride only). Status-only — the
+// finish time is never sent, only reflected read-only from the JSON response.
+document.querySelectorAll('.result-select').forEach(function (sel) {
+  sel.addEventListener('change', function () {
+    var eventId = sel.getAttribute('data-event-id');
+    fetch('/calendar/' + eventId + '/result', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: sel.value}),
+    }).then(function (resp) {
+      return resp.json().then(function (data) { return {ok: resp.ok, data: data}; });
+    }).then(function (r) {
+      if (!r.ok) {
+        if (r.data && r.data.login_url) { window.location = r.data.login_url; }
+        return;
+      }
+      var cell = document.querySelector('.result-finish[data-event-id="' + eventId + '"]');
+      if (cell) { cell.textContent = r.data.finish_time || '—'; }
+    });
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

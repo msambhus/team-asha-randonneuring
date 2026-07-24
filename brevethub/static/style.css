@@ -1,15 +1,16 @@
 :root {
-    --primary: #0088ce;
-    --accent: #c01700;
-    --accent-light: #ec0000;
-    --bg: #f7fafc;
+    --primary: #1f4f85;
+    --primary-dark: #173b63;
+    --accent: #b64040;
+    --accent-light: #d96b62;
+    --bg: #f5f7fa;
     --card-bg: #ffffff;
     --text: #2d3748;
     --text-light: #5a6b80; /* darkened from #718096 to meet WCAG AA 4.5:1 on light backgrounds */
     --border: #e2e8f0;
-    --success: #0088ce;
-    --warning: #c01700;
-    --danger: #c01700;
+    --success: #2f6f61;
+    --warning: #a56b2a;
+    --danger: #a43f46;
 }
 /* Base resets, layout, nav, hero, stats-row, stat-card base: MIGRATED to input.css + Tailwind classes */
 /* Keep .hero-img for legacy usage */

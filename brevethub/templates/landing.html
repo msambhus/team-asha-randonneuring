@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}{{ product_name }} — randonneuring, for every club{% endblock %}
+
+{% block extra_head %}
+<style>
+/* Animated gradient background + entrance animations (mirrors the parent app hero) */
+.hero-gradient-bg {
+    position: absolute;
+    top: -50%; left: -50%; right: -50%; bottom: -50%;
+    background: linear-gradient(45deg,
+        rgba(26, 54, 93, 0.8),
+        rgba(42, 74, 127, 0.6),
+        rgba(26, 54, 93, 0.8),
+        rgba(42, 74, 127, 0.6)
+    );
+    background-size: 400% 400%;
+    animation: gradientShift 15s ease infinite;
+    z-index: 1;
+}
+
+@keyframes gradientShift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+}
+
+.hero-title { opacity: 0; animation: fadeInUp 0.8s ease forwards 0.2s; }
+.hero-description { opacity: 0; animation: fadeInUp 0.8s ease forwards 0.4s; }
+.hero-cta { opacity: 0; animation: fadeInUp 0.8s ease forwards 0.6s; }
+
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero-section relative overflow-hidden bg-gradient-to-br from-primary via-primary-dark to-primary text-white py-8 px-5 text-center">
+    <div class="hero-gradient-bg"></div>
+
+    <div class="hero-content relative z-10 flex flex-col items-center justify-center gap-4 max-w-[700px] mx-auto">
+        <h1 class="hero-title text-[2rem] mb-2 font-extrabold" style="text-shadow: 2px 2px 8px rgba(0,0,0,0.4);">
+            {{ product_name }}
+        </h1>
+        <p class="hero-description text-[0.95rem] opacity-90 mb-2.5 max-w-[500px]" style="text-shadow: 1px 1px 4px rgba(0,0,0,0.3);">
+            Track your brevets, your fitness, and your club — one home for every
+            randonneur, whatever jersey you wear.
+        </p>
+        <div class="hero-cta flex flex-col items-center gap-2.5">
+            <a href="{{ url_for('auth.google_login') }}" class="btn bg-white text-text hover:opacity-90" style="display: inline-flex; align-items: center; justify-content: center; gap: 12px; font-size: 1rem; padding: 14px 32px;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style="width: 20px; height: 20px;">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                    <path fill="none" d="M0 0h48v48H0z"/>
+                </svg>
+                Sign in with Google
+            </a>
+            <p class="text-[0.8rem] opacity-80">
+                New here? Signing in creates your account, then you pick your club and
+                (optionally) add your RUSA ID.
+            </p>
+        </div>
+    </div>
+</div>
+
+<div class="container section">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+    <div class="card fade-in-up">
+        <h2 class="text-primary mb-2.5">Your club, your directory</h2>
+        <p>Pick your randonneuring club from the official directory when you join.</p>
+    </div>
+    <div class="card fade-in-up">
+        <h2 class="text-primary mb-2.5">Your brevet record</h2>
+        <p>Add your RUSA ID to bring your randonneuring history along (coming soon).</p>
+    </div>
+    <div class="card fade-in-up">
+        <h2 class="text-primary mb-2.5">Your training</h2>
+        <p>Connect Strava for per-rider fitness stats (coming soon).</p>
+    </div>
+</div>
+</div>
+{% endblock %}
