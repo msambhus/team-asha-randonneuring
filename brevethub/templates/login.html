@@ -1,9 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Login - Team Asha Randonneuring{% endblock %}
-
+{% block title %}Sign in — {{ product_name }}{% endblock %}
 {% block content %}
 <div class="hero">
-    <h1>Welcome to Team Asha Randonneuring</h1>
+    <h1>Welcome to {{ product_name }}</h1>
     <p>Sign in with your Google account to get started</p>
 </div>
 
@@ -15,13 +14,13 @@
                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                 </svg>
             </div>
-            
+
             <h2 style="color: var(--primary); margin-bottom: 15px; font-size: 1.5rem;">Sign In</h2>
             <p style="color: var(--text-light); margin-bottom: 30px; line-height: 1.6;">
-                Connect with Team Asha Randonneuring by signing in with your Google account.
-                First-time users will need to verify their RUSA membership.
+                Use your Google account to sign in or create an account. First-time
+                users then pick their club and (optionally) add a RUSA ID.
             </p>
-            
+
             <a href="{{ url_for('auth.google_login') }}" class="btn btn-primary" style="display: inline-flex; align-items: center; justify-content: center; gap: 12px; font-size: 1rem; padding: 14px 32px;">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style="width: 20px; height: 20px;">
                     <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
@@ -32,7 +31,7 @@
                 </svg>
                 Sign in with Google
             </a>
-            
+
             <div style="margin-top: 30px; padding-top: 25px; border-top: 1px solid var(--border);">
                 <p style="font-size: 0.85rem; color: var(--text-light); margin: 0;">
                     Don't have a RUSA membership?
@@ -42,14 +41,14 @@
                 </p>
             </div>
         </div>
-        
+
         <div class="card" style="margin-top: 20px;">
             <h3 style="color: var(--primary); margin-bottom: 15px;">What to Expect</h3>
             <ul style="color: var(--text-light); line-height: 1.8; margin: 0; padding-left: 20px;">
                 <li>Sign in securely with your Google account</li>
-                <li>First-time users: Enter your RUSA ID and name</li>
-                <li>We'll verify your information with RUSA.org</li>
-                <li>Access ride signups, leaderboards, and team activities</li>
+                <li>First-time users: pick your club and (optionally) add a RUSA ID</li>
+                <li>Bring your randonneuring history along with your RUSA ID</li>
+                <li>Track brevets, follow live rides, and analyze your training</li>
             </ul>
         </div>
     </div>

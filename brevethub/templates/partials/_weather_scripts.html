@@ -4,42 +4,28 @@
     var MAPBOX_TOKEN = '{{ mapbox_token }}';
     var map = null;
     var AUTO_FETCH = '{{ auto_fetch }}';
-    var PLAN_SLUG = '{{ prefill_plan_slug }}';
+    // Read-only cached data endpoint — the guest plan page NEVER fetches live weather.
+    var WEATHER_DATA_URL = '{{ weather_data_url }}';
+    var PRODUCT_NAME = '{{ product_name }}';
     var currentRouteData = null;
 
     // Offset distance in degrees (~0.003 deg ≈ 300m at mid-latitudes)
     var ARROW_OFFSET_DEG = 0.003;
 
-    // Set default start time to tomorrow 6 AM if not pre-filled
-    (function setDefaultStartTime() {
-        var dtInput = document.getElementById('start-datetime');
-        if (!dtInput.value) {
-            var tomorrow = new Date();
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            tomorrow.setHours(6, 0, 0, 0);
-            dtInput.value = tomorrow.toISOString().slice(0, 16);
-        }
-    })();
-
+    // Fetch the pre-formatted forecast + map/table/chart payload from the cron-warmed
+    // cache (GET, read-only). No RWGPS/Open-Meteo call happens on this guest path.
     function doFetch() {
-        var url = document.getElementById('rwgps-url').value.trim();
-        var dt = document.getElementById('start-datetime').value;
-        var speed = document.getElementById('speed-mph').value;
-        if (!url) return;
+        if (!WEATHER_DATA_URL) return;
 
         showLoading(true);
         hideResults();
 
-        fetch('/api/weather-map', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ rwgps_url: url, start_datetime: dt || null, speed_mph: speed ? parseFloat(speed) : null, plan_slug: PLAN_SLUG || null })
-        })
+        fetch(WEATHER_DATA_URL, { headers: {'Accept': 'application/json'} })
         .then(function(resp) {
             if (!resp.ok) {
                 return resp.text().then(function(text) {
-                    try { var d = JSON.parse(text); showError(d.error || 'Server error (' + resp.status + ')'); }
-                    catch(e) { showError('Server error (' + resp.status + '). Please try again.'); }
+                    try { var d = JSON.parse(text); showError(d.error || d.message || 'Server error (' + resp.status + ')'); }
+                    catch(e) { showError('Could not load the forecast (' + resp.status + '). Please try again.'); }
                     showLoading(false);
                     throw new Error('handled');
                 });
@@ -48,29 +34,29 @@
         })
         .then(function(data) {
             showLoading(false);
+            if (!data || data.available === false) {
+                showError((data && data.message) || 'Weather forecast is prepared closer to the ride — check back nearer the date.');
+                return;
+            }
             renderResults(data);
         })
         .catch(function(err) {
             if (err && err.message === 'handled') return;
             showLoading(false);
-            showError('Network error. Please try again.');
+            showError('Could not load the forecast. Please try again.');
         });
     }
 
-    document.getElementById('weather-form').addEventListener('submit', function(e) {
-        e.preventDefault();
-        doFetch();
-    });
-
-    // In plan mode, re-fetch when datetime changes
-    if (PLAN_SLUG) {
-        document.getElementById('start-datetime').addEventListener('change', function() {
+    var weatherForm = document.getElementById('weather-form');
+    if (weatherForm) {
+        weatherForm.addEventListener('submit', function(e) {
+            e.preventDefault();
             doFetch();
         });
     }
 
-    // Auto-fetch when linked from brevet page with ?auto=1 or in plan mode
-    if ((AUTO_FETCH === '1' || PLAN_SLUG) && document.getElementById('rwgps-url').value.trim()) {
+    // Auto-fetch the cached forecast once the panel mounts (token + warm cache present).
+    if (AUTO_FETCH === '1') {
         doFetch();
     }
 
@@ -773,21 +759,9 @@
     }
 
     // ── Share / export ────────────────────────────────────
-    function getShareParams() {
-        var url = (document.getElementById('rwgps-url') || {}).value || '';
-        var dt = (document.getElementById('start-datetime') || {}).value || '';
-        var speed = (document.getElementById('speed-mph') || {}).value || '';
-        var qs = new URLSearchParams();
-        if (url) qs.set('rwgps_url', url);
-        if (dt) qs.set('start_datetime', dt);
-        if (speed) qs.set('speed_mph', speed);
-        if (PLAN_SLUG) qs.set('plan_slug', PLAN_SLUG);
-        qs.set('auto', '1');
-        return qs.toString();
-    }
-
+    // The plan page is the shareable surface — deep-link straight to this weather tab.
     function buildShareLink() {
-        return location.origin + '/weather?' + getShareParams();
+        return location.origin + location.pathname + '?tab=weather';
     }
 
     var feedbackTimer = null;
@@ -978,7 +952,7 @@
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.font = '13px system-ui,-apple-system,sans-serif';
-            ctx.fillText('Team Asha Randonneuring  •  ' + location.host, W / 2, H - pad - footerH / 2 + 6);
+            ctx.fillText(PRODUCT_NAME + '  •  ' + location.host, W / 2, H - pad - footerH / 2 + 6);
 
             return canvas;
         });

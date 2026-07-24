@@ -1,181 +1,80 @@
-"""Rider signup routes for upcoming rides."""
-from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, jsonify, session
-from models import (get_ride_by_id, get_signups_for_ride, get_all_riders, signup_rider,
-                    mark_interested, mark_maybe, mark_withdraw, remove_signup, 
-                    get_rider_signup_status, get_user_by_id, RideStatus)
-from auth import login_required
-from cache import cache
+"""BrevetHub signup — profile completion after Google sign-in.
+
+Collects an OPTIONAL RUSA ID and a club affiliation (picker from `rp_club`) and
+writes both to the signed-in rider's `rp_rider` row. v1 does NO RUSA ownership
+verification: the RUSA ID is validated for *shape only* (numeric) and a duplicate
+claim is *soft-flagged* (`rusa_id_duplicate`), never rejected. Hard verification
+(name match against rusa.org) is a deferred follow-on.
+"""
+from flask import (
+    Blueprint, current_app, flash, redirect, render_template, request,
+    session, url_for,
+)
+
+from brevethub import models
+from brevethub.decorators import current_rider, login_required
+from brevethub.redirects import safe_redirect
 
 signup_bp = Blueprint('signup', __name__)
 
 
-@signup_bp.route('/<int:ride_id>', methods=['GET', 'POST'])
+def _normalize_rusa_id(raw):
+    """Shape-only RUSA ID check: digits, 1–7 long. Returns the canonical string
+    or None if the shape is invalid. No network call, no ownership verification."""
+    digits = (raw or '').strip()
+    if digits.isdigit() and 1 <= len(digits) <= 7:
+        return str(int(digits))  # strip leading zeros to a canonical form
+    return None
+
+
+@signup_bp.route('/', methods=['GET', 'POST'])
 @login_required
-def ride_signup(ride_id):
-    ride = get_ride_by_id(ride_id)
-    if not ride:
-        abort(404)
+def signup():
+    rider = current_rider()
+    if rider is None:
+        return redirect(url_for('auth.login'))
+
+    clubs = models.get_all_clubs()
 
     if request.method == 'POST':
-        rider_id = request.form.get('rider_id', type=int)
-        action = request.form.get('action', 'signup')
-        if rider_id:
-            if action == 'remove':
-                remove_signup(rider_id, ride_id)
-            else:
-                signup_rider(rider_id, ride_id)
-            cache.clear()  # Clear cache after signup change
-        return redirect(url_for('signup.ride_signup', ride_id=ride_id))
+        raw_rusa = (request.form.get('rusa_id') or '').strip()
+        club_id = request.form.get('club_id', type=int)
 
-    signups = get_signups_for_ride(ride_id)
-    signup_ids = {r['id'] for r in signups}
-    all_riders = get_all_riders()
+        # Club is required; RUSA ID is optional.
+        if not club_id or not models.club_exists(club_id):
+            flash('Please pick your club from the list.', 'error')
+            return render_template('signup.html', clubs=clubs,
+                                   rusa_id=raw_rusa, selected_club_id=club_id)
 
-    return render_template('signup.html',
-                           ride=ride,
-                           signups=signups,
-                           signup_ids=signup_ids,
-                           all_riders=all_riders)
+        rusa_id = None
+        rusa_duplicate = False
+        if raw_rusa:
+            rusa_id = _normalize_rusa_id(raw_rusa)
+            if rusa_id is None:
+                flash('A RUSA ID is numeric (up to 7 digits). Leave it blank '
+                      'if you do not have one.', 'error')
+                return render_template('signup.html', clubs=clubs,
+                                       rusa_id=raw_rusa,
+                                       selected_club_id=club_id)
+            # Soft-flag a duplicate claim — v1 does not hard-verify ownership.
+            rusa_duplicate = models.rusa_id_already_claimed(
+                rusa_id, exclude_rider_id=rider['id'])
+            if rusa_duplicate:
+                current_app.logger.info(
+                    "BrevetHub duplicate RUSA-ID claim flagged: rider=%s rusa=%s",
+                    rider['id'], rusa_id)
 
+        models.complete_rider_profile(
+            rider['id'], rusa_id, club_id, rusa_id_duplicate=rusa_duplicate)
+        current_app.logger.info(
+            "BrevetHub signup completed: rider=%s club=%s rusa=%s",
+            rider['id'], club_id, rusa_id)
 
-@signup_bp.route('/api/<int:ride_id>/signup', methods=['POST'])
-def api_signup(ride_id):
-    """API endpoint to sign up current user for a ride. Allows status changes."""
-    user_id = session.get('user_id')
-    if not user_id:
-        # Store current page for redirect after login
-        referer = request.headers.get('Referer', url_for('riders.upcoming_brevets', _external=False))
-        login_url = url_for('auth.login', next=referer, _external=False)
-        return jsonify({'success': False, 'error': 'Not logged in', 'redirect': login_url}), 401
-    
-    # Get user's rider_id
-    user = get_user_by_id(user_id)
-    if not user or not user.get('rider_id'):
-        # Store current page for redirect after profile setup
-        referer = request.headers.get('Referer', url_for('riders.upcoming_brevets', _external=False))
-        session['next_url'] = referer
-        return jsonify({'success': False, 'error': 'Profile not completed', 'redirect': url_for('auth.setup_profile', _external=False)}), 400
-    
-    rider_id = user['rider_id']
-    
-    # Sign up the rider (allows status transitions)
-    success = signup_rider(rider_id, ride_id)
-    if success:
-        cache.clear()  # Clear cache after signup
-        return jsonify({'success': True, 'status': 'GOING'})
-    else:
-        return jsonify({'success': False, 'error': 'Failed to sign up'}), 500
+        # Same open-redirect guard as the OAuth callback: only a same-host
+        # relative path is honored, never an absolute or scheme-relative URL.
+        next_url = session.pop('next_url', None)
+        return safe_redirect(next_url, 'main.dashboard')
 
-
-@signup_bp.route('/api/<int:ride_id>/interested', methods=['POST'])
-def api_interested(ride_id):
-    """API endpoint to mark current user as interested in a ride. Allows status changes."""
-    user_id = session.get('user_id')
-    if not user_id:
-        referer = request.headers.get('Referer', url_for('riders.upcoming_brevets', _external=False))
-        login_url = url_for('auth.login', next=referer, _external=False)
-        return jsonify({'success': False, 'error': 'Not logged in', 'redirect': login_url}), 401
-
-    user = get_user_by_id(user_id)
-    if not user or not user.get('rider_id'):
-        referer = request.headers.get('Referer', url_for('riders.upcoming_brevets', _external=False))
-        session['next_url'] = referer
-        return jsonify({'success': False, 'error': 'Profile not completed', 'redirect': url_for('auth.setup_profile', _external=False)}), 400
-
-    rider_id = user['rider_id']
-
-    # Mark as interested (allows status transitions)
-    success = mark_interested(rider_id, ride_id)
-    if success:
-        cache.clear()  # Clear cache after marking interest
-        return jsonify({'success': True, 'status': 'INTERESTED'})
-    return jsonify({'success': False, 'error': 'Failed to mark interest'}), 500
-
-
-@signup_bp.route('/api/<int:ride_id>/maybe', methods=['POST'])
-def api_maybe(ride_id):
-    """API endpoint to mark current user as maybe for a ride. Allows status changes."""
-    user_id = session.get('user_id')
-    if not user_id:
-        referer = request.headers.get('Referer', url_for('riders.upcoming_brevets', _external=False))
-        login_url = url_for('auth.login', next=referer, _external=False)
-        return jsonify({'success': False, 'error': 'Not logged in', 'redirect': login_url}), 401
-
-    user = get_user_by_id(user_id)
-    if not user or not user.get('rider_id'):
-        referer = request.headers.get('Referer', url_for('riders.upcoming_brevets', _external=False))
-        session['next_url'] = referer
-        return jsonify({'success': False, 'error': 'Profile not completed', 'redirect': url_for('auth.setup_profile', _external=False)}), 400
-
-    rider_id = user['rider_id']
-
-    success = mark_maybe(rider_id, ride_id)
-    if success:
-        cache.clear()  # Clear cache after marking maybe
-        return jsonify({'success': True, 'status': 'MAYBE'})
-    return jsonify({'success': False, 'error': 'Failed to mark as maybe'}), 500
-
-
-@signup_bp.route('/api/<int:ride_id>/withdraw', methods=['POST'])
-def api_withdraw(ride_id):
-    """API endpoint to mark current user as withdrawn from a ride."""
-    user_id = session.get('user_id')
-    if not user_id:
-        referer = request.headers.get('Referer', url_for('riders.upcoming_brevets', _external=False))
-        login_url = url_for('auth.login', next=referer, _external=False)
-        return jsonify({'success': False, 'error': 'Not logged in', 'redirect': login_url}), 401
-
-    user = get_user_by_id(user_id)
-    if not user or not user.get('rider_id'):
-        referer = request.headers.get('Referer', url_for('riders.upcoming_brevets', _external=False))
-        session['next_url'] = referer
-        return jsonify({'success': False, 'error': 'Profile not completed', 'redirect': url_for('auth.setup_profile', _external=False)}), 400
-
-    rider_id = user['rider_id']
-
-    success = mark_withdraw(rider_id, ride_id)
-    if success:
-        cache.clear()  # Clear cache after withdrawing
-        return jsonify({'success': True, 'status': 'WITHDRAW'})
-    return jsonify({'success': False, 'error': 'Failed to mark as withdrawn'}), 500
-
-
-@signup_bp.route('/api/<int:ride_id>/unsignup', methods=['POST'])
-def api_unsignup(ride_id):
-    """API endpoint to remove current user's signup for a ride."""
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({'success': False, 'error': 'Not logged in', 'redirect': '/auth/login'}), 401
-    
-    # Get user's rider_id
-    user = get_user_by_id(user_id)
-    if not user or not user.get('rider_id'):
-        return jsonify({'success': False, 'error': 'Profile not completed', 'redirect': '/auth/setup-profile'}), 400
-    
-    rider_id = user['rider_id']
-    
-    # Remove signup (works for pre-ride statuses: GOING, INTERESTED, MAYBE)
-    success = remove_signup(rider_id, ride_id)
-    if success:
-        cache.clear()  # Clear cache after removing signup
-        return jsonify({'success': True})
-    else:
-        return jsonify({'success': False, 'error': 'Cannot remove signup (may have already started/finished)'}), 400
-
-
-@signup_bp.route('/api/<int:ride_id>/signups', methods=['GET'])
-def api_get_signups(ride_id):
-    """API endpoint to get all signups for a ride (public)."""
-    signups = get_signups_for_ride(ride_id)
-    return jsonify({
-        'success': True,
-        'count': len(signups),
-        'riders': [{
-            'id': s['id'],
-            'rusa_id': s['rusa_id'],
-            'first_name': s['first_name'],
-            'last_name': s['last_name'],
-            'status': s['status'],
-            'signed_up_at': s['signed_up_at'].isoformat() if s.get('signed_up_at') else None
-        } for s in signups]
-    })
+    return render_template('signup.html', clubs=clubs,
+                           rusa_id=rider.get('rusa_id') or '',
+                           selected_club_id=rider.get('club_id'))

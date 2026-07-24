@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Share a live ride — {{ product_name }}{% endblock %}
+{% block content %}
+<div class="container section">
+<section class="card">
+  <h1 class="text-primary text-[1.6rem] font-bold mb-4">Share a live ride</h1>
+  <p class="text-text-light mb-4">
+    Create a ride and flag it public to get a shareable link anyone can open to
+    follow you on the map — no account needed on their end.
+  </p>
+
+  <form method="post" action="{{ url_for('live.live_new') }}">
+    <div class="form-group">
+      <label for="name">Ride name</label>
+      <input id="name" name="name" type="text" required
+             placeholder="SFR Point Reyes 200k" />
+    </div>
+
+    <div class="form-group">
+      <label for="distance_km">Distance (km)</label>
+      <input id="distance_km" name="distance_km" type="number" min="0" step="1"
+             placeholder="200" />
+    </div>
+
+    <div class="form-group">
+      <label class="inline-flex items-center gap-2 font-normal">
+        <input name="is_public" type="checkbox" checked class="w-auto" />
+        Make it public now (you can toggle this later)
+      </label>
+    </div>
+
+    <button class="btn btn-primary" type="submit">Create ride</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2 class="text-primary text-[1.3rem] font-bold mb-4">Your rides</h2>
+  {% if rides %}
+    <div class="table-wrap">
+    <table class="live-rides">
+      <thead>
+        <tr><th>Ride</th><th>Distance</th><th>Public</th><th>Share link</th><th>Brevet</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for ride in rides %}
+          <tr>
+            <td>{{ ride.name }}</td>
+            <td>{% if ride.distance_km %}{{ ride.distance_km }} km{% else %}—{% endif %}</td>
+            <td>
+              {% if ride.is_public %}
+                <span class="badge badge-signup">Public</span>
+              {% else %}
+                <span class="text-text-light">Private</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if ride.is_public %}
+                <a class="text-primary font-semibold hover:text-accent hover:underline break-all" href="{{ url_for('live.live_map', ride_id=ride.id, _external=True) }}">
+                  {{ url_for('live.live_map', ride_id=ride.id, _external=True) }}
+                </a>
+              {% else %}
+                <span class="text-text-light">make public to share</span>
+              {% endif %}
+            </td>
+            <td>
+              {# Link this ride to a calendar brevet so that event shows a Live
+                 link on the calendar. Owner-scoped server-side; "Not linked"
+                 clears the link. Only surfaced when the ride is public, since the
+                 calendar Live link resolves public rides only. #}
+              {% if ride.is_public %}
+                <form method="post" action="{{ url_for('live.link_event', ride_id=ride.id) }}"
+                      class="flex items-center gap-2">
+                  <select name="event_id" aria-label="Link to brevet"
+                          class="border border-border rounded-md px-2 py-1 text-sm bg-white">
+                    <option value="">Not linked</option>
+                    {% for ev in events %}
+                      <option value="{{ ev.id }}" {% if ride.event_id == ev.id %}selected{% endif %}>
+                        {{ ev.date }} · {{ ev.name }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                  <button class="btn btn-sm bg-white text-primary border border-border hover:opacity-90" type="submit">Save</button>
+                </form>
+              {% else %}
+                <span class="text-text-light">make public to link</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="{{ url_for('live.set_public', ride_id=ride.id) }}">
+                {% if ride.is_public %}
+                  <button class="btn btn-sm bg-white text-primary border border-border hover:opacity-90" type="submit">Make private</button>
+                {% else %}
+                  <input type="hidden" name="is_public" value="on" />
+                  <button class="btn btn-primary btn-sm" type="submit">Make public</button>
+                {% endif %}
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% else %}
+    <p class="text-text-light">You have no rides yet. Create one above.</p>
+  {% endif %}
+</section>
+</div>
+{% endblock %}

@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block title %}Share my location — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+{# Phone beacon — page-specific styling on the shared navy/red design tokens
+   (the big tap target + streaming dot are built for a phone held in the hand;
+   they mirror the parent phone-share UI, de-branded). #}
+<style>
+.share-container { max-width: 560px; margin: 0 auto; padding: 24px 16px; }
+.share-card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; margin-top: 12px; text-align: center;
+}
+.share-card h1 { font-size: 1.4rem; margin: 0 0 6px; }
+.share-card p.help { color: var(--text-light); font-size: 0.9rem; margin: 0 0 20px; line-height: 1.5; }
+.big-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; padding: 18px; border: none; border-radius: 12px;
+    font-size: 1.1rem; font-weight: 700; cursor: pointer; transition: background 0.15s;
+}
+.big-btn.start { background: var(--success); color: #fff; }
+.big-btn.start:hover { opacity: 0.92; }
+.big-btn.stop { background: var(--danger); color: #fff; }
+.big-btn.stop:hover { opacity: 0.92; }
+.share-status { margin-top: 18px; font-size: 0.9rem; min-height: 1.4em; }
+.share-status .dot {
+    display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+    background: #94a3b8; margin-right: 6px; vertical-align: middle;
+}
+.share-status.live .dot { background: var(--success); animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+.share-meta { color: var(--text-light); font-size: 0.8rem; margin-top: 10px; line-height: 1.5; }
+.share-err { color: var(--danger); font-size: 0.85rem; margin-top: 12px; }
+.lp-toggle { display: flex; align-items: center; gap: 8px; justify-content: center;
+    font-size: 0.82rem; color: var(--text-light); margin-bottom: 16px; cursor: pointer; }
+.share-noride {
+    background: var(--warning); background: rgba(234,179,8,0.10);
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+    font-size: 0.82rem; color: var(--text-light); margin-bottom: 16px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="share-container">
+  <div class="share-card">
+    <h1>Share my location</h1>
+
+    <p class="help">
+      Tap start to share your live location with the club — no setup needed.
+      <strong>Keep this page open with your screen on</strong> — phone browsers
+      cannot share location in the background. For hands-off tracking, link
+      <a class="text-primary font-semibold hover:text-accent hover:underline"
+         href="{{ url_for('live.live_settings') }}">Garmin LiveTrack</a> instead.
+      Stop any time — your location history is deleted after 7 days.
+    </p>
+
+    {% if not ride_id %}
+    <div class="share-noride" id="share-noride">
+      Open a ride's live map and tap “Share my phone location” so your dot appears
+      on that ride. Without a ride, sharing picks up the last ride you streamed to.
+    </div>
+    {% endif %}
+
+    <label class="lp-toggle">
+      <input type="checkbox" id="lowpower">
+      Low-power mode — coarser GPS, updates every 60s (saves battery)
+    </label>
+    <button id="share-toggle" class="big-btn start">
+      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+      </svg>
+      <span id="share-toggle-label">Start sharing</span>
+    </button>
+    <div id="share-status" class="share-status"><span class="dot"></span><span id="share-status-text">Not sharing</span></div>
+    <div id="share-meta" class="share-meta"></div>
+    <div id="share-err" class="share-err"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // The ride this beacon streams to (from ?ride_id= when opened off a ride map),
+  // or null to let the server pick up the rider's active ride.
+  var RIDE_ID = {{ ride_id | tojson }};
+</script>
+<script>
+(function () {
+  var POST_INTERVAL_MS = 25000;   // throttle: at most one beacon per 25s
+  var sharing = false;
+  var watchId = null;
+  var wakeLock = null;
+  var lastSent = 0;
+
+  var toggle = document.getElementById('share-toggle');
+  var label = document.getElementById('share-toggle-label');
+  var statusEl = document.getElementById('share-status');
+  var statusText = document.getElementById('share-status-text');
+  var metaEl = document.getElementById('share-meta');
+  var errEl = document.getElementById('share-err');
+
+  async function acquireWakeLock() {
+    try {
+      if ('wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); }
+    } catch (e) { /* non-fatal: screen may sleep */ }
+  }
+  function releaseWakeLock() {
+    if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (sharing && document.visibilityState === 'visible' && !wakeLock) { acquireWakeLock(); }
+  });
+
+  function sendPosition(pos) {
+    var now = Date.now();
+    if (now - lastSent < POST_INTERVAL_MS) { return; }   // throttle
+    lastSent = now;
+    var body = {
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      accuracy: pos.coords.accuracy,
+      speed: pos.coords.speed   // m/s or null
+    };
+    if (RIDE_ID !== null && RIDE_ID !== undefined) { body.ride_id = RIDE_ID; }
+    fetch('/api/live/beacon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      if (r.status === 403) { errEl.textContent = 'Location sharing was turned off — re-enable it and try again.'; stop(); return null; }
+      if (r.status === 400) { return r.json().then(function (d) { throw new Error((d && d.error) || 'no ride to share to'); }); }
+      if (!r.ok) { throw new Error('status ' + r.status); }
+      return r.json();
+    }).then(function (data) {
+      if (!data) { return; }
+      errEl.textContent = '';
+      var acc = body.accuracy ? Math.round(body.accuracy) + ' m' : 'unknown';
+      metaEl.textContent = 'Last sent ' + new Date().toLocaleTimeString() + ' · accuracy ' + acc;
+    }).catch(function (e) {
+      errEl.textContent = 'Could not send location (' + e.message + ') — will retry.';
+    });
+  }
+
+  function onError(err) {
+    errEl.textContent = (err.code === 1)
+      ? 'Location permission denied. Enable location access for this site and try again.'
+      : 'Location error: ' + err.message;
+  }
+
+  function beginWatch(lowPower) {
+    sharing = true; lastSent = 0;
+    toggle.className = 'big-btn stop'; label.textContent = 'Stop sharing';
+    statusEl.className = 'share-status live'; statusText.textContent = 'Sharing your location…';
+    acquireWakeLock();
+    watchId = navigator.geolocation.watchPosition(sendPosition, onError, {
+      enableHighAccuracy: !lowPower,
+      maximumAge: lowPower ? 30000 : 10000,
+      timeout: 20000
+    });
+  }
+
+  function start() {
+    if (!('geolocation' in navigator)) { errEl.textContent = 'Geolocation is not supported on this device.'; return; }
+    var lp = document.getElementById('lowpower');
+    var lowPower = lp && lp.checked;
+    POST_INTERVAL_MS = lowPower ? 60000 : 25000;
+    statusEl.className = 'share-status live'; statusText.textContent = 'Starting…';
+    // Opt in (one tap = consent) before sending — no detour to the settings page.
+    fetch('/api/live/sharing', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin', body: JSON.stringify({ enabled: true })
+    }).then(function (r) {
+      if (!r.ok) { throw new Error('status ' + r.status); }
+      beginWatch(lowPower);
+    }).catch(function (e) {
+      errEl.textContent = 'Could not start sharing (' + e.message + ').';
+      statusEl.className = 'share-status'; statusText.textContent = 'Not sharing';
+    });
+  }
+
+  function stop() {
+    sharing = false;
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    releaseWakeLock();
+    // Revoke consent so the rider drops off the member map on the next poll.
+    fetch('/api/live/sharing', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin', body: JSON.stringify({ enabled: false })
+    }).catch(function () { /* best-effort revoke */ });
+    toggle.className = 'big-btn start'; label.textContent = 'Start sharing';
+    statusEl.className = 'share-status'; statusText.textContent = 'Not sharing';
+  }
+
+  toggle.addEventListener('click', function () { sharing ? stop() : start(); });
+  window.addEventListener('pagehide', function () { if (sharing) { releaseWakeLock(); } });
+})();
+</script>
+{% endblock %}

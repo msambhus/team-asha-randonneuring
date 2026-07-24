@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Generate ride plan — {{ product_name }}{% endblock %}
+{% block content %}
+{# Owner-only console (route gates on rp_club.owner_rider_id). Flashes render in
+   base.html. Builtin Jinja only. #}
+<div class="container section">
+<div class="max-w-[700px] mx-auto">
+<section class="card">
+  <h1 class="text-primary text-[1.6rem] font-bold mb-2">Generate a real ride plan</h1>
+  <p class="text-text-light mb-4">
+    Club: <strong>{{ owned_club.name }}</strong>. Paste a RideWithGPS route URL for
+    a calendar brevet to fetch its real controls, elevation and gradient pacing.
+    The generated plan is shown on that brevet's <em>Ride plan</em> page.
+  </p>
+
+  <form method="post" action="{{ url_for('admin.generate_plan') }}">
+    <div class="form-group">
+      <label for="admin-event">Brevet</label>
+      <select id="admin-event" name="event_id" required>
+        <option value="" disabled selected>Choose a brevet…</option>
+        {% for e in events %}
+          <option value="{{ e.id }}">{{ e.date }} — {{ e.name }} ({{ e.distance_km }} km)</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="admin-rwgps">RideWithGPS route URL</label>
+      <input id="admin-rwgps" name="rwgps_url" type="url"
+             placeholder="https://ridewithgps.com/routes/123456" inputmode="url">
+      <p class="text-text-light text-[0.85rem] mt-1">Leave blank to use the brevet's own RWGPS link if it has one.</p>
+    </div>
+    <button type="submit" class="btn btn-primary">Generate plan</button>
+  </form>
+
+  {% if not events %}
+    <p class="text-text-light mt-4">No upcoming brevets in the calendar yet.</p>
+  {% endif %}
+</section>
+</div>
+</div>
+{% endblock %}

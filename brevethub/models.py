@@ -1,4244 +1,373 @@
-"""Data access layer — all SQL queries live here (PostgreSQL via psycopg2)."""
-import json
+"""BrevetHub data model — rp_* tables only.
+
+Every SQL statement in this module targets a `rp_`-prefixed tenant table. The
+app never reads or writes any Team Asha table; `tests/brevethub/test_rp_only.py`
+scans this file and fails the build if a non-`rp_` table name ever appears.
+"""
 import secrets
-from datetime import datetime, date, timedelta
 from enum import Enum
+
 import psycopg2.extras
-from db import get_db
-from cache import cache, CACHE_TIMEOUT
-from services.email_normalize import normalize_email
+from psycopg2 import Binary
+from psycopg2.extras import Json
+
+from brevethub import db
 
 
 class RideStatus(str, Enum):
-    """
-    Enumeration for rider_ride.status field.
-    Uses EXISTING database string values - no data migration needed.
-    Inherits from str to allow direct comparison with database TEXT values.
+    """BrevetHub own ride-status enum — defined here so BrevetHub shares no code
+    with the parent web app models. Kept as a str-Enum for direct SQL binding.
+
+    Pre-ride:  interested / maybe / going / withdraw.
+    Post-ride: finished / dnf / dns / otl (a result, set once the event date passed).
+
+    The helper classmethods below mirror the parent web app state machine so the
+    routes can gate transitions without re-deriving the rules. BrevetHub stays
+    LOWERCASE where the parent web app uses uppercase status strings — a deliberate,
+    documented divergence (see the web-parity notes in the PR).
     """
     # Pre-ride statuses
-    INTERESTED = "INTERESTED"       # Soft interest, considering the ride
-    MAYBE = "MAYBE"                 # Tentative, less certain than interested
-    GOING = "GOING"                 # Rider officially registered for upcoming ride (formerly SIGNED_UP)
-    WITHDRAW = "WITHDRAW"           # Was going but withdrew
-
-    # Post-ride statuses (ride has occurred)
-    FINISHED = "FINISHED"           # Successfully completed within time limit
-    DNF = "DNF"                     # Did Not Finish
-    DNS = "DNS"                     # Did Not Start (signed up but didn't show)
-    OTL = "OTL"                     # Over Time Limit (finished but past cutoff)
+    INTERESTED = 'interested'
+    MAYBE = 'maybe'
+    GOING = 'going'
+    WITHDRAW = 'withdraw'
+    # Post-ride result statuses (the event date has passed)
+    FINISHED = 'finished'
+    DNF = 'dnf'
+    DNS = 'dns'
+    OTL = 'otl'
 
     @classmethod
-    def normalize(cls, value: str) -> 'RideStatus':
+    def normalize(cls, value):
+        """Coerce a raw status string to a RideStatus member (lowercase).
+
+        Raises ValueError when the value is empty or not one of the eight members.
+        BrevetHub has no legacy status values, so there is no legacy remapping — the
+        one deliberate divergence versus the parent web app normalize, which carries
+        a YES / NO / SIGNED_UP legacy table BrevetHub never had.
         """
-        Normalize legacy status values to current enum.
-        Raises ValueError if status is invalid.
-        """
-        if not value or not value.strip():
-            raise ValueError("Status cannot be empty")
-
-        # Normalize to uppercase
-        val = value.upper().strip()
-
-        # Handle legacy values
-        legacy_mapping = {
-            'YES': cls.FINISHED,
-            '1': cls.FINISHED,
-            'NO': cls.DNS,
-            '0': cls.DNS,
-            'SIGNED_UP': cls.GOING,  # Legacy: SIGNED_UP renamed to GOING
-        }
-
-        if val in legacy_mapping:
-            return legacy_mapping[val]
-
-        # Try to match enum value
+        if value is None or not str(value).strip():
+            raise ValueError('Status cannot be empty')
+        val = str(value).strip().lower()
         try:
-            return cls[val]
-        except KeyError:
-            raise ValueError(f"Invalid status: {value}. Must be one of: {', '.join([s.value for s in cls])}")
+            return cls(val)
+        except ValueError:
+            raise ValueError('Invalid status: ' + str(value))
 
     @classmethod
-    def is_pre_ride(cls, status: 'RideStatus') -> bool:
-        """Check if status is pre-ride (INTERESTED, MAYBE, or GOING)."""
+    def is_pre_ride(cls, status):
+        """True when the status is a pre-ride intent (interested / maybe / going).
+
+        Mirrors the parent web app: withdraw is deliberately NOT pre-ride here, so a
+        withdrawn row is never cleared or auto-finalized like an active intent.
+        """
         return status in (cls.INTERESTED, cls.MAYBE, cls.GOING)
 
     @classmethod
-    def is_post_ride(cls, status: 'RideStatus') -> bool:
-        """Check if status is post-ride (finished, dnf, dns, otl)."""
+    def is_post_ride(cls, status):
+        """True when the status is a post-ride result (finished / dnf / dns / otl)."""
         return status in (cls.FINISHED, cls.DNF, cls.DNS, cls.OTL)
 
     @classmethod
-    def is_successful(cls, status: 'RideStatus') -> bool:
-        """Check if status represents successful completion."""
+    def is_successful(cls, status):
+        """True only when the status is a successful finish (finished)."""
         return status == cls.FINISHED
 
     @classmethod
-    def can_remove_signup(cls, status: 'RideStatus') -> bool:
-        """Check if rider can remove their signup (INTERESTED, MAYBE, or GOING)."""
+    def can_remove(cls, status):
+        """True when a sign-up in this status may be cleared by the rider.
+
+        Only a pre-ride intent (interested / maybe / going) may be removed; a
+        withdraw or any post-ride result is retained as history.
+        """
         return status in (cls.INTERESTED, cls.MAYBE, cls.GOING)
 
 
-def _execute(sql, params=None):
-    """Execute a query and return a RealDictCursor."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(sql, params or ())
-    return cur
+# --------------------------------------------------------------------------- #
+# Clubs (rp_club) — the tenant directory riders pick from at signup.
+# --------------------------------------------------------------------------- #
+def get_all_clubs():
+    """All clubs, alphabetical, for the signup picker and /api/clubs."""
+    return db.query(
+        "SELECT id, name, city, state, rusa_club_id "
+        "FROM rp_club ORDER BY name ASC"
+    )
 
 
-# ========== SEASONS ==========
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_all_seasons():
-    return _execute("SELECT * FROM season ORDER BY start_date DESC").fetchall()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_current_season():
-    return _execute("SELECT * FROM season WHERE is_current = TRUE").fetchone()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_season_by_name(name):
-    return _execute("SELECT * FROM season WHERE name = %s", (name,)).fetchone()
+def get_club(club_id):
+    return db.query_one(
+        "SELECT id, name, city, state, rusa_club_id FROM rp_club WHERE id = %s",
+        (club_id,),
+    )
 
 
-# ========== RIDERS ==========
+def club_exists(club_id):
+    return get_club(club_id) is not None
 
-@cache.memoize(CACHE_TIMEOUT)
-def get_all_riders():
-    return _execute("""
-        SELECT r.*, rp.photo_filename, rp.bio, rp.pbp_2023_registered, rp.pbp_2023_status
-        FROM rider r LEFT JOIN rider_profile rp ON r.id = rp.rider_id
-        ORDER BY r.first_name
-    """).fetchall()
 
-def get_rider_by_rusa(rusa_id):
-    """Get rider by RUSA ID. NOT CACHED - rider data should not be cached in serverless environments."""
-    return _execute("""
-        SELECT r.*, rp.photo_filename, rp.bio, rp.pbp_2023_registered, rp.pbp_2023_status, rp.strava_data_private
-        FROM rider r LEFT JOIN rider_profile rp ON r.id = rp.rider_id
-        WHERE r.rusa_id = %s
-    """, (rusa_id,)).fetchone()
+# --------------------------------------------------------------------------- #
+# Riders (rp_rider) — one row per authenticated BrevetHub user.
+# --------------------------------------------------------------------------- #
+def get_rider_by_google_id(google_id):
+    return db.query_one(
+        "SELECT id, email, google_id, rusa_id, club_id, "
+        "       profile_completed, rusa_id_duplicate, created_at, last_login_at "
+        "FROM rp_rider WHERE google_id = %s",
+        (google_id,),
+    )
 
 
 def get_rider_by_id(rider_id):
-    """Get rider by primary key ID. Returns dict or None."""
-    return _execute(
-        "SELECT * FROM rider WHERE id = %s",
-        (rider_id,)
-    ).fetchone()
+    """The rider row for the signed-in session (the own-profile loader).
 
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_riders_for_season(season_id):
-    """Get riders who have any participation record in this season."""
-    return _execute("""
-        SELECT DISTINCT r.*, rp.photo_filename
-        FROM rider r
-        LEFT JOIN rider_profile rp ON r.id = rp.rider_id
-        JOIN rider_ride rr ON r.id = rr.rider_id
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE ri.season_id = %s
-        ORDER BY r.first_name
-    """, (season_id,)).fetchall()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_active_riders_for_season(season_id):
-    """Get riders who have completed at least 1 ride (status=FINISHED) in this season, only counting past rides."""
-    today = date.today()
-    return _execute("""
-        SELECT DISTINCT r.*, rp.photo_filename
-        FROM rider r
-        LEFT JOIN rider_profile rp ON r.id = rp.rider_id
-        JOIN rider_ride rr ON r.id = rr.rider_id
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE ri.season_id = %s AND rr.status = %s AND ri.date <= %s
-        ORDER BY r.first_name
-    """, (season_id, RideStatus.FINISHED.value, today)).fetchall()
-
-
-# ========== RIDES ==========
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_rides_for_season(season_id):
-    """Get all rides for a season with club info.
-
-    When a ride is linked to a ride_plan, prefers plan name/distance/elevation
-    over ride-level values (avoids stale RUSA-scraped data).
+    Carries the cached Eddington columns (km + miles + calculated_at) so the own
+    profile renders the number without a second query; they are NULL until the
+    first compute (on Strava connect or the daily cron), which the template shows
+    as a graceful prompt rather than a fabricated zero.
     """
-    return _execute("""
-        SELECT ri.*,
-               COALESCE(rp.name, ri.name) as name,
-               COALESCE(rp.distance_km, ri.distance_km) as distance_km,
-               COALESCE(rp.total_elevation_ft, ri.elevation_ft) as elevation_ft,
-               COALESCE(rp.total_distance_miles, ri.distance_miles) as distance_miles,
-               c.code as club_code,
-               c.name as club_name,
-               c.region as region,
-               rp.slug as plan_slug,
-               ri.start_time as plan_start_time,
-               (c.code = 'TA') as is_team_ride
-        FROM ride ri
-        INNER JOIN club c ON ri.club_id = c.id
-        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
-        WHERE ri.season_id = %s
-        ORDER BY ri.date
-    """, (season_id,)).fetchall()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_ride_by_id(ride_id):
-    """Get a single ride by ID with club info.
-
-    Prefers ride_plan name/distance/elevation when linked.
-    """
-    return _execute("""
-        SELECT ri.*,
-               COALESCE(rp.name, ri.name) as name,
-               COALESCE(rp.distance_km, ri.distance_km) as distance_km,
-               COALESCE(rp.total_elevation_ft, ri.elevation_ft) as elevation_ft,
-               COALESCE(rp.total_distance_miles, ri.distance_miles) as distance_miles,
-               c.code as club_code,
-               c.name as club_name,
-               c.region as region,
-               rp.slug as plan_slug,
-               rp.start_time as plan_start_time,
-               (c.code = 'TA') as is_team_ride
-        FROM ride ri
-        INNER JOIN club c ON ri.club_id = c.id
-        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
-        WHERE ri.id = %s
-    """, (ride_id,)).fetchone()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_upcoming_rides():
-    """Get Team Asha upcoming rides."""
-    today = date.today()
-    ta_club_id = get_team_asha_club_id()
-    return _execute("""
-        SELECT ri.*, 
-               c.code as club_code, 
-               c.name as club_name,
-               c.region as region,
-               rp.slug as plan_slug,
-               (SELECT COUNT(*) FROM rider_ride rr WHERE rr.ride_id = ri.id AND rr.signed_up_at IS NOT NULL) as signup_count
-        FROM ride ri 
-        INNER JOIN club c ON ri.club_id = c.id
-        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
-        WHERE ri.date >= %s AND ri.club_id = %s
-        ORDER BY ri.date
-    """, (today, ta_club_id)).fetchall()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_past_rides_for_season(season_id):
-    """Get past Team Asha rides for a season."""
-    today = date.today()
-    ta_club_id = get_team_asha_club_id()
-    return _execute("""
-        SELECT ri.*, 
-               c.code as club_code, 
-               c.name as club_name,
-               c.region as region,
-               rp.slug as plan_slug
-        FROM ride ri 
-        INNER JOIN club c ON ri.club_id = c.id
-        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
-        WHERE ri.season_id = %s AND ri.date < %s AND ri.club_id = %s
-        ORDER BY ri.date
-    """, (season_id, today, ta_club_id)).fetchall()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_clubs():
-    return _execute("SELECT * FROM club ORDER BY name").fetchall()
-
-
-# ========== PARTICIPATION ==========
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_participation_matrix(season_id):
-    """Return {rider_id: {ride_id: {status, finish_time, signed_up_at}}} for a season."""
-    rows = _execute("""
-        SELECT rr.rider_id, rr.ride_id, rr.status, rr.finish_time, rr.signed_up_at
-        FROM rider_ride rr
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE ri.season_id = %s
-          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-    """, (season_id,)).fetchall()
-    matrix = {}
-    for row in rows:
-        rid = row['rider_id']
-        if rid not in matrix:
-            matrix[rid] = {}
-        matrix[rid][row['ride_id']] = {
-            'status': row['status'],
-            'finish_time': row['finish_time'],
-            'signed_up_at': row['signed_up_at']
-        }
-    return matrix
-
-#  NOT CACHED - rider-specific data should not be cached in serverless environments
-def get_rider_participation(rider_id, season_id):
-    return _execute("""
-        SELECT rr.status, rr.finish_time, ri.id as ride_id, ri.name as ride_name,
-               ri.date, ri.distance_km, ri.elevation_ft, ri.ft_per_mile, ri.rwgps_url,
-               ri.ride_plan_id, c.code as club_code, rp.slug as plan_slug
-        FROM rider_ride rr
-        JOIN ride ri ON rr.ride_id = ri.id
-        LEFT JOIN club c ON ri.club_id = c.id
-        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
-        WHERE rr.rider_id = %s AND ri.season_id = %s
-          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-        ORDER BY ri.date
-    """, (rider_id, season_id)).fetchall()
-
-# NOT CACHED - rider-specific data should not be cached in serverless environments
-def get_rider_career_stats(rider_id):
-    """Total rides completed, total KMs, across all seasons."""
-    row = _execute("""
-        SELECT COUNT(*) as total_rides,
-               COALESCE(SUM(ri.distance_km), 0) as total_kms
-        FROM rider_ride rr
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE rr.rider_id = %s AND rr.status = %s
-          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-    """, (rider_id, RideStatus.FINISHED.value)).fetchone()
-    return dict(row) if row else {'total_rides': 0, 'total_kms': 0}
-
-# NOT CACHED - rider-specific data should not be cached in serverless environments
-def get_rider_season_stats(rider_id, season_id):
-    """Rides and KMs for a specific season."""
-    row = _execute("""
-        SELECT COUNT(*) as rides, COALESCE(SUM(ri.distance_km), 0) as kms
-        FROM rider_ride rr
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
-          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-    """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchone()
-    return dict(row) if row else {'rides': 0, 'kms': 0}
-
-
-# NOT CACHED - rider-specific data should not be cached in serverless environments
-def get_rider_season_elevation_ft(rider_id, season_id):
-    """Total climbed elevation (ft) for a rider's finished rides in a season.
-
-    Same FINISHED-ride definition as get_rider_season_stats; kept separate so the
-    web season-stats query is untouched. Returns an int (0 when no data)."""
-    row = _execute("""
-        SELECT COALESCE(SUM(ri.elevation_ft), 0) as elevation_ft
-        FROM rider_ride rr
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
-          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-    """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchone()
-    return int(row['elevation_ft']) if row and row['elevation_ft'] else 0
-
-
-# NOT CACHED - rider-specific data should not be cached in serverless environments
-def get_rider_finished_rides_for_season(rider_id, season_id):
-    """The rider's finished rides this season (newest first) — id/name/date/distance.
-
-    Same FINISHED-ride definition as get_rider_season_stats, so the list length
-    matches the season `rides` count. Powers the app's "rides done" list."""
-    rows = _execute("""
-        SELECT ri.id, ri.name, ri.date, ri.distance_km
-        FROM rider_ride rr
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
-          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-        ORDER BY ri.date DESC
-    """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchall()
-    return [dict(r) for r in rows]
-
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_all_rider_season_stats(season_id):
-    """Batch: rides and KMs for ALL riders in a season. Returns dict keyed by rider_id."""
-    rows = _execute("""
-        SELECT rr.rider_id, COUNT(*) as rides, COALESCE(SUM(ri.distance_km), 0) as kms
-        FROM rider_ride rr
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE ri.season_id = %s AND rr.status = %s
-        GROUP BY rr.rider_id
-    """, (season_id, RideStatus.FINISHED.value)).fetchall()
-    return {r['rider_id']: {'rides': r['rides'], 'kms': r['kms']} for r in rows}
-
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_all_riders_with_career_stats(current_season_id=None):
-    """Get all riders with career and current season stats for the riders directory page."""
-    return _execute("""
-        SELECT r.id, r.first_name, r.last_name, r.rusa_id,
-               rp.photo_filename,
-               sc.eddington_number_miles,
-               COUNT(DISTINCT rr.ride_id) FILTER (WHERE rr.status = %s) as total_rides,
-               COALESCE(SUM(ri.distance_km) FILTER (WHERE rr.status = %s), 0) as total_kms,
-               MAX(ri.date) FILTER (WHERE rr.status = %s) as last_brevet_date,
-               -- Current season stats
-               COUNT(DISTINCT rr.ride_id) FILTER (
-                   WHERE rr.status = %s AND ri.season_id = %s
-               ) as season_rides,
-               COALESCE(SUM(ri.distance_km) FILTER (
-                   WHERE rr.status = %s AND ri.season_id = %s
-               ), 0) as season_kms,
-               -- SR progress: count of each distance completed this season
-               COUNT(DISTINCT rr.ride_id) FILTER (WHERE ri.distance_km >= 200 AND ri.distance_km < 300 AND rr.status = %s AND ri.season_id = %s) as sr_200,
-               COUNT(DISTINCT rr.ride_id) FILTER (WHERE ri.distance_km >= 300 AND ri.distance_km < 400 AND rr.status = %s AND ri.season_id = %s) as sr_300,
-               COUNT(DISTINCT rr.ride_id) FILTER (WHERE ri.distance_km >= 400 AND ri.distance_km < 600 AND rr.status = %s AND ri.season_id = %s) as sr_400,
-               COUNT(DISTINCT rr.ride_id) FILTER (WHERE ri.distance_km >= 600 AND rr.status = %s AND ri.season_id = %s) as sr_600
-        FROM rider r
-        LEFT JOIN rider_profile rp ON r.id = rp.rider_id
-        LEFT JOIN strava_connection sc ON r.id = sc.rider_id
-        LEFT JOIN rider_ride rr ON r.id = rr.rider_id
-        LEFT JOIN ride ri ON rr.ride_id = ri.id
-        GROUP BY r.id, r.first_name, r.last_name, r.rusa_id,
-                 rp.photo_filename, sc.eddington_number_miles
-        HAVING COUNT(DISTINCT rr.ride_id) FILTER (WHERE rr.status = %s) > 0
-        ORDER BY r.first_name, r.last_name
-    """, (
-        RideStatus.FINISHED.value,  # total_rides
-        RideStatus.FINISHED.value,  # total_kms
-        RideStatus.FINISHED.value,  # last_brevet_date
-        RideStatus.FINISHED.value, current_season_id,  # season_rides
-        RideStatus.FINISHED.value, current_season_id,  # season_kms
-        RideStatus.FINISHED.value, current_season_id,  # sr_200
-        RideStatus.FINISHED.value, current_season_id,  # sr_300
-        RideStatus.FINISHED.value, current_season_id,  # sr_400
-        RideStatus.FINISHED.value, current_season_id,  # sr_600
-        RideStatus.FINISHED.value,  # HAVING
-    )).fetchall()
-
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_completed_events_for_season(season_id):
-    """Get completed/past events (Team Asha + external) for a season."""
-    today = date.today()
-    return _execute("""
-        SELECT ri.*, c.code as club_code, c.name as club_name, c.region,
-               rp.slug as plan_slug,
-               rp.rwgps_url as plan_rwgps_url, rp.rwgps_url_team as plan_rwgps_url_team,
-               COUNT(rr.id) FILTER (WHERE rr.status = %s) as finisher_count,
-               COUNT(rr.id) FILTER (WHERE rr.status IS NOT NULL) as signup_count
-        FROM ride ri
-        JOIN club c ON ri.club_id = c.id
-        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
-        LEFT JOIN rider_ride rr ON rr.ride_id = ri.id
-        WHERE ri.season_id = %s AND ri.date < %s
-        GROUP BY ri.id, c.code, c.name, c.region, rp.slug, rp.rwgps_url, rp.rwgps_url_team
-        ORDER BY ri.date DESC
-    """, (RideStatus.FINISHED.value, season_id, today)).fetchall()
-
-
-# ========== SR DETECTION ==========
-
-@cache.memoize(CACHE_TIMEOUT)
-def detect_sr_for_rider_season(rider_id, season_id, date_filter=False):
-    """Count complete SR sets (200+300+400+600) for a rider in a season.
-    Returns count (min across all four buckets), or 0."""
-    today = date.today()
-    if date_filter:
-        rows = _execute("""
-            SELECT ri.distance_km FROM rider_ride rr
-            JOIN ride ri ON rr.ride_id = ri.id
-            WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
-              AND ri.date <= %s
-              AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-        """, (rider_id, season_id, RideStatus.FINISHED.value, today)).fetchall()
-    else:
-        rows = _execute("""
-            SELECT ri.distance_km FROM rider_ride rr
-            JOIN ride ri ON rr.ride_id = ri.id
-            WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
-              AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-        """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchall()
-
-    buckets = {200: 0, 300: 0, 400: 0, 600: 0}
-    for row in rows:
-        d = row['distance_km']
-        if 200 <= d < 300:
-            buckets[200] += 1
-        elif 300 <= d < 400:
-            buckets[300] += 1
-        elif 400 <= d < 600:
-            buckets[400] += 1
-        elif d >= 600:
-            buckets[600] += 1
-    return min(buckets.values())
-
-# NOT CACHED - rider-specific data should not be cached in serverless environments
-def get_sr_distances_done(rider_id, season_id, date_filter=False):
-    """Which SR distance tiers (200/300/400/600) the rider has at least one
-    finished ride in this season. Returns a sorted list, e.g. [200, 400].
-
-    Uses the same query + bucket thresholds as detect_sr_for_rider_season so the
-    canonical SR definition stays single-sourced — this just exposes per-tier
-    completion for progress display instead of the min-across-buckets count."""
-    today = date.today()
-    if date_filter:
-        rows = _execute("""
-            SELECT ri.distance_km FROM rider_ride rr
-            JOIN ride ri ON rr.ride_id = ri.id
-            WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
-              AND ri.date <= %s
-              AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-        """, (rider_id, season_id, RideStatus.FINISHED.value, today)).fetchall()
-    else:
-        rows = _execute("""
-            SELECT ri.distance_km FROM rider_ride rr
-            JOIN ride ri ON rr.ride_id = ri.id
-            WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
-              AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-        """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchall()
-
-    done = set()
-    for row in rows:
-        d = row['distance_km']
-        if 200 <= d < 300:
-            done.add(200)
-        elif 300 <= d < 400:
-            done.add(300)
-        elif 400 <= d < 600:
-            done.add(400)
-        elif d >= 600:
-            done.add(600)
-    return sorted(done)
-
-
-# NOT CACHED - rider-specific data should not be cached in serverless environments
-def get_sr_counts_by_tier(rider_id, season_id, date_filter=False):
-    """How many finished rides the rider has in each SR distance tier this season.
-
-    Returns {200: n, 300: n, 400: n, 600: n}. Same query + bucket thresholds as
-    detect_sr_for_rider_season / get_sr_distances_done so the SR definition stays
-    single-sourced — this exposes the per-tier *counts* for progress display."""
-    today = date.today()
-    if date_filter:
-        rows = _execute("""
-            SELECT ri.distance_km FROM rider_ride rr
-            JOIN ride ri ON rr.ride_id = ri.id
-            WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
-              AND ri.date <= %s
-              AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-        """, (rider_id, season_id, RideStatus.FINISHED.value, today)).fetchall()
-    else:
-        rows = _execute("""
-            SELECT ri.distance_km FROM rider_ride rr
-            JOIN ride ri ON rr.ride_id = ri.id
-            WHERE rr.rider_id = %s AND ri.season_id = %s AND rr.status = %s
-              AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-        """, (rider_id, season_id, RideStatus.FINISHED.value)).fetchall()
-
-    counts = {200: 0, 300: 0, 400: 0, 600: 0}
-    for row in rows:
-        d = row['distance_km']
-        if 200 <= d < 300:
-            counts[200] += 1
-        elif 300 <= d < 400:
-            counts[300] += 1
-        elif 400 <= d < 600:
-            counts[400] += 1
-        elif d >= 600:
-            counts[600] += 1
-    return counts
-
-
-@cache.memoize(CACHE_TIMEOUT)
-def detect_sr_for_all_riders_in_season(season_id, date_filter=False):
-    """Batch: SR count for ALL riders in a season. Returns dict keyed by rider_id."""
-    today = date.today()
-    if date_filter:
-        rows = _execute("""
-            SELECT rr.rider_id, ri.distance_km FROM rider_ride rr
-            JOIN ride ri ON rr.ride_id = ri.id
-            WHERE ri.season_id = %s AND rr.status = %s AND ri.date <= %s
-        """, (season_id, RideStatus.FINISHED.value, today)).fetchall()
-    else:
-        rows = _execute("""
-            SELECT rr.rider_id, ri.distance_km FROM rider_ride rr
-            JOIN ride ri ON rr.ride_id = ri.id
-            WHERE ri.season_id = %s AND rr.status = %s
-        """, (season_id, RideStatus.FINISHED.value)).fetchall()
-
-    # Group by rider, then compute SR per rider
-    from collections import defaultdict
-    rider_distances = defaultdict(list)
-    for row in rows:
-        rider_distances[row['rider_id']].append(row['distance_km'])
-
-    result = {}
-    for rider_id, distances in rider_distances.items():
-        buckets = {200: 0, 300: 0, 400: 0, 600: 0}
-        for d in distances:
-            if 200 <= d < 300:
-                buckets[200] += 1
-            elif 300 <= d < 400:
-                buckets[300] += 1
-            elif 400 <= d < 600:
-                buckets[400] += 1
-            elif d >= 600:
-                buckets[600] += 1
-        result[rider_id] = min(buckets.values())
-    return result
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_rider_total_srs(rider_id):
-    """Total SRs across all seasons."""
-    seasons = get_all_seasons()
-    current = get_current_season()
-    total = 0
-    for s in seasons:
-        df = s['id'] == current['id'] if current else False
-        total += detect_sr_for_rider_season(rider_id, s['id'], date_filter=df)
-    return total
-
-
-@cache.memoize(CACHE_TIMEOUT)
-def detect_r12_awards(rider_id):
-    """Detect R-12 awards: 12 consecutive months each with at least one 200+km finished ride.
-
-    Returns a list of dicts with 'start_month' and 'end_month' (YYYY-MM strings)
-    for each R-12 completion. A rider can earn multiple R-12s.
-    """
-    rows = _execute("""
-        SELECT DISTINCT TO_CHAR(ri.date, 'YYYY-MM') as ride_month
-        FROM rider_ride rr
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE rr.rider_id = %s
-          AND rr.status = %s
-          AND ri.distance_km >= 200
-          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-        ORDER BY ride_month
-    """, (rider_id, RideStatus.FINISHED.value)).fetchall()
-
-    if not rows:
-        return []
-
-    months = [r['ride_month'] for r in rows]
-
-    # Convert to (year, month) tuples for consecutive checking
-    def parse_ym(ym_str):
-        y, m = ym_str.split('-')
-        return int(y), int(m)
-
-    def month_diff(ym1, ym2):
-        """Number of months between two (year, month) tuples."""
-        return (ym2[0] - ym1[0]) * 12 + (ym2[1] - ym1[1])
-
-    parsed = [parse_ym(m) for m in months]
-
-    # Find all runs of consecutive months
-    r12_awards = []
-    run_start = 0
-    for i in range(1, len(parsed)):
-        if month_diff(parsed[i - 1], parsed[i]) != 1:
-            # Break in consecutive months — check if we had 12+ consecutive
-            run_len = i - run_start
-            if run_len >= 12:
-                # Award one R-12 per non-overlapping 12-month block
-                j = 0
-                while j + 12 <= run_len:
-                    s = parsed[run_start + j]
-                    e = parsed[run_start + j + 11]
-                    r12_awards.append({
-                        'start_month': f'{s[0]}-{s[1]:02d}',
-                        'end_month': f'{e[0]}-{e[1]:02d}',
-                        'end_year': e[0],
-                    })
-                    j += 12
-            run_start = i
-
-    # Check final run
-    run_len = len(parsed) - run_start
-    if run_len >= 12:
-        j = 0
-        while j + 12 <= run_len:
-            s = parsed[run_start + j]
-            e = parsed[run_start + j + 11]
-            r12_awards.append({
-                'start_month': f'{s[0]}-{s[1]:02d}',
-                'end_month': f'{e[0]}-{e[1]:02d}',
-                'end_year': e[0],
-            })
-            j += 12
-
-    return r12_awards
-
-
-# NOT CACHED - rider-specific + date-dependent ('active' tracks the current month)
-def get_r12_current_streak(rider_id):
-    """The rider's *current* R-12 streak: consecutive recent months each with a
-    finished 200+km ride, ending at the most recent qualifying month.
-
-    Reuses the same monthly-qualification rule as detect_r12_awards (200+km,
-    finished). Returns {'months': int, 'active': bool}. ``active`` means the chain
-    is still alive — its last qualifying month is the current or previous calendar
-    month, so the rider can keep it going. A completed-but-stale streak is inactive."""
-    rows = _execute("""
-        SELECT DISTINCT TO_CHAR(ri.date, 'YYYY-MM') as ride_month
-        FROM rider_ride rr
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE rr.rider_id = %s
-          AND rr.status = %s
-          AND ri.distance_km >= 200
-          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-        ORDER BY ride_month
-    """, (rider_id, RideStatus.FINISHED.value)).fetchall()
-
-    if not rows:
-        return {'months': 0, 'active': False}
-
-    def parse_ym(ym_str):
-        y, m = ym_str.split('-')
-        return int(y), int(m)
-
-    def month_diff(ym1, ym2):
-        return (ym2[0] - ym1[0]) * 12 + (ym2[1] - ym1[1])
-
-    parsed = [parse_ym(r['ride_month']) for r in rows]
-
-    # Length of the trailing run of consecutive months (ending at the latest month).
-    streak = 1
-    for i in range(len(parsed) - 1, 0, -1):
-        if month_diff(parsed[i - 1], parsed[i]) == 1:
-            streak += 1
-        else:
-            break
-
-    # Active if the latest qualifying month is this month or last month.
-    today = date.today()
-    last = parsed[-1]
-    months_since_last = month_diff(last, (today.year, today.month))
-    active = months_since_last <= 1
-
-    return {'months': streak, 'active': active}
-
-
-# ========== ALL-TIME STATS ==========
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_all_time_stats():
-    # Single query for riders, rides, kms
-    row = _execute("""
-        SELECT COUNT(DISTINCT rr.rider_id) as riders,
-               COUNT(*) as rides,
-               COALESCE(SUM(ri.distance_km), 0) as kms
-        FROM rider_ride rr
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE rr.status = %s
-          AND (ri.event_status = 'COMPLETED' OR ri.date < CURRENT_DATE)
-    """, (RideStatus.FINISHED.value,)).fetchone()
-    riders = row['riders']
-    rides = row['rides']
-    kms = row['kms']
-
-    # Unique SR earners (batch — 1 query per season instead of riders×seasons)
-    seasons = get_all_seasons()
-    current = get_current_season()
-    sr_riders = set()
-    for s in seasons:
-        df = s['id'] == current['id'] if current else False
-        all_srs = detect_sr_for_all_riders_in_season(s['id'], date_filter=df)
-        for rider_id, n in all_srs.items():
-            if n > 0:
-                sr_riders.add(rider_id)
-    # Mihir's India SR
-    mihir = _execute("SELECT id FROM rider WHERE rusa_id = 14680").fetchone()
-    if mihir:
-        sr_riders.add(mihir['id'])
-
-    return {
-        'riders': riders,
-        'rides': rides,
-        'kms': kms,
-        'srs': len(sr_riders)
-    }
-
-
-# ========== SEASON STATS ==========
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_season_stats(season_id, past_only=False):
-    """Get season stats. If past_only=True, only count rides before today."""
-    current = get_current_season()
-    is_current = current and current['id'] == season_id
-
-    date_clause = ""
-    params = [season_id, RideStatus.FINISHED.value]
-    if past_only:
-        today = date.today()
-        date_clause = " AND ri.date <= %s"
-        params.append(today)
-
-    # Single query for active riders, total rides, total kms
-    row = _execute(f"""
-        SELECT COUNT(DISTINCT rr.rider_id) as active,
-               COUNT(*) as rides,
-               COALESCE(SUM(ri.distance_km), 0) as kms
-        FROM rider_ride rr
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE ri.season_id = %s AND rr.status = %s{date_clause}
-    """, params).fetchone()
-    active = row['active']
-    total_rides = row['rides']
-    total_kms = row['kms']
-
-    # SR counts (batch — 1 query instead of N)
-    all_srs = detect_sr_for_all_riders_in_season(season_id, date_filter=is_current)
-    sr_count = sum(all_srs.values())
-    sr_rider_count = sum(1 for n in all_srs.values() if n > 0)
-
-    return {
-        'active_riders': active,
-        'total_rides': total_rides,
-        'total_kms': total_kms,
-        'sr_count': sr_count,
-        'sr_rider_count': sr_rider_count,
-    }
-
-
-# ========== CLUB HELPERS ==========
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_team_asha_club_id():
-    """Get Team Asha club ID (cached helper)."""
-    club = _execute("SELECT id FROM club WHERE code = 'TA'").fetchone()
-    return club['id'] if club else None
-
-
-# ========== UPCOMING EVENTS (UNIFIED) ==========
-
-def get_default_time_limit(distance_km):
-    """Return standard RUSA/ACP time limit in hours based on distance."""
-    if distance_km <= 0:
-        return None
-    elif distance_km <= 200:
-        return 13.5
-    elif distance_km <= 300:
-        return 20
-    elif distance_km <= 400:
-        return 27
-    elif distance_km <= 600:
-        return 40
-    else:
-        return None
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_all_upcoming_events():
-    """Get all upcoming events (Team Asha and external) with club info."""
-    today = date.today()
-    events = _execute("""
-        SELECT ri.*,
-               COALESCE(rp.name, ri.name) as route_name,
-               COALESCE(rp.distance_km, ri.distance_km) as distance_km,
-               COALESCE(rp.total_elevation_ft, ri.elevation_ft) as elevation_ft,
-               COALESCE(rp.total_distance_miles, ri.distance_miles) as distance_miles,
-               c.code as club_code,
-               c.name as club_name,
-               c.region as region,
-               rp.slug as plan_slug,
-               rp.rwgps_url_team as plan_rwgps_url_team,
-               rp.start_time as plan_start_time,
-               rp.avg_elapsed_speed as plan_avg_speed,
-               (c.code = 'TA') as is_team_ride,
-               (SELECT COUNT(*) FROM rider_ride rr WHERE rr.ride_id = ri.id AND rr.signed_up_at IS NOT NULL) as signup_count
-        FROM ride ri
-        INNER JOIN club c ON ri.club_id = c.id
-        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
-        WHERE ri.date >= %s AND ri.event_status = 'UPCOMING'
-        ORDER BY ri.date
-    """, (today,)).fetchall()
-
-    events_with_defaults = []
-    for event in events:
-        event_dict = dict(event)
-        d = event_dict.get('date')
-        event_dict['date_str'] = d if isinstance(d, str) else (d.isoformat() if hasattr(d, 'isoformat') else str(d or ''))
-        
-        # Add route_name alias for compatibility with templates
-        if not event_dict.get('route_name'):
-            event_dict['route_name'] = event_dict.get('name')
-        
-        # Add default time limits if missing
-        if not event_dict.get('time_limit_hours') and event_dict.get('distance_km'):
-            event_dict['time_limit_hours'] = get_default_time_limit(event_dict['distance_km'])
-        
-        events_with_defaults.append(event_dict)
-
-    return events_with_defaults
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_upcoming_rusa_events():
-    """Get external RUSA events (not Team Asha). Legacy function for compatibility."""
-    all_events = get_all_upcoming_events()
-    return [e for e in all_events if not e.get('is_team_ride')]
-
-
-# ========== PBP FINISHERS ==========
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_pbp_finishers(season_id):
-    """Get PBP finishers for a season, sorted by finish time."""
-    return _execute("""
-        SELECT r.id, r.rusa_id, r.first_name, r.last_name,
-               rp.photo_filename, rp.pbp_2023_status,
-               rr.finish_time
-        FROM rider r
-        JOIN rider_profile rp ON r.id = rp.rider_id
-        JOIN rider_ride rr ON r.id = rr.rider_id
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE ri.season_id = %s AND ri.ride_type = 'PBP'
-              AND rr.status = %s
-        ORDER BY rr.finish_time
-    """, (season_id, RideStatus.FINISHED.value)).fetchall()
-
-
-# ========== SIGNUPS ==========
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_signups_for_ride(ride_id):
-    """Get all riders signed up for a ride (including those with results)."""
-    return _execute("""
-        SELECT r.*, rr.status, rr.signed_up_at 
-        FROM rider r
-        JOIN rider_ride rr ON r.id = rr.rider_id
-        WHERE rr.ride_id = %s AND rr.signed_up_at IS NOT NULL
-        ORDER BY r.first_name, r.last_name
-    """, (ride_id,)).fetchall()
-
-# NOT CACHED - rider-specific data should not be cached in serverless environments
-def get_rider_signup_status(rider_id, ride_id):
-    """Check if rider is signed up and get their current status."""
-    return _execute("""
-        SELECT status, signed_up_at, finish_time 
-        FROM rider_ride 
-        WHERE rider_id = %s AND ride_id = %s
-    """, (rider_id, ride_id)).fetchone()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_signup_count(ride_id):
-    """Get count of riders signed up for a ride (excludes WITHDRAW status)."""
-    row = _execute("""
-        SELECT COUNT(*) as count 
-        FROM rider_ride 
-        WHERE ride_id = %s AND signed_up_at IS NOT NULL AND status != %s
-    """, (ride_id, RideStatus.WITHDRAW.value)).fetchone()
-    return row['count'] if row else 0
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_signup_counts_batch(ride_ids):
-    """Get signup counts for multiple rides in one query. Returns dict {ride_id: count}."""
-    if not ride_ids:
-        return {}
-    
-    placeholders = ','.join(['%s'] * len(ride_ids))
-    rows = _execute(f"""
-        SELECT ride_id, COUNT(*) as count 
-        FROM rider_ride 
-        WHERE ride_id IN ({placeholders}) 
-          AND signed_up_at IS NOT NULL 
-          AND status != %s
-        GROUP BY ride_id
-    """, tuple(ride_ids) + (RideStatus.WITHDRAW.value,)).fetchall()
-    
-    counts = {r['ride_id']: r['count'] for r in rows}
-    # Fill in zeros for rides with no signups
-    return {ride_id: counts.get(ride_id, 0) for ride_id in ride_ids}
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_rider_signup_statuses_batch(rider_id, ride_ids):
-    """Get signup statuses for a rider across multiple rides in one query. Returns dict {ride_id: status_dict}."""
-    if not ride_ids or not rider_id:
-        return {}
-    
-    placeholders = ','.join(['%s'] * len(ride_ids))
-    rows = _execute(f"""
-        SELECT ride_id, status, signed_up_at, finish_time 
-        FROM rider_ride 
-        WHERE rider_id = %s AND ride_id IN ({placeholders})
-    """, (rider_id,) + tuple(ride_ids)).fetchall()
-    
-    return {r['ride_id']: {'status': r['status'], 'signed_up_at': r['signed_up_at'], 'finish_time': r['finish_time']} for r in rows}
-
-def signup_rider(rider_id, ride_id):
-    """Sign up a rider for a ride. Updates status to GOING regardless of current status."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        cur.execute("""
-            INSERT INTO rider_ride (rider_id, ride_id, status, signed_up_at)
-            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-            ON CONFLICT (rider_id, ride_id) DO UPDATE
-              SET status = %s, signed_up_at = CURRENT_TIMESTAMP
-        """, (rider_id, ride_id,
-              RideStatus.GOING.value,
-              RideStatus.GOING.value))
-        conn.commit()
-        return True
-    except Exception:
-        conn.rollback()
-        return False
-
-
-def mark_interested(rider_id, ride_id):
-    """Mark a rider as interested in a ride. Updates status to INTERESTED regardless of current status."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        cur.execute("""
-            INSERT INTO rider_ride (rider_id, ride_id, status, signed_up_at)
-            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-            ON CONFLICT (rider_id, ride_id) DO UPDATE
-              SET status = %s, signed_up_at = CURRENT_TIMESTAMP
-        """, (rider_id, ride_id, 
-              RideStatus.INTERESTED.value,
-              RideStatus.INTERESTED.value))
-        conn.commit()
-        return True
-    except Exception:
-        conn.rollback()
-        return False
-
-
-def mark_maybe(rider_id, ride_id):
-    """Mark a rider as maybe for a ride. Updates status to MAYBE regardless of current status."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        cur.execute("""
-            INSERT INTO rider_ride (rider_id, ride_id, status, signed_up_at)
-            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-            ON CONFLICT (rider_id, ride_id) DO UPDATE
-              SET status = %s, signed_up_at = CURRENT_TIMESTAMP
-        """, (rider_id, ride_id, 
-              RideStatus.MAYBE.value,
-              RideStatus.MAYBE.value))
-        conn.commit()
-        return True
-    except Exception:
-        conn.rollback()
-        return False
-
-
-def mark_withdraw(rider_id, ride_id):
-    """Mark a rider as withdrawn from a ride. Updates status to WITHDRAW."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        cur.execute("""
-            UPDATE rider_ride
-            SET status = %s, signed_up_at = CURRENT_TIMESTAMP
-            WHERE rider_id = %s AND ride_id = %s
-        """, (RideStatus.WITHDRAW.value, rider_id, ride_id))
-        conn.commit()
-        return cur.rowcount > 0
-    except Exception:
-        conn.rollback()
-        return False
-
-
-def remove_signup(rider_id, ride_id):
-    """
-    Remove a rider's signup (only if status is pre-ride: GOING, INTERESTED, or MAYBE).
-
-    Returns:
-        bool: True if signup was removed, False otherwise
-
-    Raises:
-        ValueError: If signup exists but status doesn't allow removal
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-    # Get current status first to provide better error message
-    cur.execute("""
-        SELECT status FROM rider_ride
-        WHERE rider_id = %s AND ride_id = %s
-    """, (rider_id, ride_id))
-    row = cur.fetchone()
-
-    if row:
-        current_status = RideStatus.normalize(row['status'])
-        if not RideStatus.can_remove_signup(current_status):
-            raise ValueError(f"Cannot remove signup with status '{current_status.value}'. Only pre-ride signups can be removed.")
-
-    # Delete if status allows it (GOING, INTERESTED, or MAYBE can be removed)
-    cur.execute("""
-        DELETE FROM rider_ride
-        WHERE rider_id = %s AND ride_id = %s
-        AND status IN (%s, %s, %s)
-    """, (rider_id, ride_id, RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.MAYBE.value))
-
-    conn.commit()
-    return cur.rowcount > 0
-
-
-def admin_delete_rider_ride(rider_id, ride_id):
-    """Admin-only: Remove a rider_ride record regardless of status.
-
-    Unlike remove_signup() which is user-facing and restricted to pre-ride
-    statuses, this function allows admins to delete any participation record
-    (e.g. correcting data entry errors).
-
-    Returns:
-        bool: True if a record was deleted, False if no matching record found.
-    """
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "DELETE FROM rider_ride WHERE rider_id = %s AND ride_id = %s",
-        (rider_id, ride_id),
+    return db.query_one(
+        "SELECT id, email, google_id, rusa_id, club_id, "
+        "       profile_completed, rusa_id_duplicate, created_at, last_login_at, "
+        "       eddington_km, eddington_miles, eddington_calculated_at "
+        "FROM rp_rider WHERE id = %s",
+        (rider_id,),
     )
-    conn.commit()
-    deleted = cur.rowcount > 0
-    if deleted:
-        cache.clear()
-    return deleted
 
 
-# ========== ADMIN WRITES ==========
-
-def update_base_plan_stop(stop_id, changes):
-    """Admin-only: Update a base plan stop's details."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-    updates = []
-    params = []
-
-    # Core metrics
-    if 'distance_miles' in changes:
-        updates.append("distance_miles = %s")
-        params.append(changes['distance_miles'])
-
-    if 'segment_time_min' in changes:
-        updates.append("segment_time_min = %s")
-        params.append(changes['segment_time_min'])
-
-    if 'elevation_gain' in changes:
-        updates.append("elevation_gain = %s")
-        params.append(changes['elevation_gain'])
-
-    # Break / stop details
-    if 'stop_duration_min' in changes:
-        updates.append("stop_duration_min = %s")
-        params.append(changes['stop_duration_min'])
-
-    if 'stop_name' in changes:
-        updates.append("stop_name = %s")
-        # Store None (NULL) for empty strings so the template condition
-        # `stop.stop_name and stop.stop_duration_min > 0` works correctly.
-        params.append(changes['stop_name'] or None)
-
-    if 'location' in changes:
-        updates.append("location = %s")
-        params.append(changes['location'] or None)
-
-    if 'stop_type' in changes:
-        updates.append("stop_type = %s")
-        params.append(changes['stop_type'] or None)
-
-    if 'notes' in changes:
-        updates.append("notes = %s")
-        params.append(changes['notes'] or None)
-
-    if not updates:
-        return False
-
-    params.append(stop_id)
-    sql = f"UPDATE ride_plan_stop SET {', '.join(updates)} WHERE id = %s"
-
-    cur.execute(sql, params)
-    row_count = cur.rowcount  # save before subsequent queries change it
-    conn.commit()
-
-    # Clear cache for the affected plan
-    cur.execute("SELECT ride_plan_id FROM ride_plan_stop WHERE id = %s", (stop_id,))
-    result = cur.fetchone()
-    if result:
-        plan_id = result['ride_plan_id']
-        cache.delete_memoized(get_ride_plan_stops, plan_id)
-        # Recalculate cum_time_min for all stops in this plan
-        if any(k in changes for k in ('segment_time_min', 'stop_duration_min', 'distance_miles')):
-            recalculate_base_plan_cumulative(plan_id, cur, conn)
-            conn.commit()  # commit the recalculated cumulative times
-    cache.clear()
-
-    return row_count > 0
-
-
-def recalculate_base_plan_cumulative(ride_plan_id, cur=None, conn=None):
-    """Recalculate cum_time_min for all stops and sync ride_plan summary.
-
-    cum_time_min = running sum of (segment_time_min + stop_duration_min).
-    Also updates ride_plan.total_moving_time_min, total_elapsed_time_min,
-    and total_break_time_min to stay in sync with the stops.
-    """
-    own_conn = False
-    if cur is None:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        own_conn = True
-
-    cur.execute(
-        "SELECT id, stop_order, segment_time_min, stop_duration_min, bookend_time_min "
-        "FROM ride_plan_stop WHERE ride_plan_id = %s ORDER BY stop_order",
-        (ride_plan_id,)
+def create_rider(email, google_id):
+    """Create a rider on first Google sign-in. Profile is incomplete until they
+    finish signup (optional RUSA ID + club)."""
+    return db.execute(
+        "INSERT INTO rp_rider (email, google_id, profile_completed) "
+        "VALUES (%s, %s, FALSE) "
+        "RETURNING id, email, google_id, rusa_id, club_id, "
+        "          profile_completed, rusa_id_duplicate, created_at, last_login_at",
+        (email, google_id),
+        returning=True,
     )
-    stops = cur.fetchall()
 
-    cum = 0
-    total_moving = 0
-    total_break = 0
-    for s in stops:
-        seg = s['segment_time_min'] or 0
-        brk = s['stop_duration_min'] or 0
-        cum += seg + brk
-        total_moving += seg
-        total_break += brk
-        arrival = cum - brk
-        bookend = s.get('bookend_time_min')
-        time_bank = (bookend - arrival) if bookend else None
-        cur.execute(
-            "UPDATE ride_plan_stop SET cum_time_min = %s, time_bank_min = %s WHERE id = %s",
-            (cum, time_bank, s['id'])
-        )
 
-    # Sync ride_plan summary fields from stops (single source of truth)
-    cur.execute(
-        "UPDATE ride_plan SET total_moving_time_min = %s, "
-        "total_elapsed_time_min = %s, total_break_time_min = %s "
+def update_rider_login(rider_id):
+    db.execute(
+        "UPDATE rp_rider SET last_login_at = NOW() WHERE id = %s",
+        (rider_id,),
+    )
+
+
+def rusa_id_already_claimed(rusa_id, exclude_rider_id=None):
+    """True if another rider has already claimed this RUSA ID. Used to *soft-flag*
+    duplicates at signup — v1 does no hard RUSA ownership verification."""
+    if not rusa_id:
+        return False
+    row = db.query_one(
+        "SELECT COUNT(*) AS n FROM rp_rider "
+        "WHERE rusa_id = %s AND (%s::int IS NULL OR id <> %s)",
+        (rusa_id, exclude_rider_id, exclude_rider_id),
+    )
+    return bool(row and row['n'] > 0)
+
+
+def complete_rider_profile(rider_id, rusa_id, club_id, rusa_id_duplicate=False):
+    """Store the optional RUSA ID + chosen club and mark the profile complete."""
+    return db.execute(
+        "UPDATE rp_rider "
+        "SET rusa_id = %s, club_id = %s, rusa_id_duplicate = %s, "
+        "    profile_completed = TRUE "
+        "WHERE id = %s "
+        "RETURNING id, email, google_id, rusa_id, club_id, "
+        "          profile_completed, rusa_id_duplicate, created_at, last_login_at",
+        (rusa_id, club_id, rusa_id_duplicate, rider_id),
+        returning=True,
+    )
+
+
+def set_rider_eddington(rider_id, *, eddington_km, eddington_miles):
+    """Cache the computed cycling Eddington number for one rider (both units) and
+    stamp the calculation time. Keyed by rider_id, so a rider only ever writes their
+    OWN value; the write is rp_-only and additive. Called OFF the request path (on
+    Strava connect and by the daily refresh cron), never at public-view time.
+    """
+    db.execute(
+        "UPDATE rp_rider "
+        "SET eddington_km = %s, eddington_miles = %s, "
+        "    eddington_calculated_at = NOW() "
         "WHERE id = %s",
-        (total_moving, cum, total_break, ride_plan_id)
+        (eddington_km, eddington_miles, rider_id),
     )
 
-    if own_conn:
-        conn.commit()
 
-def insert_ride_plan_stop(ride_plan_id, stop_order, location, stop_type='waypoint',
-                         distance_miles=None, elevation_gain=None, notes=None):
-    """Insert a new stop into a ride plan and reorder subsequent stops."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    # Shift existing stops: negate first to avoid unique constraint, then set final values
-    cur.execute(
-        "UPDATE ride_plan_stop SET stop_order = -stop_order WHERE ride_plan_id = %s AND stop_order >= %s",
-        (ride_plan_id, stop_order)
+# --------------------------------------------------------------------------- #
+# Public rides (rp_ride) + live positions (rp_live_position) — guest/spectator
+# browse of rides opted into public tracking, and the owner-only ingestion path
+# that feeds the live map. Every guest-facing query selects ONLY non-PII columns
+# (name/club/distance/start/status) — never rider email — and the map/poll gates
+# hard-filter on is_public = TRUE so a private or unknown ride is never viewable.
+# --------------------------------------------------------------------------- #
+def get_public_rides():
+    """Public rides for the guest browse list, joined to their club name.
+
+    Guest-facing: selects only what a club would publicly show (name, club,
+    distance, start time, status). No rider identity (no email, no rider_id) is
+    exposed on this surface.
+    """
+    return db.query(
+        "SELECT r.id, r.name, r.distance_km, r.start_at, r.status, "
+        "       c.name AS club_name "
+        "FROM rp_ride r LEFT JOIN rp_club c ON c.id = r.club_id "
+        "WHERE r.is_public = TRUE ORDER BY r.start_at DESC NULLS LAST"
     )
-    cur.execute(
-        "UPDATE ride_plan_stop SET stop_order = -stop_order + 1 WHERE ride_plan_id = %s AND stop_order < 0",
-        (ride_plan_id,)
+
+
+def get_public_ride(ride_id):
+    """A single PUBLIC ride by id (the guest-view 404 gate), joined to its club.
+
+    Returns None when the ride is unknown OR is_public = FALSE, so a private/
+    unknown ride is indistinguishable to a guest (both 404). No rider PII.
+    """
+    return db.query_one(
+        "SELECT r.id, r.name, r.distance_km, r.start_at, r.status, r.rwgps_url, "
+        "       c.name AS club_name "
+        "FROM rp_ride r LEFT JOIN rp_club c ON c.id = r.club_id "
+        "WHERE r.id = %s AND r.is_public = TRUE",
+        (ride_id,),
     )
-    cur.execute(
-        """INSERT INTO ride_plan_stop (ride_plan_id, stop_order, location, stop_type, distance_miles, elevation_gain, notes)
-           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *""",
-        (ride_plan_id, stop_order, location, stop_type, distance_miles, elevation_gain, notes)
+
+
+def get_ride(ride_id):
+    """A ride by id for the OWNER check (position POST / flag-public).
+
+    Includes rider_id so the caller can compare it to the session rider before
+    allowing a write. Never rendered to a guest.
+    """
+    return db.query_one(
+        "SELECT id, club_id, rider_id, name, distance_km, start_at, status, "
+        "       is_public, rwgps_url FROM rp_ride WHERE id = %s",
+        (ride_id,),
     )
-    result = cur.fetchone()
-    conn.commit()
-    recalculate_base_plan_cumulative(ride_plan_id)
-    cache.clear()
-    return result
 
 
-def delete_ride_plan_stop(stop_id):
-    """Delete a stop from a ride plan and reorder remaining stops."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    # Get the stop info before deleting
-    cur.execute("SELECT ride_plan_id, stop_order FROM ride_plan_stop WHERE id = %s", (stop_id,))
-    stop = cur.fetchone()
-    if not stop:
-        return False
-    cur.execute("DELETE FROM ride_plan_stop WHERE id = %s", (stop_id,))
-    # Reorder remaining stops: negate first to avoid unique constraint, then set final values
-    cur.execute(
-        "UPDATE ride_plan_stop SET stop_order = -stop_order WHERE ride_plan_id = %s AND stop_order > %s",
-        (stop['ride_plan_id'], stop['stop_order'])
+def get_rider_rides(rider_id):
+    """Own rides for one rider, for the create/flag page listing + share links.
+
+    ``event_id`` is selected too so the manage page can show which calendar event
+    each ride is currently linked to (NULL when unlinked).
+    """
+    return db.query(
+        "SELECT id, name, distance_km, start_at, status, is_public, event_id "
+        "FROM rp_ride WHERE rider_id = %s ORDER BY start_at DESC NULLS LAST",
+        (rider_id,),
     )
-    cur.execute(
-        "UPDATE ride_plan_stop SET stop_order = -stop_order - 1 WHERE ride_plan_id = %s AND stop_order < 0",
-        (stop['ride_plan_id'],)
+
+
+def get_rider_ride_for_event(rider_id, event_id):
+    """The rider OWN ride linked to a calendar event, or None (most recent first).
+
+    Backs the event-scoped live view share surface: a logged-in rider appears on the
+    event Live map through a ride they own that is linked to the event (event_id FK).
+    Scoped to the session rider, so it never reveals another rider ride. Returns the
+    ride row (id, is_public, name, event_id) or None when the rider has not joined
+    this event yet. Touches only rp_ride.
+    """
+    return db.query_one(
+        "SELECT id, name, distance_km, is_public, event_id "
+        "FROM rp_ride WHERE rider_id = %s AND event_id = %s "
+        "ORDER BY start_at DESC NULLS LAST LIMIT 1",
+        (rider_id, event_id),
     )
-    conn.commit()
-    recalculate_base_plan_cumulative(stop['ride_plan_id'])
-    cache.clear()
-    return True
 
 
-def get_ride_plan_by_rwgps_route_id(route_id):
-    """Check if a ride plan already exists for a given RWGPS route ID."""
-    return _execute(
-        "SELECT * FROM ride_plan WHERE rwgps_route_id = %s", (route_id,)
-    ).fetchone()
+def create_ride(rider_id, *, name, distance_km=None, is_public=False,
+                club_id=None, status=None):
+    """Create a ride owned by ``rider_id`` and return its new id.
 
-
-def create_ride_plan_from_rwgps(plan_data, stops_data):
-    """Insert or update a ride plan and its stops generated from RWGPS data.
-
-    Uses upsert on slug to handle duplicates. Deletes old stops and re-inserts.
-
-    Args:
-        plan_data: dict with ride_plan column values
-        stops_data: list of dicts with ride_plan_stop column values
-
-    Returns:
-        New/updated ride_plan id
+    Used by the rider-facing "share a live ride" flow: the owner names a ride and
+    (optionally) flags it public+live in one step. start_at defaults to NOW() so a
+    just-created live ride sorts to the top of the public list.
     """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-    # Upsert ride_plan
-    cur.execute("""
-        INSERT INTO ride_plan (name, slug, total_distance_miles, total_elevation_ft,
-            rwgps_url, rwgps_route_id, distance_km, cutoff_hours, start_time,
-            avg_moving_speed, avg_elapsed_speed, total_moving_time_min,
-            total_elapsed_time_min, total_break_time_min, overall_ft_per_mile)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (slug) DO UPDATE SET
-            name = EXCLUDED.name,
-            total_distance_miles = EXCLUDED.total_distance_miles,
-            total_elevation_ft = EXCLUDED.total_elevation_ft,
-            rwgps_url = EXCLUDED.rwgps_url,
-            rwgps_route_id = EXCLUDED.rwgps_route_id,
-            distance_km = EXCLUDED.distance_km,
-            cutoff_hours = EXCLUDED.cutoff_hours,
-            avg_moving_speed = EXCLUDED.avg_moving_speed,
-            avg_elapsed_speed = EXCLUDED.avg_elapsed_speed,
-            total_moving_time_min = EXCLUDED.total_moving_time_min,
-            total_elapsed_time_min = EXCLUDED.total_elapsed_time_min,
-            total_break_time_min = EXCLUDED.total_break_time_min,
-            overall_ft_per_mile = EXCLUDED.overall_ft_per_mile
-        RETURNING id
-    """, (
-        plan_data['name'], plan_data['slug'],
-        plan_data.get('total_distance_miles'), plan_data.get('total_elevation_ft'),
-        plan_data.get('rwgps_url'), plan_data.get('rwgps_route_id'),
-        plan_data.get('distance_km'), plan_data.get('cutoff_hours'),
-        plan_data.get('start_time', '07:00'),
-        plan_data.get('avg_moving_speed'), plan_data.get('avg_elapsed_speed'),
-        plan_data.get('total_moving_time_min'), plan_data.get('total_elapsed_time_min'),
-        plan_data.get('total_break_time_min'), plan_data.get('overall_ft_per_mile'),
-    ))
-
-    plan_id = cur.fetchone()['id']
-
-    # Delete old stops and re-insert
-    cur.execute("DELETE FROM ride_plan_stop WHERE ride_plan_id = %s", (plan_id,))
-
-    for stop in stops_data:
-        cur.execute("""
-            INSERT INTO ride_plan_stop (ride_plan_id, stop_order, location, stop_type,
-                distance_miles, elevation_gain, segment_time_min, notes,
-                seg_dist, ft_per_mi, avg_speed, cum_time_min,
-                bookend_time_min, time_bank_min, difficulty_score)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            plan_id, stop['stop_order'], stop['location'], stop['stop_type'],
-            stop.get('distance_miles'), stop.get('elevation_gain'),
-            stop.get('segment_time_min'), stop.get('notes', ''),
-            stop.get('seg_dist'), stop.get('ft_per_mi'),
-            stop.get('avg_speed'), stop.get('cum_time_min'),
-            stop.get('bookend_time_min'), stop.get('time_bank_min'),
-            stop.get('difficulty_score'),
-        ))
-
-    conn.commit()
-
-    # Clear relevant caches
-    cache.delete_memoized(get_all_ride_plans)
-    cache.delete_memoized(get_ride_plan_by_slug, plan_data['slug'])
-    cache.delete_memoized(get_ride_plan_stops, plan_id)
-
-    return plan_id
-
-
-def create_ride(season_id, club_id, name, ride_type, ride_date, distance_km,
-                elevation_ft=None, distance_miles=None, ft_per_mile=None, rwgps_url=None):
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-    # Auto-match ride plan by name (e.g. "Healdsburg" matches "SFR 300k Healdsburg" plan)
-    matched_plan = find_ride_plan_for_ride(name)
-    plan_id = matched_plan['id'] if matched_plan else None
-
-    cur.execute("""INSERT INTO ride (season_id, club_id, name, ride_type, date, distance_km,
-                  elevation_ft, distance_miles, ft_per_mile, rwgps_url,
-                  ride_plan_id)
-                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                  RETURNING id""",
-               (season_id, club_id, name, ride_type, ride_date, distance_km,
-                elevation_ft, distance_miles, ft_per_mile, rwgps_url, plan_id))
-    new_id = cur.fetchone()['id']
-    conn.commit()
-    return new_id
-
-def update_rider_ride_status(ride_id, statuses):
-    """
-    Update rider status for a specific ride.
-
-    Args:
-        ride_id: The ride ID
-        statuses: Dict mapping rider_id -> status string
-
-    Raises:
-        ValueError: If any status value is invalid
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-    # Validate all statuses before making any changes
-    normalized_statuses = {}
-    for rider_id, status in statuses.items():
-        try:
-            normalized_statuses[rider_id] = RideStatus.normalize(status).value
-        except ValueError as e:
-            raise ValueError(f"Invalid status for rider {rider_id}: {e}")
-
-    # Insert/update with validated statuses
-    for rider_id, status in normalized_statuses.items():
-        cur.execute("""
-            INSERT INTO rider_ride (rider_id, ride_id, status)
-            VALUES (%s, %s, %s)
-            ON CONFLICT(rider_id, ride_id)
-            DO UPDATE SET status = EXCLUDED.status
-        """, (rider_id, ride_id, status))
-
-    conn.commit()
-    cache.clear()
-
-
-def auto_finalize_past_rides():
-    """Mark all GOING riders as FINISHED for rides whose date has passed.
-
-    Also sets event_status='COMPLETED' on those rides.
-
-    Returns:
-        list of dicts: [{'ride_id': int, 'ride_name': str, 'riders_finalized': int}]
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-    # Find past rides that still have GOING riders
-    cur.execute("""
-        SELECT ri.id AS ride_id, ri.name AS ride_name, COUNT(rr.id) AS going_count
-        FROM ride ri
-        JOIN rider_ride rr ON rr.ride_id = ri.id
-        WHERE ri.date < CURRENT_DATE
-          AND rr.status = 'GOING'
-        GROUP BY ri.id, ri.name
-    """)
-    rides_to_finalize = cur.fetchall()
-
-    results = []
-    for ride in rides_to_finalize:
-        # Mark GOING riders as FINISHED
-        cur.execute("""
-            UPDATE rider_ride
-            SET status = 'FINISHED'
-            WHERE ride_id = %s AND status = 'GOING'
-        """, (ride['ride_id'],))
-        count = cur.rowcount
-
-        # Mark ride as COMPLETED
-        cur.execute("""
-            UPDATE ride SET event_status = 'COMPLETED'
-            WHERE id = %s AND event_status = 'UPCOMING'
-        """, (ride['ride_id'],))
-
-        results.append({
-            'ride_id': ride['ride_id'],
-            'ride_name': ride['ride_name'],
-            'riders_finalized': count,
-        })
-
-    conn.commit()
-    cache.clear()
-    return results
-
-
-def sync_rusa_finish_times():
-    """Fetch official finish times from RUSA for FINISHED rides missing them.
-
-    Groups by rider to minimize RUSA page fetches (one per rider).
-    Matches RUSA results to rides using date ±10 days and distance ±20km.
-
-    Returns:
-        list of dicts with per-rider sync details
-    """
-    import time
-    from services.rusa import fetch_rider_results
-
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-    # Find all FINISHED rider_ride records missing finish_time
-    cur.execute("""
-        SELECT rr.id AS rr_id, rr.rider_id, rr.ride_id,
-               r.rusa_id, r.first_name, r.last_name,
-               ri.date AS ride_date, ri.distance_km, ri.name AS ride_name
-        FROM rider_ride rr
-        JOIN rider r ON rr.rider_id = r.id
-        JOIN ride ri ON rr.ride_id = ri.id
-        WHERE rr.status = 'FINISHED'
-          AND (rr.finish_time IS NULL OR rr.finish_time = '')
-          AND r.rusa_id IS NOT NULL
-        ORDER BY r.id, ri.date
-    """)
-    rows = cur.fetchall()
-
-    if not rows:
-        return []
-
-    # Group by rider
-    riders = {}
-    for row in rows:
-        rid = row['rider_id']
-        if rid not in riders:
-            riders[rid] = {
-                'rusa_id': row['rusa_id'],
-                'name': f"{row['first_name']} {row['last_name']}",
-                'rides': [],
-            }
-        riders[rid]['rides'].append(row)
-
-    results = []
-    total_updated = 0
-
-    for i, (rider_id, info) in enumerate(riders.items()):
-        rusa_results = fetch_rider_results(info['rusa_id'])
-        matched = 0
-        matched_rides = []
-
-        for ride_row in info['rides']:
-            ride_date = ride_row['ride_date']
-            if not ride_date:
-                continue
-            if hasattr(ride_date, 'date'):
-                ride_date = ride_date.date()
-
-            distance_km = ride_row['distance_km'] or 0
-
-            for rr in rusa_results:
-                date_diff = abs((ride_date - rr['date']).days)
-                dist_diff = abs(distance_km - rr['distance_km'])
-                if date_diff <= 10 and (dist_diff <= 20 or (distance_km >= 1000 and rr['distance_km'] >= 1000)):
-                    cur.execute(
-                        "UPDATE rider_ride SET finish_time = %s WHERE id = %s",
-                        (rr['finish_time'], ride_row['rr_id'])
-                    )
-                    matched += 1
-                    matched_rides.append({
-                        'ride': ride_row.get('ride_name', ''),
-                        'time': rr['finish_time'],
-                    })
-                    break
-
-        results.append({
-            'rider_name': info['name'],
-            'rusa_id': info['rusa_id'],
-            'rides_checked': len(info['rides']),
-            'results_found': matched,
-            'matched_rides': matched_rides,
-        })
-        total_updated += matched
-
-        # Be respectful to RUSA servers
-        if i < len(riders) - 1:
-            time.sleep(1)
-
-    if total_updated > 0:
-        conn.commit()
-        cache.clear()
-
-    return results
-
-
-def get_rides_with_signup_counts(season_id):
-    """Get all rides for a season with signup/result counts for admin dashboard."""
-    return _execute("""
-        SELECT ri.*,
-               c.code AS club_code,
-               c.name AS club_name,
-               COUNT(rr.id) FILTER (WHERE rr.status = 'GOING') AS going_count,
-               COUNT(rr.id) FILTER (WHERE rr.status IN ('FINISHED','DNF','DNS','OTL')) AS result_count,
-               COUNT(rr.id) FILTER (WHERE rr.status IS NOT NULL) AS total_signups,
-               EXISTS (SELECT 1 FROM ride_wind_data rwd WHERE rwd.ride_id = ri.id) AS has_wind
-        FROM ride ri
-        JOIN club c ON ri.club_id = c.id
-        LEFT JOIN rider_ride rr ON rr.ride_id = ri.id
-        WHERE ri.season_id = %s
-        GROUP BY ri.id, c.code, c.name
-        ORDER BY ri.date
-    """, (season_id,)).fetchall()
-
-
-def update_ride_core(ride_id, fields):
-    """Update core ride fields: name, date, distance_km, ride_type, club_id, elevation_ft, distance_miles, ft_per_mile."""
-    allowed = {'name', 'date', 'distance_km', 'ride_type', 'club_id', 'elevation_ft', 'distance_miles', 'ft_per_mile'}
-    conn = get_db()
-    cur = conn.cursor()
-    updates = []
-    params = []
-    for col in allowed:
-        if col in fields:
-            updates.append(f"{col} = %s")
-            params.append(fields[col] if fields[col] != '' else None)
-    if updates:
-        params.append(ride_id)
-        cur.execute(f"UPDATE ride SET {', '.join(updates)} WHERE id = %s", params)
-        conn.commit()
-        cache.clear()
-        return True
-    return False
-
-
-def update_ride_details(ride_id, rwgps_url=None, ride_plan_id=None,
-                       start_location=None, time_limit_hours=None,
-                       start_time=None, rwgps_url_team=None):
-    """Update ride details (route, location, time limit, start time, team route)."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-    updates = []
-    params = []
-
-    if rwgps_url is not None:
-        updates.append("rwgps_url = %s")
-        params.append(rwgps_url if rwgps_url.strip() else None)
-
-    if ride_plan_id is not None:
-        updates.append("ride_plan_id = %s")
-        params.append(ride_plan_id if ride_plan_id else None)
-
-    if start_location is not None:
-        updates.append("start_location = %s")
-        params.append(start_location if start_location.strip() else None)
-    
-    if time_limit_hours is not None:
-        updates.append("time_limit_hours = %s")
-        params.append(time_limit_hours if time_limit_hours else None)
-
-    if start_time is not None:
-        updates.append("start_time = %s")
-        params.append(start_time if start_time.strip() else None)
-
-    if rwgps_url_team is not None:
-        updates.append("rwgps_url_team = %s")
-        params.append(rwgps_url_team if rwgps_url_team.strip() else None)
-
-    if updates:
-        params.append(ride_id)
-        sql = f"UPDATE ride SET {', '.join(updates)} WHERE id = %s"
-        cur.execute(sql, params)
-        conn.commit()
-        return True
-    return False
-
-# ========== RIDE PLANS ==========
-
-def update_ride_plan_info(plan_id, name, rwgps_url):
-    """Update ride plan template metadata (name and canonical route URL only)."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
-        UPDATE ride_plan SET name=%s, rwgps_url=%s
-        WHERE id=%s
-    """, (name or None, rwgps_url or None, plan_id))
-    conn.commit()
-    cache.delete_memoized(get_all_ride_plans)
-    cache.delete_memoized(get_ride_plan_by_slug)
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_all_ride_plans():
-    return _execute("""
-        SELECT * FROM ride_plan ORDER BY name
-    """).fetchall()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_ride_plan_by_slug(slug):
-    return _execute("""
-        SELECT * FROM ride_plan WHERE slug = %s
-    """, (slug,)).fetchone()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_ride_plan_stops(ride_plan_id):
-    return _execute("""
-        SELECT * FROM ride_plan_stop
-        WHERE ride_plan_id = %s
-        ORDER BY stop_order
-    """, (ride_plan_id,)).fetchall()
-
-def get_latest_ride_for_plan(plan_id):
-    """Get the most recent ride linked to a plan, for deriving defaults."""
-    return _execute("""
-        SELECT start_time, rwgps_url_team, rwgps_url, time_limit_hours, date
-        FROM ride
-        WHERE ride_plan_id = %s
-        ORDER BY date DESC
-        LIMIT 1
-    """, (plan_id,)).fetchone()
-
-
-@cache.memoize(CACHE_TIMEOUT)
-def find_ride_plan_for_ride(ride_name):
-    """Try to match a ride to a ride plan by fuzzy name matching."""
-    plans = _execute("SELECT id, name, slug FROM ride_plan").fetchall()
-    ride_lower = ride_name.lower()
-    for plan in plans:
-        plan_lower = plan['name'].lower()
-        # Extract key words from both (remove common suffixes like 'plan', '200k', etc.)
-        plan_key = plan_lower.replace(' plan', '').replace('-', ' ').strip()
-        if plan_key in ride_lower or ride_lower in plan_key:
-            return plan
-    # Try matching on the core route name (e.g., "Healdsburg" in "SFR 300k Healdsburg")
-    for plan in plans:
-        plan_words = set(plan['name'].lower().replace('-', ' ').replace('plan', '').split())
-        ride_words = set(ride_lower.replace('-', ' ').split())
-        # Remove common words
-        common_ignore = {'200k', '300k', '400k', '600k', '1000k', 'sfr', 'scr', 'dbc', 'plan', 'route', 'k', '2022', '2023', '2024', '2025', '2026'}
-        plan_words -= common_ignore
-        ride_words -= common_ignore
-        if plan_words and ride_words and plan_words & ride_words:
-            return plan
-    return None
-
-
-def update_rider_profile(rider_id, photo_filename=None, bio=None):
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    if photo_filename and bio is not None:
-        cur.execute("""INSERT INTO rider_profile (rider_id, photo_filename, bio)
-                      VALUES (%s, %s, %s)
-                      ON CONFLICT(rider_id) DO UPDATE SET
-                      photo_filename = EXCLUDED.photo_filename, bio = EXCLUDED.bio""",
-                   (rider_id, photo_filename, bio))
-    elif photo_filename:
-        cur.execute("""INSERT INTO rider_profile (rider_id, photo_filename)
-                      VALUES (%s, %s)
-                      ON CONFLICT(rider_id) DO UPDATE SET photo_filename = EXCLUDED.photo_filename""",
-                   (rider_id, photo_filename))
-    elif bio is not None:
-        cur.execute("""INSERT INTO rider_profile (rider_id, bio)
-                      VALUES (%s, %s)
-                      ON CONFLICT(rider_id) DO UPDATE SET bio = EXCLUDED.bio""",
-                   (rider_id, bio))
-    conn.commit()
-
-
-def update_strava_privacy(rider_id, is_private):
-    """Update Strava data privacy setting for a rider."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
-        INSERT INTO rider_profile (rider_id, strava_data_private)
-        VALUES (%s, %s)
-        ON CONFLICT(rider_id) DO UPDATE SET strava_data_private = EXCLUDED.strava_data_private
-    """, (rider_id, is_private))
-    conn.commit()
-
-
-# ========== USER AUTHENTICATION ==========
-
-def get_user_by_email(email):
-    """Get user by email, CASE-INSENSITIVELY (emails are case-insensitive; the
-    Google/Apple paths may store mixed case). NOT CACHED (serverless)."""
-    return _execute("SELECT * FROM app_user WHERE lower(email) = lower(%s)",
-                    (email,)).fetchone()
-
-def get_user_by_normalized_email(email):
-    """Get the account matching an email's canonical form (see
-    services/email_normalize), so Gmail dot/+tag variants resolve to ONE account.
-    When variants have somehow produced duplicates, prefers a profile-completed
-    row (the real account) over an empty one, then the oldest. NOT CACHED."""
-    return _execute("""SELECT * FROM app_user WHERE email_normalized = %s
-                       ORDER BY (profile_completed IS TRUE) DESC, id ASC LIMIT 1""",
-                    (normalize_email(email),)).fetchone()
-
-def get_user_by_google_id(google_id):
-    """Get user by Google ID. NOT CACHED - user data should not be cached in serverless environments."""
-    return _execute("SELECT * FROM app_user WHERE google_id = %s", (google_id,)).fetchone()
-
-def get_user_by_id(user_id):
-    """Get user by ID. NOT CACHED - user data should not be cached in serverless environments."""
-    return _execute("SELECT * FROM app_user WHERE id = %s", (user_id,)).fetchone()
-
-def create_user(email, google_id):
-    """Create a new user with Google credentials."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""INSERT INTO app_user (email, email_normalized, google_id, profile_completed, last_login)
-                  VALUES (%s, %s, %s, FALSE, CURRENT_TIMESTAMP)
-                  RETURNING id, email, google_id, profile_completed, rider_id""",
-               (email, normalize_email(email), google_id))
-    user = cur.fetchone()
-    conn.commit()
-    return dict(user) if user else None
-
-def create_user_password(email, password_hash):
-    """Create a new user with an email + password (mobile's 3rd login option).
-
-    ``password_hash`` is a werkzeug hash string (never the plaintext). google_id
-    and apple_sub stay NULL — this is a first-party credential. Mirrors
-    create_user / create_user_apple.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        cur.execute("""INSERT INTO app_user (email, email_normalized, password_hash, profile_completed, last_login)
-                      VALUES (%s, %s, %s, FALSE, CURRENT_TIMESTAMP)
-                      RETURNING id, email, password_hash, profile_completed, rider_id""",
-                   (email, normalize_email(email), password_hash))
-        user = cur.fetchone()
-        conn.commit()
-    except psycopg2.errors.UniqueViolation:
-        # Lost a race against a concurrent signup for the same email (the
-        # unique lower(email) index caught it). Surface it so the route → 409.
-        conn.rollback()
-        raise
-    return dict(user) if user else None
-
-def update_user_login_time(user_id):
-    """Update last login timestamp."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("UPDATE app_user SET last_login = CURRENT_TIMESTAMP WHERE id = %s", (user_id,))
-    conn.commit()
-
-def complete_user_profile(user_id, rider_id):
-    """Link user to rider and mark profile as completed."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        cur.execute("""UPDATE app_user SET rider_id = %s, profile_completed = TRUE
-                      WHERE id = %s""",
-                   (rider_id, user_id))
-        conn.commit()
-        return True
-    except Exception as e:
-        conn.rollback()
-        return False
-
-def get_user_by_apple_sub(apple_sub):
-    """Get user by Sign in with Apple subject id. NOT CACHED (serverless)."""
-    return _execute("SELECT * FROM app_user WHERE apple_sub = %s", (apple_sub,)).fetchone()
-
-def create_user_apple(email, apple_sub):
-    """Create a new user from a Sign in with Apple identity (no google_id)."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""INSERT INTO app_user (email, email_normalized, apple_sub, profile_completed, last_login)
-                  VALUES (%s, %s, %s, FALSE, CURRENT_TIMESTAMP)
-                  RETURNING id, email, google_id, apple_sub, profile_completed, rider_id""",
-               (email, normalize_email(email), apple_sub))
-    user = cur.fetchone()
-    conn.commit()
-    return dict(user) if user else None
-
-def link_apple_sub(user_id, apple_sub):
-    """Attach an Apple sub to an EXISTING app_user (account linking by email).
-
-    Lets a member who set up their profile on the web (Google/email) keep their
-    rider profile when they first use Sign in with Apple. The ``apple_sub IS
-    NULL`` guard makes this a safe no-op if the row already has an Apple id
-    (never overwrites a different one). Returns the number of rows updated.
-    """
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("UPDATE app_user SET apple_sub = %s WHERE id = %s AND apple_sub IS NULL",
-                (apple_sub, user_id))
-    conn.commit()
-    return cur.rowcount
-
-def create_user_email_otp(email, phone=None):
-    """Create a passwordless user from a verified email OTP signup.
-
-    The email is proven (they received & entered the code), so google_id,
-    apple_sub and password_hash all stay NULL. Optional ``phone`` is stored
-    UNVERIFIED for a future SMS OTP. Mirrors create_user / create_user_password;
-    raises UniqueViolation on a concurrent same-email signup so the route → 409.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        cur.execute("""INSERT INTO app_user (email, email_normalized, phone, profile_completed, last_login)
-                      VALUES (%s, %s, %s, FALSE, CURRENT_TIMESTAMP)
-                      RETURNING id, email, phone, profile_completed, rider_id""",
-                   (email, normalize_email(email), phone))
-        user = cur.fetchone()
-        conn.commit()
-    except psycopg2.errors.UniqueViolation:
-        conn.rollback()
-        raise
-    return dict(user) if user else None
-
-
-def set_user_phone(user_id, phone):
-    """Store/replace a user's phone number (always UNVERIFIED until an SMS OTP).
-
-    Used when an existing account supplies a phone during an OTP login so a
-    future SMS OTP can reach them. No-op (returns 0) when the phone is unchanged.
-    Returns the number of rows updated.
-    """
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""UPDATE app_user SET phone = %s, phone_verified = FALSE
-                   WHERE id = %s AND phone IS DISTINCT FROM %s""",
-                (phone, user_id, phone))
-    conn.commit()
-    return cur.rowcount
-
-
-# ========== EMAIL OTP (passwordless login) ==========
-
-def create_otp(identifier, code_hash, link_hash, expires_at, channel='email', request_ip=None):
-    """Insert an OTP row and return its id.
-
-    ``code_hash`` is a salted werkzeug hash of the 6-digit code; ``link_hash`` is
-    sha256 hex of the magic-link token (see services/otp_service.py). Neither
-    plaintext is ever stored. ``request_ip`` is kept for per-IP rate limiting.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""INSERT INTO auth_otp (identifier, channel, code_hash, link_hash, request_ip, expires_at)
-                  VALUES (lower(%s), %s, %s, %s, %s, %s) RETURNING id""",
-               (identifier, channel, code_hash, link_hash, request_ip, expires_at))
-    row = cur.fetchone()
-    conn.commit()
+    row = db.execute(
+        "INSERT INTO rp_ride (rider_id, club_id, name, distance_km, is_public, "
+        "                     status, start_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, NOW()) RETURNING id",
+        (rider_id, club_id, name, distance_km, is_public, status),
+        returning=True,
+    )
     return row['id'] if row else None
 
 
-def invalidate_active_otps(identifier):
-    """Consume any still-live OTPs for ``identifier`` (called before issuing a new
-    one) so only the newest code/link is ever valid. This makes the per-code
-    attempts cap an effective per-identifier lockout instead of one-per-row.
-    Returns the number of rows invalidated.
+def set_ride_public(ride_id, rider_id, is_public):
+    """Flag one of the rider's OWN rides public/private. Owner-scoped: the write
+    is filtered by rider_id too, so a non-owner can never flip another rider's flag.
+
+    Returns the updated row (id) or None when the ride is not the rider's.
     """
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""UPDATE auth_otp SET consumed_at = CURRENT_TIMESTAMP
-                   WHERE identifier = lower(%s) AND consumed_at IS NULL""", (identifier,))
-    conn.commit()
-    return cur.rowcount
-
-
-def count_recent_otps(identifier, since):
-    """How many OTPs were issued to ``identifier`` at/after ``since`` (rate limiting)."""
-    return _execute("""SELECT COUNT(*) AS n FROM auth_otp
-                       WHERE identifier = lower(%s) AND created_at >= %s""",
-                    (identifier, since)).fetchone()['n']
-
-
-def count_recent_otps_by_ip(request_ip, since):
-    """How many OTPs were requested from ``request_ip`` at/after ``since``. Guards
-    against email-bombing / cross-identifier brute force from one source. Returns
-    0 when the IP is unknown (None) so a missing IP never blocks a legit login."""
-    if not request_ip:
-        return 0
-    return _execute("""SELECT COUNT(*) AS n FROM auth_otp
-                       WHERE request_ip = %s AND created_at >= %s""",
-                    (request_ip, since)).fetchone()['n']
-
-
-def get_active_otp_by_identifier(identifier):
-    """Newest live (unconsumed, unexpired) OTP for ``identifier``, or None."""
-    return _execute("""SELECT * FROM auth_otp
-                       WHERE identifier = lower(%s) AND consumed_at IS NULL
-                         AND expires_at > CURRENT_TIMESTAMP
-                       ORDER BY created_at DESC LIMIT 1""", (identifier,)).fetchone()
-
-
-def get_active_otp_by_link_hash(link_hash):
-    """Newest live OTP matching a magic-link token's sha256 hash, or None."""
-    return _execute("""SELECT * FROM auth_otp
-                       WHERE link_hash = %s AND consumed_at IS NULL
-                         AND expires_at > CURRENT_TIMESTAMP
-                       ORDER BY created_at DESC LIMIT 1""", (link_hash,)).fetchone()
-
-
-def increment_otp_attempts(otp_id):
-    """Bump the wrong-attempt counter; return the new count (or None if gone)."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("UPDATE auth_otp SET attempts = attempts + 1 WHERE id = %s RETURNING attempts",
-                (otp_id,))
-    row = cur.fetchone()
-    conn.commit()
-    return row['attempts'] if row else None
-
-
-def consume_otp(otp_id):
-    """Atomically mark an OTP consumed. Returns True iff THIS call consumed it.
-
-    The ``consumed_at IS NULL`` guard makes redemption single-use even under a
-    concurrent double-submit — the loser sees rowcount 0.
-    """
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""UPDATE auth_otp SET consumed_at = CURRENT_TIMESTAMP
-                   WHERE id = %s AND consumed_at IS NULL""", (otp_id,))
-    conn.commit()
-    return cur.rowcount == 1
-
-
-def delete_account(user_id, preserve_rider=False):
-    """Permanently delete an account for App Store Guideline 5.1.1(v).
-
-    Removes the app_user (login identity) and, unless ``preserve_rider`` is set,
-    the linked rider and ALL rider-scoped data. Most rider-child tables are
-    ON DELETE CASCADE (strava_*, rider_live_*, rider_ride, custom_ride_plan,
-    gear_preference, personality_*, ...) so deleting the rider removes them; the
-    two NO ACTION references (app_user.rider_id and rider_profile.rider_id) and
-    app_user's NO ACTION referrer (access_request.reviewed_by_user_id) are
-    detached/deleted explicitly, in order.
-
-    ``preserve_rider`` keeps a shared rider intact when only the login should go
-    (the demo/reviewer account — its rider is re-linked on the next demo login).
-
-    Returns True if a user was deleted, False if no such user. Raises (after
-    rollback) on any DB error so the caller can fail cleanly rather than
-    half-delete.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        cur.execute("SELECT rider_id FROM app_user WHERE id = %s", (user_id,))
-        row = cur.fetchone()
-        if not row:
-            conn.rollback()
-            return False
-        rider_id = row['rider_id']
-
-        # Detach the one NO ACTION referrer of app_user, then delete the login
-        # account (conversation rows cascade off app_user).
-        cur.execute("UPDATE access_request SET reviewed_by_user_id = NULL WHERE reviewed_by_user_id = %s", (user_id,))
-        cur.execute("DELETE FROM app_user WHERE id = %s", (user_id,))
-
-        if rider_id and not preserve_rider:
-            # rider_profile is NO ACTION → delete before the rider; deleting the
-            # rider cascades the rest of the rider-scoped data.
-            cur.execute("DELETE FROM rider_profile WHERE rider_id = %s", (rider_id,))
-            cur.execute("DELETE FROM rider WHERE id = %s", (rider_id,))
-
-        conn.commit()
-        return True
-    except Exception:
-        conn.rollback()
-        raise
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_rider_by_name_and_rusa(first_name, last_name, rusa_id):
-    """Get rider by exact name match and RUSA ID."""
-    return _execute("""
-        SELECT * FROM rider 
-        WHERE LOWER(first_name) = LOWER(%s) 
-        AND LOWER(last_name) = LOWER(%s) 
-        AND rusa_id = %s
-    """, (first_name, last_name, rusa_id)).fetchone()
-
-def create_rider(first_name, last_name, rusa_id):
-    """Create a new rider record."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        cur.execute("""INSERT INTO rider (first_name, last_name, rusa_id)
-                      VALUES (%s, %s, %s)
-                      RETURNING id, first_name, last_name, rusa_id""",
-                   (first_name, last_name, rusa_id))
-        rider = cur.fetchone()
-        conn.commit()
-        return dict(rider) if rider else None
-    except Exception as e:
-        conn.rollback()
-        return None
-
-@cache.memoize(CACHE_TIMEOUT)
-def check_rusa_id_exists(rusa_id):
-    """Check if a RUSA ID is already registered."""
-    return _execute("SELECT id FROM rider WHERE rusa_id = %s", (rusa_id,)).fetchone()
-
-@cache.memoize(CACHE_TIMEOUT)
-def is_rider_linked_to_user(rider_id):
-    """Check if a rider is already linked to a user account."""
-    return _execute("SELECT id FROM app_user WHERE rider_id = %s", (rider_id,)).fetchone()
-
-def get_rider_by_rusa_id(rusa_id):
-    """Get rider by RUSA ID. NOT CACHED - rider data should not be cached in serverless environments."""
-    return _execute("SELECT * FROM rider WHERE rusa_id = %s", (rusa_id,)).fetchone()
-
-
-# ========== STRAVA ==========
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_strava_connection(rider_id):
-    """Get Strava connection for a rider."""
-    return _execute(
-        "SELECT * FROM strava_connection WHERE rider_id = %s", (rider_id,)
-    ).fetchone()
-
-def create_strava_connection(rider_id, strava_athlete_id, access_token,
-                              refresh_token, expires_at, scope=None):
-    """Create or update Strava connection for a rider."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
-        INSERT INTO strava_connection
-            (rider_id, strava_athlete_id, access_token, refresh_token, expires_at, scope)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT (rider_id) DO UPDATE SET
-            strava_athlete_id = EXCLUDED.strava_athlete_id,
-            access_token = EXCLUDED.access_token,
-            refresh_token = EXCLUDED.refresh_token,
-            expires_at = EXCLUDED.expires_at,
-            scope = EXCLUDED.scope,
-            connected_at = CURRENT_TIMESTAMP
-    """, (rider_id, strava_athlete_id, access_token, refresh_token, expires_at, scope))
-    conn.commit()
-
-def update_strava_tokens(rider_id, access_token, refresh_token, expires_at):
-    """Update tokens after a refresh."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
-        UPDATE strava_connection
-        SET access_token = %s, refresh_token = %s, expires_at = %s
-        WHERE rider_id = %s
-    """, (access_token, refresh_token, expires_at, rider_id))
-    conn.commit()
-
-def update_strava_last_sync(rider_id):
-    """Update last_sync_at timestamp."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(
-        "UPDATE strava_connection SET last_sync_at = CURRENT_TIMESTAMP WHERE rider_id = %s",
-        (rider_id,)
+    return db.execute(
+        "UPDATE rp_ride SET is_public = %s WHERE id = %s AND rider_id = %s "
+        "RETURNING id",
+        (is_public, ride_id, rider_id),
+        returning=True,
     )
-    conn.commit()
 
-def delete_strava_connection(rider_id):
-    """Delete Strava connection and all stored activities."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("DELETE FROM strava_activity WHERE rider_id = %s", (rider_id,))
-    cur.execute("DELETE FROM strava_connection WHERE rider_id = %s", (rider_id,))
-    conn.commit()
 
-def consume_strava_broker_handoff(code):
-    """Atomically consume a one-time Strava broker handoff row (delete-on-read).
+def set_ride_event(ride_id, rider_id, event_id):
+    """Link or unlink one ride owned by the rider to a calendar event.
 
-    A single ``DELETE ... RETURNING`` enforces BOTH invariants at once:
-      - single-use: a second consume of the same code deletes nothing (zero rows).
-      - freshness: the TTL gate reads ONLY ``handoff_expires_at`` (the short
-        one-time-code window), never the ~6h Strava-token column — so an expired
-        code can never be accepted while the underlying token is still alive.
-
-    Returns the row (with ``expires_at`` as the Strava token's epoch integer, ready
-    for ``create_strava_connection``) or ``None`` if the code is unknown, already
-    consumed, or expired. The handoff row is written by BrevetHub into the neutral
-    ``rp_strava_broker_handoff`` broker table (see migration 035); Team Asha only
-    reads+deletes it here.
+    Owner-scoped: the write is filtered by rider_id too, so a non-owner can never
+    point another rider ride at an event. Pass ``event_id=None`` to unlink and
+    clear the FK back to NULL. Returns the updated row id or None when the ride is
+    not owned by the rider, so the caller can report a non-owner no-op. The FK
+    itself guarantees a missing event cannot be stored; the route validates event
+    existence too.
     """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
-        DELETE FROM rp_strava_broker_handoff
-        WHERE code = %s AND handoff_expires_at > NOW()
-        RETURNING ta_rider_id, strava_athlete_id, access_token, refresh_token,
-                  EXTRACT(EPOCH FROM strava_token_expires_at)::bigint AS expires_at,
-                  scope
-    """, (code,))
-    row = cur.fetchone()
-    conn.commit()
-    return row
-
-def get_all_active_strava_connections():
-    """Get all riders with active Strava connections.
-
-    Returns riders ordered by last_sync (oldest first) to prioritize
-    those who haven't synced in longest time.
-
-    Returns:
-        list of dicts with rider_id, rider_name, access_token, refresh_token, expires_at, last_sync_at
-    """
-    return _execute("""
-        SELECT sc.rider_id, r.first_name || ' ' || r.last_name AS rider_name,
-               sc.access_token, sc.refresh_token, sc.expires_at,
-               sc.last_sync_at AS last_sync
-        FROM strava_connection sc
-        JOIN rider r ON r.id = sc.rider_id
-        WHERE sc.access_token IS NOT NULL
-        ORDER BY sc.last_sync_at ASC NULLS FIRST
-        LIMIT 100
-    """).fetchall()
-
-
-def get_strava_admin_summary():
-    """Get Strava sync summary for all connected riders (admin page)."""
-    return _execute("""
-        SELECT r.id AS rider_id, r.first_name, r.last_name, r.rusa_id,
-               sc.eddington_number_miles, sc.eddington_number_km,
-               sc.eddington_calculated_at, sc.backfill_cursor, sc.last_sync_at,
-               COUNT(sa.id) AS activity_count,
-               MIN(sa.start_date)::date AS oldest_activity,
-               MAX(sa.start_date)::date AS newest_activity
-        FROM strava_connection sc
-        JOIN rider r ON r.id = sc.rider_id
-        LEFT JOIN strava_activity sa ON sa.rider_id = sc.rider_id
-        GROUP BY r.id, r.first_name, r.last_name, r.rusa_id,
-                 sc.eddington_number_miles, sc.eddington_number_km,
-                 sc.eddington_calculated_at, sc.backfill_cursor, sc.last_sync_at
-        ORDER BY r.first_name, r.last_name
-    """).fetchall()
-
-
-def get_oldest_activity_date(rider_id):
-    """Get the earliest activity start_date for a rider.
-
-    Returns:
-        str or None: ISO date string of oldest activity, or None if no activities
-    """
-    row = _execute("""
-        SELECT MIN(start_date) AS oldest
-        FROM strava_activity
-        WHERE rider_id = %s
-    """, (rider_id,)).fetchone()
-    return row['oldest'] if row else None
-
-
-def get_backfill_cursor(rider_id):
-    """Get the backfill cursor date for a rider.
-
-    The cursor tracks how far back we've searched for Strava activities,
-    independent of whether activities were found (handles gaps in history).
-
-    Returns:
-        date or None: How far back we've searched, or None if never backfilled
-    """
-    row = _execute("""
-        SELECT backfill_cursor FROM strava_connection WHERE rider_id = %s
-    """, (rider_id,)).fetchone()
-    return row['backfill_cursor'] if row else None
-
-
-def update_backfill_cursor(rider_id, cursor_date):
-    """Update the backfill cursor to track how far back we've searched."""
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        UPDATE strava_connection SET backfill_cursor = %s WHERE rider_id = %s
-    """, (cursor_date, rider_id))
-    conn.commit()
-
-
-def upsert_strava_activity(row):
-    """Insert or update a Strava activity.
-
-    Returns:
-        bool: True if this was a new insert, False if it updated an existing row
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
-        INSERT INTO strava_activity (
-            rider_id, strava_activity_id, name, activity_type, distance,
-            moving_time, elapsed_time, total_elevation_gain, start_date,
-            start_date_local, average_heartrate, max_heartrate, has_heartrate,
-            average_watts, max_watts, weighted_average_watts, kilojoules,
-            device_watts, average_speed, max_speed, suffer_score, strava_url,
-            average_cadence, average_temp, calories, pr_count, achievement_count,
-            gear_id, elev_high, elev_low, trainer, commute, workout_type,
-            map_summary_polyline, start_latlng, end_latlng
-        ) VALUES (
-            %(rider_id)s, %(strava_activity_id)s, %(name)s, %(activity_type)s,
-            %(distance)s, %(moving_time)s, %(elapsed_time)s, %(total_elevation_gain)s,
-            %(start_date)s, %(start_date_local)s, %(average_heartrate)s,
-            %(max_heartrate)s, %(has_heartrate)s, %(average_watts)s, %(max_watts)s,
-            %(weighted_average_watts)s, %(kilojoules)s, %(device_watts)s,
-            %(average_speed)s, %(max_speed)s, %(suffer_score)s, %(strava_url)s,
-            %(average_cadence)s, %(average_temp)s, %(calories)s, %(pr_count)s,
-            %(achievement_count)s, %(gear_id)s, %(elev_high)s, %(elev_low)s,
-            %(trainer)s, %(commute)s, %(workout_type)s,
-            %(map_summary_polyline)s, %(start_latlng)s, %(end_latlng)s
-        )
-        ON CONFLICT (strava_activity_id) DO UPDATE SET
-            name = EXCLUDED.name,
-            distance = EXCLUDED.distance,
-            moving_time = EXCLUDED.moving_time,
-            elapsed_time = EXCLUDED.elapsed_time,
-            total_elevation_gain = EXCLUDED.total_elevation_gain,
-            average_heartrate = EXCLUDED.average_heartrate,
-            max_heartrate = EXCLUDED.max_heartrate,
-            has_heartrate = EXCLUDED.has_heartrate,
-            average_watts = EXCLUDED.average_watts,
-            max_watts = EXCLUDED.max_watts,
-            weighted_average_watts = EXCLUDED.weighted_average_watts,
-            kilojoules = EXCLUDED.kilojoules,
-            device_watts = EXCLUDED.device_watts,
-            average_speed = EXCLUDED.average_speed,
-            max_speed = EXCLUDED.max_speed,
-            suffer_score = EXCLUDED.suffer_score,
-            average_cadence = EXCLUDED.average_cadence,
-            average_temp = EXCLUDED.average_temp,
-            calories = EXCLUDED.calories,
-            pr_count = EXCLUDED.pr_count,
-            achievement_count = EXCLUDED.achievement_count,
-            gear_id = EXCLUDED.gear_id,
-            elev_high = EXCLUDED.elev_high,
-            elev_low = EXCLUDED.elev_low,
-            trainer = EXCLUDED.trainer,
-            commute = EXCLUDED.commute,
-            workout_type = EXCLUDED.workout_type,
-            map_summary_polyline = EXCLUDED.map_summary_polyline,
-            start_latlng = EXCLUDED.start_latlng,
-            end_latlng = EXCLUDED.end_latlng,
-            fetched_at = CURRENT_TIMESTAMP
-        RETURNING (xmax = 0) AS is_new
-    """, row)
-    result = cur.fetchone()
-    conn.commit()
-    return result['is_new'] if result else False
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_strava_activities(rider_id, days=28):
-    """Get recent Strava activities for a rider."""
-    return _execute("""
-        SELECT * FROM strava_activity
-        WHERE rider_id = %s AND start_date_local >= NOW() - INTERVAL '%s days'
-        ORDER BY start_date_local DESC
-    """, (rider_id, days)).fetchall()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_strava_activities_for_calendar(rider_id, days=28):
-    """Get activities with date column for calendar display."""
-    return _execute("""
-        SELECT *, DATE(start_date_local) as activity_date
-        FROM strava_activity
-        WHERE rider_id = %s AND start_date_local >= NOW() - INTERVAL '%s days'
-        ORDER BY start_date_local ASC
-    """, (rider_id, days)).fetchall()
-
-
-def update_eddington_number(rider_id, eddington_miles, eddington_km):
-    """Update Eddington numbers for a rider."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
-        UPDATE strava_connection
-        SET eddington_number_miles = %s,
-            eddington_number_km = %s,
-            eddington_calculated_at = CURRENT_TIMESTAMP
-        WHERE rider_id = %s
-    """, (eddington_miles, eddington_km, rider_id))
-    conn.commit()
-    cache.clear()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_all_strava_activities_for_eddington(rider_id):
-    """Get ALL Strava cycling activities for Eddington calculation (no time limit).
-
-    Includes all cycling-related activity types: Ride, VirtualRide,
-    MountainBikeRide, GravelRide, EBikeRide, Handcycle, Velomobile.
-    """
-    return _execute("""
-        SELECT distance, start_date, start_date_local, activity_type, elapsed_time
-        FROM strava_activity
-        WHERE rider_id = %s
-          AND activity_type IN (
-              'Ride', 'VirtualRide', 'MountainBikeRide', 'GravelRide',
-              'EBikeRide', 'Handcycle', 'Velomobile'
-          )
-        ORDER BY start_date_local DESC
-    """, (rider_id,)).fetchall()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_all_strava_activities_unfiltered(rider_id):
-    """Get ALL Strava activities regardless of type (for 'All' Eddington comparison)."""
-    return _execute("""
-        SELECT distance, start_date, start_date_local, activity_type, elapsed_time
-        FROM strava_activity
-        WHERE rider_id = %s
-        ORDER BY start_date_local DESC
-    """, (rider_id,)).fetchall()
-
-
-# NOT CACHED - rider-specific data (serverless SimpleCache convention)
-def get_rider_activity_baseline(rider_id, days=365, min_distance_km=180):
-    """Compute a rider's own historical norms over ~1 year of long Strava rides.
-
-    Used as the baseline that the rich ride analysis compares a single ride
-    against. Only cycling activities at or above `min_distance_km` within the
-    last `days` are considered. Returns {} if fewer than 3 rides qualify.
-
-    Returns a plain dict:
-      {
-        'n_rides': int,
-        'avg_speed_mph': float,        # mean of average_speed (m/s) * 2.23694
-        'median_speed_mph': float,
-        'avg_watts': int|None,         # mean average_watts over rides w/ power
-        'avg_np_watts': int|None,      # mean weighted_average_watts (Strava NP)
-        'avg_hr': int|None,            # mean average_heartrate
-        'avg_cadence': int|None,       # mean average_cadence
-        'avg_suffer': int|None,        # mean suffer_score
-        'avg_elev_per_mile_ft': float|None,
-      }
-    """
-    rows = _execute("""
-        SELECT distance, total_elevation_gain, average_speed,
-               average_watts, weighted_average_watts, average_heartrate,
-               average_cadence, suffer_score
-        FROM strava_activity
-        WHERE rider_id = %s
-          AND activity_type IN (
-              'Ride', 'VirtualRide', 'MountainBikeRide', 'GravelRide',
-              'EBikeRide', 'Handcycle', 'Velomobile'
-          )
-          AND distance >= %s
-          AND start_date >= NOW() - MAKE_INTERVAL(days => %s)
-        ORDER BY start_date_local DESC
-    """, (rider_id, min_distance_km * 1000, days)).fetchall()
-
-    if len(rows) < 3:
-        return {}
-
-    def _mean(vals):
-        vals = [v for v in vals if v is not None]
-        return sum(vals) / len(vals) if vals else None
-
-    def _median(vals):
-        vals = sorted(v for v in vals if v is not None)
-        if not vals:
-            return None
-        mid = len(vals) // 2
-        if len(vals) % 2:
-            return vals[mid]
-        return (vals[mid - 1] + vals[mid]) / 2
-
-    speeds_mph = [r['average_speed'] * 2.23694 for r in rows
-                  if r['average_speed'] is not None]
-
-    elev_per_mile = []
-    for r in rows:
-        dist_m = r['distance']
-        gain_m = r['total_elevation_gain']
-        if dist_m and gain_m is not None and dist_m > 0:
-            elev_per_mile.append((gain_m * 3.28084) / (dist_m / 1609.34))
-
-    avg_speed = _mean(speeds_mph)
-    median_speed = _median(speeds_mph)
-    avg_watts = _mean([r['average_watts'] for r in rows])
-    avg_np_watts = _mean([r['weighted_average_watts'] for r in rows])
-    avg_hr = _mean([r['average_heartrate'] for r in rows])
-    avg_cadence = _mean([r['average_cadence'] for r in rows])
-    avg_suffer = _mean([r['suffer_score'] for r in rows])
-    avg_elev = _mean(elev_per_mile)
-
-    return {
-        'n_rides': len(rows),
-        'avg_speed_mph': round(avg_speed, 1) if avg_speed is not None else 0.0,
-        'median_speed_mph': round(median_speed, 1) if median_speed is not None else 0.0,
-        'avg_watts': round(avg_watts) if avg_watts is not None else None,
-        'avg_np_watts': round(avg_np_watts) if avg_np_watts is not None else None,
-        'avg_hr': round(avg_hr) if avg_hr is not None else None,
-        'avg_cadence': round(avg_cadence) if avg_cadence is not None else None,
-        'avg_suffer': round(avg_suffer) if avg_suffer is not None else None,
-        'avg_elev_per_mile_ft': round(avg_elev, 1) if avg_elev is not None else None,
-    }
-
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_rider_upcoming_signups(rider_id):
-    """Get upcoming rides a rider has signed up for or expressed interest in.
-
-    Returns list of dicts with ride details + signup status, ordered by date.
-    """
-    today = date.today()
-    return _execute("""
-        SELECT ri.id, ri.name, ri.date, ri.distance_km, ri.distance_miles,
-               ri.elevation_ft, ri.ft_per_mile, ri.time_limit_hours, ri.ride_type,
-               ri.rwgps_url, ri.event_status, ri.start_location,
-               c.code as club_code, c.name as club_name,
-               rp.slug as plan_slug, rp.name as plan_name,
-               ri.start_time as start_time,
-               rp.rwgps_url as plan_rwgps_url, ri.rwgps_url_team as plan_rwgps_url_team,
-               rr.status as signup_status, rr.signed_up_at
-        FROM rider_ride rr
-        JOIN ride ri ON rr.ride_id = ri.id
-        JOIN club c ON ri.club_id = c.id
-        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
-        WHERE rr.rider_id = %s
-          AND ri.date >= %s
-          AND rr.status IN (%s, %s, %s)
-        ORDER BY ri.date ASC
-    """, (rider_id, today, RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.MAYBE.value)).fetchall()
-
-
-# ========== CUSTOM RIDE PLANS ==========
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_custom_plan(rider_id, base_plan_id):
-    """Get a rider's custom plan for a specific base plan."""
-    return _execute("""
-        SELECT * FROM custom_ride_plan
-        WHERE rider_id = %s AND base_plan_id = %s
-    """, (rider_id, base_plan_id)).fetchone()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_custom_plan_by_id(custom_plan_id):
-    """Get a custom plan by ID."""
-    return _execute("""
-        SELECT * FROM custom_ride_plan WHERE id = %s
-    """, (custom_plan_id,)).fetchone()
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_custom_plan_with_rider_info(custom_plan_id):
-    """Get a custom plan with rider information for display."""
-    return _execute("""
-        SELECT cp.*, r.first_name, r.last_name, r.rusa_id,
-               rp.name as base_plan_name, rp.slug as base_plan_slug
-        FROM custom_ride_plan cp
-        JOIN rider r ON cp.rider_id = r.id
-        JOIN ride_plan rp ON cp.base_plan_id = rp.id
-        WHERE cp.id = %s
-    """, (custom_plan_id,)).fetchone()
-
-def create_custom_plan(rider_id, base_plan_id, name, description=None, avg_moving_speed=None):
-    """Create a new custom plan. Returns the new plan ID."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        cur.execute("""
-            INSERT INTO custom_ride_plan (rider_id, base_plan_id, name, description, avg_moving_speed)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id
-        """, (rider_id, base_plan_id, name, description, avg_moving_speed))
-        result = cur.fetchone()
-        conn.commit()
-        cache.delete_memoized(get_custom_plan, rider_id, base_plan_id)
-        cache.delete_memoized(get_public_custom_plans, base_plan_id)
-        
-        # Clear the ride plan detail page cache
-        cur.execute("SELECT slug FROM ride_plan WHERE id = %s", (base_plan_id,))
-        plan = cur.fetchone()
-        if plan:
-            cache_key = f"flask_cache_view//ride-plan/{plan['slug']}"
-            cache.delete(cache_key)
-        
-        return result['id'] if result else None
-    except Exception as e:
-        conn.rollback()
-        raise e
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_custom_plan_stops_raw(custom_plan_id):
-    """Get raw custom plan stop overrides (not merged with base)."""
-    return _execute("""
-        SELECT * FROM custom_ride_plan_stop
-        WHERE custom_plan_id = %s
-        ORDER BY stop_order
-    """, (custom_plan_id,)).fetchall()
-
-def _clear_custom_plan_cache(custom_plan_id):
-    """Force clear all caches related to a custom plan."""
-    print(f"[DEBUG] Clearing all caches for custom_plan_id={custom_plan_id}")
-    
-    # Clear memoized function caches
-    cache.delete_memoized(get_custom_plan_stops_raw, custom_plan_id)
-    cache.delete_memoized(get_custom_plan_by_id, custom_plan_id)
-    
-    # Clear direct cache keys
-    cache.cache.delete(f'get_custom_plan_stops_raw_{custom_plan_id}')
-    cache.cache.delete(f'get_custom_plan_by_id_{custom_plan_id}')
-    
-    # Clear any pattern-based cache keys
-    try:
-        # Flask-Caching doesn't have a built-in pattern delete, so we'll do specific keys
-        for key in [f'custom_plan_{custom_plan_id}', f'merged_plan_stops_{custom_plan_id}']:
-            cache.cache.delete(key)
-    except Exception as e:
-        print(f"[DEBUG] Error clearing additional cache keys: {e}")
-    
-    print(f"[DEBUG] Cache cleared successfully")
-
-def update_custom_plan_stop(custom_plan_id, stop_id, segment_time_min=None, stop_duration_min=None, stop_name=None, location=None, notes=None, distance_miles=None, elevation_gain=None, explicit_fields=None):
-    """Update timing, distance, elevation, stop_name, location, or notes for a custom plan stop.
-    
-    stop_id can be either:
-    - A custom_ride_plan_stop.id (for existing overrides or custom stops)
-    - A ride_plan_stop.id (base stop) - in which case we create an override
-    
-    explicit_fields: Set of field names that were explicitly provided (to distinguish None from missing)
-    """
-    if explicit_fields is None:
-        explicit_fields = set()
-    
-    print(f"[DEBUG] update_custom_plan_stop called:")
-    print(f"  custom_plan_id={custom_plan_id}, stop_id={stop_id}")
-    print(f"  stop_name={stop_name}, stop_duration_min={stop_duration_min}")
-    print(f"  explicit_fields={explicit_fields}")
-    
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    # First, check if this is an existing custom stop record
-    cur.execute("""
-        SELECT id, base_stop_id, is_custom_stop 
-        FROM custom_ride_plan_stop
-        WHERE id = %s AND custom_plan_id = %s
-    """, (stop_id, custom_plan_id))
-    existing_custom_stop = cur.fetchone()
-    print(f"[DEBUG] existing_custom_stop query result: {existing_custom_stop}")
-    
-    if existing_custom_stop:
-        # This is an existing custom stop override - update it directly
-        updates = []
-        params = []
-        
-        if 'segment_time_min' in explicit_fields:
-            updates.append("segment_time_min = %s")
-            params.append(segment_time_min)
-        
-        if 'stop_duration_min' in explicit_fields:
-            updates.append("stop_duration_min = %s")
-            params.append(stop_duration_min)
-        
-        if 'stop_name' in explicit_fields:
-            updates.append("stop_name = %s")
-            params.append(stop_name)
-        
-        if 'location' in explicit_fields:
-            updates.append("location = %s")
-            params.append(location)
-        
-        if 'distance_miles' in explicit_fields:
-            updates.append("distance_miles = %s")
-            params.append(distance_miles)
-        
-        if 'elevation_gain' in explicit_fields:
-            updates.append("elevation_gain = %s")
-            params.append(elevation_gain)
-        
-        if 'notes' in explicit_fields:
-            updates.append("notes = %s")
-            params.append(notes)
-        
-        if not updates:
-            return False
-        
-        params.extend([stop_id, custom_plan_id])
-        sql = f"UPDATE custom_ride_plan_stop SET {', '.join(updates)} WHERE id = %s AND custom_plan_id = %s"
-        
-        print(f"[DEBUG] Executing UPDATE on existing custom stop: {sql}")
-        print(f"[DEBUG] Params: {params}")
-        cur.execute(sql, params)
-        conn.commit()
-        
-        # Clear all caches
-        _clear_custom_plan_cache(custom_plan_id)
-        print(f"[DEBUG] Updated {cur.rowcount} row(s)")
-        return cur.rowcount > 0
-    else:
-        # This might be a base_stop_id - check if an override exists for this base stop
-        cur.execute("""
-            SELECT id 
-            FROM custom_ride_plan_stop
-            WHERE custom_plan_id = %s AND base_stop_id = %s
-        """, (custom_plan_id, stop_id))
-        override = cur.fetchone()
-        print(f"[DEBUG] Checking for override by base_stop_id={stop_id}: {override}")
-        
-        if override:
-            # Override exists, update it
-            updates = []
-            params = []
-            
-            if 'segment_time_min' in explicit_fields:
-                updates.append("segment_time_min = %s")
-                params.append(segment_time_min)
-            
-            if 'stop_duration_min' in explicit_fields:
-                updates.append("stop_duration_min = %s")
-                params.append(stop_duration_min)
-            
-            if 'stop_name' in explicit_fields:
-                updates.append("stop_name = %s")
-                params.append(stop_name)
-            
-            if 'location' in explicit_fields:
-                updates.append("location = %s")
-                params.append(location)
-            
-            if 'distance_miles' in explicit_fields:
-                updates.append("distance_miles = %s")
-                params.append(distance_miles)
-            
-            if 'elevation_gain' in explicit_fields:
-                updates.append("elevation_gain = %s")
-                params.append(elevation_gain)
-            
-            if 'notes' in explicit_fields:
-                updates.append("notes = %s")
-                params.append(notes)
-            
-            if not updates:
-                return False
-            
-            params.append(override['id'])
-            sql = f"UPDATE custom_ride_plan_stop SET {', '.join(updates)} WHERE id = %s"
-            
-            print(f"[DEBUG] Executing UPDATE on override: {sql}")
-            print(f"[DEBUG] Params: {params}")
-            cur.execute(sql, params)
-            conn.commit()
-            
-            # Clear all caches
-            _clear_custom_plan_cache(custom_plan_id)
-            print(f"[DEBUG] Updated {cur.rowcount} row(s) via override")
-            return cur.rowcount > 0
-        else:
-            # No override exists - create one for this base stop
-            print(f"[DEBUG] No override found, fetching base stop with id={stop_id}")
-            cur.execute("""
-                SELECT id, stop_order, stop_name, location, stop_type, distance_miles, elevation_gain
-                FROM ride_plan_stop
-                WHERE id = %s
-            """, (stop_id,))
-            base_stop = cur.fetchone()
-            
-            if not base_stop:
-                print(f"[DEBUG] Base stop not found!")
-                return False
-            
-            print(f"[DEBUG] Base stop found: {base_stop}")
-            
-            # Create new override - ONLY store explicitly provided fields (delta model)
-            # Required fields from base, optional fields only if explicitly changed
-            columns = ['custom_plan_id', 'base_stop_id', 'stop_order', 'location', 'stop_type', 'distance_miles', 'elevation_gain', 'is_custom_stop']
-            values = [
-                custom_plan_id,
-                base_stop['id'],
-                base_stop['stop_order'],
-                location if 'location' in explicit_fields else base_stop['location'],
-                base_stop['stop_type'],
-                distance_miles if 'distance_miles' in explicit_fields else base_stop['distance_miles'],
-                elevation_gain if 'elevation_gain' in explicit_fields else base_stop['elevation_gain'],
-                False
-            ]
-            
-            # Only add optional columns if explicitly provided in the request
-            if 'segment_time_min' in explicit_fields:
-                columns.append('segment_time_min')
-                values.append(segment_time_min)
-            
-            if 'stop_duration_min' in explicit_fields:
-                columns.append('stop_duration_min')
-                values.append(stop_duration_min)
-            
-            if 'stop_name' in explicit_fields:
-                columns.append('stop_name')
-                values.append(stop_name)
-            
-            if 'notes' in explicit_fields:
-                columns.append('notes')
-                values.append(notes)
-            
-            placeholders = ', '.join(['%s'] * len(values))
-            sql = f"INSERT INTO custom_ride_plan_stop ({', '.join(columns)}) VALUES ({placeholders})"
-            
-            print(f"[DEBUG] Inserting new override with SQL: {sql}")
-            print(f"[DEBUG] Values: {values}")
-            
-            cur.execute(sql, values)
-            conn.commit()
-            
-            # Clear all caches
-            _clear_custom_plan_cache(custom_plan_id)
-            print(f"[DEBUG] Created new override successfully")
-            return True
-
-def add_custom_stop(custom_plan_id, location, stop_type, distance_miles, elevation_gain, after_stop_order, segment_time_min=None, notes=None):
-    """Add a custom stop at a specific position by distance."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    try:
-        # Get the base plan id
-        cur.execute("SELECT base_plan_id, rider_id FROM custom_ride_plan WHERE id = %s", (custom_plan_id,))
-        plan = cur.fetchone()
-        if not plan:
-            raise Exception("Custom plan not found")
-        
-        # Find max stop_order to append at end
-        cur.execute("""
-            SELECT COALESCE(MAX(stop_order), 0) as max_order
-            FROM (
-                SELECT stop_order FROM ride_plan_stop WHERE ride_plan_id = %s
-                UNION
-                SELECT stop_order FROM custom_ride_plan_stop WHERE custom_plan_id = %s
-            ) combined
-        """, (plan['base_plan_id'], custom_plan_id))
-        result = cur.fetchone()
-        new_order = result['max_order'] + 1
-        
-        # Insert new custom stop with high stop_order
-        # It will be sorted by distance_miles for display
-        cur.execute("""
-            INSERT INTO custom_ride_plan_stop 
-            (custom_plan_id, stop_order, location, stop_type, distance_miles, 
-             elevation_gain, segment_time_min, notes, is_custom_stop)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE)
-            RETURNING id
-        """, (custom_plan_id, new_order, location, stop_type, distance_miles, 
-              elevation_gain, segment_time_min, notes))
-        
-        new_stop_id = cur.fetchone()['id']
-        
-        # Adjust timing for the next stop if segment_time_min was provided
-        if segment_time_min and segment_time_min > 0:
-            # Find the next stop by distance
-            cur.execute("""
-                SELECT rps.id as base_stop_id, rps.distance_miles, rps.segment_time_min,
-                       crps.id as override_id, crps.segment_time_min as custom_time
-                FROM ride_plan_stop rps
-                LEFT JOIN custom_ride_plan_stop crps 
-                    ON crps.custom_plan_id = %s AND crps.base_stop_id = rps.id
-                WHERE rps.ride_plan_id = %s 
-                AND rps.distance_miles > %s
-                AND NOT EXISTS (
-                    SELECT 1 FROM custom_ride_plan_stop 
-                    WHERE custom_plan_id = %s AND base_stop_id = rps.id AND is_hidden = TRUE
-                )
-                ORDER BY rps.distance_miles ASC
-                LIMIT 1
-            """, (custom_plan_id, plan['base_plan_id'], distance_miles, custom_plan_id))
-            
-            next_stop = cur.fetchone()
-            if next_stop:
-                original_time = int(next_stop['custom_time'] or next_stop['segment_time_min'] or 0)
-                if original_time > 0:
-                    # Calculate adjusted time: original_time - new_stop_time
-                    adjusted_time = max(1, original_time - segment_time_min)
-                    
-                    # Create or update override for the next stop
-                    if next_stop['override_id']:
-                        # Update existing override
-                        cur.execute("""
-                            UPDATE custom_ride_plan_stop
-                            SET segment_time_min = %s
-                            WHERE id = %s
-                        """, (adjusted_time, next_stop['override_id']))
-                    else:
-                        # Create new override
-                        cur.execute("""
-                            INSERT INTO custom_ride_plan_stop
-                            (custom_plan_id, base_stop_id, stop_order, location, stop_type,
-                             distance_miles, elevation_gain, segment_time_min, is_custom_stop)
-                            SELECT %s, id, stop_order, location, stop_type,
-                                   distance_miles, elevation_gain, %s, FALSE
-                            FROM ride_plan_stop
-                            WHERE id = %s
-                        """, (custom_plan_id, adjusted_time, next_stop['base_stop_id']))
-        
-        conn.commit()
-        
-        # Clear all caches
-        _clear_custom_plan_cache(custom_plan_id)
-        cache.delete_memoized(get_custom_plan, plan['rider_id'], plan['base_plan_id'])
-        
-        return new_stop_id
-    except Exception as e:
-        conn.rollback()
-        raise e
-
-def hide_base_stop(custom_plan_id, base_stop_id):
-    """Mark a base stop as hidden in the custom plan."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    try:
-        # Check if override already exists
-        cur.execute("""
-            SELECT id FROM custom_ride_plan_stop
-            WHERE custom_plan_id = %s AND base_stop_id = %s
-        """, (custom_plan_id, base_stop_id))
-        existing = cur.fetchone()
-        
-        if existing:
-            # Update existing override
-            cur.execute("""
-                UPDATE custom_ride_plan_stop
-                SET is_hidden = TRUE
-                WHERE id = %s
-            """, (existing['id'],))
-        else:
-            # Get base stop info to create override
-            cur.execute("SELECT * FROM ride_plan_stop WHERE id = %s", (base_stop_id,))
-            base_stop = cur.fetchone()
-            
-            if not base_stop:
-                conn.rollback()
-                return False
-            
-            # Create new override with hidden flag
-            cur.execute("""
-                INSERT INTO custom_ride_plan_stop
-                (custom_plan_id, base_stop_id, stop_order, location, stop_type,
-                 distance_miles, elevation_gain, is_hidden)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)
-            """, (custom_plan_id, base_stop['id'], base_stop['stop_order'],
-                  base_stop['location'], base_stop['stop_type'],
-                  base_stop['distance_miles'], base_stop['elevation_gain']))
-        
-        conn.commit()
-        _clear_custom_plan_cache(custom_plan_id)
-        return True
-    except Exception as e:
-        conn.rollback()
-        raise e
-
-def unhide_base_stop(custom_plan_id, base_stop_id):
-    """Unhide a previously hidden base stop."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    cur.execute("""
-        UPDATE custom_ride_plan_stop
-        SET is_hidden = FALSE
-        WHERE custom_plan_id = %s AND base_stop_id = %s
-    """, (custom_plan_id, base_stop_id))
-    
-    conn.commit()
-    _clear_custom_plan_cache(custom_plan_id)
-    return cur.rowcount > 0
-
-def update_custom_plan_settings(custom_plan_id, rider_id, name=None, description=None, 
-                                 is_public=None, avg_moving_speed=None):
-    """Update custom plan settings."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    updates = []
-    params = []
-    
-    if name is not None:
-        updates.append("name = %s")
-        params.append(name)
-    
-    if description is not None:
-        updates.append("description = %s")
-        params.append(description)
-    
-    if is_public is not None:
-        updates.append("is_public = %s")
-        params.append(is_public)
-    
-    if avg_moving_speed is not None:
-        updates.append("avg_moving_speed = %s")
-        params.append(avg_moving_speed)
-    
-    if not updates:
-        return False
-    
-    params.extend([custom_plan_id, rider_id])
-    sql = f"UPDATE custom_ride_plan SET {', '.join(updates)} WHERE id = %s AND rider_id = %s"
-    
-    cur.execute(sql, params)
-    conn.commit()
-    
-    # Get the plan to invalidate correct cache
-    cur.execute("""
-        SELECT cp.rider_id, cp.base_plan_id, rp.slug 
-        FROM custom_ride_plan cp
-        JOIN ride_plan rp ON cp.base_plan_id = rp.id
-        WHERE cp.id = %s
-    """, (custom_plan_id,))
-    plan = cur.fetchone()
-    if plan:
-        cache.delete_memoized(get_custom_plan, plan['rider_id'], plan['base_plan_id'])
-        cache.delete_memoized(get_custom_plan_by_id, custom_plan_id)
-        if is_public is not None:
-            cache.delete_memoized(get_public_custom_plans, plan['base_plan_id'])
-        
-        # Clear the ride plan detail page cache
-        cache_key = f"flask_cache_view//ride-plan/{plan['slug']}"
-        cache.delete(cache_key)
-    
-    return cur.rowcount > 0
-
-def delete_custom_plan(custom_plan_id, rider_id):
-    """Delete a custom plan (only owner can delete)."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    # Get plan info before deletion for cache invalidation
-    cur.execute("""
-        SELECT cp.rider_id, cp.base_plan_id, rp.slug 
-        FROM custom_ride_plan cp
-        JOIN ride_plan rp ON cp.base_plan_id = rp.id
-        WHERE cp.id = %s AND cp.rider_id = %s
-    """, (custom_plan_id, rider_id))
-    plan = cur.fetchone()
-    
-    if not plan:
-        return False
-    
-    cur.execute("""
-        DELETE FROM custom_ride_plan
-        WHERE id = %s AND rider_id = %s
-    """, (custom_plan_id, rider_id))
-    
-    conn.commit()
-    
-    # Clear all caches
-    _clear_custom_plan_cache(custom_plan_id)
-    cache.delete_memoized(get_custom_plan, plan['rider_id'], plan['base_plan_id'])
-    cache.delete_memoized(get_public_custom_plans, plan['base_plan_id'])
-    
-    # Clear the ride plan detail page cache for this specific plan
-    from flask import request
-    cache_key = f"flask_cache_view//ride-plan/{plan['slug']}"
-    cache.delete(cache_key)
-    
-    return cur.rowcount > 0
-
-@cache.memoize(CACHE_TIMEOUT)
-def get_public_custom_plans(base_plan_id):
-    """Get all public custom plans for a base plan."""
-    return _execute("""
-        SELECT cp.*, r.first_name, r.last_name, r.rusa_id
-        FROM custom_ride_plan cp
-        JOIN rider r ON cp.rider_id = r.id
-        WHERE cp.base_plan_id = %s AND cp.is_public = TRUE
-        ORDER BY cp.updated_at DESC
-    """, (base_plan_id,)).fetchall()
-
-def delete_custom_stop(custom_stop_id, rider_id):
-    """Delete a custom stop (only works for custom-added stops, not base stops)."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    # Verify the stop belongs to a plan owned by this rider
-    cur.execute("""
-        SELECT cs.custom_plan_id, cs.is_custom_stop, cp.rider_id, cp.base_plan_id
-        FROM custom_ride_plan_stop cs
-        JOIN custom_ride_plan cp ON cs.custom_plan_id = cp.id
-        WHERE cs.id = %s
-    """, (custom_stop_id,))
-    result = cur.fetchone()
-    
-    if not result or result['rider_id'] != rider_id:
-        return False
-    
-    if not result['is_custom_stop']:
-        # Cannot delete base stops, only hide them
-        return False
-    
-    # Delete the custom stop
-    cur.execute("DELETE FROM custom_ride_plan_stop WHERE id = %s", (custom_stop_id,))
-    conn.commit()
-    
-    # Clear all caches
-    _clear_custom_plan_cache(result['custom_plan_id'])
-    cache.delete_memoized(get_custom_plan, result['rider_id'], result['base_plan_id'])
-    
-    return True
-
-def clone_custom_plan(source_plan_id, target_rider_id, new_name=None):
-    """Clone a public custom plan to a new rider."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    try:
-        # Get source plan
-        cur.execute("SELECT * FROM custom_ride_plan WHERE id = %s AND is_public = TRUE", (source_plan_id,))
-        source_plan = cur.fetchone()
-        
-        if not source_plan:
-            return None
-        
-        # Create new plan
-        plan_name = new_name or f"{source_plan['name']} (Copy)"
-        cur.execute("""
-            INSERT INTO custom_ride_plan 
-            (rider_id, base_plan_id, name, description, avg_moving_speed, is_public)
-            VALUES (%s, %s, %s, %s, %s, FALSE)
-            RETURNING id
-        """, (target_rider_id, source_plan['base_plan_id'], plan_name,
-              source_plan['description'], source_plan['avg_moving_speed']))
-        
-        new_plan = cur.fetchone()
-        new_plan_id = new_plan['id']
-        
-        # Copy stops
-        cur.execute("""
-            INSERT INTO custom_ride_plan_stop
-            (custom_plan_id, base_stop_id, stop_order, location, stop_type,
-             distance_miles, elevation_gain, segment_time_min, notes, 
-             is_custom_stop, is_hidden)
-            SELECT %s, base_stop_id, stop_order, location, stop_type,
-                   distance_miles, elevation_gain, segment_time_min, notes,
-                   is_custom_stop, is_hidden
-            FROM custom_ride_plan_stop
-            WHERE custom_plan_id = %s
-        """, (new_plan_id, source_plan_id))
-        
-        conn.commit()
-        cache.delete_memoized(get_custom_plan, target_rider_id, source_plan['base_plan_id'])
-        return new_plan_id
-    except Exception as e:
-        conn.rollback()
-        raise e
-
-
-# ========== STRAVA RIDE ANALYSIS ==========
-
-def get_strava_ride_match(rider_id, ride_id):
-    """Get existing Strava match for a rider's ride."""
-    return _execute("""
-        SELECT srm.*, sa.strava_url, sa.name as activity_name,
-               sa.distance, sa.moving_time, sa.elapsed_time,
-               sa.total_elevation_gain, sa.average_speed,
-               sa.average_heartrate, sa.max_heartrate, sa.has_heartrate,
-               sa.average_watts, sa.max_watts, sa.weighted_average_watts,
-               sa.kilojoules, sa.device_watts, sa.suffer_score,
-               sa.start_date_local
-        FROM strava_ride_match srm
-        JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
-                                AND sa.rider_id = srm.rider_id
-        WHERE srm.rider_id = %s AND srm.ride_id = %s
-    """, (rider_id, ride_id)).fetchone()
-
-
-def create_strava_ride_match(rider_id, ride_id, strava_activity_id, confidence='auto'):
-    """Create a ride-to-activity match."""
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO strava_ride_match (rider_id, ride_id, strava_activity_id, match_confidence)
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT (rider_id, ride_id) DO UPDATE SET
-            strava_activity_id = EXCLUDED.strava_activity_id,
-            match_confidence = EXCLUDED.match_confidence,
-            matched_at = CURRENT_TIMESTAMP
-        RETURNING id
-    """, (rider_id, ride_id, strava_activity_id, confidence))
-    result = cur.fetchone()
-    conn.commit()
-    return result['id'] if result else None
-
-
-def get_all_strava_ride_matches(rider_id, ride_ids):
-    """Batch get matches for multiple rides. Returns {ride_id: {strava_activity_id, strava_url}}."""
-    if not ride_ids:
-        return {}
-    placeholders = ','.join(['%s'] * len(ride_ids))
-    rows = _execute(f"""
-        SELECT srm.ride_id, srm.strava_activity_id, sa.strava_url
-        FROM strava_ride_match srm
-        JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
-                                AND sa.rider_id = srm.rider_id
-        WHERE srm.rider_id = %s AND srm.ride_id IN ({placeholders})
-    """, (rider_id, *ride_ids)).fetchall()
-    return {r['ride_id']: dict(r) for r in rows}
-
-
-def get_strava_ride_analysis(match_id):
-    """Get cached analysis for a match."""
-    return _execute("""
-        SELECT * FROM strava_ride_analysis WHERE match_id = %s
-    """, (match_id,)).fetchone()
-
-
-def upsert_strava_ride_analysis(match_id, detected_stops, stream_summary,
-                                error=None, compressed_streams=None):
-    """Insert or update analysis results.
-
-    compressed_streams: optional zlib-compressed bytes of the full Strava
-    streams dict.  When provided, stored as BYTEA; when None the existing
-    cached streams are preserved (COALESCE).
-    """
-    conn = get_db()
-    cur = conn.cursor()
-    import json
-    streams_param = psycopg2.Binary(compressed_streams) if compressed_streams else None
-    cur.execute("""
-        INSERT INTO strava_ride_analysis
-            (match_id, detected_stops, stream_summary, strava_api_error,
-             activity_streams, streams_fetched_at)
-        VALUES (%s, %s, %s, %s, %s, CASE WHEN %s IS NOT NULL THEN CURRENT_TIMESTAMP END)
-        ON CONFLICT (match_id) DO UPDATE SET
-            detected_stops = EXCLUDED.detected_stops,
-            stream_summary = EXCLUDED.stream_summary,
-            strava_api_error = EXCLUDED.strava_api_error,
-            analyzed_at = CURRENT_TIMESTAMP,
-            activity_streams = COALESCE(EXCLUDED.activity_streams,
-                                        strava_ride_analysis.activity_streams),
-            streams_fetched_at = COALESCE(EXCLUDED.streams_fetched_at,
-                                          strava_ride_analysis.streams_fetched_at)
-    """, (match_id, json.dumps(detected_stops), json.dumps(stream_summary),
-          error, streams_param, streams_param))
-    conn.commit()
-
-
-def clear_strava_ride_analysis(match_id):
-    """Clear cached analysis (for retry)."""
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM strava_ride_analysis WHERE match_id = %s", (match_id,))
-    conn.commit()
-
-
-def _set_or_remove_rider_note(match_id, path, note):
-    """Set (or, for an empty note, remove) one rider_notes value, in place.
-
-    ``path`` is a JSONB path as a Python list (e.g. ``['overall']`` or
-    ``['segments', location]``); it is bound as a ``text[]`` param so an
-    arbitrary key string can never be interpolated into SQL. A non-empty
-    ``note`` is written with jsonb_set, creating any missing intermediate
-    object; an empty/blank note REMOVES the key (``#-``) so cleared notes leave
-    no residue and read back as absent.
-
-    Returns the number of rows updated (0 when no analysis row exists).
-    """
-    conn = get_db()
-    cur = conn.cursor()
-    if (note or '').strip():
-        # Ensure the parent object exists, then set the leaf. For a 2-element
-        # path the parent is path[:-1]; a 1-element path has no parent object.
-        if len(path) > 1:
-            parent = path[:-1]
-            cur.execute("""
-                UPDATE strava_ride_analysis
-                SET rider_notes = jsonb_set(
-                        jsonb_set(
-                            COALESCE(rider_notes, '{}'::jsonb),
-                            %s::text[],
-                            COALESCE(rider_notes #> %s::text[], '{}'::jsonb),
-                            true),
-                        %s::text[],
-                        %s::jsonb,
-                        true)
-                WHERE match_id = %s
-            """, (parent, parent, path, json.dumps(note), match_id))
-        else:
-            cur.execute("""
-                UPDATE strava_ride_analysis
-                SET rider_notes = jsonb_set(
-                        COALESCE(rider_notes, '{}'::jsonb),
-                        %s::text[], %s::jsonb, true)
-                WHERE match_id = %s
-            """, (path, json.dumps(note), match_id))
-    else:
-        cur.execute("""
-            UPDATE strava_ride_analysis
-            SET rider_notes = rider_notes #- %s::text[]
-            WHERE match_id = %s
-        """, (path, match_id))
-    conn.commit()
-    return cur.rowcount
-
-
-def update_overall_note(match_id, note):
-    """Set/clear the rider's note about the whole ride (rider_notes.overall)."""
-    return _set_or_remove_rider_note(match_id, ['overall'], note)
-
-
-def update_segment_note(match_id, location, note):
-    """Set/clear a rider's note on one planned segment (rider_notes.segments.<location>).
-
-    Segments are keyed by their (stable, human-meaningful) ``location`` — the
-    same key ``ride_strava_analysis`` uses for ``segment_eval`` and ``stop_wind``
-    — so notes stay attached across re-analysis. (Caveat inherited from that
-    keying scheme: on a loop route where two segments share a ``location`` name,
-    a note maps to both; unplanned stops avoid this by keying on distance.)
-    """
-    return _set_or_remove_rider_note(match_id, ['segments', location], note)
-
-
-def update_stop_note(match_id, key, note):
-    """Set/clear a rider's note on one UNPLANNED stop (rider_notes.stops.<key>).
-
-    Unplanned (is_extra) stops have no clean location, so they are keyed by
-    their rounded cumulative distance (a stable, unique per-stop string),
-    avoiding the label collisions bare ``location`` would cause.
-    """
-    return _set_or_remove_rider_note(match_id, ['stops', key], note)
-
-
-def get_rider_rides_with_cached_streams(rider_id):
-    """Get all finished rides for a rider that have cached Strava stream data.
-
-    Returns ride metadata plus the compressed activity_streams blob for each ride.
-    Only includes rides where stream analysis completed successfully.
-    """
-    return _execute("""
-        SELECT r.id AS ride_id, r.name AS ride_name, r.ride_plan_id,
-               r.date, r.distance_km,
-               r.elevation_ft,
-               s.name AS season_name,
-               srm.id AS match_id,
-               sa.elapsed_time, sa.moving_time, sa.distance AS strava_distance_m,
-               sa.total_elevation_gain, sa.average_speed,
-               sa.average_heartrate, sa.max_heartrate, sa.has_heartrate,
-               sa.average_watts, sa.weighted_average_watts, sa.device_watts,
-               sa.suffer_score, sa.strava_url,
-               sra.activity_streams
-        FROM rider_ride rr
-        JOIN ride r ON r.id = rr.ride_id
-        JOIN season s ON s.id = r.season_id
-        JOIN strava_ride_match srm ON srm.rider_id = rr.rider_id AND srm.ride_id = rr.ride_id
-        JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
-                                AND sa.rider_id = srm.rider_id
-        JOIN strava_ride_analysis sra ON sra.match_id = srm.id
-        WHERE rr.rider_id = %s
-          AND rr.status = %s
-          AND sra.activity_streams IS NOT NULL
-          AND sra.strava_api_error IS NULL
-        ORDER BY r.date DESC
-    """, (rider_id, RideStatus.FINISHED.value)).fetchall()
-
-
-def get_rider_rides_metadata_for_comparison(rider_id):
-    """Get ride metadata (no streams) for the brevet comparison selector list."""
-    return _execute("""
-        SELECT r.id AS ride_id, r.name AS ride_name, r.ride_plan_id,
-               r.date, r.distance_km,
-               r.elevation_ft,
-               s.name AS season_name,
-               sa.elapsed_time, sa.moving_time, sa.distance AS strava_distance_m,
-               sa.total_elevation_gain, sa.average_speed,
-               sa.average_heartrate, sa.max_heartrate, sa.has_heartrate,
-               sa.average_watts, sa.weighted_average_watts, sa.device_watts,
-               sa.suffer_score, sa.strava_url
-        FROM rider_ride rr
-        JOIN ride r ON r.id = rr.ride_id
-        JOIN season s ON s.id = r.season_id
-        JOIN strava_ride_match srm ON srm.rider_id = rr.rider_id AND srm.ride_id = rr.ride_id
-        JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
-                                AND sa.rider_id = srm.rider_id
-        JOIN strava_ride_analysis sra ON sra.match_id = srm.id
-        WHERE rr.rider_id = %s
-          AND rr.status = %s
-          AND sra.activity_streams IS NOT NULL
-          AND sra.strava_api_error IS NULL
-        ORDER BY r.date DESC
-    """, (rider_id, RideStatus.FINISHED.value)).fetchall()
-
-
-def get_rider_rides_with_cached_streams_by_ids(rider_id, ride_ids):
-    """Get finished rides with cached streams for specific ride IDs."""
-    return _execute("""
-        SELECT r.id AS ride_id, r.name AS ride_name, r.ride_plan_id,
-               r.date, r.distance_km,
-               r.elevation_ft,
-               s.name AS season_name,
-               srm.id AS match_id,
-               sa.elapsed_time, sa.moving_time, sa.distance AS strava_distance_m,
-               sa.total_elevation_gain, sa.average_speed,
-               sa.average_heartrate, sa.max_heartrate, sa.has_heartrate,
-               sa.average_watts, sa.weighted_average_watts, sa.device_watts,
-               sa.suffer_score, sa.strava_url,
-               sra.activity_streams
-        FROM rider_ride rr
-        JOIN ride r ON r.id = rr.ride_id
-        JOIN season s ON s.id = r.season_id
-        JOIN strava_ride_match srm ON srm.rider_id = rr.rider_id AND srm.ride_id = rr.ride_id
-        JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
-                                AND sa.rider_id = srm.rider_id
-        JOIN strava_ride_analysis sra ON sra.match_id = srm.id
-        WHERE rr.rider_id = %s
-          AND rr.status = %s
-          AND r.id = ANY(%s)
-          AND sra.activity_streams IS NOT NULL
-          AND sra.strava_api_error IS NULL
-        ORDER BY r.date DESC
-    """, (rider_id, RideStatus.FINISHED.value, ride_ids)).fetchall()
-
-
-def get_cohort_cached_streams(ride_id):
-    """Get cached Strava streams for all public finishers of a ride.
-
-    Returns list of dicts with rider info and compressed activity_streams blob.
-    Only includes riders with cached streams and non-private Strava data.
-    """
-    return _execute("""
-        SELECT
-            r.id AS rider_id,
-            r.first_name,
-            r.last_name,
-            sa.elapsed_time, sa.moving_time, sa.average_speed,
-            sra.activity_streams
-        FROM rider_ride rr
-        JOIN rider r ON r.id = rr.rider_id
-        LEFT JOIN rider_profile rp ON rp.rider_id = r.id
-        JOIN strava_ride_match srm ON srm.rider_id = r.id AND srm.ride_id = rr.ride_id
-        JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
-                                AND sa.rider_id = srm.rider_id
-        JOIN strava_ride_analysis sra ON sra.match_id = srm.id
-        WHERE rr.ride_id = %s
-          AND rr.status = %s
-          AND (rp.strava_data_private IS NULL OR rp.strava_data_private = FALSE)
-          AND sra.activity_streams IS NOT NULL
-          AND sra.strava_api_error IS NULL
-        ORDER BY sa.elapsed_time ASC
-    """, (ride_id, RideStatus.FINISHED.value)).fetchall()
-
-
-def get_strava_activities_in_date_range(rider_id, date_start, date_end):
-    """Get Ride-type Strava activities in a date range for matching."""
-    return _execute("""
-        SELECT strava_activity_id, name, distance, moving_time, elapsed_time,
-               total_elevation_gain, start_date_local, strava_url,
-               average_heartrate, has_heartrate, average_watts, device_watts
-        FROM strava_activity
-        WHERE rider_id = %s AND activity_type = 'Ride'
-          AND start_date_local::date BETWEEN %s AND %s
-        ORDER BY distance DESC
-    """, (rider_id, date_start, date_end)).fetchall()
-
-
-def get_ride_by_id_full(ride_id):
-    """Get ride with plan info."""
-    return _execute("""
-        SELECT ri.*, rp.slug as plan_slug, rp.id as plan_id,
-               ri.start_time as plan_start_time
-        FROM ride ri
-        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
-        WHERE ri.id = %s
-    """, (ride_id,)).fetchone()
-
-
-def get_finished_riders_for_ride(ride_id):
-    """Get all FINISHED riders for a ride with their strava match and analysis status.
-
-    Returns list of dicts with rider info, match details, activity summary,
-    and a boolean has_analysis flag indicating cached analysis availability.
-    Privacy-sensitive riders included (caller handles filtering).
-    """
-    return _execute("""
-        SELECT
-            r.id as rider_id,
-            r.first_name,
-            r.last_name,
-            r.rusa_id,
-            COALESCE(rp.strava_data_private, FALSE) as strava_data_private,
-            srm.id as match_id,
-            srm.strava_activity_id,
-            sa.strava_url,
-            sa.start_date_local,
-            sa.distance,
-            sa.moving_time,
-            sa.elapsed_time,
-            sa.total_elevation_gain,
-            sa.average_speed,
-            sa.average_heartrate,
-            sa.max_heartrate,
-            sa.has_heartrate,
-            sa.average_watts,
-            sa.max_watts,
-            sa.weighted_average_watts,
-            sa.kilojoules,
-            sa.device_watts,
-            sa.suffer_score,
-            CASE WHEN sra.id IS NOT NULL THEN TRUE ELSE FALSE END as has_analysis,
-            sra.strava_api_error
-        FROM rider_ride rr
-        JOIN rider r ON r.id = rr.rider_id
-        LEFT JOIN rider_profile rp ON rp.rider_id = r.id
-        LEFT JOIN strava_ride_match srm ON srm.rider_id = r.id AND srm.ride_id = rr.ride_id
-        LEFT JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
-        LEFT JOIN strava_ride_analysis sra ON sra.match_id = srm.id
-        WHERE rr.ride_id = %s
-          AND rr.status = %s
-        ORDER BY r.first_name, r.last_name
-    """, (ride_id, RideStatus.FINISHED.value)).fetchall()
-
-
-# ========== COHORT ANALYSIS ==========
-
-def get_ride_cohort_stats(ride_id):
-    """Get Strava stats for all riders who finished a ride and share Strava data.
-
-    Returns list of dicts ordered by elapsed_time ASC.
-    Excludes riders with strava_data_private = TRUE.
-    Uses LEFT JOIN on rider_profile so riders without a profile row are treated as public.
-    """
-    return _execute("""
-        SELECT
-            r.id AS rider_id,
-            r.first_name,
-            r.last_name,
-            r.rusa_id,
-            sa.elapsed_time,
-            sa.moving_time,
-            (sa.elapsed_time - sa.moving_time) AS stopped_time,
-            sa.average_speed,
-            sa.average_heartrate,
-            sa.max_heartrate,
-            sa.has_heartrate,
-            sa.total_elevation_gain,
-            sa.suffer_score,
-            sa.average_watts,
-            sa.weighted_average_watts,
-            sa.device_watts,
-            sa.average_cadence,
-            sa.strava_url
-        FROM rider_ride rr
-        JOIN rider r ON r.id = rr.rider_id
-        LEFT JOIN rider_profile rp ON rp.rider_id = r.id
-        JOIN strava_ride_match srm ON srm.rider_id = r.id AND srm.ride_id = rr.ride_id
-        JOIN strava_activity sa ON sa.strava_activity_id = srm.strava_activity_id
-                                AND sa.rider_id = srm.rider_id
-        WHERE rr.ride_id = %s
-          AND rr.status = %s
-          AND (rp.strava_data_private IS NULL OR rp.strava_data_private = FALSE)
-        ORDER BY sa.elapsed_time ASC
-    """, (ride_id, RideStatus.FINISHED.value)).fetchall()
-
-
-def get_ride_cohort_breakdown(ride_id):
-    """Return finisher counts at each filter stage for display in the cohort page header.
-
-    Returns a dict with:
-        total_finished  — all riders with FINISHED status
-        strava_linked   — subset who have a matched Strava activity
-        private         — subset with a match but strava_data_private = TRUE
-        compared        — subset actually included in the comparison
-    """
-    row = _execute("""
-        SELECT
-            COUNT(*) FILTER (WHERE TRUE)                                   AS total_finished,
-            COUNT(*) FILTER (WHERE srm.strava_activity_id IS NOT NULL)     AS strava_linked,
-            COUNT(*) FILTER (WHERE srm.strava_activity_id IS NOT NULL
-                               AND rp.strava_data_private = TRUE)          AS private,
-            COUNT(*) FILTER (WHERE srm.strava_activity_id IS NOT NULL
-                               AND (rp.strava_data_private IS NULL
-                                    OR rp.strava_data_private = FALSE))    AS compared
-        FROM rider_ride rr
-        JOIN rider r ON r.id = rr.rider_id
-        LEFT JOIN rider_profile rp ON rp.rider_id = r.id
-        LEFT JOIN strava_ride_match srm
-               ON srm.rider_id = r.id AND srm.ride_id = rr.ride_id
-        WHERE rr.ride_id = %s
-          AND rr.status = %s
-    """, (ride_id, RideStatus.FINISHED.value)).fetchone()
-    return dict(row) if row else {'total_finished': 0, 'strava_linked': 0, 'private': 0, 'compared': 0}
-
-
-
-# ========== CHAT ==========
-
-def create_conversation(user_id, title=None):
-    """Create a new chat conversation. Returns the created row as dict."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(
-        "INSERT INTO conversation (user_id, title) VALUES (%s, %s) RETURNING *",
-        (user_id, title)
+    return db.execute(
+        "UPDATE rp_ride SET event_id = %s WHERE id = %s AND rider_id = %s "
+        "RETURNING id",
+        (event_id, ride_id, rider_id),
+        returning=True,
     )
-    result = cur.fetchone()
-    conn.commit()
-    return result
 
 
-def get_conversation(conversation_id, user_id):
-    """Get a conversation by ID. ALWAYS requires user_id — never look up by ID alone (SEC-10)."""
-    return _execute(
-        "SELECT * FROM conversation WHERE id = %s AND user_id = %s",
-        (conversation_id, user_id)
-    ).fetchone()
+def get_ride_positions(ride_id, limit=500):
+    """The ride position breadcrumbs (oldest→newest) for the live trail.
 
-
-def get_conversations_for_user(user_id, limit=20):
-    """Get recent conversations for a user, ordered by last activity."""
-    return _execute(
-        "SELECT * FROM conversation WHERE user_id = %s ORDER BY last_active_at DESC LIMIT %s",
-        (user_id, limit)
-    ).fetchall()
-
-
-def insert_chat_message(conversation_id, role, content, prompt_tokens=None, completion_tokens=None, metadata=None):
-    """Insert a chat message. Returns the created row as dict."""
-    import json as _json
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(
-        """INSERT INTO chat_message
-           (conversation_id, role, content, prompt_tokens, completion_tokens, metadata)
-           VALUES (%s, %s, %s, %s, %s, %s) RETURNING *""",
-        (conversation_id, role, content, prompt_tokens, completion_tokens,
-         _json.dumps(metadata or {}))
+    Guest-facing: selects ONLY lat/lng/recorded_at — never rider_id or the row id
+    — so the public poll endpoint leaks no rider identity. Capped at ``limit``
+    most-recent points (then re-ordered oldest→newest for the trail).
+    """
+    return db.query(
+        "SELECT lat, lng, recorded_at FROM ("
+        "  SELECT lat, lng, recorded_at FROM rp_live_position "
+        "  WHERE ride_id = %s ORDER BY recorded_at DESC LIMIT %s"
+        ") p ORDER BY recorded_at ASC",
+        (ride_id, limit),
     )
-    result = cur.fetchone()
-    conn.commit()
-    return result
 
 
-def get_recent_messages(conversation_id, limit=20):
-    """Fetch last N messages for context window. limit=20 = last 10 turns (SEC-07)."""
-    rows = _execute(
-        """SELECT role, content FROM chat_message
-           WHERE conversation_id = %s
-           ORDER BY created_at DESC LIMIT %s""",
-        (conversation_id, limit)
-    ).fetchall()
-    return list(reversed(rows))
+def insert_position(ride_id, rider_id, lat, lng, recorded_at=None):
+    """Append one {lat,lng,recorded_at} breadcrumb for a ride.
 
-
-def get_rider_privacy_flag(rider_id):
-    """Check if rider has strava_data_private set. Returns True if private, False otherwise."""
-    row = _execute(
-        "SELECT strava_data_private FROM rider_profile WHERE rider_id = %s",
-        (rider_id,)
-    ).fetchone()
-    if row is None:
-        return False
-    return bool(row.get('strava_data_private'))
-
-
-def touch_conversation(conversation_id):
-    """Update last_active_at timestamp on each message exchange."""
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE conversation SET last_active_at = NOW() WHERE id = %s",
-        (conversation_id,)
+    ``recorded_at`` is an optional ISO-8601 string (as the device reports
+    it); when omitted the DB stamps NOW(). Owner enforcement is the route job —
+    this is the raw insert.
+    """
+    db.execute(
+        "INSERT INTO rp_live_position (ride_id, rider_id, lat, lng, recorded_at) "
+        "VALUES (%s, %s, %s, %s, COALESCE(%s::timestamptz, NOW()))",
+        (ride_id, rider_id, lat, lng, recorded_at),
     )
-    conn.commit()
 
 
-# ========== WIND DATA ==========
-
-def get_ride_wind_data(ride_id):
-    """Return stored wind rows for a ride, ordered by stop_order.
-
-    Returns an empty list if no wind data has been saved for this ride.
-    Used by the route handler to avoid re-fetching from the archive API.
-    """
-    rows = _execute(
-        "SELECT * FROM ride_wind_data WHERE ride_id = %s ORDER BY stop_order",
-        (ride_id,)
-    ).fetchall()
-    return list(rows)
-
-
-def save_ride_wind_data(ride_id, wind_rows):
-    """Persist per-stop wind data for a ride.
-
-    Inserts each row with ON CONFLICT (ride_id, stop_order) DO NOTHING so
-    calling this function a second time for the same ride is safe — existing
-    rows are left unchanged and no error is raised.
-
-    Args:
-        ride_id: Integer primary key of the ride.
-        wind_rows: List of dicts, each containing stop wind data.
-                   Required keys: stop_order, data_source.
-                   Optional keys: stop_name, wind_speed_kmh, wind_direction_deg,
-                   headwind_kmh, crosswind_kmh, wind_type, temperature_c, conditions,
-                   wind_gust_kmh, temp_min_c, temp_max_c.
-    """
-    if not wind_rows:
-        return
-
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-    # Build a single multi-row INSERT to avoid N+1 round trips (one per stop).
-    values = [
-        (
-            ride_id,
-            row.get('stop_order'),
-            row.get('stop_name'),
-            row.get('wind_speed_kmh'),
-            row.get('wind_direction_deg'),
-            row.get('headwind_kmh'),
-            row.get('crosswind_kmh'),
-            row.get('wind_type'),
-            row.get('temperature_c'),
-            row.get('conditions'),
-            row.get('data_source'),
-            row.get('wind_gust_kmh'),
-            row.get('temp_min_c'),
-            row.get('temp_max_c'),
-        )
-        for row in wind_rows
-    ]
-    psycopg2.extras.execute_values(
-        cur,
-        """
-        INSERT INTO ride_wind_data (
-            ride_id, stop_order, stop_name,
-            wind_speed_kmh, wind_direction_deg,
-            headwind_kmh, crosswind_kmh,
-            wind_type, temperature_c, conditions, data_source,
-            wind_gust_kmh, temp_min_c, temp_max_c
-        ) VALUES %s
-        ON CONFLICT (ride_id, stop_order) DO UPDATE SET
-            stop_name = EXCLUDED.stop_name,
-            wind_speed_kmh = EXCLUDED.wind_speed_kmh,
-            wind_direction_deg = EXCLUDED.wind_direction_deg,
-            headwind_kmh = EXCLUDED.headwind_kmh,
-            crosswind_kmh = EXCLUDED.crosswind_kmh,
-            wind_type = EXCLUDED.wind_type,
-            temperature_c = EXCLUDED.temperature_c,
-            conditions = EXCLUDED.conditions,
-            data_source = EXCLUDED.data_source,
-            wind_gust_kmh = EXCLUDED.wind_gust_kmh,
-            temp_min_c = EXCLUDED.temp_min_c,
-            temp_max_c = EXCLUDED.temp_max_c,
-            fetched_at = NOW()
-        """,
-        values,
-    )
-    conn.commit()
-
-
-# ========== ROUTE WEATHER CACHE (async forecast cron — TA-237) ==========
-# Weather is pre-fetched hourly by /api/cron/fetch-route-weather and READ from
-# route_weather_cache on every request path (no live Open-Meteo on the request path).
-
-def get_route_weather_cache(route_id, forecast_date):
-    """Return the stored Open-Meteo forecast for a route on a date, or None.
-
-    Row shape: {'route_id', 'forecast_date', 'weather_data' (list of per-sample
-    forecast dicts), 'sample_points' (list of {lat,lng,distance_m}), 'fetched_at'}.
-    Populated hourly by the fetch-route-weather cron; every request path READS from
-    here instead of calling Open-Meteo live (TA-237).
-    """
-    return _execute(
-        "SELECT route_id, forecast_date, weather_data, sample_points, fetched_at "
-        "FROM route_weather_cache WHERE route_id = %s AND forecast_date = %s",
-        (route_id, forecast_date),
-    ).fetchone()
-
-
-def save_route_weather_cache(route_id, forecast_date, weather_data, sample_points,
-                             elevation_track=None):
-    """Upsert one route's forecast for a date (idempotent on (route_id, forecast_date)).
-
-    Overwrites the payload + sample points (+ the elevation track for the rpv2 gradient
-    elevation profile) and bumps fetched_at, so each hourly cron run refreshes the
-    last-good row in place. ``elevation_track`` is the downsampled
-    ``[{lat, lng, dist_m, e_m}, ...]`` route track (optional — None on a route with no
-    usable points; the plan render then draws an empty profile). Only called from the
-    fetch-route-weather cron — never on a request path. On a cron fetch failure the
-    caller simply skips this upsert, leaving the previous last-good row untouched.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(
-        """
-        INSERT INTO route_weather_cache
-            (route_id, forecast_date, weather_data, sample_points, elevation_track,
-             fetched_at)
-        VALUES (%s, %s, %s, %s, %s, NOW())
-        ON CONFLICT (route_id, forecast_date) DO UPDATE SET
-            weather_data = EXCLUDED.weather_data,
-            sample_points = EXCLUDED.sample_points,
-            elevation_track = EXCLUDED.elevation_track,
-            fetched_at = NOW()
-        """,
-        (route_id, forecast_date,
-         psycopg2.extras.Json(weather_data), psycopg2.extras.Json(sample_points),
-         psycopg2.extras.Json(elevation_track) if elevation_track is not None else None),
-    )
-    conn.commit()
-
-
-def get_route_elevation_track(route_id):
-    """The cron-warmed elevation track for a route, or None.
-
-    Returns the ``[{lat, lng, dist_m, e_m}, ...]`` track cached in the route-keyed
-    route_geometry_cache (route geometry is date-invariant), for the rpv2 plan-page
-    gradient elevation profile to read from cache instead of fetching RWGPS live on the
-    request path (the TA-237 guest-safety invariant). The warm-plan-elevation cron
-    populates it for every route referenced by a ride_plan (past and upcoming), so any
-    plan's profile is served once warmed. None when the route has no cached track yet
-    (new route, or the cron has not run) — the render then degrades to an empty profile.
-    """
-    row = _execute(
-        "SELECT elevation_track FROM route_geometry_cache "
-        "WHERE route_id = %s AND elevation_track IS NOT NULL",
-        (route_id,),
-    ).fetchone()
-    return row['elevation_track'] if row else None
-
-
-def upsert_route_geometry(route_id, elevation_track):
-    """Insert or refresh one route's cached elevation track (idempotent on route_id).
-
-    Route geometry is date-invariant, so this is keyed on the RWGPS route id alone.
-    Only called by the warm-plan-elevation cron with a successful fetch, so a transient
-    RWGPS failure never overwrites a last-good row (the caller skips the upsert). The
-    track is the downsampled ``[{lat, lng, dist_m, e_m}, ...]`` shared.live_radial
-    output that build_elevation_profile consumes; None on a route with no usable points.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(
-        """
-        INSERT INTO route_geometry_cache (route_id, elevation_track, fetched_at)
-        VALUES (%s, %s, NOW())
-        ON CONFLICT (route_id) DO UPDATE SET
-            elevation_track = EXCLUDED.elevation_track,
-            fetched_at = NOW()
-        """,
-        (route_id, psycopg2.extras.Json(elevation_track) if elevation_track is not None else None),
-    )
-    conn.commit()
-
-
-def get_route_geometry_freshness(route_id):
-    """The fetched_at of a route's cached geometry, or None — for the cron fresh-skip.
-
-    Only counts a row that actually has a track: a NULL-track row (a fetch that yielded
-    no usable points) returns None so the cron re-warms it rather than pinning an empty
-    profile for the whole freshness window.
-    """
-    row = _execute(
-        "SELECT fetched_at FROM route_geometry_cache "
-        "WHERE route_id = %s AND elevation_track IS NOT NULL",
-        (route_id,),
-    ).fetchone()
-    return row['fetched_at'] if row else None
-
-
-def get_upcoming_weather_targets(within_days=28):
-    """Rides needing pre-fetched weather: upcoming rides within `within_days` OR
-    live/active rides, that have a date.
-
-    One row per ride: ride_id, forecast_date (the ride date), name, the RWGPS url, and
-    plan_id. The fetch-route-weather cron extracts the route id, gates on the 16-day
-    forecast horizon, and upserts route_weather_cache. NOT cached — the cron needs fresh
-    dates each run. "Live/active" = a ride currently pointed at by rider_live_tracking,
-    so a multi-day ride that started before the window is still covered.
-    """
-    today = date.today()
-    cutoff = today + timedelta(days=within_days)
-    rows = _execute("""
-        SELECT ri.id AS ride_id, ri.date AS forecast_date, ri.name AS name,
-               COALESCE(rp.rwgps_url_team, ri.rwgps_url_team, ri.rwgps_url) AS rwgps_url,
-               rp.id AS plan_id
-        FROM ride ri
-        LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
-        WHERE ri.date IS NOT NULL
-          AND (
-                (ri.date >= %s AND ri.date <= %s)
-             OR ri.id IN (
-                    SELECT active_ride_id FROM rider_live_tracking
-                    WHERE enabled = TRUE AND active_ride_id IS NOT NULL
-                )
-          )
-        ORDER BY ri.date
-    """, (today, cutoff)).fetchall()
-    return [dict(r) for r in rows]
-
-
-def get_upcoming_ride_date_for_plan(plan_id):
-    """Return the date of this plan's next upcoming ride (>= today), or None.
-
-    The ride-plan-detail pages render a route class (not a dated event), so they key the
-    stored forecast on the plan's next scheduled running of the route. None when the plan
-    has no upcoming dated ride — the page then shows no wind (a stored-cache miss), the
-    same graceful degradation as any route without a stored forecast.
-    """
-    row = _execute("""
-        SELECT MIN(date) AS next_date
-        FROM ride
-        WHERE ride_plan_id = %s AND date >= CURRENT_DATE
-    """, (plan_id,)).fetchone()
-    return row['next_date'] if row else None
-
-
-# ========== PERSONALITY & COACHING ==========
-# CRUD functions for personality_profile, gear_preference, coach_assignment, coaching_guardrail.
-# NOT cached — admin edits must be immediately visible.
-# All SELECTs include WHERE deleted_at IS NULL.
-# All writes call conn.commit().
-
-
-def get_personality_profile(rider_id, profile_type='coach'):
-    """Get active personality profile for a rider. Returns dict or None."""
-    return _execute(
-        """SELECT * FROM personality_profile
-           WHERE rider_id = %s AND profile_type = %s AND deleted_at IS NULL""",
-        (rider_id, profile_type)
-    ).fetchone()
-
-
-def get_all_personality_profiles(profile_type=None):
-    """Get all active personality profiles, optionally filtered by type."""
-    if profile_type:
-        return _execute(
-            """SELECT * FROM personality_profile
-               WHERE profile_type = %s AND deleted_at IS NULL
-               ORDER BY rider_id""",
-            (profile_type,)
-        ).fetchall()
-    return _execute(
-        """SELECT * FROM personality_profile
-           WHERE deleted_at IS NULL ORDER BY rider_id"""
-    ).fetchall()
-
-
-def upsert_personality_profile(rider_id, profile_type, fields, updated_by='system'):
-    """Insert or update personality profile. fields dict maps column names to values."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    col_names = list(fields.keys())
-    col_values = list(fields.values())
-    # Build INSERT columns and placeholders
-    all_cols = ['rider_id', 'profile_type', 'updated_by'] + col_names
-    all_placeholders = ['%s', '%s', '%s'] + ['%s'] * len(col_names)
-    all_values = [rider_id, profile_type, updated_by] + col_values
-    # Build ON CONFLICT SET clause
-    set_parts = [f"{c} = EXCLUDED.{c}" for c in col_names]
-    set_parts.append("updated_by = EXCLUDED.updated_by")
-    set_parts.append("updated_at = NOW()")
-    cur.execute(
-        f"""INSERT INTO personality_profile ({', '.join(all_cols)})
-            VALUES ({', '.join(all_placeholders)})
-            ON CONFLICT (rider_id, profile_type, extraction_source) DO UPDATE SET
-            {', '.join(set_parts)}
-            RETURNING *""",
-        all_values
-    )
-    result = cur.fetchone()
-    conn.commit()
-    return result
-
-
-def soft_delete_personality_profile(profile_id, updated_by='system'):
-    """Soft-delete a personality profile by setting deleted_at."""
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE personality_profile SET deleted_at = NOW(), updated_by = %s WHERE id = %s",
-        (updated_by, profile_id)
-    )
-    conn.commit()
-
-
-def get_gear_preference(rider_id, label=None):
-    """Get active gear preference for a rider. Returns primary bike or specific label."""
-    if label:
-        return _execute(
-            "SELECT * FROM gear_preference WHERE rider_id = %s AND label = %s AND deleted_at IS NULL",
-            (rider_id, label)
-        ).fetchone()
-    return _execute(
-        """SELECT * FROM gear_preference WHERE rider_id = %s AND deleted_at IS NULL
-           ORDER BY CASE WHEN label = 'Primary' THEN 0 ELSE 1 END, id LIMIT 1""",
-        (rider_id,)
-    ).fetchone()
-
-
-def get_all_gear_for_rider(rider_id):
-    """Get all active gear rows (multiple bikes) for a rider."""
-    return _execute(
-        """SELECT * FROM gear_preference WHERE rider_id = %s AND deleted_at IS NULL
-           ORDER BY CASE WHEN label = 'Primary' THEN 0 ELSE 1 END, id""",
-        (rider_id,)
-    ).fetchall()
-
-
-def upsert_gear_preference(rider_id, fields, updated_by='system', label='Primary'):
-    """Insert or update gear preference. Uses (rider_id, label) for multi-bike support."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    col_names = list(fields.keys())
-    col_values = list(fields.values())
-    all_cols = ['rider_id', 'label', 'updated_by'] + col_names
-    all_placeholders = ['%s', '%s', '%s'] + ['%s'] * len(col_names)
-    all_values = [rider_id, label, updated_by] + col_values
-    set_parts = [f"{c} = EXCLUDED.{c}" for c in col_names]
-    set_parts.append("updated_by = EXCLUDED.updated_by")
-    set_parts.append("updated_at = NOW()")
-    cur.execute(
-        f"""INSERT INTO gear_preference ({', '.join(all_cols)})
-            VALUES ({', '.join(all_placeholders)})
-            ON CONFLICT (rider_id, label) DO UPDATE SET
-            {', '.join(set_parts)}
-            RETURNING *""",
-        all_values
-    )
-    result = cur.fetchone()
-    conn.commit()
-    return result
-
-
-def get_coach_assignments(coach_rider_id=None, topic_domain=None, active_only=True):
-    """Get coach assignments with optional filters. Always excludes soft-deleted."""
-    conditions = ["deleted_at IS NULL"]
-    params = []
-    if active_only:
-        conditions.append("is_active = TRUE")
-    if coach_rider_id is not None:
-        conditions.append("coach_rider_id = %s")
-        params.append(coach_rider_id)
-    if topic_domain is not None:
-        conditions.append("topic_domain = %s")
-        params.append(topic_domain)
-    where = " AND ".join(conditions)
-    return _execute(
-        f"SELECT * FROM coach_assignment WHERE {where} ORDER BY topic_domain",
-        tuple(params)
-    ).fetchall()
-
-
-def upsert_coach_assignment(coach_rider_id, topic_domain, fields, updated_by='system'):
-    """Insert or update coach assignment. fields dict maps column names to values."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    col_names = list(fields.keys())
-    col_values = list(fields.values())
-    all_cols = ['coach_rider_id', 'topic_domain', 'updated_by'] + col_names
-    all_placeholders = ['%s', '%s', '%s'] + ['%s'] * len(col_names)
-    all_values = [coach_rider_id, topic_domain, updated_by] + col_values
-    set_parts = [f"{c} = EXCLUDED.{c}" for c in col_names]
-    set_parts.append("updated_by = EXCLUDED.updated_by")
-    set_parts.append("updated_at = NOW()")
-    cur.execute(
-        f"""INSERT INTO coach_assignment ({', '.join(all_cols)})
-            VALUES ({', '.join(all_placeholders)})
-            ON CONFLICT (coach_rider_id, topic_domain) DO UPDATE SET
-            {', '.join(set_parts)}
-            RETURNING *""",
-        all_values
-    )
-    result = cur.fetchone()
-    conn.commit()
-    return result
-
-
-def get_active_guardrails(rule_type=None, applies_to=None):
-    """Get active guardrails with optional filters. Excludes soft-deleted and inactive."""
-    conditions = ["is_active = TRUE", "deleted_at IS NULL"]
-    params = []
-    if rule_type is not None:
-        conditions.append("rule_type = %s")
-        params.append(rule_type)
-    if applies_to is not None:
-        conditions.append("applies_to = %s")
-        params.append(applies_to)
-    where = " AND ".join(conditions)
-    return _execute(
-        f"SELECT * FROM coaching_guardrail WHERE {where} ORDER BY rule_type",
-        tuple(params)
-    ).fetchall()
-
-
-def insert_guardrail(rule_type, rule_value, applies_to='all', updated_by='system'):
-    """Insert a new guardrail row. Returns the inserted row."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(
-        """INSERT INTO coaching_guardrail (rule_type, rule_value, applies_to, updated_by)
-           VALUES (%s, %s, %s, %s)
-           RETURNING *""",
-        (rule_type, rule_value, applies_to, updated_by)
-    )
-    result = cur.fetchone()
-    conn.commit()
-    return result
-
-
-def update_guardrail(guardrail_id, fields, updated_by='system'):
-    """Update guardrail fields. DB trigger handles rule_version increment."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    set_parts = [f"{k} = %s" for k in fields.keys()]
-    set_parts.append("updated_by = %s")
-    values = list(fields.values()) + [updated_by, guardrail_id]
-    cur.execute(
-        f"""UPDATE coaching_guardrail
-            SET {', '.join(set_parts)}
-            WHERE id = %s
-            RETURNING *""",
-        values
-    )
-    result = cur.fetchone()
-    conn.commit()
-    return result
-
-
-def get_trait_evidence(rider_id, extraction_source=None):
-    """Get personality trait evidence quotes for a rider. Returns list of dicts."""
-    if extraction_source:
-        return _execute(
-            """SELECT * FROM personality_trait_evidence
-               WHERE rider_id = %s AND extraction_source = %s
-               ORDER BY trait_name, created_at DESC""",
-            (rider_id, extraction_source)
-        ).fetchall()
-    return _execute(
-        """SELECT * FROM personality_trait_evidence
-           WHERE rider_id = %s
-           ORDER BY trait_name, created_at DESC""",
-        (rider_id,)
-    ).fetchall()
-
-
-def get_all_guardrails(rule_type=None):
-    """Get all non-deleted guardrails (active AND inactive) for admin display."""
-    if rule_type:
-        return _execute(
-            """SELECT * FROM coaching_guardrail
-               WHERE deleted_at IS NULL AND rule_type = %s
-               ORDER BY rule_type, id""",
-            (rule_type,)
-        ).fetchall()
-    return _execute(
-        """SELECT * FROM coaching_guardrail
-           WHERE deleted_at IS NULL
-           ORDER BY rule_type, id"""
-    ).fetchall()
-
-
-def soft_delete_guardrail(guardrail_id, updated_by='system'):
-    """Soft-delete a guardrail by setting deleted_at."""
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE coaching_guardrail SET deleted_at = NOW(), updated_by = %s WHERE id = %s",
-        (updated_by, guardrail_id)
-    )
-    conn.commit()
-
-
-# ---------------------------------------------------------------------------
-# Knowledge Base (Phase 12)
-# ---------------------------------------------------------------------------
-
-def get_knowledge_sources():
-    """Return web_* sources with chunk count and embed dates from whatsapp_chunk."""
-    return _execute("""
-        SELECT source,
-               COUNT(*) AS chunk_count,
-               MIN(created_at) AS first_embedded,
-               MAX(created_at) AS last_embedded
-        FROM whatsapp_chunk
-        WHERE source LIKE 'web_%%'
-        GROUP BY source
-        ORDER BY last_embedded DESC
-    """).fetchall()
-
-
-def delete_knowledge_source(source):
-    """Delete all chunks for a web_* source. Returns deleted count.
-
-    Raises ValueError if source does not start with 'web_'.
-    """
-    if not source or not source.startswith('web_'):
-        raise ValueError("Can only delete web_ sources, got: " + repr(source))
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(
-        "DELETE FROM whatsapp_chunk WHERE source = %s RETURNING id",
-        (source,)
-    )
-    deleted = len(cur.fetchall())
-    conn.commit()
-    return deleted
-
-
-# ========== LIVE TRACKING (rider location) ==========
-
-def get_live_tracking(rider_id):
-    """Get a rider's live-tracking prefs row, or None if never set."""
-    return _execute(
-        "SELECT * FROM rider_live_tracking WHERE rider_id = %s",
-        (rider_id,)
-    ).fetchone()
-
-
-def set_live_tracking_enabled(rider_id, enabled):
-    """Set the master opt-in flag for a rider, preserving any Garmin session.
-
-    Used by the global settings toggle and the one-tap beacon switch — neither
-    should clobber the per-ride Garmin link registered from a ride's live map.
-    Returns True on success.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        cur.execute("""
-            INSERT INTO rider_live_tracking (rider_id, enabled, updated_at)
-            VALUES (%s, %s, now())
-            ON CONFLICT (rider_id) DO UPDATE
-              SET enabled = EXCLUDED.enabled, updated_at = now()
-        """, (rider_id, bool(enabled)))
-        conn.commit()
-        return True
-    except Exception:
-        conn.rollback()
-        return False
-
-
-def set_ride_garmin(rider_id, ride_id, session_url, session_token):
-    """Register a Garmin LiveTrack link for ONE specific ride and opt the rider in.
-
-    Garmin mints a fresh session per activity, so the link is inherently
-    per-ride: saving one points the rider's tracking at `ride_id` (active_ride_id)
-    and enables tracking. Positions the cron ingests are then tagged with this
-    ride, so they only show on that ride's map. Returns True on success.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        cur.execute("""
-            INSERT INTO rider_live_tracking
-                (rider_id, enabled, garmin_session_url, garmin_session_token,
-                 active_ride_id, updated_at)
-            VALUES (%s, TRUE, %s, %s, %s, now())
-            ON CONFLICT (rider_id) DO UPDATE
-              SET enabled = TRUE,
-                  garmin_session_url = EXCLUDED.garmin_session_url,
-                  garmin_session_token = EXCLUDED.garmin_session_token,
-                  active_ride_id = EXCLUDED.active_ride_id,
-                  updated_at = now()
-        """, (rider_id, session_url, session_token, ride_id))
-        conn.commit()
-        return True
-    except Exception:
-        conn.rollback()
-        return False
-
-
-def clear_ride_garmin(rider_id, ride_id):
-    """Remove the rider's Garmin link if it's currently pointed at `ride_id`.
-
-    Leaves the master opt-in flag alone (they may still beacon). No-op if the
-    active ride is a different one. Returns True on success.
-    """
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        cur.execute("""
-            UPDATE rider_live_tracking
-               SET garmin_session_url = NULL, garmin_session_token = NULL,
-                   active_ride_id = NULL, updated_at = now()
-             WHERE rider_id = %s AND active_ride_id = %s
-        """, (rider_id, ride_id))
-        conn.commit()
-        return True
-    except Exception:
-        conn.rollback()
-        return False
-
-
-def get_enabled_live_tracking():
-    """All riders opted in WITH a Garmin session pointed at a specific ride.
-
-    The poll cron iterates these and tags ingested points with active_ride_id.
-    """
-    return _execute("""
-        SELECT rider_id, garmin_session_url, garmin_session_token, active_ride_id
-        FROM rider_live_tracking
-        WHERE enabled = TRUE
-          AND garmin_session_token IS NOT NULL
-          AND active_ride_id IS NOT NULL
-    """).fetchall()
-
-
+# --------------------------------------------------------------------------- #
+# Live tracking (rp_live_tracking + rp_live_position telemetry) — the Garmin
+# ingestion + multi-rider member map (Mission 1). Distinct `_rp` names so the
+# existing anonymous guest surface (insert_position / get_ride_positions) is
+# untouched. Every write on rp_live_tracking is SELF-scoped: the functions take
+# the SUBJECT (session) rider_id and can only ever read/modify only that rider own
+# row — there is no ride-owner parameter, so one rider can never touch another rider
+# tracking prefs. The named+telemetry latest-positions query is consumed ONLY by
+# the @profile_required member endpoint; the anonymous poll never selects a name.
+# --------------------------------------------------------------------------- #
 def _coerce_num(value, cast):
-    """Best-effort cast to int/float; None on failure."""
+    """Best-effort cast to int/float; None on failure (bad telemetry → NULL)."""
     if value is None:
         return None
     try:
@@ -4247,17 +376,169 @@ def _coerce_num(value, cast):
         return None
 
 
-def insert_live_position(rider_id, lat, lng, recorded_at, source, accuracy=None,
-                         speed=None, heart_rate=None, power=None, cadence=None,
-                         ride_id=None):
-    """Insert one position point. Validates/clamps coordinates.
+def get_live_tracking_rp(rider_id):
+    """A rider own live-tracking prefs row, or None if never set."""
+    return db.query_one(
+        "SELECT rider_id, enabled, garmin_session_url, garmin_session_token, "
+        "       active_ride_id, updated_at "
+        "FROM rp_live_tracking WHERE rider_id = %s",
+        (rider_id,),
+    )
 
-    `ride_id` tags the point to a specific ride so it only shows on that ride's
-    map (NULL points are not shown on any per-ride map). Optional telemetry
-    fields (speed m/s, heart_rate bpm, power W, cadence rpm) are stored when the
-    source provides them; bad values are coerced to NULL. Returns True on
-    success, False if coordinates are invalid (out of range).
-    """
+
+def upsert_rider_live_tracking_rp(rider_id, enabled):
+    """Set the master opt-in flag for the SUBJECT rider, preserving any Garmin
+    session. Self-scoped (keyed on the session rider_id). Returns True on success.
+
+    The settings toggle calls this; it must not clobber a per-ride Garmin link the
+    rider registered on a ride map (that link lives on active_ride_id)."""
+    try:
+        db.execute(
+            "INSERT INTO rp_live_tracking (rider_id, enabled, updated_at) "
+            "VALUES (%s, %s, NOW()) "
+            "ON CONFLICT (rider_id) DO UPDATE "
+            "SET enabled = EXCLUDED.enabled, updated_at = NOW()",
+            (rider_id, bool(enabled)),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def set_ride_garmin_rp(rider_id, ride_id, session_url, session_token):
+    """Register a Garmin LiveTrack link for ONE ride and opt the SUBJECT rider in.
+
+    Self-scoped: writes only the session rider own row (rider_id), pointing
+    tracking at `ride_id` (active_ride_id) and enabling it. Garmin mints a fresh
+    session per activity, so the link is inherently per-ride. Points the cron
+    ingests are tagged with this ride, so they only show on that ride map.
+    Returns True on success."""
+    try:
+        db.execute(
+            "INSERT INTO rp_live_tracking "
+            "    (rider_id, enabled, garmin_session_url, garmin_session_token, "
+            "     active_ride_id, updated_at) "
+            "VALUES (%s, TRUE, %s, %s, %s, NOW()) "
+            "ON CONFLICT (rider_id) DO UPDATE "
+            "SET enabled = TRUE, "
+            "    garmin_session_url = EXCLUDED.garmin_session_url, "
+            "    garmin_session_token = EXCLUDED.garmin_session_token, "
+            "    active_ride_id = EXCLUDED.active_ride_id, "
+            "    updated_at = NOW()",
+            (rider_id, session_url, session_token, ride_id),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def clear_ride_garmin_rp(rider_id, ride_id):
+    """Remove the SUBJECT rider Garmin link if it is pointed at `ride_id`.
+
+    Self-scoped and a no-op when the rider active ride is a different one (the
+    WHERE clause matches nothing). Leaves the master opt-in flag alone. Returns
+    True on success."""
+    try:
+        db.execute(
+            "UPDATE rp_live_tracking "
+            "SET garmin_session_url = NULL, garmin_session_token = NULL, "
+            "    active_ride_id = NULL, updated_at = NOW() "
+            "WHERE rider_id = %s AND active_ride_id = %s",
+            (rider_id, ride_id),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def set_active_ride_rp(rider_id, ride_id):
+    """Point the SUBJECT rider live-tracking row at ``ride_id``; when this MOVES the
+    active ride, clear any registered Garmin session so it cannot be mis-polled.
+
+    Self-scoped (keyed on rider_id). The phone beacon calls this to attach the rider
+    to the ride they are streaming to. A Garmin session is registered against the
+    then-active ride; the poll cron tags every fetched Garmin point with the current
+    active_ride_id. So if a rider linked Garmin for ride A and then beacons ride B,
+    keeping the session would let the cron poll the ride A session and attribute its
+    points to ride B (cross-ride contamination). Therefore, when the active ride
+    actually changes, the session URL/token are nulled; when the active ride is
+    unchanged the Garmin link is preserved. A fresh row is created with tracking
+    disabled — consent is set separately by the sharing toggle. Returns True on
+    success."""
+    try:
+        db.execute(
+            "INSERT INTO rp_live_tracking (rider_id, active_ride_id, updated_at) "
+            "VALUES (%s, %s, NOW()) "
+            "ON CONFLICT (rider_id) DO UPDATE "
+            "SET active_ride_id = EXCLUDED.active_ride_id, "
+            "    garmin_session_url = CASE "
+            "        WHEN COALESCE(rp_live_tracking.active_ride_id, -1) <> EXCLUDED.active_ride_id "
+            "        THEN NULL ELSE rp_live_tracking.garmin_session_url END, "
+            "    garmin_session_token = CASE "
+            "        WHEN COALESCE(rp_live_tracking.active_ride_id, -1) <> EXCLUDED.active_ride_id "
+            "        THEN NULL ELSE rp_live_tracking.garmin_session_token END, "
+            "    updated_at = NOW()",
+            (rider_id, ride_id),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def get_auto_attach_ride_rp(rider_id):
+    """Cold-start auto-attach: deterministically pick the accessible ride a beacon
+    should stream to when neither an explicit nor an active ride is set. Returns a
+    ride row (id, rider_id, is_public, start_at) or None when nothing is eligible.
+
+    The candidate set is the accessible union — rides the rider owns, PLUS public
+    rides the rider already has a stored position on (the concrete signal they
+    attached to another rider public ride). A private ride the rider does not own is
+    never a candidate, so this can never surface an inaccessible ride; the caller
+    still re-gates the pick defensively. Ordering is deterministic: rides the rider
+    is already streaming to first, then the ride whose start is nearest to now, then
+    the highest id. Reads rp_ride and rp_live_position only (live tracking operates
+    on rp_ride, not the calendar tables)."""
+    return db.query_one(
+        "SELECT r.id, r.rider_id, r.is_public, r.start_at "
+        "FROM rp_ride r "
+        "WHERE r.rider_id = %s "
+        "   OR (r.is_public = TRUE "
+        "       AND r.id IN (SELECT ride_id FROM rp_live_position "
+        "                    WHERE rider_id = %s)) "
+        "ORDER BY "
+        "  (r.id IN (SELECT ride_id FROM rp_live_position "
+        "            WHERE rider_id = %s)) DESC, "
+        "  ABS(EXTRACT(EPOCH FROM (COALESCE(r.start_at, NOW()) - NOW()))) ASC, "
+        "  r.id DESC "
+        "LIMIT 1",
+        (rider_id, rider_id, rider_id),
+    )
+
+
+def get_enabled_live_tracking_rp():
+    """All riders opted in WITH a Garmin session pointed at a specific ride.
+
+    The poll cron iterates these and tags ingested points with active_ride_id."""
+    return db.query(
+        "SELECT rider_id, garmin_session_url, garmin_session_token, active_ride_id "
+        "FROM rp_live_tracking "
+        "WHERE enabled = TRUE "
+        "  AND garmin_session_token IS NOT NULL "
+        "  AND active_ride_id IS NOT NULL"
+    )
+
+
+def insert_live_position_rp(rider_id, lat, lng, recorded_at, source, accuracy=None,
+                            speed=None, heart_rate=None, power=None, cadence=None,
+                            ride_id=None):
+    """Insert one telemetry-bearing position point for a rider. Validates/clamps
+    coordinates and coerces bad telemetry to NULL.
+
+    `ride_id` tags the point to a specific ride so it only shows on that ride
+    member map. `source` records how it arrived ('garmin'). Optional telemetry
+    (speed m/s, heart_rate bpm, power W, cadence rpm) is stored when present.
+    Returns True on success, False if coordinates are invalid (out of range) or
+    the insert fails."""
     try:
         lat = float(lat)
         lng = float(lng)
@@ -4272,159 +553,1658 @@ def insert_live_position(rider_id, lat, lng, recorded_at, source, accuracy=None,
     power = _coerce_num(power, int)
     cadence = _coerce_num(cadence, int)
 
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("""
-            INSERT INTO rider_live_position
-                (rider_id, lat, lng, accuracy, recorded_at, source,
-                 speed, heart_rate, power, cadence, ride_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (rider_id, lat, lng, accuracy, recorded_at, source,
-              speed, heart_rate, power, cadence, ride_id))
-        conn.commit()
+        db.execute(
+            "INSERT INTO rp_live_position "
+            "    (rider_id, ride_id, lat, lng, accuracy, recorded_at, source, "
+            "     speed, heart_rate, power, cadence) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (rider_id, ride_id, lat, lng, accuracy, recorded_at, source,
+             speed, heart_rate, power, cadence),
+        )
         return True
     except Exception:
-        conn.rollback()
         return False
 
 
-def get_positions_for_rider_since(rider_id, since, ride_id=None):
-    """Ordered position history for a rider since `since` (oldest → newest).
+def get_last_position_recorded_at_rp(rider_id, ride_id):
+    """Most recent stored position timestamp for a rider on one ride (or None).
 
-    Scoped to one ride when `ride_id` is given, so elapsed/moving/stopped time
-    and recent speed never mix points from a different ride. Used by the live
-    telemetry block.
-    """
-    if ride_id is not None:
-        return _execute("""
-            SELECT lat, lng, accuracy, recorded_at, source, speed, heart_rate, power, cadence
-            FROM rider_live_position
-            WHERE rider_id = %s AND ride_id = %s AND recorded_at >= %s
-            ORDER BY recorded_at ASC
-        """, (rider_id, ride_id, since)).fetchall()
-    return _execute("""
-        SELECT lat, lng, accuracy, recorded_at, source, speed, heart_rate, power, cadence
-        FROM rider_live_position
-        WHERE rider_id = %s AND recorded_at >= %s
-        ORDER BY recorded_at ASC
-    """, (rider_id, since)).fetchall()
-
-
-def get_last_position_recorded_at(rider_id, ride_id=None):
-    """Most recent stored position timestamp for a rider (optionally one ride)."""
-    if ride_id is not None:
-        row = _execute("""
-            SELECT MAX(recorded_at) AS last_at
-            FROM rider_live_position WHERE rider_id = %s AND ride_id = %s
-        """, (rider_id, ride_id)).fetchone()
-    else:
-        row = _execute("""
-            SELECT MAX(recorded_at) AS last_at
-            FROM rider_live_position WHERE rider_id = %s
-        """, (rider_id,)).fetchone()
+    The poll cron appends only points newer than this, so a re-run inserts nothing
+    new (idempotent)."""
+    row = db.query_one(
+        "SELECT MAX(recorded_at) AS last_at "
+        "FROM rp_live_position WHERE rider_id = %s AND ride_id = %s",
+        (rider_id, ride_id),
+    )
     return row['last_at'] if row else None
 
 
-def get_latest_positions_for_ride(ride_id, since):
-    """Latest position per opted-in rider sharing for a ride, newer than `since`.
+def get_live_positions_rp(ride_id, since):
+    """Latest position per opted-in rider tagged to a ride, newer than `since`.
 
-    A rider shows up purely because they opted in (tracking enabled) AND have
-    points tagged to THIS ride (p.ride_id) — i.e. they set up Garmin or started
-    the beacon FROM this ride's map. That per-ride share is the opt-in, so signup
-    status is irrelevant: riders appear whether or not they're marked Going, or
-    even signed up at all. rider_ride is LEFT-joined only to colour the dot by
-    signup status when one happens to exist (NULL → default colour).
-    `since` is the display-window cutoff (a datetime). Returns rows with
-    rider_id, name, lat, lng, recorded_at, source, status (status may be NULL).
+    A rider appears purely because they are currently opted in
+    (rp_live_tracking.enabled), currently attached to THIS ride
+    (t.active_ride_id), and have points tagged to THIS ride (p.ride_id). That
+    per-ride attach is the opt-in/consent, so clearing or moving the Garmin link
+    drops the rider off the live map even if recent historical points remain.
+    Returns rider_id, TWO name fields, lat/lng, recorded_at, and telemetry
+    (speed/heart_rate/power/cadence) + source:
+      - `name` — the AUTHENTICATED member/mobile card name: the rider's display_name
+        when set, else the email local-part. Shown ONLY behind authentication (the
+        @profile_required member endpoint / bearer mobile poll), where it is not a
+        public leak — so members stay distinguishable until display_name is set.
+      - `display_name` — the raw display_name (NULL when unset). The PUBLIC roster
+        uses THIS (never the email local-part), defaulting a NULL to a neutral token
+        at the route layer, so no email ever reaches the world-viewable payload.
+
+    Consumed by the @profile_required member endpoint AND, privacy-shaped through
+    build_radial_roster (which drops rider_id + reads display_name), by the public
+    roster.json poll."""
+    return db.query(
+        "SELECT DISTINCT ON (p.rider_id) "
+        "       p.rider_id, "
+        "       COALESCE(NULLIF(r.display_name, ''), split_part(r.email, '@', 1)) AS name, "
+        "       NULLIF(r.display_name, '') AS display_name, "
+        "       p.lat, p.lng, p.recorded_at, "
+        "       p.speed, p.heart_rate, p.power, p.cadence, p.source "
+        "FROM rp_live_position p "
+        "JOIN rp_rider r ON r.id = p.rider_id "
+        "JOIN rp_live_tracking t ON t.rider_id = p.rider_id "
+        "WHERE p.ride_id = %s "
+        "  AND t.enabled = TRUE "
+        "  AND t.active_ride_id = p.ride_id "
+        "  AND p.recorded_at >= %s "
+        "ORDER BY p.rider_id, p.recorded_at DESC",
+        (ride_id, since),
+    )
+
+
+def get_rider_position_history_rp(ride_id, rider_id, since):
+    """Position history for one rider on one ride, oldest to newest, for telemetry.
+
+    Selects lat, lng, recorded_at and speed so the shared telemetry engine can
+    project the trajectory onto the route and derive moving versus stopped time.
+    Scoped to a single rider and ride and bounded by ``since`` (the display window),
+    so a poll only reads the recent trail. Consumed ONLY by the member endpoint.
     """
-    return _execute("""
-        SELECT DISTINCT ON (p.rider_id)
-               p.rider_id,
-               r.first_name || ' ' || COALESCE(r.last_name, '') AS name,
-               p.lat, p.lng, p.recorded_at,
-               p.speed, p.heart_rate, p.power, p.cadence, p.source,
-               rr.status
-        FROM rider_live_position p
-        JOIN rider r ON r.id = p.rider_id
-        JOIN rider_live_tracking t ON t.rider_id = p.rider_id
-        LEFT JOIN rider_ride rr ON rr.rider_id = p.rider_id AND rr.ride_id = %s
-        WHERE p.ride_id = %s
-          AND t.enabled = TRUE
-          AND p.recorded_at >= %s
-        ORDER BY p.rider_id, p.recorded_at DESC
-    -- params: rr.ride_id (LEFT JOIN, for the status colour), p.ride_id (the ride
-    -- gate — points are tagged to this ride only), recency cutoff.
-    """, (ride_id, ride_id, since)).fetchall()
+    return db.query(
+        "SELECT lat, lng, recorded_at, speed FROM rp_live_position "
+        "WHERE ride_id = %s AND rider_id = %s AND recorded_at >= %s "
+        "ORDER BY recorded_at ASC",
+        (ride_id, rider_id, since),
+    )
 
 
-def purge_old_positions(retention_days=7):
-    """Delete position points older than the retention window. Returns count."""
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
-        DELETE FROM rider_live_position
-        WHERE created_at < now() - (%s || ' days')::interval
-        RETURNING id
-    """, (str(int(retention_days)),))
-    deleted = len(cur.fetchall())
-    conn.commit()
-    return deleted
-
-
-# ========== LIVE INVITE CODES (public per-ride map access) ==========
-
-# Unambiguous alphabet — no I/O/0/1 so a code is easy to read aloud / type.
-_INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-
-
-def _generate_invite_code():
-    """A short, typeable code like 'ABCD-2K9P' (8 chars, ~40 bits)."""
-    raw = ''.join(secrets.choice(_INVITE_ALPHABET) for _ in range(8))
-    return f'{raw[:4]}-{raw[4:]}'
-
-
-def get_or_create_ride_invite(ride_id, created_by, expires_at):
-    """Return an existing unexpired invite code for the ride, or mint one.
-
-    One shared code per ride keeps things simple — any club member who opens
-    the ride gets the same code to share. Returns the code, or None on failure.
-    """
-    existing = _execute(
-        "SELECT code FROM live_invite_code WHERE ride_id = %s "
-        "AND (expires_at IS NULL OR expires_at > now()) "
-        "ORDER BY created_at DESC LIMIT 1", (ride_id,)).fetchone()
-    if existing:
-        return existing['code']
-
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    for _ in range(5):                      # retry on the rare code collision
-        code = _generate_invite_code()
-        try:
+def purge_old_positions_rp(retention_days=7):
+    """Delete position points older than the retention window. Returns the count
+    deleted (via cursor.rowcount), or None on failure. Goes through the cursor
+    directly because the db.execute helper only surfaces one RETURNING row, not a
+    row count."""
+    conn = db.get_db()
+    try:
+        with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO live_invite_code (code, ride_id, created_by, expires_at) "
-                "VALUES (%s, %s, %s, %s)", (code, ride_id, created_by, expires_at))
-            conn.commit()
-            return code
-        except psycopg2.errors.UniqueViolation:
-            conn.rollback()
-            continue
-        except Exception:
-            conn.rollback()
-            return None
-    return None
-
-
-def get_valid_ride_invite(code):
-    """Return {code, ride_id, expires_at} for a non-expired code, else None.
-
-    Normalizes case/whitespace so a guest can type it casually.
-    """
-    if not code:
+                "DELETE FROM rp_live_position "
+                "WHERE created_at < NOW() - (%s || ' days')::interval",
+                (str(int(retention_days)),),
+            )
+            deleted = cur.rowcount
+        conn.commit()
+        return deleted
+    except Exception:
+        conn.rollback()
         return None
-    norm = str(code).strip().upper()
-    return _execute(
-        "SELECT code, ride_id, expires_at FROM live_invite_code "
-        "WHERE code = %s AND (expires_at IS NULL OR expires_at > now())",
-        (norm,)).fetchone()
+
+
+# --------------------------------------------------------------------------- #
+# RUSA brevet cache (rp_rider.rusa_cache) — the rider's scraped RUSA history,
+# stored as a JSON-safe array so every dashboard load does not re-scrape.
+# --------------------------------------------------------------------------- #
+def get_rider_rusa_cache(rider_id):
+    """Return the cached RUSA scrape + its fetch time for a rider.
+
+    Yields ``{'rusa_cache': <list|None>, 'rusa_fetched_at': <datetime|None>}``.
+    ``rusa_cache`` is decoded by psycopg2 straight to a Python list; a NULL
+    (never fetched) comes back as None.
+    """
+    return db.query_one(
+        "SELECT rusa_cache, rusa_fetched_at FROM rp_rider WHERE id = %s",
+        (rider_id,),
+    )
+
+
+def update_rider_rusa_cache(rider_id, brevets):
+    """Store a fresh RUSA scrape (a JSON-safe list of brevet dicts) and stamp
+    the fetch time. Callers pass results already normalized to JSON-safe values
+    (dates as ISO strings)."""
+    db.execute(
+        "UPDATE rp_rider SET rusa_cache = %s, rusa_fetched_at = NOW() WHERE id = %s",
+        (Json(brevets), rider_id),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Club roster (rp_rider) — read-only, club-scoped community surfaces (directory,
+# leaderboard, season rosters, public rider profile). Every query here is
+# parameterized by the viewer club_id, so no rider outside that club is ever
+# returned; the cached RUSA history rides along, letting career numbers reuse the
+# same engine the self-profile page uses instead of a second computation.
+# --------------------------------------------------------------------------- #
+def get_club_riders_with_rusa(club_id):
+    """Completed-profile riders in one club, each with the cached RUSA history.
+
+    Club-scoped by the club_id bind, so a caller can only ever see members of the
+    club it passes. Rows are ordered by email for a deterministic list; the caller
+    derives the public display name and career numbers and drops the raw email
+    before rendering, so no full address or google id reaches another rider.
+    """
+    return db.query(
+        "SELECT id, email, rusa_id, rusa_cache "
+        "FROM rp_rider "
+        "WHERE club_id = %s AND profile_completed = TRUE "
+        "ORDER BY email ASC",
+        (club_id,),
+    )
+
+
+def get_club_rider(club_id, rider_id):
+    """One club-scoped rider by primary key, with the cached RUSA history.
+
+    Keyed on the unique rider id, never the RUSA id: BrevetHub allows two riders to
+    claim the same RUSA id (soft-flagged, not rejected), so a RUSA id can be
+    ambiguous within a club. The row is returned only when it belongs to the given
+    club, so a viewer can never resolve a rider outside their own club (the
+    public-profile access gate). Returns None when the club has no such
+    completed-profile rider.
+    """
+    return db.query_one(
+        "SELECT id, email, rusa_id, club_id, created_at, rusa_cache, "
+        "       eddington_km, eddington_miles "
+        "FROM rp_rider "
+        "WHERE club_id = %s AND id = %s AND profile_completed = TRUE",
+        (club_id, rider_id),
+    )
+
+
+def get_public_rider(rider_id):
+    """Return only RUSA-backed fields for an anonymous public profile.
+
+    BrevetHub's public directory is an official-randonneuring surface, not a
+    Strava/social directory. Requiring a RUSA id and a completed profile keeps
+    local-only accounts and their private activity out of public pages.
+    """
+    return db.query_one(
+        "SELECT id, email, rusa_id, rusa_cache "
+        "FROM rp_rider WHERE id = %s AND profile_completed = TRUE "
+        "AND rusa_id IS NOT NULL",
+        (rider_id,),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Strava connection (rp_strava_connection) — per-rider OAuth link + cached
+# activity summary.
+#
+# This layer owns the epoch<->TIMESTAMPTZ conversion for expires_at: the shared
+# Strava code is epoch-native (Unix integers, as Strava returns them), while the
+# column is TIMESTAMPTZ. Writes convert with to_timestamp(%s); the getter reads
+# the tz-aware datetimes back and returns them as epoch floats, so every consumer
+# (staleness / refresh decisions) stays epoch-native and comparable to time.time().
+# --------------------------------------------------------------------------- #
+def get_strava_connection(rider_id):
+    """Return the rider's Strava connection, or None.
+
+    ``expires_at`` and ``stats_fetched_at`` are returned as epoch floats (never
+    bare datetimes) so callers compare them directly against ``time.time()``.
+    """
+    row = db.query_one(
+        "SELECT id, rider_id, strava_athlete_id, access_token, refresh_token, "
+        "       expires_at, scope, stats_cache, stats_fetched_at, created_at "
+        "FROM rp_strava_connection WHERE rider_id = %s",
+        (rider_id,),
+    )
+    if row is None:
+        return None
+    row = dict(row)
+    row['expires_at'] = row['expires_at'].timestamp() if row.get('expires_at') else None
+    row['stats_fetched_at'] = (
+        row['stats_fetched_at'].timestamp() if row.get('stats_fetched_at') else None
+    )
+    return row
+
+
+def get_strava_connections_for_eddington():
+    """Every rider Strava connection, for the owner-context Eddington refresh cron.
+
+    Returns the same per-connection shape as get_strava_connection (expires_at as an
+    epoch float so the token-refresh decision stays numeric), one row per connected
+    rider ordered by rider_id. The cron recomputes each rider OWN Eddington with
+    their OWN token; it reads only rp_strava_connection here and never a parent-app
+    table.
+    """
+    rows = db.query(
+        "SELECT id, rider_id, strava_athlete_id, access_token, refresh_token, "
+        "       expires_at, scope, stats_cache, stats_fetched_at, created_at "
+        "FROM rp_strava_connection ORDER BY rider_id ASC",
+    )
+    result = []
+    for row in rows or []:
+        row = dict(row)
+        row['expires_at'] = row['expires_at'].timestamp() if row.get('expires_at') else None
+        row['stats_fetched_at'] = (
+            row['stats_fetched_at'].timestamp() if row.get('stats_fetched_at') else None
+        )
+        result.append(row)
+    return result
+
+
+def upsert_strava_connection(rider_id, *, strava_athlete_id, access_token,
+                             refresh_token, expires_at, scope=None):
+    """Create or replace the rider's Strava connection.
+
+    ``expires_at`` is a Unix epoch integer (as Strava returns it) and is written
+    to the TIMESTAMPTZ column via ``to_timestamp(%s)``.
+    """
+    if get_strava_connection(rider_id):
+        db.execute(
+            "UPDATE rp_strava_connection "
+            "SET strava_athlete_id = %s, access_token = %s, refresh_token = %s, "
+            "    expires_at = to_timestamp(%s), scope = %s "
+            "WHERE rider_id = %s",
+            (strava_athlete_id, access_token, refresh_token, expires_at, scope, rider_id),
+        )
+    else:
+        db.execute(
+            "INSERT INTO rp_strava_connection "
+            "  (rider_id, strava_athlete_id, access_token, refresh_token, expires_at, scope) "
+            "VALUES (%s, %s, %s, %s, to_timestamp(%s), %s)",
+            (rider_id, strava_athlete_id, access_token, refresh_token, expires_at, scope),
+        )
+
+
+def update_strava_tokens(rider_id, *, access_token, refresh_token, expires_at):
+    """Persist refreshed Strava tokens. ``expires_at`` is a Unix epoch integer,
+    stored via ``to_timestamp(%s)``."""
+    db.execute(
+        "UPDATE rp_strava_connection "
+        "SET access_token = %s, refresh_token = %s, expires_at = to_timestamp(%s) "
+        "WHERE rider_id = %s",
+        (access_token, refresh_token, expires_at, rider_id),
+    )
+
+
+def update_strava_stats(rider_id, stats):
+    """Cache the computed per-rider activity summary (a JSON-safe dict) and stamp
+    the fetch time."""
+    db.execute(
+        "UPDATE rp_strava_connection "
+        "SET stats_cache = %s, stats_fetched_at = NOW() "
+        "WHERE rider_id = %s",
+        (Json(stats), rider_id),
+    )
+
+
+def delete_strava_connection(rider_id):
+    """Remove the rider's Strava connection (disconnect)."""
+    db.execute(
+        "DELETE FROM rp_strava_connection WHERE rider_id = %s",
+        (rider_id,),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Strava OAuth broker (rp_strava_broker_state + rp_strava_broker_handoff) —
+# BrevetHub serving a Strava connect on behalf of Team Asha. BrevetHub is the
+# sole writer here; Team Asha only reads+deletes the handoff row (see the note in
+# migration 035). Both tables are rp_-prefixed, so the rp-only isolation invariant
+# holds.
+# --------------------------------------------------------------------------- #
+def claim_broker_state(nonce, *, state_ttl_seconds=600):
+    """Phase 1 (at /connect): atomically claim a broker-state nonce for single use.
+
+    Returns the claim row on first use, or ``None`` if the nonce was already
+    claimed — the durable replay guard that makes a signed state single-use across
+    stateless serverless invocations (an HMAC + TTL check alone cannot). The
+    caller hard-rejects the connect when this returns ``None``. The claim is left
+    unconsumed (``consumed_at IS NULL``) until :func:`consume_broker_state` marks
+    it at the matching /callback.
+    """
+    return db.execute(
+        "INSERT INTO rp_strava_broker_state (nonce, state_expires_at) "
+        "VALUES (%s, NOW() + make_interval(secs => %s)) "
+        "ON CONFLICT (nonce) DO NOTHING "
+        "RETURNING nonce",
+        (nonce, state_ttl_seconds),
+        returning=True,
+    )
+
+
+def consume_broker_state(nonce):
+    """Phase 2 (at /callback): atomically consume a previously-claimed nonce.
+
+    Returns the row only if the nonce was claimed at /connect AND has not already
+    been consumed by an earlier callback. ``None`` means the state either skipped
+    /connect entirely (a direct-to-Strava bypass that never passed the claim) or is
+    being replayed through /callback — either way the caller hard-rejects before any
+    token exchange or handoff. This is what makes the single-use guarantee hold end
+    to end, not just at the first hop.
+    """
+    return db.execute(
+        "UPDATE rp_strava_broker_state SET consumed_at = NOW() "
+        "WHERE nonce = %s AND consumed_at IS NULL "
+        "RETURNING nonce",
+        (nonce,),
+        returning=True,
+    )
+
+
+def create_broker_handoff(*, ta_rider_id, strava_athlete_id, access_token,
+                          refresh_token, strava_token_expires_at, scope=None,
+                          handoff_ttl_seconds=300):
+    """Insert a one-time Strava-token handoff row and return its opaque code.
+
+    ``strava_token_expires_at`` is a Unix epoch integer (Strava's access-token
+    lifetime) stored via ``to_timestamp()``; the separate ``handoff_expires_at``
+    is the short single-use TTL Team Asha's consume gate reads. The code is a
+    high-entropy random token — the only thing put in the return URL, never a
+    Strava token.
+    """
+    code = secrets.token_urlsafe(32)
+    db.execute(
+        "INSERT INTO rp_strava_broker_handoff "
+        "  (code, ta_rider_id, strava_athlete_id, access_token, refresh_token, "
+        "   strava_token_expires_at, scope, handoff_expires_at) "
+        "VALUES (%s, %s, %s, %s, %s, to_timestamp(%s), %s, "
+        "        NOW() + make_interval(secs => %s))",
+        (code, ta_rider_id, strava_athlete_id, access_token, refresh_token,
+         strava_token_expires_at, scope, handoff_ttl_seconds),
+    )
+    return code
+
+
+# --------------------------------------------------------------------------- #
+# Brevet calendar (rp_brevet_event) — a cache of upcoming RUSA brevets parsed by
+# shared/rusa_calendar.py, plus the rider-participation table (rp_event_signup).
+#
+# The national feed carries no start location/time, so those columns are NULL for
+# national-feed events; the calendar renders an honest placeholder and never
+# fabricates them. Every query below targets an rp_* table only.
+# --------------------------------------------------------------------------- #
+def get_events_cache_freshness():
+    """The newest ``scraped_at`` across cached events, or None when empty.
+
+    The calendar route uses ``None`` to identify the first-deploy seed path. A
+    present timestamp, even an old one, is served from cache; age only controls the
+    soft stale banner.
+    """
+    row = db.query_one("SELECT MAX(scraped_at) AS latest FROM rp_brevet_event")
+    return row['latest'] if row else None
+
+
+def get_upcoming_events(state=None, limit=200):
+    """Upcoming brevets (date >= today), soonest first, with an aggregate signup count.
+
+    ``state`` optionally narrows to one US state by matching the RUSA region
+    label ``"<STATE>: ..."`` prefix — an honest, documented narrowing a generic
+    multi-club app can do without the Team Asha hardcoded region->club map. None
+    returns every upcoming brevet (the general RUSA calendar).
+
+    ``signup_count`` is the number of riders who are actively participating
+    (interested / maybe / going) — an AGGREGATE only, so the guest calendar can show
+    interest without exposing any rider identity. WITHDRAW rows are excluded so a
+    withdrawn rider drops off the count. The count comes from a pre-aggregated
+    sub-select LEFT-joined on the event id, so an event with zero sign-ups still
+    returns (coalesced to 0) — both the sub-select and the outer query touch only
+    rp_* tables (rp_event_signup / rp_brevet_event).
+    """
+    like = (state + ': %') if state else None
+    return db.query(
+        "SELECT e.id, e.rusa_route_id, e.name, e.date, e.distance_km, e.region, "
+        "       e.ride_type, e.elevation_ft, e.rwgps_url, e.start_location, "
+        "       e.club_id, c.name AS club_name, c.state AS club_state, "
+        "       e.start_time, e.time_limit_hours, "
+        "       COALESCE(sc.signup_count, 0) AS signup_count "
+        "FROM rp_brevet_event e LEFT JOIN rp_club c ON c.id = e.club_id "
+        "LEFT JOIN ("
+        "  SELECT event_id, COUNT(*) AS signup_count "
+        "  FROM rp_event_signup WHERE status IN (%s, %s, %s) GROUP BY event_id"
+        ") sc ON sc.event_id = e.id "
+        "WHERE e.date >= CURRENT_DATE AND (%s::text IS NULL OR e.region ILIKE %s) "
+        "ORDER BY e.date ASC, e.distance_km ASC LIMIT %s",
+        (RideStatus.INTERESTED.value, RideStatus.MAYBE.value, RideStatus.GOING.value,
+         state, like, limit),
+    )
+
+
+def get_brevet_event(event_id):
+    """A single cached brevet by id (the sign-up existence gate)."""
+    return db.query_one(
+        "SELECT id, name, date, distance_km, region FROM rp_brevet_event WHERE id = %s",
+        (event_id,),
+    )
+
+
+def upsert_brevet_event(event):
+    """Insert or refresh one cached brevet, keyed on (date, name, distance_km).
+
+    A single atomic INSERT ... ON CONFLICT ... DO UPDATE (not SELECT-then-INSERT):
+    the natural key has a UNIQUE constraint, so two concurrent /calendar refreshes
+    past the TTL can both miss the row — the conflict target makes the loser refresh
+    the row in place instead of raising a unique-violation (which would 500 the
+    calendar). COALESCE(EXCLUDED.col, existing) keeps the Team Asha upsert semantics
+    so a sparser repeat scrape never wipes richer data already cached. ``event`` is a
+    dict from shared.rusa_calendar.get_rusa_events.
+
+    NOTE: the SQL literal is split right at ``DO UPDATE`` / ``SET`` on purpose — the
+    rp-only scanner (test_rp_only) captures the identifier after an ``UPDATE``
+    keyword, and keeping ``UPDATE`` at a literal boundary prevents it from reading
+    ``SET`` as a bogus (non-rp_) table name.
+    """
+    db.execute(
+        "INSERT INTO rp_brevet_event "
+        "  (rusa_route_id, name, date, distance_km, region, ride_type, "
+        "   elevation_ft, rwgps_url, start_location, start_time, time_limit_hours) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "ON CONFLICT (date, name, distance_km) DO UPDATE "
+        "SET rusa_route_id = COALESCE(EXCLUDED.rusa_route_id, rp_brevet_event.rusa_route_id), "
+        "    region = COALESCE(EXCLUDED.region, rp_brevet_event.region), "
+        "    ride_type = COALESCE(EXCLUDED.ride_type, rp_brevet_event.ride_type), "
+        "    elevation_ft = COALESCE(EXCLUDED.elevation_ft, rp_brevet_event.elevation_ft), "
+        "    rwgps_url = COALESCE(EXCLUDED.rwgps_url, rp_brevet_event.rwgps_url), "
+        "    start_location = COALESCE(EXCLUDED.start_location, rp_brevet_event.start_location), "
+        "    start_time = COALESCE(EXCLUDED.start_time, rp_brevet_event.start_time), "
+        "    time_limit_hours = COALESCE(EXCLUDED.time_limit_hours, rp_brevet_event.time_limit_hours), "
+        "    scraped_at = NOW()",
+        (event.get('route_id'), event['name'], event['date'], event['distance_km'],
+         event.get('region'), event.get('ride_type'), event.get('elevation_ft'),
+         event.get('rwgps_url'), event.get('start_location'),
+         event.get('start_time'), event.get('time_limit_hours')),
+    )
+
+
+def get_rider_signup_statuses(rider_id):
+    """(event_id, status) for every sign-up belonging to THIS rider.
+
+    Used to annotate the calendar with the signed-in rider own status per event —
+    never a different rider, so the guest/other-rider surface stays PII-free.
+    """
+    return db.query(
+        "SELECT event_id, status FROM rp_event_signup WHERE rider_id = %s",
+        (rider_id,),
+    )
+
+
+def set_rider_signup(rider_id, event_id, status):
+    """Create or transition a rider pre-ride sign-up on an event (one row per pair).
+
+    A single atomic INSERT ... ON CONFLICT ... DO UPDATE keyed on the
+    UNIQUE(event_id, rider_id) constraint: the calendar UI POSTs several status
+    buttons to this same endpoint, so rapid/duplicate requests for one rider-event
+    pair can race — the conflict target makes them transition the status cleanly
+    (last write wins) instead of one hitting a unique-violation and returning a 500.
+
+    Guarded so a pre-ride intent can NEVER clobber a post-ride result: the guarded
+    write carries a WHERE that skips any existing finished / dnf / dns / otl row, and
+    RETURNING lets the caller tell an applied write apart from a blocked one. Returns
+    a sentinel the route maps to an HTTP code:
+      applied      a new or pre-ride row was written -> 200
+      has_result   an existing post-ride result was left intact -> 409
+    A fresh INSERT and a pre-ride write both yield an id; a blocked write yields none.
+    Without this guard a rider could POST interested / maybe / going onto a past
+    finished ride and erase the result (and, via interested / maybe, block the
+    auto-finalize sweep so it can never restore the result).
+
+    (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner
+    reason documented on :func:`upsert_brevet_event`.)
+    """
+    row = db.execute(
+        "INSERT INTO rp_event_signup (rider_id, event_id, status) "
+        "VALUES (%s, %s, %s) "
+        "ON CONFLICT (event_id, rider_id) DO UPDATE "
+        "SET status = EXCLUDED.status, updated_at = NOW() "
+        "WHERE rp_event_signup.status NOT IN (%s, %s, %s, %s) "
+        "RETURNING id",
+        (rider_id, event_id, status,
+         RideStatus.FINISHED.value, RideStatus.DNF.value,
+         RideStatus.DNS.value, RideStatus.OTL.value),
+        returning=True,
+    )
+    # A None row means the conflict hit an existing post-ride result the WHERE
+    # excluded (a fresh INSERT or a pre-ride write both yield an id row).
+    return 'applied' if row is not None else 'has_result'
+
+
+def withdraw_rider_signup(rider_id, event_id):
+    """Transition an EXISTING pre-ride sign-up to withdraw; return a route sentinel.
+
+    Read-then-guarded-update, mirroring the parent web app withdraw guard and the
+    sibling :func:`clear_rider_signup`:
+      not_found    no sign-up for this rider on this event -> 404
+      has_result   the current status is a post-ride result, left intact -> 409
+      withdrawn    a pre-ride row was transitioned to withdraw -> 200
+    A withdraw with no prior sign-up changes nothing, so a guest cannot manufacture a
+    withdraw row; a withdraw over a finished / dnf / dns / otl result is refused so it
+    cannot erase the result. Scoped by rider_id throughout, so a rider can only ever
+    withdraw their OWN row; the guarded write re-asserts the pre-ride predicate so a
+    concurrent transition cannot slip a post-ride row through.
+    """
+    current = db.query_one(
+        "SELECT status FROM rp_event_signup WHERE rider_id = %s AND event_id = %s",
+        (rider_id, event_id),
+    )
+    if not current:
+        return 'not_found'
+    if RideStatus.is_post_ride(RideStatus.normalize(current['status'])):
+        return 'has_result'
+    db.execute(
+        "UPDATE rp_event_signup "
+        "SET status = %s, updated_at = NOW() "
+        "WHERE rider_id = %s AND event_id = %s "
+        "  AND status NOT IN (%s, %s, %s, %s)",
+        (RideStatus.WITHDRAW.value, rider_id, event_id,
+         RideStatus.FINISHED.value, RideStatus.DNF.value,
+         RideStatus.DNS.value, RideStatus.OTL.value),
+    )
+    return 'withdrawn'
+
+
+def clear_rider_signup(rider_id, event_id):
+    """Remove a rider OWN pre-ride sign-up; return a sentinel the route maps to HTTP.
+
+    Read-then-guarded-delete, mirroring the parent web app remove_signup:
+      not_found  no sign-up for this rider on this event -> 404
+      post_ride  the current status may not be cleared (a result, or withdraw) -> 400
+      deleted    a pre-ride row (interested / maybe / going) was removed -> 200
+    Scoped by rider_id throughout, so a rider can only ever clear their OWN row; the
+    DELETE re-asserts the pre-ride predicate so a concurrent transition cannot slip a
+    non-clearable row through.
+    """
+    row = db.query_one(
+        "SELECT status FROM rp_event_signup WHERE rider_id = %s AND event_id = %s",
+        (rider_id, event_id),
+    )
+    if not row:
+        return 'not_found'
+    if not RideStatus.can_remove(RideStatus.normalize(row['status'])):
+        return 'post_ride'
+    db.execute(
+        "DELETE FROM rp_event_signup "
+        "WHERE rider_id = %s AND event_id = %s AND status IN (%s, %s, %s)",
+        (rider_id, event_id, RideStatus.INTERESTED.value, RideStatus.MAYBE.value,
+         RideStatus.GOING.value),
+    )
+    return 'deleted'
+
+
+def set_signup_result(rider_id, event_id, status):
+    """Set a post-ride result on a rider OWN PAST sign-up (status-only).
+
+    Read, then a guarded write on a three-part predicate, all three required:
+    ownership (rider_id bind — the tenant-safety gate), a past event date, and a
+    current status eligible for a result (going, or an existing post-ride result).
+    Returns a (sentinel, finish_time) tuple the route maps to an HTTP code:
+      (not_found, None)     no sign-up for this rider on this event -> 404
+      (not_past, None)      the event date has not passed -> 409
+      (ineligible, None)    a non-convertible pre-ride current status -> 409
+      (ok, <time-or-None>)  the result was written -> 200
+
+    finish_time is NEVER given a rider value here — the RUSA-sync cron is the sole
+    real writer. A correction to a non-successful result (dnf / dns / otl) clears any
+    stale finish_time to NULL as a status side effect; a correction to or among
+    finished preserves an existing RUSA value. The guarded write re-asserts the
+    eligibility predicate so a concurrent transition cannot slip a non-eligible row
+    through.
+    """
+    row = db.query_one(
+        "SELECT s.status, s.finish_time, (e.date < CURRENT_DATE) AS is_past "
+        "FROM rp_event_signup s "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "WHERE s.rider_id = %s AND s.event_id = %s",
+        (rider_id, event_id),
+    )
+    if not row:
+        return ('not_found', None)
+    if not row['is_past']:
+        return ('not_past', None)
+    current = RideStatus.normalize(row['status'])
+    if not (current == RideStatus.GOING or RideStatus.is_post_ride(current)):
+        return ('ineligible', None)
+
+    new_status = RideStatus.normalize(status)
+    # The eligibility set re-asserted by the guarded write: a going row or any
+    # post-ride result. Kept identical to the read-time predicate above.
+    eligible = (RideStatus.GOING.value, RideStatus.FINISHED.value,
+                RideStatus.DNF.value, RideStatus.DNS.value, RideStatus.OTL.value)
+    if RideStatus.is_successful(new_status):
+        # Preserve any existing RUSA finish time; only flip the status.
+        updated = db.execute(
+            "UPDATE rp_event_signup "
+            "SET status = %s, updated_at = NOW() "
+            "WHERE rider_id = %s AND event_id = %s "
+            "  AND status IN (%s, %s, %s, %s, %s) "
+            "RETURNING finish_time",
+            (new_status.value, rider_id, event_id) + eligible,
+            returning=True,
+        )
+    else:
+        # A non-finish has no official time: clear any stale finish_time to NULL.
+        updated = db.execute(
+            "UPDATE rp_event_signup "
+            "SET status = %s, finish_time = NULL, updated_at = NOW() "
+            "WHERE rider_id = %s AND event_id = %s "
+            "  AND status IN (%s, %s, %s, %s, %s) "
+            "RETURNING finish_time",
+            (new_status.value, rider_id, event_id) + eligible,
+            returning=True,
+        )
+    if updated is None:
+        # A concurrent transition moved the row out of an eligible status.
+        return ('ineligible', None)
+    return ('ok', updated.get('finish_time'))
+
+
+def auto_finalize_past_signups():
+    """Promote every past-date going sign-up to finished; return the count changed.
+
+    Tenant-agnostic: keyed on the event date and the going status only, so it needs
+    no club scoping. Mirrors the parent web app auto-finalize. ONLY a going row on a
+    past-date event is promoted (interested / maybe / withdraw and any future row are
+    untouched, and a row already resolved is left as-is). The CTE returns the affected
+    ids so db.execute can report a COUNT (it yields the first row, not a rowcount).
+    """
+    row = db.execute(
+        "WITH rp_finalized AS ("
+        "  UPDATE rp_event_signup "
+        "  SET status = %s, updated_at = NOW() "
+        "  WHERE status = %s "
+        "    AND event_id IN (SELECT id FROM rp_brevet_event WHERE date < CURRENT_DATE) "
+        "  RETURNING id"
+        ") SELECT COUNT(*) AS n FROM rp_finalized",
+        (RideStatus.FINISHED.value, RideStatus.GOING.value),
+        returning=True,
+    )
+    return row['n'] if row else 0
+
+
+def get_event_going_riders(event_id):
+    """The pre-ride roster for a brevet plan page — riders who are interested / maybe
+    / going, exposed as EMAIL LOCAL-PART ONLY.
+
+    Guest-safety: the plan page is public, so this must never leak a full email address,
+    google_id, or rider_id. Only ``split_part(email, '@', 1)`` (the part before the '@')
+    and the pre-ride status are selected — the same local-part-only idiom the live map
+    uses. Ordered going-first, then interested / maybe, then by local-part. rp_* only.
+    """
+    return db.query(
+        "SELECT split_part(r.email, '@', 1) AS name, s.status "
+        "FROM rp_event_signup s "
+        "JOIN rp_rider r ON r.id = s.rider_id "
+        "WHERE s.event_id = %s AND s.status IN (%s, %s, %s) "
+        "ORDER BY CASE s.status WHEN %s THEN 0 WHEN %s THEN 1 ELSE 2 END, name ASC",
+        (event_id, RideStatus.GOING.value, RideStatus.INTERESTED.value,
+         RideStatus.MAYBE.value, RideStatus.GOING.value, RideStatus.INTERESTED.value),
+    )
+
+
+def get_event_finishers(event_id):
+    """Official RUSA-backed finishers for a completed event, fastest first."""
+    return db.query(
+        "SELECT split_part(r.email, '@', 1) AS name, r.rusa_id, "
+        "       s.finish_time, s.status "
+        "FROM rp_event_signup s JOIN rp_rider r ON r.id = s.rider_id "
+        "WHERE s.event_id = %s AND s.status = %s AND s.finish_time IS NOT NULL "
+        "ORDER BY s.finish_time ASC NULLS LAST, name ASC",
+        (event_id, RideStatus.FINISHED.value),
+    )
+
+
+def get_rider_signups(rider_id):
+    """The active upcoming sign-ups (interested / maybe / going) for a rider, linked
+    to the event, soonest first — for the dashboard "My upcoming sign-ups" section.
+    WITHDRAW rows are excluded so a withdrawn brevet drops off the list."""
+    return db.query(
+        "SELECT s.event_id, s.status, e.name, e.date, e.distance_km, e.region, "
+        "       e.start_location, e.start_time "
+        "FROM rp_event_signup s "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "WHERE s.rider_id = %s AND s.status IN (%s, %s, %s) AND e.date >= CURRENT_DATE "
+        "ORDER BY e.date ASC, e.distance_km ASC",
+        (rider_id, RideStatus.INTERESTED.value, RideStatus.MAYBE.value,
+         RideStatus.GOING.value),
+    )
+
+
+def get_rider_past_results(rider_id):
+    """Past-event results (finished / dnf / dns / otl) for one rider, most recent
+    first, for the dashboard "My past results" card. Linked to the event for name /
+    date / distance; carries the official finish_time (NULL until the RUSA-sync cron
+    fills it). rp_ tables only, rider_id-scoped."""
+    return db.query(
+        "SELECT s.event_id, s.status, s.finish_time, "
+        "       e.name, e.date, e.distance_km, e.region "
+        "FROM rp_event_signup s "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "WHERE s.rider_id = %s AND s.status IN (%s, %s, %s, %s) "
+        "  AND e.date < CURRENT_DATE "
+        "ORDER BY e.date DESC, e.distance_km DESC",
+        (rider_id, RideStatus.FINISHED.value, RideStatus.DNF.value,
+         RideStatus.DNS.value, RideStatus.OTL.value),
+    )
+
+
+def get_signups_needing_finish_time():
+    """Finished sign-ups still missing an official finish_time, for the RUSA sync.
+
+    One row per finished rp_event_signup whose rider has a rusa_id and whose
+    finish_time is NULL or blank, carrying the event date + distance the matcher
+    needs and the rider rusa_id + rusa_cache (so the cron reuses the cached RUSA
+    history before any live fetch). Ordered by rider so the cron can batch per rider.
+    Touches only rp_event_signup / rp_rider / rp_brevet_event; scoped per rider
+    downstream by the cron.
+    """
+    return db.query(
+        "SELECT s.id, s.rider_id, s.event_id, "
+        "       r.rusa_id, r.rusa_cache, "
+        "       e.date, e.distance_km, e.name "
+        "FROM rp_event_signup s "
+        "JOIN rp_rider r ON r.id = s.rider_id "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "WHERE s.status = %s "
+        "  AND (s.finish_time IS NULL OR s.finish_time = '') "
+        "  AND r.rusa_id IS NOT NULL "
+        "ORDER BY r.id, e.date",
+        (RideStatus.FINISHED.value,),
+    )
+
+
+def set_signup_finish_time(signup_id, finish_time):
+    """Write an official RUSA finish_time onto one finished sign-up (by row id).
+
+    The SOLE real-value writer of finish_time — the self-service result endpoint only
+    ever clears it. Re-asserts status = finished AND a still-empty finish_time, so a
+    row that left finished, or was already filled, is never overwritten. Returns True
+    when a row changed (RETURNING id, since db.execute yields the first row not a
+    rowcount). rp_ tables only.
+    """
+    row = db.execute(
+        "UPDATE rp_event_signup "
+        "SET finish_time = %s, updated_at = NOW() "
+        "WHERE id = %s AND status = %s "
+        "  AND (finish_time IS NULL OR finish_time = '') "
+        "RETURNING id",
+        (finish_time, signup_id, RideStatus.FINISHED.value),
+        returning=True,
+    )
+    return row is not None
+
+
+# --------------------------------------------------------------------------- #
+# Brevet weather cache (rp_brevet_weather) — one raw Open-Meteo point forecast per
+# (event, date), warmed OFF the request path by the weather cron and READ (never
+# fetched) by the calendar. Every query below targets an rp_* table only.
+# --------------------------------------------------------------------------- #
+def get_weather_forecast_targets(horizon_days=16):
+    """Near-term upcoming brevets the weather cron should fetch a forecast for.
+
+    Returns ``[{id, date, region}, ...]`` for events whose date is between today
+    and ``today + horizon_days`` (Open-Meteo's forecast horizon) AND that have a
+    non-NULL region label (so the cron can resolve an approximate start coordinate).
+    Events further out — or without a region — are skipped: there is nothing honest
+    to forecast, so no cache row is created and the calendar shows the "not
+    available yet" state. Touches only rp_brevet_event.
+    """
+    return db.query(
+        "SELECT id, date, region FROM rp_brevet_event "
+        "WHERE date >= CURRENT_DATE "
+        "  AND date <= CURRENT_DATE + make_interval(days => %s) "
+        "  AND region IS NOT NULL "
+        "ORDER BY date ASC",
+        (horizon_days,),
+    )
+
+
+def upsert_brevet_weather(event_id, forecast_date, weather_data):
+    """Insert or refresh one cached point forecast, keyed on (event_id, forecast_date).
+
+    A single atomic upsert on the UNIQUE(event_id, forecast_date) constraint, so a
+    repeated cron run refreshes the row in place (idempotent) instead of raising a
+    unique-violation. ``weather_data``
+    is the raw Open-Meteo JSON dict, JSON-adapted with psycopg2's ``Json``. Only ever
+    called by the cron with a successful fetch, so a transient failure never overwrites
+    a last-good row.
+
+    (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner
+    reason documented on :func:`upsert_brevet_event`.)
+    """
+    db.execute(
+        "INSERT INTO rp_brevet_weather (event_id, forecast_date, weather_data) "
+        "VALUES (%s, %s, %s) "
+        "ON CONFLICT (event_id, forecast_date) DO UPDATE "
+        "SET weather_data = EXCLUDED.weather_data, fetched_at = NOW()",
+        (event_id, forecast_date, Json(weather_data)),
+    )
+
+
+def get_brevet_weather_for_events(event_ids):
+    """Cached forecasts for a list of event ids, as ``{event_id: {weather_data,
+    forecast_date, fetched_at}}``.
+
+    The calendar's cache-read-only lookup: one query for every event on the page,
+    then the route summarizes each raw payload in-process. Returns ``{}`` immediately
+    for an empty id list (no query, no error). Touches only rp_brevet_weather.
+    """
+    if not event_ids:
+        return {}
+    rows = db.query(
+        "SELECT event_id, forecast_date, weather_data, fetched_at "
+        "FROM rp_brevet_weather WHERE event_id = ANY(%s)",
+        (list(event_ids),),
+    )
+    return {row['event_id']: {
+        'weather_data': row['weather_data'],
+        'forecast_date': row['forecast_date'],
+        'fetched_at': row['fetched_at'],
+    } for row in rows}
+
+
+# --------------------------------------------------------------------------- #
+# Event -> live-ride resolution (Closes #538). A calendar event resolves to an
+# associated PUBLIC live ride so the calendar can render a per-event "Live" link
+# pointing at the shared Radial view (/live/<ride_id>). Two tiers, in priority
+# order and both PUBLIC-only (is_public = TRUE) so no private ride can ever leak:
+#   1. the explicit FK link (rp_ride.event_id), set by the ride owner — the
+#      authoritative path; and
+#   2. a name+date fallback for a public ride that predates the FK (same date,
+#      same normalized name) and is NOT explicitly linked elsewhere.
+# On a tie the pick is deterministic (most-recently-started, then highest id), and
+# only a bare ride id (never PII) is returned. Both tiers touch only rp_ride and
+# rp_brevet_event.
+# --------------------------------------------------------------------------- #
+
+# Shared match clause both resolvers build on: a PUBLIC ride matches an event
+# either by the explicit FK (event_id) OR, when it has no explicit link, by same-date +
+# normalized-name equality. Restricting the fallback to event_id IS NULL means a
+# ride explicitly linked to ANOTHER event can never be name-matched here, so the
+# owner FK always wins. Ordering puts the FK tier first, then the deterministic
+# tie-break, so DISTINCT ON / LIMIT 1 pick one stable ride per event.
+_EVENT_LIVE_RIDE_MATCH = (
+    "  ON r.is_public = TRUE AND ("
+    "       r.event_id = e.id"
+    "       OR (r.event_id IS NULL"
+    "           AND lower(btrim(r.name)) = lower(btrim(e.name))"
+    "           AND r.start_at::date = e.date)"
+    "     ) "
+)
+_EVENT_LIVE_RIDE_ORDER = (
+    "(r.event_id = e.id) DESC, r.start_at DESC NULLS LAST, r.id DESC "
+)
+
+
+def get_live_ride_ids_for_event(event_id):
+    """The PUBLIC live ride ids associated with one calendar event, as an ordered
+    ``[ride_id, ...]`` list (best match first).
+
+    The event-scoped live view aggregates the rider rosters of EVERY public ride
+    linked to a brevet, so this returns all matches, not just one: the explicit FK
+    (rp_ride.event_id) first, then a public-ride name+date fallback, ordered so an
+    explicitly-linked ride ranks ahead of a name-matched one. Only ride ids are
+    returned — never any rider identity. Empty list when no PUBLIC ride is
+    associated, so a future or quiet event resolves to an empty roster (the view
+    still renders the route and a "waiting for riders" state). Touches only rp_ride
+    and rp_brevet_event; never returns PII.
+    """
+    rows = db.query(
+        "SELECT r.id AS ride_id "
+        "FROM rp_brevet_event e JOIN rp_ride r "
+        + _EVENT_LIVE_RIDE_MATCH +
+        "WHERE e.id = %s "
+        "ORDER BY " + _EVENT_LIVE_RIDE_ORDER,
+        (event_id,),
+    )
+    return [row['ride_id'] for row in rows]
+
+
+# --------------------------------------------------------------------------- #
+# Brevet pacing plans (rp_brevet_plan) — a rider's saved target speed / finish
+# time per cached brevet, plus the server-computed pacing schedule. The pacing
+# math is the reused shared/pacing.py engine; this layer only persists the
+# rider's inputs and the computed schedule. Every query targets an rp_* table.
+# --------------------------------------------------------------------------- #
+def get_brevet_event_full(event_id):
+    """A single cached brevet by id including ``time_limit_hours`` — the row the
+    pacing planner needs (the sign-up gate's :func:`get_brevet_event` omits it).
+
+    Returns None for an unknown event so the plan route can 404. ``club_id`` is
+    included so the admin plan-generation gate can enforce that a club owner only
+    generates plans for events belonging to the club they own (NULL for
+    national-feed events, which stay first-owner-wins claimable). Touches only
+    rp_brevet_event.
+    """
+    return db.query_one(
+        "SELECT id, rusa_route_id, name, date, distance_km, region, ride_type, "
+        "       elevation_ft, rwgps_url, start_location, start_time, time_limit_hours, "
+        "       club_id "
+        "FROM rp_brevet_event WHERE id = %s",
+        (event_id,),
+    )
+
+
+def get_rider_brevet_plan(rider_id, event_id):
+    """The saved pacing plan for a rider's brevet, or None. One row per pair.
+
+    Widened for the Strategies tab to also return ``strategy_pace`` (the chosen pace
+    card id, NULL until one is picked) and ``is_public`` (the community share flag), so
+    the render context can show the saved/shared state without a second query.
+    """
+    return db.query_one(
+        "SELECT rider_id, event_id, target_speed_kmh, target_finish_min, plan_data, "
+        "       strategy_pace, is_public "
+        "FROM rp_brevet_plan WHERE rider_id = %s AND event_id = %s",
+        (rider_id, event_id),
+    )
+
+
+def upsert_rider_brevet_plan(rider_id, event_id, *, target_speed_kmh=None,
+                             target_finish_min=None, plan_data=None):
+    """Create or replace the rider's saved pacing plan for a brevet.
+
+    A single atomic INSERT ... ON CONFLICT ... DO UPDATE keyed on the
+    UNIQUE(rider_id, event_id) constraint, so a rider re-saving with a new target
+    transitions the row in place (last write wins) instead of hitting a unique
+    violation. ``plan_data`` is the SERVER-computed schedule (never a client-posted
+    one), JSON-adapted with psycopg2's ``Json``.
+
+    (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner
+    reason documented on :func:`upsert_brevet_event`.)
+    """
+    db.execute(
+        "INSERT INTO rp_brevet_plan "
+        "  (rider_id, event_id, target_speed_kmh, target_finish_min, plan_data) "
+        "VALUES (%s, %s, %s, %s, %s) "
+        "ON CONFLICT (rider_id, event_id) DO UPDATE "
+        "SET target_speed_kmh = EXCLUDED.target_speed_kmh, "
+        "    target_finish_min = EXCLUDED.target_finish_min, "
+        "    plan_data = EXCLUDED.plan_data, updated_at = NOW()",
+        (rider_id, event_id, target_speed_kmh, target_finish_min, Json(plan_data)),
+    )
+
+
+def upsert_rider_brevet_strategy(rider_id, event_id, pace_id, is_public=None):
+    """Save the selected rider pace card + community share flag for a brevet.
+
+    Writes only ``strategy_pace`` (comfort | standard | push) and the tri-state
+    ``is_public`` onto the existing ``(rider_id, event_id)`` row, leaving any saved
+    ``target_speed_kmh`` / ``plan_data`` untouched. A single atomic upsert on the
+    UNIQUE(rider_id, event_id) constraint, so a re-pick transitions the row in place
+    (last write wins) instead of raising a unique-violation.
+
+    Tri-state ``is_public``: None means preserve the existing flag (COALESCE keeps the
+    stored value on update, and a brand-new row falls back to FALSE = private, matching
+    the NOT NULL DEFAULT); True publishes; False unpublishes. The upsert RETURNS the
+    ``is_public`` it actually persisted, so a re-pick that omits the flag reports the
+    preserved value rather than a guessed literal and the client share toggle stays in
+    sync. Returns that resolved boolean.
+
+    (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner reason
+    documented on :func:`upsert_brevet_event`.)
+    """
+    row = db.execute(
+        "INSERT INTO rp_brevet_plan "
+        "  (rider_id, event_id, strategy_pace, is_public) "
+        "VALUES (%s, %s, %s, COALESCE(%s, FALSE)) "
+        "ON CONFLICT (rider_id, event_id) DO UPDATE "
+        "SET strategy_pace = EXCLUDED.strategy_pace, "
+        "    is_public = COALESCE(%s, rp_brevet_plan.is_public), "
+        "    updated_at = NOW() "
+        "RETURNING is_public",
+        (rider_id, event_id, pace_id, is_public, is_public),
+        returning=True,
+    )
+    return bool(row['is_public']) if row else False
+
+
+def get_public_strategies(event_id, club_id):
+    """Other publicly-shared saved pace strategies for a brevet, scoped to one
+    club and exposed as EMAIL LOCAL-PART ONLY.
+
+    Guest-safety mirrors :func:`get_event_going_riders`: the plan page is public, so this
+    must never leak a full email address, google_id, or rider_id. Only the local-part of
+    the email (via split_part on the at-sign) and the chosen pace are selected. Scoped by
+    ``club_id`` so a viewer only ever sees co-club strategies; a NULL scope (a guest, or a
+    rider with no club) returns an empty list without touching the DB. rp_* only.
+    """
+    if club_id is None:
+        return []
+    return db.query(
+        "SELECT split_part(r.email, '@', 1) AS name, p.strategy_pace "
+        "FROM rp_brevet_plan p "
+        "JOIN rp_rider r ON r.id = p.rider_id "
+        "WHERE p.event_id = %s AND p.is_public = TRUE "
+        "  AND p.strategy_pace IS NOT NULL AND r.club_id = %s "
+        "ORDER BY name ASC",
+        (event_id, club_id),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Per-ride analysis (rp_ride_analysis) — a rider's cached, computed breakdown of
+# one of their OWN Strava activities (M9). The heavy Strava stream fetch + the
+# reused shared/strava_analysis.py engine run only on an explicit rider action
+# (POST /analysis/<id>/compute); every read is served from this cache. Both the
+# analysis (JSONB) and the compressed raw streams (BYTEA) live here, keyed per
+# (rider, activity). Every query targets an rp_* table only and is scoped by
+# rider_id, so a rider only ever reads their own analysis.
+# --------------------------------------------------------------------------- #
+def get_ride_analysis(rider_id, strava_activity_id):
+    """The rider's cached analysis for one activity, or None.
+
+    Scoped by ``rider_id`` — the read side of the ownership invariant, so a rider
+    can never read another rider's cached analysis. Returns the decoded ``analysis``
+    dict, the raw compressed ``activity_streams`` blob, and ``computed_at``.
+    """
+    return db.query_one(
+        "SELECT rider_id, strava_activity_id, analysis, activity_streams, computed_at "
+        "FROM rp_ride_analysis WHERE rider_id = %s AND strava_activity_id = %s",
+        (rider_id, strava_activity_id),
+    )
+
+
+def get_analyzed_activity_ids(rider_id):
+    """The set of the rider's Strava activity ids that already have a cached
+    analysis — lets the list view mark which activities are analyzed without an
+    N+1 query. Rider-scoped, so it never reveals another rider's activity ids."""
+    rows = db.query(
+        "SELECT strava_activity_id FROM rp_ride_analysis WHERE rider_id = %s",
+        (rider_id,),
+    )
+    return {row['strava_activity_id'] for row in rows}
+
+
+def get_rider_ride_analyses(rider_id):
+    """All cached ride analyses for one rider, newest cache first.
+
+    Used by the reused Team Asha brevet-analysis index so analyzed brevet cards
+    can still render when the Strava activity is older than the live activity
+    picker's fetch window. Rider-scoped, and it reads only the existing analysis
+    JSON plus the Strava activity id needed by the detail link.
+    """
+    return db.query(
+        "SELECT strava_activity_id, analysis, computed_at "
+        "FROM rp_ride_analysis WHERE rider_id = %s "
+        "ORDER BY computed_at DESC NULLS LAST",
+        (rider_id,),
+    )
+
+
+def upsert_ride_analysis(rider_id, strava_activity_id, analysis,
+                         compressed_streams=None):
+    """Create or replace the rider's cached analysis for one activity.
+
+    A single atomic upsert on the UNIQUE(rider_id, strava_activity_id) constraint,
+    so re-analyzing an already cached activity refreshes the row in place
+    (idempotent) instead of raising a unique-violation. ``analysis`` is the
+    SERVER-computed breakdown (JSON-adapted
+    with psycopg2's ``Json``); ``compressed_streams`` is the zlib-compressed raw
+    streams (wrapped with ``Binary`` for the BYTEA column) so the detail/map view
+    re-renders without another Strava fetch.
+
+    (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner
+    reason documented on :func:`upsert_brevet_event`.)
+    """
+    db.execute(
+        "INSERT INTO rp_ride_analysis "
+        "  (rider_id, strava_activity_id, analysis, activity_streams) "
+        "VALUES (%s, %s, %s, %s) "
+        "ON CONFLICT (rider_id, strava_activity_id) DO UPDATE "
+        "SET analysis = EXCLUDED.analysis, "
+        "    activity_streams = EXCLUDED.activity_streams, computed_at = NOW()",
+        (rider_id, strava_activity_id, Json(analysis),
+         Binary(compressed_streams) if compressed_streams is not None else None),
+    )
+
+
+def save_ride_analysis_note(rider_id, strava_activity_id, scope, ident, note):
+    """Persist a Team-Asha-template note inside the rider-owned analysis JSON.
+
+    The reused Strava-analysis template can save an overall ride note, a planned
+    segment note, or an unplanned-stop note. BrevetHub stores those in the existing
+    rp_ride_analysis.analysis JSONB payload, scoped by rider/activity; no Team Asha
+    table is touched.
+    """
+    row = get_ride_analysis(rider_id, strava_activity_id)
+    if not row or not row.get('analysis'):
+        return None
+
+    analysis = dict(row['analysis'])
+    notes = dict(analysis.get('notes') or {})
+    notes.setdefault('segments', {})
+    notes.setdefault('stops', {})
+
+    text = (note or '').strip()[:2000]
+    if scope == 'overall':
+        if text:
+            notes['overall'] = text
+        else:
+            notes.pop('overall', None)
+    elif scope == 'segment':
+        key = (ident or '').strip()[:200]
+        if not key:
+            return None
+        if text:
+            notes['segments'][key] = text
+        else:
+            notes['segments'].pop(key, None)
+    elif scope == 'stop':
+        key = (ident or '').strip()[:40]
+        if not key:
+            return None
+        if text:
+            notes['stops'][key] = text
+        else:
+            notes['stops'].pop(key, None)
+    else:
+        return None
+
+    analysis['notes'] = notes
+    db.execute(
+        "UPDATE rp_ride_analysis SET analysis = %s "
+        "WHERE rider_id = %s AND strava_activity_id = %s",
+        (Json(analysis), rider_id, strava_activity_id),
+    )
+    return text
+
+
+# --------------------------------------------------------------------------- #
+# Club ownership (rp_club.owner_rider_id) — who may generate real RWGPS ride
+# plans for a club. The club-admin route gates real-plan generation on these
+# checks; NULL owner means no one can admin the club (a safe closed default).
+# --------------------------------------------------------------------------- #
+def get_club_owned_by_rider(rider_id):
+    """The club this rider OWNS (owner_rider_id == rider_id), or None.
+
+    The admin route's ownership gate: a rider with no owned club cannot generate
+    plans. Scoped by owner_rider_id, so a rider can only ever act on their own club.
+    Touches only rp_club.
+    """
+    if not rider_id:
+        return None
+    return db.query_one(
+        "SELECT id, name, city, state, rusa_club_id, owner_rider_id "
+        "FROM rp_club WHERE owner_rider_id = %s",
+        (rider_id,),
+    )
+
+
+def is_club_owner(club_id, rider_id):
+    """True iff ``rider_id`` owns ``club_id`` (owner_rider_id match). Touches only
+    rp_club. A NULL owner or a mismatched rider is never an owner."""
+    if not club_id or not rider_id:
+        return False
+    row = db.query_one(
+        "SELECT 1 AS ok FROM rp_club WHERE id = %s AND owner_rider_id = %s",
+        (club_id, rider_id),
+    )
+    return row is not None
+
+
+# --------------------------------------------------------------------------- #
+# Real RWGPS ride plans (rp_brevet_route_plan + rp_brevet_route_plan_stop) — one
+# persisted, real plan per cached brevet, generated by the reused shared/rwgps.py
+# engine. Distances/speeds are stored in the engine's NATIVE units (miles / mph /
+# feet), verbatim — the /plan route converts to km / km-h at display time, never
+# here, so the column names (distance_miles, avg_speed) stay honest. Every query
+# targets an rp_* table only.
+# --------------------------------------------------------------------------- #
+def get_brevet_route_plan(event_id, variant='conservative'):
+    """The persisted real ride plan for a brevet + variant, or None.
+
+    One row per (event, variant). ``variant`` defaults to 'conservative' — the legacy
+    single-plan rows migrate to conservative, so an unqualified read still resolves to
+    the same plan an event had before the conservative/aggressive split.
+    """
+    return db.query_one(
+        "SELECT id, event_id, club_id, variant, name, slug, total_distance_miles, "
+        "       total_elevation_ft, rwgps_url, rwgps_route_id, distance_km, "
+        "       cutoff_hours, start_time, avg_moving_speed, avg_elapsed_speed, "
+        "       total_moving_time_min, total_elapsed_time_min, total_break_time_min, "
+        "       overall_ft_per_mile, created_at "
+        "FROM rp_brevet_route_plan WHERE event_id = %s AND variant = %s",
+        (event_id, variant),
+    )
+
+
+def get_brevet_route_plan_stops(ride_plan_id):
+    """The ordered per-control stops of a route plan (by stop_order)."""
+    return db.query(
+        "SELECT id, ride_plan_id, stop_order, location, stop_type, distance_miles, "
+        "       elevation_gain, segment_time_min, notes, seg_dist, ft_per_mi, "
+        "       avg_speed, cum_time_min, bookend_time_min, time_bank_min, "
+        "       difficulty_score "
+        "FROM rp_brevet_route_plan_stop WHERE ride_plan_id = %s "
+        "ORDER BY stop_order ASC",
+        (ride_plan_id,),
+    )
+
+
+def get_brevet_route_plan_with_stops(event_id, variant='conservative'):
+    """The real plan for a brevet + variant plus its ordered stops, or None when no
+    such plan exists (so the /plan route falls back to the synthetic schedule).
+
+    ``variant`` defaults to 'conservative' (the /plan default and the legacy plan).
+    Returns ``{'plan': <row>, 'stops': [<row>, ...]}``.
+    """
+    plan = get_brevet_route_plan(event_id, variant)
+    if not plan:
+        return None
+    return {'plan': plan, 'stops': get_brevet_route_plan_stops(plan['id'])}
+
+
+def get_brevet_route_plan_event_ids(event_ids, variant='conservative'):
+    """Event ids that currently have a cached BrevetHub route plan.
+
+    The Team Asha brevet-analysis index distinguishes the plain Strava view and
+    the plan-vs-actual comparison. BrevetHub makes that decision by checking the
+    rp_brevet_route_plan cache instead of assuming every finished event has a plan.
+    """
+    ids = [int(e) for e in (event_ids or []) if e is not None]
+    if not ids:
+        return set()
+    rows = db.query(
+        "SELECT event_id FROM rp_brevet_route_plan "
+        "WHERE variant = %s AND event_id = ANY(%s)",
+        (variant, ids),
+    )
+    return {row['event_id'] for row in rows}
+
+
+def get_brevet_route_plan_by_route_id_rp(rwgps_route_id, club_id, variant='conservative'):
+    """The best in-tenant real plan for an RWGPS route id, or None.
+
+    Tenant-scoped: matches only a plan owned by ``club_id`` OR a public club-less
+    warm plan (club_id IS NULL) — NEVER another club plan, because rwgps_route_id is
+    not unique and two clubs can share one route id. When ``club_id`` is None (a
+    club-less ride) only club-less plans match, since ``club_id = NULL`` is never
+    true. Deterministic pick when a route id maps to more than one accepted plan:
+    same-club before club-less, then newest, then highest id.
+
+    PINNED to the conservative variant (the default): after the conservative/aggressive
+    split an event has two plans sharing one route id, but live-tracking grades against
+    the conservative (legacy default, realistic-pace) plan only — so selection can never
+    depend on which variant was inserted last, and the aggressive plan is never graded.
+    """
+    if not rwgps_route_id:
+        return None
+    return db.query_one(
+        "SELECT id, event_id, club_id, variant, name, slug, total_distance_miles, "
+        "       total_elevation_ft, rwgps_url, rwgps_route_id, distance_km, "
+        "       cutoff_hours, start_time, created_at "
+        "FROM rp_brevet_route_plan "
+        "WHERE rwgps_route_id = %s AND (club_id = %s OR club_id IS NULL) "
+        "  AND variant = %s "
+        "ORDER BY (club_id IS NULL), created_at DESC NULLS LAST, id DESC "
+        "LIMIT 1",
+        (rwgps_route_id, club_id, variant),
+    )
+
+
+def get_brevet_route_plan_candidates_rp(club_id, variant='conservative'):
+    """In-tenant real plans as name-match candidates when no route id matches.
+
+    Returns the id, name, slug, cutoff_hours and total distance of every plan owned
+    by ``club_id`` OR club-less (club_id IS NULL), so the shared name matcher is fed
+    ONLY same-club and public plans — never another club plan. A club-less ride
+    (``club_id`` None) gets only club-less candidates.
+
+    PINNED to the conservative variant (the default) so the name matcher returns
+    exactly one plan per event — the same legacy plan it graded before the
+    conservative/aggressive split — never both variants of one event.
+    """
+    return db.query(
+        "SELECT id, name, slug, rwgps_route_id, club_id, cutoff_hours, "
+        "       total_distance_miles, created_at "
+        "FROM rp_brevet_route_plan "
+        "WHERE (club_id = %s OR club_id IS NULL) AND variant = %s "
+        "ORDER BY (club_id IS NULL), created_at DESC NULLS LAST, id DESC",
+        (club_id, variant),
+    )
+
+
+def upsert_brevet_route_plan(event_id, plan, stops, club_id=None,
+                             variant='conservative'):
+    """Persist a real RWGPS-derived plan + its stops for a brevet variant, atomically.
+
+    One transaction on the per-request connection (the per-call ``db.execute`` can't
+    span the three statements): upsert the plan row keyed on the
+    UNIQUE(event_id, variant) constraint (so re-warming/re-generating the same brevet
+    variant refreshes it in place — idempotent, and the conservative + aggressive
+    variants coexist as two rows under one event), delete the old stops, then re-insert
+    the fresh ordered stops. Values are stored VERBATIM in the engine's native
+    miles / mph / feet.
+
+    OWNERSHIP GUARD (authorization): there is one public plan per brevet, so the
+    ON CONFLICT clause writes a row only when the existing plan is UNOWNED
+    (``club_id IS NULL``, i.e. auto-warmed by cron) or already owned by the SAME club.
+    A club owner can adopt an unowned plan or refresh the plan for the same club, but
+    can NEVER overwrite a different club (first club to generate owns it). When the
+    write is blocked, nothing changes (the stops are left untouched) and this returns
+    ``None``; the caller surfaces that as a flash / skip rather than a silent clobber.
+    The warm cron passes ``club_id=None``, so it can create or refresh only unowned
+    plans and never clobbers a club-owned one.
+
+    ``plan`` / ``stops`` are the two parts of the dict returned by
+    shared.rwgps.build_ride_plan (``{'plan': ..., 'stops': [...]}``). Returns the
+    new/updated plan id, or ``None`` when a different club already owns the plan.
+    """
+    # slug is UNIQUE per (event_id, variant); suffix with BOTH the event id and the
+    # variant so two brevets that share a route name never collide AND the two variants
+    # of one event never collide, while staying deterministic (idempotent) per variant.
+    slug = f"{plan.get('slug') or 'route'}-{event_id}-{variant}"
+
+    conn = db.get_db()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "INSERT INTO rp_brevet_route_plan "
+                "  (event_id, club_id, variant, name, slug, total_distance_miles, "
+                "   total_elevation_ft, rwgps_url, rwgps_route_id, distance_km, "
+                "   cutoff_hours, start_time, avg_moving_speed, avg_elapsed_speed, "
+                "   total_moving_time_min, total_elapsed_time_min, "
+                "   total_break_time_min, overall_ft_per_mile) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (event_id, variant) DO UPDATE "
+                "SET club_id = EXCLUDED.club_id, name = EXCLUDED.name, "
+                "    slug = EXCLUDED.slug, "
+                "    total_distance_miles = EXCLUDED.total_distance_miles, "
+                "    total_elevation_ft = EXCLUDED.total_elevation_ft, "
+                "    rwgps_url = EXCLUDED.rwgps_url, "
+                "    rwgps_route_id = EXCLUDED.rwgps_route_id, "
+                "    distance_km = EXCLUDED.distance_km, "
+                "    cutoff_hours = EXCLUDED.cutoff_hours, "
+                "    start_time = EXCLUDED.start_time, "
+                "    avg_moving_speed = EXCLUDED.avg_moving_speed, "
+                "    avg_elapsed_speed = EXCLUDED.avg_elapsed_speed, "
+                "    total_moving_time_min = EXCLUDED.total_moving_time_min, "
+                "    total_elapsed_time_min = EXCLUDED.total_elapsed_time_min, "
+                "    total_break_time_min = EXCLUDED.total_break_time_min, "
+                "    overall_ft_per_mile = EXCLUDED.overall_ft_per_mile "
+                # Ownership guard: adopt an unowned plan or refresh the same club;
+                # never clobber a different club. A blocked write changes no rows, so
+                # RETURNING yields nothing and fetchone() is None.
+                "WHERE rp_brevet_route_plan.club_id IS NULL "
+                "   OR rp_brevet_route_plan.club_id = EXCLUDED.club_id "
+                "RETURNING id",
+                (event_id, club_id, variant, plan.get('name'), slug,
+                 plan.get('total_distance_miles'), plan.get('total_elevation_ft'),
+                 plan.get('rwgps_url'), plan.get('rwgps_route_id'),
+                 plan.get('distance_km'), plan.get('cutoff_hours'),
+                 plan.get('start_time', '07:00'),
+                 plan.get('avg_moving_speed'), plan.get('avg_elapsed_speed'),
+                 plan.get('total_moving_time_min'), plan.get('total_elapsed_time_min'),
+                 plan.get('total_break_time_min'), plan.get('overall_ft_per_mile')),
+            )
+            row = cur.fetchone()
+            if row is None:
+                # A different club owns this brevet's plan — do NOT touch its stops.
+                conn.rollback()
+                return None
+            plan_id = row['id']
+
+            cur.execute(
+                "DELETE FROM rp_brevet_route_plan_stop WHERE ride_plan_id = %s",
+                (plan_id,),
+            )
+            for s in stops:
+                cur.execute(
+                    "INSERT INTO rp_brevet_route_plan_stop "
+                    "  (ride_plan_id, stop_order, location, stop_type, distance_miles, "
+                    "   elevation_gain, segment_time_min, notes, seg_dist, ft_per_mi, "
+                    "   avg_speed, cum_time_min, bookend_time_min, time_bank_min, "
+                    "   difficulty_score) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (plan_id, s['stop_order'], s['location'], s['stop_type'],
+                     s.get('distance_miles'), s.get('elevation_gain'),
+                     s.get('segment_time_min'), s.get('notes', ''),
+                     s.get('seg_dist'), s.get('ft_per_mi'), s.get('avg_speed'),
+                     s.get('cum_time_min'), s.get('bookend_time_min'),
+                     s.get('time_bank_min'), s.get('difficulty_score')),
+                )
+        conn.commit()
+        return plan_id
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def get_route_plan_warm_targets():
+    """Upcoming brevets with a non-NULL rwgps_url that are still MISSING a variant —
+    the events the warm cron should pre-fetch and persist both variants for.
+
+    Returns ``[{id, rwgps_url, start_time}, ...]`` for events dated today or later that
+    carry an RWGPS URL AND do not yet have BOTH stored plan variants (conservative +
+    aggressive). ``start_time`` rides along so the cron can clock-type the meal breaks.
+    An event that already has both variants is not re-warmed (the daily cron is a
+    fill-in, not a rebuild); events without an RWGPS URL have no real route to build, so
+    they are skipped (the calendar falls back to the synthetic schedule). The
+    variant-count filter reads rp_brevet_route_plan; both tables are rp_*.
+    """
+    return db.query(
+        "SELECT e.id, e.rwgps_url, e.start_time FROM rp_brevet_event e "
+        "WHERE e.date >= CURRENT_DATE AND e.rwgps_url IS NOT NULL "
+        "  AND (SELECT COUNT(DISTINCT p.variant) FROM rp_brevet_route_plan p "
+        "       WHERE p.event_id = e.id) < 2 "
+        "ORDER BY e.date ASC",
+    )
+
+
+def get_events_needing_rwgps_url(limit):
+    """Brevet events still missing an rwgps_url that carry a rusa_route_id, upcoming first.
+
+    Returns ``[{id, rusa_route_id}, ...]`` for at most ``limit`` events WHERE the
+    rwgps_url column is NULL and a rusa_route_id is present (the backfill needs a
+    route id to scrape). Future-dated events sort ahead of past ones, then by date
+    ascending, so a bounded run resolves the events a rider is about to plan for
+    first. The ``limit`` (the caller BATCH_SIZE) keeps a run well within the
+    serverless budget; the NULL-only filter makes it idempotent — a row already
+    holding a URL is never reselected. Touches only rp_brevet_event.
+    """
+    return db.query(
+        "SELECT id, rusa_route_id FROM rp_brevet_event "
+        "WHERE rwgps_url IS NULL AND rusa_route_id IS NOT NULL "
+        "ORDER BY (date >= CURRENT_DATE) DESC, date ASC "
+        "LIMIT %s",
+        (limit,),
+    )
+
+
+def set_event_rwgps_url(event_id, rwgps_url):
+    """Write a scraped rwgps_url onto one brevet event, guarded on a still-NULL column.
+
+    A single-column writer used only by the backfill cron. The WHERE clause re-asserts
+    rwgps_url IS NULL, so a row already filled (by the calendar upsert or an earlier
+    run) is never overwritten and the backfill stays idempotent and safe. Returns True
+    when a row changed (RETURNING id, since db.execute yields the first row not a
+    rowcount). Touches only rp_brevet_event.
+
+    (The literal is split at ``UPDATE`` / ``SET`` for the same rp-only-scanner reason
+    documented on :func:`upsert_brevet_event`.)
+    """
+    row = db.execute(
+        "UPDATE rp_brevet_event "
+        "SET rwgps_url = %s "
+        "WHERE id = %s AND rwgps_url IS NULL "
+        "RETURNING id",
+        (rwgps_url, event_id),
+        returning=True,
+    )
+    return row is not None
+
+
+# --------------------------------------------------------------------------- #
+# Brevet route weather cache (rp_brevet_route_weather) — one dense per-sample
+# Open-Meteo forecast per (event, date), warmed OFF the request path by the
+# warm-brevet-route-weather cron and READ (never fetched) by the /plan page. Mirrors
+# Team Asha's route_weather_cache but keyed on the calendar event. Every query below
+# targets an rp_* table only.
+# --------------------------------------------------------------------------- #
+def get_route_weather_warm_targets(horizon_days=16):
+    """Near-term brevets that HAVE a persisted real plan — the only events whose /plan
+    page renders per-stop wind — each paired with the PLAN's route (not the event's).
+
+    Returns ``[{id, date, rwgps_url, rwgps_route_id}, ...]`` for events dated between
+    today and ``today + horizon_days`` (Open-Meteo's forecast horizon) that have a row
+    in rp_brevet_route_plan. The route fields are read off the PERSISTED PLAN, with the
+    event's URL used only as a fallback when the plan omits one.
+
+    Driving off the plan's route (rather than ``rp_brevet_event.rwgps_url``) is a
+    correctness requirement: a club owner can generate the plan against an admin-entered
+    RWGPS URL that need not match the event's (see routes/admin.py), and the /plan page
+    maps each plan stop onto THAT route. Warming off the event URL could sample the wind
+    along the wrong course — or skip it entirely when only the plan carries a URL.
+    Events without a persisted plan are skipped (no real plan → no Wind column → nothing
+    to warm). Touches only rp_* tables.
+
+    PINNED to the conservative variant: after the conservative/aggressive split an event
+    has two plan rows, but the two variants map the SAME route, so filtering to
+    conservative keeps this ONE row per event — the weather cron fetches each course
+    once, not twice (the /plan wind overlay is variant-agnostic route geometry).
+    """
+    return db.query(
+        "SELECT e.id AS id, e.date AS date, "
+        "       COALESCE(p.rwgps_url, e.rwgps_url) AS rwgps_url, "
+        "       p.rwgps_route_id AS rwgps_route_id "
+        "FROM rp_brevet_route_plan p "
+        "JOIN rp_brevet_event e ON e.id = p.event_id "
+        "WHERE e.date >= CURRENT_DATE "
+        "  AND e.date <= CURRENT_DATE + make_interval(days => %s) "
+        "  AND p.variant = %s "
+        "ORDER BY e.date ASC",
+        (horizon_days, 'conservative'),
+    )
+
+
+def upsert_brevet_route_weather(event_id, forecast_date, weather_data,
+                                sample_points, polyline=None,
+                                elevation_track=None):
+    """Insert or refresh one cached along-route forecast, keyed on
+    (event_id, forecast_date).
+
+    A single atomic upsert on the UNIQUE(event_id, forecast_date) constraint, so a
+    repeated cron run refreshes the row in place (idempotent) instead of raising a
+    unique-violation. ``weather_data`` is the raw Open-Meteo per-sample forecast list
+    and ``sample_points`` is the aligned ``[{lat, lng, distance_m}]``; ``polyline`` is
+    the decimated ``[[lat, lng], ...]`` route line for the Mapbox map; ``elevation_track``
+    is the downsampled ``[{lat, lng, dist_m, e_m}, ...]`` route track for the rpv2
+    gradient elevation profile (all optional — a caller that has no track points passes
+    None and the read paths degrade: polyline falls back to sample_points, the
+    elevation profile renders empty). All are JSON-adapted with psycopg2's ``Json``.
+    Only ever called by the cron with a successful fetch, so a transient failure never
+    overwrites a last-good row.
+
+    (The literal is split at ``DO UPDATE`` / ``SET`` for the same rp-only-scanner
+    reason documented on :func:`upsert_brevet_event`.)
+    """
+    db.execute(
+        "INSERT INTO rp_brevet_route_weather "
+        "  (event_id, forecast_date, weather_data, sample_points, polyline, "
+        "   elevation_track) "
+        "VALUES (%s, %s, %s, %s, %s, %s) "
+        "ON CONFLICT (event_id, forecast_date) DO UPDATE "
+        "SET weather_data = EXCLUDED.weather_data, "
+        "    sample_points = EXCLUDED.sample_points, "
+        "    polyline = EXCLUDED.polyline, "
+        "    elevation_track = EXCLUDED.elevation_track, fetched_at = NOW()",
+        (event_id, forecast_date, Json(weather_data), Json(sample_points),
+         Json(polyline) if polyline is not None else None,
+         Json(elevation_track) if elevation_track is not None else None),
+    )
+
+
+def get_brevet_route_weather(event_id, forecast_date):
+    """The cached along-route forecast for a brevet on a date, or None.
+
+    Returns ``{weather_data, sample_points, polyline, elevation_track, forecast_date,
+    fetched_at}`` (the raw per-sample Open-Meteo list, the aligned sample points, the
+    decimated route polyline for the Mapbox map, and the downsampled elevation track for
+    the rpv2 gradient elevation profile) so the /plan route can map each stop to the
+    nearest sample and compute per-stop wind in-process (shared/weather.py
+    compute_stop_winds), draw the route line, and build the elevation profile — all from
+    cache, no live fetch. ``polyline`` / ``elevation_track`` are NULL on rows warmed
+    before they were cached — the polyline read path falls back to sample_points and the
+    elevation profile renders empty. Returns None when nothing is stored (new route,
+    beyond-horizon brevet, or the cron has not run yet), so the caller degrades
+    gracefully with no live fallback. Touches only rp_brevet_route_weather.
+    """
+    return db.query_one(
+        "SELECT event_id, forecast_date, weather_data, sample_points, polyline, "
+        "       elevation_track, fetched_at "
+        "FROM rp_brevet_route_weather WHERE event_id = %s AND forecast_date = %s",
+        (event_id, forecast_date),
+    )
+
+
+def upsert_rp_route_geometry(route_id, elevation_track):
+    """Insert or refresh one route cached elevation track (idempotent on route_id).
+
+    Route geometry is date-invariant, so this is keyed on the RWGPS route id alone. Only
+    called by the warm-plan-elevation cron with a successful fetch, so a transient RWGPS
+    failure never overwrites a last-good row. The track is the downsampled
+    [{lat, lng, dist_m, e_m}, ...] shared.live_radial output that build_elevation_profile
+    consumes; None on a route with no usable points. Touches only rp_route_geometry_cache.
+
+    (The literal is split at DO UPDATE / SET for the same rp-only-scanner reason
+    documented on upsert_brevet_event.)
+    """
+    db.execute(
+        "INSERT INTO rp_route_geometry_cache (route_id, elevation_track, fetched_at) "
+        "VALUES (%s, %s, NOW()) "
+        "ON CONFLICT (route_id) DO UPDATE "
+        "SET elevation_track = EXCLUDED.elevation_track, fetched_at = NOW()",
+        (route_id, Json(elevation_track) if elevation_track is not None else None),
+    )
+
+
+def get_rp_route_elevation_track(route_id):
+    """The cron-warmed elevation track for a route, or None.
+
+    Returns the [{lat, lng, dist_m, e_m}, ...] track cached in the route-keyed
+    rp_route_geometry_cache (route geometry is date-invariant), for the rpv2 /plan
+    gradient elevation profile to read from cache instead of fetching RWGPS live on the
+    guest request path (the guest page NEVER fetches RWGPS live). The warm-plan-elevation
+    cron populates it for every route referenced by an rp_brevet_route_plan, so any plan
+    profile is served once warmed. None when the route has no cached track yet. Touches
+    only rp_route_geometry_cache.
+    """
+    row = db.query_one(
+        "SELECT elevation_track FROM rp_route_geometry_cache "
+        "WHERE route_id = %s AND elevation_track IS NOT NULL",
+        (route_id,),
+    )
+    return row['elevation_track'] if row else None
+
+
+def get_rp_route_geometry_freshness(route_id):
+    """The fetched_at of a route cached geometry, or None — for the cron fresh-skip.
+
+    Only counts a row that actually has a track: a NULL-track row (a fetch that yielded
+    no usable points) returns None so the cron re-warms it rather than pinning an empty
+    profile for the whole freshness window. Touches only rp_route_geometry_cache.
+    """
+    row = db.query_one(
+        "SELECT fetched_at FROM rp_route_geometry_cache "
+        "WHERE route_id = %s AND elevation_track IS NOT NULL",
+        (route_id,),
+    )
+    return row['fetched_at'] if row else None
+
+
+def get_brevet_route_plan_route_ids():
+    """Distinct RWGPS route references across every rp_brevet_route_plan.
+
+    Returns ``[{rwgps_route_id, rwgps_url}, ...]`` so the warm-plan-elevation cron can
+    enumerate every route that needs a cached elevation track (past and upcoming, not
+    just the weather-warm window). Touches only rp_brevet_route_plan.
+    """
+    return db.query(
+        "SELECT DISTINCT rwgps_route_id, rwgps_url FROM rp_brevet_route_plan"
+    )

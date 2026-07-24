@@ -1,46 +1,26 @@
+{# Vendored, de-branded weather tab body — the interactive Mapbox wind map + along-route
+   forecast, driven by _weather_scripts.html. Adapted from the parent app's /weather page:
+   the guest /plan embed is READ-ONLY (all data comes from the cron-warmed cache via
+   /plan/<id>/weather-data), so the live RWGPS-URL entry form is replaced by a header and
+   the route/time/speed inputs are hidden, prefilled from the plan. No live fetch. #}
 <div class="weather-container">
     <div class="input-card">
-        {% if prefill_plan_name %}
-        <h2>{{ prefill_plan_name }} — Weather Forecast</h2>
-        <p style="font-size:0.85rem; color:var(--text-light); margin:0 0 12px;">
-            Using ride plan timing for arrival estimates. Adjust the start to recompute.
+        <h2>{{ prefill_plan_name }} — Weather along the route</h2>
+        <p style="font-size:0.85rem; color:var(--text-light); margin:0;">
+            Forecast from the latest cached data, timed to the plan's start.
         </p>
+        {# Hidden inputs the render script reads; the guest embed never fetches live. #}
         <form id="weather-form">
             <input type="hidden" id="rwgps-url" value="{{ prefill_url }}">
-            <input type="hidden" id="speed-mph" value="">
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="start-datetime">Start Date/Time</label>
-                    <input type="datetime-local" id="start-datetime" value="{{ prefill_datetime }}">
-                </div>
-            </div>
+            <input type="hidden" id="start-datetime" value="{{ prefill_datetime }}">
+            <input type="hidden" id="speed-mph" value="{{ prefill_speed }}">
         </form>
-        {% else %}
-        <h2>Route Weather Forecast</h2>
-        <form id="weather-form">
-            <div class="form-row">
-                <div class="form-group" style="flex:1; min-width: 280px;">
-                    <label for="rwgps-url">RideWithGPS Route URL</label>
-                    <input type="text" id="rwgps-url" placeholder="https://ridewithgps.com/routes/12345" value="{{ prefill_url }}" required>
-                </div>
-                <div class="form-group">
-                    <label for="start-datetime">Start Date/Time</label>
-                    <input type="datetime-local" id="start-datetime" value="{{ prefill_datetime }}">
-                </div>
-                <div class="form-group" style="width:100px;">
-                    <label for="speed-mph">Speed (mph)</label>
-                    <input type="number" id="speed-mph" placeholder="14" step="0.5" min="5" max="25" value="{{ prefill_speed }}">
-                </div>
-                <button type="submit" class="btn-fetch" id="btn-fetch">Get Weather</button>
-            </div>
-        </form>
-        {% endif %}
     </div>
 
     <div class="error-alert" id="error-alert"></div>
     <div class="loading" id="loading">
         <div class="spinner"></div>
-        <div style="color:var(--text-light); font-size:0.9rem;">Fetching route & weather data...</div>
+        <div style="color:var(--text-light); font-size:0.9rem;">Loading route &amp; weather data...</div>
     </div>
 
     <div class="summary-bar" id="summary-bar">

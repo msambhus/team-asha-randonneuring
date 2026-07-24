@@ -1,716 +1,172 @@
 {% extends "base.html" %}
-{% block title %}{{ rider.first_name }} {{ rider.last_name }} - Team Asha Randonneuring{% endblock %}
-
+{% block title %}{{ display_name }} — {{ product_name }}{% endblock %}
 {% block extra_head %}
 <style>
-.advice-tip .advice-tooltip {
-    display: none;
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%);
-    background: #1a202c;
-    color: #fff;
-    font-size: 0.72rem;
-    font-weight: 400;
-    line-height: 1.5;
-    padding: 8px 12px;
-    border-radius: 8px;
-    width: 240px;
-    z-index: 10;
-    box-shadow: 0 4px 12px rgba(0,0,0,.15);
-    pointer-events: none;
-}
-.advice-tip .advice-tooltip::after {
-    content: '';
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    border: 6px solid transparent;
-    border-top-color: #1a202c;
-}
-.advice-tip:hover .advice-tooltip {
-    display: block;
-}
-
-/* Training card hover effects */
-.training-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 16px rgba(0,0,0,0.1) !important;
-    border-color: #cbd5e0 !important;
-}
-.activity-link:hover {
-    color: #2c5282 !important;
-    text-decoration: underline !important;
-}
-
-/* Upcoming ride card hover effects */
-.upcoming-ride-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 20px rgba(0,0,0,0.12) !important;
-}
-.advice-tip:hover {
-    background: #f7fafc !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1) !important;
-}
-
-/* AI advice loading animation */
-@keyframes ai-pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 1; }
-}
-.advice-loading {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 0;
-}
-.advice-loading-dots span {
-    display: inline-block;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: #a0aec0;
-    animation: ai-pulse 1.2s ease-in-out infinite;
-}
-.advice-loading-dots span:nth-child(2) { animation-delay: 0.2s; }
-.advice-loading-dots span:nth-child(3) { animation-delay: 0.4s; }
-
-/* AI sparkle icon */
-.ai-sparkle {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-}
-
-/* Responsive adjustments for mobile */
-@media (min-width: 768px) {
-    .season-block {
-        padding: 24px !important;
-    }
-}
-@media (max-width: 639px) {
-    #eddington-detail {
-        left: auto !important;
-        right: 0 !important;
-    }
-}
+/* Public rider profile: hero, career stat grid, SR-leg pips, per-season history.
+   Mirrors the parent web app's rider profile on the shared design tokens; no
+   parallel component library, so the page-specific bits are styled inline. */
+.stats-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
+.stats-grid dt { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.stats-grid dd { font-size: 1.4rem; font-weight: 700; color: var(--primary); }
+.profile { display: grid; grid-template-columns: 160px 1fr; gap: 10px 16px; margin: 20px 0; }
+.profile dt { font-weight: 600; color: var(--text-light); }
+.profile dd { margin: 0; }
+.sr-legs, .sr-progress { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.sr-leg { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; border: 1px solid var(--border); }
+.sr-leg.done { background: #2a4a7f; color: #fff; border-color: #2a4a7f; }
+.sr-leg.todo { color: var(--text-light); }
+.season { margin-bottom: 20px; }
+.season-current { border-left: 4px solid #2a4a7f; }
+.season-totals { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+.season-past { margin-bottom: 10px; }
+.season-past > summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+.season-past > summary:hover { color: var(--primary); }
+@media (max-width: 768px) { .profile { grid-template-columns: 1fr; gap: 4px 0; } .profile dt { margin-top: 10px; } }
 </style>
 {% endblock %}
 
+{% macro season_block(s) %}
+  <div class="season-totals">
+    <span>{{ s.summary.total_km }} km &middot; {{ s.summary.count }} ride{{ '' if s.summary.count == 1 else 's' }}</span>
+    <span class="text-text-light">
+      200: {{ s.summary.bands['200'] }} &middot;
+      300: {{ s.summary.bands['300'] }} &middot;
+      400: {{ s.summary.bands['400'] }} &middot;
+      600: {{ s.summary.bands['600'] }} &middot;
+      1000: {{ s.summary.bands['1000'] }}
+    </span>
+    <span class="sr-progress">
+      SR:
+      {% if s.summary.is_sr %}
+        <span class="badge">complete</span>
+      {% else %}
+        {% for leg in [200, 300, 400, 600] %}
+          <span class="sr-leg {% if s.summary.legs[leg] %}done{% else %}todo{% endif %}">{{ leg }}</span>
+        {% endfor %}
+      {% endif %}
+    </span>
+  </div>
+  <div class="table-wrap">
+  <table class="rusa-history">
+    <thead>
+      <tr><th>Date</th><th>Distance</th><th>Event</th><th>Time</th></tr>
+    </thead>
+    <tbody>
+      {% for b in s.brevets %}
+        <tr>
+          <td>{{ b.date }}</td>
+          <td>{{ b.distance_km }} km</td>
+          <td>{{ b.route_name }}</td>
+          <td>{{ b.finish_time }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endmacro %}
+
 {% block content %}
-<div class="hero" style="padding:30px 20px;">
-{% if rider.photo_filename %}
-<img src="{{ url_for('static', filename='riders/' + rider.photo_filename) }}" alt="{{ rider.first_name }} {{ rider.last_name }}" class="w-[100px] h-[100px] md:w-[150px] md:h-[150px] rounded-full object-cover" style="border:4px solid white;margin-bottom:15px;">
-{% endif %}
-<h1>{{ rider.first_name }} {{ rider.last_name }}</h1>
-<p>RUSA# {{ rider.rusa_id }}</p>
+{# Hero + stat-card row mirror the parent web app's rider profile: a full-width
+   gradient banner with initials, then a row of headline career numbers. No email
+   address or google id is ever rendered — only the display name and RUSA id. #}
+<div class="hero" style="padding:30px 20px 64px;">
+  <div class="w-[90px] h-[90px] md:w-[110px] md:h-[110px] rounded-full flex items-center justify-center"
+       style="background:rgba(255,255,255,0.2);margin:0 auto 15px;font-size:2.6rem;color:white;font-weight:700;">
+    {{ display_name[0]|upper }}
+  </div>
+  <h1>{{ display_name }}{% if is_self %} <span class="badge">you</span>{% endif %}</h1>
+  {% if rusa_id %}<p>RUSA# {{ rusa_id }}</p>{% endif %}
+  {% if pbp_years %}
+  {# PBP Ancien: earned by finishing Paris-Brest-Paris. Reuses the shared
+     .pbp-badge treatment (inline gradient so it renders on the hero gradient). #}
+  <p style="margin-top:8px;"><span class="badge pbp-badge" style="background:linear-gradient(135deg,#805ad5,#b794f4);color:#fff;">PBP Ancien {{ pbp_years | join(', ') }}</span></p>
+  {% endif %}
 </div>
 
 <div class="stats-row">
-<div class="stat-card"><div class="number">{{ career_rides }}</div><div class="label">Career Rides</div></div>
-<div class="stat-card"><div class="number">{{ career_kms|commafy }}</div><div class="label">Career KMs</div></div>
-{% if total_srs > 0 %}
-<div class="stat-card"><div class="number" style="color:var(--accent);">{% if total_srs > 1 %}SR*{{ total_srs }}{% else %}SR{% endif %}</div><div class="label">Super Randonneur</div></div>
-{% endif %}
-{% if total_r12s > 0 %}
-<div class="stat-card"><div class="number" style="color:#805ad5;">{% if total_r12s > 1 %}R-12*{{ total_r12s }}{% else %}R-12{% endif %}</div><div class="label">Randonneur 12</div></div>
-{% endif %}
-{% if rider.pbp_2023_status == 'Yes' %}
-<div class="stat-card"><div class="number" style="font-size:1.4rem;"><span class="pbp-badge" style="font-size:1rem;">PBP 2023</span></div><div class="label">Paris-Brest-Paris</div></div>
-{% endif %}
-{% if fitness_score %}
-<div class="stat-card"><div class="number" style="color:{% if fitness_score.total >= 70 %}#38a169{% elif fitness_score.total >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ fitness_score.total }}</div><div class="label">Fitness Score</div></div>
-{% endif %}
-{% if eddington_data %}
-<div style="position:relative;">
-<div class="stat-card" id="eddington-toggle" style="cursor:pointer;" title="Click to expand"><div class="number" style="color:{{ eddington_data.badge.color }};">{{ eddington_data.badge.emoji }} E{{ eddington_data.miles }}</div><div class="label">Eddington Number*</div></div>
-<div id="eddington-detail" style="display:none; position:absolute; top:100%; left:0; z-index:10; max-width:min(360px, calc(100vw - 40px)); margin-top:8px; padding:16px; background:white; border-radius:12px; border:2px solid {{ eddington_data.badge.color }}40; box-shadow:0 8px 24px rgba(0,0,0,0.15);">
-    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
-        <div style="font-size:2rem; line-height:1;">{{ eddington_data.badge.emoji }}</div>
-        <div>
-            <div style="font-size:1.4rem; font-weight:900; color:{{ eddington_data.badge.color }}; line-height:1.2;">E{{ eddington_data.miles }}</div>
-            <div style="font-size:0.7rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">{{ eddington_data.badge.label }}</div>
-        </div>
-    </div>
-    <p style="font-size:0.8rem; color:var(--text); margin:0 0 8px 0; line-height:1.4;">
-        You've ridden <strong>{{ eddington_data.miles }}+ miles</strong> on <strong>{{ eddington_data.miles }}+ different days</strong>
-        <span style="color:var(--text-light);">(E{{ eddington_data.km }} km)</span>
-    </p>
-    <div style="padding:10px; background:#f7fafc; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:8px;">
-        <div style="font-size:0.7rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin-bottom:6px;">Next: E{{ eddington_data.progress.next_target }}</div>
-        <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
-            <div style="flex:1; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
-                <div style="width:{{ eddington_data.progress.progress_pct }}%; height:100%; background:{{ eddington_data.badge.color }};"></div>
-            </div>
-            <div style="font-size:0.7rem; font-weight:700; color:{{ eddington_data.badge.color }};">{{ eddington_data.progress.progress_pct }}%</div>
-        </div>
-        <div style="font-size:0.75rem; color:var(--text);">
-            <strong>{{ eddington_data.progress.days_completed }}</strong>/{{ eddington_data.progress.next_target }} days
-            {% if eddington_data.progress.days_needed > 0 %}
-            · {{ eddington_data.progress.days_needed }} more needed
-            {% endif %}
-        </div>
-    </div>
-    {% if eddington_data.targets %}
-    <div style="margin-bottom:8px;">
-        <div style="font-size:0.7rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin-bottom:4px;">Targets</div>
-        <div style="max-height:250px; overflow-y:auto; font-size:0.7rem; color:var(--text); line-height:1.6; padding:6px 8px; background:#f7fafc; border-radius:6px; border:1px solid #e2e8f0;">
-            {% for t in eddington_data.targets %}
-            <div>{{ t.days_needed }} more day{{ 's' if t.days_needed != 1 else '' }} of {{ t.target }}+ mi for <strong>E{{ t.target }}</strong></div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <a href="https://en.wikipedia.org/wiki/Arthur_Eddington#Eddington_number_for_cycling" target="_blank" rel="noopener" style="font-size:0.7rem; color:var(--text-light); text-decoration:underline;">What is the Eddington number?</a>
-    </div>
-    <p style="font-size:0.65rem; color:#a0aec0; margin:6px 0 0 0; font-style:italic;">* Based on synced Strava activities.</p>
-</div>
-</div>
-<script>
-document.getElementById('eddington-toggle').addEventListener('click', function(e) {
-    e.stopPropagation();
-    var el = document.getElementById('eddington-detail');
-    el.style.display = el.style.display === 'none' ? 'block' : 'none';
-});
-document.addEventListener('click', function(e) {
-    var detail = document.getElementById('eddington-detail');
-    var toggle = document.getElementById('eddington-toggle');
-    if (detail && detail.style.display === 'block' && !detail.contains(e.target) && !toggle.contains(e.target)) {
-        detail.style.display = 'none';
-    }
-});
-</script>
-{% endif %}
+  <div class="stat-card"><div class="number">{{ career.count }}</div><div class="label">Career Rides</div></div>
+  <div class="stat-card"><div class="number">{{ career.total_km }}</div><div class="label">Career KMs</div></div>
+  {% set sr_total = career.total_sr %}
+  <div class="stat-card"><div class="number" style="color:var(--accent);">{% if sr_total > 1 %}SR&times;{{ sr_total }}{% elif sr_total == 1 %}SR{% else %}—{% endif %}</div><div class="label">Super Randonneur</div></div>
+  <div class="stat-card"><div class="number">{{ career.r12_streak.months }}</div><div class="label">R-12 Streak (mo)</div></div>
+  {# Eddington (mi) from this rider own Strava history — a pure read of the cached
+     scalar. This page issues ZERO Strava calls; an absent value renders as an
+     honest dash, never a fabricated 0. #}
+  <div class="stat-card"><div class="number">{% if eddington_miles is not none %}{{ eddington_miles }}{% else %}—{% endif %}</div><div class="label">Eddington (mi)</div></div>
 </div>
 
 <div class="container section">
-<a href="javascript:history.back()" class="back-link">&larr; Back</a>
+<section class="card" id="career">
+  <h2 class="text-primary text-[1.3rem] font-bold mb-4">Career summary</h2>
+  {% if career.count == 0 %}
+    <p class="text-text-light">
+      No completed brevets in this rider's RUSA history yet.
+    </p>
+  {% else %}
+    <dl class="profile">
+      <dt>Career distance</dt>
+      <dd>{{ career.total_km }} km ({{ career.count }} brevets)</dd>
 
-{% if rider.bio %}
-<div class="card">
-<p>{{ rider.bio }}</p>
-</div>
-{% endif %}
+      <dt>Super Randonneur ({{ career.current_season }})</dt>
+      <dd>
+        {% if career.current_sr.is_sr %}
+          <span class="badge">SR complete{% if career.current_sr.sr_count > 1 %} &times;{{ career.current_sr.sr_count }}{% endif %}</span>
+        {% else %}
+          <span class="sr-legs">
+            {% for leg in [200, 300, 400, 600] %}
+              <span class="sr-leg {% if career.current_sr.legs[leg] %}done{% else %}todo{% endif %}">{{ leg }}</span>
+            {% endfor %}
+          </span>
+        {% endif %}
+      </dd>
 
-{# ===== UPCOMING RIDES (COMPACT GRID) ===== #}
-{% if upcoming_rides %}
-<div style="margin-bottom:40px;">
-    <div style="margin-bottom:20px; padding-bottom:12px; border-bottom:2px solid #e2e8f0;">
-        <h3 style="color:var(--primary); margin:0 0 4px 0; font-size:1.5rem; font-weight:700;">Upcoming Rides</h3>
-    </div>
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-    {% for ride in upcoming_rides %}
-    <div class="upcoming-ride-card" style="display:flex; flex-direction:column; padding:14px 16px; background:white; border-radius:12px; border:2px solid {% if ride.is_soon %}#f59e0b{% else %}#e2e8f0{% endif %}; border-top:5px solid {% if ride.is_soon %}#f59e0b{% elif ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}; {% if ride.is_soon %}box-shadow: 0 4px 16px rgba(245, 158, 11, 0.25);{% else %}box-shadow: 0 2px 4px rgba(0,0,0,0.05);{% endif %} transition:all 0.2s ease;">
-        <div style="margin-bottom:10px;">
-            <div style="font-weight:700; font-size:0.9rem; color:var(--text); margin-bottom:6px; line-height:1.3;">
-                {{ ride.name|clean_name }}
-                {% if ride.signup_status == 'MAYBE' %}
-                <span style="display:inline-block; font-size:0.65rem; font-weight:600; color:#d69e2e; background:#fef3c7; padding:2px 6px; border-radius:4px; margin-left:4px;">Maybe</span>
-                {% endif %}
-            </div>
-            {% if ride.is_soon %}
-            <div style="display:inline-flex; align-items:center; gap:4px; font-size:0.7rem; font-weight:700; color:#f59e0b; background:#fff7ed; padding:4px 8px; border-radius:6px; margin-bottom:8px;">
-                <span style="font-size:0.9rem;">🔔</span>
-                <span>{{ ride.days_until }} day{% if ride.days_until != 1 %}s{% endif %} away</span>
-            </div>
-            {% endif %}
-            <div style="display:flex; flex-wrap:wrap; gap:8px; font-size:0.75rem; color:var(--text-light); margin-bottom:4px;">
-                <span style="display:inline-flex; align-items:center; gap:3px; font-weight:600;">
-                    📅 {{ ride.date }}{% if ride.start_time %} {{ ride.start_time }}{% endif %}
-                </span>
-            </div>
-            <div style="display:flex; flex-wrap:wrap; gap:10px; font-size:0.75rem; color:var(--text-light);">
-                {% if ride.distance_miles %}
-                <span style="display:inline-flex; align-items:center; gap:3px;">
-                    <span style="font-weight:600; color:var(--text);">{{ ride.distance_miles|round(0)|int }}</span> mi
-                </span>
-                {% elif ride.distance_km %}
-                <span style="display:inline-flex; align-items:center; gap:3px;">
-                    <span style="font-weight:600; color:var(--text);">{{ (ride.distance_km * 0.621371)|round(0)|int }}</span> mi
-                </span>
-                {% endif %}
-                {% if ride.elevation_ft %}
-                <span style="display:inline-flex; align-items:center; gap:3px;">
-                    <span style="font-weight:600; color:var(--text);">{{ "{:,}".format(ride.elevation_ft) }}</span> ft
-                </span>
-                {% endif %}
-            </div>
-        </div>
-        
-        {# Start Location #}
-        {% if ride.start_location %}
-        <div style="font-size:0.75rem; color:var(--text-light); margin-bottom:10px; padding:6px 8px; background:#f7fafc; border-radius:6px; border-left:3px solid var(--primary);">
-            <span style="font-weight:600; color:var(--text);">📍</span> {{ ride.start_location }}
-        </div>
+      <dt>SR seasons</dt>
+      <dd>
+        {% if career.sr_seasons %}
+          {{ career.sr_seasons | join(', ') }}
+        {% else %}
+          <span class="text-text-light">none yet</span>
         {% endif %}
-        
-        {% if ride.readiness or ride.advice %}
-        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; padding:8px; background:#f7fafc; border-radius:8px;">
-        {% if ride.readiness %}
-            <div style="display:inline-flex; align-items:center; gap:6px;" title="Readiness Score: {{ ride.readiness.score }}/100&#10;&#10;Distance: {{ ride.readiness.distance }}/{{ ride.readiness.distance_max | default(35) }} (longest vs target)&#10;Elevation: {{ ride.readiness.elevation }}/{{ ride.readiness.elevation_max | default(25) }} (max climb vs target)&#10;Volume: {{ ride.readiness.volume }}/{{ ride.readiness.volume_max | default(20) }} (weekly mileage)&#10;Fitness: {{ ride.readiness.fitness }}/{{ ride.readiness.fitness_max | default(20) }} (overall Strava fitness)">
-                <div style="width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:900; color:white; background:{{ ride.readiness.color }}; box-shadow:0 2px 4px rgba(0,0,0,0.15); cursor:help;">
-                    {{ ride.readiness.score }}
-                </div>
-                <div style="display:inline-block; padding:4px 10px; border-radius:12px; font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:white; background:{{ ride.readiness.color }}; cursor:help;">
-                    {% if ride.readiness.level == 'ready' %}✓ Ready{% elif ride.readiness.level == 'caution' %}⚠️ Needs Work{% else %}⚠️ Not Ready{% endif %}
-                </div>
-            </div>
-        {% endif %}
-            <span class="advice-tip" data-ride-id="{{ ride.id }}" style="position:relative; cursor:pointer; display:inline-flex; align-items:center; background:white; padding:4px 8px; border-radius:8px; border:1px solid #e2e8f0; transition:all 0.2s;">
-                <span class="advice-icon" data-icon-ride="{{ ride.id }}">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %}" stroke-width="2"><path d="M12 2l2.09 6.26L20.18 10l-6.09 1.74L12 18l-2.09-6.26L3.82 10l6.09-1.74L12 2z"/><path d="M20 7l.6 1.8L22.4 10l-1.8.6L20 12.4l-.6-1.8L17.6 10l1.8-.6L20 7z" opacity=".6"/><path d="M4 17l.4 1.2 1.2.4-1.2.4L4 20.2l-.4-1.2-1.2-.4 1.2-.4L4 17z" opacity=".6"/></svg>
-                </span>
-                <span class="advice-label" data-label-ride="{{ ride.id }}" style="font-size:0.65rem; margin-left:4px; font-weight:600; color:{% if ride.readiness %}{{ ride.readiness.color }}{% else %}var(--primary){% endif %};">Advice</span>
-                <span class="advice-tooltip" data-tooltip-ride="{{ ride.id }}">
-                    {# Rule-based advice shown immediately as fallback #}
-                    {% if ride.advice %}
-                    <span class="advice-fallback">{% for tip in ride.advice %}{{ tip }}{% if not loop.last %}<br><br>{% endif %}{% endfor %}</span>
-                    {% else %}
-                    <span class="advice-fallback" style="display:none;"></span>
-                    {% endif %}
-                    {# Loading indicator for async personalized tips #}
-                    <div class="advice-loading" data-loading-ride="{{ ride.id }}" {% if ride.advice %}style="display:none;"{% endif %}>
-                        <span style="font-size:0.7rem; color:#a0aec0;">Loading personalized tips</span>
-                        <span class="advice-loading-dots"><span></span><span></span><span></span></span>
-                    </div>
-                </span>
-            </span>
-        </div>
-        {% endif %}
-        
-        {# Ride Plan and Route Links - Pushed to bottom #}
-        <div style="display:flex; gap:6px; margin-top:auto; padding-top:8px; border-top:1px solid #f1f5f9; flex-wrap:wrap;">
-            {% if ride.plan_slug %}
-            <a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}" style="display:inline-flex; align-items:center; gap:4px; padding:5px 10px; border-radius:6px; font-size:0.7rem; font-weight:600; text-decoration:none; background:linear-gradient(135deg,#f0f4ff,#e8f0fe); border:1px solid #c7d2fe; color:#4338ca; transition:all 0.2s;">
-                📍 Ride Plan
-            </a>
-            {% else %}
-                {% if ride.plan_rwgps_url_team %}
-                <a href="{{ ride.plan_rwgps_url_team }}" target="_blank" style="display:inline-flex; align-items:center; gap:4px; padding:5px 10px; border-radius:6px; font-size:0.7rem; font-weight:600; text-decoration:none; background:linear-gradient(135deg,#fff7ed,#ffedd5); border:1px solid #ff6b00; color:#c2410c; transition:all 0.2s;">
-                    <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:14px;height:14px;">
-                    Team Route
-                </a>
-                {% endif %}
-                
-                {% if ride.rwgps_url %}
-                <a href="{{ ride.rwgps_url }}" target="_blank" style="display:inline-flex; align-items:center; gap:4px; padding:5px 10px; border-radius:6px; font-size:0.7rem; font-weight:600; text-decoration:none; background:linear-gradient(135deg,#f0f9ff,#e0f2fe); border:1px solid #7dd3fc; color:#0369a1; transition:all 0.2s;">
-                    <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:14px;height:14px;">
-                    Route
-                </a>
-                {% endif %}
-            {% endif %}
-        </div>
-    </div>
-    {% endfor %}
-    </div>
-</div>
-{% endif %}
+      </dd>
 
-{# ===== RECENT TRAINING (STRAVA) ===== #}
-{% if has_strava and training_rides %}
-<div style="margin-bottom:40px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; padding-bottom:12px; border-bottom:2px solid #e2e8f0;">
-        <div>
-            <h3 style="color:var(--primary); margin:0 0 4px 0; font-size:1.5rem; font-weight:700;">Recent Training</h3>
-            <p style="margin:0; font-size:0.85rem; color:var(--text-light);">From Strava (last 28 days)</p>
-        </div>
-        <img src="{{ url_for('static', filename='img/powered_by_strava.svg') }}" alt="Powered by Strava" style="height:28px; opacity:0.9;">
-    </div>
+      <dt>R-12 streak</dt>
+      <dd>
+        {{ career.r12_streak.months }} consecutive month{{ '' if career.r12_streak.months == 1 else 's' }}
+        {% if career.r12_streak.active %}
+          <span class="badge">active</span>
+        {% elif career.r12_streak.months > 0 %}
+          <span class="text-text-light">(lapsed)</span>
+        {% endif %}
+      </dd>
 
-    {# Fitness Score Breakdown #}
-    {% if fitness_score %}
-    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(90px, 1fr)); gap:12px; margin-bottom:24px; padding:18px; background:linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%); border-radius:12px; border:1px solid #e2e8f0; box-shadow:0 2px 4px rgba(0,0,0,0.04);">
-        <div style="text-align:center; padding:8px; background:white; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-            <div style="font-size:2.2rem; font-weight:900; background:linear-gradient(135deg, {% if fitness_score.total >= 70 %}#38a169, #48bb78{% elif fitness_score.total >= 40 %}#d69e2e, #ed8936{% else %}#e53e3e, #fc8181{% endif %}); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;">{{ fitness_score.total }}</div>
-            <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin-top:2px;">Overall</div>
-        </div>
-        <div style="text-align:center; padding:8px;">
-            <div style="font-size:1.3rem; font-weight:800; color:var(--primary);">{{ fitness_score.frequency }}</div>
-            <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.4px; font-weight:500;">Frequency</div>
-            <div style="font-size:0.6rem; color:#a0aec0; margin-top:1px;">/25</div>
-        </div>
-        <div style="text-align:center; padding:8px;">
-            <div style="font-size:1.3rem; font-weight:800; color:var(--primary);">{{ fitness_score.volume }}</div>
-            <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.4px; font-weight:500;">Volume</div>
-            <div style="font-size:0.6rem; color:#a0aec0; margin-top:1px;">/35</div>
-        </div>
-        <div style="text-align:center; padding:8px;">
-            <div style="font-size:1.3rem; font-weight:800; color:var(--primary);">{{ fitness_score.intensity }}</div>
-            <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.4px; font-weight:500;">Intensity</div>
-            <div style="font-size:0.6rem; color:#a0aec0; margin-top:1px;">/25</div>
-        </div>
-        <div style="text-align:center; padding:8px;">
-            <div style="font-size:1.3rem; font-weight:800; color:var(--primary);">{{ fitness_score.recency }}</div>
-            <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.4px; font-weight:500;">Recency</div>
-            <div style="font-size:0.6rem; color:#a0aec0; margin-top:1px;">/15</div>
-        </div>
-    </div>
-    {% endif %}
+      <dt>R-12 awards</dt>
+      <dd>{{ career.r12_awards | length }}</dd>
+    </dl>
+    <p class="text-text-light">R-12 and Super Randonneur reflect this rider's official RUSA brevet history.</p>
+  {% endif %}
+  <p class="mt-4"><a class="text-primary font-semibold hover:text-accent hover:underline" href="{{ url_for('riders.directory') }}">&larr; Back to the rider directory</a></p>
+</section>
 
-
-    {# Training Rides Card Grid #}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-    {% for ride in training_rides %}
-    <div class="training-card" style="padding:14px; background:white; border-radius:12px; border:1px solid #e2e8f0; border-left:5px solid {{ ride.color }}; position:relative; transition:all 0.2s ease; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-        {# Grade badge - top right #}
-        <div style="position:absolute; top:12px; right:12px;">
-            <span style="display:inline-flex; align-items:center; justify-content:center; min-width:36px; height:24px; padding:0 8px; border-radius:12px; font-size:0.75rem; font-weight:800; color:white; background:{{ ride.color }}; text-align:center; box-shadow:0 2px 4px rgba(0,0,0,0.1);" title="Score: {{ ride.total }}/100">
-                {{ ride.grade }}{% if ride.trend == 'building' %} <span style="font-size:0.6rem; margin-left:2px;">▲</span>{% elif ride.trend == 'declining' %} <span style="font-size:0.6rem; margin-left:2px;">▼</span>{% endif %}
-            </span>
-        </div>
-        {# Activity name #}
-        <div style="font-weight:600; font-size:0.85rem; color:var(--text); margin-bottom:5px; line-height:1.3; padding-right:50px;">
-            <a href="{{ ride.strava_url or ('https://www.strava.com/activities/' ~ ride.strava_activity_id) }}" target="_blank" rel="noopener" style="color:var(--primary); text-decoration:none; transition:color 0.2s;" title="View on Strava" class="activity-link">
-                {{ ride.name or 'Ride' }}
-            </a>
-        </div>
-        {# Date #}
-        <div style="font-size:0.72rem; color:var(--text-light); margin-bottom:8px; font-weight:500;">
-            {% if ride.start_date_local %}
-                {{ ride.start_date_local.strftime('%b %d, %Y') if ride.start_date_local is not string else ride.start_date_local[:10] }}
-            {% endif %}
-        </div>
-        {# Metrics #}
-        <div style="font-size:0.8rem; color:var(--text); line-height:1.7; background:#f7fafc; padding:8px; border-radius:8px; margin-bottom:6px;">
-            <div style="display:flex; align-items:center; gap:6px; margin-bottom:3px;">
-                <span style="font-weight:600;">{{ ((ride.distance or 0) / 1609.34)|round(1) }}</span> 
-                <span style="color:var(--text-light); font-size:0.7rem;">mi</span>
-                <span style="color:#cbd5e0; margin:0 4px;">|</span>
-                <span style="font-weight:600;">{{ "{:,}".format(((ride.total_elevation_gain or 0) * 3.28084)|round(0)|int) }}</span>
-                <span style="color:var(--text-light); font-size:0.7rem;">ft</span>
-            </div>
-            <div style="color:#718096; font-size:0.75rem;">
-                {% if ride.moving_time %}
-                    {% set hrs = (ride.moving_time // 3600)|int %}
-                    {% set mins = ((ride.moving_time % 3600) // 60)|int %}
-                    ⏱️ {% if hrs > 0 %}{{ hrs }}h {{ mins }}m{% else %}{{ mins }}m{% endif %}
-                {% endif %}
-            </div>
-        </div>
-        {# HR/Power footer #}
-        {% if (ride.has_heartrate and ride.average_heartrate) or (ride.device_watts and ride.average_watts) %}
-        <div style="display:flex; gap:10px; font-size:0.7rem; color:var(--text-light); padding-top:6px; border-top:1px solid #edf2f7;">
-            {% if ride.has_heartrate and ride.average_heartrate %}
-            <span style="display:inline-flex; align-items:center; gap:3px;" title="Average Heart Rate">
-                <span style="color:#e53e3e;">❤️</span>
-                <span style="font-weight:600; color:var(--text);">{{ ride.average_heartrate|round(0)|int }}</span>
-                <span style="font-size:0.65rem;">bpm</span>
-            </span>
-            {% endif %}
-            {% if ride.device_watts and ride.average_watts %}
-            <span style="display:inline-flex; align-items:center; gap:3px;" title="Average Power">
-                <span style="color:#f59e0b;">⚡</span>
-                <span style="font-weight:600; color:var(--text);">{{ ride.average_watts|round(0)|int }}</span>
-                <span style="font-size:0.65rem;">W</span>
-            </span>
-            {% endif %}
-        </div>
-        {% endif %}
-    </div>
-    {% endfor %}
-    </div>
-</div>
-{% endif %}
-
-{# ===== BREVET SEASON HISTORY ===== #}
-{% for sd in season_data %}
-<div class="season-block" style="margin-bottom:35px; background:white; border-radius:12px; padding:12px; box-shadow:0 2px 8px rgba(0,0,0,0.06); border-left:5px solid var(--primary);">
-<div style="margin-bottom:16px; padding-bottom:16px; border-bottom:2px solid #f1f5f9;">
-    <h3 style="margin:0 0 12px 0; font-size:1.4rem; font-weight:700; color:var(--primary); display:flex; align-items:center; flex-wrap:wrap; gap:10px;">
-        <span>{{ sd.season.name }} Season</span>
-        {% if sd.sr_count > 0 %}
-        <span class="sr-badge" style="background:linear-gradient(135deg, #4facfe, #00f2fe); padding:4px 12px; border-radius:10px; font-size:0.8rem; box-shadow:0 2px 6px rgba(0,0,0,0.12);">{% if sd.sr_count > 1 %}SR×{{ sd.sr_count }}{% else %}SR{% endif %}</span>
-        {% endif %}
-        {% set season_years = sd.season.name.split('-') %}
-        {% set r12_in_season = [] %}
-        {% for award in r12_awards %}{% if award.end_year|string in season_years %}{% if r12_in_season.append(1) %}{% endif %}{% endif %}{% endfor %}
-        {% if r12_in_season|length > 0 %}
-        <span style="display:inline-block; padding:4px 12px; border-radius:10px; font-size:0.8rem; font-weight:700; color:white; background:linear-gradient(135deg, #a8edea, #fed6e3); color:#805ad5; box-shadow:0 2px 6px rgba(0,0,0,0.12);">{% if r12_in_season|length > 1 %}R-12×{{ r12_in_season|length }}{% else %}R-12{% endif %}</span>
-        {% endif %}
-        {% if sd.season.name == '2022-2023' and rider.pbp_2023_status == 'Yes' %}
-        <span class="pbp-badge" style="background:linear-gradient(135deg, #ff6b6b, #ee5a6f); padding:4px 12px; border-radius:10px; font-size:0.8rem; box-shadow:0 2px 6px rgba(0,0,0,0.12);">PBP Finisher</span>
-        {% endif %}
-        {% if sd.season.name == '2022-2023' and rider.pbp_2023_status == 'DNF' %}
-        <span class="badge badge-dnf" style="padding:4px 12px; border-radius:10px; font-size:0.8rem;">PBP DNF</span>
-        {% endif %}
-    </h3>
-    <div style="display:flex; gap:20px; flex-wrap:wrap; font-size:0.9rem;">
-        <div style="display:flex; align-items:center; gap:6px;">
-            <span style="color:var(--text-light);">Rides:</span>
-            <span style="font-weight:700; color:var(--primary); font-size:1.1rem;">{{ sd.rides }}</span>
-        </div>
-        <div style="display:flex; align-items:center; gap:6px;">
-            <span style="color:var(--text-light);">Distance:</span>
-            <span style="font-weight:700; color:var(--primary); font-size:1.1rem;">{{ sd.kms|commafy }} km</span>
-        </div>
-    </div>
-</div>
-
-<div class="table-wrap" style="margin-top:0; overflow-x:auto;">
-<table style="width:100%; border-collapse:separate; border-spacing:0;">
-<thead>
-<tr style="background:linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);">
-    <th style="padding:12px 16px; text-align:left; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text); border-bottom:2px solid #e2e8f0; border-top-left-radius:8px;">Date</th>
-    <th style="padding:12px 16px; text-align:left; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text); border-bottom:2px solid #e2e8f0;">Event</th>
-    <th style="padding:12px 16px; text-align:left; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text); border-bottom:2px solid #e2e8f0;">Distance</th>
-    <th style="padding:12px 16px; text-align:left; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text); border-bottom:2px solid #e2e8f0;">Elevation</th>
-    <th style="padding:12px 16px; text-align:center; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text); border-bottom:2px solid #e2e8f0;">Time</th>
-    {% if is_own_profile %}<th style="padding:12px 16px; text-align:center; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:#fc4c02; border-bottom:2px solid #e2e8f0; border-top-right-radius:8px;">
-        <span style="display:inline-flex; align-items:center; gap:8px;">
-            Strava
-            {% if sd.strava_matches %}
-            <button onclick="toggleAllRideStats('{{ sd.season.id }}')" id="showall-{{ sd.season.id }}"
-                style="font-size:0.65rem; font-weight:600; color:#fc4c02; background:transparent; border:1px solid #fc4c02; padding:2px 7px; border-radius:4px; cursor:pointer; text-transform:none; letter-spacing:0; transition:all 0.2s; white-space:nowrap;"
-                onmouseover="this.style.background='#fff5f0'" onmouseout="this.style.background='transparent'">
-                Show all
-            </button>
-            {% endif %}
-        </span>
-    </th>{% endif %}
-</tr>
-</thead>
-<tbody>
-{% for p in sd.participation %}
-{% if p.status|lower == 'finished' or p.status|lower == 'dnf' %}
-<tr style="transition:background 0.2s;" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='white'">
-<td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; color:var(--text-light); font-weight:500;">{{ p.date }}</td>
-<td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; color:var(--text); line-height:1.5;">
-    {% if sd.season.name in ['2024-2025', '2025-2026'] and p.plan_slug %}
-    <a href="{{ url_for('riders.ride_plan_detail', slug=p.plan_slug) }}"
-       style="color:var(--primary); text-decoration:none; font-weight:700;">
-        {{ p.ride_name|clean_name }}
-    </a>
-    {% else %}
-    <strong style="color:var(--primary);">{{ p.ride_name|clean_name }}</strong>
-    {% endif %}
-    {% if p.rwgps_url %}
-    <a href="{{ p.rwgps_url }}" target="_blank" style="display:inline-flex; align-items:center; gap:3px; margin-left:8px; font-size:0.75rem; color:#4299e1; text-decoration:none; padding:2px 6px; border-radius:4px; background:#ebf8ff; transition:all 0.2s;">
-        <img src="https://ridewithgps.com/favicon.ico" alt="" style="width:12px;height:12px;">
-        route
-    </a>
-    {% endif %}
-    {% if p.status|lower == 'dnf' %}
-    <span class="badge badge-dnf" style="display:inline-block; margin-left:6px; padding:2px 8px; border-radius:6px; font-size:0.7rem; font-weight:600;">DNF</span>
-    {% endif %}
-</td>
-<td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; font-weight:600; color:var(--text);">{{ p.distance_km }} km</td>
-<td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:0.85rem; color:var(--text-light);">{% if p.elevation_ft %}<span style="font-weight:600; color:var(--text);">{{ "{:,}".format(p.elevation_ft) }}</span> ft{% endif %}</td>
-<td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; text-align:center; font-size:0.85rem; color:#718096; font-weight:600; font-family:monospace;">{{ p.finish_time or '—' }}</td>
-{% if is_own_profile %}
-<td style="padding:14px 16px; border-bottom:1px solid #f1f5f9; text-align:center;">
-    {% if p.status|lower == 'finished' and p.ride_id and sd.strava_matches and p.ride_id in sd.strava_matches %}
-    <button onclick="toggleRideAnalysis({{ p.ride_id }})" id="btn-{{ p.ride_id }}"
-        style="display:inline-flex; align-items:center; gap:4px; font-size:0.72rem; font-weight:600; color:#fc4c02; background:#fff5f0; border:1px solid #fed7aa; padding:4px 10px; border-radius:6px; cursor:pointer; transition:all 0.2s;"
-        onmouseover="this.style.background='#fed7aa'" onmouseout="this.style.background='#fff5f0'">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="#fc4c02"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
-        Stats
-    </button>
-    {% else %}
-    <span style="color:#cbd5e0; font-size:0.75rem;">—</span>
-    {% endif %}
-</td>
-{% endif %}
-</tr>
-{% if is_own_profile and p.status|lower == 'finished' and p.ride_id and sd.strava_matches and p.ride_id in sd.strava_matches %}
-<tr id="strava-row-{{ p.ride_id }}" data-season="{{ sd.season.id }}" style="display:none;">
-    <td colspan="6" style="padding:0 8px 12px; background:#fffaf8; border-bottom:1px solid #f1f5f9;">
-        {% set act = sd.ride_details.get(p.ride_id) %}
-        {% if act %}
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(95px, 1fr)); gap:1px; background:#fee2d5; border-radius:10px; overflow:hidden; border:1px solid #fed7aa; margin-bottom:10px;">
-            <div style="text-align:center; padding:12px 6px; background:white;">
-                <div style="font-size:1.1rem; font-weight:700; color:#1e293b;">{{ act.distance_miles }} mi</div>
-                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Distance</div>
-            </div>
-            <div style="text-align:center; padding:12px 6px; background:white;">
-                <div style="font-size:1.1rem; font-weight:700; color:#1e293b;">{{ act.elapsed_time_hrs }}h{{ "%02d"|format(act.elapsed_time_min) }}m</div>
-                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Total Time</div>
-            </div>
-            <div style="text-align:center; padding:12px 6px; background:white;">
-                <div style="font-size:1.1rem; font-weight:700; color:#1e293b;">{{ act.moving_time_hrs }}h{{ "%02d"|format(act.moving_time_min) }}m</div>
-                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Moving</div>
-            </div>
-            <div style="text-align:center; padding:12px 6px; background:white;">
-                <div style="font-size:1.1rem; font-weight:700; color:#1e293b;">{{ act.stopped_time_min }} min</div>
-                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Stopped</div>
-            </div>
-            <div style="text-align:center; padding:12px 6px; background:white;">
-                <div style="font-size:1.1rem; font-weight:700; color:#1e293b;">{{ act.avg_speed_mph }} mph</div>
-                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Avg Speed</div>
-            </div>
-            <div style="text-align:center; padding:12px 6px; background:white;">
-                <div style="font-size:1.1rem; font-weight:700; color:#1e293b;">{{ "{:,}".format(act.elevation_ft) }} ft</div>
-                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Elevation</div>
-            </div>
-            {% if act.has_heartrate and act.average_heartrate %}
-            <div style="text-align:center; padding:12px 6px; background:white;">
-                <div style="font-size:1.1rem; font-weight:700; color:#dc2626;">{{ act.average_heartrate|round(0)|int }} bpm</div>
-                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Avg HR</div>
-            </div>
-            {% endif %}
-            {% if act.device_watts and act.average_watts %}
-            <div style="text-align:center; padding:12px 6px; background:white;">
-                <div style="font-size:1.1rem; font-weight:700; color:#7c3aed;">{{ act.average_watts|round(0)|int }} W</div>
-                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Avg Power</div>
-            </div>
-            {% endif %}
-            {% if act.suffer_score %}
-            <div style="text-align:center; padding:12px 6px; background:white;">
-                <div style="font-size:1.1rem; font-weight:700; color:#ea580c;">{{ act.suffer_score }}</div>
-                <div style="font-size:0.6rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Suffer Score</div>
-            </div>
-            {% endif %}
-        </div>
-        {% endif %}
-        <div style="display:flex; gap:8px; flex-wrap:wrap; padding:0 4px;">
-            <a href="{{ url_for('riders.ride_strava_analysis', rusa_id=rider.rusa_id, ride_id=p.ride_id) }}"
-               style="display:inline-flex; align-items:center; gap:5px; padding:6px 14px; background:#fc4c02; color:white; border-radius:8px; text-decoration:none; font-weight:600; font-size:0.78rem; transition:background 0.2s;"
-               onmouseover="this.style.background='#e04302'" onmouseout="this.style.background='#fc4c02'">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
-                {% if p.plan_slug %}Plan vs Actual{% else %}Full Analysis{% endif %}
-            </a>
-            <a href="{{ url_for('riders.ride_cohort_comparison', ride_id=p.ride_id) }}"
-               style="display:inline-flex; align-items:center; gap:5px; padding:6px 14px; background:#0ea5e9; color:white; border-radius:8px; text-decoration:none; font-weight:600; font-size:0.78rem; transition:background 0.2s;"
-               onmouseover="this.style.background='#38bdf8'" onmouseout="this.style.background='#0ea5e9'">
-                &#x1F465; Compare with Cohort
-            </a>
-            {% if act and act.strava_url %}
-            <a href="{{ act.strava_url }}" target="_blank" rel="noopener"
-               style="display:inline-flex; align-items:center; gap:4px; padding:6px 12px; background:white; color:#fc4c02; border:1px solid #fc4c02; border-radius:8px; text-decoration:none; font-size:0.78rem; font-weight:600; transition:all 0.2s;"
-               onmouseover="this.style.background='#fff5f0'" onmouseout="this.style.background='white'">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="#fc4c02"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
-                View on Strava
-            </a>
-            {% endif %}
-        </div>
-    </td>
-</tr>
-{% endif %}
-{% endif %}
-{% endfor %}
-</tbody>
-</table>
-</div>
-</div>
+{% for s in seasons %}
+  {% if s.is_current %}
+    <section class="card season season-current" id="season-{{ s.season }}">
+      <h2 class="text-primary text-[1.3rem] font-bold mb-4">{{ s.season }} <span class="badge">current season</span></h2>
+      {{ season_block(s) }}
+    </section>
+  {% endif %}
 {% endfor %}
 
-
-{% if session.get('logged_in') %}
-<p style="margin-top:20px;"><a href="{{ url_for('riders.rider_edit', rusa_id=rider.rusa_id) }}" class="btn btn-primary btn-sm">Edit Profile</a></p>
+{% set past = seasons | rejectattr('is_current') | list %}
+{% if past %}
+  <section class="card">
+    <h2 class="text-primary text-[1.3rem] font-bold mb-4">Past seasons</h2>
+    {% for s in past %}
+      <details class="season season-past" id="season-{{ s.season }}">
+        <summary>{{ s.season }} — {{ s.summary.total_km }} km, {{ s.summary.count }} ride{{ '' if s.summary.count == 1 else 's' }}{% if s.summary.is_sr %} &middot; SR{% endif %}</summary>
+        {{ season_block(s) }}
+      </details>
+    {% endfor %}
+  </section>
 {% endif %}
-
 </div>
-
-<script>
-var STRAVA_SVG = '<svg width="10" height="10" viewBox="0 0 24 24" fill="#fc4c02"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg> ';
-
-function toggleRideAnalysis(rideId) {
-    var row = document.getElementById('strava-row-' + rideId);
-    var btn = document.getElementById('btn-' + rideId);
-    if (!row) return;
-    var isOpen = row.style.display !== 'none';
-    row.style.display = isOpen ? 'none' : 'table-row';
-    if (btn) {
-        btn.style.background = isOpen ? '#fff5f0' : '#fed7aa';
-        btn.innerHTML = STRAVA_SVG + (isOpen ? 'Stats' : 'Hide');
-    }
-}
-
-function toggleAllRideStats(seasonId) {
-    var rows = document.querySelectorAll('tr[data-season="' + seasonId + '"]');
-    var btn = document.getElementById('showall-' + seasonId);
-    if (!rows.length) return;
-    var anyHidden = Array.from(rows).some(function(r) { return r.style.display === 'none'; });
-    rows.forEach(function(row) {
-        var rideId = row.id.replace('strava-row-', '');
-        var indBtn = document.getElementById('btn-' + rideId);
-        row.style.display = anyHidden ? 'table-row' : 'none';
-        if (indBtn) {
-            indBtn.style.background = anyHidden ? '#fed7aa' : '#fff5f0';
-            indBtn.innerHTML = STRAVA_SVG + (anyHidden ? 'Hide' : 'Stats');
-        }
-    });
-    if (btn) btn.textContent = anyHidden ? 'Hide all' : 'Show all';
-}
-</script>
-
-{% if upcoming_rides %}
-<script>
-(function() {
-    var rusa_id = {{ rider.rusa_id }};
-    var tooltips = document.querySelectorAll('.advice-tooltip[data-tooltip-ride]');
-    if (!tooltips.length) return;
-
-    // Show loading state — hide fallback, show spinner
-    tooltips.forEach(function(el) {
-        var loader = el.querySelector('.advice-loading');
-        var fallback = el.querySelector('.advice-fallback');
-        if (loader) loader.style.display = 'flex';
-        if (fallback) fallback.style.display = 'none';
-    });
-
-    var sparkleIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2" style="flex-shrink:0;margin-top:1px;">' +
-        '<path d="M12 2l2.09 6.26L20.18 10l-6.09 1.74L12 18l-2.09-6.26L3.82 10l6.09-1.74L12 2z" stroke="#a78bfa"/>' +
-        '<path d="M20 7l.6 1.8L22.4 10l-1.8.6L20 12.4l-.6-1.8L17.6 10l1.8-.6L20 7z" stroke="#a78bfa" opacity=".6"/>' +
-        '<path d="M4 17l.4 1.2 1.2.4-1.2.4L4 20.2l-.4-1.2-1.2-.4 1.2-.4L4 17z" stroke="#a78bfa" opacity=".6"/></svg>';
-
-    fetch('/rider/' + rusa_id + '/advice')
-        .then(function(r) { return r.json(); })
-        .then(function(advice) {
-            tooltips.forEach(function(el) {
-                var rideId = el.getAttribute('data-tooltip-ride');
-                var loader = el.querySelector('.advice-loading');
-                var fallback = el.querySelector('.advice-fallback');
-
-                if (advice[rideId]) {
-                    // Replace with AI advice
-                    if (loader) loader.style.display = 'none';
-                    if (fallback) fallback.style.display = 'none';
-                    var aiDiv = document.createElement('div');
-                    aiDiv.style.cssText = 'display:flex;align-items:flex-start;gap:6px;';
-                    aiDiv.innerHTML = sparkleIcon + '<span>' + advice[rideId] + '</span>';
-                    el.appendChild(aiDiv);
-
-                    // Icon is already sparkle from initial render, no swap needed
-                } else {
-                    // No AI advice — show rule-based fallback
-                    if (loader) loader.style.display = 'none';
-                    if (fallback && fallback.textContent.trim()) {
-                        fallback.style.display = '';
-                    } else {
-                        // No advice at all — hide the button
-                        el.closest('.advice-tip').style.display = 'none';
-                    }
-                }
-            });
-        })
-        .catch(function() {
-            // On failure, show rule-based fallback
-            tooltips.forEach(function(el) {
-                var loader = el.querySelector('.advice-loading');
-                var fallback = el.querySelector('.advice-fallback');
-                if (loader) loader.style.display = 'none';
-                if (fallback && fallback.textContent.trim()) {
-                    fallback.style.display = '';
-                } else {
-                    el.closest('.advice-tip').style.display = 'none';
-                }
-            });
-        });
-})();
-</script>
-{% endif %}
-{% endblock %}
-
-{% block extra_js %}
-<script>
-// Pretext.js — auto-fit rider name heading if it overflows
-document.addEventListener('DOMContentLoaded', function() {
-    if (typeof PretextUtils !== 'undefined' && PretextUtils.autoFitHeading) {
-        PretextUtils.autoFitHeading('.hero h1', 0.7);
-    }
-});
-</script>
 {% endblock %}
