@@ -573,6 +573,8 @@ document.querySelectorAll('.result-select').forEach(function (sel) {
   var areaSel = document.getElementById('region-area');
   var clubSel = document.getElementById('club-filter');
   if (!stateSel || !areaSel) return;
+  var defaultState = {{ (default_state or '')|tojson }};
+  var defaultClub = {{ (default_club or '')|tojson }};
 
   function apply() {
     var st = stateSel.value;
@@ -614,7 +616,13 @@ document.querySelectorAll('.result-select').forEach(function (sel) {
   areaSel.addEventListener('change', apply);
   if (clubSel) clubSel.addEventListener('change', apply);
 
+  if (defaultState && Array.prototype.some.call(stateSel.options, function (o) { return o.value === defaultState; })) {
+    stateSel.value = defaultState;
+  }
   repopulateAreas();
+  if (defaultClub && clubSel && Array.prototype.some.call(clubSel.options, function (o) { return o.value === defaultClub; })) {
+    clubSel.value = defaultClub;
+  }
   apply();
 })();
 </script>

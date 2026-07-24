@@ -261,10 +261,13 @@ def calendar():
                                        rider['id'], e)
             my_results = []
 
+    default_state = (club or {}).get('state') if club else None
+    default_club = (club or {}).get('name') if club else None
     return render_template(
         'calendar.html', events=events, months=months, my_status=my_status,
         my_results=my_results, rider=rider, club=club, states=states,
         regions_by_state=regions_by_state, clubs=clubs,
+        default_state=default_state, default_club=default_club,
         degraded=degraded, weather=weather,
     )
 
