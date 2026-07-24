@@ -446,9 +446,12 @@ def directory():
     q = (request.args.get('q') or '').strip()
 
     riders = []
+    season_names = {seasons.current_season_name(date.today())}
     if viewer.get('club_id'):
         today = date.today()
         rows = models.get_club_riders_with_rusa(viewer['club_id'])
+        for row in rows:
+            season_names.update(group['season'] for group in seasons.seasons_with_summaries(row.get('rusa_cache') or [], today))
         riders = [_career_row(r, today) for r in rows]
         if q:
             needle = q.lower()
@@ -456,7 +459,9 @@ def directory():
         riders.sort(key=lambda r: r['display_name'].lower())
 
     return render_template('riders_directory.html', club=club, riders=riders,
-                           q=q, has_club=bool(viewer.get('club_id')))
+                           q=q, has_club=bool(viewer.get('club_id')),
+                           season_names=sorted((s for s in season_names if s), reverse=True),
+                           current_season=seasons.current_season_name(date.today()))
 
 
 @riders_bp.route('/riders/season/<season_name>')

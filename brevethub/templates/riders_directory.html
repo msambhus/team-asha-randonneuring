@@ -37,6 +37,17 @@
       <button type="submit" class="btn btn-primary">Search</button>
       {% if q %}<a class="text-primary font-semibold hover:text-accent hover:underline text-sm" href="{{ url_for('riders.directory') }}">Clear</a>{% endif %}
     </form>
+    {% if season_names %}
+      <label class="block text-sm font-semibold text-text-light mb-4" for="directory-season">Season roster
+        <select id="directory-season" class="ml-2 border border-border rounded-lg px-3 py-2 font-normal"
+                onchange="if (this.value) window.location.href=this.value">
+          <option value="{{ url_for('riders.directory') }}">All career riders</option>
+          {% for name in season_names %}
+            <option value="{{ url_for('riders.season_roster', season_name=name) }}"{% if name == current_season %} selected{% endif %}>{{ name }}{% if name == current_season %} (current){% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+    {% endif %}
 
     {% if riders %}
       <p class="text-text-light mb-4">{{ riders | length }} rider{{ '' if riders | length == 1 else 's' }}{% if q %} matching &ldquo;{{ q }}&rdquo;{% endif %}.</p>
