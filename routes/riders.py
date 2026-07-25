@@ -44,6 +44,8 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     RideStatus)
 from auth import login_required, user_login_required
 from shared.strava_analysis_index import ride_card, season_group
+from shared.calendar_view import calendar_event, completed_event
+from shared.calendar_view import finisher_row
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
 from services.openai_coach import generate_openai_advice
@@ -448,7 +450,7 @@ def upcoming_brevets(season_name):
     # same per-event processing (signup counts, plan matching, custom plans) as the
     # external RUSA events. get_upcoming_rusa_events() (external-only) is unchanged for
     # its other callers.
-    rusa_events = get_all_upcoming_events()
+    rusa_events = [calendar_event(row) for row in get_all_upcoming_events()]
 
     rides = get_rides_for_season(season['id'])
     today = date.today()
@@ -580,7 +582,10 @@ def upcoming_brevets(season_name):
     # known plans — most older rides were never explicitly linked, so the
     # JOIN comes back empty for them even when a matching plan exists.
     from models import get_completed_events_for_season
-    completed_events = [dict(r) for r in get_completed_events_for_season(season['id'])]
+    completed_events = [
+        completed_event(row)
+        for row in get_completed_events_for_season(season['id'])
+    ]
     _match_plans_to_events(completed_events, all_ride_plans,
                            name_field='name', only_if_missing=True)
 
@@ -603,6 +608,32 @@ def upcoming_brevets(season_name):
                            all_ride_plans=all_ride_plans,
                            can_edit_rides=can_edit_rides,
                            wind_warnings=wind_warnings)
+
+
+@riders_bp.route('/ride/<int:ride_id>/finishers')
+def ride_finishers(ride_id):
+    """Public completed-ride results using the same view as the admin detail."""
+    from models import get_ride_participants
+
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        abort(404)
+    participants = [
+        finisher_row(row) for row in get_ride_participants(ride_id)
+    ]
+    plan = None
+    if ride.get('ride_plan_id'):
+        plan = _execute(
+            "SELECT * FROM ride_plan WHERE id = %s",
+            (ride['ride_plan_id'],),
+        ).fetchone()
+    return render_template(
+        'admin/ride_detail.html',
+        ride=ride,
+        participants=participants,
+        plan=plan,
+        can_edit=is_admin_user(),
+    )
 
 
 @riders_bp.route('/riders/directory')

@@ -51,6 +51,7 @@ from flask import (Blueprint, current_app, jsonify, render_template, request,
 from brevethub import models
 from brevethub.decorators import current_rider
 from shared.rusa_calendar import get_rusa_events
+from shared.calendar_view import calendar_event, finisher_row
 from shared.weather import summarize_point_forecast
 
 calendar_bp = Blueprint('calendar', __name__)
@@ -62,7 +63,7 @@ def event_finishers(event_id):
     event = models.get_brevet_event(event_id)
     if not event:
         return ('Not found', 404)
-    finishers = models.get_event_finishers(event_id)
+    finishers = [finisher_row(row) for row in models.get_event_finishers(event_id)]
     return render_template('finishers.html', event=event, finishers=finishers)
 
 # How old the cache may get before /calendar shows a soft "stale" banner. This is a
@@ -206,7 +207,7 @@ def calendar():
         club = models.get_club(rider['club_id'])
 
     degraded = _seed_calendar_cache_if_empty()
-    events = models.get_upcoming_events()
+    events = [calendar_event(row) for row in models.get_upcoming_events()]
     months = _group_by_month(events)
 
     # State -> sorted RBA areas map for the cascading region dropdowns. RUSA region

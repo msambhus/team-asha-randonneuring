@@ -274,6 +274,23 @@ def get_participation_matrix(season_id):
         }
     return matrix
 
+
+def get_ride_participants(ride_id):
+    """Public ride-result rows ordered with official finishers first."""
+    return _execute("""
+        SELECT r.id as rider_id, r.first_name, r.last_name, r.rusa_id,
+               rr.status, rr.finish_time
+        FROM rider_ride rr
+        JOIN rider r ON r.id = rr.rider_id
+        WHERE rr.ride_id = %s
+        ORDER BY
+            CASE rr.status
+                WHEN 'FINISHED' THEN 1 WHEN 'DNF' THEN 2
+                WHEN 'DNS' THEN 3 WHEN 'OTL' THEN 4 ELSE 5
+            END,
+            rr.finish_time NULLS LAST, r.first_name
+    """, (ride_id,)).fetchall()
+
 #  NOT CACHED - rider-specific data should not be cached in serverless environments
 def get_rider_participation(rider_id, season_id):
     return _execute("""
