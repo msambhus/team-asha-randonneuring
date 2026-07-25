@@ -121,6 +121,8 @@ def test_calendar_template_uses_dynamic_state_and_club_filters():
     assert 'id="region-area"' in source
     assert "regions_by_state" in source
     assert "Team Asha" not in source
+    assert "Find official registration via RUSA" in source
+    assert "riders.upcoming_brevets" not in source
 
 
 def test_brevethub_calendar_template_renders_with_rusa_context():
@@ -139,6 +141,7 @@ def test_brevethub_calendar_template_renders_with_rusa_context():
         "distance_miles": 124.3,
         "elevation_ft": 6000,
         "signup_count": 3,
+        "interested_count": 1,
         "rwgps_url": "https://ridewithgps.com/routes/123",
         "rwgps_url_team": None,
         "plan_slug": "sample-200k",
@@ -153,13 +156,32 @@ def test_brevethub_calendar_template_renders_with_rusa_context():
     with app.test_request_context("/riders/2026-2027/upcoming-brevets"):
         body = render_template("calendar.html", events=[event],
                                months=[("August 2026", [event])],
-                               rider=None, club=None, states=['CA'],
+                               rider={"id": 1}, club=None, states=['CA'],
                                regions_by_state={'CA': ['San Francisco']},
                                my_status={}, my_results=[], degraded=None,
-                               weather={})
+                               weather={},
+                               rusa_event_search_url=(
+                                   "https://rusa.org/cgi-bin/"
+                                   "eventsearch_PF.pl?sortby=date"))
 
     assert "Sample 200k" in body
     assert "region-state" in body
     assert "region-area" in body
     assert "San Francisco" in body
+    assert "3 going" in body
+    assert "1 interested" in body
+    assert "Find official registration via RUSA" in body
     assert "Team Asha" not in body
+
+
+def test_brevethub_signup_does_not_offer_maybe_as_a_new_intent():
+    from brevethub.routes.calendar import _SIGNUP_STATUSES
+
+    assert _SIGNUP_STATUSES == {"going", "interested", "withdraw"}
+
+
+def test_brevethub_templates_use_the_active_calendar_endpoint():
+    for name in ("live_hub.html", "riders.html"):
+        source = (BREVETHUB_DIR / "templates" / name).read_text()
+        assert "riders.upcoming_brevets" not in source
+        assert "calendar.calendar" in source

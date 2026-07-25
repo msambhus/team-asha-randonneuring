@@ -50,7 +50,7 @@ from flask import (Blueprint, current_app, jsonify, render_template, request,
 
 from brevethub import models
 from brevethub.decorators import current_rider
-from shared.rusa_calendar import get_rusa_events
+from shared.rusa_calendar import RUSA_NATIONAL_URL, get_rusa_events
 from shared.calendar_view import calendar_event, finisher_row
 from shared.weather import summarize_point_forecast
 
@@ -74,11 +74,12 @@ def event_finishers(event_id):
 CALENDAR_STALE_AFTER = timedelta(hours=40)
 
 # The pre-ride statuses a rider may set on the /signup endpoint (BrevetHub's own
-# lowercase enum values): the three active intents plus withdraw. Post-ride result
+# lowercase enum values): Going is primary, Interested is secondary, plus Withdraw.
+# Legacy Maybe rows remain removable through DELETE but cannot be newly created.
+# Post-ride result
 # values (finished/dnf/dns/otl) are NOT settable here — they go through /result.
 _SIGNUP_STATUSES = {
     models.RideStatus.INTERESTED.value,
-    models.RideStatus.MAYBE.value,
     models.RideStatus.GOING.value,
     models.RideStatus.WITHDRAW.value,
 }
@@ -270,6 +271,7 @@ def calendar():
         regions_by_state=regions_by_state, clubs=clubs,
         default_state=default_state, default_club=default_club,
         degraded=degraded, weather=weather,
+        rusa_event_search_url=RUSA_NATIONAL_URL,
     )
 
 
@@ -283,7 +285,7 @@ def _login_required_json():
 
 @calendar_bp.route('/calendar/<int:event_id>/signup', methods=['POST'])
 def signup(event_id):
-    """Mark the signed-in rider interested / maybe / going / withdraw on a brevet.
+    """Mark the signed-in rider interested / going / withdraw on a brevet.
 
     JSON API (no redirects), auth ladder:
       - no session rider           → 401 (+ a login_url the client can send them to)

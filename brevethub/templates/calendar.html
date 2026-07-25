@@ -410,6 +410,9 @@
 
                 <div class="signup-section">
                   <span class="signup-count">{{ ev.signup_count or 0 }} going</span>
+                  {% if ev.interested_count %}
+                    <span class="text-text-light text-sm">{{ ev.interested_count }} interested</span>
+                  {% endif %}
                   {% if rider %}
                     <span class="signup-actions">
                       {% set status = my_status.get(ev.id) %}
@@ -423,7 +426,10 @@
                       <button type="button" class="signup-btn secondary"
                               data-event-id="{{ ev.id }}" data-status="withdraw">Withdraw</button>
                     </span>
-                    <small class="club-registration-note">Going here is an intent only; complete registration on the organizing club&rsquo;s site.</small>
+                    <small class="club-registration-note">
+                      Going here is an intent only; complete registration on the organizing club&rsquo;s site.
+                      <a href="{{ rusa_event_search_url }}" target="_blank" rel="noopener">Find official registration via RUSA</a>.
+                    </small>
                   {% endif %}
                 </div>
               </article>

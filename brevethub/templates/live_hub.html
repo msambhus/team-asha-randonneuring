@@ -96,7 +96,7 @@
     {% endfor %}
   {% else %}
     <p class="hub-empty">You have no upcoming rides. Find one on the
-      <a href="{{ url_for('riders.upcoming_brevets', season_name=current_season.name) if current_season else '#' }}">Brevet Calendar</a>.</p>
+      <a href="{{ url_for('calendar.calendar') }}">Brevet Calendar</a>.</p>
   {% endif %}
 </div>
 {% endblock %}
