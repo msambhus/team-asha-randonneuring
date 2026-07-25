@@ -47,6 +47,7 @@ from shared.strava_analysis import (
     _compress_streams,
     _decompress_streams,
 )
+from shared.strava_analysis_view import build_team_asha_analysis_context
 from shared.weather import (_AVG_SPEED_KMH, _safe_get, calculate_bearing,
                             classify_wind, compass_label, crosswind_component,
                             fetch_historical_wind, get_hour_index,
@@ -548,182 +549,6 @@ def _build_analysis(activity, streams, brevet=None):
     }
 
 
-def _team_asha_summary(analysis):
-    activity = analysis.get('activity') or {}
-    summary = analysis.get('summary') or {}
-    comparison = analysis.get('comparison') or {}
-    source = comparison.get('summary') or {}
-
-    actual_km = source.get('actual_distance_km', activity.get('distance_km') or 0)
-    plan_km = source.get('plan_distance_km')
-    actual_miles = round((actual_km or 0) / _MILES_TO_KM, 1)
-    plan_miles = round(plan_km / _MILES_TO_KM, 1) if plan_km else None
-    elapsed_min = source.get('actual_elapsed_time_min')
-    if elapsed_min is None:
-        elapsed_min = _parse_hm(activity.get('elapsed_time'))
-    moving_min = source.get('actual_moving_time_min')
-    if moving_min is None:
-        moving_min = _parse_hm(activity.get('moving_time'))
-    stopped_min = source.get('actual_stopped_time_min')
-    if stopped_min is None and elapsed_min is not None and moving_min is not None:
-        stopped_min = max(0, elapsed_min - moving_min)
-
-    plan_total = source.get('plan_total_time_min')
-    plan_break = source.get('plan_break_time_min')
-    actual_avg_mph = None
-    if elapsed_min and actual_miles:
-        actual_avg_mph = round(actual_miles / (elapsed_min / 60), 1)
-    elif activity.get('avg_speed_kmh') is not None:
-        actual_avg_mph = round(activity['avg_speed_kmh'] / _MPH_TO_KMH, 1)
-    plan_avg_mph = (
-        round(plan_miles / (plan_total / 60), 1)
-        if plan_miles and plan_total else None
-    )
-
-    return {
-        'plan_distance_miles': plan_miles,
-        'actual_distance_miles': actual_miles,
-        'distance_delta_miles': (
-            round((source.get('distance_delta_km') or 0) / _MILES_TO_KM, 1)
-            if source.get('distance_delta_km') is not None else None
-        ),
-        'plan_elevation_ft': source.get('plan_elevation_ft'),
-        'actual_elevation_ft': source.get('actual_elevation_ft', activity.get('elevation_ft')),
-        'elevation_delta_ft': (
-            source.get('actual_elevation_ft') - source.get('plan_elevation_ft')
-            if source.get('actual_elevation_ft') is not None
-            and source.get('plan_elevation_ft') is not None else None
-        ),
-        'plan_total_time_min': plan_total,
-        'base_total_time_min': None,
-        'actual_elapsed_time_min': elapsed_min or 0,
-        'time_delta_min': (
-            round((elapsed_min or 0) - plan_total)
-            if elapsed_min is not None and plan_total is not None else None
-        ),
-        'actual_moving_time_min': moving_min or 0,
-        'plan_break_time_min': plan_break,
-        'actual_stopped_time_min': stopped_min or 0,
-        'break_delta_min': (
-            round((stopped_min or 0) - plan_break)
-            if stopped_min is not None and plan_break is not None else None
-        ),
-        'plan_avg_speed_mph': plan_avg_mph,
-        'actual_avg_speed_mph': actual_avg_mph,
-        'speed_delta_mph': (
-            round(actual_avg_mph - plan_avg_mph, 1)
-            if actual_avg_mph is not None and plan_avg_mph is not None else None
-        ),
-        'stops_detected': source.get('stops_detected', analysis.get('stop_count') or 0),
-        'stops_planned': source.get('stops_planned'),
-        'stops_extra': source.get('stops_extra', 0),
-    }
-
-
-def _team_asha_rows(analysis):
-    rows = []
-    for row in (analysis.get('comparison') or {}).get('rows') or []:
-        item = dict(row)
-        item.setdefault('stop_type', 'extra' if item.get('is_extra') else 'waypoint')
-        item.setdefault('custom', None)
-        item.setdefault('actual_seg_break_min', None)
-        item.setdefault('actual_np_watts', item.get('np_watts'))
-        if item.get('actual_climb_ft_per_mi') is None:
-            miles = item.get('distance_miles') or 0
-            gain = item.get('actual_elev_gain_ft')
-            item['actual_climb_ft_per_mi'] = (
-                round(gain / miles) if gain is not None and miles else None
-            )
-        for key in (
-            'plan_arrival_time_min', 'actual_arrival_time_min',
-            'plan_time_of_day', 'actual_time_of_day', 'plan_time_bank',
-            'actual_time_bank', 'plan_segment_min', 'actual_segment_min',
-            'plan_speed_mph', 'actual_speed_mph', 'plan_stop_duration_min',
-            'actual_stop_duration_min', 'plan_cum_time_min',
-            'actual_cum_time_min', 'actual_avg_hr', 'actual_avg_watts',
-            'actual_avg_cadence', 'actual_elev_gain_ft', 'cum_time_delta_min',
-        ):
-            item.setdefault(key, None)
-        rows.append(item)
-    return rows
-
-
-def _team_asha_hr_power(analysis, rows):
-    summary = analysis.get('summary') or {}
-    values = {
-        'avg_hr': summary.get('avg_hr'),
-        'max_hr': summary.get('max_hr'),
-        'avg_watts': summary.get('avg_watts'),
-        'weighted_avg_watts': summary.get('np_watts'),
-        'max_watts': summary.get('max_watts'),
-        'kilojoules': summary.get('kilojoules'),
-        'suffer_score': summary.get('suffer_score'),
-    }
-    if any(v is not None for v in values.values()):
-        return values
-    if any(r.get('actual_avg_hr') or r.get('actual_avg_watts') for r in rows):
-        return values
-    return None
-
-
-def _team_asha_comparison(analysis):
-    rows = _team_asha_rows(analysis)
-    return {
-        'summary': _team_asha_summary(analysis),
-        'rows': rows,
-        'hr_power': _team_asha_hr_power(analysis, rows),
-    }
-
-
-def _team_asha_map_data(analysis):
-    source = dict(analysis.get('map') or {})
-    if not source.get('track'):
-        return None
-    stops = []
-    for stop in source.get('stops') or analysis.get('stops') or []:
-        item = dict(stop)
-        if item.get('distance_miles') is None and item.get('distance_km') is not None:
-            item['distance_miles'] = round(item['distance_km'] / _MILES_TO_KM, 1)
-        stops.append(item)
-    source['stops'] = stops
-    source.setdefault('segments', [])
-    return source
-
-
-def _team_asha_template_context(analysis, activity_id, stop_wind_by_location):
-    activity = analysis.get('activity') or {}
-    notes = analysis.get('notes') or {}
-    return {
-        'ride': {
-            'id': activity_id,
-            'name': activity.get('name') or 'Strava ride',
-            'date': activity.get('date'),
-            'distance_km': activity.get('distance_km'),
-        },
-        'rider': {'rusa_id': session.get('rider_id') or 0},
-        'activity': {
-            'strava_url': (
-                activity.get('strava_url') or
-                f'https://www.strava.com/activities/{activity_id}'
-            ),
-        },
-        'comparison': _team_asha_comparison(analysis),
-        'map_data': _team_asha_map_data(analysis),
-        'stop_wind': stop_wind_by_location or None,
-        'has_custom': False,
-        'has_plan': bool((analysis.get('comparison') or {}).get('rows')),
-        'plan_slug': None,
-        'error': None,
-        'is_own_profile': True,
-        'segment_eval': {},
-        'ride_recommendations': None,
-        'overall_narrative': [],
-        'overall_note': notes.get('overall') or '',
-        'segment_notes': notes.get('segments') or {},
-        'stop_notes': notes.get('stops') or {},
-    }
-
-
 # Ride start estimate for historical arrival-hour selection — a completed ride's
 # per-stop times aren't stored, so wind is sampled at a flat-speed arrival from a
 # conventional 07:00 grand départ (same heuristic Team Asha's historical path uses).
@@ -980,8 +805,9 @@ def analysis_detail(activity_id):
     if analysis:
         return render_template(
             'strava_ride_analysis.html',
-            **_team_asha_template_context(
-                analysis, activity_id, stop_wind_by_location),
+            **build_team_asha_analysis_context(
+                analysis, activity_id, session.get('rider_id'),
+                stop_wind_by_location),
         )
     return render_template('analysis_detail.html', analysis=analysis,
                            stop_winds=stop_winds, stop_wind_by_location=stop_wind_by_location,
