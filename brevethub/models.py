@@ -1997,6 +1997,22 @@ def get_route_plan_warm_targets():
     )
 
 
+def get_route_plan_operations_status():
+    """Upcoming BrevetHub route and plan coverage, isolated to rp_* tables."""
+    rows = db.query(
+        "SELECT COUNT(*) AS upcoming_events, "
+        "COUNT(*) FILTER (WHERE e.rwgps_url IS NULL) AS missing_routes, "
+        "COUNT(*) FILTER (WHERE e.rwgps_url IS NOT NULL AND p.id IS NULL) "
+        "  AS routes_missing_plans, "
+        "COUNT(*) FILTER (WHERE p.id IS NOT NULL) AS plans_ready "
+        "FROM rp_brevet_event e "
+        "LEFT JOIN rp_brevet_route_plan p "
+        "  ON p.event_id = e.id AND p.variant = 'conservative' "
+        "WHERE e.date >= CURRENT_DATE"
+    )
+    return rows[0] if rows else None
+
+
 def get_events_needing_rwgps_url(limit):
     """Brevet events still missing an rwgps_url that carry a rusa_route_id, upcoming first.
 

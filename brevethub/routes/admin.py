@@ -23,6 +23,7 @@ from flask import (Blueprint, abort, current_app, flash, redirect,
 
 from brevethub import models
 from brevethub.decorators import current_rider, login_required
+from brevethub.shared.operations_status import route_plan_status
 from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
                                     extract_rwgps_route_id, fetch_route)
 
@@ -52,7 +53,18 @@ def plan_console():
     """
     _rider, owned = _owned_club_or_403()
     events = models.get_upcoming_events(limit=100)
-    return render_template('admin_plan.html', owned_club=owned, events=events)
+    try:
+        pipeline_status = route_plan_status(
+            models.get_route_plan_operations_status())
+    except Exception:
+        current_app.logger.exception('Could not load route-plan pipeline status')
+        pipeline_status = route_plan_status({})
+    return render_template(
+        'admin_plan.html',
+        owned_club=owned,
+        events=events,
+        pipeline_status=pipeline_status,
+    )
 
 
 @admin_bp.route('/plan/generate', methods=['POST'])
