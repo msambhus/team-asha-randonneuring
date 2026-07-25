@@ -18,6 +18,10 @@
   ],
   "crons": [
     {
+      "path": "/api/cron/warm-ride-plans",
+      "schedule": "30 7 * * *"
+    },
+    {
       "path": "/backfill-wind",
       "schedule": "0 8 * * *"
     }

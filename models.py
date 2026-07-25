@@ -1286,6 +1286,20 @@ def get_ride_plan_by_rwgps_route_id(route_id):
     ).fetchone()
 
 
+def get_ride_plan_warm_targets(limit=25):
+    """Upcoming rides with a route but no linked plan, oldest first."""
+    return _execute("""
+        SELECT id, name, date, start_time,
+               COALESCE(rwgps_url_team, rwgps_url) AS rwgps_url
+        FROM ride
+        WHERE date >= CURRENT_DATE
+          AND ride_plan_id IS NULL
+          AND COALESCE(rwgps_url_team, rwgps_url) IS NOT NULL
+        ORDER BY date, id
+        LIMIT %s
+    """, (limit,)).fetchall()
+
+
 def create_ride_plan_from_rwgps(plan_data, stops_data):
     """Insert or update a ride plan and its stops generated from RWGPS data.
 

@@ -7,6 +7,8 @@ from flask import Blueprint, request, jsonify, current_app
 
 cron_bp = Blueprint('cron', __name__)
 
+PLAN_WARM_BATCH_SIZE = 25
+
 
 def _verify_cron_auth():
     """Verify CRON_SECRET authentication. Returns error response or None.
@@ -25,6 +27,76 @@ def _verify_cron_auth():
         return jsonify({'error': 'Unauthorized'}), 401
 
     return None
+
+
+@cron_bp.route('/warm-ride-plans', methods=['GET', 'POST'])
+def warm_ride_plans():
+    """Create and link plans for upcoming Team Asha rides with RWGPS routes."""
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    from models import (
+        create_ride_plan_from_rwgps, get_ride_plan_by_rwgps_route_id,
+        get_ride_plan_warm_targets, update_ride_details,
+    )
+    from shared.rwgps import (
+        build_ride_plan, extract_controls, extract_rwgps_route_id, fetch_route,
+    )
+
+    try:
+        targets = get_ride_plan_warm_targets(PLAN_WARM_BATCH_SIZE)
+    except Exception as exc:
+        current_app.logger.warning('ride-plan warm target load failed: %s', exc)
+        return jsonify({
+            'ok': False, 'considered': 0, 'generated': 0,
+            'linked_existing': 0, 'skipped': 0, 'failed': 0,
+            'error': 'target load failed',
+        }), 200
+
+    generated = linked_existing = skipped = failed = 0
+    for ride in targets:
+        route_id = extract_rwgps_route_id(ride.get('rwgps_url'))
+        if not route_id:
+            skipped += 1
+            continue
+        try:
+            existing = get_ride_plan_by_rwgps_route_id(route_id)
+            if existing:
+                plan_id = existing['id']
+                linked_existing += 1
+            else:
+                route_data = fetch_route(
+                    route_id,
+                    current_app.config.get('RWGPS_API_KEY'),
+                    current_app.config.get('RWGPS_AUTH_TOKEN'),
+                )
+                controls = extract_controls(route_data)
+                built = build_ride_plan(
+                    route_data, controls,
+                    start_time=ride.get('start_time') or '07:00',
+                    insert_meals=True,
+                )
+                plan_id = create_ride_plan_from_rwgps(
+                    built['plan'], built['stops'])
+                generated += 1
+            update_ride_details(ride['id'], ride_plan_id=plan_id)
+        except Exception as exc:
+            current_app.logger.warning(
+                'ride-plan warm failed for ride %s (%s): %s',
+                ride.get('id'), ride.get('rwgps_url'), exc)
+            failed += 1
+
+    result = {
+        'ok': True,
+        'considered': len(targets),
+        'generated': generated,
+        'linked_existing': linked_existing,
+        'skipped': skipped,
+        'failed': failed,
+    }
+    current_app.logger.info('Team Asha ride-plan warm: %s', result)
+    return jsonify(result), 200
 
 
 @cron_bp.route('/sync-strava', methods=['POST'])
