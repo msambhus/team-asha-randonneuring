@@ -38,6 +38,7 @@ from brevethub.routes.analysis import (
 from brevethub.routes.strava import _valid_access_token
 from shared import seasons
 from shared.strava_analysis_index import ride_card, season_group
+from shared.rider_directory_view import public_rider_row
 from shared.strava import fetch_activity_streams
 
 riders_bp = Blueprint('riders', __name__)
@@ -105,7 +106,7 @@ def _cached_activity_from_analysis(row):
     if not activity:
         return None
     activity_id = row.get('strava_activity_id')
-    return {
+    return public_rider_row({
         'id': activity_id,
         'name': activity.get('name') or 'Strava ride',
         'date': activity.get('date'),
@@ -117,7 +118,7 @@ def _cached_activity_from_analysis(row):
             f'https://www.strava.com/activities/{activity_id}'
         ),
         '_cached_analysis': analysis,
-    }
+    })
 
 
 def _activity_metrics(activity):

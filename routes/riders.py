@@ -46,6 +46,7 @@ from auth import login_required, user_login_required
 from shared.strava_analysis_index import ride_card, season_group
 from shared.calendar_view import calendar_event, completed_event
 from shared.calendar_view import finisher_row
+from shared.rider_directory_view import public_rider_row
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
 from services.openai_coach import generate_openai_advice
@@ -719,7 +720,7 @@ def riders_directory():
         d['upcoming'] = upcoming_by_rider.get(d['id'], [])
         d['eddington'] = edd_by_rider.get(d['id'])
         d['is_pbp_ancien'] = d['id'] in pbp_anciens
-        riders_out.append(d)
+        riders_out.append(public_rider_row(d))
 
     riders_out.sort(key=lambda x: ((x.get('first_name') or '').lower(),
                                    (x.get('last_name') or '').lower()))
