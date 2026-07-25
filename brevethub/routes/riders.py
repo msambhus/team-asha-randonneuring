@@ -5,13 +5,12 @@ multi-rider club, each scoped to the signed-in viewer's OWN club:
 
 - ``/riders/<int:rider_id>``      a same-club rider's public profile (access-gated)
 - ``/riders``                     the club rider directory (searchable by display name)
-- ``/riders/leaderboard``         career km leaderboard for the club
 - ``/riders/season/<name>``       the club roster for one randonneuring season
 
 Tenant isolation is the load-bearing property: every rider query is parameterized
 by the *viewer's* ``club_id`` (from the session-resolved current rider), never by a
 user-supplied value, so a rider in another club can never appear in a directory,
-leaderboard, or roster, and a cross-club profile 404s. Career numbers reuse the
+roster, or public profile, and a cross-club profile 404s. Career numbers reuse the
 exact engine ``/profile`` uses (``shared.seasons`` over the cached RUSA history),
 so nothing here recomputes randonneuring rules. Only a rider's display name (the
 email local-part), RUSA id, and derived career numbers ever cross into a template —
@@ -422,8 +421,7 @@ def _career_row(rider_row, today):
         'total_km': career['total_km'],
         'count': career['count'],
         # SR awards across the career (a season with two full series counts twice),
-        # not the number of SR seasons — so the directory/leaderboard agree with
-        # the "SR×N" the profile pages now show.
+        # not the number of SR seasons, matching the "SR×N" profile display.
         'sr_count': career['total_sr'],
         'pbp_years': seasons.pbp_ancien_years(brevets),
         'permanent_count': sum(

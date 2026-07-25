@@ -63,6 +63,20 @@ def test_base_menu_matches_requested_brevethub_shape():
     assert "career leaderboard" not in source.lower()
 
 
+def test_career_leaderboard_is_removed_from_both_products():
+    from brevethub.app import app
+
+    assert not (REPO_ROOT / "templates" / "career_leaderboard.html").exists()
+    assert not (
+        BREVETHUB_DIR / "templates" / "career_leaderboard.html"
+    ).exists()
+    assert "riders.leaderboard" not in app.view_functions
+    assert not any(
+        rule.rule == "/riders/leaderboard"
+        for rule in app.url_map.iter_rules()
+    )
+
+
 def test_brevethub_shell_uses_rusa_blue_white_red_palette():
     combined_source = "\n".join(
         (BREVETHUB_DIR / "templates" / name).read_text().lower()
