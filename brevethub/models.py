@@ -943,17 +943,17 @@ def get_events_cache_freshness():
 
 
 def get_upcoming_events(state=None, limit=200):
-    """Upcoming brevets (date >= today), soonest first, with an aggregate signup count.
+    """Upcoming brevets with separate Going and Interested aggregate counts.
 
     ``state`` optionally narrows to one US state by matching the RUSA region
     label ``"<STATE>: ..."`` prefix — an honest, documented narrowing a generic
     multi-club app can do without the Team Asha hardcoded region->club map. None
     returns every upcoming brevet (the general RUSA calendar).
 
-    ``signup_count`` is the number of riders who are actively participating
-    (interested / maybe / going) — an AGGREGATE only, so the guest calendar can show
-    interest without exposing any rider identity. WITHDRAW rows are excluded so a
-    withdrawn rider drops off the count. The count comes from a pre-aggregated
+    ``signup_count`` counts Going only; ``interested_count`` counts Interested only.
+    Both are AGGREGATES, so the guest calendar can show intent without exposing any
+    rider identity. Legacy Maybe and Withdraw rows are excluded. The counts come from
+    a pre-aggregated
     sub-select LEFT-joined on the event id, so an event with zero sign-ups still
     returns (coalesced to 0) — both the sub-select and the outer query touch only
     rp_* tables (rp_event_signup / rp_brevet_event).
@@ -964,15 +964,18 @@ def get_upcoming_events(state=None, limit=200):
         "       e.ride_type, e.elevation_ft, e.rwgps_url, e.start_location, "
         "       e.club_id, c.name AS club_name, c.state AS club_state, "
         "       e.start_time, e.time_limit_hours, "
-        "       COALESCE(sc.signup_count, 0) AS signup_count "
+        "       COALESCE(sc.signup_count, 0) AS signup_count, "
+        "       COALESCE(sc.interested_count, 0) AS interested_count "
         "FROM rp_brevet_event e LEFT JOIN rp_club c ON c.id = e.club_id "
         "LEFT JOIN ("
-        "  SELECT event_id, COUNT(*) AS signup_count "
-        "  FROM rp_event_signup WHERE status IN (%s, %s, %s) GROUP BY event_id"
+        "  SELECT event_id, "
+        "    COUNT(*) FILTER (WHERE status = %s) AS signup_count, "
+        "    COUNT(*) FILTER (WHERE status = %s) AS interested_count "
+        "  FROM rp_event_signup GROUP BY event_id"
         ") sc ON sc.event_id = e.id "
         "WHERE e.date >= CURRENT_DATE AND (%s::text IS NULL OR e.region ILIKE %s) "
         "ORDER BY e.date ASC, e.distance_km ASC LIMIT %s",
-        (RideStatus.INTERESTED.value, RideStatus.MAYBE.value, RideStatus.GOING.value,
+        (RideStatus.GOING.value, RideStatus.INTERESTED.value,
          state, like, limit),
     )
 

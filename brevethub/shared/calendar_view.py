@@ -32,6 +32,7 @@ _EVENT_DEFAULTS = {
     'plan_start_time': None,
     'plan_avg_speed': None,
     'signup_count': 0,
+    'interested_count': 0,
     'has_custom_plan': False,
     'is_team_ride': False,
 }

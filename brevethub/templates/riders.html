@@ -524,7 +524,7 @@
   <div class="stat-card"><div class="number stat-number" data-target="{{ pbp_finishers|length }}" style="font-size:1.6rem;"><span class="pbp-badge" style="font-size:1rem;">PBP 2023</span></div><div class="label">{{ pbp_finishers|length }} Finishers</div></div>
   {% endif %}
   {% if is_current and upcoming_count > 0 %}
-  <a href="{{ url_for('riders.upcoming_brevets', season_name=season.name) }}" class="stat-card" style="text-decoration:none;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;">
+  <a href="{{ url_for('calendar.calendar') }}" class="stat-card" style="text-decoration:none;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;">
     <div class="number stat-number" data-target="{{ upcoming_count }}">0</div><div class="label">Upcoming Brevets &rarr;</div>
   </a>
   {% endif %}
