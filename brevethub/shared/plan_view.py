@@ -16,6 +16,70 @@ No web-framework import anywhere in this module.
 import math
 
 
+_PLAN_DEFAULTS = {
+    'id': None,
+    'event_id': None,
+    'name': '',
+    'slug': None,
+    'variant': 'conservative',
+    'date_str': None,
+    'distance_km': None,
+    'total_distance_miles': 0,
+    'total_elevation_ft': 0,
+    'cutoff_hours': None,
+    'start_time': '06:00',
+    'rwgps_url': None,
+    'rwgps_url_team': None,
+    'rwgps_route_id': None,
+    'avg_moving_speed': None,
+    'total_moving_time_min': 0,
+    'total_break_time_min': 0,
+    'total_elapsed_time_min': 0,
+}
+
+_STOP_DEFAULTS = {
+    'id': None,
+    'stop_order': None,
+    'location': '',
+    'name': '',
+    'stop_type': 'waypoint',
+    'notes': None,
+    'distance_miles': None,
+    'seg_dist': None,
+    'elevation_gain': None,
+    'ft_per_mi': None,
+    'segment_time_min': None,
+    'stop_duration_min': 0,
+    'cum_time_min': None,
+    'arrival_time_min': None,
+    'time_bank_min': None,
+    'avg_speed': None,
+    'difficulty_score': None,
+}
+
+
+def plan_header(record, **overrides):
+    """Losslessly normalize either product's persisted plan header."""
+    plan = dict(record or {})
+    for key, value in _PLAN_DEFAULTS.items():
+        plan.setdefault(key, value)
+    plan.update(overrides)
+    return plan
+
+
+def plan_stop(record, **overrides):
+    """Losslessly normalize either product's persisted stop/control row."""
+    stop = dict(record or {})
+    for key, value in _STOP_DEFAULTS.items():
+        stop.setdefault(key, value)
+    stop.update(overrides)
+    if not stop.get('location') and stop.get('name'):
+        stop['location'] = stop['name']
+    if not stop.get('name') and stop.get('location'):
+        stop['name'] = stop['location']
+    return stop
+
+
 # ── Segment toughness ───────────────────────────────────────────────────────
 # Headwind<->grade equivalence. A relentless, unrewarded headwind rides like an
 # "invisible hill" with no summit -> ~15 ft/mile per mph. Tailwind helps, but less

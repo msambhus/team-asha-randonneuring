@@ -200,7 +200,7 @@ from shared.plan_view import (  # noqa: F401  (re-exported for callers/tests)
     _compute_segment_toughness, _toughness_class,
     _FUEL_KEYWORDS, _stop_is_fuel, normalize_wind, _to_v2_stops,
     _BAY_AREA_SUN, _hm_to_min, compute_sun_times, compute_risk_zones,
-    _weather_summary_from_stop_wind,
+    _weather_summary_from_stop_wind, plan_header, plan_stop,
 )
 from shared.strategies import _PACE_VARIANTS, compute_pace_strategies  # noqa: F401
 from shared.live_radial import build_elevation_profile, overlay_stop_markers
@@ -2039,7 +2039,7 @@ def ride_plan_detail_v1(slug):
     raw_stops = get_ride_plan_stops(plan['id'])
 
     # Convert Decimal types to float for Jinja2 arithmetic
-    plan = dict(plan)
+    plan = plan_header(plan)
     plan['total_distance_miles'] = float(plan.get('total_distance_miles') or 0)
     plan['total_elevation_ft'] = int(plan.get('total_elevation_ft') or 0)
 
@@ -2133,7 +2133,7 @@ def ride_plan_detail_v1(slug):
             d['terrain_label'] = None
 
         prev_dist = cur_dist
-        stops.append(d)
+        stops.append(plan_stop(d))
 
     total_time = cum_time_min
 
