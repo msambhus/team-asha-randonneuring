@@ -38,8 +38,10 @@ from flask import (Blueprint, abort, current_app, jsonify, render_template,
 from brevethub import models
 from brevethub.decorators import current_rider
 from shared.pacing import recalculate_cumulative_values, _get_cutoff_hours
-from shared.plan_view import (_to_v2_stops, _weather_summary_from_stop_wind,
-                              compute_risk_zones)
+from shared.plan_view import (
+    _to_v2_stops, _weather_summary_from_stop_wind, compute_risk_zones,
+    plan_header, plan_stop,
+)
 from shared.strategies import _PACE_VARIANTS, compute_pace_strategies
 from shared.live_radial import build_elevation_profile, overlay_stop_markers
 from shared.rwgps import extract_rwgps_route_id
@@ -360,7 +362,7 @@ def _build_real_plan(plan, stops, stop_winds=None):
         # A meal-break row is a rest, not a control: no segment/speed/difficulty — just
         # its clock-typed label (notes) and its dwell (stored in segment_time_min). Its
         # cum_time_min is the break-inclusive ETA, so later ETAs already fold in the stop.
-        display_stops.append({
+        display_stops.append(plan_stop({
             'stop_order': s['stop_order'],
             'location': s['location'],
             'stop_type': s['stop_type'],
@@ -380,14 +382,14 @@ def _build_real_plan(plan, stops, stop_winds=None):
                                    and s['time_bank_min'] >= 0),
             'time_bank_known': s['time_bank_min'] is not None,
             'wind': None if is_meal else wind,
-        })
+        }))
 
     # The elevation profile + terrain strip are per-CONTROL; meal rows carry no segment
     # geometry, so exclude them from the SVG (they'd double-mark a control's distance).
     control_stops = [ds for ds in display_stops if not ds['is_meal']]
     final_mi = control_stops[-1]['distance_mi'] if control_stops else None
     total_break_min = plan.get('total_break_time_min') or 0
-    return {
+    return plan_header({
         'name': plan['name'],
         'variant': plan.get('variant', 'conservative'),
         'rwgps_url': plan['rwgps_url'],
@@ -404,7 +406,7 @@ def _build_real_plan(plan, stops, stop_winds=None):
         'stops': display_stops,
         'has_wind': any(ds['wind'] for ds in display_stops),
         'svg': _build_elevation_svg(control_stops),
-    }
+    })
 
 
 # ── rpv2 3-tab plan view (rich visual parity with Team Asha) ────────────────
@@ -602,7 +604,7 @@ def _build_v2_context(event, plan, stops, variant, rider=None):
         start_time = start_time.strftime('%H:%M')
     total_mi = float(plan.get('total_distance_miles') or 0)
 
-    plan_ctx = {
+    plan_ctx = plan_header({
         'name': plan['name'],
         'distance_km': int(event['distance_km']),
         'date_str': _event_date_str(event.get('date')),
@@ -611,7 +613,7 @@ def _build_v2_context(event, plan, stops, variant, rider=None):
         'total_elevation_ft': int(plan.get('total_elevation_ft') or 0),
         'cutoff_hours': cutoff_hours,
         'event_id': event['id'],
-    }
+    })
 
     forecast_date = _event_date(event.get('date'))
     weather_row = None
