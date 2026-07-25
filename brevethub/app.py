@@ -97,7 +97,7 @@ def create_app():
     from brevethub.routes.tools import tools_bp
     from brevethub.routes.cron import cron_bp
     from brevethub.routes.admin import admin_bp
-    # Community surfaces (club directory / leaderboard / season rosters / public
+    # Community surfaces (club directory / season rosters / public
     # rider profiles), all club-scoped and login-gated.
     from brevethub.routes.riders import riders_bp
     # BH-native mobile bearer-token mint (login-gated). Server half of a future
