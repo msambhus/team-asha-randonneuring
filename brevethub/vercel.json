@@ -11,10 +11,12 @@
     { "src": "static/**", "use": "@vercel/static" }
   ],
   "crons": [
-    { "path": "/api/cron/auto-generate-plans", "schedule": "30 7 * * *" },
-    { "path": "/api/cron/backfill-wind", "schedule": "0 8 * * *" },
-    { "path": "/api/cron/fetch-route-weather", "schedule": "30 8 * * *" },
-    { "path": "/api/cron/warm-plan-elevation", "schedule": "0 9 * * *" }
+    { "path": "/cron/refresh-calendar", "schedule": "0 6 * * *" },
+    { "path": "/cron/backfill-rwgps-urls", "schedule": "30 6 * * *" },
+    { "path": "/cron/warm-brevet-plans", "schedule": "0 7 * * *" },
+    { "path": "/cron/fetch-brevet-weather", "schedule": "0 8 * * *" },
+    { "path": "/cron/warm-brevet-route-weather", "schedule": "30 8 * * *" },
+    { "path": "/cron/warm-plan-elevation", "schedule": "0 9 * * *" }
   ],
   "routes": [
     { "src": "/static/(.*)", "dest": "/static/$1" },

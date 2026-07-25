@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from flask import render_template
@@ -26,6 +27,18 @@ def test_brevethub_is_standalone_and_keeps_private_strava_surface():
     assert "strava.connect" in endpoints
     assert "tools.merge_fit_page" in endpoints
     assert "riders.leaderboard" not in endpoints
+
+
+def test_vercel_cron_paths_are_registered_by_brevethub_app():
+    from brevethub.app import app
+
+    config = json.loads(
+        (BREVETHUB_DIR / "vercel.json").read_text(encoding="utf-8"))
+    configured = {item["path"] for item in config.get("crons", [])}
+    registered = {rule.rule for rule in app.url_map.iter_rules()}
+
+    assert configured
+    assert configured <= registered
 
 
 def test_home_template_is_brevethub_neutral():
