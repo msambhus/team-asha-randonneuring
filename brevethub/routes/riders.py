@@ -37,6 +37,7 @@ from brevethub.routes.analysis import (
 )
 from brevethub.routes.strava import _valid_access_token
 from shared import seasons
+from shared.strava_analysis_index import ride_card, season_group
 from shared.strava import fetch_activity_streams
 
 riders_bp = Blueprint('riders', __name__)
@@ -261,28 +262,25 @@ def _season_analysis_cards(rider_id, connection):
             continue
         has_comparison = bool(activity and (activity.get('_cached_analysis') or {}).get('comparison'))
         event_id = brevet.get('event_id')
-        card = {
-            'ride_id': activity.get('id') if activity else event_id,
-            'ride_name': _brevet_name(brevet),
-            'date': _event_date(brevet.get('date')),
-            'distance_km': brevet.get('distance_km'),
-            'elevation_ft': brevet.get('elevation_ft'),
-            'finish_time': brevet.get('finish_time'),
-            'has_plan': bool((event_id and event_id in plan_ids) or has_comparison),
-            'has_match': activity is not None,
-            'activity': _activity_metrics(activity) if activity else None,
-        }
+        card = ride_card(
+            ride_id=activity.get('id') if activity else event_id,
+            ride_name=_brevet_name(brevet),
+            date=_event_date(brevet.get('date')),
+            distance_km=brevet.get('distance_km'),
+            elevation_ft=brevet.get('elevation_ft'),
+            finish_time=brevet.get('finish_time'),
+            has_plan=bool((event_id and event_id in plan_ids) or has_comparison),
+            has_match=activity is not None,
+            activity=_activity_metrics(activity) if activity else None,
+        )
         by_season.setdefault(season_name, []).append(card)
 
     current = seasons.current_season_name(date.today())
     season_analysis = []
     for name in sorted(by_season, reverse=True):
         ride_cards = sorted(by_season[name], key=lambda c: c.get('date') or '', reverse=True)
-        season_analysis.append({
-            'season': {'name': name},
-            'is_current': name == current,
-            'ride_cards': ride_cards,
-        })
+        season_analysis.append(
+            season_group({'name': name}, name == current, ride_cards))
     return season_analysis
 
 
