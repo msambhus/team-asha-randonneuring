@@ -43,6 +43,7 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_ride_cohort_stats, get_ride_cohort_breakdown,
                     RideStatus)
 from auth import login_required, user_login_required
+from shared.strava_analysis_index import ride_card, season_group
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
 from services.openai_coach import generate_openai_advice
@@ -1766,24 +1767,21 @@ def my_strava_analysis():
                         'suffer_score': a.get('suffer_score'),
                     }
 
-            ride_cards.append({
-                'ride_id': ride_id_val,
-                'ride_name': p.get('ride_name', ''),
-                'date': p['date'],
-                'distance_km': p.get('distance_km'),
-                'elevation_ft': p.get('elevation_ft'),
-                'finish_time': p.get('finish_time'),
-                'has_plan': has_plan,
-                'has_match': match_info is not None,
-                'activity': activity_data,
-            })
+            ride_cards.append(ride_card(
+                ride_id=ride_id_val,
+                ride_name=p.get('ride_name', ''),
+                date=p['date'],
+                distance_km=p.get('distance_km'),
+                elevation_ft=p.get('elevation_ft'),
+                finish_time=p.get('finish_time'),
+                has_plan=has_plan,
+                has_match=match_info is not None,
+                activity=activity_data,
+            ))
 
         if ride_cards:
-            season_analysis.append({
-                'season': dict(s),
-                'is_current': is_cur,
-                'ride_cards': ride_cards,
-            })
+            season_analysis.append(
+                season_group(dict(s), is_cur, ride_cards))
 
     return render_template('my_strava_analysis.html',
                            rider=rider,
