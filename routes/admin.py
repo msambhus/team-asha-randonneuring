@@ -23,6 +23,7 @@ from models import (get_current_season, get_rides_for_season, get_riders_for_sea
 from auth import login_required, user_login_required, verify_password
 from services.rwgps import (extract_rwgps_route_id, fetch_route, extract_controls,
                             build_ride_plan, slugify)
+from shared.operations_status import route_plan_status
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -116,7 +117,7 @@ def logout():
 @user_login_required
 def dashboard(season_id=None):
     _require_admin()
-    from models import get_all_seasons, _execute
+    from models import get_all_seasons, get_route_plan_operations_status, _execute
 
     all_seasons = get_all_seasons()
     current = get_current_season()
@@ -151,8 +152,15 @@ def dashboard(season_id=None):
     except Exception:
         pass
 
+    try:
+        pipeline_status = route_plan_status(get_route_plan_operations_status())
+    except Exception:
+        current_app.logger.exception('Could not load route-plan pipeline status')
+        pipeline_status = route_plan_status({})
+
     return render_template('admin/dashboard.html', season=season, rides=rides,
                            today=today, wind_status=wind_status,
+                           pipeline_status=pipeline_status,
                            all_seasons=all_seasons)
 
 

@@ -5,6 +5,15 @@
    base.html. Builtin Jinja only. #}
 <div class="container section">
 <div class="max-w-[700px] mx-auto">
+<section class="card mb-4" aria-labelledby="pipeline-status-heading">
+  <h2 id="pipeline-status-heading" class="text-primary text-[1.2rem] font-bold mb-3">Route and plan coverage</h2>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div><strong class="block text-[1.35rem]">{{ pipeline_status.upcoming_events }}</strong><span class="text-text-light text-[0.8rem]">Upcoming</span></div>
+    <div><strong class="block text-[1.35rem]">{{ pipeline_status.missing_routes }}</strong><span class="text-text-light text-[0.8rem]">Missing routes</span></div>
+    <div><strong class="block text-[1.35rem]">{{ pipeline_status.routes_missing_plans }}</strong><span class="text-text-light text-[0.8rem]">Awaiting plans</span></div>
+    <div><strong class="block text-[1.35rem]">{{ pipeline_status.plans_ready }}</strong><span class="text-text-light text-[0.8rem]">Plans ready</span></div>
+  </div>
+</section>
 <section class="card">
   <h1 class="text-primary text-[1.6rem] font-bold mb-2">Generate a real ride plan</h1>
   <p class="text-text-light mb-4">

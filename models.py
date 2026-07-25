@@ -1300,6 +1300,24 @@ def get_ride_plan_warm_targets(limit=25):
     """, (limit,)).fetchall()
 
 
+def get_route_plan_operations_status():
+    """Upcoming Team Asha route and plan coverage for the admin dashboard."""
+    return _execute("""
+        SELECT
+            COUNT(*) AS upcoming_events,
+            COUNT(*) FILTER (
+                WHERE COALESCE(rwgps_url_team, rwgps_url) IS NULL
+            ) AS missing_routes,
+            COUNT(*) FILTER (
+                WHERE COALESCE(rwgps_url_team, rwgps_url) IS NOT NULL
+                  AND ride_plan_id IS NULL
+            ) AS routes_missing_plans,
+            COUNT(*) FILTER (WHERE ride_plan_id IS NOT NULL) AS plans_ready
+        FROM ride
+        WHERE date >= CURRENT_DATE
+    """).fetchone()
+
+
 def create_ride_plan_from_rwgps(plan_data, stops_data):
     """Insert or update a ride plan and its stops generated from RWGPS data.
 
