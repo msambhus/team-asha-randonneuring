@@ -35,6 +35,17 @@ from urllib.request import urlopen, Request
 # brevets like the Boonville Lollipop — doesn't surface under the obvious region
 # numbers), whereas the Region LABEL column is stable and self-describing.
 RUSA_NATIONAL_URL = 'https://rusa.org/cgi-bin/eventsearch_PF.pl?sortby=date'
+BREVET_EVENT_TYPES = frozenset({'ACP brevet', 'RUSA brevet'})
+SANCTIONED_EVENT_TYPES = frozenset({
+    'ACP Trace',
+    'ACP brevet',
+    'ACP flèche',
+    'RM randonnée',
+    'RUSA arrow/dart/dart populaire',
+    'RUSA brevet',
+    'RUSA populaire',
+    'UAF brevet',
+})
 
 
 def get_time_limit_hours(distance_km):
@@ -118,11 +129,14 @@ def get_rwgps_details(rwgps_url):
         return None, None
 
 
-def get_rusa_events(fetch_rwgps=True, region_filter=None):
-    """Download RUSA's national calendar and return its ACP/RUSA brevets.
+def get_rusa_events(fetch_rwgps=True, region_filter=None,
+                    include_all_sanctioned=False):
+    """Download RUSA's national calendar and return sanctioned events.
 
-    One national fetch of the printer-friendly event search; keeps rows whose type
-    is 'ACP brevet' or 'RUSA brevet'. ``region_filter`` controls region scoping:
+    By default, preserves Team Asha's existing ACP/RUSA brevet-only behavior.
+    ``include_all_sanctioned=True`` enables BrevetHub's national directory mode:
+    ACP brevets/flèches/traces, RM randonnées, RUSA brevets/populaires/team events,
+    and UAF brevets. ``region_filter`` controls region scoping:
       * ``None`` — keep every region; ``event['region']`` is RUSA's raw label.
       * a dict (label -> region string) — keep only its labels; ``event['region']``
         is the mapped value (how the Team Asha shim tags each event with the
@@ -171,10 +185,15 @@ def get_rusa_events(fetch_rwgps=True, region_filter=None):
 
             # Extract event type (first line before any divs)
             event_type = re.split(r'<div', event_type_raw)[0]
-            event_type = re.sub(r'<[^>]+>', '', event_type).strip()
+            event_type = html.unescape(
+                re.sub(r'<[^>]+>', '', event_type).strip())
 
-            # Filter for ACP brevet or RUSA brevet only
-            if event_type not in ['ACP brevet', 'RUSA brevet']:
+            accepted_types = (
+                SANCTIONED_EVENT_TYPES
+                if include_all_sanctioned
+                else BREVET_EVENT_TYPES
+            )
+            if event_type not in accepted_types:
                 continue
 
             # Parse date (format: YYYY/MM/DD)
@@ -248,9 +267,9 @@ def get_rusa_events(fetch_rwgps=True, region_filter=None):
             events.append(event)
 
         if events:
-            print(f"✅ Downloaded {len(events)} RUSA brevet events")
+            print(f"✅ Downloaded {len(events)} RUSA calendar events")
         else:
-            print("⚠️  No RUSA ACP/RUSA brevet events found")
+            print("⚠️  No matching RUSA calendar events found")
 
         return events
 

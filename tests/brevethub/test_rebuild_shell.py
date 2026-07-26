@@ -211,6 +211,14 @@ def test_brevethub_calendar_template_renders_with_rusa_context():
     assert "Team Asha" not in body
 
 
+def test_brevethub_calendar_requests_all_national_sanctioned_events():
+    source = (
+        BREVETHUB_DIR / "routes" / "calendar.py"
+    ).read_text()
+
+    assert "include_all_sanctioned=True" in source
+
+
 def test_brevethub_signup_does_not_offer_maybe_as_a_new_intent():
     from brevethub.routes.calendar import _SIGNUP_STATUSES
 

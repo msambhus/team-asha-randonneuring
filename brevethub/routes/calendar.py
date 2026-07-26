@@ -109,7 +109,10 @@ def _scrape_and_upsert():
     following every route-detail page would make a load do dozens of blocking HTTP
     calls. region_filter=None → the general RUSA calendar.
     """
-    events = get_rusa_events(fetch_rwgps=False)
+    events = get_rusa_events(
+        fetch_rwgps=False,
+        include_all_sanctioned=True,
+    )
     if not events:
         return 0
     for event in events:
