@@ -46,6 +46,12 @@
   <div class="stat-card"><div class="number" style="color:var(--accent);">{% if sr_total > 1 %}SR&times;{{ sr_total }}{% else %}SR{% endif %}</div><div class="label">Super Randonneur</div></div>
   {% endif %}
   <div class="stat-card"><div class="number">{{ career.r12_streak.months }}</div><div class="label">R-12 Streak (mo)</div></div>
+  {% if career.permanent_count %}
+  <div class="stat-card"><div class="number">{{ career.permanent_count }}</div><div class="label">Permanents</div></div>
+  {% endif %}
+  {% if career.populaire_count %}
+  <div class="stat-card"><div class="number">{{ career.populaire_count }}</div><div class="label">Populaires</div></div>
+  {% endif %}
   {% endif %}
   {% if strava.stats and strava.stats.fitness is not none %}
   <div class="stat-card"><div class="number" style="color:{% if strava.stats.fitness >= 70 %}#38a169{% elif strava.stats.fitness >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ strava.stats.fitness }}</div><div class="label">Fitness Score</div></div>

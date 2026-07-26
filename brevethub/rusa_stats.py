@@ -14,6 +14,7 @@ from datetime import datetime
 from shared.seasons import DISTANCE_BANDS as _BANDS
 from shared.seasons import band_for as _band_for
 from shared.seasons import sr_tier_for as _sr_tier
+from shared.rusa_ride_kind import ride_kind_counts
 
 
 def normalize_results(raw):
@@ -65,7 +66,6 @@ def compute_stats(brevets, current_year=None):
     per_year_tiers = {}
     season_km = 0
     season_count = 0
-    permanent_count = 0
     rides_1000_plus = 0
 
     for b in brevets:
@@ -73,8 +73,6 @@ def compute_stats(brevets, current_year=None):
         total_km += dist
         if dist > longest_km:
             longest_km = dist
-        if 'perm' in str(b.get('event_type') or '').lower() or 'perm' in str(b.get('route_name') or '').lower():
-            permanent_count += 1
         if dist >= 1000:
             rides_1000_plus += 1
         band = _band_for(dist)
@@ -93,6 +91,7 @@ def compute_stats(brevets, current_year=None):
         if all(tiers[t] > 0 for t in (200, 300, 400, 600)):
             sr_year = yr  # keep the most recent qualifying year
 
+    kinds = ride_kind_counts(brevets)
     return {
         'total_km': total_km,
         'count': len(brevets),
@@ -103,6 +102,8 @@ def compute_stats(brevets, current_year=None):
         'season_year': current_year,
         'season_total_km': season_km,
         'season_count': season_count,
-        'permanent_count': permanent_count,
+        'brevet_count': kinds['brevet'],
+        'permanent_count': kinds['permanent'],
+        'populaire_count': kinds['populaire'],
         'rides_1000_plus': rides_1000_plus,
     }

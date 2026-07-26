@@ -51,6 +51,7 @@
           <td>{{ b.distance_km }} km</td>
           <td>
             {{ b.route_name }}
+            <span class="badge">{{ b.ride_kind|capitalize }}</span>
             {% if b.source == 'ride' %}<span class="badge badge-warn" title="Your own logged ride">logged</span>{% endif %}
           </td>
           <td>{{ b.finish_time }}</td>
@@ -66,7 +67,7 @@
 <section class="card">
   <h1 class="text-primary text-[1.6rem] font-bold">Rides by Season</h1>
   <p class="text-text-light">
-    Your brevets grouped by randonneuring season (Nov 1 – Oct 31), from your RUSA
+    Your brevets, permanents, and populaires grouped by randonneuring season (Nov 1 – Oct 31), from your RUSA
     history merged with any rides you've logged here.
   </p>
 

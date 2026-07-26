@@ -39,6 +39,7 @@ from shared import seasons
 from shared.strava_analysis_index import ride_card, season_group
 from shared.rider_directory_view import public_rider_row
 from shared.strava import fetch_activity_streams
+from shared.rusa_ride_kind import ride_kind_counts
 
 riders_bp = Blueprint('riders', __name__)
 
@@ -442,6 +443,7 @@ def _career_row(rider_row, today):
     """
     brevets = rider_row.get('rusa_cache') or []
     career = seasons.career_summary(brevets, today)
+    kinds = ride_kind_counts(brevets)
     return {
         'id': rider_row.get('id'),
         'rusa_id': rider_row.get('rusa_id'),
@@ -452,10 +454,8 @@ def _career_row(rider_row, today):
         # not the number of SR seasons, matching the "SR×N" profile display.
         'sr_count': career['total_sr'],
         'pbp_years': seasons.pbp_ancien_years(brevets),
-        'permanent_count': sum(
-            1 for b in brevets
-            if 'perm' in str(b.get('event_type') or '').lower()
-            or 'perm' in str(b.get('route_name') or '').lower()),
+        'permanent_count': kinds['permanent'],
+        'populaire_count': kinds['populaire'],
         'rides_1000_plus': sum(1 for b in brevets if (b.get('distance_km') or 0) >= 1000),
         'career': career,
     }
