@@ -103,6 +103,31 @@ def test_inherited_team_asha_templates_are_color_neutralized_for_brevethub():
     assert "Team Asha" not in source
 
 
+def test_public_rider_profile_is_rusa_only_and_owner_profile_keeps_strava():
+    public_source = (
+        BREVETHUB_DIR / "templates" / "rider_profile.html"
+    ).read_text().lower()
+    owner_source = (
+        BREVETHUB_DIR / "templates" / "profile.html"
+    ).read_text().lower()
+    model_source = (BREVETHUB_DIR / "models.py").read_text().lower()
+
+    assert "eddington" not in public_source
+    assert "strava" not in public_source
+    assert "activity" not in public_source
+    assert "eddington_miles=target" not in (
+        BREVETHUB_DIR / "routes" / "riders.py"
+    ).read_text()
+
+    club_rider_query = model_source.split(
+        "def get_club_rider(", 1
+    )[1].split("def get_public_rider(", 1)[0]
+    assert "eddington" not in club_rider_query
+
+    assert "eddington" in owner_source
+    assert "riders.my_strava_analysis" in owner_source
+
+
 def test_inherited_templates_are_product_neutralized():
     from brevethub.app import app
 

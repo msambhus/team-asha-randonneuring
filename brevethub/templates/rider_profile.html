@@ -89,10 +89,6 @@
   {% set sr_total = career.total_sr %}
   <div class="stat-card"><div class="number" style="color:var(--accent);">{% if sr_total > 1 %}SR&times;{{ sr_total }}{% elif sr_total == 1 %}SR{% else %}—{% endif %}</div><div class="label">Super Randonneur</div></div>
   <div class="stat-card"><div class="number">{{ career.r12_streak.months }}</div><div class="label">R-12 Streak (mo)</div></div>
-  {# Eddington (mi) from this rider own Strava history — a pure read of the cached
-     scalar. This page issues ZERO Strava calls; an absent value renders as an
-     honest dash, never a fabricated 0. #}
-  <div class="stat-card"><div class="number">{% if eddington_miles is not none %}{{ eddington_miles }}{% else %}—{% endif %}</div><div class="label">Eddington (mi)</div></div>
 </div>
 
 <div class="container section">

@@ -686,7 +686,7 @@ def update_rider_rusa_cache(rider_id, brevets):
 
 # --------------------------------------------------------------------------- #
 # Club roster (rp_rider) — read-only, club-scoped community surfaces (directory,
-# leaderboard, season rosters, public rider profile). Every query here is
+# season rosters, public rider profile). Every query here is
 # parameterized by the viewer club_id, so no rider outside that club is ever
 # returned; the cached RUSA history rides along, letting career numbers reuse the
 # same engine the self-profile page uses instead of a second computation.
@@ -709,7 +709,7 @@ def get_club_riders_with_rusa(club_id):
 
 
 def get_club_rider(club_id, rider_id):
-    """One club-scoped rider by primary key, with the cached RUSA history.
+    """One club-scoped rider by primary key, with RUSA-backed public fields only.
 
     Keyed on the unique rider id, never the RUSA id: BrevetHub allows two riders to
     claim the same RUSA id (soft-flagged, not rejected), so a RUSA id can be
@@ -719,8 +719,7 @@ def get_club_rider(club_id, rider_id):
     completed-profile rider.
     """
     return db.query_one(
-        "SELECT id, email, rusa_id, club_id, created_at, rusa_cache, "
-        "       eddington_km, eddington_miles "
+        "SELECT id, email, rusa_id, club_id, created_at, rusa_cache "
         "FROM rp_rider "
         "WHERE club_id = %s AND id = %s AND profile_completed = TRUE",
         (club_id, rider_id),
