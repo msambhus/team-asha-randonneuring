@@ -26,6 +26,8 @@ _RUSA_HTML = """
     <td><a href="/cgi-bin/routeview_PF.pl?rtid=1234">Davis Dunnigan Delta 302k</a></td><td>info</td></tr>
 <tr><td>CA: San Francisco</td><td>RUSA populaire</td><td>2026/05/03</td><td>100</td><td></td>
     <td>Laguna Lake</td><td>info</td></tr>
+<tr><td>WA: Seattle</td><td>ACP fl&egrave;che</td><td>2026/04/18</td><td>360</td><td></td>
+    <td>Spring Flèche</td><td>info</td></tr>
 <tr><td>CO: Boulder</td><td>RUSA brevet</td><td>2026/07/11</td><td>200</td><td></td>
     <td>Vail Pass Volley</td><td>info</td></tr>
 </table></body></html>
@@ -51,6 +53,20 @@ def test_national_table_parses_to_event_dicts_with_route_id():
     assert davis["ride_type"] == "ACP brevet"
     assert davis["route_id"] == "1234"              # route id parsed from the Route cell
     assert davis["elevation_ft"] == 3519            # from the Climbing column
+
+
+def test_national_directory_mode_keeps_all_sanctioned_event_types():
+    with patch.object(rc, "urlopen", _fake_urlopen):
+        events = rc.get_rusa_events(
+            fetch_rwgps=False,
+            include_all_sanctioned=True,
+        )
+
+    by_name = {e["name"]: e for e in events}
+    assert "Laguna Lake" in by_name
+    assert by_name["Laguna Lake"]["ride_type"] == "RUSA populaire"
+    assert "Spring Flèche" in by_name
+    assert by_name["Spring Flèche"]["ride_type"] == "ACP flèche"
 
 
 def test_national_feed_has_no_start_location_or_time():
