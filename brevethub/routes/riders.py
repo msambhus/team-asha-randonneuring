@@ -512,15 +512,14 @@ def rider_profile(rider_id):
         target = models.get_public_rider(rider_id)
     if target is None and is_self:
         # Self-view fallback: a rider can always see their own record, even before
-        # joining a club. current_rider() carries no rusa_cache, so read it here.
+        # joining a club. This is still the PUBLIC-profile contract, even for its
+        # owner, so only RUSA-backed fields cross into the template. Private Strava
+        # metrics belong on /profile and /my/strava-analysis.
         cache = models.get_rider_rusa_cache(viewer['id']) or {}
         target = {
             'email': viewer['email'],
             'rusa_id': viewer['rusa_id'],
             'rusa_cache': cache.get('rusa_cache'),
-            # current_rider() (get_rider_by_id) carries the cached Eddington, so the
-            # self-view fallback shows the owner own value without a Strava fetch.
-            'eddington_miles': viewer.get('eddington_miles'),
         }
     if target is None:
         abort(404)
@@ -536,5 +535,4 @@ def rider_profile(rider_id):
                            display_name=_display_name(target.get('email')),
                            rusa_id=target.get('rusa_id'),
                            career=career, seasons=season_groups,
-                           pbp_years=pbp_years, is_self=is_self,
-                           eddington_miles=target.get('eddington_miles'))
+                           pbp_years=pbp_years, is_self=is_self)
