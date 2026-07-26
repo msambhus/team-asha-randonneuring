@@ -57,7 +57,7 @@
             <span class="rider-avatar">{{ r.display_name[0]|upper }}</span>
             <span class="rider-meta">
               <span class="rider-name block">{{ r.display_name }}</span>
-              <span class="rider-sub">{{ r.total_km }} km &middot; {{ r.count }} brevet{{ '' if r.count == 1 else 's' }}{% if r.sr_count %} &middot; SR&times;{{ r.sr_count }}{% endif %} &middot; {{ r.permanent_count }} perm{% if r.rides_1000_plus %} &middot; {{ r.rides_1000_plus }} 1000+{% endif %}{% if r.pbp_years %} &middot; PBP {{ r.pbp_years|join(', ') }}{% endif %}</span>
+              <span class="rider-sub">{{ r.total_km }} km &middot; {{ r.count }} official ride{{ '' if r.count == 1 else 's' }}{% if r.sr_count %} &middot; SR&times;{{ r.sr_count }}{% endif %} &middot; {{ r.permanent_count }} perm{% if r.populaire_count %} &middot; {{ r.populaire_count }} populaire{% endif %}{% if r.rides_1000_plus %} &middot; {{ r.rides_1000_plus }} 1000+{% endif %}{% if r.pbp_years %} &middot; PBP {{ r.pbp_years|join(', ') }}{% endif %}</span>
             </span>
           </a>
         {% endfor %}

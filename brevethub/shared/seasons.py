@@ -32,6 +32,8 @@ Every function accepts brevets in the JSON-safe shape BrevetHub caches (see
 """
 from datetime import date
 
+from shared.rusa_ride_kind import ride_kind_counts, rusa_ride_kind
+
 # Randonneuring season boundary: a new season starts on November 1.
 SEASON_START_MONTH = 11
 
@@ -188,10 +190,14 @@ def seasons_with_summaries(brevets, today):
     current = current_season_name(today)
     out = []
     for group in group_brevets_by_season(brevets):
+        rides = [
+            {**ride, 'ride_kind': rusa_ride_kind(ride)}
+            for ride in group['brevets']
+        ]
         out.append({
             'season': group['season'],
-            'brevets': group['brevets'],
-            'summary': season_summary(group['brevets']),
+            'brevets': rides,
+            'summary': season_summary(rides),
             'is_current': group['season'] == current,
         })
     return out
@@ -278,9 +284,13 @@ def career_summary(brevets, today):
     current_season = next((s for s in seasons if s['season'] == current), None)
     sr_seasons = [s['season'] for s in seasons if s['summary']['is_sr']]
     total_sr = sum(s['summary']['sr_count'] for s in seasons)
+    kinds = ride_kind_counts(brevets)
     return {
         'total_km': sum((b.get('distance_km') or 0) for b in brevets or []),
         'count': len(brevets or []),
+        'brevet_count': kinds['brevet'],
+        'permanent_count': kinds['permanent'],
+        'populaire_count': kinds['populaire'],
         'current_season': current,
         'current_sr': current_season['summary'] if current_season else sr_progress([]),
         'sr_seasons': sr_seasons,

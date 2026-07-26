@@ -56,7 +56,7 @@
         <tr>
           <td>{{ b.date }}</td>
           <td>{{ b.distance_km }} km</td>
-          <td>{{ b.route_name }}</td>
+          <td>{{ b.route_name }} <span class="badge">{{ b.ride_kind|capitalize }}</span></td>
           <td>{{ b.finish_time }}</td>
         </tr>
       {% endfor %}
