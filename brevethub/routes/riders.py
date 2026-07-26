@@ -256,10 +256,13 @@ def _season_analysis_cards(rider_id, connection):
     plan_ids = _plan_event_ids(brevets)
 
     by_season = {}
+    used_activity_ids = set()
     for brevet, activity in _match_brevets_to_activities(brevets, activities):
         season_name = seasons.season_name_for_date(_event_date(brevet.get('date')))
         if not season_name:
             continue
+        if activity and activity.get('id') is not None:
+            used_activity_ids.add(activity['id'])
         has_comparison = bool(activity and (activity.get('_cached_analysis') or {}).get('comparison'))
         event_id = brevet.get('event_id')
         card = ride_card(
@@ -271,9 +274,34 @@ def _season_analysis_cards(rider_id, connection):
             finish_time=brevet.get('finish_time'),
             has_plan=bool((event_id and event_id in plan_ids) or has_comparison),
             has_match=activity is not None,
+            is_brevet=True,
             activity=_activity_metrics(activity) if activity else None,
         )
         by_season.setdefault(season_name, []).append(card)
+
+    # The private owner page is also the rider's Strava ride list. Activities that
+    # did not match an official finished brevet remain visible as Regular rides;
+    # they are not silently discarded or mislabeled as failed brevet matches.
+    for activity in activities.values():
+        activity_id = activity.get('id')
+        if activity_id is None or activity_id in used_activity_ids:
+            continue
+        activity_date = _activity_date(activity)
+        season_name = seasons.season_name_for_date(_event_date(activity_date))
+        if not season_name:
+            continue
+        metrics = _activity_metrics(activity)
+        by_season.setdefault(season_name, []).append(ride_card(
+            ride_id=activity_id,
+            ride_name=activity.get('name') or 'Strava ride',
+            date=activity_date,
+            distance_km=round(_activity_distance_km(activity), 1),
+            elevation_ft=metrics.get('elevation_ft'),
+            has_plan=False,
+            has_match=True,
+            is_brevet=False,
+            activity=metrics,
+        ))
 
     current = seasons.current_season_name(date.today())
     season_analysis = []
