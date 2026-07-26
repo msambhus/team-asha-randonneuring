@@ -12,6 +12,7 @@ def ride_card(**values):
         'finish_time': None,
         'has_plan': False,
         'has_match': False,
+        'is_brevet': False,
         'activity': None,
     }
     card.update(values)

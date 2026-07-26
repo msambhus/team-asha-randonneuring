@@ -75,6 +75,7 @@ def test_shared_index_contract_is_identical_for_both_products():
         date='2026-04-18',
         distance_km=400,
         has_match=True,
+        is_brevet=True,
     )
     group = season_group({'name': '2025-2026'}, True, [card])
 
@@ -82,4 +83,53 @@ def test_shared_index_contract_is_identical_for_both_products():
     assert group['ride_cards'][0]['ride_id'] == 42
     assert group['ride_cards'][0]['has_match'] is True
     assert group['ride_cards'][0]['has_plan'] is False
+    assert group['ride_cards'][0]['is_brevet'] is True
     assert group['ride_cards'][0]['activity'] is None
+
+
+def test_private_index_includes_unmatched_regular_rides_newest_first(monkeypatch):
+    from brevethub.routes import riders
+
+    monkeypatch.setattr(riders, '_rider_finished_brevets', lambda _rider_id: [{
+        'event_id': 9,
+        'name': 'Official 200K',
+        'date': '2026-07-10',
+        'distance_km': 200,
+        'finish_time': '12:30',
+    }])
+    monkeypatch.setattr(riders, '_plan_event_ids', lambda _brevets: {9})
+    monkeypatch.setattr(
+        riders,
+        '_load_analysis_index_activities',
+        lambda _rider_id, _connection: {
+            101: {
+                'id': 101,
+                'name': 'Official 200K activity',
+                'start_date_local': '2026-07-10T06:00:00',
+                'distance': 200_500,
+                'moving_time': 40_000,
+                'elapsed_time': 45_000,
+                'total_elevation_gain': 2_000,
+                'average_speed': 5,
+            },
+            102: {
+                'id': 102,
+                'name': 'Morning training ride',
+                'start_date_local': '2026-07-20T07:00:00',
+                'distance': 50_000,
+                'moving_time': 7_000,
+                'elapsed_time': 7_500,
+                'total_elevation_gain': 500,
+                'average_speed': 7,
+            },
+        },
+    )
+
+    groups = riders._season_analysis_cards(1, {'id': 1})
+    cards = groups[0]['ride_cards']
+
+    assert [card['ride_id'] for card in cards] == [102, 101]
+    assert cards[0]['is_brevet'] is False
+    assert cards[0]['ride_name'] == 'Morning training ride'
+    assert cards[1]['is_brevet'] is True
+    assert cards[1]['has_plan'] is True

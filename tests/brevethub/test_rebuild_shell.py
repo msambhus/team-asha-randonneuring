@@ -128,6 +128,18 @@ def test_public_rider_profile_is_rusa_only_and_owner_profile_keeps_strava():
     assert "riders.my_strava_analysis" in owner_source
 
 
+def test_private_strava_index_visually_separates_brevets_and_regular_rides():
+    source = (
+        BREVETHUB_DIR / "templates" / "my_strava_analysis.html"
+    ).read_text()
+
+    assert "My Strava Rides" in source
+    assert "Regular ride" in source
+    assert "card.is_brevet" in source
+    assert ">Stats<" not in source  # Jinja/HTML whitespace is intentional.
+    assert "            Stats" in source
+
+
 def test_inherited_templates_are_product_neutralized():
     from brevethub.app import app
 

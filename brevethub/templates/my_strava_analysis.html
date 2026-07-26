@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Completed Brevet Analysis - Team Asha Randonneuring{% endblock %}
+{% block title %}My Strava Rides — {{ product_name }}{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -13,6 +13,25 @@
 }
 .strava-ride-card:hover {
     box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+.strava-ride-card.regular-ride {
+    border-left: 4px solid #cbd5e1;
+    opacity: 0.92;
+}
+.ride-kind {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: #dbeafe;
+    color: #1e40af;
+}
+.ride-kind.regular {
+    background: #f1f5f9;
+    color: #64748b;
 }
 .card-header {
     padding: 16px 20px;
@@ -170,7 +189,7 @@
 
 {% block content %}
 <div class="hero" style="padding:30px 20px;">
-    <h1 style="margin-bottom:4px;">Completed Brevet Analysis</h1>
+    <h1 style="margin-bottom:4px;">My Strava Rides</h1>
     <p style="opacity:0.85;">{{ rider.first_name }} {{ rider.last_name }} &mdash; RUSA# {{ rider.rusa_id }}</p>
 </div>
 
@@ -183,8 +202,8 @@
 
 {% if not season_analysis %}
 <div class="empty-state">
-    <h3>No Finished Rides Yet</h3>
-    <p>Complete some brevet rides and sync Strava to see your ride analysis here.</p>
+    <h3>No Strava Rides Yet</h3>
+    <p>Sync Strava to see your rides and brevet matches here.</p>
     <p style="margin-top:12px; font-size:0.8rem;">Your Strava activities are matched to brevets by date and distance.</p>
 </div>
 {% endif %}
@@ -196,10 +215,13 @@
 </div>
 
 {% for card in sa.ride_cards %}
-<div class="strava-ride-card">
+<div class="strava-ride-card{% if not card.is_brevet %} regular-ride{% endif %}">
     {# --- Card Header: Ride info --- #}
     <div class="card-header">
         <span class="ride-name">{{ card.ride_name|clean_name }}</span>
+        <span class="ride-kind{% if not card.is_brevet %} regular{% endif %}">
+          {{ 'Brevet' if card.is_brevet else 'Regular ride' }}
+        </span>
         <span class="ride-meta">{{ card.date }} &mdash; {{ card.distance_km }} km</span>
         {% if card.finish_time %}
         <span class="ride-meta" style="font-family:monospace; font-weight:600;">{{ card.finish_time }}</span>
@@ -273,16 +295,18 @@
         {% else %}
         <a href="{{ url_for('riders.ride_strava_analysis', rusa_id=rider.rusa_id, ride_id=card.ride_id) }}" class="btn-analysis">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
-            View Strava Analysis
+            Stats
         </a>
         {% endif %}
         <a href="{{ card.activity.strava_url }}" target="_blank" rel="noopener" class="btn-strava-link">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="#fc4c02"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
             View on Strava
         </a>
+        {% if card.is_brevet %}
         <a href="{{ url_for('riders.ride_cohort_comparison', ride_id=card.ride_id) }}" class="btn-cohort">
             &#x1F465; Compare with Cohort
         </a>
+        {% endif %}
     </div>
     {% endif %}
 </div>
