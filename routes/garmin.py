@@ -165,6 +165,8 @@ def sync():
                 raw_activity, separators=(",", ":"), default=str))
             imported.append((normalized, activity_ciphertext))
         models.upsert_garmin_activities(rider_id, imported)
+        from services.activity_matching import refresh_activity_matches_safely
+        refresh_activity_matches_safely(rider_id)
     except GarminConnectAuthenticationError:
         models.mark_garmin_reauth_required(rider_id)
         flash("Garmin authorization expired. Disconnect and reconnect Garmin.",

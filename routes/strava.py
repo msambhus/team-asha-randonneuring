@@ -204,6 +204,8 @@ def sync():
 
     try:
         counts = sync_rider_activities(rider_id)
+        from services.activity_matching import refresh_activity_matches_safely
+        refresh_activity_matches_safely(rider_id)
         cache.clear()  # Clear cache after Strava sync
         flash(f'Synced {counts["new"]} new, {counts["updated"]} updated activities from Strava.', 'success')
     except Exception as e:
