@@ -96,3 +96,6 @@ def test_garmin_decimal_distance_renders_on_my_profile(client, app):
     assert b'aria-live="polite"' in response.data
     assert b"Syncing Garmin performance and recent rides" in response.data
     assert b"button.disabled = true" in response.data
+    assert b"Disconnect &amp; delete Garmin data" in response.data
+    assert b'name="confirm_delete" value="DELETE"' in response.data
+    assert b"permanently delete its encrypted tokens" in response.data

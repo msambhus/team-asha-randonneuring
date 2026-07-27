@@ -2162,12 +2162,36 @@ def update_strava_last_sync(rider_id):
     conn.commit()
 
 def delete_strava_connection(rider_id):
-    """Delete Strava connection and all stored activities."""
+    """Atomically delete one rider's complete private Strava footprint."""
     conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("DELETE FROM strava_activity WHERE rider_id = %s", (rider_id,))
-    cur.execute("DELETE FROM strava_connection WHERE rider_id = %s", (rider_id,))
-    conn.commit()
+    cur = conn.cursor()
+    try:
+        # Analyses cascade from matches. Delete matches before activities so no
+        # cached comparison can survive removal of its source activity.
+        cur.execute(
+            "DELETE FROM strava_ride_match WHERE rider_id = %s",
+            (rider_id,),
+        )
+        matches = cur.rowcount
+        cur.execute(
+            "DELETE FROM strava_activity WHERE rider_id = %s",
+            (rider_id,),
+        )
+        activities = cur.rowcount
+        cur.execute(
+            "DELETE FROM strava_connection WHERE rider_id = %s",
+            (rider_id,),
+        )
+        connections = cur.rowcount
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return {
+        "connections": connections,
+        "activities": activities,
+        "matches": matches,
+    }
 
 
 # ========== GARMIN CONNECT ==========
@@ -2209,22 +2233,40 @@ def upsert_garmin_connection(rider_id, token_ciphertext, display_name=None):
 
 
 def delete_garmin_connection(rider_id):
-    """Disconnect only the specified rider and delete private Garmin snapshots."""
+    """Atomically delete one rider's complete private Garmin footprint."""
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("DELETE FROM garmin_activity WHERE rider_id = %s",
-                (rider_id,))
-    cur.execute(
-        "DELETE FROM garmin_performance_snapshot WHERE rider_id = %s",
-        (rider_id,),
-    )
-    cur.execute(
-        "DELETE FROM garmin_connection WHERE rider_id = %s RETURNING rider_id",
-        (rider_id,),
-    )
-    removed = cur.fetchone() is not None
-    conn.commit()
-    return removed
+    try:
+        cur.execute(
+            "DELETE FROM garmin_mfa_challenge WHERE rider_id = %s",
+            (rider_id,),
+        )
+        challenges = cur.rowcount
+        cur.execute(
+            "DELETE FROM garmin_activity WHERE rider_id = %s",
+            (rider_id,),
+        )
+        activities = cur.rowcount
+        cur.execute(
+            "DELETE FROM garmin_performance_snapshot WHERE rider_id = %s",
+            (rider_id,),
+        )
+        snapshots = cur.rowcount
+        cur.execute(
+            "DELETE FROM garmin_connection WHERE rider_id = %s",
+            (rider_id,),
+        )
+        connections = cur.rowcount
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return {
+        "connections": connections,
+        "challenges": challenges,
+        "activities": activities,
+        "snapshots": snapshots,
+    }
 
 
 def save_garmin_mfa_challenge(rider_id, state_ciphertext):
