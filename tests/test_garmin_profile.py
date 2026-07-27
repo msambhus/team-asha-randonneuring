@@ -71,7 +71,16 @@ def test_garmin_decimal_distance_renders_on_my_profile(client, app):
          patch("routes.auth.models.get_garmin_connection",
                return_value={"rider_id": 42, "status": "connected"}), \
          patch("routes.auth.models.get_latest_garmin_performance_snapshot",
-               return_value=None), \
+               return_value={
+                   "snapshot_date": "2026-07-27",
+                   "training_readiness": Decimal("74"),
+                   "readiness_level": "HIGH",
+                   "readiness_feedback": "READY",
+                   "recovery_time_minutes": Decimal("90"),
+                   "endurance_score": Decimal("7120"),
+                   "acute_training_load": Decimal("642"),
+                   "load_level_trend": "MAINTAINING",
+               }), \
          patch("routes.auth.models.get_recent_garmin_activities",
                return_value=[activity]):
         response = client.get("/auth/my-profile")
@@ -79,6 +88,10 @@ def test_garmin_decimal_distance_renders_on_my_profile(client, app):
     assert response.status_code == 200
     assert b"Garmin Decimal Ride" in response.data
     assert b"10.0" in response.data
+    assert b"Endurance" in response.data
+    assert b"7120" in response.data
+    assert b"1.5h recovery" in response.data
+    assert b"Load maintaining" in response.data
     assert b'id="garmin-sync-progress"' in response.data
     assert b'aria-live="polite"' in response.data
     assert b"Syncing Garmin performance and recent rides" in response.data
