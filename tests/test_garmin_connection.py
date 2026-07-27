@@ -16,6 +16,23 @@ def _login(client, rider_id=42):
         sess["rider_id"] = rider_id
 
 
+def test_connect_page_explains_and_shows_submission_progress(client, app):
+    _login(client)
+    app.config["GARMIN_TOKEN_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+
+    with patch("routes.garmin.models.get_garmin_connection",
+               return_value=None):
+        response = client.get("/garmin/connect")
+
+    assert response.status_code == 200
+    assert b'id="garmin-connect-progress"' in response.data
+    assert b'aria-live="polite"' in response.data
+    assert b"Connecting securely" in response.data
+    assert b"up to a minute" in response.data
+    assert b"button.disabled = true" in response.data
+    assert b"input.readOnly = true" in response.data
+
+
 def test_token_cipher_round_trip_and_wrong_key_fails():
     token_json = json.dumps({
         "di_token": "access-secret",

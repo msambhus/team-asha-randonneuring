@@ -255,7 +255,8 @@
         <strong>{{ activity.activity_name or 'Cycling activity' }}</strong><br>
         <span style="color:var(--text-light);">{{ activity.started_at.strftime('%b %-d, %Y') if activity.started_at else '' }}</span>
       </div>
-      <div><strong>{{ '%.1f'|format((activity.distance_m or 0) / 1609.344) }}</strong><br><span style="color:var(--text-light);">miles</span></div>
+      {% set distance_m = activity.distance_m|float if activity.distance_m is not none else 0 %}
+      <div><strong>{{ '%.1f'|format(distance_m / 1609.344) }}</strong><br><span style="color:var(--text-light);">miles</span></div>
       <div><strong>{{ activity.average_hr|round|int if activity.average_hr is not none else '—' }}</strong><br><span style="color:var(--text-light);">avg HR</span></div>
       <div><strong>{{ activity.normalized_power|round|int if activity.normalized_power is not none else (activity.average_power|round|int if activity.average_power is not none else '—') }}</strong><br><span style="color:var(--text-light);">power</span></div>
       <div><strong>{{ activity.aerobic_training_effect if activity.aerobic_training_effect is not none else '—' }}</strong><br><span style="color:var(--text-light);">training effect</span></div>
