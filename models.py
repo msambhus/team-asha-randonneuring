@@ -2489,6 +2489,70 @@ def upsert_activity_source_matches(rider_id, matches):
         raise
 
 
+def get_authoritative_brevet_source_links(rider_id):
+    """Reuse existing Strava-to-brevet decisions and attach Garmin provenance."""
+    rows = _execute(
+        "SELECT srm.ride_id, srm.rider_id, srm.strava_activity_id, "
+        "asm.id AS source_match_id, asm.garmin_activity_id "
+        "FROM strava_ride_match srm "
+        "JOIN rider_ride rr ON rr.rider_id=srm.rider_id "
+        " AND rr.ride_id=srm.ride_id AND rr.status=%s "
+        "LEFT JOIN activity_source_match asm ON asm.rider_id=srm.rider_id "
+        " AND asm.strava_activity_id=srm.strava_activity_id "
+        "WHERE srm.rider_id=%s",
+        (RideStatus.FINISHED.value, rider_id),
+    ).fetchall()
+    return [{
+        **dict(row),
+        "confidence": 1.0,
+        "match_status": "authoritative",
+        "reasons": {"existing_strava_brevet_match": True},
+    } for row in rows]
+
+
+def get_finished_brevets_for_matching(rider_id):
+    """Return only finished brevet candidates owned by the rider."""
+    rows = _execute(
+        "SELECT r.id AS ride_id, r.name AS ride_name, r.date, "
+        "r.distance_km, r.start_time, r.ride_type "
+        "FROM rider_ride rr JOIN ride r ON r.id=rr.ride_id "
+        "WHERE rr.rider_id=%s AND rr.status=%s "
+        "ORDER BY r.date DESC",
+        (rider_id, RideStatus.FINISHED.value),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def replace_activity_brevet_matches(rider_id, matches):
+    """Replace derived brevet links while preserving rider-reviewed decisions."""
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "DELETE FROM activity_brevet_match WHERE rider_id=%s "
+            "AND match_status IN ('auto', 'authoritative')",
+            (rider_id,),
+        )
+        for match in matches:
+            if match["rider_id"] != rider_id:
+                raise ValueError("Brevet match does not belong to rider")
+            cur.execute(
+                "INSERT INTO activity_brevet_match "
+                "(rider_id, ride_id, source_match_id, garmin_activity_id, "
+                "strava_activity_id, confidence, reasons, match_status) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                (rider_id, match["ride_id"], match.get("source_match_id"),
+                 match.get("garmin_activity_id"),
+                 match.get("strava_activity_id"), match["confidence"],
+                 psycopg2.extras.Json(match["reasons"]),
+                 match["match_status"]),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def mark_garmin_reauth_required(rider_id):
     """Record an auth failure without exposing its details to other riders."""
     conn = get_db()

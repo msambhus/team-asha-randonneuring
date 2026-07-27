@@ -1,5 +1,5 @@
 """Deterministic, rider-owned matching of Garmin and Strava ride recordings."""
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 AUTO_MATCH_THRESHOLD = 0.82
@@ -158,6 +158,7 @@ def refresh_activity_matches(rider_id):
     strava = models.get_strava_activities_for_matching(rider_id)
     matches = auto_matches(garmin, strava)
     models.upsert_activity_source_matches(rider_id, matches)
+    refresh_brevet_matches(rider_id)
     return len(matches)
 
 
@@ -170,3 +171,99 @@ def refresh_activity_matches_safely(rider_id):
         current_app.logger.exception(
             "Activity source matching failed for rider %s", rider_id)
         return 0
+
+
+def _date(value):
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
+
+
+def score_garmin_brevet(garmin, brevet):
+    """Conservatively score a Garmin-only recording against a finished brevet."""
+    if not _is_cycling(garmin.get("activity_type")):
+        return None
+    started = _datetime(garmin.get("started_at"))
+    if not started or abs((_date(brevet["date"]) - started.date()).days) > 1:
+        return None
+
+    distance_difference = _relative_difference(
+        _number(garmin.get("distance_m")),
+        _number(brevet.get("distance_km")) * 1000,
+    )
+    if distance_difference is None or distance_difference > 0.08:
+        return None
+    same_date = _date(brevet["date"]) == started.date()
+    confidence = (
+        0.94 if same_date and distance_difference <= 0.03
+        else 0.86 if same_date
+        else 0.82
+    )
+    return {
+        "confidence": confidence,
+        "reasons": {
+            "same_calendar_date": same_date,
+            "date_delta_days": abs((_date(brevet["date"]) - started.date()).days),
+            "distance_difference_percent": round(distance_difference * 100, 1),
+            "finished_brevet": True,
+            "garmin_only": True,
+        },
+    }
+
+
+def garmin_brevet_auto_matches(garmin_activities, brevets):
+    """Return unique Garmin-only brevet links; do not guess among ambiguity."""
+    candidates = {}
+    for garmin in garmin_activities:
+        scored = []
+        for brevet in brevets:
+            result = score_garmin_brevet(garmin, brevet)
+            if result:
+                scored.append({
+                    **result,
+                    "rider_id": garmin["rider_id"],
+                    "ride_id": brevet["ride_id"],
+                    "garmin_activity_id": garmin["garmin_activity_id"],
+                    "strava_activity_id": None,
+                    "source_match_id": None,
+                    "match_status": "auto",
+                })
+        if len(scored) == 1:
+            candidates[garmin["garmin_activity_id"]] = scored[0]
+
+    # Two Garmin recordings can represent split parts of one brevet, but those
+    # require rider review. Auto-link only a brevet with one clear recording.
+    ride_counts = {}
+    for candidate in candidates.values():
+        ride_counts[candidate["ride_id"]] = (
+            ride_counts.get(candidate["ride_id"], 0) + 1)
+    return [
+        candidate for candidate in candidates.values()
+        if ride_counts[candidate["ride_id"]] == 1
+    ]
+
+
+def refresh_brevet_matches(rider_id):
+    """Reuse reviewed Strava links, then add conservative Garmin-only links."""
+    import models
+
+    authoritative = models.get_authoritative_brevet_source_links(rider_id)
+    linked_garmin_ids = {
+        row["garmin_activity_id"] for row in authoritative
+        if row.get("garmin_activity_id") is not None
+    }
+    linked_ride_ids = {row["ride_id"] for row in authoritative}
+    garmin = [
+        row for row in models.get_garmin_activities_for_matching(rider_id)
+        if row["garmin_activity_id"] not in linked_garmin_ids
+    ]
+    brevets = [
+        row for row in models.get_finished_brevets_for_matching(rider_id)
+        if row["ride_id"] not in linked_ride_ids
+    ]
+    automatic = garmin_brevet_auto_matches(garmin, brevets)
+    models.replace_activity_brevet_matches(
+        rider_id, [*authoritative, *automatic])
+    return len(authoritative) + len(automatic)
