@@ -1415,6 +1415,20 @@ def ride_strava_analysis(rusa_id, ride_id):
         current_app.logger.exception(
             'ride_strava_analysis: map build failed for ride %s', ride_id)
 
+    # Garmin metrics are private supplemental provenance for the owning rider.
+    # Strava streams remain the plan/map/segment source; Garmin never silently
+    # replaces those values.
+    garmin_metrics = None
+    if is_own_profile:
+        try:
+            from models import get_garmin_metrics_for_brevet
+            garmin_metrics = get_garmin_metrics_for_brevet(
+                rider['id'], ride_id)
+        except Exception:
+            current_app.logger.exception(
+                'ride_strava_analysis: Garmin metrics failed for ride %s',
+                ride_id)
+
     return render_template('strava_ride_analysis.html',
                            rider=rider, ride=ride, activity=dict(match),
                            comparison=comparison, error=None,
@@ -1428,7 +1442,8 @@ def ride_strava_analysis(rusa_id, ride_id):
                            map_data=map_data,
                            segment_notes=segment_notes,
                            stop_notes=stop_notes,
-                           overall_note=overall_note)
+                           overall_note=overall_note,
+                           garmin_metrics=garmin_metrics)
 
 
 @riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/strava-retry', methods=['POST'])

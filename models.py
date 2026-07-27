@@ -2553,6 +2553,45 @@ def replace_activity_brevet_matches(rider_id, matches):
         raise
 
 
+def get_garmin_metrics_for_brevet(rider_id, ride_id):
+    """Return normalized Garmin metrics for an owned brevet Stats page."""
+    row = _execute(
+        "SELECT ga.garmin_activity_id, ga.activity_name, ga.started_at, "
+        "ga.distance_m, ga.duration_s, ga.moving_duration_s, "
+        "ga.elevation_gain_m, ga.average_hr, ga.max_hr, ga.average_power, "
+        "ga.max_power, ga.normalized_power, ga.aerobic_training_effect, "
+        "ga.anaerobic_training_effect, ga.calories, ga.average_cadence, "
+        "ga.device_name, asm.confidence AS source_confidence "
+        "FROM strava_ride_match srm "
+        "JOIN activity_source_match asm ON asm.rider_id=srm.rider_id "
+        " AND asm.strava_activity_id=srm.strava_activity_id "
+        "JOIN garmin_activity ga ON ga.rider_id=asm.rider_id "
+        " AND ga.garmin_activity_id=asm.garmin_activity_id "
+        "WHERE srm.rider_id=%s AND srm.ride_id=%s "
+        "LIMIT 1",
+        (rider_id, ride_id),
+    ).fetchone()
+    if row:
+        return dict(row)
+
+    # Garmin-only brevet associations do not have a Strava ride-match row.
+    row = _execute(
+        "SELECT ga.garmin_activity_id, ga.activity_name, ga.started_at, "
+        "ga.distance_m, ga.duration_s, ga.moving_duration_s, "
+        "ga.elevation_gain_m, ga.average_hr, ga.max_hr, ga.average_power, "
+        "ga.max_power, ga.normalized_power, ga.aerobic_training_effect, "
+        "ga.anaerobic_training_effect, ga.calories, ga.average_cadence, "
+        "ga.device_name, abm.confidence AS source_confidence "
+        "FROM activity_brevet_match abm "
+        "JOIN garmin_activity ga ON ga.rider_id=abm.rider_id "
+        " AND ga.garmin_activity_id=abm.garmin_activity_id "
+        "WHERE abm.rider_id=%s AND abm.ride_id=%s "
+        "AND abm.match_status <> 'rejected' LIMIT 1",
+        (rider_id, ride_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def mark_garmin_reauth_required(rider_id):
     """Record an auth failure without exposing its details to other riders."""
     conn = get_db()
