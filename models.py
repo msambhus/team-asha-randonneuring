@@ -2436,6 +2436,59 @@ def get_recent_garmin_activities(rider_id, limit=10):
     return [dict(row) for row in rows]
 
 
+def get_garmin_activities_for_matching(rider_id, limit=100):
+    """Return normalized Garmin fields needed by the private matcher."""
+    rows = _execute(
+        "SELECT rider_id, garmin_activity_id, activity_name, activity_type, "
+        "started_at, distance_m, duration_s, moving_duration_s "
+        "FROM garmin_activity WHERE rider_id=%s "
+        "ORDER BY started_at DESC LIMIT %s",
+        (rider_id, limit),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_strava_activities_for_matching(rider_id, limit=200):
+    """Return normalized Strava fields needed by the private matcher."""
+    rows = _execute(
+        "SELECT rider_id, strava_activity_id, name, activity_type, start_date, "
+        "start_date_local, distance, elapsed_time, moving_time "
+        "FROM strava_activity WHERE rider_id=%s "
+        "ORDER BY start_date DESC LIMIT %s",
+        (rider_id, limit),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def upsert_activity_source_matches(rider_id, matches):
+    """Replace derived matches while preserving rider-reviewed decisions."""
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "DELETE FROM activity_source_match "
+            "WHERE rider_id=%s AND match_status='auto'",
+            (rider_id,),
+        )
+        for match in matches:
+            if match["rider_id"] != rider_id:
+                raise ValueError("Activity match does not belong to rider")
+            cur.execute(
+                "INSERT INTO activity_source_match "
+                "(rider_id, garmin_activity_id, strava_activity_id, "
+                " confidence, reasons, match_status) "
+                "VALUES (%s, %s, %s, %s, %s, 'auto') "
+                "ON CONFLICT DO NOTHING",
+                (rider_id, match["garmin_activity_id"],
+                 match["strava_activity_id"], match["confidence"],
+                 psycopg2.extras.Json(match["reasons"])),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def mark_garmin_reauth_required(rider_id):
     """Record an auth failure without exposing its details to other riders."""
     conn = get_db()
