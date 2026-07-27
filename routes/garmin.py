@@ -158,6 +158,13 @@ def sync():
         refreshed_tokens = _cipher().encrypt(performance.dump_tokens())
         models.upsert_garmin_performance_snapshot(
             rider_id, snapshot, raw_ciphertext, refreshed_tokens)
+        imported = []
+        for raw_activity in performance.activities(limit=20):
+            normalized = performance.normalize_activity(raw_activity)
+            activity_ciphertext = _cipher().encrypt(json.dumps(
+                raw_activity, separators=(",", ":"), default=str))
+            imported.append((normalized, activity_ciphertext))
+        models.upsert_garmin_activities(rider_id, imported)
     except GarminConnectAuthenticationError:
         models.mark_garmin_reauth_required(rider_id)
         flash("Garmin authorization expired. Disconnect and reconnect Garmin.",
@@ -172,7 +179,8 @@ def sync():
         flash("Could not sync Garmin performance data right now.", "error")
         return redirect(url_for("auth.my_profile"))
 
-    flash("Garmin performance data synced.", "success")
+    flash(f"Garmin performance data and {len(imported)} cycling activities synced.",
+          "success")
     return redirect(url_for("auth.my_profile"))
 
 

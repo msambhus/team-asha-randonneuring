@@ -27,6 +27,22 @@
 .privacy-toggle input:checked + .slider:before {
     transform: translateX(24px);
 }
+.garmin-ride-row {
+    display: grid;
+    grid-template-columns: minmax(150px, 2fr) repeat(4, minmax(70px, 1fr));
+    gap: 8px;
+    padding: 9px 0;
+    border-bottom: 1px solid #edf2f7;
+    font-size: .78rem;
+}
+@media (max-width: 640px) {
+    .garmin-ride-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .garmin-ride-row > div:first-child {
+        grid-column: 1 / -1;
+    }
+}
 </style>
 {% endblock %}
 
@@ -229,6 +245,23 @@
   <p style="margin:10px 0 0;color:var(--text-light);font-size:.72rem;">
     Private Garmin snapshot for {{ garmin_snapshot.snapshot_date }}.
   </p>
+  {% endif %}
+  {% if garmin_activities %}
+  <div style="margin-top:18px;border-top:1px solid #e2e8f0;padding-top:14px;">
+    <h5 style="margin:0 0 10px;color:var(--primary);">Recent Garmin rides</h5>
+    {% for activity in garmin_activities %}
+    <div class="garmin-ride-row">
+      <div>
+        <strong>{{ activity.activity_name or 'Cycling activity' }}</strong><br>
+        <span style="color:var(--text-light);">{{ activity.started_at.strftime('%b %-d, %Y') if activity.started_at else '' }}</span>
+      </div>
+      <div><strong>{{ '%.1f'|format((activity.distance_m or 0) / 1609.344) }}</strong><br><span style="color:var(--text-light);">miles</span></div>
+      <div><strong>{{ activity.average_hr|round|int if activity.average_hr is not none else '—' }}</strong><br><span style="color:var(--text-light);">avg HR</span></div>
+      <div><strong>{{ activity.normalized_power|round|int if activity.normalized_power is not none else (activity.average_power|round|int if activity.average_power is not none else '—') }}</strong><br><span style="color:var(--text-light);">power</span></div>
+      <div><strong>{{ activity.aerobic_training_effect if activity.aerobic_training_effect is not none else '—' }}</strong><br><span style="color:var(--text-light);">training effect</span></div>
+    </div>
+    {% endfor %}
+  </div>
   {% endif %}
 </div>
 

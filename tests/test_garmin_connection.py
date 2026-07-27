@@ -262,6 +262,25 @@ class FakePerformanceSync:
     def dump_tokens(self):
         return json.dumps({"di_refresh_token": "refreshed-secret"})
 
+    def activities(self, limit):
+        assert limit == 20
+        return [{
+            "activityId": 123,
+            "activityName": "Private ride",
+            "activityType": {"typeKey": "cycling"},
+            "distance": 100000,
+            "averageHR": 130,
+        }]
+
+    def normalize_activity(self, activity):
+        return {
+            "garmin_activity_id": activity["activityId"],
+            "activity_name": activity["activityName"],
+            "activity_type": "cycling",
+            "distance_m": activity["distance"],
+            "average_hr": activity["averageHR"],
+        }
+
 
 def test_performance_sync_decrypts_tokens_and_encrypts_private_payload(
         client, app):
@@ -269,16 +288,22 @@ def test_performance_sync_decrypts_tokens_and_encrypts_private_payload(
     app.config["GARMIN_TOKEN_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
     cipher = GarminTokenCipher(app.config["GARMIN_TOKEN_ENCRYPTION_KEY"])
     stored = {}
+    activities = {}
 
     def capture(rider_id, snapshot, raw_ciphertext, token_ciphertext):
         stored.update(rider_id=rider_id, snapshot=snapshot,
                       raw_ciphertext=raw_ciphertext,
                       token_ciphertext=token_ciphertext)
 
+    def capture_activities(rider_id, rows):
+        activities.update(rider_id=rider_id, rows=rows)
+
     with patch("routes.garmin.models.get_garmin_connection", return_value={
             "token_ciphertext": cipher.encrypt('{"di_token":"old-secret"}')}), \
          patch("routes.garmin.models.upsert_garmin_performance_snapshot",
                side_effect=capture), \
+         patch("routes.garmin.models.upsert_garmin_activities",
+               side_effect=capture_activities), \
          patch("routes.garmin.GarminPerformanceClient",
                FakePerformanceSync):
         response = client.post("/garmin/sync", data={"rider_id": "999"})
@@ -290,3 +315,9 @@ def test_performance_sync_decrypts_tokens_and_encrypts_private_payload(
     assert json.loads(cipher.decrypt(
         stored["raw_ciphertext"]))["private"] == "recovery-payload"
     assert "refreshed-secret" not in stored["token_ciphertext"]
+    assert activities["rider_id"] == 42
+    normalized, encrypted_raw = activities["rows"][0]
+    assert normalized["garmin_activity_id"] == 123
+    assert "Private ride" not in encrypted_raw
+    assert json.loads(cipher.decrypt(
+        encrypted_raw))["activityName"] == "Private ride"

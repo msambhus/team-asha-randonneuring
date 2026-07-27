@@ -27,9 +27,12 @@ def test_my_profile_reads_garmin_when_encryption_key_is_configured(client, app):
                return_value=garmin_connection) as get_garmin, \
          patch("routes.auth.models.get_latest_garmin_performance_snapshot",
                return_value=None), \
+         patch("routes.auth.models.get_recent_garmin_activities",
+               return_value=[]) as get_activities, \
          patch("routes.auth.render_template", return_value="profile ok"):
         response = client.get("/auth/my-profile")
 
     assert response.status_code == 200
     assert response.data == b"profile ok"
     get_garmin.assert_called_once_with(42)
+    get_activities.assert_called_once_with(42, limit=10)
