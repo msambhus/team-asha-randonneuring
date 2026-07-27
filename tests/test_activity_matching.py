@@ -80,7 +80,8 @@ def test_refresh_reads_and_writes_only_the_requested_rider():
                return_value=garmin) as get_garmin, \
          patch("models.get_strava_activities_for_matching",
                return_value=strava) as get_strava, \
-         patch("models.upsert_activity_source_matches") as save:
+         patch("models.upsert_activity_source_matches") as save, \
+         patch("services.activity_matching.refresh_brevet_matches") as refresh_brevets:
         count = refresh_activity_matches(42)
 
     assert count == 1
@@ -88,6 +89,7 @@ def test_refresh_reads_and_writes_only_the_requested_rider():
     get_strava.assert_called_once_with(42)
     save.assert_called_once()
     assert save.call_args.args[0] == 42
+    refresh_brevets.assert_called_once_with(42)
 
 
 def test_matching_failure_does_not_break_provider_sync(app):
