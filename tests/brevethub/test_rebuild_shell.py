@@ -52,6 +52,17 @@ def test_home_template_is_brevethub_neutral():
     assert "about" not in source.lower()
 
 
+def test_home_page_has_no_aggregate_statistics_or_alternate_template():
+    source = (BREVETHUB_DIR / "templates" / "landing.html").read_text().lower()
+
+    assert not (BREVETHUB_DIR / "templates" / "index.html").exists()
+    assert "brevethub statistics" not in source
+    assert "all-time brevet kms" not in source
+    assert "active riders" not in source
+    assert "super randonneurs" not in source
+    assert "season_summaries" not in source
+
+
 def test_base_menu_matches_requested_brevethub_shape():
     source = (BREVETHUB_DIR / "templates" / "base.html").read_text()
 
@@ -80,7 +91,7 @@ def test_career_leaderboard_is_removed_from_both_products():
 def test_brevethub_shell_uses_rusa_blue_white_red_palette():
     combined_source = "\n".join(
         (BREVETHUB_DIR / "templates" / name).read_text().lower()
-        for name in ("base.html", "index.html", "upcoming_brevets.html")
+        for name in ("base.html", "landing.html", "upcoming_brevets.html")
     )
     combined_static_source = "\n".join(
         (BREVETHUB_DIR / "static" / name).read_text().lower()
