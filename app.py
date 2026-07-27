@@ -38,6 +38,7 @@ def create_app():
     from routes.live import live_bp
     from routes.api_auth import api_auth_bp
     from routes.tools import tools_bp
+    from routes.garmin import garmin_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(riders_bp)
@@ -51,6 +52,7 @@ def create_app():
     app.register_blueprint(live_bp)
     app.register_blueprint(api_auth_bp, url_prefix='/api/auth')
     app.register_blueprint(tools_bp, url_prefix='/tools')
+    app.register_blueprint(garmin_bp, url_prefix='/garmin')
 
     # Template helpers
     @app.template_filter('commafy')

@@ -2169,6 +2169,57 @@ def delete_strava_connection(rider_id):
     cur.execute("DELETE FROM strava_connection WHERE rider_id = %s", (rider_id,))
     conn.commit()
 
+
+# ========== GARMIN CONNECT ==========
+
+def get_garmin_connection(rider_id, include_tokens=False):
+    """Return one rider's Garmin connection; ciphertext is opt-in for sync only."""
+    columns = (
+        "rider_id, token_ciphertext, display_name, status, connected_at, "
+        "last_sync_at, last_error, updated_at"
+        if include_tokens else
+        "rider_id, display_name, status, connected_at, last_sync_at, "
+        "last_error, updated_at"
+    )
+    row = _execute(
+        f"SELECT {columns} FROM garmin_connection WHERE rider_id = %s",
+        (rider_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_garmin_connection(rider_id, token_ciphertext, display_name=None):
+    """Persist encrypted Garmin tokens for the owning rider."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        "INSERT INTO garmin_connection "
+        "  (rider_id, token_ciphertext, display_name, status) "
+        "VALUES (%s, %s, %s, 'connected') "
+        "ON CONFLICT (rider_id) DO UPDATE SET "
+        "  token_ciphertext = EXCLUDED.token_ciphertext, "
+        "  display_name = EXCLUDED.display_name, status = 'connected', "
+        "  last_error = NULL, updated_at = NOW() "
+        "RETURNING rider_id, display_name, status, connected_at, updated_at",
+        (rider_id, token_ciphertext, display_name),
+    )
+    row = cur.fetchone()
+    conn.commit()
+    return dict(row) if row else None
+
+
+def delete_garmin_connection(rider_id):
+    """Disconnect only the specified rider."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "DELETE FROM garmin_connection WHERE rider_id = %s RETURNING rider_id",
+        (rider_id,),
+    )
+    removed = cur.fetchone() is not None
+    conn.commit()
+    return removed
+
 def consume_strava_broker_handoff(code):
     """Atomically consume a one-time Strava broker handoff row (delete-on-read).
 

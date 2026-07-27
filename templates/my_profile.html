@@ -178,6 +178,33 @@
 </div>
 {% endif %}
 
+{# ===== GARMIN CONNECT: private connection status ===== #}
+<div class="card" style="border-left:4px solid #2563eb;padding:20px;margin-bottom:15px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;">
+    <div>
+      <h4 style="margin:0 0 4px;color:var(--primary);font-size:1rem;">Garmin Connect</h4>
+      {% if garmin_connection %}
+        <p style="margin:0;color:var(--text-light);font-size:.85rem;">
+          Connected{% if garmin_connection.display_name %} as {{ garmin_connection.display_name }}{% endif %}.
+          Performance data remains private to your account.
+        </p>
+      {% else %}
+        <p style="margin:0;color:var(--text-light);font-size:.85rem;">
+          Connect Garmin to add recovery and training metrics to your private analysis.
+        </p>
+      {% endif %}
+    </div>
+    {% if garmin_connection %}
+      <form method="post" action="{{ url_for('garmin.disconnect') }}"
+            onsubmit="return confirm('Disconnect Garmin and delete stored tokens?');">
+        <button class="btn btn-secondary" type="submit">Disconnect Garmin</button>
+      </form>
+    {% else %}
+      <a class="btn btn-primary" href="{{ url_for('garmin.connect') }}">Connect Garmin</a>
+    {% endif %}
+  </div>
+</div>
+
 <div style="margin-top:20px;">
     <a href="{{ url_for('riders.rider_profile', rusa_id=rider.rusa_id) }}" class="btn btn-primary btn-sm">View Public Profile</a>
 </div>

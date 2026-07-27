@@ -280,6 +280,13 @@ def my_profile():
 
     # Strava integration
     strava_connection = models.get_strava_connection(rider_id)
+    # Feature stays dormant until its dedicated encryption key is configured.
+    # This also makes the code-safe deployment precede migration 057/key rollout
+    # without My Profile querying a table that may not exist yet.
+    garmin_connection = (
+        models.get_garmin_connection(rider_id)
+        if current_app.config.get('GARMIN_TOKEN_ENCRYPTION_KEY') else None
+    )
     strava_activities = []
     fitness_score = None
 
@@ -307,6 +314,7 @@ def my_profile():
                            career_kms=career['total_kms'],
                            total_srs=total_srs,
                            strava_connection=strava_connection,
+                           garmin_connection=garmin_connection,
                            strava_activities=strava_activities,
                            fitness_score=fitness_score)
 
