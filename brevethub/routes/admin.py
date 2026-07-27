@@ -18,8 +18,11 @@ Isolation: imports only flask / stdlib / brevethub.* (its own models, decorators
 config) and brevethub.shared.* — nothing from Team Asha — so
 test_brevethub_isolation.py stays green. Every model call is on an rp_* table.
 """
+import hmac
+from functools import wraps
+
 from flask import (Blueprint, abort, current_app, flash, redirect,
-                   render_template, request, url_for)
+                   render_template, request, session, url_for)
 
 from brevethub import models
 from brevethub.decorators import current_rider, login_required
@@ -28,6 +31,80 @@ from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
                                     extract_rwgps_route_id, fetch_route)
 
 admin_bp = Blueprint('admin', __name__)
+
+
+def operator_required(view):
+    """Require the separate national-operations session."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get('brevethub_operator'):
+            return redirect(url_for('admin.login', next=request.path))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@admin_bp.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        configured = current_app.config.get('ADMIN_PASSWORD')
+        supplied = request.form.get('password') or ''
+        if configured and hmac.compare_digest(supplied, configured):
+            session['brevethub_operator'] = True
+            return redirect(request.args.get('next') or url_for('admin.dashboard'))
+        flash('Incorrect admin password.', 'error')
+    return render_template('admin_login.html')
+
+
+@admin_bp.route('/logout', methods=['POST'])
+def logout():
+    session.pop('brevethub_operator', None)
+    return redirect(url_for('main.landing'))
+
+
+@admin_bp.route('/', methods=['GET'])
+@operator_required
+def dashboard():
+    try:
+        pipeline_status = route_plan_status(
+            models.get_route_plan_operations_status())
+        finishers_pending = len(models.get_signups_needing_finish_time())
+    except Exception:
+        current_app.logger.exception('Could not load BrevetHub operations status')
+        pipeline_status = route_plan_status({})
+        finishers_pending = 0
+    return render_template(
+        'admin_dashboard.html',
+        pipeline_status=pipeline_status,
+        finishers_pending=finishers_pending,
+    )
+
+
+@admin_bp.route('/run/<operation>', methods=['POST'])
+@operator_required
+def run_operation(operation):
+    # Import lazily so the cron module remains the single owner of each pipeline
+    # implementation and admin.py does not create an import cycle at app startup.
+    from brevethub.routes.cron import (
+        run_backfill_rwgps_urls,
+        run_refresh_calendar,
+        run_sync_rusa_results,
+        run_warm_brevet_plans,
+    )
+    operations = {
+        'refresh-calendar': run_refresh_calendar,
+        'sync-rusa-results': run_sync_rusa_results,
+        'backfill-rwgps': run_backfill_rwgps_urls,
+        'warm-plans': run_warm_brevet_plans,
+    }
+    runner = operations.get(operation)
+    if runner is None:
+        abort(404)
+    result = runner()
+    category = 'success' if result.get('ok') else 'error'
+    details = ', '.join(f'{key.replace("_", " ")}: {value}'
+                        for key, value in result.items() if key != 'ok')
+    flash(f'{operation.replace("-", " ").title()}: {details}', category)
+    return redirect(url_for('admin.dashboard'))
 
 
 def _owned_club_or_403():

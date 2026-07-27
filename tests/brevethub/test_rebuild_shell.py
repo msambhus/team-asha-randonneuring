@@ -20,6 +20,7 @@ def test_brevethub_is_standalone_and_keeps_private_strava_surface():
     from brevethub.app import app
 
     endpoints = set(app.view_functions)
+    assert "admin.dashboard" in endpoints
     assert "admin.plan_console" in endpoints
     assert "auth.my_profile" in endpoints
     assert "live.live_list" in endpoints

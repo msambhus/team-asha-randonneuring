@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Operations — {{ product_name }}{% endblock %}
+{% block content %}
+<div class="container section">
+<div class="max-w-[900px] mx-auto">
+  <div class="flex justify-between items-start gap-3 mb-4">
+    <div>
+      <h1 class="text-primary text-[1.7rem] font-bold">BrevetHub operations</h1>
+      <p class="text-text-light">National RUSA calendar, official results, route discovery, and ride-plan coverage.</p>
+    </div>
+    <form method="post" action="{{ url_for('admin.logout') }}">
+      <button class="btn btn-secondary" type="submit">Sign out</button>
+    </form>
+  </div>
+
+  <section class="card mb-4" aria-labelledby="coverage-heading">
+    <h2 id="coverage-heading" class="text-primary text-[1.2rem] font-bold mb-3">Current coverage</h2>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div><strong class="block text-[1.35rem]">{{ pipeline_status.upcoming_events }}</strong><span class="text-text-light text-[0.8rem]">Upcoming</span></div>
+      <div><strong class="block text-[1.35rem]">{{ pipeline_status.missing_routes }}</strong><span class="text-text-light text-[0.8rem]">Missing routes</span></div>
+      <div><strong class="block text-[1.35rem]">{{ pipeline_status.routes_missing_plans }}</strong><span class="text-text-light text-[0.8rem]">Awaiting plans</span></div>
+      <div><strong class="block text-[1.35rem]">{{ pipeline_status.plans_ready }}</strong><span class="text-text-light text-[0.8rem]">Plans ready</span></div>
+      <div><strong class="block text-[1.35rem]">{{ finishers_pending }}</strong><span class="text-text-light text-[0.8rem]">Results pending</span></div>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="actions-heading">
+    <h2 id="actions-heading" class="text-primary text-[1.2rem] font-bold mb-1">Manual pipeline runs</h2>
+    <p class="text-text-light mb-4">These are the same bounded, fail-soft operations used by Vercel cron.</p>
+    <div class="grid md:grid-cols-2 gap-3">
+      {% for operation, title, description in [
+        ('refresh-calendar', 'Refresh national calendar', 'Import the current RUSA event feed into BrevetHub.'),
+        ('sync-rusa-results', 'Sync official finishers', 'Fill pending finish times from official RUSA results.'),
+        ('backfill-rwgps', 'Discover RWGPS routes', 'Process the next bounded batch of missing route links.'),
+        ('warm-plans', 'Generate missing plans', 'Build plans for upcoming events that have RWGPS routes.')
+      ] %}
+      <form method="post" action="{{ url_for('admin.run_operation', operation=operation) }}"
+            class="border border-border rounded-lg p-4">
+        <h3 class="font-bold text-primary mb-1">{{ title }}</h3>
+        <p class="text-text-light text-sm mb-3">{{ description }}</p>
+        <button class="btn btn-primary" type="submit">{{ title }}</button>
+      </form>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+</div>
+{% endblock %}
