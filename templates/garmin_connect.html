@@ -1,5 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Connect Garmin — Team Asha Randonneuring{% endblock %}
+{% block extra_head %}
+<style>
+  .garmin-spinner {
+    display:none;
+    width:18px;
+    height:18px;
+    border:2px solid rgba(255,255,255,.45);
+    border-top-color:#fff;
+    border-radius:50%;
+    animation:garmin-spin .75s linear infinite;
+  }
+  .garmin-submit.is-loading .garmin-spinner { display:inline-block; }
+  .garmin-submit.is-loading { cursor:wait; opacity:.85; }
+  @keyframes garmin-spin { to { transform:rotate(360deg); } }
+</style>
+{% endblock %}
 {% block content %}
 <div class="container section">
   <section class="card" style="max-width:560px;margin:0 auto;">
@@ -13,7 +29,7 @@
         Garmin connection is not configured yet.
       </p>
     {% else %}
-    <form method="post" autocomplete="off">
+    <form id="garmin-connect-form" method="post" autocomplete="off">
       <div class="form-group">
         <label for="garmin-email">Garmin email</label>
         <input id="garmin-email" name="email" type="email"
@@ -24,7 +40,19 @@
         <input id="garmin-password" name="password" type="password"
                autocomplete="current-password" required>
       </div>
-      <button class="btn btn-primary" type="submit">Connect Garmin</button>
+      <button id="garmin-connect-submit" class="btn btn-primary garmin-submit"
+              type="submit"
+              style="display:inline-flex;align-items:center;gap:9px;">
+        <span class="garmin-spinner" aria-hidden="true"></span>
+        <span class="garmin-submit-label">Connect Garmin</span>
+      </button>
+      <div id="garmin-connect-progress" role="status" aria-live="polite"
+           hidden style="margin-top:12px;color:var(--primary);font-weight:600;">
+        Connecting securely to Garmin…
+        <div style="margin-top:4px;color:var(--text-light);font-size:.8rem;font-weight:400;">
+          This can take up to a minute. Please keep this page open.
+        </div>
+      </div>
     </form>
     <p style="color:var(--text-light);font-size:.8rem;margin-top:14px;">
       Garmin Connect access is unofficial. If Garmin requires verification,
@@ -33,4 +61,35 @@
     {% endif %}
   </section>
 </div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(() => {
+  const form = document.getElementById('garmin-connect-form');
+  if (!form) return;
+
+  let submitting = false;
+  form.addEventListener('submit', (event) => {
+    if (submitting) {
+      event.preventDefault();
+      return;
+    }
+    submitting = true;
+    form.setAttribute('aria-busy', 'true');
+
+    const button = document.getElementById('garmin-connect-submit');
+    const label = button.querySelector('.garmin-submit-label');
+    button.disabled = true;
+    button.classList.add('is-loading');
+    label.textContent = 'Connecting securely…';
+
+    // Readonly keeps credentials in the submitted form while preventing edits
+    // during the request. Disabled inputs would be omitted from submission.
+    form.querySelectorAll('input').forEach((input) => {
+      input.readOnly = true;
+    });
+    document.getElementById('garmin-connect-progress').hidden = false;
+  });
+})();
+</script>
 {% endblock %}
