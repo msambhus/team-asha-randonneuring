@@ -700,10 +700,13 @@ def get_club_riders_with_rusa(club_id):
     before rendering, so no full address or google id reaches another rider.
     """
     return db.query(
-        "SELECT id, email, rusa_id, rusa_cache "
-        "FROM rp_rider "
-        "WHERE club_id = %s AND profile_completed = TRUE "
-        "ORDER BY email ASC",
+        "SELECT r.id, r.email, r.rusa_id, r.rusa_cache, "
+        "       CASE WHEN sc.id IS NOT NULL THEN r.eddington_miles END "
+        "         AS eddington "
+        "FROM rp_rider r "
+        "LEFT JOIN rp_strava_connection sc ON sc.rider_id = r.id "
+        "WHERE r.club_id = %s AND r.profile_completed = TRUE "
+        "ORDER BY r.email ASC",
         (club_id,),
     )
 
