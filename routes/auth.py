@@ -1,5 +1,6 @@
 """Authentication routes - Google OAuth login and profile setup."""
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import (Blueprint, current_app, flash, jsonify, redirect,
+                   render_template, request, session, url_for)
 from authlib.integrations.flask_client import OAuth
 from werkzeug.security import gen_salt
 from werkzeug.utils import redirect as werkzeug_redirect
