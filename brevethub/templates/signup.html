@@ -5,14 +5,16 @@
 <div class="max-w-[600px] mx-auto">
 <section class="card">
   <h1 class="text-primary text-[1.6rem] font-bold mb-2">Complete your profile</h1>
-  <p class="text-text-light mb-4">Pick your club to finish setting up your {{ product_name }} account. Your
-     RUSA ID is optional — add it to link your randonneuring history later.</p>
+  <p class="text-text-light mb-4">Pick your home club to finish setting up your {{ product_name }} account.
+     The calendar will start with that club or other clubs in the same state; you
+     can always expand the filters to browse nationally. Your RUSA ID is optional
+     — add it to link your randonneuring history later.</p>
 
   <form method="post" action="{{ url_for('signup.signup') }}">
     <div class="form-group">
-      <label for="club_id">Club <span style="color: var(--accent);">*</span></label>
+      <label for="club_id">Home club <span style="color: var(--accent);">*</span></label>
       <select id="club_id" name="club_id" required>
-        <option value="">— select your club —</option>
+        <option value="">— select your home club —</option>
         {% for club in clubs %}
         <option value="{{ club.id }}"
           {% if selected_club_id and selected_club_id == club.id %}selected{% endif %}>

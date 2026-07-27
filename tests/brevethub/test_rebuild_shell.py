@@ -186,6 +186,17 @@ def test_calendar_template_uses_dynamic_state_and_club_filters():
     assert "Team Asha" not in source
     assert "Find official registration via RUSA" in source
     assert "riders.upcoming_brevets" not in source
+    assert "Starting with rides near your home club" in source
+
+
+def test_home_club_is_explicit_and_editable_after_onboarding():
+    signup = (BREVETHUB_DIR / "templates" / "signup.html").read_text()
+    profile = (BREVETHUB_DIR / "templates" / "profile.html").read_text()
+
+    assert "Home club" in signup
+    assert "browse nationally" in signup
+    assert "Home club" in profile
+    assert "url_for('signup.signup')" in profile
 
 
 def test_brevethub_calendar_template_renders_with_rusa_context():
