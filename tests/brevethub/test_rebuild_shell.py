@@ -151,7 +151,17 @@ def test_club_directory_gets_connection_gated_eddington_without_public_leak():
 
     assert "left join rp_strava_connection" in directory_query
     assert "case when sc.id is not null then r.eddington_miles" in directory_query
+    assert "jsonb_array_length(r.rusa_cache) > 0" in directory_query
     assert "eddington" not in public_query
+    assert "jsonb_array_length(rusa_cache) > 0" in public_query
+
+
+def test_web_signup_rejects_duplicate_rusa_identity():
+    source = (BREVETHUB_DIR / "routes" / "signup.py").read_text()
+
+    assert "rusa_id_already_claimed" in source
+    assert "already registered to another" in source
+    assert "rusa_id_duplicate=False" in source
 
 
 def test_private_strava_index_visually_separates_brevets_and_regular_rides():

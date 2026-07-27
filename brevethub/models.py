@@ -155,8 +155,7 @@ def update_rider_login(rider_id):
 
 
 def rusa_id_already_claimed(rusa_id, exclude_rider_id=None):
-    """True if another rider has already claimed this RUSA ID. Used to *soft-flag*
-    duplicates at signup — v1 does no hard RUSA ownership verification."""
+    """True if another rider has already claimed this RUSA ID."""
     if not rusa_id:
         return False
     row = db.query_one(
@@ -706,6 +705,9 @@ def get_club_riders_with_rusa(club_id):
         "FROM rp_rider r "
         "LEFT JOIN rp_strava_connection sc ON sc.rider_id = r.id "
         "WHERE r.club_id = %s AND r.profile_completed = TRUE "
+        "  AND r.rusa_id IS NOT NULL "
+        "  AND jsonb_typeof(r.rusa_cache) = 'array' "
+        "  AND jsonb_array_length(r.rusa_cache) > 0 "
         "ORDER BY r.email ASC",
         (club_id,),
     )
@@ -714,17 +716,17 @@ def get_club_riders_with_rusa(club_id):
 def get_club_rider(club_id, rider_id):
     """One club-scoped rider by primary key, with RUSA-backed public fields only.
 
-    Keyed on the unique rider id, never the RUSA id: BrevetHub allows two riders to
-    claim the same RUSA id (soft-flagged, not rejected), so a RUSA id can be
-    ambiguous within a club. The row is returned only when it belongs to the given
-    club, so a viewer can never resolve a rider outside their own club (the
-    public-profile access gate). Returns None when the club has no such
-    completed-profile rider.
+    The row is returned only when it belongs to the given club and has a nonempty
+    official RUSA history, so a viewer can never resolve a local-only rider or a
+    rider outside their own club.
     """
     return db.query_one(
         "SELECT id, email, rusa_id, club_id, created_at, rusa_cache "
         "FROM rp_rider "
-        "WHERE club_id = %s AND id = %s AND profile_completed = TRUE",
+        "WHERE club_id = %s AND id = %s AND profile_completed = TRUE "
+        "AND rusa_id IS NOT NULL "
+        "AND jsonb_typeof(rusa_cache) = 'array' "
+        "AND jsonb_array_length(rusa_cache) > 0",
         (club_id, rider_id),
     )
 
@@ -734,12 +736,15 @@ def get_public_rider(rider_id):
 
     BrevetHub's public directory is an official-randonneuring surface, not a
     Strava/social directory. Requiring a RUSA id and a completed profile keeps
-    local-only accounts and their private activity out of public pages.
+    local-only accounts and their private activity out of public pages. A nonempty
+    cached official history is required; merely typing a numeric ID is not enough.
     """
     return db.query_one(
         "SELECT id, email, rusa_id, rusa_cache "
         "FROM rp_rider WHERE id = %s AND profile_completed = TRUE "
-        "AND rusa_id IS NOT NULL",
+        "AND rusa_id IS NOT NULL "
+        "AND jsonb_typeof(rusa_cache) = 'array' "
+        "AND jsonb_array_length(rusa_cache) > 0",
         (rider_id,),
     )
 
