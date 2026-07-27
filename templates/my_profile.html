@@ -183,11 +183,12 @@
         </label>
     </div>
     <div style="border-top:1px solid #e2e8f0; padding-top:12px;">
-        <form method="POST" action="{{ url_for('strava.disconnect') }}"
-              onsubmit="return confirm('Disconnect Strava? This will remove your activity data.');"
+        <form id="strava-delete-form" method="POST" action="{{ url_for('strava.disconnect') }}"
+              data-delete-message="Disconnect Strava and permanently delete its tokens, imported activities, brevet matches, and cached analyses? This cannot be undone."
               style="margin:0;">
-            <button type="submit" style="background:none; border:none; color:#e53e3e; font-size:0.85rem; cursor:pointer; text-decoration:underline; padding:0;">
-                Disconnect Strava
+            <input type="hidden" name="confirm_delete" value="DELETE">
+            <button id="strava-delete-submit" type="submit" style="background:none; border:none; color:#b91c1c; font-size:0.85rem; cursor:pointer; text-decoration:underline; padding:0;">
+                Disconnect &amp; delete Strava data
             </button>
         </form>
     </div>
@@ -238,9 +239,13 @@
             <span class="garmin-sync-label">Sync Garmin</span>
           </button>
         </form>
-        <form method="post" action="{{ url_for('garmin.disconnect') }}"
-              onsubmit="return confirm('Disconnect Garmin and delete stored tokens?');">
-          <button class="btn btn-secondary" type="submit">Disconnect Garmin</button>
+        <form id="garmin-delete-form" method="post" action="{{ url_for('garmin.disconnect') }}"
+              data-delete-message="Disconnect Garmin and permanently delete its encrypted tokens, recovery snapshots, and imported activities? This cannot be undone.">
+          <input type="hidden" name="confirm_delete" value="DELETE">
+          <button id="garmin-delete-submit" class="btn" type="submit"
+                  style="border:1px solid #b91c1c;color:#b91c1c;background:#fff;">
+            Disconnect &amp; delete Garmin data
+          </button>
         </form>
       </div>
     {% else %}
@@ -346,6 +351,26 @@
         document.getElementById('garmin-sync-progress').hidden = false;
     });
 })();
+
+// Destructive integration deletion: explicit confirmation, visible progress,
+// and duplicate-submit protection for both Garmin and Strava.
+['garmin', 'strava'].forEach((provider) => {
+    const form = document.getElementById(provider + '-delete-form');
+    if (!form) return;
+    let submitting = false;
+    form.addEventListener('submit', (event) => {
+        if (submitting || !window.confirm(form.dataset.deleteMessage)) {
+            event.preventDefault();
+            return;
+        }
+        submitting = true;
+        form.setAttribute('aria-busy', 'true');
+        const button = document.getElementById(provider + '-delete-submit');
+        button.disabled = true;
+        button.textContent = 'Deleting ' +
+            provider.charAt(0).toUpperCase() + provider.slice(1) + ' data…';
+    });
+});
 
 // Privacy Toggle Handler
 document.addEventListener('DOMContentLoaded', function() {

@@ -248,13 +248,20 @@ def test_vendor_mfa_state_round_trip_excludes_credentials():
 def test_disconnect_is_scoped_to_session_rider(client, app):
     _login(client, rider_id=42)
     app.config["GARMIN_TOKEN_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
-    with patch("routes.garmin.models.delete_garmin_connection") as remove, \
-         patch("routes.garmin.models.delete_garmin_mfa_challenge") as remove_mfa:
+    with patch("routes.garmin.models.delete_garmin_connection") as remove:
         response = client.post("/garmin/disconnect",
-                               data={"rider_id": "999"})
+                               data={"rider_id": "999",
+                                     "confirm_delete": "DELETE"})
     assert response.status_code == 302
     remove.assert_called_once_with(42)
-    remove_mfa.assert_called_once_with(42)
+
+
+def test_disconnect_requires_explicit_confirmation(client):
+    _login(client, rider_id=42)
+    with patch("routes.garmin.models.delete_garmin_connection") as remove:
+        response = client.post("/garmin/disconnect")
+    assert response.status_code == 302
+    remove.assert_not_called()
 
 
 class FakePerformanceSync:

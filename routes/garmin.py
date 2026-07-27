@@ -187,10 +187,25 @@ def sync():
 @garmin_bp.route("/disconnect", methods=["POST"])
 @profile_required
 def disconnect():
-    if not current_app.config.get("GARMIN_TOKEN_ENCRYPTION_KEY"):
-        flash("Garmin Connect is not configured on this server.", "error")
+    if request.form.get("confirm_delete") != "DELETE":
+        flash("Confirm permanent deletion before disconnecting Garmin.",
+              "warning")
         return redirect(url_for("auth.my_profile"))
-    models.delete_garmin_connection(session["rider_id"])
-    models.delete_garmin_mfa_challenge(session["rider_id"])
-    flash("Garmin Connect disconnected. Stored tokens were deleted.", "success")
+    rider_id = session["rider_id"]
+    try:
+        models.delete_garmin_connection(rider_id)
+    except Exception:
+        current_app.logger.exception(
+            "Garmin deletion failed for rider %s", rider_id)
+        flash(
+            "Garmin data could not be deleted right now. Nothing was "
+            "partially removed; please try again.",
+            "error",
+        )
+        return redirect(url_for("auth.my_profile"))
+    flash(
+        "Garmin disconnected. Tokens, recovery snapshots, and imported "
+        "Garmin activities were permanently deleted.",
+        "success",
+    )
     return redirect(url_for("auth.my_profile"))

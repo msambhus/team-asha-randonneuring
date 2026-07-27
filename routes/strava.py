@@ -217,15 +217,38 @@ def sync():
 def disconnect():
     """Disconnect Strava and delete stored data."""
     rider_id = session.get('rider_id')
+    if request.form.get('confirm_delete') != 'DELETE':
+        flash('Confirm permanent deletion before disconnecting Strava.',
+              'warning')
+        return redirect(url_for('auth.my_profile'))
 
     connection = models.get_strava_connection(rider_id)
     if connection:
-        # Revoke token at Strava
-        deauthorize_strava(connection['access_token'])
-        # Delete from DB
-        models.delete_strava_connection(rider_id)
+        # Revocation is best-effort. Local deletion must always proceed so a
+        # Strava outage cannot retain the rider's private data.
+        try:
+            deauthorize_strava(connection['access_token'])
+        except Exception:
+            current_app.logger.warning(
+                'Remote Strava revocation failed for rider %s; proceeding '
+                'with local deletion', rider_id)
+        try:
+            models.delete_strava_connection(rider_id)
+        except Exception:
+            current_app.logger.exception(
+                'Local Strava deletion failed for rider %s', rider_id)
+            flash(
+                'Strava data could not be deleted right now. Nothing was '
+                'partially removed; please try again.',
+                'error',
+            )
+            return redirect(url_for('auth.my_profile'))
         cache.clear()  # Clear cache after Strava disconnect
-        flash('Strava has been disconnected.', 'success')
+        flash(
+            'Strava disconnected. Tokens, imported activities, ride matches, '
+            'and cached analyses were permanently deleted.',
+            'success',
+        )
     else:
         flash('No Strava connection found.', 'info')
 
