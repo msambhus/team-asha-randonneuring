@@ -1,6 +1,6 @@
 """BrevetHub signup — profile completion after Google sign-in.
 
-Collects an OPTIONAL RUSA ID and a club affiliation (picker from `rp_club`) and
+Collects an OPTIONAL RUSA ID and a home club (picker from `rp_club`) and
 writes both to the signed-in rider's `rp_rider` row. v1 does NO RUSA ownership
 verification: the RUSA ID is validated for *shape only* (numeric) and a duplicate
 claim is *soft-flagged* (`rusa_id_duplicate`), never rejected. Hard verification
@@ -40,9 +40,9 @@ def signup():
         raw_rusa = (request.form.get('rusa_id') or '').strip()
         club_id = request.form.get('club_id', type=int)
 
-        # Club is required; RUSA ID is optional.
+        # Home club is required; RUSA ID is optional.
         if not club_id or not models.club_exists(club_id):
-            flash('Please pick your club from the list.', 'error')
+            flash('Please pick your home club from the list.', 'error')
             return render_template('signup.html', clubs=clubs,
                                    rusa_id=raw_rusa, selected_club_id=club_id)
 

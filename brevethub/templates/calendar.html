@@ -272,6 +272,12 @@
   {% if states %}
     <div class="filter-section">
       <div class="filter-label" id="region-filter-label">Region</div>
+      {% if default_state %}
+      <p class="text-text-light text-sm mb-3">
+        Starting with rides near your home club{% if club %}, {{ club.name }}{% endif %}.
+        Choose <strong>All states</strong> or another filter to expand your search.
+      </p>
+      {% endif %}
       <div class="region-selects" role="group" aria-labelledby="region-filter-label">
         <label class="region-select-wrap">
           <span class="region-select-caption">State</span>
