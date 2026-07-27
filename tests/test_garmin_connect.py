@@ -1,5 +1,6 @@
 """Credential-free contract tests for Team Asha's read-only Garmin client."""
 from services.garmin_connect import GarminPerformanceClient
+from vendor.python_garminconnect import GarminConnectNotFoundError
 
 
 class FakeAuth:
@@ -20,11 +21,30 @@ class FakeAuth:
         if "bodyBattery" in path:
             return [{"charged": 61}]
         if "trainingreadiness" in path:
-            return [{"score": 74}]
+            return [
+                {"score": 62, "inputContext": "MIDDAY_UPDATE"},
+                {
+                    "score": 74,
+                    "level": "HIGH",
+                    "feedbackShort": "READY",
+                    "recoveryTime": 90,
+                    "sleepScoreFactorPercent": 85,
+                    "acwrFactorPercent": 90,
+                    "hrvFactorPercent": 80,
+                    "inputContext": "AFTER_WAKEUP_RESET",
+                },
+            ]
         if "maxmet" in path:
             return {"cycling": {"vo2Max": 52}}
         if "trainingstatus" in path:
-            return {"trainingStatus": "PRODUCTIVE"}
+            return {"mostRecentTrainingStatus": {
+                "latestTrainingStatusData": {"device": {
+                    "trainingStatusFeedbackPhrase": "PRODUCTIVE",
+                    "dailyTrainingLoadAcute": 642,
+                    "loadLevelTrend": "MAINTAINING",
+                }}}}
+        if "endurancescore" in path:
+            return {"enduranceScore": 7120}
         if "activities/search" in path:
             return [{"activityId": 123, "activityType": {"typeKey": "cycling"}}]
         return {}
@@ -41,8 +61,32 @@ def test_performance_snapshot_normalizes_cycling_headlines():
     assert snapshot["training_readiness"] == 74
     assert snapshot["vo2_max_cycling"] == 52
     assert snapshot["training_status"] == "PRODUCTIVE"
-    assert len(snapshot["raw"]) == 9
+    assert snapshot["readiness_level"] == "HIGH"
+    assert snapshot["readiness_feedback"] == "READY"
+    assert snapshot["recovery_time_minutes"] == 90
+    assert snapshot["sleep_factor_percent"] == 85
+    assert snapshot["acwr_factor_percent"] == 90
+    assert snapshot["hrv_factor_percent"] == 80
+    assert snapshot["acute_training_load"] == 642
+    assert snapshot["load_level_trend"] == "MAINTAINING"
+    assert snapshot["endurance_score"] == 7120
+    assert len(snapshot["raw"]) == 10
     assert all(call[0].startswith("/") for call in auth.calls)
+
+
+def test_missing_endurance_score_does_not_block_other_garmin_metrics():
+    class NoEnduranceAuth(FakeAuth):
+        def connectapi(self, path, **kwargs):
+            if "endurancescore" in path:
+                raise GarminConnectNotFoundError("not supported")
+            return super().connectapi(path, **kwargs)
+
+    snapshot = GarminPerformanceClient(
+        NoEnduranceAuth()).performance_snapshot("2026-07-27")
+
+    assert snapshot["endurance_score"] is None
+    assert snapshot["training_readiness"] == 74
+    assert snapshot["training_status"] == "PRODUCTIVE"
 
 
 def test_activity_read_is_bounded_and_cycling_only_by_default():

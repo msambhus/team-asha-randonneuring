@@ -2276,8 +2276,11 @@ def upsert_garmin_performance_snapshot(rider_id, snapshot, raw_ciphertext,
         "INSERT INTO garmin_performance_snapshot "
         " (rider_id, snapshot_date, resting_heart_rate, hrv_status, "
         "  sleep_score, body_battery, training_readiness, vo2_max_cycling, "
-        "  training_status, raw_ciphertext) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+        "  training_status, readiness_level, readiness_feedback, "
+        "  recovery_time_minutes, sleep_factor_percent, acwr_factor_percent, "
+        "  hrv_factor_percent, endurance_score, acute_training_load, "
+        "  load_level_trend, raw_ciphertext) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
         "ON CONFLICT (rider_id, snapshot_date) DO UPDATE SET "
         " resting_heart_rate=EXCLUDED.resting_heart_rate, "
         " hrv_status=EXCLUDED.hrv_status, sleep_score=EXCLUDED.sleep_score, "
@@ -2285,11 +2288,28 @@ def upsert_garmin_performance_snapshot(rider_id, snapshot, raw_ciphertext,
         " training_readiness=EXCLUDED.training_readiness, "
         " vo2_max_cycling=EXCLUDED.vo2_max_cycling, "
         " training_status=EXCLUDED.training_status, "
+        " readiness_level=EXCLUDED.readiness_level, "
+        " readiness_feedback=EXCLUDED.readiness_feedback, "
+        " recovery_time_minutes=EXCLUDED.recovery_time_minutes, "
+        " sleep_factor_percent=EXCLUDED.sleep_factor_percent, "
+        " acwr_factor_percent=EXCLUDED.acwr_factor_percent, "
+        " hrv_factor_percent=EXCLUDED.hrv_factor_percent, "
+        " endurance_score=EXCLUDED.endurance_score, "
+        " acute_training_load=EXCLUDED.acute_training_load, "
+        " load_level_trend=EXCLUDED.load_level_trend, "
         " raw_ciphertext=EXCLUDED.raw_ciphertext, synced_at=NOW()",
         (rider_id, snapshot["date"], snapshot.get("resting_heart_rate"),
          snapshot.get("hrv_status"), snapshot.get("sleep_score"),
          snapshot.get("body_battery"), snapshot.get("training_readiness"),
          snapshot.get("vo2_max_cycling"), snapshot.get("training_status"),
+         snapshot.get("readiness_level"), snapshot.get("readiness_feedback"),
+         snapshot.get("recovery_time_minutes"),
+         snapshot.get("sleep_factor_percent"),
+         snapshot.get("acwr_factor_percent"),
+         snapshot.get("hrv_factor_percent"),
+         snapshot.get("endurance_score"),
+         snapshot.get("acute_training_load"),
+         snapshot.get("load_level_trend"),
          raw_ciphertext),
     )
     cur.execute(
@@ -2305,6 +2325,9 @@ def get_latest_garmin_performance_snapshot(rider_id):
     row = _execute(
         "SELECT snapshot_date, resting_heart_rate, hrv_status, sleep_score, "
         "body_battery, training_readiness, vo2_max_cycling, training_status, "
+        "readiness_level, readiness_feedback, recovery_time_minutes, "
+        "sleep_factor_percent, acwr_factor_percent, hrv_factor_percent, "
+        "endurance_score, acute_training_load, load_level_trend, "
         "synced_at FROM garmin_performance_snapshot WHERE rider_id=%s "
         "ORDER BY snapshot_date DESC LIMIT 1",
         (rider_id,),

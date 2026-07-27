@@ -12,7 +12,7 @@ keys and derives only conservative headline values.
 from datetime import date, datetime
 from typing import Any
 
-from vendor.python_garminconnect import Client
+from vendor.python_garminconnect import Client, GarminConnectNotFoundError
 
 MAX_ACTIVITY_LIMIT = 100
 _DATE_FORMAT = "%Y-%m-%d"
@@ -27,6 +27,7 @@ _HRV = "/hrv-service/hrv"
 _MAX_METRICS = "/metrics-service/metrics/maxmet/daily"
 _TRAINING_READINESS = "/metrics-service/metrics/trainingreadiness"
 _TRAINING_STATUS = "/metrics-service/metrics/trainingstatus/aggregated"
+_ENDURANCE_SCORE = "/metrics-service/metrics/endurancescore"
 _ACTIVITIES = "/activitylist-service/activities/search/activities"
 _ACTIVITY = "/activity-service/activity"
 
@@ -49,6 +50,40 @@ def _dig(payload: Any, *paths: tuple[str, ...]) -> Any:
         if value is not None:
             return value
     return None
+
+
+def _find_key(payload: Any, *keys: str) -> Any:
+    """Find the first named non-None field in nested Garmin payloads."""
+    if isinstance(payload, dict):
+        for key in keys:
+            if payload.get(key) is not None:
+                return payload[key]
+        for value in payload.values():
+            found = _find_key(value, *keys)
+            if found is not None:
+                return found
+    elif isinstance(payload, list):
+        for value in payload:
+            found = _find_key(value, *keys)
+            if found is not None:
+                return found
+    return None
+
+
+def _morning_readiness(payload: Any) -> dict[str, Any]:
+    """Select Garmin's post-wakeup readiness record when available."""
+    if isinstance(payload, dict):
+        return payload
+    if not isinstance(payload, list):
+        return {}
+    morning = next((
+        item for item in payload
+        if isinstance(item, dict)
+        and item.get("inputContext") == "AFTER_WAKEUP_RESET"
+    ), None)
+    if morning is not None:
+        return morning
+    return next((item for item in payload if isinstance(item, dict)), {})
 
 
 class GarminPerformanceClient:
@@ -167,6 +202,13 @@ class GarminPerformanceClient:
             f"{_TRAINING_READINESS}/{day}") or []
         training_status = self.auth.connectapi(
             f"{_TRAINING_STATUS}/{day}") or {}
+        try:
+            endurance_score = self.auth.connectapi(
+                _ENDURANCE_SCORE, params={"calendarDate": day}) or {}
+        except GarminConnectNotFoundError:
+            # Not every Garmin device/account exposes Endurance Score.
+            endurance_score = {}
+        morning_readiness = _morning_readiness(readiness)
 
         return {
             "date": day,
@@ -182,15 +224,32 @@ class GarminPerformanceClient:
                 else body_battery,
                 ("charged",), ("bodyBatteryMostRecentValue",)),
             "training_readiness": _dig(
-                readiness[0] if isinstance(readiness, list) and readiness
-                else readiness,
+                morning_readiness,
                 ("score",), ("trainingReadinessScore",)),
+            "readiness_level": _dig(morning_readiness, ("level",)),
+            "readiness_feedback": _dig(
+                morning_readiness, ("feedbackShort",), ("feedbackLong",)),
+            "recovery_time_minutes": _dig(
+                morning_readiness, ("recoveryTime",)),
+            "sleep_factor_percent": _dig(
+                morning_readiness, ("sleepScoreFactorPercent",)),
+            "acwr_factor_percent": _dig(
+                morning_readiness, ("acwrFactorPercent",)),
+            "hrv_factor_percent": _dig(
+                morning_readiness, ("hrvFactorPercent",)),
             "vo2_max_cycling": _dig(
                 max_metrics, ("cycling", "vo2Max"), ("generic", "vo2Max"),
                 ("vo2MaxPreciseValue",)),
-            "training_status": _dig(
-                training_status, ("mostRecentTrainingStatus", "trainingStatus"),
-                ("trainingStatus",)),
+            "training_status": _find_key(
+                training_status, "trainingStatusFeedbackPhrase",
+                "trainingStatus"),
+            "acute_training_load": _find_key(
+                training_status, "dailyTrainingLoadAcute",
+                "acuteTrainingLoad", "weeklyTrainingLoad"),
+            "load_level_trend": _find_key(
+                training_status, "loadLevelTrend"),
+            "endurance_score": _find_key(
+                endurance_score, "enduranceScore", "overallScore", "score"),
             "raw": {
                 "summary": summary,
                 "heart_rate": heart_rate,
@@ -201,5 +260,6 @@ class GarminPerformanceClient:
                 "max_metrics": max_metrics,
                 "training_readiness": readiness,
                 "training_status": training_status,
+                "endurance_score": endurance_score,
             },
         }

@@ -264,6 +264,8 @@
       ('Body Battery', garmin_snapshot.body_battery),
       ('Resting HR', garmin_snapshot.resting_heart_rate),
       ('Cycling VO₂ Max', garmin_snapshot.vo2_max_cycling),
+      ('Endurance', garmin_snapshot.endurance_score),
+      ('Acute Load', garmin_snapshot.acute_training_load),
       ('Training', garmin_snapshot.training_status)
     ] %}
       {% if value is not none %}
@@ -277,6 +279,22 @@
   <p style="margin:10px 0 0;color:var(--text-light);font-size:.72rem;">
     Private Garmin snapshot for {{ garmin_snapshot.snapshot_date }}.
   </p>
+  {% if garmin_snapshot.readiness_level or garmin_snapshot.readiness_feedback or garmin_snapshot.recovery_time_minutes is not none %}
+  <div style="margin-top:10px;padding:10px 12px;background:#f7fafc;border-radius:8px;color:var(--text-light);font-size:.78rem;">
+    {% if garmin_snapshot.readiness_level %}
+      <strong style="color:var(--primary);">{{ garmin_snapshot.readiness_level|replace('_', ' ')|title }}</strong>
+    {% endif %}
+    {% if garmin_snapshot.readiness_feedback %}
+      · {{ garmin_snapshot.readiness_feedback|replace('_', ' ')|title }}
+    {% endif %}
+    {% if garmin_snapshot.recovery_time_minutes is not none %}
+      · {{ '%.1f'|format((garmin_snapshot.recovery_time_minutes|float) / 60) }}h recovery
+    {% endif %}
+    {% if garmin_snapshot.load_level_trend %}
+      · Load {{ garmin_snapshot.load_level_trend|replace('_', ' ')|lower }}
+    {% endif %}
+  </div>
+  {% endif %}
   {% endif %}
   {% if garmin_activities %}
   <div style="margin-top:18px;border-top:1px solid #e2e8f0;padding-top:14px;">
