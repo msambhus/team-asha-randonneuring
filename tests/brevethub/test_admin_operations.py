@@ -62,3 +62,20 @@ def test_operator_can_dispatch_both_weather_warmers(monkeypatch):
     assert client.post('/admin/run/fetch-weather').status_code == 302
     assert client.post('/admin/run/warm-route-weather').status_code == 302
     assert calls == ['point', 'route']
+
+
+def test_operator_can_dispatch_elevation_and_eddington(monkeypatch):
+    monkeypatch.setitem(app.config, 'ADMIN_PASSWORD', 'test-operator-password')
+    calls = []
+    monkeypatch.setattr(
+        'brevethub.routes.cron.run_warm_plan_elevation',
+        lambda: calls.append('elevation') or {'ok': True, 'warmed': 3})
+    monkeypatch.setattr(
+        'brevethub.routes.cron.run_refresh_eddington',
+        lambda: calls.append('eddington') or {'ok': True, 'refreshed': 4})
+    client = app.test_client()
+    client.post('/admin/login', data={'password': 'test-operator-password'})
+
+    assert client.post('/admin/run/warm-elevation').status_code == 302
+    assert client.post('/admin/run/refresh-eddington').status_code == 302
+    assert calls == ['elevation', 'eddington']

@@ -88,9 +88,11 @@ def run_operation(operation):
         run_backfill_rwgps_urls,
         run_fetch_brevet_weather,
         run_refresh_calendar,
+        run_refresh_eddington,
         run_sync_rusa_results,
         run_warm_brevet_plans,
         run_warm_brevet_route_weather,
+        run_warm_plan_elevation,
     )
     operations = {
         'refresh-calendar': run_refresh_calendar,
@@ -99,6 +101,8 @@ def run_operation(operation):
         'warm-plans': run_warm_brevet_plans,
         'fetch-weather': run_fetch_brevet_weather,
         'warm-route-weather': run_warm_brevet_route_weather,
+        'warm-elevation': run_warm_plan_elevation,
+        'refresh-eddington': run_refresh_eddington,
     }
     runner = operations.get(operation)
     if runner is None:
