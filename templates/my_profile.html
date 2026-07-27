@@ -35,6 +35,25 @@
     border-bottom: 1px solid #edf2f7;
     font-size: .78rem;
 }
+.garmin-sync-spinner {
+    display: none;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,.45);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: garmin-sync-spin .75s linear infinite;
+}
+.garmin-sync-button.is-loading .garmin-sync-spinner {
+    display: inline-block;
+}
+.garmin-sync-button.is-loading {
+    cursor: wait;
+    opacity: .85;
+}
+@keyframes garmin-sync-spin {
+    to { transform: rotate(360deg); }
+}
 @media (max-width: 640px) {
     .garmin-ride-row {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -212,8 +231,12 @@
     </div>
     {% if garmin_connection %}
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <form method="post" action="{{ url_for('garmin.sync') }}">
-          <button class="btn btn-primary" type="submit">Sync Garmin</button>
+        <form id="garmin-sync-form" method="post" action="{{ url_for('garmin.sync') }}">
+          <button id="garmin-sync-submit" class="btn btn-primary garmin-sync-button"
+                  type="submit" style="display:inline-flex;align-items:center;gap:8px;">
+            <span class="garmin-sync-spinner" aria-hidden="true"></span>
+            <span class="garmin-sync-label">Sync Garmin</span>
+          </button>
         </form>
         <form method="post" action="{{ url_for('garmin.disconnect') }}"
               onsubmit="return confirm('Disconnect Garmin and delete stored tokens?');">
@@ -224,6 +247,15 @@
       <a class="btn btn-primary" href="{{ url_for('garmin.connect') }}">Connect Garmin</a>
     {% endif %}
   </div>
+  {% if garmin_connection %}
+  <div id="garmin-sync-progress" role="status" aria-live="polite" hidden
+       style="margin-top:12px;color:var(--primary);font-weight:600;">
+    Syncing Garmin performance and recent rides…
+    <div style="margin-top:4px;color:var(--text-light);font-size:.78rem;font-weight:400;">
+      This may take up to a minute. Please keep this page open.
+    </div>
+  </div>
+  {% endif %}
   {% if garmin_snapshot %}
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-top:18px;">
     {% for label, value in [
@@ -275,6 +307,28 @@
 
 {% block extra_js %}
 <script>
+// Garmin Sync progress and duplicate-submit protection.
+(() => {
+    const form = document.getElementById('garmin-sync-form');
+    if (!form) return;
+
+    let submitting = false;
+    form.addEventListener('submit', (event) => {
+        if (submitting) {
+            event.preventDefault();
+            return;
+        }
+        submitting = true;
+        form.setAttribute('aria-busy', 'true');
+
+        const button = document.getElementById('garmin-sync-submit');
+        button.disabled = true;
+        button.classList.add('is-loading');
+        button.querySelector('.garmin-sync-label').textContent = 'Syncing Garmin…';
+        document.getElementById('garmin-sync-progress').hidden = false;
+    });
+})();
+
 // Privacy Toggle Handler
 document.addEventListener('DOMContentLoaded', function() {
     const toggle = document.getElementById('stravaPrivacyToggle');

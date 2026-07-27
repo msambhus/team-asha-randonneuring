@@ -79,3 +79,7 @@ def test_garmin_decimal_distance_renders_on_my_profile(client, app):
     assert response.status_code == 200
     assert b"Garmin Decimal Ride" in response.data
     assert b"10.0" in response.data
+    assert b'id="garmin-sync-progress"' in response.data
+    assert b'aria-live="polite"' in response.data
+    assert b"Syncing Garmin performance and recent rides" in response.data
+    assert b"button.disabled = true" in response.data
