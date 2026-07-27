@@ -2,9 +2,9 @@
 
 Collects an OPTIONAL RUSA ID and a home club (picker from `rp_club`) and
 writes both to the signed-in rider's `rp_rider` row. v1 does NO RUSA ownership
-verification: the RUSA ID is validated for *shape only* (numeric) and a duplicate
-claim is *soft-flagged* (`rusa_id_duplicate`), never rejected. Hard verification
-(name match against rusa.org) is a deferred follow-on.
+verification: the RUSA ID is validated for *shape only* (numeric), because RUSA's
+public result search cannot prove a result-less new member exists. A duplicate
+claim is rejected so one official history cannot populate two public identities.
 """
 from flask import (
     Blueprint, current_app, flash, redirect, render_template, request,
@@ -47,7 +47,6 @@ def signup():
                                    rusa_id=raw_rusa, selected_club_id=club_id)
 
         rusa_id = None
-        rusa_duplicate = False
         if raw_rusa:
             rusa_id = _normalize_rusa_id(raw_rusa)
             if rusa_id is None:
@@ -56,16 +55,16 @@ def signup():
                 return render_template('signup.html', clubs=clubs,
                                        rusa_id=raw_rusa,
                                        selected_club_id=club_id)
-            # Soft-flag a duplicate claim — v1 does not hard-verify ownership.
-            rusa_duplicate = models.rusa_id_already_claimed(
-                rusa_id, exclude_rider_id=rider['id'])
-            if rusa_duplicate:
-                current_app.logger.info(
-                    "BrevetHub duplicate RUSA-ID claim flagged: rider=%s rusa=%s",
-                    rider['id'], rusa_id)
+            if models.rusa_id_already_claimed(
+                    rusa_id, exclude_rider_id=rider['id']):
+                flash('That RUSA ID is already registered to another '
+                      'BrevetHub account.', 'error')
+                return render_template(
+                    'signup.html', clubs=clubs, rusa_id=raw_rusa,
+                    selected_club_id=club_id)
 
         models.complete_rider_profile(
-            rider['id'], rusa_id, club_id, rusa_id_duplicate=rusa_duplicate)
+            rider['id'], rusa_id, club_id, rusa_id_duplicate=False)
         current_app.logger.info(
             "BrevetHub signup completed: rider=%s club=%s rusa=%s",
             rider['id'], club_id, rusa_id)
