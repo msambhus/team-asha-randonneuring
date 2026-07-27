@@ -44,3 +44,21 @@ def test_unknown_operator_action_is_not_dispatched(monkeypatch):
     client.post('/admin/login', data={'password': 'test-operator-password'})
 
     assert client.post('/admin/run/not-real').status_code == 404
+
+
+def test_operator_can_dispatch_both_weather_warmers(monkeypatch):
+    monkeypatch.setitem(app.config, 'ADMIN_PASSWORD', 'test-operator-password')
+    calls = []
+
+    monkeypatch.setattr(
+        'brevethub.routes.cron.run_fetch_brevet_weather',
+        lambda: calls.append('point') or {'ok': True, 'fetched': 2})
+    monkeypatch.setattr(
+        'brevethub.routes.cron.run_warm_brevet_route_weather',
+        lambda: calls.append('route') or {'ok': True, 'warmed': 2})
+    client = app.test_client()
+    client.post('/admin/login', data={'password': 'test-operator-password'})
+
+    assert client.post('/admin/run/fetch-weather').status_code == 302
+    assert client.post('/admin/run/warm-route-weather').status_code == 302
+    assert calls == ['point', 'route']

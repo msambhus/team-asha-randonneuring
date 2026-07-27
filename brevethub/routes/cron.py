@@ -318,12 +318,17 @@ def fetch_brevet_weather():
     if auth_error:
         return auth_error
 
+    return jsonify(run_fetch_brevet_weather()), 200
+
+
+def run_fetch_brevet_weather():
+    """Run the point-forecast warmer for cron and the operator console."""
     try:
         targets = models.get_weather_forecast_targets(horizon_days=FORECAST_HORIZON_DAYS)
     except Exception as e:
         current_app.logger.warning('Brevet weather target load failed: %s', e)
-        return jsonify({'ok': False, 'error': 'target load failed',
-                        'fetched': 0, 'skipped': 0, 'failed': 0}), 200
+        return {'ok': False, 'error': 'target load failed',
+                'fetched': 0, 'skipped': 0, 'failed': 0}
 
     fetched = skipped = failed = 0
     for event in targets:
@@ -349,8 +354,8 @@ def fetch_brevet_weather():
     current_app.logger.info(
         'Brevet weather cron: fetched=%s skipped=%s failed=%s of %s considered',
         fetched, skipped, failed, len(targets))
-    return jsonify({'ok': True, 'fetched': fetched, 'skipped': skipped,
-                    'failed': failed, 'considered': len(targets)}), 200
+    return {'ok': True, 'fetched': fetched, 'skipped': skipped,
+            'failed': failed, 'considered': len(targets)}
 
 
 # Max RUSA route-page scrapes attempted per backfill run. Bounded so one run makes at
@@ -587,12 +592,17 @@ def warm_brevet_route_weather():
     if auth_error:
         return auth_error
 
+    return jsonify(run_warm_brevet_route_weather()), 200
+
+
+def run_warm_brevet_route_weather():
+    """Run the route-weather warmer for cron and the operator console."""
     try:
         targets = models.get_route_weather_warm_targets(horizon_days=FORECAST_HORIZON_DAYS)
     except Exception as e:
         current_app.logger.warning('Route-weather warm target load failed: %s', e)
-        return jsonify({'ok': False, 'error': 'target load failed',
-                        'warmed': 0, 'skipped': 0, 'failed': 0}), 200
+        return {'ok': False, 'error': 'target load failed',
+                'warmed': 0, 'skipped': 0, 'failed': 0}
 
     api_key = current_app.config.get('RWGPS_API_KEY')
     auth_token = current_app.config.get('RWGPS_AUTH_TOKEN')
@@ -661,8 +671,8 @@ def warm_brevet_route_weather():
     current_app.logger.info(
         'Brevet route-weather cron: warmed=%s skipped=%s failed=%s of %s considered',
         warmed, skipped, failed, len(targets))
-    return jsonify({'ok': True, 'warmed': warmed, 'skipped': skipped,
-                    'failed': failed, 'considered': len(targets)}), 200
+    return {'ok': True, 'warmed': warmed, 'skipped': skipped,
+            'failed': failed, 'considered': len(targets)}
 
 
 @cron_bp.route('/warm-plan-elevation', methods=['GET', 'POST'])

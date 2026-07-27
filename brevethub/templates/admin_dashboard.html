@@ -32,7 +32,9 @@
         ('refresh-calendar', 'Refresh national calendar', 'Import the current RUSA event feed into BrevetHub.'),
         ('sync-rusa-results', 'Sync official finishers', 'Fill pending finish times from official RUSA results.'),
         ('backfill-rwgps', 'Discover RWGPS routes', 'Process the next bounded batch of missing route links.'),
-        ('warm-plans', 'Generate missing plans', 'Build plans for upcoming events that have RWGPS routes.')
+        ('warm-plans', 'Generate missing plans', 'Build plans for upcoming events that have RWGPS routes.'),
+        ('fetch-weather', 'Refresh event forecasts', 'Cache near-term point forecasts for calendar weather badges.'),
+        ('warm-route-weather', 'Refresh route weather', 'Cache along-route wind and weather for upcoming ride plans.')
       ] %}
       <form method="post" action="{{ url_for('admin.run_operation', operation=operation) }}"
             class="border border-border rounded-lg p-4">

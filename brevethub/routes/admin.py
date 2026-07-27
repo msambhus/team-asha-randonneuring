@@ -86,15 +86,19 @@ def run_operation(operation):
     # implementation and admin.py does not create an import cycle at app startup.
     from brevethub.routes.cron import (
         run_backfill_rwgps_urls,
+        run_fetch_brevet_weather,
         run_refresh_calendar,
         run_sync_rusa_results,
         run_warm_brevet_plans,
+        run_warm_brevet_route_weather,
     )
     operations = {
         'refresh-calendar': run_refresh_calendar,
         'sync-rusa-results': run_sync_rusa_results,
         'backfill-rwgps': run_backfill_rwgps_urls,
         'warm-plans': run_warm_brevet_plans,
+        'fetch-weather': run_fetch_brevet_weather,
+        'warm-route-weather': run_warm_brevet_route_weather,
     }
     runner = operations.get(operation)
     if runner is None:
