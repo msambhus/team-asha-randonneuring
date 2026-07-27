@@ -195,14 +195,41 @@
       {% endif %}
     </div>
     {% if garmin_connection %}
-      <form method="post" action="{{ url_for('garmin.disconnect') }}"
-            onsubmit="return confirm('Disconnect Garmin and delete stored tokens?');">
-        <button class="btn btn-secondary" type="submit">Disconnect Garmin</button>
-      </form>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <form method="post" action="{{ url_for('garmin.sync') }}">
+          <button class="btn btn-primary" type="submit">Sync Garmin</button>
+        </form>
+        <form method="post" action="{{ url_for('garmin.disconnect') }}"
+              onsubmit="return confirm('Disconnect Garmin and delete stored tokens?');">
+          <button class="btn btn-secondary" type="submit">Disconnect Garmin</button>
+        </form>
+      </div>
     {% else %}
       <a class="btn btn-primary" href="{{ url_for('garmin.connect') }}">Connect Garmin</a>
     {% endif %}
   </div>
+  {% if garmin_snapshot %}
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-top:18px;">
+    {% for label, value in [
+      ('Readiness', garmin_snapshot.training_readiness),
+      ('Sleep', garmin_snapshot.sleep_score),
+      ('Body Battery', garmin_snapshot.body_battery),
+      ('Resting HR', garmin_snapshot.resting_heart_rate),
+      ('Cycling VO₂ Max', garmin_snapshot.vo2_max_cycling),
+      ('Training', garmin_snapshot.training_status)
+    ] %}
+      {% if value is not none %}
+      <div style="background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:1.15rem;font-weight:700;color:var(--primary);">{{ value }}</div>
+        <div style="font-size:.68rem;text-transform:uppercase;color:var(--text-light);">{{ label }}</div>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  <p style="margin:10px 0 0;color:var(--text-light);font-size:.72rem;">
+    Private Garmin snapshot for {{ garmin_snapshot.snapshot_date }}.
+  </p>
+  {% endif %}
 </div>
 
 <div style="margin-top:20px;">
