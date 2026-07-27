@@ -1,0 +1,148 @@
+"""Read-only Garmin Connect performance client for Team Asha.
+
+Authentication is adapted from the vendored MIT-licensed
+``cyberjunky/python-garminconnect`` client. This module deliberately exposes only
+cycling-relevant reads. It contains no upload, edit, delete, goal, hydration,
+weight, workout, or device-write method.
+
+Garmin Connect is an unofficial web API. Response fields vary by device and
+account, so ``performance_snapshot`` retains raw endpoint payloads behind stable
+keys and derives only conservative headline values.
+"""
+from datetime import date, datetime
+from typing import Any
+
+from vendor.python_garminconnect import Client
+
+MAX_ACTIVITY_LIMIT = 100
+_DATE_FORMAT = "%Y-%m-%d"
+
+_PROFILE = "/userprofile-service/socialProfile"
+_DAILY_SUMMARY = "/usersummary-service/usersummary/daily"
+_HEART_RATE = "/wellness-service/wellness/dailyHeartRate"
+_SLEEP = "/wellness-service/wellness/dailySleepData"
+_STRESS = "/wellness-service/wellness/dailyStress"
+_BODY_BATTERY = "/wellness-service/wellness/bodyBattery/reports/daily"
+_HRV = "/hrv-service/hrv"
+_MAX_METRICS = "/metrics-service/metrics/maxmet/daily"
+_TRAINING_READINESS = "/metrics-service/metrics/trainingreadiness"
+_TRAINING_STATUS = "/metrics-service/metrics/trainingstatus/aggregated"
+_ACTIVITIES = "/activitylist-service/activities/search/activities"
+
+
+def _date(value: str | date) -> str:
+    rendered = value.isoformat() if isinstance(value, date) else str(value).strip()
+    datetime.strptime(rendered, _DATE_FORMAT)
+    return rendered
+
+
+def _dig(payload: Any, *paths: tuple[str, ...]) -> Any:
+    """Return the first non-None value found at one of several nested paths."""
+    for path in paths:
+        value = payload
+        for key in path:
+            if not isinstance(value, dict):
+                value = None
+                break
+            value = value.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+class GarminPerformanceClient:
+    """Narrow read-only client backed by a Garmin DI-auth session."""
+
+    def __init__(self, auth_client: Client | None = None):
+        self.auth = auth_client or Client()
+        self._profile: dict[str, Any] | None = None
+
+    def load_tokens(self, token_json: str) -> None:
+        """Load serialized DI tokens; callers must decrypt storage first."""
+        self.auth.loads(token_json)
+
+    def dump_tokens(self) -> str:
+        """Serialize DI tokens; callers must encrypt before persistence."""
+        return self.auth.dumps()
+
+    def profile(self) -> dict[str, Any]:
+        if self._profile is None:
+            self._profile = self.auth.connectapi(_PROFILE) or {}
+        return self._profile
+
+    def _display_name(self) -> str:
+        value = self.profile().get("displayName")
+        if not value:
+            raise ValueError("Garmin profile has no displayName")
+        return str(value)
+
+    def activities(self, *, start: int = 0, limit: int = 20,
+                   activity_type: str = "cycling") -> list[dict[str, Any]]:
+        if start < 0 or limit < 1 or limit > MAX_ACTIVITY_LIMIT:
+            raise ValueError("invalid Garmin activity page")
+        params = {"start": str(start), "limit": str(limit)}
+        if activity_type:
+            params["activityType"] = activity_type
+        result = self.auth.connectapi(_ACTIVITIES, params=params)
+        return result if isinstance(result, list) else []
+
+    def performance_snapshot(self, on_date: str | date) -> dict[str, Any]:
+        """Fetch one private, read-only daily performance snapshot."""
+        day = _date(on_date)
+        display_name = self._display_name()
+        summary = self.auth.connectapi(
+            f"{_DAILY_SUMMARY}/{display_name}",
+            params={"calendarDate": day},
+        ) or {}
+        heart_rate = self.auth.connectapi(
+            f"{_HEART_RATE}/{display_name}", params={"date": day}) or {}
+        sleep = self.auth.connectapi(
+            f"{_SLEEP}/{display_name}",
+            params={"date": day, "nonSleepBufferMinutes": 60},
+        ) or {}
+        stress = self.auth.connectapi(f"{_STRESS}/{day}") or {}
+        body_battery = self.auth.connectapi(
+            _BODY_BATTERY, params={"startDate": day, "endDate": day}) or []
+        hrv = self.auth.connectapi(f"{_HRV}/{day}") or {}
+        max_metrics = self.auth.connectapi(
+            f"{_MAX_METRICS}/{day}/{day}") or {}
+        readiness = self.auth.connectapi(
+            f"{_TRAINING_READINESS}/{day}") or []
+        training_status = self.auth.connectapi(
+            f"{_TRAINING_STATUS}/{day}") or {}
+
+        return {
+            "date": day,
+            "resting_heart_rate": _dig(
+                heart_rate, ("restingHeartRate",), ("restingHeartRateValue",)),
+            "hrv_status": _dig(
+                hrv, ("hrvSummary", "status"), ("hrvSummary", "weeklyAvg")),
+            "sleep_score": _dig(
+                sleep, ("dailySleepDTO", "sleepScores", "overall", "value"),
+                ("sleepScores", "overall", "value")),
+            "body_battery": _dig(
+                body_battery[0] if isinstance(body_battery, list) and body_battery
+                else body_battery,
+                ("charged",), ("bodyBatteryMostRecentValue",)),
+            "training_readiness": _dig(
+                readiness[0] if isinstance(readiness, list) and readiness
+                else readiness,
+                ("score",), ("trainingReadinessScore",)),
+            "vo2_max_cycling": _dig(
+                max_metrics, ("cycling", "vo2Max"), ("generic", "vo2Max"),
+                ("vo2MaxPreciseValue",)),
+            "training_status": _dig(
+                training_status, ("mostRecentTrainingStatus", "trainingStatus"),
+                ("trainingStatus",)),
+            "raw": {
+                "summary": summary,
+                "heart_rate": heart_rate,
+                "sleep": sleep,
+                "stress": stress,
+                "body_battery": body_battery,
+                "hrv": hrv,
+                "max_metrics": max_metrics,
+                "training_readiness": readiness,
+                "training_status": training_status,
+            },
+        }
