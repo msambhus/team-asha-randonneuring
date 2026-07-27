@@ -287,6 +287,10 @@ def my_profile():
         models.get_garmin_connection(rider_id)
         if current_app.config.get('GARMIN_TOKEN_ENCRYPTION_KEY') else None
     )
+    garmin_snapshot = (
+        models.get_latest_garmin_performance_snapshot(rider_id)
+        if garmin_connection else None
+    )
     strava_activities = []
     fitness_score = None
 
@@ -315,6 +319,7 @@ def my_profile():
                            total_srs=total_srs,
                            strava_connection=strava_connection,
                            garmin_connection=garmin_connection,
+                           garmin_snapshot=garmin_snapshot,
                            strava_activities=strava_activities,
                            fitness_score=fitness_score)
 

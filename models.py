@@ -2209,9 +2209,13 @@ def upsert_garmin_connection(rider_id, token_ciphertext, display_name=None):
 
 
 def delete_garmin_connection(rider_id):
-    """Disconnect only the specified rider."""
+    """Disconnect only the specified rider and delete private Garmin snapshots."""
     conn = get_db()
     cur = conn.cursor()
+    cur.execute(
+        "DELETE FROM garmin_performance_snapshot WHERE rider_id = %s",
+        (rider_id,),
+    )
     cur.execute(
         "DELETE FROM garmin_connection WHERE rider_id = %s RETURNING rider_id",
         (rider_id,),
@@ -2258,6 +2262,64 @@ def delete_garmin_mfa_challenge(rider_id):
     cur = conn.cursor()
     cur.execute("DELETE FROM garmin_mfa_challenge WHERE rider_id = %s",
                 (rider_id,))
+    conn.commit()
+
+
+def upsert_garmin_performance_snapshot(rider_id, snapshot, raw_ciphertext,
+                                       token_ciphertext):
+    """Persist one private daily snapshot and any refreshed Garmin tokens."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO garmin_performance_snapshot "
+        " (rider_id, snapshot_date, resting_heart_rate, hrv_status, "
+        "  sleep_score, body_battery, training_readiness, vo2_max_cycling, "
+        "  training_status, raw_ciphertext) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+        "ON CONFLICT (rider_id, snapshot_date) DO UPDATE SET "
+        " resting_heart_rate=EXCLUDED.resting_heart_rate, "
+        " hrv_status=EXCLUDED.hrv_status, sleep_score=EXCLUDED.sleep_score, "
+        " body_battery=EXCLUDED.body_battery, "
+        " training_readiness=EXCLUDED.training_readiness, "
+        " vo2_max_cycling=EXCLUDED.vo2_max_cycling, "
+        " training_status=EXCLUDED.training_status, "
+        " raw_ciphertext=EXCLUDED.raw_ciphertext, synced_at=NOW()",
+        (rider_id, snapshot["date"], snapshot.get("resting_heart_rate"),
+         snapshot.get("hrv_status"), snapshot.get("sleep_score"),
+         snapshot.get("body_battery"), snapshot.get("training_readiness"),
+         snapshot.get("vo2_max_cycling"), snapshot.get("training_status"),
+         raw_ciphertext),
+    )
+    cur.execute(
+        "UPDATE garmin_connection SET token_ciphertext=%s, status='connected', "
+        "last_sync_at=NOW(), last_error=NULL, updated_at=NOW() WHERE rider_id=%s",
+        (token_ciphertext, rider_id),
+    )
+    conn.commit()
+
+
+def get_latest_garmin_performance_snapshot(rider_id):
+    """Return only the owning rider's latest normalized Garmin headlines."""
+    row = _execute(
+        "SELECT snapshot_date, resting_heart_rate, hrv_status, sleep_score, "
+        "body_battery, training_readiness, vo2_max_cycling, training_status, "
+        "synced_at FROM garmin_performance_snapshot WHERE rider_id=%s "
+        "ORDER BY snapshot_date DESC LIMIT 1",
+        (rider_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def mark_garmin_reauth_required(rider_id):
+    """Record an auth failure without exposing its details to other riders."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE garmin_connection SET status='reauth_required', "
+        "last_error='Garmin authentication expired', updated_at=NOW() "
+        "WHERE rider_id=%s",
+        (rider_id,),
+    )
     conn.commit()
 
 def consume_strava_broker_handoff(code):

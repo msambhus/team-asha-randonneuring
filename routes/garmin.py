@@ -1,5 +1,6 @@
 """Private Garmin Connect account connection routes."""
 import json
+from datetime import date
 from flask import (Blueprint, current_app, flash, redirect, render_template,
                    request, session, url_for)
 
@@ -135,6 +136,43 @@ def mfa():
 
     models.delete_garmin_mfa_challenge(rider_id)
     flash("Garmin Connect linked securely.", "success")
+    return redirect(url_for("auth.my_profile"))
+
+
+@garmin_bp.route("/sync", methods=["POST"])
+@profile_required
+def sync():
+    rider_id = session["rider_id"]
+    connection = models.get_garmin_connection(rider_id, include_tokens=True)
+    if not connection:
+        flash("Connect Garmin before syncing performance data.", "warning")
+        return redirect(url_for("garmin.connect"))
+
+    try:
+        performance = GarminPerformanceClient()
+        performance.load_tokens(
+            _cipher().decrypt(connection["token_ciphertext"]))
+        snapshot = performance.performance_snapshot(date.today())
+        raw_ciphertext = _cipher().encrypt(json.dumps(
+            snapshot["raw"], separators=(",", ":"), default=str))
+        refreshed_tokens = _cipher().encrypt(performance.dump_tokens())
+        models.upsert_garmin_performance_snapshot(
+            rider_id, snapshot, raw_ciphertext, refreshed_tokens)
+    except GarminConnectAuthenticationError:
+        models.mark_garmin_reauth_required(rider_id)
+        flash("Garmin authorization expired. Disconnect and reconnect Garmin.",
+              "warning")
+        return redirect(url_for("auth.my_profile"))
+    except GarminConnectTooManyRequestsError:
+        flash("Garmin is rate limiting sync. Try again later.", "warning")
+        return redirect(url_for("auth.my_profile"))
+    except (GarminConnectConnectionError, ValueError):
+        current_app.logger.warning(
+            "Garmin performance sync failed for rider %s", rider_id)
+        flash("Could not sync Garmin performance data right now.", "error")
+        return redirect(url_for("auth.my_profile"))
+
+    flash("Garmin performance data synced.", "success")
     return redirect(url_for("auth.my_profile"))
 
 

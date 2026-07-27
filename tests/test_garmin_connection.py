@@ -238,3 +238,55 @@ def test_disconnect_is_scoped_to_session_rider(client, app):
     assert response.status_code == 302
     remove.assert_called_once_with(42)
     remove_mfa.assert_called_once_with(42)
+
+
+class FakePerformanceSync:
+    loaded_tokens = None
+
+    def load_tokens(self, token_json):
+        self.loaded_tokens = token_json
+
+    def performance_snapshot(self, on_date):
+        return {
+            "date": on_date.isoformat(),
+            "resting_heart_rate": 48,
+            "hrv_status": "BALANCED",
+            "sleep_score": 83,
+            "body_battery": 72,
+            "training_readiness": 77,
+            "vo2_max_cycling": 53,
+            "training_status": "PRODUCTIVE",
+            "raw": {"private": "recovery-payload"},
+        }
+
+    def dump_tokens(self):
+        return json.dumps({"di_refresh_token": "refreshed-secret"})
+
+
+def test_performance_sync_decrypts_tokens_and_encrypts_private_payload(
+        client, app):
+    _login(client, rider_id=42)
+    app.config["GARMIN_TOKEN_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+    cipher = GarminTokenCipher(app.config["GARMIN_TOKEN_ENCRYPTION_KEY"])
+    stored = {}
+
+    def capture(rider_id, snapshot, raw_ciphertext, token_ciphertext):
+        stored.update(rider_id=rider_id, snapshot=snapshot,
+                      raw_ciphertext=raw_ciphertext,
+                      token_ciphertext=token_ciphertext)
+
+    with patch("routes.garmin.models.get_garmin_connection", return_value={
+            "token_ciphertext": cipher.encrypt('{"di_token":"old-secret"}')}), \
+         patch("routes.garmin.models.upsert_garmin_performance_snapshot",
+               side_effect=capture), \
+         patch("routes.garmin.GarminPerformanceClient",
+               FakePerformanceSync):
+        response = client.post("/garmin/sync", data={"rider_id": "999"})
+
+    assert response.status_code == 302
+    assert stored["rider_id"] == 42
+    assert stored["snapshot"]["training_readiness"] == 77
+    assert "recovery-payload" not in stored["raw_ciphertext"]
+    assert json.loads(cipher.decrypt(
+        stored["raw_ciphertext"]))["private"] == "recovery-payload"
+    assert "refreshed-secret" not in stored["token_ciphertext"]
