@@ -211,3 +211,52 @@ def disconnect():
         "success",
     )
     return redirect(url_for("auth.my_profile"))
+
+
+@garmin_bp.route("/ride-matches")
+@profile_required
+def ride_matches():
+    """Private review surface for Garmin-to-brevet associations."""
+    rider_id = session["rider_id"]
+    activities = models.get_garmin_brevet_match_review(rider_id)
+    brevets = models.get_finished_brevets_for_matching(rider_id)
+    return render_template(
+        "garmin_ride_matches.html",
+        activities=activities,
+        brevets=brevets,
+    )
+
+
+@garmin_bp.route("/ride-matches/<int:garmin_activity_id>", methods=["POST"])
+@profile_required
+def update_ride_match(garmin_activity_id):
+    """Create, correct, or reject a rider-owned Garmin brevet link."""
+    rider_id = session["rider_id"]
+    action = request.form.get("action")
+    try:
+        if action == "unlink":
+            if not models.reject_garmin_brevet_match(
+                    rider_id, garmin_activity_id):
+                flash("That Garmin ride did not have an active brevet link.",
+                      "info")
+            else:
+                flash("Garmin ride unlinked. Future syncs will preserve this.",
+                      "success")
+        elif action == "link":
+            ride_id = int(request.form.get("ride_id") or 0)
+            models.set_manual_garmin_brevet_match(
+                rider_id, garmin_activity_id, ride_id)
+            flash("Garmin ride linked to the selected finished brevet.",
+                  "success")
+        else:
+            flash("Choose a valid matching action.", "warning")
+    except (TypeError, ValueError):
+        current_app.logger.warning(
+            "Rejected invalid Garmin brevet match for rider %s", rider_id)
+        flash("That Garmin ride or brevet is not available to your account.",
+              "error")
+    except Exception:
+        current_app.logger.exception(
+            "Garmin brevet match update failed for rider %s", rider_id)
+        flash("Could not update that ride match right now.", "error")
+    return redirect(url_for("garmin.ride_matches"))
