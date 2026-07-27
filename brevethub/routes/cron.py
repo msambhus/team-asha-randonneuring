@@ -694,9 +694,14 @@ def warm_plan_elevation():
     if auth_error:
         return auth_error
 
+    force = request.args.get('force') in ('1', 'true', 'yes')
+    return jsonify(run_warm_plan_elevation(force=force)), 200
+
+
+def run_warm_plan_elevation(force=False):
+    """Warm route elevation geometry for cron and the operator console."""
     from datetime import datetime, timezone, timedelta
 
-    force = request.args.get('force') in ('1', 'true', 'yes')
     api_key = current_app.config.get('RWGPS_API_KEY')
     auth_token = current_app.config.get('RWGPS_AUTH_TOKEN')
 
@@ -704,8 +709,8 @@ def warm_plan_elevation():
         plans = models.get_brevet_route_plan_route_ids()
     except Exception as e:
         current_app.logger.warning('warm-plan-elevation: plan load failed: %s', e)
-        return jsonify({'ok': False, 'error': 'plan load failed',
-                        'warmed': 0, 'skipped': 0, 'failed': 0}), 200
+        return {'ok': False, 'error': 'plan load failed',
+                'warmed': 0, 'skipped': 0, 'failed': 0}
 
     route_ids = set()
     for p in plans:
@@ -735,8 +740,8 @@ def warm_plan_elevation():
     current_app.logger.info(
         'warm-plan-elevation: warmed=%s skipped=%s failed=%s of %s routes',
         warmed, skipped, failed, len(route_ids))
-    return jsonify({'ok': True, 'warmed': warmed, 'skipped': skipped,
-                    'failed': failed, 'considered': len(route_ids)}), 200
+    return {'ok': True, 'warmed': warmed, 'skipped': skipped,
+            'failed': failed, 'considered': len(route_ids)}
 
 
 # Short pause between riders in the Eddington refresh so a full-history fetch for
@@ -770,12 +775,17 @@ def refresh_eddington():
     if auth_error:
         return auth_error
 
+    return jsonify(run_refresh_eddington()), 200
+
+
+def run_refresh_eddington():
+    """Recompute connected-rider Eddington values for cron and operators."""
     try:
         connections = models.get_strava_connections_for_eddington()
     except Exception as e:
         current_app.logger.warning('Eddington refresh: connection load failed: %s', e)
-        return jsonify({'ok': False, 'error': 'connection load failed',
-                        'refreshed': 0, 'failed': 0, 'considered': 0}), 200
+        return {'ok': False, 'error': 'connection load failed',
+                'refreshed': 0, 'failed': 0, 'considered': 0}
 
     refreshed = failed = 0
     for idx, connection in enumerate(connections):
@@ -795,8 +805,8 @@ def refresh_eddington():
     current_app.logger.info(
         'Eddington refresh: refreshed=%s failed=%s of %s considered',
         refreshed, failed, len(connections))
-    return jsonify({'ok': True, 'refreshed': refreshed, 'failed': failed,
-                    'considered': len(connections)}), 200
+    return {'ok': True, 'refreshed': refreshed, 'failed': failed,
+            'considered': len(connections)}
 
 
 # Retention + downsample tuning (mirrors Team Asha's poll_garmin_livetrack).
