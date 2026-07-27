@@ -17,6 +17,7 @@ import os
 import random
 import re
 import time
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any, cast
 
@@ -1360,6 +1361,96 @@ class Client:
         """Complete a previously initiated MFA login."""
         self._complete_mfa(mfa_code)
         return None, None
+
+    def export_mfa_state(self) -> dict[str, Any]:
+        """Return the minimum JSON-safe state needed to resume an MFA challenge.
+
+        Credentials are deliberately absent: Garmin's MFA endpoints need only
+        the challenge session cookies and non-secret routing metadata.
+        """
+        sess = getattr(self, "_mfa_session", None)
+        flow = getattr(self, "_mfa_flow", None)
+        if sess is None or flow not in {"ios", "portal", "widget"}:
+            raise GarminConnectAuthenticationError("Missing Garmin MFA context")
+
+        cookies = []
+        for cookie in sess.cookies:
+            if cookie.domain and not (
+                cookie.domain == "garmin.com"
+                or cookie.domain.endswith(".garmin.com")
+            ):
+                continue
+            cookies.append({
+                "name": cookie.name,
+                "value": cookie.value,
+                "domain": cookie.domain,
+                "path": cookie.path or "/",
+                "secure": bool(cookie.secure),
+                "expires": cookie.expires,
+            })
+
+        state: dict[str, Any] = {
+            "version": 1,
+            "flow": flow,
+            "method": getattr(self, "_mfa_method", "email"),
+            "login_params": dict(getattr(self, "_mfa_login_params", {})),
+            "post_headers": dict(getattr(self, "_mfa_post_headers", {})),
+            "service_url": getattr(self, "_mfa_service_url", None),
+            "cookies": cookies,
+            "session_kind": (
+                "cffi" if sess.__class__.__module__.startswith("curl_cffi")
+                else "requests"
+            ),
+        }
+        if flow == "widget":
+            response = getattr(self, "_widget_last_resp", None)
+            if response is None:
+                raise GarminConnectAuthenticationError(
+                    "Missing Garmin widget MFA context")
+            state["widget_response"] = {
+                "text": response.text,
+                "url": response.url,
+            }
+        return state
+
+    def import_mfa_state(self, state: dict[str, Any]) -> None:
+        """Restore a state produced by :meth:`export_mfa_state`."""
+        if state.get("version") != 1 or state.get("flow") not in {
+            "ios", "portal", "widget"
+        }:
+            raise GarminConnectAuthenticationError("Invalid Garmin MFA state")
+
+        if state.get("session_kind") == "cffi":
+            if not HAS_CFFI:
+                raise GarminConnectConnectionError(
+                    "Garmin MFA session requires curl_cffi")
+            sess: Any = cffi_requests.Session(impersonate="chrome", timeout=30)
+        else:
+            sess = requests.Session()
+
+        for cookie in state.get("cookies", []):
+            domain = str(cookie.get("domain") or "")
+            if not (domain == "garmin.com" or domain.endswith(".garmin.com")):
+                continue
+            sess.cookies.set(
+                str(cookie["name"]),
+                str(cookie["value"]),
+                domain=domain,
+                path=str(cookie.get("path") or "/"),
+            )
+
+        self._mfa_session = sess
+        self._mfa_flow = state["flow"]
+        self._mfa_method = state.get("method", "email")
+        self._mfa_login_params = dict(state.get("login_params") or {})
+        self._mfa_post_headers = dict(state.get("post_headers") or {})
+        self._mfa_service_url = state.get("service_url")
+        if self._mfa_flow == "widget":
+            response = state.get("widget_response") or {}
+            self._widget_last_resp = SimpleNamespace(
+                text=str(response.get("text") or ""),
+                url=str(response.get("url") or ""),
+            )
 
     def download(self, path: str, **kwargs: Any) -> bytes:
         if "headers" not in kwargs:

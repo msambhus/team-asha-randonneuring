@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Verify Garmin — Team Asha Randonneuring{% endblock %}
+{% block content %}
+<div class="container section">
+  <section class="card" style="max-width:560px;margin:0 auto;">
+    <h1 style="color:var(--primary);font-size:1.6rem;margin-bottom:8px;">Verify Garmin</h1>
+    <p style="color:var(--text-light);margin-bottom:18px;">
+      Enter the one-time verification code from Garmin. The challenge expires
+      after 10 minutes and is limited to five attempts.
+    </p>
+    <form method="post" autocomplete="off">
+      <div class="form-group">
+        <label for="garmin-code">Verification code</label>
+        <input id="garmin-code" name="code" type="text" inputmode="numeric"
+               autocomplete="one-time-code" maxlength="12" required autofocus>
+      </div>
+      <button class="btn btn-primary" type="submit">Verify and connect</button>
+    </form>
+    <p style="color:var(--text-light);font-size:.8rem;margin-top:14px;">
+      Team Asha never stores your Garmin password or verification code.
+    </p>
+  </section>
+</div>
+{% endblock %}
