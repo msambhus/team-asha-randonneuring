@@ -3,7 +3,7 @@
 Its own environment namespace and secret. It reuses Team Asha's existing Google
 OAuth *client* (same GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET) — the owner just
 adds BrevetHub's redirect URIs to that client — but everything else is separate.
-No Strava defaults, no admin password, no Team Asha config is imported.
+No Team Asha config is imported.
 """
 import os
 from datetime import timedelta
@@ -33,6 +33,10 @@ class Config:
     # Same Supabase Postgres as Team Asha, but BrevetHub only ever touches rp_* tables.
     DATABASE_URL = os.environ.get('DATABASE_URL')
     SECRET_KEY = _SECRET_KEY
+    # Separate operator credential for national cache/pipeline maintenance. This is
+    # intentionally not a club-owner permission: calendar and RUSA refreshes mutate
+    # global BrevetHub rp_* data.
+    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
 
     # FIT merge uploads are parsed with a route-local limit. Keep this below
     # Vercel's request-body ceiling and keep every uploaded part in memory.

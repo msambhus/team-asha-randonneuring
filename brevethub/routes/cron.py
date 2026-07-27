@@ -176,14 +176,18 @@ def refresh_calendar():
     if auth_error:
         return auth_error
 
+    return jsonify(run_refresh_calendar()), 200
+
+
+def run_refresh_calendar():
+    """Run the calendar refresh core for cron and the operator console."""
     try:
         refreshed = _scrape_and_upsert()
     except Exception as e:
         current_app.logger.warning('RUSA calendar refresh failed: %s', e)
-        return jsonify({'ok': False, 'error': 'refresh failed', 'refreshed': 0}), 200
-
+        return {'ok': False, 'error': 'refresh failed', 'refreshed': 0}
     current_app.logger.info('RUSA calendar refresh upserted %s events', refreshed)
-    return jsonify({'ok': True, 'refreshed': refreshed}), 200
+    return {'ok': True, 'refreshed': refreshed}
 
 
 @cron_bp.route('/finalize-signups', methods=['GET', 'POST'])
@@ -247,12 +251,17 @@ def sync_rusa_results():
     if auth_error:
         return auth_error
 
+    return jsonify(run_sync_rusa_results()), 200
+
+
+def run_sync_rusa_results():
+    """Run the official-results sync core for cron and the operator console."""
     try:
         targets = models.get_signups_needing_finish_time()
     except Exception as e:
         current_app.logger.warning('RUSA sync target load failed: %s', e)
-        return jsonify({'ok': False, 'error': 'target load failed',
-                        'synced': 0, 'considered': 0}), 200
+        return {'ok': False, 'error': 'target load failed',
+                'synced': 0, 'considered': 0}
 
     live_by_rusa = {}
     synced = 0
@@ -279,7 +288,7 @@ def sync_rusa_results():
 
     current_app.logger.info(
         'RUSA finish-time sync: synced=%s of %s considered', synced, len(targets))
-    return jsonify({'ok': True, 'synced': synced, 'considered': len(targets)}), 200
+    return {'ok': True, 'synced': synced, 'considered': len(targets)}
 
 
 @cron_bp.route('/fetch-brevet-weather', methods=['GET', 'POST'])
@@ -385,13 +394,18 @@ def backfill_rwgps_urls():
     if auth_error:
         return auth_error
 
+    return jsonify(run_backfill_rwgps_urls()), 200
+
+
+def run_backfill_rwgps_urls():
+    """Run one bounded RWGPS discovery batch for cron and the operator console."""
     try:
         targets = models.get_events_needing_rwgps_url(BATCH_SIZE)
     except Exception as e:
         current_app.logger.warning('RWGPS backfill target load failed: %s', e)
-        return jsonify({'ok': False, 'error': 'target load failed',
-                        'considered': 0, 'filled': 0, 'still_null': 0,
-                        'remaining': 0}), 200
+        return {'ok': False, 'error': 'target load failed',
+                'considered': 0, 'filled': 0, 'still_null': 0,
+                'remaining': 0}
 
     filled = 0
     for event in targets:
@@ -417,8 +431,8 @@ def backfill_rwgps_urls():
     current_app.logger.info(
         'RWGPS backfill: filled=%s of %s considered, ~%s still needing a URL',
         filled, considered, remaining)
-    return jsonify({'ok': True, 'considered': considered, 'filled': filled,
-                    'still_null': still_null, 'remaining': remaining}), 200
+    return {'ok': True, 'considered': considered, 'filled': filled,
+            'still_null': still_null, 'remaining': remaining}
 
 
 @cron_bp.route('/warm-brevet-plans', methods=['GET', 'POST'])
@@ -448,12 +462,17 @@ def warm_brevet_plans():
     if auth_error:
         return auth_error
 
+    return jsonify(run_warm_brevet_plans()), 200
+
+
+def run_warm_brevet_plans():
+    """Run the route-plan warmer core for cron and the operator console."""
     try:
         targets = models.get_route_plan_warm_targets()
     except Exception as e:
         current_app.logger.warning('Route-plan warm target load failed: %s', e)
-        return jsonify({'ok': False, 'error': 'target load failed',
-                        'warmed': 0, 'skipped': 0, 'failed': 0}), 200
+        return {'ok': False, 'error': 'target load failed',
+                'warmed': 0, 'skipped': 0, 'failed': 0}
 
     api_key = current_app.config.get('RWGPS_API_KEY')
     auth_token = current_app.config.get('RWGPS_AUTH_TOKEN')
@@ -499,8 +518,8 @@ def warm_brevet_plans():
     current_app.logger.info(
         'Brevet route-plan cron: warmed=%s skipped=%s failed=%s of %s considered',
         warmed, skipped, failed, len(targets))
-    return jsonify({'ok': True, 'warmed': warmed, 'skipped': skipped,
-                    'failed': failed, 'considered': len(targets)}), 200
+    return {'ok': True, 'warmed': warmed, 'skipped': skipped,
+            'failed': failed, 'considered': len(targets)}
 
 
 def _decimate_track_polyline(track_points):

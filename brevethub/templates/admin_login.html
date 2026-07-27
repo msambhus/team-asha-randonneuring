@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Admin sign in — {{ product_name }}{% endblock %}
+{% block content %}
+<div class="container section">
+  <section class="card max-w-[440px] mx-auto">
+    <h1 class="text-primary text-[1.6rem] font-bold mb-2">Operations sign in</h1>
+    <p class="text-text-light mb-4">Use the BrevetHub administrator password.</p>
+    <form method="post">
+      <div class="form-group">
+        <label for="admin-password">Password</label>
+        <input id="admin-password" name="password" type="password"
+               autocomplete="current-password" required autofocus>
+      </div>
+      <button class="btn btn-primary" type="submit">Sign in</button>
+    </form>
+  </section>
+</div>
+{% endblock %}
