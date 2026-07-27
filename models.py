@@ -2220,6 +2220,46 @@ def delete_garmin_connection(rider_id):
     conn.commit()
     return removed
 
+
+def save_garmin_mfa_challenge(rider_id, state_ciphertext):
+    """Replace a rider's MFA challenge with a fresh ten-minute challenge."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO garmin_mfa_challenge "
+        "  (rider_id, state_ciphertext, expires_at, attempts) "
+        "VALUES (%s, %s, NOW() + INTERVAL '10 minutes', 0) "
+        "ON CONFLICT (rider_id) DO UPDATE SET "
+        "  state_ciphertext = EXCLUDED.state_ciphertext, "
+        "  expires_at = EXCLUDED.expires_at, attempts = 0, created_at = NOW()",
+        (rider_id, state_ciphertext),
+    )
+    conn.commit()
+
+
+def take_garmin_mfa_attempt(rider_id):
+    """Atomically count and return one valid rider-owned MFA attempt."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        "UPDATE garmin_mfa_challenge SET attempts = attempts + 1 "
+        "WHERE rider_id = %s AND expires_at > NOW() AND attempts < 5 "
+        "RETURNING state_ciphertext, expires_at, attempts",
+        (rider_id,),
+    )
+    row = cur.fetchone()
+    conn.commit()
+    return dict(row) if row else None
+
+
+def delete_garmin_mfa_challenge(rider_id):
+    """Delete only the specified rider's pending MFA state."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM garmin_mfa_challenge WHERE rider_id = %s",
+                (rider_id,))
+    conn.commit()
+
 def consume_strava_broker_handoff(code):
     """Atomically consume a one-time Strava broker handoff row (delete-on-read).
 

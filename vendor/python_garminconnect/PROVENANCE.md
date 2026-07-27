@@ -12,3 +12,7 @@ License, reproduced in `LICENSE`.
 Team Asha intentionally did not copy the upstream all-purpose `Garmin` API
 wrapper, workout writers, activity mutation endpoints, demos, or exports.
 The local `services.garmin_connect` module owns the narrow read-only API surface.
+
+Local adaptation: `Client.export_mfa_state()` and `Client.import_mfa_state()`
+serialize only the challenge cookies and routing metadata needed to resume MFA
+across Vercel invocations. They deliberately exclude Garmin credentials.
