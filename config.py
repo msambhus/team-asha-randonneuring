@@ -94,6 +94,12 @@ class Config:
     # Mapbox Configuration (for weather wind map)
     MAPBOX_ACCESS_TOKEN = os.environ.get('MAPBOX_ACCESS_TOKEN')
 
+    # Garmin Connect DI OAuth token encryption. Generate with:
+    # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # This is intentionally separate from SECRET_KEY so session-secret rotation
+    # does not destroy Garmin connections. Unset disables Garmin account connect.
+    GARMIN_TOKEN_ENCRYPTION_KEY = os.environ.get('GARMIN_TOKEN_ENCRYPTION_KEY')
+
     # OpenAI Configuration (optional — AI coaching falls back to rule-based if not set)
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Connect Garmin — Team Asha Randonneuring{% endblock %}
+{% block content %}
+<div class="container section">
+  <section class="card" style="max-width:560px;margin:0 auto;">
+    <h1 style="color:var(--primary);font-size:1.6rem;margin-bottom:8px;">Connect Garmin</h1>
+    <p style="color:var(--text-light);margin-bottom:18px;">
+      Read private training and recovery metrics from Garmin Connect. Team Asha
+      never stores your Garmin password. It stores only encrypted session tokens.
+    </p>
+    {% if not configured %}
+      <p class="py-3 px-4 rounded-lg bg-[#fef3c7] text-[#78350f]">
+        Garmin connection is not configured yet.
+      </p>
+    {% else %}
+    <form method="post" autocomplete="off">
+      <div class="form-group">
+        <label for="garmin-email">Garmin email</label>
+        <input id="garmin-email" name="email" type="email"
+               value="{{ email or '' }}" autocomplete="username" required>
+      </div>
+      <div class="form-group">
+        <label for="garmin-password">Garmin password</label>
+        <input id="garmin-password" name="password" type="password"
+               autocomplete="current-password" required>
+      </div>
+      <button class="btn btn-primary" type="submit">Connect Garmin</button>
+    </form>
+    <p style="color:var(--text-light);font-size:.8rem;margin-top:14px;">
+      Garmin Connect access is unofficial. Accounts requiring MFA are detected
+      but cannot complete connection in this version.
+    </p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
