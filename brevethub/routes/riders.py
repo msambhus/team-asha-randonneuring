@@ -444,7 +444,8 @@ def _career_row(rider_row, today):
     brevets = rider_row.get('rusa_cache') or []
     career = seasons.career_summary(brevets, today)
     kinds = ride_kind_counts(brevets)
-    return {
+    pbp_years = seasons.pbp_ancien_years(brevets)
+    return public_rider_row({
         'id': rider_row.get('id'),
         'rusa_id': rider_row.get('rusa_id'),
         'display_name': _display_name(rider_row.get('email')),
@@ -453,12 +454,14 @@ def _career_row(rider_row, today):
         # SR awards across the career (a season with two full series counts twice),
         # not the number of SR seasons, matching the "SR×N" profile display.
         'sr_count': career['total_sr'],
-        'pbp_years': seasons.pbp_ancien_years(brevets),
+        'pbp_years': pbp_years,
+        'pbp_count': len(pbp_years),
         'permanent_count': kinds['permanent'],
         'populaire_count': kinds['populaire'],
         'rides_1000_plus': sum(1 for b in brevets if (b.get('distance_km') or 0) >= 1000),
+        'eddington': rider_row.get('eddington'),
         'career': career,
-    }
+    })
 
 
 @riders_bp.route('/riders')

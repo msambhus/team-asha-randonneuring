@@ -23,12 +23,18 @@ def test_public_rider_contract_normalizes_names_and_lifetime_metrics():
         'total_kms': 18750,
         'total_rides': 48,
         'permanent_count': 8,
+        'populaire_count': 4,
         'rides_1000_plus': 3,
+        'pbp_years': (2019, 2023),
+        'pbp_count': 2,
+        'eddington': 87,
     })
 
     assert row['display_name'] == 'Asha Rider'
     assert row['total_km'] == 18750
     assert row['count'] == 48
     assert row['permanent_count'] == 8
+    assert row['populaire_count'] == 4
     assert row['rides_1000_plus'] == 3
-    assert row['eddington'] is None
+    assert row['pbp_count'] == 2
+    assert row['eddington'] == 87

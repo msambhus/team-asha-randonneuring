@@ -128,6 +128,20 @@ def test_public_rider_profile_is_rusa_only_and_owner_profile_keeps_strava():
     assert "riders.my_strava_analysis" in owner_source
 
 
+def test_club_directory_gets_connection_gated_eddington_without_public_leak():
+    model_source = (BREVETHUB_DIR / "models.py").read_text().lower()
+    directory_query = model_source.split(
+        "def get_club_riders_with_rusa(", 1
+    )[1].split("def get_club_rider(", 1)[0]
+    public_query = model_source.split(
+        "def get_public_rider(", 1
+    )[1].split("# --------------------------------------------------------------------------- #", 1)[0]
+
+    assert "left join rp_strava_connection" in directory_query
+    assert "case when sc.id is not null then r.eddington_miles" in directory_query
+    assert "eddington" not in public_query
+
+
 def test_private_strava_index_visually_separates_brevets_and_regular_rides():
     source = (
         BREVETHUB_DIR / "templates" / "my_strava_analysis.html"
