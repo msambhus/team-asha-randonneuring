@@ -2212,6 +2212,8 @@ def delete_garmin_connection(rider_id):
     """Disconnect only the specified rider and delete private Garmin snapshots."""
     conn = get_db()
     cur = conn.cursor()
+    cur.execute("DELETE FROM garmin_activity WHERE rider_id = %s",
+                (rider_id,))
     cur.execute(
         "DELETE FROM garmin_performance_snapshot WHERE rider_id = %s",
         (rider_id,),
@@ -2308,6 +2310,65 @@ def get_latest_garmin_performance_snapshot(rider_id):
         (rider_id,),
     ).fetchone()
     return dict(row) if row else None
+
+
+def upsert_garmin_activities(rider_id, activities):
+    """Upsert normalized, encrypted Garmin activities for one owning rider."""
+    conn = get_db()
+    cur = conn.cursor()
+    for activity, raw_ciphertext in activities:
+        cur.execute(
+            "INSERT INTO garmin_activity "
+            "(rider_id, garmin_activity_id, activity_name, activity_type, "
+            " started_at, distance_m, duration_s, moving_duration_s, "
+            " elevation_gain_m, average_hr, max_hr, average_power, max_power, "
+            " normalized_power, aerobic_training_effect, "
+            " anaerobic_training_effect, calories, average_cadence, "
+            " device_name, raw_ciphertext) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (rider_id, garmin_activity_id) DO UPDATE SET "
+            "activity_name=EXCLUDED.activity_name, "
+            "activity_type=EXCLUDED.activity_type, started_at=EXCLUDED.started_at, "
+            "distance_m=EXCLUDED.distance_m, duration_s=EXCLUDED.duration_s, "
+            "moving_duration_s=EXCLUDED.moving_duration_s, "
+            "elevation_gain_m=EXCLUDED.elevation_gain_m, "
+            "average_hr=EXCLUDED.average_hr, max_hr=EXCLUDED.max_hr, "
+            "average_power=EXCLUDED.average_power, max_power=EXCLUDED.max_power, "
+            "normalized_power=EXCLUDED.normalized_power, "
+            "aerobic_training_effect=EXCLUDED.aerobic_training_effect, "
+            "anaerobic_training_effect=EXCLUDED.anaerobic_training_effect, "
+            "calories=EXCLUDED.calories, average_cadence=EXCLUDED.average_cadence, "
+            "device_name=EXCLUDED.device_name, "
+            "raw_ciphertext=EXCLUDED.raw_ciphertext, synced_at=NOW()",
+            (rider_id, activity["garmin_activity_id"],
+             activity.get("activity_name"), activity.get("activity_type"),
+             activity.get("started_at"), activity.get("distance_m"),
+             activity.get("duration_s"), activity.get("moving_duration_s"),
+             activity.get("elevation_gain_m"), activity.get("average_hr"),
+             activity.get("max_hr"), activity.get("average_power"),
+             activity.get("max_power"), activity.get("normalized_power"),
+             activity.get("aerobic_training_effect"),
+             activity.get("anaerobic_training_effect"),
+             activity.get("calories"), activity.get("average_cadence"),
+             activity.get("device_name"), raw_ciphertext),
+        )
+    conn.commit()
+
+
+def get_recent_garmin_activities(rider_id, limit=10):
+    """Return private normalized activity rows for the owning rider."""
+    limit = max(1, min(int(limit), 50))
+    rows = _execute(
+        "SELECT garmin_activity_id, activity_name, activity_type, started_at, "
+        "distance_m, duration_s, moving_duration_s, elevation_gain_m, "
+        "average_hr, max_hr, average_power, max_power, normalized_power, "
+        "aerobic_training_effect, anaerobic_training_effect, calories, "
+        "average_cadence, device_name, synced_at "
+        "FROM garmin_activity WHERE rider_id=%s "
+        "ORDER BY started_at DESC NULLS LAST LIMIT %s",
+        (rider_id, limit),
+    ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def mark_garmin_reauth_required(rider_id):

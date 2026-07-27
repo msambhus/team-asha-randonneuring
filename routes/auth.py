@@ -292,6 +292,10 @@ def my_profile():
         models.get_latest_garmin_performance_snapshot(rider_id)
         if garmin_connection else None
     )
+    garmin_activities = (
+        models.get_recent_garmin_activities(rider_id, limit=10)
+        if garmin_connection else []
+    )
     strava_activities = []
     fitness_score = None
 
@@ -321,6 +325,7 @@ def my_profile():
                            strava_connection=strava_connection,
                            garmin_connection=garmin_connection,
                            garmin_snapshot=garmin_snapshot,
+                           garmin_activities=garmin_activities,
                            strava_activities=strava_activities,
                            fitness_score=fitness_score)
 

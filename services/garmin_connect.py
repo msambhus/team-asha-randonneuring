@@ -28,6 +28,7 @@ _MAX_METRICS = "/metrics-service/metrics/maxmet/daily"
 _TRAINING_READINESS = "/metrics-service/metrics/trainingreadiness"
 _TRAINING_STATUS = "/metrics-service/metrics/trainingstatus/aggregated"
 _ACTIVITIES = "/activitylist-service/activities/search/activities"
+_ACTIVITY = "/activity-service/activity"
 
 
 def _date(value: str | date) -> str:
@@ -85,6 +86,62 @@ class GarminPerformanceClient:
             params["activityType"] = activity_type
         result = self.auth.connectapi(_ACTIVITIES, params=params)
         return result if isinstance(result, list) else []
+
+    def activity(self, activity_id: int) -> dict[str, Any]:
+        """Return one activity summary using the upstream read endpoint."""
+        if not isinstance(activity_id, int) or activity_id < 1:
+            raise ValueError("invalid Garmin activity id")
+        result = self.auth.connectapi(f"{_ACTIVITY}/{activity_id}")
+        return result if isinstance(result, dict) else {}
+
+    def activity_details(self, activity_id: int, *, max_chart: int = 2000,
+                         max_polyline: int = 4000) -> dict[str, Any]:
+        """Return bounded chart/polyline details for one Garmin activity."""
+        if not isinstance(activity_id, int) or activity_id < 1:
+            raise ValueError("invalid Garmin activity id")
+        if not 0 < max_chart <= 5000 or not 0 <= max_polyline <= 10000:
+            raise ValueError("invalid Garmin activity detail bounds")
+        result = self.auth.connectapi(
+            f"{_ACTIVITY}/{activity_id}/details",
+            params={"maxChartSize": str(max_chart),
+                    "maxPolylineSize": str(max_polyline)},
+        )
+        return result if isinstance(result, dict) else {}
+
+    @staticmethod
+    def normalize_activity(activity: dict[str, Any]) -> dict[str, Any]:
+        """Normalize stable cycling fields while retaining raw data separately."""
+        activity_id = activity.get("activityId")
+        if not isinstance(activity_id, int) or activity_id < 1:
+            raise ValueError("Garmin activity has no valid activityId")
+        activity_type = activity.get("activityType") or {}
+        return {
+            "garmin_activity_id": activity_id,
+            "activity_name": activity.get("activityName"),
+            "activity_type": (
+                activity_type.get("typeKey")
+                if isinstance(activity_type, dict) else str(activity_type)),
+            "started_at": (
+                activity.get("startTimeGMT")
+                or activity.get("startTimeLocal")),
+            "distance_m": activity.get("distance"),
+            "duration_s": activity.get("duration"),
+            "moving_duration_s": activity.get("movingDuration"),
+            "elevation_gain_m": activity.get("elevationGain"),
+            "average_hr": activity.get("averageHR"),
+            "max_hr": activity.get("maxHR"),
+            "average_power": activity.get("avgPower"),
+            "max_power": activity.get("maxPower"),
+            "normalized_power": activity.get("normPower"),
+            "aerobic_training_effect": activity.get("aerobicTrainingEffect"),
+            "anaerobic_training_effect": activity.get(
+                "anaerobicTrainingEffect"),
+            "calories": activity.get("calories"),
+            "average_cadence": (
+                activity.get("averageBikingCadenceInRevPerMinute")
+                or activity.get("averageCadence")),
+            "device_name": activity.get("deviceName"),
+        }
 
     def performance_snapshot(self, on_date: str | date) -> dict[str, Any]:
         """Fetch one private, read-only daily performance snapshot."""
