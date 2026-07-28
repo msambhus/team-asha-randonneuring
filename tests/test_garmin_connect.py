@@ -234,6 +234,33 @@ def test_activity_details_is_bounded_and_read_only():
         "maxChartSize": "1000", "maxPolylineSize": "0"}
 
 
+def test_activity_splits_are_read_only_and_normalized_across_devices():
+    payload = {
+        "lapDTOs": [{
+            "lapIndex": 1, "distance": 32186.8, "duration": 7200,
+            "movingDuration": 7000, "averageSpeed": 4.598,
+            "averageHR": 141, "maxHR": 166, "avgPower": 151,
+            "normPower": 168,
+            "averageBikingCadenceInRevPerMinute": 72,
+            "elevationGain": 610, "averageTemperature": 18,
+        }]
+    }
+    auth = FakeAuth()
+
+    client = GarminPerformanceClient(auth)
+    client.activity_splits(123)
+    laps = client.normalize_splits(payload)
+
+    path, kwargs = auth.calls[-1]
+    assert path == "/activity-service/activity/123/splits"
+    assert kwargs == {}
+    assert laps[0]["lap_number"] == 1
+    assert laps[0]["distance_m"] == 32186.8
+    assert laps[0]["normalized_power"] == 168
+    assert laps[0]["average_cadence"] == 72
+    assert laps[0]["average_temperature_c"] == 18
+
+
 def test_client_exposes_no_garmin_write_operations():
     public = set(dir(GarminPerformanceClient))
     assert not any(name.startswith((

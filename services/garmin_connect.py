@@ -252,6 +252,57 @@ class GarminPerformanceClient:
         )
         return result if isinstance(result, dict) else {}
 
+    def activity_splits(self, activity_id: int) -> dict[str, Any]:
+        """Return Garmin's read-only lap/split payload for one activity."""
+        if not isinstance(activity_id, int) or activity_id < 1:
+            raise ValueError("invalid Garmin activity id")
+        result = self.auth.connectapi(
+            f"{_ACTIVITY}/{activity_id}/splits")
+        return result if isinstance(result, dict) else {}
+
+    @staticmethod
+    def normalize_splits(payload: dict[str, Any]) -> list[dict[str, Any]]:
+        """Normalize Garmin laps without depending on one device's envelope."""
+        candidates = None
+        for key in ("lapDTOs", "laps", "splits"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                candidates = value
+                break
+        if candidates is None and isinstance(payload.get("activitySplits"), dict):
+            nested = payload["activitySplits"]
+            for key in ("lapDTOs", "laps", "splits"):
+                if isinstance(nested.get(key), list):
+                    candidates = nested[key]
+                    break
+
+        normalized = []
+        for index, lap in enumerate(candidates or [], start=1):
+            if not isinstance(lap, dict):
+                continue
+            normalized.append({
+                "lap_number": (
+                    lap.get("lapIndex") or lap.get("lapNumber") or index),
+                "started_at": (
+                    lap.get("startTimeGMT") or lap.get("startTimeLocal")),
+                "distance_m": lap.get("distance"),
+                "duration_s": lap.get("duration"),
+                "moving_duration_s": lap.get("movingDuration"),
+                "average_speed_mps": lap.get("averageSpeed"),
+                "elevation_gain_m": lap.get("elevationGain"),
+                "average_hr": lap.get("averageHR"),
+                "max_hr": lap.get("maxHR"),
+                "average_power": lap.get("avgPower"),
+                "max_power": lap.get("maxPower"),
+                "normalized_power": lap.get("normPower"),
+                "average_cadence": (
+                    lap.get("averageBikingCadenceInRevPerMinute")
+                    or lap.get("averageCadence")),
+                "calories": lap.get("calories"),
+                "average_temperature_c": lap.get("averageTemperature"),
+            })
+        return normalized
+
     @staticmethod
     def normalize_activity(activity: dict[str, Any]) -> dict[str, Any]:
         """Normalize stable cycling fields while retaining raw data separately."""
