@@ -107,6 +107,55 @@ def build_provider_metric_comparison(strava_summary, garmin_metrics):
     return comparison
 
 
+def build_garmin_brevet_summary(ride, garmin_metrics):
+    """Build an honest plan-level summary when Garmin is the only recording."""
+    if not ride or not garmin_metrics:
+        return None
+
+    planned_km = _number(ride.get("distance_km"))
+    distance_m = _number(garmin_metrics.get("distance_m"))
+    elapsed_s = _number(garmin_metrics.get("duration_s"))
+    moving_s = _number(garmin_metrics.get("moving_duration_s"))
+    limit_hours = _number(ride.get("time_limit_hours"))
+
+    planned_miles = (
+        planned_km * 0.621371 if planned_km is not None else None)
+    actual_miles = (
+        distance_m / METERS_PER_MILE if distance_m is not None else None)
+    elapsed_min = elapsed_s / 60 if elapsed_s is not None else None
+    moving_min = moving_s / 60 if moving_s is not None else None
+    stopped_min = (
+        max(0, elapsed_min - moving_min)
+        if elapsed_min is not None and moving_min is not None else None)
+    limit_min = limit_hours * 60 if limit_hours is not None else None
+
+    return {
+        "planned_distance_miles": (
+            round(planned_miles, 1) if planned_miles is not None else None),
+        "actual_distance_miles": (
+            round(actual_miles, 1) if actual_miles is not None else None),
+        "distance_delta_miles": (
+            round(actual_miles - planned_miles, 1)
+            if actual_miles is not None and planned_miles is not None
+            else None),
+        "elapsed_time_min": (
+            round(elapsed_min) if elapsed_min is not None else None),
+        "moving_time_min": (
+            round(moving_min) if moving_min is not None else None),
+        "stopped_time_min": (
+            round(stopped_min) if stopped_min is not None else None),
+        "official_limit_min": (
+            round(limit_min) if limit_min is not None else None),
+        "limit_margin_min": (
+            round(limit_min - elapsed_min)
+            if limit_min is not None and elapsed_min is not None else None),
+        "average_moving_speed_mph": (
+            round(actual_miles / (moving_s / 3600), 1)
+            if actual_miles is not None and moving_s and moving_s > 0
+            else None),
+    }
+
+
 def score_pair(garmin, strava):
     """Score one Garmin/Strava candidate and explain every contributing signal."""
     if not (_is_cycling(garmin.get("activity_type"))

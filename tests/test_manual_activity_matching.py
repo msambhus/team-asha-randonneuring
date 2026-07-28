@@ -64,7 +64,9 @@ def test_owned_rider_can_open_private_match_review(client):
          patch("models.get_garmin_brevet_match_review",
                return_value=[]) as activities, \
          patch("models.get_finished_brevets_for_matching",
-               return_value=[]) as brevets:
+               return_value=[]) as brevets, \
+         patch("models.get_rider_by_id",
+               return_value={"id": 42, "rusa_id": 14680}):
         response = client.get("/garmin/ride-matches")
     assert response.status_code == 200
     refresh.assert_called_once_with(42)
@@ -123,3 +125,5 @@ def test_review_template_shows_garmin_and_strava_recording_details():
     assert "strava_distance_m" in template
     assert "source_confidence" in template
     assert "start_delta_minutes" in template
+    assert "ride_strava_analysis" in template
+    assert "current_rusa_id" in template

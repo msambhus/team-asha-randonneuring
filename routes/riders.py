@@ -1163,6 +1163,20 @@ def ride_strava_analysis(rusa_id, ride_id):
     if not show_strava_data:
         abort(403)
 
+    # Garmin is private even when the rider allows public Strava data. Resolve
+    # it before the Strava early-return so Garmin-only brevet Stats can render
+    # for the owning rider without exposing device metrics publicly.
+    garmin_metrics = None
+    if is_own_profile:
+        try:
+            from models import get_garmin_metrics_for_brevet
+            garmin_metrics = get_garmin_metrics_for_brevet(
+                rider['id'], ride_id)
+        except Exception:
+            current_app.logger.exception(
+                'ride_strava_analysis: Garmin metrics failed for ride %s',
+                ride_id)
+
     # Look for existing match
     match = get_strava_ride_match(rider['id'], ride_id)
 
@@ -1180,12 +1194,20 @@ def ride_strava_analysis(rusa_id, ride_id):
             match = get_strava_ride_match(rider['id'], ride_id)
 
     if not match:
+        garmin_summary = None
+        if garmin_metrics:
+            from services.activity_matching import build_garmin_brevet_summary
+            garmin_summary = build_garmin_brevet_summary(
+                dict(ride), garmin_metrics)
         return render_template('strava_ride_analysis.html',
                                rider=rider, ride=ride, activity=None,
                                comparison=None, error=None,
                                has_plan=False, has_custom=False, plan_slug=None,
                                is_own_profile=is_own_profile,
-                               stop_wind=None)
+                               stop_wind=None,
+                               garmin_metrics=garmin_metrics,
+                               garmin_summary=garmin_summary,
+                               provider_comparison=[])
 
     # Load plan stops if available. Resolve the base plan FK-first, then by
     # route-name match (web parity — see services/plan_match): a ride whose
@@ -1418,14 +1440,10 @@ def ride_strava_analysis(rusa_id, ride_id):
     # Garmin metrics are private supplemental provenance for the owning rider.
     # Strava streams remain the plan/map/segment source; Garmin never silently
     # replaces those values.
-    garmin_metrics = None
     provider_comparison = []
-    if is_own_profile:
+    if garmin_metrics:
         try:
-            from models import get_garmin_metrics_for_brevet
-            garmin_metrics = get_garmin_metrics_for_brevet(
-                rider['id'], ride_id)
-            if garmin_metrics and isinstance(comparison, dict):
+            if isinstance(comparison, dict):
                 from services.activity_matching import (
                     build_provider_metric_comparison)
                 provider_comparison = build_provider_metric_comparison(
@@ -1450,6 +1468,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                            stop_notes=stop_notes,
                            overall_note=overall_note,
                            garmin_metrics=garmin_metrics,
+                           garmin_summary=None,
                            provider_comparison=provider_comparison)
 
 

@@ -278,11 +278,13 @@ def ride_matches():
                        and row.get("match_status") != "rejected"
                        for row in activities),
     }
+    rider = models.get_rider_by_id(rider_id)
     return render_template(
         "garmin_ride_matches.html",
         activities=activities,
         brevets=brevets,
         summary=summary,
+        current_rusa_id=(rider or {}).get("rusa_id"),
     )
 
 
