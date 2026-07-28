@@ -221,6 +221,18 @@ document.addEventListener('click', function(event) {
     );
 });
 
+// Back/forward navigation may restore the exact loading DOM from the browser's
+// page cache. Always return Stats links to their normal interactive state.
+window.addEventListener('pageshow', function() {
+    document.querySelectorAll('a.analysis-nav-loading').forEach(function(link) {
+        link.classList.remove('analysis-nav-loading');
+        link.removeAttribute('aria-busy');
+        link.querySelectorAll('.analysis-nav-spinner').forEach(function(spinner) {
+            spinner.remove();
+        });
+    });
+});
+
 // Scroll animations with Intersection Observer
 document.addEventListener('DOMContentLoaded', function() {
     const observerOptions = {
