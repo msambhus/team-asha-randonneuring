@@ -26,6 +26,8 @@
 .calendar-event.workout{background:#f7fafc;border-left-color:#64748b}
 .calendar-event.brevet{background:#fff1f2;border-left-color:#c91f37;color:#7f1d2d;box-shadow:inset 0 0 0 1px #fecdd3}
 .calendar-event-title{display:block;font-weight:800;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.calendar-event:hover,.calendar-event:focus{position:relative;z-index:12;overflow:visible;box-shadow:0 6px 16px rgba(15,23,42,.16);outline:2px solid rgba(37,99,235,.2)}
+.calendar-event:hover .calendar-event-title,.calendar-event:focus .calendar-event-title{white-space:normal;overflow:visible;text-overflow:clip}
 .calendar-event-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:3px;color:var(--text-light)}
 .calendar-grade{color:#fff;border-radius:999px;padding:1px 5px;font-weight:900}
 .upcoming-brevet-section{margin-top:22px}
@@ -279,6 +281,9 @@ function renderRideCalendar() {
     events.filter(function(event) { return event.date === key; }).forEach(function(event) {
       var block = document.createElement('div');
       block.className = 'calendar-event ' + event.kind;
+      block.tabIndex = 0;
+      block.title = event.title;
+      block.setAttribute('aria-label', event.title);
       var primaryMetric = event.metrics.find(function(metric) {
         return /\\b(km|mi)\\b/i.test(metric);
       }) || '';
