@@ -24,6 +24,21 @@ def test_garmin_metrics_lookup_is_owned_and_contains_no_raw_payload():
     assert result["normalized_power"] == 177
 
 
+def test_ride_date_recovery_lookup_is_owned_and_date_scoped():
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {
+        "snapshot_date": "2026-07-27", "sleep_score": 80,
+    }
+    with patch("models._execute", return_value=cursor) as execute:
+        result = models.get_garmin_performance_snapshot_for_date(
+            42, "2026-07-27")
+
+    sql, params = execute.call_args.args
+    assert "rider_id=%s AND snapshot_date=%s" in sql
+    assert params == (42, "2026-07-27")
+    assert result["sleep_score"] == 80
+
+
 def test_stats_template_labels_garmin_without_replacing_strava_contract():
     template = (
         Path(__file__).parents[1] / "templates" / "strava_ride_analysis.html"
@@ -127,8 +142,9 @@ def test_garmin_only_stats_route_is_owner_only(client):
                return_value=None), \
          patch("models.get_garmin_metrics_for_brevet",
                return_value=garmin) as get_garmin, \
-         patch("models.get_latest_garmin_performance_snapshot",
-               return_value=None), \
+         patch("models.get_garmin_laps_for_brevet", return_value=[]), \
+         patch("models.get_garmin_performance_snapshot_for_date",
+               return_value=None) as get_recovery, \
          patch("models.get_strava_recordings_for_brevet",
                return_value=[]):
         response = client.get(
@@ -140,6 +156,7 @@ def test_garmin_only_stats_route_is_owner_only(client):
     assert b"Edge 1050" in response.data
     assert b"Route maps, detected stops" in response.data
     get_garmin.assert_called_once_with(42, 10)
+    get_recovery.assert_called_once_with(42, "2026-07-27")
 
     with client.session_transaction() as sess:
         sess.clear()

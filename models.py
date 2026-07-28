@@ -2404,6 +2404,21 @@ def get_latest_garmin_performance_snapshot(rider_id):
     return dict(row) if row else None
 
 
+def get_garmin_performance_snapshot_for_date(rider_id, snapshot_date):
+    """Return the owning rider's Garmin context only for the requested date."""
+    row = _execute(
+        "SELECT snapshot_date, resting_heart_rate, hrv_status, sleep_score, "
+        "body_battery, training_readiness, vo2_max_cycling, training_status, "
+        "readiness_level, readiness_feedback, recovery_time_minutes, "
+        "sleep_factor_percent, acwr_factor_percent, hrv_factor_percent, "
+        "endurance_score, acute_training_load, load_level_trend, "
+        "synced_at FROM garmin_performance_snapshot "
+        "WHERE rider_id=%s AND snapshot_date=%s LIMIT 1",
+        (rider_id, snapshot_date),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def upsert_garmin_activities(rider_id, activities):
     """Upsert normalized, encrypted Garmin activities for one owning rider."""
     conn = get_db()

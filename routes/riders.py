@@ -1178,15 +1178,17 @@ def ride_strava_analysis(rusa_id, ride_id):
         try:
             from models import (get_garmin_laps_for_brevet,
                                 get_garmin_metrics_for_brevet,
-                                get_latest_garmin_performance_snapshot,
+                                get_garmin_performance_snapshot_for_date,
                                 get_strava_recordings_for_brevet)
             from services.activity_matching import aggregate_strava_recordings
             garmin_metrics = get_garmin_metrics_for_brevet(
                 rider['id'], ride_id)
             garmin_laps = get_garmin_laps_for_brevet(
                 rider['id'], ride_id)
-            garmin_recovery = get_latest_garmin_performance_snapshot(
-                rider['id'])
+            # Recovery/readiness values are date-specific. Never attach the
+            # rider's latest snapshot to an older ride.
+            garmin_recovery = get_garmin_performance_snapshot_for_date(
+                rider['id'], ride.get('date'))
             strava_recordings = get_strava_recordings_for_brevet(
                 rider['id'], ride_id)
             if len(strava_recordings) > 1:
