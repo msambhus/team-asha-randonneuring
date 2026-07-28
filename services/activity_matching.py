@@ -4,6 +4,8 @@ from decimal import Decimal
 
 AUTO_MATCH_THRESHOLD = 0.82
 AMBIGUITY_MARGIN = 0.12
+METERS_PER_MILE = 1609.344
+FEET_PER_METER = 3.28084
 
 
 def _number(value):
@@ -33,6 +35,76 @@ def _relative_difference(left, right):
     if left is None or right is None or max(left, right) <= 0:
         return None
     return abs(left - right) / max(left, right)
+
+
+def build_provider_metric_comparison(strava_summary, garmin_metrics):
+    """Preserve both providers and flag only material recording differences."""
+    if not strava_summary or not garmin_metrics:
+        return []
+
+    metrics = [
+        {
+            "key": "distance", "label": "Distance", "unit": "mi",
+            "strava": _number(strava_summary.get("actual_distance_miles")),
+            "garmin": (
+                _number(garmin_metrics.get("distance_m")) / METERS_PER_MILE
+                if garmin_metrics.get("distance_m") is not None else None),
+            "absolute_floor": 0.5, "relative_floor": 0.02, "precision": 1,
+        },
+        {
+            "key": "elapsed_time", "label": "Elapsed time", "unit": "min",
+            "strava": _number(
+                strava_summary.get("actual_elapsed_time_min")),
+            "garmin": (
+                _number(garmin_metrics.get("duration_s")) / 60
+                if garmin_metrics.get("duration_s") is not None else None),
+            "absolute_floor": 5, "relative_floor": 0.05, "precision": 0,
+        },
+        {
+            "key": "moving_time", "label": "Moving time", "unit": "min",
+            "strava": _number(
+                strava_summary.get("actual_moving_time_min")),
+            "garmin": (
+                _number(garmin_metrics.get("moving_duration_s")) / 60
+                if garmin_metrics.get("moving_duration_s") is not None
+                else None),
+            "absolute_floor": 5, "relative_floor": 0.05, "precision": 0,
+        },
+        {
+            "key": "elevation", "label": "Elevation gain", "unit": "ft",
+            "strava": _number(strava_summary.get("actual_elevation_ft")),
+            "garmin": (
+                _number(garmin_metrics.get("elevation_gain_m"))
+                * FEET_PER_METER
+                if garmin_metrics.get("elevation_gain_m") is not None
+                else None),
+            "absolute_floor": 200, "relative_floor": 0.10, "precision": 0,
+        },
+    ]
+
+    comparison = []
+    for metric in metrics:
+        left = metric["strava"]
+        right = metric["garmin"]
+        if left is None or right is None:
+            continue
+        delta = right - left
+        relative = _relative_difference(left, right)
+        material = (
+            abs(delta) >= metric["absolute_floor"]
+            and relative is not None
+            and relative >= metric["relative_floor"]
+        )
+        comparison.append({
+            **metric,
+            "strava": round(left, metric["precision"]),
+            "garmin": round(right, metric["precision"]),
+            "delta": round(delta, metric["precision"]),
+            "difference_percent": (
+                round(relative * 100, 1) if relative is not None else None),
+            "material": material,
+        })
+    return comparison
 
 
 def score_pair(garmin, strava):

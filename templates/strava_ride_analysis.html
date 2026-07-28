@@ -619,6 +619,49 @@
 </div>
 {% endif %}
 
+{% if is_own_profile and provider_comparison %}
+<div class="hr-power-card">
+    <div style="font-size:1.1rem;font-weight:700;color:var(--text);margin-bottom:4px;">Recording Source Comparison</div>
+    <div style="font-size:.72rem;color:var(--text-light);margin-bottom:14px;">
+        Both provider values are preserved. Strava supplies the route, stops, and plan comparison;
+        Garmin supplies supplemental device metrics. Differences can result from pause handling,
+        GPS sampling, elevation correction, or recording gaps.
+    </div>
+    <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:.78rem;">
+            <thead>
+                <tr style="border-bottom:1px solid #cbd5e1;color:var(--text-light);text-align:right;">
+                    <th style="padding:8px;text-align:left;">Metric</th>
+                    <th style="padding:8px;">Strava</th>
+                    <th style="padding:8px;">Garmin</th>
+                    <th style="padding:8px;">Difference</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for metric in provider_comparison %}
+                <tr style="border-bottom:1px solid #e2e8f0;{{ 'background:#fff7ed;' if metric.material else '' }}">
+                    <td style="padding:9px 8px;font-weight:700;">
+                        {{ metric.label }}
+                        {% if metric.material %}
+                        <span style="margin-left:5px;padding:2px 5px;border-radius:999px;background:#ffedd5;color:#9a3412;font-size:.62rem;text-transform:uppercase;">Review</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding:9px 8px;text-align:right;">{{ metric.strava }} {{ metric.unit }}</td>
+                    <td style="padding:9px 8px;text-align:right;">{{ metric.garmin }} {{ metric.unit }}</td>
+                    <td style="padding:9px 8px;text-align:right;color:{{ '#9a3412' if metric.material else 'var(--text-light)' }};">
+                        {{ '+' if metric.delta > 0 else '' }}{{ metric.delta }} {{ metric.unit }}
+                        {% if metric.difference_percent is not none %}
+                        ({{ metric.difference_percent }}%)
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 {# --- Interactive Route Map --- #}
 {% if map_data and map_data.track %}
 <div class="chart-container" style="margin-bottom:24px;">

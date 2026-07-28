@@ -1419,11 +1419,17 @@ def ride_strava_analysis(rusa_id, ride_id):
     # Strava streams remain the plan/map/segment source; Garmin never silently
     # replaces those values.
     garmin_metrics = None
+    provider_comparison = []
     if is_own_profile:
         try:
             from models import get_garmin_metrics_for_brevet
             garmin_metrics = get_garmin_metrics_for_brevet(
                 rider['id'], ride_id)
+            if garmin_metrics and isinstance(comparison, dict):
+                from services.activity_matching import (
+                    build_provider_metric_comparison)
+                provider_comparison = build_provider_metric_comparison(
+                    comparison.get('summary'), garmin_metrics)
         except Exception:
             current_app.logger.exception(
                 'ride_strava_analysis: Garmin metrics failed for ride %s',
@@ -1443,7 +1449,8 @@ def ride_strava_analysis(rusa_id, ride_id):
                            segment_notes=segment_notes,
                            stop_notes=stop_notes,
                            overall_note=overall_note,
-                           garmin_metrics=garmin_metrics)
+                           garmin_metrics=garmin_metrics,
+                           provider_comparison=provider_comparison)
 
 
 @riders_bp.route('/rider/<int:rusa_id>/ride/<int:ride_id>/strava-retry', methods=['POST'])

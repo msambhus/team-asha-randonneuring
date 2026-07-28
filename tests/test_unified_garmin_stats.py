@@ -30,6 +30,8 @@ def test_stats_template_labels_garmin_without_replacing_strava_contract():
     assert "Supplemental device-recorded values" in template
     assert "Strava remains the source for the route, stops, and segment" in template
     assert "{% if is_own_profile and garmin_metrics %}" in template
+    assert "{% if is_own_profile and provider_comparison %}" in template
+    assert "Recording Source Comparison" in template
     assert "View on Strava" in template
     assert "Route Map" in template
     assert "Plan vs Actual Summary" in template
