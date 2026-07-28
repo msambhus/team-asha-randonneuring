@@ -1,4 +1,6 @@
 """Authentication routes - Google OAuth login and profile setup."""
+from datetime import datetime, timedelta
+
 from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
                    render_template, request, session, url_for)
 from authlib.integrations.flask_client import OAuth
@@ -375,7 +377,49 @@ def my_rides():
         strava_activities=strava_activities,
         garmin_activities=garmin_activities,
     )
-    upcoming = models.get_rider_upcoming_signups(rider_id)
+    from services.fitness import assess_readiness, score_all_activities
+
+    # Apply the existing per-workout training rating after provider records have
+    # been collapsed. A Garmin/Strava pair therefore receives one rating rather
+    # than appearing as two independently scored workouts.
+    ratings_by_strava_id = {
+        str(row.get('strava_activity_id')): row
+        for row in score_all_activities(strava_activities)
+        if row.get('strava_activity_id') is not None
+    }
+    for activity in activity_feed:
+        rating = ratings_by_strava_id.get(
+            str(activity.get('strava_activity_id')))
+        if rating:
+            activity.update({
+                'rating_score': rating.get('total'),
+                'rating_grade': rating.get('grade'),
+                'rating_color': rating.get('color'),
+                'rating_trend': rating.get('trend'),
+            })
+
+    # Readiness belongs with the private upcoming-brevet calendar. Use only the
+    # most recent 28 days even though the activity feed itself spans 120 days.
+    recent_cutoff = datetime.now().date() - timedelta(days=28)
+    recent_training = []
+    for row in strava_activities:
+        raw_date = row.get('start_date_local') or row.get('start_date')
+        try:
+            activity_date = datetime.fromisoformat(
+                str(raw_date).replace('Z', '+00:00')).date()
+        except (TypeError, ValueError):
+            continue
+        if activity_date >= recent_cutoff:
+            recent_training.append(row)
+
+    upcoming = []
+    for row in models.get_rider_upcoming_signups(rider_id):
+        ride = dict(row)
+        ride['readiness'] = (
+            assess_readiness(recent_training, ride)
+            if strava_activities else None
+        )
+        upcoming.append(ride)
     strava_connection = models.get_strava_connection(rider_id)
     current_season = models.get_current_season()
     brevet_history = []

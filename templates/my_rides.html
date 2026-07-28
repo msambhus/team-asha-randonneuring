@@ -10,9 +10,26 @@
 .provider-strava{background:#fff0e9;color:#c43d00}.provider-garmin{background:#eaf2ff;color:#174ea6}
 .brevet-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.68rem;font-weight:800;margin-right:4px;background:#e7effa;color:var(--primary);border:1px solid #bfd0e8}
 .ride-metrics{display:flex;gap:18px;flex-wrap:wrap;color:var(--text-light);font-size:.82rem;margin-top:6px}
-#ride-feed.calendar-view{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
-#ride-feed.calendar-view .private-ride{display:block;border:1px solid #e2e8f0;border-radius:10px;padding:14px}
+.training-rating{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;color:#fff;font-size:.7rem;font-weight:850}
+.readiness-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;color:#fff;font-size:.72rem;font-weight:800}
+.ride-calendar-shell{border:1px solid #dbe4ef;border-radius:12px;overflow:hidden;background:#fff}
+.ride-calendar-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid #dbe4ef}
+.ride-calendar-toolbar h2{margin:0;color:var(--primary);font-size:1.2rem}
+.ride-calendar-nav{border:1px solid #cbd5e1;background:#fff;color:var(--primary);border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:1.1rem;font-weight:800}
+.ride-calendar-week,.ride-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.ride-calendar-week div{padding:8px 4px;text-align:center;background:#f8fafc;color:var(--text-light);font-size:.7rem;font-weight:800;text-transform:uppercase}
+.calendar-day{min-height:128px;padding:7px;border-top:1px solid #edf2f7;border-right:1px solid #edf2f7;background:#fff}
+.calendar-day:nth-child(7n){border-right:0}.calendar-day.outside{background:#f8fafc;color:#94a3b8}
+.calendar-day-number{font-size:.72rem;font-weight:800;margin-bottom:5px}
+.calendar-event{display:block;margin:4px 0;padding:6px;border-radius:7px;background:#eef4fb;border-left:3px solid var(--primary);font-size:.68rem;line-height:1.25;color:var(--text);text-decoration:none;overflow:hidden}
+.calendar-event.workout{background:#f7fafc}.calendar-event.brevet{background:#eef4fb}
+.calendar-event-title{display:block;font-weight:800;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.calendar-event-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:3px;color:var(--text-light)}
+.calendar-grade{color:#fff;border-radius:999px;padding:1px 5px;font-weight:900}
 @media(max-width:640px){.private-ride{grid-template-columns:1fr}}
+@media(max-width:760px){
+  .ride-calendar-shell{overflow-x:auto}.ride-calendar-week,.ride-calendar-grid{min-width:720px}
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -21,6 +38,30 @@
   <p>Your private training, brevet plans, and matched ride stats.</p>
 </div>
 <div class="container section">
+  <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px;">
+    <div>
+      <h2 style="margin:0;color:var(--primary);">Training calendar</h2>
+      <p style="margin:4px 0 0;color:var(--text-light);">Recent workouts and upcoming brevets in one private view.</p>
+    </div>
+    <div class="ride-view-toggle" aria-label="Ride view">
+      <button type="button" class="active" data-view="calendar">Calendar</button>
+      <button type="button" data-view="timeline">Timeline</button>
+    </div>
+  </div>
+
+  <section id="calendar-panel" class="ride-calendar-shell" aria-label="Training and brevet calendar">
+    <div class="ride-calendar-toolbar">
+      <button type="button" class="ride-calendar-nav" id="calendar-prev" aria-label="Previous month">&lsaquo;</button>
+      <h2 id="calendar-month"></h2>
+      <button type="button" class="ride-calendar-nav" id="calendar-next" aria-label="Next month">&rsaquo;</button>
+    </div>
+    <div class="ride-calendar-week" aria-hidden="true">
+      <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+    </div>
+    <div id="calendar-grid" class="ride-calendar-grid"></div>
+  </section>
+
+  <div id="timeline-panel" hidden>
   <div class="card">
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
       <div>
@@ -31,8 +72,21 @@
     </div>
     {% if upcoming %}
       {% for ride in upcoming %}
-      <div class="private-ride">
-        <div><strong>{{ ride.name|clean_name }}</strong><div class="ride-metrics"><span>{{ ride.date }}</span><span>{{ ride.distance_km }} km</span><span>{{ ride.status|title }}</span></div></div>
+      <div class="private-ride calendar-source" data-calendar-kind="brevet" data-calendar-date="{{ ride.date }}">
+        <div>
+          <strong>{{ ride.name|clean_name }}</strong>
+          <div class="ride-metrics">
+            <span>{{ ride.date }}</span>
+            {% if ride.distance_km %}<span>{{ ride.distance_km }} km</span>{% elif ride.distance_miles %}<span>{{ ride.distance_miles|round(0)|int }} mi</span>{% endif %}
+            <span>{{ ride.signup_status|default(ride.status)|title }}</span>
+            {% if ride.readiness %}
+            <span class="readiness-pill" style="background:{{ ride.readiness.color }}" title="Readiness score {{ ride.readiness.score }} out of 100">
+              {{ ride.readiness.score }} · {% if ride.readiness.level == 'ready' %}Ready{% elif ride.readiness.level == 'caution' %}Needs work{% else %}Not ready{% endif %}
+            </span>
+            {% endif %}
+          </div>
+        </div>
+        {% if ride.plan_slug %}<a class="btn" href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}">Plan</a>{% endif %}
       </div>
       {% endfor %}
     {% else %}
@@ -46,20 +100,22 @@
         <h2 style="margin:0;color:var(--primary);">Recent rides</h2>
         <p style="margin:4px 0 0;color:var(--text-light);">Matched Garmin and Strava recordings appear once.</p>
       </div>
-      <div class="ride-view-toggle" aria-label="Ride view">
-        <button type="button" class="active" data-view="timeline">Timeline</button>
-        <button type="button" data-view="calendar">Calendar</button>
-      </div>
     </div>
     <div id="ride-feed">
     {% for activity in activity_feed %}
-      <article class="private-ride">
+      <article class="private-ride calendar-source" data-calendar-kind="workout" data-calendar-date="{{ activity.started_at[:10] if activity.started_at else '' }}">
         <div>
           <div>
             {% if activity.ride_id %}<span class="brevet-badge">Brevet</span>{% endif %}
             {% for provider in activity.providers %}
             <span class="provider-badge provider-{{ provider|lower }}">{{ provider }}</span>
             {% endfor %}
+            {% if activity.rating_grade %}
+            <span class="training-rating" style="background:{{ activity.rating_color }}" title="Workout rating {{ activity.rating_score }} out of 100">
+              {{ activity.rating_grade }} · {{ activity.rating_score }}
+              {% if activity.rating_trend == 'building' %}▲{% elif activity.rating_trend == 'declining' %}▼{% endif %}
+            </span>
+            {% endif %}
           </div>
           <strong>{{ activity.ride_name or activity.name }}</strong>
           <div class="ride-metrics">
@@ -86,6 +142,7 @@
       {% if garmin_connected %}<a class="btn" style="border:1px solid var(--primary);color:var(--primary);background:#fff;" href="{{ url_for('garmin.ride_matches') }}">Review ride matches</a>{% endif %}
       {% if rider.rusa_id %}<a class="btn" style="border:1px solid var(--primary);color:var(--primary);background:#fff;" href="{{ url_for('riders.rider_profile', rusa_id=rider.rusa_id) }}">Public brevet history</a>{% endif %}
     </div>
+  </div>
   </div>
 
   <div class="card">
@@ -114,12 +171,99 @@
 {% endblock %}
 {% block extra_js %}
 <script>
+var calendarCursor = new Date();
+
+function calendarEvents() {
+  return Array.from(document.querySelectorAll('.calendar-source')).map(function(item) {
+    var metrics = Array.from(item.querySelectorAll('.ride-metrics span')).map(function(span) {
+      return span.textContent.trim();
+    });
+    var title = item.querySelector('strong');
+    var rating = item.querySelector('.training-rating');
+    var readiness = item.querySelector('.readiness-pill');
+    return {
+      date: item.dataset.calendarDate,
+      kind: item.dataset.calendarKind,
+      title: title ? title.textContent.trim() : 'Activity',
+      metrics: metrics,
+      rating: rating ? rating.textContent.trim() : '',
+      ratingColor: rating ? rating.style.backgroundColor : '',
+      readiness: readiness ? readiness.textContent.trim() : '',
+      readinessColor: readiness ? readiness.style.backgroundColor : ''
+    };
+  }).filter(function(event) { return /^\d{4}-\d{2}-\d{2}$/.test(event.date); });
+}
+
+function escapeCalendarText(value) {
+  return String(value || '').replace(/[&<>"']/g, function(character) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character];
+  });
+}
+
+function renderRideCalendar() {
+  var year = calendarCursor.getFullYear();
+  var month = calendarCursor.getMonth();
+  document.getElementById('calendar-month').textContent =
+    new Intl.DateTimeFormat(undefined, {month:'long', year:'numeric'}).format(calendarCursor);
+
+  var first = new Date(year, month, 1);
+  var gridStart = new Date(year, month, 1 - first.getDay());
+  var events = calendarEvents();
+  var grid = document.getElementById('calendar-grid');
+  grid.innerHTML = '';
+
+  for (var offset = 0; offset < 42; offset += 1) {
+    var day = new Date(gridStart);
+    day.setDate(gridStart.getDate() + offset);
+    var key = [
+      day.getFullYear(),
+      String(day.getMonth() + 1).padStart(2, '0'),
+      String(day.getDate()).padStart(2, '0')
+    ].join('-');
+    var cell = document.createElement('div');
+    cell.className = 'calendar-day' + (day.getMonth() === month ? '' : ' outside');
+    cell.innerHTML = '<div class="calendar-day-number">' + day.getDate() + '</div>';
+
+    events.filter(function(event) { return event.date === key; }).forEach(function(event) {
+      var block = document.createElement('div');
+      block.className = 'calendar-event ' + event.kind;
+      var primaryMetric = event.metrics.find(function(metric) {
+        return /\\b(km|mi)\\b/i.test(metric);
+      }) || '';
+      var badge = event.rating
+        ? '<span class="calendar-grade" style="background:' + event.ratingColor + '">' + escapeCalendarText(event.rating) + '</span>'
+        : (event.readiness
+          ? '<span class="calendar-grade" style="background:' + event.readinessColor + '">' + escapeCalendarText(event.readiness) + '</span>'
+          : '');
+      block.innerHTML =
+        '<span class="calendar-event-title">' + escapeCalendarText(event.title) + '</span>' +
+        '<span class="calendar-event-meta">' +
+          (primaryMetric ? '<span>' + escapeCalendarText(primaryMetric) + '</span>' : '') + badge +
+        '</span>';
+      cell.appendChild(block);
+    });
+    grid.appendChild(cell);
+  }
+}
+
 document.querySelectorAll('.ride-view-toggle button').forEach(function(button){
   button.addEventListener('click', function(){
     document.querySelectorAll('.ride-view-toggle button').forEach(function(item){item.classList.remove('active');});
     button.classList.add('active');
-    document.getElementById('ride-feed').classList.toggle('calendar-view', button.dataset.view === 'calendar');
+    var showCalendar = button.dataset.view === 'calendar';
+    document.getElementById('calendar-panel').hidden = !showCalendar;
+    document.getElementById('timeline-panel').hidden = showCalendar;
+    if (showCalendar) renderRideCalendar();
   });
 });
+document.getElementById('calendar-prev').addEventListener('click', function(){
+  calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
+  renderRideCalendar();
+});
+document.getElementById('calendar-next').addEventListener('click', function(){
+  calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 1);
+  renderRideCalendar();
+});
+renderRideCalendar();
 </script>
 {% endblock %}

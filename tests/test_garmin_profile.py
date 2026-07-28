@@ -103,7 +103,8 @@ def test_my_rides_collapses_explicit_garmin_strava_match(client, app):
     strava = {
         "strava_activity_id": 101, "name": "Morning Ride",
         "start_date_local": "2026-07-27T06:00:00", "distance": 16093.44,
-        "elapsed_time": 3600,
+        "elapsed_time": 3600, "moving_time": 3400,
+        "activity_type": "Ride", "total_elevation_gain": 300,
     }
     garmin = {
         "garmin_activity_id": 202, "strava_activity_id": 101,
@@ -121,7 +122,12 @@ def test_my_rides_collapses_explicit_garmin_strava_match(client, app):
          patch("routes.auth.models.get_garmin_connection",
                return_value={"rider_id": 42}), \
          patch("routes.auth.models.get_rider_upcoming_signups",
-               return_value=[]), \
+               return_value=[{
+                   "id": 3091, "name": "SCR 200K",
+                   "date": "2026-08-15", "distance_km": 200,
+                   "distance_miles": None, "elevation_ft": 5000,
+                   "signup_status": "GOING", "plan_slug": "scr-200k",
+               }]), \
          patch("routes.auth.models.get_strava_connection",
                return_value={"rider_id": 42}), \
          patch("routes.auth.models.get_current_season",
@@ -138,3 +144,10 @@ def test_my_rides_collapses_explicit_garmin_strava_match(client, app):
     assert b"Calendar" in response.data
     assert b"Brevet" in response.data
     assert b"SCR 400K" in response.data
+    assert b"SCR 200K" in response.data
+    assert b"200 km" in response.data
+    assert b"Workout rating" in response.data
+    assert b"Readiness score" in response.data
+    assert b'id="calendar-grid"' in response.data
+    assert b'data-calendar-kind="workout"' in response.data
+    assert b'data-calendar-kind="brevet"' in response.data
