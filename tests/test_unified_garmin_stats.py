@@ -45,6 +45,15 @@ def test_stats_template_labels_garmin_without_replacing_strava_contract():
     assert "do not replace Strava route, stop, or control analysis" in lap_partial
 
 
+def test_stats_template_rounds_decimal_garmin_metrics():
+    template = (
+        Path(__file__).parents[1] / "templates" / "strava_ride_analysis.html"
+    ).read_text()
+    assert template.count(
+        "(value|round(0)|int) if suffix else (value|round(2))"
+    ) == 2
+
+
 def test_garmin_lap_lookup_is_owned_and_excludes_encrypted_payload():
     cursor = MagicMock()
     cursor.fetchall.return_value = [{
