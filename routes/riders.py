@@ -1736,8 +1736,9 @@ def debug_match_check(rider_id, ride_id):
 def my_strava_analysis():
     """Private page: rider's Strava analysis for all brevet rides."""
     from auth import profile_required as _profile_required
-    from models import (get_strava_connection, get_all_seasons, get_current_season,
-                        get_rider_participation, _execute)
+    from models import (get_strava_connection, get_garmin_connection,
+                        get_garmin_metrics_for_brevet, get_all_seasons,
+                        get_current_season, get_rider_participation, _execute)
     from flask import flash
 
     # Auth check — always enforce authentication; never bypass for debug mode
@@ -1760,10 +1761,11 @@ def my_strava_analysis():
         return redirect(url_for('main.index'))
     rider = dict(rider_row)
 
-    # Check Strava connection
+    # Either private activity source can power the brevet Stats index.
     strava_connection = get_strava_connection(rider_id)
-    if not strava_connection:
-        flash('Connect your Strava account first to see ride analysis.', 'info')
+    garmin_connection = get_garmin_connection(rider_id)
+    if not strava_connection and not garmin_connection:
+        flash('Connect Strava or Garmin first to see ride analysis.', 'info')
         return redirect(url_for('auth.my_profile'))
 
     # Load all seasons and participation
@@ -1801,6 +1803,7 @@ def my_strava_analysis():
             has_plan = bool(p.get('ride_plan_id'))
             match_info = strava_matches.get(ride_id_val)
             activity_data = None
+            garmin_data = None
 
             if match_info:
                 # Get full activity data from strava_activity table
@@ -1840,6 +1843,48 @@ def my_strava_analysis():
                         'suffer_score': a.get('suffer_score'),
                     }
 
+            try:
+                garmin_metrics = get_garmin_metrics_for_brevet(
+                    rider_id, ride_id_val)
+            except Exception as e:
+                current_app.logger.error(
+                    'Garmin metrics lookup failed for ride %s: %s',
+                    ride_id_val, e, exc_info=True)
+                garmin_metrics = None
+
+            if garmin_metrics:
+                distance_miles = (
+                    float(garmin_metrics.get('distance_m') or 0)
+                    / METERS_PER_MILE)
+                moving_time_min = (
+                    float(garmin_metrics.get('moving_duration_s') or 0) / 60)
+                elapsed_time_min = (
+                    float(garmin_metrics.get('duration_s') or 0) / 60)
+                garmin_data = {
+                    'distance_miles': round(distance_miles, 1),
+                    'moving_time_hrs': int(moving_time_min // 60),
+                    'moving_time_min': int(moving_time_min % 60),
+                    'elapsed_time_hrs': int(elapsed_time_min // 60),
+                    'elapsed_time_min': int(elapsed_time_min % 60),
+                    'stopped_time_min': round(max(
+                        0, elapsed_time_min - moving_time_min)),
+                    'elevation_ft': round(
+                        float(garmin_metrics.get('elevation_gain_m') or 0)
+                        * 3.28084),
+                    'average_heartrate': garmin_metrics.get('average_hr'),
+                    'average_watts': garmin_metrics.get('average_power'),
+                    'normalized_power': garmin_metrics.get('normalized_power'),
+                    'average_cadence': garmin_metrics.get('average_cadence'),
+                    'calories': garmin_metrics.get('calories'),
+                    'device_name': garmin_metrics.get('device_name'),
+                }
+
+            sources = []
+            if activity_data:
+                sources.append('strava')
+            if garmin_data:
+                sources.append('garmin')
+
             ride_cards.append(ride_card(
                 ride_id=ride_id_val,
                 ride_name=p.get('ride_name', ''),
@@ -1848,17 +1893,25 @@ def my_strava_analysis():
                 elevation_ft=p.get('elevation_ft'),
                 finish_time=p.get('finish_time'),
                 has_plan=has_plan,
-                has_match=match_info is not None,
+                has_match=bool(sources),
+                has_strava_match=activity_data is not None,
+                has_garmin_match=garmin_data is not None,
+                sources=sources,
                 activity=activity_data,
+                garmin_activity=garmin_data,
             ))
 
         if ride_cards:
+            ride_cards.sort(
+                key=lambda card: str(card.get('date') or ''), reverse=True)
             season_analysis.append(
                 season_group(dict(s), is_cur, ride_cards))
 
     return render_template('my_strava_analysis.html',
                            rider=rider,
-                           season_analysis=season_analysis)
+                           season_analysis=season_analysis,
+                           strava_connected=bool(strava_connection),
+                           garmin_connected=bool(garmin_connection))
 
 
 @riders_bp.route('/my/brevet-comparison')

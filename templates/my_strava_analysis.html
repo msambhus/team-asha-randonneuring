@@ -40,6 +40,15 @@
     background: #dcfce7;
     color: #166534;
 }
+.source-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+.source-badge.strava { background:#fff1eb; color:#c2410c; }
+.source-badge.garmin { background:#e0f2fe; color:#075985; }
 .metric-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
@@ -184,8 +193,8 @@
 {% if not season_analysis %}
 <div class="empty-state">
     <h3>No Finished Rides Yet</h3>
-    <p>Complete some brevet rides and sync Strava to see your ride analysis here.</p>
-    <p style="margin-top:12px; font-size:0.8rem;">Your Strava activities are matched to brevets by date and distance.</p>
+    <p>Complete some brevet rides and sync Strava or Garmin to see your ride analysis here.</p>
+    <p style="margin-top:12px; font-size:0.8rem;">Your private activities are matched to brevets by date and distance.</p>
 </div>
 {% endif %}
 
@@ -207,55 +216,64 @@
         {% if card.has_plan %}
         <span class="plan-badge">Has Ride Plan</span>
         {% endif %}
+        {% if card.has_strava_match %}
+        <span class="source-badge strava">Strava</span>
+        {% endif %}
+        {% if card.has_garmin_match %}
+        <span class="source-badge garmin">Garmin</span>
+        {% endif %}
     </div>
 
     {% if not card.has_match %}
     {# --- No Strava match --- #}
     <div class="no-match-msg">
-        No matching Strava activity found for this ride.
-        <div style="font-size:0.75rem; margin-top:4px; color:#94a3b8;">Make sure the activity is synced and is a "Ride" type activity.</div>
+        No matching Strava or Garmin activity found for this ride.
+        <div style="font-size:0.75rem; margin-top:4px; color:#94a3b8;">Sync a connected account, then review Garmin matches if a ride was not matched automatically.</div>
     </div>
 
-    {% elif card.activity %}
+    {% elif card.activity or card.garmin_activity %}
+    {% set metrics = card.activity or card.garmin_activity %}
     {# --- Strava metrics grid --- #}
     <div class="metric-grid">
         <div class="metric-item">
-            <div class="metric-value">{{ card.activity.distance_miles }} mi</div>
+            <div class="metric-value">{{ metrics.distance_miles }} mi</div>
             <div class="metric-label">Distance</div>
         </div>
         <div class="metric-item">
-            <div class="metric-value">{{ card.activity.elapsed_time_hrs }}h{{ "%02d"|format(card.activity.elapsed_time_min) }}m</div>
+            <div class="metric-value">{{ metrics.elapsed_time_hrs }}h{{ "%02d"|format(metrics.elapsed_time_min) }}m</div>
             <div class="metric-label">Total Time</div>
         </div>
         <div class="metric-item">
-            <div class="metric-value">{{ card.activity.moving_time_hrs }}h{{ "%02d"|format(card.activity.moving_time_min) }}m</div>
+            <div class="metric-value">{{ metrics.moving_time_hrs }}h{{ "%02d"|format(metrics.moving_time_min) }}m</div>
             <div class="metric-label">Moving Time</div>
         </div>
         <div class="metric-item">
-            <div class="metric-value">{{ card.activity.stopped_time_min }} min</div>
+            <div class="metric-value">{{ metrics.stopped_time_min }} min</div>
             <div class="metric-label">Stopped</div>
         </div>
         <div class="metric-item">
-            <div class="metric-value">{{ "{:,}".format(card.activity.elevation_ft) }} ft</div>
+            <div class="metric-value">{{ "{:,}".format(metrics.elevation_ft) }} ft</div>
             <div class="metric-label">Elevation</div>
         </div>
+        {% if metrics.avg_speed_mph is defined %}
         <div class="metric-item">
-            <div class="metric-value">{{ card.activity.avg_speed_mph }} mph</div>
+            <div class="metric-value">{{ metrics.avg_speed_mph }} mph</div>
             <div class="metric-label">Avg Speed</div>
         </div>
-        {% if card.activity.has_heartrate and card.activity.average_heartrate %}
+        {% endif %}
+        {% if metrics.average_heartrate %}
         <div class="metric-item">
-            <div class="metric-value hr-value">{{ card.activity.average_heartrate|round(0)|int }} bpm</div>
+            <div class="metric-value hr-value">{{ metrics.average_heartrate|round(0)|int }} bpm</div>
             <div class="metric-label">Avg HR</div>
         </div>
         {% endif %}
-        {% if card.activity.device_watts and card.activity.average_watts %}
+        {% if metrics.average_watts %}
         <div class="metric-item">
-            <div class="metric-value power-value">{{ card.activity.average_watts|round(0)|int }} W</div>
+            <div class="metric-value power-value">{{ metrics.average_watts|round(0)|int }} W</div>
             <div class="metric-label">Avg Power</div>
         </div>
         {% endif %}
-        {% if card.activity.suffer_score %}
+        {% if card.activity and card.activity.suffer_score %}
         <div class="metric-item">
             <div class="metric-value" style="color:#ea580c;">{{ card.activity.suffer_score }}</div>
             <div class="metric-label">Suffer Score</div>
@@ -268,18 +286,20 @@
         {% if card.has_plan %}
         <a href="{{ url_for('riders.ride_strava_analysis', rusa_id=rider.rusa_id, ride_id=card.ride_id) }}" class="btn-analysis">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
-            Plan vs Actual Comparison
+            Plan vs Actual Stats
         </a>
         {% else %}
         <a href="{{ url_for('riders.ride_strava_analysis', rusa_id=rider.rusa_id, ride_id=card.ride_id) }}" class="btn-analysis">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
-            View Strava Analysis
+            View Ride Stats
         </a>
         {% endif %}
+        {% if card.activity and card.activity.strava_url %}
         <a href="{{ card.activity.strava_url }}" target="_blank" rel="noopener" class="btn-strava-link">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="#fc4c02"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
             View on Strava
         </a>
+        {% endif %}
         <a href="{{ url_for('riders.ride_cohort_comparison', ride_id=card.ride_id) }}" class="btn-cohort">
             &#x1F465; Compare with Cohort
         </a>
