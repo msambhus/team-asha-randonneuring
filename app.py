@@ -70,6 +70,13 @@ def create_app():
         import html as html_mod
         return html_mod.unescape(str(value)).replace('\xa0', ' ')
 
+    from services.garmin_display import (
+        training_status_description, training_status_label)
+    app.jinja_env.filters['garmin_training_status'] = training_status_label
+    app.jinja_env.filters[
+        'garmin_training_status_description'
+    ] = training_status_description
+
     # Debug auto-login: simulate an authenticated user in local dev.
     # Gated on FLASK_ENV=development — never fires in production even if
     # app.debug is True, preventing accidental auth bypass on Vercel.
