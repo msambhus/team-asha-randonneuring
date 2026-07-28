@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Strava Analysis - {{ ride.name }} - Team Asha Randonneuring{% endblock %}
+{% block title %}{{ 'Garmin Stats' if not activity and garmin_metrics else 'Strava Analysis' }} - {{ ride.name }} - Team Asha Randonneuring{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -352,7 +352,7 @@
 
 {% block content %}
 <div class="hero" style="padding:40px 20px 50px;">
-    <h1>Strava Ride Analysis</h1>
+    <h1>{{ 'Garmin Brevet Stats' if not activity and garmin_metrics else 'Strava Ride Analysis' }}</h1>
     <p style="opacity:0.85;margin-top:8px;">
         {{ ride.name|clean_name }} &mdash; {{ ride.date }}
     </p>
@@ -396,6 +396,100 @@
     <form method="post" action="{{ url_for('riders.retry_strava_analysis', rusa_id=rider.rusa_id, ride_id=ride.id) }}" style="margin-top:16px;">
         <button type="submit" class="btn btn-primary">Retry Analysis</button>
     </form>
+</div>
+
+{% elif not activity and garmin_metrics %}
+{# ===== PRIVATE GARMIN-ONLY BREVET STATS ===== #}
+<div class="analysis-summary" style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-color:#2563eb;">
+    <div class="summary-title" style="color:#1e40af;">Brevet Plan vs Garmin Recording</div>
+    <div class="summary-grid">
+        <div class="summary-item" style="border-color:#bfdbfe;">
+            <div class="summary-label" style="color:#1e40af;">Distance</div>
+            {% if garmin_summary.planned_distance_miles is not none %}
+            <div class="summary-plan">Brevet: {{ '%.1f'|format(garmin_summary.planned_distance_miles) }} mi</div>
+            {% endif %}
+            <div class="summary-actual" style="color:#1e40af;">
+                {{ '%.1f'|format(garmin_summary.actual_distance_miles) if garmin_summary.actual_distance_miles is not none else '—' }} mi
+            </div>
+            {% if garmin_summary.distance_delta_miles is not none %}
+            <div class="summary-delta delta-neutral">&Delta; {{ '%+.1f'|format(garmin_summary.distance_delta_miles) }} mi</div>
+            {% endif %}
+        </div>
+        <div class="summary-item" style="border-color:#bfdbfe;">
+            <div class="summary-label" style="color:#1e40af;">Elapsed Time</div>
+            {% if garmin_summary.official_limit_min is not none %}
+            <div class="summary-plan">Official limit: {{ (garmin_summary.official_limit_min // 60)|int }}h{{ '%02d'|format(garmin_summary.official_limit_min % 60) }}m</div>
+            {% endif %}
+            <div class="summary-actual" style="color:#1e40af;">
+                {% if garmin_summary.elapsed_time_min is not none %}{{ (garmin_summary.elapsed_time_min // 60)|int }}h{{ '%02d'|format(garmin_summary.elapsed_time_min % 60) }}m{% else %}—{% endif %}
+            </div>
+            {% if garmin_summary.limit_margin_min is not none %}
+            <div class="summary-delta {{ 'delta-faster' if garmin_summary.limit_margin_min >= 0 else 'delta-slower' }}">
+                {{ garmin_summary.limit_margin_min|abs }} min {{ 'inside' if garmin_summary.limit_margin_min >= 0 else 'over' }} limit
+            </div>
+            {% endif %}
+        </div>
+        <div class="summary-item" style="border-color:#bfdbfe;">
+            <div class="summary-label" style="color:#1e40af;">Moving Time</div>
+            <div class="summary-actual" style="color:#1e40af;">
+                {% if garmin_summary.moving_time_min is not none %}{{ (garmin_summary.moving_time_min // 60)|int }}h{{ '%02d'|format(garmin_summary.moving_time_min % 60) }}m{% else %}—{% endif %}
+            </div>
+        </div>
+        <div class="summary-item" style="border-color:#bfdbfe;">
+            <div class="summary-label" style="color:#1e40af;">Stopped Time</div>
+            <div class="summary-actual" style="color:#1e40af;">
+                {% if garmin_summary.stopped_time_min is not none %}{{ (garmin_summary.stopped_time_min // 60)|int }}h{{ '%02d'|format(garmin_summary.stopped_time_min % 60) }}m{% else %}—{% endif %}
+            </div>
+        </div>
+        <div class="summary-item" style="border-color:#bfdbfe;">
+            <div class="summary-label" style="color:#1e40af;">Moving Speed</div>
+            <div class="summary-actual" style="color:#1e40af;">
+                {{ '%.1f'|format(garmin_summary.average_moving_speed_mph) if garmin_summary.average_moving_speed_mph is not none else '—' }} mph
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="hr-power-card" style="border-color:#2563eb;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+        <div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--text);">Garmin Device Metrics</div>
+            <div style="font-size:.72rem;color:var(--text-light);margin-top:3px;">
+                Private device-recorded values{% if garmin_metrics.device_name %} from {{ garmin_metrics.device_name }}{% endif %}.
+            </div>
+        </div>
+        <span style="padding:4px 8px;border-radius:999px;background:#dbeafe;color:#1e40af;font-size:.68rem;font-weight:700;text-transform:uppercase;">Garmin</span>
+    </div>
+    <div class="hr-power-grid">
+        {% for label, value, suffix, color_class in [
+            ('Normalized Power', garmin_metrics.normalized_power, ' W', 'power-value'),
+            ('Average Power', garmin_metrics.average_power, ' W', 'power-value'),
+            ('Max Power', garmin_metrics.max_power, ' W', 'power-value'),
+            ('Average HR', garmin_metrics.average_hr, ' bpm', 'hr-value'),
+            ('Max HR', garmin_metrics.max_hr, ' bpm', 'hr-value'),
+            ('Cadence', garmin_metrics.average_cadence, ' rpm', ''),
+            ('Calories', garmin_metrics.calories, ' kcal', ''),
+            ('Aerobic Effect', garmin_metrics.aerobic_training_effect, '', ''),
+            ('Anaerobic Effect', garmin_metrics.anaerobic_training_effect, '', '')
+        ] %}
+        {% if value is defined and value is not none %}
+        <div class="hr-power-item">
+            <div class="hr-power-value {{ color_class }}">{{ value|round(0)|int if suffix else value }}{{ suffix }}</div>
+            <div class="hr-power-label">{{ label }}</div>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+</div>
+
+<div class="analysis-message" style="border-color:#bfdbfe;">
+    <h3>Garmin recording only</h3>
+    <p>This brevet is matched to Garmin but not Strava. Route maps, detected stops, and detailed segment analysis require Strava activity streams.</p>
+    <a href="{{ url_for('garmin.ride_matches') }}" class="btn btn-primary" style="margin-top:14px;">Review ride matches</a>
+</div>
+
+<div style="text-align:center;margin-top:30px;">
+    <a href="{{ url_for('riders.my_strava_analysis') }}" class="back-link">&larr; Back to Brevet Analysis</a>
 </div>
 
 {% elif not activity %}
@@ -589,7 +683,7 @@
             ('Aerobic Effect', garmin_metrics.aerobic_training_effect, '', ''),
             ('Anaerobic Effect', garmin_metrics.anaerobic_training_effect, '', '')
         ] %}
-        {% if value is not none %}
+        {% if value is defined and value is not none %}
         <div class="hr-power-item">
             <div class="hr-power-value {{ color_class }}">{{ value|round(0)|int if suffix else value }}{{ suffix }}</div>
             <div class="hr-power-label">{{ label }}</div>
