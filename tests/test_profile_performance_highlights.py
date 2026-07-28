@@ -118,6 +118,10 @@ def test_private_profile_highlights_all_available_sources(client, app):
                return_value={"rider_id": 42, "status": "connected"}), \
          patch("routes.auth.models.get_latest_garmin_performance_snapshot",
                return_value=snapshot), \
+         patch("routes.auth.models.get_garmin_performance_history_summary",
+               return_value={"days_captured": 1,
+                             "first_date": "2026-07-27",
+                             "latest_date": "2026-07-27"}), \
          patch("routes.auth.models.get_recent_garmin_activities",
                return_value=[]):
         response = client.get("/auth/my-profile")

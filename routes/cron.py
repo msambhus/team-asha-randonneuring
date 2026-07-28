@@ -29,6 +29,67 @@ def _verify_cron_auth():
     return None
 
 
+@cron_bp.route('/sync-garmin-performance', methods=['GET', 'POST'])
+def sync_garmin_performance():
+    """Refresh current Garmin metrics and advance one historical backfill slice.
+
+    The candidate query rotates by oldest ``last_sync_at`` so one bounded
+    serverless invocation cannot let a large account starve other riders.
+    """
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+
+    from models import (
+        get_garmin_connections_for_performance_sync,
+        mark_garmin_reauth_required,
+    )
+    from routes.garmin import (
+        _store_performance_snapshot, backfill_performance_history)
+    from services.garmin_connect import GarminPerformanceClient
+    from services.garmin_tokens import GarminTokenCipher
+    from vendor.python_garminconnect import (
+        GarminConnectAuthenticationError,
+        GarminConnectConnectionError,
+        GarminConnectTooManyRequestsError,
+    )
+
+    cipher = GarminTokenCipher(
+        current_app.config.get('GARMIN_TOKEN_ENCRYPTION_KEY'))
+    refreshed = backfilled = reauth_required = failed = 0
+    for connection in get_garmin_connections_for_performance_sync(limit=1):
+        rider_id = connection['rider_id']
+        try:
+            performance = GarminPerformanceClient()
+            performance.load_tokens(
+                cipher.decrypt(connection['token_ciphertext']))
+            _store_performance_snapshot(
+                rider_id, performance, date.today())
+            refreshed += 1
+            result = backfill_performance_history(
+                rider_id, performance, max_days=1, budget_seconds=20)
+            backfilled += result['captured']
+        except GarminConnectAuthenticationError:
+            mark_garmin_reauth_required(rider_id)
+            reauth_required += 1
+        except (GarminConnectTooManyRequestsError,
+                GarminConnectConnectionError, ValueError):
+            current_app.logger.warning(
+                'scheduled Garmin sync failed for rider %s', rider_id,
+                exc_info=True)
+            failed += 1
+
+    result = {
+        'ok': failed == 0,
+        'refreshed': refreshed,
+        'backfilled_days': backfilled,
+        'reauth_required': reauth_required,
+        'failed': failed,
+    }
+    current_app.logger.info('Scheduled Garmin performance sync: %s', result)
+    return jsonify(result), 200
+
+
 @cron_bp.route('/warm-ride-plans', methods=['GET', 'POST'])
 def warm_ride_plans():
     """Create and link plans for upcoming Team Asha rides with RWGPS routes."""

@@ -78,6 +78,22 @@ def test_performance_snapshot_normalizes_cycling_headlines():
     assert all(call[0].startswith("/") for call in auth.calls)
 
 
+def test_body_battery_prefers_current_value_over_amount_charged():
+    class CurrentBodyBatteryAuth(FakeAuth):
+        def connectapi(self, path, **kwargs):
+            if "bodyBattery" in path:
+                return [{
+                    "charged": 23,
+                    "bodyBatteryMostRecentValue": 71,
+                }]
+            return super().connectapi(path, **kwargs)
+
+    snapshot = GarminPerformanceClient(
+        CurrentBodyBatteryAuth()).performance_snapshot("2026-07-27")
+
+    assert snapshot["body_battery"] == 71
+
+
 def test_missing_endurance_score_does_not_block_other_garmin_metrics():
     class NoEnduranceAuth(FakeAuth):
         def connectapi(self, path, **kwargs):

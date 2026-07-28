@@ -404,3 +404,47 @@ def test_performance_sync_resumes_incomplete_activity_history(client, app):
                     in flask_session.get("_flashes", [])]
     assert any("More one-year history remains" in message
                for message in messages)
+
+
+def test_performance_backfill_resumes_from_oldest_committed_day(app):
+    from routes.garmin import backfill_performance_history
+
+    captured = []
+    with app.app_context(), \
+         patch("routes.garmin.models.get_garmin_performance_history_summary",
+               return_value={
+                   "days_captured": 2,
+                   "first_date": date(2026, 7, 26),
+                   "latest_date": date(2026, 7, 27),
+               }), \
+         patch("routes.garmin._store_performance_snapshot",
+               side_effect=lambda rider_id, _performance, day:
+               captured.append((rider_id, day))):
+        result = backfill_performance_history(
+            42, object(), today=date(2026, 7, 28), max_days=3,
+            budget_seconds=20)
+
+    assert captured == [
+        (42, date(2026, 7, 25)),
+        (42, date(2026, 7, 24)),
+        (42, date(2026, 7, 23)),
+    ]
+    assert result["next_date"] == date(2026, 7, 22)
+    assert result["captured"] == 3
+    assert result["complete"] is False
+
+
+def test_garmin_history_endpoint_is_owner_scoped(client):
+    _login(client, rider_id=42)
+    with patch("routes.garmin.models.get_garmin_performance_history",
+               return_value=[{
+                   "snapshot_date": date(2026, 7, 27),
+                   "sleep_score": 84,
+                   "body_battery": 71,
+               }]) as history:
+        response = client.get("/garmin/history?start=2026-01-01")
+
+    assert response.status_code == 200
+    assert response.get_json()["days"][0]["sleep_score"] == 84
+    history.assert_called_once()
+    assert history.call_args.args[0] == 42

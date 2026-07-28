@@ -2419,6 +2419,47 @@ def get_garmin_performance_snapshot_for_date(rider_id, snapshot_date):
     return dict(row) if row else None
 
 
+def get_garmin_performance_history_summary(rider_id):
+    """Return owner-scoped coverage for the durable daily Garmin series."""
+    row = _execute(
+        "SELECT COUNT(*) AS days_captured, MIN(snapshot_date) AS first_date, "
+        "MAX(snapshot_date) AS latest_date "
+        "FROM garmin_performance_snapshot WHERE rider_id=%s",
+        (rider_id,),
+    ).fetchone()
+    return dict(row) if row else {
+        "days_captured": 0, "first_date": None, "latest_date": None}
+
+
+def get_garmin_performance_history(rider_id, *, start_date, end_date,
+                                   limit=1200):
+    """Return bounded, chronological normalized history for its owning rider."""
+    limit = max(1, min(int(limit), 1200))
+    rows = _execute(
+        "SELECT snapshot_date, resting_heart_rate, hrv_status, sleep_score, "
+        "body_battery, training_readiness, vo2_max_cycling, training_status, "
+        "readiness_level, recovery_time_minutes, endurance_score, "
+        "acute_training_load, load_level_trend "
+        "FROM garmin_performance_snapshot "
+        "WHERE rider_id=%s AND snapshot_date BETWEEN %s AND %s "
+        "ORDER BY snapshot_date ASC LIMIT %s",
+        (rider_id, start_date, end_date, limit),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_garmin_connections_for_performance_sync(limit=1):
+    """Select connected accounts fairly for a bounded scheduled refresh."""
+    limit = max(1, min(int(limit), 5))
+    rows = _execute(
+        "SELECT rider_id, token_ciphertext, last_sync_at "
+        "FROM garmin_connection WHERE status='connected' "
+        "ORDER BY last_sync_at ASC NULLS FIRST, rider_id LIMIT %s",
+        (limit,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def upsert_garmin_activities(rider_id, activities):
     """Upsert normalized, encrypted Garmin activities for one owning rider."""
     conn = get_db()

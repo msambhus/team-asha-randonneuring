@@ -28,6 +28,9 @@ def test_my_profile_reads_garmin_when_encryption_key_is_configured(client, app):
                return_value=garmin_connection) as get_garmin, \
          patch("routes.auth.models.get_latest_garmin_performance_snapshot",
                return_value=None), \
+         patch("routes.auth.models.get_garmin_performance_history_summary",
+               return_value={"days_captured": 0, "first_date": None,
+                             "latest_date": None}), \
          patch("routes.auth.render_template", return_value="profile ok"):
         response = client.get("/auth/my-profile")
 
@@ -67,7 +70,11 @@ def test_current_garmin_recovery_renders_on_my_profile_without_recent_rides(clie
                    "endurance_score": Decimal("7120"),
                    "acute_training_load": Decimal("642"),
                    "load_level_trend": "MAINTAINING",
-               }):
+               }), \
+         patch("routes.auth.models.get_garmin_performance_history_summary",
+               return_value={"days_captured": 12,
+                             "first_date": "2026-07-16",
+                             "latest_date": "2026-07-27"}):
             response = client.get("/auth/my-profile")
 
     assert response.status_code == 200
@@ -83,6 +90,8 @@ def test_current_garmin_recovery_renders_on_my_profile_without_recent_rides(clie
     assert b"Disconnect &amp; delete Garmin data" in response.data
     assert b'name="confirm_delete" value="DELETE"' in response.data
     assert b"permanently delete its encrypted tokens" in response.data
+    assert b"12 daily snapshots stored" in response.data
+    assert b"Backfill Garmin history" in response.data
 
 
 def test_my_rides_collapses_explicit_garmin_strava_match(client, app):
@@ -100,6 +109,7 @@ def test_my_rides_collapses_explicit_garmin_strava_match(client, app):
         "garmin_activity_id": 202, "strava_activity_id": 101,
         "activity_name": "Cycling", "strava_name": "Morning Ride",
         "started_at": "2026-07-27T06:00:02", "distance_m": 16093.44,
+        "ride_id": 3090, "ride_name": "SCR 400K",
     }
 
     with patch("routes.auth.models.get_rider_by_id",
@@ -121,8 +131,10 @@ def test_my_rides_collapses_explicit_garmin_strava_match(client, app):
         response = client.get("/auth/my-rides")
 
     assert response.status_code == 200
-    assert response.data.count(b"Morning Ride") == 1
+    assert response.data.count(b"SCR 400K") == 1
     assert b"Strava" in response.data
     assert b"Garmin" in response.data
     assert b"Timeline" in response.data
     assert b"Calendar" in response.data
+    assert b"Brevet" in response.data
+    assert b"SCR 400K" in response.data
