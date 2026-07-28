@@ -2436,8 +2436,9 @@ def get_recent_garmin_activities(rider_id, limit=10):
     return [dict(row) for row in rows]
 
 
-def get_garmin_activities_for_matching(rider_id, limit=100):
+def get_garmin_activities_for_matching(rider_id, limit=2000):
     """Return normalized Garmin fields needed by the private matcher."""
+    limit = max(1, min(int(limit), 2000))
     rows = _execute(
         "SELECT rider_id, garmin_activity_id, activity_name, activity_type, "
         "started_at, distance_m, duration_s, moving_duration_s "
@@ -2448,8 +2449,9 @@ def get_garmin_activities_for_matching(rider_id, limit=100):
     return [dict(row) for row in rows]
 
 
-def get_strava_activities_for_matching(rider_id, limit=200):
+def get_strava_activities_for_matching(rider_id, limit=2000):
     """Return normalized Strava fields needed by the private matcher."""
+    limit = max(1, min(int(limit), 2000))
     rows = _execute(
         "SELECT rider_id, strava_activity_id, name, activity_type, start_date, "
         "start_date_local, distance, elapsed_time, moving_time "

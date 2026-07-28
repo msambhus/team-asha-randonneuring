@@ -122,6 +122,51 @@ class GarminPerformanceClient:
         result = self.auth.connectapi(_ACTIVITIES, params=params)
         return result if isinstance(result, list) else []
 
+    def activity_pages_since(
+            self, since: date, *, page_size: int = 100,
+            max_activities: int = 2000):
+        """Yield newest-first cycling pages until the requested date boundary."""
+        if not isinstance(since, date):
+            raise ValueError("Garmin activity history requires a date")
+        if page_size < 1 or page_size > MAX_ACTIVITY_LIMIT:
+            raise ValueError("invalid Garmin activity page size")
+        if max_activities < 1 or max_activities > 5000:
+            raise ValueError("invalid Garmin activity history bound")
+
+        start = 0
+        while start < max_activities:
+            limit = min(page_size, max_activities - start)
+            page = self.activities(start=start, limit=limit)
+            if not page:
+                break
+
+            included = []
+            reached_boundary = False
+            for activity in page:
+                raw_started = (
+                    activity.get("startTimeGMT")
+                    or activity.get("startTimeLocal")
+                )
+                activity_date = None
+                if raw_started:
+                    try:
+                        activity_date = datetime.fromisoformat(
+                            str(raw_started).replace("Z", "+00:00")).date()
+                    except ValueError:
+                        pass
+                if activity_date is not None and activity_date < since:
+                    reached_boundary = True
+                else:
+                    included.append(activity)
+
+            if included:
+                yield included
+            start += len(page)
+            # Garmin returns this endpoint newest-first. Once a page crosses
+            # the cutoff, subsequent pages are older and need not be fetched.
+            if reached_boundary or len(page) < limit:
+                break
+
     def activity(self, activity_id: int) -> dict[str, Any]:
         """Return one activity summary using the upstream read endpoint."""
         if not isinstance(activity_id, int) or activity_id < 1:

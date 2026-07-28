@@ -1,5 +1,6 @@
 """Garmin connection security and rider-ownership tests."""
 import json
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -295,6 +296,10 @@ class FakePerformanceSync:
             "distance": 100000,
             "averageHR": 130,
         }]
+
+    def activity_pages_since(self, since):
+        assert (date.today() - since).days == 365
+        yield self.activities(limit=20)
 
     def normalize_activity(self, activity):
         return {
