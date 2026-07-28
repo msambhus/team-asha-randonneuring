@@ -1,5 +1,5 @@
 """Authentication routes - Google OAuth login and profile setup."""
-from flask import (Blueprint, current_app, flash, jsonify, redirect,
+from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
                    render_template, request, session, url_for)
 from authlib.integrations.flask_client import OAuth
 from werkzeug.security import gen_salt
@@ -292,10 +292,6 @@ def my_profile():
         models.get_latest_garmin_performance_snapshot(rider_id)
         if garmin_connection else None
     )
-    garmin_activities = (
-        models.get_recent_garmin_activities(rider_id, limit=10)
-        if garmin_connection else []
-    )
     strava_activities = []
     fitness_score = None
 
@@ -325,9 +321,90 @@ def my_profile():
                            strava_connection=strava_connection,
                            garmin_connection=garmin_connection,
                            garmin_snapshot=garmin_snapshot,
-                           garmin_activities=garmin_activities,
                            strava_activities=strava_activities,
                            fitness_score=fitness_score)
+
+
+@auth_bp.route('/my-rides')
+def my_rides():
+    """Private activity dashboard for the signed-in rider.
+
+    Provider activities are owner-scoped in the model queries, and explicit
+    Garmin/Strava matches collapse into one logical ride card.
+    """
+    if not session.get('user_id'):
+        flash('Please log in to view your rides.', 'warning')
+        return redirect(url_for('auth.login', next=request.path))
+
+    rider_id = session.get('rider_id')
+    if not rider_id:
+        return redirect(url_for('auth.setup_profile'))
+
+    rider = models.get_rider_by_id(rider_id)
+    if not rider:
+        abort(404)
+
+    from shared.activity_feed import build_private_activity_feed
+
+    try:
+        strava_activities = [
+            dict(row) for row in models.get_strava_activities(rider_id, days=120)
+        ]
+    except Exception:
+        current_app.logger.exception(
+            'Could not load Strava activities for rider %s', rider_id)
+        strava_activities = []
+
+    garmin_activities = []
+    garmin_connection = None
+    if current_app.config.get('GARMIN_TOKEN_ENCRYPTION_KEY'):
+        try:
+            garmin_connection = models.get_garmin_connection(rider_id)
+            garmin_activities = models.get_garmin_brevet_match_review(
+                rider_id, limit=50)
+        except Exception:
+            current_app.logger.exception(
+                'Could not load Garmin activities for rider %s', rider_id)
+
+    activity_feed = build_private_activity_feed(
+        strava_activities=strava_activities,
+        garmin_activities=garmin_activities,
+    )
+    upcoming = models.get_rider_upcoming_signups(rider_id)
+    strava_connection = models.get_strava_connection(rider_id)
+    current_season = models.get_current_season()
+    brevet_history = []
+    try:
+        for season in models.get_all_seasons():
+            participation = [
+                dict(row) for row in models.get_rider_participation(
+                    rider_id, season['id'])
+                if str(row.get('status') or '').lower() in ('finished', 'dnf')
+            ]
+            if participation:
+                ride_ids = [
+                    row['ride_id'] for row in participation if row.get('ride_id')]
+                matches = models.get_all_strava_ride_matches(
+                    rider_id, ride_ids) if strava_connection else {}
+                brevet_history.append({
+                    'season': dict(season),
+                    'rides': participation,
+                    'matches': matches,
+                })
+    except Exception:
+        current_app.logger.exception(
+            'Could not load brevet history for rider %s', rider_id)
+
+    return render_template(
+        'my_rides.html',
+        rider=rider,
+        activity_feed=activity_feed,
+        upcoming=upcoming,
+        current_season=current_season,
+        brevet_history=brevet_history,
+        strava_connection=strava_connection,
+        garmin_connected=bool(garmin_connection),
+    )
 
 
 @auth_bp.route('/logout')

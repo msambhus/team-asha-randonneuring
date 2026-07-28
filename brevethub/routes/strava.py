@@ -367,6 +367,17 @@ def _compute_strava_stats(rider_id, connection):
     summary = summarize_activities(activities)
     fitness = calculate_fitness_score(activities)
     summary['fitness'] = fitness['total'] if fitness else None
+    # Keep a compact, presentation-safe recent feed in the same cache so My
+    # Rides never makes a second Strava API request during page rendering.
+    summary['activities'] = [{
+        'strava_activity_id': activity.get('strava_activity_id'),
+        'name': activity.get('name'),
+        'start_date_local': activity.get('start_date_local'),
+        'distance': activity.get('distance'),
+        'elapsed_time': activity.get('elapsed_time'),
+        'moving_time': activity.get('moving_time'),
+        'total_elevation_gain': activity.get('total_elevation_gain'),
+    } for activity in activities[:50]]
     return summary
 
 

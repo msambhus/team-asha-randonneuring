@@ -21,6 +21,7 @@ from brevethub import models, rusa_stats
 from brevethub.decorators import current_rider, profile_required
 from brevethub.routes.strava import load_strava_section
 from shared import seasons
+from shared.activity_feed import build_private_activity_feed
 from shared.rusa import fetch_rider_results
 
 main_bp = Blueprint('main', __name__)
@@ -126,9 +127,12 @@ def dashboard():
     strava = load_strava_section(rider)
     signups = load_signups(rider)
     past_results = load_past_results(rider)
+    activity_feed = build_private_activity_feed(
+        strava_activities=(strava.get('stats') or {}).get('activities') or [])
     return render_template('dashboard.html', rider=rider, club=club,
                            rusa=rusa, strava=strava, signups=signups,
-                           past_results=past_results)
+                           past_results=past_results,
+                           activity_feed=activity_feed)
 
 
 @main_bp.route('/profile')

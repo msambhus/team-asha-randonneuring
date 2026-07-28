@@ -68,7 +68,8 @@ def test_base_menu_matches_requested_brevethub_shape():
     source = (BREVETHUB_DIR / "templates" / "base.html").read_text()
 
     assert "My Profile" in source
-    assert "My Rider Page" in source
+    assert "My Rides" in source
+    assert "Public Rider Page" in source
     assert "Live" in source
     assert "Logout" in source
     assert "Merge GPS Files" in source
@@ -137,7 +138,7 @@ def test_public_rider_profile_is_rusa_only_and_owner_profile_keeps_strava():
     assert "eddington" not in club_rider_query
 
     assert "eddington" in owner_source
-    assert "riders.my_strava_analysis" in owner_source
+    assert "main.dashboard" in owner_source
 
 
 def test_club_directory_gets_connection_gated_eddington_without_public_leak():
