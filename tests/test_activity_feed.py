@@ -35,6 +35,23 @@ def test_unmatched_provider_rides_stay_separate_and_sort_newest_first():
     assert [card["providers"] for card in feed] == [["Garmin"], ["Strava"]]
 
 
+def test_activity_type_survives_provider_normalization():
+    feed = build_private_activity_feed(
+        strava_activities=[
+            {"strava_activity_id": 11, "name": "Lunch Run",
+             "activity_type": "Run",
+             "start_date_local": "2026-07-27T12:00:00"},
+        ],
+        garmin_activities=[
+            {"garmin_activity_id": 22, "activity_name": "Pool Swim",
+             "activity_type": "LapSwimming",
+             "started_at": "2026-07-26T06:00:00"},
+        ],
+    )
+
+    assert [card["activity_type"] for card in feed] == ["Run", "LapSwimming"]
+
+
 def test_brevethub_shared_copy_stays_identical():
     from pathlib import Path
 

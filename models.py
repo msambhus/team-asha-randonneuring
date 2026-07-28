@@ -2714,7 +2714,7 @@ def replace_activity_brevet_matches(rider_id, matches):
 def get_garmin_recordings_for_brevet(rider_id, ride_id):
     """Return every owned Garmin recording associated with one brevet."""
     rows = _execute(
-        "SELECT ga.garmin_activity_id, ga.activity_name, ga.started_at, "
+        "SELECT ga.garmin_activity_id, ga.activity_name, ga.activity_type, ga.started_at, "
         "ga.distance_m, ga.duration_s, ga.moving_duration_s, "
         "ga.elevation_gain_m, ga.average_hr, ga.max_hr, ga.average_power, "
         "ga.max_power, ga.normalized_power, ga.aerobic_training_effect, "
@@ -2815,7 +2815,8 @@ def get_garmin_brevet_match_review(rider_id, limit=50):
         "asm.confidence AS source_confidence, "
         "asm.match_status AS source_match_status, "
         "asm.reasons AS source_reasons, "
-        "sa.name AS strava_name, sa.start_date AS strava_started_at, "
+        "sa.name AS strava_name, sa.activity_type AS strava_activity_type, "
+        "sa.start_date AS strava_started_at, "
         "sa.distance AS strava_distance_m, "
         "sa.elapsed_time AS strava_elapsed_s, "
         "sa.moving_time AS strava_moving_s, "
