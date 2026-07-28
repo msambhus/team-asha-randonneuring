@@ -89,7 +89,7 @@ def test_private_profile_highlights_all_available_sources(client, app):
         "recovery_time_minutes": Decimal("120"),
         "endurance_score": Decimal("7100"),
         "acute_training_load": Decimal("622"),
-        "training_status": "PRODUCTIVE",
+        "training_status": "NO_STATUS_AER_LOW_SHORT",
         "readiness_level": "HIGH",
         "readiness_feedback": "READY",
         "load_level_trend": "MAINTAINING",
@@ -134,3 +134,6 @@ def test_private_profile_highlights_all_available_sources(client, app):
     assert b"Strava athlete profile" in response.data
     assert b"Training Readiness" in response.data
     assert b"HRV Status" in response.data
+    assert b"No Training Status" in response.data
+    assert b"Garmin needs more qualifying aerobic activity data." in response.data
+    assert b"No Status Aer Low Short" not in response.data

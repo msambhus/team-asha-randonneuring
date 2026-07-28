@@ -53,8 +53,10 @@
     {% endfor %}
     {% if garmin_recovery.get('training_status') %}
     <div class="hr-power-item">
-      <div class="hr-power-value" style="font-size:1rem;">{{ garmin_recovery.get('training_status')|replace('_', ' ')|title }}</div>
+      <div class="hr-power-value" style="font-size:1rem;">{{ garmin_recovery.get('training_status')|garmin_training_status }}</div>
       <div class="hr-power-label">Training Status</div>
+      {% set status_description = garmin_recovery.get('training_status')|garmin_training_status_description %}
+      {% if status_description %}<div style="margin-top:4px;color:var(--text-light);font-size:.68rem;line-height:1.35;">{{ status_description }}</div>{% endif %}
     </div>
     {% endif %}
   </div>

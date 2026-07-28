@@ -144,7 +144,9 @@ def test_garmin_only_stats_route_is_owner_only(client):
                return_value=garmin) as get_garmin, \
          patch("models.get_garmin_laps_for_brevet", return_value=[]), \
          patch("models.get_garmin_performance_snapshot_for_date",
-               return_value=None) as get_recovery, \
+               return_value={
+                   "training_status": "NO_STATUS_AER_LOW_SHORT",
+               }) as get_recovery, \
          patch("models.get_strava_recordings_for_brevet",
                return_value=[]):
         response = client.get(
@@ -155,6 +157,9 @@ def test_garmin_only_stats_route_is_owner_only(client):
     assert b"Brevet Plan vs Garmin Recording" in response.data
     assert b"Edge 1050" in response.data
     assert b"Route maps, detected stops" in response.data
+    assert b"No Training Status" in response.data
+    assert b"Garmin needs more qualifying aerobic activity data." in response.data
+    assert b"No Status Aer Low Short" not in response.data
     get_garmin.assert_called_once_with(42, 10)
     get_recovery.assert_called_once_with(42, "2026-07-27")
 

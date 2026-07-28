@@ -209,8 +209,7 @@
     {% endif %}
     {% for label, value in [
       ('Endurance Score', garmin_snapshot.get('endurance_score') if garmin_snapshot else none),
-      ('Acute Training Load', garmin_snapshot.get('acute_training_load') if garmin_snapshot else none),
-      ('Training Status', garmin_snapshot.get('training_status') if garmin_snapshot else none)
+      ('Acute Training Load', garmin_snapshot.get('acute_training_load') if garmin_snapshot else none)
     ] %}
       {% if value is not none %}
       <div class="performance-metric">
@@ -220,6 +219,15 @@
       </div>
       {% endif %}
     {% endfor %}
+    {% if garmin_snapshot and garmin_snapshot.get('training_status') %}
+    <div class="performance-metric">
+      <div class="performance-value" style="font-size:1.05rem;">{{ garmin_snapshot.get('training_status')|garmin_training_status }}</div>
+      <div class="performance-label">Training Status</div>
+      {% set status_description = garmin_snapshot.get('training_status')|garmin_training_status_description %}
+      {% if status_description %}<div style="margin-top:5px;color:var(--text-light);font-size:.68rem;line-height:1.35;">{{ status_description }}</div>{% endif %}
+      <div class="performance-source">Garmin</div>
+    </div>
+    {% endif %}
   </div>
   {% if fitness_score %}
   <div style="margin-top:12px;color:var(--text-light);font-size:.72rem;">
