@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Review Garmin Ride Matches - Team Asha Randonneuring{% endblock %}
+
+{% block content %}
+<div style="max-width:980px;margin:0 auto;padding:24px 16px;">
+  <a href="{{ url_for('auth.my_profile') }}"
+     style="color:var(--primary);text-decoration:none;">&larr; Back to My Profile</a>
+  <div class="card" style="margin-top:16px;padding:24px;">
+    <h1 style="margin:0 0 8px;color:var(--primary);font-size:1.55rem;">Review Garmin ride matches</h1>
+    <p style="margin:0;color:var(--text-light);">
+      These private links determine which Garmin device metrics appear in brevet Stats.
+      Automatic links show their confidence; your selections take precedence and remain
+      in place after future syncs.
+    </p>
+  </div>
+
+  {% if not activities %}
+  <div class="card" style="margin-top:16px;padding:24px;">
+    Sync Garmin from My Profile to import cycling activities.
+  </div>
+  {% endif %}
+
+  {% for activity in activities %}
+  <div class="card" style="margin-top:14px;padding:20px;">
+    <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+      <div>
+        <h2 style="margin:0 0 4px;font-size:1.05rem;color:var(--text);">
+          {{ activity.activity_name or 'Garmin cycling activity' }}
+        </h2>
+        <div style="color:var(--text-light);font-size:.82rem;">
+          {{ activity.started_at.strftime('%b %-d, %Y at %-I:%M %p') if activity.started_at else 'Date unavailable' }}
+          {% if activity.distance_m is not none %}
+            &middot; {{ '%.1f'|format((activity.distance_m|float) / 1609.344) }} mi
+          {% endif %}
+          {% if activity.device_name %}&middot; {{ activity.device_name }}{% endif %}
+        </div>
+      </div>
+      {% if activity.ride_id and activity.match_status != 'rejected' %}
+      <span style="align-self:flex-start;border-radius:999px;padding:4px 9px;background:#e8f5e9;color:#216e39;font-size:.72rem;font-weight:700;">
+        {{ 'Your match' if activity.match_status in ('manual', 'confirmed') else 'Auto matched' }}
+      </span>
+      {% elif activity.match_status == 'rejected' %}
+      <span style="align-self:flex-start;border-radius:999px;padding:4px 9px;background:#f3f4f6;color:#64748b;font-size:.72rem;font-weight:700;">
+        Unlinked by you
+      </span>
+      {% else %}
+      <span style="align-self:flex-start;border-radius:999px;padding:4px 9px;background:#fff7ed;color:#9a3412;font-size:.72rem;font-weight:700;">
+        Needs review
+      </span>
+      {% endif %}
+    </div>
+
+    {% if activity.ride_id and activity.match_status != 'rejected' %}
+    <div style="margin-top:14px;padding:12px;background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px;">
+      <strong>{{ activity.ride_name|clean_name }}</strong>
+      <span style="color:var(--text-light);">
+        &middot; {{ activity.ride_date.strftime('%b %-d, %Y') if activity.ride_date else '' }}
+        &middot; {{ activity.ride_distance_km|round|int }} km
+        {% if activity.confidence is not none %}
+          &middot; {{ (activity.confidence|float * 100)|round|int }}% confidence
+        {% endif %}
+      </span>
+    </div>
+    {% endif %}
+
+    <form method="post"
+          action="{{ url_for('garmin.update_ride_match', garmin_activity_id=activity.garmin_activity_id) }}"
+          style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-top:14px;">
+      <label style="flex:1;min-width:260px;font-size:.78rem;font-weight:700;color:var(--text);">
+        Finished brevet
+        <select name="ride_id" style="display:block;width:100%;margin-top:5px;padding:9px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;">
+          <option value="">Select a finished brevet</option>
+          {% for brevet in brevets %}
+          <option value="{{ brevet.ride_id }}"
+                  {{ 'selected' if activity.ride_id == brevet.ride_id and activity.match_status != 'rejected' else '' }}>
+            {{ brevet.date }} — {{ brevet.ride_name|clean_name }} ({{ brevet.distance_km|round|int }} km)
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="btn btn-primary" type="submit" name="action" value="link">
+        {{ 'Change match' if activity.ride_id and activity.match_status != 'rejected' else 'Link brevet' }}
+      </button>
+      {% if activity.ride_id and activity.match_status != 'rejected' %}
+      <button class="btn" type="submit" name="action" value="unlink"
+              style="border:1px solid #b91c1c;color:#b91c1c;background:#fff;">
+        Unlink
+      </button>
+      {% endif %}
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

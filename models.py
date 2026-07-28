@@ -2592,6 +2592,101 @@ def get_garmin_metrics_for_brevet(rider_id, ride_id):
     return dict(row) if row else None
 
 
+def get_garmin_brevet_match_review(rider_id, limit=50):
+    """Return private Garmin rides and their rider-reviewed brevet links."""
+    limit = max(1, min(int(limit), 100))
+    rows = _execute(
+        "SELECT ga.garmin_activity_id, ga.activity_name, ga.started_at, "
+        "ga.distance_m, ga.duration_s, ga.device_name, "
+        "abm.id AS match_id, abm.ride_id, abm.confidence, "
+        "abm.match_status, abm.reasons, r.name AS ride_name, "
+        "r.date AS ride_date, r.distance_km AS ride_distance_km "
+        "FROM garmin_activity ga "
+        "LEFT JOIN activity_brevet_match abm "
+        " ON abm.rider_id=ga.rider_id "
+        " AND abm.garmin_activity_id=ga.garmin_activity_id "
+        "LEFT JOIN ride r ON r.id=abm.ride_id "
+        "WHERE ga.rider_id=%s "
+        "ORDER BY ga.started_at DESC NULLS LAST LIMIT %s",
+        (rider_id, limit),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def set_manual_garmin_brevet_match(rider_id, garmin_activity_id, ride_id):
+    """Link one owned Garmin activity to one owned finished brevet."""
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT 1 FROM garmin_activity "
+            "WHERE rider_id=%s AND garmin_activity_id=%s",
+            (rider_id, garmin_activity_id),
+        )
+        if not cur.fetchone():
+            raise ValueError("Garmin activity does not belong to rider")
+        cur.execute(
+            "SELECT 1 FROM rider_ride "
+            "WHERE rider_id=%s AND ride_id=%s AND status=%s",
+            (rider_id, ride_id, RideStatus.FINISHED.value),
+        )
+        if not cur.fetchone():
+            raise ValueError("Brevet does not belong to rider")
+
+        cur.execute(
+            "SELECT id, strava_activity_id FROM activity_source_match "
+            "WHERE rider_id=%s AND garmin_activity_id=%s "
+            "AND match_status <> 'rejected' LIMIT 1",
+            (rider_id, garmin_activity_id),
+        )
+        source = cur.fetchone()
+        source_match_id = source["id"] if source else None
+        strava_activity_id = source["strava_activity_id"] if source else None
+
+        cur.execute(
+            "DELETE FROM activity_brevet_match WHERE rider_id=%s "
+            "AND (garmin_activity_id=%s "
+            " OR (%s IS NOT NULL AND source_match_id=%s) "
+            " OR (%s IS NOT NULL AND strava_activity_id=%s))",
+            (rider_id, garmin_activity_id, source_match_id, source_match_id,
+             strava_activity_id, strava_activity_id),
+        )
+        cur.execute(
+            "INSERT INTO activity_brevet_match "
+            "(rider_id, ride_id, source_match_id, garmin_activity_id, "
+            "strava_activity_id, confidence, reasons, match_status) "
+            "VALUES (%s,%s,%s,%s,%s,1.0,%s,'manual')",
+            (rider_id, ride_id, source_match_id, garmin_activity_id,
+             strava_activity_id,
+             psycopg2.extras.Json({"rider_selected": True})),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def reject_garmin_brevet_match(rider_id, garmin_activity_id):
+    """Reject an existing owned Garmin-to-brevet link persistently."""
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "UPDATE activity_brevet_match SET match_status='rejected', "
+            "reasons=reasons || %s::jsonb, updated_at=NOW() "
+            "WHERE rider_id=%s AND garmin_activity_id=%s "
+            "AND match_status <> 'rejected'",
+            (psycopg2.extras.Json({"rider_rejected": True}),
+             rider_id, garmin_activity_id),
+        )
+        changed = cur.rowcount
+        conn.commit()
+        return bool(changed)
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def mark_garmin_reauth_required(rider_id):
     """Record an auth failure without exposing its details to other riders."""
     conn = get_db()

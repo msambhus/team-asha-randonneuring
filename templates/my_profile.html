@@ -232,6 +232,10 @@
     </div>
     {% if garmin_connection %}
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <a class="btn" href="{{ url_for('garmin.ride_matches') }}"
+           style="border:1px solid var(--primary);color:var(--primary);background:#fff;">
+          Review ride matches
+        </a>
         <form id="garmin-sync-form" method="post" action="{{ url_for('garmin.sync') }}">
           <button id="garmin-sync-submit" class="btn btn-primary garmin-sync-button"
                   type="submit" style="display:inline-flex;align-items:center;gap:8px;">
