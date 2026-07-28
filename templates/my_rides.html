@@ -12,6 +12,7 @@
 .ride-metrics{display:flex;gap:18px;flex-wrap:wrap;color:var(--text-light);font-size:.82rem;margin-top:6px}
 .training-rating{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;color:#fff;font-size:.7rem;font-weight:850}
 .readiness-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;color:#fff;font-size:.72rem;font-weight:800}
+.activity-type-icon{display:inline-flex;align-items:center;justify-content:center;width:25px;height:25px;margin-right:5px;border-radius:7px;background:#f1f5f9;font-size:.9rem;vertical-align:middle}
 .ride-calendar-shell{border:1px solid #dbe4ef;border-radius:12px;overflow:hidden;background:#fff}
 .ride-calendar-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid #dbe4ef}
 .ride-calendar-toolbar h2{margin:0;color:var(--primary);font-size:1.2rem}
@@ -22,10 +23,26 @@
 .calendar-day:nth-child(7n){border-right:0}.calendar-day.outside{background:#f8fafc;color:#94a3b8}
 .calendar-day-number{font-size:.72rem;font-weight:800;margin-bottom:5px}
 .calendar-event{display:block;margin:4px 0;padding:6px;border-radius:7px;background:#eef4fb;border-left:3px solid var(--primary);font-size:.68rem;line-height:1.25;color:var(--text);text-decoration:none;overflow:hidden}
-.calendar-event.workout{background:#f7fafc}.calendar-event.brevet{background:#eef4fb}
+.calendar-event.workout{background:#f7fafc;border-left-color:#64748b}
+.calendar-event.brevet{background:#fff1f2;border-left-color:#c91f37;color:#7f1d2d;box-shadow:inset 0 0 0 1px #fecdd3}
 .calendar-event-title{display:block;font-weight:800;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
 .calendar-event-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:3px;color:var(--text-light)}
 .calendar-grade{color:#fff;border-radius:999px;padding:1px 5px;font-weight:900}
+.upcoming-brevet-section{margin-top:22px}
+.upcoming-brevet-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;margin-top:14px}
+.upcoming-brevet-card{display:flex;flex-direction:column;padding:15px 16px;background:#fff;border:1px solid #e2e8f0;border-top:5px solid #c91f37;border-radius:12px;box-shadow:0 2px 5px rgba(15,23,42,.07)}
+.upcoming-brevet-title{font-weight:800;font-size:.92rem;line-height:1.35;color:var(--text)}
+.brevet-coach{position:relative;display:inline-flex;align-items:center;gap:6px;outline:none}
+.brevet-coach-trigger{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #dbe4ef;border-radius:9px;background:#fff;color:var(--primary);font-size:.7rem;font-weight:800;cursor:help}
+.ai-sparkle{font-size:1rem;color:#7c3aed;animation:sparkle-pulse 1.5s ease-in-out infinite}
+.brevet-coach-popover{display:none;position:absolute;left:0;top:calc(100% + 8px);z-index:30;width:min(340px,calc(100vw - 56px));padding:13px 14px;border:1px solid #d8dff0;border-radius:11px;background:#fff;color:var(--text);box-shadow:0 12px 28px rgba(15,23,42,.18);font-size:.78rem;line-height:1.5}
+.brevet-coach:hover .brevet-coach-popover,.brevet-coach:focus-within .brevet-coach-popover{display:block}
+.coach-loading{display:flex;align-items:center;gap:8px;color:var(--text-light)}
+.coach-loading-dots{display:inline-flex;gap:3px}
+.coach-loading-dots i{display:block;width:5px;height:5px;border-radius:50%;background:#7c3aed;animation:coach-dot 1s ease-in-out infinite}
+.coach-loading-dots i:nth-child(2){animation-delay:.15s}.coach-loading-dots i:nth-child(3){animation-delay:.3s}
+@keyframes sparkle-pulse{0%,100%{transform:scale(.9);opacity:.65}50%{transform:scale(1.15);opacity:1}}
+@keyframes coach-dot{0%,100%{transform:translateY(0);opacity:.35}50%{transform:translateY(-4px);opacity:1}}
 @media(max-width:640px){.private-ride{grid-template-columns:1fr}}
 @media(max-width:760px){
   .ride-calendar-shell{overflow-x:auto}.ride-calendar-week,.ride-calendar-grid{min-width:720px}
@@ -61,39 +78,58 @@
     <div id="calendar-grid" class="ride-calendar-grid"></div>
   </section>
 
-  <div id="timeline-panel" hidden>
-  <div class="card">
+  <section class="card upcoming-brevet-section" id="upcoming-brevets" {% if rider.rusa_id %}data-advice-url="{{ url_for('riders.rider_advice_api', rusa_id=rider.rusa_id) }}"{% endif %}>
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
       <div>
         <h2 style="margin:0;color:var(--primary);">Upcoming brevets</h2>
-        <p style="margin:4px 0 0;color:var(--text-light);">Your commitments and preparation targets.</p>
+        <p style="margin:4px 0 0;color:var(--text-light);">Your commitments, route targets, readiness, and private coaching.</p>
       </div>
       {% if current_season %}<a class="btn btn-primary" href="{{ url_for('riders.upcoming_brevets', season_name=current_season.name) }}">Browse calendar</a>{% endif %}
     </div>
     {% if upcoming %}
+    <div class="upcoming-brevet-grid">
       {% for ride in upcoming %}
-      <div class="private-ride calendar-source" data-calendar-kind="brevet" data-calendar-date="{{ ride.date }}">
-        <div>
-          <strong>{{ ride.name|clean_name }}</strong>
-          <div class="ride-metrics">
-            <span>{{ ride.date }}</span>
-            {% if ride.distance_km %}<span>{{ ride.distance_km }} km</span>{% elif ride.distance_miles %}<span>{{ ride.distance_miles|round(0)|int }} mi</span>{% endif %}
-            <span>{{ ride.signup_status|default(ride.status)|title }}</span>
-            {% if ride.readiness %}
-            <span class="readiness-pill" style="background:{{ ride.readiness.color }}" title="Readiness score {{ ride.readiness.score }} out of 100">
-              {{ ride.readiness.score }} · {% if ride.readiness.level == 'ready' %}Ready{% elif ride.readiness.level == 'caution' %}Needs work{% else %}Not ready{% endif %}
-            </span>
-            {% endif %}
-          </div>
+      <article class="upcoming-brevet-card calendar-source" data-calendar-kind="brevet" data-calendar-type="Brevet" data-calendar-date="{{ ride.date }}">
+        <div class="upcoming-brevet-title"><span class="activity-type-icon" aria-label="Brevet">◆</span>{{ ride.name|clean_name }}</div>
+        <div class="ride-metrics" style="margin:10px 0;">
+          <span>📅 {{ ride.date }}{% if ride.start_time %} · {{ ride.start_time }}{% endif %}</span>
+          {% if ride.distance_km %}<span><strong>{{ ride.distance_km }}</strong> km</span>{% elif ride.distance_miles %}<span><strong>{{ ride.distance_miles|round(0)|int }}</strong> mi</span>{% endif %}
+          {% if ride.elevation_ft %}<span><strong>{{ ride.elevation_ft|commafy }}</strong> ft</span>{% endif %}
+          <span>{{ ride.signup_status|default(ride.status)|title }}</span>
         </div>
-        {% if ride.plan_slug %}<a class="btn" href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}">Plan</a>{% endif %}
-      </div>
+        {% if ride.start_location %}
+        <div style="padding:7px 9px;margin-bottom:10px;background:#f8fafc;border-left:3px solid var(--primary);border-radius:6px;color:var(--text-light);font-size:.75rem;">📍 {{ ride.start_location }}</div>
+        {% endif %}
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:auto;">
+          {% if ride.readiness %}
+          <span class="readiness-pill" style="background:{{ ride.readiness.color }}" title="Readiness score {{ ride.readiness.score }} out of 100">
+            {{ ride.readiness.score }} · {% if ride.readiness.level == 'ready' %}Ready{% elif ride.readiness.level == 'caution' %}Needs work{% else %}Not ready{% endif %}
+          </span>
+          {% endif %}
+          <span class="brevet-coach" tabindex="0" data-coach-ride="{{ ride.id }}">
+            <span class="brevet-coach-trigger"><span class="ai-sparkle" aria-hidden="true">✦</span> AI coaching</span>
+            <span class="brevet-coach-popover" role="tooltip">
+              <span class="coach-loading">
+                Loading personalized coaching
+                <span class="coach-loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              </span>
+              <span class="coach-copy" hidden></span>
+            </span>
+          </span>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid #edf2f7;">
+          {% if ride.plan_slug %}<a class="btn" href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}">Ride plan</a>{% endif %}
+          {% if ride.rwgps_url %}<a class="btn" href="{{ ride.rwgps_url }}" target="_blank" rel="noopener">Route</a>{% endif %}
+        </div>
+      </article>
       {% endfor %}
+    </div>
     {% else %}
       <p style="color:var(--text-light);margin-top:16px;">No upcoming brevet commitments yet.</p>
     {% endif %}
-  </div>
+  </section>
 
+  <div id="timeline-panel" hidden>
   <div class="card">
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
       <div>
@@ -103,9 +139,10 @@
     </div>
     <div id="ride-feed">
     {% for activity in activity_feed %}
-      <article class="private-ride calendar-source" data-calendar-kind="workout" data-calendar-date="{{ activity.started_at[:10] if activity.started_at else '' }}">
+      <article class="private-ride calendar-source" data-calendar-kind="{{ 'brevet' if activity.ride_id else 'workout' }}" data-calendar-type="{{ activity.activity_type|default('Workout') }}" data-calendar-date="{{ activity.started_at[:10] if activity.started_at else '' }}">
         <div>
           <div>
+            <span class="activity-type-icon activity-type-icon-dynamic" data-activity-type="{{ activity.activity_type|default('Workout') }}" aria-hidden="true"></span>
             {% if activity.ride_id %}<span class="brevet-badge">Brevet</span>{% endif %}
             {% for provider in activity.providers %}
             <span class="provider-badge provider-{{ provider|lower }}">{{ provider }}</span>
@@ -178,12 +215,13 @@ function calendarEvents() {
     var metrics = Array.from(item.querySelectorAll('.ride-metrics span')).map(function(span) {
       return span.textContent.trim();
     });
-    var title = item.querySelector('strong');
+    var title = item.querySelector('.upcoming-brevet-title, strong');
     var rating = item.querySelector('.training-rating');
     var readiness = item.querySelector('.readiness-pill');
     return {
       date: item.dataset.calendarDate,
       kind: item.dataset.calendarKind,
+      activityType: item.dataset.calendarType || 'Workout',
       title: title ? title.textContent.trim() : 'Activity',
       metrics: metrics,
       rating: rating ? rating.textContent.trim() : '',
@@ -198,6 +236,19 @@ function escapeCalendarText(value) {
   return String(value || '').replace(/[&<>"']/g, function(character) {
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character];
   });
+}
+
+function activityIcon(activityType, kind) {
+  if (kind === 'brevet') return '◆';
+  var value = String(activityType || '').toLowerCase();
+  if (value.indexOf('virtual') >= 0) return '▣';
+  if (value.indexOf('ride') >= 0 || value.indexOf('cycl') >= 0 || value.indexOf('bike') >= 0) return '🚲';
+  if (value.indexOf('run') >= 0) return '🏃';
+  if (value.indexOf('walk') >= 0 || value.indexOf('hike') >= 0) return '🥾';
+  if (value.indexOf('swim') >= 0) return '🏊';
+  if (value.indexOf('weight') >= 0 || value.indexOf('strength') >= 0) return '🏋️';
+  if (value.indexOf('yoga') >= 0) return '🧘';
+  return '●';
 }
 
 function renderRideCalendar() {
@@ -236,7 +287,7 @@ function renderRideCalendar() {
           ? '<span class="calendar-grade" style="background:' + event.readinessColor + '">' + escapeCalendarText(event.readiness) + '</span>'
           : '');
       block.innerHTML =
-        '<span class="calendar-event-title">' + escapeCalendarText(event.title) + '</span>' +
+        '<span class="calendar-event-title">' + activityIcon(event.activityType, event.kind) + ' ' + escapeCalendarText(event.title) + '</span>' +
         '<span class="calendar-event-meta">' +
           (primaryMetric ? '<span>' + escapeCalendarText(primaryMetric) + '</span>' : '') + badge +
         '</span>';
@@ -245,6 +296,55 @@ function renderRideCalendar() {
     grid.appendChild(cell);
   }
 }
+
+document.querySelectorAll('.activity-type-icon-dynamic').forEach(function(icon) {
+  var card = icon.closest('.calendar-source');
+  icon.textContent = activityIcon(icon.dataset.activityType, card ? card.dataset.calendarKind : 'workout');
+});
+
+var coachingRequest = null;
+
+function renderCoaching(advice) {
+  document.querySelectorAll('[data-coach-ride]').forEach(function(coach) {
+    var copy = coach.querySelector('.coach-copy');
+    var loading = coach.querySelector('.coach-loading');
+    var message = advice[String(coach.dataset.coachRide)] ||
+      'Personalized coaching is not available for this brevet yet.';
+    copy.textContent = message;
+    copy.hidden = false;
+    loading.hidden = true;
+  });
+}
+
+function loadOpenAICoaching() {
+  if (coachingRequest) return coachingRequest;
+  var section = document.getElementById('upcoming-brevets');
+  var adviceUrl = section ? section.dataset.adviceUrl : '';
+  if (!adviceUrl) {
+    renderCoaching({});
+    return Promise.resolve({});
+  }
+  coachingRequest = fetch(adviceUrl, {headers:{'Accept':'application/json'}})
+    .then(function(response) {
+      if (!response.ok) throw new Error('Coaching request failed');
+      return response.json();
+    })
+    .then(function(advice) {
+      renderCoaching(advice || {});
+      return advice;
+    })
+    .catch(function() {
+      renderCoaching({});
+      return {};
+    });
+  return coachingRequest;
+}
+
+document.querySelectorAll('[data-coach-ride]').forEach(function(coach) {
+  coach.addEventListener('pointerenter', loadOpenAICoaching, {once:true});
+  coach.addEventListener('focusin', loadOpenAICoaching, {once:true});
+  coach.addEventListener('click', loadOpenAICoaching, {once:true});
+});
 
 document.querySelectorAll('.ride-view-toggle button').forEach(function(button){
   button.addEventListener('click', function(){

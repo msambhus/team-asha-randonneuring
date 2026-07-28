@@ -58,6 +58,8 @@ def build_private_activity_feed(strava_activities=None, garmin_activities=None):
             "key": f"garmin:{row.get('garmin_activity_id')}",
             "name": _value(
                 row, "ride_name", "strava_name", "activity_name") or "Cycling activity",
+            "activity_type": _value(
+                row, "strava_activity_type", "activity_type") or "Ride",
             "started_at": started_at,
             "distance_m": distance_m,
             "duration_s": duration_s,
@@ -79,6 +81,7 @@ def build_private_activity_feed(strava_activities=None, garmin_activities=None):
         cards.append({
             "key": f"strava:{strava_id}",
             "name": _value(row, "name", "activity_name") or "Cycling activity",
+            "activity_type": _value(row, "activity_type", "sport_type") or "Workout",
             "started_at": _iso_datetime(
                 _value(row, "start_date_local", "start_date", "started_at")),
             "distance_m": _value(row, "distance", "distance_m"),

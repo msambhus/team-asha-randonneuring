@@ -145,9 +145,16 @@ def test_my_rides_collapses_explicit_garmin_strava_match(client, app):
     assert b"Brevet" in response.data
     assert b"SCR 400K" in response.data
     assert b"SCR 200K" in response.data
-    assert b"200 km" in response.data
+    assert b"<strong>200</strong> km" in response.data
     assert b"Workout rating" in response.data
     assert b"Readiness score" in response.data
     assert b'id="calendar-grid"' in response.data
-    assert b'data-calendar-kind="workout"' in response.data
     assert b'data-calendar-kind="brevet"' in response.data
+    assert b'data-calendar-type="Ride"' in response.data
+    assert b"activityIcon" in response.data
+    assert b"AI coaching" in response.data
+    assert b"Loading personalized coaching" in response.data
+    assert b"/rider/12345/advice" in response.data
+    assert b"pointerenter" in response.data
+    assert response.data.index(b'id="calendar-grid"') < response.data.index(
+        b'id="upcoming-brevets"')
