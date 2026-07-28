@@ -89,6 +89,19 @@ def fetch_activities(connection, after_epoch=None, before_epoch=None, per_page=1
     )
 
 
+def sync_athlete_profile(connection):
+    """Refresh stable athlete-level metrics that Strava actually exposes."""
+    token = _get_valid_token(connection)
+    athlete = _shared.fetch_athlete(
+        token, api_base=current_app.config['STRAVA_API_BASE'])
+    from models import update_strava_athlete_metrics
+    update_strava_athlete_metrics(
+        connection['rider_id'],
+        ftp=athlete.get('ftp'),
+    )
+    return athlete
+
+
 def sync_rider_activities(rider_id, days=365, before_epoch=None, after_epoch=None, calculate_eddington=True):
     """Pull activities for a rider and upsert into DB.
 
@@ -109,6 +122,14 @@ def sync_rider_activities(rider_id, days=365, before_epoch=None, after_epoch=Non
     connection = get_strava_connection(rider_id)
     if not connection:
         return {'new': 0, 'updated': 0, 'failed': 0, 'total': 0}
+
+    try:
+        sync_athlete_profile(connection)
+    except Exception as e:
+        # Athlete metrics are additive; activity sync must still proceed.
+        current_app.logger.warning(
+            "Strava athlete profile sync failed for rider %s: %s",
+            rider_id, e)
 
     if after_epoch is None:
         after_epoch = int(time.time()) - (days * 24 * 3600)

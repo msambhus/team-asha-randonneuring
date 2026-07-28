@@ -122,6 +122,20 @@ def fetch_activities(access_token, *, api_base, after_epoch=None, before_epoch=N
     return all_activities
 
 
+def fetch_athlete(access_token, *, api_base):
+    """Fetch the authenticated athlete profile for provider-owned metrics."""
+    resp = requests.get(
+        f"{api_base}/athlete",
+        headers={'Authorization': f'Bearer {access_token}'},
+        timeout=10,
+    )
+    if resp.status_code == 429:
+        raise Exception("Strava rate limit exceeded. Please try again later.")
+    resp.raise_for_status()
+    athlete = resp.json()
+    return athlete if isinstance(athlete, dict) else {}
+
+
 # The Strava activity-streams the ride-analysis engine consumes, as the API's
 # `keys` param. Mirrors shared.strava_analysis._STREAM_KEYS.
 ACTIVITY_STREAM_KEYS = 'time,distance,velocity_smooth,heartrate,watts,cadence,altitude,grade_smooth,latlng'
