@@ -12,8 +12,12 @@ def ride_card(**values):
         'finish_time': None,
         'has_plan': False,
         'has_match': False,
+        'has_strava_match': False,
+        'has_garmin_match': False,
+        'sources': [],
         'is_brevet': False,
         'activity': None,
+        'garmin_activity': None,
     }
     card.update(values)
     return card
