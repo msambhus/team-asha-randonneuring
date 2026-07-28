@@ -2200,16 +2200,30 @@ def get_garmin_connection(rider_id, include_tokens=False):
     """Return one rider's Garmin connection; ciphertext is opt-in for sync only."""
     columns = (
         "rider_id, token_ciphertext, display_name, status, connected_at, "
-        "last_sync_at, last_error, updated_at"
+        "last_sync_at, last_error, updated_at, activity_sync_cursor, "
+        "activity_sync_since, activity_history_complete"
         if include_tokens else
         "rider_id, display_name, status, connected_at, last_sync_at, "
-        "last_error, updated_at"
+        "last_error, updated_at, activity_sync_cursor, activity_sync_since, "
+        "activity_history_complete"
     )
     row = _execute(
         f"SELECT {columns} FROM garmin_connection WHERE rider_id = %s",
         (rider_id,),
     ).fetchone()
     return dict(row) if row else None
+
+
+def update_garmin_activity_sync_state(
+        rider_id, *, cursor, since, complete):
+    """Persist one rider's bounded Garmin history continuation state."""
+    _execute(
+        "UPDATE garmin_connection SET activity_sync_cursor=%s, "
+        "activity_sync_since=%s, activity_history_complete=%s, "
+        "updated_at=NOW() WHERE rider_id=%s",
+        (cursor, since, complete, rider_id),
+    )
+    get_db().commit()
 
 
 def upsert_garmin_connection(rider_id, token_ciphertext, display_name=None):

@@ -154,6 +154,47 @@ def test_activity_history_has_explicit_safety_bound():
             date(2025, 7, 27), max_activities=5001))
 
 
+def test_activity_history_batch_returns_resumable_cursor():
+    class BatchAuth:
+        def __init__(self):
+            self.starts = []
+
+        def connectapi(self, path, **kwargs):
+            start = int(kwargs["params"]["start"])
+            self.starts.append(start)
+            return [
+                {"activityId": start + index,
+                 "startTimeGMT": "2026-07-27T08:00:00Z"}
+                for index in range(100)
+            ]
+
+    auth = BatchAuth()
+    batch = GarminPerformanceClient(auth).activity_history_batch(
+        date(2025, 7, 27), start=200, max_pages=2)
+
+    assert auth.starts == [200, 300]
+    assert len(batch["pages"]) == 2
+    assert batch["next_start"] == 400
+    assert batch["complete"] is False
+
+
+def test_activity_history_batch_completes_at_date_boundary():
+    class BoundaryAuth:
+        def connectapi(self, path, **kwargs):
+            return [
+                {"activityId": 1, "startTimeGMT": "2025-07-28T08:00:00Z"},
+                {"activityId": 2, "startTimeGMT": "2025-07-26T08:00:00Z"},
+            ]
+
+    batch = GarminPerformanceClient(BoundaryAuth()).activity_history_batch(
+        date(2025, 7, 27), page_size=100)
+
+    assert [[row["activityId"] for row in page]
+            for page in batch["pages"]] == [[1]]
+    assert batch["next_start"] == 0
+    assert batch["complete"] is True
+
+
 def test_activity_summary_normalizes_cycling_performance_fields():
     normalized = GarminPerformanceClient.normalize_activity({
         "activityId": 123,
