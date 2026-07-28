@@ -2161,6 +2161,19 @@ def update_strava_last_sync(rider_id):
     )
     conn.commit()
 
+
+def update_strava_athlete_metrics(rider_id, ftp=None):
+    """Persist provider-supplied athlete metrics for one connected rider."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE strava_connection SET ftp = %s WHERE rider_id = %s",
+        (ftp, rider_id),
+    )
+    conn.commit()
+    cache.delete_memoized(get_strava_connection, rider_id)
+
+
 def delete_strava_connection(rider_id):
     """Atomically delete one rider's complete private Strava footprint."""
     conn = get_db()

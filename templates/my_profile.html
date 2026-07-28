@@ -51,6 +51,41 @@
     cursor: wait;
     opacity: .85;
 }
+.performance-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+    gap: 10px;
+}
+.performance-metric {
+    position: relative;
+    min-height: 92px;
+    padding: 14px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #fff;
+}
+.performance-metric.highlight {
+    background: linear-gradient(145deg, #eff6ff, #fff);
+    border-color: #bfdbfe;
+}
+.performance-value {
+    color: var(--primary);
+    font-size: 1.5rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+.performance-label {
+    margin-top: 5px;
+    color: var(--text);
+    font-size: .75rem;
+    font-weight: 700;
+}
+.performance-source {
+    color: var(--text-light);
+    font-size: .65rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
 @keyframes garmin-sync-spin {
     to { transform: rotate(360deg); }
 }
@@ -94,6 +129,114 @@
 </div>
 
 <div class="container section">
+
+{% if fitness_score or garmin_snapshot or (strava_connection and strava_connection.get('ftp') is not none) %}
+<div class="card" style="margin-bottom:18px;border-top:4px solid var(--primary);padding:20px;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:15px;">
+    <div>
+      <h3 style="margin:0;color:var(--primary);">Performance &amp; Recovery</h3>
+      <p style="margin:4px 0 0;color:var(--text-light);font-size:.78rem;">
+        Private highlights from your connected accounts. Each value retains its source.
+      </p>
+    </div>
+    {% if garmin_snapshot %}
+    <span style="color:var(--text-light);font-size:.7rem;">Garmin snapshot {{ garmin_snapshot.snapshot_date }}</span>
+    {% endif %}
+  </div>
+  <div class="performance-grid">
+    {% if garmin_snapshot and garmin_snapshot.get('sleep_score') is not none %}
+    <div class="performance-metric highlight">
+      <div class="performance-value">{{ garmin_snapshot.get('sleep_score') }}</div>
+      <div class="performance-label">Sleep Score</div>
+      <div class="performance-source">Garmin</div>
+    </div>
+    {% endif %}
+    {% if garmin_snapshot and garmin_snapshot.get('body_battery') is not none %}
+    <div class="performance-metric highlight">
+      <div class="performance-value">{{ garmin_snapshot.get('body_battery') }}</div>
+      <div class="performance-label">Body Battery</div>
+      <div class="performance-source">Garmin</div>
+    </div>
+    {% endif %}
+    {% if fitness_score %}
+    <div class="performance-metric">
+      <div class="performance-value" style="color:{% if fitness_score.total >= 70 %}#25803b{% elif fitness_score.total >= 40 %}#9a6700{% else %}#b42318{% endif %};">{{ fitness_score.total }}<span style="font-size:.72rem;">/100</span></div>
+      <div class="performance-label">Fitness Score</div>
+      <div class="performance-source">Team Asha from Strava</div>
+    </div>
+    {% endif %}
+    {% if garmin_snapshot and garmin_snapshot.get('vo2_max_cycling') is not none %}
+    <div class="performance-metric">
+      <div class="performance-value">{{ garmin_snapshot.get('vo2_max_cycling') }}</div>
+      <div class="performance-label">Cycling VO₂ Max</div>
+      <div class="performance-source">Garmin</div>
+    </div>
+    {% endif %}
+    {% if strava_connection and strava_connection.get('ftp') is not none %}
+    <div class="performance-metric">
+      <div class="performance-value">{{ strava_connection.get('ftp')|round|int }}<span style="font-size:.72rem;"> W</span></div>
+      <div class="performance-label">FTP</div>
+      <div class="performance-source">Strava athlete profile</div>
+    </div>
+    {% endif %}
+    {% if garmin_snapshot and garmin_snapshot.get('training_readiness') is not none %}
+    <div class="performance-metric">
+      <div class="performance-value">{{ garmin_snapshot.get('training_readiness') }}</div>
+      <div class="performance-label">Training Readiness</div>
+      <div class="performance-source">Garmin</div>
+    </div>
+    {% endif %}
+    {% if garmin_snapshot and garmin_snapshot.get('hrv_status') is not none %}
+    <div class="performance-metric">
+      <div class="performance-value" style="font-size:1.05rem;">{{ garmin_snapshot.get('hrv_status')|replace('_', ' ')|title }}</div>
+      <div class="performance-label">HRV Status</div>
+      <div class="performance-source">Garmin</div>
+    </div>
+    {% endif %}
+    {% if garmin_snapshot and garmin_snapshot.get('resting_heart_rate') is not none %}
+    <div class="performance-metric">
+      <div class="performance-value">{{ garmin_snapshot.get('resting_heart_rate')|round|int }}<span style="font-size:.72rem;"> bpm</span></div>
+      <div class="performance-label">Resting Heart Rate</div>
+      <div class="performance-source">Garmin</div>
+    </div>
+    {% endif %}
+    {% if garmin_snapshot and garmin_snapshot.get('recovery_time_minutes') is not none %}
+    <div class="performance-metric">
+      <div class="performance-value">{{ '%.1f'|format((garmin_snapshot.get('recovery_time_minutes')|float) / 60) }}<span style="font-size:.72rem;"> h</span></div>
+      <div class="performance-label">Recovery Time</div>
+      <div class="performance-source">Garmin</div>
+    </div>
+    {% endif %}
+    {% for label, value in [
+      ('Endurance Score', garmin_snapshot.get('endurance_score') if garmin_snapshot else none),
+      ('Acute Training Load', garmin_snapshot.get('acute_training_load') if garmin_snapshot else none),
+      ('Training Status', garmin_snapshot.get('training_status') if garmin_snapshot else none)
+    ] %}
+      {% if value is not none %}
+      <div class="performance-metric">
+        <div class="performance-value" style="{% if label == 'Training Status' %}font-size:1.05rem;{% endif %}">{{ value|replace('_', ' ')|title if value is string else value }}</div>
+        <div class="performance-label">{{ label }}</div>
+        <div class="performance-source">Garmin</div>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% if fitness_score %}
+  <div style="margin-top:12px;color:var(--text-light);font-size:.72rem;">
+    Fitness components: frequency {{ fitness_score.frequency }}/25 · volume {{ fitness_score.volume }}/35 ·
+    intensity {{ fitness_score.intensity }}/25 · recency {{ fitness_score.recency }}/15.
+  </div>
+  {% endif %}
+  {% if garmin_snapshot and (garmin_snapshot.get('readiness_level') or garmin_snapshot.get('readiness_feedback') or garmin_snapshot.get('recovery_time_minutes') is not none or garmin_snapshot.get('load_level_trend')) %}
+  <div style="margin-top:8px;color:var(--text-light);font-size:.72rem;">
+    {% if garmin_snapshot.get('readiness_level') %}Readiness {{ garmin_snapshot.get('readiness_level')|replace('_', ' ')|lower }}.{% endif %}
+    {% if garmin_snapshot.get('readiness_feedback') %} {{ garmin_snapshot.get('readiness_feedback')|replace('_', ' ')|title }}.{% endif %}
+    {% if garmin_snapshot.get('recovery_time_minutes') is not none %} {{ '%.1f'|format((garmin_snapshot.get('recovery_time_minutes')|float) / 60) }}h recovery.{% endif %}
+    {% if garmin_snapshot.get('load_level_trend') %} Load {{ garmin_snapshot.get('load_level_trend')|replace('_', ' ')|lower }}.{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
 
 {% if rider.bio %}
 <div class="card">
@@ -264,46 +407,6 @@
       This may take up to a minute. Please keep this page open.
     </div>
   </div>
-  {% endif %}
-  {% if garmin_snapshot %}
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-top:18px;">
-    {% for label, value in [
-      ('Readiness', garmin_snapshot.training_readiness),
-      ('Sleep', garmin_snapshot.sleep_score),
-      ('Body Battery', garmin_snapshot.body_battery),
-      ('Resting HR', garmin_snapshot.resting_heart_rate),
-      ('Cycling VO₂ Max', garmin_snapshot.vo2_max_cycling),
-      ('Endurance', garmin_snapshot.endurance_score),
-      ('Acute Load', garmin_snapshot.acute_training_load),
-      ('Training', garmin_snapshot.training_status)
-    ] %}
-      {% if value is not none %}
-      <div style="background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;text-align:center;">
-        <div style="font-size:1.15rem;font-weight:700;color:var(--primary);">{{ value }}</div>
-        <div style="font-size:.68rem;text-transform:uppercase;color:var(--text-light);">{{ label }}</div>
-      </div>
-      {% endif %}
-    {% endfor %}
-  </div>
-  <p style="margin:10px 0 0;color:var(--text-light);font-size:.72rem;">
-    Private Garmin snapshot for {{ garmin_snapshot.snapshot_date }}.
-  </p>
-  {% if garmin_snapshot.readiness_level or garmin_snapshot.readiness_feedback or garmin_snapshot.recovery_time_minutes is not none %}
-  <div style="margin-top:10px;padding:10px 12px;background:#f7fafc;border-radius:8px;color:var(--text-light);font-size:.78rem;">
-    {% if garmin_snapshot.readiness_level %}
-      <strong style="color:var(--primary);">{{ garmin_snapshot.readiness_level|replace('_', ' ')|title }}</strong>
-    {% endif %}
-    {% if garmin_snapshot.readiness_feedback %}
-      · {{ garmin_snapshot.readiness_feedback|replace('_', ' ')|title }}
-    {% endif %}
-    {% if garmin_snapshot.recovery_time_minutes is not none %}
-      · {{ '%.1f'|format((garmin_snapshot.recovery_time_minutes|float) / 60) }}h recovery
-    {% endif %}
-    {% if garmin_snapshot.load_level_trend %}
-      · Load {{ garmin_snapshot.load_level_trend|replace('_', ' ')|lower }}
-    {% endif %}
-  </div>
-  {% endif %}
   {% endif %}
   {% if garmin_activities %}
   <div style="margin-top:18px;border-top:1px solid #e2e8f0;padding-top:14px;">
