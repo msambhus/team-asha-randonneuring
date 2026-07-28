@@ -59,12 +59,15 @@ def test_owned_rider_can_open_private_match_review(client):
     with client.session_transaction() as session:
         session["user_id"] = 1
         session["rider_id"] = 42
-    with patch("models.get_garmin_brevet_match_review",
+    with patch("services.activity_matching.refresh_activity_matches_safely"
+               ) as refresh, \
+         patch("models.get_garmin_brevet_match_review",
                return_value=[]) as activities, \
          patch("models.get_finished_brevets_for_matching",
                return_value=[]) as brevets:
         response = client.get("/garmin/ride-matches")
     assert response.status_code == 200
+    refresh.assert_called_once_with(42)
     activities.assert_called_once_with(42)
     brevets.assert_called_once_with(42)
 
@@ -94,3 +97,29 @@ def test_unlink_route_passes_only_session_owner_to_model(client):
         )
     assert response.status_code == 302
     reject.assert_called_once_with(42, 991)
+
+
+def test_review_query_includes_paired_strava_details_without_raw_payload():
+    cursor = MagicMock()
+    cursor.fetchall.return_value = []
+    with patch("models._execute", return_value=cursor) as execute:
+        models.get_garmin_brevet_match_review(42)
+    sql, params = execute.call_args.args
+    assert params == (42, 50)
+    assert "activity_source_match asm" in sql
+    assert "strava_activity sa" in sql
+    assert "sa.elapsed_time AS strava_elapsed_s" in sql
+    assert "asm.reasons AS source_reasons" in sql
+    assert "raw_ciphertext" not in sql
+
+
+def test_review_template_shows_garmin_and_strava_recording_details():
+    from pathlib import Path
+    template = (
+        Path(__file__).parents[1] / "templates" / "garmin_ride_matches.html"
+    ).read_text()
+    assert "Garmin recording" in template
+    assert "Strava matched" in template
+    assert "strava_distance_m" in template
+    assert "source_confidence" in template
+    assert "start_delta_minutes" in template
