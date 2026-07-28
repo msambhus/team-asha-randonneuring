@@ -4031,13 +4031,17 @@ def update_stop_note(match_id, key, note):
     return _set_or_remove_rider_note(match_id, ['stops', key], note)
 
 
-def get_rider_rides_with_cached_streams(rider_id):
+def get_rider_rides_with_cached_streams(rider_id, limit=None):
     """Get all finished rides for a rider that have cached Strava stream data.
 
     Returns ride metadata plus the compressed activity_streams blob for each ride.
     Only includes rides where stream analysis completed successfully.
+
+    ``limit`` bounds the number of large BYTEA stream blobs transferred for
+    callers that only need a small recent baseline. The default preserves the
+    complete-history behavior used by comparison and cohort features.
     """
-    return _execute("""
+    sql = """
         SELECT r.id AS ride_id, r.name AS ride_name, r.ride_plan_id,
                r.date, r.distance_km,
                r.elevation_ft,
@@ -4061,7 +4065,12 @@ def get_rider_rides_with_cached_streams(rider_id):
           AND sra.activity_streams IS NOT NULL
           AND sra.strava_api_error IS NULL
         ORDER BY r.date DESC
-    """, (rider_id, RideStatus.FINISHED.value)).fetchall()
+    """
+    params = [rider_id, RideStatus.FINISHED.value]
+    if limit is not None:
+        sql += " LIMIT %s"
+        params.append(max(0, int(limit)))
+    return _execute(sql, tuple(params)).fetchall()
 
 
 def get_rider_rides_metadata_for_comparison(rider_id):
