@@ -9,10 +9,21 @@
   <div class="card" style="margin-top:16px;padding:24px;">
     <h1 style="margin:0 0 8px;color:var(--primary);font-size:1.55rem;">Review Garmin ride matches</h1>
     <p style="margin:0;color:var(--text-light);">
-      These private links determine which Garmin device metrics appear in brevet Stats.
-      Automatic links show their confidence; your selections take precedence and remain
-      in place after future syncs.
+      Each row shows the Garmin recording, its paired Strava activity, and any brevet
+      association. These private links determine which device metrics appear in brevet
+      Stats. Your selections take precedence and remain in place after future syncs.
     </p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
+      <span style="padding:6px 10px;border-radius:999px;background:#dbeafe;color:#1e40af;font-size:.75rem;font-weight:700;">
+        {{ summary.garmin }} Garmin rides
+      </span>
+      <span style="padding:6px 10px;border-radius:999px;background:#fff1eb;color:#b93815;font-size:.75rem;font-weight:700;">
+        {{ summary.strava }} matched to Strava
+      </span>
+      <span style="padding:6px 10px;border-radius:999px;background:#e8f5e9;color:#216e39;font-size:.75rem;font-weight:700;">
+        {{ summary.brevets }} matched to brevets
+      </span>
+    </div>
   </div>
 
   {% if not activities %}
@@ -36,19 +47,80 @@
           {% if activity.device_name %}&middot; {{ activity.device_name }}{% endif %}
         </div>
       </div>
-      {% if activity.ride_id and activity.match_status != 'rejected' %}
-      <span style="align-self:flex-start;border-radius:999px;padding:4px 9px;background:#e8f5e9;color:#216e39;font-size:.72rem;font-weight:700;">
-        {{ 'Your match' if activity.match_status in ('manual', 'confirmed') else 'Auto matched' }}
-      </span>
-      {% elif activity.match_status == 'rejected' %}
-      <span style="align-self:flex-start;border-radius:999px;padding:4px 9px;background:#f3f4f6;color:#64748b;font-size:.72rem;font-weight:700;">
-        Unlinked by you
-      </span>
-      {% else %}
-      <span style="align-self:flex-start;border-radius:999px;padding:4px 9px;background:#fff7ed;color:#9a3412;font-size:.72rem;font-weight:700;">
-        Needs review
-      </span>
-      {% endif %}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-self:flex-start;">
+        {% if activity.strava_activity_id %}
+        <span style="border-radius:999px;padding:4px 9px;background:#fff1eb;color:#b93815;font-size:.72rem;font-weight:700;">
+          Strava matched
+        </span>
+        {% else %}
+        <span style="border-radius:999px;padding:4px 9px;background:#f3f4f6;color:#64748b;font-size:.72rem;font-weight:700;">
+          No Strava match
+        </span>
+        {% endif %}
+        {% if activity.ride_id and activity.match_status != 'rejected' %}
+        <span style="border-radius:999px;padding:4px 9px;background:#e8f5e9;color:#216e39;font-size:.72rem;font-weight:700;">
+          {{ 'Brevet selected by you' if activity.match_status in ('manual', 'confirmed') else 'Brevet auto matched' }}
+        </span>
+        {% elif activity.match_status == 'rejected' %}
+        <span style="border-radius:999px;padding:4px 9px;background:#f3f4f6;color:#64748b;font-size:.72rem;font-weight:700;">
+          Brevet unlinked by you
+        </span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:14px;">
+      <div style="padding:14px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:8px;">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+          <strong style="color:#1e40af;">Garmin recording</strong>
+          <span style="font-size:.65rem;font-weight:700;color:#1e40af;text-transform:uppercase;">Garmin</span>
+        </div>
+        {% set garmin_elapsed_min = (activity.duration_s|float / 60)|round|int if activity.duration_s is not none else none %}
+        {% set garmin_moving_min = (activity.moving_duration_s|float / 60)|round|int if activity.moving_duration_s is not none else none %}
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:10px;font-size:.78rem;">
+          <div><span style="color:var(--text-light);">Distance</span><br><strong>{{ '%.1f'|format((activity.distance_m|float) / 1609.344) if activity.distance_m is not none else '—' }} mi</strong></div>
+          <div><span style="color:var(--text-light);">Elevation</span><br><strong>{{ (activity.elevation_gain_m|float * 3.28084)|round|int if activity.elevation_gain_m is not none else '—' }} ft</strong></div>
+          <div><span style="color:var(--text-light);">Elapsed</span><br><strong>{% if garmin_elapsed_min is not none %}{{ (garmin_elapsed_min // 60)|int }}h {{ garmin_elapsed_min % 60 }}m{% else %}—{% endif %}</strong></div>
+          <div><span style="color:var(--text-light);">Moving</span><br><strong>{% if garmin_moving_min is not none %}{{ (garmin_moving_min // 60)|int }}h {{ garmin_moving_min % 60 }}m{% else %}—{% endif %}</strong></div>
+        </div>
+      </div>
+
+      <div style="padding:14px;border:1px solid {{ '#fed7c3' if activity.strava_activity_id else '#e2e8f0' }};background:{{ '#fff8f5' if activity.strava_activity_id else '#f8fafc' }};border-radius:8px;">
+        {% if activity.strava_activity_id %}
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+          <a href="https://www.strava.com/activities/{{ activity.strava_activity_id }}"
+             target="_blank" rel="noopener" style="font-weight:700;color:#b93815;text-decoration:none;">
+            {{ activity.strava_name or 'Strava activity' }} ↗
+          </a>
+          <span style="font-size:.65rem;font-weight:700;color:#b93815;text-transform:uppercase;">Strava</span>
+        </div>
+        {% set strava_elapsed_min = (activity.strava_elapsed_s|float / 60)|round|int if activity.strava_elapsed_s is not none else none %}
+        {% set strava_moving_min = (activity.strava_moving_s|float / 60)|round|int if activity.strava_moving_s is not none else none %}
+        <div style="color:var(--text-light);font-size:.72rem;margin-top:3px;">
+          {{ activity.strava_started_at.strftime('%b %-d, %Y at %-I:%M %p') if activity.strava_started_at else '' }}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:10px;font-size:.78rem;">
+          <div><span style="color:var(--text-light);">Distance</span><br><strong>{{ '%.1f'|format((activity.strava_distance_m|float) / 1609.344) if activity.strava_distance_m is not none else '—' }} mi</strong></div>
+          <div><span style="color:var(--text-light);">Elevation</span><br><strong>{{ (activity.strava_elevation_gain_m|float * 3.28084)|round|int if activity.strava_elevation_gain_m is not none else '—' }} ft</strong></div>
+          <div><span style="color:var(--text-light);">Elapsed</span><br><strong>{% if strava_elapsed_min is not none %}{{ (strava_elapsed_min // 60)|int }}h {{ strava_elapsed_min % 60 }}m{% else %}—{% endif %}</strong></div>
+          <div><span style="color:var(--text-light);">Moving</span><br><strong>{% if strava_moving_min is not none %}{{ (strava_moving_min // 60)|int }}h {{ strava_moving_min % 60 }}m{% else %}—{% endif %}</strong></div>
+        </div>
+        <div style="margin-top:10px;font-size:.7rem;color:var(--text-light);">
+          {{ (activity.source_confidence|float * 100)|round|int }}% match confidence
+          {% if activity.source_reasons %}
+            &middot; start {{ activity.source_reasons.start_delta_minutes or 0 }} min apart
+            &middot; distance {{ activity.source_reasons.distance_difference_percent or 0 }}% apart
+            &middot; elapsed {{ activity.source_reasons.duration_difference_percent or 0 }}% apart
+          {% endif %}
+        </div>
+        {% else %}
+        <strong style="color:var(--text-light);">No Strava activity matched</strong>
+        <p style="margin:8px 0 0;color:var(--text-light);font-size:.76rem;">
+          Automatic matching requires compatible cycling type, start times within two
+          hours, distance within 20%, and an unambiguous high-confidence candidate.
+        </p>
+        {% endif %}
+      </div>
     </div>
 
     {% if activity.ride_id and activity.match_status != 'rejected' %}

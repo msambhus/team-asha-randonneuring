@@ -218,12 +218,25 @@ def disconnect():
 def ride_matches():
     """Private review surface for Garmin-to-brevet associations."""
     rider_id = session["rider_id"]
+    # Matching is derived and idempotent. Refresh here so a rider does not
+    # need another provider sync after a matching/schema deployment.
+    from services.activity_matching import refresh_activity_matches_safely
+    refresh_activity_matches_safely(rider_id)
     activities = models.get_garmin_brevet_match_review(rider_id)
     brevets = models.get_finished_brevets_for_matching(rider_id)
+    summary = {
+        "garmin": len(activities),
+        "strava": sum(bool(row.get("strava_activity_id"))
+                      for row in activities),
+        "brevets": sum(bool(row.get("ride_id"))
+                       and row.get("match_status") != "rejected"
+                       for row in activities),
+    }
     return render_template(
         "garmin_ride_matches.html",
         activities=activities,
         brevets=brevets,
+        summary=summary,
     )
 
 
