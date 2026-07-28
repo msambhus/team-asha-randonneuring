@@ -1167,16 +1167,20 @@ def ride_strava_analysis(rusa_id, ride_id):
     # it before the Strava early-return so Garmin-only brevet Stats can render
     # for the owning rider without exposing device metrics publicly.
     garmin_metrics = None
+    garmin_laps = []
     garmin_recovery = None
     strava_recordings = []
     strava_split_summary = None
     if is_own_profile:
         try:
-            from models import (get_garmin_metrics_for_brevet,
+            from models import (get_garmin_laps_for_brevet,
+                                get_garmin_metrics_for_brevet,
                                 get_latest_garmin_performance_snapshot,
                                 get_strava_recordings_for_brevet)
             from services.activity_matching import aggregate_strava_recordings
             garmin_metrics = get_garmin_metrics_for_brevet(
+                rider['id'], ride_id)
+            garmin_laps = get_garmin_laps_for_brevet(
                 rider['id'], ride_id)
             garmin_recovery = get_latest_garmin_performance_snapshot(
                 rider['id'])
@@ -1219,6 +1223,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                                is_own_profile=is_own_profile,
                                stop_wind=None,
                                garmin_metrics=garmin_metrics,
+                               garmin_laps=garmin_laps,
                                garmin_summary=garmin_summary,
                                garmin_recovery=garmin_recovery,
                                strava_recordings=strava_recordings,
@@ -1487,6 +1492,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                            stop_notes=stop_notes,
                            overall_note=overall_note,
                            garmin_metrics=garmin_metrics,
+                           garmin_laps=garmin_laps,
                            garmin_summary=None,
                            garmin_recovery=garmin_recovery,
                            strava_recordings=strava_recordings,

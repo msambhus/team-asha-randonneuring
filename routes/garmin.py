@@ -23,6 +23,33 @@ def _cipher():
         current_app.config.get("GARMIN_TOKEN_ENCRYPTION_KEY"))
 
 
+def _enrich_one_matched_activity(rider_id, performance):
+    """Best-effort detail sync; summary/history sync must still succeed."""
+    try:
+        candidates = models.get_garmin_detail_sync_candidates(
+            rider_id, limit=1)
+        for activity_id in candidates:
+            activity_summary = performance.activity(activity_id)
+            split_payload = performance.activity_splits(activity_id)
+            normalized = performance.normalize_activity(activity_summary)
+            laps = performance.normalize_splits(split_payload)
+            detail_ciphertext = _cipher().encrypt(json.dumps(
+                {"activity": activity_summary, "splits": split_payload},
+                separators=(",", ":"), default=str))
+            models.upsert_garmin_activity_detail(
+                rider_id, activity_id, normalized, laps, detail_ciphertext)
+    except Exception:
+        # A phased deploy or one unsupported activity must not undo the already
+        # committed recovery snapshot and resumable history page.
+        try:
+            models.get_db().rollback()
+        except Exception:
+            pass
+        current_app.logger.warning(
+            "Garmin activity detail enrichment deferred for rider %s",
+            rider_id, exc_info=True)
+
+
 @garmin_bp.route("/connect", methods=["GET", "POST"])
 @profile_required
 def connect():
@@ -193,6 +220,9 @@ def sync():
         )
         from services.activity_matching import refresh_activity_matches_safely
         refresh_activity_matches_safely(rider_id)
+        # One matched recording per request keeps Garmin calls and Vercel
+        # execution time bounded while repeated syncs make durable progress.
+        _enrich_one_matched_activity(rider_id, performance)
     except GarminConnectAuthenticationError:
         models.mark_garmin_reauth_required(rider_id)
         flash("Garmin authorization expired. Disconnect and reconnect Garmin.",

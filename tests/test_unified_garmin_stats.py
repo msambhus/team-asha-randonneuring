@@ -37,6 +37,34 @@ def test_stats_template_labels_garmin_without_replacing_strava_contract():
     assert "View on Strava" in template
     assert "Route Map" in template
     assert "Plan vs Actual Summary" in template
+    lap_partial = (
+        Path(__file__).parents[1] / "templates" / "_garmin_lap_details.html"
+    ).read_text()
+    assert "Garmin Lap Details" in lap_partial
+    assert "Private device-recorded laps" in lap_partial
+    assert "do not replace Strava route, stop, or control analysis" in lap_partial
+
+
+def test_garmin_lap_lookup_is_owned_and_excludes_encrypted_payload():
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [{
+        "garmin_activity_id": 123,
+        "laps": [{"lap_number": 1, "distance_m": 10000}],
+        "synced_at": "now",
+    }]
+    with patch("models._execute", return_value=cursor) as execute:
+        result = models.get_garmin_laps_for_brevet(42, 10)
+
+    sql, params = execute.call_args.args
+    assert params == (42, 10)
+    assert "abm.rider_id=%s AND abm.ride_id=%s" in sql
+    assert "raw_ciphertext" not in sql
+    assert result == [{
+        "lap_number": 1,
+        "distance_m": 10000,
+        "recording_number": 1,
+        "garmin_activity_id": 123,
+    }]
 
 
 def test_garmin_only_summary_compares_brevet_and_device_headlines():

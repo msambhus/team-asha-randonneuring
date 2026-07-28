@@ -2476,6 +2476,79 @@ def get_garmin_activities_for_matching(rider_id, limit=2000):
     return [dict(row) for row in rows]
 
 
+def get_garmin_detail_sync_candidates(rider_id, limit=1):
+    """Prioritize matched brevet recordings that still lack lap details."""
+    limit = max(1, min(int(limit), 3))
+    rows = _execute(
+        "SELECT DISTINCT ga.garmin_activity_id "
+        "FROM activity_brevet_match abm "
+        "JOIN garmin_activity ga ON ga.rider_id=abm.rider_id "
+        " AND ga.garmin_activity_id=abm.garmin_activity_id "
+        "LEFT JOIN garmin_activity_detail gad ON gad.rider_id=ga.rider_id "
+        " AND gad.garmin_activity_id=ga.garmin_activity_id "
+        "WHERE abm.rider_id=%s AND abm.match_status <> 'rejected' "
+        "AND gad.garmin_activity_id IS NULL "
+        "ORDER BY ga.garmin_activity_id DESC LIMIT %s",
+        (rider_id, limit),
+    ).fetchall()
+    return [int(row["garmin_activity_id"]) for row in rows]
+
+
+def upsert_garmin_activity_detail(
+        rider_id, garmin_activity_id, normalized_activity, laps,
+        raw_ciphertext):
+    """Atomically refresh one owned activity summary and private lap detail."""
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "UPDATE garmin_activity SET activity_name=%s, activity_type=%s, "
+            "started_at=%s, distance_m=%s, duration_s=%s, moving_duration_s=%s, "
+            "elevation_gain_m=%s, average_hr=%s, max_hr=%s, average_power=%s, "
+            "max_power=%s, normalized_power=%s, aerobic_training_effect=%s, "
+            "anaerobic_training_effect=%s, calories=%s, average_cadence=%s, "
+            "device_name=%s, synced_at=NOW() "
+            "WHERE rider_id=%s AND garmin_activity_id=%s",
+            (
+                normalized_activity.get("activity_name"),
+                normalized_activity.get("activity_type"),
+                normalized_activity.get("started_at"),
+                normalized_activity.get("distance_m"),
+                normalized_activity.get("duration_s"),
+                normalized_activity.get("moving_duration_s"),
+                normalized_activity.get("elevation_gain_m"),
+                normalized_activity.get("average_hr"),
+                normalized_activity.get("max_hr"),
+                normalized_activity.get("average_power"),
+                normalized_activity.get("max_power"),
+                normalized_activity.get("normalized_power"),
+                normalized_activity.get("aerobic_training_effect"),
+                normalized_activity.get("anaerobic_training_effect"),
+                normalized_activity.get("calories"),
+                normalized_activity.get("average_cadence"),
+                normalized_activity.get("device_name"),
+                rider_id,
+                garmin_activity_id,
+            ),
+        )
+        if cur.rowcount != 1:
+            raise ValueError("Garmin activity does not belong to rider")
+        cur.execute(
+            "INSERT INTO garmin_activity_detail "
+            "(rider_id, garmin_activity_id, laps, raw_ciphertext) "
+            "VALUES (%s,%s,%s,%s) "
+            "ON CONFLICT (rider_id, garmin_activity_id) DO UPDATE SET "
+            "laps=EXCLUDED.laps, raw_ciphertext=EXCLUDED.raw_ciphertext, "
+            "synced_at=NOW()",
+            (rider_id, garmin_activity_id, psycopg2.extras.Json(laps),
+             raw_ciphertext),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def get_strava_activities_for_matching(rider_id, limit=2000):
     """Return normalized Strava fields needed by the private matcher."""
     limit = max(1, min(int(limit), 2000))
@@ -2649,6 +2722,30 @@ def get_garmin_metrics_for_brevet(rider_id, ride_id):
     from services.activity_matching import aggregate_garmin_recordings
     return aggregate_garmin_recordings(
         get_garmin_recordings_for_brevet(rider_id, ride_id))
+
+
+def get_garmin_laps_for_brevet(rider_id, ride_id):
+    """Return normalized private laps for all owned Garmin brevet recordings."""
+    rows = _execute(
+        "SELECT gad.garmin_activity_id, gad.laps, gad.synced_at "
+        "FROM activity_brevet_match abm "
+        "JOIN garmin_activity_detail gad ON gad.rider_id=abm.rider_id "
+        " AND gad.garmin_activity_id=abm.garmin_activity_id "
+        "WHERE abm.rider_id=%s AND abm.ride_id=%s "
+        "AND abm.match_status <> 'rejected' "
+        "ORDER BY gad.garmin_activity_id",
+        (rider_id, ride_id),
+    ).fetchall()
+    laps = []
+    for recording_number, row in enumerate(rows, start=1):
+        for lap in row.get("laps") or []:
+            if isinstance(lap, dict):
+                laps.append({
+                    **lap,
+                    "recording_number": recording_number,
+                    "garmin_activity_id": row["garmin_activity_id"],
+                })
+    return laps
 
 
 def get_garmin_brevet_match_review(rider_id, limit=50):

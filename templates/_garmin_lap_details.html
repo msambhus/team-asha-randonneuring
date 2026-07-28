@@ -1,0 +1,43 @@
+{% if is_own_profile and garmin_laps %}
+<div class="hr-power-card" style="border-color:#2563eb;">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+    <div>
+      <div style="font-size:1.1rem;font-weight:700;color:var(--text);">Garmin Lap Details</div>
+      <div style="font-size:.72rem;color:var(--text-light);margin-top:3px;">
+        Private device-recorded laps. These do not replace Strava route, stop, or control analysis.
+      </div>
+    </div>
+    <span style="padding:4px 8px;border-radius:999px;background:#dbeafe;color:#1e40af;font-size:.68rem;font-weight:700;text-transform:uppercase;">Garmin</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:.78rem;">
+      <thead>
+        <tr>
+          {% if garmin_metrics.recording_count and garmin_metrics.recording_count > 1 %}<th>File</th>{% endif %}
+          <th>Lap</th><th>Distance</th><th>Time</th><th>Speed</th>
+          <th>HR</th><th>Power</th><th>Cadence</th><th>Climb</th><th>Temp</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for lap in garmin_laps %}
+        <tr>
+          {% if garmin_metrics.recording_count and garmin_metrics.recording_count > 1 %}<td>{{ lap.recording_number }}</td>{% endif %}
+          <td>{{ lap.lap_number }}</td>
+          <td>{{ '%.1f'|format((lap.distance_m|float) / 1609.344) if lap.distance_m is not none else '—' }} mi</td>
+          <td>{% if lap.duration_s is not none %}{% set minutes = (lap.duration_s|float / 60)|round|int %}{{ (minutes // 60)|int }}h{{ '%02d'|format(minutes % 60) }}m{% else %}—{% endif %}</td>
+          <td>{{ '%.1f'|format((lap.average_speed_mps|float) * 2.23694) if lap.average_speed_mps is not none else '—' }} mph</td>
+          <td>{{ lap.average_hr|round|int if lap.average_hr is not none else '—' }}{% if lap.max_hr is not none %} / {{ lap.max_hr|round|int }}{% endif %}</td>
+          <td>{{ lap.average_power|round|int if lap.average_power is not none else '—' }}{% if lap.normalized_power is not none %} / {{ lap.normalized_power|round|int }} NP{% endif %}</td>
+          <td>{{ lap.average_cadence|round|int if lap.average_cadence is not none else '—' }}</td>
+          <td>{{ (lap.elevation_gain_m|float * 3.28084)|round|int if lap.elevation_gain_m is not none else '—' }} ft</td>
+          <td>{{ '%.0f'|format((lap.average_temperature_c|float * 9 / 5) + 32) if lap.average_temperature_c is not none else '—' }}°F</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div style="font-size:.68rem;color:var(--text-light);margin-top:10px;">
+    HR shows average / max. Power shows average / normalized where Garmin provides both.
+  </div>
+</div>
+{% endif %}
