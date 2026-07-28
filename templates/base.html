@@ -17,6 +17,25 @@
 <meta name="twitter:description" content="{{ self.meta_description() }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='output.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+.analysis-loading-spinner {
+    width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;
+    border-radius:50%;display:inline-block;flex:0 0 auto;
+    animation:analysis-spin .7s linear infinite;
+}
+a.analysis-nav-loading {
+    pointer-events:none;opacity:.78;cursor:wait;
+}
+a.analysis-nav-loading .analysis-nav-spinner {
+    width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;
+    border-radius:50%;display:inline-block;vertical-align:-2px;margin-left:7px;
+    animation:analysis-spin .7s linear infinite;
+}
+@keyframes analysis-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+    .analysis-loading-spinner,.analysis-nav-spinner { animation-duration:1.5s; }
+}
+</style>
 {% block extra_head %}{% endblock %}
 </head>
 <body class="bg-bg text-text">
@@ -185,6 +204,23 @@ function submitFeedback(e) {
 {% block extra_js %}{% endblock %}
 
 <script>
+// Give immediate feedback while navigating to server-rendered ride Stats.
+document.addEventListener('click', function(event) {
+    const link = event.target.closest('a[href*="/strava-analysis"]');
+    if (!link || link.target === '_blank' || event.metaKey || event.ctrlKey ||
+            event.shiftKey || event.altKey) return;
+    if (link.classList.contains('analysis-nav-loading')) {
+        event.preventDefault();
+        return;
+    }
+    link.classList.add('analysis-nav-loading');
+    link.setAttribute('aria-busy', 'true');
+    link.insertAdjacentHTML(
+        'beforeend',
+        '<span class="analysis-nav-spinner" aria-hidden="true"></span>'
+    );
+});
+
 // Scroll animations with Intersection Observer
 document.addEventListener('DOMContentLoaded', function() {
     const observerOptions = {
