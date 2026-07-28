@@ -1,6 +1,6 @@
 """Private Garmin Connect account connection routes."""
 import json
-from datetime import date
+from datetime import date, timedelta
 from flask import (Blueprint, current_app, flash, redirect, render_template,
                    request, session, url_for)
 
@@ -143,6 +143,7 @@ def mfa():
 @profile_required
 def sync():
     rider_id = session["rider_id"]
+    imported_count = 0
     connection = models.get_garmin_connection(rider_id, include_tokens=True)
     if not connection:
         flash("Connect Garmin before syncing performance data.", "warning")
@@ -158,13 +159,18 @@ def sync():
         refreshed_tokens = _cipher().encrypt(performance.dump_tokens())
         models.upsert_garmin_performance_snapshot(
             rider_id, snapshot, raw_ciphertext, refreshed_tokens)
-        imported = []
-        for raw_activity in performance.activities(limit=20):
-            normalized = performance.normalize_activity(raw_activity)
-            activity_ciphertext = _cipher().encrypt(json.dumps(
-                raw_activity, separators=(",", ":"), default=str))
-            imported.append((normalized, activity_ciphertext))
-        models.upsert_garmin_activities(rider_id, imported)
+        cutoff = date.today() - timedelta(days=365)
+        for raw_page in performance.activity_pages_since(cutoff):
+            imported = []
+            for raw_activity in raw_page:
+                normalized = performance.normalize_activity(raw_activity)
+                activity_ciphertext = _cipher().encrypt(json.dumps(
+                    raw_activity, separators=(",", ":"), default=str))
+                imported.append((normalized, activity_ciphertext))
+            # Commit each page independently. If Garmin rate-limits a later
+            # page, completed history remains safely stored and resumable.
+            models.upsert_garmin_activities(rider_id, imported)
+            imported_count += len(imported)
         from services.activity_matching import refresh_activity_matches_safely
         refresh_activity_matches_safely(rider_id)
     except GarminConnectAuthenticationError:
@@ -173,6 +179,16 @@ def sync():
               "warning")
         return redirect(url_for("auth.my_profile"))
     except GarminConnectTooManyRequestsError:
+        if imported_count:
+            from services.activity_matching import (
+                refresh_activity_matches_safely)
+            refresh_activity_matches_safely(rider_id)
+            flash(
+                f"Garmin imported {imported_count} rides before rate limiting. "
+                "Sync again later to continue the one-year history.",
+                "warning",
+            )
+            return redirect(url_for("auth.my_profile"))
         flash("Garmin is rate limiting sync. Try again later.", "warning")
         return redirect(url_for("auth.my_profile"))
     except (GarminConnectConnectionError, ValueError):
@@ -181,7 +197,7 @@ def sync():
         flash("Could not sync Garmin performance data right now.", "error")
         return redirect(url_for("auth.my_profile"))
 
-    flash(f"Garmin performance data and {len(imported)} cycling activities synced.",
+    flash(f"Garmin performance data and {imported_count} cycling activities synced.",
           "success")
     return redirect(url_for("auth.my_profile"))
 

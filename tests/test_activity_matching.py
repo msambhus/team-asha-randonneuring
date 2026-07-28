@@ -92,6 +92,19 @@ def test_refresh_reads_and_writes_only_the_requested_rider():
     refresh_brevets.assert_called_once_with(42)
 
 
+def test_matching_model_windows_cover_full_garmin_history():
+    cursor = Mock()
+    cursor.fetchall.return_value = []
+    with patch("models._execute", return_value=cursor) as execute:
+        models.get_garmin_activities_for_matching(42)
+        garmin_params = execute.call_args.args[1]
+        models.get_strava_activities_for_matching(42)
+        strava_params = execute.call_args.args[1]
+
+    assert garmin_params == (42, 2000)
+    assert strava_params == (42, 2000)
+
+
 def test_matching_failure_does_not_break_provider_sync(app):
     with app.app_context(), \
          patch("services.activity_matching.refresh_activity_matches",

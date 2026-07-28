@@ -1,4 +1,8 @@
 """Credential-free contract tests for Team Asha's read-only Garmin client."""
+from datetime import date
+
+import pytest
+
 from services.garmin_connect import GarminPerformanceClient
 from vendor.python_garminconnect import GarminConnectNotFoundError
 
@@ -98,6 +102,56 @@ def test_activity_read_is_bounded_and_cycling_only_by_default():
     assert "activities/search/activities" in path
     assert kwargs["params"] == {
         "start": "0", "limit": "25", "activityType": "cycling"}
+
+
+def test_activity_history_pages_until_one_year_boundary():
+    class PagingAuth:
+        def __init__(self):
+            self.calls = []
+
+        def connectapi(self, path, **kwargs):
+            self.calls.append((path, kwargs))
+            start = int(kwargs["params"]["start"])
+            if start == 0:
+                return [
+                    {"activityId": index,
+                     "startTimeGMT": f"2026-07-{index:02d}T08:00:00Z"}
+                    for index in range(1, 4)
+                ]
+            return []
+
+    auth = PagingAuth()
+    pages = list(GarminPerformanceClient(auth).activity_pages_since(
+        date(2025, 7, 27), page_size=3))
+
+    assert [[row["activityId"] for row in page] for page in pages] == [
+        [1, 2, 3]]
+    assert auth.calls[0][1]["params"] == {
+        "start": "0", "limit": "3", "activityType": "cycling"}
+    assert auth.calls[1][1]["params"]["start"] == "3"
+
+
+def test_activity_history_stops_and_filters_at_date_boundary():
+    class BoundaryAuth:
+        def connectapi(self, path, **kwargs):
+            return [
+                {"activityId": 1, "startTimeGMT": "2025-07-28T08:00:00Z"},
+                {"activityId": 2, "startTimeGMT": "2025-07-27T08:00:00Z"},
+                {"activityId": 3, "startTimeGMT": "2025-07-26T08:00:00Z"},
+            ]
+
+    pages = list(GarminPerformanceClient(
+        BoundaryAuth()).activity_pages_since(
+            date(2025, 7, 27), page_size=3))
+
+    assert [[row["activityId"] for row in page] for page in pages] == [[1, 2]]
+
+
+def test_activity_history_has_explicit_safety_bound():
+    client = GarminPerformanceClient(FakeAuth())
+    with pytest.raises(ValueError):
+        list(client.activity_pages_since(
+            date(2025, 7, 27), max_activities=5001))
 
 
 def test_activity_summary_normalizes_cycling_performance_fields():
