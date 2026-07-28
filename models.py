@@ -3897,6 +3897,21 @@ def get_strava_ride_analysis(match_id):
     """, (match_id,)).fetchone()
 
 
+def save_strava_ride_coaching(rider_id, match_id, narrative):
+    """Persist validated coaching only for a match owned by this rider."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE strava_ride_analysis sra SET llm_narrative=%s "
+        "FROM strava_ride_match srm "
+        "WHERE sra.match_id=srm.id AND sra.match_id=%s "
+        "AND srm.rider_id=%s",
+        (psycopg2.extras.Json(narrative), match_id, rider_id),
+    )
+    conn.commit()
+    return cur.rowcount == 1
+
+
 def upsert_strava_ride_analysis(match_id, detected_stops, stream_summary,
                                 error=None, compressed_streams=None):
     """Insert or update analysis results.
@@ -3965,7 +3980,8 @@ def _set_or_remove_rider_note(match_id, path, note):
                             true),
                         %s::text[],
                         %s::jsonb,
-                        true)
+                        true),
+                    llm_narrative = NULL
                 WHERE match_id = %s
             """, (parent, parent, path, json.dumps(note), match_id))
         else:
@@ -3973,13 +3989,15 @@ def _set_or_remove_rider_note(match_id, path, note):
                 UPDATE strava_ride_analysis
                 SET rider_notes = jsonb_set(
                         COALESCE(rider_notes, '{}'::jsonb),
-                        %s::text[], %s::jsonb, true)
+                        %s::text[], %s::jsonb, true),
+                    llm_narrative = NULL
                 WHERE match_id = %s
             """, (path, json.dumps(note), match_id))
     else:
         cur.execute("""
             UPDATE strava_ride_analysis
-            SET rider_notes = rider_notes #- %s::text[]
+            SET rider_notes = rider_notes #- %s::text[],
+                llm_narrative = NULL
             WHERE match_id = %s
         """, (path, match_id))
     conn.commit()

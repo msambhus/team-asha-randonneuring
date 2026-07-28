@@ -1113,9 +1113,18 @@
 {% endif %}
 
 {# --- Coach's Read: overall observations + LLM recommendations --- #}
-{% if ride_recommendations or overall_narrative %}
+{% if ride_recommendations or overall_narrative or coaching_pending %}
 <div class="analysis-summary" style="margin-top:24px;background:white;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
     <h3 style="margin-top:0;">&#x1f9ed; Coach's Read</h3>
+    {% if coaching_pending %}
+    <div id="ride-coaching-loading" role="status" aria-live="polite"
+         style="display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;color:#1e40af;font-size:.82rem;">
+        <span class="analysis-loading-spinner" aria-hidden="true"></span>
+        <span id="ride-coaching-loading-text">Generating personalized coaching&hellip; The ride analysis is ready to use while this finishes.</span>
+        <button id="ride-coaching-retry" type="button" hidden
+                style="margin-left:auto;padding:5px 10px;font-size:.75rem;">Retry</button>
+    </div>
+    {% endif %}
     {% if ride_recommendations and ride_recommendations.summary %}
     <p style="color:var(--text);line-height:1.5;">{{ ride_recommendations.summary }}</p>
     {% endif %}
@@ -1134,6 +1143,41 @@
     {% endif %}
     <div style="margin-top:12px;font-size:0.72rem;color:var(--text-light,#94a3b8);">Automated analysis &mdash; use your own judgment.</div>
 </div>
+{% endif %}
+
+{% if coaching_pending %}
+<script>
+(() => {
+    const statusText = document.getElementById('ride-coaching-loading-text');
+    const retry = document.getElementById('ride-coaching-retry');
+    let running = false;
+
+    async function loadCoaching() {
+        if (running) return;
+        running = true;
+        retry.hidden = true;
+        statusText.textContent = 'Generating personalized coaching… The ride analysis is ready to use while this finishes.';
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('coaching', '1');
+            const response = await fetch(url, {
+                headers: {'Accept': 'application/json'},
+                credentials: 'same-origin'
+            });
+            if (!response.ok) throw new Error('coaching request failed');
+            statusText.textContent = 'Coaching ready — refreshing…';
+            window.location.reload();
+        } catch (error) {
+            statusText.textContent = 'Personalized coaching could not load. The rest of your analysis is available.';
+            retry.hidden = false;
+        } finally {
+            running = false;
+        }
+    }
+    retry.addEventListener('click', loadCoaching);
+    loadCoaching();
+})();
+</script>
 {% endif %}
 
 {# --- Owner's ride notes: overall note box + save/delete wiring for all notes --- #}

@@ -1158,6 +1158,9 @@ def ride_strava_analysis(rusa_id, ride_id):
 
     # Check Strava visibility — never override privacy based on debug mode
     is_own_profile = session.get('rider_id') == rider['id']
+    generate_coaching_request = request.args.get('coaching') == '1'
+    if generate_coaching_request and not is_own_profile:
+        abort(403)
     strava_data_private = rider.get('strava_data_private', False)
     show_strava_data = is_own_profile or not strava_data_private
     if not show_strava_data:
@@ -1388,7 +1391,17 @@ def ride_strava_analysis(rusa_id, ride_id):
     # constructed dict WITHOUT the rider_notes column, so reading it off
     # `analysis` would always be None (saved notes would never re-display).
     from models import get_strava_ride_analysis
-    _db_row = get_strava_ride_analysis(match['id'])
+    try:
+        _db_row = get_strava_ride_analysis(match['id'])
+    except Exception:
+        # Analysis itself remains useful if the optional cache lookup fails.
+        current_app.logger.exception(
+            'ride_strava_analysis: coaching cache lookup failed for ride %s',
+            ride_id)
+        _db_row = None
+    persisted_coaching = (_db_row or {}).get('llm_narrative') or {}
+    if not isinstance(persisted_coaching, dict):
+        persisted_coaching = {}
     rider_notes = (_db_row or {}).get('rider_notes') or {}
     if not isinstance(rider_notes, dict):
         rider_notes = {}
@@ -1416,7 +1429,7 @@ def ride_strava_analysis(rusa_id, ride_id):
     if isinstance(comparison, dict) and comparison.get('rows'):
         try:
             from models import get_rider_activity_baseline
-            from services import segment_analysis, ride_coach, route_history
+            from services import segment_analysis, route_history
             ride_baseline = get_rider_activity_baseline(rider['id'])
             band_baseline = segment_analysis.compute_gradient_band_baseline(
                 rider['id'], exclude_ride_id=ride['id'])
@@ -1430,13 +1443,21 @@ def ride_strava_analysis(rusa_id, ride_id):
             overall_narrative = segment_analysis.build_overall_narrative(
                 comparison['summary'], hr_power=comparison.get('hr_power'),
                 ride_baseline=ride_baseline)
-            coaching = ride_coach.generate_ride_coaching(
-                rider['id'], ride['id'], match['id'], dict(match),
-                comparison['rows'], comparison['summary'], comparison.get('hr_power'),
-                stop_wind, ride_baseline, band_baseline, narratives,
-                same_route_baseline=same_route_baseline,
-                segment_notes=segment_notes, overall_note=overall_note,
-                stop_notes=coach_stop_notes)
+            coaching = persisted_coaching
+            if generate_coaching_request and not coaching:
+                from services import ride_coach
+                coaching = ride_coach.generate_ride_coaching(
+                    rider['id'], ride['id'], match['id'], dict(match),
+                    comparison['rows'], comparison['summary'],
+                    comparison.get('hr_power'), stop_wind, ride_baseline,
+                    band_baseline, narratives,
+                    same_route_baseline=same_route_baseline,
+                    segment_notes=segment_notes, overall_note=overall_note,
+                    stop_notes=coach_stop_notes)
+                if coaching:
+                    from models import save_strava_ride_coaching
+                    save_strava_ride_coaching(
+                        rider['id'], match['id'], coaching)
             coach_seg = (coaching or {}).get('per_segment', {})
             for loc in set(narratives) | set(coach_seg):
                 segment_eval[loc] = {'narrative': narratives.get(loc),
@@ -1445,6 +1466,14 @@ def ride_strava_analysis(rusa_id, ride_id):
         except Exception:
             current_app.logger.exception(
                 'ride_strava_analysis: rich analysis failed for ride %s', ride_id)
+
+    if generate_coaching_request:
+        if not ride_recommendations:
+            return jsonify({
+                'ok': False,
+                'error': 'Coaching is temporarily unavailable.',
+            }), 503
+        return jsonify({'ok': True})
 
     # Interactive map payload (GPS track, per-segment speed, stop markers).
     # Best-effort: a missing/misaligned latlng stream yields None and the page
@@ -1487,6 +1516,10 @@ def ride_strava_analysis(rusa_id, ride_id):
                            segment_eval=segment_eval,
                            overall_narrative=overall_narrative,
                            ride_recommendations=ride_recommendations,
+                           coaching_pending=(
+                               is_own_profile
+                               and bool(comparison and comparison.get('rows'))
+                               and not bool(persisted_coaching)),
                            map_data=map_data,
                            segment_notes=segment_notes,
                            stop_notes=stop_notes,
