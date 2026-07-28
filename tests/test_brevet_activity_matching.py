@@ -68,6 +68,8 @@ def test_authoritative_strava_brevet_link_carries_garmin_source():
                return_value=authoritative), \
          patch("models.get_garmin_activities_for_matching",
                return_value=[_garmin(1), _garmin(2)]), \
+         patch("models.get_strava_activities_for_matching",
+               return_value=[]), \
          patch("models.get_finished_brevets_for_matching",
                return_value=[_brevet(10), _brevet(11, 300)]), \
          patch("models.replace_activity_brevet_matches") as save:
