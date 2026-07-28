@@ -297,9 +297,15 @@ class FakePerformanceSync:
             "averageHR": 130,
         }]
 
-    def activity_pages_since(self, since):
+    def activity_history_batch(self, since, *, start=0, max_pages=1):
         assert (date.today() - since).days == 365
-        yield self.activities(limit=20)
+        assert start == 0
+        assert max_pages == 1
+        return {
+            "pages": [self.activities(limit=20)],
+            "next_start": 0,
+            "complete": True,
+        }
 
     def normalize_activity(self, activity):
         return {
@@ -318,6 +324,7 @@ def test_performance_sync_decrypts_tokens_and_encrypts_private_payload(
     cipher = GarminTokenCipher(app.config["GARMIN_TOKEN_ENCRYPTION_KEY"])
     stored = {}
     activities = {}
+    sync_state = {}
 
     def capture(rider_id, snapshot, raw_ciphertext, token_ciphertext):
         stored.update(rider_id=rider_id, snapshot=snapshot,
@@ -327,12 +334,17 @@ def test_performance_sync_decrypts_tokens_and_encrypts_private_payload(
     def capture_activities(rider_id, rows):
         activities.update(rider_id=rider_id, rows=rows)
 
+    def capture_sync_state(rider_id, **state):
+        sync_state.update(rider_id=rider_id, **state)
+
     with patch("routes.garmin.models.get_garmin_connection", return_value={
             "token_ciphertext": cipher.encrypt('{"di_token":"old-secret"}')}), \
          patch("routes.garmin.models.upsert_garmin_performance_snapshot",
                side_effect=capture), \
          patch("routes.garmin.models.upsert_garmin_activities",
                side_effect=capture_activities), \
+         patch("routes.garmin.models.update_garmin_activity_sync_state",
+               side_effect=capture_sync_state), \
          patch("routes.garmin.GarminPerformanceClient",
                FakePerformanceSync):
         response = client.post("/garmin/sync", data={"rider_id": "999"})
@@ -350,3 +362,45 @@ def test_performance_sync_decrypts_tokens_and_encrypts_private_payload(
     assert "Private ride" not in encrypted_raw
     assert json.loads(cipher.decrypt(
         encrypted_raw))["activityName"] == "Private ride"
+    assert sync_state["rider_id"] == 42
+    assert sync_state["cursor"] == 0
+    assert sync_state["complete"] is True
+
+
+def test_performance_sync_resumes_incomplete_activity_history(client, app):
+    _login(client, rider_id=42)
+    app.config["GARMIN_TOKEN_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+    cipher = GarminTokenCipher(app.config["GARMIN_TOKEN_ENCRYPTION_KEY"])
+    sync_state = {}
+
+    class ResumingSync(FakePerformanceSync):
+        def activity_history_batch(self, since, *, start=0, max_pages=1):
+            assert since == date(2025, 8, 1)
+            assert start == 200
+            assert max_pages == 1
+            return {"pages": [], "next_start": 300, "complete": False}
+
+    with patch("routes.garmin.models.get_garmin_connection", return_value={
+            "token_ciphertext": cipher.encrypt('{"di_token":"old-secret"}'),
+            "activity_sync_cursor": 200,
+            "activity_sync_since": date(2025, 8, 1),
+            "activity_history_complete": False,
+         }), \
+         patch("routes.garmin.models.upsert_garmin_performance_snapshot"), \
+         patch("routes.garmin.models.upsert_garmin_activities"), \
+         patch("routes.garmin.models.update_garmin_activity_sync_state",
+               side_effect=lambda rider_id, **state: sync_state.update(
+                   rider_id=rider_id, **state)), \
+         patch("services.activity_matching.refresh_activity_matches_safely"), \
+         patch("routes.garmin.GarminPerformanceClient", ResumingSync):
+        response = client.post("/garmin/sync")
+
+    assert response.status_code == 302
+    assert sync_state["cursor"] == 300
+    assert sync_state["since"] == date(2025, 8, 1)
+    assert sync_state["complete"] is False
+    with client.session_transaction() as flask_session:
+        messages = [message for _category, message
+                    in flask_session.get("_flashes", [])]
+    assert any("More one-year history remains" in message
+               for message in messages)

@@ -159,8 +159,22 @@ def sync():
         refreshed_tokens = _cipher().encrypt(performance.dump_tokens())
         models.upsert_garmin_performance_snapshot(
             rider_id, snapshot, raw_ciphertext, refreshed_tokens)
-        cutoff = date.today() - timedelta(days=365)
-        for raw_page in performance.activity_pages_since(cutoff):
+        default_cutoff = date.today() - timedelta(days=365)
+        history_complete = bool(connection.get("activity_history_complete"))
+        if history_complete:
+            # Completed riders still refresh the newest page for new rides.
+            cutoff = default_cutoff
+            start = 0
+            max_pages = 1
+        else:
+            cutoff = connection.get("activity_sync_since") or default_cutoff
+            start = int(connection.get("activity_sync_cursor") or 0)
+            # One page per request means the encrypted rows and continuation
+            # cursor commit together before another Garmin API call can fail.
+            max_pages = 1
+        batch = performance.activity_history_batch(
+            cutoff, start=start, max_pages=max_pages)
+        for raw_page in batch["pages"]:
             imported = []
             for raw_activity in raw_page:
                 normalized = performance.normalize_activity(raw_activity)
@@ -171,6 +185,12 @@ def sync():
             # page, completed history remains safely stored and resumable.
             models.upsert_garmin_activities(rider_id, imported)
             imported_count += len(imported)
+        models.update_garmin_activity_sync_state(
+            rider_id,
+            cursor=batch["next_start"],
+            since=cutoff,
+            complete=batch["complete"] or history_complete,
+        )
         from services.activity_matching import refresh_activity_matches_safely
         refresh_activity_matches_safely(rider_id)
     except GarminConnectAuthenticationError:
@@ -197,8 +217,18 @@ def sync():
         flash("Could not sync Garmin performance data right now.", "error")
         return redirect(url_for("auth.my_profile"))
 
-    flash(f"Garmin performance data and {imported_count} cycling activities synced.",
-          "success")
+    if not batch["complete"] and not history_complete:
+        flash(
+            f"Garmin imported {imported_count} cycling activities. More "
+            "one-year history remains; sync again to continue.",
+            "success",
+        )
+    else:
+        flash(
+            f"Garmin performance data and {imported_count} cycling "
+            "activities synced.",
+            "success",
+        )
     return redirect(url_for("auth.my_profile"))
 
 

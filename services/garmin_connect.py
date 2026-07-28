@@ -167,6 +167,70 @@ class GarminPerformanceClient:
             if reached_boundary or len(page) < limit:
                 break
 
+    def activity_history_batch(
+            self, since: date, *, start: int = 0, page_size: int = 100,
+            max_pages: int = 2, max_activities: int = 2000
+    ) -> dict[str, Any]:
+        """Fetch a bounded, resumable batch from Garmin's newest-first feed."""
+        if not isinstance(since, date):
+            raise ValueError("Garmin activity history requires a date")
+        if start < 0 or start > max_activities:
+            raise ValueError("invalid Garmin activity history cursor")
+        if page_size < 1 or page_size > MAX_ACTIVITY_LIMIT:
+            raise ValueError("invalid Garmin activity page size")
+        if max_pages < 1 or max_pages > 10:
+            raise ValueError("invalid Garmin activity page count")
+        if max_activities < 1 or max_activities > 5000:
+            raise ValueError("invalid Garmin activity history bound")
+
+        pages = []
+        cursor = start
+        complete = cursor >= max_activities
+        for _ in range(max_pages):
+            if complete:
+                break
+            limit = min(page_size, max_activities - cursor)
+            page = self.activities(start=cursor, limit=limit)
+            if not page:
+                complete = True
+                break
+
+            included = []
+            reached_boundary = False
+            for activity in page:
+                raw_started = (
+                    activity.get("startTimeGMT")
+                    or activity.get("startTimeLocal")
+                )
+                activity_date = None
+                if raw_started:
+                    try:
+                        activity_date = datetime.fromisoformat(
+                            str(raw_started).replace("Z", "+00:00")).date()
+                    except ValueError:
+                        pass
+                if activity_date is not None and activity_date < since:
+                    reached_boundary = True
+                else:
+                    included.append(activity)
+
+            if included:
+                pages.append(included)
+            cursor += len(page)
+            complete = (
+                reached_boundary
+                or len(page) < limit
+                or cursor >= max_activities
+            )
+            if complete:
+                break
+
+        return {
+            "pages": pages,
+            "next_start": 0 if complete else cursor,
+            "complete": complete,
+        }
+
     def activity(self, activity_id: int) -> dict[str, Any]:
         """Return one activity summary using the upstream read endpoint."""
         if not isinstance(activity_id, int) or activity_id < 1:
