@@ -152,6 +152,8 @@ def test_my_rides_collapses_explicit_garmin_strava_match(client, app):
     assert b'data-calendar-kind="brevet"' in response.data
     assert b'data-calendar-type="Ride"' in response.data
     assert b"activityIcon" in response.data
+    assert b"block.title = event.title" in response.data
+    assert b".calendar-event:hover .calendar-event-title" in response.data
     assert b"AI coaching" in response.data
     assert b"Loading personalized coaching" in response.data
     assert b".coach-loading[hidden],.coach-copy[hidden]{display:none!important}" in response.data
