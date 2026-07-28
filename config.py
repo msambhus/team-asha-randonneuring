@@ -100,6 +100,11 @@ class Config:
     # does not destroy Garmin connections. Unset disables Garmin account connect.
     GARMIN_TOKEN_ENCRYPTION_KEY = os.environ.get('GARMIN_TOKEN_ENCRYPTION_KEY')
 
+    # SRAM AXS tokens and private gearing payloads use an independent Fernet
+    # key so rotation or compromise is isolated from Garmin connections.
+    SRAM_AXS_TOKEN_ENCRYPTION_KEY = os.environ.get(
+        'SRAM_AXS_TOKEN_ENCRYPTION_KEY')
+
     # OpenAI Configuration (optional — AI coaching falls back to rule-based if not set)
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 

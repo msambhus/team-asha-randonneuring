@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ 'Unified Ride Stats' if (garmin_metrics or strava_split_summary) else 'Strava Analysis' }} - {{ ride.name }} - Team Asha Randonneuring{% endblock %}
+{% block title %}{{ 'Unified Ride Stats' if (garmin_metrics or sram_metrics or strava_split_summary) else 'Strava Analysis' }} - {{ ride.name }} - Team Asha Randonneuring{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -352,7 +352,7 @@
 
 {% block content %}
 <div class="hero" style="padding:40px 20px 50px;">
-    <h1>{{ 'Unified Brevet Stats' if (garmin_metrics or strava_split_summary) else 'Strava Ride Analysis' }}</h1>
+    <h1>{{ 'Unified Brevet Stats' if (garmin_metrics or sram_metrics or strava_split_summary) else 'Strava Ride Analysis' }}</h1>
     <p style="opacity:0.85;margin-top:8px;">
         {{ ride.name|clean_name }} &mdash; {{ ride.date }}
     </p>
@@ -480,7 +480,18 @@
         {% endif %}
         {% endfor %}
     </div>
+    {% if garmin_metrics.average_temperature_c is defined and garmin_metrics.average_temperature_c is not none %}
+    <div style="margin-top:12px;color:var(--text-light);font-size:.76rem;">
+        Device temperature:
+        {{ '%.1f'|format((garmin_metrics.average_temperature_c|float * 9 / 5) + 32) }}°F average
+        {% if garmin_metrics.min_temperature_c is defined and garmin_metrics.min_temperature_c is not none and garmin_metrics.max_temperature_c is defined and garmin_metrics.max_temperature_c is not none %}
+        ({{ '%.1f'|format((garmin_metrics.min_temperature_c|float * 9 / 5) + 32) }}–{{ '%.1f'|format((garmin_metrics.max_temperature_c|float * 9 / 5) + 32) }}°F)
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
+
+{% include "_sram_axs_stats.html" %}
 
 {% include "_garmin_lap_details.html" %}
 
@@ -747,8 +758,20 @@
         </div>
         {% endif %}
     </div>
+    {% if garmin_metrics.average_temperature_c is defined and garmin_metrics.average_temperature_c is not none %}
+    <div style="margin-top:12px;color:var(--text-light);font-size:.76rem;">
+        Device temperature:
+        {{ '%.1f'|format((garmin_metrics.average_temperature_c|float * 9 / 5) + 32) }}°F average
+        {% if garmin_metrics.min_temperature_c is defined and garmin_metrics.min_temperature_c is not none and garmin_metrics.max_temperature_c is defined and garmin_metrics.max_temperature_c is not none %}
+        ({{ '%.1f'|format((garmin_metrics.min_temperature_c|float * 9 / 5) + 32) }}–{{ '%.1f'|format((garmin_metrics.max_temperature_c|float * 9 / 5) + 32) }}°F)
+        {% endif %}
+        Device temperature can differ from ambient air temperature.
+    </div>
+    {% endif %}
 </div>
 {% endif %}
+
+{% include "_sram_axs_stats.html" %}
 
 {% include "_garmin_lap_details.html" %}
 

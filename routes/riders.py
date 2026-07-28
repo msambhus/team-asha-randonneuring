@@ -1171,6 +1171,7 @@ def ride_strava_analysis(rusa_id, ride_id):
     # it before the Strava early-return so Garmin-only brevet Stats can render
     # for the owning rider without exposing device metrics publicly.
     garmin_metrics = None
+    sram_metrics = None
     garmin_laps = []
     garmin_recovery = None
     strava_recordings = []
@@ -1198,6 +1199,17 @@ def ride_strava_analysis(rusa_id, ride_id):
         except Exception:
             current_app.logger.exception(
                 'ride_strava_analysis: provider metrics failed for ride %s',
+                ride_id)
+        try:
+            from models import get_sram_axs_metrics_for_brevet
+            sram_metrics = get_sram_axs_metrics_for_brevet(
+                rider['id'], ride_id)
+        except Exception:
+            # SRAM is an optional, private supplement. A missing migration or
+            # temporarily unavailable provider must not break Garmin/Strava
+            # Stats.
+            current_app.logger.exception(
+                'ride_strava_analysis: SRAM metrics failed for ride %s',
                 ride_id)
 
     # Look for existing match
@@ -1229,6 +1241,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                                is_own_profile=is_own_profile,
                                stop_wind=None,
                                garmin_metrics=garmin_metrics,
+                               sram_metrics=sram_metrics,
                                garmin_laps=garmin_laps,
                                garmin_summary=garmin_summary,
                                garmin_recovery=garmin_recovery,
@@ -1528,6 +1541,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                            stop_notes=stop_notes,
                            overall_note=overall_note,
                            garmin_metrics=garmin_metrics,
+                           sram_metrics=sram_metrics,
                            garmin_laps=garmin_laps,
                            garmin_summary=None,
                            garmin_recovery=garmin_recovery,

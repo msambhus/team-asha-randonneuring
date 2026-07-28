@@ -49,6 +49,7 @@ def test_stats_template_labels_garmin_without_replacing_strava_contract():
     assert "{% if is_own_profile and garmin_metrics %}" in template
     assert "{% if is_own_profile and provider_comparison %}" in template
     assert "Recording Source Comparison" in template
+    assert "Device temperature:" in template
     assert "View on Strava" in template
     assert "Route Map" in template
     assert "Plan vs Actual Summary" in template
@@ -58,6 +59,16 @@ def test_stats_template_labels_garmin_without_replacing_strava_contract():
     assert "Garmin Lap Details" in lap_partial
     assert "Private device-recorded laps" in lap_partial
     assert "do not replace Strava route, stop, or control analysis" in lap_partial
+
+
+def test_sram_stats_are_private_and_provider_attributed():
+    template = (
+        Path(__file__).parents[1] / "templates" / "_sram_axs_stats.html"
+    ).read_text()
+    assert "{% if is_own_profile and sram_metrics %}" in template
+    assert "SRAM AXS Drivetrain" in template
+    assert "Rear cog use" in template
+    assert "Source: SRAM AXS Web" in template
 
 
 def test_stats_template_rounds_decimal_garmin_metrics():

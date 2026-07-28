@@ -295,6 +295,13 @@ def aggregate_garmin_recordings(recordings):
              if row.get("anaerobic_training_effect") is not None), default=None),
         "calories": total("calories"),
         "average_cadence": weighted("average_cadence"),
+        "average_temperature_c": weighted("average_temperature_c"),
+        "min_temperature_c": min(
+            (_number(row.get("min_temperature_c")) for row in rows
+             if row.get("min_temperature_c") is not None), default=None),
+        "max_temperature_c": max(
+            (_number(row.get("max_temperature_c")) for row in rows
+             if row.get("max_temperature_c") is not None), default=None),
         "device_name": ", ".join(devices) if devices else None,
     }
     return result

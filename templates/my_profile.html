@@ -362,6 +362,49 @@
   {% endif %}
 </div>
 
+{# ===== SRAM AXS: private gearing connection ===== #}
+<div class="card" style="border-left:4px solid #c91f37;padding:20px;margin-bottom:15px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;">
+    <div>
+      <h4 style="margin:0 0 4px;color:var(--primary);font-size:1rem;">SRAM AXS</h4>
+      {% if sram_axs_connection %}
+      <p style="margin:0;color:var(--text-light);font-size:.85rem;">
+        Connected{% if sram_axs_connection.display_name %} as {{ sram_axs_connection.display_name }}{% endif %}.
+        Gearing and shift data remain private.
+      </p>
+      {% else %}
+      <p style="margin:0;color:var(--text-light);font-size:.85rem;">
+        Connect AXS Web to add private gearing, shift, and component data to matched ride Stats.
+      </p>
+      {% endif %}
+    </div>
+    {% if sram_axs_connection %}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <a class="btn" href="{{ url_for('sram_axs.activities') }}"
+         style="border:1px solid var(--primary);color:var(--primary);background:#fff;">View AXS rides</a>
+      <form id="sram-sync-form" method="post" action="{{ url_for('sram_axs.sync') }}">
+        <button id="sram-sync-submit" class="btn btn-primary" type="submit">Sync SRAM AXS</button>
+      </form>
+      <form method="post" action="{{ url_for('sram_axs.disconnect') }}"
+            data-delete-message="Disconnect SRAM AXS and permanently delete encrypted tokens, gearing telemetry, and ride matches? This cannot be undone.">
+        <input type="hidden" name="confirm_delete" value="DELETE">
+        <button class="btn" type="submit" style="border:1px solid #b91c1c;color:#b91c1c;background:#fff;">
+          Disconnect &amp; delete SRAM data
+        </button>
+      </form>
+    </div>
+    {% else %}
+    <a class="btn btn-primary" href="{{ url_for('sram_axs.connect') }}">Connect SRAM AXS</a>
+    {% endif %}
+  </div>
+  {% if sram_axs_connection %}
+  <div id="sram-sync-progress" role="status" aria-live="polite" hidden
+       style="margin-top:12px;color:var(--primary);font-weight:600;">
+    Syncing SRAM AXS activities and matching rides…
+  </div>
+  {% endif %}
+</div>
+
 <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;">
     <a href="{{ url_for('auth.my_rides') }}" class="btn btn-primary btn-sm">My Rides</a>
     {% if rider.rusa_id %}<a href="{{ url_for('riders.rider_profile', rusa_id=rider.rusa_id) }}" class="btn btn-primary btn-sm">View Public Profile</a>{% endif %}
@@ -372,6 +415,17 @@
 
 {% block extra_js %}
 <script>
+(() => {
+  const form = document.getElementById('sram-sync-form');
+  if (!form) return;
+  form.addEventListener('submit', () => {
+    const button = document.getElementById('sram-sync-submit');
+    button.disabled = true;
+    button.textContent = 'Syncing…';
+    document.getElementById('sram-sync-progress').hidden = false;
+  });
+})();
+
 // Garmin Sync progress and duplicate-submit protection.
 (() => {
     const form = document.getElementById('garmin-sync-form');
