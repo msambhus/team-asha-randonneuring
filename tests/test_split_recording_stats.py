@@ -182,7 +182,7 @@ def test_stats_template_explains_split_and_recovery_context():
     assert "Combined Strava Recording Summary" in page
     assert "Split Recording Group" in context
     assert "Garmin Recovery Context" in context
-    assert "not a claim about your condition on the historical ride date" in context
+    assert "recorded on this ride date" in context
 
 
 def test_refresh_persists_both_provider_split_parts():
