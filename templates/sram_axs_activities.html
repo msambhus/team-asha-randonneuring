@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}SRAM AXS Activities - Team Asha Randonneuring{% endblock %}
+{% block content %}
+<div class="container section">
+  <a href="{{ url_for('auth.my_profile') }}" class="back-link">&larr; My Profile</a>
+  <div class="card">
+    <h1 style="margin-top:0;color:var(--primary);">Private SRAM AXS activities</h1>
+    <p style="color:var(--text-light);">Provider and brevet matches are private to your account.</p>
+    {% for activity in activities %}
+    <div style="display:grid;grid-template-columns:1fr auto;gap:12px;padding:14px 0;border-top:1px solid #e2e8f0;">
+      <div>
+        <strong>{{ activity.activity_name or 'AXS ride' }}</strong>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;color:var(--text-light);font-size:.8rem;margin-top:5px;">
+          <span>{{ activity.started_at }}</span>
+          {% if activity.distance_m is not none %}<span>{{ '%.1f'|format((activity.distance_m|float)/1609.344) }} mi</span>{% endif %}
+          {% if activity.rear_shift_count is not none %}<span>{{ activity.rear_shift_count }} rear shifts</span>{% endif %}
+          {% if activity.front_shift_count is not none %}<span>{{ activity.front_shift_count }} front shifts</span>{% endif %}
+        </div>
+      </div>
+      <div>
+        {% if activity.ride_id %}<span class="badge badge-success">Brevet matched</span>
+        {% elif activity.strava_activity_id or activity.garmin_activity_id %}<span class="badge">Ride matched</span>
+        {% else %}<span style="color:var(--text-light);font-size:.75rem;">Unmatched</span>{% endif %}
+      </div>
+    </div>
+    {% else %}
+    <p>No SRAM AXS activities have been synced yet.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

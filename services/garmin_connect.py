@@ -317,6 +317,13 @@ class GarminPerformanceClient:
         if not isinstance(activity_id, int) or activity_id < 1:
             raise ValueError("Garmin activity has no valid activityId")
         activity_type = activity.get("activityType") or {}
+        def first_present(*keys):
+            return next(
+                (activity[key] for key in keys
+                 if activity.get(key) is not None),
+                None,
+            )
+
         return {
             "garmin_activity_id": activity_id,
             "activity_name": activity.get("activityName"),
@@ -343,6 +350,12 @@ class GarminPerformanceClient:
                 activity.get("averageBikingCadenceInRevPerMinute")
                 or activity.get("averageCadence")),
             "device_name": activity.get("deviceName"),
+            "average_temperature_c": first_present(
+                "avgTemperature", "averageTemperature"),
+            "min_temperature_c": first_present(
+                "minTemperature", "minimumTemperature"),
+            "max_temperature_c": first_present(
+                "maxTemperature", "maximumTemperature"),
         }
 
     def performance_snapshot(self, on_date: str | date) -> dict[str, Any]:

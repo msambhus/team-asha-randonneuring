@@ -1,0 +1,45 @@
+{% if is_own_profile and sram_metrics %}
+{% set gear = sram_metrics.gear_summary or {} %}
+<div class="hr-power-card" style="border-color:#f59e0b;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+        <div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--text);">SRAM AXS Drivetrain</div>
+            <div style="font-size:.72rem;color:var(--text-light);margin-top:3px;">
+                Private shift and gear-use telemetry matched to this brevet.
+            </div>
+        </div>
+        <span style="padding:4px 8px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:.68rem;font-weight:700;text-transform:uppercase;">SRAM AXS</span>
+    </div>
+    <div class="hr-power-grid">
+        {% for label, value, suffix in [
+            ('Rear Shifts', gear.rear_shift_count if gear.rear_shift_count is not none else sram_metrics.rear_shift_count, ''),
+            ('Front Shifts', gear.front_shift_count if gear.front_shift_count is not none else sram_metrics.front_shift_count, ''),
+            ('Most Used Rear Cog', gear.most_used_rear_index, ''),
+            ('Most Used Chainring', gear.most_used_front_index, ''),
+            ('Normalized Power', sram_metrics.normalized_power, ' W'),
+            ('Average Cadence', sram_metrics.average_cadence, ' rpm')
+        ] %}
+        {% if value is defined and value is not none %}
+        <div class="hr-power-item">
+            <div class="hr-power-value">{{ value|round|int }}{{ suffix }}</div>
+            <div class="hr-power-label">{{ label }}</div>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% if gear.rear_histogram %}
+    {% set max_rear = gear.rear_histogram|max %}
+    <div style="margin-top:18px;">
+        <div style="font-size:.76rem;font-weight:700;color:var(--text);margin-bottom:8px;">Rear cog use</div>
+        <div style="display:flex;align-items:flex-end;gap:4px;height:72px;" aria-label="Rear cog usage histogram">
+            {% for count in gear.rear_histogram %}
+            <div title="Cog {{ loop.index }}: {{ count }}" style="flex:1;min-width:6px;height:{{ (count|float / max_rear * 100) if max_rear else 0 }}%;background:#f59e0b;border-radius:3px 3px 0 0;"></div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    <div style="margin-top:10px;color:var(--text-light);font-size:.68rem;">
+        Source: SRAM AXS Web. Gear numbers are positional indices reported by the drivetrain.
+    </div>
+</div>
+{% endif %}

@@ -2207,6 +2207,220 @@ def delete_strava_connection(rider_id):
     }
 
 
+# ========== SRAM AXS ==========
+
+def get_sram_axs_connection(rider_id, include_tokens=False):
+    columns = (
+        "rider_id, token_ciphertext, display_name, status, connected_at, "
+        "last_sync_at, last_error, updated_at"
+        if include_tokens else
+        "rider_id, display_name, status, connected_at, last_sync_at, "
+        "last_error, updated_at"
+    )
+    row = _execute(
+        f"SELECT {columns} FROM sram_axs_connection WHERE rider_id=%s",
+        (rider_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_sram_axs_connection(rider_id, token_ciphertext, display_name=None):
+    row = _execute(
+        "INSERT INTO sram_axs_connection "
+        "(rider_id, token_ciphertext, display_name, status) "
+        "VALUES (%s,%s,%s,'connected') "
+        "ON CONFLICT (rider_id) DO UPDATE SET "
+        "token_ciphertext=EXCLUDED.token_ciphertext, "
+        "display_name=EXCLUDED.display_name, status='connected', "
+        "last_error=NULL, updated_at=NOW() "
+        "RETURNING rider_id, display_name, status, connected_at, updated_at",
+        (rider_id, token_ciphertext, display_name),
+    ).fetchone()
+    get_db().commit()
+    return dict(row) if row else None
+
+
+def mark_sram_axs_sync(rider_id, error=None):
+    _execute(
+        "UPDATE sram_axs_connection SET last_sync_at=NOW(), last_error=%s, "
+        "status=%s, updated_at=NOW() WHERE rider_id=%s",
+        (error, "reauth_required" if error else "connected", rider_id),
+    )
+    get_db().commit()
+
+
+def delete_sram_axs_connection(rider_id):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "DELETE FROM sram_axs_activity WHERE rider_id=%s", (rider_id,))
+        activities = cur.rowcount
+        cur.execute(
+            "DELETE FROM sram_axs_connection WHERE rider_id=%s", (rider_id,))
+        connections = cur.rowcount
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return {"activities": activities, "connections": connections}
+
+
+def upsert_sram_axs_activity(rider_id, activity, raw_ciphertext):
+    _execute(
+        "INSERT INTO sram_axs_activity "
+        "(rider_id,sram_activity_id,activity_name,activity_type,started_at,"
+        "ended_at,distance_m,duration_s,elevation_gain_m,average_power,"
+        "max_power,normalized_power,average_hr,max_hr,average_cadence,"
+        "max_cadence,rear_shift_count,front_shift_count,component_ids,"
+        "raw_ciphertext) "
+        "VALUES (%s,%s,%s,%s,to_timestamp(%s),to_timestamp(%s),%s,%s,%s,%s,"
+        "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+        "ON CONFLICT (rider_id,sram_activity_id) DO UPDATE SET "
+        "activity_name=EXCLUDED.activity_name,activity_type=EXCLUDED.activity_type,"
+        "started_at=EXCLUDED.started_at,ended_at=EXCLUDED.ended_at,"
+        "distance_m=EXCLUDED.distance_m,duration_s=EXCLUDED.duration_s,"
+        "elevation_gain_m=EXCLUDED.elevation_gain_m,"
+        "average_power=EXCLUDED.average_power,max_power=EXCLUDED.max_power,"
+        "normalized_power=EXCLUDED.normalized_power,average_hr=EXCLUDED.average_hr,"
+        "max_hr=EXCLUDED.max_hr,average_cadence=EXCLUDED.average_cadence,"
+        "max_cadence=EXCLUDED.max_cadence,"
+        "rear_shift_count=EXCLUDED.rear_shift_count,"
+        "front_shift_count=EXCLUDED.front_shift_count,"
+        "component_ids=EXCLUDED.component_ids,raw_ciphertext=EXCLUDED.raw_ciphertext,"
+        "synced_at=NOW()",
+        (
+            rider_id, activity["sram_activity_id"],
+            activity.get("activity_name"), activity.get("activity_type"),
+            activity.get("started_at_epoch"), activity.get("ended_at_epoch"),
+            activity.get("distance_m"), activity.get("duration_s"),
+            activity.get("elevation_gain_m"), activity.get("average_power"),
+            activity.get("max_power"), activity.get("normalized_power"),
+            activity.get("average_hr"), activity.get("max_hr"),
+            activity.get("average_cadence"), activity.get("max_cadence"),
+            activity.get("rear_shift_count"), activity.get("front_shift_count"),
+            psycopg2.extras.Json(activity.get("component_ids") or []),
+            raw_ciphertext,
+        ),
+    )
+    get_db().commit()
+
+
+def upsert_sram_axs_activity_detail(
+        rider_id, sram_activity_id, gear_summary, components, raw_ciphertext):
+    _execute(
+        "INSERT INTO sram_axs_activity_detail "
+        "(rider_id,sram_activity_id,gear_summary,components,raw_ciphertext) "
+        "VALUES (%s,%s,%s,%s,%s) "
+        "ON CONFLICT (rider_id,sram_activity_id) DO UPDATE SET "
+        "gear_summary=EXCLUDED.gear_summary,components=EXCLUDED.components,"
+        "raw_ciphertext=EXCLUDED.raw_ciphertext,synced_at=NOW()",
+        (rider_id, sram_activity_id,
+         psycopg2.extras.Json(gear_summary or {}),
+         psycopg2.extras.Json(components or []), raw_ciphertext),
+    )
+    get_db().commit()
+
+
+def get_sram_axs_activities(rider_id, limit=100):
+    limit = max(1, min(int(limit), 500))
+    return [dict(row) for row in _execute(
+        "SELECT a.rider_id,a.sram_activity_id,a.activity_name,a.activity_type,"
+        "a.started_at,a.ended_at,a.distance_m,a.duration_s,a.elevation_gain_m,"
+        "a.average_power,a.max_power,a.normalized_power,a.average_hr,a.max_hr,"
+        "a.average_cadence,a.max_cadence,a.rear_shift_count,a.front_shift_count,"
+        "m.strava_activity_id,m.garmin_activity_id,m.ride_id,m.confidence,"
+        "m.match_status,m.reasons "
+        "FROM sram_axs_activity a LEFT JOIN sram_axs_activity_match m "
+        "ON m.rider_id=a.rider_id AND m.sram_activity_id=a.sram_activity_id "
+        "WHERE a.rider_id=%s ORDER BY a.started_at DESC LIMIT %s",
+        (rider_id, limit),
+    ).fetchall()]
+
+
+def get_sram_axs_match_candidates(rider_id, activity):
+    """Return owner-scoped provider and finished-brevet candidates."""
+    started = activity.get("started_at_epoch")
+    distance = float(activity.get("distance_m") or 0)
+    strava = [dict(row) for row in _execute(
+        "SELECT sa.strava_activity_id,sa.start_date_local,sa.distance,"
+        "sa.elapsed_time,sa.name,abm.ride_id "
+        "FROM strava_activity sa LEFT JOIN activity_brevet_match abm "
+        "ON abm.rider_id=sa.rider_id "
+        "AND abm.strava_activity_id=sa.strava_activity_id "
+        "AND abm.match_status <> 'rejected' "
+        "WHERE sa.rider_id=%s "
+        "AND ABS(EXTRACT(EPOCH FROM start_date_local)-%s)<=1800 "
+        "ORDER BY ABS(EXTRACT(EPOCH FROM start_date_local)-%s) LIMIT 5",
+        (rider_id, started, started),
+    ).fetchall()]
+    garmin = [dict(row) for row in _execute(
+        "SELECT ga.garmin_activity_id,ga.started_at,ga.distance_m,"
+        "ga.duration_s,ga.activity_name,abm.ride_id "
+        "FROM garmin_activity ga LEFT JOIN activity_brevet_match abm "
+        "ON abm.rider_id=ga.rider_id "
+        "AND abm.garmin_activity_id=ga.garmin_activity_id "
+        "AND abm.match_status <> 'rejected' "
+        "WHERE ga.rider_id=%s "
+        "AND ABS(EXTRACT(EPOCH FROM started_at)-%s)<=1800 "
+        "ORDER BY ABS(EXTRACT(EPOCH FROM started_at)-%s) LIMIT 5",
+        (rider_id, started, started),
+    ).fetchall()]
+    rides = [dict(row) for row in _execute(
+        "SELECT r.id AS ride_id,r.name,r.date,r.distance_km "
+        "FROM rider_ride rr JOIN ride r ON r.id=rr.ride_id "
+        "WHERE rr.rider_id=%s AND rr.status=%s "
+        "AND r.date BETWEEN (to_timestamp(%s)::date-1) "
+        "AND (to_timestamp(%s)::date+1) "
+        "ORDER BY ABS((r.distance_km*1000)-%s) LIMIT 5",
+        (rider_id, RideStatus.FINISHED.value, started, started, distance),
+    ).fetchall()]
+    return {"strava": strava, "garmin": garmin, "rides": rides}
+
+
+def upsert_sram_axs_match(rider_id, sram_activity_id, match):
+    _execute(
+        "INSERT INTO sram_axs_activity_match "
+        "(rider_id,sram_activity_id,strava_activity_id,garmin_activity_id,"
+        "ride_id,confidence,reasons,match_status) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+        "ON CONFLICT (rider_id,sram_activity_id) DO UPDATE SET "
+        "strava_activity_id=EXCLUDED.strava_activity_id,"
+        "garmin_activity_id=EXCLUDED.garmin_activity_id,"
+        "ride_id=EXCLUDED.ride_id,confidence=EXCLUDED.confidence,"
+        "reasons=EXCLUDED.reasons,match_status=EXCLUDED.match_status,"
+        "updated_at=NOW() "
+        "WHERE sram_axs_activity_match.match_status <> 'manual'",
+        (
+            rider_id, sram_activity_id, match.get("strava_activity_id"),
+            match.get("garmin_activity_id"), match.get("ride_id"),
+            match["confidence"], psycopg2.extras.Json(match.get("reasons") or {}),
+            match.get("match_status", "auto"),
+        ),
+    )
+    get_db().commit()
+
+
+def get_sram_axs_metrics_for_brevet(rider_id, ride_id):
+    row = _execute(
+        "SELECT a.sram_activity_id,a.activity_name,a.started_at,a.distance_m,"
+        "a.duration_s,a.elevation_gain_m,a.average_power,a.max_power,"
+        "a.normalized_power,a.average_hr,a.max_hr,a.average_cadence,"
+        "a.max_cadence,a.rear_shift_count,a.front_shift_count,"
+        "d.gear_summary,d.components,m.confidence,m.match_status "
+        "FROM sram_axs_activity_match m "
+        "JOIN sram_axs_activity a ON a.rider_id=m.rider_id "
+        "AND a.sram_activity_id=m.sram_activity_id "
+        "LEFT JOIN sram_axs_activity_detail d ON d.rider_id=a.rider_id "
+        "AND d.sram_activity_id=a.sram_activity_id "
+        "WHERE m.rider_id=%s AND m.ride_id=%s "
+        "AND m.match_status <> 'rejected' "
+        "ORDER BY m.confidence DESC LIMIT 1",
+        (rider_id, ride_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 # ========== GARMIN CONNECT ==========
 
 def get_garmin_connection(rider_id, include_tokens=False):
@@ -2472,8 +2686,9 @@ def upsert_garmin_activities(rider_id, activities):
             " elevation_gain_m, average_hr, max_hr, average_power, max_power, "
             " normalized_power, aerobic_training_effect, "
             " anaerobic_training_effect, calories, average_cadence, "
-            " device_name, raw_ciphertext) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            " device_name, average_temperature_c, min_temperature_c, "
+            " max_temperature_c, raw_ciphertext) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (rider_id, garmin_activity_id) DO UPDATE SET "
             "activity_name=EXCLUDED.activity_name, "
             "activity_type=EXCLUDED.activity_type, started_at=EXCLUDED.started_at, "
@@ -2487,6 +2702,9 @@ def upsert_garmin_activities(rider_id, activities):
             "anaerobic_training_effect=EXCLUDED.anaerobic_training_effect, "
             "calories=EXCLUDED.calories, average_cadence=EXCLUDED.average_cadence, "
             "device_name=EXCLUDED.device_name, "
+            "average_temperature_c=EXCLUDED.average_temperature_c, "
+            "min_temperature_c=EXCLUDED.min_temperature_c, "
+            "max_temperature_c=EXCLUDED.max_temperature_c, "
             "raw_ciphertext=EXCLUDED.raw_ciphertext, synced_at=NOW()",
             (rider_id, activity["garmin_activity_id"],
              activity.get("activity_name"), activity.get("activity_type"),
@@ -2498,7 +2716,10 @@ def upsert_garmin_activities(rider_id, activities):
              activity.get("aerobic_training_effect"),
              activity.get("anaerobic_training_effect"),
              activity.get("calories"), activity.get("average_cadence"),
-             activity.get("device_name"), raw_ciphertext),
+             activity.get("device_name"),
+             activity.get("average_temperature_c"),
+             activity.get("min_temperature_c"),
+             activity.get("max_temperature_c"), raw_ciphertext),
         )
     conn.commit()
 
@@ -2511,7 +2732,8 @@ def get_recent_garmin_activities(rider_id, limit=10):
         "distance_m, duration_s, moving_duration_s, elevation_gain_m, "
         "average_hr, max_hr, average_power, max_power, normalized_power, "
         "aerobic_training_effect, anaerobic_training_effect, calories, "
-        "average_cadence, device_name, synced_at "
+        "average_cadence, device_name, average_temperature_c, "
+        "min_temperature_c, max_temperature_c, synced_at "
         "FROM garmin_activity WHERE rider_id=%s "
         "ORDER BY started_at DESC NULLS LAST LIMIT %s",
         (rider_id, limit),
@@ -2563,7 +2785,8 @@ def upsert_garmin_activity_detail(
             "elevation_gain_m=%s, average_hr=%s, max_hr=%s, average_power=%s, "
             "max_power=%s, normalized_power=%s, aerobic_training_effect=%s, "
             "anaerobic_training_effect=%s, calories=%s, average_cadence=%s, "
-            "device_name=%s, synced_at=NOW() "
+            "device_name=%s, average_temperature_c=%s, min_temperature_c=%s, "
+            "max_temperature_c=%s, synced_at=NOW() "
             "WHERE rider_id=%s AND garmin_activity_id=%s",
             (
                 normalized_activity.get("activity_name"),
@@ -2583,6 +2806,9 @@ def upsert_garmin_activity_detail(
                 normalized_activity.get("calories"),
                 normalized_activity.get("average_cadence"),
                 normalized_activity.get("device_name"),
+                normalized_activity.get("average_temperature_c"),
+                normalized_activity.get("min_temperature_c"),
+                normalized_activity.get("max_temperature_c"),
                 rider_id,
                 garmin_activity_id,
             ),
@@ -2719,7 +2945,8 @@ def get_garmin_recordings_for_brevet(rider_id, ride_id):
         "ga.elevation_gain_m, ga.average_hr, ga.max_hr, ga.average_power, "
         "ga.max_power, ga.normalized_power, ga.aerobic_training_effect, "
         "ga.anaerobic_training_effect, ga.calories, ga.average_cadence, "
-        "ga.device_name, abm.confidence AS source_confidence, "
+        "ga.device_name, ga.average_temperature_c, ga.min_temperature_c, "
+        "ga.max_temperature_c, abm.confidence AS source_confidence, "
         "abm.reasons AS match_reasons "
         "FROM activity_brevet_match abm "
         "JOIN garmin_activity ga ON ga.rider_id=abm.rider_id "
@@ -2740,7 +2967,8 @@ def get_garmin_recordings_for_brevet(rider_id, ride_id):
         "ga.elevation_gain_m, ga.average_hr, ga.max_hr, ga.average_power, "
         "ga.max_power, ga.normalized_power, ga.aerobic_training_effect, "
         "ga.anaerobic_training_effect, ga.calories, ga.average_cadence, "
-        "ga.device_name, asm.confidence AS source_confidence "
+        "ga.device_name, ga.average_temperature_c, ga.min_temperature_c, "
+        "ga.max_temperature_c, asm.confidence AS source_confidence "
         "FROM strava_ride_match srm "
         "JOIN activity_source_match asm ON asm.rider_id=srm.rider_id "
         " AND asm.strava_activity_id=srm.strava_activity_id "

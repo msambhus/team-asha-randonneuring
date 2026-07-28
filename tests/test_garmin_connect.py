@@ -230,6 +230,9 @@ def test_activity_summary_normalizes_cycling_performance_fields():
         "anaerobicTrainingEffect": 1.1,
         "averageBikingCadenceInRevPerMinute": 78,
         "deviceName": "Edge 1050",
+        "avgTemperature": 21.25,
+        "minTemperature": 12,
+        "maxTemperature": 29,
     })
 
     assert normalized["garmin_activity_id"] == 123
@@ -237,6 +240,9 @@ def test_activity_summary_normalizes_cycling_performance_fields():
     assert normalized["normalized_power"] == 177
     assert normalized["aerobic_training_effect"] == 4.2
     assert normalized["average_cadence"] == 78
+    assert normalized["average_temperature_c"] == 21.25
+    assert normalized["min_temperature_c"] == 12
+    assert normalized["max_temperature_c"] == 29
 
 
 def test_activity_details_is_bounded_and_read_only():
