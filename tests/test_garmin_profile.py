@@ -154,6 +154,7 @@ def test_my_rides_collapses_explicit_garmin_strava_match(client, app):
     assert b"activityIcon" in response.data
     assert b"AI coaching" in response.data
     assert b"Loading personalized coaching" in response.data
+    assert b".coach-loading[hidden],.coach-copy[hidden]{display:none!important}" in response.data
     assert b"/rider/12345/advice" in response.data
     assert b"pointerenter" in response.data
     assert response.data.index(b'id="calendar-grid"') < response.data.index(
