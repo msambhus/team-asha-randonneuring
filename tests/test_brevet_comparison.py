@@ -184,6 +184,15 @@ class TestGetRiderRidesWithCachedStreams:
         # Second arg is the params tuple
         assert args[1] == (42, RideStatus.FINISHED.value)
 
+    @patch('models._execute')
+    def test_optional_limit_is_bound_in_sql(self, mock_execute):
+        from models import get_rider_rides_with_cached_streams, RideStatus
+        mock_execute.return_value.fetchall.return_value = []
+        get_rider_rides_with_cached_streams(rider_id=42, limit=16)
+        sql, params = mock_execute.call_args[0]
+        assert 'LIMIT %s' in sql
+        assert params == (42, RideStatus.FINISHED.value, 16)
+
 
 # ---------------------------------------------------------------------------
 # Service tests: build_cohort_chart_data

@@ -173,10 +173,21 @@ def compute_same_route_segment_baseline(rider_id, base_plan_id,
     if not base_plan_id:
         return {}
 
+    metadata_only = True
     try:
-        candidate_rows = models.get_rider_rides_with_cached_streams(rider_id) or []
+        # Filter using lightweight metadata first. Pulling every compressed
+        # stream blob before discovering which rides share this route made
+        # long-history rider pages transfer and decompress far too much data.
+        candidate_rows = (
+            models.get_rider_rides_metadata_for_comparison(rider_id) or [])
     except Exception:
-        return {}
+        # Compatibility/fail-soft path for older schemas and test doubles.
+        metadata_only = False
+        try:
+            candidate_rows = (
+                models.get_rider_rides_with_cached_streams(rider_id) or [])
+        except Exception:
+            return {}
 
     try:
         all_plans = models.get_all_ride_plans() or []
@@ -208,6 +219,17 @@ def compute_same_route_segment_baseline(rider_id, base_plan_id,
         pass
     if max_rides and max_rides > 0:
         same_route = same_route[:max_rides]
+
+    if metadata_only:
+        try:
+            ride_ids = [row.get('ride_id') for row in same_route
+                        if row.get('ride_id') is not None]
+            same_route = models.get_rider_rides_with_cached_streams_by_ids(
+                rider_id, ride_ids) or []
+        except Exception:
+            return {}
+    if not same_route:
+        return {}
 
     # 2. Shared plan stops — same route → same waypoints for every prior ride.
     try:

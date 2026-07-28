@@ -76,7 +76,10 @@ def compute_gradient_band_baseline(rider_id, exclude_ride_id=None, max_rides=15)
     from models import get_rider_rides_with_cached_streams
 
     try:
-        rides = get_rider_rides_with_cached_streams(rider_id)
+        # Fetch only what this calculation can consume. Add one slot because
+        # the current ride may be present and then excluded below.
+        rides = get_rider_rides_with_cached_streams(
+            rider_id, limit=max_rides + (1 if exclude_ride_id is not None else 0))
     except Exception:
         return {}
     if not rides:

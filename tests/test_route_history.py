@@ -84,6 +84,32 @@ def test_no_matching_route_returns_empty():
         assert route_history.compute_same_route_segment_baseline(1, 42) == {}
 
 
+def test_filters_metadata_before_loading_selected_stream_blobs():
+    metadata = [
+        _row(1, ride_plan_id=42, streams=None),
+        _row(2, ride_plan_id=99, streams=None),
+    ]
+    selected = [_row(1, ride_plan_id=42)]
+    with patch.object(
+            route_history.models, 'get_rider_rides_metadata_for_comparison',
+            return_value=metadata), \
+         patch.object(route_history.models, 'get_all_ride_plans',
+                      return_value=[]), \
+         patch.object(
+             route_history.models, 'get_rider_rides_with_cached_streams_by_ids',
+             return_value=selected) as get_selected, \
+         patch.object(route_history.models, 'get_ride_plan_stops',
+                      return_value=[{'location': 'Start'}]), \
+         patch.object(route_history.models, 'get_strava_ride_analysis',
+                      return_value={'detected_stops': []}), \
+         patch.object(route_history.strava_analysis, 'build_comparison',
+                      return_value=_comparison([_seg('Start', 60)])):
+        result = route_history.compute_same_route_segment_baseline(7, 42)
+
+    get_selected.assert_called_once_with(7, [1])
+    assert result['Start']['n_rides'] == 1
+
+
 # ── FK vs name-match filtering ───────────────────────────────────────────
 def test_fk_match_kept():
     rows = [_row(1, ride_plan_id=42)]

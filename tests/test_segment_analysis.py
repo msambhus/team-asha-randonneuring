@@ -97,8 +97,10 @@ def test_compute_gradient_band_baseline_excludes_ride_and_caps():
         {'ride_id': 99, 'activity_streams': _compress(good)},   # excluded
         {'ride_id': 1, 'activity_streams': _compress(good)},
     ]
-    with patch('models.get_rider_rides_with_cached_streams', return_value=rows):
+    with patch('models.get_rider_rides_with_cached_streams',
+               return_value=rows) as get_streams:
         result = compute_gradient_band_baseline(rider_id=42, exclude_ride_id=99)
+    get_streams.assert_called_once_with(42, limit=16)
     assert result['flat']['n_samples'] == 2  # only ride 1 counted
 
 
