@@ -1,8 +1,9 @@
 """Private Garmin Connect account connection routes."""
 import json
-from datetime import date, timedelta
-from flask import (Blueprint, current_app, flash, redirect, render_template,
-                   request, session, url_for)
+import time
+from datetime import date, datetime, timedelta
+from flask import (Blueprint, current_app, flash, jsonify, redirect,
+                   render_template, request, session, url_for)
 
 import models
 from auth import profile_required
@@ -16,6 +17,9 @@ from vendor.python_garminconnect import (
 )
 
 garmin_bp = Blueprint("garmin", __name__)
+PERFORMANCE_BACKFILL_YEARS = 3
+PERFORMANCE_BACKFILL_MAX_DAYS = 3
+PERFORMANCE_BACKFILL_BUDGET_SECONDS = 20
 
 
 def _cipher():
@@ -48,6 +52,57 @@ def _enrich_one_matched_activity(rider_id, performance):
         current_app.logger.warning(
             "Garmin activity detail enrichment deferred for rider %s",
             rider_id, exc_info=True)
+
+
+def _store_performance_snapshot(rider_id, performance, snapshot_date):
+    """Fetch and durably commit one encrypted, normalized daily snapshot."""
+    snapshot = performance.performance_snapshot(snapshot_date)
+    raw_ciphertext = _cipher().encrypt(json.dumps(
+        snapshot["raw"], separators=(",", ":"), default=str))
+    refreshed_tokens = _cipher().encrypt(performance.dump_tokens())
+    models.upsert_garmin_performance_snapshot(
+        rider_id, snapshot, raw_ciphertext, refreshed_tokens)
+    return snapshot
+
+
+def _backfill_target(today=None):
+    current = today or date.today()
+    try:
+        return current.replace(year=current.year - PERFORMANCE_BACKFILL_YEARS)
+    except ValueError:
+        # Feb 29 has no direct counterpart in a non-leap target year.
+        return current.replace(
+            year=current.year - PERFORMANCE_BACKFILL_YEARS, day=28)
+
+
+def _next_backfill_date(rider_id, today=None):
+    """Continue backward from the oldest committed row; no extra cursor needed."""
+    current = today or date.today()
+    coverage = models.get_garmin_performance_history_summary(rider_id)
+    first_date = coverage.get("first_date")
+    return (first_date - timedelta(days=1)) if first_date else current
+
+
+def backfill_performance_history(rider_id, performance, *, today=None,
+                                 max_days=PERFORMANCE_BACKFILL_MAX_DAYS,
+                                 budget_seconds=PERFORMANCE_BACKFILL_BUDGET_SECONDS):
+    """Capture a bounded, resumable slice of historical Garmin daily data."""
+    current = today or date.today()
+    target = _backfill_target(current)
+    next_date = _next_backfill_date(rider_id, current)
+    started = time.monotonic()
+    captured = 0
+    while (next_date >= target and captured < max_days
+           and time.monotonic() - started < budget_seconds):
+        _store_performance_snapshot(rider_id, performance, next_date)
+        captured += 1
+        next_date -= timedelta(days=1)
+    return {
+        "captured": captured,
+        "next_date": next_date,
+        "target_date": target,
+        "complete": next_date < target,
+    }
 
 
 @garmin_bp.route("/connect", methods=["GET", "POST"])
@@ -180,12 +235,7 @@ def sync():
         performance = GarminPerformanceClient()
         performance.load_tokens(
             _cipher().decrypt(connection["token_ciphertext"]))
-        snapshot = performance.performance_snapshot(date.today())
-        raw_ciphertext = _cipher().encrypt(json.dumps(
-            snapshot["raw"], separators=(",", ":"), default=str))
-        refreshed_tokens = _cipher().encrypt(performance.dump_tokens())
-        models.upsert_garmin_performance_snapshot(
-            rider_id, snapshot, raw_ciphertext, refreshed_tokens)
+        _store_performance_snapshot(rider_id, performance, date.today())
         default_cutoff = date.today() - timedelta(days=365)
         history_complete = bool(connection.get("activity_history_complete"))
         if history_complete:
@@ -260,6 +310,66 @@ def sync():
             "success",
         )
     return redirect(url_for("auth.my_profile"))
+
+
+@garmin_bp.route("/backfill", methods=["POST"])
+@profile_required
+def backfill():
+    """Capture the next bounded historical slice for the owning rider."""
+    rider_id = session["rider_id"]
+    connection = models.get_garmin_connection(rider_id, include_tokens=True)
+    if not connection:
+        flash("Connect Garmin before backfilling history.", "warning")
+        return redirect(url_for("garmin.connect"))
+    try:
+        performance = GarminPerformanceClient()
+        performance.load_tokens(
+            _cipher().decrypt(connection["token_ciphertext"]))
+        result = backfill_performance_history(rider_id, performance)
+    except GarminConnectAuthenticationError:
+        models.mark_garmin_reauth_required(rider_id)
+        flash("Garmin authorization expired. Reconnect Garmin.", "warning")
+        return redirect(url_for("auth.my_profile"))
+    except GarminConnectTooManyRequestsError:
+        flash(
+            "Garmin rate limited the backfill. Saved days are retained; "
+            "continue later.", "warning")
+        return redirect(url_for("auth.my_profile"))
+    except (GarminConnectConnectionError, ValueError):
+        current_app.logger.warning(
+            "Garmin performance backfill failed for rider %s", rider_id,
+            exc_info=True)
+        flash("Could not backfill Garmin history right now.", "error")
+        return redirect(url_for("auth.my_profile"))
+
+    if result["complete"]:
+        flash(
+            f"Garmin performance history is captured back to "
+            f"{result['target_date']}.", "success")
+    else:
+        flash(
+            f"Captured {result['captured']} more Garmin history day(s). "
+            f"Next run continues with {result['next_date']}.", "success")
+    return redirect(url_for("auth.my_profile"))
+
+
+@garmin_bp.route("/history")
+@profile_required
+def history():
+    """Owner-only normalized daily series for future coaching/model inputs."""
+    rider_id = session["rider_id"]
+    end_date = date.today()
+    raw_start = request.args.get("start")
+    try:
+        start_date = (
+            datetime.strptime(raw_start, "%Y-%m-%d").date()
+            if raw_start else end_date - timedelta(days=365))
+    except ValueError:
+        return jsonify({"error": "start must use YYYY-MM-DD"}), 400
+    start_date = max(start_date, _backfill_target(end_date))
+    rows = models.get_garmin_performance_history(
+        rider_id, start_date=start_date, end_date=end_date)
+    return jsonify({"start": start_date, "end": end_date, "days": rows})
 
 
 @garmin_bp.route("/disconnect", methods=["POST"])

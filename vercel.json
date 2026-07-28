@@ -25,6 +25,10 @@
     {
       "path": "/backfill-wind",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/sync-garmin-performance",
+      "schedule": "0 19 * * *"
     }
   ],
   "routes": [

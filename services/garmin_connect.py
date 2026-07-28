@@ -112,6 +112,13 @@ class GarminPerformanceClient:
             raise ValueError("Garmin profile has no displayName")
         return str(value)
 
+    def _optional_metric(self, path, **kwargs):
+        """Treat unsupported/unavailable dated metrics as missing, not fatal."""
+        try:
+            return self.auth.connectapi(path, **kwargs)
+        except GarminConnectNotFoundError:
+            return None
+
     def activities(self, *, start: int = 0, limit: int = 20,
                    activity_type: str = "cycling") -> list[dict[str, Any]]:
         if start < 0 or limit < 1 or limit > MAX_ACTIVITY_LIMIT:
@@ -342,32 +349,28 @@ class GarminPerformanceClient:
         """Fetch one private, read-only daily performance snapshot."""
         day = _date(on_date)
         display_name = self._display_name()
-        summary = self.auth.connectapi(
+        summary = self._optional_metric(
             f"{_DAILY_SUMMARY}/{display_name}",
             params={"calendarDate": day},
         ) or {}
-        heart_rate = self.auth.connectapi(
+        heart_rate = self._optional_metric(
             f"{_HEART_RATE}/{display_name}", params={"date": day}) or {}
-        sleep = self.auth.connectapi(
+        sleep = self._optional_metric(
             f"{_SLEEP}/{display_name}",
             params={"date": day, "nonSleepBufferMinutes": 60},
         ) or {}
-        stress = self.auth.connectapi(f"{_STRESS}/{day}") or {}
-        body_battery = self.auth.connectapi(
+        stress = self._optional_metric(f"{_STRESS}/{day}") or {}
+        body_battery = self._optional_metric(
             _BODY_BATTERY, params={"startDate": day, "endDate": day}) or []
-        hrv = self.auth.connectapi(f"{_HRV}/{day}") or {}
-        max_metrics = self.auth.connectapi(
+        hrv = self._optional_metric(f"{_HRV}/{day}") or {}
+        max_metrics = self._optional_metric(
             f"{_MAX_METRICS}/{day}/{day}") or {}
-        readiness = self.auth.connectapi(
+        readiness = self._optional_metric(
             f"{_TRAINING_READINESS}/{day}") or []
-        training_status = self.auth.connectapi(
+        training_status = self._optional_metric(
             f"{_TRAINING_STATUS}/{day}") or {}
-        try:
-            endurance_score = self.auth.connectapi(
-                _ENDURANCE_SCORE, params={"calendarDate": day}) or {}
-        except GarminConnectNotFoundError:
-            # Not every Garmin device/account exposes Endurance Score.
-            endurance_score = {}
+        endurance_score = self._optional_metric(
+            _ENDURANCE_SCORE, params={"calendarDate": day}) or {}
         morning_readiness = _morning_readiness(readiness)
 
         return {
@@ -382,7 +385,7 @@ class GarminPerformanceClient:
             "body_battery": _dig(
                 body_battery[0] if isinstance(body_battery, list) and body_battery
                 else body_battery,
-                ("charged",), ("bodyBatteryMostRecentValue",)),
+                ("bodyBatteryMostRecentValue",), ("charged",)),
             "training_readiness": _dig(
                 morning_readiness,
                 ("score",), ("trainingReadinessScore",)),

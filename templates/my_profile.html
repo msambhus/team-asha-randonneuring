@@ -324,6 +324,13 @@
             <span class="garmin-sync-label">Sync Garmin</span>
           </button>
         </form>
+        <form id="garmin-backfill-form" method="post" action="{{ url_for('garmin.backfill') }}">
+          <button id="garmin-backfill-submit" class="btn garmin-sync-button"
+                  type="submit" style="display:inline-flex;align-items:center;gap:8px;border:1px solid var(--primary);color:var(--primary);background:#fff;">
+            <span class="garmin-sync-spinner" aria-hidden="true" style="border-color:rgba(31,79,133,.25);border-top-color:var(--primary);"></span>
+            <span class="garmin-sync-label">Backfill Garmin history</span>
+          </button>
+        </form>
         <form id="garmin-delete-form" method="post" action="{{ url_for('garmin.disconnect') }}"
               data-delete-message="Disconnect Garmin and permanently delete its encrypted tokens, recovery snapshots, and imported activities? This cannot be undone.">
           <input type="hidden" name="confirm_delete" value="DELETE">
@@ -344,6 +351,13 @@
     <div style="margin-top:4px;color:var(--text-light);font-size:.78rem;font-weight:400;">
       This may take up to a minute. Please keep this page open.
     </div>
+  </div>
+  {% endif %}
+  {% if garmin_connection and garmin_history %}
+  <div style="margin-top:12px;color:var(--text-light);font-size:.78rem;">
+    {{ garmin_history.days_captured }} daily snapshot{{ '' if garmin_history.days_captured == 1 else 's' }} stored
+    {% if garmin_history.first_date %}from {{ garmin_history.first_date }} through {{ garmin_history.latest_date }}{% endif %}.
+    Scheduled refresh runs daily; backfill continues in safe resumable batches toward three years.
   </div>
   {% endif %}
 </div>
@@ -377,6 +391,19 @@
         button.classList.add('is-loading');
         button.querySelector('.garmin-sync-label').textContent = 'Syncing Garmin…';
         document.getElementById('garmin-sync-progress').hidden = false;
+    });
+})();
+
+(() => {
+    const form = document.getElementById('garmin-backfill-form');
+    if (!form) return;
+    form.addEventListener('submit', () => {
+        form.setAttribute('aria-busy', 'true');
+        const button = document.getElementById('garmin-backfill-submit');
+        button.disabled = true;
+        button.classList.add('is-loading');
+        button.querySelector('.garmin-sync-label').textContent =
+            'Backfilling Garmin history…';
     });
 })();
 

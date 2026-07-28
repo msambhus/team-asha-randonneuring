@@ -8,6 +8,7 @@
 .private-ride{display:grid;grid-template-columns:1fr auto;gap:12px;padding:16px 0;border-bottom:1px solid #e2e8f0}
 .provider-badge{display:inline-block;padding:2px 7px;border-radius:999px;font-size:.68rem;font-weight:800;margin-right:4px}
 .provider-strava{background:#fff0e9;color:#c43d00}.provider-garmin{background:#eaf2ff;color:#174ea6}
+.brevet-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.68rem;font-weight:800;margin-right:4px;background:#e7effa;color:var(--primary);border:1px solid #bfd0e8}
 .ride-metrics{display:flex;gap:18px;flex-wrap:wrap;color:var(--text-light);font-size:.82rem;margin-top:6px}
 #ride-feed.calendar-view{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
 #ride-feed.calendar-view .private-ride{display:block;border:1px solid #e2e8f0;border-radius:10px;padding:14px}
@@ -55,6 +56,7 @@
       <article class="private-ride">
         <div>
           <div>
+            {% if activity.ride_id %}<span class="brevet-badge">Brevet</span>{% endif %}
             {% for provider in activity.providers %}
             <span class="provider-badge provider-{{ provider|lower }}">{{ provider }}</span>
             {% endfor %}
