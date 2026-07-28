@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}My Rides - Team Asha Randonneuring{% endblock %}
+{% block extra_head %}
+<style>
+.ride-view-toggle{display:inline-flex;padding:3px;background:#edf2f7;border-radius:9px}
+.ride-view-toggle button{border:0;background:transparent;padding:7px 12px;border-radius:7px;color:var(--text-light);font-weight:700;cursor:pointer}
+.ride-view-toggle button.active{background:#fff;color:var(--primary);box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.private-ride{display:grid;grid-template-columns:1fr auto;gap:12px;padding:16px 0;border-bottom:1px solid #e2e8f0}
+.provider-badge{display:inline-block;padding:2px 7px;border-radius:999px;font-size:.68rem;font-weight:800;margin-right:4px}
+.provider-strava{background:#fff0e9;color:#c43d00}.provider-garmin{background:#eaf2ff;color:#174ea6}
+.ride-metrics{display:flex;gap:18px;flex-wrap:wrap;color:var(--text-light);font-size:.82rem;margin-top:6px}
+#ride-feed.calendar-view{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+#ride-feed.calendar-view .private-ride{display:block;border:1px solid #e2e8f0;border-radius:10px;padding:14px}
+@media(max-width:640px){.private-ride{grid-template-columns:1fr}}
+</style>
+{% endblock %}
+{% block content %}
+<div class="hero" style="padding:30px 20px;">
+  <h1>My Rides</h1>
+  <p>Your private training, brevet plans, and matched ride stats.</p>
+</div>
+<div class="container section">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+      <div>
+        <h2 style="margin:0;color:var(--primary);">Upcoming brevets</h2>
+        <p style="margin:4px 0 0;color:var(--text-light);">Your commitments and preparation targets.</p>
+      </div>
+      {% if current_season %}<a class="btn btn-primary" href="{{ url_for('riders.upcoming_brevets', season_name=current_season.name) }}">Browse calendar</a>{% endif %}
+    </div>
+    {% if upcoming %}
+      {% for ride in upcoming %}
+      <div class="private-ride">
+        <div><strong>{{ ride.name|clean_name }}</strong><div class="ride-metrics"><span>{{ ride.date }}</span><span>{{ ride.distance_km }} km</span><span>{{ ride.status|title }}</span></div></div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p style="color:var(--text-light);margin-top:16px;">No upcoming brevet commitments yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+      <div>
+        <h2 style="margin:0;color:var(--primary);">Recent rides</h2>
+        <p style="margin:4px 0 0;color:var(--text-light);">Matched Garmin and Strava recordings appear once.</p>
+      </div>
+      <div class="ride-view-toggle" aria-label="Ride view">
+        <button type="button" class="active" data-view="timeline">Timeline</button>
+        <button type="button" data-view="calendar">Calendar</button>
+      </div>
+    </div>
+    <div id="ride-feed">
+    {% for activity in activity_feed %}
+      <article class="private-ride">
+        <div>
+          <div>
+            {% for provider in activity.providers %}
+            <span class="provider-badge provider-{{ provider|lower }}">{{ provider }}</span>
+            {% endfor %}
+          </div>
+          <strong>{{ activity.ride_name or activity.name }}</strong>
+          <div class="ride-metrics">
+            <span>{{ activity.started_at[:10] if activity.started_at else 'Date unavailable' }}</span>
+            {% if activity.distance_m is not none %}<span>{{ '%.1f'|format((activity.distance_m|float) / 1609.344) }} mi</span>{% endif %}
+            {% if activity.duration_s is not none %}<span>{{ '%.1f'|format((activity.duration_s|float) / 3600) }} h</span>{% endif %}
+            {% if activity.elevation_gain_m is not none %}<span>{{ (activity.elevation_gain_m|float * 3.28084)|round|int }} ft</span>{% endif %}
+          </div>
+        </div>
+        <div>
+          {% if activity.ride_id and activity.strava_activity_id %}
+          <a class="btn btn-primary" href="{{ url_for('riders.ride_strava_analysis', rusa_id=rider.rusa_id, ride_id=activity.ride_id) }}">Stats</a>
+          {% elif activity.strava_activity_id %}
+          <a class="btn" style="border:1px solid #fc5200;color:#c43d00;background:#fff;" href="{{ url_for('riders.my_strava_analysis') }}">Match &amp; analyze</a>
+          {% endif %}
+        </div>
+      </article>
+    {% else %}
+      <p style="color:var(--text-light);padding:16px 0;">Connect and sync Strava or Garmin to see rides here.</p>
+    {% endfor %}
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
+      {% if strava_connection %}<a class="btn" style="border:1px solid #fc5200;color:#c43d00;background:#fff;" href="{{ url_for('riders.my_strava_analysis') }}">Strava ride analysis</a>{% endif %}
+      {% if garmin_connected %}<a class="btn" style="border:1px solid var(--primary);color:var(--primary);background:#fff;" href="{{ url_for('garmin.ride_matches') }}">Review ride matches</a>{% endif %}
+      {% if rider.rusa_id %}<a class="btn" style="border:1px solid var(--primary);color:var(--primary);background:#fff;" href="{{ url_for('riders.rider_profile', rusa_id=rider.rusa_id) }}">Public brevet history</a>{% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0;color:var(--primary);">Brevet history</h2>
+    <p style="margin:4px 0 16px;color:var(--text-light);">Finished rides by season, with private Stats when a Strava match exists.</p>
+    {% for group in brevet_history %}
+      <details {% if loop.first %}open{% endif %} style="border-top:1px solid #e2e8f0;padding:12px 0;">
+        <summary style="cursor:pointer;font-weight:800;color:var(--primary);">{{ group.season.name }}</summary>
+        {% for ride in group.rides %}
+        <div class="private-ride">
+          <div>
+            <strong>{{ ride.ride_name|clean_name }}</strong>
+            <div class="ride-metrics"><span>{{ ride.date }}</span><span>{{ ride.distance_km }} km</span><span>{{ ride.status|upper }}</span></div>
+          </div>
+          {% if ride.status|lower == 'finished' and ride.ride_id in group.matches %}
+          <a class="btn btn-primary" href="{{ url_for('riders.ride_strava_analysis', rusa_id=rider.rusa_id, ride_id=ride.ride_id) }}">Stats</a>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </details>
+    {% else %}
+      <p style="color:var(--text-light);">No finished brevet history is available yet.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+document.querySelectorAll('.ride-view-toggle button').forEach(function(button){
+  button.addEventListener('click', function(){
+    document.querySelectorAll('.ride-view-toggle button').forEach(function(item){item.classList.remove('active');});
+    button.classList.add('active');
+    document.getElementById('ride-feed').classList.toggle('calendar-view', button.dataset.view === 'calendar');
+  });
+});
+</script>
+{% endblock %}

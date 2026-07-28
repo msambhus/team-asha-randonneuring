@@ -810,9 +810,10 @@ def rider_profile(rusa_id):
     # Check if logged-in user is viewing their own profile
     is_own_profile = session.get('rider_id') == rider['id']
     
-    # Determine if Strava data should be visible
-    strava_data_private = rider.get('strava_data_private', False)
-    show_strava_data = is_own_profile or not strava_data_private
+    # This route is the public randonneuring record even when its owner opens
+    # it. Private provider activity belongs on /auth/my-rides.
+    strava_data_private = True
+    show_strava_data = False
 
     seasons = get_all_seasons()
     current = get_current_season()
@@ -848,7 +849,7 @@ def rider_profile(rusa_id):
     r12_years = set(a['end_year'] for a in r12_awards)
 
     # --- Strava training data ---
-    strava_connection = get_strava_connection(rider['id'])
+    strava_connection = None
     training_rides = []
     fitness_score = None
     has_strava = False
@@ -952,7 +953,7 @@ def rider_profile(rusa_id):
 
     # --- Upcoming rides with readiness ---
     upcoming_rides = []
-    signups = get_rider_upcoming_signups(rider['id'])
+    signups = []
     
     # Convert signups to list of dicts and match ride plans (same logic as upcoming_brevets)
     signups_list = []
@@ -1029,7 +1030,7 @@ def rider_profile(rusa_id):
                            total_r12s=total_r12s,
                            r12_awards=r12_awards,
                            r12_years=r12_years,
-                           is_own_profile=is_own_profile,
+                           is_own_profile=False,
                            show_strava_data=show_strava_data)
 
 

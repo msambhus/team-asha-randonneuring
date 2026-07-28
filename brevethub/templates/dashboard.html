@@ -1,38 +1,52 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — {{ product_name }}{% endblock %}
+{% block title %}My Rides — {{ product_name }}{% endblock %}
 {% block content %}
 <div class="hero" style="padding:30px 20px;">
-<h1>Welcome to {{ product_name }}</h1>
-<p style="font-size:0.9rem; opacity:0.8;">{{ rider.email }}</p>
+<h1>My Rides</h1>
+<p style="font-size:0.9rem; opacity:0.8;">Your private brevet and training dashboard.</p>
 </div>
 
 <div class="container section">
 
 <div class="card">
-  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+  <div class="flex flex-wrap gap-2.5">
+    <a class="btn btn-primary" href="{{ url_for('main.rides_by_season') }}">Brevet history by season</a>
+    <a class="btn bg-white text-primary border border-border hover:opacity-90" href="{{ url_for('analysis.analysis_list') }}">Match &amp; analyze rides</a>
+    <a class="btn bg-white text-primary border border-border hover:opacity-90" href="{{ url_for('main.profile') }}">Connections &amp; profile</a>
+  </div>
+</div>
+
+<div class="card" id="recent-rides">
+  <div class="flex items-start justify-between gap-3 flex-wrap mb-4">
     <div>
-      <div class="text-[0.7rem] text-text-light uppercase tracking-wider">Club</div>
-      <div class="font-semibold">{% if club %}{{ club.name }}{% else %}—{% endif %}</div>
+      <h2 class="text-primary text-[1.3rem] font-bold">Recent rides</h2>
+      <p class="text-text-light text-sm">Private Strava activities, newest first.</p>
     </div>
-    <div>
-      <div class="text-[0.7rem] text-text-light uppercase tracking-wider">RUSA ID</div>
-      <div class="font-semibold">
-        {% if rider.rusa_id %}
-          {{ rider.rusa_id }}
-          {% if rider.rusa_id_duplicate %}
-            <span class="badge bg-[#fef3c7] text-[#78350f]" title="Another rider has claimed this RUSA ID">
-              also claimed by another rider
-            </span>
-          {% endif %}
-        {% else %}
-          <span class="text-text-light">not provided</span>
-        {% endif %}
-      </div>
+    <div class="inline-flex bg-[#edf2f7] rounded-lg p-1" aria-label="Ride view">
+      <button type="button" class="ride-view active bg-white text-primary shadow-sm rounded-md px-3 py-1.5 text-sm font-semibold" data-view="timeline">Timeline</button>
+      <button type="button" class="ride-view text-text-light rounded-md px-3 py-1.5 text-sm font-semibold" data-view="calendar">Calendar</button>
     </div>
   </div>
-  <div class="mt-4 flex flex-wrap gap-2.5">
-    <a class="btn btn-primary" href="{{ url_for('main.profile') }}">My Profile</a>
-    <a class="btn bg-white text-primary border border-border hover:opacity-90" href="{{ url_for('main.rides_by_season') }}">Rides by Season</a>
+  <div id="private-ride-feed">
+  {% for activity in activity_feed %}
+    <article class="private-ride py-4 border-b border-border flex justify-between gap-4 flex-wrap">
+      <div>
+        <span class="inline-block py-0.5 px-2 rounded-full text-[0.68rem] font-bold bg-[#fff0e9] text-[#c43d00]">Strava</span>
+        <div class="font-bold mt-1">{{ activity.name }}</div>
+        <div class="text-text-light text-sm flex gap-4 flex-wrap mt-1">
+          <span>{{ activity.started_at[:10] if activity.started_at else 'Date unavailable' }}</span>
+          {% if activity.distance_m is not none %}<span>{{ '%.1f'|format((activity.distance_m|float) / 1609.344) }} mi</span>{% endif %}
+          {% if activity.duration_s is not none %}<span>{{ '%.1f'|format((activity.duration_s|float) / 3600) }} h</span>{% endif %}
+          {% if activity.elevation_gain_m is not none %}<span>{{ (activity.elevation_gain_m|float * 3.28084)|round|int }} ft</span>{% endif %}
+        </div>
+      </div>
+      <a class="btn bg-white text-[#c43d00] border border-[#fc5200] hover:opacity-90" href="{{ url_for('analysis.analysis_list') }}">Match &amp; analyze</a>
+    </article>
+  {% else %}
+    <p class="text-text-light">
+      {% if strava.connected %}Recent rides will appear after the next Strava refresh.{% else %}Connect Strava from My Profile to see recent rides here.{% endif %}
+    </p>
+  {% endfor %}
   </div>
 </div>
 
@@ -248,4 +262,27 @@ document.querySelectorAll('.result-select').forEach(function (sel) {
 });
 </script>
 {% endif %}
+<script>
+document.querySelectorAll('.ride-view').forEach(function(button) {
+  button.addEventListener('click', function() {
+    document.querySelectorAll('.ride-view').forEach(function(item) {
+      item.classList.remove('active', 'bg-white', 'text-primary', 'shadow-sm');
+      item.classList.add('text-text-light');
+    });
+    button.classList.add('active', 'bg-white', 'text-primary', 'shadow-sm');
+    button.classList.remove('text-text-light');
+    var feed = document.getElementById('private-ride-feed');
+    var calendar = button.dataset.view === 'calendar';
+    feed.classList.toggle('grid', calendar);
+    feed.classList.toggle('grid-cols-1', calendar);
+    feed.classList.toggle('md:grid-cols-2', calendar);
+    feed.classList.toggle('gap-3', calendar);
+    feed.querySelectorAll('.private-ride').forEach(function(card) {
+      card.classList.toggle('border', calendar);
+      card.classList.toggle('rounded-lg', calendar);
+      card.classList.toggle('p-4', calendar);
+    });
+  });
+});
+</script>
 {% endblock %}
