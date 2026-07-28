@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ 'Garmin Stats' if not activity and garmin_metrics else 'Strava Analysis' }} - {{ ride.name }} - Team Asha Randonneuring{% endblock %}
+{% block title %}{{ 'Unified Ride Stats' if (garmin_metrics or strava_split_summary) else 'Strava Analysis' }} - {{ ride.name }} - Team Asha Randonneuring{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -352,7 +352,7 @@
 
 {% block content %}
 <div class="hero" style="padding:40px 20px 50px;">
-    <h1>{{ 'Garmin Brevet Stats' if not activity and garmin_metrics else 'Strava Ride Analysis' }}</h1>
+    <h1>{{ 'Unified Brevet Stats' if (garmin_metrics or strava_split_summary) else 'Strava Ride Analysis' }}</h1>
     <p style="opacity:0.85;margin-top:8px;">
         {{ ride.name|clean_name }} &mdash; {{ ride.date }}
     </p>
@@ -482,6 +482,8 @@
     </div>
 </div>
 
+{% include "_unified_provider_context.html" %}
+
 <div class="analysis-message" style="border-color:#bfdbfe;">
     <h3>Garmin recording only</h3>
     <p>This brevet is matched to Garmin but not Strava. Route maps, detected stops, and detailed segment analysis require Strava activity streams.</p>
@@ -490,6 +492,39 @@
 
 <div style="text-align:center;margin-top:30px;">
     <a href="{{ url_for('riders.my_strava_analysis') }}" class="back-link">&larr; Back to Brevet Analysis</a>
+</div>
+
+{% elif not activity and strava_split_summary %}
+<div class="analysis-summary">
+  <div class="summary-title">Combined Strava Recording Summary</div>
+  <div class="summary-grid">
+    <div class="summary-item">
+      <div class="summary-label">Distance</div>
+      <div class="summary-plan">Brevet: {{ '%.1f'|format((ride.distance_km|float) * 0.621371) }} mi</div>
+      <div class="summary-actual">{{ '%.1f'|format(strava_split_summary.actual_distance_miles) }} mi</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-label">Elapsed Time</div>
+      {% set elapsed = strava_split_summary.actual_elapsed_time_min|round|int %}
+      <div class="summary-actual">{{ (elapsed // 60)|int }}h{{ '%02d'|format(elapsed % 60) }}m</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-label">Moving Time</div>
+      {% set moving = strava_split_summary.actual_moving_time_min|round|int %}
+      <div class="summary-actual">{{ (moving // 60)|int }}h{{ '%02d'|format(moving % 60) }}m</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-label">Recording Parts</div>
+      <div class="summary-actual">{{ strava_split_summary.recording_count }}</div>
+    </div>
+  </div>
+</div>
+{% include "_unified_provider_context.html" %}
+<div class="analysis-message">
+  <h3>Split Strava recording</h3>
+  <p>The complete brevet totals combine all matched files. Detailed route, stop,
+  and segment analysis remains attached to individual source files until their
+  streams can be joined without inventing data across recording gaps.</p>
 </div>
 
 {% elif not activity %}
@@ -712,6 +747,8 @@
     </div>
 </div>
 {% endif %}
+
+{% include "_unified_provider_context.html" %}
 
 {% if is_own_profile and provider_comparison %}
 <div class="hr-power-card">

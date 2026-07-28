@@ -1,5 +1,5 @@
 """Deterministic, rider-owned matching of Garmin and Strava ride recordings."""
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 AUTO_MATCH_THRESHOLD = 0.82
@@ -80,6 +80,51 @@ def build_provider_metric_comparison(strava_summary, garmin_metrics):
                 else None),
             "absolute_floor": 200, "relative_floor": 0.10, "precision": 0,
         },
+        {
+            "key": "average_hr", "label": "Average heart rate", "unit": "bpm",
+            "strava": _number(
+                strava_summary.get("average_heartrate")
+                or strava_summary.get("avg_hr")),
+            "garmin": _number(garmin_metrics.get("average_hr")),
+            "absolute_floor": 5, "relative_floor": 0.04, "precision": 0,
+        },
+        {
+            "key": "max_hr", "label": "Maximum heart rate", "unit": "bpm",
+            "strava": _number(
+                strava_summary.get("max_heartrate")
+                or strava_summary.get("max_hr")),
+            "garmin": _number(garmin_metrics.get("max_hr")),
+            "absolute_floor": 5, "relative_floor": 0.03, "precision": 0,
+        },
+        {
+            "key": "average_power", "label": "Average power", "unit": "W",
+            "strava": _number(
+                strava_summary.get("average_watts")
+                or strava_summary.get("avg_watts")),
+            "garmin": _number(garmin_metrics.get("average_power")),
+            "absolute_floor": 10, "relative_floor": 0.08, "precision": 0,
+        },
+        {
+            "key": "normalized_power", "label": "Normalized power", "unit": "W",
+            "strava": _number(
+                strava_summary.get("weighted_average_watts")
+                or strava_summary.get("weighted_avg_watts")),
+            "garmin": _number(garmin_metrics.get("normalized_power")),
+            "absolute_floor": 10, "relative_floor": 0.07, "precision": 0,
+        },
+        {
+            "key": "max_power", "label": "Maximum power", "unit": "W",
+            "strava": _number(
+                strava_summary.get("max_watts")),
+            "garmin": _number(garmin_metrics.get("max_power")),
+            "absolute_floor": 50, "relative_floor": 0.10, "precision": 0,
+        },
+        {
+            "key": "cadence", "label": "Average cadence", "unit": "rpm",
+            "strava": _number(strava_summary.get("average_cadence")),
+            "garmin": _number(garmin_metrics.get("average_cadence")),
+            "absolute_floor": 4, "relative_floor": 0.06, "precision": 0,
+        },
     ]
 
     comparison = []
@@ -153,6 +198,179 @@ def build_garmin_brevet_summary(ride, garmin_metrics):
             round(actual_miles / (moving_s / 3600), 1)
             if actual_miles is not None and moving_s and moving_s > 0
             else None),
+    }
+
+
+def aggregate_garmin_recordings(recordings):
+    """Combine split Garmin recordings without discarding per-part provenance."""
+    rows = [dict(row) for row in recordings or []]
+    if not rows:
+        return None
+
+    def total(key):
+        values = [_number(row.get(key)) for row in rows]
+        present = [value for value in values if value is not None]
+        return sum(present) if present else None
+
+    moving_weights = [
+        max(
+            _number(row.get("moving_duration_s"))
+            or _number(row.get("duration_s"))
+            or 1,
+            0,
+        )
+        for row in rows
+    ]
+
+    def weighted(key):
+        pairs = [
+            (_number(row.get(key)), weight)
+            for row, weight in zip(rows, moving_weights)
+            if row.get(key) is not None and weight > 0
+        ]
+        return (
+            sum(value * weight for value, weight in pairs)
+            / sum(weight for _, weight in pairs)
+            if pairs else None
+        )
+
+    starts = [
+        _datetime(row.get("started_at")) for row in rows
+        if row.get("started_at") is not None
+    ]
+    ends = []
+    for row in rows:
+        started = _datetime(row.get("started_at"))
+        duration = _number(row.get("duration_s"))
+        if started and duration is not None:
+            ends.append(started + timedelta(seconds=duration))
+    elapsed = (
+        (max(ends) - min(starts)).total_seconds()
+        if starts and ends else total("duration_s")
+    )
+    normalized = [
+        (_number(row.get("normalized_power")), weight)
+        for row, weight in zip(rows, moving_weights)
+        if row.get("normalized_power") is not None and weight > 0
+    ]
+    normalized_power = (
+        (sum((value ** 4) * weight for value, weight in normalized)
+         / sum(weight for _, weight in normalized)) ** 0.25
+        if normalized else None
+    )
+    devices = sorted({
+        str(row["device_name"]) for row in rows if row.get("device_name")
+    })
+    parts = [{
+        "garmin_activity_id": row.get("garmin_activity_id"),
+        "activity_name": row.get("activity_name"),
+        "started_at": row.get("started_at"),
+        "distance_m": row.get("distance_m"),
+        "duration_s": row.get("duration_s"),
+        "device_name": row.get("device_name"),
+    } for row in sorted(
+        rows, key=lambda row: str(row.get("started_at") or ""))]
+
+    result = {
+        "recording_count": len(rows),
+        "recording_parts": parts,
+        "distance_m": total("distance_m"),
+        "duration_s": elapsed,
+        "moving_duration_s": total("moving_duration_s"),
+        "elevation_gain_m": total("elevation_gain_m"),
+        "average_hr": weighted("average_hr"),
+        "max_hr": max(
+            (_number(row.get("max_hr")) for row in rows
+             if row.get("max_hr") is not None), default=None),
+        "average_power": weighted("average_power"),
+        "max_power": max(
+            (_number(row.get("max_power")) for row in rows
+             if row.get("max_power") is not None), default=None),
+        "normalized_power": normalized_power,
+        "aerobic_training_effect": max(
+            (_number(row.get("aerobic_training_effect")) for row in rows
+             if row.get("aerobic_training_effect") is not None), default=None),
+        "anaerobic_training_effect": max(
+            (_number(row.get("anaerobic_training_effect")) for row in rows
+             if row.get("anaerobic_training_effect") is not None), default=None),
+        "calories": total("calories"),
+        "average_cadence": weighted("average_cadence"),
+        "device_name": ", ".join(devices) if devices else None,
+    }
+    return result
+
+
+def aggregate_strava_recordings(recordings):
+    """Combine split Strava headline metrics while retaining every source row."""
+    rows = [dict(row) for row in recordings or []]
+    if not rows:
+        return None
+
+    def total(key):
+        values = [_number(row.get(key)) for row in rows]
+        present = [value for value in values if value is not None]
+        return sum(present) if present else None
+
+    weights = [max(_number(row.get("moving_time")) or 0, 0) for row in rows]
+
+    def weighted(key):
+        pairs = [
+            (_number(row.get(key)), weight)
+            for row, weight in zip(rows, weights)
+            if row.get(key) is not None and weight > 0
+        ]
+        return (
+            sum(value * weight for value, weight in pairs)
+            / sum(weight for _, weight in pairs)
+            if pairs else None
+        )
+
+    starts = [
+        _datetime(row.get("start_date")) for row in rows
+        if row.get("start_date") is not None
+    ]
+    ends = []
+    for row in rows:
+        started = _datetime(row.get("start_date"))
+        duration = _number(row.get("elapsed_time"))
+        if started and duration is not None:
+            ends.append(started + timedelta(seconds=duration))
+    elapsed = (
+        (max(ends) - min(starts)).total_seconds()
+        if starts and ends else total("elapsed_time")
+    )
+    return {
+        "recording_count": len(rows),
+        "recording_parts": [{
+            "strava_activity_id": row.get("strava_activity_id"),
+            "activity_name": row.get("name"),
+            "started_at": row.get("start_date"),
+            "distance_m": row.get("distance"),
+            "duration_s": row.get("elapsed_time"),
+            "strava_url": row.get("strava_url"),
+        } for row in rows],
+        "actual_distance_miles": (
+            total("distance") / METERS_PER_MILE
+            if total("distance") is not None else None),
+        "actual_elapsed_time_min": elapsed / 60 if elapsed is not None else None,
+        "actual_moving_time_min": (
+            total("moving_time") / 60
+            if total("moving_time") is not None else None),
+        "actual_elevation_ft": (
+            total("total_elevation_gain") * FEET_PER_METER
+            if total("total_elevation_gain") is not None else None),
+        "average_heartrate": weighted("average_heartrate"),
+        "max_heartrate": max(
+            (_number(row.get("max_heartrate")) for row in rows
+             if row.get("max_heartrate") is not None), default=None),
+        "average_watts": weighted("average_watts"),
+        "max_watts": max(
+            (_number(row.get("max_watts")) for row in rows
+             if row.get("max_watts") is not None), default=None),
+        "weighted_average_watts": weighted("weighted_average_watts"),
+        "average_cadence": weighted("average_cadence"),
+        "kilojoules": total("kilojoules"),
+        "suffer_score": total("suffer_score"),
     }
 
 
@@ -366,6 +584,104 @@ def garmin_brevet_auto_matches(garmin_activities, brevets):
     ]
 
 
+def split_brevet_auto_matches(activities, brevets, provider):
+    """Auto-link only a unique contiguous set whose combined distance fits."""
+    if provider not in ("garmin", "strava"):
+        raise ValueError("unsupported split recording provider")
+    id_key = (
+        "garmin_activity_id" if provider == "garmin"
+        else "strava_activity_id")
+    start_key = "started_at" if provider == "garmin" else "start_date"
+    distance_key = "distance_m" if provider == "garmin" else "distance"
+    duration_key = "duration_s" if provider == "garmin" else "elapsed_time"
+    candidates = []
+
+    for brevet in brevets:
+        target = _number(brevet.get("distance_km")) * 1000
+        max_days = max(1, min(5, int(target / 250000) + 1))
+        ride_date = _date(brevet["date"])
+        pool = []
+        for activity in activities:
+            if not _is_cycling(activity.get("activity_type")):
+                continue
+            started = _datetime(activity.get(start_key))
+            distance = _number(activity.get(distance_key))
+            if not started or not distance or distance >= target * 0.90:
+                continue
+            if ride_date <= started.date() <= ride_date + timedelta(days=max_days):
+                pool.append(activity)
+        pool.sort(key=lambda row: _datetime(row.get(start_key)))
+        # Bound work and risk: split recordings should be chronological and
+        # adjacent, not arbitrary combinations of a rider's week.
+        pool = pool[:12]
+        qualifying = []
+        for start in range(len(pool)):
+            total_distance = 0.0
+            previous_end = None
+            group = []
+            for activity in pool[start:start + 6]:
+                started = _datetime(activity.get(start_key))
+                duration = _number(activity.get(duration_key)) or 0
+                if previous_end and started - previous_end > timedelta(hours=18):
+                    break
+                group.append(activity)
+                total_distance += _number(activity.get(distance_key)) or 0
+                previous_end = started + timedelta(seconds=duration)
+                if len(group) < 2:
+                    continue
+                difference = _relative_difference(total_distance, target)
+                if difference is not None and difference <= 0.08:
+                    qualifying.append((difference, list(group), total_distance))
+                if total_distance > target * 1.08:
+                    break
+        if len(qualifying) != 1:
+            continue
+        difference, group, combined = qualifying[0]
+        candidates.append({
+            "brevet": brevet,
+            "group": group,
+            "difference": difference,
+            "combined": combined,
+        })
+
+    # Never use a source recording in two automatic brevet groups.
+    counts = {}
+    for candidate in candidates:
+        for activity in candidate["group"]:
+            source_id = activity[id_key]
+            counts[source_id] = counts.get(source_id, 0) + 1
+
+    matches = []
+    for candidate in candidates:
+        group = candidate["group"]
+        if any(counts[activity[id_key]] != 1 for activity in group):
+            continue
+        for index, activity in enumerate(group, start=1):
+            match = {
+                "rider_id": activity["rider_id"],
+                "ride_id": candidate["brevet"]["ride_id"],
+                "garmin_activity_id": (
+                    activity[id_key] if provider == "garmin" else None),
+                "strava_activity_id": (
+                    activity[id_key] if provider == "strava" else None),
+                "source_match_id": None,
+                "confidence": round(
+                    max(0.82, 0.94 - candidate["difference"]), 3),
+                "match_status": "auto",
+                "reasons": {
+                    "split_recording": True,
+                    "provider": provider,
+                    "part_number": index,
+                    "part_count": len(group),
+                    "combined_distance_m": round(candidate["combined"]),
+                    "distance_difference_percent": round(
+                        candidate["difference"] * 100, 1),
+                },
+            }
+            matches.append(match)
+    return matches
+
+
 def refresh_brevet_matches(rider_id):
     """Reuse reviewed Strava links, then add conservative Garmin-only links."""
     import models
@@ -385,6 +701,25 @@ def refresh_brevet_matches(rider_id):
         if row["ride_id"] not in linked_ride_ids
     ]
     automatic = garmin_brevet_auto_matches(garmin, brevets)
+    single_garmin_ids = {
+        row["garmin_activity_id"] for row in automatic
+        if row.get("garmin_activity_id") is not None
+    }
+    split_garmin = split_brevet_auto_matches(
+        [row for row in garmin
+         if row["garmin_activity_id"] not in single_garmin_ids],
+        brevets, "garmin")
+    strava = [
+        row for row in models.get_strava_activities_for_matching(rider_id)
+        if row["strava_activity_id"] not in {
+            link["strava_activity_id"] for link in authoritative
+            if link.get("strava_activity_id") is not None
+        }
+    ]
+    split_strava = split_brevet_auto_matches(strava, brevets, "strava")
     models.replace_activity_brevet_matches(
-        rider_id, [*authoritative, *automatic])
-    return len(authoritative) + len(automatic)
+        rider_id, [*authoritative, *automatic, *split_garmin, *split_strava])
+    return (
+        len(authoritative) + len(automatic)
+        + len(split_garmin) + len(split_strava)
+    )

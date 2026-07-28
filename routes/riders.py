@@ -1167,14 +1167,27 @@ def ride_strava_analysis(rusa_id, ride_id):
     # it before the Strava early-return so Garmin-only brevet Stats can render
     # for the owning rider without exposing device metrics publicly.
     garmin_metrics = None
+    garmin_recovery = None
+    strava_recordings = []
+    strava_split_summary = None
     if is_own_profile:
         try:
-            from models import get_garmin_metrics_for_brevet
+            from models import (get_garmin_metrics_for_brevet,
+                                get_latest_garmin_performance_snapshot,
+                                get_strava_recordings_for_brevet)
+            from services.activity_matching import aggregate_strava_recordings
             garmin_metrics = get_garmin_metrics_for_brevet(
                 rider['id'], ride_id)
+            garmin_recovery = get_latest_garmin_performance_snapshot(
+                rider['id'])
+            strava_recordings = get_strava_recordings_for_brevet(
+                rider['id'], ride_id)
+            if len(strava_recordings) > 1:
+                strava_split_summary = aggregate_strava_recordings(
+                    strava_recordings)
         except Exception:
             current_app.logger.exception(
-                'ride_strava_analysis: Garmin metrics failed for ride %s',
+                'ride_strava_analysis: provider metrics failed for ride %s',
                 ride_id)
 
     # Look for existing match
@@ -1207,6 +1220,9 @@ def ride_strava_analysis(rusa_id, ride_id):
                                stop_wind=None,
                                garmin_metrics=garmin_metrics,
                                garmin_summary=garmin_summary,
+                               garmin_recovery=garmin_recovery,
+                               strava_recordings=strava_recordings,
+                               strava_split_summary=strava_split_summary,
                                provider_comparison=[])
 
     # Load plan stops if available. Resolve the base plan FK-first, then by
@@ -1446,8 +1462,11 @@ def ride_strava_analysis(rusa_id, ride_id):
             if isinstance(comparison, dict):
                 from services.activity_matching import (
                     build_provider_metric_comparison)
+                provider_strava = dict(
+                    strava_split_summary or comparison.get('summary') or {})
+                provider_strava.update(comparison.get('hr_power') or {})
                 provider_comparison = build_provider_metric_comparison(
-                    comparison.get('summary'), garmin_metrics)
+                    provider_strava, garmin_metrics)
         except Exception:
             current_app.logger.exception(
                 'ride_strava_analysis: Garmin metrics failed for ride %s',
@@ -1469,6 +1488,9 @@ def ride_strava_analysis(rusa_id, ride_id):
                            overall_note=overall_note,
                            garmin_metrics=garmin_metrics,
                            garmin_summary=None,
+                           garmin_recovery=garmin_recovery,
+                           strava_recordings=strava_recordings,
+                           strava_split_summary=strava_split_summary,
                            provider_comparison=provider_comparison)
 
 

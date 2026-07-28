@@ -1,0 +1,63 @@
+{% if (garmin_metrics and garmin_metrics.recording_count|default(1) > 1) or strava_split_summary %}
+<div class="hr-power-card" style="border-color:#94a3b8;">
+  <div style="font-size:1.1rem;font-weight:700;color:var(--text);">Split Recording Group</div>
+  <div style="font-size:.72rem;color:var(--text-light);margin:3px 0 14px;">
+    These files are preserved separately and combined only for headline totals.
+    Elapsed time spans the first recording start through the final recording end,
+    including gaps between files.
+  </div>
+  {% if garmin_metrics and garmin_metrics.recording_count|default(1) > 1 %}
+  <h5 style="margin:8px 0;color:#1e40af;">Garmin · {{ garmin_metrics.recording_count }} parts</h5>
+  {% for part in garmin_metrics.recording_parts %}
+  <div style="display:grid;grid-template-columns:1fr auto auto;gap:12px;padding:7px 0;border-bottom:1px solid #e2e8f0;font-size:.76rem;">
+    <span>{{ part.activity_name or ('Garmin part ' ~ loop.index) }}</span>
+    <span>{{ '%.1f'|format((part.distance_m|float) / 1609.344) if part.distance_m is not none else '—' }} mi</span>
+    <span>{{ part.started_at }}</span>
+  </div>
+  {% endfor %}
+  {% endif %}
+  {% if strava_split_summary %}
+  <h5 style="margin:14px 0 8px;color:#c2410c;">Strava · {{ strava_split_summary.recording_count }} parts</h5>
+  {% for part in strava_split_summary.recording_parts %}
+  <div style="display:grid;grid-template-columns:1fr auto auto;gap:12px;padding:7px 0;border-bottom:1px solid #e2e8f0;font-size:.76rem;">
+    <a href="{{ part.strava_url }}" target="_blank" rel="noopener" style="color:#c2410c;">{{ part.activity_name or ('Strava part ' ~ loop.index) }}</a>
+    <span>{{ '%.1f'|format((part.distance_m|float) / 1609.344) if part.distance_m is not none else '—' }} mi</span>
+    <span>{{ part.started_at }}</span>
+  </div>
+  {% endfor %}
+  {% endif %}
+</div>
+{% endif %}
+
+{% if garmin_recovery %}
+<div class="hr-power-card" style="border-color:#bfdbfe;">
+  <div style="font-size:1.1rem;font-weight:700;color:var(--text);">Garmin Recovery Context</div>
+  <div style="font-size:.72rem;color:var(--text-light);margin:3px 0 14px;">
+    Private snapshot from {{ garmin_recovery.snapshot_date }}. This is current
+    training context, not a claim about your condition on the historical ride date.
+  </div>
+  <div class="hr-power-grid">
+    {% for label, value, suffix in [
+      ('Sleep Score', garmin_recovery.get('sleep_score'), ''),
+      ('Body Battery', garmin_recovery.get('body_battery'), ''),
+      ('Training Readiness', garmin_recovery.get('training_readiness'), ''),
+      ('Cycling VO₂ Max', garmin_recovery.get('vo2_max_cycling'), ''),
+      ('Resting HR', garmin_recovery.get('resting_heart_rate'), ' bpm'),
+      ('Acute Load', garmin_recovery.get('acute_training_load'), '')
+    ] %}
+    {% if value is not none %}
+    <div class="hr-power-item">
+      <div class="hr-power-value">{{ value|round(0)|int }}{{ suffix }}</div>
+      <div class="hr-power-label">{{ label }}</div>
+    </div>
+    {% endif %}
+    {% endfor %}
+    {% if garmin_recovery.get('training_status') %}
+    <div class="hr-power-item">
+      <div class="hr-power-value" style="font-size:1rem;">{{ garmin_recovery.get('training_status')|replace('_', ' ')|title }}</div>
+      <div class="hr-power-label">Training Status</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

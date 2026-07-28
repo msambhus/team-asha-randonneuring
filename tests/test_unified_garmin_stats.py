@@ -9,17 +9,17 @@ from services.activity_matching import build_garmin_brevet_summary
 
 def test_garmin_metrics_lookup_is_owned_and_contains_no_raw_payload():
     cursor = MagicMock()
-    cursor.fetchone.return_value = {
+    cursor.fetchall.return_value = [{
         "garmin_activity_id": 123,
         "normalized_power": 177,
         "device_name": "Edge",
-    }
+    }]
     with patch("models._execute", return_value=cursor) as execute:
         result = models.get_garmin_metrics_for_brevet(42, 10)
 
-    sql, params = execute.call_args.args
+    sql, params = execute.call_args_list[0].args
     assert params == (42, 10)
-    assert "srm.rider_id=%s AND srm.ride_id=%s" in sql
+    assert "abm.rider_id=%s AND abm.ride_id=%s" in sql
     assert "raw_ciphertext" not in sql
     assert result["normalized_power"] == 177
 
@@ -89,12 +89,16 @@ def test_garmin_only_stats_route_is_owner_only(client):
          patch("services.strava_analysis.find_matching_activity",
                return_value=None), \
          patch("models.get_garmin_metrics_for_brevet",
-               return_value=garmin) as get_garmin:
+               return_value=garmin) as get_garmin, \
+         patch("models.get_latest_garmin_performance_snapshot",
+               return_value=None), \
+         patch("models.get_strava_recordings_for_brevet",
+               return_value=[]):
         response = client.get(
             "/rider/14680/ride/10/strava-analysis")
 
     assert response.status_code == 200
-    assert b"Garmin Brevet Stats" in response.data
+    assert b"Unified Brevet Stats" in response.data
     assert b"Brevet Plan vs Garmin Recording" in response.data
     assert b"Edge 1050" in response.data
     assert b"Route maps, detected stops" in response.data
@@ -112,6 +116,6 @@ def test_garmin_only_stats_route_is_owner_only(client):
             "/rider/14680/ride/10/strava-analysis")
 
     assert response.status_code == 200
-    assert b"Garmin Brevet Stats" not in response.data
+    assert b"Unified Brevet Stats" not in response.data
     assert b"No Matching Strava Activity" in response.data
     get_garmin.assert_not_called()

@@ -2582,9 +2582,30 @@ def replace_activity_brevet_matches(rider_id, matches):
         raise
 
 
-def get_garmin_metrics_for_brevet(rider_id, ride_id):
-    """Return normalized Garmin metrics for an owned brevet Stats page."""
-    row = _execute(
+def get_garmin_recordings_for_brevet(rider_id, ride_id):
+    """Return every owned Garmin recording associated with one brevet."""
+    rows = _execute(
+        "SELECT ga.garmin_activity_id, ga.activity_name, ga.started_at, "
+        "ga.distance_m, ga.duration_s, ga.moving_duration_s, "
+        "ga.elevation_gain_m, ga.average_hr, ga.max_hr, ga.average_power, "
+        "ga.max_power, ga.normalized_power, ga.aerobic_training_effect, "
+        "ga.anaerobic_training_effect, ga.calories, ga.average_cadence, "
+        "ga.device_name, abm.confidence AS source_confidence, "
+        "abm.reasons AS match_reasons "
+        "FROM activity_brevet_match abm "
+        "JOIN garmin_activity ga ON ga.rider_id=abm.rider_id "
+        " AND ga.garmin_activity_id=abm.garmin_activity_id "
+        "WHERE abm.rider_id=%s AND abm.ride_id=%s "
+        "AND abm.match_status <> 'rejected' "
+        "ORDER BY ga.started_at, ga.garmin_activity_id",
+        (rider_id, ride_id),
+    ).fetchall()
+    if rows:
+        return [dict(row) for row in rows]
+
+    # Compatibility for a reviewed Strava match before derived brevet
+    # provenance has refreshed.
+    rows = _execute(
         "SELECT ga.garmin_activity_id, ga.activity_name, ga.started_at, "
         "ga.distance_m, ga.duration_s, ga.moving_duration_s, "
         "ga.elevation_gain_m, ga.average_hr, ga.max_hr, ga.average_power, "
@@ -2597,28 +2618,37 @@ def get_garmin_metrics_for_brevet(rider_id, ride_id):
         "JOIN garmin_activity ga ON ga.rider_id=asm.rider_id "
         " AND ga.garmin_activity_id=asm.garmin_activity_id "
         "WHERE srm.rider_id=%s AND srm.ride_id=%s "
-        "LIMIT 1",
+        "ORDER BY ga.started_at, ga.garmin_activity_id",
         (rider_id, ride_id),
-    ).fetchone()
-    if row:
-        return dict(row)
+    ).fetchall()
+    return [dict(row) for row in rows]
 
-    # Garmin-only brevet associations do not have a Strava ride-match row.
-    row = _execute(
-        "SELECT ga.garmin_activity_id, ga.activity_name, ga.started_at, "
-        "ga.distance_m, ga.duration_s, ga.moving_duration_s, "
-        "ga.elevation_gain_m, ga.average_hr, ga.max_hr, ga.average_power, "
-        "ga.max_power, ga.normalized_power, ga.aerobic_training_effect, "
-        "ga.anaerobic_training_effect, ga.calories, ga.average_cadence, "
-        "ga.device_name, abm.confidence AS source_confidence "
+
+def get_strava_recordings_for_brevet(rider_id, ride_id):
+    """Return all private Strava parts linked through derived provenance."""
+    rows = _execute(
+        "SELECT sa.strava_activity_id, sa.name, sa.start_date, "
+        "sa.distance, sa.elapsed_time, sa.moving_time, "
+        "sa.total_elevation_gain, sa.average_heartrate, sa.max_heartrate, "
+        "sa.average_watts, sa.max_watts, sa.weighted_average_watts, "
+        "sa.average_cadence, sa.kilojoules, sa.suffer_score, sa.strava_url, "
+        "abm.confidence, abm.reasons "
         "FROM activity_brevet_match abm "
-        "JOIN garmin_activity ga ON ga.rider_id=abm.rider_id "
-        " AND ga.garmin_activity_id=abm.garmin_activity_id "
+        "JOIN strava_activity sa ON sa.rider_id=abm.rider_id "
+        " AND sa.strava_activity_id=abm.strava_activity_id "
         "WHERE abm.rider_id=%s AND abm.ride_id=%s "
-        "AND abm.match_status <> 'rejected' LIMIT 1",
+        "AND abm.match_status <> 'rejected' "
+        "ORDER BY sa.start_date, sa.strava_activity_id",
         (rider_id, ride_id),
-    ).fetchone()
-    return dict(row) if row else None
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_garmin_metrics_for_brevet(rider_id, ride_id):
+    """Return duration-weighted metrics across every matched Garmin part."""
+    from services.activity_matching import aggregate_garmin_recordings
+    return aggregate_garmin_recordings(
+        get_garmin_recordings_for_brevet(rider_id, ride_id))
 
 
 def get_garmin_brevet_match_review(rider_id, limit=50):
