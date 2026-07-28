@@ -2,12 +2,11 @@ name: Trigger Vercel Deploy
 on:
   push:
     branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - run: curl -X POST ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
-
 
