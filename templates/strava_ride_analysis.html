@@ -474,7 +474,7 @@
         ] %}
         {% if value is defined and value is not none %}
         <div class="hr-power-item">
-            <div class="hr-power-value {{ color_class }}">{{ value|round(0)|int if suffix else value }}{{ suffix }}</div>
+            <div class="hr-power-value {{ color_class }}">{{ (value|round(0)|int) if suffix else (value|round(2)) }}{{ suffix }}</div>
             <div class="hr-power-label">{{ label }}</div>
         </div>
         {% endif %}
@@ -722,7 +722,7 @@
         ] %}
         {% if value is defined and value is not none %}
         <div class="hr-power-item">
-            <div class="hr-power-value {{ color_class }}">{{ value|round(0)|int if suffix else value }}{{ suffix }}</div>
+            <div class="hr-power-value {{ color_class }}">{{ (value|round(0)|int) if suffix else (value|round(2)) }}{{ suffix }}</div>
             <div class="hr-power-label">{{ label }}</div>
         </div>
         {% endif %}
