@@ -3,7 +3,8 @@
 ## Git Workflow Rules
 - **NEVER push directly to main.** Always create a feature branch and open a PR.
 - **Always merge from main** before creating a PR (`git merge main`).
-- **Always create a Linear ticket** before merging a PR. Assign to the implementer and link in the PR body.
+- **Track work in GitHub Issues, not Linear.** Create or reuse a GitHub issue before merging a PR, assign it to the implementer when possible, and link it in the PR body.
+- If GitHub Issues are unavailable or usage/rate limits prevent issue creation, continue the work and PR without a tracking issue; note that omission in the PR body.
 - Use descriptive branch names: `fix/`, `feature/`, `chore/` prefixes.
 - Commit messages should explain the "why", not just the "what".
 

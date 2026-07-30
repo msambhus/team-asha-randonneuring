@@ -88,6 +88,7 @@ def sync():
         rows = client.activities(page=1, page_size=50)
         imported = 0
         matched = 0
+        matched_details_imported = 0
         for index, source in enumerate(rows):
             normalized = client.normalize_activity(source)
             if not normalized["sram_activity_id"]:
@@ -97,9 +98,25 @@ def sync():
             models.upsert_sram_axs_activity(
                 rider_id, normalized, raw_ciphertext)
 
-            # Component telemetry is large and request-heavy. Enrich only the
-            # newest three rides per request; repeated syncs refresh safely.
-            if index < 3:
+            candidates = models.get_sram_axs_match_candidates(
+                rider_id, normalized)
+            match = build_sram_match(normalized, candidates)
+            if match:
+                models.upsert_sram_axs_match(
+                    rider_id, normalized["sram_activity_id"], match)
+                matched += 1
+
+            # Component telemetry is large and request-heavy. Backfill up to
+            # five matched rides that lack detail per sync, while also
+            # refreshing the newest three activities. Repeated syncs therefore
+            # make bounded forward progress without timing out the request.
+            needs_matched_detail = (
+                bool(match)
+                and matched_details_imported < 5
+                and not models.has_sram_axs_activity_detail(
+                    rider_id, normalized["sram_activity_id"])
+            )
+            if needs_matched_detail or index < 3:
                 try:
                     full_activity = client.activity(
                         normalized["sram_activity_id"])
@@ -121,6 +138,8 @@ def sync():
                             {"activity": full_activity,
                              "components": component_rows},
                             separators=(",", ":"), default=str)))
+                    if needs_matched_detail:
+                        matched_details_imported += 1
                 except (SramAxsConnectionError, SramAxsRateLimitError,
                         ValueError, json.JSONDecodeError):
                     current_app.logger.warning(
@@ -129,13 +148,6 @@ def sync():
                         rider_id, normalized["sram_activity_id"],
                         exc_info=True)
 
-            candidates = models.get_sram_axs_match_candidates(
-                rider_id, normalized)
-            match = build_sram_match(normalized, candidates)
-            if match:
-                models.upsert_sram_axs_match(
-                    rider_id, normalized["sram_activity_id"], match)
-                matched += 1
             imported += 1
         models.mark_sram_axs_sync(rider_id)
     except SramAxsAuthenticationError:
@@ -155,7 +167,8 @@ def sync():
 
     flash(
         f"Synced {imported} SRAM AXS activities; "
-        f"matched {matched} with existing rides.", "success")
+        f"matched {matched} with existing rides and enriched "
+        f"{matched_details_imported} matched rides.", "success")
     return redirect(url_for("auth.my_profile"))
 
 

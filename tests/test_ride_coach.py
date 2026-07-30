@@ -305,6 +305,23 @@ def test_build_user_message_includes_notes_directly():
     assert '<stop_notes>' in msg and 'Unplanned stop @ 148.0mi' in msg and 'flat tire' in msg
 
 
+def test_build_user_message_includes_only_compact_drivetrain_aggregates():
+    metrics = {
+        "shifts_per_hour": 12.5,
+        "dominant_rear_position": 4,
+        "rear_position_changed_late": True,
+    }
+    msg = ride_coach._build_user_message(
+        _ACTIVITY, _ROWS, _SUMMARY, _HR_POWER, _STOP_WIND,
+        _RIDE_BASELINE, _BAND_BASELINE, _SEGMENT_NARRATIVES,
+        drivetrain_metrics=metrics)
+
+    assert "<drivetrain>" in msg
+    assert '"shifts_per_hour": 12.5' in msg
+    assert "raw_ciphertext" not in msg
+    assert "rear_gears" not in msg
+
+
 def test_notes_bust_cache_key_for_that_ride():
     base = ride_coach._cache_key(5, 11, 77, _ACTIVITY, _ROWS)
 

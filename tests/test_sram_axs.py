@@ -11,6 +11,7 @@ from services.sram_axs import (
     SramAxsClient,
     SramTokenCipher,
 )
+from services.sram_coaching import derive_sram_coaching_metrics
 
 
 def _jwt(payload):
@@ -94,3 +95,50 @@ def test_sram_normalizes_gearing_summary():
     summary = SramAxsClient.gear_summary(components)
     assert summary["most_used_rear_index"] == 2
     assert summary["most_used_front_index"] == 2
+
+
+def test_sram_coaching_derives_compact_sample_based_metrics():
+    result = derive_sram_coaching_metrics({
+        "duration_s": 7200,
+        "rear_shift_count": 18,
+        "front_shift_count": 2,
+        "components": [{
+            "ant_component_id": 2,
+            "battery_status": "good",
+            "voltage": 2.91,
+            "rear_gears": [1, 1, 2, 2, 2, 3],
+            "front_gears": [1, 1, 1, 2, 2, 2],
+            "timestamps": [0, 1, 2, 3, 4, 5],
+        }],
+    })
+
+    assert result["total_shifts"] == 20
+    assert result["shifts_per_hour"] == 10.0
+    assert result["dominant_rear_position"] == 2
+    assert result["rear_positions_used"] == 3
+    assert result["rear_distribution"] == [
+        {"position": 1, "samples": 2, "sample_percentage": 33.3},
+        {"position": 2, "samples": 3, "sample_percentage": 50.0},
+        {"position": 3, "samples": 1, "sample_percentage": 16.7},
+    ]
+    assert result["first_half_dominant_rear_position"] == 1
+    assert result["second_half_dominant_rear_position"] == 2
+    assert result["rear_position_changed_late"] is True
+    assert result["battery_status"] == "good"
+    assert "position samples" == result["distribution_basis"]
+
+
+def test_sram_coaching_does_not_invent_time_or_tooth_counts_from_histogram():
+    result = derive_sram_coaching_metrics({
+        "duration_s": 3600,
+        "gear_summary": {
+            "rear_histogram": [10, 30],
+            "most_used_rear_index": 2,
+        },
+        "components": [],
+    })
+
+    assert result["dominant_rear_position"] == 2
+    assert result["rear_distribution"] == []
+    assert result["distribution_basis"] is None
+    assert not any("time" in key or "teeth" in key for key in result)
