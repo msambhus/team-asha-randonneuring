@@ -85,6 +85,8 @@
 .radial-swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block;
   margin-right: 6px; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--border, #e5e7eb); vertical-align: middle; }
 .radial-stale { font-size: 0.68rem; color: var(--text-light, #6b7280); font-weight: 400; }
+.radial-paused { font-size: 0.66rem; font-weight: 700; color: #b45309; background: #fef3c7;
+  border-radius: 4px; padding: 1px 5px; margin-left: 2px; text-transform: uppercase; letter-spacing: 0.03em; }
 .radial-dist { white-space: nowrap; }
 .radial-exp { width: 2.5ch; text-align: right; }
 .radial-toggle { background: none; border: none; cursor: pointer; font-size: 1rem;
@@ -468,11 +470,16 @@
         '<td class="radial-rank">' + (i + 1) + '</td>' +
         '<td class="radial-name"><span class="radial-swatch" style="background:' +
           (row.marker_color || '#9ca3af') + '"></span>' +
-          escapeHtml(row.display_name) + (row.stale ? ' <span class="radial-stale">stale</span>' : '') + '</td>' +
+          escapeHtml(row.display_name) +
+          (row.stale ? ' <span class="radial-stale">stale</span>'
+                     : (row.activity === 'paused' ? ' <span class="radial-paused">paused</span>' : '')) + '</td>' +
         '<td class="radial-dist">' + fmtDist(row) + '</td>' +
         '<td class="radial-exp"><button type="button" class="radial-toggle" aria-expanded="' +
           (expanded[row.key] ? 'true' : 'false') + '">' + (expanded[row.key] ? '▾' : '▸') + '</button></td>';
-      tr.querySelector('.radial-toggle').addEventListener('click', function () {
+      // The whole row is clickable (not just the ▸) so tapping a rider opens their
+      // detail — speed, banked time, next control, ascent, finish ETA.
+      tr.style.cursor = 'pointer';
+      tr.addEventListener('click', function () {
         expanded[row.key] = !expanded[row.key];
         renderTable(lastRoster);
       });

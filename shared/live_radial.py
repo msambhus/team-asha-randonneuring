@@ -372,6 +372,7 @@ def _base_roster_row(row, ride_id, now, stale_after_minutes, dist_unit):
         'stale': (minutes_ago is not None and minutes_ago > stale_after_minutes),
         'on_route': None,
         'speed_mph': None,
+        'activity': None,
         'dist_mi': None,
         'dist_display': None,
         'dist_unit': dist_unit,
@@ -397,6 +398,10 @@ def _privacy_row(row, telemetry, ride_id, now, stale_after_minutes, dist_unit):
     entry.update({
         'on_route': telemetry.get('on_route'),
         'speed_mph': nowb.get('speed_mph'),
+        # 'paused' | 'walking' | 'cycling' | 'driving' | None — movement classified
+        # from ground speed, so the live view can flag a rider who is stopped (but
+        # still sharing) distinctly from one who has gone stale (no updates at all).
+        'activity': nowb.get('activity'),
         'dist_mi': dist_mi,
         'route_position_mi': nowb.get('route_position_mi'),
         'ascent_done_ft': nowb.get('ascent_done_ft'),

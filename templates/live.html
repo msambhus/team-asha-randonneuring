@@ -451,9 +451,30 @@
       shareBtn.className = 'share-btn start';
       if (shareLabel) { shareLabel.textContent = 'Share my location'; }
       shareState.className = 'share-state';
+      // Tell the server sharing is off so we drop off the live roster on the next
+      // poll — the symmetric counterpart to startShare's opt-in. Without this, the
+      // tracking flag stays enabled and our last position keeps us on the map for the
+      // whole display window. Best-effort: the local GPS watch is already stopped.
+      fetch('/api/live/sharing', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin', body: JSON.stringify({ enabled: false })
+      }).catch(function () {});
     }
     shareBtn.addEventListener('click', function () { sharing ? stopShare() : startShare(); });
-    window.addEventListener('pagehide', function () { if (sharing) { releaseWake(); } });
+    // Leaving the page (close tab / navigate away) also ends sharing — the common way
+    // people "stop". Phone sharing can't continue in the background anyway, so drop off
+    // the roster now instead of lingering for the whole display window. sendBeacon
+    // survives unload where a normal fetch would be cancelled. Only fires while actively
+    // sharing, so a Garmin rider (who never started the phone beacon) is untouched.
+    window.addEventListener('pagehide', function () {
+      if (!sharing) { return; }
+      releaseWake();
+      sharing = false;
+      try {
+        navigator.sendBeacon('/api/live/sharing',
+          new Blob([JSON.stringify({ enabled: false })], { type: 'application/json' }));
+      } catch (e) { /* best-effort — nothing else we can do on unload */ }
+    });
   })();
 </script>
 {% endblock %}

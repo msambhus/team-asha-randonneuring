@@ -116,6 +116,40 @@ def test_roster_computes_route_position_and_stats():
                                    lr.MARKER_UNKNOWN_COLOR)
 
 
+def _paused_history(track, mile=20, elapsed_min=100):
+    """History of a rider stopped at one spot (same lat/lng, zero speed) — a paused,
+    still-sharing rider (distinct from one who has gone stale with no updates)."""
+    start = _NOW - timedelta(minutes=elapsed_min)
+    p = track[min(int(mile), 40)]
+    return [{'lat': p['lat'], 'lng': p['lng'], 'speed': 0.0,
+             'recorded_at': start + timedelta(minutes=elapsed_min * k / 6)}
+            for k in range(7)]
+
+
+def test_roster_flags_paused_rider():
+    """A rider who is still sharing (recent update) but not moving is flagged
+    activity == 'paused' and is NOT stale."""
+    track, ctx = _track_and_ctx()
+    rows = [{'rider_id': 1, 'display_name': 'Bob Lee', 'lat': track[20]['lat'],
+             'lng': track[20]['lng'], 'source': 'beacon', 'recorded_at': _NOW,
+             'speed': 0.0}]
+    roster = lr.build_radial_roster(rows, ctx, _NOW, {1: _paused_history(track, 20)},
+                                    ride_id=1, min_history=2, stateless_fallback=False)
+    assert roster[0]['activity'] == 'paused'
+    assert roster[0]['stale'] is False
+
+
+def test_roster_moving_rider_not_paused():
+    """A moving rider classifies as walking/cycling/driving, never 'paused'."""
+    track, ctx = _track_and_ctx()
+    rows = [{'rider_id': 1, 'display_name': 'Bob Lee', 'lat': track[20]['lat'],
+             'lng': track[20]['lng'], 'source': 'garmin', 'recorded_at': _NOW,
+             'speed': 5.0}]
+    roster = lr.build_radial_roster(rows, ctx, _NOW, {1: _history(track, 20)},
+                                    ride_id=1, min_history=2, stateless_fallback=False)
+    assert roster[0]['activity'] in ('walking', 'cycling', 'driving')
+
+
 def test_roster_is_fail_soft_per_rider():
     track, ctx = _track_and_ctx()
     # A malformed row (no lat/lng) must degrade to a base row, not raise.
