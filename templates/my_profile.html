@@ -368,10 +368,16 @@
     <div>
       <h4 style="margin:0 0 4px;color:var(--primary);font-size:1rem;">SRAM AXS</h4>
       {% if sram_axs_connection %}
+      {% if sram_axs_connection.status == 'reauth_required' %}
+      <p style="margin:0;color:#b91c1c;font-size:.85rem;font-weight:700;">
+        SRAM session expired. Reconnect to continue syncing; existing AXS data and matches will be preserved.
+      </p>
+      {% else %}
       <p style="margin:0;color:var(--text-light);font-size:.85rem;">
         Connected{% if sram_axs_connection.display_name %} as {{ sram_axs_connection.display_name }}{% endif %}.
         Gearing and shift data remain private.
       </p>
+      {% endif %}
       {% else %}
       <p style="margin:0;color:var(--text-light);font-size:.85rem;">
         Connect AXS Web to add private gearing, shift, and component data to matched ride Stats.
@@ -382,9 +388,15 @@
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <a class="btn" href="{{ url_for('sram_axs.activities') }}"
          style="border:1px solid var(--primary);color:var(--primary);background:#fff;">View AXS rides</a>
+      {% if sram_axs_connection.status == 'reauth_required' %}
+      <a class="btn btn-primary" href="{{ url_for('sram_axs.connect') }}">Reconnect SRAM AXS</a>
+      {% else %}
       <form id="sram-sync-form" method="post" action="{{ url_for('sram_axs.sync') }}">
         <button id="sram-sync-submit" class="btn btn-primary" type="submit">Sync SRAM AXS</button>
       </form>
+      <a class="btn" href="{{ url_for('sram_axs.connect', reconnect=1) }}"
+         style="border:1px solid var(--primary);color:var(--primary);background:#fff;">Renew session</a>
+      {% endif %}
       <form method="post" action="{{ url_for('sram_axs.disconnect') }}"
             data-delete-message="Disconnect SRAM AXS and permanently delete encrypted tokens, gearing telemetry, and ride matches? This cannot be undone.">
         <input type="hidden" name="confirm_delete" value="DELETE">

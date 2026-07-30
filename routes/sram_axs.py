@@ -30,11 +30,28 @@ def connect():
     rider_id = session["rider_id"]
     configured = bool(
         current_app.config.get("SRAM_AXS_TOKEN_ENCRYPTION_KEY"))
-    if configured and models.get_sram_axs_connection(rider_id):
+    connection = (
+        models.get_sram_axs_connection(rider_id) if configured else None)
+    reconnecting = bool(
+        connection
+        and (
+            connection.get("status") == "reauth_required"
+            or request.args.get("reconnect") == "1"
+        )
+    )
+    connect_url = url_for(
+        "sram_axs.connect", reconnect=1) if connection else url_for(
+            "sram_axs.connect")
+    if configured and connection and not reconnecting:
         flash("SRAM AXS is already connected.", "info")
         return redirect(url_for("auth.my_profile"))
     if request.method == "GET":
-        return render_template("sram_axs_connect.html", configured=configured)
+        return render_template(
+            "sram_axs_connect.html",
+            configured=configured,
+            reconnecting=reconnecting,
+            email=(connection or {}).get("display_name"),
+        )
     if not configured:
         flash("SRAM AXS is not configured on this server.", "error")
         return redirect(url_for("sram_axs.connect"))
@@ -44,7 +61,8 @@ def connect():
     if not email or not password:
         flash("Enter your SRAM ID email and password.", "error")
         return render_template(
-            "sram_axs_connect.html", configured=True, email=email)
+            "sram_axs_connect.html", configured=True, email=email,
+            reconnecting=reconnecting)
 
     # The password remains request-local and never crosses into model/log calls.
     client = SramAxsClient()
@@ -58,18 +76,29 @@ def connect():
             "SRAM rejected those credentials or requires a verification "
             "step AXS Web does not expose to connectors.", "error")
         return render_template(
-            "sram_axs_connect.html", configured=True, email=email)
+            "sram_axs_connect.html", configured=True, email=email,
+            reconnecting=reconnecting)
     except SramAxsRateLimitError:
         flash("SRAM is rate limiting sign-ins. Try again later.", "warning")
-        return redirect(url_for("sram_axs.connect"))
+        return redirect(connect_url)
     except (SramAxsConnectionError, ValueError):
         current_app.logger.warning(
             "SRAM AXS connection failed for rider %s", rider_id)
         flash("Could not connect to SRAM AXS. No credentials were stored.",
               "error")
-        return redirect(url_for("sram_axs.connect"))
+        return redirect(connect_url)
 
-    flash("SRAM AXS linked securely. Your password was not stored.", "success")
+    if connection:
+        flash(
+            "SRAM AXS session renewed. Existing activities, matches, and "
+            "Stats were preserved; your password was not stored.",
+            "success",
+        )
+    else:
+        flash(
+            "SRAM AXS linked securely. Your password was not stored.",
+            "success",
+        )
     return redirect(url_for("auth.my_profile"))
 
 

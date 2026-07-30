@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container section" style="max-width:720px;">
   <div class="card" style="border-left:4px solid #c91f37;">
-    <h1 style="margin-top:0;color:var(--primary);">Connect SRAM AXS</h1>
+    <h1 style="margin-top:0;color:var(--primary);">{{ 'Reconnect' if reconnecting else 'Connect' }} SRAM AXS</h1>
     <p style="color:var(--text-light);line-height:1.6;">
       Import private drivetrain, shifting, gearing, component, and battery data
       from AXS Web. Team Asha sends your credentials directly to SRAM for this
@@ -16,7 +16,9 @@
       may require reconnection when SRAM's short-lived session expires.
     </p>
     {% if configured %}
-    <form id="sram-connect-form" method="post" style="margin-top:18px;">
+    <form id="sram-connect-form" method="post"
+          action="{{ url_for('sram_axs.connect', reconnect=1) if reconnecting else url_for('sram_axs.connect') }}"
+          style="margin-top:18px;">
       <label for="sram-email" style="display:block;font-weight:700;margin-bottom:6px;">SRAM ID email</label>
       <input id="sram-email" name="email" type="email" autocomplete="username"
              value="{{ email or '' }}" required style="width:100%;margin-bottom:14px;">
@@ -24,11 +26,11 @@
       <input id="sram-password" name="password" type="password"
              autocomplete="current-password" required style="width:100%;margin-bottom:16px;">
       <button id="sram-connect-submit" class="btn btn-primary" type="submit">
-        Connect SRAM AXS
+        {{ 'Renew SRAM AXS Session' if reconnecting else 'Connect SRAM AXS' }}
       </button>
       <div id="sram-connect-progress" hidden role="status" aria-live="polite"
            style="margin-top:12px;color:var(--primary);font-weight:700;">
-        Connecting securely to SRAM AXS…
+        {{ 'Renewing' if reconnecting else 'Connecting' }} securely to SRAM AXS…
       </div>
     </form>
     {% else %}
