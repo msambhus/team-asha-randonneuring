@@ -1,5 +1,6 @@
 {% if is_own_profile and sram_metrics %}
 {% set gear = sram_metrics.gear_summary or {} %}
+{% set coaching = sram_metrics.coaching or {} %}
 <div class="hr-power-card" style="border-color:#f59e0b;">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
         <div>
@@ -12,10 +13,13 @@
     </div>
     <div class="hr-power-grid">
         {% for label, value, suffix in [
-            ('Rear Shifts', gear.rear_shift_count if gear.rear_shift_count is not none else sram_metrics.rear_shift_count, ''),
-            ('Front Shifts', gear.front_shift_count if gear.front_shift_count is not none else sram_metrics.front_shift_count, ''),
-            ('Most Used Rear Cog', gear.most_used_rear_index, ''),
-            ('Most Used Chainring', gear.most_used_front_index, ''),
+            ('Total Shifts', coaching.total_shifts, ''),
+            ('Shifts / Hour', coaching.shifts_per_hour, ''),
+            ('Rear Shifts', coaching.rear_shift_count if coaching.rear_shift_count is not none else sram_metrics.rear_shift_count, ''),
+            ('Front Shifts', coaching.front_shift_count if coaching.front_shift_count is not none else sram_metrics.front_shift_count, ''),
+            ('Dominant Rear Position', coaching.dominant_rear_position if coaching.dominant_rear_position is not none else gear.most_used_rear_index, ''),
+            ('Dominant Front Position', coaching.dominant_front_position if coaching.dominant_front_position is not none else gear.most_used_front_index, ''),
+            ('Rear Positions Used', coaching.rear_positions_used, ''),
             ('Normalized Power', sram_metrics.normalized_power, ' W'),
             ('Average Cadence', sram_metrics.average_cadence, ' rpm')
         ] %}
@@ -27,19 +31,49 @@
         {% endif %}
         {% endfor %}
     </div>
-    {% if gear.rear_histogram %}
-    {% set max_rear = gear.rear_histogram|max %}
+    {% if coaching.rear_distribution %}
     <div style="margin-top:18px;">
-        <div style="font-size:.76rem;font-weight:700;color:var(--text);margin-bottom:8px;">Rear cog use</div>
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:8px;">
+            <div style="font-size:.76rem;font-weight:700;color:var(--text);">Rear gear-position distribution</div>
+            <div style="font-size:.66rem;color:var(--text-light);">share of recorded position samples</div>
+        </div>
         <div style="display:flex;align-items:flex-end;gap:4px;height:72px;" aria-label="Rear cog usage histogram">
-            {% for count in gear.rear_histogram %}
-            <div title="Cog {{ loop.index }}: {{ count }}" style="flex:1;min-width:6px;height:{{ (count|float / max_rear * 100) if max_rear else 0 }}%;background:#f59e0b;border-radius:3px 3px 0 0;"></div>
+            {% for item in coaching.rear_distribution %}
+            <div title="Position {{ item.position }}: {{ item.sample_percentage }}% of samples" style="flex:1;min-width:6px;height:{{ item.sample_percentage }}%;background:#f59e0b;border-radius:3px 3px 0 0;position:relative;">
+                <span style="position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:3px;font-size:.58rem;color:var(--text-light);">{{ item.position }}</span>
+            </div>
             {% endfor %}
         </div>
     </div>
+    {% elif gear.rear_histogram %}
+    {% set max_rear = gear.rear_histogram|max %}
+    <div style="margin-top:18px;">
+        <div style="font-size:.76rem;font-weight:700;color:var(--text);margin-bottom:8px;">Rear gear-position distribution</div>
+        <div style="display:flex;align-items:flex-end;gap:4px;height:72px;" aria-label="Rear gear-position histogram">
+            {% for count in gear.rear_histogram %}
+            <div title="Position {{ loop.index }}: {{ count }} provider histogram units" style="flex:1;min-width:6px;height:{{ (count|float / max_rear * 100) if max_rear else 0 }}%;background:#f59e0b;border-radius:3px 3px 0 0;"></div>
+            {% endfor %}
+        </div>
+        <div style="font-size:.64rem;color:var(--text-light);margin-top:5px;">Relative provider histogram; not interpreted as elapsed time.</div>
+    </div>
+    {% endif %}
+    {% if coaching.insights %}
+    <div style="margin-top:22px;padding:12px 14px;border-radius:10px;background:#fffbeb;border:1px solid #fde68a;">
+        <div style="font-size:.76rem;font-weight:700;color:#78350f;margin-bottom:6px;">Drivetrain observations</div>
+        <ul style="margin:0;padding-left:18px;color:#78350f;font-size:.72rem;line-height:1.55;">
+            {% for insight in coaching.insights %}
+            <li>{{ insight }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+    {% if coaching.battery_status or coaching.battery_voltage %}
+    <div style="margin-top:10px;color:var(--text-light);font-size:.68rem;">
+        Drivetrain battery: {{ coaching.battery_status or 'status unavailable' }}{% if coaching.battery_voltage %} · {{ coaching.battery_voltage|round(2) }} V{% endif %}
+    </div>
     {% endif %}
     <div style="margin-top:10px;color:var(--text-light);font-size:.68rem;">
-        Source: SRAM AXS Web. Gear numbers are positional indices reported by the drivetrain.
+        Source: SRAM AXS Web. Gear numbers are positional indices reported by the drivetrain, not cassette tooth counts.
     </div>
 </div>
 {% endif %}

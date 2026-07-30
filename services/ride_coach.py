@@ -97,7 +97,7 @@ def _same_route_signature(same_route_baseline):
 
 def _cache_key(rider_id, ride_id, match_id, activity, rows,
                segment_notes=None, overall_note=None, stop_notes=None,
-               same_route_baseline=None):
+               same_route_baseline=None, drivetrain_metrics=None):
     """Deterministic content fingerprint from rider + ride + segment inputs.
 
     Follows openai_coach._cache_key: md5 over rider_id, the strava activity id
@@ -120,8 +120,10 @@ def _cache_key(rider_id, ride_id, match_id, activity, rows,
     )
     notes_sig = _notes_signature(segment_notes, overall_note, stop_notes)
     sr_sig = _same_route_signature(same_route_baseline)
+    drivetrain_sig = json.dumps(
+        drivetrain_metrics or {}, sort_keys=True, default=str)
     raw = (f"{_PROMPT_VERSION}:{rider_id}:{ride_id}:{match_id}:{act_id}:{start}"
-           f":{seg_sig}:{notes_sig}:{sr_sig}")
+           f":{seg_sig}:{notes_sig}:{sr_sig}:{drivetrain_sig}")
     return hashlib.md5(raw.encode()).hexdigest()
 
 
@@ -248,6 +250,11 @@ under-paced the climbs.
 GUSTS (peak vs sustained) and TEMPERATURE SWINGS across a leg change what a \
 given power or speed actually costs the rider; note when a gust or a heat/cold \
 spike likely hurt a segment.
+- When <drivetrain> is present, use its shift rate, dominant positional gear, \
+and first-half/second-half change as supplemental evidence. Gear positions are \
+device indexes, not tooth counts; sample percentages are not elapsed-time \
+percentages. Never invent a cassette size, gear ratio, cross-chaining claim, or \
+time-in-gear value.
 - Give ACTIONABLE recommendations: pacing targets, power/cadence cues, \
 fueling and hydration timing, stop discipline, and wind/weather strategy.
 - Be encouraging and direct. These riders are amateurs doing something hard.
@@ -425,7 +432,8 @@ def _stop_notes_block(stop_notes):
 def _build_user_message(activity, rows, summary, hr_power, stop_wind,
                         ride_baseline, band_baseline, segment_narratives,
                         same_route_baseline=None, segment_notes=None,
-                        overall_note=None, stop_notes=None):
+                        overall_note=None, stop_notes=None,
+                        drivetrain_metrics=None):
     """Assemble the USER message: all data inside XML-delimited blocks."""
     activity = activity or {}
     summary = summary or {}
@@ -501,6 +509,11 @@ def _build_user_message(activity, rows, summary, hr_power, stop_wind,
         parts.append("<rider_baseline>\n" + "\n".join(baseline_lines) + "\n</rider_baseline>")
     if wind_block:
         parts.append("<wind>\n" + wind_block + "\n</wind>")
+    if drivetrain_metrics:
+        parts.append(
+            "<drivetrain>\n"
+            + json.dumps(drivetrain_metrics, default=str, sort_keys=True)[:3000]
+            + "\n</drivetrain>")
     seg_notes_block = _segment_notes_block(segment_notes)
     if seg_notes_block:
         parts.append("<segment_notes>\n" + seg_notes_block + "\n</segment_notes>")
@@ -523,7 +536,8 @@ def _build_user_message(activity, rows, summary, hr_power, stop_wind,
 def generate_ride_coaching(rider_id, ride_id, match_id, activity, rows, summary,
                            hr_power, stop_wind, ride_baseline, band_baseline,
                            segment_narratives, same_route_baseline=None,
-                           segment_notes=None, overall_note=None, stop_notes=None):
+                           segment_notes=None, overall_note=None, stop_notes=None,
+                           drivetrain_metrics=None):
     """Generate per-segment + overall coaching for one completed ride.
 
     Args:
@@ -548,6 +562,8 @@ def generate_ride_coaching(rider_id, ride_id, match_id, activity, rows, summary,
         stop_notes: optional list of {label, note} — the rider's own notes on
             UNPLANNED stops; fed as a <stop_notes> DATA block and folded into
             the cache key
+        drivetrain_metrics: compact derived SRAM AXS aggregates. Raw component
+            streams and encrypted provider payloads are never sent to the model.
 
     Returns:
         {
@@ -565,7 +581,8 @@ def generate_ride_coaching(rider_id, ride_id, match_id, activity, rows, summary,
         key = _cache_key(rider_id, ride_id, match_id, activity, rows,
                          segment_notes=segment_notes, overall_note=overall_note,
                          stop_notes=stop_notes,
-                         same_route_baseline=same_route_baseline)
+                         same_route_baseline=same_route_baseline,
+                         drivetrain_metrics=drivetrain_metrics)
         cached = _get_cached(key)
         if cached is not None:
             return cached
@@ -581,6 +598,7 @@ def generate_ride_coaching(rider_id, ride_id, match_id, activity, rows, summary,
             same_route_baseline=same_route_baseline,
             segment_notes=segment_notes, overall_note=overall_note,
             stop_notes=stop_notes,
+            drivetrain_metrics=drivetrain_metrics,
         )
 
         response = client.chat.completions.create(

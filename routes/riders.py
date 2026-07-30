@@ -1228,6 +1228,22 @@ def ride_strava_analysis(rusa_id, ride_id):
             create_strava_ride_match(rider['id'], ride_id, activity['strava_activity_id'])
             match = get_strava_ride_match(rider['id'], ride_id)
 
+    # An AXS match may initially know the Strava identity before the brevet
+    # identity. Resolve through either identifier so the private drivetrain
+    # card appears as soon as the providers converge on the same activity.
+    if is_own_profile and match and not sram_metrics:
+        try:
+            from models import get_sram_axs_metrics_for_activity
+            sram_metrics = get_sram_axs_metrics_for_activity(
+                rider['id'],
+                ride_id=ride_id,
+                strava_activity_id=match.get('strava_activity_id'),
+            )
+        except Exception:
+            current_app.logger.exception(
+                'ride_strava_analysis: SRAM provider fallback failed for '
+                'ride %s', ride_id)
+
     if not match:
         garmin_summary = None
         if garmin_metrics:
@@ -1469,7 +1485,9 @@ def ride_strava_analysis(rusa_id, ride_id):
                     band_baseline, narratives,
                     same_route_baseline=same_route_baseline,
                     segment_notes=segment_notes, overall_note=overall_note,
-                    stop_notes=coach_stop_notes)
+                    stop_notes=coach_stop_notes,
+                    drivetrain_metrics=(
+                        (sram_metrics or {}).get('coaching')))
                 if coaching:
                     from models import save_strava_ride_coaching
                     save_strava_ride_coaching(

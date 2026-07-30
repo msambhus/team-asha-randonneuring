@@ -67,8 +67,32 @@ def test_sram_stats_are_private_and_provider_attributed():
     ).read_text()
     assert "{% if is_own_profile and sram_metrics %}" in template
     assert "SRAM AXS Drivetrain" in template
-    assert "Rear cog use" in template
+    assert "Rear gear-position distribution" in template
+    assert "Drivetrain observations" in template
+    assert "not cassette tooth counts" in template
     assert "Source: SRAM AXS Web" in template
+
+
+def test_sram_metrics_lookup_accepts_unified_provider_identity():
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {
+        "sram_activity_id": "axs-1",
+        "duration_s": 3600,
+        "rear_shift_count": 12,
+        "front_shift_count": 0,
+        "gear_summary": {},
+        "components": [],
+    }
+    with patch("models._execute", return_value=cursor) as execute:
+        result = models.get_sram_axs_metrics_for_activity(
+            42, ride_id=10, strava_activity_id=999)
+
+    sql, params = execute.call_args.args
+    assert "m.rider_id=%s" in sql
+    assert "m.strava_activity_id=%s" in sql
+    assert params == (42, 10, 999, 999, None, None)
+    assert result["coaching"]["total_shifts"] == 12
+    assert result["coaching"]["shifts_per_hour"] == 12.0
 
 
 def test_stats_template_rounds_decimal_garmin_metrics():

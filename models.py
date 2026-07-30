@@ -2322,6 +2322,15 @@ def upsert_sram_axs_activity_detail(
     get_db().commit()
 
 
+def has_sram_axs_activity_detail(rider_id, sram_activity_id):
+    """Return whether owner-scoped component telemetry is already cached."""
+    return _execute(
+        "SELECT 1 FROM sram_axs_activity_detail "
+        "WHERE rider_id=%s AND sram_activity_id=%s",
+        (rider_id, sram_activity_id),
+    ).fetchone() is not None
+
+
 def get_sram_axs_activities(rider_id, limit=100):
     limit = max(1, min(int(limit), 500))
     return [dict(row) for row in _execute(
@@ -2401,7 +2410,13 @@ def upsert_sram_axs_match(rider_id, sram_activity_id, match):
     get_db().commit()
 
 
-def get_sram_axs_metrics_for_brevet(rider_id, ride_id):
+def get_sram_axs_metrics_for_activity(
+        rider_id, ride_id=None, strava_activity_id=None,
+        garmin_activity_id=None):
+    """Return one owned AXS recording linked to any known ride identity."""
+    if all(value is None for value in (
+            ride_id, strava_activity_id, garmin_activity_id)):
+        return None
     row = _execute(
         "SELECT a.sram_activity_id,a.activity_name,a.started_at,a.distance_m,"
         "a.duration_s,a.elevation_gain_m,a.average_power,a.max_power,"
@@ -2413,12 +2428,28 @@ def get_sram_axs_metrics_for_brevet(rider_id, ride_id):
         "AND a.sram_activity_id=m.sram_activity_id "
         "LEFT JOIN sram_axs_activity_detail d ON d.rider_id=a.rider_id "
         "AND d.sram_activity_id=a.sram_activity_id "
-        "WHERE m.rider_id=%s AND m.ride_id=%s "
+        "WHERE m.rider_id=%s AND (m.ride_id=%s "
+        "OR (%s IS NOT NULL AND m.strava_activity_id=%s) "
+        "OR (%s IS NOT NULL AND m.garmin_activity_id=%s)) "
         "AND m.match_status <> 'rejected' "
         "ORDER BY m.confidence DESC LIMIT 1",
-        (rider_id, ride_id),
+        (
+            rider_id, ride_id,
+            strava_activity_id, strava_activity_id,
+            garmin_activity_id, garmin_activity_id,
+        ),
     ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    result = dict(row)
+    from services.sram_coaching import derive_sram_coaching_metrics
+    result["coaching"] = derive_sram_coaching_metrics(result)
+    return result
+
+
+def get_sram_axs_metrics_for_brevet(rider_id, ride_id):
+    """Backward-compatible brevet lookup with derived coaching aggregates."""
+    return get_sram_axs_metrics_for_activity(rider_id, ride_id=ride_id)
 
 
 # ========== GARMIN CONNECT ==========
