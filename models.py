@@ -7,6 +7,7 @@ import psycopg2.extras
 from db import get_db
 from cache import cache, CACHE_TIMEOUT
 from services.email_normalize import normalize_email
+from services.club_clock import club_today
 
 
 class RideStatus(str, Enum):
@@ -426,7 +427,7 @@ def get_all_riders_with_career_stats(current_season_id=None):
 @cache.memoize(CACHE_TIMEOUT)
 def get_completed_events_for_season(season_id):
     """Get completed/past events (Team Asha + external) for a season."""
-    today = date.today()
+    today = club_today()
     return _execute("""
         SELECT ri.*, c.code as club_code, c.name as club_name, c.region,
                rp.slug as plan_slug,
@@ -839,7 +840,7 @@ def get_default_time_limit(distance_km):
 @cache.memoize(CACHE_TIMEOUT)
 def get_all_upcoming_events():
     """Get all upcoming events (Team Asha and external) with club info."""
-    today = date.today()
+    today = club_today()
     events = _execute("""
         SELECT ri.*,
                COALESCE(rp.name, ri.name) as route_name,

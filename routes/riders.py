@@ -50,6 +50,7 @@ from shared.rider_directory_view import public_rider_row
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
 from services.openai_coach import generate_openai_advice
+from services.club_clock import club_today
 from services.custom_plan_service import (get_merged_plan_stops,
                                           recalculate_cumulative_values,
                                           apply_pace_adjustment, compare_plans)
@@ -454,7 +455,7 @@ def upcoming_brevets(season_name):
     rusa_events = [calendar_event(row) for row in get_all_upcoming_events()]
 
     rides = get_rides_for_season(season['id'])
-    today = date.today()
+    today = club_today()
     future_rides = [r for r in rides if r['date'] and r['date'] > today]
 
     # Build ride plan lookup for RUSA events
@@ -466,7 +467,7 @@ def upcoming_brevets(season_name):
     plan_slug_to_id = {plan['slug']: plan['id'] for plan in plans}
 
     # Wind warning loop: check brevets within 28 days that have a linked ride plan
-    cutoff = date.today() + timedelta(days=28)
+    cutoff = club_today() + timedelta(days=28)
     wind_deadline = time.monotonic() + _WIND_WARNING_BUDGET_S
     wind_warnings = []
     for event in rusa_events:
