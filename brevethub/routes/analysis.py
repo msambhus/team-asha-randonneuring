@@ -48,6 +48,7 @@ from shared.strava_analysis import (
     _decompress_streams,
 )
 from shared.strava_analysis_view import build_team_asha_analysis_context
+from shared.live_radial import build_elevation_profile, overlay_stop_markers
 from shared.weather import (_AVG_SPEED_KMH, _safe_get, calculate_bearing,
                             classify_wind, compass_label, crosswind_component,
                             fetch_historical_wind, get_hour_index,
@@ -70,6 +71,35 @@ _MPH_TO_KMH = 1.609344
 _M_PER_S_TO_KMH = 3.6
 _M_TO_FT = 3.28084
 _MILES_TO_KM = 1.609344
+
+
+def _explorer_track(streams):
+    """Normalize aligned Strava streams for the shared map/profile explorer."""
+    streams = streams or {}
+    latlng = streams.get('latlng') or []
+    distance = streams.get('distance') or []
+    altitude = streams.get('altitude') or []
+    count = min(len(latlng), len(distance), len(altitude))
+    if count < 2:
+        return []
+    return [{
+        'lat': float(latlng[i][0]),
+        'lng': float(latlng[i][1]),
+        'dist_m': float(distance[i]),
+        'e_m': float(altitude[i]),
+    } for i in range(count)
+        if isinstance(latlng[i], (list, tuple)) and len(latlng[i]) >= 2]
+
+
+def _explorer_stops(markers):
+    return [{
+        'index': marker.get('i'),
+        'name': marker.get('name'),
+        'distance_miles': marker.get('cumul_mi'),
+        'color': marker.get('color'),
+        'eta': marker.get('eta'),
+        'break_min': marker.get('break_min'),
+    } for marker in (markers or [])]
 
 
 def _event_date(value):
@@ -803,11 +833,42 @@ def analysis_detail(activity_id):
             if name and wind:
                 stop_wind_by_location[name] = wind
     if analysis:
+        context = build_team_asha_analysis_context(
+            analysis, activity_id, session.get('rider_id'),
+            stop_wind_by_location)
+        try:
+            streams = _decompress_streams(cached['activity_streams'])
+            explorer_track = _explorer_track(streams)
+            elevation_profile = build_elevation_profile(explorer_track)
+            comparison_stops = [{
+                'i': index,
+                'name': stop.get('location') or stop.get('matched_stop_name')
+                        or 'Detected stop',
+                'type': 'rest',
+                'cumul_mi': stop.get('distance_miles')
+                            if stop.get('distance_miles') is not None
+                            else ((stop.get('distance_km') or 0) / _MILES_TO_KM),
+                'eta': '',
+                'break_min': stop.get('duration_min') or 0,
+            } for index, stop in enumerate(
+                (analysis.get('comparison') or {}).get('detected_stops') or [])]
+            profile_markers = overlay_stop_markers(
+                elevation_profile, comparison_stops,
+                {'rest': '#ea580c'})
+            map_data = context.get('map_data') or {}
+            context.update({
+                'stats_route_points': map_data.get('track') or [],
+                'stats_elevation_profile': elevation_profile,
+                'stats_profile_markers': profile_markers,
+                'stats_map_stops': map_data.get('stops') or _explorer_stops(profile_markers),
+            })
+        except Exception as e:  # noqa: BLE001
+            current_app.logger.warning(
+                'analysis detail: route explorer build failed for %s: %s',
+                activity_id, e)
         return render_template(
             'strava_ride_analysis.html',
-            **build_team_asha_analysis_context(
-                analysis, activity_id, session.get('rider_id'),
-                stop_wind_by_location),
+            **context,
         )
     return render_template('analysis_detail.html', analysis=analysis,
                            stop_winds=stop_winds, stop_wind_by_location=stop_wind_by_location,

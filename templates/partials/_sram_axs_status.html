@@ -1,0 +1,23 @@
+{% if is_own_profile and not sram_metrics and sram_status %}
+<div class="hr-power-card" style="border-color:#f59e0b;">
+    <div style="font-size:1rem;font-weight:700;color:var(--text);">SRAM AXS Drivetrain</div>
+    {% if sram_status == 'reauth_required' %}
+    <p style="margin:8px 0;color:#92400e;font-size:.78rem;">
+        Your SRAM session expired. Reconnect to resume matching; previously imported AXS data is preserved.
+    </p>
+    <a class="btn btn-primary" href="{{ url_for('sram_axs.connect') }}">Reconnect SRAM AXS</a>
+    {% elif sram_status == 'unmatched' %}
+    <p style="margin:8px 0;color:var(--text-light);font-size:.78rem;">
+        SRAM is connected, but no AXS activity is matched to this brevet or its Strava recording yet.
+        Sync again, then review the private AXS activity list to confirm the date and distance.
+    </p>
+    <a class="btn" href="{{ url_for('sram_axs.activities') }}">View AXS rides</a>
+    <a class="btn btn-primary" href="{{ url_for('auth.my_profile') }}#sram-axs">Sync on My Profile</a>
+    {% else %}
+    <p style="margin:8px 0;color:var(--text-light);font-size:.78rem;">
+        Connect SRAM AXS from My Profile to add private shifting and gear-position data to matched ride Stats.
+    </p>
+    <a class="btn btn-primary" href="{{ url_for('sram_axs.connect') }}">Connect SRAM AXS</a>
+    {% endif %}
+</div>
+{% endif %}

@@ -6,6 +6,7 @@
 {% block extra_head %}
 {% if real_plan %}
 <link rel="stylesheet" href="{{ url_for('static', filename='ride-plan-v2.css') }}">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 {% if v2.show_weather_map %}
 {# Mapbox GL assets + weather-tab styles — only when a publishable token and a warm
    cache both exist, so the guest page never loads a broken/empty map. #}
@@ -217,8 +218,15 @@
                             {% endfor %}
                         </div>
                     </div>
-                    {% with profile=v2.elevation_profile, markers=v2.stop_markers, big=True %}
-                    {% include 'partials/_elevation_profile.html' %}
+                    {% with
+                        explorer_id='plan-route-explorer',
+                        route_points=v2.plan_route_points,
+                        profile=v2.elevation_profile,
+                        markers=v2.stop_markers,
+                        map_stops=v2.plan_map_stops,
+                        map_segments=[]
+                    %}
+                    {% include 'partials/_route_explorer.html' %}
                     {% endwith %}
                 </div>
 
@@ -857,6 +865,7 @@
 {# `plan` is set inside the content block; re-derive it here since a Jinja block has
    its own scope (v2 is a global render-context var, available in every block). #}
 {% set plan = v2.plan %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function() {
     var tabs = document.querySelectorAll('.rpv2-tab');
@@ -888,6 +897,14 @@
     function setSelected(idx) {
         svgStops.forEach(function(g) { g.classList.toggle('is-sel', g.dataset.stopI === String(idx)); });
         tableRows.forEach(function(row) { row.classList.toggle('is-sel', row.dataset.stopI === String(idx)); });
+    }
+    var routeExplorer = document.getElementById('plan-route-explorer');
+    if (routeExplorer) {
+        routeExplorer.addEventListener('route-explorer-stop', function(event) {
+            if (event.detail && event.detail.index != null) {
+                setSelected(event.detail.index);
+            }
+        });
     }
     svgStops.forEach(function(g) { g.addEventListener('click', function() { setSelected(g.dataset.stopI); }); });
     tableRows.forEach(function(row) {
