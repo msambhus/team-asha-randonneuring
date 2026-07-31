@@ -118,6 +118,8 @@
   overflow: hidden; text-overflow: ellipsis; }
 .radial-row-meta.ahead { color: #166534; font-weight: 700; }
 .radial-row-meta.behind { color: #991b1b; font-weight: 700; }
+.radial-row-value.ahead { color: #166534; }
+.radial-row-value.behind { color: #991b1b; }
 .radial-exp { width: 8.5rem; text-align: right; }
 .radial-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 5px;
   min-width: 7rem; background: var(--card-bg, #fff); border: 1px solid var(--primary, #1a365d);
@@ -153,6 +155,7 @@
   .radial-table { font-size: 0.8rem; }
   .radial-table thead th, .radial-row td { padding-left: 4px; padding-right: 4px; }
   .radial-row-meta { max-width: 108px; }
+  .radial-rank { display: none; }
   .radial-exp { width: 3.2rem; }
   .radial-toggle { min-width: 0; padding: 5px 7px; }
   .radial-toggle-label { display: none; }
@@ -232,7 +235,7 @@
 
   <table class="radial-table" id="radial-table">
     <thead>
-      <tr><th class="radial-rank">#</th><th>Rider</th><th>Progress</th><th>Live</th><th class="radial-exp"></th></tr>
+      <tr><th class="radial-rank">#</th><th>Rider</th><th>Progress</th><th>Avg speed</th><th>Banked</th><th class="radial-exp"></th></tr>
     </thead>
     <tbody id="radial-tbody">
       <tr class="radial-empty"><td colspan="5">Waiting for riders to appear…</td></tr>
@@ -583,12 +586,6 @@
       ]) +
       '</div>';
   }
-  function planBankHtml(row) {
-    if (row.banked_plan_min == null) { return 'Plan —'; }
-    var statusClass = Number(row.banked_plan_min) < -2 ? 'behind' : 'ahead';
-    return '<span class="radial-row-meta ' + statusClass + '">' +
-      fmtMin(Number(row.banked_plan_min)) + ' vs plan</span>';
-  }
   function nextControlHtml(row) {
     var nc = row.next_control || {};
     if (!nc.name) { return '<span class="radial-row-meta">No next control</span>'; }
@@ -599,12 +596,45 @@
     return '<span class="radial-row-meta" title="' + escapeHtml(text) + '">' +
       text + '</span>';
   }
+  function averageSpeedHtml(row) {
+    var average = row.avg_elapsed_speed_mph;
+    var qualifier = 'elapsed average';
+    if (average == null) {
+      average = row.avg_moving_speed_mph;
+      qualifier = 'moving average';
+    }
+    return '<span class="radial-row-value">' +
+      (average != null ? Number(average) + ' mph' : '—') +
+      '</span><span class="radial-row-meta">' +
+      (row.elapsed_min != null ? 'Elapsed ' + fmtDuration(row.elapsed_min) : qualifier) +
+      '</span>';
+  }
+  function bankedSummaryHtml(row) {
+    var bank = row.banked_plan_min;
+    var basis = 'vs plan';
+    if (bank == null) {
+      bank = row.banked_cutoff_min;
+      basis = 'vs cutoff';
+    }
+    if (bank == null) {
+      return '<span class="radial-row-value">—</span>' +
+        '<span class="radial-row-meta">No plan timing</span>';
+    }
+    var statusClass = Number(bank) < -2 ? 'behind' : 'ahead';
+    var cutoff = row.banked_cutoff_min;
+    var secondary = basis === 'vs plan' && cutoff != null
+      ? ' · ' + fmtMin(Number(cutoff)) + ' cutoff'
+      : '';
+    return '<span class="radial-row-value ' + statusClass + '">' +
+      fmtMin(Number(bank)) + '</span><span class="radial-row-meta">' +
+      basis + secondary + '</span>';
+  }
   function renderTable(roster) {
     tbody.innerHTML = '';
     if (!roster.length) {
       var er = document.createElement('tr');
       er.className = 'radial-empty';
-      er.innerHTML = '<td colspan="5">No riders are sharing their location yet.</td>';
+      er.innerHTML = '<td colspan="6">No riders are sharing their location yet.</td>';
       tbody.appendChild(er);
       return;
     }
@@ -621,10 +651,9 @@
           (row.stale ? ' <span class="radial-stale">stale</span>'
                      : (row.activity === 'paused' ? ' <span class="radial-paused">paused</span>' : '')) + '</td>' +
         '<td><span class="radial-row-value">' + fmtDist(row) + '</span>' +
-          planBankHtml(row) + '</td>' +
-        '<td><span class="radial-row-value">' +
-          (row.speed_mph != null ? Number(row.speed_mph) + ' mph' : '—') +
-          '</span>' + nextControlHtml(row) + '</td>' +
+          nextControlHtml(row) + '</td>' +
+        '<td>' + averageSpeedHtml(row) + '</td>' +
+        '<td>' + bankedSummaryHtml(row) + '</td>' +
         '<td class="radial-exp"><button type="button" class="radial-toggle" aria-expanded="' +
           (expanded[row.key] ? 'true' : 'false') + '" aria-label="' +
           (expanded[row.key] ? 'Hide details for ' : 'View details for ') +
@@ -643,7 +672,7 @@
         var dr = document.createElement('tr');
         dr.className = 'radial-detailrow';
         dr.style.setProperty('--rider-color', row.marker_color || '#1a365d');
-        dr.innerHTML = '<td colspan="5">' + detailHtml(row) + '</td>';
+        dr.innerHTML = '<td colspan="6">' + detailHtml(row) + '</td>';
         tbody.appendChild(dr);
       }
     });
