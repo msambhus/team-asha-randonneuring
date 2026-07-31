@@ -384,6 +384,13 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'nextControlHtml(row)' in html
     assert 'liveRiderMarkers' in html
     assert 'updateWeatherChartMarkers(roster)' in html
+    assert 'updateWeatherScrub(mi)' in html
+    assert 'clearWeatherScrub()' in html
+    assert 'chart.$scrubIndex' in html
+    assert 'radial-elev-rider-label' in html
+    assert 'View details' in html
+    assert 'Hide details' in html
+    assert 'repeat(auto-fit, minmax(125px, 1fr))' in html
 
 
 def test_map_page_draws_rwgps_route(client):
