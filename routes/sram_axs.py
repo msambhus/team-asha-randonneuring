@@ -24,6 +24,27 @@ def _cipher():
         current_app.config.get("SRAM_AXS_TOKEN_ENCRYPTION_KEY"))
 
 
+def _import_activity_detail(client, rider_id, activity_id, component_ids):
+    """Fetch and persist one bounded, owner-scoped AXS component payload."""
+    full_activity = client.activity(activity_id)
+    summary_ids = component_ids or [
+        row.get("id")
+        for row in full_activity.get("componentsummary_set", [])
+        if isinstance(row, dict) and row.get("id")
+    ]
+    component_rows = [
+        client.component_summary(summary_id)
+        for summary_id in summary_ids[:30]
+    ]
+    components = client.normalize_components(component_rows)
+    gear_summary = client.gear_summary(components)
+    models.upsert_sram_axs_activity_detail(
+        rider_id, activity_id, gear_summary, components,
+        _cipher().encrypt(json.dumps(
+            {"activity": full_activity, "components": component_rows},
+            separators=(",", ":"), default=str)))
+
+
 @sram_axs_bp.route("/connect", methods=["GET", "POST"])
 @profile_required
 def connect():
@@ -147,26 +168,9 @@ def sync():
             )
             if needs_matched_detail or index < 3:
                 try:
-                    full_activity = client.activity(
-                        normalized["sram_activity_id"])
-                    component_rows = []
-                    component_ids = normalized.get("component_ids") or [
-                        row.get("id")
-                        for row in full_activity.get(
-                            "componentsummary_set", [])
-                        if isinstance(row, dict) and row.get("id")
-                    ]
-                    for summary_id in component_ids[:30]:
-                        component_rows.append(
-                            client.component_summary(summary_id))
-                    components = client.normalize_components(component_rows)
-                    gear_summary = client.gear_summary(components)
-                    models.upsert_sram_axs_activity_detail(
-                        rider_id, normalized["sram_activity_id"], gear_summary,
-                        components, _cipher().encrypt(json.dumps(
-                            {"activity": full_activity,
-                             "components": component_rows},
-                            separators=(",", ":"), default=str)))
+                    _import_activity_detail(
+                        client, rider_id, normalized["sram_activity_id"],
+                        normalized.get("component_ids"))
                     if needs_matched_detail:
                         matched_details_imported += 1
                 except (SramAxsConnectionError, SramAxsRateLimitError,
@@ -178,6 +182,23 @@ def sync():
                         exc_info=True)
 
             imported += 1
+        # The provider list is page-bounded, but older matched brevets still
+        # need component detail. Advance a small backlog on every sync.
+        remaining = max(0, 5 - matched_details_imported)
+        if remaining:
+            for pending in models.get_sram_axs_detail_backfill_candidates(
+                    rider_id, limit=remaining):
+                try:
+                    _import_activity_detail(
+                        client, rider_id, pending["sram_activity_id"],
+                        pending.get("component_ids"))
+                    matched_details_imported += 1
+                except (SramAxsConnectionError, SramAxsRateLimitError,
+                        ValueError, json.JSONDecodeError):
+                    current_app.logger.warning(
+                        "SRAM AXS backlog detail enrichment failed for rider "
+                        "%s activity %s", rider_id,
+                        pending["sram_activity_id"], exc_info=True)
         models.mark_sram_axs_sync(rider_id)
     except SramAxsAuthenticationError:
         models.mark_sram_axs_sync(

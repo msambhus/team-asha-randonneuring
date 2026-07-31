@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import secrets
 import time
 from urllib.parse import parse_qs, urljoin, urlparse
@@ -28,6 +29,7 @@ AXS_SCOPE = (
     "openid email profile read:current_user "
     "update:current_user_identities"
 )
+_AXS_RESOURCE_ID = re.compile(r"^[A-Za-z0-9_-]{1,160}$")
 
 
 class SramAxsError(Exception):
@@ -225,13 +227,13 @@ class SramAxsClient:
         return payload if isinstance(payload, list) else []
 
     def activity(self, activity_id):
-        if not activity_id or len(str(activity_id)) > 128:
+        if not _AXS_RESOURCE_ID.fullmatch(str(activity_id or "")):
             raise ValueError("Invalid SRAM activity id")
         payload = self._get(f"activities/{activity_id}/")
         return payload if isinstance(payload, dict) else {}
 
     def component_summary(self, summary_id):
-        if not str(summary_id).isdigit():
+        if not _AXS_RESOURCE_ID.fullmatch(str(summary_id or "")):
             raise ValueError("Invalid SRAM component summary id")
         payload = self._get(f"componentsummaries/{summary_id}/")
         return payload if isinstance(payload, dict) else {}

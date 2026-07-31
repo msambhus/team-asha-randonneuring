@@ -1,8 +1,9 @@
 {# Coordinated Leaflet route map + shared gradient elevation profile.
-   Context: explorer_id, route_points, profile, markers, map_segments, map_stops. #}
+   Context: explorer_id, route_points, profile, markers, map_segments, map_stops,
+   compact_map (plan/live-sized map). #}
 {% if route_points and route_points|length > 1 %}
 {% set rid = explorer_id or 'route-explorer' %}
-<div class="route-explorer" id="{{ rid }}">
+<div class="route-explorer{% if compact_map %} route-explorer-compact{% endif %}" id="{{ rid }}">
     <div class="route-explorer-map" id="{{ rid }}-map"
          role="img" aria-label="Interactive route map"></div>
     {% if profile and profile.available %}
@@ -19,6 +20,9 @@
 #{{ rid }} .route-explorer-map {
     height:clamp(360px,58vh,620px); border-radius:10px; overflow:hidden;
     border:1px solid var(--border,#e2e8f0); z-index:0;
+}
+#{{ rid }}.route-explorer-compact .route-explorer-map {
+    height:clamp(220px,30vh,300px);
 }
 #{{ rid }} .route-explorer-profile {
     padding:10px 12px 6px; border:1px solid var(--border,#e2e8f0);
@@ -52,18 +56,13 @@
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom:18, attribution:'&copy; OpenStreetMap contributors'
         }).addTo(map);
+        // Shared with the live view and mobile ride map.
+        var routeColor='#2563eb';
         var route = L.polyline(points, {
-            color:'#2563eb', weight:4, opacity:.78
+            color:routeColor, weight:4, opacity:.78
         }).addTo(map);
         map.fitBounds(route.getBounds(), { padding:[24,24], maxZoom:13 });
 
-        function speedColor(mph) {
-            if (mph == null) return '#64748b';
-            if (mph < 10) return '#dc2626';
-            if (mph < 13) return '#f59e0b';
-            if (mph < 16) return '#65a30d';
-            return '#16a34a';
-        }
         function safeTooltip(text) {
             var node=document.createElement('span');
             node.textContent=text == null ? '' : String(text);
@@ -72,7 +71,7 @@
         segments.forEach(function (segment) {
             if (!segment.points || segment.points.length < 2) return;
             L.polyline(segment.points, {
-                color:speedColor(segment.speed_mph), weight:5, opacity:.9
+                color:routeColor, weight:5, opacity:.9
             }).addTo(map).bindTooltip(safeTooltip(
                 (segment.location || 'Segment') + (segment.speed_mph != null
                     ? ': ' + segment.speed_mph + ' mph' : ''),
@@ -136,17 +135,28 @@
             }
             return p[p.length-1][1];
         }
-        function selectMile(mile) {
+        function selectMile(mile, notify) {
             var ll=latLngAtMile(mile);
             mapCursor.setLatLng(ll);
-            if (!cursorLine || !profile.available) return;
-            var frac=Math.max(0,Math.min(1,mile/profile.total_mi));
-            var x=profile.plot.x+frac*profile.plot.w, y=profileY(x);
-            cursorLine.setAttribute('x1',x); cursorLine.setAttribute('x2',x);
-            cursorLine.setAttribute('y1',profile.plot.y);
-            cursorLine.setAttribute('y2',profile.plot.y+profile.plot.h);
-            cursorDot.setAttribute('cx',x); cursorDot.setAttribute('cy',y);
+            if (cursorLine && profile.available) {
+                var frac=Math.max(0,Math.min(1,mile/profile.total_mi));
+                var x=profile.plot.x+frac*profile.plot.w, y=profileY(x);
+                cursorLine.setAttribute('x1',x); cursorLine.setAttribute('x2',x);
+                cursorLine.setAttribute('y1',profile.plot.y);
+                cursorLine.setAttribute('y2',profile.plot.y+profile.plot.h);
+                cursorDot.setAttribute('cx',x); cursorDot.setAttribute('cy',y);
+            }
+            if (notify !== false) {
+                root.dispatchEvent(new CustomEvent('route-explorer-mile', {
+                    detail:{ mile:mile }
+                }));
+            }
         }
+        root.addEventListener('route-explorer-select-mile', function (event) {
+            if (event.detail && Number.isFinite(Number(event.detail.mile))) {
+                selectMile(Number(event.detail.mile), false);
+            }
+        });
 
         if (svg && profile.available) {
             svg.addEventListener('pointermove', function (event) {
