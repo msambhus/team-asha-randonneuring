@@ -35,6 +35,12 @@
 .radial-plan-snapshot { flex: 1 1 32%; min-width: 190px; border: 1px solid var(--border, #e5e7eb);
   border-radius: 12px; padding: 12px 14px; background: var(--card-bg, #f9fafb); box-sizing: border-box; }
 .rps-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.rps-mobile-toggle { display: none; width: 100%; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.rps-mobile-title { display: flex; flex-direction: column; min-width: 0; }
+.rps-mobile-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.86rem; font-weight: 700; color: var(--primary, #1a365d); }
+.rps-mobile-chevron { font-size: 1rem; transition: transform 0.15s ease; }
 .rps-label { font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-light, #6b7280); }
 .rps-name { font-weight: 700; font-size: 0.98rem; color: var(--primary, #1a365d); text-decoration: none; line-height: 1.2; }
 .rps-name:hover { text-decoration: underline; }
@@ -161,6 +167,11 @@
   .radial-toggle { min-width: 0; padding: 5px 7px; }
   .radial-toggle-label { display: none; }
   .radial-detail { margin: 0 2px; padding: 10px; }
+  .rps-mobile-toggle { display: flex; }
+  .radial-plan-snapshot { padding: 10px 12px; }
+  .radial-plan-snapshot.mobile-collapsed .rps-body { display: none; }
+  .radial-plan-snapshot:not(.mobile-collapsed) .rps-mobile-chevron { transform: rotate(180deg); }
+  .radial-plan-snapshot:not(.mobile-collapsed) .rps-body { margin-top: 10px; }
 }
 </style>
 <div class="radial-live" data-roster-url="{{ roster_url }}" data-poll-ms="{{ (poll_seconds or 30) * 1000 }}">
@@ -172,6 +183,22 @@
     and elevation profile below still update.
   </div>
   {% endif %}
+
+  <div class="radial-plan" id="radial-plan-wrap" style="display:none;">
+    <label for="radial-plan-select">Plan</label>
+    <select class="radial-plan-select" id="radial-plan-select"></select>
+  </div>
+
+  <div class="radial-status" id="radial-status" aria-live="polite"></div>
+
+  <table class="radial-table" id="radial-table">
+    <thead>
+      <tr><th class="radial-rank">#</th><th>Rider</th><th>Progress</th><th>Speed</th><th>Banked</th><th class="radial-exp"></th></tr>
+    </thead>
+    <tbody id="radial-tbody">
+      <tr class="radial-empty"><td colspan="6">Waiting for riders to appear…</td></tr>
+    </tbody>
+  </table>
 
   {% if (elevation_profile and elevation_profile.available) or plan_snapshot %}
   <div class="radial-elev-row">
@@ -209,7 +236,15 @@
     </div>
     {% endif %}
     {% if plan_snapshot %}
-    <aside class="radial-plan-snapshot">
+    <aside class="radial-plan-snapshot mobile-collapsed">
+      <button type="button" class="rps-mobile-toggle" aria-expanded="false">
+        <span class="rps-mobile-title">
+          <span class="rps-label">Selected plan</span>
+          <span class="rps-mobile-name">{{ plan_snapshot.name }}</span>
+        </span>
+        <span class="rps-mobile-chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div class="rps-body">
       <div class="rps-head">
         <span class="rps-label">Selected plan</span>
         <a class="rps-name" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">{{ plan_snapshot.name }}</a>
@@ -222,26 +257,11 @@
         {% if plan_snapshot.start_time %}<div class="rps-stat"><span class="rps-v">{{ plan_snapshot.start_time }}</span><span class="rps-l">start</span></div>{% endif %}
       </div>
       <a class="rps-open" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">Open full plan →</a>
+      </div>
     </aside>
     {% endif %}
   </div>
   {% endif %}
-
-  <div class="radial-plan" id="radial-plan-wrap" style="display:none;">
-    <label for="radial-plan-select">Plan</label>
-    <select class="radial-plan-select" id="radial-plan-select"></select>
-  </div>
-
-  <div class="radial-status" id="radial-status" aria-live="polite"></div>
-
-  <table class="radial-table" id="radial-table">
-    <thead>
-      <tr><th class="radial-rank">#</th><th>Rider</th><th>Progress</th><th>Speed</th><th>Banked</th><th class="radial-exp"></th></tr>
-    </thead>
-    <tbody id="radial-tbody">
-      <tr class="radial-empty"><td colspan="5">Waiting for riders to appear…</td></tr>
-    </tbody>
-  </table>
 
   <section class="radial-conditions" id="radial-conditions" aria-live="polite">
     <div class="radial-conditions-head">
@@ -283,6 +303,16 @@
   var planSelect = document.getElementById('radial-plan-select');
   var weatherCharts = {};
   var weatherSignature = '';
+
+  function initMobilePlanToggle() {
+    var panel = root.querySelector('.radial-plan-snapshot');
+    var button = panel && panel.querySelector('.rps-mobile-toggle');
+    if (!panel || !button) { return; }
+    button.addEventListener('click', function () {
+      var collapsed = panel.classList.toggle('mobile-collapsed');
+      button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    });
+  }
 
   // ---- Map (the ONE shared Mapbox GL implementation) ---------------------- //
   function initMap() {
@@ -922,6 +952,7 @@
   }
 
   initMap();
+  initMobilePlanToggle();           // selected plan starts compact on phones
   buildRouteIndex();                // cumulative route distances for hover→map scrub
   initElevHover();                  // hovering the elevation profile moves a map dot
   if (!map) { poll(); }             // static fallback: still poll table + profile
