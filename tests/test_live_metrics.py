@@ -733,6 +733,21 @@ def test_ride_context_start_time_is_pacific_winter(app):
     assert ctx['ride_start_iso'] == '2026-01-10T14:00:00+00:00'
 
 
+def test_scheduled_ride_start_overrides_plan_default(app):
+    """A reusable plan's default start must not add phantom stopped time."""
+    cache.clear()
+    ride = {'id': 5553, 'name': 'Evening 200k', 'date': '2026-07-30',
+            'start_time': '21:57', 'plan_start_time': '21:00',
+            'ride_plan_id': 64, 'rwgps_url': None, 'rwgps_url_team': None}
+    with app.app_context():
+        with patch('routes.live.get_ride_by_id', return_value=ride):
+            ctx = live_module._ride_live_context(5553)
+    cache.clear()
+    # July is PDT (UTC-7): 9:57 PM local is 04:57 UTC the following day.
+    assert ctx['ride_start_iso'] == '2026-07-31T04:57:00+00:00'
+    assert live_module._ride_start_local(ride) == datetime(2026, 7, 30, 21, 57)
+
+
 # ── Per-ride context is cached (no RWGPS re-fetch per poll) ─────────────────
 
 def test_ride_context_cached_across_polls(client):
