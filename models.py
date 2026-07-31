@@ -2344,7 +2344,10 @@ def get_sram_axs_detail_backfill_candidates(rider_id, limit=5):
         "AND d.sram_activity_id=a.sram_activity_id "
         "WHERE a.rider_id=%s AND d.sram_activity_id IS NULL "
         "AND m.match_status <> 'rejected' "
-        "ORDER BY a.started_at DESC LIMIT %s",
+        # AXS detail powers the brevet Stats gear column. Prioritize records
+        # already matched to a brevet before unmatched workouts so one bounded
+        # sync makes the rider-facing analysis useful immediately.
+        "ORDER BY (m.ride_id IS NULL),a.started_at DESC LIMIT %s",
         (rider_id, bounded_limit),
     ).fetchall()
 
