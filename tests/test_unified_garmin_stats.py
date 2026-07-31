@@ -132,9 +132,30 @@ def test_garmin_fit_candidates_are_owned_matched_and_unexamined():
 
     sql, params = execute.call_args.args
     assert "abm.rider_id=%s" in sql
+    assert "activity_source_match asm" in sql
+    assert "asm.strava_activity_id=srm.strava_activity_id" in sql
     assert "gad.gear_synced_at IS NULL" in sql
-    assert params == (42, 1)
+    assert params == (42, 42, 1)
     assert result == [123]
+
+
+def test_garmin_fit_stats_lookup_accepts_reviewed_strava_source_match():
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [{
+        "garmin_activity_id": 123,
+        "gear_events": [{"elapsed_s": 10, "rear_teeth": 21}],
+        "gear_summary": {"rear_shift_count": 1},
+        "gear_synced_at": "now",
+    }]
+    with patch("models._execute", return_value=cursor) as execute:
+        result = models.get_garmin_gearing_for_brevet(42, 163)
+
+    sql, params = execute.call_args.args
+    assert "activity_brevet_match abm" in sql
+    assert "activity_source_match asm" in sql
+    assert "strava_ride_match srm" in sql
+    assert params == (42, 163, 42, 163)
+    assert result[0]["gear_summary"]["rear_shift_count"] == 1
 
 
 def test_stats_template_rounds_decimal_garmin_metrics():

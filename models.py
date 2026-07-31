@@ -2841,16 +2841,27 @@ def get_garmin_fit_gear_sync_candidates(rider_id, limit=1):
     """Prioritize matched Garmin activities whose FIT gearing is unexamined."""
     limit = max(1, min(int(limit), 3))
     rows = _execute(
+        "WITH matched AS ("
+        " SELECT abm.rider_id,abm.garmin_activity_id "
+        " FROM activity_brevet_match abm "
+        " WHERE abm.rider_id=%s AND abm.match_status <> 'rejected' "
+        " AND abm.garmin_activity_id IS NOT NULL "
+        " UNION "
+        " SELECT asm.rider_id,asm.garmin_activity_id "
+        " FROM strava_ride_match srm "
+        " JOIN activity_source_match asm ON asm.rider_id=srm.rider_id "
+        "  AND asm.strava_activity_id=srm.strava_activity_id "
+        " WHERE srm.rider_id=%s AND asm.match_status <> 'rejected'"
+        ") "
         "SELECT DISTINCT ga.garmin_activity_id "
-        "FROM activity_brevet_match abm "
-        "JOIN garmin_activity ga ON ga.rider_id=abm.rider_id "
-        " AND ga.garmin_activity_id=abm.garmin_activity_id "
+        "FROM matched m "
+        "JOIN garmin_activity ga ON ga.rider_id=m.rider_id "
+        " AND ga.garmin_activity_id=m.garmin_activity_id "
         "JOIN garmin_activity_detail gad ON gad.rider_id=ga.rider_id "
         " AND gad.garmin_activity_id=ga.garmin_activity_id "
-        "WHERE abm.rider_id=%s AND abm.match_status <> 'rejected' "
-        "AND gad.gear_synced_at IS NULL "
+        "WHERE gad.gear_synced_at IS NULL "
         "ORDER BY ga.garmin_activity_id DESC LIMIT %s",
-        (rider_id, limit),
+        (rider_id, rider_id, limit),
     ).fetchall()
     return [int(row["garmin_activity_id"]) for row in rows]
 
@@ -2877,12 +2888,19 @@ def upsert_garmin_fit_gearing(
         cur.execute(
             "UPDATE strava_ride_analysis sra SET llm_narrative=NULL "
             "FROM strava_ride_match srm "
-            "JOIN activity_brevet_match abm ON abm.rider_id=srm.rider_id "
-            "AND (abm.ride_id=srm.ride_id "
-            "OR abm.strava_activity_id=srm.strava_activity_id) "
-            "WHERE sra.match_id=srm.id AND abm.rider_id=%s "
-            "AND abm.garmin_activity_id=%s",
-            (rider_id, garmin_activity_id),
+            "WHERE sra.match_id=srm.id AND srm.rider_id=%s AND ("
+            " EXISTS (SELECT 1 FROM activity_brevet_match abm "
+            "  WHERE abm.rider_id=srm.rider_id "
+            "  AND abm.garmin_activity_id=%s "
+            "  AND abm.match_status <> 'rejected' "
+            "  AND (abm.ride_id=srm.ride_id "
+            "   OR abm.strava_activity_id=srm.strava_activity_id)) "
+            " OR EXISTS (SELECT 1 FROM activity_source_match asm "
+            "  WHERE asm.rider_id=srm.rider_id "
+            "  AND asm.strava_activity_id=srm.strava_activity_id "
+            "  AND asm.garmin_activity_id=%s "
+            "  AND asm.match_status <> 'rejected'))",
+            (rider_id, garmin_activity_id, garmin_activity_id),
         )
         conn.commit()
     except Exception:
@@ -3153,16 +3171,28 @@ def get_garmin_laps_for_brevet(rider_id, ride_id):
 def get_garmin_gearing_for_brevet(rider_id, ride_id):
     """Return normalized FIT gearing for every owned matched recording."""
     rows = _execute(
+        "WITH matched AS ("
+        " SELECT abm.rider_id,abm.ride_id,abm.garmin_activity_id "
+        " FROM activity_brevet_match abm "
+        " WHERE abm.rider_id=%s AND abm.ride_id=%s "
+        " AND abm.match_status <> 'rejected' "
+        " AND abm.garmin_activity_id IS NOT NULL "
+        " UNION "
+        " SELECT srm.rider_id,srm.ride_id,asm.garmin_activity_id "
+        " FROM strava_ride_match srm "
+        " JOIN activity_source_match asm ON asm.rider_id=srm.rider_id "
+        "  AND asm.strava_activity_id=srm.strava_activity_id "
+        " WHERE srm.rider_id=%s AND srm.ride_id=%s "
+        " AND asm.match_status <> 'rejected'"
+        ") "
         "SELECT gad.garmin_activity_id,gad.gear_events,gad.gear_summary,"
         "gad.gear_synced_at "
-        "FROM activity_brevet_match abm "
-        "JOIN garmin_activity_detail gad ON gad.rider_id=abm.rider_id "
-        " AND gad.garmin_activity_id=abm.garmin_activity_id "
-        "WHERE abm.rider_id=%s AND abm.ride_id=%s "
-        "AND abm.match_status <> 'rejected' "
-        "AND gad.gear_synced_at IS NOT NULL "
+        "FROM matched m "
+        "JOIN garmin_activity_detail gad ON gad.rider_id=m.rider_id "
+        " AND gad.garmin_activity_id=m.garmin_activity_id "
+        "WHERE gad.gear_synced_at IS NOT NULL "
         "ORDER BY gad.garmin_activity_id",
-        (rider_id, ride_id),
+        (rider_id, ride_id, rider_id, ride_id),
     ).fetchall()
     return [dict(row) for row in rows]
 
