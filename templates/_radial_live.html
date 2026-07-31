@@ -76,6 +76,8 @@
 .radial-elev { cursor: crosshair; }
 .radial-elev-cursor { stroke: var(--text-light, #6b7280); stroke-width: 1; stroke-dasharray: 3 2; opacity: 0.85; }
 .radial-elev-cursor-dot { fill: var(--primary, #1a365d); stroke: #fff; stroke-width: 1.5; }
+.radial-elev-rider-label { font-size: 9px; font-weight: 800; paint-order: stroke;
+  stroke: #fff; stroke-width: 2.5px; stroke-linejoin: round; }
 .radial-scrub { width: 16px; height: 16px; border-radius: 50%; background: var(--primary, #1a365d);
   border: 3px solid #fff; box-shadow: 0 1px 6px rgba(0,0,0,0.5); pointer-events: none; }
 .radial-status { font-size: 0.8rem; color: var(--text-light, #6b7280); margin: 10px 0; min-height: 1.2em; }
@@ -110,14 +112,17 @@
   overflow: hidden; text-overflow: ellipsis; }
 .radial-row-meta.ahead { color: #166534; font-weight: 700; }
 .radial-row-meta.behind { color: #991b1b; font-weight: 700; }
-.radial-exp { width: 2.5ch; text-align: right; }
-.radial-toggle { background: none; border: none; cursor: pointer; font-size: 1rem;
-  color: var(--text-light, #6b7280); padding: 0 4px; }
+.radial-exp { width: 8.5rem; text-align: right; }
+.radial-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  min-width: 7rem; background: var(--card-bg, #fff); border: 1px solid var(--primary, #1a365d);
+  border-radius: 999px; cursor: pointer; font-size: 0.72rem; font-weight: 800;
+  color: var(--primary, #1a365d); padding: 5px 9px; white-space: nowrap; }
+.radial-toggle:hover, .radial-toggle:focus-visible { color: #fff; background: var(--primary, #1a365d); }
 .radial-detailrow td { padding: 0 8px 10px; border-bottom: 1px solid var(--border, #e5e7eb); }
 .radial-detail { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 6px 14px; }
 .radial-detail-group { grid-column: 1 / -1; display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(125px, 1fr)); gap: 7px 14px;
+  grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 7px 14px;
   padding: 9px 0; border-top: 1px solid var(--border, #e5e7eb); }
 .radial-detail-group:first-child { border-top: 0; padding-top: 2px; }
 .radial-detail-label { grid-column: 1 / -1; font-size: 0.68rem; font-weight: 800;
@@ -133,6 +138,9 @@
   .radial-table { font-size: 0.8rem; }
   .radial-table thead th, .radial-row td { padding-left: 4px; padding-right: 4px; }
   .radial-row-meta { max-width: 108px; }
+  .radial-exp { width: 3.2rem; }
+  .radial-toggle { min-width: 0; padding: 5px 7px; }
+  .radial-toggle-label { display: none; }
 }
 </style>
 <div class="radial-live" data-roster-url="{{ roster_url }}" data-poll-ms="{{ (poll_seconds or 30) * 1000 }}">
@@ -405,10 +413,12 @@
       else { dot.style.display = 'none'; }
       elevCursor.style.display = '';
     }
+    updateWeatherScrub(mi);
   }
   function clearScrub() {
     if (scrubMarker) { scrubMarker.remove(); }
     if (elevCursor) { elevCursor.style.display = 'none'; }
+    clearWeatherScrub();
   }
   function initElevHover() {
     var svg = document.querySelector('.radial-elev');
@@ -447,20 +457,31 @@
     var g = document.getElementById('radial-elev-riders');
     if (!g || !PROFILE || !PROFILE.available) { return; }
     while (g.firstChild) { g.removeChild(g.firstChild); }
-    roster.forEach(function (row) {
+    roster.forEach(function (row, index) {
       if (row.route_position_mi == null) { return; }
       var cx = profileX(row.route_position_mi);
       var cy = profileY(row.route_position_mi);
       if (cy == null) { return; }
+      var rider = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', 4);
       c.setAttribute('fill', row.marker_color || '#9ca3af');
       c.setAttribute('stroke', '#fff'); c.setAttribute('stroke-width', '1.5');
-      if (row.stale) { c.setAttribute('opacity', '0.5'); }
+      var label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      var labelOnLeft = row.route_position_mi > (PROFILE.total_mi || 0) * 0.85;
+      label.setAttribute('x', labelOnLeft ? cx - 7 : cx + 7);
+      label.setAttribute('y', cy - 4 - (index % 3) * 9);
+      label.setAttribute('text-anchor', labelOnLeft ? 'end' : 'start');
+      label.setAttribute('class', 'radial-elev-rider-label');
+      label.setAttribute('fill', row.marker_color || '#1a365d');
+      label.textContent = row.display_name || row.initials || '?';
+      if (row.stale) { rider.setAttribute('opacity', '0.5'); }
       var title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
       title.textContent = row.display_name + ' · ' + fmtDist(row);
-      c.appendChild(title);
-      g.appendChild(c);
+      rider.appendChild(title);
+      rider.appendChild(c);
+      rider.appendChild(label);
+      g.appendChild(rider);
     });
   }
 
@@ -584,7 +605,11 @@
           (row.speed_mph != null ? Number(row.speed_mph) + ' mph' : '—') +
           '</span>' + nextControlHtml(row) + '</td>' +
         '<td class="radial-exp"><button type="button" class="radial-toggle" aria-expanded="' +
-          (expanded[row.key] ? 'true' : 'false') + '">' + (expanded[row.key] ? '▾' : '▸') + '</button></td>';
+          (expanded[row.key] ? 'true' : 'false') + '" aria-label="' +
+          (expanded[row.key] ? 'Hide details for ' : 'View details for ') +
+          escapeHtml(row.display_name) + '"><span class="radial-toggle-label">' +
+          (expanded[row.key] ? 'Hide details' : 'View details') + '</span><span aria-hidden="true">' +
+          (expanded[row.key] ? '⌃' : '⌄') + '</span></button></td>';
       // The whole row is clickable (not just the ▸) so tapping a rider opens their
       // detail — speed, banked time, next control, ascent, finish ETA.
       tr.style.cursor = 'pointer';
@@ -677,7 +702,7 @@
       var riderMarkers = chart.$riderMarkers || [];
       var xAxis = chart.scales.x;
       var area = chart.chartArea;
-      if (!xAxis || !area || !riderMarkers.length) { return; }
+      if (!xAxis || !area) { return; }
       riderMarkers.forEach(function (marker, index) {
         if (marker.index == null || marker.index < 0) { return; }
         var x = xAxis.getPixelForValue(marker.index);
@@ -706,6 +731,31 @@
         ctx.fillText(marker.initials || '?', x + 8, y);
         ctx.restore();
       });
+      if (chart.$scrubIndex == null || chart.$scrubIndex < 0) { return; }
+      var scrubX = xAxis.getPixelForValue(chart.$scrubIndex);
+      var scrubCtx = chart.ctx;
+      scrubCtx.save();
+      scrubCtx.beginPath();
+      scrubCtx.moveTo(scrubX, area.top);
+      scrubCtx.lineTo(scrubX, area.bottom);
+      scrubCtx.strokeStyle = '#1a365d';
+      scrubCtx.lineWidth = 1.5;
+      scrubCtx.setLineDash([3, 3]);
+      scrubCtx.stroke();
+      scrubCtx.setLineDash([]);
+      chart.data.datasets.forEach(function (_dataset, datasetIndex) {
+        var meta = chart.getDatasetMeta(datasetIndex);
+        var point = meta && meta.data && meta.data[chart.$scrubIndex];
+        if (!point || point.skip || !Number.isFinite(point.y)) { return; }
+        scrubCtx.beginPath();
+        scrubCtx.arc(scrubX, point.y, 4, 0, 2 * Math.PI);
+        scrubCtx.fillStyle = '#1a365d';
+        scrubCtx.fill();
+        scrubCtx.strokeStyle = '#fff';
+        scrubCtx.lineWidth = 1.5;
+        scrubCtx.stroke();
+      });
+      scrubCtx.restore();
     }
   };
   function makeWeatherChart(canvasId, labels, datasets) {
@@ -744,6 +794,22 @@
           };
         });
       chart.update('none');
+    });
+  }
+  function updateWeatherScrub(mile) {
+    Object.keys(weatherCharts).forEach(function (key) {
+      var chart = weatherCharts[key];
+      if (!chart) { return; }
+      chart.$scrubIndex = nearestWeatherIndex(chart.data.labels || [], mile);
+      chart.draw();
+    });
+  }
+  function clearWeatherScrub() {
+    Object.keys(weatherCharts).forEach(function (key) {
+      var chart = weatherCharts[key];
+      if (!chart) { return; }
+      chart.$scrubIndex = null;
+      chart.draw();
     });
   }
   function lineSet(label, values, color, fill) {
