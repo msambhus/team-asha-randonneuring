@@ -492,6 +492,7 @@
 </div>
 
 {% include "_sram_axs_stats.html" %}
+{% include "partials/_sram_axs_status.html" %}
 
 {% include "_garmin_lap_details.html" %}
 
@@ -772,6 +773,7 @@
 {% endif %}
 
 {% include "_sram_axs_stats.html" %}
+{% include "partials/_sram_axs_status.html" %}
 
 {% include "_garmin_lap_details.html" %}
 
@@ -820,76 +822,23 @@
 </div>
 {% endif %}
 
-{# --- Interactive Route Map --- #}
-{% if map_data and map_data.track %}
+{# --- Coordinated route map + elevation profile --- #}
+{% if stats_route_points %}
 <div class="chart-container" style="margin-bottom:24px;">
-    <h3>Route Map</h3>
-    <div id="rideMap"></div>
+    <h3>Route Map &amp; Elevation</h3>
     <div style="margin-top:8px;font-size:0.72rem;color:var(--text-light,#94a3b8);">
-        Track coloured by segment speed. Markers show detected stops.
+        Track is coloured by segment speed. Orange markers show detected stops.
     </div>
+    {% with explorer_id='stats-route-explorer',
+            route_points=stats_route_points,
+            profile=stats_elevation_profile,
+            markers=stats_profile_markers,
+            map_segments=(map_data.segments if map_data else []),
+            map_stops=stats_map_stops %}
+    {% include 'partials/_route_explorer.html' %}
+    {% endwith %}
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-(function() {
-    const mapData = {{ map_data|tojson }};
-    if (!mapData || !mapData.track || mapData.track.length < 2) return;
-
-    const map = L.map('rideMap', { scrollWheelZoom: false });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 18,
-        attribution: '&copy; OpenStreetMap contributors',
-    }).addTo(map);
-
-    // Base track (neutral) — always drawn so the ride shows even without segments.
-    L.polyline(mapData.track, { color: '#94a3b8', weight: 3, opacity: 0.7 }).addTo(map);
-
-    // Fit to bounds.
-    if (mapData.bounds) {
-        map.fitBounds(mapData.bounds, { padding: [20, 20] });
-    } else {
-        map.fitBounds(L.polyline(mapData.track).getBounds(), { padding: [20, 20] });
-    }
-
-    function escapeHtml(s) {
-        const d = document.createElement('div');
-        d.textContent = s == null ? '' : s;
-        return d.innerHTML;
-    }
-
-    // Colour a segment by its average speed (mph) — slow=red, fast=green.
-    function speedColor(mph) {
-        if (mph == null) return '#64748b';
-        if (mph < 10) return '#dc2626';
-        if (mph < 13) return '#f59e0b';
-        if (mph < 16) return '#65a30d';
-        return '#16a34a';
-    }
-
-    (mapData.segments || []).forEach(function(seg) {
-        const line = L.polyline(seg.points, {
-            color: speedColor(seg.speed_mph), weight: 5, opacity: 0.9,
-        }).addTo(map);
-        const spd = seg.speed_mph != null ? seg.speed_mph + ' mph' : 'n/a';
-        // seg.location may carry scraped HTML entities — escape it (Leaflet
-        // tooltips render their content as HTML).
-        line.bindTooltip(escapeHtml(seg.location) + ': ' + spd, { sticky: true });
-    });
-
-    // Stop markers — informational only (notes live in the segment table +
-    // the overall note box below, not on the map).
-    (mapData.stops || []).forEach(function(stop) {
-        const marker = L.marker([stop.lat, stop.lng]).addTo(map);
-        const where = stop.location ? escapeHtml(stop.location) : (stop.distance_miles + ' mi');
-        const dur = stop.duration_min != null ? stop.duration_min + ' min stop' : '';
-        const html = '<div class="map-stop-popup" style="min-width:160px;">'
-            + '<div style="font-weight:700;">' + where + '</div>'
-            + '<div style="font-size:0.72rem;color:#64748b;">' + stop.distance_miles + ' mi &middot; ' + dur + '</div>'
-            + '</div>';
-        marker.bindPopup(html);
-    });
-})();
-</script>
 {% endif %}
 
 {# --- Chart --- #}
@@ -929,6 +878,9 @@
     <th style="text-align:right;" title="Average power (normalized power shown below)">W</th>
     <th style="text-align:right;" title="Average cadence (rpm)">Cad</th>
     {% endif %}
+    {% if sram_segment_metrics %}
+    <th style="text-align:right;" title="SRAM AXS positional gear changes aligned to this segment">Gear</th>
+    {% endif %}
     <th style="text-align:right;" title="Elevation gain and average gradient for the segment">Climb</th>
     <th style="text-align:right;">&Delta;</th>
     {% if stop_wind %}<th style="text-align:center;">Actual Wind</th><th style="text-align:center;">Temp</th>{% endif %}
@@ -938,6 +890,7 @@
 {% for row in comparison.rows %}
 {# Alternating group shade: main + analysis + note rows of a segment share _grp. #}
 {% set _grp = 'seg-grp-a' if loop.index0 % 2 == 0 else 'seg-grp-b' %}
+{% set gx = sram_segment_metrics.get(row.location) if sram_segment_metrics else None %}
 <tr class="{{ _grp }}{% if row.is_extra %} extra-row{% endif %}">
     {# Stop name — truncated with hover #}
     <td style="max-width:120px;">
@@ -1040,6 +993,23 @@
     </td>
     {% endif %}
 
+    {% if sram_segment_metrics %}
+    <td style="text-align:right;font-size:0.66rem;color:#92400e;min-width:92px;">
+        {% if gx %}
+        {% if gx.rear %}
+        <div title="Rear positional index; not cassette tooth count">
+            R {{ gx.rear.start_position }}→{{ gx.rear.end_position }}
+            <span style="color:#b45309;">· dom {{ gx.rear.dominant_position }}</span>
+        </div>
+        {% endif %}
+        {% if gx.front %}
+        <div title="Front positional index">F {{ gx.front.start_position }}→{{ gx.front.end_position }}</div>
+        {% endif %}
+        <div style="color:#64748b;">{{ gx.total_shifts }} changes{% if gx.shifts_per_mile is not none %} · {{ gx.shifts_per_mile }}/mi{% endif %}</div>
+        {% else %}&mdash;{% endif %}
+    </td>
+    {% endif %}
+
     {# Climb: elevation gain + climbing rate (ft/mile) for the segment #}
     <td style="text-align:right;font-size:0.7rem;color:#65a30d;">
         {% if row.actual_elev_gain_ft is not none and not row.is_extra %}{{ row.actual_elev_gain_ft }}&nbsp;ft{% if row.actual_climb_ft_per_mi is not none %}<div style="font-size:0.6rem;color:#84cc16;">{{ row.actual_climb_ft_per_mi }} ft/mi</div>{% endif %}{% else %}<span style="color:var(--text-light);">&mdash;</span>{% endif %}
@@ -1080,11 +1050,16 @@
 </tr>
 {# Per-segment analysis: rule-based narrative + LLM coach note (best-effort) #}
 {% set ev = segment_eval.get(row.location) if segment_eval else None %}
-{% if ev and (ev.narrative or ev.coach) and not row.is_extra %}
+{% if ((ev and (ev.narrative or ev.coach)) or (gx and gx.advice)) and not row.is_extra %}
 <tr class="segment-analysis-row {{ _grp }}">
-    <td colspan="20" style="padding:6px 12px 10px;border-bottom:1px solid #eef2f7;">
-        {% if ev.narrative %}<div style="font-size:0.78rem;color:#334155;line-height:1.45;">{{ ev.narrative }}</div>{% endif %}
-        {% if ev.coach %}<div style="font-size:0.78rem;color:#0369a1;line-height:1.45;margin-top:3px;"><span style="font-weight:600;">Coach:</span> {{ ev.coach }}</div>{% endif %}
+    <td colspan="{{ 21 if sram_segment_metrics else 20 }}" style="padding:6px 12px 10px;border-bottom:1px solid #eef2f7;">
+        {% if ev and ev.narrative %}<div style="font-size:0.78rem;color:#334155;line-height:1.45;">{{ ev.narrative }}</div>{% endif %}
+        {% if ev and ev.coach %}<div style="font-size:0.78rem;color:#0369a1;line-height:1.45;margin-top:3px;"><span style="font-weight:600;">Coach:</span> {{ ev.coach }}</div>{% endif %}
+        {% if gx and gx.advice %}
+        {% for advice in gx.advice %}
+        <div style="font-size:0.78rem;color:#92400e;line-height:1.45;margin-top:3px;"><span style="font-weight:600;">AXS drivetrain:</span> {{ advice }}</div>
+        {% endfor %}
+        {% endif %}
     </td>
 </tr>
 {% endif %}
@@ -1095,7 +1070,7 @@
 {% set _ident = ('%.1f'|format(row.distance_miles)) if _is_stop else row.location %}
 {% set _note = (stop_notes.get('%.1f'|format(row.distance_miles), '')) if _is_stop else segment_notes.get(row.location, '') %}
 <tr class="segment-note-row {{ _grp }}{% if row.is_extra %} extra-row{% endif %}">
-    <td colspan="20" style="padding:2px 12px 10px;border-bottom:1px solid #eef2f7;">
+    <td colspan="{{ 21 if sram_segment_metrics else 20 }}" style="padding:2px 12px 10px;border-bottom:1px solid #eef2f7;">
         <div class="row-note" data-scope="{{ 'stop' if _is_stop else 'segment' }}" data-ident="{{ _ident }}"
              style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;font-size:0.75rem;">
             {# Saved-note view (shown when a note exists) #}

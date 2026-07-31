@@ -3,6 +3,7 @@
 
 {% block extra_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='ride-plan-v2.css') }}">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 {# Weather tab embeds the /weather page UI — pull in its CSS + Mapbox assets #}
 {% include 'partials/_weather_head.html' %}
 {% endblock %}
@@ -176,8 +177,13 @@
                             {% endfor %}
                         </div>
                     </div>
-                    {% with profile=elevation_profile, markers=stop_markers, big=True %}
-                    {% include 'partials/_elevation_profile.html' %}
+                    {% with explorer_id='plan-route-explorer',
+                            route_points=plan_route_points,
+                            profile=elevation_profile,
+                            markers=stop_markers,
+                            map_segments=[],
+                            map_stops=plan_map_stops %}
+                    {% include 'partials/_route_explorer.html' %}
                     {% endwith %}
                 </div>
 
@@ -723,6 +729,7 @@
 
 
 {% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function() {
     var tabs = document.querySelectorAll('.rpv2-tab');
@@ -770,6 +777,14 @@
             row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         });
     });
+    var planExplorer = document.getElementById('plan-route-explorer');
+    if (planExplorer) {
+        planExplorer.addEventListener('route-explorer-stop', function(event) {
+            if (event.detail && event.detail.index != null) {
+                setSelected(event.detail.index);
+            }
+        });
+    }
 
     // Pace strategy — highlight the picked column AND live re-time the itinerary.
     // Each pace variant's per-stop pace fields are keyed by card id; picking a

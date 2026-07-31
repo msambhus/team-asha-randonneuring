@@ -563,76 +563,22 @@
 </div>
 {% endif %}
 
-{# --- Interactive Route Map --- #}
-{% if map_data and map_data.track %}
+{# --- Coordinated Route Map + Elevation --- #}
+{% if stats_route_points %}
 <div class="chart-container" style="margin-bottom:24px;">
-    <h3>Route Map</h3>
-    <div id="rideMap"></div>
-    <div style="margin-top:8px;font-size:0.72rem;color:var(--text-light,#94a3b8);">
-        Track coloured by segment speed. Markers show detected stops.
-    </div>
+    <h3>Route Map &amp; Elevation</h3>
+    {% with
+        explorer_id='stats-route-explorer',
+        route_points=stats_route_points,
+        profile=stats_elevation_profile,
+        markers=stats_profile_markers,
+        map_stops=stats_map_stops,
+        map_segments=(map_data.segments if map_data else [])
+    %}
+    {% include 'partials/_route_explorer.html' %}
+    {% endwith %}
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-(function() {
-    const mapData = {{ map_data|tojson }};
-    if (!mapData || !mapData.track || mapData.track.length < 2) return;
-
-    const map = L.map('rideMap', { scrollWheelZoom: false });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 18,
-        attribution: '&copy; OpenStreetMap contributors',
-    }).addTo(map);
-
-    // Base track (neutral) — always drawn so the ride shows even without segments.
-    L.polyline(mapData.track, { color: '#94a3b8', weight: 3, opacity: 0.7 }).addTo(map);
-
-    // Fit to bounds.
-    if (mapData.bounds) {
-        map.fitBounds(mapData.bounds, { padding: [20, 20] });
-    } else {
-        map.fitBounds(L.polyline(mapData.track).getBounds(), { padding: [20, 20] });
-    }
-
-    function escapeHtml(s) {
-        const d = document.createElement('div');
-        d.textContent = s == null ? '' : s;
-        return d.innerHTML;
-    }
-
-    // Colour a segment by its average speed (mph) — slow=red, fast=green.
-    function speedColor(mph) {
-        if (mph == null) return '#64748b';
-        if (mph < 10) return '#dc2626';
-        if (mph < 13) return '#f59e0b';
-        if (mph < 16) return '#65a30d';
-        return '#16a34a';
-    }
-
-    (mapData.segments || []).forEach(function(seg) {
-        const line = L.polyline(seg.points, {
-            color: speedColor(seg.speed_mph), weight: 5, opacity: 0.9,
-        }).addTo(map);
-        const spd = seg.speed_mph != null ? seg.speed_mph + ' mph' : 'n/a';
-        // seg.location may carry scraped HTML entities — escape it (Leaflet
-        // tooltips render their content as HTML).
-        line.bindTooltip(escapeHtml(seg.location) + ': ' + spd, { sticky: true });
-    });
-
-    // Stop markers — informational only (notes live in the segment table +
-    // the overall note box below, not on the map).
-    (mapData.stops || []).forEach(function(stop) {
-        const marker = L.marker([stop.lat, stop.lng]).addTo(map);
-        const where = stop.location ? escapeHtml(stop.location) : (stop.distance_miles + ' mi');
-        const dur = stop.duration_min != null ? stop.duration_min + ' min stop' : '';
-        const html = '<div class="map-stop-popup" style="min-width:160px;">'
-            + '<div style="font-weight:700;">' + where + '</div>'
-            + '<div style="font-size:0.72rem;color:#64748b;">' + stop.distance_miles + ' mi &middot; ' + dur + '</div>'
-            + '</div>';
-        marker.bindPopup(html);
-    });
-})();
-</script>
 {% endif %}
 
 {# --- Chart --- #}

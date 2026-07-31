@@ -1172,6 +1172,7 @@ def ride_strava_analysis(rusa_id, ride_id):
     # for the owning rider without exposing device metrics publicly.
     garmin_metrics = None
     sram_metrics = None
+    sram_connection = None
     garmin_laps = []
     garmin_recovery = None
     strava_recordings = []
@@ -1201,7 +1202,11 @@ def ride_strava_analysis(rusa_id, ride_id):
                 'ride_strava_analysis: provider metrics failed for ride %s',
                 ride_id)
         try:
-            from models import get_sram_axs_metrics_for_brevet
+            from models import (
+                get_sram_axs_connection,
+                get_sram_axs_metrics_for_brevet,
+            )
+            sram_connection = get_sram_axs_connection(rider['id'])
             sram_metrics = get_sram_axs_metrics_for_brevet(
                 rider['id'], ride_id)
         except Exception:
@@ -1244,6 +1249,15 @@ def ride_strava_analysis(rusa_id, ride_id):
                 'ride_strava_analysis: SRAM provider fallback failed for '
                 'ride %s', ride_id)
 
+    sram_status = None
+    if is_own_profile and not sram_metrics:
+        if not sram_connection:
+            sram_status = 'disconnected'
+        elif sram_connection.get('status') == 'reauth_required':
+            sram_status = 'reauth_required'
+        else:
+            sram_status = 'unmatched'
+
     if not match:
         garmin_summary = None
         if garmin_metrics:
@@ -1258,6 +1272,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                                stop_wind=None,
                                garmin_metrics=garmin_metrics,
                                sram_metrics=sram_metrics,
+                               sram_status=sram_status,
                                garmin_laps=garmin_laps,
                                garmin_summary=garmin_summary,
                                garmin_recovery=garmin_recovery,
@@ -1415,6 +1430,23 @@ def ride_strava_analysis(rusa_id, ride_id):
             )
             stop_wind = None
 
+    # Align private AXS gear-position samples to Strava elapsed distance so
+    # every planned leg can show its own shift and gearing behavior.
+    sram_segment_metrics = {}
+    if is_own_profile and sram_metrics and isinstance(comparison, dict):
+        try:
+            from services.sram_coaching import derive_sram_segment_metrics
+            sram_segment_metrics = derive_sram_segment_metrics(
+                sram_metrics,
+                analysis.get('streams') or {},
+                comparison.get('rows') or [],
+            )
+            sram_metrics['segment_metrics'] = sram_segment_metrics
+        except Exception:
+            current_app.logger.exception(
+                'ride_strava_analysis: SRAM segment alignment failed for '
+                'ride %s', ride_id)
+
     # Rider's own saved notes (rider_notes JSONB:
     #   {overall, segments{location}, stops{distance_key}}).
     # Fed to the coach (so notes change coaching) and to the template (to pre-fill
@@ -1486,8 +1518,10 @@ def ride_strava_analysis(rusa_id, ride_id):
                     same_route_baseline=same_route_baseline,
                     segment_notes=segment_notes, overall_note=overall_note,
                     stop_notes=coach_stop_notes,
-                    drivetrain_metrics=(
-                        (sram_metrics or {}).get('coaching')))
+                    drivetrain_metrics={
+                        'overall': (sram_metrics or {}).get('coaching'),
+                        'segments': sram_segment_metrics,
+                    } if sram_metrics else None)
                 if coaching:
                     from models import save_strava_ride_coaching
                     save_strava_ride_coaching(
@@ -1513,10 +1547,40 @@ def ride_strava_analysis(rusa_id, ride_id):
     # Best-effort: a missing/misaligned latlng stream yields None and the page
     # renders without a map.
     map_data = None
+    stats_elevation_profile = {'available': False}
+    stats_profile_markers = []
+    stats_route_points = []
+    stats_map_stops = []
     try:
         from services.strava_analysis import build_map_data
+        from services.route_explorer import (
+            route_points, track_from_strava_streams)
         map_data = build_map_data(
             analysis.get('streams'), comparison, analysis.get('detected_stops'))
+        stats_track = track_from_strava_streams(analysis.get('streams'))
+        stats_elevation_profile = build_elevation_profile(stats_track)
+        stats_route_points = (
+            route_points(stats_track)
+            or ((map_data or {}).get('track') or []))
+        stats_map_stops = [{
+            **stop,
+            'index': index,
+            'name': stop.get('location') or 'Detected stop',
+            'color': '#ea580c',
+        } for index, stop in enumerate((map_data or {}).get('stops') or [])]
+        stats_profile_stops = [{
+            'i': stop['index'],
+            'name': stop['name'],
+            'type': 'rest',
+            'cumul_mi': stop.get('distance_miles'),
+            'eta': '',
+            'break_min': stop.get('duration_min') or 0,
+        } for stop in stats_map_stops]
+        stats_profile_markers = overlay_stop_markers(
+            stats_elevation_profile,
+            stats_profile_stops,
+            {'rest': '#ea580c'},
+        )
     except Exception:
         current_app.logger.exception(
             'ride_strava_analysis: map build failed for ride %s', ride_id)
@@ -1555,11 +1619,17 @@ def ride_strava_analysis(rusa_id, ride_id):
                                and bool(comparison and comparison.get('rows'))
                                and not bool(persisted_coaching)),
                            map_data=map_data,
+                           stats_elevation_profile=stats_elevation_profile,
+                           stats_profile_markers=stats_profile_markers,
+                           stats_route_points=stats_route_points,
+                           stats_map_stops=stats_map_stops,
                            segment_notes=segment_notes,
                            stop_notes=stop_notes,
                            overall_note=overall_note,
                            garmin_metrics=garmin_metrics,
                            sram_metrics=sram_metrics,
+                           sram_status=sram_status,
+                           sram_segment_metrics=sram_segment_metrics,
                            garmin_laps=garmin_laps,
                            garmin_summary=None,
                            garmin_recovery=garmin_recovery,
@@ -2669,6 +2739,9 @@ def ride_plan_detail(slug):
     elevation_profile = build_elevation_profile(elevation_track or [])
     stop_markers = overlay_stop_markers(elevation_profile, v2_stops,
                                         _RPV2_STOP_MARKER_COLORS)
+    from services.route_explorer import explorer_stops, route_points
+    plan_route_points = route_points(elevation_track or [])
+    plan_map_stops = explorer_stops(stop_markers)
     # Pace payload for the inline "Choose your pace" live re-render: each pace card's
     # per-stop pace-varying fields, keyed by card id (comfort/standard/push, or the
     # rebaselined team/yours/… ids when viewing a custom plan).
@@ -2746,6 +2819,8 @@ def ride_plan_detail(slug):
                            pace_stops_map=pace_stops_map,
                            elevation_profile=elevation_profile,
                            stop_markers=stop_markers,
+                           plan_route_points=plan_route_points,
+                           plan_map_stops=plan_map_stops,
                            risks=risks,
                            total_time=total_time,
                            total_moving_time=total_moving_time,

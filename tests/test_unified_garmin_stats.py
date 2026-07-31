@@ -71,6 +71,10 @@ def test_sram_stats_are_private_and_provider_attributed():
     assert "Drivetrain observations" in template
     assert "not cassette tooth counts" in template
     assert "Source: SRAM AXS Web" in template
+    stats_template = (
+        Path(__file__).parents[1] / "templates" / "strava_ride_analysis.html"
+    ).read_text()
+    assert "partials/_sram_axs_status.html" in stats_template
 
 
 def test_sram_metrics_lookup_accepts_unified_provider_identity():

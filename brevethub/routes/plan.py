@@ -673,6 +673,19 @@ def _build_v2_context(event, plan, stops, variant, rider=None):
     elevation_profile = build_elevation_profile(elevation_track or [])
     stop_markers = overlay_stop_markers(elevation_profile, v2_stops,
                                         _RPV2_STOP_MARKER_COLORS)
+    plan_route_points = [
+        [point.get('lat'), point.get('lng')]
+        for point in (elevation_track or [])
+        if point.get('lat') is not None and point.get('lng') is not None
+    ]
+    plan_map_stops = [{
+        'index': marker.get('i'),
+        'name': marker.get('name'),
+        'distance_miles': marker.get('cumul_mi'),
+        'color': marker.get('color'),
+        'eta': marker.get('eta'),
+        'break_min': marker.get('break_min'),
+    } for marker in stop_markers]
     # Pace payload for the inline "Choose your pace" live re-render: each pace card's
     # per-stop pace-varying fields, keyed by card id (comfort/standard/push).
     pace_stops_map = {p['id']: p['stops'] for p in paces} if paces else {}
@@ -726,6 +739,8 @@ def _build_v2_context(event, plan, stops, variant, rider=None):
         'pace_stops_map': pace_stops_map,
         'elevation_profile': elevation_profile,
         'stop_markers': stop_markers,
+        'plan_route_points': plan_route_points,
+        'plan_map_stops': plan_map_stops,
         'save_state': save_state,
         'saved_pace_id': saved_pace_id,
         'saved_is_public': saved_is_public,
