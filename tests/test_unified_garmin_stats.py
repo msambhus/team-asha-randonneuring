@@ -99,6 +99,17 @@ def test_sram_metrics_lookup_accepts_unified_provider_identity():
     assert result["coaching"]["shifts_per_hour"] == 12.0
 
 
+def test_sram_detail_backfill_prioritizes_brevet_matches():
+    cursor = MagicMock()
+    cursor.fetchall.return_value = []
+    with patch("models._execute", return_value=cursor) as execute:
+        models.get_sram_axs_detail_backfill_candidates(42, limit=5)
+
+    sql, params = execute.call_args.args
+    assert "ORDER BY (m.ride_id IS NULL),a.started_at DESC" in sql
+    assert params == (42, 5)
+
+
 def test_stats_template_rounds_decimal_garmin_metrics():
     template = (
         Path(__file__).parents[1] / "templates" / "strava_ride_analysis.html"
