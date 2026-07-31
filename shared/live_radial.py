@@ -377,12 +377,27 @@ def _base_roster_row(row, ride_id, now, stale_after_minutes, dist_unit):
         'dist_display': None,
         'dist_unit': dist_unit,
         'route_position_mi': None,
+        'elapsed_min': None,
+        'moving_min': None,
+        'stopped_min': None,
+        'avg_elapsed_speed_mph': None,
+        'avg_moving_speed_mph': None,
+        'heart_rate': None,
+        'power': None,
+        'cadence': None,
+        'grade_pct': None,
+        'headwind_done_label': None,
         'ascent_done_ft': None,
+        'distance_left_mi': None,
         'ascent_left_ft': None,
+        'time_left_min': None,
+        'toughness': None,
+        'headwind_ahead_label': None,
         'plan_status': None,
         'banked_plan_min': None,
         'banked_cutoff_min': None,
         'next_control': None,
+        'finish': None,
         'eta_finish_iso': None,
         'eta_finish_label': None,
         'marker_color': MARKER_UNKNOWN_COLOR,
@@ -404,12 +419,27 @@ def _privacy_row(row, telemetry, ride_id, now, stale_after_minutes, dist_unit):
         'activity': nowb.get('activity'),
         'dist_mi': dist_mi,
         'route_position_mi': nowb.get('route_position_mi'),
+        'elapsed_min': nowb.get('elapsed_min'),
+        'moving_min': nowb.get('moving_min'),
+        'stopped_min': nowb.get('stopped_min'),
+        'avg_elapsed_speed_mph': nowb.get('avg_elapsed_speed_mph'),
+        'avg_moving_speed_mph': nowb.get('avg_moving_speed_mph'),
+        'heart_rate': nowb.get('heart_rate'),
+        'power': nowb.get('power'),
+        'cadence': nowb.get('cadence'),
+        'grade_pct': nowb.get('grade_pct'),
+        'headwind_done_label': nowb.get('headwind_done_label'),
         'ascent_done_ft': nowb.get('ascent_done_ft'),
+        'distance_left_mi': remaining.get('distance_mi'),
         'ascent_left_ft': remaining.get('ascent_left_ft'),
+        'time_left_min': remaining.get('time_left_min'),
+        'toughness': remaining.get('toughness'),
+        'headwind_ahead_label': remaining.get('headwind_ahead_label'),
         'plan_status': (telemetry.get('plan') or {}).get('status'),
         'banked_plan_min': telemetry.get('time_banked_plan_min'),
         'banked_cutoff_min': telemetry.get('time_banked_cutoff_min'),
         'next_control': _public_next_control(telemetry.get('next_control')),
+        'finish': _public_next_control(telemetry.get('finish')),
         'eta_finish_iso': (telemetry.get('finish') or {}).get('eta_iso'),
         'eta_finish_label': (telemetry.get('finish') or {}).get('eta_label'),
         'marker_color': _marker_color(telemetry),
@@ -424,7 +454,7 @@ def _privacy_row(row, telemetry, ride_id, now, stale_after_minutes, dist_unit):
 def build_radial_roster(rider_rows, ctx, now, history_by_rider, plan_stops_by_rider=None,
                         *, ride_id=None, anchor='first_fix', tz=None, min_history=1,
                         stateless_fallback=True, stale_after_minutes=10,
-                        dist_unit=None):
+                        dist_unit=None, telemetry_builder=None):
     """Progress-sorted, privacy-shaped roster for the public live view.
 
     ``rider_rows`` are the latest position rows (each carrying a REAL
@@ -450,9 +480,13 @@ def build_radial_roster(rider_rows, ctx, now, history_by_rider, plan_stops_by_ri
             if stops is None:
                 stops = ctx.get('plan_stops')
             start = _resolve_anchor(anchor, ctx, history)
-            telemetry = compose_rider_telemetry(
-                row, ctx, now, history, plan_stops=stops, start=start, tz=tz,
-                min_history=min_history, stateless_fallback=stateless_fallback)
+            if telemetry_builder is not None:
+                telemetry = telemetry_builder(row, ctx, now, history, stops)
+            else:
+                telemetry = compose_rider_telemetry(
+                    row, ctx, now, history, plan_stops=stops, start=start, tz=tz,
+                    min_history=min_history,
+                    stateless_fallback=stateless_fallback)
             out.append(_privacy_row(row, telemetry, ride_id, now,
                                     stale_after_minutes, dist_unit))
         except Exception:  # noqa: BLE001 — one bad rider degrades to a base row

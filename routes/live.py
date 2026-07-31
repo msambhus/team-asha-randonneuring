@@ -1210,7 +1210,9 @@ def ride_live_roster(ride_id):
     roster = radial.build_radial_roster(
         rows, ctx, now, history_by, plan_stops_by_rider=plan_stops_by_rider,
         ride_id=ride_id, anchor='ride_start', tz=CLUB_TZ,
-        min_history=1, stateless_fallback=True, stale_after_minutes=STALE_AFTER_MINUTES)
+        min_history=1, stateless_fallback=True,
+        stale_after_minutes=STALE_AFTER_MINUTES,
+        telemetry_builder=_rider_telemetry)
 
     return jsonify({
         'ride_id': ride_id,
@@ -1220,6 +1222,9 @@ def ride_live_roster(ride_id):
         'poll_seconds': RADIAL_POLL_SECONDS,
         'plans': plan_options,
         'selected_plan_id': applied_plan_id,
+        # Static, cache-backed route conditions. The client builds these charts
+        # once and only moves rider markers on subsequent position polls.
+        'chart_data': ctx.get('chart_data') if ctx else None,
     })
 
 
