@@ -98,6 +98,12 @@
   border-bottom: 1px solid var(--border, #e5e7eb); }
 .radial-row td { padding: 8px; border-bottom: 1px solid var(--border, #e5e7eb); }
 .radial-row.stale { opacity: 0.6; }
+.radial-row.open td { background: #f8fafc; border-bottom-color: transparent; }
+@supports (background: color-mix(in srgb, red 10%, white)) {
+  .radial-row.open td {
+    background: color-mix(in srgb, var(--rider-color, #1a365d) 8%, var(--card-bg, #fff));
+  }
+}
 .radial-rank { width: 2ch; color: var(--text-light, #6b7280); }
 .radial-name { font-weight: 600; }
 .radial-swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block;
@@ -118,9 +124,18 @@
   border-radius: 999px; cursor: pointer; font-size: 0.72rem; font-weight: 800;
   color: var(--primary, #1a365d); padding: 5px 9px; white-space: nowrap; }
 .radial-toggle:hover, .radial-toggle:focus-visible { color: #fff; background: var(--primary, #1a365d); }
-.radial-detailrow td { padding: 0 8px 10px; border-bottom: 1px solid var(--border, #e5e7eb); }
+.radial-detailrow td { padding: 0 8px 14px; border-bottom: 2px solid var(--border, #e5e7eb); }
 .radial-detail { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 6px 14px; }
+  gap: 6px 14px; margin: 0 8px; padding: 12px 14px; border: 1px solid var(--border, #e5e7eb);
+  border-left: 5px solid var(--rider-color, #1a365d); border-radius: 0 10px 10px 0;
+  background: var(--card-bg, #fff); box-shadow: 0 2px 8px rgba(15, 23, 42, 0.07); }
+.radial-detail-rider { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px;
+  padding-bottom: 8px; color: var(--text, #111); }
+.radial-detail-rider-dot { width: 12px; height: 12px; flex: 0 0 12px; border-radius: 50%;
+  background: var(--rider-color, #1a365d); box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--border, #e5e7eb); }
+.radial-detail-rider strong { display: block; font-size: 0.92rem; }
+.radial-detail-rider small { display: block; margin-top: 1px; font-size: 0.66rem;
+  color: var(--text-light, #6b7280); text-transform: uppercase; letter-spacing: 0.04em; }
 .radial-detail-group { grid-column: 1 / -1; display: grid;
   grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 7px 14px;
   padding: 9px 0; border-top: 1px solid var(--border, #e5e7eb); }
@@ -141,6 +156,7 @@
   .radial-exp { width: 3.2rem; }
   .radial-toggle { min-width: 0; padding: 5px 7px; }
   .radial-toggle-label { display: none; }
+  .radial-detail { margin: 0 2px; padding: 10px; }
 }
 </style>
 <div class="radial-live" data-roster-url="{{ roster_url }}" data-poll-ms="{{ (poll_seconds or 30) * 1000 }}">
@@ -526,6 +542,9 @@
     }
     var fin = row.finish || {};
     return '<div class="radial-detail">' +
+      '<div class="radial-detail-rider"><span class="radial-detail-rider-dot"></span>' +
+      '<span><strong>' + escapeHtml(row.display_name) +
+      '</strong><small>Live rider details</small></span></div>' +
       metricGroup('Now', [
         metric('Speed', row.speed_mph != null ? Number(row.speed_mph) + ' mph' : '—'),
         metric('Avg elapsed', row.avg_elapsed_speed_mph != null ? Number(row.avg_elapsed_speed_mph) + ' mph' : '—'),
@@ -591,7 +610,9 @@
     }
     roster.forEach(function (row, i) {
       var tr = document.createElement('tr');
-      tr.className = 'radial-row' + (row.stale ? ' stale' : '');
+      tr.className = 'radial-row' + (row.stale ? ' stale' : '') +
+        (expanded[row.key] ? ' open' : '');
+      tr.style.setProperty('--rider-color', row.marker_color || '#1a365d');
       tr.innerHTML =
         '<td class="radial-rank">' + (i + 1) + '</td>' +
         '<td class="radial-name"><span class="radial-swatch" style="background:' +
@@ -621,6 +642,7 @@
       if (expanded[row.key]) {
         var dr = document.createElement('tr');
         dr.className = 'radial-detailrow';
+        dr.style.setProperty('--rider-color', row.marker_color || '#1a365d');
         dr.innerHTML = '<td colspan="5">' + detailHtml(row) + '</td>';
         tbody.appendChild(dr);
       }

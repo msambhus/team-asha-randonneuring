@@ -391,6 +391,10 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'View details' in html
     assert 'Hide details' in html
     assert 'repeat(auto-fit, minmax(125px, 1fr))' in html
+    assert 'radial-row.open' in html
+    assert 'radial-detail-rider' in html
+    assert 'Live rider details' in html
+    assert "setProperty('--rider-color'" in html
 
 
 def test_map_page_draws_rwgps_route(client):
