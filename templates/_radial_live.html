@@ -56,6 +56,22 @@
 .radial-weather-arrow { font-size: 18px; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,0.55); }
 .radial-weather-temp { font-size: 10px; font-weight: 700; color: #1f2937; background: rgba(255,255,255,0.85);
   border-radius: 4px; padding: 0 3px; margin-top: 1px; }
+.radial-conditions { margin: 12px 0 0; padding: 12px 14px; border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px; background: var(--card-bg, #fff); }
+.radial-conditions-head { display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; flex-wrap: wrap; }
+.radial-conditions-title { font-weight: 700; color: var(--primary, #1a365d); }
+.radial-conditions-note { font-size: 0.72rem; color: var(--text-light, #6b7280); }
+.radial-condition-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.radial-condition-chip { padding: 6px 9px; border-radius: 8px; background: var(--bg, #f8fafc);
+  border: 1px solid var(--border, #e5e7eb); font-size: 0.8rem; }
+.radial-condition-chip strong { color: var(--text, #111); }
+.radial-weather-empty { margin-top: 7px; font-size: 0.8rem; color: var(--text-light, #6b7280); }
+.radial-weather-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px; margin-top: 10px; }
+.radial-weather-chart { min-width: 0; }
+.radial-weather-chart h4 { margin: 0 0 4px; font-size: 0.75rem; color: var(--text-light, #6b7280); }
+.radial-weather-chart canvas { width: 100% !important; height: 120px !important; }
 /* Hover-scrub: crosshair on the profile + a matching dot on the map */
 .radial-elev { cursor: crosshair; }
 .radial-elev-cursor { stroke: var(--text-light, #6b7280); stroke-width: 1; stroke-dasharray: 3 2; opacity: 0.85; }
@@ -94,11 +110,21 @@
 .radial-detailrow td { padding: 0 8px 10px; border-bottom: 1px solid var(--border, #e5e7eb); }
 .radial-detail { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 6px 14px; }
+.radial-detail-group { grid-column: 1 / -1; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(125px, 1fr)); gap: 7px 14px;
+  padding: 9px 0; border-top: 1px solid var(--border, #e5e7eb); }
+.radial-detail-group:first-child { border-top: 0; padding-top: 2px; }
+.radial-detail-label { grid-column: 1 / -1; font-size: 0.68rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary, #1a365d); }
 .radial-m { display: flex; flex-direction: column; }
 .radial-ml { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em;
   color: var(--text-light, #6b7280); }
 .radial-mv { font-weight: 700; font-size: 0.92rem; }
 .radial-empty td { padding: 16px 8px; color: var(--text-light, #6b7280); text-align: center; }
+@media (max-width: 680px) {
+  .radial-weather-charts { grid-template-columns: 1fr; }
+  .radial-detail-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 </style>
 <div class="radial-live" data-roster-url="{{ roster_url }}" data-poll-ms="{{ (poll_seconds or 30) * 1000 }}">
   {% if mapbox_token %}
@@ -109,6 +135,19 @@
     and elevation profile below still update.
   </div>
   {% endif %}
+
+  <section class="radial-conditions" id="radial-conditions" aria-live="polite">
+    <div class="radial-conditions-head">
+      <span class="radial-conditions-title">Route conditions</span>
+      <span class="radial-conditions-note">Forecast follows planned progress along the route</span>
+    </div>
+    <div class="radial-condition-chips" id="radial-condition-chips"></div>
+    <div class="radial-weather-empty" id="radial-weather-empty">Loading route weather…</div>
+    <div class="radial-weather-charts" id="radial-weather-charts" hidden>
+      <div class="radial-weather-chart"><h4>Headwind / tailwind by mile</h4><canvas id="radial-headwind-chart"></canvas></div>
+      <div class="radial-weather-chart"><h4>Temperature by mile</h4><canvas id="radial-temperature-chart"></canvas></div>
+    </div>
+  </section>
 
   {% if (elevation_profile and elevation_profile.available) or plan_snapshot %}
   <div class="radial-elev-row">
@@ -205,6 +244,8 @@
   var plansBuilt = false;
   var planWrap = document.getElementById('radial-plan-wrap');
   var planSelect = document.getElementById('radial-plan-select');
+  var weatherCharts = {};
+  var weatherSignature = '';
 
   // ---- Map (the ONE shared Mapbox GL implementation) ---------------------- //
   function initMap() {
@@ -426,9 +467,18 @@
     var a = Math.abs(v);
     return s + (a >= 60 ? Math.floor(a / 60) + 'h ' + (a % 60) + 'm' : a + 'm');
   }
+  function fmtDuration(v) {
+    if (v == null) { return '—'; }
+    var mins = Math.max(0, Math.round(Number(v)));
+    return (mins >= 60 ? Math.floor(mins / 60) + 'h ' : '') + (mins % 60) + 'm';
+  }
   function metric(label, value) {
     return '<div class="radial-m"><span class="radial-ml">' + label +
            '</span><span class="radial-mv">' + value + '</span></div>';
+  }
+  function metricGroup(label, cells) {
+    return '<section class="radial-detail-group"><div class="radial-detail-label">' +
+      label + '</div>' + cells.filter(Boolean).join('') + '</section>';
   }
   function detailHtml(row) {
     // Every value is embedded via innerHTML below, so ANY server-supplied string
@@ -444,14 +494,44 @@
         (nc.behind ? ' · behind'
                    : (nc.required_mph != null ? ' · need ' + Number(nc.required_mph) + ' mph' : ''));
     }
+    var fin = row.finish || {};
     return '<div class="radial-detail">' +
-      metric('Speed', row.speed_mph != null ? Number(row.speed_mph) + ' mph' : '—') +
-      metric('Banked vs plan', fmtMin(row.banked_plan_min)) +
-      metric('Banked vs cutoff', fmtMin(row.banked_cutoff_min)) +
-      metric('Next control', ncTxt) +
-      metric('Ascent done', row.ascent_done_ft != null ? Number(row.ascent_done_ft) + ' ft' : '—') +
-      metric('Ascent left', row.ascent_left_ft != null ? Number(row.ascent_left_ft) + ' ft' : '—') +
-      metric('Finish ETA', row.eta_finish_label ? escapeHtml(row.eta_finish_label) : '—') +
+      metricGroup('Now', [
+        metric('Speed', row.speed_mph != null ? Number(row.speed_mph) + ' mph' : '—'),
+        metric('Avg elapsed', row.avg_elapsed_speed_mph != null ? Number(row.avg_elapsed_speed_mph) + ' mph' : '—'),
+        metric('Avg moving', row.avg_moving_speed_mph != null ? Number(row.avg_moving_speed_mph) + ' mph' : '—'),
+        metric('Elapsed', fmtDuration(row.elapsed_min)),
+        metric('Moving', fmtDuration(row.moving_min)),
+        metric('Stopped', fmtDuration(row.stopped_min)),
+        metric('Gradient', row.grade_pct != null ? Number(row.grade_pct) + '%' : '—'),
+        metric('Wind here', row.headwind_done_label ? escapeHtml(row.headwind_done_label) : '—'),
+        row.heart_rate != null ? metric('Heart rate', Number(row.heart_rate) + ' bpm') : '',
+        row.power != null ? metric('Power', Number(row.power) + ' W') : '',
+        row.cadence != null ? metric('Cadence', Number(row.cadence) + ' rpm') : '',
+        metric('Updated', row.minutes_ago == null ? '—' :
+          (Number(row.minutes_ago) <= 0 ? 'just now' : fmtDuration(row.minutes_ago) + ' ago'))
+      ]) +
+      metricGroup('Remaining', [
+        metric('Distance', row.distance_left_mi != null ? Number(row.distance_left_mi) + ' mi' : '—'),
+        metric('Climb', row.ascent_left_ft != null ? Number(row.ascent_left_ft) + ' ft' : '—'),
+        metric('Time left', fmtDuration(row.time_left_min)),
+        metric('Toughness', row.toughness ? escapeHtml(row.toughness) : '—'),
+        metric('Wind ahead', row.headwind_ahead_label ? escapeHtml(row.headwind_ahead_label) : '—')
+      ]) +
+      metricGroup('Time banked', [
+        metric('Vs plan', fmtMin(row.banked_plan_min)),
+        metric('Vs cutoff', fmtMin(row.banked_cutoff_min))
+      ]) +
+      metricGroup('Next control', [
+        metric('Control', ncTxt),
+        metric('ETA', nc.eta_label ? escapeHtml(nc.eta_label) : '—'),
+        metric('Required speed', nc.required_mph != null ? Number(nc.required_mph) + ' mph' : '—')
+      ]) +
+      metricGroup('Finish', [
+        metric('ETA', row.eta_finish_label ? escapeHtml(row.eta_finish_label) : '—'),
+        metric('Distance to go', fin.dist_to_go_mi != null ? Number(fin.dist_to_go_mi) + ' mi' : '—'),
+        metric('Required speed', fin.required_mph != null ? Number(fin.required_mph) + ' mph' : '—')
+      ]) +
       '</div>';
   }
   function renderTable(roster) {
@@ -533,11 +613,97 @@
     if (data.selected_plan_id != null) { planSelect.value = String(data.selected_plan_id); }
   }
 
+  function finiteValues(values) {
+    return (values || []).map(Number).filter(function (v) { return Number.isFinite(v); });
+  }
+  function rangeText(values, suffix) {
+    var nums = finiteValues(values);
+    if (!nums.length) { return '—'; }
+    var lo = Math.round(Math.min.apply(null, nums));
+    var hi = Math.round(Math.max.apply(null, nums));
+    return (lo === hi ? String(lo) : lo + '–' + hi) + suffix;
+  }
+  function weatherChip(label, value) {
+    var el = document.createElement('span');
+    el.className = 'radial-condition-chip';
+    var strong = document.createElement('strong');
+    strong.textContent = value;
+    el.appendChild(strong);
+    el.appendChild(document.createTextNode(' ' + label));
+    return el;
+  }
+  function makeWeatherChart(canvasId, labels, datasets) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas || typeof Chart === 'undefined') { return null; }
+    return new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: { labels: labels, datasets: datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: { intersect: false, mode: 'index' },
+        plugins: { legend: { display: datasets.length > 1, labels: { boxWidth: 10, font: { size: 10 } } } },
+        scales: {
+          x: { ticks: { maxTicksLimit: 6, callback: function (v, i) {
+            return labels[i] == null ? '' : Math.round(labels[i]) + ' mi';
+          } } },
+          y: { ticks: { maxTicksLimit: 5, font: { size: 9 } } }
+        }
+      }
+    });
+  }
+  function lineSet(label, values, color, fill) {
+    return { label: label, data: values, borderColor: color,
+      backgroundColor: color + '22', borderWidth: 1.5, fill: Boolean(fill),
+      tension: 0.25, pointRadius: 0, pointHitRadius: 8 };
+  }
+  function renderConditions(data) {
+    var chips = document.getElementById('radial-condition-chips');
+    var empty = document.getElementById('radial-weather-empty');
+    var chartsWrap = document.getElementById('radial-weather-charts');
+    if (!chips || !empty || !chartsWrap) { return; }
+    var cd = data && data.chart_data;
+    if (!cd || !cd.labels || cd.labels.length < 2) {
+      chips.textContent = '';
+      chartsWrap.hidden = true;
+      empty.hidden = false;
+      empty.textContent = 'No current route forecast is cached yet. Weather and headwind will appear after the next forecast refresh.';
+      return;
+    }
+    var temps = finiteValues(cd.temperature_f);
+    var winds = finiteValues(cd.headwind_mph);
+    var heads = winds.filter(function (v) { return v > 0; });
+    var tails = winds.filter(function (v) { return v < 0; }).map(Math.abs);
+    chips.textContent = '';
+    chips.appendChild(weatherChip('temperature', rangeText(temps, '°F')));
+    chips.appendChild(weatherChip('peak headwind', heads.length ? Math.round(Math.max.apply(null, heads)) + ' mph' : 'none'));
+    chips.appendChild(weatherChip('peak tailwind', tails.length ? Math.round(Math.max.apply(null, tails)) + ' mph' : 'none'));
+    chips.appendChild(weatherChip('forecast points', String(cd.labels.length)));
+    empty.hidden = true;
+    chartsWrap.hidden = false;
+
+    var signature = JSON.stringify(cd);
+    if (signature === weatherSignature) { return; }
+    weatherSignature = signature;
+    Object.keys(weatherCharts).forEach(function (key) {
+      if (weatherCharts[key]) { weatherCharts[key].destroy(); }
+    });
+    var headPos = (cd.headwind_mph || []).map(function (v) { return Number(v) > 0 ? Number(v) : 0; });
+    var headNeg = (cd.headwind_mph || []).map(function (v) { return Number(v) < 0 ? Number(v) : 0; });
+    weatherCharts.headwind = makeWeatherChart('radial-headwind-chart', cd.labels, [
+      lineSet('Headwind', headPos, '#dc2626', true),
+      lineSet('Tailwind', headNeg, '#16a34a', true)
+    ]);
+    weatherCharts.temperature = makeWeatherChart(
+      'radial-temperature-chart', cd.labels,
+      [lineSet('Temperature', cd.temperature_f || [], '#ef4444', true)]);
+  }
+
   function poll() {
     fetch(ROSTER_URL + planQuery(), { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (data) {
         renderPlans(data);
+        renderConditions(data);
         var roster = (data && data.roster) || [];
         render(roster);
         if (statusEl) {

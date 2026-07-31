@@ -34,6 +34,12 @@ _FAKE_CTX = {
     'plan_total_mi': 1.1,
     'plan_cutoff_hours': 1.0,
     'wind_by_dist': None,
+    'chart_data': {
+        'labels': [0.0, 1.1],
+        'elevation_ft': [0, 200],
+        'headwind_mph': [4.0, -2.0],
+        'temperature_f': [58.0, 61.0],
+    },
     'ride_start_iso': datetime(2026, 6, 23, 7, 0, tzinfo=timezone.utc).isoformat(),
     'time_limit_min': 60,
 }
@@ -68,6 +74,7 @@ def test_guest_reads_public_live_roster_200(client):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data['ride_id'] == 5 and 'server_time' in data
+    assert data['chart_data']['headwind_mph'] == [4.0, -2.0]
     assert len(data['roster']) == 1
     # Privacy-reduced name: first name + last initial, never a full surname.
     assert data['roster'][0]['display_name'] == 'Asha R.'
@@ -86,6 +93,32 @@ def test_public_roster_is_pii_safe(client):
     row = resp.get_json()['roster'][0]
     assert 'key' in row and len(row['key']) == 12
     assert row['route_position_mi'] is not None   # on-route position computed
+    # Rich telemetry is restored without weakening the public privacy contract.
+    assert row['elapsed_min'] is not None
+    assert row['moving_min'] is not None
+    assert row['stopped_min'] is not None
+    assert row['grade_pct'] is not None
+    assert row['distance_left_mi'] is not None
+    assert row['time_left_min'] is not None
+    assert row['finish'] is not None
+
+
+def test_public_roster_restores_headwind_context(client):
+    ctx = dict(_FAKE_CTX)
+    ctx['wind_by_dist'] = [
+        {'dist_m': 0, 'headwind_kmh': 12, 'crosswind_kmh': 0},
+        {'dist_m': 1778, 'headwind_kmh': 8, 'crosswind_kmh': 3},
+    ]
+    with patch('routes.live.get_ride_by_id', return_value=_PUBLIC_LIVE_RIDE), \
+         patch('routes.live._ride_live_context', return_value=ctx), \
+         patch('routes.live.get_latest_positions_for_ride',
+               return_value=[_row()]), \
+         patch('routes.live.get_positions_for_rider_since',
+               return_value=_history()):
+        resp = client.get('/ride/5/live/roster.json')
+    row = resp.get_json()['roster'][0]
+    assert 'head' in row['headwind_done_label']
+    assert row['headwind_ahead_label'] is not None
 
 
 def test_private_ride_guest_404s(client):

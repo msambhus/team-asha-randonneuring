@@ -373,6 +373,11 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'Share from this phone' in html
     assert 'Share my location' in html       # beacon Start control on the map
     assert '/ride/5/live/garmin' in html     # form posts to the per-ride link endpoint
+    assert 'Route conditions' in html
+    assert 'Headwind / tailwind by mile' in html
+    assert "metricGroup('Now'" in html
+    assert "metric('Gradient'" in html
+    assert "metric('Wind ahead'" in html
 
 
 def test_map_page_draws_rwgps_route(client):
