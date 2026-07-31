@@ -360,8 +360,12 @@ def test_map_page_renders_for_profile_rider(client):
     with client.session_transaction() as s:
         s['user_id'] = 1
         s['rider_id'] = 1
+    plan = {'slug': 'test-plan', 'name': 'Test 200K Plan',
+            'distance_mi': 124.3, 'elevation_ft': 4500, 'controls': 4,
+            'cutoff_hours': 13.5, 'start_time': '06:00'}
     with patch('routes.live.get_ride_by_id', return_value=dict(_RIDE)), \
-         patch('routes.live.get_live_tracking', return_value=None):
+         patch('routes.live.get_live_tracking', return_value=None), \
+         patch('routes.live._build_plan_snapshot', return_value=plan):
         resp = client.get('/ride/5/live')
     assert resp.status_code == 200
     html = resp.data.decode()
@@ -380,6 +384,8 @@ def test_map_page_renders_for_profile_rider(client):
     assert "metric('Wind ahead'" in html
     assert html.index('id="radial-table"') < html.index(
         'id="radial-conditions"')
+    assert html.index('id="radial-table"') < html.index(
+        'class="radial-elev-row"')
     assert 'liveRiderMarkers' in html
     assert 'updateWeatherChartMarkers(roster)' in html
     assert 'updateWeatherScrub(mi)' in html
@@ -402,6 +408,10 @@ def test_map_page_renders_for_profile_rider(client):
     assert '\'</span><span class="radial-row-meta">Avg \'' in html
     assert "fmtMin(Number(cutoff)) + ' cutoff'" in html
     assert html.count("'radial-detail-group-three'") == 2
+    assert 'radial-plan-snapshot mobile-collapsed' in html
+    assert 'rps-mobile-toggle' in html
+    assert 'initMobilePlanToggle()' in html
+    assert "classList.toggle('mobile-collapsed')" in html
 
 
 def test_map_page_draws_rwgps_route(client):
