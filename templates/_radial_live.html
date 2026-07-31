@@ -141,6 +141,7 @@
 .radial-detail-group { grid-column: 1 / -1; display: grid;
   grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 7px 14px;
   padding: 9px 0; border-top: 1px solid var(--border, #e5e7eb); }
+.radial-detail-group-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .radial-detail-group:first-child { border-top: 0; padding-top: 2px; }
 .radial-detail-label { grid-column: 1 / -1; font-size: 0.68rem; font-weight: 800;
   text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary, #1a365d); }
@@ -235,7 +236,7 @@
 
   <table class="radial-table" id="radial-table">
     <thead>
-      <tr><th class="radial-rank">#</th><th>Rider</th><th>Progress</th><th>Avg speed</th><th>Banked</th><th class="radial-exp"></th></tr>
+      <tr><th class="radial-rank">#</th><th>Rider</th><th>Progress</th><th>Speed</th><th>Banked</th><th class="radial-exp"></th></tr>
     </thead>
     <tbody id="radial-tbody">
       <tr class="radial-empty"><td colspan="5">Waiting for riders to appear…</td></tr>
@@ -525,8 +526,9 @@
     return '<div class="radial-m"><span class="radial-ml">' + label +
            '</span><span class="radial-mv">' + value + '</span></div>';
   }
-  function metricGroup(label, cells) {
-    return '<section class="radial-detail-group"><div class="radial-detail-label">' +
+  function metricGroup(label, cells, layoutClass) {
+    return '<section class="radial-detail-group ' + (layoutClass || '') +
+      '"><div class="radial-detail-label">' +
       label + '</div>' + cells.filter(Boolean).join('') + '</section>';
   }
   function detailHtml(row) {
@@ -538,10 +540,7 @@
     var ncTxt = '—';
     if (nc.name) {
       ncTxt = escapeHtml(nc.name) +
-        (nc.eta_label ? ' · ' + escapeHtml(nc.eta_label) : '') +
-        (nc.dist_to_go_mi != null ? ' · ' + Number(nc.dist_to_go_mi) + ' mi to go' : '') +
-        (nc.behind ? ' · behind'
-                   : (nc.required_mph != null ? ' · need ' + Number(nc.required_mph) + ' mph' : ''));
+        (nc.dist_to_go_mi != null ? ' · ' + Number(nc.dist_to_go_mi) + ' mi to go' : '');
     }
     var fin = row.finish || {};
     return '<div class="radial-detail">' +
@@ -578,35 +577,29 @@
         metric('Control', ncTxt),
         metric('ETA', nc.eta_label ? escapeHtml(nc.eta_label) : '—'),
         metric('Required speed', nc.required_mph != null ? Number(nc.required_mph) + ' mph' : '—')
-      ]) +
+      ], 'radial-detail-group-three') +
       metricGroup('Finish', [
         metric('ETA', row.eta_finish_label ? escapeHtml(row.eta_finish_label) : '—'),
         metric('Distance to go', fin.dist_to_go_mi != null ? Number(fin.dist_to_go_mi) + ' mi' : '—'),
         metric('Required speed', fin.required_mph != null ? Number(fin.required_mph) + ' mph' : '—')
-      ]) +
+      ], 'radial-detail-group-three') +
       '</div>';
   }
-  function nextControlHtml(row) {
-    var nc = row.next_control || {};
-    if (!nc.name) { return '<span class="radial-row-meta">No next control</span>'; }
-    var text = 'Next: ' + escapeHtml(nc.name);
-    if (nc.dist_to_go_mi != null) {
-      text += ' · ' + Number(nc.dist_to_go_mi) + ' mi';
-    }
-    return '<span class="radial-row-meta" title="' + escapeHtml(text) + '">' +
-      text + '</span>';
+  function progressSummaryHtml(row) {
+    return '<span class="radial-row-value">' + fmtDist(row) + '</span>' +
+      '<span class="radial-row-meta">' +
+      (row.elapsed_min != null ? 'Elapsed ' + fmtDuration(row.elapsed_min) : 'Elapsed —') +
+      '</span>';
   }
-  function averageSpeedHtml(row) {
+  function speedSummaryHtml(row) {
     var average = row.avg_elapsed_speed_mph;
-    var qualifier = 'elapsed average';
     if (average == null) {
       average = row.avg_moving_speed_mph;
-      qualifier = 'moving average';
     }
     return '<span class="radial-row-value">' +
+      (row.speed_mph != null ? Number(row.speed_mph) + ' mph' : '—') +
+      '</span><span class="radial-row-meta">Avg ' +
       (average != null ? Number(average) + ' mph' : '—') +
-      '</span><span class="radial-row-meta">' +
-      (row.elapsed_min != null ? 'Elapsed ' + fmtDuration(row.elapsed_min) : qualifier) +
       '</span>';
   }
   function bankedSummaryHtml(row) {
@@ -650,9 +643,8 @@
           escapeHtml(row.display_name) +
           (row.stale ? ' <span class="radial-stale">stale</span>'
                      : (row.activity === 'paused' ? ' <span class="radial-paused">paused</span>' : '')) + '</td>' +
-        '<td><span class="radial-row-value">' + fmtDist(row) + '</span>' +
-          nextControlHtml(row) + '</td>' +
-        '<td>' + averageSpeedHtml(row) + '</td>' +
+        '<td>' + progressSummaryHtml(row) + '</td>' +
+        '<td>' + speedSummaryHtml(row) + '</td>' +
         '<td>' + bankedSummaryHtml(row) + '</td>' +
         '<td class="radial-exp"><button type="button" class="radial-toggle" aria-expanded="' +
           (expanded[row.key] ? 'true' : 'false') + '" aria-label="' +
