@@ -205,6 +205,65 @@ def _gear_samples(activity, streams, component, key):
     return samples
 
 
+def derive_sram_sample_coverage(activity, streams):
+    """Describe the portion of a ride covered by AXS position samples."""
+    if not activity or not streams:
+        return None
+    component = next((
+        row for row in (activity.get("components") or [])
+        if row.get("ant_component_id") == 2
+        or row.get("device_type") == 34
+    ), None)
+    if not component:
+        return None
+    elapsed = _elapsed_seconds(
+        component.get("timestamps"), activity.get("started_at"))
+    sample_count = min(
+        len(elapsed),
+        max(
+            len(component.get("rear_gears") or []),
+            len(component.get("front_gears") or []),
+        ),
+    )
+    if sample_count < 2:
+        return None
+    covered_seconds = elapsed[sample_count - 1]
+    stream_times = streams.get("time") or []
+    stream_distances = streams.get("distance") or []
+    duration_s = (
+        _number(activity.get("duration_s"))
+        or (_number(stream_times[-1]) if stream_times else None))
+    covered_distance_m = _distance_at_time(
+        covered_seconds, stream_times, stream_distances)
+    total_distance_m = (
+        _number(stream_distances[-1]) if stream_distances else None)
+    time_percentage = (
+        min(100.0, covered_seconds * 100.0 / duration_s)
+        if duration_s and duration_s > 0 else None)
+    distance_percentage = (
+        min(100.0, covered_distance_m * 100.0 / total_distance_m)
+        if covered_distance_m is not None
+        and total_distance_m and total_distance_m > 0 else None)
+    complete = bool(
+        (time_percentage is None or time_percentage >= 98)
+        and (distance_percentage is None or distance_percentage >= 98)
+    )
+    return {
+        "sample_count": sample_count,
+        "covered_seconds": round(covered_seconds),
+        "time_percentage": (
+            round(time_percentage, 1)
+            if time_percentage is not None else None),
+        "covered_distance_miles": (
+            round(covered_distance_m / 1609.344, 1)
+            if covered_distance_m is not None else None),
+        "distance_percentage": (
+            round(distance_percentage, 1)
+            if distance_percentage is not None else None),
+        "complete": complete,
+    }
+
+
 def _segment_gears(samples, start_mi, end_mi):
     positions = [
         position for distance, position in samples
@@ -275,10 +334,6 @@ def derive_sram_segment_metrics(activity, streams, comparison_rows):
                 f"{shifts} recorded position changes "
                 f"({shift_rate:.1f}/mi) suggest frequent gear searching; "
                 "shift earlier and settle into a sustainable cadence.")
-        if not advice and cadence is not None and 70 <= cadence <= 95:
-            advice.append(
-                f"Cadence averaged {cadence:g} rpm with no clear drivetrain "
-                "mismatch visible from the available positional data.")
         result[row.get("location") or str(end_mi)] = {
             "start_mi": round(previous_mi, 1),
             "end_mi": round(end_mi, 1),
@@ -288,6 +343,16 @@ def derive_sram_segment_metrics(activity, streams, comparison_rows):
             "shifts_per_mile": (
                 round(shift_rate, 1) if shift_rate is not None else None),
             "average_cadence": cadence,
+            "sample_count": max(
+                len([
+                    1 for distance, _ in rear_samples
+                    if previous_mi <= distance <= end_mi
+                ]),
+                len([
+                    1 for distance, _ in front_samples
+                    if previous_mi <= distance <= end_mi
+                ]),
+            ),
             "advice": advice,
         }
         previous_mi = end_mi

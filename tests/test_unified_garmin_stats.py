@@ -110,6 +110,20 @@ def test_sram_detail_backfill_prioritizes_brevet_matches():
     assert params == (42, 5)
 
 
+def test_sram_detail_update_invalidates_only_matching_coaching():
+    cursor = MagicMock()
+    with patch("models._execute", return_value=cursor) as execute, \
+            patch("models.get_db") as get_db:
+        models.upsert_sram_axs_activity_detail(
+            42, "axs-1", {}, [], "encrypted")
+
+    invalidation_sql, invalidation_params = execute.call_args_list[1].args
+    assert "SET llm_narrative=NULL" in invalidation_sql
+    assert "sam.rider_id=%s" in invalidation_sql
+    assert invalidation_params == (42, "axs-1")
+    get_db.return_value.commit.assert_called_once()
+
+
 def test_stats_template_rounds_decimal_garmin_metrics():
     template = (
         Path(__file__).parents[1] / "templates" / "strava_ride_analysis.html"

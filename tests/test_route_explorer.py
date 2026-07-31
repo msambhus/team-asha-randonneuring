@@ -6,6 +6,7 @@ from services.route_explorer import (
     track_from_strava_streams,
 )
 from services.sram_coaching import derive_sram_segment_metrics
+from services.sram_coaching import derive_sram_sample_coverage
 
 
 def test_strava_streams_build_shared_route_and_elevation_track():
@@ -89,7 +90,34 @@ def test_axs_position_samples_are_aligned_to_planned_segments():
     assert first["front"]["shift_count"] == 0
     assert "lower gear range" in first["advice"][0]
     assert result["Finish"]["rear"]["start_position"] == 3
-    assert "no clear drivetrain mismatch" in result["Finish"]["advice"][0]
+    assert result["Finish"]["advice"] == []
+    assert result["Finish"]["sample_count"] == 2
+
+
+def test_axs_coverage_discloses_provider_sample_cap():
+    result = derive_sram_sample_coverage(
+        {
+            "duration_s": 40000,
+            "components": [{
+                "ant_component_id": 2,
+                "timestamps": [0, 10000, 20000],
+                "rear_gears": [1, 2, 3],
+            }],
+        },
+        {
+            "time": [0, 10000, 20000, 40000],
+            "distance": [0, 40000, 90000, 200000],
+        },
+    )
+
+    assert result == {
+        "sample_count": 3,
+        "covered_seconds": 20000,
+        "time_percentage": 50.0,
+        "covered_distance_miles": 55.9,
+        "distance_percentage": 45.0,
+        "complete": False,
+    }
 
 
 def test_plan_and_stats_use_the_same_route_explorer_partial():
