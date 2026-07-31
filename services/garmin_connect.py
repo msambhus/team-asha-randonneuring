@@ -30,6 +30,7 @@ _TRAINING_STATUS = "/metrics-service/metrics/trainingstatus/aggregated"
 _ENDURANCE_SCORE = "/metrics-service/metrics/endurancescore"
 _ACTIVITIES = "/activitylist-service/activities/search/activities"
 _ACTIVITY = "/activity-service/activity"
+_FIT_DOWNLOAD = "/download-service/files/activity"
 
 
 def _date(value: str | date) -> str:
@@ -266,6 +267,15 @@ class GarminPerformanceClient:
         result = self.auth.connectapi(
             f"{_ACTIVITY}/{activity_id}/splits")
         return result if isinstance(result, dict) else {}
+
+    def activity_fit(self, activity_id: int) -> bytes:
+        """Download one owner-authorized original Garmin Activity FIT file."""
+        if not isinstance(activity_id, int) or activity_id < 1:
+            raise ValueError("invalid Garmin activity id")
+        result = self.auth.download(f"{_FIT_DOWNLOAD}/{activity_id}")
+        if not isinstance(result, bytes):
+            raise ValueError("Garmin activity download was not binary")
+        return result
 
     @staticmethod
     def normalize_splits(payload: dict[str, Any]) -> list[dict[str, Any]]:

@@ -42,6 +42,17 @@ def _enrich_one_matched_activity(rider_id, performance):
                 separators=(",", ":"), default=str))
             models.upsert_garmin_activity_detail(
                 rider_id, activity_id, normalized, laps, detail_ciphertext)
+        # Download one original FIT after lap detail exists. Decode only the
+        # normalized electronic-shifting events/aggregates and discard the
+        # binary immediately; repeated Sync requests advance the backlog.
+        from services.garmin_fit import decode_fit_gearing
+        for activity_id in models.get_garmin_fit_gear_sync_candidates(
+                rider_id, limit=1):
+            fit_data = performance.activity_fit(activity_id)
+            gearing = decode_fit_gearing(fit_data)
+            del fit_data
+            models.upsert_garmin_fit_gearing(
+                rider_id, activity_id, gearing["events"], gearing["summary"])
     except Exception:
         # A phased deploy or one unsupported activity must not undo the already
         # committed recovery snapshot and resumable history page.

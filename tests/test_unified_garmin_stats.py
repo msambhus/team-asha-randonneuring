@@ -124,6 +124,19 @@ def test_sram_detail_update_invalidates_only_matching_coaching():
     get_db.return_value.commit.assert_called_once()
 
 
+def test_garmin_fit_candidates_are_owned_matched_and_unexamined():
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [{"garmin_activity_id": 123}]
+    with patch("models._execute", return_value=cursor) as execute:
+        result = models.get_garmin_fit_gear_sync_candidates(42, limit=1)
+
+    sql, params = execute.call_args.args
+    assert "abm.rider_id=%s" in sql
+    assert "gad.gear_synced_at IS NULL" in sql
+    assert params == (42, 1)
+    assert result == [123]
+
+
 def test_stats_template_rounds_decimal_garmin_metrics():
     template = (
         Path(__file__).parents[1] / "templates" / "strava_ride_analysis.html"

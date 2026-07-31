@@ -491,6 +491,7 @@
     {% endif %}
 </div>
 
+{% include "_garmin_fit_gearing.html" %}
 {% include "_sram_axs_stats.html" %}
 {% include "partials/_sram_axs_status.html" %}
 
@@ -772,6 +773,7 @@
 </div>
 {% endif %}
 
+{% include "_garmin_fit_gearing.html" %}
 {% include "_sram_axs_stats.html" %}
 {% include "partials/_sram_axs_status.html" %}
 
@@ -998,13 +1000,24 @@
     <td style="text-align:right;font-size:0.66rem;color:#92400e;min-width:92px;">
         {% if gx %}
         {% if gx.rear %}
+        {% if gx.source == 'garmin_fit' %}
+        <div title="Actual rear cog tooth counts from Garmin FIT">
+            R {{ gx.rear.start_teeth }}T→{{ gx.rear.end_teeth }}T
+            <span style="color:#b45309;">· dom {{ gx.rear.dominant_teeth }}T</span>
+        </div>
+        {% else %}
         <div title="Rear positional index; not cassette tooth count">
             R {{ gx.rear.start_position }}→{{ gx.rear.end_position }}
             <span style="color:#b45309;">· dom {{ gx.rear.dominant_position }}</span>
         </div>
         {% endif %}
+        {% endif %}
         {% if gx.front %}
+        {% if gx.source == 'garmin_fit' %}
+        <div title="Actual front ring tooth counts from Garmin FIT">F {{ gx.front.start_teeth }}T→{{ gx.front.end_teeth }}T</div>
+        {% else %}
         <div title="Front positional index">F {{ gx.front.start_position }}→{{ gx.front.end_position }}</div>
+        {% endif %}
         {% endif %}
         <div style="color:#64748b;">{{ gx.total_shifts }} changes{% if gx.shifts_per_mile is not none %} · {{ gx.shifts_per_mile }}/mi{% endif %}</div>
         {% else %}&mdash;{% endif %}

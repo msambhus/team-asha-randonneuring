@@ -1172,6 +1172,7 @@ def ride_strava_analysis(rusa_id, ride_id):
     # it before the Strava early-return so Garmin-only brevet Stats can render
     # for the owning rider without exposing device metrics publicly.
     garmin_metrics = None
+    garmin_gearing = []
     sram_metrics = None
     sram_connection = None
     garmin_laps = []
@@ -1201,6 +1202,15 @@ def ride_strava_analysis(rusa_id, ride_id):
         except Exception:
             current_app.logger.exception(
                 'ride_strava_analysis: provider metrics failed for ride %s',
+                ride_id)
+        try:
+            from models import get_garmin_gearing_for_brevet
+            garmin_gearing = get_garmin_gearing_for_brevet(
+                rider['id'], ride_id)
+        except Exception:
+            # FIT gearing is an optional post-deploy/backfill supplement.
+            current_app.logger.exception(
+                'ride_strava_analysis: Garmin FIT gearing failed for ride %s',
                 ride_id)
         try:
             from models import (
@@ -1272,6 +1282,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                                is_own_profile=is_own_profile,
                                stop_wind=None,
                                garmin_metrics=garmin_metrics,
+                               garmin_gearing=garmin_gearing,
                                sram_metrics=sram_metrics,
                                sram_status=sram_status,
                                garmin_laps=garmin_laps,
@@ -1455,6 +1466,21 @@ def ride_strava_analysis(rusa_id, ride_id):
             current_app.logger.exception(
                 'ride_strava_analysis: SRAM segment alignment failed for '
                 'ride %s', ride_id)
+    # Original Garmin FIT shift events are not subject to AXS Web's 20,000
+    # sample ceiling. Prefer them for segment gearing when available.
+    if is_own_profile and garmin_gearing and isinstance(comparison, dict):
+        try:
+            from services.garmin_fit import (
+                derive_garmin_fit_segment_metrics,
+            )
+            garmin_fit_segments = derive_garmin_fit_segment_metrics(
+                garmin_gearing, comparison.get('rows') or [])
+            if garmin_fit_segments:
+                sram_segment_metrics = garmin_fit_segments
+        except Exception:
+            current_app.logger.exception(
+                'ride_strava_analysis: Garmin FIT gearing alignment failed '
+                'for ride %s', ride_id)
 
     # Rider's own saved notes (rider_notes JSONB:
     #   {overall, segments{location}, stops{distance_key}}).
@@ -1528,9 +1554,14 @@ def ride_strava_analysis(rusa_id, ride_id):
                     segment_notes=segment_notes, overall_note=overall_note,
                     stop_notes=coach_stop_notes,
                     drivetrain_metrics={
-                        'overall': (sram_metrics or {}).get('coaching'),
+                        'garmin_fit': [
+                            row.get('gear_summary')
+                            for row in garmin_gearing
+                            if row.get('gear_summary')
+                        ],
+                        'sram_axs': (sram_metrics or {}).get('coaching'),
                         'segments': sram_segment_metrics,
-                    } if sram_metrics else None)
+                    } if (sram_metrics or garmin_gearing) else None)
                 if coaching:
                     from models import save_strava_ride_coaching
                     save_strava_ride_coaching(
@@ -1636,6 +1667,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                            stop_notes=stop_notes,
                            overall_note=overall_note,
                            garmin_metrics=garmin_metrics,
+                           garmin_gearing=garmin_gearing,
                            sram_metrics=sram_metrics,
                            sram_status=sram_status,
                            sram_segment_metrics=sram_segment_metrics,
