@@ -1,0 +1,68 @@
+{% if is_own_profile and garmin_gearing %}
+{% macro clock(total) -%}
+{%- set seconds = total|int -%}
+{%- set hours = seconds // 3600 -%}
+{%- set minutes = (seconds % 3600) // 60 -%}
+{%- set remainder = seconds % 60 -%}
+{{ hours }}:{{ "%02d"|format(minutes) }}:{{ "%02d"|format(remainder) }}
+{%- endmacro %}
+{% for recording in garmin_gearing %}
+{% set gear = recording.gear_summary or {} %}
+{% if gear.has_gearing %}
+<div class="hr-power-card" style="border-color:#dc2626;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+        <div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--text);">Full-Ride Electronic Gearing</div>
+            <div style="font-size:.72rem;color:var(--text-light);margin-top:3px;">
+                {{ gear.gear_events|commafy }} timestamped shifts decoded from the original Garmin FIT file.
+            </div>
+        </div>
+        <span style="padding:4px 8px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:.68rem;font-weight:700;text-transform:uppercase;">Garmin FIT</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:22px;">
+        {% for title, rows in [('Front Rings', gear.front_usage), ('Rear Cogs', gear.rear_usage)] %}
+        {% if rows %}
+        <section>
+            <div style="font-size:.85rem;font-weight:800;color:var(--text);margin-bottom:8px;">Gear Usage · {{ title }}</div>
+            {% for item in rows %}
+            <div style="display:grid;grid-template-columns:42px 1fr 70px;gap:8px;align-items:center;margin:5px 0;">
+                <strong style="font-size:.72rem;">{{ item.teeth }}T</strong>
+                <div style="height:12px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
+                    <div style="height:100%;width:{{ item.bar_percentage }}%;background:#e51937;"></div>
+                </div>
+                <span style="font-size:.68rem;text-align:right;color:var(--text-light);">{{ clock(item.seconds) }}</span>
+            </div>
+            {% endfor %}
+        </section>
+        {% endif %}
+        {% endfor %}
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:22px;margin-top:22px;">
+        {% for title, rows in [('Front Rings', gear.front_usage), ('Rear Cogs', gear.rear_usage)] %}
+        {% set powered = rows|selectattr('average_power', 'ne', none)|list %}
+        {% if powered %}
+        <section>
+            <div style="font-size:.85rem;font-weight:800;color:var(--text);margin-bottom:8px;">Power in Gear · {{ title }}</div>
+            {% set max_power = powered|map(attribute='average_power')|max %}
+            {% for item in powered %}
+            <div style="display:grid;grid-template-columns:42px 1fr 54px;gap:8px;align-items:center;margin:5px 0;">
+                <strong style="font-size:.72rem;">{{ item.teeth }}T</strong>
+                <div style="height:12px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
+                    <div style="height:100%;width:{{ (item.average_power|float / max_power * 100) if max_power else 0 }}%;background:#d92f72;"></div>
+                </div>
+                <span style="font-size:.68rem;text-align:right;color:var(--text-light);">{{ item.average_power }} W</span>
+            </div>
+            {% endfor %}
+        </section>
+        {% endif %}
+        {% endfor %}
+    </div>
+    <div style="margin-top:14px;color:var(--text-light);font-size:.68rem;">
+        Source: original Garmin Activity FIT. Power is the arithmetic average of recorded power samples while each gear was active. The FIT binary is discarded after decoding.
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+{% endif %}

@@ -1,5 +1,6 @@
 """Credential-free contract tests for Team Asha's read-only Garmin client."""
 from datetime import date
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -281,6 +282,17 @@ def test_activity_splits_are_read_only_and_normalized_across_devices():
     assert laps[0]["normalized_power"] == 168
     assert laps[0]["average_cadence"] == 72
     assert laps[0]["average_temperature_c"] == 18
+
+
+def test_activity_fit_downloads_original_binary():
+    auth = FakeAuth()
+    auth.download = MagicMock(return_value=b"fit-bytes")
+
+    result = GarminPerformanceClient(auth).activity_fit(123)
+
+    assert result == b"fit-bytes"
+    auth.download.assert_called_once_with(
+        "/download-service/files/activity/123")
 
 
 def test_client_exposes_no_garmin_write_operations():
