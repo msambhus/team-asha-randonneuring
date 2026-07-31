@@ -380,7 +380,6 @@ def test_map_page_renders_for_profile_rider(client):
     assert "metric('Wind ahead'" in html
     assert html.index('id="radial-table"') < html.index(
         'id="radial-conditions"')
-    assert 'nextControlHtml(row)' in html
     assert 'liveRiderMarkers' in html
     assert 'updateWeatherChartMarkers(roster)' in html
     assert 'updateWeatherScrub(mi)' in html
@@ -394,11 +393,15 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'radial-detail-rider' in html
     assert 'Live rider details' in html
     assert "setProperty('--rider-color'" in html
-    assert '<th>Avg speed</th><th>Banked</th>' in html
-    assert 'averageSpeedHtml(row)' in html
+    assert '<th>Speed</th><th>Banked</th>' in html
+    assert 'progressSummaryHtml(row)' in html
+    assert 'speedSummaryHtml(row)' in html
     assert 'bankedSummaryHtml(row)' in html
     assert "'Elapsed ' + fmtDuration(row.elapsed_min)" in html
+    assert "(row.speed_mph != null ? Number(row.speed_mph) + ' mph'" in html
+    assert '\'</span><span class="radial-row-meta">Avg \'' in html
     assert "fmtMin(Number(cutoff)) + ' cutoff'" in html
+    assert html.count("'radial-detail-group-three'") == 2
 
 
 def test_map_page_draws_rwgps_route(client):
