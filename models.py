@@ -2320,6 +2320,19 @@ def upsert_sram_axs_activity_detail(
          psycopg2.extras.Json(gear_summary or {}),
          psycopg2.extras.Json(components or []), raw_ciphertext),
     )
+    # Coaching is derived from provider detail. Clear only analyses connected
+    # to this owned AXS activity so the next Stats request regenerates with the
+    # new segment-specific drivetrain evidence.
+    _execute(
+        "UPDATE strava_ride_analysis sra SET llm_narrative=NULL "
+        "FROM strava_ride_match srm "
+        "JOIN sram_axs_activity_match sam ON sam.rider_id=srm.rider_id "
+        "AND (sam.ride_id=srm.ride_id "
+        "OR sam.strava_activity_id=srm.strava_activity_id) "
+        "WHERE sra.match_id=srm.id AND sam.rider_id=%s "
+        "AND sam.sram_activity_id=%s",
+        (rider_id, sram_activity_id),
+    )
     get_db().commit()
 
 

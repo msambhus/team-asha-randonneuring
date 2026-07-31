@@ -1436,12 +1436,20 @@ def ride_strava_analysis(rusa_id, ride_id):
     sram_segment_metrics = {}
     if is_own_profile and sram_metrics and isinstance(comparison, dict):
         try:
-            from services.sram_coaching import derive_sram_segment_metrics
+            from services.sram_coaching import (
+                derive_sram_sample_coverage,
+                derive_sram_segment_metrics,
+            )
             sram_segment_metrics = derive_sram_segment_metrics(
                 sram_metrics,
                 analysis.get('streams') or {},
                 comparison.get('rows') or [],
             )
+            sram_metrics['sample_coverage'] = derive_sram_sample_coverage(
+                sram_metrics, analysis.get('streams') or {})
+            if sram_metrics.get('coaching'):
+                sram_metrics['coaching']['sample_coverage'] = (
+                    sram_metrics['sample_coverage'])
             sram_metrics['segment_metrics'] = sram_segment_metrics
         except Exception:
             current_app.logger.exception(

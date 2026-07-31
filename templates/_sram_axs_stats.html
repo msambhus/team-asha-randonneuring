@@ -31,6 +31,15 @@
         {% endif %}
         {% endfor %}
     </div>
+    {% if sram_metrics.sample_coverage and not sram_metrics.sample_coverage.complete %}
+    {% set coverage = sram_metrics.sample_coverage %}
+    <div style="margin-top:14px;padding:10px 12px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:.72rem;line-height:1.45;">
+        AXS supplied {{ coverage.sample_count|commafy }} position samples,
+        covering approximately
+        {% if coverage.covered_distance_miles is not none %}{{ coverage.covered_distance_miles }} miles ({{ coverage.distance_percentage }}% of this recording){% elif coverage.time_percentage is not none %}{{ coverage.time_percentage }}% of elapsed time{% endif %}.
+        Gear cells after that boundary are intentionally blank; ride-level shift totals still describe the complete AXS summary.
+    </div>
+    {% endif %}
     {% if coaching.rear_distribution %}
     <div style="margin-top:18px;">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:8px;">
