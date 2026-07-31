@@ -29,6 +29,28 @@ def test_sram_token_cipher_round_trip_and_rejects_invalid_key():
         SramTokenCipher("not-a-fernet-key")
 
 
+def test_component_summary_accepts_composite_garmin_connect_id():
+    session = MagicMock()
+    response = MagicMock(ok=True, status_code=200)
+    response.json.return_value = {"data": {}}
+    session.get.return_value = response
+    client = SramAxsClient(
+        token_data={"access_token": "token"}, session=session)
+
+    client.component_summary(
+        "garmin-connect-3429761693__1781446225__11302")
+
+    assert "componentsummaries/garmin-connect-" in (
+        session.get.call_args.args[0])
+
+
+def test_component_summary_rejects_path_separators():
+    client = SramAxsClient(token_data={"access_token": "token"})
+
+    with pytest.raises(ValueError):
+        client.component_summary("../private")
+
+
 def test_sram_login_uses_ticket_flow_and_keeps_password_out_of_tokens():
     session = MagicMock()
     ticket = MagicMock(ok=True, status_code=200)

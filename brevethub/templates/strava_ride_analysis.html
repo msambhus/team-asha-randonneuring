@@ -573,7 +573,8 @@
         profile=stats_elevation_profile,
         markers=stats_profile_markers,
         map_stops=stats_map_stops,
-        map_segments=(map_data.segments if map_data else [])
+        map_segments=(map_data.segments if map_data else []),
+        compact_map=True
     %}
     {% include 'partials/_route_explorer.html' %}
     {% endwith %}
@@ -1283,13 +1284,35 @@
     // --- Build tooltip that shows segment time + break for the nearest stop ---
     const stopLookup = {};
     rows.forEach(r => { stopLookup[r.distance_miles] = r; });
+    const routeExplorer = document.getElementById('stats-route-explorer');
+    annotations.syncCursor = {
+        type: 'line', xMin: 0, xMax: 0, display: false,
+        borderColor: '#1a365d', borderWidth: 1.5,
+    };
+    let rideChart = null;
+    function setChartCursor(mile) {
+        const cursor = annotations.syncCursor;
+        cursor.xMin = mile;
+        cursor.xMax = mile;
+        cursor.display = true;
+        if (rideChart) rideChart.update('none');
+    }
 
-    new Chart(ctx, {
+    rideChart = new Chart(ctx, {
         type: 'line',
         data: { datasets },
         options: {
             responsive: true,
             interaction: { mode: 'nearest', intersect: false },
+            onHover: (event, _elements, chart) => {
+                const mile = chart.scales.x.getValueForPixel(event.x);
+                if (!Number.isFinite(mile)) return;
+                setChartCursor(mile);
+                if (routeExplorer) {
+                    routeExplorer.dispatchEvent(new CustomEvent(
+                        'route-explorer-select-mile', { detail: { mile } }));
+                }
+            },
             scales: {
                 x: { type: 'linear', title: { display: true, text: 'Distance (mi)' },
                      ticks: { stepSize: 20 } },
@@ -1364,6 +1387,13 @@
             }
         }
     });
+    if (routeExplorer) {
+        routeExplorer.addEventListener('route-explorer-mile', event => {
+            if (event.detail && Number.isFinite(Number(event.detail.mile))) {
+                setChartCursor(Number(event.detail.mile));
+            }
+        });
+    }
 })();
 </script>
 

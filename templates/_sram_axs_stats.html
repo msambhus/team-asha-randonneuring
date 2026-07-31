@@ -67,6 +67,12 @@
         </ul>
     </div>
     {% endif %}
+    {% if not sram_metrics.segment_metrics %}
+    <div style="margin-top:14px;padding:10px 12px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:.72rem;line-height:1.45;">
+        Ride-level AXS shifting is available{% if coaching.rear_shift_count is not none %}: {{ coaching.rear_shift_count }} rear changes{% endif %}.
+        Timestamped gear-position samples have not been imported yet, so trustworthy per-segment gearing is not available for this ride. Sync SRAM AXS again to advance the matched-ride detail backfill.
+    </div>
+    {% endif %}
     {% if coaching.battery_status or coaching.battery_voltage %}
     <div style="margin-top:10px;color:var(--text-light);font-size:.68rem;">
         Drivetrain battery: {{ coaching.battery_status or 'status unavailable' }}{% if coaching.battery_voltage %} · {{ coaching.battery_voltage|round(2) }} V{% endif %}

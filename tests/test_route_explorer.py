@@ -97,12 +97,25 @@ def test_plan_and_stats_use_the_same_route_explorer_partial():
     partial = (root / "templates/partials/_route_explorer.html").read_text()
     plan = (root / "templates/ride_plan_detail_v2.html").read_text()
     stats = (root / "templates/strava_ride_analysis.html").read_text()
+    mobile_live = (root / "mobile/app/ride/[id].tsx").read_text()
+    mobile_plan = (root / "mobile/app/ride/plan.tsx").read_text()
 
     assert "Move across the map or elevation profile" in partial
     assert "route-explorer-stop" in partial
+    assert "route-explorer-select-mile" in partial
+    assert "route-explorer-mile" in partial
+    assert "height:clamp(220px,30vh,300px)" in partial
+    assert "var routeColor='#2563eb'" in partial
+    assert "color:routeColor" in partial
     assert "partials/_route_explorer.html" in plan
+    assert "compact_map=True" in plan
     assert "partials/_route_explorer.html" in stats
+    assert "compact_map=True" in stats
     assert "AXS drivetrain:" in stats
+    assert "annotations.syncCursor" in stats
+    assert "route-explorer-select-mile" in stats
+    assert 'strokeColor="#2563eb"' in mobile_live
+    assert "stroke={seg.color}" in mobile_plan
 
 
 def test_brevethub_plan_and_stats_use_the_shared_route_explorer():
@@ -115,5 +128,8 @@ def test_brevethub_plan_and_stats_use_the_shared_route_explorer():
     assert "v2.plan_route_points" in plan
     assert "route-explorer-stop" in plan
     assert "partials/_route_explorer.html" in plan
+    assert "compact_map=True" in plan
     assert "stats_elevation_profile" in stats
     assert "partials/_route_explorer.html" in stats
+    assert "compact_map=True" in stats
+    assert "annotations.syncCursor" in stats

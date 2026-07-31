@@ -2332,6 +2332,23 @@ def has_sram_axs_activity_detail(rider_id, sram_activity_id):
     ).fetchone() is not None
 
 
+def get_sram_axs_detail_backfill_candidates(rider_id, limit=5):
+    """Matched owned AXS activities still missing component telemetry."""
+    bounded_limit = max(1, min(int(limit or 5), 20))
+    return _execute(
+        "SELECT a.sram_activity_id,a.component_ids "
+        "FROM sram_axs_activity a "
+        "JOIN sram_axs_activity_match m ON m.rider_id=a.rider_id "
+        "AND m.sram_activity_id=a.sram_activity_id "
+        "LEFT JOIN sram_axs_activity_detail d ON d.rider_id=a.rider_id "
+        "AND d.sram_activity_id=a.sram_activity_id "
+        "WHERE a.rider_id=%s AND d.sram_activity_id IS NULL "
+        "AND m.match_status <> 'rejected' "
+        "ORDER BY a.started_at DESC LIMIT %s",
+        (rider_id, bounded_limit),
+    ).fetchall()
+
+
 def get_sram_axs_activities(rider_id, limit=100):
     limit = max(1, min(int(limit), 500))
     return [dict(row) for row in _execute(
