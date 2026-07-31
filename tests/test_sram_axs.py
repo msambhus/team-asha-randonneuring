@@ -4,6 +4,7 @@ import time
 from unittest.mock import MagicMock
 
 import pytest
+import requests
 from cryptography.fernet import Fernet
 
 from services.sram_axs import (
@@ -53,6 +54,10 @@ def test_component_summary_rejects_path_separators():
 
 def test_sram_login_uses_ticket_flow_and_keeps_password_out_of_tokens():
     session = MagicMock()
+    session.cookies = requests.cookies.RequestsCookieJar()
+    session.cookies.set(
+        "auth0", "browser-session",
+        domain=".sramid-auth.sram.com", path="/", secure=True)
     ticket = MagicMock(ok=True, status_code=200)
     ticket.json.return_value = {"login_ticket": "ticket-1"}
     callback = MagicMock(
@@ -71,6 +76,7 @@ def test_sram_login_uses_ticket_flow_and_keeps_password_out_of_tokens():
         tokens = client.login("rider@example.com", "never-store-me")
 
     assert tokens["access_token"] == "access"
+    assert tokens["session_cookies"][0]["name"] == "auth0"
     assert "never-store-me" not in client.dump_tokens()
     assert client.display_name() == "rider@example.com"
     assert session.post.call_args.kwargs["json"]["password"] == "never-store-me"
@@ -82,6 +88,51 @@ def test_expired_sram_session_requires_reconnect():
             "access_token": "old",
             "expires_at": int(time.time()) - 1,
         }))
+
+
+def test_expired_sram_session_with_cookies_can_silently_renew():
+    session = MagicMock()
+    session.cookies = requests.cookies.RequestsCookieJar()
+    callback = MagicMock(headers={"Location": (
+        "https://axs.sram.com/callback#access_token=fresh"
+        f"&id_token={_jwt({'email': 'rider@example.com'})}"
+        "&expires_in=3600&state=STATE"
+    )})
+    session.get.return_value = callback
+    client = SramAxsClient.from_token_json(json.dumps({
+        "access_token": "old",
+        "expires_at": int(time.time()) - 1,
+        "session_cookies": [{
+            "name": "auth0", "value": "encrypted-later",
+            "domain": ".sramid-auth.sram.com", "path": "/",
+            "secure": True, "expires": None,
+        }],
+    }), session=session)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr("services.sram_axs.secrets.token_urlsafe",
+                      lambda _size: "STATE")
+        assert client.renew_if_needed() is True
+
+    assert client.token_data["access_token"] == "fresh"
+    assert client.tokens_changed is True
+    assert client.token_data["session_cookies"][0]["name"] == "auth0"
+    assert session.get.call_args.kwargs["params"]["prompt"] == "none"
+
+
+def test_unexpired_sram_session_skips_silent_renewal():
+    session = MagicMock()
+    client = SramAxsClient.from_token_json(json.dumps({
+        "access_token": "live",
+        "expires_at": int(time.time()) + 1800,
+        "session_cookies": [{
+            "name": "auth0", "value": "session",
+            "domain": ".sramid-auth.sram.com", "path": "/",
+        }],
+    }), session=session)
+
+    assert client.renew_if_needed() is False
+    session.get.assert_not_called()
 
 
 def test_sram_normalizes_gearing_summary():

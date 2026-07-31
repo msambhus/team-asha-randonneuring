@@ -89,6 +89,92 @@ class SramAxsClient:
         self.token_data = dict(token_data or {})
         self.session = session or requests.Session()
         self.timeout = timeout
+        self.tokens_changed = False
+        self._restore_session_cookies()
+
+    def _restore_session_cookies(self):
+        """Restore only the Auth0 cookie fields kept in encrypted storage."""
+        for row in self.token_data.get("session_cookies") or []:
+            if not isinstance(row, dict) or not row.get("name"):
+                continue
+            self.session.cookies.set(
+                row["name"], row.get("value") or "",
+                domain=row.get("domain") or None,
+                path=row.get("path") or "/",
+                secure=bool(row.get("secure")),
+                expires=row.get("expires"),
+            )
+
+    def _session_cookies(self):
+        """Return a JSON-safe cookie jar for the encrypted token envelope."""
+        return [
+            {
+                "name": cookie.name,
+                "value": cookie.value,
+                "domain": cookie.domain,
+                "path": cookie.path,
+                "secure": bool(cookie.secure),
+                "expires": cookie.expires,
+            }
+            for cookie in self.session.cookies
+            if (
+                cookie.name
+                and cookie.value
+                and (cookie.domain or "").lower().endswith(
+                    "sramid-auth.sram.com")
+            )
+        ]
+
+    def _authorize(self, extra_params):
+        state = secrets.token_urlsafe(24)
+        nonce = secrets.token_urlsafe(24)
+        authorize_url = f"{AUTH0_DOMAIN}/authorize"
+        params = {
+            "client_id": AUTH0_CLIENT_ID,
+            "audience": AUTH0_AUDIENCE,
+            "response_type": "token id_token",
+            "redirect_uri": AXS_CALLBACK,
+            "scope": AXS_SCOPE,
+            "state": state,
+            "nonce": nonce,
+            **extra_params,
+        }
+        location = None
+        for _ in range(5):
+            try:
+                auth_response = self.session.get(
+                    authorize_url, params=params, allow_redirects=False,
+                    timeout=self.timeout)
+            except requests.RequestException as exc:
+                raise SramAxsConnectionError(
+                    "Could not complete SRAM sign-in") from exc
+            location = auth_response.headers.get("Location")
+            if not location:
+                break
+            location = urljoin(authorize_url, location)
+            if location.startswith(AXS_CALLBACK):
+                break
+            authorize_url, params = location, None
+        fragment = parse_qs(urlparse(location or "").fragment)
+        if fragment.get("state", [None])[0] != state:
+            raise SramAxsAuthenticationError(
+                "SRAM sign-in state could not be verified")
+        access_token = fragment.get("access_token", [None])[0]
+        id_token = fragment.get("id_token", [None])[0]
+        if not access_token:
+            error = fragment.get("error_description", [""])[0]
+            raise SramAxsAuthenticationError(
+                error or "SRAM did not return an access token")
+        expires_in = int(fragment.get("expires_in", [86400])[0])
+        self.token_data = {
+            "access_token": access_token,
+            "id_token": id_token,
+            "expires_at": int(time.time()) + expires_in,
+            "scope": fragment.get("scope", [AXS_SCOPE])[0],
+            "session_cookies": self._session_cookies(),
+        }
+        self.tokens_changed = True
+        return self.token_data
 
     def login(self, email, password):
         """Exchange request-local credentials for the AXS Web token envelope."""
@@ -126,53 +212,7 @@ class SramAxsClient:
             raise SramAxsAuthenticationError(
                 "SRAM requires an unsupported verification step")
 
-        state = secrets.token_urlsafe(24)
-        nonce = secrets.token_urlsafe(24)
-        authorize_url = f"{AUTH0_DOMAIN}/authorize"
-        params = {
-            "client_id": AUTH0_CLIENT_ID,
-            "audience": AUTH0_AUDIENCE,
-            "response_type": "token id_token",
-            "redirect_uri": AXS_CALLBACK,
-            "scope": AXS_SCOPE,
-            "state": state,
-            "nonce": nonce,
-            "login_ticket": login_ticket,
-        }
-        location = None
-        for _ in range(5):
-            try:
-                auth_response = self.session.get(
-                    authorize_url, params=params, allow_redirects=False,
-                    timeout=self.timeout)
-            except requests.RequestException as exc:
-                raise SramAxsConnectionError(
-                    "Could not complete SRAM sign-in") from exc
-            location = auth_response.headers.get("Location")
-            if not location:
-                break
-            location = urljoin(authorize_url, location)
-            if location.startswith(AXS_CALLBACK):
-                break
-            authorize_url, params = location, None
-        fragment = parse_qs(urlparse(location or "").fragment)
-        if fragment.get("state", [None])[0] != state:
-            raise SramAxsAuthenticationError(
-                "SRAM sign-in state could not be verified")
-        access_token = fragment.get("access_token", [None])[0]
-        id_token = fragment.get("id_token", [None])[0]
-        if not access_token:
-            error = fragment.get("error_description", [""])[0]
-            raise SramAxsAuthenticationError(
-                error or "SRAM did not return an access token")
-        expires_in = int(fragment.get("expires_in", [86400])[0])
-        self.token_data = {
-            "access_token": access_token,
-            "id_token": id_token,
-            "expires_at": int(time.time()) + expires_in,
-            "scope": fragment.get("scope", [AXS_SCOPE])[0],
-        }
-        return self.token_data
+        return self._authorize({"login_ticket": login_ticket})
 
     def dump_tokens(self):
         return json.dumps(self.token_data, separators=(",", ":"))
@@ -183,10 +223,24 @@ class SramAxsClient:
             token_data = json.loads(token_json)
         except (TypeError, json.JSONDecodeError) as exc:
             raise SramAxsAuthenticationError("Stored SRAM session is invalid") from exc
-        if int(token_data.get("expires_at") or 0) <= int(time.time()) + 30:
+        if (
+            int(token_data.get("expires_at") or 0) <= int(time.time()) + 30
+            and not token_data.get("session_cookies")
+        ):
             raise SramAxsAuthenticationError(
                 "SRAM session expired; reconnect SRAM AXS")
         return cls(token_data=token_data, **kwargs)
+
+    def renew_if_needed(self, leeway=300, force=False):
+        """Use the encrypted Auth0 browser session to obtain a fresh token."""
+        expires_at = int(self.token_data.get("expires_at") or 0)
+        if not force and expires_at > int(time.time()) + max(30, leeway):
+            return False
+        if not self.token_data.get("session_cookies"):
+            raise SramAxsAuthenticationError(
+                "SRAM session expired; reconnect SRAM AXS")
+        self._authorize({"prompt": "none"})
+        return True
 
     def display_name(self):
         claims = _jwt_claims(self.token_data.get("id_token") or "")

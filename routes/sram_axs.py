@@ -135,6 +135,7 @@ def sync():
     try:
         token_json = _cipher().decrypt(connection["token_ciphertext"])
         client = SramAxsClient.from_token_json(token_json)
+        client.renew_if_needed()
         rows = client.activities(page=1, page_size=50)
         imported = 0
         matched = 0
@@ -200,6 +201,10 @@ def sync():
                         "%s activity %s", rider_id,
                         pending["sram_activity_id"], exc_info=True)
         models.mark_sram_axs_sync(rider_id)
+        if client.tokens_changed:
+            models.upsert_sram_axs_connection(
+                rider_id, _cipher().encrypt(client.dump_tokens()),
+                connection.get("display_name"))
     except SramAxsAuthenticationError:
         models.mark_sram_axs_sync(
             rider_id, "SRAM session expired; reconnect SRAM AXS")
