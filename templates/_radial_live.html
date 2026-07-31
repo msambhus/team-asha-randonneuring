@@ -104,6 +104,12 @@
 .radial-paused { font-size: 0.66rem; font-weight: 700; color: #b45309; background: #fef3c7;
   border-radius: 4px; padding: 1px 5px; margin-left: 2px; text-transform: uppercase; letter-spacing: 0.03em; }
 .radial-dist { white-space: nowrap; }
+.radial-row-value { font-weight: 700; white-space: nowrap; }
+.radial-row-meta { display: block; max-width: 180px; margin-top: 2px; font-size: 0.68rem;
+  line-height: 1.2; color: var(--text-light, #6b7280); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.radial-row-meta.ahead { color: #166534; font-weight: 700; }
+.radial-row-meta.behind { color: #991b1b; font-weight: 700; }
 .radial-exp { width: 2.5ch; text-align: right; }
 .radial-toggle { background: none; border: none; cursor: pointer; font-size: 1rem;
   color: var(--text-light, #6b7280); padding: 0 4px; }
@@ -124,6 +130,9 @@
 @media (max-width: 680px) {
   .radial-weather-charts { grid-template-columns: 1fr; }
   .radial-detail-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .radial-table { font-size: 0.8rem; }
+  .radial-table thead th, .radial-row td { padding-left: 4px; padding-right: 4px; }
+  .radial-row-meta { max-width: 108px; }
 }
 </style>
 <div class="radial-live" data-roster-url="{{ roster_url }}" data-poll-ms="{{ (poll_seconds or 30) * 1000 }}">
@@ -135,19 +144,6 @@
     and elevation profile below still update.
   </div>
   {% endif %}
-
-  <section class="radial-conditions" id="radial-conditions" aria-live="polite">
-    <div class="radial-conditions-head">
-      <span class="radial-conditions-title">Route conditions</span>
-      <span class="radial-conditions-note">Forecast follows planned progress along the route</span>
-    </div>
-    <div class="radial-condition-chips" id="radial-condition-chips"></div>
-    <div class="radial-weather-empty" id="radial-weather-empty">Loading route weather…</div>
-    <div class="radial-weather-charts" id="radial-weather-charts" hidden>
-      <div class="radial-weather-chart"><h4>Headwind / tailwind by mile</h4><canvas id="radial-headwind-chart"></canvas></div>
-      <div class="radial-weather-chart"><h4>Temperature by mile</h4><canvas id="radial-temperature-chart"></canvas></div>
-    </div>
-  </section>
 
   {% if (elevation_profile and elevation_profile.available) or plan_snapshot %}
   <div class="radial-elev-row">
@@ -212,12 +208,25 @@
 
   <table class="radial-table" id="radial-table">
     <thead>
-      <tr><th class="radial-rank">#</th><th>Rider</th><th class="radial-dist">Distance</th><th class="radial-exp"></th></tr>
+      <tr><th class="radial-rank">#</th><th>Rider</th><th>Progress</th><th>Live</th><th class="radial-exp"></th></tr>
     </thead>
     <tbody id="radial-tbody">
-      <tr class="radial-empty"><td colspan="4">Waiting for riders to appear…</td></tr>
+      <tr class="radial-empty"><td colspan="5">Waiting for riders to appear…</td></tr>
     </tbody>
   </table>
+
+  <section class="radial-conditions" id="radial-conditions" aria-live="polite">
+    <div class="radial-conditions-head">
+      <span class="radial-conditions-title">Route conditions</span>
+      <span class="radial-conditions-note">Forecast follows planned progress along the route</span>
+    </div>
+    <div class="radial-condition-chips" id="radial-condition-chips"></div>
+    <div class="radial-weather-empty" id="radial-weather-empty">Loading route weather…</div>
+    <div class="radial-weather-charts" id="radial-weather-charts" hidden>
+      <div class="radial-weather-chart"><h4>Headwind / tailwind by mile</h4><canvas id="radial-headwind-chart"></canvas></div>
+      <div class="radial-weather-chart"><h4>Temperature by mile</h4><canvas id="radial-temperature-chart"></canvas></div>
+    </div>
+  </section>
 </div>
 
 <script>
@@ -534,12 +543,28 @@
       ]) +
       '</div>';
   }
+  function planBankHtml(row) {
+    if (row.banked_plan_min == null) { return 'Plan —'; }
+    var statusClass = Number(row.banked_plan_min) < -2 ? 'behind' : 'ahead';
+    return '<span class="radial-row-meta ' + statusClass + '">' +
+      fmtMin(Number(row.banked_plan_min)) + ' vs plan</span>';
+  }
+  function nextControlHtml(row) {
+    var nc = row.next_control || {};
+    if (!nc.name) { return '<span class="radial-row-meta">No next control</span>'; }
+    var text = 'Next: ' + escapeHtml(nc.name);
+    if (nc.dist_to_go_mi != null) {
+      text += ' · ' + Number(nc.dist_to_go_mi) + ' mi';
+    }
+    return '<span class="radial-row-meta" title="' + escapeHtml(text) + '">' +
+      text + '</span>';
+  }
   function renderTable(roster) {
     tbody.innerHTML = '';
     if (!roster.length) {
       var er = document.createElement('tr');
       er.className = 'radial-empty';
-      er.innerHTML = '<td colspan="4">No riders are sharing their location yet.</td>';
+      er.innerHTML = '<td colspan="5">No riders are sharing their location yet.</td>';
       tbody.appendChild(er);
       return;
     }
@@ -553,7 +578,11 @@
           escapeHtml(row.display_name) +
           (row.stale ? ' <span class="radial-stale">stale</span>'
                      : (row.activity === 'paused' ? ' <span class="radial-paused">paused</span>' : '')) + '</td>' +
-        '<td class="radial-dist">' + fmtDist(row) + '</td>' +
+        '<td><span class="radial-row-value">' + fmtDist(row) + '</span>' +
+          planBankHtml(row) + '</td>' +
+        '<td><span class="radial-row-value">' +
+          (row.speed_mph != null ? Number(row.speed_mph) + ' mph' : '—') +
+          '</span>' + nextControlHtml(row) + '</td>' +
         '<td class="radial-exp"><button type="button" class="radial-toggle" aria-expanded="' +
           (expanded[row.key] ? 'true' : 'false') + '">' + (expanded[row.key] ? '▾' : '▸') + '</button></td>';
       // The whole row is clickable (not just the ▸) so tapping a rider opens their
@@ -567,7 +596,7 @@
       if (expanded[row.key]) {
         var dr = document.createElement('tr');
         dr.className = 'radial-detailrow';
-        dr.innerHTML = '<td colspan="4">' + detailHtml(row) + '</td>';
+        dr.innerHTML = '<td colspan="5">' + detailHtml(row) + '</td>';
         tbody.appendChild(dr);
       }
     });
@@ -584,6 +613,7 @@
     renderTable(roster);
     updateMarkers(roster);
     updateProfileDots(roster);
+    updateWeatherChartMarkers(roster);
   }
 
   function planQuery() {
@@ -632,6 +662,52 @@
     el.appendChild(document.createTextNode(' ' + label));
     return el;
   }
+  function nearestWeatherIndex(labels, mile) {
+    if (mile == null || !labels || !labels.length) { return -1; }
+    var best = 0, delta = Infinity;
+    labels.forEach(function (label, index) {
+      var candidate = Math.abs(Number(label) - Number(mile));
+      if (candidate < delta) { best = index; delta = candidate; }
+    });
+    return best;
+  }
+  var weatherRiderMarkerPlugin = {
+    id: 'liveRiderMarkers',
+    afterDatasetsDraw: function (chart) {
+      var riderMarkers = chart.$riderMarkers || [];
+      var xAxis = chart.scales.x;
+      var area = chart.chartArea;
+      if (!xAxis || !area || !riderMarkers.length) { return; }
+      riderMarkers.forEach(function (marker, index) {
+        if (marker.index == null || marker.index < 0) { return; }
+        var x = xAxis.getPixelForValue(marker.index);
+        var color = marker.color || '#1a365d';
+        var y = area.top + 8 + (index % 3) * 14;
+        var ctx = chart.ctx;
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x, area.top);
+        ctx.lineTo(x, area.bottom);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = marker.stale ? 0.3 : 0.55;
+        ctx.stroke();
+        ctx.globalAlpha = marker.stale ? 0.55 : 1;
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.font = '700 9px sans-serif';
+        ctx.fillStyle = color;
+        ctx.textBaseline = 'middle';
+        ctx.fillText(marker.initials || '?', x + 8, y);
+        ctx.restore();
+      });
+    }
+  };
   function makeWeatherChart(canvasId, labels, datasets) {
     var canvas = document.getElementById(canvasId);
     if (!canvas || typeof Chart === 'undefined') { return null; }
@@ -648,7 +724,26 @@
           } } },
           y: { ticks: { maxTicksLimit: 5, font: { size: 9 } } }
         }
-      }
+      },
+      plugins: [weatherRiderMarkerPlugin]
+    });
+  }
+  function updateWeatherChartMarkers(roster) {
+    Object.keys(weatherCharts).forEach(function (key) {
+      var chart = weatherCharts[key];
+      if (!chart) { return; }
+      var labels = chart.data.labels || [];
+      chart.$riderMarkers = (roster || [])
+        .filter(function (row) { return row.route_position_mi != null; })
+        .map(function (row) {
+          return {
+            index: nearestWeatherIndex(labels, row.route_position_mi),
+            initials: row.initials,
+            color: row.marker_color,
+            stale: row.stale
+          };
+        });
+      chart.update('none');
     });
   }
   function lineSet(label, values, color, fill) {

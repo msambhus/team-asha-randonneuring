@@ -65,7 +65,9 @@ def _ride_start_utc(ride):
     start_time is Bay-Area wall-clock ("06:00" = 6 AM Pacific), so it is built in
     CLUB_TZ then converted to UTC — treating "06:00" as UTC would be ~7-8h off."""
     try:
-        start_t = ride.get('plan_start_time') or ride.get('start_time') or '06:00'
+        # The scheduled event may override the reusable plan's default clock
+        # time. Live elapsed/stopped time must follow the actual ride.
+        start_t = ride.get('start_time') or ride.get('plan_start_time') or '06:00'
         hh, mm = (int(x) for x in str(start_t).split(':')[:2])
         d = ride['date']
         if isinstance(d, str):
@@ -223,7 +225,7 @@ def _build_weather_points(ride):
         if not route_id or not rd:
             return []
         weather_data, sample_points = load_stored_route_weather(route_id, rd)
-        start_t = ride.get('plan_start_time') or ride.get('start_time') or '06:00'
+        start_t = ride.get('start_time') or ride.get('plan_start_time') or '06:00'
         return build_live_weather_markers(weather_data, sample_points, rd, str(start_t))
     except Exception:  # noqa: BLE001 — the weather overlay is best-effort
         current_app.logger.warning('live: weather_points build failed', exc_info=True)
@@ -530,7 +532,7 @@ def _ride_start_local(ride):
             d = date.fromisoformat(d)
         if d is None:
             return None
-        start_t = ride.get('plan_start_time') or ride.get('start_time') or '06:00'
+        start_t = ride.get('start_time') or ride.get('plan_start_time') or '06:00'
         hh, mm = (int(x) for x in str(start_t).split(':')[:2])
         return datetime(d.year, d.month, d.day, hh, mm)
     except Exception:

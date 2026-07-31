@@ -378,6 +378,12 @@ def test_map_page_renders_for_profile_rider(client):
     assert "metricGroup('Now'" in html
     assert "metric('Gradient'" in html
     assert "metric('Wind ahead'" in html
+    assert html.index('id="radial-table"') < html.index(
+        'id="radial-conditions"')
+    assert 'planBankHtml(row)' in html
+    assert 'nextControlHtml(row)' in html
+    assert 'liveRiderMarkers' in html
+    assert 'updateWeatherChartMarkers(roster)' in html
 
 
 def test_map_page_draws_rwgps_route(client):
