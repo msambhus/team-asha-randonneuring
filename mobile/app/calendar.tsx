@@ -1,12 +1,20 @@
 /**
  * mobile/app/calendar.tsx — the club's upcoming brevet calendar (read-only).
  */
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useCalendar } from '../hooks/useCalendar';
+import { useRideSignup } from '../hooks/useRideSignup';
 import type { BrevetSummary } from '../lib/types';
 
 export default function CalendarScreen() {
   const { data: rides, isLoading, isError, refetch, isRefetching } = useCalendar();
+  const signup = useRideSignup();
+
+  function updateRide(rideId: number, going: boolean) {
+    signup.mutate({ rideId, going }, {
+      onError: () => Alert.alert('Could not update ride', 'Please try again.'),
+    });
+  }
 
   if (isLoading) return <View style={styles.center}><ActivityIndicator /></View>;
   if (isError) {
@@ -39,6 +47,30 @@ export default function CalendarScreen() {
           ) : null}
           {item.start_location ? <Text style={styles.meta}>Start: {item.start_location}</Text> : null}
           {item.signup_count ? <Text style={styles.count}>{item.signup_count} signed up</Text> : null}
+          <View style={styles.actions}>
+            <Pressable
+              style={[styles.action, item.signup_status === 'GOING' && styles.goingAction]}
+              disabled={signup.isPending}
+              onPress={() => updateRide(item.id, true)}
+              accessibilityRole="button"
+              accessibilityLabel={`Mark ${item.name} as going`}
+            >
+              <Text style={[styles.actionText, item.signup_status === 'GOING' && styles.goingText]}>
+                {item.signup_status === 'GOING' ? '✓ Going' : 'Going'}
+              </Text>
+            </Pressable>
+            {item.signup_status === 'GOING' ? (
+              <Pressable
+                style={styles.notGoing}
+                disabled={signup.isPending}
+                onPress={() => updateRide(item.id, false)}
+                accessibilityRole="button"
+                accessibilityLabel={`Mark ${item.name} as not going`}
+              >
+                <Text style={styles.notGoingText}>Not going</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
       )}
     />
@@ -53,6 +85,13 @@ const styles = StyleSheet.create({
   meta: { color: '#6b7280', fontSize: 13, marginTop: 2 },
   count: { color: '#16a34a', fontSize: 12, marginTop: 4, fontWeight: '600' },
   teamClub: { color: '#1a365d', fontWeight: '700' },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
+  action: { borderWidth: 1, borderColor: '#1a365d', borderRadius: 9, paddingHorizontal: 15, paddingVertical: 9 },
+  goingAction: { backgroundColor: '#dcfce7', borderColor: '#16a34a' },
+  actionText: { color: '#1a365d', fontWeight: '700' },
+  goingText: { color: '#166534' },
+  notGoing: { paddingHorizontal: 8, paddingVertical: 9 },
+  notGoingText: { color: '#6b7280', fontWeight: '600' },
   muted: { color: '#6b7280' },
   link: { color: '#2563eb', fontWeight: '600' },
 });

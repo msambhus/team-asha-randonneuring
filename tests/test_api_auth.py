@@ -524,18 +524,66 @@ def test_calendar_endpoint_token_authed(client, app):
          'start_location': None, 'club_name': 'San Francisco Randonneurs',
          'signup_count': 0, 'is_team_ride': False},
     ]
-    with patch('models.get_all_upcoming_events', return_value=events):
+    with patch('models.get_all_upcoming_events', return_value=events), \
+         patch('models.get_rider_signup_statuses_batch', return_value={
+             5: {'status': 'GOING'},
+         }):
         resp = client.get('/api/calendar', headers=_bearer(app, rider_id=7))
     assert resp.status_code == 200
     data = resp.get_json()['rides']
     assert [r['id'] for r in data] == [5, 9]
     # Team Asha ride keeps its flag; external SFR brevet is included (the bug fix).
     assert data[0]['name'] == 'Mt Hamilton 200K' and data[0]['is_team_ride'] is True
+    assert data[0]['signup_status'] == 'GOING'
+    assert data[1]['signup_status'] is None
     assert data[1]['club_name'] == 'San Francisco Randonneurs' and data[1]['is_team_ride'] is False
 
 
 def test_calendar_endpoint_requires_auth(client):
     assert client.get('/api/calendar').status_code == 401
+
+
+def test_mobile_calendar_status_uses_token_rider(client, app):
+    with patch('models.get_ride_by_id', return_value={'id': 5}), \
+         patch('models.signup_rider', return_value=True) as signup:
+        resp = client.post('/api/calendar/5/status', json={'status': 'GOING'},
+                           headers=_bearer(app, user_id=3, rider_id=7))
+    assert resp.status_code == 200
+    assert resp.get_json()['status'] == 'GOING'
+    signup.assert_called_once_with(7, 5)
+
+
+def test_mobile_calendar_not_going_removes_own_signup(client, app):
+    with patch('models.get_ride_by_id', return_value={'id': 5}), \
+         patch('models.remove_signup', return_value=True) as remove:
+        resp = client.post('/api/calendar/5/status', json={'status': 'NONE'},
+                           headers=_bearer(app, user_id=3, rider_id=7))
+    assert resp.status_code == 200
+    assert resp.get_json()['status'] is None
+    remove.assert_called_once_with(7, 5)
+
+
+def test_mobile_calendar_status_requires_profile(client, app):
+    resp = client.post('/api/calendar/5/status', json={'status': 'GOING'},
+                       headers=_bearer(app, rider_id=None))
+    assert resp.status_code == 403
+
+
+def test_mobile_profile_reuses_career_models(client, app):
+    rider = {'id': 7, 'rusa_id': 14680, 'first_name': 'Mihir',
+             'last_name': 'Sambhus'}
+    with patch('models.get_rider_by_id', return_value=rider), \
+         patch('models.get_rider_career_stats', return_value={
+             'total_rides': 42, 'total_kms': 12345.6,
+         }), \
+         patch('models.get_rider_total_srs', return_value=3):
+        resp = client.get('/api/me/profile', headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['rider']['rusa_id'] == 14680
+    assert data['career'] == {
+        'rides': 42, 'distance_km': 12346, 'super_randonneur': 3,
+    }
 
 
 def test_ride_route_endpoint_token_authed(client, app):

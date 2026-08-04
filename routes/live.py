@@ -1266,8 +1266,11 @@ def api_calendar():
     """
     if not g.rider_id:
         return jsonify({'error': 'Complete your profile to view the calendar'}), 403
-    from models import get_all_upcoming_events
+    from models import (get_all_upcoming_events,
+                        get_rider_signup_statuses_batch)
     rides = get_all_upcoming_events()
+    ride_ids = [r['id'] for r in rides if r.get('id')]
+    statuses = get_rider_signup_statuses_batch(g.rider_id, ride_ids)
     out = [{
         'id': r['id'],
         'name': (r.get('route_name') or r.get('name') or '').strip(),
@@ -1278,8 +1281,71 @@ def api_calendar():
         'club_name': r.get('club_name'),
         'signup_count': r.get('signup_count'),
         'is_team_ride': bool(r.get('is_team_ride')),
+        'signup_status': (statuses.get(r['id']) or {}).get('status'),
     } for r in rides]
     return jsonify({'rides': out})
+
+
+@live_bp.route('/api/calendar/<int:ride_id>/status', methods=['POST'])
+@token_or_session_required
+def api_calendar_status(ride_id):
+    """Set the signed-in rider's mobile calendar intent.
+
+    The native app deliberately exposes the two clear choices requested by the
+    product: GOING and not going.  Identity always comes from the bearer token
+    or web session; a client cannot change another rider's signup.
+    """
+    if not g.rider_id:
+        return jsonify({'error': 'Complete your profile to update rides'}), 403
+
+    from models import get_ride_by_id, signup_rider, remove_signup
+
+    if not get_ride_by_id(ride_id):
+        return jsonify({'error': 'Ride not found'}), 404
+
+    body = request.get_json(silent=True) or {}
+    status = str(body.get('status') or '').upper()
+    if status == RideStatus.GOING.value:
+        success = signup_rider(g.rider_id, ride_id)
+        result_status = RideStatus.GOING.value
+    elif status in {'NONE', 'NOT_GOING'}:
+        success = remove_signup(g.rider_id, ride_id)
+        result_status = None
+    else:
+        return jsonify({'error': 'status must be GOING or NONE'}), 400
+
+    if not success:
+        return jsonify({'error': 'Could not update ride status'}), 400
+    cache.clear()
+    return jsonify({'success': True, 'status': result_status})
+
+
+@live_bp.route('/api/me/profile')
+@token_or_session_required
+def api_mobile_profile():
+    """Small native profile contract backed by the same web profile models."""
+    if not g.rider_id:
+        return jsonify({'error': 'Complete your profile to view it'}), 403
+
+    from models import (get_rider_by_id, get_rider_career_stats,
+                        get_rider_total_srs)
+    rider = get_rider_by_id(g.rider_id)
+    if not rider:
+        return jsonify({'error': 'Rider not found'}), 404
+    career = get_rider_career_stats(g.rider_id)
+    return jsonify({
+        'rider': {
+            'id': rider['id'],
+            'rusa_id': rider.get('rusa_id'),
+            'first_name': rider.get('first_name'),
+            'last_name': rider.get('last_name'),
+        },
+        'career': {
+            'rides': career.get('total_rides') or 0,
+            'distance_km': round(career.get('total_kms') or 0),
+            'super_randonneur': get_rider_total_srs(g.rider_id) or 0,
+        },
+    })
 
 
 @cache.memoize(CACHE_TIMEOUT)

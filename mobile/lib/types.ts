@@ -31,10 +31,25 @@ export interface BrevetSummary {
   club_name: string | null;
   signup_count: number | null;
   is_team_ride?: boolean;
+  signup_status: string | null;
 }
 
 export interface CalendarResponse {
   rides: BrevetSummary[];
+}
+
+export interface RiderProfileResponse {
+  rider: {
+    id: number;
+    rusa_id: number | null;
+    first_name: string | null;
+    last_name: string | null;
+  };
+  career: {
+    rides: number;
+    distance_km: number;
+    super_randonneur: number;
+  };
 }
 
 export interface EddingtonBadge {
