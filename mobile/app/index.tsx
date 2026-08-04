@@ -48,6 +48,9 @@ export default function RidesScreen() {
         <Link href="/season" asChild>
           <Pressable style={styles.calLink}><Text style={styles.link}>🏅 My Season</Text></Pressable>
         </Link>
+        <Link href="/profile" asChild>
+          <Pressable style={styles.calLink}><Text style={styles.link}>👤 Profile</Text></Pressable>
+        </Link>
       </View>
       <FlatList
         data={rides ?? []}
@@ -97,6 +100,6 @@ const styles = StyleSheet.create({
   muted: { color: '#6b7280' },
   link: { color: '#2563eb', fontWeight: '600' },
   signOut: { alignItems: 'center', paddingVertical: 14 },
-  navRow: { flexDirection: 'row', gap: 16, marginBottom: 4 },
+  navRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 4 },
   calLink: { paddingVertical: 10, paddingHorizontal: 4 },
 });
