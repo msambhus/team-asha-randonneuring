@@ -183,7 +183,8 @@ def _compute_schedule(total_km, cutoff_hours, speed_kmh):
         })
         prev = cum
     return recalculate_cumulative_values(
-        stops, {'name': ''}, cutoff_hours=cutoff_hours, total_mi=total_km)
+        stops, {'name': f'{int(total_km)}k'}, cutoff_hours=cutoff_hours,
+        total_mi=total_km, distance_unit='km')
 
 
 def _fmt_hm(minutes):

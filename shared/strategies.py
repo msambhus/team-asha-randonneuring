@@ -10,6 +10,7 @@ and BrevetHub ships a byte-identical vendored copy under ``brevethub/shared/``.
 Isolation contract: stdlib only — no ``services`` / ``models`` / ``routes`` imports and
 never the web framework's app/request globals (guarded by test_shared_isolation).
 """
+from shared.control_times import control_close_time_minutes
 
 # Pace variants shared between compute_pace_strategies() and the
 # /ride-plan/<slug>/v2/strategy POST endpoint. Each entry is
@@ -116,7 +117,10 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours,
             cum += break_m
             mi = s.get('distance_miles') or 0
             if cutoff_hours and total_mi > 0 and mi:
-                bookend = round((mi / total_mi) * cutoff_hours * 60)
+                bookend = control_close_time_minutes(
+                    mi, total_mi, cutoff_hours,
+                    event_distance_km=plan.get('distance_km'),
+                )
                 bank = bookend - arrival
             else:
                 bank = None

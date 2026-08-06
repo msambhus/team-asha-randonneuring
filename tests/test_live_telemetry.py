@@ -513,6 +513,14 @@ def test_time_banked_cutoff_none_without_cutoff_or_distance():
     assert tlm.time_banked_cutoff_min(100, None, 200, 20) is None
 
 
+def test_time_banked_cutoff_uses_relaxed_long_brevet_band_after_600k():
+    total_mi = 1200 / 1.609344
+    at_800_mi = 800 / 1.609344
+    assert tlm.time_banked_cutoff_min(
+        at_800_mi, 3000, total_mi, 90,
+        event_distance_km=1200) == 450
+
+
 # A short 3-point profile: flat, then a 10 m climb over 100 m (10% grade).
 _GRADE_TRACK = [
     {'dist_m': 0, 'e_m': 100.0},

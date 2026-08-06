@@ -12,6 +12,7 @@ conventions); speeds in m/s; times in minutes.
 import math
 
 from .rwgps import _compute_difficulty_score
+from .control_times import control_close_time_minutes
 
 METERS_TO_MILES = 1 / 1609.344
 METERS_TO_FEET = 3.28084
@@ -613,19 +614,23 @@ def required_speed_mph(dist_to_go_mi, arrival_time_min, elapsed_min):
     return round(dist_to_go_mi / (window_min / 60.0), 1), False
 
 
-def time_banked_cutoff_min(current_dist_miles, elapsed_min, total_mi, cutoff_hours):
+def time_banked_cutoff_min(current_dist_miles, elapsed_min, total_mi, cutoff_hours,
+                           event_distance_km=None):
     """Minutes in hand vs the brevet CUTOFF (OTL margin) at the rider's current
     distance: the interpolated cutoff clock there minus elapsed. Positive = margin
     before going over the time limit.
 
-    cutoff_at_dist = (dist / total_mi) × cutoff_hours × 60 — a linear pro-rata of
-    the overall time allowance, matching the plan page's per-stop time-bank bookend.
+    For 1000/1200 km events, the cutoff follows the official piecewise long-brevet
+    schedule; shorter events retain the existing linear pro-rata calculation.
     Returns None when the ride has no cutoff or the plan distance is unknown/zero.
     """
     if (current_dist_miles is None or elapsed_min is None
             or not cutoff_hours or not total_mi or total_mi <= 0):
         return None
-    cutoff_at_dist = (current_dist_miles / total_mi) * cutoff_hours * 60.0
+    cutoff_at_dist = control_close_time_minutes(
+        current_dist_miles, total_mi, cutoff_hours,
+        event_distance_km=event_distance_km,
+    )
     return round(cutoff_at_dist - elapsed_min)
 
 

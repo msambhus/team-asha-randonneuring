@@ -8,16 +8,18 @@ here, and ``brevethub/shared/pacing.py`` is a byte-identical vendored copy.
 
 Every function below is stdlib-only (no Flask, no DB): given a list of stop dicts
 it recomputes segment distance, average speed, cumulative/arrival time, and the
-time bank vs an ACP control cutoff. The math is unit-agnostic — the time bank is a
-distance *fraction* and ``avg_speed`` is distance-units per hour — so a caller may
+time bank vs an ACP control cutoff. The math is unit-aware for official 1000/1200 km
+control-close bands, while ``avg_speed`` remains distance-units per hour, so a caller may
 pass kilometres straight through the ``distance_miles``-named field and read
 ``avg_speed`` back as km/h (BrevetHub does exactly this). The field keeps its
 original name so the extraction stays byte-identical to the Team Asha source and no
 existing caller or test changes.
 """
+from shared.control_times import control_close_time_minutes
 
 
-def recalculate_cumulative_values(stops, custom_plan, cutoff_hours=None, total_mi=None):
+def recalculate_cumulative_values(stops, custom_plan, cutoff_hours=None, total_mi=None,
+                                  distance_unit='miles'):
     """
     Recalculate all cumulative and derived values for stops.
 
@@ -34,15 +36,16 @@ def recalculate_cumulative_values(stops, custom_plan, cutoff_hours=None, total_m
             ``custom_plan['name']`` — which yields None for a custom plan whose name has
             no distance (e.g. "Mihir's Push pace"), silently zeroing the time bank. Callers
             that know the real cutoff (routes/live.py) should always pass it.
-        total_mi: the plan's total distance in miles, used as the time-bank fraction basis.
+        total_mi: the plan's total distance in the selected distance unit.
             When None, fall back to the largest per-stop cumulative distance.
+        distance_unit: ``'miles'`` for Team Asha or ``'km'`` for BrevetHub.
     """
     if not stops:
         return stops
 
     # Prefer the caller's canonical cutoff; only parse the (custom) plan name as a fallback.
+    distance_km = _extract_distance_km(custom_plan.get('name', ''))
     if cutoff_hours is None:
-        distance_km = _extract_distance_km(custom_plan.get('name', ''))
         cutoff_hours = _get_cutoff_hours(distance_km)
     if cutoff_hours:
         cutoff_hours = float(cutoff_hours)
@@ -90,8 +93,11 @@ def recalculate_cumulative_values(stops, custom_plan, cutoff_hours=None, total_m
 
         # Time bank calculation (bookend time - arrival time, not including stop duration)
         if cutoff_hours and total_distance > 0 and cur_dist > 0:
-            fraction = cur_dist / total_distance
-            bookend_time_min = round(fraction * cutoff_hours * 60)
+            bookend_time_min = control_close_time_minutes(
+                cur_dist, total_distance, cutoff_hours,
+                event_distance_km=distance_km,
+                distance_unit=distance_unit,
+            )
             stop['bookend_time_min'] = bookend_time_min
             stop['time_bank_min'] = bookend_time_min - stop['arrival_time_min']
         else:
