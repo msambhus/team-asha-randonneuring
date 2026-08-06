@@ -369,10 +369,12 @@ def test_map_page_renders_for_profile_rider(client):
     all_day_weather = {'url': '/weather?plan_slug=test-plan', 'days': [
         {'day_number': 1, 'forecast_date': 'Thu, Aug 6', 'is_current': True,
          'is_selected': True, 'available': True, 'distance_mi': 235,
+         'start_distance_mi': 0, 'plan': plan,
          'chart_data': {'labels': [0, 235], 'headwind_mph': [2, -3],
                         'temperature_f': [57, 83], 'elevation_ft': [100, 200]}},
         {'day_number': 2, 'forecast_date': 'Fri, Aug 7', 'is_current': False,
          'is_selected': False, 'available': False, 'distance_mi': 182,
+         'start_distance_mi': 235, 'plan': dict(plan, active_day=2),
          'chart_data': None},
     ]}
     with patch('routes.live.get_ride_by_id', return_value=dict(_RIDE)), \
@@ -390,7 +392,7 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'Share from this phone' in html
     assert 'Share my location' in html       # beacon Start control on the map
     assert '/ride/5/live/garmin' in html     # form posts to the per-ride link endpoint
-    assert 'All-days forecast' in html
+    assert 'Daily plans &amp; weather' in html
     assert '235 mi' in html
     assert 'Map route' in html
     assert 'radial-day-1-headwind' in html
@@ -398,8 +400,8 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'Forecast not cached yet' in html
     assert 'data-weather-day="1" open' in html
     assert 'data-weather-day="2" open' not in html
-    assert 'Show charts' in html
-    assert 'Hide charts' in html
+    assert 'Show details' in html
+    assert 'Hide details' in html
     assert 'planned riding' in html
     assert 'planned stops' in html
     assert 'planned bank' in html
@@ -411,10 +413,11 @@ def test_map_page_renders_for_profile_rider(client):
     assert "metric('Wind ahead'" in html
     assert html.index('id="radial-table"') < html.index(
         'class="radial-multiday"')
-    # The compact day plan belongs at the end, after route conditions. Elevation
-    # remains between the rider table and conditions when route data is available.
-    assert html.index('class="radial-multiday"') < html.index(
-        'class="radial-plan-snapshot')
+    # Every multi-day card combines that day's itinerary and forecast.
+    assert html.count('class="rps-body radial-day-plan"') == 2
+    assert html.index('Day 1 plan') < html.index('radial-day-1-headwind')
+    assert 'syncDayToRouteProgress(roster)' in html
+    assert "target.searchParams.set('auto', '1')" in html
     assert 'liveRiderMarkers' in html
     assert 'updateWeatherChartMarkers(roster)' in html
     assert 'updateWeatherScrub(mi)' in html
@@ -437,8 +440,8 @@ def test_map_page_renders_for_profile_rider(client):
     assert '\'</span><span class="radial-row-meta">Avg \'' in html
     assert "fmtMin(Number(cutoff)) + ' cutoff'" in html
     assert html.count("'radial-detail-group-three'") == 2
-    assert 'radial-plan-snapshot mobile-collapsed' in html
-    assert 'rps-mobile-toggle' in html
+    assert 'radial-plan-snapshot mobile-collapsed' not in html
+    assert 'radial-day-weather current' in html
     assert 'initMobilePlanToggle()' in html
     assert "classList.toggle('mobile-collapsed')" in html
 
