@@ -94,13 +94,19 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
     if start is not None and start <= now:
         elapsed_min = round((now - start).total_seconds() / 60)
 
-    # Moving / stopped only over history at/after the anchor, then reconciled to
-    # elapsed so moving + stopped == elapsed (gaps + pre-start time count as stopped).
+    # Moving / stopped are measured only where tracking exists. Reconcile gaps to
+    # elapsed only when tracking began near the official start; otherwise a rider
+    # who enables LiveTrack hours later would have all unobserved time mislabeled
+    # as stopped.
     ride_history = history
     if start is not None:
         ride_history = [h for h in history if _as_utc(h['recorded_at']) >= start]
+    first_fix = _as_utc(ride_history[0].get('recorded_at')) if ride_history else None
+    history_started_late = bool(
+        start is not None and first_fix is not None
+        and first_fix > start + timedelta(minutes=10))
     moving_min, stopped_min = tlm.moving_stopped(ride_history)
-    if elapsed_min is not None:
+    if elapsed_min is not None and not history_started_late:
         stopped_min = round(max(0.0, elapsed_min - moving_min), 1)
 
     speed_ms = tlm.latest_speed_ms(history)
@@ -179,8 +185,14 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
     now_block['grade_pct'] = tlm.grade_at(ctx.get('track'), idx)
     now_block['avg_elapsed_speed_mph'] = (
         round(dist_mi / (elapsed_min / 60.0), 1) if elapsed_min and elapsed_min > 0 else None)
+    moving_distance_m = progressed_m
+    if history_started_late and start_dist_m is not None:
+        moving_distance_m = tlm.distance_progressed_m(
+            dist_m, start_dist_m, ctx['total_dist_m'])
+    moving_distance_mi = moving_distance_m * M_TO_MI
     now_block['avg_moving_speed_mph'] = (
-        round(dist_mi / (moving_min / 60.0), 1) if moving_min and moving_min > 0 else None)
+        round(moving_distance_mi / (moving_min / 60.0), 1)
+        if moving_min and moving_min > 0 else None)
     now_block['ascent_done_ft'] = ascent_done
 
     # Time left = the brevet's overall time limit minus elapsed (e.g. 40h for a 600),
