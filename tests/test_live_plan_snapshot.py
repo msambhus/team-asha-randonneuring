@@ -61,6 +61,12 @@ def test_plan_snapshot_includes_only_active_day_controls(app):
     assert [row['name'] for row in snap['day_stops']] == ['Start', 'Control A']
     assert snap['day_stops'][1]['distance_mi'] == 50.0
     assert snap['day_stops'][1]['eta'] == '06:00'
+    assert snap['day_distance_mi'] == 50.0
+    assert snap['day_controls'] == 1
+    assert snap['day_moving_min'] == 240
+    assert snap['day_stopped_min'] == 15
+    assert snap['day_elapsed_min'] == 255
+    assert snap['day_stops'][1]['time_bank_min'] is not None
 
 
 def test_plan_snapshot_uses_event_local_calendar_day(app):
@@ -77,6 +83,23 @@ def test_plan_snapshot_uses_event_local_calendar_day(app):
          patch('routes.live.get_ride_plan_stops', return_value=stops):
         snap = live._build_plan_snapshot(ride)
     assert snap['active_day'] == 2
+    assert [row['name'] for row in snap['day_stops']] == ['Control B']
+
+
+def test_plan_snapshot_follows_explicit_map_day(app):
+    stops = [
+        {'location': 'Day 1: Start', 'stop_type': 'start',
+         'distance_miles': 0, 'segment_time_min': 0, 'stop_duration_min': 0},
+        {'location': 'Day 2: Control B', 'stop_type': 'control',
+         'distance_miles': 160, 'segment_time_min': 600, 'stop_duration_min': 20},
+    ]
+    future_ride = dict(_RIDE, date='2099-08-06')
+    with app.app_context(), \
+         patch('routes.live._resolve_base_plan', return_value=_PLAN), \
+         patch('routes.live.get_ride_plan_stops', return_value=stops):
+        snap = live._build_plan_snapshot(future_ride, selected_day=2)
+    assert snap['active_day'] == 2
+    assert snap['is_current_day'] is False
     assert [row['name'] for row in snap['day_stops']] == ['Control B']
 
 
@@ -111,27 +134,25 @@ def test_all_day_weather_summarizes_each_stored_leg(app):
         {'rwgps_url': 'https://ridewithgps.com/routes/444', 'day_number': 4},
     ]
     samples = [{'distance_m': 0}, {'distance_m': 160934.4}]
-    markers = [
-        {'temp_f': 56, 'wind_speed_mph': 4, 'wind_type': 'tailwind'},
-        {'temp_f': 82, 'wind_speed_mph': 12, 'wind_type': 'headwind'},
-    ]
+    chart = {'labels': [0, 100], 'headwind_mph': [-4, 12],
+             'temperature_f': [56, 82], 'elevation_ft': [100, 200]}
     with app.test_request_context(), \
          patch('routes.live._resolve_base_plan',
                return_value=dict(_PLAN, slug='coulee-challenge')), \
          patch('models.get_ride_plan_legs', return_value=legs), \
          patch('routes.live._active_plan_leg', return_value={'day_number': 2}), \
+         patch('routes.live.get_ride_plan_stops', return_value=[]), \
          patch('routes.live.load_stored_route_weather',
                return_value=([{'forecast': True}], samples)), \
-         patch('routes.live.build_live_weather_markers', return_value=markers):
+         patch('routes.live.get_route_elevation_track', return_value=[]), \
+         patch('routes.live._build_live_chart_data', return_value=chart):
         summary = live._build_all_day_weather(ride)
 
     assert len(summary['days']) == 4
     assert summary['days'][1]['is_current'] is True
     assert summary['days'][0]['distance_mi'] == 100
-    assert summary['days'][0]['temp_low_f'] == 56
-    assert summary['days'][0]['temp_high_f'] == 82
-    assert summary['days'][0]['peak_wind_mph'] == 12
-    assert summary['days'][0]['headwind_pct'] == 50
+    assert summary['days'][0]['chart_data'] == chart
+    assert summary['days'][0]['available'] is True
     assert 'plan_slug=coulee-challenge' in summary['url']
 
 
@@ -187,7 +208,28 @@ def test_radial_track_falls_back_on_cold_cache(app):
         {'x': -121.42, 'y': 37.73, 'd': 5000.0, 'e': 40.0}]}
     with app.app_context(), \
          patch('routes.live.get_route_elevation_track', return_value=None), \
+         patch('routes.live.load_stored_route_weather', return_value=(None, None)), \
          patch('routes.live.fetch_route', return_value=route_json) as fetch:
         track = live._radial_track(_RIDE)
     fetch.assert_called_once()                   # fell back to the live fetch
     assert track and track[0]['lat'] == 37.72
+
+
+def test_radial_track_uses_stored_weather_samples_before_live_fetch(app):
+    """A private multi-day leg still draws from its warmed forecast coordinates."""
+    samples = [
+        {'lat': 44.9, 'lng': -93.1, 'distance_m': 0},
+        {'lat': 44.8, 'lng': -92.9, 'distance_m': 16093.44},
+    ]
+    leg = {'rwgps_url': 'https://ridewithgps.com/routes/55704679',
+           'forecast_date': '2026-08-07', 'distance_offset_mi': 235}
+    with app.app_context(), \
+         patch('routes.live.get_route_elevation_track', return_value=None), \
+         patch('routes.live.load_stored_route_weather',
+               return_value=([{'forecast': True}], samples)), \
+         patch('routes.live.fetch_route') as fetch:
+        track = live._radial_track(_RIDE, leg)
+    assert len(track) == 2
+    assert track[0]['dist_m'] == 235 / live.M_TO_MI
+    assert track[1]['lat'] == 44.8
+    fetch.assert_not_called()

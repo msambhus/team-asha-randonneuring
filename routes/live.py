@@ -130,8 +130,8 @@ def _plan_dot_color(status, telemetry):
 _MAX_POLYLINE_POINTS = 1000
 
 
-def _active_plan_leg(ride, now=None):
-    """The route/weather leg for the ride's current event-local calendar day."""
+def _active_plan_leg(ride, now=None, day_number=None):
+    """Resolve a route/weather leg by day, defaulting to the current event day."""
     fallback = {
         'day_number': 1,
         'rwgps_url': ((ride or {}).get('rwgps_url_team') or (ride or {}).get('rwgps_url')),
@@ -149,9 +149,10 @@ def _active_plan_leg(ride, now=None):
         ride_date = ride.get('date')
         if isinstance(ride_date, str):
             ride_date = date.fromisoformat(ride_date)
-        local_now = (now or datetime.now(timezone.utc)).astimezone(ride_timezone(ride))
-        day_number = max(1, (local_now.date() - ride_date).days + 1)
-        leg = min(legs, key=lambda row: abs(int(row.get('day_number') or 1) - day_number))
+        if day_number is None:
+            local_now = (now or datetime.now(timezone.utc)).astimezone(ride_timezone(ride))
+            day_number = max(1, (local_now.date() - ride_date).days + 1)
+        leg = min(legs, key=lambda row: abs(int(row.get('day_number') or 1) - int(day_number)))
         day_number = int(leg.get('day_number') or 1)
 
         offset_mi = 0.0
@@ -206,12 +207,12 @@ def _build_route_polyline(ride):
     return coords
 
 
-def _radial_track(ride):
+def _radial_track(ride, leg=None):
     """Fetch + downsample the ride's RWGPS route ONCE into a track
     [{lat, lng, dist_m, e_m}] feeding BOTH the shared map polyline and the altitude
     profile (one fetch, not two). Fail-soft → None on any missing route / fetch
     error so the shared live view still renders with rider markers only."""
-    leg = _active_plan_leg(ride)
+    leg = leg or _active_plan_leg(ride)
     rwgps_url = leg.get('rwgps_url')
     route_id = extract_rwgps_route_id(rwgps_url)
     if not route_id:
@@ -229,6 +230,26 @@ def _radial_track(ride):
         offset_m = float(leg.get('distance_offset_mi') or 0) / M_TO_MI
         return [dict(point, dist_m=float(point.get('dist_m') or 0) + offset_m)
                 for point in cached]
+    # Multi-day private RWGPS legs may have their weather cache warmed even when
+    # dense elevation geometry could not be fetched. Those stored sample points
+    # still trace the complete route well enough for the live overview. Prefer
+    # that cache-only fallback to a blank map (and to a request-path RWGPS call).
+    try:
+        route_date = leg.get('forecast_date')
+        if isinstance(route_date, str):
+            route_date = date.fromisoformat(route_date)
+        _weather, samples = load_stored_route_weather(route_id, route_date)
+        if samples and len(samples) >= 2:
+            offset_m = float(leg.get('distance_offset_mi') or 0) / M_TO_MI
+            return [
+                {'lat': float(point['lat']), 'lng': float(point['lng']),
+                 'dist_m': float(point.get('distance_m') or 0) + offset_m,
+                 'e_m': None}
+                for point in samples
+                if point.get('lat') is not None and point.get('lng') is not None
+            ]
+    except Exception:  # noqa: BLE001 — fall through to the existing RWGPS fallback
+        current_app.logger.warning('live: stored route sample fallback failed', exc_info=True)
     try:
         route = fetch_route(route_id)
     except Exception as exc:  # noqa: BLE001 — fail-soft, route line is optional
@@ -261,14 +282,14 @@ def _radial_polyline(track):
     return coords
 
 
-def _build_weather_points(ride):
+def _build_weather_points(ride, leg=None):
     """Along-route weather markers for the live map: {lat,lng,temp_f,wind_speed_mph,
     wind_type,arrow_deg,color} from the STORED route weather (route_weather_cache — a DB
     read, never a live Open-Meteo fetch on the request path, per TA-237). The shared
     build_live_weather_markers does all the wind math (same code as the plan page).
     Fail-soft: no route / no forecast / any error → [] so the map just omits weather."""
     try:
-        leg = _active_plan_leg(ride)
+        leg = leg or _active_plan_leg(ride)
         route_id = extract_rwgps_route_id(leg.get('rwgps_url'))
         rd = leg.get('forecast_date')
         if isinstance(rd, str):
@@ -283,12 +304,12 @@ def _build_weather_points(ride):
         return []
 
 
-def _build_all_day_weather(ride):
-    """Compact stored-forecast summaries for every leg of a multi-day plan.
+def _build_all_day_weather(ride, selected_day=None):
+    """Stored headwind and temperature chart data for every multi-day leg.
 
-    The detailed map and charts remain scoped to ``_active_plan_leg``.  This
-    companion context lets a rider scan the whole event without combining four
-    unrelated route geometries on one map.  It is intentionally cache/DB-only:
+    The map remains scoped to the selected leg while every day's charts are
+    visible below it. This avoids combining unrelated route geometries on one
+    map while keeping the whole forecast on-page. It is intentionally cache/DB-only:
     ``load_stored_route_weather`` never calls Open-Meteo on the request path.
     """
     try:
@@ -305,29 +326,34 @@ def _build_all_day_weather(ride):
         if isinstance(ride_date, str):
             ride_date = date.fromisoformat(ride_date)
         active_day = int(_active_plan_leg(ride).get('day_number') or 1)
-        start_t = str(ride.get('start_time') or ride.get('plan_start_time') or '06:00')
+        selected_day = int(selected_day or active_day)
+        plan_stops = get_ride_plan_stops(plan['id']) or []
         days = []
         for leg in legs:
             day_number = int(leg.get('day_number') or leg.get('leg_order') or 1)
             route_id = extract_rwgps_route_id(leg.get('rwgps_url'))
             forecast_date = ride_date + timedelta(days=day_number - 1)
             weather_data, sample_points = load_stored_route_weather(route_id, forecast_date)
-            markers = build_live_weather_markers(
-                weather_data, sample_points, forecast_date, start_t, interval_mi=8.0)
-            if not markers:
-                days.append({
-                    'day_number': day_number,
-                    'label': leg.get('label') or f'Day {day_number}',
-                    'forecast_date': forecast_date.strftime('%a, %b %-d'),
-                    'is_current': day_number == active_day,
-                    'available': False,
-                })
-                continue
-
-            temps = [float(m['temp_f']) for m in markers if m.get('temp_f') is not None]
-            winds = [float(m['wind_speed_mph']) for m in markers
-                     if m.get('wind_speed_mph') is not None]
-            headwinds = sum(1 for m in markers if m.get('wind_type') == 'headwind')
+            offset_mi = 0.0
+            for stop in plan_stops:
+                if re.match(rf'^\s*Day\s+{day_number}\s*:',
+                            stop.get('location') or '', re.I):
+                    offset_mi = float(stop.get('distance_miles') or 0)
+                    break
+            offset_m = offset_mi / M_TO_MI
+            adjusted_samples = [
+                dict(point, distance_m=float(point.get('distance_m') or 0) + offset_m)
+                for point in (sample_points or [])
+            ]
+            cached_track = get_route_elevation_track(route_id) or []
+            track_points = [
+                {'d': float(point.get('dist_m') or 0) + offset_m,
+                 'e': point.get('e_m')}
+                for point in cached_track
+            ]
+            chart_data = _build_live_chart_data(
+                adjusted_samples, weather_data, track_points, plan_stops,
+                _ride_start_local(ride))
             max_distance_m = max(
                 (float(p.get('distance_m') or 0) for p in (sample_points or [])),
                 default=0,
@@ -337,15 +363,14 @@ def _build_all_day_weather(ride):
                 'label': leg.get('label') or f'Day {day_number}',
                 'forecast_date': forecast_date.strftime('%a, %b %-d'),
                 'is_current': day_number == active_day,
-                'available': True,
+                'is_selected': day_number == selected_day,
+                'available': bool(chart_data),
                 'distance_mi': round(max_distance_m * M_TO_MI),
-                'temp_low_f': round(min(temps)) if temps else None,
-                'temp_high_f': round(max(temps)) if temps else None,
-                'peak_wind_mph': round(max(winds)) if winds else None,
-                'headwind_pct': round(100 * headwinds / len(markers)),
+                'chart_data': chart_data,
             })
 
         first_url = legs[0].get('rwgps_url') or ''
+        start_t = str(ride.get('start_time') or ride.get('plan_start_time') or '06:00')
         start_date_time = f'{ride_date.isoformat()}T{start_t}'
         return {
             'days': days,
@@ -358,7 +383,7 @@ def _build_all_day_weather(ride):
         return None
 
 
-def _build_plan_snapshot(ride):
+def _build_plan_snapshot(ride, selected_day=None):
     """A compact summary of the ride's resolved plan for the live page — the plan
     name (linked to its plan page), distance, climb, control count, start time — shown
     beside the climb profile. Resolves the plan the SAME way the live grading does
@@ -400,6 +425,9 @@ def _build_plan_snapshot(ride):
                 named_days.append(int(match.group(1)))
         if named_days:
             active_day = min(max(active_day, min(named_days)), max(named_days))
+        current_day = active_day
+        if selected_day is not None and named_days:
+            active_day = min(max(int(selected_day), min(named_days)), max(named_days))
 
         start_raw = ride.get('start_time') or plan.get('start_time') or '06:00'
         try:
@@ -407,11 +435,13 @@ def _build_plan_snapshot(ride):
         except (TypeError, ValueError):
             start_h, start_m = 6, 0
         day_rows = []
+        day_timed_stops = []
         for stop in timed_stops:
             name = stop.get('location') or ''
             match = re.match(r'\s*Day\s+(\d+)\s*:\s*(.*)', name, re.I)
             if not match or int(match.group(1)) != active_day:
                 continue
+            day_timed_stops.append(stop)
             arrival = int(stop.get('arrival_time_min') or 0)
             clock_total = start_h * 60 + start_m + arrival
             _, clock_min = divmod(clock_total, 24 * 60)
@@ -422,7 +452,19 @@ def _build_plan_snapshot(ride):
                 'eta': f'{hh:02d}:{mm:02d}',
                 'break_min': int(stop.get('stop_duration_min') or 0),
                 'type': (stop.get('stop_type') or 'waypoint').lower(),
+                'time_bank_min': stop.get('time_bank_min'),
             })
+
+        first_day_mi = (float(day_timed_stops[0].get('distance_miles') or 0)
+                        if day_timed_stops else 0.0)
+        last_day_mi = (float(day_timed_stops[-1].get('distance_miles') or 0)
+                       if day_timed_stops else first_day_mi)
+        day_moving_min = sum(int(s.get('segment_time_min') or 0)
+                             for s in day_timed_stops)
+        day_stopped_min = sum(int(s.get('stop_duration_min') or 0)
+                              for s in day_timed_stops)
+        day_banks = [s.get('time_bank_min') for s in day_timed_stops
+                     if s.get('time_bank_min') is not None]
 
         return {
             'name': plan.get('name'),
@@ -433,7 +475,17 @@ def _build_plan_snapshot(ride):
             'cutoff_hours': cutoff,
             'start_time': (ride.get('start_time') or plan.get('start_time') or None),
             'active_day': active_day,
+            'is_current_day': active_day == current_day,
             'day_stops': day_rows,
+            'day_distance_mi': round(max(0.0, last_day_mi - first_day_mi), 1),
+            'day_elevation_ft': sum(int(s.get('elevation_gain') or 0)
+                                    for s in day_timed_stops),
+            'day_controls': sum(1 for s in day_timed_stops
+                                if (s.get('stop_type') or '').lower() == 'control'),
+            'day_moving_min': day_moving_min,
+            'day_stopped_min': day_stopped_min,
+            'day_elapsed_min': day_moving_min + day_stopped_min,
+            'day_time_bank_min': day_banks[-1] if day_banks else None,
         }
     except Exception:  # noqa: BLE001 — the snapshot panel is best-effort
         current_app.logger.warning('live: plan snapshot build failed', exc_info=True)
@@ -502,10 +554,16 @@ def ride_live_map(ride_id):
         abort(404)
 
     mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
-    track = _radial_track(ride)
-    weather_points = _build_weather_points(ride)   # [] when no stored forecast → map degrades
-    all_day_weather = _build_all_day_weather(ride)  # None for ordinary one-day rides
-    plan_snapshot = _build_plan_snapshot(ride)     # None when the ride resolves no plan
+    requested_day = request.args.get('day', type=int)
+    selected_leg = _active_plan_leg(ride, day_number=requested_day)
+    selected_day = int(selected_leg.get('day_number') or 1)
+    track = _radial_track(ride, selected_leg)
+    weather_points = _build_weather_points(
+        ride, selected_leg)  # [] when no stored forecast → map degrades
+    all_day_weather = _build_all_day_weather(
+        ride, selected_day)  # None for ordinary one-day rides
+    plan_snapshot = _build_plan_snapshot(
+        ride, selected_day)  # None when the ride resolves no plan
     opted_in = garmin_here = False
     garmin_url = ''
     if is_member:
