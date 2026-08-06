@@ -283,6 +283,81 @@ def _build_weather_points(ride):
         return []
 
 
+def _build_all_day_weather(ride):
+    """Compact stored-forecast summaries for every leg of a multi-day plan.
+
+    The detailed map and charts remain scoped to ``_active_plan_leg``.  This
+    companion context lets a rider scan the whole event without combining four
+    unrelated route geometries on one map.  It is intentionally cache/DB-only:
+    ``load_stored_route_weather`` never calls Open-Meteo on the request path.
+    """
+    try:
+        from models import get_ride_plan_legs
+
+        plan = _resolve_base_plan(ride)
+        if not plan:
+            return None
+        legs = [dict(row) for row in (get_ride_plan_legs(plan['id']) or [])]
+        if len(legs) < 2:
+            return None
+
+        ride_date = ride.get('date')
+        if isinstance(ride_date, str):
+            ride_date = date.fromisoformat(ride_date)
+        active_day = int(_active_plan_leg(ride).get('day_number') or 1)
+        start_t = str(ride.get('start_time') or ride.get('plan_start_time') or '06:00')
+        days = []
+        for leg in legs:
+            day_number = int(leg.get('day_number') or leg.get('leg_order') or 1)
+            route_id = extract_rwgps_route_id(leg.get('rwgps_url'))
+            forecast_date = ride_date + timedelta(days=day_number - 1)
+            weather_data, sample_points = load_stored_route_weather(route_id, forecast_date)
+            markers = build_live_weather_markers(
+                weather_data, sample_points, forecast_date, start_t, interval_mi=8.0)
+            if not markers:
+                days.append({
+                    'day_number': day_number,
+                    'label': leg.get('label') or f'Day {day_number}',
+                    'forecast_date': forecast_date.strftime('%a, %b %-d'),
+                    'is_current': day_number == active_day,
+                    'available': False,
+                })
+                continue
+
+            temps = [float(m['temp_f']) for m in markers if m.get('temp_f') is not None]
+            winds = [float(m['wind_speed_mph']) for m in markers
+                     if m.get('wind_speed_mph') is not None]
+            headwinds = sum(1 for m in markers if m.get('wind_type') == 'headwind')
+            max_distance_m = max(
+                (float(p.get('distance_m') or 0) for p in (sample_points or [])),
+                default=0,
+            )
+            days.append({
+                'day_number': day_number,
+                'label': leg.get('label') or f'Day {day_number}',
+                'forecast_date': forecast_date.strftime('%a, %b %-d'),
+                'is_current': day_number == active_day,
+                'available': True,
+                'distance_mi': round(max_distance_m * M_TO_MI),
+                'temp_low_f': round(min(temps)) if temps else None,
+                'temp_high_f': round(max(temps)) if temps else None,
+                'peak_wind_mph': round(max(winds)) if winds else None,
+                'headwind_pct': round(100 * headwinds / len(markers)),
+            })
+
+        first_url = legs[0].get('rwgps_url') or ''
+        start_date_time = f'{ride_date.isoformat()}T{start_t}'
+        return {
+            'days': days,
+            'url': url_for('weather.weather_page', rwgps_url=first_url,
+                           plan_slug=plan.get('slug', ''),
+                           start_datetime=start_date_time, auto='1'),
+        }
+    except Exception:  # noqa: BLE001 — live weather summaries are best-effort
+        current_app.logger.warning('live: all-day weather build failed', exc_info=True)
+        return None
+
+
 def _build_plan_snapshot(ride):
     """A compact summary of the ride's resolved plan for the live page — the plan
     name (linked to its plan page), distance, climb, control count, start time — shown
@@ -429,6 +504,7 @@ def ride_live_map(ride_id):
     mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
     track = _radial_track(ride)
     weather_points = _build_weather_points(ride)   # [] when no stored forecast → map degrades
+    all_day_weather = _build_all_day_weather(ride)  # None for ordinary one-day rides
     plan_snapshot = _build_plan_snapshot(ride)     # None when the ride resolves no plan
     opted_in = garmin_here = False
     garmin_url = ''
@@ -449,6 +525,7 @@ def ride_live_map(ride_id):
         route_polyline=_radial_polyline(track),
         elevation_profile=radial.build_elevation_profile(track or []),
         weather_points=weather_points,
+        all_day_weather=all_day_weather,
         roster_url=url_for('live.ride_live_roster', ride_id=ride_id),
         poll_seconds=RADIAL_POLL_SECONDS,
         stale_after_minutes=STALE_AFTER_MINUTES,

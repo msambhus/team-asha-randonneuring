@@ -88,6 +88,30 @@
 .radial-weather-chart { min-width: 0; }
 .radial-weather-chart h4 { margin: 0 0 4px; font-size: 0.75rem; color: var(--text-light, #6b7280); }
 .radial-weather-chart canvas { width: 100% !important; height: 120px !important; }
+.radial-multiday { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px; background: var(--card-bg, #fff); }
+.radial-multiday-head { display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin-bottom: 9px; }
+.radial-multiday-title { font-weight: 750; color: var(--primary, #1a365d); }
+.radial-multiday-link { font-size: 0.78rem; font-weight: 700; color: var(--primary, #1a365d);
+  text-decoration: none; }
+.radial-multiday-link:hover { text-decoration: underline; }
+.radial-multiday-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.radial-day-weather { min-width: 0; padding: 10px; border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px; background: var(--bg, #f8fafc); }
+.radial-day-weather.current { border: 2px solid var(--primary, #1a365d); padding: 9px;
+  background: color-mix(in srgb, var(--primary, #1a365d) 5%, var(--card-bg, #fff)); }
+.rdw-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.rdw-day { font-weight: 800; color: var(--text, #111); }
+.rdw-current { padding: 2px 5px; border-radius: 999px; background: var(--primary, #1a365d);
+  color: #fff; font-size: 0.58rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; }
+.rdw-date { display: block; margin-top: 1px; font-size: .68rem; color: var(--text-light, #6b7280); }
+.rdw-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 9px; }
+.rdw-stat { display: flex; flex-direction: column; min-width: 0; }
+.rdw-value { font-size: .84rem; font-weight: 800; color: var(--text, #111); white-space: nowrap; }
+.rdw-label { font-size: .57rem; color: var(--text-light, #6b7280); text-transform: uppercase;
+  letter-spacing: .03em; white-space: nowrap; }
+.rdw-empty { margin-top: 10px; font-size: .72rem; color: var(--text-light, #6b7280); }
 /* Hover-scrub: crosshair on the profile + a matching dot on the map */
 .radial-elev { cursor: crosshair; }
 .radial-elev-cursor { stroke: var(--text-light, #6b7280); stroke-width: 1; stroke-dasharray: 3 2; opacity: 0.85; }
@@ -168,6 +192,9 @@
 .radial-empty td { padding: 16px 8px; color: var(--text-light, #6b7280); text-align: center; }
 @media (max-width: 680px) {
   .radial-weather-charts { grid-template-columns: 1fr; }
+  .radial-multiday-grid { display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
+    padding-bottom: 3px; }
+  .radial-day-weather { flex: 0 0 72%; scroll-snap-align: start; }
   .radial-detail-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .radial-table { font-size: 0.8rem; }
   .radial-table thead th, .radial-row td { padding-left: 4px; padding-right: 4px; }
@@ -258,6 +285,35 @@
       <div class="radial-weather-chart"><h4>Temperature by mile</h4><canvas id="radial-temperature-chart"></canvas></div>
     </div>
   </section>
+
+  {% if all_day_weather and all_day_weather.days %}
+  <section class="radial-multiday" aria-label="All-days weather forecast">
+    <div class="radial-multiday-head">
+      <span class="radial-multiday-title">All-days forecast</span>
+      <a class="radial-multiday-link" href="{{ all_day_weather.url }}">Open full forecast →</a>
+    </div>
+    <div class="radial-multiday-grid">
+      {% for day in all_day_weather.days %}
+      <article class="radial-day-weather{% if day.is_current %} current{% endif %}">
+        <div class="rdw-head">
+          <span><span class="rdw-day">Day {{ day.day_number }}</span><span class="rdw-date">{{ day.forecast_date }}</span></span>
+          {% if day.is_current %}<span class="rdw-current">Current</span>{% endif %}
+        </div>
+        {% if day.available %}
+        <div class="rdw-stats">
+          <span class="rdw-stat"><span class="rdw-value">{{ day.distance_mi }} mi</span><span class="rdw-label">Route</span></span>
+          <span class="rdw-stat"><span class="rdw-value">{{ day.temp_low_f }}–{{ day.temp_high_f }}°F</span><span class="rdw-label">Temperature</span></span>
+          <span class="rdw-stat"><span class="rdw-value">{{ day.peak_wind_mph }} mph</span><span class="rdw-label">Peak wind</span></span>
+          <span class="rdw-stat"><span class="rdw-value">{{ day.headwind_pct }}%</span><span class="rdw-label">Headwind</span></span>
+        </div>
+        {% else %}
+        <div class="rdw-empty">Forecast not cached yet</div>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
 
   {% if plan_snapshot %}
     <aside class="radial-plan-snapshot mobile-collapsed" aria-label="Today's ride plan">
