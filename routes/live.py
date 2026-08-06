@@ -21,6 +21,7 @@ from cache import cache, CACHE_TIMEOUT
 from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled,
                     set_ride_garmin, clear_ride_garmin,
                     get_latest_positions_for_ride, insert_live_position,
+                    get_going_riders_for_ride,
                     get_rider_upcoming_signups, get_ride_plan_stops,
                     get_positions_for_rider_since, get_default_time_limit,
                     get_or_create_ride_invite, get_valid_ride_invite,
@@ -1531,6 +1532,16 @@ def ride_live_roster(ride_id):
     except Exception:  # noqa: BLE001 — never 500 the public poll
         current_app.logger.exception('live roster: positions load failed for ride %s', ride_id)
         rows = []
+    try:
+        sharing_ids = {row['rider_id'] for row in rows}
+        for rider in get_going_riders_for_ride(ride_id) or []:
+            if rider['rider_id'] not in sharing_ids:
+                rows.append(dict(rider, lat=None, lng=None, recorded_at=None,
+                                 source=None, speed=None, heart_rate=None,
+                                 power=None, cadence=None))
+    except Exception:  # noqa: BLE001 — Going roster is best-effort on old schemas
+        current_app.logger.exception(
+            'live roster: Going riders load failed for ride %s', ride_id)
     for row in rows:
         # Feed the builder a privacy-reduced name; it never reads a member's email.
         row['display_name'] = _public_display_name(row.get('name'))

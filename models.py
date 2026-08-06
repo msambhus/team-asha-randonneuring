@@ -5603,6 +5603,19 @@ def get_latest_positions_for_ride(ride_id, since):
     """, (ride_id, ride_id, since)).fetchall()
 
 
+def get_going_riders_for_ride(ride_id):
+    """All riders marked Going for a ride, independent of live sharing."""
+    return _execute("""
+        SELECT r.id AS rider_id,
+               r.first_name || ' ' || COALESCE(r.last_name, '') AS name,
+               rr.status
+        FROM rider_ride rr
+        JOIN rider r ON r.id = rr.rider_id
+        WHERE rr.ride_id = %s AND rr.status = %s
+        ORDER BY r.first_name, r.last_name
+    """, (ride_id, RideStatus.GOING.value)).fetchall()
+
+
 def purge_old_positions(retention_days=7):
     """Delete position points older than the retention window. Returns count."""
     conn = get_db()

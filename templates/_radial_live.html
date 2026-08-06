@@ -149,9 +149,6 @@
 .radial-multiday-head { display: flex; align-items: baseline; justify-content: space-between;
   gap: 10px; flex-wrap: wrap; margin: 0 0 9px; }
 .radial-multiday-title { font-weight: 750; color: var(--primary, #1a365d); }
-.radial-multiday-link { font-size: 0.78rem; font-weight: 700; color: var(--primary, #1a365d);
-  text-decoration: none; }
-.radial-multiday-link:hover { text-decoration: underline; }
 .radial-multiday-list { display: grid; gap: 12px; }
 .radial-day-weather { min-width: 0; padding: 12px 14px; border: 1px solid var(--border, #e5e7eb);
   border-radius: 12px; background: var(--card-bg, #fff); }
@@ -218,6 +215,9 @@
 .radial-stale { font-size: 0.68rem; color: var(--text-light, #6b7280); font-weight: 400; }
 .radial-paused { font-size: 0.66rem; font-weight: 700; color: #b45309; background: #fef3c7;
   border-radius: 4px; padding: 1px 5px; margin-left: 2px; text-transform: uppercase; letter-spacing: 0.03em; }
+.radial-not-sharing { font-size: 0.64rem; font-weight: 750; color: #6b7280; background: #f3f4f6;
+  border: 1px solid #d1d5db; border-radius: 999px; padding: 2px 6px; margin-left: 5px;
+  white-space: nowrap; }
 .radial-dist { white-space: nowrap; }
 .radial-row-value { font-weight: 700; white-space: nowrap; }
 .radial-row-meta { display: block; max-width: 180px; margin-top: 2px; font-size: 0.68rem;
@@ -361,7 +361,6 @@
   <section class="radial-multiday" aria-label="Daily plans and weather">
     <div class="radial-multiday-head">
       <span class="radial-multiday-title">Daily plans &amp; weather</span>
-      <a class="radial-multiday-link" href="{{ all_day_weather.url }}">Open full forecast →</a>
     </div>
     <div class="radial-multiday-list">
       {% for day in all_day_weather.days %}
@@ -744,6 +743,10 @@
       '</div>';
   }
   function progressSummaryHtml(row) {
+    if (row.lat == null || row.lng == null || row.recorded_at == null) {
+      return '<span class="radial-row-value">—</span>' +
+        '<span class="radial-row-meta">Not sharing location</span>';
+    }
     return '<span class="radial-row-value">' + fmtDist(row) + '</span>' +
       '<span class="radial-row-meta">' +
       (row.elapsed_min != null ? 'Elapsed ' + fmtDuration(row.elapsed_min) : 'Elapsed —') +
@@ -799,7 +802,9 @@
         '<td class="radial-name"><span class="radial-swatch" style="background:' +
           (row.marker_color || '#9ca3af') + '"></span>' +
           escapeHtml(row.display_name) +
-          (row.stale ? ' <span class="radial-stale">stale</span>'
+          (row.lat == null || row.lng == null || row.recorded_at == null
+            ? ' <span class="radial-not-sharing">Not sharing location</span>'
+            : row.stale ? ' <span class="radial-stale">stale</span>'
                      : (row.activity === 'paused' ? ' <span class="radial-paused">paused</span>' : '')) + '</td>' +
         '<td>' + progressSummaryHtml(row) + '</td>' +
         '<td>' + speedSummaryHtml(row) + '</td>' +
@@ -1113,9 +1118,13 @@
         syncDayToRouteProgress(roster);
         render(roster);
         if (statusEl) {
+          var sharingCount = roster.filter(function (row) {
+            return row.lat != null && row.lng != null && row.recorded_at != null;
+          }).length;
           statusEl.textContent = roster.length
-            ? (roster.length + ' rider' + (roster.length === 1 ? '' : 's') + ' on course')
-            : 'No riders sharing right now.';
+            ? (roster.length + ' rider' + (roster.length === 1 ? '' : 's') + ' listed · ' +
+              sharingCount + ' sharing location')
+            : 'No riders marked Going or sharing location.';
         }
       })
       .catch(function () {
