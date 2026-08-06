@@ -979,9 +979,15 @@ def _ride_live_context_cached(ride_id, day_key):
            # Base plan id + timing inputs so the per-rider custom plan (if any) can
            # be merged + retimed the SAME way the web plan page does (_rider_plan_stops).
            'base_plan_id': None, 'plan_cutoff_hours': None, 'plan_total_mi': 0.0,
-           'plan_distance_km': None}
+           'plan_distance_km': None,
+           # Only explicitly classified permanents may begin partway around a
+           # route. Scheduled brevets always measure from the official start.
+           'allow_mid_route_start': False}
     if not ride:
         return ctx
+
+    ctx['allow_mid_route_start'] = (
+        'permanent' in str(ride.get('ride_type') or '').strip().lower())
 
     # Overall brevet time limit (for "time left" = limit − elapsed; e.g. 40h for
     # a 600). Prefer the event's own time_limit_hours; else the standard ACP
@@ -1404,7 +1410,8 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
 
     return radial.compose_rider_telemetry(
         row, ctx, now, history, plan_stops=plan_stops, start=start, tz=CLUB_TZ,
-        wind_labeler=wind_labeler, min_history=1, stateless_fallback=True)
+        wind_labeler=wind_labeler, min_history=1, stateless_fallback=True,
+        rebase_from_first_fix=bool(ctx.get('allow_mid_route_start')))
 
 
 @live_bp.route('/api/live/positions')

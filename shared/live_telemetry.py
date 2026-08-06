@@ -631,6 +631,8 @@ def time_banked_cutoff_min(current_dist_miles, elapsed_min, total_mi, cutoff_hou
         current_dist_miles, total_mi, cutoff_hours,
         event_distance_km=event_distance_km,
     )
+    if cutoff_at_dist is None:
+        return None
     return round(cutoff_at_dist - elapsed_min)
 
 
