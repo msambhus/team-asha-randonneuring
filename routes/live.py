@@ -161,6 +161,69 @@ def _planned_day_number(ride, timed_stops, now=None):
     return active
 
 
+def _day_distance_boundaries(stops):
+    """First cumulative route mile belonging to each named plan day."""
+    boundaries = {}
+    for stop in stops or []:
+        match = re.match(r'\s*Day\s+(\d+)\s*:', stop.get('location') or '', re.I)
+        if match:
+            boundaries.setdefault(int(match.group(1)),
+                                  float(stop.get('distance_miles') or 0))
+    return boundaries
+
+
+def _progress_day_number(ride, legs, stops):
+    """Active day from the leading live rider's position across all route legs.
+
+    Each latest point is projected against every cached day route. The closest
+    on-route match yields a cumulative plan distance (day offset + leg miles),
+    so a day changes exactly when course progress reaches that day's first mile.
+    """
+    ride_id = (ride or {}).get('id')
+    boundaries = _day_distance_boundaries(stops)
+    if not ride_id or len(boundaries) < 2:
+        return None
+    cache_key = f'_live_progress_day_{ride_id}'
+    if has_app_context() and hasattr(g, cache_key):
+        return getattr(g, cache_key)
+    try:
+        since = datetime.now(timezone.utc) - timedelta(hours=DISPLAY_WINDOW_HOURS)
+        rows = get_latest_positions_for_ride(ride_id, since)
+        route_legs = []
+        for leg in legs or []:
+            day = int(leg.get('day_number') or leg.get('leg_order') or 1)
+            route_id = extract_rwgps_route_id(leg.get('rwgps_url'))
+            track = get_route_elevation_track(route_id) if route_id else None
+            if track:
+                route_legs.append((day, track))
+        leader_mile = None
+        for row in rows or []:
+            candidates = []
+            for day, track in route_legs:
+                dist_m, _idx, off_by_m = tlm.project_to_route(
+                    float(row['lat']), float(row['lng']), track)
+                if dist_m is not None and off_by_m is not None:
+                    candidates.append((off_by_m,
+                                       boundaries.get(day, 0) + dist_m * M_TO_MI))
+            if candidates:
+                off_by_m, mile = min(candidates, key=lambda item: item[0])
+                if off_by_m <= tlm.ON_ROUTE_MAX_M:
+                    leader_mile = mile if leader_mile is None else max(leader_mile, mile)
+        active = None
+        if leader_mile is not None:
+            active = min(boundaries)
+            for day, start_mile in sorted(boundaries.items()):
+                if leader_mile >= start_mile:
+                    active = day
+        if has_app_context():
+            setattr(g, cache_key, active)
+        return active
+    except Exception:
+        if has_app_context():
+            current_app.logger.warning('live: progress day resolution failed', exc_info=True)
+        return None
+
+
 def _active_plan_leg(ride, now=None, day_number=None):
     """Resolve a route/weather leg by day, defaulting to the current event day."""
     fallback = {
@@ -183,7 +246,8 @@ def _active_plan_leg(ride, now=None, day_number=None):
         if day_number is None:
             raw_stops = get_ride_plan_stops(plan['id']) or []
             timed_stops = _compute_base_timing(raw_stops, None, 0)
-            day_number = _planned_day_number(ride, timed_stops, now=now)
+            day_number = (_progress_day_number(ride, legs, raw_stops)
+                          or _planned_day_number(ride, timed_stops, now=now))
         leg = min(legs, key=lambda row: abs(int(row.get('day_number') or 1) - int(day_number)))
         day_number = int(leg.get('day_number') or 1)
 
@@ -336,7 +400,7 @@ def _build_weather_points(ride, leg=None):
         return []
 
 
-def _build_all_day_weather(ride, selected_day=None):
+def _build_all_day_weather(ride, selected_day=None, active_day=None):
     """Stored headwind and temperature chart data for every multi-day leg.
 
     The map remains scoped to the selected leg while every day's charts are
@@ -357,7 +421,7 @@ def _build_all_day_weather(ride, selected_day=None):
         ride_date = ride.get('date')
         if isinstance(ride_date, str):
             ride_date = date.fromisoformat(ride_date)
-        active_day = int(_active_plan_leg(ride).get('day_number') or 1)
+        active_day = int(active_day or _active_plan_leg(ride).get('day_number') or 1)
         selected_day = int(selected_day or active_day)
         plan_stops = get_ride_plan_stops(plan['id']) or []
         days = []
@@ -398,7 +462,9 @@ def _build_all_day_weather(ride, selected_day=None):
                 'is_selected': day_number == selected_day,
                 'available': bool(chart_data),
                 'distance_mi': round(max_distance_m * M_TO_MI),
+                'start_distance_mi': round(offset_mi, 1),
                 'chart_data': chart_data,
+                'plan': _build_plan_snapshot(ride, selected_day=day_number),
             })
 
         first_url = legs[0].get('rwgps_url') or ''
@@ -580,13 +646,16 @@ def ride_live_map(ride_id):
 
     mapbox_token = current_app.config.get('MAPBOX_ACCESS_TOKEN', '')
     requested_day = request.args.get('day', type=int)
+    auto_day = requested_day is None or request.args.get('auto') == '1'
     selected_leg = _active_plan_leg(ride, day_number=requested_day)
     selected_day = int(selected_leg.get('day_number') or 1)
     track = _radial_track(ride, selected_leg)
     weather_points = _build_weather_points(
         ride, selected_leg)  # [] when no stored forecast → map degrades
     all_day_weather = _build_all_day_weather(
-        ride, selected_day)  # None for ordinary one-day rides
+        ride, selected_day,
+        active_day=(selected_day if request.args.get('auto') == '1' else None),
+    )  # None for ordinary one-day rides
     plan_snapshot = _build_plan_snapshot(
         ride, selected_day)  # None when the ride resolves no plan
     opted_in = garmin_here = False
@@ -617,6 +686,8 @@ def ride_live_map(ride_id):
         garmin_url=garmin_url,
         is_guest=is_guest,
         plan_snapshot=plan_snapshot,
+        auto_day=auto_day,
+        selected_day=selected_day,
     )
 
 

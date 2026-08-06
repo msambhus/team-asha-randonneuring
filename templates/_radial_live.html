@@ -18,6 +18,52 @@
    Templates stay framework-builtin-only (no commafy / clean_name): the altitude
    profile geometry is computed server-side and the numbers are formatted in JS.
    =========================================================================== #}
+{% macro day_plan(plan, show_live=false) -%}
+  {% if plan %}
+  <div class="rps-body radial-day-plan">
+    <div class="rps-head">
+      <span class="rps-heading">
+        <span class="rps-label">Day {{ plan.active_day or 1 }} plan</span>
+        <a class="rps-name" href="{{ url_for('riders.ride_plan_detail', slug=plan.slug) }}">{{ plan.name }}</a>
+      </span>
+      <a class="rps-open" href="{{ url_for('riders.ride_plan_detail', slug=plan.slug) }}">Open full plan →</a>
+    </div>
+    <div class="rps-stats">
+      <div class="rps-stat"><span class="rps-v">{{ plan.day_distance_mi }}</span><span class="rps-l">day miles</span></div>
+      <div class="rps-stat"><span class="rps-v">{{ plan.day_elevation_ft }}</span><span class="rps-l">day ft climb</span></div>
+      <div class="rps-stat"><span class="rps-v">{{ plan.day_controls }}</span><span class="rps-l">day controls</span></div>
+      <div class="rps-stat"><span class="rps-v">{{ plan.day_moving_min // 60 }}h{{ '%02d'|format(plan.day_moving_min % 60) }}</span><span class="rps-l">planned riding</span></div>
+      <div class="rps-stat"><span class="rps-v">{{ plan.day_stopped_min // 60 }}h{{ '%02d'|format(plan.day_stopped_min % 60) }}</span><span class="rps-l">planned stops</span></div>
+      <div class="rps-stat"><span class="rps-v">{{ plan.day_elapsed_min // 60 }}h{{ '%02d'|format(plan.day_elapsed_min % 60) }}</span><span class="rps-l">planned elapsed</span></div>
+      {% if plan.day_time_bank_min is not none %}{% set dbank = plan.day_time_bank_min|int %}{% set dbank_abs = dbank|abs %}<div class="rps-stat"><span class="rps-v" style="color:{{ '#166534' if dbank >= 0 else '#991b1b' }};">{{ '+' if dbank >= 0 else '−' }}{{ dbank_abs // 60 }}h{{ '%02d'|format(dbank_abs % 60) }}</span><span class="rps-l">planned bank</span></div>{% endif %}
+    </div>
+    {% if show_live %}
+    <div class="rps-live-summary" id="rps-live-summary" hidden>
+      <div class="rps-live-title" id="rps-live-title">Ride so far</div>
+      <div class="rps-live-grid">
+        <span><strong id="rps-live-moving">—</strong><small>Riding</small></span>
+        <span><strong id="rps-live-stopped">—</strong><small>Stopped</small></span>
+        <span><strong id="rps-live-elapsed">—</strong><small>Elapsed</small></span>
+        <span><strong id="rps-live-bank">—</strong><small>Time bank</small></span>
+      </div>
+    </div>
+    {% endif %}
+    {% if plan.day_stops %}
+    <div class="rps-day-title">Day {{ plan.active_day }} controls and stops</div>
+    <div class="rps-day-list">
+      {% for stop in plan.day_stops %}
+      <div class="rps-day-row">
+        <span class="rps-day-name">{{ stop.name }}</span>
+        <span class="rps-day-meta">{{ stop.distance_mi }} mi{% if stop.break_min %} · {{ stop.break_min }}m stop{% endif %}</span>
+        <span class="rps-day-eta">{{ stop.eta }}</span>
+        {% if stop.time_bank_min is not none %}{% set sbank = stop.time_bank_min|int %}{% set sbank_abs = sbank|abs %}<span class="rps-day-bank {{ 'ahead' if sbank >= 0 else 'behind' }}">{{ '+' if sbank >= 0 else '−' }}{{ sbank_abs // 60 }}h{{ '%02d'|format(sbank_abs % 60) }}</span>{% else %}<span class="rps-day-bank">—</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+{%- endmacro %}
 <style>
 .radial-live { margin-top: 8px; }
 #radial-map { height: 46vh; min-height: 300px; width: 100%; border-radius: 12px;
@@ -133,13 +179,15 @@
 .rdw-head-right { display: flex; align-items: center; gap: 10px; }
 .rdw-toggle { min-width: 5.5rem; text-align: right; font-size: .66rem; font-weight: 750;
   color: var(--primary, #1a365d); white-space: nowrap; }
-.rdw-toggle::after { content: 'Show charts ▾'; }
-.radial-day-weather[open] .rdw-toggle::after { content: 'Hide charts ▴'; }
+.rdw-toggle::after { content: 'Show details ▾'; }
+.radial-day-weather[open] .rdw-toggle::after { content: 'Hide details ▴'; }
 .rdw-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .rdw-chart { min-width: 0; }
 .rdw-chart h4 { margin: 0 0 4px; font-size: .72rem; color: var(--text-light, #6b7280); }
 .rdw-chart canvas { width: 100% !important; height: 145px !important; }
 .rdw-empty { margin-top: 10px; font-size: .72rem; color: var(--text-light, #6b7280); }
+.radial-day-plan { padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border, #e5e7eb); }
+.radial-day-plan .rps-open { margin-top: 0; }
 /* Hover-scrub: crosshair on the profile + a matching dot on the map */
 .radial-elev { cursor: crosshair; }
 .radial-elev-cursor { stroke: var(--text-light, #6b7280); stroke-width: 1; stroke-dasharray: 3 2; opacity: 0.85; }
@@ -240,7 +288,8 @@
   .radial-plan-snapshot:not(.mobile-collapsed) .rps-body { margin-top: 10px; }
 }
 </style>
-<div class="radial-live" data-roster-url="{{ roster_url }}" data-poll-ms="{{ (poll_seconds or 30) * 1000 }}">
+<div class="radial-live" data-roster-url="{{ roster_url }}" data-poll-ms="{{ (poll_seconds or 30) * 1000 }}"
+     data-selected-day="{{ selected_day or 1 }}" data-auto-day="{{ 'true' if auto_day else 'false' }}">
   {% if all_day_weather and all_day_weather.days %}
   <nav class="radial-day-picker" aria-label="Route day shown on map">
     <span class="radial-day-picker-label">Map route</span>
@@ -328,9 +377,9 @@
   {% endif %}
 
   {% if all_day_weather and all_day_weather.days %}
-  <section class="radial-multiday" aria-label="All-days weather forecast">
+  <section class="radial-multiday" aria-label="Daily plans and weather">
     <div class="radial-multiday-head">
-      <span class="radial-multiday-title">All-days forecast</span>
+      <span class="radial-multiday-title">Daily plans &amp; weather</span>
       <a class="radial-multiday-link" href="{{ all_day_weather.url }}">Open full forecast →</a>
     </div>
     <div class="radial-multiday-list">
@@ -341,7 +390,8 @@
           {% if day.is_current %}<span class="rdw-current">Current</span>{% endif %}
           </span>
           <span class="rdw-head-right"><span class="rdw-distance">{{ day.distance_mi }} mi</span><span class="rdw-toggle" aria-hidden="true"></span></span>
-        </summary>
+      </summary>
+        {{ day_plan(day.plan, day.is_current) }}
         {% if day.available %}
         <div class="rdw-charts">
           <div class="rdw-chart"><h4>Headwind / tailwind by mile</h4><canvas id="radial-day-{{ day.day_number }}-headwind"></canvas></div>
@@ -356,7 +406,7 @@
   </section>
   {% endif %}
 
-  {% if plan_snapshot %}
+  {% if plan_snapshot and not all_day_weather %}
     <aside class="radial-plan-snapshot mobile-collapsed" aria-label="Today's ride plan">
       <button type="button" class="rps-mobile-toggle" aria-expanded="false">
         <span class="rps-mobile-title">
@@ -365,46 +415,7 @@
         </span>
         <span class="rps-mobile-chevron" aria-hidden="true">⌄</span>
       </button>
-      <div class="rps-body">
-      <div class="rps-head">
-        <span class="rps-heading">
-          <span class="rps-label">Day {{ plan_snapshot.active_day or 1 }} plan</span>
-          <a class="rps-name" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">{{ plan_snapshot.name }}</a>
-        </span>
-        <a class="rps-open" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">Open full plan →</a>
-      </div>
-      <div class="rps-stats">
-        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.day_distance_mi }}</span><span class="rps-l">day miles</span></div>
-        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.day_elevation_ft }}</span><span class="rps-l">day ft climb</span></div>
-        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.day_controls }}</span><span class="rps-l">day controls</span></div>
-        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.day_moving_min // 60 }}h{{ '%02d'|format(plan_snapshot.day_moving_min % 60) }}</span><span class="rps-l">planned riding</span></div>
-        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.day_stopped_min // 60 }}h{{ '%02d'|format(plan_snapshot.day_stopped_min % 60) }}</span><span class="rps-l">planned stops</span></div>
-        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.day_elapsed_min // 60 }}h{{ '%02d'|format(plan_snapshot.day_elapsed_min % 60) }}</span><span class="rps-l">planned elapsed</span></div>
-        {% if plan_snapshot.day_time_bank_min is not none %}{% set dbank = plan_snapshot.day_time_bank_min|int %}{% set dbank_abs = dbank|abs %}<div class="rps-stat"><span class="rps-v" style="color:{{ '#166534' if dbank >= 0 else '#991b1b' }};">{{ '+' if dbank >= 0 else '−' }}{{ dbank_abs // 60 }}h{{ '%02d'|format(dbank_abs % 60) }}</span><span class="rps-l">planned bank</span></div>{% endif %}
-      </div>
-      <div class="rps-live-summary" id="rps-live-summary" hidden>
-        <div class="rps-live-title" id="rps-live-title">Ride so far</div>
-        <div class="rps-live-grid">
-          <span><strong id="rps-live-moving">—</strong><small>Riding</small></span>
-          <span><strong id="rps-live-stopped">—</strong><small>Stopped</small></span>
-          <span><strong id="rps-live-elapsed">—</strong><small>Elapsed</small></span>
-          <span><strong id="rps-live-bank">—</strong><small>Time bank</small></span>
-        </div>
-      </div>
-      {% if plan_snapshot.day_stops %}
-      <div class="rps-day-title">Day {{ plan_snapshot.active_day }} controls and stops</div>
-      <div class="rps-day-list">
-        {% for stop in plan_snapshot.day_stops %}
-        <div class="rps-day-row">
-          <span class="rps-day-name">{{ stop.name }}</span>
-          <span class="rps-day-meta">{{ stop.distance_mi }} mi{% if stop.break_min %} · {{ stop.break_min }}m stop{% endif %}</span>
-          <span class="rps-day-eta">{{ stop.eta }}</span>
-          {% if stop.time_bank_min is not none %}{% set sbank = stop.time_bank_min|int %}{% set sbank_abs = sbank|abs %}<span class="rps-day-bank {{ 'ahead' if sbank >= 0 else 'behind' }}">{{ '+' if sbank >= 0 else '−' }}{{ sbank_abs // 60 }}h{{ '%02d'|format(sbank_abs % 60) }}</span>{% else %}<span class="rps-day-bank">—</span>{% endif %}
-        </div>
-        {% endfor %}
-      </div>
-      {% endif %}
-      </div>
+      {{ day_plan(plan_snapshot, true) }}
     </aside>
   {% endif %}
 </div>
@@ -419,6 +430,9 @@
 
   var ROSTER_URL = root.getAttribute('data-roster-url');
   var POLL_MS = parseInt(root.getAttribute('data-poll-ms'), 10) || 30000;
+  var SELECTED_DAY = parseInt(root.getAttribute('data-selected-day'), 10) || 1;
+  var AUTO_DAY = root.getAttribute('data-auto-day') === 'true';
+  var autoDayNavigating = false;
   var MAPBOX_TOKEN = {{ mapbox_token | tojson }};
   var ROUTE_POLYLINE = {{ route_polyline | tojson }};   // [[lng,lat],…] or null
   var PROFILE = {{ elevation_profile | tojson }};         // build_elevation_profile(...)
@@ -1115,6 +1129,7 @@
         renderPlans(data);
         renderConditions(data);
         var roster = (data && data.roster) || [];
+        syncDayToRouteProgress(roster);
         render(roster);
         if (statusEl) {
           statusEl.textContent = roster.length
@@ -1125,6 +1140,28 @@
       .catch(function () {
         if (statusEl) { statusEl.textContent = 'Could not refresh live positions.'; }
       });
+  }
+
+  function syncDayToRouteProgress(roster) {
+    if (!AUTO_DAY || autoDayNavigating || !ALL_DAY_WEATHER.length || !roster.length) { return; }
+    var distances = roster.map(function (row) { return Number(row.route_position_mi); })
+      .filter(function (mile) { return Number.isFinite(mile); });
+    if (!distances.length) { return; }
+    var leaderMile = Math.max.apply(null, distances);
+    var activeDay = 1;
+    ALL_DAY_WEATHER.slice().sort(function (a, b) {
+      return Number(a.start_distance_mi || 0) - Number(b.start_distance_mi || 0);
+    }).forEach(function (day) {
+      if (leaderMile >= Number(day.start_distance_mi || 0)) {
+        activeDay = Number(day.day_number || activeDay);
+      }
+    });
+    if (activeDay === SELECTED_DAY) { return; }
+    autoDayNavigating = true;
+    var target = new URL(window.location.href);
+    target.searchParams.set('day', String(activeDay));
+    target.searchParams.set('auto', '1');
+    window.location.replace(target.toString());
   }
 
   initMap();
