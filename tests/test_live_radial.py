@@ -143,6 +143,9 @@ def test_ride_start_anchor_keeps_miles_before_livetrack_began():
     assert roster[0]['dist_display'] == 40.0
     assert roster[0]['elapsed_min'] == 288
     assert roster[0]['avg_elapsed_speed_mph'] == 8.3
+    assert roster[0]['moving_min'] == 45.0
+    assert roster[0]['stopped_min'] == 0.0
+    assert roster[0]['avg_moving_speed_mph'] == 13.3
 
 
 def test_first_fix_anchor_rebases_an_explicit_permanent():
