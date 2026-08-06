@@ -97,6 +97,22 @@ def test_has_external_events_flag(client):
     assert ctx2['has_external_events'] is False
 
 
+def test_minnesota_randonneurs_has_calendar_filter(client):
+    """Minnesota events receive a named club filter and the matching card region."""
+    minnesota = _event(
+        id=194,
+        name='Coulee Challenge',
+        club_code='MNR',
+        club_name='Minnesota Randonneurs',
+        region='Minnesota',
+        distance_km=1200,
+    )
+    ctx = _render_upcoming(client, [minnesota])
+    assert 'Minnesota' in ctx['region_colors']
+    assert ctx['rusa_events'][0]['region'] == 'Minnesota'
+    assert 1200 in ctx['distances']
+
+
 def test_team_ride_skipped_in_wind_warning_loop(client):
     """A Team Asha ride is skipped by the wind-warning loop even when it has a linked
     plan + near date — the banner is ungated, so a hidden ride must never raise it."""
