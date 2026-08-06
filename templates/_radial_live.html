@@ -45,7 +45,7 @@
 .rps-label { font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-light, #6b7280); }
 .rps-name { font-weight: 700; font-size: 0.98rem; color: var(--primary, #1a365d); text-decoration: none; line-height: 1.2; }
 .rps-name:hover { text-decoration: underline; }
-.rps-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 12px; }
+.rps-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px 12px; }
 .rps-stat { display: flex; flex-direction: column; }
 .rps-v { font-weight: 700; font-size: 0.95rem; color: var(--text, #111); }
 .rps-l { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-light, #6b7280); }
@@ -54,12 +54,23 @@
 .rps-day-title { margin: 12px 0 6px; font-size: 0.74rem; font-weight: 800;
   text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-light, #6b7280); }
 .rps-day-list { display: grid; gap: 5px; }
-.rps-day-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px;
+.rps-day-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 10px;
   align-items: baseline; padding: 7px 9px; border: 1px solid var(--border, #e5e7eb);
   border-radius: 8px; background: var(--card-bg, #fff); font-size: 0.8rem; }
 .rps-day-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
 .rps-day-meta { color: var(--text-light, #6b7280); white-space: nowrap; }
 .rps-day-eta { font-weight: 750; color: var(--primary, #1a365d); white-space: nowrap; }
+.rps-day-bank { min-width: 4.5rem; text-align: right; font-weight: 750; white-space: nowrap; }
+.rps-day-bank.ahead { color: #166534; }
+.rps-day-bank.behind { color: #991b1b; }
+.rps-live-summary { margin-top: 12px; padding: 10px; border: 1px solid var(--border, #e5e7eb);
+  border-left: 4px solid var(--primary, #1a365d); border-radius: 8px; background: var(--bg, #f8fafc); }
+.rps-live-title { margin-bottom: 7px; font-size: .7rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--primary, #1a365d); }
+.rps-live-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.rps-live-grid span { display: flex; flex-direction: column; }
+.rps-live-grid strong { font-size: .86rem; }
+.rps-live-grid small { font-size: .58rem; text-transform: uppercase; color: var(--text-light, #6b7280); }
 .radial-elev-grid { stroke: var(--border, #e5e7eb); stroke-width: 0.5; opacity: 0.6; }
 .radial-elev-ylabel { fill: var(--text-light, #6b7280); font-size: 9px; text-anchor: end; }
 .radial-elev-xlabel { fill: var(--text-light, #6b7280); font-size: 9px; text-anchor: middle; }
@@ -88,29 +99,39 @@
 .radial-weather-chart { min-width: 0; }
 .radial-weather-chart h4 { margin: 0 0 4px; font-size: 0.75rem; color: var(--text-light, #6b7280); }
 .radial-weather-chart canvas { width: 100% !important; height: 120px !important; }
-.radial-multiday { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--border, #e5e7eb);
-  border-radius: 12px; background: var(--card-bg, #fff); }
+.radial-day-picker { display: flex; align-items: center; gap: 6px; margin: 0 0 9px;
+  overflow-x: auto; padding-bottom: 2px; }
+.radial-day-picker-label { margin-right: 3px; font-size: .68rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--text-light, #6b7280); }
+.radial-day-link { flex: 0 0 auto; padding: 5px 10px; border: 1px solid var(--border, #e5e7eb);
+  border-radius: 999px; background: var(--card-bg, #fff); color: var(--primary, #1a365d);
+  text-decoration: none; font-size: .75rem; font-weight: 750; }
+.radial-day-link.selected { background: var(--primary, #1a365d); color: #fff; border-color: var(--primary, #1a365d); }
+.radial-day-link.current:not(.selected)::after { content: ' · current'; font-size: .62rem; }
+.radial-multiday { margin-top: 14px; }
 .radial-multiday-head { display: flex; align-items: baseline; justify-content: space-between;
-  gap: 10px; flex-wrap: wrap; margin-bottom: 9px; }
+  gap: 10px; flex-wrap: wrap; margin: 0 0 9px; }
 .radial-multiday-title { font-weight: 750; color: var(--primary, #1a365d); }
 .radial-multiday-link { font-size: 0.78rem; font-weight: 700; color: var(--primary, #1a365d);
   text-decoration: none; }
 .radial-multiday-link:hover { text-decoration: underline; }
-.radial-multiday-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.radial-day-weather { min-width: 0; padding: 10px; border: 1px solid var(--border, #e5e7eb);
-  border-radius: 10px; background: var(--bg, #f8fafc); }
-.radial-day-weather.current { border: 2px solid var(--primary, #1a365d); padding: 9px;
-  background: color-mix(in srgb, var(--primary, #1a365d) 5%, var(--card-bg, #fff)); }
-.rdw-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
-.rdw-day { font-weight: 800; color: var(--text, #111); }
+.radial-multiday-list { display: grid; gap: 12px; }
+.radial-day-weather { min-width: 0; padding: 12px 14px; border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px; background: var(--card-bg, #fff); }
+.radial-day-weather.current { border-left: 4px solid var(--primary, #1a365d); padding-left: 11px; }
+.rdw-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 9px; }
+.rdw-heading { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.rdw-day { font-weight: 800; color: var(--primary, #1a365d); }
 .rdw-current { padding: 2px 5px; border-radius: 999px; background: var(--primary, #1a365d);
   color: #fff; font-size: 0.58rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; }
-.rdw-date { display: block; margin-top: 1px; font-size: .68rem; color: var(--text-light, #6b7280); }
-.rdw-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 9px; }
-.rdw-stat { display: flex; flex-direction: column; min-width: 0; }
-.rdw-value { font-size: .84rem; font-weight: 800; color: var(--text, #111); white-space: nowrap; }
-.rdw-label { font-size: .57rem; color: var(--text-light, #6b7280); text-transform: uppercase;
-  letter-spacing: .03em; white-space: nowrap; }
+.rdw-date { font-size: .72rem; color: var(--text-light, #6b7280); white-space: nowrap; }
+.rdw-distance { margin-left: auto; font-size: .72rem; font-weight: 750;
+  color: var(--text-light, #6b7280); white-space: nowrap; }
+.rdw-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.rdw-chart { min-width: 0; }
+.rdw-chart h4 { margin: 0 0 4px; font-size: .72rem; color: var(--text-light, #6b7280); }
+.rdw-chart canvas { width: 100% !important; height: 145px !important; }
 .rdw-empty { margin-top: 10px; font-size: .72rem; color: var(--text-light, #6b7280); }
 /* Hover-scrub: crosshair on the profile + a matching dot on the map */
 .radial-elev { cursor: crosshair; }
@@ -192,9 +213,7 @@
 .radial-empty td { padding: 16px 8px; color: var(--text-light, #6b7280); text-align: center; }
 @media (max-width: 680px) {
   .radial-weather-charts { grid-template-columns: 1fr; }
-  .radial-multiday-grid { display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
-    padding-bottom: 3px; }
-  .radial-day-weather { flex: 0 0 72%; scroll-snap-align: start; }
+  .rdw-charts { grid-template-columns: 1fr; }
   .radial-detail-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .radial-table { font-size: 0.8rem; }
   .radial-table thead th, .radial-row td { padding-left: 4px; padding-right: 4px; }
@@ -204,6 +223,9 @@
   .radial-toggle { min-width: 0; padding: 5px 7px; }
   .radial-toggle-label { display: none; }
   .radial-detail { margin: 0 2px; padding: 10px; }
+  .rps-day-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .rps-day-bank { grid-column: 2 / -1; }
+  .rps-live-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rps-mobile-toggle { display: flex; }
   .radial-plan-snapshot { padding: 10px 12px; }
   .radial-plan-snapshot.mobile-collapsed .rps-body { display: none; }
@@ -212,6 +234,16 @@
 }
 </style>
 <div class="radial-live" data-roster-url="{{ roster_url }}" data-poll-ms="{{ (poll_seconds or 30) * 1000 }}">
+  {% if all_day_weather and all_day_weather.days %}
+  <nav class="radial-day-picker" aria-label="Route day shown on map">
+    <span class="radial-day-picker-label">Map route</span>
+    {% for day in all_day_weather.days %}
+    <a class="radial-day-link{% if day.is_selected %} selected{% endif %}{% if day.is_current %} current{% endif %}"
+       href="{{ url_for('live.ride_live_map', ride_id=ride.id, day=day.day_number) }}"
+       {% if day.is_selected %}aria-current="page"{% endif %}>Day {{ day.day_number }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
   {% if mapbox_token %}
   <div id="radial-map"></div>
   {% else %}
@@ -273,6 +305,7 @@
   </div>
   {% endif %}
 
+  {% if not all_day_weather %}
   <section class="radial-conditions" id="radial-conditions" aria-live="polite">
     <div class="radial-conditions-head">
       <span class="radial-conditions-title">Route conditions</span>
@@ -285,6 +318,7 @@
       <div class="radial-weather-chart"><h4>Temperature by mile</h4><canvas id="radial-temperature-chart"></canvas></div>
     </div>
   </section>
+  {% endif %}
 
   {% if all_day_weather and all_day_weather.days %}
   <section class="radial-multiday" aria-label="All-days weather forecast">
@@ -292,19 +326,19 @@
       <span class="radial-multiday-title">All-days forecast</span>
       <a class="radial-multiday-link" href="{{ all_day_weather.url }}">Open full forecast →</a>
     </div>
-    <div class="radial-multiday-grid">
+    <div class="radial-multiday-list">
       {% for day in all_day_weather.days %}
       <article class="radial-day-weather{% if day.is_current %} current{% endif %}">
         <div class="rdw-head">
-          <span><span class="rdw-day">Day {{ day.day_number }}</span><span class="rdw-date">{{ day.forecast_date }}</span></span>
+          <span class="rdw-heading"><span class="rdw-day">Day {{ day.day_number }}</span><span class="rdw-date">{{ day.forecast_date }}</span>
           {% if day.is_current %}<span class="rdw-current">Current</span>{% endif %}
+          </span>
+          <span class="rdw-distance">{{ day.distance_mi }} mi</span>
         </div>
         {% if day.available %}
-        <div class="rdw-stats">
-          <span class="rdw-stat"><span class="rdw-value">{{ day.distance_mi }} mi</span><span class="rdw-label">Route</span></span>
-          <span class="rdw-stat"><span class="rdw-value">{{ day.temp_low_f }}–{{ day.temp_high_f }}°F</span><span class="rdw-label">Temperature</span></span>
-          <span class="rdw-stat"><span class="rdw-value">{{ day.peak_wind_mph }} mph</span><span class="rdw-label">Peak wind</span></span>
-          <span class="rdw-stat"><span class="rdw-value">{{ day.headwind_pct }}%</span><span class="rdw-label">Headwind</span></span>
+        <div class="rdw-charts">
+          <div class="rdw-chart"><h4>Headwind / tailwind by mile</h4><canvas id="radial-day-{{ day.day_number }}-headwind"></canvas></div>
+          <div class="rdw-chart"><h4>Temperature by mile</h4><canvas id="radial-day-{{ day.day_number }}-temperature"></canvas></div>
         </div>
         {% else %}
         <div class="rdw-empty">Forecast not cached yet</div>
@@ -319,7 +353,7 @@
     <aside class="radial-plan-snapshot mobile-collapsed" aria-label="Today's ride plan">
       <button type="button" class="rps-mobile-toggle" aria-expanded="false">
         <span class="rps-mobile-title">
-          <span class="rps-label">Today's plan · Day {{ plan_snapshot.active_day or 1 }}</span>
+          <span class="rps-label">{{ "Today's plan" if plan_snapshot.is_current_day else "Selected plan" }} · Day {{ plan_snapshot.active_day or 1 }}</span>
           <span class="rps-mobile-name">{{ plan_snapshot.name }}</span>
         </span>
         <span class="rps-mobile-chevron" aria-hidden="true">⌄</span>
@@ -327,17 +361,28 @@
       <div class="rps-body">
       <div class="rps-head">
         <span class="rps-heading">
-          <span class="rps-label">Today's plan · Day {{ plan_snapshot.active_day or 1 }}</span>
+          <span class="rps-label">{{ "Today's plan" if plan_snapshot.is_current_day else "Selected plan" }} · Day {{ plan_snapshot.active_day or 1 }}</span>
           <a class="rps-name" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">{{ plan_snapshot.name }}</a>
         </span>
         <a class="rps-open" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">Open full plan →</a>
       </div>
       <div class="rps-stats">
-        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.distance_mi }}</span><span class="rps-l">miles</span></div>
-        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.elevation_ft }}</span><span class="rps-l">ft climb</span></div>
-        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.controls }}</span><span class="rps-l">controls</span></div>
-        {% if plan_snapshot.cutoff_hours %}<div class="rps-stat"><span class="rps-v">{{ plan_snapshot.cutoff_hours }}</span><span class="rps-l">h limit</span></div>{% endif %}
-        {% if plan_snapshot.start_time %}<div class="rps-stat"><span class="rps-v">{{ plan_snapshot.start_time }}</span><span class="rps-l">start</span></div>{% endif %}
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.day_distance_mi }}</span><span class="rps-l">day miles</span></div>
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.day_elevation_ft }}</span><span class="rps-l">day ft climb</span></div>
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.day_controls }}</span><span class="rps-l">day controls</span></div>
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.day_moving_min // 60 }}h{{ '%02d'|format(plan_snapshot.day_moving_min % 60) }}</span><span class="rps-l">planned riding</span></div>
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.day_stopped_min // 60 }}h{{ '%02d'|format(plan_snapshot.day_stopped_min % 60) }}</span><span class="rps-l">planned stops</span></div>
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.day_elapsed_min // 60 }}h{{ '%02d'|format(plan_snapshot.day_elapsed_min % 60) }}</span><span class="rps-l">planned elapsed</span></div>
+        {% if plan_snapshot.day_time_bank_min is not none %}{% set dbank = plan_snapshot.day_time_bank_min|int %}{% set dbank_abs = dbank|abs %}<div class="rps-stat"><span class="rps-v" style="color:{{ '#166534' if dbank >= 0 else '#991b1b' }};">{{ '+' if dbank >= 0 else '−' }}{{ dbank_abs // 60 }}h{{ '%02d'|format(dbank_abs % 60) }}</span><span class="rps-l">planned bank</span></div>{% endif %}
+      </div>
+      <div class="rps-live-summary" id="rps-live-summary" hidden>
+        <div class="rps-live-title" id="rps-live-title">Ride so far</div>
+        <div class="rps-live-grid">
+          <span><strong id="rps-live-moving">—</strong><small>Riding</small></span>
+          <span><strong id="rps-live-stopped">—</strong><small>Stopped</small></span>
+          <span><strong id="rps-live-elapsed">—</strong><small>Elapsed</small></span>
+          <span><strong id="rps-live-bank">—</strong><small>Time bank</small></span>
+        </div>
       </div>
       {% if plan_snapshot.day_stops %}
       <div class="rps-day-title">Day {{ plan_snapshot.active_day }} controls and stops</div>
@@ -347,6 +392,7 @@
           <span class="rps-day-name">{{ stop.name }}</span>
           <span class="rps-day-meta">{{ stop.distance_mi }} mi{% if stop.break_min %} · {{ stop.break_min }}m stop{% endif %}</span>
           <span class="rps-day-eta">{{ stop.eta }}</span>
+          {% if stop.time_bank_min is not none %}{% set sbank = stop.time_bank_min|int %}{% set sbank_abs = sbank|abs %}<span class="rps-day-bank {{ 'ahead' if sbank >= 0 else 'behind' }}">{{ '+' if sbank >= 0 else '−' }}{{ sbank_abs // 60 }}h{{ '%02d'|format(sbank_abs % 60) }}</span>{% else %}<span class="rps-day-bank">—</span>{% endif %}
         </div>
         {% endfor %}
       </div>
@@ -370,6 +416,7 @@
   var ROUTE_POLYLINE = {{ route_polyline | tojson }};   // [[lng,lat],…] or null
   var PROFILE = {{ elevation_profile | tojson }};         // build_elevation_profile(...)
   var WEATHER_POINTS = {{ weather_points | default([]) | tojson }};  // [{lat,lng,temp_f,wind_speed_mph,wind_type,arrow_deg,color}]
+  var ALL_DAY_WEATHER = {{ (all_day_weather.days if all_day_weather else []) | tojson }};
 
   var statusEl = document.getElementById('radial-status');
   var tbody = document.getElementById('radial-tbody');
@@ -785,12 +832,28 @@
   }
 
   var lastRoster = [];
+  function renderLivePlanSummary(roster) {
+    var box = document.getElementById('rps-live-summary');
+    if (!box) { return; }
+    var row = roster && roster.length ? roster[0] : null;
+    if (!row || row.elapsed_min == null) { box.hidden = true; return; }
+    box.hidden = false;
+    var title = document.getElementById('rps-live-title');
+    if (title) { title.textContent = 'Ride so far · ' + (row.display_name || 'lead rider'); }
+    document.getElementById('rps-live-moving').textContent = fmtDuration(row.moving_min);
+    document.getElementById('rps-live-stopped').textContent = fmtDuration(row.stopped_min);
+    document.getElementById('rps-live-elapsed').textContent = fmtDuration(row.elapsed_min);
+    var bank = document.getElementById('rps-live-bank');
+    bank.textContent = fmtMin(row.banked_cutoff_min);
+    bank.style.color = Number(row.banked_cutoff_min) < 0 ? '#991b1b' : '#166534';
+  }
   function render(roster) {
     lastRoster = roster;
     renderTable(roster);
     updateMarkers(roster);
     updateProfileDots(roster);
     updateWeatherChartMarkers(roster);
+    renderLivePlanSummary(roster);
   }
 
   function planQuery() {
@@ -969,6 +1032,23 @@
       backgroundColor: color + '22', borderWidth: 1.5, fill: Boolean(fill),
       tension: 0.25, pointRadius: 0, pointHitRadius: 8 };
   }
+  function initAllDayWeatherCharts() {
+    (ALL_DAY_WEATHER || []).forEach(function (day) {
+      var cd = day && day.chart_data;
+      if (!cd || !cd.labels || cd.labels.length < 2) { return; }
+      var headPos = (cd.headwind_mph || []).map(function (v) { return Number(v) > 0 ? Number(v) : 0; });
+      var headNeg = (cd.headwind_mph || []).map(function (v) { return Number(v) < 0 ? Number(v) : 0; });
+      var prefix = 'radial-day-' + day.day_number + '-';
+      weatherCharts['day-' + day.day_number + '-headwind'] = makeWeatherChart(
+        prefix + 'headwind', cd.labels, [
+          lineSet('Headwind', headPos, '#dc2626', true),
+          lineSet('Tailwind', headNeg, '#16a34a', true)
+        ]);
+      weatherCharts['day-' + day.day_number + '-temperature'] = makeWeatherChart(
+        prefix + 'temperature', cd.labels,
+        [lineSet('Temperature', cd.temperature_f || [], '#ef4444', true)]);
+    });
+  }
   function renderConditions(data) {
     var chips = document.getElementById('radial-condition-chips');
     var empty = document.getElementById('radial-weather-empty');
@@ -1031,6 +1111,7 @@
   }
 
   initMap();
+  initAllDayWeatherCharts();       // all multi-day forecasts are visible without leaving live
   initMobilePlanToggle();           // selected plan starts compact on phones
   buildRouteIndex();                // cumulative route distances for hover→map scrub
   initElevHover();                  // hovering the elevation profile moves a map dot
