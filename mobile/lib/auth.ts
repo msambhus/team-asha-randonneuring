@@ -19,7 +19,16 @@ import type { GoogleAuthResponse } from './types';
  *  /api/auth/demo endpoint. Only works when the server has demo mode enabled;
  *  otherwise it 404s and we surface a friendly message. */
 export async function demoSignIn(): Promise<GoogleAuthResponse> {
-  const res = await fetch(`${API_BASE}/api/auth/demo`, {
+  return demoSignInAt('/api/auth/demo');
+}
+
+/** Resettable reviewer identity used to demonstrate permanent account deletion. */
+export async function demoDeleteSignIn(): Promise<GoogleAuthResponse> {
+  return demoSignInAt('/api/auth/demo-delete');
+}
+
+async function demoSignInAt(path: string): Promise<GoogleAuthResponse> {
+  const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
     headers: authHeaders(null),
   });

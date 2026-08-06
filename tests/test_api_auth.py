@@ -432,6 +432,28 @@ def test_demo_signin_creates_and_links_demo_user(client, app):
         assert auth_mod.load_mobile_token(data['token']) == {'user_id': 99, 'rider_id': 7}
 
 
+def test_demo_delete_signin_uses_separate_resettable_identity(client, app):
+    app.config['DEMO_MODE_ENABLED'] = True
+    app.config['DEMO_RIDER_ID'] = '7'
+    new_user = {'id': 100, 'email': 'delete-review@teamasha.demo',
+                'google_id': 'demo-delete-reviewer', 'rider_id': None}
+    with patch('models.get_rider_by_id', return_value={'id': 7}), \
+         patch('models.get_user_by_google_id', return_value=None) as mock_find, \
+         patch('models.create_user', return_value=new_user) as mock_create, \
+         patch('models.complete_user_profile') as mock_link:
+        resp = client.post('/api/auth/demo-delete')
+
+    assert resp.status_code == 200
+    mock_find.assert_called_once_with('demo-delete-reviewer')
+    mock_create.assert_called_once_with(
+        'delete-review@teamasha.demo', 'demo-delete-reviewer')
+    mock_link.assert_called_once_with(100, 7)
+    with app.app_context():
+        assert auth_mod.load_mobile_token(resp.get_json()['token']) == {
+            'user_id': 100, 'rider_id': 7,
+        }
+
+
 def test_demo_signin_ignores_request_body_rider(client, app):
     """Security: the rider is pinned to the server's DEMO_RIDER_ID — a caller
     cannot pick a different rider via the request body."""

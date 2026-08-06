@@ -13,7 +13,7 @@ import * as SecureStore from 'expo-secure-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { getToken, storeToken, deleteToken } from '../lib/api';
 import {
-  demoSignIn, deleteAccount as deleteAccountApi,
+  demoSignIn, demoDeleteSignIn, deleteAccount as deleteAccountApi,
   passwordLogin, passwordSignup,
   requestEmailOtp as requestEmailOtpApi,
   verifyEmailOtp as verifyEmailOtpApi,
@@ -38,6 +38,8 @@ interface SessionValue {
   isLoading: boolean;
   /** Reviewer/demo login (no third party). Returns null on success, else an error string. */
   signInDemo: () => Promise<string | null>;
+  /** Resettable demo identity for recording the permanent deletion flow. */
+  signInDemoDelete: () => Promise<string | null>;
   /** Email + password sign-in / sign-up. Returns null on success, else an error string. */
   signInWithPassword: (email: string, password: string) => Promise<string | null>;
   signUpWithPassword: (email: string, password: string) => Promise<string | null>;
@@ -61,6 +63,7 @@ const SessionContext = createContext<SessionValue>({
   accountEmail: null,
   isLoading: true,
   signInDemo: async () => 'not ready',
+  signInDemoDelete: async () => 'not ready',
   signInWithPassword: async () => 'not ready',
   signUpWithPassword: async () => 'not ready',
   requestEmailOtp: async () => 'not ready',
@@ -116,6 +119,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       return null;
     } catch (e) {
       return e instanceof Error ? e.message : 'Demo sign-in failed';
+    }
+  }, [applySession]);
+
+  const signInDemoDelete = useCallback(async (): Promise<string | null> => {
+    try {
+      await applySession(await demoDeleteSignIn());
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : 'Deletion demo sign-in failed';
     }
   }, [applySession]);
 
@@ -205,7 +217,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     <SessionContext.Provider
       value={{
         token, riderId, profileComplete, accountEmail, isLoading,
-        signInDemo, signInWithPassword, signUpWithPassword,
+        signInDemo, signInDemoDelete, signInWithPassword, signUpWithPassword,
         requestEmailOtp, verifyEmailOtp, setupProfile, signOut, deleteAccount,
       }}
     >
