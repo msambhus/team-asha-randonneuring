@@ -48,6 +48,11 @@
         })
         .then(function(data) {
             showLoading(false);
+            if (data && data.available === false) {
+                hideResults();
+                showError(data.message || 'Weather forecast is not available yet.');
+                return;
+            }
             renderResults(data);
         })
         .catch(function(err) {
@@ -117,11 +122,13 @@
     }
 
     function renderSummary(data) {
-        document.getElementById('route-name').textContent = data.route_name;
+        document.getElementById('route-name').textContent = data.route_name || 'Route weather';
         var chips = document.getElementById('summary-chips');
         chips.innerHTML = '';
 
-        addChip(chips, data.total_distance_mi + ' mi', '');
+        if (Number.isFinite(Number(data.total_distance_mi))) {
+            addChip(chips, data.total_distance_mi + ' mi', '');
+        }
         if (data.total_elevation_ft) {
             addChip(chips, data.total_elevation_ft.toLocaleString() + ' ft', '');
         }

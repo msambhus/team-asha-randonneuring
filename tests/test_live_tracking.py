@@ -384,8 +384,10 @@ def test_map_page_renders_for_profile_rider(client):
     assert "metric('Wind ahead'" in html
     assert html.index('id="radial-table"') < html.index(
         'id="radial-conditions"')
-    assert html.index('id="radial-table"') < html.index(
-        'class="radial-elev-row"')
+    # The compact day plan belongs at the end, after route conditions. Elevation
+    # remains between the rider table and conditions when route data is available.
+    assert html.index('id="radial-conditions"') < html.index(
+        'class="radial-plan-snapshot')
     assert 'liveRiderMarkers' in html
     assert 'updateWeatherChartMarkers(roster)' in html
     assert 'updateWeatherScrub(mi)' in html

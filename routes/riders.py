@@ -223,6 +223,29 @@ def _extract_distance_km(name):
     return int(match.group(1)) if match else None
 
 
+def _plan_distance_km(plan):
+    """Return the canonical event distance without relying on its display name.
+
+    Newer plans persist ``distance_km``.  The name parser remains only as a
+    compatibility fallback for old rows, followed by the measured route length
+    for manually-created plans whose name contains no ``1200K`` token.
+    """
+    stored = plan.get('distance_km')
+    if stored:
+        return int(round(float(stored)))
+    named = _extract_distance_km(plan.get('name') or '')
+    if named:
+        return named
+    miles = float(plan.get('total_distance_miles') or 0)
+    if not miles:
+        return None
+    measured_km = miles * 1.609344
+    for nominal in (200, 300, 400, 600, 1000, 1200):
+        if abs(measured_km - nominal) <= max(15, nominal * 0.03):
+            return nominal
+    return int(round(measured_km))
+
+
 _CUTOFF_HOURS = {200: 13.5, 300: 20, 400: 27, 600: 40, 1000: 75, 1200: 90}
 
 
@@ -2347,7 +2370,7 @@ def ride_plan_detail_v1(slug):
     plan['total_elevation_ft'] = int(plan.get('total_elevation_ft') or 0)
 
     # Extract distance class for bookend time calculation
-    distance_km = _extract_distance_km(plan['name'])
+    distance_km = _plan_distance_km(plan)
     cutoff_hours = _get_cutoff_hours(distance_km)
     plan['distance_km'] = distance_km
     plan['cutoff_hours'] = cutoff_hours
@@ -2614,7 +2637,7 @@ def ride_plan_detail(slug):
     plan['total_distance_miles'] = float(plan.get('total_distance_miles') or 0)
     plan['total_elevation_ft'] = int(plan.get('total_elevation_ft') or 0)
 
-    distance_km = _extract_distance_km(plan['name'])
+    distance_km = _plan_distance_km(plan)
     cutoff_hours = _get_cutoff_hours(distance_km)
     plan['distance_km'] = distance_km
     plan['cutoff_hours'] = cutoff_hours
@@ -3056,7 +3079,7 @@ def ride_plan_live(slug):
     plan = dict(plan)
     plan['total_distance_miles'] = float(plan.get('total_distance_miles') or 0)
     plan['total_elevation_ft'] = int(plan.get('total_elevation_ft') or 0)
-    distance_km = _extract_distance_km(plan['name'])
+    distance_km = _plan_distance_km(plan)
     cutoff_hours = _get_cutoff_hours(distance_km)
     plan['distance_km'] = distance_km
     plan['cutoff_hours'] = cutoff_hours
@@ -3260,7 +3283,7 @@ def custom_ride_plan_view(slug, custom_plan_id=None):
         plan['custom_name'] = f"My {base_plan['name']}"
     
     # Extract distance class for bookend time calculation
-    distance_km = _extract_distance_km(plan['name'])
+    distance_km = _plan_distance_km(plan)
     cutoff_hours = _get_cutoff_hours(distance_km)
     plan['distance_km'] = distance_km
     plan['cutoff_hours'] = cutoff_hours
@@ -3504,7 +3527,7 @@ def custom_ride_plan_editor(slug):
         base_stops_raw = get_ride_plan_stops(base_plan['id'])
         
         # Calculate derived metrics for base stops
-        distance_km = _extract_distance_km(base_plan['name'])
+        distance_km = _plan_distance_km(base_plan)
         cutoff_hours = _get_cutoff_hours(distance_km)
         total_distance = float(base_plan.get('total_distance_miles') or 0)
         
@@ -3651,7 +3674,7 @@ def custom_ride_plan_editor(slug):
         custom_stops.sort(key=lambda s: (s.get('distance_miles') or 0, s.get('stop_order', 999)))
         
         # Calculate derived metrics for editor display
-        distance_km = _extract_distance_km(base_plan['name'])
+        distance_km = _plan_distance_km(base_plan)
         cutoff_hours = _get_cutoff_hours(distance_km)
         total_distance = float(base_plan.get('total_distance_miles') or 0)
         
@@ -3698,7 +3721,7 @@ def custom_ride_plan_editor(slug):
         base_stops_raw = get_ride_plan_stops(base_plan['id'])
         
         # Calculate derived metrics for base stops
-        distance_km = _extract_distance_km(base_plan['name'])
+        distance_km = _plan_distance_km(base_plan)
         cutoff_hours = _get_cutoff_hours(distance_km)
         total_distance = float(base_plan.get('total_distance_miles') or 0)
         
