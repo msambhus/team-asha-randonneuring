@@ -174,11 +174,11 @@ def _day_distance_boundaries(stops):
 
 
 def _progress_day_number(ride, legs, stops):
-    """Active day from the leading live rider's position across all route legs.
+    """Active day from progress along the plan's single full-course distance axis.
 
-    Each latest point is projected against every cached day route. The closest
-    on-route match yields a cumulative plan distance (day offset + leg miles),
-    so a day changes exactly when course progress reaches that day's first mile.
+    Projecting against the individual day routes is ambiguous where legs overlap:
+    a rider near mile 235 can appear near mile 0/120 on another leg.  The plan page
+    already has the canonical full-course geometry, so live uses that same track.
     """
     ride_id = (ride or {}).get('id')
     boundaries = _day_distance_boundaries(stops)
@@ -190,26 +190,17 @@ def _progress_day_number(ride, legs, stops):
     try:
         since = datetime.now(timezone.utc) - timedelta(hours=DISPLAY_WINDOW_HOURS)
         rows = get_latest_positions_for_ride(ride_id, since)
-        route_legs = []
-        for leg in legs or []:
-            day = int(leg.get('day_number') or leg.get('leg_order') or 1)
-            route_id = extract_rwgps_route_id(leg.get('rwgps_url'))
-            track = get_route_elevation_track(route_id) if route_id else None
-            if track:
-                route_legs.append((day, track))
+        track = _radial_overview_track(ride)
+        if not track:
+            return None
         leader_mile = None
         for row in rows or []:
-            candidates = []
-            for day, track in route_legs:
-                dist_m, _idx, off_by_m = tlm.project_to_route(
-                    float(row['lat']), float(row['lng']), track)
-                if dist_m is not None and off_by_m is not None:
-                    candidates.append((off_by_m,
-                                       boundaries.get(day, 0) + dist_m * M_TO_MI))
-            if candidates:
-                off_by_m, mile = min(candidates, key=lambda item: item[0])
-                if off_by_m <= tlm.ON_ROUTE_MAX_M:
-                    leader_mile = mile if leader_mile is None else max(leader_mile, mile)
+            dist_m, _idx, off_by_m = tlm.project_to_route(
+                float(row['lat']), float(row['lng']), track)
+            if (dist_m is not None and off_by_m is not None
+                    and off_by_m <= tlm.ON_ROUTE_MAX_M):
+                mile = dist_m * M_TO_MI
+                leader_mile = mile if leader_mile is None else max(leader_mile, mile)
         active = None
         if leader_mile is not None:
             active = min(boundaries)
@@ -367,49 +358,34 @@ def _radial_track(ride, leg=None):
             for point in track]
 
 
-def _radial_overview_tracks(ride):
-    """Ordered route-leg tracks, kept separate to prevent fake map connectors."""
-    try:
-        from models import get_ride_plan_legs
-
-        plan = _resolve_base_plan(ride)
-        legs = [dict(row) for row in (get_ride_plan_legs(plan['id']) or [])] if plan else []
-        if len(legs) < 2:
-            track = _radial_track(ride)
-            return [track] if track else []
-        stops = get_ride_plan_stops(plan['id']) or []
-        boundaries = _day_distance_boundaries(stops)
-        ride_date = ride.get('date')
-        if isinstance(ride_date, str):
-            ride_date = date.fromisoformat(ride_date)
-
-        tracks = []
-        for leg in sorted(legs, key=lambda row: int(
-                row.get('day_number') or row.get('leg_order') or 1)):
-            day = int(leg.get('day_number') or leg.get('leg_order') or 1)
-            leg.update({
-                'day_number': day,
-                'distance_offset_mi': boundaries.get(day, 0.0),
-                'forecast_date': (ride_date + timedelta(days=day - 1)
-                                  if ride_date else None),
-            })
-            track = _radial_track(ride, leg) or []
-            if track:
-                tracks.append(track)
-        if tracks:
-            return tracks
-        fallback = _radial_track(ride)
-        return [fallback] if fallback else []
-    except Exception:  # noqa: BLE001 — overview degrades to the active route
-        if has_app_context():
-            current_app.logger.warning('live: combined route build failed', exc_info=True)
-        fallback = _radial_track(ride)
-        return [fallback] if fallback else []
-
-
 def _radial_overview_track(ride):
-    """Cumulative flattened track for the full-event elevation profile."""
-    return [point for track in _radial_overview_tracks(ride) for point in track]
+    """Canonical full-course track, identical to the v2 ride-plan route.
+
+    Multi-day plans may also carry one RWGPS URL per day.  Those are weather
+    sources, not pieces to append to the plan's already-complete primary route.
+    """
+    try:
+        plan = _resolve_base_plan(ride)
+        # Match ride_plan_v2: a linked ride's team route wins; otherwise the
+        # plan's official route is the full-course source.
+        if plan:
+            primary_url = (plan.get('rwgps_url_team')
+                           if ride.get('rwgps_url_team') else plan.get('rwgps_url'))
+            primary_url = (primary_url or plan.get('rwgps_url')
+                           or plan.get('rwgps_url_team'))
+        else:
+            primary_url = None
+        primary_url = (primary_url or ride.get('rwgps_url_team')
+                       or ride.get('rwgps_url'))
+        track = _radial_track(ride, {
+            'rwgps_url': primary_url,
+            'distance_offset_mi': 0.0,
+        })
+        return track or []
+    except Exception:  # noqa: BLE001 — overview degrades to active route
+        if has_app_context():
+            current_app.logger.warning('live: plan route build failed', exc_info=True)
+        return _radial_track(ride) or []
 
 
 def _radial_polyline(track):
@@ -730,8 +706,7 @@ def ride_live_map(ride_id):
     auto_day = requested_day is None or request.args.get('auto') == '1'
     selected_leg = _active_plan_leg(ride, day_number=requested_day)
     selected_day = int(selected_leg.get('day_number') or 1)
-    route_tracks = _radial_overview_tracks(ride)
-    track = [point for route_track in route_tracks for point in route_track]
+    track = _radial_overview_track(ride)
     weather_points = _build_all_weather_points(
         ride)  # every route day; [] when no stored forecast → map degrades
     all_day_weather = _build_all_day_weather(
@@ -757,7 +732,7 @@ def ride_live_map(ride_id):
         ride=ride,
         mapbox_token=mapbox_token,
         route_polyline=_radial_polyline(track),
-        route_polylines=[_radial_polyline(route_track) for route_track in route_tracks],
+        route_polylines=[_radial_polyline(track)] if track else [],
         elevation_profile=radial.build_elevation_profile(track or []),
         weather_points=weather_points,
         all_day_weather=all_day_weather,
