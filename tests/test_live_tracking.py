@@ -396,9 +396,15 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'radial-day-1-headwind' in html
     assert 'radial-day-1-temperature' in html
     assert 'Forecast not cached yet' in html
+    assert 'data-weather-day="1" open' in html
+    assert 'data-weather-day="2" open' not in html
+    assert 'Show charts' in html
+    assert 'Hide charts' in html
     assert 'planned riding' in html
     assert 'planned stops' in html
     assert 'planned bank' in html
+    assert 'Day 1 plan' in html
+    assert "Today's plan" not in html
     assert 'Headwind / tailwind by mile' in html
     assert "metricGroup('Now'" in html
     assert "metric('Gradient'" in html

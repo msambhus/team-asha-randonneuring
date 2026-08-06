@@ -120,7 +120,9 @@
   border-radius: 12px; background: var(--card-bg, #fff); }
 .radial-day-weather.current { border-left: 4px solid var(--primary, #1a365d); padding-left: 11px; }
 .rdw-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  margin-bottom: 9px; }
+  cursor: pointer; list-style: none; }
+.rdw-head::-webkit-details-marker { display: none; }
+.radial-day-weather[open] .rdw-head { margin-bottom: 9px; }
 .rdw-heading { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .rdw-day { font-weight: 800; color: var(--primary, #1a365d); }
 .rdw-current { padding: 2px 5px; border-radius: 999px; background: var(--primary, #1a365d);
@@ -128,6 +130,11 @@
 .rdw-date { font-size: .72rem; color: var(--text-light, #6b7280); white-space: nowrap; }
 .rdw-distance { margin-left: auto; font-size: .72rem; font-weight: 750;
   color: var(--text-light, #6b7280); white-space: nowrap; }
+.rdw-head-right { display: flex; align-items: center; gap: 10px; }
+.rdw-toggle { min-width: 5.5rem; text-align: right; font-size: .66rem; font-weight: 750;
+  color: var(--primary, #1a365d); white-space: nowrap; }
+.rdw-toggle::after { content: 'Show charts ▾'; }
+.radial-day-weather[open] .rdw-toggle::after { content: 'Hide charts ▴'; }
 .rdw-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .rdw-chart { min-width: 0; }
 .rdw-chart h4 { margin: 0 0 4px; font-size: .72rem; color: var(--text-light, #6b7280); }
@@ -328,13 +335,13 @@
     </div>
     <div class="radial-multiday-list">
       {% for day in all_day_weather.days %}
-      <article class="radial-day-weather{% if day.is_current %} current{% endif %}">
-        <div class="rdw-head">
+      <details class="radial-day-weather{% if day.is_current %} current{% endif %}" data-weather-day="{{ day.day_number }}"{% if day.is_current %} open{% endif %}>
+        <summary class="rdw-head">
           <span class="rdw-heading"><span class="rdw-day">Day {{ day.day_number }}</span><span class="rdw-date">{{ day.forecast_date }}</span>
           {% if day.is_current %}<span class="rdw-current">Current</span>{% endif %}
           </span>
-          <span class="rdw-distance">{{ day.distance_mi }} mi</span>
-        </div>
+          <span class="rdw-head-right"><span class="rdw-distance">{{ day.distance_mi }} mi</span><span class="rdw-toggle" aria-hidden="true"></span></span>
+        </summary>
         {% if day.available %}
         <div class="rdw-charts">
           <div class="rdw-chart"><h4>Headwind / tailwind by mile</h4><canvas id="radial-day-{{ day.day_number }}-headwind"></canvas></div>
@@ -343,7 +350,7 @@
         {% else %}
         <div class="rdw-empty">Forecast not cached yet</div>
         {% endif %}
-      </article>
+      </details>
       {% endfor %}
     </div>
   </section>
@@ -353,7 +360,7 @@
     <aside class="radial-plan-snapshot mobile-collapsed" aria-label="Today's ride plan">
       <button type="button" class="rps-mobile-toggle" aria-expanded="false">
         <span class="rps-mobile-title">
-          <span class="rps-label">{{ "Today's plan" if plan_snapshot.is_current_day else "Selected plan" }} · Day {{ plan_snapshot.active_day or 1 }}</span>
+          <span class="rps-label">Day {{ plan_snapshot.active_day or 1 }} plan</span>
           <span class="rps-mobile-name">{{ plan_snapshot.name }}</span>
         </span>
         <span class="rps-mobile-chevron" aria-hidden="true">⌄</span>
@@ -361,7 +368,7 @@
       <div class="rps-body">
       <div class="rps-head">
         <span class="rps-heading">
-          <span class="rps-label">{{ "Today's plan" if plan_snapshot.is_current_day else "Selected plan" }} · Day {{ plan_snapshot.active_day or 1 }}</span>
+          <span class="rps-label">Day {{ plan_snapshot.active_day or 1 }} plan</span>
           <a class="rps-name" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">{{ plan_snapshot.name }}</a>
         </span>
         <a class="rps-open" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">Open full plan →</a>
@@ -1047,6 +1054,16 @@
       weatherCharts['day-' + day.day_number + '-temperature'] = makeWeatherChart(
         prefix + 'temperature', cd.labels,
         [lineSet('Temperature', cd.temperature_f || [], '#ef4444', true)]);
+    });
+    document.querySelectorAll('.radial-day-weather').forEach(function (section) {
+      section.addEventListener('toggle', function () {
+        if (!section.open) { return; }
+        var day = section.getAttribute('data-weather-day');
+        ['headwind', 'temperature'].forEach(function (kind) {
+          var chart = weatherCharts['day-' + day + '-' + kind];
+          if (chart) { chart.resize(); chart.update('none'); }
+        });
+      });
     });
   }
   function renderConditions(data) {
