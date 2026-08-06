@@ -41,6 +41,26 @@ def test_plan_snapshot_summarizes_resolved_plan(app):
     assert snap['start_time'] == '02:00'
 
 
+def test_plan_snapshot_includes_only_active_day_controls(app):
+    stops = [
+        {'location': 'Day 1: Start', 'stop_type': 'start',
+         'distance_miles': 0, 'segment_time_min': 0, 'stop_duration_min': 0},
+        {'location': 'Day 1: Control A', 'stop_type': 'control',
+         'distance_miles': 50, 'segment_time_min': 240, 'stop_duration_min': 15},
+        {'location': 'Day 2: Control B', 'stop_type': 'control',
+         'distance_miles': 160, 'segment_time_min': 600, 'stop_duration_min': 20},
+    ]
+    future_ride = dict(_RIDE, date='2099-08-06')
+    with app.app_context(), \
+         patch('routes.live._resolve_base_plan', return_value=_PLAN), \
+         patch('routes.live.get_ride_plan_stops', return_value=stops):
+        snap = live._build_plan_snapshot(future_ride)
+    assert snap['active_day'] == 1
+    assert [row['name'] for row in snap['day_stops']] == ['Start', 'Control A']
+    assert snap['day_stops'][1]['distance_mi'] == 50.0
+    assert snap['day_stops'][1]['eta'] == '06:00'
+
+
 def test_plan_snapshot_none_when_no_plan(app):
     with app.app_context(), patch('routes.live._resolve_base_plan', return_value=None):
         assert live._build_plan_snapshot(_RIDE) is None

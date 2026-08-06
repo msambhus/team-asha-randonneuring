@@ -8,6 +8,7 @@ Club-login-only, opt-in. Three surfaces:
 The poll cron that writes positions lives in routes/cron.py.
 """
 import math
+import re
 from datetime import datetime, date, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -255,14 +256,59 @@ def _build_plan_snapshot(ride):
             cutoff = round(float(raw_cutoff), 1) if raw_cutoff else None
         except (TypeError, ValueError):
             cutoff = None
+        total_mi = float(plan.get('total_distance_miles') or 0)
+        event_km = plan.get('distance_km') or ride.get('distance_km')
+        timed_stops = _compute_base_timing(stops, cutoff, total_mi, event_km)
+
+        # Pick the active event day from elapsed wall time. Before the start this
+        # deliberately resolves to Day 1; after the finish it stays on the final
+        # named day. Multi-day plans created from separate RWGPS routes prefix
+        # their controls with "Day N", which is the most reliable day boundary.
+        start_utc = _ride_start_utc(ride)
+        elapsed_min = max(0, int(((datetime.now(timezone.utc) - start_utc).total_seconds() / 60)
+                                 if start_utc else 0))
+        active_day = elapsed_min // (24 * 60) + 1
+        named_days = []
+        for stop in timed_stops:
+            match = re.match(r'\s*Day\s+(\d+)\s*:', stop.get('location') or '', re.I)
+            if match:
+                named_days.append(int(match.group(1)))
+        if named_days:
+            active_day = min(max(active_day, min(named_days)), max(named_days))
+
+        start_raw = ride.get('start_time') or plan.get('start_time') or '06:00'
+        try:
+            start_h, start_m = (int(x) for x in str(start_raw).split(':')[:2])
+        except (TypeError, ValueError):
+            start_h, start_m = 6, 0
+        day_rows = []
+        for stop in timed_stops:
+            name = stop.get('location') or ''
+            match = re.match(r'\s*Day\s+(\d+)\s*:\s*(.*)', name, re.I)
+            if not match or int(match.group(1)) != active_day:
+                continue
+            arrival = int(stop.get('arrival_time_min') or 0)
+            clock_total = start_h * 60 + start_m + arrival
+            _, clock_min = divmod(clock_total, 24 * 60)
+            hh, mm = divmod(clock_min, 60)
+            day_rows.append({
+                'name': match.group(2),
+                'distance_mi': round(float(stop.get('distance_miles') or 0), 1),
+                'eta': f'{hh:02d}:{mm:02d}',
+                'break_min': int(stop.get('stop_duration_min') or 0),
+                'type': (stop.get('stop_type') or 'waypoint').lower(),
+            })
+
         return {
             'name': plan.get('name'),
             'slug': plan.get('slug'),
-            'distance_mi': round(float(plan.get('total_distance_miles') or 0)),
+            'distance_mi': round(total_mi),
             'elevation_ft': int(plan.get('total_elevation_ft') or 0),
             'controls': controls,
             'cutoff_hours': cutoff,
             'start_time': (ride.get('start_time') or plan.get('start_time') or None),
+            'active_day': active_day,
+            'day_stops': day_rows,
         }
     except Exception:  # noqa: BLE001 — the snapshot panel is best-effort
         current_app.logger.warning('live: plan snapshot build failed', exc_info=True)

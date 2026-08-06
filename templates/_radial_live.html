@@ -29,12 +29,13 @@
 .radial-elev { width: 100%; height: 160px; display: block; }
 .radial-elev-area { fill: var(--border, #e5e7eb); opacity: 0.35; }
 .radial-elev-fill { opacity: 0.22; }
-/* Profile + plan-snapshot side by side; the profile takes the wider column. */
+/* Profile first; the day plan is a full-width section at the end of the page. */
 .radial-elev-row { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin-top: 14px; }
 .radial-elev-row .radial-elev-wrap { flex: 1 1 60%; min-width: 260px; margin-top: 0; }
-.radial-plan-snapshot { flex: 1 1 32%; min-width: 190px; border: 1px solid var(--border, #e5e7eb);
+.radial-plan-snapshot { margin-top: 14px; border: 1px solid var(--border, #e5e7eb);
   border-radius: 12px; padding: 12px 14px; background: var(--card-bg, #f9fafb); box-sizing: border-box; }
-.rps-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.rps-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.rps-heading { display: flex; flex-direction: column; gap: 2px; }
 .rps-mobile-toggle { display: none; width: 100%; align-items: center; justify-content: space-between;
   gap: 10px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .rps-mobile-title { display: flex; flex-direction: column; min-width: 0; }
@@ -50,6 +51,15 @@
 .rps-l { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-light, #6b7280); }
 .rps-open { display: inline-block; margin-top: 10px; font-size: 0.8rem; font-weight: 600; color: var(--primary, #1a365d); text-decoration: none; }
 .rps-open:hover { text-decoration: underline; }
+.rps-day-title { margin: 12px 0 6px; font-size: 0.74rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-light, #6b7280); }
+.rps-day-list { display: grid; gap: 5px; }
+.rps-day-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px;
+  align-items: baseline; padding: 7px 9px; border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px; background: var(--card-bg, #fff); font-size: 0.8rem; }
+.rps-day-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
+.rps-day-meta { color: var(--text-light, #6b7280); white-space: nowrap; }
+.rps-day-eta { font-weight: 750; color: var(--primary, #1a365d); white-space: nowrap; }
 .radial-elev-grid { stroke: var(--border, #e5e7eb); stroke-width: 0.5; opacity: 0.6; }
 .radial-elev-ylabel { fill: var(--text-light, #6b7280); font-size: 9px; text-anchor: end; }
 .radial-elev-xlabel { fill: var(--text-light, #6b7280); font-size: 9px; text-anchor: middle; }
@@ -200,9 +210,8 @@
     </tbody>
   </table>
 
-  {% if (elevation_profile and elevation_profile.available) or plan_snapshot %}
+  {% if elevation_profile and elevation_profile.available %}
   <div class="radial-elev-row">
-    {% if elevation_profile and elevation_profile.available %}
     <div class="radial-elev-wrap">
     <svg class="radial-elev" viewBox="0 0 {{ elevation_profile.width }} {{ elevation_profile.height }}"
          preserveAspectRatio="none" role="img" aria-label="Route elevation profile">
@@ -234,32 +243,6 @@
       {% endfor %}
     </div>
     </div>
-    {% endif %}
-    {% if plan_snapshot %}
-    <aside class="radial-plan-snapshot mobile-collapsed">
-      <button type="button" class="rps-mobile-toggle" aria-expanded="false">
-        <span class="rps-mobile-title">
-          <span class="rps-label">Selected plan</span>
-          <span class="rps-mobile-name">{{ plan_snapshot.name }}</span>
-        </span>
-        <span class="rps-mobile-chevron" aria-hidden="true">⌄</span>
-      </button>
-      <div class="rps-body">
-      <div class="rps-head">
-        <span class="rps-label">Selected plan</span>
-        <a class="rps-name" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">{{ plan_snapshot.name }}</a>
-      </div>
-      <div class="rps-stats">
-        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.distance_mi }}</span><span class="rps-l">miles</span></div>
-        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.elevation_ft }}</span><span class="rps-l">ft climb</span></div>
-        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.controls }}</span><span class="rps-l">controls</span></div>
-        {% if plan_snapshot.cutoff_hours %}<div class="rps-stat"><span class="rps-v">{{ plan_snapshot.cutoff_hours }}</span><span class="rps-l">h limit</span></div>{% endif %}
-        {% if plan_snapshot.start_time %}<div class="rps-stat"><span class="rps-v">{{ plan_snapshot.start_time }}</span><span class="rps-l">start</span></div>{% endif %}
-      </div>
-      <a class="rps-open" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">Open full plan →</a>
-      </div>
-    </aside>
-    {% endif %}
   </div>
   {% endif %}
 
@@ -275,6 +258,46 @@
       <div class="radial-weather-chart"><h4>Temperature by mile</h4><canvas id="radial-temperature-chart"></canvas></div>
     </div>
   </section>
+
+  {% if plan_snapshot %}
+    <aside class="radial-plan-snapshot mobile-collapsed" aria-label="Today's ride plan">
+      <button type="button" class="rps-mobile-toggle" aria-expanded="false">
+        <span class="rps-mobile-title">
+          <span class="rps-label">Today's plan · Day {{ plan_snapshot.active_day or 1 }}</span>
+          <span class="rps-mobile-name">{{ plan_snapshot.name }}</span>
+        </span>
+        <span class="rps-mobile-chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div class="rps-body">
+      <div class="rps-head">
+        <span class="rps-heading">
+          <span class="rps-label">Today's plan · Day {{ plan_snapshot.active_day or 1 }}</span>
+          <a class="rps-name" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">{{ plan_snapshot.name }}</a>
+        </span>
+        <a class="rps-open" href="{{ url_for('riders.ride_plan_detail', slug=plan_snapshot.slug) }}">Open full plan →</a>
+      </div>
+      <div class="rps-stats">
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.distance_mi }}</span><span class="rps-l">miles</span></div>
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.elevation_ft }}</span><span class="rps-l">ft climb</span></div>
+        <div class="rps-stat"><span class="rps-v">{{ plan_snapshot.controls }}</span><span class="rps-l">controls</span></div>
+        {% if plan_snapshot.cutoff_hours %}<div class="rps-stat"><span class="rps-v">{{ plan_snapshot.cutoff_hours }}</span><span class="rps-l">h limit</span></div>{% endif %}
+        {% if plan_snapshot.start_time %}<div class="rps-stat"><span class="rps-v">{{ plan_snapshot.start_time }}</span><span class="rps-l">start</span></div>{% endif %}
+      </div>
+      {% if plan_snapshot.day_stops %}
+      <div class="rps-day-title">Day {{ plan_snapshot.active_day }} controls and stops</div>
+      <div class="rps-day-list">
+        {% for stop in plan_snapshot.day_stops %}
+        <div class="rps-day-row">
+          <span class="rps-day-name">{{ stop.name }}</span>
+          <span class="rps-day-meta">{{ stop.distance_mi }} mi{% if stop.break_min %} · {{ stop.break_min }}m stop{% endif %}</span>
+          <span class="rps-day-eta">{{ stop.eta }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      </div>
+    </aside>
+  {% endif %}
 </div>
 
 <script>
