@@ -125,6 +125,34 @@ def test_active_plan_leg_switches_route_and_forecast_date(app):
     assert leg['distance_offset_mi'] == 100
 
 
+def test_active_plan_leg_waits_for_planned_overnight_departure(app):
+    ride = dict(_RIDE, date='2026-08-06', start_time='06:00', region='Minnesota')
+    legs = [
+        {'rwgps_url': 'https://ridewithgps.com/routes/111', 'day_number': 1},
+        {'rwgps_url': 'https://ridewithgps.com/routes/222', 'day_number': 2},
+    ]
+    stops = [
+        {'location': 'Day 1: Start', 'distance_miles': 0,
+         'segment_time_min': 0, 'stop_duration_min': 0},
+        {'location': 'Day 1: Overnight', 'distance_miles': 235,
+         'segment_time_min': 1200, 'stop_duration_min': 240},
+        {'location': 'Day 2: First control', 'distance_miles': 270,
+         'segment_time_min': 180, 'stop_duration_min': 20},
+    ]
+    # Midnight Central is only 18 hours after a 6 AM start: still Day 1.
+    midnight_central = live.datetime(2026, 8, 7, 5, 1, tzinfo=live.timezone.utc)
+    # The Day 1 riding + sleep plan totals 24h, so 6:01 AM starts Day 2.
+    departure_central = live.datetime(2026, 8, 7, 11, 1, tzinfo=live.timezone.utc)
+    with app.app_context(), \
+         patch('routes.live._resolve_base_plan', return_value=_PLAN), \
+         patch('models.get_ride_plan_legs', return_value=legs), \
+         patch('routes.live.get_ride_plan_stops', return_value=stops):
+        before = live._active_plan_leg(ride, now=midnight_central)
+        after = live._active_plan_leg(ride, now=departure_central)
+    assert before['day_number'] == 1
+    assert after['day_number'] == 2
+
+
 def test_all_day_weather_summarizes_each_stored_leg(app):
     ride = dict(_RIDE, date='2026-08-06', region='Minnesota', start_time='06:00')
     legs = [

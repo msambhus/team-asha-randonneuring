@@ -130,6 +130,37 @@ def _plan_dot_color(status, telemetry):
 _MAX_POLYLINE_POINTS = 1000
 
 
+def _planned_day_number(ride, timed_stops, now=None):
+    """Active plan day from elapsed time at each overnight departure boundary.
+
+    A new route day starts when the prior day's final stop (normally the sleep
+    control) is complete, not at civil midnight and not upon arrival at the first
+    control on the new route. ``timed_stops`` carries cumulative planned minutes.
+    """
+    boundaries = {}
+    previous_cum = 0
+    for stop in timed_stops or []:
+        match = re.match(r'\s*Day\s+(\d+)\s*:', stop.get('location') or '', re.I)
+        if match:
+            day = int(match.group(1))
+            boundaries.setdefault(day, previous_cum if day > 1 else 0)
+        previous_cum = int(stop.get('cum_time_min') or previous_cum)
+    if not boundaries:
+        return 1
+
+    start_utc = _ride_start_utc(ride)
+    current_utc = now or datetime.now(timezone.utc)
+    if current_utc.tzinfo is None:
+        current_utc = current_utc.replace(tzinfo=timezone.utc)
+    elapsed_min = ((current_utc.astimezone(timezone.utc) - start_utc).total_seconds() / 60
+                   if start_utc else 0)
+    active = min(boundaries)
+    for day, boundary_min in sorted(boundaries.items()):
+        if elapsed_min >= boundary_min:
+            active = day
+    return active
+
+
 def _active_plan_leg(ride, now=None, day_number=None):
     """Resolve a route/weather leg by day, defaulting to the current event day."""
     fallback = {
@@ -150,8 +181,9 @@ def _active_plan_leg(ride, now=None, day_number=None):
         if isinstance(ride_date, str):
             ride_date = date.fromisoformat(ride_date)
         if day_number is None:
-            local_now = (now or datetime.now(timezone.utc)).astimezone(ride_timezone(ride))
-            day_number = max(1, (local_now.date() - ride_date).days + 1)
+            raw_stops = get_ride_plan_stops(plan['id']) or []
+            timed_stops = _compute_base_timing(raw_stops, None, 0)
+            day_number = _planned_day_number(ride, timed_stops, now=now)
         leg = min(legs, key=lambda row: abs(int(row.get('day_number') or 1) - int(day_number)))
         day_number = int(leg.get('day_number') or 1)
 
@@ -409,15 +441,8 @@ def _build_plan_snapshot(ride, selected_day=None):
         event_km = plan.get('distance_km') or ride.get('distance_km')
         timed_stops = _compute_base_timing(stops, cutoff, total_mi, event_km)
 
-        # Pick the active event day from elapsed wall time. Before the start this
-        # deliberately resolves to Day 1; after the finish it stays on the final
-        # named day. Multi-day plans created from separate RWGPS routes prefix
-        # their controls with "Day N", which is the most reliable day boundary.
-        ride_date = ride.get('date')
-        if isinstance(ride_date, str):
-            ride_date = date.fromisoformat(ride_date)
-        event_today = datetime.now(ride_timezone(ride)).date()
-        active_day = max(1, (event_today - ride_date).days + 1) if ride_date else 1
+        # Advance only at each planned overnight departure, not at midnight.
+        active_day = _planned_day_number(ride, timed_stops)
         named_days = []
         for stop in timed_stops:
             match = re.match(r'\s*Day\s+(\d+)\s*:', stop.get('location') or '', re.I)
