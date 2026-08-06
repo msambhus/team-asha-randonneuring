@@ -121,6 +121,29 @@ def test_public_roster_restores_headwind_context(client):
     assert row['headwind_ahead_label'] is not None
 
 
+def test_public_roster_includes_going_rider_without_location(client):
+    going = [
+        {'rider_id': 7, 'name': 'Asha Rider', 'status': 'GOING'},
+        {'rider_id': 8, 'name': 'Bharadwaj Rao', 'status': 'GOING'},
+    ]
+    with patch('routes.live.get_ride_by_id', return_value=_PUBLIC_LIVE_RIDE), \
+         patch('routes.live._ride_live_context', return_value=_FAKE_CTX), \
+         patch('routes.live.get_latest_positions_for_ride', return_value=[_row()]), \
+         patch('routes.live.get_going_riders_for_ride', return_value=going), \
+         patch('routes.live.get_positions_for_rider_since',
+               side_effect=lambda rider_id, *_args, **_kwargs: _history() if rider_id == 7 else []):
+        resp = client.get('/ride/5/live/roster.json')
+
+    assert resp.status_code == 200
+    roster = resp.get_json()['roster']
+    assert len(roster) == 2
+    bharadwaj = next(row for row in roster if row['display_name'] == 'Bharadwaj R.')
+    assert bharadwaj['lat'] is None
+    assert bharadwaj['lng'] is None
+    assert bharadwaj['recorded_at'] is None
+    assert 'rider_id' not in bharadwaj
+
+
 def test_private_ride_guest_404s(client):
     with patch('routes.live.get_ride_by_id', return_value=_PRIVATE_RIDE):
         resp = client.get('/ride/5/live/roster.json')   # guest, not public-live, no invite

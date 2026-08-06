@@ -350,6 +350,27 @@ def test_latest_positions_query_filters_by_ride_id():
     assert models.RideStatus.GOING.value not in captured['params']
 
 
+def test_going_riders_query_is_scoped_to_ride_and_status():
+    import models
+
+    captured = {}
+
+    class _FakeCur:
+        def fetchall(self):
+            return []
+
+    def _fake_execute(sql, params=None):
+        captured['sql'] = sql
+        captured['params'] = params
+        return _FakeCur()
+
+    with patch('models._execute', side_effect=_fake_execute):
+        models.get_going_riders_for_ride(42)
+
+    assert 'rr.ride_id = %s AND rr.status = %s' in captured['sql']
+    assert captured['params'] == (42, models.RideStatus.GOING.value)
+
+
 # ── /ride/<id>/live map page ──────────────────────────────────────────────
 
 _RIDE = {'id': 5, 'name': 'Mt Hamilton 200K', 'date': '2026-07-04',
@@ -393,6 +414,7 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'Share my location' in html       # beacon Start control on the map
     assert '/ride/5/live/garmin' in html     # form posts to the per-ride link endpoint
     assert 'Daily plans &amp; weather' in html
+    assert 'Open full forecast' not in html
     assert '235 mi' in html
     assert 'Map route' not in html
     assert 'radial-day-picker' not in html
@@ -407,6 +429,7 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'planned stops' in html
     assert 'planned bank' in html
     assert 'Day 1 plan' in html
+    assert 'Not sharing location' in html
     assert "Today's plan" not in html
     assert 'Headwind / tailwind by mile' in html
     assert "metricGroup('Now'" in html
