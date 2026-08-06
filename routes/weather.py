@@ -100,7 +100,7 @@ def weather_page():
 
 
 def build_weather_payload(route_id, start_dt, speed_mph=None, plan_slug=None,
-                          rider_id=None):
+                          rider_id=None, include_summary=True):
     """Shared core: fetch a route + its weather and build the table/map/chart payload.
 
     Used by both the web `/api/weather-map` POST and the mobile
@@ -215,7 +215,9 @@ def build_weather_payload(route_id, start_dt, speed_mph=None, plan_slug=None,
     total_elev_ft = round(total_elev_m * _M_TO_FT)
 
     # Generate ride weather summary (LLM or rule-based fallback)
-    ride_summary = generate_ride_summary(route_name, total_dist_mi, total_elev_ft, map_segments)
+    ride_summary = (generate_ride_summary(route_name, total_dist_mi, total_elev_ft,
+                                          map_segments)
+                    if include_summary else None)
 
     logger.info("Weather map total time: %.1fs for route %s (%d map points, %d table points, plan=%s)",
                 time.time() - t0, route_id, len(map_segments), len(table_segments), plan_source or 'none')
@@ -235,6 +237,92 @@ def build_weather_payload(route_id, start_dt, speed_mph=None, plan_slug=None,
             'min_f': min(temps_f) if temps_f else 0,
             'max_f': max(temps_f) if temps_f else 0,
         },
+        'attribution': '*Weather data: Open-Meteo*',
+    }, None
+
+
+def build_multiday_weather_payload(legs, start_dt, speed_mph=None,
+                                   plan_name='Multi-day ride'):
+    """Combine ordered RWGPS legs into one continuous weather/map payload.
+
+    Each leg reads its own day-specific stored forecast. Distances and cue points
+    are offset into the complete route so the existing map, charts, hover sync,
+    table and sharing UI work without a separate multi-day frontend.
+    """
+    combined_segments = []
+    combined_table = []
+    combined_polyline = []
+    combined_cues = []
+    leg_meta = []
+    distance_offset = 0.0
+    total_elevation = 0
+
+    for leg in legs:
+        route_id = extract_rwgps_route_id(leg.get('rwgps_url'))
+        if not route_id:
+            continue
+        day_number = max(1, int(leg.get('day_number') or 1))
+        leg_start = start_dt + timedelta(days=day_number - 1)
+        payload, err = build_weather_payload(
+            route_id, leg_start, speed_mph=speed_mph,
+            plan_slug=None, rider_id=None, include_summary=False)
+        if err:
+            body, status = err
+            body = dict(body)
+            body['leg'] = leg.get('label') or f'Day {day_number}'
+            return None, (body, status)
+
+        for segment in payload.get('map_segments') or []:
+            row = dict(segment)
+            row['distance_mi'] = round(distance_offset + float(row['distance_mi']), 1)
+            row['day_number'] = day_number
+            combined_segments.append(row)
+        for segment in payload.get('table_segments') or []:
+            row = dict(segment)
+            row['distance_mi'] = round(distance_offset + float(row['distance_mi']), 1)
+            row['day_number'] = day_number
+            combined_table.append(row)
+        for cue in payload.get('cue_points') or []:
+            row = dict(cue)
+            row['distance_mi'] = round(distance_offset + float(row['distance_mi']), 1)
+            row['day_number'] = day_number
+            combined_cues.append(row)
+        combined_polyline.extend(payload.get('polyline') or [])
+
+        leg_distance = float(payload.get('total_distance_mi') or 0)
+        leg_meta.append({
+            'day_number': day_number,
+            'label': leg.get('label') or f'Day {day_number}',
+            'distance_mi': round(leg_distance, 1),
+            'route_name': payload.get('route_name'),
+        })
+        distance_offset += leg_distance
+        total_elevation += int(payload.get('total_elevation_ft') or 0)
+
+    if not combined_segments:
+        return None, ({'available': False, 'reason': 'no_legs',
+                       'message': 'No route legs are available for this plan.'}, 200)
+
+    temps = [s['temperature_f'] for s in combined_table
+             if s.get('temperature_f') is not None]
+    total_distance = round(distance_offset, 1)
+    return {
+        'route_name': plan_name,
+        'total_distance_mi': total_distance,
+        'total_elevation_ft': total_elevation,
+        'plan_source': 'base-multiday',
+        'polyline': combined_polyline,
+        'table_segments': combined_table,
+        'map_segments': combined_segments,
+        'chart_data': build_chart_data(combined_segments),
+        'cue_points': combined_cues,
+        'ride_summary': generate_ride_summary(
+            plan_name, total_distance, total_elevation, combined_segments),
+        'temp_range': {
+            'min_f': min(temps) if temps else 0,
+            'max_f': max(temps) if temps else 0,
+        },
+        'legs': leg_meta,
         'attribution': '*Weather data: Open-Meteo*',
     }, None
 
@@ -276,9 +364,25 @@ def weather_map_api():
     except (ValueError, TypeError):
         rider_speed = None
 
-    payload, err = build_weather_payload(
-        route_id, start_dt, speed_mph=rider_speed, plan_slug=plan_slug,
-        rider_id=session.get('rider_id'))
+    legs = []
+    plan_name = None
+    if plan_slug:
+        try:
+            from models import get_ride_plan_by_slug, get_ride_plan_legs
+            plan = get_ride_plan_by_slug(plan_slug)
+            if plan:
+                plan_name = plan.get('name')
+                legs = [dict(row) for row in (get_ride_plan_legs(plan['id']) or [])]
+        except Exception:
+            logger.exception('Could not load route legs for plan %s', plan_slug)
+
+    if len(legs) > 1:
+        payload, err = build_multiday_weather_payload(
+            legs, start_dt, speed_mph=rider_speed, plan_name=plan_name or plan_slug)
+    else:
+        payload, err = build_weather_payload(
+            route_id, start_dt, speed_mph=rider_speed, plan_slug=plan_slug,
+            rider_id=session.get('rider_id'))
     if err:
         body, status = err
         return jsonify(body), status

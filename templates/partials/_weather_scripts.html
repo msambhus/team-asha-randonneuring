@@ -991,12 +991,101 @@
         });
     }
 
-    function makeShareFilename() {
+    function buildDayShareImage(leg) {
+        var day = Number(leg.day_number || 1);
+        var segments = (currentRouteData.map_segments || []).filter(function(s) {
+            return Number(s.day_number || 1) === day;
+        });
+        if (!segments.length) return Promise.reject(new Error('No data for ' + leg.label));
+
+        var W = 1200, H = 1040, pad = 42;
+        var canvas = document.createElement('canvas');
+        canvas.width = W; canvas.height = H;
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, 0, W, H);
+
+        function fitText(text, maxWidth, startPx, minPx) {
+            var px = startPx;
+            while (px > minPx) {
+                ctx.font = '700 ' + px + 'px system-ui,-apple-system,Segoe UI,sans-serif';
+                if (ctx.measureText(text).width <= maxWidth) break;
+                px -= 2;
+            }
+            return px;
+        }
+        function metricBox(x, y, w, label, value, color) {
+            ctx.fillStyle = color; ctx.fillRect(x, y, w, 92);
+            ctx.save(); ctx.beginPath(); ctx.rect(x + 12, y + 8, w - 24, 76); ctx.clip();
+            ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.font = '700 25px system-ui,-apple-system,sans-serif';
+            ctx.fillText(String(value), x + w / 2, y + 35, w - 28);
+            ctx.font = '600 13px system-ui,-apple-system,sans-serif';
+            ctx.fillText(label, x + w / 2, y + 67, w - 28);
+            ctx.restore();
+        }
+        function lineChart(x, y, w, h, title, key, color, zeroLine) {
+            var values = segments.map(function(s) { return Number(s[key] || 0); });
+            var min = Math.min.apply(null, values.concat(zeroLine ? [0] : []));
+            var max = Math.max.apply(null, values.concat(zeroLine ? [0] : []));
+            if (max === min) max = min + 1;
+            ctx.fillStyle = '#fff'; ctx.fillRect(x, y, w, h);
+            ctx.strokeStyle = '#e2e8f0'; ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+            ctx.fillStyle = '#0f172a'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+            ctx.font = '700 18px system-ui,-apple-system,sans-serif'; ctx.fillText(title, x + 18, y + 15);
+            var px = x + 44, py = y + 54, pw = w - 64, ph = h - 82;
+            if (zeroLine && min < 0 && max > 0) {
+                var zy = py + ph - ((0 - min) / (max - min)) * ph;
+                ctx.strokeStyle = '#cbd5e1'; ctx.beginPath(); ctx.moveTo(px, zy); ctx.lineTo(px + pw, zy); ctx.stroke();
+            }
+            ctx.strokeStyle = color; ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.beginPath();
+            values.forEach(function(v, i) {
+                var xx = px + (values.length === 1 ? 0 : i / (values.length - 1)) * pw;
+                var yy = py + ph - ((v - min) / (max - min)) * ph;
+                if (i) ctx.lineTo(xx, yy); else ctx.moveTo(xx, yy);
+            });
+            ctx.stroke();
+            ctx.fillStyle = '#64748b'; ctx.font = '12px system-ui,-apple-system,sans-serif';
+            ctx.fillText(String(Math.round(max * 10) / 10), x + 8, py - 5);
+            ctx.fillText(String(Math.round(min * 10) / 10), x + 8, py + ph - 5);
+        }
+
+        ctx.fillStyle = '#1e3a5f'; ctx.fillRect(0, 0, W, 150);
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        var title = (currentRouteData.route_name || 'Route Weather') + ' — ' + (leg.label || ('Day ' + day));
+        var titlePx = fitText(title, W - pad * 2, 36, 22);
+        ctx.font = '700 ' + titlePx + 'px system-ui,-apple-system,Segoe UI,sans-serif';
+        ctx.fillText(title, W / 2, 58, W - pad * 2);
+        ctx.font = '17px system-ui,-apple-system,sans-serif';
+        ctx.fillText((leg.route_name || '') + '  •  ' + leg.distance_mi + ' mi', W / 2, 108, W - pad * 2);
+
+        var temps = segments.map(function(s) { return Number(s.temperature_f); }).filter(Number.isFinite);
+        var headPct = Math.round(100 * segments.filter(function(s) { return Number(s.headwind_mph) > 3; }).length / segments.length);
+        metricBox(pad, 180, 260, 'DISTANCE', leg.distance_mi + ' mi', '#2563eb');
+        metricBox(pad + 280, 180, 260, 'TEMPERATURE', Math.round(Math.min.apply(null, temps)) + '–' + Math.round(Math.max.apply(null, temps)) + '°F', '#16a34a');
+        metricBox(pad + 560, 180, 260, 'HEADWIND', headPct + '% of day', '#15803d');
+        metricBox(pad + 840, 180, 276, 'MAX GUST', Math.max.apply(null, segments.map(function(s) { return Number(s.wind_gust_mph || 0); })) + ' mph', '#ea580c');
+
+        lineChart(pad, 310, 540, 300, 'Headwind / tailwind (mph)', 'headwind_mph', '#dc2626', true);
+        lineChart(618, 310, 540, 300, 'Temperature (°F)', 'temperature_f', '#ea580c', false);
+        lineChart(pad, 638, 540, 300, 'Wind speed (mph)', 'wind_speed_mph', '#2563eb', false);
+        lineChart(618, 638, 540, 300, 'Elevation (ft)', 'elevation_ft', '#16a34a', false);
+        ctx.fillStyle = '#64748b'; ctx.textAlign = 'center'; ctx.font = '14px system-ui,-apple-system,sans-serif';
+        ctx.fillText('Team Asha Randonneuring  •  Weather data: Open-Meteo', W / 2, 988);
+        return Promise.resolve(canvas);
+    }
+
+    function buildShareImages() {
+        var legs = (currentRouteData && currentRouteData.legs) || [];
+        if (legs.length > 1) return Promise.all(legs.map(buildDayShareImage));
+        return buildShareImage().then(function(canvas) { return [canvas]; });
+    }
+
+    function makeShareFilename(dayNumber) {
         var name = (currentRouteData && currentRouteData.route_name) || 'route';
         var slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'route';
         var dt = (document.getElementById('start-datetime') || {}).value || '';
         var dpart = (dt && dt.slice(0, 10)) || new Date().toISOString().slice(0, 10);
-        return 'weather-' + slug + '-' + dpart + '.png';
+        return 'weather-' + slug + (dayNumber ? '-day-' + dayNumber : '') + '-' + dpart + '.png';
     }
 
     function triggerDownload(blob, filename) {
@@ -1019,15 +1108,16 @@
 
     function downloadShareImage() {
         return withBusy('share-download-image', 'Building image…', function() {
-            return buildShareImage().then(function(canvas) {
-                return new Promise(function(resolve, reject) {
-                    canvas.toBlob(function(blob) {
-                        if (!blob) return reject(new Error('toBlob returned null'));
-                        triggerDownload(blob, makeShareFilename());
-                        showShareFeedback('Saved!', 'success');
-                        resolve();
-                    }, 'image/png');
-                });
+            return buildShareImages().then(function(canvases) {
+                return Promise.all(canvases.map(function(canvas, index) {
+                    return new Promise(function(resolve, reject) {
+                        canvas.toBlob(function(blob) {
+                            if (!blob) return reject(new Error('toBlob returned null'));
+                            triggerDownload(blob, makeShareFilename(canvases.length > 1 ? index + 1 : null));
+                            resolve();
+                        }, 'image/png');
+                    });
+                })).then(function() { showShareFeedback('Saved ' + canvases.length + ' image' + (canvases.length === 1 ? '' : 's') + '!', 'success'); });
             }).catch(function(e) {
                 showShareFeedback('Image export failed', 'error');
                 if (window.console) console.error(e);
@@ -1038,16 +1128,18 @@
     function shareNative() {
         if (!navigator.share) { showShareFeedback('Share not supported here', 'error'); return; }
         return withBusy('share-native', 'Building image…', function() {
-            return buildShareImage().then(function(canvas) {
-                return new Promise(function(resolve, reject) {
+            return buildShareImages().then(function(canvases) {
+                return Promise.all(canvases.map(function(canvas) { return new Promise(function(resolve, reject) {
                     canvas.toBlob(function(blob) { blob ? resolve(blob) : reject(new Error('toBlob returned null')); }, 'image/png');
+                }); }));
+            }).then(function(blobs) {
+                var files = blobs.map(function(blob, index) {
+                    return new File([blob], makeShareFilename(blobs.length > 1 ? index + 1 : null), { type: 'image/png' });
                 });
-            }).then(function(blob) {
-                var file = new File([blob], makeShareFilename(), { type: 'image/png' });
                 var payload = {
                     title: (currentRouteData && currentRouteData.route_name) || 'Route Weather',
                     text: buildShareLink(),
-                    files: [file],
+                    files: files,
                 };
                 if (!navigator.canShare || !navigator.canShare(payload)) {
                     payload = { title: payload.title, text: payload.text };
