@@ -4,11 +4,13 @@
 import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useCalendar } from '../hooks/useCalendar';
 import { useRideSignup } from '../hooks/useRideSignup';
+import { useFollowedRides } from '../hooks/useFollowedRides';
 import type { BrevetSummary } from '../lib/types';
 
 export default function CalendarScreen() {
   const { data: rides, isLoading, isError, refetch, isRefetching } = useCalendar();
   const signup = useRideSignup();
+  const followed = useFollowedRides();
 
   function updateRide(rideId: number, going: boolean) {
     signup.mutate({ rideId, going }, {
@@ -49,6 +51,24 @@ export default function CalendarScreen() {
           {item.signup_count ? <Text style={styles.count}>{item.signup_count} signed up</Text> : null}
           <View style={styles.actions}>
             <Pressable
+              style={[styles.followAction, followed.followedRideIds.includes(item.id) && styles.followingAction]}
+              disabled={followed.isPending && followed.pendingRideId === item.id}
+              onPress={() => followed.setFollowed({
+                rideId: item.id,
+                followed: !followed.followedRideIds.includes(item.id),
+              }, {
+                onError: () => Alert.alert('Could not update followed rides', 'Please try again.'),
+              })}
+              accessibilityRole="button"
+              accessibilityLabel={`${followed.followedRideIds.includes(item.id) ? 'Stop following' : 'Follow'} ${item.name} live`}
+            >
+              <Text style={[styles.followText, followed.followedRideIds.includes(item.id) && styles.followingText]}>
+                {followed.isPending && followed.pendingRideId === item.id
+                  ? 'Updating…'
+                  : followed.followedRideIds.includes(item.id) ? '✓ Following live' : '◎ Follow live'}
+              </Text>
+            </Pressable>
+            <Pressable
               style={[styles.action, item.signup_status === 'GOING' && styles.goingAction]}
               disabled={signup.isPending}
               onPress={() => updateRide(item.id, true)}
@@ -85,7 +105,11 @@ const styles = StyleSheet.create({
   meta: { color: '#6b7280', fontSize: 13, marginTop: 2 },
   count: { color: '#16a34a', fontSize: 12, marginTop: 4, fontWeight: '600' },
   teamClub: { color: '#1a365d', fontWeight: '700' },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 12 },
+  followAction: { borderWidth: 1, borderColor: '#2563eb', borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
+  followingAction: { backgroundColor: '#dbeafe', borderColor: '#2563eb' },
+  followText: { color: '#1d4ed8', fontWeight: '700' },
+  followingText: { color: '#1e40af' },
   action: { borderWidth: 1, borderColor: '#1a365d', borderRadius: 9, paddingHorizontal: 15, paddingVertical: 9 },
   goingAction: { backgroundColor: '#dcfce7', borderColor: '#16a34a' },
   actionText: { color: '#1a365d', fontWeight: '700' },

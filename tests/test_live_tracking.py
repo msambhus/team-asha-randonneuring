@@ -434,6 +434,8 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'Headwind / tailwind by mile' in html
     assert "metricGroup('Now'" in html
     assert "metric('Gradient'" in html
+    assert "metric('Climbed so far'" in html
+    assert 'ft climbed' in html
     assert "metric('Wind ahead'" in html
     assert html.index('id="radial-table"') < html.index(
         'class="radial-multiday"')
@@ -453,6 +455,8 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'repeat(auto-fit, minmax(125px, 1fr))' in html
     assert 'radial-row.open' in html
     assert 'radial-detail-rider' in html
+    assert '.rdw-heading { display: grid;' in html
+    assert '.rdw-current { justify-self: end;' in html
     assert 'Live rider details' in html
     assert "setProperty('--rider-color'" in html
     assert '<th>Speed</th><th>Banked</th>' in html

@@ -141,7 +141,7 @@ function RiderCard({ p }: { p: LivePosition }) {
           {now.activity ? <Metric label="state" value={`${ACTIVITY_ICON[now.activity] ?? ''} ${now.activity}`} /> : null}
           <Metric label="moving" value={hm(now.moving_min)} />
           <Metric label="stopped" value={hm(now.stopped_min)} />
-          {now.ascent_done_ft != null ? <Metric label="climb" value={n(now.ascent_done_ft, ' ft')} /> : null}
+          {now.ascent_done_ft != null ? <Metric label="climbed so far" value={n(now.ascent_done_ft, ' ft')} /> : null}
           {now.heart_rate != null ? <Metric label="HR" value={n(now.heart_rate, ' bpm')} /> : null}
           {now.power != null ? <Metric label="power" value={n(now.power, ' W')} /> : null}
           {now.cadence != null ? <Metric label="cadence" value={n(now.cadence, ' rpm')} /> : null}
