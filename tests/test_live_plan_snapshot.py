@@ -163,16 +163,17 @@ def test_progress_day_uses_next_day_start_distance(app):
         {'location': 'Day 1: Start', 'distance_miles': 0},
         {'location': 'Day 2: Start', 'distance_miles': 235},
     ]
-    day_two_track = [
-        {'lat': 44.0, 'lng': -92.0, 'dist_m': 0},
-        {'lat': 44.1, 'lng': -92.1, 'dist_m': 1609.344},
+    full_course_track = [
+        {'lat': 44.1, 'lng': -92.1, 'dist_m': 0},
+        {'lat': 44.0, 'lng': -92.0, 'dist_m': 235 * 1609.344},
+        {'lat': 43.9, 'lng': -91.9, 'dist_m': 236 * 1609.344},
     ]
     with app.test_request_context(), \
          patch('routes.live.get_latest_positions_for_ride', return_value=[{
              'lat': 44.0, 'lng': -92.0,
          }]), \
-         patch('routes.live.get_route_elevation_track',
-               side_effect=lambda route_id: day_two_track if route_id == '222' else None):
+         patch('routes.live._radial_overview_track',
+               return_value=full_course_track):
         active = live._progress_day_number(ride, legs, stops)
 
     assert active == 2
@@ -325,38 +326,17 @@ def test_radial_track_uses_stored_weather_samples_before_live_fetch(app):
     fetch.assert_not_called()
 
 
-def test_radial_overview_track_combines_every_plan_leg(app):
+def test_radial_overview_track_uses_primary_plan_route_only(app):
     ride = dict(_RIDE, date='2026-08-06')
-    legs = [
-        {'rwgps_url': 'https://ridewithgps.com/routes/111', 'day_number': 1},
-        {'rwgps_url': 'https://ridewithgps.com/routes/222', 'day_number': 2},
-    ]
-    stops = [
-        {'location': 'Day 1: Start', 'distance_miles': 0},
-        {'location': 'Day 2: Start', 'distance_miles': 235},
-    ]
-
-    def leg_track(_ride, leg=None):
-        day = int((leg or {}).get('day_number') or 1)
-        offset_m = float((leg or {}).get('distance_offset_mi') or 0) / live.M_TO_MI
-        return [
-            {'lat': 44 + day / 10, 'lng': -93, 'dist_m': offset_m, 'e_m': 10},
-            {'lat': 44 + day / 10, 'lng': -92, 'dist_m': offset_m + 1609.344,
-             'e_m': 20},
-        ]
-
+    plan = dict(_PLAN, rwgps_url='https://ridewithgps.com/routes/999')
     with app.app_context(), \
-         patch('routes.live._resolve_base_plan', return_value=_PLAN), \
-         patch('models.get_ride_plan_legs', return_value=legs), \
-         patch('routes.live.get_ride_plan_stops', return_value=stops), \
-         patch('routes.live._radial_track', side_effect=leg_track):
-        tracks = live._radial_overview_tracks(ride)
-        track = [point for leg_track in tracks for point in leg_track]
+         patch('routes.live._resolve_base_plan', return_value=plan), \
+         patch('routes.live._radial_track', return_value=_TRACK) as radial_track:
+        track = live._radial_overview_track(ride)
 
-    assert len(tracks) == 2
-    assert len(tracks[0]) == 2
-    assert len(tracks[1]) == 2
-    assert len(track) == 4
-    assert track[0]['dist_m'] == 0
-    assert track[2]['dist_m'] == 235 / live.M_TO_MI
-    assert {point['lat'] for point in track} == {44.1, 44.2}
+    assert track == _TRACK
+    radial_track.assert_called_once()
+    assert radial_track.call_args.args[1] == {
+        'rwgps_url': 'https://ridewithgps.com/routes/999',
+        'distance_offset_mi': 0.0,
+    }
