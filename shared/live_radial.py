@@ -171,14 +171,21 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
         start_idx = 0
     mid_route_start = start_offset_m > 0
     progressed_m = tlm.distance_progressed_m(dist_m, start_offset_m, ctx['total_dist_m'])
-    remaining_m = tlm.remaining_distance_m(ctx['total_dist_m'], progressed_m)
     ascent_done, ascent_left = tlm.ascent_progressed_split(
         ctx['cum_ascent_ft'], start_idx, idx, ctx['total_ascent_ft'])
-    tuf = tlm.toughness_remaining(ascent_left, remaining_m)
 
     dist_mi = progressed_m * M_TO_MI
     route_position_mi = dist_m * M_TO_MI
-    remaining_mi = (remaining_m or 0) * M_TO_MI
+    # A multi-day ride's telemetry track can represent only its active leg. Keep
+    # every value in the Remaining card scoped to the whole brevet, just like the
+    # overall time limit, by using the plan totals and absolute course position.
+    plan_total_mi = ctx.get('plan_total_mi') or ((ctx['total_dist_m'] or 0) * M_TO_MI)
+    remaining_mi = max(0.0, plan_total_mi - route_position_mi)
+    plan_total_ascent_ft = ctx.get('plan_total_ascent_ft')
+    if plan_total_ascent_ft:
+        ascent_left = max(0, round(plan_total_ascent_ft - (ascent_done or 0)))
+    remaining_m = remaining_mi / M_TO_MI
+    tuf = tlm.toughness_remaining(ascent_left, remaining_m)
 
     now_block['distance_mi'] = round(dist_mi, 1)                  # ridden (odometer)
     now_block['route_position_mi'] = round(route_position_mi, 1)  # absolute (chart marker)
@@ -203,7 +210,6 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
         time_left_min = max(0, limit_min - elapsed_min)
 
     active_stops = plan_stops if plan_stops is not None else ctx.get('plan_stops')
-    plan_total_mi = ctx.get('plan_total_mi') or ((ctx['total_dist_m'] or 0) * M_TO_MI)
     plan_frame = (tlm.rebase_plan_stops(active_stops, start_offset_m * M_TO_MI, plan_total_mi)
                   if mid_route_start else active_stops)
 

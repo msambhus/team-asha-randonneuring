@@ -50,7 +50,7 @@ from shared.rider_directory_view import public_rider_row
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
 from services.openai_coach import generate_openai_advice
-from services.club_clock import club_today
+from services.club_clock import club_today, schedule_time_labels
 from services.custom_plan_service import (get_merged_plan_stops,
                                           recalculate_cumulative_values,
                                           apply_pace_adjustment, compare_plans)
@@ -2763,6 +2763,23 @@ def ride_plan_detail(slug):
 
     # Map stops into the design shape
     v2_stops = _to_v2_stops(stops, plan, stop_wind)
+    schedule_ride = dict(linked_ride or {})
+    schedule_ride.setdefault(
+        'date', plan.get('linked_ride_date') or datetime.now().date())
+    plan_start_labels = schedule_time_labels(
+        schedule_ride, plan.get('start_time'), 0)
+    plan['start_time_event'] = plan_start_labels['event']
+    plan['start_time_event_zone'] = plan_start_labels['event_zone']
+    plan['start_time_pacific'] = plan_start_labels['pacific']
+    plan['show_pacific_time'] = plan_start_labels['show_pacific']
+    for schedule_stop in v2_stops:
+        labels = schedule_time_labels(
+            schedule_ride, plan.get('start_time'),
+            schedule_stop.get('cumul_time_min'))
+        schedule_stop['eta_event'] = labels['event']
+        schedule_stop['eta_event_zone'] = labels['event_zone']
+        schedule_stop['eta_pacific'] = labels['pacific']
+        schedule_stop['show_pacific'] = labels['show_pacific']
 
     # Fuel/food and break list — include any stop with a meaningful break
     # (>= 5 min) OR a food/water keyword in the note/name. is_fuel is also
@@ -2840,6 +2857,15 @@ def ride_plan_detail(slug):
         stops, plan, plan.get('start_time', '06:00'), cutoff_hours,
         base_stops=base_stops_for_strategies, your_plan_name=your_plan_name,
         seg_meta=seg_meta)
+    for pace in paces or []:
+        for schedule_stop in pace.get('stops') or []:
+            labels = schedule_time_labels(
+                schedule_ride, plan.get('start_time'),
+                schedule_stop.get('cumul_time_min'))
+            schedule_stop['eta_event'] = labels['event']
+            schedule_stop['eta_event_zone'] = labels['event_zone']
+            schedule_stop['eta_pacific'] = labels['pacific']
+            schedule_stop['show_pacific'] = labels['show_pacific']
 
     # Gradient altitude profile + control/break overlay for the Journey card and the
     # snapshot, built from the cron-warmed elevation track (route_weather_cache) —

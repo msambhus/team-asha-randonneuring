@@ -86,6 +86,28 @@ def test_plan_snapshot_uses_event_local_calendar_day(app):
     assert [row['name'] for row in snap['day_stops']] == ['Control B']
 
 
+def test_plan_snapshot_shows_event_time_with_pacific_secondary(app):
+    stops = [
+        {'location': 'Day 1: Start', 'stop_type': 'start',
+         'distance_miles': 0, 'segment_time_min': 0, 'stop_duration_min': 0},
+        {'location': 'Day 1: Control A', 'stop_type': 'control',
+         'distance_miles': 31.3, 'segment_time_min': 130, 'stop_duration_min': 0},
+    ]
+    ride = dict(_RIDE, date='2026-08-06', region='Minnesota', start_time='05:00')
+    with app.app_context(), \
+         patch('routes.live._resolve_base_plan', return_value=_PLAN), \
+         patch('routes.live.get_ride_plan_stops', return_value=stops):
+        snap = live._build_plan_snapshot(ride, selected_day=1)
+
+    assert snap['start_time_event'] == '05:00'
+    assert snap['start_time_event_zone'] == 'CT'
+    assert snap['start_time_pacific'] == '03:00'
+    assert snap['show_pacific_time'] is True
+    assert snap['day_stops'][1]['eta'] == '07:10'
+    assert snap['day_stops'][1]['eta_event_zone'] == 'CT'
+    assert snap['day_stops'][1]['eta_pacific'] == '05:10'
+
+
 def test_plan_snapshot_follows_explicit_map_day(app):
     stops = [
         {'location': 'Day 1: Start', 'stop_type': 'start',
@@ -215,6 +237,10 @@ def test_all_day_weather_summarizes_each_stored_leg(app):
     assert summary['days'][0]['distance_mi'] == 100
     assert summary['days'][0]['chart_data'] == chart
     assert summary['days'][0]['available'] is True
+    assert summary['days'][0]['temperature_min_f'] == 56
+    assert summary['days'][0]['temperature_max_f'] == 82
+    assert summary['days'][0]['peak_headwind_mph'] == 12
+    assert summary['days'][0]['peak_tailwind_mph'] == 4
     assert summary['days'][1]['start_distance_mi'] == 235.0
     assert summary['days'][2]['plan']['active_day'] == 3
     assert 'plan_slug=coulee-challenge' in summary['url']

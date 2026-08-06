@@ -116,6 +116,22 @@ def test_roster_computes_route_position_and_stats():
                                    lr.MARKER_UNKNOWN_COLOR)
 
 
+def test_remaining_metrics_use_whole_brevet_totals_not_active_leg():
+    track, ctx = _track_and_ctx()
+    ctx['plan_total_mi'] = 120.0
+    ctx['plan_total_ascent_ft'] = 5000
+    rows = [{'rider_id': 1, 'display_name': 'Multi-day Rider',
+             'lat': track[20]['lat'], 'lng': track[20]['lng'],
+             'source': 'garmin', 'recorded_at': _NOW}]
+
+    roster = lr.build_radial_roster(
+        rows, ctx, _NOW, {1: _history(track, 20)}, ride_id=1,
+        min_history=2, stateless_fallback=False)
+
+    assert roster[0]['distance_left_mi'] == 100.0
+    assert roster[0]['ascent_left_ft'] > ctx['total_ascent_ft']
+
+
 def test_ride_start_anchor_keeps_miles_before_livetrack_began():
     """A late LiveTrack first fix must not reset a scheduled brevet's odometer."""
     track, ctx = _track_and_ctx()

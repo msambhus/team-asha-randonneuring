@@ -104,7 +104,7 @@
             <div class="rpv2-eyebrow">
                 {% if plan.distance_km %}{{ plan.distance_km }}K Brevet{% endif %}
                 {%- if start_dt_str %} · {{ start_dt_str }}{% endif %}
-                {%- if plan.start_time %} · Start {{ plan.start_time }}{% endif %}
+                {%- if plan.start_time %} · Start {{ plan.start_time_event or plan.start_time }} {{ plan.start_time_event_zone or '' }}{% endif %}
             </div>
             <h1 class="rpv2-title">
                 {% if viewing_custom and custom_plan_for_view and custom_plan_for_view.name %}{{ custom_plan_for_view.name }}{% else %}{{ plan.name }}{% endif %}
@@ -265,7 +265,10 @@
                                 {# Elapsed: cumulative time since start (Hh MM) #}
                                 <td class="r mono" data-cell="elapsed">{{ s.elapsed }}</td>
                                 {# ETA / Bank — Schedule group #}
-                                <td class="r mono rpv2-grp" data-cell="eta">{{ s.eta }}</td>
+                                <td class="r mono rpv2-grp rpv2-dual-time" data-cell="eta">
+                                    <span>{{ s.eta_event or s.eta }} {{ s.eta_event_zone or '' }}</span>
+                                    {% if s.show_pacific %}<small>{{ s.eta_pacific }} PT</small>{% endif %}
+                                </td>
                                 <td class="r mono {{ 'good' if bank_good else 'bad' }}" data-cell="bank">{{ s.bank }}</td>
                                 {# Wind: colored direction arrow + mph (no word) — Conditions group #}
                                 <td class="r rpv2-grp">
@@ -633,7 +636,10 @@
     <div class="rpv2-snap-times">
         <div>
             <div class="rpv2-snap-times-lbl">Start</div>
-            <div class="rpv2-snap-times-val">{{ plan.start_time or '—' }}</div>
+            <div class="rpv2-snap-times-val rpv2-dual-time">
+                <span>{{ plan.start_time_event or plan.start_time or '—' }} {{ plan.start_time_event_zone or '' }}</span>
+                {% if plan.show_pacific_time %}<small>{{ plan.start_time_pacific }} PT</small>{% endif %}
+            </div>
         </div>
         <div>
             <div class="rpv2-snap-times-lbl">Cutoff</div>
@@ -822,7 +828,11 @@
             var el = row.querySelector('[data-cell="elapsed"]');
             if (el) el.textContent = st.elapsed;
             var eta = row.querySelector('[data-cell="eta"]');
-            if (eta) eta.textContent = st.eta;
+            if (eta) {
+                eta.innerHTML = '<span>' + escapeHtml(st.eta_event || st.eta) + ' ' +
+                    escapeHtml(st.eta_event_zone || '') + '</span>' +
+                    (st.show_pacific ? '<small>' + escapeHtml(st.eta_pacific) + ' PT</small>' : '');
+            }
             var bank = row.querySelector('[data-cell="bank"]');
             if (bank) {
                 bank.textContent = st.bank;

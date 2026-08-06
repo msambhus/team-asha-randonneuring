@@ -54,9 +54,13 @@ def _patches():
         'routes.riders.fetch_route': lambda rid: {'track_points': [{'x': 0, 'y': 0, 'd': 0}]},
         # The v2 plan page now keys stored weather on the plan's next upcoming ride date.
         'routes.riders.get_upcoming_ride_date_for_plan': lambda pid: date(2026, 7, 20),
-        'routes.riders.fetch_stop_wind': lambda **kw: list(_WIND),
+        'routes.riders.fetch_stop_wind': lambda *args, **kw: list(_WIND),
+        'routes.riders.get_route_elevation_track': lambda route_id: [],
         'routes.riders.get_user_by_id': lambda uid: None,
-        'models.get_latest_ride_for_plan': lambda pid: None,
+        'models.get_latest_ride_for_plan': lambda pid: {
+            'id': 44, 'start_time': '05:00', 'date': date(2026, 8, 6),
+            'region': 'Minnesota', 'rwgps_url_team': None,
+        },
         'models.get_upcoming_rusa_events': lambda: [],
         'models.get_signups_for_ride': lambda eid: [],
         'models.get_user_by_id': lambda uid: None,
@@ -106,6 +110,15 @@ def test_cumulative_time_column_present(client):
     table = _itinerary_table(_render(client).data.decode())
     # Finish cumulative elapsed = 535 min arrival -> "8h55".
     assert '8h55' in table
+
+
+def test_itinerary_shows_event_time_with_pacific_below(client):
+    table = _itinerary_table(_render(client).data.decode())
+
+    assert '05:00 CT' in table
+    assert '03:00 PT' in table
+    assert '09:00 CT' in table
+    assert '07:00 PT' in table
 
 
 def test_wind_cell_has_arrow_no_classification_word(client):
