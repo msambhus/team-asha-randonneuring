@@ -566,6 +566,7 @@ def upcoming_brevets(season_name):
         'Santa Cruz': '#3498db',
         'Santa Rosa': '#9b59b6',
         'San Luis Obispo': '#f39c12',
+        'Minnesota': '#2563eb',
     }
 
     # Build distance filter from actual event data. Team Asha rides are excluded so a
