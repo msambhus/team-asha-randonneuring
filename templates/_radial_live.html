@@ -145,15 +145,6 @@
 .radial-weather-chart { min-width: 0; }
 .radial-weather-chart h4 { margin: 0 0 4px; font-size: 0.75rem; color: var(--text-light, #6b7280); }
 .radial-weather-chart canvas { width: 100% !important; height: 120px !important; }
-.radial-day-picker { display: flex; align-items: center; gap: 6px; margin: 0 0 9px;
-  overflow-x: auto; padding-bottom: 2px; }
-.radial-day-picker-label { margin-right: 3px; font-size: .68rem; font-weight: 800;
-  text-transform: uppercase; letter-spacing: .04em; color: var(--text-light, #6b7280); }
-.radial-day-link { flex: 0 0 auto; padding: 5px 10px; border: 1px solid var(--border, #e5e7eb);
-  border-radius: 999px; background: var(--card-bg, #fff); color: var(--primary, #1a365d);
-  text-decoration: none; font-size: .75rem; font-weight: 750; }
-.radial-day-link.selected { background: var(--primary, #1a365d); color: #fff; border-color: var(--primary, #1a365d); }
-.radial-day-link.current:not(.selected)::after { content: ' · current'; font-size: .62rem; }
 .radial-multiday { margin-top: 14px; }
 .radial-multiday-head { display: flex; align-items: baseline; justify-content: space-between;
   gap: 10px; flex-wrap: wrap; margin: 0 0 9px; }
@@ -290,16 +281,6 @@
 </style>
 <div class="radial-live" data-roster-url="{{ roster_url }}" data-poll-ms="{{ (poll_seconds or 30) * 1000 }}"
      data-selected-day="{{ selected_day or 1 }}" data-auto-day="{{ 'true' if auto_day else 'false' }}">
-  {% if all_day_weather and all_day_weather.days %}
-  <nav class="radial-day-picker" aria-label="Route day shown on map">
-    <span class="radial-day-picker-label">Map route</span>
-    {% for day in all_day_weather.days %}
-    <a class="radial-day-link{% if day.is_selected %} selected{% endif %}{% if day.is_current %} current{% endif %}"
-       href="{{ url_for('live.ride_live_map', ride_id=ride.id, day=day.day_number) }}"
-       {% if day.is_selected %}aria-current="page"{% endif %}>Day {{ day.day_number }}</a>
-    {% endfor %}
-  </nav>
-  {% endif %}
   {% if mapbox_token %}
   <div id="radial-map"></div>
   {% else %}

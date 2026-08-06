@@ -394,7 +394,8 @@ def test_map_page_renders_for_profile_rider(client):
     assert '/ride/5/live/garmin' in html     # form posts to the per-ride link endpoint
     assert 'Daily plans &amp; weather' in html
     assert '235 mi' in html
-    assert 'Map route' in html
+    assert 'Map route' not in html
+    assert 'radial-day-picker' not in html
     assert 'radial-day-1-headwind' in html
     assert 'radial-day-1-temperature' in html
     assert 'Forecast not cached yet' in html
