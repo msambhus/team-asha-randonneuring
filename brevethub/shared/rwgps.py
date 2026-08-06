@@ -20,6 +20,7 @@ import functools
 import os
 import re
 import requests as http_requests
+from shared.control_times import control_close_time_minutes
 
 
 # ── Constants ──────────────────────────────────────────────────────────
@@ -608,8 +609,10 @@ def build_ride_plan(route_data, controls, *, profile='default',
         bookend_time_min = None
         time_bank_min = None
         if cutoff_hours and total_dist_miles > 0 and dist_miles > 0:
-            fraction = dist_miles / total_dist_miles
-            bookend_time_min = round(fraction * cutoff_hours * 60)
+            bookend_time_min = control_close_time_minutes(
+                dist_miles, total_dist_miles, cutoff_hours,
+                event_distance_km=distance_km,
+            )
             time_bank_min = bookend_time_min - cum_time_min
 
         difficulty_score = _compute_difficulty_score(ft_per_mi)

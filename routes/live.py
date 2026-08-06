@@ -28,6 +28,7 @@ from services.rwgps import extract_rwgps_route_id, fetch_route
 from services import live_telemetry as tlm
 from services import live_radial as radial
 from shared.strategies import compute_pace_strategies
+from shared.control_times import control_close_time_minutes
 from services.weather import (sample_track_points, load_stored_route_weather,
                               calculate_bearing, headwind_component,
                               crosswind_component, classify_wind,
@@ -592,7 +593,8 @@ def _ride_live_context(ride_id):
            'has_route': False, 'has_plan': False, 'chart_data': None,
            # Base plan id + timing inputs so the per-rider custom plan (if any) can
            # be merged + retimed the SAME way the web plan page does (_rider_plan_stops).
-           'base_plan_id': None, 'plan_cutoff_hours': None, 'plan_total_mi': 0.0}
+           'base_plan_id': None, 'plan_cutoff_hours': None, 'plan_total_mi': 0.0,
+           'plan_distance_km': None}
     if not ride:
         return ctx
 
@@ -622,9 +624,11 @@ def _ride_live_context(ride_id):
             cutoff_raw = ride.get('time_limit_hours') or plan.get('cutoff_hours')
             ctx['plan_cutoff_hours'] = float(cutoff_raw) if cutoff_raw else None
             ctx['plan_total_mi'] = float(plan.get('total_distance_miles') or 0)
+            ctx['plan_distance_km'] = plan.get('distance_km') or ride.get('distance_km')
             ctx['base_plan_id'] = plan['id']
             base_raw = _compute_base_timing(
-                get_ride_plan_stops(plan['id']), ctx['plan_cutoff_hours'], ctx['plan_total_mi'])
+                get_ride_plan_stops(plan['id']), ctx['plan_cutoff_hours'],
+                ctx['plan_total_mi'], ctx['plan_distance_km'])
             ctx['plan_stops'] = [
                 {'distance_miles': float(s['distance_miles']),
                  'cum_time_min': float(s['cum_time_min']),
@@ -1423,7 +1427,7 @@ def _emit_plan_stop(d, base_dt):
     }
 
 
-def _compute_base_timing(raw_stops, cutoff_hours, total_mi):
+def _compute_base_timing(raw_stops, cutoff_hours, total_mi, event_distance_km=None):
     """Add cum/arrival/seg_dist/ft_per_mi/time_bank to base ride_plan_stop rows
     (the web ride_plan_detail formulas). The custom path uses the custom-plan
     service's recalculate instead; both feed _emit_plan_stop."""
@@ -1444,7 +1448,10 @@ def _compute_base_timing(raw_stops, cutoff_hours, total_mi):
         d['arrival_time_min'] = cum_time - stop_dur
         d['time_bank_min'] = None
         if cutoff_hours and total_mi > 0 and dist_mi:
-            bookend = round((dist_mi / total_mi) * cutoff_hours * 60)
+            bookend = control_close_time_minutes(
+                dist_mi, total_mi, cutoff_hours,
+                event_distance_km=event_distance_km,
+            )
             d['time_bank_min'] = bookend - d['arrival_time_min']
         out.append(d)
         prev_mi = dist_mi
@@ -1572,7 +1579,9 @@ def api_ride_plan(ride_id):
         raw = recalculate_cumulative_values(merged or [], meta or custom,
                                             cutoff_hours=cutoff_hours, total_mi=total_mi)
     else:
-        raw = _compute_base_timing(get_ride_plan_stops(plan['id']), cutoff_hours, total_mi)
+        raw = _compute_base_timing(
+            get_ride_plan_stops(plan['id']), cutoff_hours, total_mi,
+            plan.get('distance_km') or ride.get('distance_km'))
 
     if not raw:
         return jsonify({'available': False, 'reason': 'no_stops',

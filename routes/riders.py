@@ -205,6 +205,7 @@ from shared.plan_view import (  # noqa: F401  (re-exported for callers/tests)
 )
 from shared.strategies import _PACE_VARIANTS, compute_pace_strategies  # noqa: F401
 from shared.live_radial import build_elevation_profile, overlay_stop_markers
+from shared.control_times import control_close_time_minutes
 
 # Stop-marker colours for the elevation-profile overlay — kept in step with the
 # STOP_TYPES colour map in the rpv2 plan templates so a control's dot matches its
@@ -2408,8 +2409,10 @@ def ride_plan_detail_v1(slug):
 
         # Bookend time: max allowed time to reach this point (arrival, not departure)
         if cutoff_hours and plan['total_distance_miles'] > 0 and d['distance_miles']:
-            fraction = d['distance_miles'] / plan['total_distance_miles']
-            d['bookend_time_min'] = round(fraction * cutoff_hours * 60)
+            d['bookend_time_min'] = control_close_time_minutes(
+                d['distance_miles'], plan['total_distance_miles'], cutoff_hours,
+                event_distance_km=plan.get('distance_km'),
+            )
             # Time bank should be based on arrival time, not departure time
             d['time_bank_min'] = d['bookend_time_min'] - d['arrival_time_min']
         else:
@@ -2647,7 +2650,10 @@ def ride_plan_detail(slug):
         d['cum_time_min'] = cum_time_min
         d['arrival_time_min'] = cum_time_min - d['stop_duration_min']
         if cutoff_hours and plan['total_distance_miles'] > 0 and d['distance_miles']:
-            d['bookend_time_min'] = round((d['distance_miles'] / plan['total_distance_miles']) * cutoff_hours * 60)
+            d['bookend_time_min'] = control_close_time_minutes(
+                d['distance_miles'], plan['total_distance_miles'], cutoff_hours,
+                event_distance_km=plan.get('distance_km'),
+            )
             d['time_bank_min'] = d['bookend_time_min'] - d['arrival_time_min']
         else:
             d['time_bank_min'] = None
@@ -3080,7 +3086,10 @@ def ride_plan_live(slug):
         d['cum_time_min'] = cum_time_min
         d['arrival_time_min'] = cum_time_min - d['stop_duration_min']
         if cutoff_hours and plan['total_distance_miles'] > 0 and d['distance_miles']:
-            d['bookend_time_min'] = round((d['distance_miles'] / plan['total_distance_miles']) * cutoff_hours * 60)
+            d['bookend_time_min'] = control_close_time_minutes(
+                d['distance_miles'], plan['total_distance_miles'], cutoff_hours,
+                event_distance_km=plan.get('distance_km'),
+            )
             d['time_bank_min'] = d['bookend_time_min'] - d['arrival_time_min']
         else:
             d['time_bank_min'] = None
@@ -3311,8 +3320,10 @@ def custom_ride_plan_view(slug, custom_plan_id=None):
         
         # Bookend time: max allowed time to reach this point (arrival, not departure)
         if cutoff_hours and plan['total_distance_miles'] > 0 and d['distance_miles']:
-            fraction = d['distance_miles'] / plan['total_distance_miles']
-            d['bookend_time_min'] = round(fraction * cutoff_hours * 60)
+            d['bookend_time_min'] = control_close_time_minutes(
+                d['distance_miles'], plan['total_distance_miles'], cutoff_hours,
+                event_distance_km=plan.get('distance_km'),
+            )
             # Time bank should be based on arrival time, not departure time
             d['time_bank_min'] = d['bookend_time_min'] - d['arrival_time_min']
         else:
@@ -3526,8 +3537,10 @@ def custom_ride_plan_editor(slug):
             
             # Time bank
             if cutoff_hours and total_distance > 0 and cur_dist > 0:
-                fraction = cur_dist / total_distance
-                bookend_time_min = round(fraction * cutoff_hours * 60)
+                bookend_time_min = control_close_time_minutes(
+                    cur_dist, total_distance, cutoff_hours,
+                    event_distance_km=base_plan.get('distance_km'),
+                )
                 stop['time_bank_min'] = bookend_time_min - cum_time_min
             else:
                 stop['time_bank_min'] = None
@@ -3665,8 +3678,10 @@ def custom_ride_plan_editor(slug):
             
             # Time bank
             if cutoff_hours and total_distance > 0 and cur_dist > 0:
-                fraction = cur_dist / total_distance
-                bookend_time_min = round(fraction * cutoff_hours * 60)
+                bookend_time_min = control_close_time_minutes(
+                    cur_dist, total_distance, cutoff_hours,
+                    event_distance_km=base_plan.get('distance_km'),
+                )
                 stop['time_bank_min'] = bookend_time_min - cum_time_min
             else:
                 stop['time_bank_min'] = None
@@ -3716,8 +3731,10 @@ def custom_ride_plan_editor(slug):
             
             # Time bank
             if cutoff_hours and total_distance > 0 and cur_dist > 0:
-                fraction = cur_dist / total_distance
-                bookend_time_min = round(fraction * cutoff_hours * 60)
+                bookend_time_min = control_close_time_minutes(
+                    cur_dist, total_distance, cutoff_hours,
+                    event_distance_km=base_plan.get('distance_km'),
+                )
                 stop['time_bank_min'] = bookend_time_min - cum_time_min
             else:
                 stop['time_bank_min'] = None

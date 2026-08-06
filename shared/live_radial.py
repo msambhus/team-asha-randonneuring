@@ -207,7 +207,8 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
     if mid_route_start and ctx.get('total_dist_m'):
         cutoff_total_mi = ctx['total_dist_m'] * M_TO_MI
     banked_cutoff = tlm.time_banked_cutoff_min(
-        dist_mi, elapsed_min, cutoff_total_mi, ctx.get('plan_cutoff_hours'))
+        dist_mi, elapsed_min, cutoff_total_mi, ctx.get('plan_cutoff_hours'),
+        event_distance_km=ctx.get('plan_distance_km'))
 
     # Wind / weather is the one field this shared builder can't compute (it needs the
     # caller's weather layer); Team Asha layers it back through the hook, BrevetHub skips.
