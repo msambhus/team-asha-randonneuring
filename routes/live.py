@@ -367,6 +367,44 @@ def _radial_track(ride, leg=None):
             for point in track]
 
 
+def _radial_overview_track(ride):
+    """All multi-day route legs as one cumulative track for map/profile overview."""
+    try:
+        from models import get_ride_plan_legs
+
+        plan = _resolve_base_plan(ride)
+        legs = [dict(row) for row in (get_ride_plan_legs(plan['id']) or [])] if plan else []
+        if len(legs) < 2:
+            return _radial_track(ride)
+        stops = get_ride_plan_stops(plan['id']) or []
+        boundaries = _day_distance_boundaries(stops)
+        ride_date = ride.get('date')
+        if isinstance(ride_date, str):
+            ride_date = date.fromisoformat(ride_date)
+
+        combined = []
+        for leg in sorted(legs, key=lambda row: int(
+                row.get('day_number') or row.get('leg_order') or 1)):
+            day = int(leg.get('day_number') or leg.get('leg_order') or 1)
+            leg.update({
+                'day_number': day,
+                'distance_offset_mi': boundaries.get(day, 0.0),
+                'forecast_date': (ride_date + timedelta(days=day - 1)
+                                  if ride_date else None),
+            })
+            track = _radial_track(ride, leg) or []
+            for point in track:
+                if (combined and point.get('lat') == combined[-1].get('lat')
+                        and point.get('lng') == combined[-1].get('lng')):
+                    continue
+                combined.append(point)
+        return combined or _radial_track(ride)
+    except Exception:  # noqa: BLE001 — overview degrades to the active route
+        if has_app_context():
+            current_app.logger.warning('live: combined route build failed', exc_info=True)
+        return _radial_track(ride)
+
+
 def _radial_polyline(track):
     """[[lng, lat], …] for the Mapbox route line from a _radial_track track, capped
     to _MAX_POLYLINE_POINTS. None when there's no track."""
@@ -374,8 +412,11 @@ def _radial_polyline(track):
         return None
     coords = [[t['lng'], t['lat']] for t in track]
     if len(coords) > _MAX_POLYLINE_POINTS:
+        final = coords[-1]
         step = len(coords) // _MAX_POLYLINE_POINTS + 1
         coords = coords[::step]
+        if coords[-1] != final:
+            coords.append(final)
     return coords
 
 
@@ -650,7 +691,7 @@ def ride_live_map(ride_id):
     auto_day = requested_day is None or request.args.get('auto') == '1'
     selected_leg = _active_plan_leg(ride, day_number=requested_day)
     selected_day = int(selected_leg.get('day_number') or 1)
-    track = _radial_track(ride, selected_leg)
+    track = _radial_overview_track(ride)
     weather_points = _build_weather_points(
         ride, selected_leg)  # [] when no stored forecast → map degrades
     all_day_weather = _build_all_day_weather(
@@ -1724,7 +1765,7 @@ def _ride_route_polyline_cached(ride_id, day_key):
     ride = get_ride_by_id(ride_id)
     if not ride:
         return None
-    return _build_route_polyline(ride)
+    return _radial_polyline(_radial_overview_track(ride))
 
 
 def _ride_route_polyline(ride_id):

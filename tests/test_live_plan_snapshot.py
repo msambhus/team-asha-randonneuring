@@ -296,3 +296,36 @@ def test_radial_track_uses_stored_weather_samples_before_live_fetch(app):
     assert track[0]['dist_m'] == 235 / live.M_TO_MI
     assert track[1]['lat'] == 44.8
     fetch.assert_not_called()
+
+
+def test_radial_overview_track_combines_every_plan_leg(app):
+    ride = dict(_RIDE, date='2026-08-06')
+    legs = [
+        {'rwgps_url': 'https://ridewithgps.com/routes/111', 'day_number': 1},
+        {'rwgps_url': 'https://ridewithgps.com/routes/222', 'day_number': 2},
+    ]
+    stops = [
+        {'location': 'Day 1: Start', 'distance_miles': 0},
+        {'location': 'Day 2: Start', 'distance_miles': 235},
+    ]
+
+    def leg_track(_ride, leg=None):
+        day = int((leg or {}).get('day_number') or 1)
+        offset_m = float((leg or {}).get('distance_offset_mi') or 0) / live.M_TO_MI
+        return [
+            {'lat': 44 + day / 10, 'lng': -93, 'dist_m': offset_m, 'e_m': 10},
+            {'lat': 44 + day / 10, 'lng': -92, 'dist_m': offset_m + 1609.344,
+             'e_m': 20},
+        ]
+
+    with app.app_context(), \
+         patch('routes.live._resolve_base_plan', return_value=_PLAN), \
+         patch('models.get_ride_plan_legs', return_value=legs), \
+         patch('routes.live.get_ride_plan_stops', return_value=stops), \
+         patch('routes.live._radial_track', side_effect=leg_track):
+        track = live._radial_overview_track(ride)
+
+    assert len(track) == 4
+    assert track[0]['dist_m'] == 0
+    assert track[2]['dist_m'] == 235 / live.M_TO_MI
+    assert {point['lat'] for point in track} == {44.1, 44.2}
