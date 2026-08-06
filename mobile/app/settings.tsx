@@ -7,7 +7,10 @@
  * here is a kill-switch — the backend then rejects every beacon.
  */
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable,
+  ScrollView, StyleSheet, Switch, Text, TextInput, View,
+} from 'react-native';
 import { useSharing } from '../hooks/useSharing';
 import { useSession } from '../contexts/SessionContext';
 import { getLowPower, setLowPower, stopSharing } from '../location/backgroundLocation';
@@ -35,8 +38,7 @@ export default function SettingsScreen() {
     setConfirmText('');
   }
 
-  async function onConfirmDelete() {
-    if (!confirmed) return;
+  async function executeDelete() {
     setDeleting(true);
     const err = await deleteAccount();
     setDeleting(false);
@@ -45,6 +47,19 @@ export default function SettingsScreen() {
       return;
     }
     // On success, signOut (inside deleteAccount) sends us back to login.
+  }
+
+  function onConfirmDelete() {
+    if (!confirmed || deleting) return;
+    Alert.alert(
+      'Delete account permanently?',
+      'Your account and all associated data will be permanently deleted. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete account', style: 'destructive', onPress: executeDelete },
+      ],
+      { cancelable: true },
+    );
   }
 
   async function onToggleLowPower(on: boolean) {
@@ -79,7 +94,17 @@ export default function SettingsScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+    >
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="interactive"
+    >
       <Text style={styles.section}>Location sharing</Text>
       <View style={styles.card}>
         <View style={styles.row}>
@@ -130,23 +155,30 @@ export default function SettingsScreen() {
             </Text>
             <Text style={styles.confirmPrompt}>
               {requireEmail
-                ? 'To confirm, type your account email address:'
-                : `To confirm, type ${DELETE_KEYWORD} below:`}
+                ? 'To confirm, enter your account email address exactly as shown:'
+                : 'To confirm, enter the word shown below:'}
             </Text>
-            {requireEmail
-              ? <Text selectable style={styles.confirmTarget}>{accountEmail}</Text>
-              : null}
+            <View style={styles.confirmTargetBox}>
+              <Text selectable style={styles.confirmTarget}>
+                {requireEmail ? accountEmail : DELETE_KEYWORD}
+              </Text>
+            </View>
+            <Text style={styles.inputLabel}>Confirmation</Text>
             <TextInput
               style={styles.confirmInput}
               value={confirmText}
               onChangeText={setConfirmText}
-              placeholder={requireEmail ? 'you@example.com' : DELETE_KEYWORD}
+              placeholder={requireEmail ? 'Enter your account email' : 'Enter the word above'}
               placeholderTextColor="#9ca3af"
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType={requireEmail ? 'email-address' : 'default'}
               editable={!deleting}
-              autoFocus
+              returnKeyType="done"
+              accessibilityLabel="Account deletion confirmation"
+              accessibilityHint={requireEmail
+                ? 'Enter the account email shown above'
+                : `Enter ${DELETE_KEYWORD}`}
             />
             <Pressable
               style={[styles.dangerBtn, (!confirmed || deleting) && styles.btnDisabled]}
@@ -168,11 +200,13 @@ export default function SettingsScreen() {
         )}
       </View>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f7fafc' },
+  content: { padding: 16, paddingBottom: 56 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   section: { fontSize: 13, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', marginBottom: 8 },
   sectionTop: { marginTop: 20 },
@@ -187,12 +221,18 @@ const styles = StyleSheet.create({
   dangerBtn: { borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fef2f2', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   dangerText: { color: '#b91c1c', fontWeight: '700', fontSize: 15 },
   confirmTitle: { fontSize: 16, fontWeight: '700', color: '#1a365d', marginBottom: 4 },
-  confirmPrompt: { color: '#374151', fontSize: 14, fontWeight: '600', marginTop: 14 },
-  confirmTarget: { color: '#1a365d', fontSize: 15, fontWeight: '700', marginTop: 4 },
+  confirmPrompt: { color: '#374151', fontSize: 14, fontWeight: '600', marginTop: 16, lineHeight: 20 },
+  confirmTargetBox: {
+    alignSelf: 'stretch', backgroundColor: '#f3f4f6', borderColor: '#d1d5db',
+    borderRadius: 8, borderWidth: 1, marginTop: 8, paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  confirmTarget: { color: '#1a365d', fontSize: 16, fontWeight: '800', lineHeight: 22 },
+  inputLabel: { color: '#374151', fontSize: 13, fontWeight: '700', marginTop: 18, marginBottom: 6 },
   confirmInput: {
     borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10, paddingHorizontal: 14,
-    paddingVertical: 10, fontSize: 15, color: '#111827', backgroundColor: '#fff',
-    marginTop: 10, marginBottom: 14,
+    minHeight: 48, paddingVertical: 11, fontSize: 16, lineHeight: 22,
+    color: '#111827', backgroundColor: '#fff', marginBottom: 16,
   },
   cancelBtn: { paddingVertical: 12, alignItems: 'center', marginTop: 8 },
   cancelText: { color: '#6b7280', fontWeight: '600', fontSize: 15 },
