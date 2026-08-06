@@ -10,17 +10,17 @@
       "ios": {
         "simulator": false
       },
-      "node": "20.18.3",
+      "node": "20.19.4",
       "channel": "development"
     },
     "preview": {
       "distribution": "internal",
-      "node": "20.18.3",
+      "node": "20.19.4",
       "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
-      "node": "20.18.3",
+      "node": "20.19.4",
       "channel": "production"
     }
   },
