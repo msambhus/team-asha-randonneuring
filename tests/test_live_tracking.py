@@ -363,8 +363,16 @@ def test_map_page_renders_for_profile_rider(client):
     plan = {'slug': 'test-plan', 'name': 'Test 200K Plan',
             'distance_mi': 124.3, 'elevation_ft': 4500, 'controls': 4,
             'cutoff_hours': 13.5, 'start_time': '06:00'}
+    all_day_weather = {'url': '/weather?plan_slug=test-plan', 'days': [
+        {'day_number': 1, 'forecast_date': 'Thu, Aug 6', 'is_current': True,
+         'available': True, 'distance_mi': 235, 'temp_low_f': 57,
+         'temp_high_f': 83, 'peak_wind_mph': 15, 'headwind_pct': 19},
+        {'day_number': 2, 'forecast_date': 'Fri, Aug 7', 'is_current': False,
+         'available': False},
+    ]}
     with patch('routes.live.get_ride_by_id', return_value=dict(_RIDE)), \
          patch('routes.live.get_live_tracking', return_value=None), \
+         patch('routes.live._build_all_day_weather', return_value=all_day_weather), \
          patch('routes.live._build_plan_snapshot', return_value=plan):
         resp = client.get('/ride/5/live')
     assert resp.status_code == 200
@@ -378,6 +386,10 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'Share my location' in html       # beacon Start control on the map
     assert '/ride/5/live/garmin' in html     # form posts to the per-ride link endpoint
     assert 'Route conditions' in html
+    assert 'All-days forecast' in html
+    assert '235 mi' in html
+    assert '57–83°F' in html
+    assert 'Forecast not cached yet' in html
     assert 'Headwind / tailwind by mile' in html
     assert "metricGroup('Now'" in html
     assert "metric('Gradient'" in html

@@ -102,6 +102,48 @@ def test_active_plan_leg_switches_route_and_forecast_date(app):
     assert leg['distance_offset_mi'] == 100
 
 
+def test_all_day_weather_summarizes_each_stored_leg(app):
+    ride = dict(_RIDE, date='2026-08-06', region='Minnesota', start_time='06:00')
+    legs = [
+        {'rwgps_url': 'https://ridewithgps.com/routes/111', 'day_number': 1},
+        {'rwgps_url': 'https://ridewithgps.com/routes/222', 'day_number': 2},
+        {'rwgps_url': 'https://ridewithgps.com/routes/333', 'day_number': 3},
+        {'rwgps_url': 'https://ridewithgps.com/routes/444', 'day_number': 4},
+    ]
+    samples = [{'distance_m': 0}, {'distance_m': 160934.4}]
+    markers = [
+        {'temp_f': 56, 'wind_speed_mph': 4, 'wind_type': 'tailwind'},
+        {'temp_f': 82, 'wind_speed_mph': 12, 'wind_type': 'headwind'},
+    ]
+    with app.test_request_context(), \
+         patch('routes.live._resolve_base_plan',
+               return_value=dict(_PLAN, slug='coulee-challenge')), \
+         patch('models.get_ride_plan_legs', return_value=legs), \
+         patch('routes.live._active_plan_leg', return_value={'day_number': 2}), \
+         patch('routes.live.load_stored_route_weather',
+               return_value=([{'forecast': True}], samples)), \
+         patch('routes.live.build_live_weather_markers', return_value=markers):
+        summary = live._build_all_day_weather(ride)
+
+    assert len(summary['days']) == 4
+    assert summary['days'][1]['is_current'] is True
+    assert summary['days'][0]['distance_mi'] == 100
+    assert summary['days'][0]['temp_low_f'] == 56
+    assert summary['days'][0]['temp_high_f'] == 82
+    assert summary['days'][0]['peak_wind_mph'] == 12
+    assert summary['days'][0]['headwind_pct'] == 50
+    assert 'plan_slug=coulee-challenge' in summary['url']
+
+
+def test_all_day_weather_is_hidden_for_single_leg(app):
+    with app.app_context(), \
+         patch('routes.live._resolve_base_plan', return_value=_PLAN), \
+         patch('models.get_ride_plan_legs', return_value=[{
+             'rwgps_url': _RIDE['rwgps_url'], 'day_number': 1,
+         }]):
+        assert live._build_all_day_weather(_RIDE) is None
+
+
 def test_plan_snapshot_none_when_no_plan(app):
     with app.app_context(), patch('routes.live._resolve_base_plan', return_value=None):
         assert live._build_plan_snapshot(_RIDE) is None
