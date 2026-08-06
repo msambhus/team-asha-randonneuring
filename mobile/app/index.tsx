@@ -6,6 +6,8 @@ import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Tex
 import { Link, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRides } from '../hooks/useRides';
+import { useCalendar } from '../hooks/useCalendar';
+import { useFollowedRides } from '../hooks/useFollowedRides';
 import { useSession } from '../contexts/SessionContext';
 import { getSharingRideId } from '../location/backgroundLocation';
 import Onboarding from '../components/Onboarding';
@@ -13,9 +15,29 @@ import type { RideSummary } from '../lib/types';
 
 export default function RidesScreen() {
   const { data: rides, isLoading, isError, refetch, isRefetching } = useRides();
+  const { data: calendarRides, refetch: refetchCalendar } = useCalendar();
+  const { followedRideIds } = useFollowedRides();
   const { signOut, profileComplete } = useSession();
   const insets = useSafeAreaInsets();
   const [sharingRideId, setSharingRideId] = useState<number | null>(null);
+
+  const homeRides = (() => {
+    const combined = new Map<number, RideSummary & { isFollowed?: boolean }>();
+    for (const ride of rides ?? []) combined.set(ride.id, ride);
+    const followedSet = new Set(followedRideIds);
+    for (const ride of calendarRides ?? []) {
+      if (!followedSet.has(ride.id) || combined.has(ride.id)) continue;
+      combined.set(ride.id, {
+        id: ride.id,
+        name: ride.name,
+        date: ride.date,
+        distance_km: ride.distance_km,
+        signup_status: null,
+        isFollowed: true,
+      });
+    }
+    return [...combined.values()].sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
+  })();
 
   // Re-check on every focus so the badge reflects starting/stopping sharing on
   // the ride screen (only one ride broadcasts at a time).
@@ -53,11 +75,13 @@ export default function RidesScreen() {
         </Link>
       </View>
       <FlatList
-        data={rides ?? []}
+        data={homeRides}
         keyExtractor={(r) => String(r.id)}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-        ListEmptyComponent={<Text style={styles.muted}>No upcoming rides. Sign up on the website.</Text>}
-        renderItem={({ item }: { item: RideSummary }) => (
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={() => {
+          void Promise.all([refetch(), refetchCalendar()]);
+        }} />}
+        ListEmptyComponent={<Text style={styles.muted}>No upcoming rides. Follow one from the Brevet Calendar.</Text>}
+        renderItem={({ item }: { item: RideSummary & { isFollowed?: boolean } }) => (
           <Link href={`/ride/${item.id}`} asChild>
             <Pressable style={styles.row}>
               <View style={{ flex: 1 }}>
@@ -66,6 +90,7 @@ export default function RidesScreen() {
                   {item.id === sharingRideId ? (
                     <Text style={styles.sharingBadge}>📍 Sharing</Text>
                   ) : null}
+                  {item.isFollowed ? <Text style={styles.followingBadge}>◎ Following live</Text> : null}
                 </View>
                 <Text style={styles.meta}>
                   {item.date ?? ''}{item.distance_km ? ` · ${item.distance_km} km` : ''}
@@ -93,6 +118,10 @@ const styles = StyleSheet.create({
   name: { fontSize: 16, fontWeight: '700', flexShrink: 1 },
   sharingBadge: {
     fontSize: 11, fontWeight: '700', color: '#166534', backgroundColor: '#dcfce7',
+    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden',
+  },
+  followingBadge: {
+    fontSize: 11, fontWeight: '700', color: '#1e40af', backgroundColor: '#dbeafe',
     paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden',
   },
   meta: { color: '#6b7280', fontSize: 13, marginTop: 2 },

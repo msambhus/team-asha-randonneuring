@@ -266,6 +266,16 @@
   .radial-weather-charts { grid-template-columns: 1fr; }
   .rdw-charts { grid-template-columns: 1fr; }
   .radial-detail-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rdw-head { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
+  .rdw-heading { display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center; width: 100%; gap: 5px 8px; }
+  .rdw-day { white-space: nowrap; }
+  .rdw-date { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .rdw-current { justify-self: end; white-space: nowrap; }
+  .rdw-head-right { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start; gap: 7px; }
+  .rdw-quick { justify-content: flex-start; margin-left: 0; gap: 4px 9px; }
+  .rdw-toggle { min-width: 0; }
   .radial-table { font-size: 0.8rem; }
   .radial-table thead th, .radial-row td { padding-left: 4px; padding-right: 4px; }
   .radial-row-meta { max-width: 108px; }
@@ -740,6 +750,7 @@
         metric('Elapsed', fmtDuration(row.elapsed_min)),
         metric('Moving', fmtDuration(row.moving_min)),
         metric('Stopped', fmtDuration(row.stopped_min)),
+        metric('Climbed so far', row.ascent_done_ft != null ? Number(row.ascent_done_ft) + ' ft' : '—'),
         metric('Gradient', row.grade_pct != null ? Number(row.grade_pct) + '%' : '—'),
         metric('Wind here', row.headwind_done_label ? escapeHtml(row.headwind_done_label) : '—'),
         row.heart_rate != null ? metric('Heart rate', Number(row.heart_rate) + ' bpm') : '',
@@ -779,6 +790,7 @@
     return '<span class="radial-row-value">' + fmtDist(row) + '</span>' +
       '<span class="radial-row-meta">' +
       (row.elapsed_min != null ? 'Elapsed ' + fmtDuration(row.elapsed_min) : 'Elapsed —') +
+      (row.ascent_done_ft != null ? ' · ' + Number(row.ascent_done_ft).toLocaleString() + ' ft climbed' : '') +
       '</span>';
   }
   function speedSummaryHtml(row) {

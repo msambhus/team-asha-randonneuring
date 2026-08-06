@@ -64,7 +64,7 @@ function rider(over: Partial<LivePosition>): LivePosition {
     telemetry: {
       on_route: true,
       now: { speed_mph: 12, activity: 'cycling', elapsed_min: 60, moving_min: 55, stopped_min: 5,
-             heart_rate: null, power: null, cadence: null, distance_mi: 5 },
+             heart_rate: null, power: null, cadence: null, distance_mi: 5, ascent_done_ft: 2345 },
       remaining: null,
       next_control: { name: 'Control 1', type: 'control', distance_mi: 10, dist_to_go_mi: 5,
                       arrival_time_min: 90, eta_iso: '2026-06-23T14:30:00Z', eta_label: '2:30 PM',
@@ -117,6 +117,8 @@ describe('RideLiveScreen', () => {
     expect(screen.getByText('10 mph')).toBeTruthy();
     expect(screen.getByText('banked (cutoff)')).toBeTruthy();
     expect(screen.getByText('banked (plan)')).toBeTruthy();
+    expect(screen.getByText('climbed so far')).toBeTruthy();
+    expect(screen.getByText('2345 ft')).toBeTruthy();
     expect(screen.getByText('+45m')).toBeTruthy();     // cutoff margin, signed
   });
 
