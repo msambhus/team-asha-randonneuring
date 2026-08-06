@@ -112,6 +112,9 @@
                 <a class="rpv2-admin-edit" href="{{ url_for('riders.base_plan_editor', slug=plan.slug) }}" title="Edit base plan (admin)">✎ Edit</a>
                 <a class="rpv2-admin-edit" href="{{ url_for('riders.edit_ride_plan_info', slug=plan.slug) }}" title="Edit plan info (admin)">⚙ Info</a>
                 {% endif %}
+                {% if plan.live_ride_id %}
+                <a class="rpv2-admin-edit" href="{{ url_for('live.ride_live_map', ride_id=plan.live_ride_id) }}" title="Open this ride's live map">● Live</a>
+                {% endif %}
             </h1>
             <div class="rpv2-sub">
                 {{ "%.0f"|format(plan.total_distance_miles or 0) }} mi ·

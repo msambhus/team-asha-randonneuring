@@ -1715,10 +1715,20 @@ def get_ride_plan_stops(ride_plan_id):
         ORDER BY stop_order
     """, (ride_plan_id,)).fetchall()
 
+
+def get_ride_plan_legs(ride_plan_id):
+    """Ordered RWGPS route legs for a multi-day plan."""
+    return _execute("""
+        SELECT id, ride_plan_id, leg_order, day_number, label, rwgps_url
+        FROM ride_plan_leg
+        WHERE ride_plan_id = %s
+        ORDER BY leg_order
+    """, (ride_plan_id,)).fetchall()
+
 def get_latest_ride_for_plan(plan_id):
     """Get the most recent ride linked to a plan, for deriving defaults."""
     return _execute("""
-        SELECT start_time, rwgps_url_team, rwgps_url, time_limit_hours, date
+        SELECT id, start_time, rwgps_url_team, rwgps_url, time_limit_hours, date
         FROM ride
         WHERE ride_plan_id = %s
         ORDER BY date DESC
@@ -5041,11 +5051,17 @@ def get_upcoming_weather_targets(within_days=28):
     today = date.today()
     cutoff = today + timedelta(days=within_days)
     rows = _execute("""
-        SELECT ri.id AS ride_id, ri.date AS forecast_date, ri.name AS name,
-               COALESCE(rp.rwgps_url_team, ri.rwgps_url_team, ri.rwgps_url) AS rwgps_url,
-               rp.id AS plan_id
+        SELECT ri.id AS ride_id,
+               ri.date + (COALESCE(rpl.day_number, 1) - 1) AS forecast_date,
+               ri.name AS name,
+               COALESCE(rpl.rwgps_url, rp.rwgps_url_team,
+                        ri.rwgps_url_team, ri.rwgps_url) AS rwgps_url,
+               rp.id AS plan_id,
+               COALESCE(rpl.leg_order, 1) AS leg_order,
+               COALESCE(rpl.day_number, 1) AS day_number
         FROM ride ri
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
+        LEFT JOIN ride_plan_leg rpl ON rpl.ride_plan_id = rp.id
         WHERE ri.date IS NOT NULL
           AND (
                 (ri.date >= %s AND ri.date <= %s)

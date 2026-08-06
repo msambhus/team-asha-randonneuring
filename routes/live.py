@@ -25,6 +25,7 @@ from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled
                     get_or_create_ride_invite, get_valid_ride_invite,
                     get_route_elevation_track, RideStatus)
 from services.garmin_livetrack import parse_session
+from services.club_clock import ride_timezone
 from services.rwgps import extract_rwgps_route_id, fetch_route
 from services import live_telemetry as tlm
 from services import live_radial as radial
@@ -75,7 +76,7 @@ def _ride_start_utc(ride):
         if isinstance(d, str):
             d = date.fromisoformat(d)
         return datetime(d.year, d.month, d.day, hh, mm,
-                        tzinfo=CLUB_TZ).astimezone(timezone.utc)
+                        tzinfo=ride_timezone(ride)).astimezone(timezone.utc)
     except Exception:
         return None
 
@@ -264,10 +265,11 @@ def _build_plan_snapshot(ride):
         # deliberately resolves to Day 1; after the finish it stays on the final
         # named day. Multi-day plans created from separate RWGPS routes prefix
         # their controls with "Day N", which is the most reliable day boundary.
-        start_utc = _ride_start_utc(ride)
-        elapsed_min = max(0, int(((datetime.now(timezone.utc) - start_utc).total_seconds() / 60)
-                                 if start_utc else 0))
-        active_day = elapsed_min // (24 * 60) + 1
+        ride_date = ride.get('date')
+        if isinstance(ride_date, str):
+            ride_date = date.fromisoformat(ride_date)
+        event_today = datetime.now(ride_timezone(ride)).date()
+        active_day = max(1, (event_today - ride_date).days + 1) if ride_date else 1
         named_days = []
         for stop in timed_stops:
             match = re.match(r'\s*Day\s+(\d+)\s*:', stop.get('location') or '', re.I)

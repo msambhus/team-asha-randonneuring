@@ -79,6 +79,13 @@
     border-top: 1px dashed var(--border);
 }
 .share-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    white-space: nowrap;
+    line-height: 1.2;
+    min-height: 34px;
     background: white;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -88,6 +95,7 @@
     color: var(--text);
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s;
+    overflow: hidden;
 }
 .share-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
 .share-btn:disabled { opacity: 0.6; cursor: wait; }

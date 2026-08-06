@@ -246,6 +246,56 @@ def _plan_distance_km(plan):
     return int(round(measured_km))
 
 
+def _fetch_plan_stop_wind(plan, stops, forecast_date, start_time_str,
+                          fallback_route_id=None):
+    """Read weather for every ordered leg of a multi-day plan.
+
+    Leg-local distances/times are rebased before calling the canonical weather
+    engine, then projected back onto the complete itinerary. Single-route plans
+    retain the original behavior.
+    """
+    from models import get_ride_plan_legs
+
+    try:
+        legs = [dict(row) for row in (get_ride_plan_legs(plan['id']) or [])]
+    except Exception:
+        legs = []
+    if len(legs) <= 1:
+        route_id = (_extract_rwgps_route_id(legs[0]['rwgps_url'])
+                    if legs else fallback_route_id)
+        return (fetch_stop_wind(stops, route_id, forecast_date, start_time_str)
+                if route_id else None)
+
+    winds = [None] * len(stops)
+    for leg in legs:
+        day_number = max(1, int(leg.get('day_number') or 1))
+        route_id = _extract_rwgps_route_id(leg.get('rwgps_url'))
+        indexes = []
+        local_stops = []
+        prefix = re.compile(rf'^\s*Day\s+{day_number}\s*:', re.I)
+        for index, stop in enumerate(stops):
+            if not prefix.match(stop.get('location') or stop.get('name') or ''):
+                continue
+            indexes.append(index)
+            local_stops.append(dict(stop))
+        if not route_id or not local_stops:
+            continue
+        distance_offset = float(local_stops[0].get('distance_miles') or 0)
+        time_offset = (day_number - 1) * 24 * 60
+        for stop in local_stops:
+            stop['distance_miles'] = max(
+                0, float(stop.get('distance_miles') or 0) - distance_offset)
+            if stop.get('arrival_time_min') is not None:
+                stop['arrival_time_min'] = max(
+                    0, float(stop['arrival_time_min']) - time_offset)
+        leg_winds = fetch_stop_wind(
+            local_stops, route_id,
+            forecast_date + timedelta(days=day_number - 1), start_time_str) or []
+        for index, wind in zip(indexes, leg_winds):
+            winds[index] = wind
+    return winds
+
+
 _CUTOFF_HOURS = {200: 13.5, 300: 20, 400: 27, 600: 40, 1000: 75, 1200: 90}
 
 
@@ -2378,6 +2428,7 @@ def ride_plan_detail_v1(slug):
     # Derive start_time and rwgps_url_team from the most recent linked ride
     from models import get_latest_ride_for_plan
     linked_ride = get_latest_ride_for_plan(plan['id'])
+    plan['live_ride_id'] = linked_ride.get('id') if linked_ride else None
     plan['start_time'] = (linked_ride.get('start_time') if linked_ride else None) or '06:00'
     plan['rwgps_url_team'] = linked_ride.get('rwgps_url_team') if linked_ride else None
     # If plan has no rwgps_url, try from linked ride
@@ -2546,12 +2597,9 @@ def ride_plan_detail_v1(slug):
             # -> no stored forecast -> no wind, the same graceful miss as an uncached route.
             forecast_date = get_upcoming_ride_date_for_plan(plan['id'])
             if forecast_date:
-                stop_wind = fetch_stop_wind(
-                    stops=stops,
-                    route_id=weather_route_id,
-                    forecast_date=forecast_date,
-                    start_time_str=plan.get('start_time', '06:00'),
-                )
+                stop_wind = _fetch_plan_stop_wind(
+                    plan, stops, forecast_date,
+                    plan.get('start_time', '06:00'), weather_route_id)
         except Exception:
             current_app.logger.exception("Wind fetch failed for plan %s", slug)
             stop_wind = None
@@ -2644,6 +2692,7 @@ def ride_plan_detail(slug):
 
     from models import get_latest_ride_for_plan
     linked_ride = get_latest_ride_for_plan(plan['id'])
+    plan['live_ride_id'] = linked_ride.get('id') if linked_ride else None
     plan['start_time'] = (linked_ride.get('start_time') if linked_ride else None) or '06:00'
     plan['linked_ride_date'] = linked_ride.get('date') if linked_ride else None
 
@@ -2705,12 +2754,9 @@ def ride_plan_detail(slug):
             # ride date (no live Open-Meteo on the plan page — TA-237).
             forecast_date = get_upcoming_ride_date_for_plan(plan['id'])
             if forecast_date:
-                stop_wind = fetch_stop_wind(
-                    stops=stops,
-                    route_id=weather_route_id,
-                    forecast_date=forecast_date,
-                    start_time_str=plan.get('start_time', '06:00'),
-                )
+                stop_wind = _fetch_plan_stop_wind(
+                    plan, stops, forecast_date,
+                    plan.get('start_time', '06:00'), weather_route_id)
         except Exception:
             current_app.logger.exception("v2 wind fetch failed for plan %s", slug)
             stop_wind = None
@@ -3406,12 +3452,9 @@ def custom_ride_plan_view(slug, custom_plan_id=None):
             # ride date (no live Open-Meteo on the plan page — TA-237).
             forecast_date = get_upcoming_ride_date_for_plan(plan['id'])
             if forecast_date:
-                stop_wind = fetch_stop_wind(
-                    stops=stops,
-                    route_id=weather_route_id,
-                    forecast_date=forecast_date,
-                    start_time_str=str(plan.get('start_time') or '07:00')[:5],
-                )
+                stop_wind = _fetch_plan_stop_wind(
+                    plan, stops, forecast_date,
+                    str(plan.get('start_time') or '07:00')[:5], weather_route_id)
         except Exception:
             current_app.logger.exception("Wind fetch failed for custom plan %s", slug)
             stop_wind = None
