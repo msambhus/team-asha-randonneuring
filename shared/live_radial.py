@@ -94,10 +94,10 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
     if start is not None and start <= now:
         elapsed_min = round((now - start).total_seconds() / 60)
 
-    # Moving / stopped are measured only where tracking exists. Reconcile gaps to
-    # elapsed only when tracking began near the official start; otherwise a rider
-    # who enables LiveTrack hours later would have all unobserved time mislabeled
-    # as stopped.
+    # Moving / stopped are measured where tracking exists. For a scheduled brevet
+    # whose LiveTrack began late, treat the unobserved pre-tracking interval as
+    # moving—not stopped—because the rider's absolute course progress proves they
+    # were already riding. Only pauses actually observed in LiveTrack count stopped.
     ride_history = history
     if start is not None:
         ride_history = [h for h in history if _as_utc(h['recorded_at']) >= start]
@@ -106,8 +106,11 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
         start is not None and first_fix is not None
         and first_fix > start + timedelta(minutes=10))
     moving_min, stopped_min = tlm.moving_stopped(ride_history)
-    if elapsed_min is not None and not history_started_late:
-        stopped_min = round(max(0.0, elapsed_min - moving_min), 1)
+    if elapsed_min is not None:
+        if history_started_late:
+            moving_min = round(max(0.0, elapsed_min - stopped_min), 1)
+        else:
+            stopped_min = round(max(0.0, elapsed_min - moving_min), 1)
 
     speed_ms = tlm.latest_speed_ms(history)
     if speed_ms is None and row.get('speed') is not None:
@@ -193,9 +196,6 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
     now_block['avg_elapsed_speed_mph'] = (
         round(dist_mi / (elapsed_min / 60.0), 1) if elapsed_min and elapsed_min > 0 else None)
     moving_distance_m = progressed_m
-    if history_started_late and start_dist_m is not None:
-        moving_distance_m = tlm.distance_progressed_m(
-            dist_m, start_dist_m, ctx['total_dist_m'])
     moving_distance_mi = moving_distance_m * M_TO_MI
     now_block['avg_moving_speed_mph'] = (
         round(moving_distance_mi / (moving_min / 60.0), 1)

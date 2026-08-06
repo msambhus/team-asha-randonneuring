@@ -132,8 +132,8 @@ def test_remaining_metrics_use_whole_brevet_totals_not_active_leg():
     assert roster[0]['ascent_left_ft'] > ctx['total_ascent_ft']
 
 
-def test_ride_start_anchor_keeps_miles_before_livetrack_began():
-    """A late LiveTrack first fix must not reset a scheduled brevet's odometer."""
+def test_ride_start_anchor_keeps_miles_and_assumes_pretracking_time_was_moving():
+    """A late LiveTrack fix preserves brevet miles and does not invent stopped time."""
     track, ctx = _track_and_ctx()
     ctx['ride_start_iso'] = (_NOW - timedelta(minutes=288)).isoformat()
     history = []
@@ -159,9 +159,9 @@ def test_ride_start_anchor_keeps_miles_before_livetrack_began():
     assert roster[0]['dist_display'] == 40.0
     assert roster[0]['elapsed_min'] == 288
     assert roster[0]['avg_elapsed_speed_mph'] == 8.3
-    assert roster[0]['moving_min'] == 45.0
+    assert roster[0]['moving_min'] == 288.0
     assert roster[0]['stopped_min'] == 0.0
-    assert roster[0]['avg_moving_speed_mph'] == 13.3
+    assert roster[0]['avg_moving_speed_mph'] == 8.3
 
 
 def test_first_fix_anchor_rebases_an_explicit_permanent():
