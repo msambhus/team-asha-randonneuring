@@ -1728,10 +1728,12 @@ def get_ride_plan_legs(ride_plan_id):
 def get_latest_ride_for_plan(plan_id):
     """Get the most recent ride linked to a plan, for deriving defaults."""
     return _execute("""
-        SELECT id, start_time, rwgps_url_team, rwgps_url, time_limit_hours, date
-        FROM ride
-        WHERE ride_plan_id = %s
-        ORDER BY date DESC
+        SELECT ri.id, ri.start_time, ri.rwgps_url_team, ri.rwgps_url,
+               ri.time_limit_hours, ri.date, ri.ride_type, c.region
+        FROM ride ri
+        LEFT JOIN club c ON c.id = ri.club_id
+        WHERE ri.ride_plan_id = %s
+        ORDER BY ri.date DESC
         LIMIT 1
     """, (plan_id,)).fetchone()
 

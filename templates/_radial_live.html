@@ -55,7 +55,7 @@
       <div class="rps-day-row">
         <span class="rps-day-name">{{ stop.name }}</span>
         <span class="rps-day-meta">{{ stop.distance_mi }} mi{% if stop.break_min %} · {{ stop.break_min }}m stop{% endif %}</span>
-        <span class="rps-day-eta">{{ stop.eta }}</span>
+        <span class="rps-day-eta"><strong>{{ stop.eta }} {{ stop.eta_event_zone }}</strong>{% if stop.show_pacific %}<small>{{ stop.eta_pacific }} PT</small>{% endif %}</span>
         {% if stop.time_bank_min is not none %}{% set sbank = stop.time_bank_min|int %}{% set sbank_abs = sbank|abs %}<span class="rps-day-bank {{ 'ahead' if sbank >= 0 else 'behind' }}">{{ '+' if sbank >= 0 else '−' }}{{ sbank_abs // 60 }}h{{ '%02d'|format(sbank_abs % 60) }}</span>{% else %}<span class="rps-day-bank">—</span>{% endif %}
       </div>
       {% endfor %}
@@ -105,7 +105,9 @@
   border-radius: 8px; background: var(--card-bg, #fff); font-size: 0.8rem; }
 .rps-day-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
 .rps-day-meta { color: var(--text-light, #6b7280); white-space: nowrap; }
-.rps-day-eta { font-weight: 750; color: var(--primary, #1a365d); white-space: nowrap; }
+.rps-day-eta { display: flex; flex-direction: column; align-items: flex-end; color: var(--primary, #1a365d); white-space: nowrap; }
+.rps-day-eta strong { font-weight: 750; }
+.rps-day-eta small, .rpv2-dual-time small, .radial-time-secondary { display: block; margin-top: 1px; font-size: .68em; font-weight: 600; color: var(--text-light, #6b7280); }
 .rps-day-bank { min-width: 4.5rem; text-align: right; font-weight: 750; white-space: nowrap; }
 .rps-day-bank.ahead { color: #166534; }
 .rps-day-bank.behind { color: #991b1b; }
@@ -165,6 +167,9 @@
 .rdw-distance { margin-left: auto; font-size: .72rem; font-weight: 750;
   color: var(--text-light, #6b7280); white-space: nowrap; }
 .rdw-head-right { display: flex; align-items: center; gap: 10px; }
+.rdw-quick { display: flex; align-items: center; justify-content: flex-end; gap: 7px;
+  flex-wrap: wrap; margin-left: auto; color: var(--text-light, #6b7280); }
+.rdw-quick span { font-size: .65rem; font-weight: 650; white-space: nowrap; }
 .rdw-toggle { min-width: 5.5rem; text-align: right; font-size: .66rem; font-weight: 750;
   color: var(--primary, #1a365d); white-space: nowrap; }
 .rdw-toggle::after { content: 'Show details ▾'; }
@@ -369,7 +374,17 @@
           <span class="rdw-heading"><span class="rdw-day">Day {{ day.day_number }}</span><span class="rdw-date">{{ day.forecast_date }}</span>
           {% if day.is_current %}<span class="rdw-current">Current</span>{% endif %}
           </span>
-          <span class="rdw-head-right"><span class="rdw-distance">{{ day.distance_mi }} mi</span><span class="rdw-toggle" aria-hidden="true"></span></span>
+          <span class="rdw-head-right">
+            <span class="rdw-quick">
+              <span>{{ day.distance_mi }} mi</span>
+              {% if day.plan and day.plan.day_elevation_ft %}<span>{{ "{:,}".format(day.plan.day_elevation_ft) }} ft</span>{% endif %}
+              {% if day.plan %}<span>{{ day.plan.day_moving_min // 60 }}h{{ '%02d'|format(day.plan.day_moving_min % 60) }} riding</span><span>{{ day.plan.day_stopped_min // 60 }}h{{ '%02d'|format(day.plan.day_stopped_min % 60) }} stopped</span>{% endif %}
+              {% if day.temperature_min_f is not none %}<span>{{ day.temperature_min_f }}–{{ day.temperature_max_f }}°F</span>{% endif %}
+              {% if day.peak_headwind_mph is not none %}<span>↘ {{ day.peak_headwind_mph }} mph head</span>{% endif %}
+              {% if day.plan and day.plan.day_time_bank_min is not none %}{% set qbank = day.plan.day_time_bank_min|int %}{% set qabs = qbank|abs %}<span>{{ '+' if qbank >= 0 else '−' }}{{ qabs // 60 }}h{{ '%02d'|format(qabs % 60) }} bank</span>{% endif %}
+            </span>
+            <span class="rdw-toggle" aria-hidden="true"></span>
+          </span>
       </summary>
         {{ day_plan(day.plan, day.is_current) }}
         {% if day.available %}
@@ -692,6 +707,11 @@
     return '<div class="radial-m"><span class="radial-ml">' + label +
            '</span><span class="radial-mv">' + value + '</span></div>';
   }
+  function dualTime(primary, pacific) {
+    if (!primary) return '—';
+    return escapeHtml(primary) + (pacific ? '<small class="radial-time-secondary">' +
+      escapeHtml(pacific) + '</small>' : '');
+  }
   function metricGroup(label, cells, layoutClass) {
     return '<section class="radial-detail-group ' + (layoutClass || '') +
       '"><div class="radial-detail-label">' +
@@ -741,11 +761,11 @@
       ]) +
       metricGroup('Next control', [
         metric('Control', ncTxt),
-        metric('ETA', nc.eta_label ? escapeHtml(nc.eta_label) : '—'),
+        metric('ETA', dualTime(nc.eta_label, nc.eta_pacific_label)),
         metric('Required speed', nc.required_mph != null ? Number(nc.required_mph) + ' mph' : '—')
       ], 'radial-detail-group-three') +
       metricGroup('Finish', [
-        metric('ETA', row.eta_finish_label ? escapeHtml(row.eta_finish_label) : '—'),
+        metric('ETA', dualTime(row.eta_finish_label, fin.eta_pacific_label)),
         metric('Distance to go', fin.dist_to_go_mi != null ? Number(fin.dist_to_go_mi) + ' mi' : '—'),
         metric('Required speed', fin.required_mph != null ? Number(fin.required_mph) + ' mph' : '—')
       ], 'radial-detail-group-three') +

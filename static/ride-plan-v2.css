@@ -261,6 +261,8 @@
     border-bottom: 1px solid #e2e8f0;
 }
 .rpv2-table th.r, .rpv2-table td.r { text-align: right; }
+.rpv2-dual-time span, .rpv2-dual-time small { display: block; }
+.rpv2-dual-time small { margin-top: 1px; font-size: .72em; font-weight: 600; color: #64748b; }
 /* Fixed layout so numeric columns stay at their tight content widths and the
    Stop column (the auto-width col) absorbs all remaining horizontal space,
    instead of slack pooling in the numeric columns. */

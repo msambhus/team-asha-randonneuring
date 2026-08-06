@@ -27,7 +27,8 @@ from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled
                     get_or_create_ride_invite, get_valid_ride_invite,
                     get_route_elevation_track, RideStatus)
 from services.garmin_livetrack import parse_session
-from services.club_clock import ride_timezone
+from services.club_clock import (ride_timezone, schedule_time_labels,
+                                 instant_time_labels)
 from services.rwgps import extract_rwgps_route_id, fetch_route
 from services import live_telemetry as tlm
 from services import live_radial as radial
@@ -507,6 +508,10 @@ def _build_all_day_weather(ride, selected_day=None, active_day=None):
             chart_data = _build_live_chart_data(
                 adjusted_samples, weather_data, track_points, plan_stops,
                 _ride_start_local(ride))
+            temperatures = [float(v) for v in ((chart_data or {}).get('temperature_f') or [])
+                            if v is not None]
+            headwinds = [float(v) for v in ((chart_data or {}).get('headwind_mph') or [])
+                         if v is not None]
             max_distance_m = max(
                 (float(p.get('distance_m') or 0) for p in (sample_points or [])),
                 default=0,
@@ -521,6 +526,12 @@ def _build_all_day_weather(ride, selected_day=None, active_day=None):
                 'distance_mi': round(max_distance_m * M_TO_MI),
                 'start_distance_mi': round(offset_mi, 1),
                 'chart_data': chart_data,
+                'temperature_min_f': round(min(temperatures)) if temperatures else None,
+                'temperature_max_f': round(max(temperatures)) if temperatures else None,
+                'peak_headwind_mph': (round(max([0.0] + headwinds))
+                                      if headwinds else None),
+                'peak_tailwind_mph': (round(abs(min([0.0] + headwinds)))
+                                      if headwinds else None),
                 'plan': _build_plan_snapshot(ride, selected_day=day_number),
             })
 
@@ -602,6 +613,13 @@ def _build_plan_snapshot(ride, selected_day=None):
                 'type': (stop.get('stop_type') or 'waypoint').lower(),
                 'time_bank_min': stop.get('time_bank_min'),
             })
+            labels = schedule_time_labels(ride, start_raw, arrival)
+            day_rows[-1].update({
+                'eta': labels['event'],
+                'eta_event_zone': labels['event_zone'],
+                'eta_pacific': labels['pacific'],
+                'show_pacific': labels['show_pacific'],
+            })
 
         first_day_mi = (float(day_timed_stops[0].get('distance_miles') or 0)
                         if day_timed_stops else 0.0)
@@ -614,6 +632,7 @@ def _build_plan_snapshot(ride, selected_day=None):
         day_banks = [s.get('time_bank_min') for s in day_timed_stops
                      if s.get('time_bank_min') is not None]
 
+        start_labels = schedule_time_labels(ride, start_raw, 0)
         return {
             'name': plan.get('name'),
             'slug': plan.get('slug'),
@@ -622,6 +641,10 @@ def _build_plan_snapshot(ride, selected_day=None):
             'controls': controls,
             'cutoff_hours': cutoff,
             'start_time': (ride.get('start_time') or plan.get('start_time') or None),
+            'start_time_event': start_labels['event'],
+            'start_time_event_zone': start_labels['event_zone'],
+            'start_time_pacific': start_labels['pacific'],
+            'show_pacific_time': start_labels['show_pacific'],
             'active_day': active_day,
             'is_current_day': active_day == current_day,
             'day_stops': day_rows,
@@ -979,15 +1002,17 @@ def _ride_live_context_cached(ride_id, day_key):
            # Base plan id + timing inputs so the per-rider custom plan (if any) can
            # be merged + retimed the SAME way the web plan page does (_rider_plan_stops).
            'base_plan_id': None, 'plan_cutoff_hours': None, 'plan_total_mi': 0.0,
-           'plan_distance_km': None,
+           'plan_total_ascent_ft': None, 'plan_distance_km': None,
            # Only explicitly classified permanents may begin partway around a
            # route. Scheduled brevets always measure from the official start.
-           'allow_mid_route_start': False}
+           'allow_mid_route_start': False,
+           'event_timezone': None}
     if not ride:
         return ctx
 
     ctx['allow_mid_route_start'] = (
         'permanent' in str(ride.get('ride_type') or '').strip().lower())
+    ctx['event_timezone'] = getattr(ride_timezone(ride), 'key', 'America/Los_Angeles')
 
     # Overall brevet time limit (for "time left" = limit − elapsed; e.g. 40h for
     # a 600). Prefer the event's own time_limit_hours; else the standard ACP
@@ -1015,6 +1040,7 @@ def _ride_live_context_cached(ride_id, day_key):
             cutoff_raw = ride.get('time_limit_hours') or plan.get('cutoff_hours')
             ctx['plan_cutoff_hours'] = float(cutoff_raw) if cutoff_raw else None
             ctx['plan_total_mi'] = float(plan.get('total_distance_miles') or 0)
+            ctx['plan_total_ascent_ft'] = float(plan.get('total_elevation_ft') or 0)
             ctx['plan_distance_km'] = plan.get('distance_km') or ride.get('distance_km')
             ctx['base_plan_id'] = plan['id']
             base_raw = _compute_base_timing(
@@ -1326,7 +1352,7 @@ def _selected_plan_stops(requested_plan_id, ctx, allowed_custom_ids, is_member=F
     return PLAN_BASE, base_stops
 
 
-def _upcoming_controls(plan_stops, leader_dist_mi, start_utc):
+def _upcoming_controls(plan_stops, leader_dist_mi, start_utc, ride=None):
     """One shared, ride-level list of the applied plan's future controls (item 2).
 
     Future = ahead of the furthest-along on-route rider (leader_dist_mi); when no
@@ -1347,11 +1373,14 @@ def _upcoming_controls(plan_stops, leader_dist_mi, start_utc):
             continue
         arrival = s.get('arrival_time_min')
         arrival = round(float(arrival)) if arrival is not None else round(float(ct))
-        eta_iso = eta_label = None
+        eta_iso = eta_label = eta_pacific_label = None
         if start_utc is not None:
             eta_dt = start_utc + timedelta(minutes=arrival)
             eta_iso = eta_dt.isoformat()
-            eta_label = eta_dt.astimezone(CLUB_TZ).strftime('%I:%M %p').lstrip('0')
+            labels = instant_time_labels(eta_dt, ride or {})
+            eta_label = f"{labels['event']} {labels['event_zone']}"
+            if labels['show_pacific']:
+                eta_pacific_label = f"{labels['pacific']} PT"
         out.append({
             'name': s.get('location') or None,
             'type': s.get('stop_type') or None,
@@ -1359,6 +1388,7 @@ def _upcoming_controls(plan_stops, leader_dist_mi, start_utc):
             'arrival_time_min': arrival,
             'eta_iso': eta_iso,
             'eta_label': eta_label,
+            'eta_pacific_label': eta_pacific_label,
         })
     out.sort(key=lambda c: c['distance_mi'])
     return out
@@ -1408,8 +1438,9 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
         return {'headwind_done_mph': wd_mph, 'headwind_done_label': wd_label,
                 'headwind_ahead_mph': wa_mph, 'headwind_ahead_label': wa_label}
 
+    event_tz = ZoneInfo(ctx.get('event_timezone') or 'America/Los_Angeles')
     return radial.compose_rider_telemetry(
-        row, ctx, now, history, plan_stops=plan_stops, start=start, tz=CLUB_TZ,
+        row, ctx, now, history, plan_stops=plan_stops, start=start, tz=event_tz,
         wind_labeler=wind_labeler, min_history=1, stateless_fallback=True,
         rebase_from_first_fix=bool(ctx.get('allow_mid_route_start')))
 
@@ -1530,7 +1561,9 @@ def live_positions():
         d = (t.get('now') or {}).get('distance_mi')
         if d is not None and (leader_dist_mi is None or d > leader_dist_mi):
             leader_dist_mi = d
-    upcoming_controls = _upcoming_controls(list_stops, leader_dist_mi, start_utc)
+    schedule_ride = {'timezone': (ctx or {}).get('event_timezone')}
+    upcoming_controls = _upcoming_controls(
+        list_stops, leader_dist_mi, start_utc, schedule_ride)
 
     return jsonify({
         'ride_id': ride_id,
@@ -1648,6 +1681,22 @@ def ride_live_roster(ride_id):
         min_history=1, stateless_fallback=True,
         stale_after_minutes=STALE_AFTER_MINUTES,
         telemetry_builder=_rider_telemetry)
+
+    # The shared composer carries one primary ETA label. Team Asha adds the
+    # Pacific secondary clock for out-of-state events after privacy shaping.
+    for roster_row in roster:
+        for block_name in ('next_control', 'finish'):
+            block = roster_row.get(block_name)
+            if not block or not block.get('eta_iso'):
+                continue
+            try:
+                eta_dt = datetime.fromisoformat(block['eta_iso'])
+                labels = instant_time_labels(eta_dt, ride)
+                block['eta_label'] = f"{labels['event']} {labels['event_zone']}"
+                block['eta_pacific_label'] = (
+                    f"{labels['pacific']} PT" if labels['show_pacific'] else None)
+            except (TypeError, ValueError):
+                pass
 
     return jsonify({
         'ride_id': ride_id,
