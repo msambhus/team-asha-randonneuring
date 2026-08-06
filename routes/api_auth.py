@@ -282,6 +282,8 @@ def apple_signin():
 # sessions never collide with a real Google account.
 DEMO_GOOGLE_ID = 'demo-reviewer'
 DEMO_EMAIL = 'appreview@teamasha.demo'
+DEMO_DELETE_GOOGLE_ID = 'demo-delete-reviewer'
+DEMO_DELETE_EMAIL = 'delete-review@teamasha.demo'
 
 
 @api_auth_bp.route('/demo', methods=['POST'])
@@ -295,6 +297,21 @@ def demo_signin():
 
     Returns: {token, rider_id, profile_complete} — same shape as /google.
     """
+    return _demo_signin(DEMO_GOOGLE_ID, DEMO_EMAIL)
+
+
+@api_auth_bp.route('/demo-delete', methods=['POST'])
+def demo_delete_signin():
+    """Resettable App Review identity dedicated to recording account deletion.
+
+    It shares the configured demo rider only as sample content. Deleting it removes
+    this login through the real account-deletion path; the next call recreates it.
+    The general reviewer identity remains untouched.
+    """
+    return _demo_signin(DEMO_DELETE_GOOGLE_ID, DEMO_DELETE_EMAIL)
+
+
+def _demo_signin(google_id, email):
     if not current_app.config.get('DEMO_MODE_ENABLED'):
         # 404 (not 403) so the endpoint doesn't even advertise its existence.
         return jsonify({'error': 'Not found'}), 404
@@ -312,9 +329,9 @@ def demo_signin():
             return jsonify({'error': 'Demo login is not configured'}), 503
 
         # Find-or-create the dedicated demo user and keep it linked to the rider.
-        user = models.get_user_by_google_id(DEMO_GOOGLE_ID)
+        user = models.get_user_by_google_id(google_id)
         if not user:
-            user = models.create_user(DEMO_EMAIL, DEMO_GOOGLE_ID)
+            user = models.create_user(email, google_id)
             if not user:
                 return jsonify({'error': 'Could not create demo account'}), 500
         if user.get('rider_id') != rider_id:

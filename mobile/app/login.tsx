@@ -20,7 +20,7 @@ type Method = 'otp' | 'password';
 
 export default function LoginScreen() {
   const {
-    signInDemo, signInWithPassword, signUpWithPassword,
+    signInDemo, signInDemoDelete, signInWithPassword, signUpWithPassword,
     requestEmailOtp, verifyEmailOtp,
   } = useSession();
 
@@ -207,6 +207,9 @@ export default function LoginScreen() {
       <Pressable onPress={() => run(signInDemo)} disabled={busy} hitSlop={8} style={styles.demoLink}>
         <Text style={styles.demoText}>Demo login (reviewers)</Text>
       </Pressable>
+      <Pressable onPress={() => run(signInDemoDelete)} disabled={busy} hitSlop={8} style={styles.demoDeleteLink}>
+        <Text style={styles.demoDeleteText}>Demo account deletion</Text>
+      </Pressable>
     </View>
   );
 }
@@ -235,4 +238,6 @@ const styles = StyleSheet.create({
   error: { color: '#b91c1c', marginTop: 16, textAlign: 'center', width: 260 },
   demoLink: { marginTop: 20, paddingVertical: 6 },
   demoText: { color: '#6b7280', fontSize: 13, textDecorationLine: 'underline' },
+  demoDeleteLink: { paddingVertical: 6 },
+  demoDeleteText: { color: '#b91c1c', fontSize: 13, textDecorationLine: 'underline' },
 });

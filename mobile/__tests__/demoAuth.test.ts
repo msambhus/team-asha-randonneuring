@@ -4,7 +4,7 @@
  * shape as Google sign-in; a 404 (demo disabled on the server) surfaces a
  * friendly error. Google native module is mocked so lib/auth imports cleanly.
  */
-import { demoSignIn } from '../lib/auth';
+import { demoDeleteSignIn, demoSignIn } from '../lib/auth';
 
 jest.mock('@react-native-google-signin/google-signin', () => ({
   GoogleSignin: {
@@ -38,5 +38,16 @@ describe('demoSignIn', () => {
   it('throws on other server errors', async () => {
     jest.spyOn(global, 'fetch' as never).mockResolvedValue({ ok: false, status: 500 } as never);
     await expect(demoSignIn()).rejects.toThrow('Demo sign-in failed (500)');
+  });
+
+  it('uses a separate resettable identity for the deletion recording', async () => {
+    const payload = { token: 'delete-token', rider_id: 7, profile_complete: true };
+    const spy = jest
+      .spyOn(global, 'fetch' as never)
+      .mockResolvedValue({ ok: true, json: async () => payload } as never);
+
+    await expect(demoDeleteSignIn()).resolves.toEqual(payload);
+    expect(String((spy as unknown as jest.Mock).mock.calls[0][0]))
+      .toContain('/api/auth/demo-delete');
   });
 });
