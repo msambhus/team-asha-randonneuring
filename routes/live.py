@@ -13,7 +13,8 @@ from datetime import datetime, date, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from flask import (Blueprint, render_template, request, redirect, url_for,
-                   session, jsonify, current_app, flash, abort, g)
+                   session, jsonify, current_app, flash, abort, g,
+                   has_app_context)
 
 from auth import profile_required, token_or_session_required, resolve_identity
 from cache import cache, CACHE_TIMEOUT
@@ -129,13 +130,54 @@ def _plan_dot_color(status, telemetry):
 _MAX_POLYLINE_POINTS = 1000
 
 
+def _active_plan_leg(ride, now=None):
+    """The route/weather leg for the ride's current event-local calendar day."""
+    fallback = {
+        'day_number': 1,
+        'rwgps_url': ((ride or {}).get('rwgps_url_team') or (ride or {}).get('rwgps_url')),
+        'forecast_date': (ride or {}).get('date'),
+        'distance_offset_mi': 0.0,
+    }
+    if not ride:
+        return fallback
+    try:
+        from models import get_ride_plan_legs
+        plan = _resolve_base_plan(ride)
+        legs = [dict(row) for row in (get_ride_plan_legs(plan['id']) or [])] if plan else []
+        if not legs:
+            return fallback
+        ride_date = ride.get('date')
+        if isinstance(ride_date, str):
+            ride_date = date.fromisoformat(ride_date)
+        local_now = (now or datetime.now(timezone.utc)).astimezone(ride_timezone(ride))
+        day_number = max(1, (local_now.date() - ride_date).days + 1)
+        leg = min(legs, key=lambda row: abs(int(row.get('day_number') or 1) - day_number))
+        day_number = int(leg.get('day_number') or 1)
+
+        offset_mi = 0.0
+        for stop in get_ride_plan_stops(plan['id']) or []:
+            if re.match(rf'^\s*Day\s+{day_number}\s*:', stop.get('location') or '', re.I):
+                offset_mi = float(stop.get('distance_miles') or 0)
+                break
+        leg.update({
+            'day_number': day_number,
+            'forecast_date': ride_date + timedelta(days=day_number - 1),
+            'distance_offset_mi': offset_mi,
+        })
+        return leg
+    except Exception:
+        if has_app_context():
+            current_app.logger.warning('live: active route leg resolution failed', exc_info=True)
+        return fallback
+
+
 def _build_route_polyline(ride):
     """Return a downsampled [[lng, lat], ...] polyline for the ride's RWGPS route.
 
     Fail-soft: returns None on any missing route / fetch error so the map still
     renders with rider dots only.
     """
-    rwgps_url = (ride.get('rwgps_url_team') or ride.get('rwgps_url')) if ride else None
+    rwgps_url = _active_plan_leg(ride).get('rwgps_url')
     route_id = extract_rwgps_route_id(rwgps_url)
     if not route_id:
         return None
@@ -169,7 +211,8 @@ def _radial_track(ride):
     [{lat, lng, dist_m, e_m}] feeding BOTH the shared map polyline and the altitude
     profile (one fetch, not two). Fail-soft → None on any missing route / fetch
     error so the shared live view still renders with rider markers only."""
-    rwgps_url = (ride.get('rwgps_url_team') or ride.get('rwgps_url')) if ride else None
+    leg = _active_plan_leg(ride)
+    rwgps_url = leg.get('rwgps_url')
     route_id = extract_rwgps_route_id(rwgps_url)
     if not route_id:
         return None
@@ -183,7 +226,9 @@ def _radial_track(ride):
     except Exception:  # noqa: BLE001 — cache read is best-effort; fall back to fetch
         cached = None
     if cached:
-        return cached
+        offset_m = float(leg.get('distance_offset_mi') or 0) / M_TO_MI
+        return [dict(point, dist_m=float(point.get('dist_m') or 0) + offset_m)
+                for point in cached]
     try:
         route = fetch_route(route_id)
     except Exception as exc:  # noqa: BLE001 — fail-soft, route line is optional
@@ -199,7 +244,9 @@ def _radial_track(ride):
         track.append({'lat': float(tp['y']), 'lng': float(tp['x']),
                       'dist_m': float(tp.get('d') or 0),
                       'e_m': float(tp['e']) if tp.get('e') is not None else None})
-    return track
+    offset_m = float(leg.get('distance_offset_mi') or 0) / M_TO_MI
+    return [dict(point, dist_m=float(point.get('dist_m') or 0) + offset_m)
+            for point in track]
 
 
 def _radial_polyline(track):
@@ -221,8 +268,9 @@ def _build_weather_points(ride):
     build_live_weather_markers does all the wind math (same code as the plan page).
     Fail-soft: no route / no forecast / any error → [] so the map just omits weather."""
     try:
-        route_id = extract_rwgps_route_id(ride.get('rwgps_url_team') or ride.get('rwgps_url'))
-        rd = ride.get('date')
+        leg = _active_plan_leg(ride)
+        route_id = extract_rwgps_route_id(leg.get('rwgps_url'))
+        rd = leg.get('forecast_date')
         if isinstance(rd, str):
             rd = date.fromisoformat(rd)
         if not route_id or not rd:
@@ -626,7 +674,7 @@ def _build_live_chart_data(sample_points, forecasts, track_points, plan_stops, s
 
 
 @cache.memoize(LIVE_CONTEXT_TTL)
-def _ride_live_context(ride_id):
+def _ride_live_context_cached(ride_id, day_key):
     """Per-ride context for telemetry, computed ONCE and cached (~5 min) so the
     per-poll path never re-fetches RWGPS / weather. Returns a plain dict.
 
@@ -697,14 +745,18 @@ def _ride_live_context(ride_id):
         ctx['plan_stops'] = []
 
     # Route geometry: track + cumulative ascent (downsampled for the cache).
-    rwgps_url = ride.get('rwgps_url_team') or ride.get('rwgps_url')
+    leg = _active_plan_leg(ride)
+    rwgps_url = leg.get('rwgps_url')
     route_id = extract_rwgps_route_id(rwgps_url)
     if route_id:
         try:
             route = fetch_route(route_id)
-            tps = [tp for tp in (route.get('track_points') or [])
+            tps = [dict(tp) for tp in (route.get('track_points') or [])
                    if tp.get('x') is not None and tp.get('y') is not None]
             if tps:
+                offset_m = float(leg.get('distance_offset_mi') or 0) / M_TO_MI
+                for tp in tps:
+                    tp['d'] = float(tp.get('d') or 0) + offset_m
                 step = max(1, len(tps) // _MAX_CONTEXT_TRACK_POINTS)
                 track, cum_ascent, prev_e, cum = [], [], None, 0.0
                 for tp in tps[::step]:
@@ -727,7 +779,7 @@ def _ride_live_context(ride_id):
                 # from storage — no live Open-Meteo on the live/telemetry path (TA-237).
                 # Load once (keyed by route + ride date) and feed BOTH the per-rider
                 # wind labels and the route-ahead charts.
-                rd = ride.get('date')
+                rd = leg.get('forecast_date')
                 if isinstance(rd, str):
                     try:
                         rd = date.fromisoformat(rd)
@@ -735,6 +787,12 @@ def _ride_live_context(ride_id):
                         rd = None
                 weather_data, weather_samples = (
                     load_stored_route_weather(route_id, rd) if rd else (None, None))
+                if weather_samples:
+                    offset_m = float(leg.get('distance_offset_mi') or 0) / M_TO_MI
+                    weather_samples = [dict(sample,
+                                            distance_m=float(sample.get('distance_m') or 0)
+                                                       + offset_m)
+                                       for sample in weather_samples]
                 # Per-rider "wind done / ahead" labels from the stored current-hour wind.
                 ctx['wind_by_dist'] = _build_wind_by_dist(weather_samples, weather_data)
                 # Route-ahead charts (elevation / headwind / temperature) from the SAME
@@ -752,6 +810,23 @@ def _ride_live_context(ride_id):
         except Exception as exc:  # noqa: BLE001 — telemetry is best-effort
             current_app.logger.warning('live ctx: route %s failed: %s', route_id, exc)
     return ctx
+
+
+def _ride_live_context(ride_id):
+    """Day-keyed wrapper so the 15-minute static cache rolls at local midnight."""
+    ride = get_ride_by_id(ride_id)
+    day_key = int(_active_plan_leg(ride).get('day_number') or 1) if ride else 1
+    return _ride_live_context_cached(ride_id, day_key)
+
+
+def _ride_live_context_uncached(ride_id):
+    """Test/debug escape hatch retained from the formerly decorated public helper."""
+    ride = get_ride_by_id(ride_id)
+    day_key = int(_active_plan_leg(ride).get('day_number') or 1) if ride else 1
+    return _ride_live_context_cached.uncached(ride_id, day_key)
+
+
+_ride_live_context.uncached = _ride_live_context_uncached
 
 
 def _as_utc(dt):
@@ -1401,13 +1476,21 @@ def api_mobile_profile():
 
 
 @cache.memoize(CACHE_TIMEOUT)
-def _ride_route_polyline(ride_id):
+def _ride_route_polyline_cached(ride_id, day_key):
     """Cached [[lng,lat],...] RWGPS route line for a ride (static per ride).
     Returns None when the ride is missing or has no resolvable route."""
     ride = get_ride_by_id(ride_id)
     if not ride:
         return None
     return _build_route_polyline(ride)
+
+
+def _ride_route_polyline(ride_id):
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        return None
+    day_key = int(_active_plan_leg(ride).get('day_number') or 1)
+    return _ride_route_polyline_cached(ride_id, day_key)
 
 
 @live_bp.route('/api/ride/<int:ride_id>/route')
