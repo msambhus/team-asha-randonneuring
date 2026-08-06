@@ -511,6 +511,7 @@ def test_time_banked_cutoff_none_without_cutoff_or_distance():
     assert tlm.time_banked_cutoff_min(100, 500, 0, 20) is None       # no plan distance
     assert tlm.time_banked_cutoff_min(None, 500, 200, 20) is None
     assert tlm.time_banked_cutoff_min(100, None, 200, 20) is None
+    assert tlm.time_banked_cutoff_min(0, 0, 200, 20) is None
 
 
 def test_time_banked_cutoff_uses_relaxed_long_brevet_band_after_600k():

@@ -72,7 +72,7 @@ def _num_or_none(value, cast):
 # --------------------------------------------------------------------------- #
 def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=None,
                             tz=None, wind_labeler=None, min_history=1,
-                            stateless_fallback=True):
+                            stateless_fallback=True, rebase_from_first_fix=True):
     """Assemble one rider's telemetry block from their position history + the
     per-ride context. Pure — every heavy input (route geometry, plan stops) is
     passed in; no I/O, no framework globals.
@@ -151,10 +151,16 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
         base['on_route'] = False
         return base
 
-    # A loop permanent can be begun partway round: measure distance done from the
-    # rider's OWN start on the route (wrapping the loop), not the route file mile 0.
-    start_offset_m = (start_dist_m if (start_dist_m or 0) >= tlm.START_OFFSET_MIN_M
-                      else 0.0)
+    # Informal/permanent tracking may start partway around a loop, in which case
+    # distance is relative to the rider's first fix. A scheduled event is anchored
+    # at the official route start: LiveTrack can be enabled hours later, but that
+    # must not subtract the miles already ridden before sharing began.
+    start_offset_m = (
+        start_dist_m
+        if (rebase_from_first_fix
+            and (start_dist_m or 0) >= tlm.START_OFFSET_MIN_M)
+        else 0.0
+    )
     if not start_offset_m:
         start_idx = 0
     mid_route_start = start_offset_m > 0
@@ -487,7 +493,8 @@ def build_radial_roster(rider_rows, ctx, now, history_by_rider, plan_stops_by_ri
                 telemetry = compose_rider_telemetry(
                     row, ctx, now, history, plan_stops=stops, start=start, tz=tz,
                     min_history=min_history,
-                    stateless_fallback=stateless_fallback)
+                    stateless_fallback=stateless_fallback,
+                    rebase_from_first_fix=(anchor != 'ride_start'))
             out.append(_privacy_row(row, telemetry, ride_id, now,
                                     stale_after_minutes, dist_unit))
         except Exception:  # noqa: BLE001 — one bad rider degrades to a base row

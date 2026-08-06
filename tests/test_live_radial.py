@@ -116,6 +116,61 @@ def test_roster_computes_route_position_and_stats():
                                    lr.MARKER_UNKNOWN_COLOR)
 
 
+def test_ride_start_anchor_keeps_miles_before_livetrack_began():
+    """A late LiveTrack first fix must not reset a scheduled brevet's odometer."""
+    track, ctx = _track_and_ctx()
+    ctx['ride_start_iso'] = (_NOW - timedelta(minutes=288)).isoformat()
+    history = []
+    for mile, minutes_ago in ((30, 45), (35, 20), (40, 0)):
+        point = track[mile]
+        history.append({
+            'lat': point['lat'], 'lng': point['lng'], 'speed': 5.0,
+            'recorded_at': _NOW - timedelta(minutes=minutes_ago),
+        })
+    latest = history[-1]
+    rows = [{
+        'rider_id': 1, 'display_name': 'Late Sharer',
+        'lat': latest['lat'], 'lng': latest['lng'],
+        'source': 'garmin', 'recorded_at': latest['recorded_at'],
+    }]
+
+    roster = lr.build_radial_roster(
+        rows, ctx, _NOW, {1: history}, ride_id=1, anchor='ride_start',
+        min_history=2, stateless_fallback=False)
+
+    assert roster[0]['route_position_mi'] == 40.0
+    assert roster[0]['dist_mi'] == 40.0
+    assert roster[0]['dist_display'] == 40.0
+    assert roster[0]['elapsed_min'] == 288
+    assert roster[0]['avg_elapsed_speed_mph'] == 8.3
+
+
+def test_first_fix_anchor_rebases_an_explicit_permanent():
+    """Permanent-style tracking may intentionally begin partway around a route."""
+    track, ctx = _track_and_ctx()
+    history = []
+    for mile, minutes_ago in ((30, 45), (35, 20), (40, 0)):
+        point = track[mile]
+        history.append({
+            'lat': point['lat'], 'lng': point['lng'], 'speed': 5.0,
+            'recorded_at': _NOW - timedelta(minutes=minutes_ago),
+        })
+    latest = history[-1]
+    rows = [{
+        'rider_id': 1, 'display_name': 'Permanent Rider',
+        'lat': latest['lat'], 'lng': latest['lng'],
+        'source': 'garmin', 'recorded_at': latest['recorded_at'],
+    }]
+
+    roster = lr.build_radial_roster(
+        rows, ctx, _NOW, {1: history}, ride_id=1, anchor='first_fix',
+        min_history=2, stateless_fallback=False)
+
+    assert roster[0]['route_position_mi'] == 40.0
+    assert roster[0]['dist_mi'] == 10.0
+    assert roster[0]['dist_display'] == 10.0
+
+
 def _paused_history(track, mile=20, elapsed_min=100):
     """History of a rider stopped at one spot (same lat/lng, zero speed) — a paused,
     still-sharing rider (distinct from one who has gone stale with no updates)."""
