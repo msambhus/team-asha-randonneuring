@@ -250,6 +250,33 @@ def test_plan_snapshot_bad_cutoff_drops_only_that_stat(app):
     assert snap['distance_mi'] == 128
 
 
+def test_all_weather_points_include_every_route_day(app):
+    ride = dict(_RIDE, date='2026-08-06')
+    legs = [
+        {'rwgps_url': 'https://ridewithgps.com/routes/111', 'day_number': 1},
+        {'rwgps_url': 'https://ridewithgps.com/routes/222', 'day_number': 2},
+    ]
+    stops = [
+        {'location': 'Day 1: Start', 'distance_miles': 0},
+        {'location': 'Day 2: Start', 'distance_miles': 235},
+    ]
+    with app.app_context(), \
+         patch('routes.live._resolve_base_plan', return_value=_PLAN), \
+         patch('models.get_ride_plan_legs', return_value=legs), \
+         patch('routes.live.get_ride_plan_stops', return_value=stops), \
+         patch('routes.live._build_weather_points',
+               side_effect=lambda _ride, leg=None: [{
+                   'day': leg['day_number'],
+                   'date': leg['forecast_date'].isoformat(),
+               }]):
+        points = live._build_all_weather_points(ride)
+
+    assert points == [
+        {'day': 1, 'date': '2026-08-06'},
+        {'day': 2, 'date': '2026-08-07'},
+    ]
+
+
 # --------------------------------------------------------------------------- #
 # _radial_track cache-first
 # --------------------------------------------------------------------------- #
@@ -323,8 +350,12 @@ def test_radial_overview_track_combines_every_plan_leg(app):
          patch('models.get_ride_plan_legs', return_value=legs), \
          patch('routes.live.get_ride_plan_stops', return_value=stops), \
          patch('routes.live._radial_track', side_effect=leg_track):
-        track = live._radial_overview_track(ride)
+        tracks = live._radial_overview_tracks(ride)
+        track = [point for leg_track in tracks for point in leg_track]
 
+    assert len(tracks) == 2
+    assert len(tracks[0]) == 2
+    assert len(tracks[1]) == 2
     assert len(track) == 4
     assert track[0]['dist_m'] == 0
     assert track[2]['dist_m'] == 235 / live.M_TO_MI

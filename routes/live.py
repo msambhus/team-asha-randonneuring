@@ -367,22 +367,23 @@ def _radial_track(ride, leg=None):
             for point in track]
 
 
-def _radial_overview_track(ride):
-    """All multi-day route legs as one cumulative track for map/profile overview."""
+def _radial_overview_tracks(ride):
+    """Ordered route-leg tracks, kept separate to prevent fake map connectors."""
     try:
         from models import get_ride_plan_legs
 
         plan = _resolve_base_plan(ride)
         legs = [dict(row) for row in (get_ride_plan_legs(plan['id']) or [])] if plan else []
         if len(legs) < 2:
-            return _radial_track(ride)
+            track = _radial_track(ride)
+            return [track] if track else []
         stops = get_ride_plan_stops(plan['id']) or []
         boundaries = _day_distance_boundaries(stops)
         ride_date = ride.get('date')
         if isinstance(ride_date, str):
             ride_date = date.fromisoformat(ride_date)
 
-        combined = []
+        tracks = []
         for leg in sorted(legs, key=lambda row: int(
                 row.get('day_number') or row.get('leg_order') or 1)):
             day = int(leg.get('day_number') or leg.get('leg_order') or 1)
@@ -393,16 +394,22 @@ def _radial_overview_track(ride):
                                   if ride_date else None),
             })
             track = _radial_track(ride, leg) or []
-            for point in track:
-                if (combined and point.get('lat') == combined[-1].get('lat')
-                        and point.get('lng') == combined[-1].get('lng')):
-                    continue
-                combined.append(point)
-        return combined or _radial_track(ride)
+            if track:
+                tracks.append(track)
+        if tracks:
+            return tracks
+        fallback = _radial_track(ride)
+        return [fallback] if fallback else []
     except Exception:  # noqa: BLE001 — overview degrades to the active route
         if has_app_context():
             current_app.logger.warning('live: combined route build failed', exc_info=True)
-        return _radial_track(ride)
+        fallback = _radial_track(ride)
+        return [fallback] if fallback else []
+
+
+def _radial_overview_track(ride):
+    """Cumulative flattened track for the full-event elevation profile."""
+    return [point for track in _radial_overview_tracks(ride) for point in track]
 
 
 def _radial_polyline(track):
@@ -440,6 +447,38 @@ def _build_weather_points(ride, leg=None):
     except Exception:  # noqa: BLE001 — the weather overlay is best-effort
         current_app.logger.warning('live: weather_points build failed', exc_info=True)
         return []
+
+
+def _build_all_weather_points(ride):
+    """Map markers for every multi-day leg, each using its own forecast date."""
+    try:
+        from models import get_ride_plan_legs
+
+        plan = _resolve_base_plan(ride)
+        legs = [dict(row) for row in (get_ride_plan_legs(plan['id']) or [])] if plan else []
+        if len(legs) < 2:
+            return _build_weather_points(ride)
+        ride_date = ride.get('date')
+        if isinstance(ride_date, str):
+            ride_date = date.fromisoformat(ride_date)
+        stops = get_ride_plan_stops(plan['id']) or []
+        boundaries = _day_distance_boundaries(stops)
+        points = []
+        for leg in sorted(legs, key=lambda row: int(
+                row.get('day_number') or row.get('leg_order') or 1)):
+            day = int(leg.get('day_number') or leg.get('leg_order') or 1)
+            leg.update({
+                'day_number': day,
+                'distance_offset_mi': boundaries.get(day, 0.0),
+                'forecast_date': (ride_date + timedelta(days=day - 1)
+                                  if ride_date else None),
+            })
+            points.extend(_build_weather_points(ride, leg))
+        return points
+    except Exception:  # noqa: BLE001 — map weather remains best-effort
+        if has_app_context():
+            current_app.logger.warning('live: all-leg weather markers failed', exc_info=True)
+        return _build_weather_points(ride)
 
 
 def _build_all_day_weather(ride, selected_day=None, active_day=None):
@@ -691,9 +730,10 @@ def ride_live_map(ride_id):
     auto_day = requested_day is None or request.args.get('auto') == '1'
     selected_leg = _active_plan_leg(ride, day_number=requested_day)
     selected_day = int(selected_leg.get('day_number') or 1)
-    track = _radial_overview_track(ride)
-    weather_points = _build_weather_points(
-        ride, selected_leg)  # [] when no stored forecast → map degrades
+    route_tracks = _radial_overview_tracks(ride)
+    track = [point for route_track in route_tracks for point in route_track]
+    weather_points = _build_all_weather_points(
+        ride)  # every route day; [] when no stored forecast → map degrades
     all_day_weather = _build_all_day_weather(
         ride, selected_day,
         active_day=(selected_day if request.args.get('auto') == '1' else None),
@@ -717,6 +757,7 @@ def ride_live_map(ride_id):
         ride=ride,
         mapbox_token=mapbox_token,
         route_polyline=_radial_polyline(track),
+        route_polylines=[_radial_polyline(route_track) for route_track in route_tracks],
         elevation_profile=radial.build_elevation_profile(track or []),
         weather_points=weather_points,
         all_day_weather=all_day_weather,
