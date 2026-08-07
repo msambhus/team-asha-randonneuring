@@ -5001,6 +5001,22 @@ def get_route_elevation_track(route_id):
     return row['elevation_track'] if row else None
 
 
+def get_route_weather_elevation_track(route_id, forecast_date):
+    """Return the route-shaped track stored with a weather forecast, or None.
+
+    Unlike ``sample_points`` (which are intentionally sparse forecast lookup
+    locations), ``elevation_track`` retains enough RWGPS geometry to render a
+    road-following fallback when the route-keyed geometry cache has not warmed.
+    """
+    row = _execute(
+        "SELECT elevation_track FROM route_weather_cache "
+        "WHERE route_id = %s AND forecast_date = %s "
+        "AND elevation_track IS NOT NULL",
+        (route_id, forecast_date),
+    ).fetchone()
+    return row['elevation_track'] if row else None
+
+
 def upsert_route_geometry(route_id, elevation_track):
     """Insert or refresh one route's cached elevation track (idempotent on route_id).
 
