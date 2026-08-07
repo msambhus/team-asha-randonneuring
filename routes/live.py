@@ -25,7 +25,8 @@ from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled
                     get_rider_upcoming_signups, get_ride_plan_stops,
                     get_positions_for_rider_since, get_default_time_limit,
                     get_or_create_ride_invite, get_valid_ride_invite,
-                    get_route_elevation_track, RideStatus)
+                    get_route_elevation_track, get_route_weather_elevation_track,
+                    RideStatus)
 from services.garmin_livetrack import parse_session
 from services.club_clock import (ride_timezone, schedule_time_labels,
                                  instant_time_labels)
@@ -46,7 +47,7 @@ live_bp = Blueprint('live', __name__)
 M_TO_MI = 1 / 1609.344
 KMH_TO_MPH = 0.621371
 MS_TO_MPH = 2.236936
-_MAX_CONTEXT_TRACK_POINTS = 2000
+_MAX_CONTEXT_TRACK_POINTS = 5000
 # The per-ride live context (route geometry + weather + chart_data + plan stops)
 # is rider-independent and changes slowly, so it gets a longer TTL than the
 # global CACHE_TIMEOUT (5 min) to cut the CPU cost of rebuilding the weather/route
@@ -128,8 +129,10 @@ def _plan_dot_color(status, telemetry):
     return STATUS_COLORS.get(status, DEFAULT_COLOR)
 
 
-# Cap polyline payload — long brevet routes can have tens of thousands of points.
-_MAX_POLYLINE_POINTS = 1000
+# The geometry cache is already reduced to at most 5,000 points. Do not apply a
+# second aggressive reduction here: on a 1,200 km route a 1,000-point cap made
+# multi-mile straight chords cut across winding roads.
+_MAX_POLYLINE_POINTS = 5000
 
 
 def _planned_day_number(ride, timed_stops, now=None):
@@ -320,25 +323,21 @@ def _radial_track(ride, leg=None):
         return [dict(point, dist_m=float(point.get('dist_m') or 0) + offset_m)
                 for point in cached]
     # Multi-day private RWGPS legs may have their weather cache warmed even when
-    # dense elevation geometry could not be fetched. Those stored sample points
-    # still trace the complete route well enough for the live overview. Prefer
-    # that cache-only fallback to a blank map (and to a request-path RWGPS call).
+    # the route-keyed geometry cache is cold. Use the route-shaped elevation
+    # track stored with that forecast. Never draw ``sample_points`` as a route:
+    # those are sparse weather lookup locations and straight lines between them
+    # visibly cut across roads.
     try:
         route_date = leg.get('forecast_date')
         if isinstance(route_date, str):
             route_date = date.fromisoformat(route_date)
-        _weather, samples = load_stored_route_weather(route_id, route_date)
-        if samples and len(samples) >= 2:
+        weather_track = get_route_weather_elevation_track(route_id, route_date)
+        if weather_track:
             offset_m = float(leg.get('distance_offset_mi') or 0) / M_TO_MI
-            return [
-                {'lat': float(point['lat']), 'lng': float(point['lng']),
-                 'dist_m': float(point.get('distance_m') or 0) + offset_m,
-                 'e_m': None}
-                for point in samples
-                if point.get('lat') is not None and point.get('lng') is not None
-            ]
+            return [dict(point, dist_m=float(point.get('dist_m') or 0) + offset_m)
+                    for point in weather_track]
     except Exception:  # noqa: BLE001 — fall through to the existing RWGPS fallback
-        current_app.logger.warning('live: stored route sample fallback failed', exc_info=True)
+        current_app.logger.warning('live: stored weather track fallback failed', exc_info=True)
     try:
         route = fetch_route(route_id)
     except Exception as exc:  # noqa: BLE001 — fail-soft, route line is optional

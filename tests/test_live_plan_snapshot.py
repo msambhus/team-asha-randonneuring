@@ -325,31 +325,46 @@ def test_radial_track_falls_back_on_cold_cache(app):
         {'x': -121.42, 'y': 37.73, 'd': 5000.0, 'e': 40.0}]}
     with app.app_context(), \
          patch('routes.live.get_route_elevation_track', return_value=None), \
-         patch('routes.live.load_stored_route_weather', return_value=(None, None)), \
+         patch('routes.live.get_route_weather_elevation_track', return_value=None), \
          patch('routes.live.fetch_route', return_value=route_json) as fetch:
         track = live._radial_track(_RIDE)
     fetch.assert_called_once()                   # fell back to the live fetch
     assert track and track[0]['lat'] == 37.72
 
 
-def test_radial_track_uses_stored_weather_samples_before_live_fetch(app):
-    """A private multi-day leg still draws from its warmed forecast coordinates."""
-    samples = [
-        {'lat': 44.9, 'lng': -93.1, 'distance_m': 0},
-        {'lat': 44.8, 'lng': -92.9, 'distance_m': 16093.44},
+def test_radial_track_uses_stored_weather_track_before_live_fetch(app):
+    """A private multi-day leg uses road-shaped cached forecast geometry."""
+    weather_track = [
+        {'lat': 44.9, 'lng': -93.1, 'dist_m': 0, 'e_m': 300},
+        {'lat': 44.8, 'lng': -92.9, 'dist_m': 16093.44, 'e_m': 320},
     ]
     leg = {'rwgps_url': 'https://ridewithgps.com/routes/55704679',
            'forecast_date': '2026-08-07', 'distance_offset_mi': 235}
     with app.app_context(), \
          patch('routes.live.get_route_elevation_track', return_value=None), \
-         patch('routes.live.load_stored_route_weather',
-               return_value=([{'forecast': True}], samples)), \
+         patch('routes.live.get_route_weather_elevation_track',
+               return_value=weather_track), \
          patch('routes.live.fetch_route') as fetch:
         track = live._radial_track(_RIDE, leg)
     assert len(track) == 2
     assert track[0]['dist_m'] == 235 / live.M_TO_MI
     assert track[1]['lat'] == 44.8
     fetch.assert_not_called()
+
+
+def test_radial_polyline_keeps_warmed_long_route_detail():
+    """A 4,020-point brevet cache must not be reduced to sparse road chords."""
+    track = [
+        {'lat': 44.0 + i / 100000, 'lng': -92.0 + i / 100000,
+         'dist_m': i * 300, 'e_m': 250}
+        for i in range(4020)
+    ]
+
+    polyline = live._radial_polyline(track)
+
+    assert len(polyline) == 4020
+    assert polyline[0] == [-92.0, 44.0]
+    assert polyline[-1] == [track[-1]['lng'], track[-1]['lat']]
 
 
 def test_radial_overview_track_uses_primary_plan_route_only(app):
