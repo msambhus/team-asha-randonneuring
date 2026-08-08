@@ -1548,6 +1548,21 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
         rebase_from_first_fix=bool(ctx.get('allow_mid_route_start')))
 
 
+def _covered_trail(history, ctx, telemetry):
+    """Road-following covered route, bounded for web/native map payloads."""
+    track = ctx.get('track') if ctx and ctx.get('has_route') else None
+    # A permanent may legitimately begin anywhere on a loop.  Until its
+    # covered route can be represented as wrapped route intervals, preserve
+    # its actual on-route breadcrumb instead of falsely painting route mile 0.
+    if ctx and ctx.get('allow_mid_route_start'):
+        return tlm.build_trail(history, track, max_points=400)
+    now_block = (telemetry or {}).get('now') or {}
+    return tlm.build_covered_route(
+        history, track,
+        route_position_mi=now_block.get('route_position_mi'),
+        off_course_since_mi=(telemetry or {}).get('off_course_since_mi'))
+
+
 def build_live_telemetry_snapshot(ride_id, now=None):
     """Compute the common base-plan payload once for web and native clients.
 
@@ -1568,7 +1583,6 @@ def build_live_telemetry_snapshot(ride_id, now=None):
                              source=None, speed=None, heart_rate=None,
                              power=None, cadence=None))
 
-    track = ctx.get('track') if ctx and ctx.get('has_route') else None
     base_stops = ctx.get('plan_stops') if ctx else None
     positions, roster = [], []
     source_recorded_at = None
@@ -1602,6 +1616,7 @@ def build_live_telemetry_snapshot(ride_id, now=None):
         minutes_ago = (max(0, int((now - recorded_at).total_seconds() // 60))
                        if recorded_at is not None else None)
         status = row.get('status')
+        trail = _covered_trail(history, ctx, telemetry) if recorded_at else None
         positions.append({
             'rider_id': row['rider_id'],
             'name': (row.get('name') or '').strip(),
@@ -1615,20 +1630,24 @@ def build_live_telemetry_snapshot(ride_id, now=None):
             'stale': bool(minutes_ago is not None and minutes_ago > STALE_AFTER_MINUTES),
             'source': row.get('source') if recorded_at else None,
             'telemetry': telemetry,
-            'trail': tlm.build_trail(history, track) if recorded_at else None,
+            'trail': trail,
             **({'not_sharing': True} if recorded_at is None else {}),
         })
 
         public_row = dict(row)
         public_row['display_name'] = _public_display_name(row.get('name'))
         if telemetry is not None:
-            roster.append(radial._privacy_row(
+            public_entry = radial._privacy_row(
                 public_row, telemetry, ride_id, now,
-                STALE_AFTER_MINUTES, radial.ROSTER_DISTANCE_UNIT))
+                STALE_AFTER_MINUTES, radial.ROSTER_DISTANCE_UNIT)
+            public_entry['trail'] = trail
+            roster.append(public_entry)
         else:
-            roster.append(radial._base_roster_row(
+            public_entry = radial._base_roster_row(
                 public_row, ride_id, now,
-                STALE_AFTER_MINUTES, radial.ROSTER_DISTANCE_UNIT))
+                STALE_AFTER_MINUTES, radial.ROSTER_DISTANCE_UNIT)
+            public_entry['trail'] = None
+            roster.append(public_entry)
 
     roster.sort(key=lambda item: (
         item.get('route_position_mi')
@@ -1817,7 +1836,7 @@ def live_positions():
         except Exception:
             current_app.logger.exception('live telemetry failed for rider %s', row['rider_id'])
 
-        trail = tlm.build_trail(history, track)   # on-route breadcrumb of where they rode
+        trail = _covered_trail(history, ctx, telemetry)
 
         # Off-route riders are still shown on the map (you can see where everyone
         # is) — only the route-relative telemetry is suppressed (on_route=False),
@@ -2065,12 +2084,28 @@ def ride_live_roster(ride_id):
     else:
         plan_stops_by_rider = None
 
+    trails_by_key = {}
+
+    def telemetry_with_trail(row, radial_ctx, radial_now, history, stops):
+        telemetry = _rider_telemetry(
+            row, radial_ctx, radial_now, history, plan_stops=stops)
+        trails_by_key[radial.roster_key(row['rider_id'], ride_id)] = (
+            _covered_trail(history, radial_ctx, telemetry)
+            if row.get('recorded_at') else None)
+        return telemetry
+
     roster = radial.build_radial_roster(
         rows, ctx, now, history_by, plan_stops_by_rider=plan_stops_by_rider,
         ride_id=ride_id, anchor='ride_start', tz=CLUB_TZ,
         min_history=1, stateless_fallback=True,
         stale_after_minutes=STALE_AFTER_MINUTES,
-        telemetry_builder=_rider_telemetry)
+        telemetry_builder=telemetry_with_trail)
+
+    # Custom-plan/direct-compute fallback still gets the same bounded map trail.
+    # Match by the opaque public key so row ordering cannot associate one rider's
+    # trail with another rider after leader-first sorting.
+    for roster_row in roster:
+        roster_row['trail'] = trails_by_key.get(roster_row.get('key'))
 
     # The shared composer carries one primary ETA label. Team Asha adds the
     # Pacific secondary clock for out-of-state events after privacy shaping.

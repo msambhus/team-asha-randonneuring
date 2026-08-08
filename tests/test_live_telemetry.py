@@ -751,3 +751,47 @@ def test_build_trail_downsamples_keeps_order_and_newest():
 
 def test_build_trail_empty():
     assert tlm.build_trail([], _TRACK) == []
+
+
+def test_build_covered_route_uses_road_geometry_not_sparse_gps_chord():
+    track = [
+        {'lat': 37.000, 'lng': -122.000, 'dist_m': 0},
+        {'lat': 37.010, 'lng': -121.995, 'dist_m': 1000},
+        {'lat': 37.000, 'lng': -121.990, 'dist_m': 2000},
+    ]
+    history = [
+        {'lat': 37.000, 'lng': -122.000, 'recorded_at': _t(0)},
+        {'lat': 37.000, 'lng': -121.990, 'recorded_at': _t(60)},
+    ]
+    trail = tlm.build_covered_route(
+        history, track, route_position_mi=2000 * tlm.METERS_TO_MILES)
+
+    assert trail[0] == [-122.0, 37.0]
+    assert trail[-1] == [-121.99, 37.0]
+    assert [-121.995, 37.01] in trail
+
+
+def test_build_covered_route_interpolates_exact_progress_and_obeys_cap():
+    track = [
+        {'lat': 37.0 + (i % 2) * 0.001, 'lng': -122.0 + i * 0.001,
+         'dist_m': i * 100}
+        for i in range(30)
+    ]
+    trail = tlm.build_covered_route(
+        [], track, route_position_mi=2550 * tlm.METERS_TO_MILES,
+        max_points=10)
+
+    assert len(trail) <= 10
+    assert trail[-1][0] == pytest.approx(-121.9745)
+
+
+def test_build_covered_route_freezes_when_rider_is_off_course():
+    track = [
+        {'lat': 37.0, 'lng': -122.0 + i * 0.001, 'dist_m': i * 100}
+        for i in range(20)
+    ]
+    trail = tlm.build_covered_route(
+        [], track, route_position_mi=1500 * tlm.METERS_TO_MILES,
+        off_course_since_mi=700 * tlm.METERS_TO_MILES)
+
+    assert trail[-1][0] == pytest.approx(-121.993)

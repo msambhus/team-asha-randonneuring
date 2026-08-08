@@ -484,7 +484,7 @@ export default function RideLiveScreen() {
         {(positions ?? []).map((p) =>
           p.trail?.length ? (
             <Polyline key={`t-${p.rider_id}`} coordinates={p.trail.map(([lng, lat]) => ({ latitude: lat, longitude: lng }))}
-              strokeColor={p.color} strokeWidth={2} />
+              strokeColor={p.plan_color ?? p.color} strokeWidth={4} />
           ) : null,
         )}
         {(positions ?? []).filter((p) => p.lat != null && p.lng != null).map((p: LivePosition) => {
