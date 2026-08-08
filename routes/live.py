@@ -1992,6 +1992,105 @@ def api_mobile_profile():
     })
 
 
+@live_bp.route('/api/riders')
+@token_or_session_required
+def api_public_riders():
+    """Public randonneuring directory for native clients.
+
+    Deliberately uses brevet/permanent participation only. Provider workouts,
+    health metrics, email, and connection state never enter this contract.
+    """
+    from models import (get_all_riders_with_career_stats, get_all_seasons,
+                        get_current_season, get_season_by_name)
+    from shared.rider_directory_view import public_rider_row
+
+    seasons = list(get_all_seasons() or [])
+    season_name = (request.args.get('season') or '').strip()
+    season = get_season_by_name(season_name) if season_name else get_current_season()
+    if season_name and not season:
+        return jsonify({'error': 'Season not found'}), 404
+    rows = get_all_riders_with_career_stats(
+        current_season_id=season['id'] if season else None)
+    riders = []
+    for record in rows:
+        row = public_rider_row(dict(record))
+        riders.append({
+            'id': row['id'], 'rusa_id': row['rusa_id'],
+            'first_name': row['first_name'], 'last_name': row['last_name'],
+            'display_name': row['display_name'],
+            'total_rides': row['total_rides'],
+            'total_km': round(float(row['total_km'] or 0)),
+            'season_rides': row['season_rides'],
+            'season_km': round(float(row['season_kms'] or 0)),
+            'eddington_miles': record.get('eddington_number_miles') or None,
+            'sr_progress': [distance for distance, key in (
+                (200, 'sr_200'), (300, 'sr_300'), (400, 'sr_400'), (600, 'sr_600'))
+                if (record.get(key) or 0) > 0],
+        })
+    return jsonify({
+        'riders': riders,
+        'season': ({'id': season['id'], 'name': season['name']} if season else None),
+        'seasons': [{'id': s['id'], 'name': s['name'],
+                     'is_current': bool(s.get('is_current'))} for s in seasons],
+    })
+
+
+@live_bp.route('/api/riders/<int:rusa_id>')
+@token_or_session_required
+def api_public_rider(rusa_id):
+    """One rider's public brevet history; never returns private provider data."""
+    from models import (get_rider_by_rusa, get_all_seasons,
+                        get_current_season, get_rider_participation,
+                        get_rider_season_stats, detect_sr_for_rider_season,
+                        get_rider_total_srs, detect_r12_awards)
+    import html as _html
+
+    rider = get_rider_by_rusa(rusa_id)
+    if not rider:
+        return jsonify({'error': 'Rider not found'}), 404
+    current = get_current_season()
+    season_data = []
+    career_rides = 0
+    career_km = 0
+    for season in get_all_seasons() or []:
+        participation = list(get_rider_participation(rider['id'], season['id']) or [])
+        if not participation:
+            continue
+        stats = get_rider_season_stats(rider['id'], season['id'])
+        is_current = bool(current and current['id'] == season['id'])
+        rides = [{
+            'id': row['id'],
+            'name': _html.unescape(str(row.get('name') or '')).replace('\xa0', ' ').strip(),
+            'date': str(row['date']) if row.get('date') else None,
+            'distance_km': row.get('distance_km'),
+            'status': row.get('status'),
+            'ride_type': row.get('ride_type'),
+            'finish_time': str(row['finish_time']) if row.get('finish_time') else None,
+        } for row in participation]
+        season_data.append({
+            'id': season['id'], 'name': season['name'], 'is_current': is_current,
+            'rides': stats.get('rides') or 0,
+            'distance_km': round(float(stats.get('kms') or 0)),
+            'sr_count': detect_sr_for_rider_season(
+                rider['id'], season['id'], date_filter=is_current),
+            'history': rides,
+        })
+        career_rides += stats.get('rides') or 0
+        career_km += stats.get('kms') or 0
+    return jsonify({
+        'rider': {
+            'id': rider['id'], 'rusa_id': rider.get('rusa_id'),
+            'first_name': rider.get('first_name'), 'last_name': rider.get('last_name'),
+        },
+        'career': {
+            'rides': career_rides, 'distance_km': round(float(career_km)),
+            'super_randonneur': get_rider_total_srs(rider['id']) or 0,
+            'r12': len(detect_r12_awards(rider['id']) or []),
+        },
+        'seasons': season_data,
+    })
+
+
 @cache.memoize(CACHE_TIMEOUT)
 def _ride_route_polyline_cached(ride_id, day_key):
     """Cached [[lng,lat],...] RWGPS route line for a ride (static per ride).

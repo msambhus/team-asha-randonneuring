@@ -73,6 +73,9 @@ export default function RidesScreen() {
         <Link href="/profile" asChild>
           <Pressable style={styles.calLink}><Text style={styles.link}>👤 Profile</Text></Pressable>
         </Link>
+        <Link href="/riders" asChild>
+          <Pressable style={styles.calLink}><Text style={styles.link}>👥 All Riders</Text></Pressable>
+        </Link>
       </View>
       <FlatList
         data={homeRides}
