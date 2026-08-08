@@ -410,6 +410,20 @@ def test_plan_delta_ahead_and_behind():
     assert tlm.plan_delta(30, 180, stops) == -30
 
 
+def test_plan_delta_does_not_credit_upcoming_overnight_stop():
+    stops = [
+        {'distance_miles': 235, 'cum_time_min': 1440, 'arrival_time_min': 1200},
+        # Four-hour sleep begins only after arrival at mile 417.
+        {'distance_miles': 417, 'cum_time_min': 2700, 'arrival_time_min': 2460},
+    ]
+
+    # Halfway through the riding segment, expected time is halfway from the
+    # previous departure (1440) to overnight arrival (2460), not to departure
+    # (2700). The old calculation incorrectly gifted two hours of sleep here.
+    assert tlm.plan_time_at(326, stops) == 1950
+    assert tlm.plan_delta(326, 2000, stops) == -50
+
+
 def test_plan_delta_none_without_plan():
     assert tlm.plan_delta(10, 60, []) is None
     assert tlm.plan_delta(10, 60, [{'distance_miles': 0, 'cum_time_min': 0}]) is None

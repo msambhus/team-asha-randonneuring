@@ -164,6 +164,29 @@ def test_ride_start_anchor_keeps_miles_and_assumes_pretracking_time_was_moving()
     assert roster[0]['avg_moving_speed_mph'] == 8.3
 
 
+def test_roster_reports_today_stopped_separately_from_total():
+    track, ctx = _track_and_ctx()
+    now = datetime(2026, 7, 2, 0, 20, tzinfo=timezone.utc)
+    start = now - timedelta(minutes=30)
+    ctx['ride_start_iso'] = start.isoformat()
+    point = track[20]
+    history = [
+        {'lat': point['lat'], 'lng': point['lng'], 'speed': 0.0,
+         'recorded_at': start + timedelta(minutes=offset)}
+        for offset in (0, 10, 20, 30)
+    ]
+    rows = [{'rider_id': 1, 'display_name': 'Overnight Rider',
+             'lat': point['lat'], 'lng': point['lng'], 'speed': 0.0,
+             'source': 'garmin', 'recorded_at': now}]
+
+    roster = lr.build_radial_roster(
+        rows, ctx, now, {1: history}, ride_id=1, anchor='ride_start',
+        min_history=2, stateless_fallback=False, tz=timezone.utc)
+
+    assert roster[0]['stopped_min'] == 30.0
+    assert roster[0]['stopped_today_min'] == 20.0
+
+
 def test_first_fix_anchor_rebases_an_explicit_permanent():
     """Permanent-style tracking may intentionally begin partway around a route."""
     track, ctx = _track_and_ctx()

@@ -112,6 +112,20 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
         else:
             stopped_min = round(max(0.0, elapsed_min - moving_min), 1)
 
+    # Separate the current event-local calendar day's observed stops from the
+    # brevet-wide total. Include a synthetic midnight boundary so an interval
+    # spanning midnight is clipped rather than discarded wholesale.
+    local_tz = tz or timezone.utc
+    day_start = now.astimezone(local_tz).replace(
+        hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    before_day = [h for h in ride_history if _as_utc(h['recorded_at']) < day_start]
+    today_history = [h for h in ride_history if _as_utc(h['recorded_at']) >= day_start]
+    if before_day and today_history:
+        boundary = dict(before_day[-1])
+        boundary['recorded_at'] = day_start
+        today_history.insert(0, boundary)
+    _today_moving, stopped_today_min = tlm.moving_stopped(today_history)
+
     speed_ms = tlm.latest_speed_ms(history)
     if speed_ms is None and row.get('speed') is not None:
         try:
@@ -125,6 +139,7 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
         'elapsed_min': elapsed_min,
         'moving_min': moving_min,
         'stopped_min': stopped_min,
+        'stopped_today_min': stopped_today_min,
         'heart_rate': _num_or_none(row.get('heart_rate'), int),
         'power': _num_or_none(row.get('power'), int),
         'cadence': _num_or_none(row.get('cadence'), int),
@@ -405,6 +420,7 @@ def _base_roster_row(row, ride_id, now, stale_after_minutes, dist_unit):
         'elapsed_min': None,
         'moving_min': None,
         'stopped_min': None,
+        'stopped_today_min': None,
         'avg_elapsed_speed_mph': None,
         'avg_moving_speed_mph': None,
         'heart_rate': None,
@@ -447,6 +463,7 @@ def _privacy_row(row, telemetry, ride_id, now, stale_after_minutes, dist_unit):
         'elapsed_min': nowb.get('elapsed_min'),
         'moving_min': nowb.get('moving_min'),
         'stopped_min': nowb.get('stopped_min'),
+        'stopped_today_min': nowb.get('stopped_today_min'),
         'avg_elapsed_speed_mph': nowb.get('avg_elapsed_speed_mph'),
         'avg_moving_speed_mph': nowb.get('avg_moving_speed_mph'),
         'heart_rate': nowb.get('heart_rate'),
