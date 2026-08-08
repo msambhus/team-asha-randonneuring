@@ -182,7 +182,8 @@ _PROJ_MIN_FWD_M = 3000.0       # min forward window per step (covers a downsampl
 _PROJ_MAX_SPEED_MS = 20.0      # forward window grows with elapsed time at this cap
 
 
-def project_history_to_route(history, track, with_start=False):
+def project_history_to_route(history, track, with_start=False,
+                             with_point_projections=False):
     """Project the rider's whole trajectory onto the route, in time order.
 
     `history` is oldest→newest [{lat,lng,recorded_at}]; `track` is
@@ -203,9 +204,15 @@ def project_history_to_route(history, track, with_start=False):
     index the track point for it (for ascent/wind splits), off_by_m how far the
     LATEST fix is from the route (for on-route detection). When `with_start` is
     True, returns (dist_m, index, off_by_m, start_dist_m, start_index) with the
-    seed's along-route distance and index appended. All-None on empty input.
+    seed's along-route distance and index appended. ``with_point_projections``
+    appends one ``(dist_m, index, off_by_m)`` entry per history fix, reusing the
+    same bounded trajectory walk. This lets callers classify stops by route day
+    without performing a second global route scan for every stopped interval.
+    All-None on empty input.
     """
     empty = (None, None, None, None, None) if with_start else (None, None, None)
+    if with_point_projections:
+        empty = (*empty, [])
     if not track or not history:
         return empty
     n = len(track)
@@ -236,11 +243,15 @@ def project_history_to_route(history, track, with_start=False):
     # progress from the nearest route vertex.
     if not clean_seed:
         if with_start:
-            return None, None, off_by, None, None
-        return None, None, off_by
+            result = (None, None, off_by, None, None)
+        else:
+            result = (None, None, off_by)
+        return (*result, []) if with_point_projections else result
     start_idx, start_dist = cur, track[cur]['dist_m']
     best_dist, best_idx = track[cur]['dist_m'], cur
     last_valid_t = history[seed_pos]['recorded_at']
+    point_projections = [(None, None, None) for _ in history]
+    point_projections[seed_pos] = (start_dist, start_idx, off_by)
     for history_i, p in enumerate(history[seed_pos + 1:], start=seed_pos + 1):
         # While off course, let the plausible forward window grow from the last
         # VALID route fix. Measuring from each intervening off-course sample kept
@@ -282,11 +293,16 @@ def project_history_to_route(history, track, with_start=False):
         if best_d <= ON_ROUTE_MAX_M:
             cur = best_i
             last_valid_t = p['recorded_at']
+            point_projections[history_i] = (track[cur]['dist_m'], cur, best_d)
             if track[cur]['dist_m'] > best_dist:
                 best_dist, best_idx = track[cur]['dist_m'], cur
+        else:
+            point_projections[history_i] = (None, None, best_d)
     if with_start:
-        return best_dist, best_idx, off_by, start_dist, start_idx
-    return best_dist, best_idx, off_by
+        result = (best_dist, best_idx, off_by, start_dist, start_idx)
+    else:
+        result = (best_dist, best_idx, off_by)
+    return (*result, point_projections) if with_point_projections else result
 
 
 def activity_from_speed(speed_ms):

@@ -156,6 +156,22 @@ def test_project_history_empty_or_no_track():
         [{'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(0)}], []) == (None, None, None)
 
 
+def test_project_history_reuses_walk_for_per_point_route_positions():
+    hist = [
+        {'lat': 37.0, 'lng': -122.0, 'recorded_at': _t(0)},
+        {'lat': 37.0, 'lng': -121.99, 'recorded_at': _t(60)},
+        {'lat': 37.0, 'lng': -121.98, 'recorded_at': _t(120)},
+    ]
+
+    result = tlm.project_history_to_route(
+        hist, _TRACK, with_start=True, with_point_projections=True)
+
+    dist_m, idx, off, start_dist, start_idx, projections = result
+    assert (dist_m, idx, start_dist, start_idx) == (1778.0, 2, 0.0, 0)
+    assert off == pytest.approx(0)
+    assert [projection[0] for projection in projections] == [0.0, 889.0, 1778.0]
+
+
 # --- mid-route loop start (permanent begun partway round) ---
 
 def test_route_start_offset_detects_mid_route_start():
