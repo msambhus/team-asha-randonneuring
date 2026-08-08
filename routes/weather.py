@@ -295,6 +295,9 @@ def build_multiday_weather_payload(legs, start_dt, speed_mph=None,
             'label': leg.get('label') or f'Day {day_number}',
             'distance_mi': round(leg_distance, 1),
             'route_name': payload.get('route_name'),
+            # Keep each leg's full geometry so per-day image exports can fit a
+            # real Mapbox map to that day instead of drawing a generic summary.
+            'polyline': payload.get('polyline') or [],
         })
         distance_offset += leg_distance
         total_elevation += int(payload.get('total_elevation_ft') or 0)
