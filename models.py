@@ -3576,6 +3576,26 @@ def get_strava_activities_for_calendar(rider_id, days=28):
     """, (rider_id, days)).fetchall()
 
 
+def get_strava_activities_between(rider_id, start_date, end_date):
+    """Owner-scoped activities in a half-open local-date range.
+
+    Used by the native training calendar so it loads one month rather than an
+    arbitrary rolling window. No provider request occurs on this read path.
+    """
+    return _execute("""
+        SELECT strava_activity_id, name, activity_type, distance, moving_time,
+               elapsed_time, total_elevation_gain, start_date_local,
+               average_heartrate, average_watts, weighted_average_watts,
+               suffer_score, calories, average_speed, trainer, commute,
+               workout_type, strava_url
+        FROM strava_activity
+        WHERE rider_id = %s
+          AND start_date_local >= %s
+          AND start_date_local < %s
+        ORDER BY start_date_local DESC
+    """, (rider_id, start_date, end_date)).fetchall()
+
+
 def update_eddington_number(rider_id, eddington_miles, eddington_km):
     """Update Eddington numbers for a rider."""
     conn = get_db()

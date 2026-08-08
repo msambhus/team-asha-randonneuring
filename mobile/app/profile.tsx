@@ -2,6 +2,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 import { Link } from 'expo-router';
 import { useRiderProfile } from '../hooks/useRiderProfile';
 import { useMySeason } from '../hooks/useMySeason';
+import { TrainingCalendar } from '../components/TrainingCalendar';
 
 export default function ProfileScreen() {
   const profile = useRiderProfile();
@@ -68,6 +69,8 @@ export default function ProfileScreen() {
           </Link>
         </View>
       ) : null}
+
+      <TrainingCalendar />
 
       <Text style={styles.note}>
         This is your private rider summary. Your public rider page remains on the Team Asha website.

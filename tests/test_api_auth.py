@@ -5,6 +5,7 @@ Google ID-token verification is mocked (no google-auth needed in the test env);
 the user/rider model lookups are patched so no database is required.
 """
 from unittest.mock import patch
+from datetime import date, datetime
 
 import pytest
 
@@ -676,6 +677,34 @@ def test_public_rider_profile_returns_brevet_history_not_training(client, app):
     assert data['career']['distance_km'] == 200
     assert data['seasons'][0]['history'][0]['name'] == 'Coast 200K'
     assert 'training' not in data and 'strava' not in data
+
+
+def test_training_log_is_owner_scoped_and_month_bounded(client, app):
+    activity = {
+        'strava_activity_id': 123, 'name': 'Morning Ride', 'activity_type': 'Ride',
+        'distance': 32186.88, 'moving_time': 3600, 'elapsed_time': 3900,
+        'total_elevation_gain': 304.8,
+        'start_date_local': datetime(2026, 8, 7, 6, 30),
+        'average_heartrate': 141, 'average_watts': 180,
+        'suffer_score': 72, 'calories': 800, 'trainer': False,
+        'commute': False, 'strava_url': 'https://www.strava.com/activities/123',
+    }
+    with patch('models.get_strava_connection', return_value={'rider_id': 7}), \
+         patch('models.get_strava_activities_between', return_value=[activity]) as rows:
+        resp = client.get('/api/me/training-log?month=2026-08',
+                          headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['attribution'] == 'Powered by Strava'
+    assert data['activities'][0]['distance_mi'] == 20.0
+    assert data['activities'][0]['elevation_ft'] == 1000
+    rows.assert_called_once_with(7, date(2026, 8, 1), date(2026, 9, 1))
+
+
+def test_training_log_rejects_invalid_month(client, app):
+    resp = client.get('/api/me/training-log?month=August',
+                      headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 400
 
 
 def test_ride_route_endpoint_token_authed(client, app):
