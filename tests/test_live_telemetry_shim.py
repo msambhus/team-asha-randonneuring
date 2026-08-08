@@ -22,7 +22,8 @@ _SURFACE = [
     'distance_progressed_m', 'ascent_split', 'ascent_progressed_split',
     'plan_time_at', 'rebase_plan_stops', 'plan_delta', 'next_control',
     'finish_stop', 'required_speed_mph', 'time_banked_cutoff_min', 'grade_at',
-    'moving_stopped', 'build_trail', 'latest_speed_ms', 'toughness_remaining',
+    'moving_stopped', 'build_trail', 'build_actual_trail', 'latest_speed_ms',
+    'toughness_remaining',
     'ON_ROUTE_MAX_M', 'START_OFFSET_MIN_M',
 ]
 
