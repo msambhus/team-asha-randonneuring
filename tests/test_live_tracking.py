@@ -12,6 +12,7 @@ import pytest
 
 import requests
 
+from cache import cache
 from services import garmin_livetrack
 import models
 
@@ -378,6 +379,8 @@ _RIDE = {'id': 5, 'name': 'Mt Hamilton 200K', 'date': '2026-07-04',
 
 
 def test_map_page_renders_for_profile_rider(client):
+    with client.application.app_context():
+        cache.clear()
     with client.session_transaction() as s:
         s['user_id'] = 1
         s['rider_id'] = 1
@@ -438,6 +441,8 @@ def test_map_page_renders_for_profile_rider(client):
     assert "metric('Climbed so far'" in html
     assert 'ft climbed' in html
     assert "metric('Wind ahead'" in html
+    assert 'poll();\n  setInterval(poll, POLL_MS);' in html
+
     assert html.index('id="radial-table"') < html.index(
         'class="radial-multiday"')
     # Every multi-day card combines that day's itinerary and forecast.
@@ -473,6 +478,32 @@ def test_map_page_renders_for_profile_rider(client):
     assert 'radial-day-weather current' in html
     assert 'initMobilePlanToggle()' in html
     assert "classList.toggle('mobile-collapsed')" in html
+
+
+def test_map_page_reuses_static_route_weather_and_plan_payload(client):
+    with client.application.app_context():
+        cache.clear()
+    with client.session_transaction() as s:
+        s['user_id'] = 1
+        s['rider_id'] = 1
+    ride = dict(_RIDE)
+    with patch('routes.live.get_ride_by_id', return_value=ride), \
+         patch('routes.live.get_live_tracking', return_value=None), \
+         patch('routes.live._active_plan_leg', return_value={'day_number': 1}), \
+         patch('routes.live._radial_overview_track', return_value=[]) as track, \
+         patch('routes.live._build_all_weather_points', return_value=[]) as weather, \
+         patch('routes.live._build_all_day_weather', return_value=None) as day_weather, \
+         patch('routes.live._build_plan_snapshot', return_value=None) as plan:
+        first = client.get('/ride/5/live')
+        second = client.get('/ride/5/live')
+
+    assert first.status_code == 200 and second.status_code == 200
+    assert track.call_count == 1
+    assert weather.call_count == 1
+    assert day_weather.call_count == 1
+    assert plan.call_count == 1
+    with client.application.app_context():
+        cache.clear()
 
 
 def test_map_page_draws_rwgps_route(client):
