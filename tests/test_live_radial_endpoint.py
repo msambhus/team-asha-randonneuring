@@ -9,7 +9,24 @@ STILL carries rider_id (the two-tier contract).
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+import pytest
+
+from cache import cache
 from routes.live import _telemetry_history_since
+
+
+@pytest.fixture(autouse=True)
+def _clear_live_roster_cache(request):
+    # Pure helper tests in this module do not construct the Flask app.
+    if 'client' not in request.fixturenames:
+        yield
+        return
+    client = request.getfixturevalue('client')
+    with client.application.app_context():
+        cache.clear()
+    yield
+    with client.application.app_context():
+        cache.clear()
 
 
 def _login(client, rider_id=7):
@@ -106,6 +123,33 @@ def test_guest_reads_public_live_roster_200(client):
     assert len(data['roster']) == 1
     # Privacy-reduced name: first name + last initial, never a full surname.
     assert data['roster'][0]['display_name'] == 'Asha R.'
+    assert resp.headers['Cache-Control'] == (
+        'public, s-maxage=15, stale-while-revalidate=30')
+
+
+def test_public_roster_reuses_composed_response_within_fresh_window(client):
+    with patch('routes.live.get_ride_by_id', return_value=_PUBLIC_LIVE_RIDE), \
+         patch('routes.live._ride_live_context', return_value=_FAKE_CTX) as context, \
+         patch('routes.live.get_latest_positions_for_ride', return_value=[_row()]) as positions, \
+         patch('routes.live.get_positions_for_rider_since', return_value=_history()):
+        first = client.get('/ride/5/live/roster.json?plan_id=base')
+        second = client.get('/ride/5/live/roster.json?plan_id=base')
+
+    assert first.status_code == 200 and second.status_code == 200
+    assert second.get_json() == first.get_json()
+    assert context.call_count == 1
+    assert positions.call_count == 1
+
+
+def test_public_roster_cache_is_partitioned_by_plan(client):
+    with patch('routes.live.get_ride_by_id', return_value=_PUBLIC_LIVE_RIDE), \
+         patch('routes.live._ride_live_context', return_value=_FAKE_CTX) as context, \
+         patch('routes.live.get_latest_positions_for_ride', return_value=[_row()]), \
+         patch('routes.live.get_positions_for_rider_since', return_value=_history()):
+        client.get('/ride/5/live/roster.json?plan_id=base')
+        client.get('/ride/5/live/roster.json?plan_id=42')
+
+    assert context.call_count == 2
 
 
 def test_public_roster_is_pii_safe(client):
@@ -186,6 +230,7 @@ def test_member_can_read_private_roster(client):
          patch('routes.live.get_positions_for_rider_since', return_value=_history()):
         resp = client.get('/ride/5/live/roster.json')
     assert resp.status_code == 200
+    assert resp.headers['Cache-Control'] == 'private, no-store'
 
 
 def test_unknown_ride_404s(client):
