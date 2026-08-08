@@ -115,6 +115,11 @@
   background: #fffbeb; color: #92400e; }
 .rps-actual-stop-row .rps-day-name { font-weight: 650; }
 .rps-actual-dwell { color: #92400e; font-weight: 750; }
+.rps-stop-rider { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.rps-stop-rider-dot { width: 11px; height: 11px; flex: 0 0 11px; border-radius: 999px;
+  border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(15, 23, 42, .22); }
+.rps-stop-rider-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rps-control-stop-row { border-left-color: #2563eb; background: #eff6ff; color: #1e3a8a; }
 .rps-live-summary { margin-top: 12px; padding: 10px; border: 1px solid var(--border, #e5e7eb);
   border-left: 4px solid var(--primary, #1a365d); border-radius: 8px; background: var(--bg, #f8fafc); }
 .rps-live-title { margin-bottom: 7px; font-size: .7rem; font-weight: 800; text-transform: uppercase;
@@ -911,13 +916,23 @@
   }
   function renderActualStops(roster) {
     document.querySelectorAll('.rps-actual-stop-row').forEach(function (node) { node.remove(); });
-    document.querySelectorAll('.rps-day-meta[data-base-meta]').forEach(function (meta) {
-      meta.textContent = meta.getAttribute('data-base-meta') || '';
-      meta.classList.remove('rps-actual-dwell');
+    var events = [];
+    (roster || []).forEach(function (rider, riderIndex) {
+      (rider.stop_events || []).forEach(function (event) {
+        if (Number(event.duration_min) < 2) { return; }
+        events.push({
+          event: event, rider: rider, riderIndex: riderIndex,
+          mile: Number(event.distance_mi), day: Number(event.day_number)
+        });
+      });
     });
-    var rider = roster && roster.length ? roster[0] : null;
-    if (!rider || !rider.stop_events || !rider.stop_events.length) { return; }
-    var days = rider.stop_events.map(function (event) { return Number(event.day_number); })
+    if (!events.length) { return; }
+    events.sort(function (a, b) {
+      return a.day - b.day || a.mile - b.mile ||
+        String(a.event.start_label || '').localeCompare(String(b.event.start_label || '')) ||
+        a.riderIndex - b.riderIndex;
+    });
+    var days = events.map(function (item) { return item.day; })
       .filter(function (day, index, all) { return day && all.indexOf(day) === index; });
     days.forEach(function (day) {
       var planRows = Array.prototype.slice.call(
@@ -928,31 +943,29 @@
       });
       lists.forEach(function (list) {
       var rows = Array.prototype.slice.call(list.querySelectorAll('.rps-day-row[data-stop-distance]'));
-      rider.stop_events.filter(function (event) {
-        return Number(event.day_number) === day && Number(event.duration_min) >= 2;
-      }).forEach(function (event) {
-        var eventMile = Number(event.distance_mi);
+      events.filter(function (item) { return item.day === day; }).forEach(function (item) {
+        var event = item.event;
+        var eventMile = item.mile;
         var nearest = null;
         rows.forEach(function (row) {
           var gap = Math.abs(Number(row.getAttribute('data-stop-distance')) - eventMile);
           if (!nearest || gap < nearest.gap) { nearest = { row: row, gap: gap }; }
         });
-        if (nearest && nearest.gap <= 0.5) {
-          var meta = nearest.row.querySelector('.rps-day-meta');
-          if (meta) {
-            meta.textContent = (meta.getAttribute('data-base-meta') || '') +
-              ' · actual ' + fmtDuration(event.duration_min);
-            meta.classList.add('rps-actual-dwell');
-          }
-          return;
-        }
+        var atControl = !!(nearest && nearest.gap <= 0.5);
         var actual = document.createElement('div');
-        actual.className = 'rps-day-row rps-actual-stop-row';
-        actual.innerHTML = '<span class="rps-day-name">↳ Intermediate stop</span>' +
+        actual.className = 'rps-day-row rps-actual-stop-row' +
+          (atControl ? ' rps-control-stop-row' : '');
+        var riderName = item.rider.display_name || 'Rider';
+        var riderColor = item.rider.marker_color || '#64748b';
+        actual.innerHTML = '<span class="rps-day-name rps-stop-rider">' +
+          '<span class="rps-stop-rider-dot" style="background:' + escapeHtml(riderColor) + '"></span>' +
+          '<span class="rps-stop-rider-name">' + escapeHtml(riderName) + ' · ' +
+          (atControl ? 'control stop' : 'intermediate stop') + '</span></span>' +
           '<span class="rps-day-meta">' + eventMile.toFixed(1) + ' mi · ' +
           fmtDuration(event.duration_min) + '</span>' +
           '<span class="rps-day-eta"><strong>' + escapeHtml(event.start_label) +
-          '–' + escapeHtml(event.end_label) + '</strong></span><span class="rps-day-bank">actual</span>';
+          '–' + escapeHtml(event.end_label) + '</strong></span><span class="rps-day-bank">' +
+          (atControl ? 'actual dwell' : 'actual') + '</span>';
         var before = rows.find(function (row) {
           return Number(row.getAttribute('data-stop-distance')) > eventMile;
         });
