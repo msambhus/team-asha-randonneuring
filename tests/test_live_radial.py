@@ -193,6 +193,39 @@ def test_roster_reports_route_day_stopped_independent_of_midnight():
     assert roster[0]['stop_events'][0]['distance_mi'] == 20.0
 
 
+def test_route_day_stopped_excludes_prior_overnight_sleep_at_same_distance():
+    track, ctx = _track_and_ctx()
+    ctx['day_distance_boundaries'] = {1: 0, 2: 15}
+    now = _NOW
+    start = now - timedelta(minutes=290)
+    ctx['ride_start_iso'] = start.isoformat()
+    history = []
+    for mile, minute, speed in (
+        (15, 0, 0.0), (15, 230, 0.0), (15, 240, 5.0),
+        (16, 250, 5.0), (20, 260, 0.0), (20, 290, 0.0),
+    ):
+        point = track[mile]
+        history.append({'lat': point['lat'], 'lng': point['lng'], 'speed': speed,
+                        'recorded_at': start + timedelta(minutes=minute)})
+    latest = history[-1]
+    rows = [{'rider_id': 1, 'display_name': 'Day 2 Rider',
+             'lat': latest['lat'], 'lng': latest['lng'], 'speed': 0.0,
+             'source': 'garmin', 'recorded_at': now}]
+
+    roster = lr.build_radial_roster(
+        rows, ctx, now, {1: history}, ride_id=1, anchor='ride_start',
+        min_history=2, stateless_fallback=False, tz=timezone.utc)
+
+    assert roster[0]['stopped_min'] > 200
+    assert roster[0]['active_day'] == 2
+    assert roster[0]['stopped_ride_day_min'] == 30.0
+    assert len(roster[0]['stop_events']) == 2
+    assert roster[0]['stop_events'][0]['day_number'] == 1
+    assert roster[0]['stop_events'][0]['duration_min'] == 230.0
+    assert roster[0]['stop_events'][1]['day_number'] == 2
+    assert roster[0]['stop_events'][1]['distance_mi'] == 20.0
+
+
 def test_first_fix_anchor_rebases_an_explicit_permanent():
     """Permanent-style tracking may intentionally begin partway around a route."""
     track, ctx = _track_and_ctx()

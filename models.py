@@ -845,6 +845,7 @@ def get_all_upcoming_events(include_active=False):
     first_date = today - timedelta(days=5) if include_active else today
     events = _execute("""
         SELECT ri.*,
+               COALESCE(ri.time_limit_hours, rp.cutoff_hours) as time_limit_hours,
                COALESCE(rp.name, ri.name) as route_name,
                COALESCE(rp.distance_km, ri.distance_km) as distance_km,
                COALESCE(rp.total_elevation_ft, ri.elevation_ft) as elevation_ft,

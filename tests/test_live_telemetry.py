@@ -324,6 +324,21 @@ def test_stationary_periods_separate_intermediate_stops():
     assert [period['duration_min'] for period in periods] == [5.0, 3.0]
 
 
+def test_stationary_periods_merge_brief_speed_glitch_at_same_control():
+    points = [
+        {'lat': 37.0, 'lng': -122.0, 'speed': 0.0, 'recorded_at': _t(0)},
+        {'lat': 37.0, 'lng': -122.0, 'speed': 0.0, 'recorded_at': _t(360)},
+        {'lat': 37.0, 'lng': -122.0, 'speed': 2.0, 'recorded_at': _t(420)},
+        {'lat': 37.0, 'lng': -122.0, 'speed': 0.0, 'recorded_at': _t(480)},
+        {'lat': 37.0, 'lng': -122.0, 'speed': 0.0, 'recorded_at': _t(720)},
+    ]
+
+    periods = tlm.stationary_periods(points)
+
+    assert len(periods) == 1
+    assert periods[0]['duration_min'] == 12.0
+
+
 def test_moving_stopped_long_gap_same_place_is_stopped():
     # A 2-hour gap where the rider didn't move (same spot) = stopped, not moving.
     # (The reported speed is irrelevant across a telemetry gap.)

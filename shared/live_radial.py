@@ -218,19 +218,6 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
             active_day, day_start_mi = day, miles
             next_day_start_mi = (boundaries[pos + 1][1]
                                  if pos + 1 < len(boundaries) else None)
-    day_history = ride_history
-    if day_start_mi > 0:
-        crossing = None
-        for pos, point in enumerate(ride_history):
-            projected, _pidx, off = tlm.project_to_route(
-                float(point['lat']), float(point['lng']), ctx['track'])
-            if (projected is not None and off is not None and off <= tlm.ON_ROUTE_MAX_M
-                    and projected * M_TO_MI >= day_start_mi - 0.1):
-                crossing = max(0, pos - 1)
-                break
-        day_history = ride_history[crossing:] if crossing is not None else []
-    _day_moving, stopped_ride_day = tlm.moving_stopped(day_history)
-    now_block['stopped_ride_day_min'] = stopped_ride_day
     now_block['active_day'] = active_day
 
     local_tz = tz or timezone.utc
@@ -243,7 +230,9 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
         event_mi = projected * M_TO_MI
         event_day = 1
         for day, miles in boundaries:
-            if event_mi >= miles:
+            # A sleep control is both Day N's arrival and Day N+1's distance
+            # origin. It remains part of the prior day until the rider departs.
+            if event_mi >= miles + (0.5 if day > 1 else 0):
                 event_day = day
         start_local = _as_utc(period['start_at']).astimezone(local_tz)
         end_local = _as_utc(period['end_at']).astimezone(local_tz)
@@ -254,6 +243,12 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
             'end_label': end_local.strftime('%-I:%M %p'),
         })
     now_block['stop_events'] = stop_events
+    # The daily total and the rendered rows must come from the same observed
+    # periods. This prevents an overnight sleep from appearing as Day 2's total
+    # while being absent (or split into tiny fragments) in the itinerary.
+    now_block['stopped_ride_day_min'] = round(sum(
+        float(event['duration_min']) for event in stop_events
+        if event['day_number'] == active_day), 1)
 
     # Time left = the brevet's overall time limit minus elapsed (e.g. 40h for a 600),
     # clamped at 0. Only when the context carries a time limit (Team Asha does).

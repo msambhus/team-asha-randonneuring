@@ -13,6 +13,16 @@ class _Rows:
         return self.rows
 
 
+class _CaptureExecute:
+    def __init__(self, rows):
+        self.rows = rows
+        self.sql = None
+
+    def __call__(self, sql, _params):
+        self.sql = sql
+        return _Rows(self.rows)
+
+
 def _event(event_id, event_date, limit_hours):
     return {
         'id': event_id, 'date': event_date, 'name': f'Ride {event_id}',
@@ -36,3 +46,15 @@ def test_mobile_calendar_keeps_active_multiday_event_but_not_expired_ride():
     assert events[0]['is_live'] is True
     assert events[1]['is_live'] is False
 
+
+def test_mobile_calendar_uses_linked_plan_cutoff_for_active_window():
+    today = date(2026, 8, 7)
+    execute = _CaptureExecute([_event(194, date(2026, 8, 6), 90)])
+
+    with patch('models.club_today', return_value=today), \
+         patch('models._execute', side_effect=execute):
+        events = models.get_all_upcoming_events.uncached(include_active=True)
+
+    assert 'COALESCE(ri.time_limit_hours, rp.cutoff_hours) as time_limit_hours' in execute.sql
+    assert [event['id'] for event in events] == [194]
+    assert events[0]['is_live'] is True

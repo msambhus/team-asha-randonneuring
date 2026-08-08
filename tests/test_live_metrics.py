@@ -762,17 +762,21 @@ def test_ride_context_cached_across_polls(client):
         {'x': -121.99, 'y': 37.0, 'd': 889, 'e': 20},
         {'x': -121.98, 'y': 37.0, 'd': 1778, 'e': 25},
     ]}
+    overview = [
+        {'lng': point['x'], 'lat': point['y'], 'dist_m': point['d'], 'e_m': point['e']}
+        for point in route['track_points']
+    ]
     row = {'rider_id': 7, 'name': 'R', 'lat': 37.0, 'lng': -121.99,
            'recorded_at': _now() - timedelta(minutes=1), 'status': 'GOING',
            'speed': None, 'heart_rate': None, 'power': None, 'cadence': None}
     with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
          patch('routes.live.get_ride_by_id', return_value=ride), \
-         patch('routes.live.fetch_route', return_value=route) as mock_fetch, \
+         patch('routes.live._radial_overview_track', return_value=overview) as mock_overview, \
          patch('routes.live.get_ride_plan_stops', return_value=[]), \
          patch('routes.live.load_stored_route_weather', return_value=(None, None)), \
          patch('routes.live.get_positions_for_rider_since', return_value=[]):
         r1 = client.get('/api/live/positions?ride_id=%d' % RIDE_ID)
         r2 = client.get('/api/live/positions?ride_id=%d' % RIDE_ID)
     assert r1.status_code == 200 and r2.status_code == 200
-    assert mock_fetch.call_count == 1   # context cached — RWGPS fetched once across 2 polls
+    assert mock_overview.call_count == 1  # full-course context built once across 2 polls
     cache.clear()

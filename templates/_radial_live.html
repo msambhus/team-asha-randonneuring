@@ -909,14 +909,16 @@
     });
     var rider = roster && roster.length ? roster[0] : null;
     if (!rider || !rider.stop_events || !rider.stop_events.length) { return; }
-    var day = Number(rider.active_day || SELECTED_DAY);
-    var planRows = Array.prototype.slice.call(
-      document.querySelectorAll('.rps-day-row[data-plan-day="' + day + '"]'));
-    var lists = [];
-    planRows.forEach(function (row) {
-      if (row.parentElement && lists.indexOf(row.parentElement) < 0) { lists.push(row.parentElement); }
-    });
-    lists.forEach(function (list) {
+    var days = rider.stop_events.map(function (event) { return Number(event.day_number); })
+      .filter(function (day, index, all) { return day && all.indexOf(day) === index; });
+    days.forEach(function (day) {
+      var planRows = Array.prototype.slice.call(
+        document.querySelectorAll('.rps-day-row[data-plan-day="' + day + '"]'));
+      var lists = [];
+      planRows.forEach(function (row) {
+        if (row.parentElement && lists.indexOf(row.parentElement) < 0) { lists.push(row.parentElement); }
+      });
+      lists.forEach(function (list) {
       var rows = Array.prototype.slice.call(list.querySelectorAll('.rps-day-row[data-stop-distance]'));
       rider.stop_events.filter(function (event) {
         return Number(event.day_number) === day && Number(event.duration_min) >= 2;
@@ -947,6 +949,7 @@
           return Number(row.getAttribute('data-stop-distance')) > eventMile;
         });
         list.insertBefore(actual, before || null);
+      });
       });
     });
   }

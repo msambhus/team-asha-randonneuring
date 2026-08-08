@@ -1066,19 +1066,22 @@ def _ride_live_context_cached(ride_id, day_key):
                                    ride_id, exc_info=True)
         ctx['plan_stops'] = []
 
-    # Route geometry: track + cumulative ascent (downsampled for the cache).
+    # Route geometry: telemetry must use the canonical FULL course, not only the
+    # active day's weather leg. Otherwise prior-day stops cannot be assigned and
+    # overlapping daily routes can produce the wrong absolute progress.
     leg = _active_plan_leg(ride)
     rwgps_url = leg.get('rwgps_url')
     route_id = extract_rwgps_route_id(rwgps_url)
     if route_id:
         try:
-            route = fetch_route(route_id)
-            tps = [dict(tp) for tp in (route.get('track_points') or [])
-                   if tp.get('x') is not None and tp.get('y') is not None]
+            overview = _radial_overview_track(ride)
+            tps = [
+                {'x': point.get('lng'), 'y': point.get('lat'),
+                 'd': point.get('dist_m'), 'e': point.get('e_m')}
+                for point in overview
+                if point.get('lng') is not None and point.get('lat') is not None
+            ]
             if tps:
-                offset_m = float(leg.get('distance_offset_mi') or 0) / M_TO_MI
-                for tp in tps:
-                    tp['d'] = float(tp.get('d') or 0) + offset_m
                 step = max(1, len(tps) // _MAX_CONTEXT_TRACK_POINTS)
                 track, cum_ascent, prev_e, cum = [], [], None, 0.0
                 for tp in tps[::step]:
