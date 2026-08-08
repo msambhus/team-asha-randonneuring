@@ -177,8 +177,28 @@ function DualTime({ primary, pacific }: { primary: string | null | undefined; pa
   );
 }
 
-function DayPlanSummary({ plan, onOpen }: { plan: LivePlanSnapshot; onOpen: () => void }) {
+function DayPlanSummary({ plan, positions, onOpen }: {
+  plan: LivePlanSnapshot; positions: LivePosition[]; onOpen: () => void;
+}) {
   const visibleStops = plan.day_stops.slice(0, 4);
+  const actualStops = positions.flatMap((rider, riderIndex) =>
+    (rider.telemetry?.now?.stop_events ?? [])
+      .filter((event) => event.day_number === plan.active_day && event.duration_min >= 2)
+      .map((event) => {
+        const nearest = plan.day_stops.reduce<{ distance: number; name: string | null } | null>((best, stop) => {
+          const distance = Math.abs(stop.distance_mi - event.distance_mi);
+          return !best || distance < best.distance ? { distance, name: stop.name } : best;
+        }, null);
+        return {
+          event, riderIndex,
+          riderName: rider.name || 'Rider',
+          riderColor: rider.plan_color ?? rider.color ?? '#64748b',
+          location: nearest && nearest.distance <= 0.5 ? (nearest.name || 'Control') : 'Intermediate stop',
+          atControl: !!nearest && nearest.distance <= 0.5,
+        };
+      })
+  ).sort((a, b) => a.event.distance_mi - b.event.distance_mi ||
+    a.event.start_label.localeCompare(b.event.start_label) || a.riderIndex - b.riderIndex);
   return (
     <View style={styles.dayPlanCard}>
       <View style={styles.dayPlanHead}>
@@ -214,6 +234,22 @@ function DayPlanSummary({ plan, onOpen }: { plan: LivePlanSnapshot; onOpen: () =
           {plan.day_stops.length > visibleStops.length ? (
             <Text style={styles.moreStops}>+{plan.day_stops.length - visibleStops.length} more in full plan</Text>
           ) : null}
+        </View>
+      ) : null}
+      {actualStops.length ? (
+        <View style={styles.actualStopCatalog}>
+          <Text style={styles.stopHistoryTitle}>Rider stops · day {plan.active_day}</Text>
+          {actualStops.map(({ event, riderName, riderColor, location, atControl }, i) => (
+            <View key={`${riderName}-${event.distance_mi}-${event.start_label}-${i}`}
+              style={[styles.actualStopRow, atControl && styles.actualControlStopRow]}>
+              <View style={[styles.actualStopRiderDot, { backgroundColor: riderColor }]} />
+              <View style={styles.actualStopBody}>
+                <Text numberOfLines={1} style={styles.actualStopRider}>{riderName} · {location}</Text>
+                <Text style={styles.actualStopMeta}>{n(event.distance_mi, ' mi')} · {hm(event.duration_min)}</Text>
+              </View>
+              <Text style={styles.stopEventTime}>{event.start_label}–{event.end_label}</Text>
+            </View>
+          ))}
         </View>
       ) : null}
     </View>
@@ -269,18 +305,6 @@ function RiderCard({ p }: { p: LivePosition }) {
           {now.headwind_done_label ? <Metric label="wind" value={now.headwind_done_label} /> : null}
         </View>
         </>
-      ) : null}
-      {now?.stop_events?.length ? (
-        <View style={styles.stopHistory}>
-          <Text style={styles.stopHistoryTitle}>Day {now.active_day ?? ''} recorded stops</Text>
-          {now.stop_events.filter((event) => event.day_number === now.active_day).slice(-6).map((event, i) => (
-            <View key={`${event.distance_mi}-${event.start_label}-${i}`} style={styles.stopEventRow}>
-              <Text style={styles.stopEventIcon}>⏸</Text>
-              <Text style={styles.stopEventMain}>{n(event.distance_mi, ' mi')} · {hm(event.duration_min)}</Text>
-              <Text style={styles.stopEventTime}>{event.start_label}–{event.end_label}</Text>
-            </View>
-          ))}
-        </View>
       ) : null}
       {rem ? (
         <View style={styles.metricRow}>
@@ -518,7 +542,7 @@ export default function RideLiveScreen() {
         {(positions ?? []).map((p) => <RiderCard key={p.rider_id} p={p} />)}
         {!isLoading && !(positions ?? []).length ? <Text style={styles.empty}>No live riders yet.</Text> : null}
         <PlanSelector plans={plans} applied={appliedPlanId} onSelect={setSelectedPlanId} />
-        {planSnapshot ? <DayPlanSummary plan={planSnapshot} onOpen={() => router.push(`/ride/plan?id=${rideId}`)} /> : null}
+        {planSnapshot ? <DayPlanSummary plan={planSnapshot} positions={positions ?? []} onOpen={() => router.push(`/ride/plan?id=${rideId}`)} /> : null}
         {chartData ? <LiveCharts chart={chartData} positions={positions ?? []} elevationProfile={elevationProfile} /> : null}
         {/* Shared upcoming-controls list — placed AFTER the weather charts. */}
         <UpcomingControls controls={upcoming} showOwnNote={String(appliedPlanId) === 'own'} />
@@ -591,11 +615,16 @@ const styles = StyleSheet.create({
   dayStopTime: { minWidth: 72, alignItems: 'flex-end' },
   dayStopEta: { fontSize: 11, fontWeight: '700', color: colors.navy },
   moreStops: { fontSize: 11, fontWeight: '600', color: '#64748b', marginTop: 7 },
-  stopHistory: { marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#eef2f7' },
+  actualStopCatalog: { marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e2e8f0' },
   stopHistoryTitle: { fontSize: 11, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: 4 },
-  stopEventRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
-  stopEventIcon: { fontSize: 12 },
-  stopEventMain: { fontSize: 12, fontWeight: '700', color: colors.navy },
+  actualStopRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 46,
+    marginTop: 5, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8,
+    borderLeftWidth: 3, borderLeftColor: colors.amber, backgroundColor: '#fffbeb' },
+  actualControlStopRow: { borderLeftColor: colors.blue, backgroundColor: '#eff6ff' },
+  actualStopRiderDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: '#fff' },
+  actualStopBody: { flex: 1, minWidth: 0 },
+  actualStopRider: { fontSize: 12, fontWeight: '700', color: colors.navy },
+  actualStopMeta: { marginTop: 1, fontSize: 11, color: '#64748b' },
   stopEventTime: { marginLeft: 'auto', fontSize: 11, color: '#64748b' },
   afterRide: { fontStyle: 'italic', color: '#6b7280', fontSize: 11, marginTop: 8 },
   empty: { color: '#6b7280', textAlign: 'center', marginTop: 16 },
