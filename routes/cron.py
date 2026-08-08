@@ -1066,6 +1066,7 @@ def poll_garmin_livetrack():
     polled = 0
     inserted = 0
     errors = []
+    touched_ride_ids = set()
     for row in tracked:
         rider_id = row['rider_id']
         ride_id = row.get('active_ride_id')
@@ -1081,6 +1082,8 @@ def poll_garmin_livetrack():
             # No ride to attribute points to — nothing would show on a map.
             errors.append({'rider_id': rider_id, 'error': 'no active ride'})
             continue
+
+        touched_ride_ids.add(ride_id)
 
         polled += 1
         try:
@@ -1116,6 +1119,22 @@ def poll_garmin_livetrack():
                 rider_inserted += 1
         inserted += rider_inserted
 
+    snapshots = 0
+    snapshot_errors = []
+    # Compute once per active ride after ALL riders' latest fixes are stored.
+    # Viewer requests then become one JSONB read instead of replaying multi-day
+    # history in every Vercel instance and on both web and native endpoints.
+    if touched_ride_ids:
+        from routes.live import build_live_telemetry_snapshot
+        for ride_id in sorted(touched_ride_ids):
+            try:
+                build_live_telemetry_snapshot(ride_id)
+                snapshots += 1
+            except Exception as e:
+                current_app.logger.exception(
+                    'poll-garmin-livetrack: snapshot failed for ride %s', ride_id)
+                snapshot_errors.append({'ride_id': ride_id, 'error': str(e)[:200]})
+
     try:
         purged = purge_old_positions(RETENTION_DAYS)
     except Exception as e:
@@ -1123,12 +1142,14 @@ def poll_garmin_livetrack():
         purged = None
 
     current_app.logger.info(
-        'poll-garmin-livetrack: polled=%d inserted=%d errors=%d purged=%s',
-        polled, inserted, len(errors), purged,
+        'poll-garmin-livetrack: polled=%d inserted=%d snapshots=%d errors=%d purged=%s',
+        polled, inserted, snapshots, len(errors) + len(snapshot_errors), purged,
     )
     return jsonify({
         'polled': polled,
         'inserted': inserted,
         'errors': errors,
+        'snapshots': snapshots,
+        'snapshot_errors': snapshot_errors,
         'purged': purged,
     }), 200

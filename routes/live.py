@@ -27,6 +27,7 @@ from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled
                     get_followed_live_ride_ids, get_followed_live_rides,
                     set_followed_live_ride,
                     get_positions_for_rider_since, get_default_time_limit,
+                    get_live_telemetry_snapshot, upsert_live_telemetry_snapshot,
                     get_or_create_ride_invite, get_valid_ride_invite,
                     get_route_elevation_track, get_route_weather_elevation_track,
                     RideStatus)
@@ -1547,6 +1548,154 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
         rebase_from_first_fix=bool(ctx.get('allow_mid_route_start')))
 
 
+def build_live_telemetry_snapshot(ride_id, now=None):
+    """Compute the common base-plan payload once for web and native clients.
+
+    This is called by the Garmin poller after it stores fresh points.  Both
+    response shapes are produced from the SAME telemetry objects, so route
+    projection and multi-day stop analysis run once per rider rather than once
+    per viewer and once per client type.
+    """
+    now = now or datetime.now(timezone.utc)
+    ctx = _ride_live_context(ride_id)
+    ride = get_ride_by_id(ride_id) or {'timezone': (ctx or {}).get('event_timezone')}
+    rows = list(get_latest_positions_for_ride(
+        ride_id, now - timedelta(hours=DISPLAY_WINDOW_HOURS)) or [])
+    sharing_ids = {row['rider_id'] for row in rows}
+    for rider in get_going_riders_for_ride(ride_id) or []:
+        if rider['rider_id'] not in sharing_ids:
+            rows.append(dict(rider, lat=None, lng=None, recorded_at=None,
+                             source=None, speed=None, heart_rate=None,
+                             power=None, cadence=None))
+
+    track = ctx.get('track') if ctx and ctx.get('has_route') else None
+    base_stops = ctx.get('plan_stops') if ctx else None
+    positions, roster = [], []
+    source_recorded_at = None
+    for row in rows:
+        recorded_at = row.get('recorded_at')
+        telemetry = None
+        history = []
+        if recorded_at is not None:
+            if recorded_at.tzinfo is None:
+                recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+            source_recorded_at = max(source_recorded_at, recorded_at) \
+                if source_recorded_at else recorded_at
+            history = get_positions_for_rider_since(
+                row['rider_id'], _telemetry_history_since(ctx, now), ride_id=ride_id)
+            try:
+                telemetry = _rider_telemetry(
+                    row, ctx, now, history, plan_stops=base_stops)
+                for block_name in ('next_control', 'finish'):
+                    block = (telemetry or {}).get(block_name)
+                    if not block or not block.get('eta_iso'):
+                        continue
+                    labels = instant_time_labels(
+                        datetime.fromisoformat(block['eta_iso']), ride)
+                    block['eta_label'] = f"{labels['event']} {labels['event_zone']}"
+                    block['eta_pacific_label'] = (
+                        f"{labels['pacific']} PT" if labels['show_pacific'] else None)
+            except Exception:
+                current_app.logger.exception(
+                    'live snapshot telemetry failed for rider %s', row['rider_id'])
+
+        minutes_ago = (max(0, int((now - recorded_at).total_seconds() // 60))
+                       if recorded_at is not None else None)
+        status = row.get('status')
+        positions.append({
+            'rider_id': row['rider_id'],
+            'name': (row.get('name') or '').strip(),
+            'lat': float(row['lat']) if row.get('lat') is not None else None,
+            'lng': float(row['lng']) if row.get('lng') is not None else None,
+            'status': status or RideStatus.GOING.value,
+            'color': STATUS_COLORS.get(status, DEFAULT_COLOR),
+            'plan_color': _plan_dot_color(status, telemetry),
+            'recorded_at': recorded_at.isoformat() if recorded_at else None,
+            'minutes_ago': minutes_ago,
+            'stale': bool(minutes_ago is not None and minutes_ago > STALE_AFTER_MINUTES),
+            'source': row.get('source') if recorded_at else None,
+            'telemetry': telemetry,
+            'trail': tlm.build_trail(history, track) if recorded_at else None,
+            **({'not_sharing': True} if recorded_at is None else {}),
+        })
+
+        public_row = dict(row)
+        public_row['display_name'] = _public_display_name(row.get('name'))
+        if telemetry is not None:
+            roster.append(radial._privacy_row(
+                public_row, telemetry, ride_id, now,
+                STALE_AFTER_MINUTES, radial.ROSTER_DISTANCE_UNIT))
+        else:
+            roster.append(radial._base_roster_row(
+                public_row, ride_id, now,
+                STALE_AFTER_MINUTES, radial.ROSTER_DISTANCE_UNIT))
+
+    roster.sort(key=lambda item: (
+        item.get('route_position_mi')
+        if item.get('route_position_mi') is not None else -1.0), reverse=True)
+    for roster_row in roster:
+        for block_name in ('next_control', 'finish'):
+            block = roster_row.get(block_name)
+            if not block or not block.get('eta_iso'):
+                continue
+            labels = instant_time_labels(
+                datetime.fromisoformat(block['eta_iso']), ride)
+            block['eta_label'] = f"{labels['event']} {labels['event_zone']}"
+            block['eta_pacific_label'] = (
+                f"{labels['pacific']} PT" if labels['show_pacific'] else None)
+    leader_dist_mi = max((
+        ((p.get('telemetry') or {}).get('now') or {}).get('distance_mi')
+        for p in positions
+        if ((p.get('telemetry') or {}).get('now') or {}).get('distance_mi') is not None
+    ), default=None)
+    start_utc = None
+    if ctx and ctx.get('ride_start_iso'):
+        try:
+            start_utc = datetime.fromisoformat(ctx['ride_start_iso'])
+        except ValueError:
+            pass
+    upcoming = _upcoming_controls(base_stops, leader_dist_mi, start_utc, ride)
+    for control in upcoming:
+        if control.get('eta_iso'):
+            labels = instant_time_labels(datetime.fromisoformat(control['eta_iso']), ride)
+            control['eta_label'] = f"{labels['event']} {labels['event_zone']}"
+            control['eta_pacific_label'] = (
+                f"{labels['pacific']} PT" if labels['show_pacific'] else None)
+
+    common = {
+        'ride_id': ride_id,
+        'server_time': now.isoformat(),
+        'stale_after_minutes': STALE_AFTER_MINUTES,
+        'chart_data': ctx.get('chart_data') if ctx else None,
+    }
+    payload = {
+        'version': 1,
+        'mobile': dict(common, positions=positions,
+                       elevation_profile=ctx.get('elevation_profile') if ctx else None,
+                       upcoming_controls=upcoming,
+                       plan_snapshot=_mobile_live_plan_snapshot(ride_id)),
+        'public': dict(common, roster=roster, poll_seconds=RADIAL_POLL_SECONDS),
+    }
+    # Flask's JSON provider normalizes any Decimal/date values before psycopg
+    # serializes the JSONB document.
+    payload = current_app.json.loads(current_app.json.dumps(payload))
+    upsert_live_telemetry_snapshot(
+        ride_id, payload, source_recorded_at=source_recorded_at)
+    return payload
+
+
+def _shared_live_snapshot(ride_id):
+    """Read the cross-instance base snapshot; fail open on pre-migration DBs."""
+    try:
+        row = get_live_telemetry_snapshot(ride_id)
+        return row if row and row.get('payload') else None
+    except Exception:
+        current_app.logger.warning(
+            'live snapshot unavailable for ride %s; using direct compute',
+            ride_id, exc_info=True)
+        return None
+
+
 @live_bp.route('/api/live/positions')
 def live_positions():
     """JSON: latest position + live telemetry per opted-in GOING rider for ?ride_id=.
@@ -1567,6 +1716,27 @@ def live_positions():
         if user_id:
             return jsonify({'error': 'Complete your profile to view live tracking'}), 403
         return jsonify({'error': 'Authentication required'}), 401
+
+    # The base plan is precomputed by the Garmin poller and shared across every
+    # Vercel instance and both clients. Viewer-specific/custom plan lenses retain
+    # the direct path below because they may contain private schedules.
+    requested_plan = request.args.get('plan_id') or PLAN_BASE
+    if requested_plan == PLAN_BASE:
+        snapshot = _shared_live_snapshot(ride_id)
+        if snapshot:
+            payload = dict(snapshot['payload']['mobile'])
+            ctx = _ride_live_context(ride_id)
+            options, _allowed = _available_plans(
+                ctx.get('base_plan_id') if ctx else None, rider_id)
+            payload['plans'] = options
+            payload['selected_plan_id'] = PLAN_BASE
+            payload['snapshot_computed_at'] = snapshot['computed_at'].isoformat()
+            payload['snapshot_source_recorded_at'] = (
+                snapshot['source_recorded_at'].isoformat()
+                if snapshot.get('source_recorded_at') else None)
+            response = jsonify(payload)
+            response.headers['Cache-Control'] = 'private, no-store'
+            return response
 
     now = datetime.now(timezone.utc)
     since = now - timedelta(hours=DISPLAY_WINDOW_HOURS)
@@ -1823,6 +1993,23 @@ def ride_live_roster(ride_id):
     cached_payload = cache.get(response_cache_key)
     if cached_payload is not None:
         return _live_roster_response(cached_payload, public_cache=public_cache)
+
+    if requested_plan == PLAN_BASE:
+        snapshot = _shared_live_snapshot(ride_id)
+        if snapshot:
+            payload = dict(snapshot['payload']['public'])
+            ctx = _ride_live_context(ride_id)
+            options, _allowed = _available_plans(
+                ctx.get('base_plan_id') if ctx else None,
+                session.get('rider_id'))
+            payload['plans'] = options
+            payload['selected_plan_id'] = PLAN_BASE
+            payload['snapshot_computed_at'] = snapshot['computed_at'].isoformat()
+            payload['snapshot_source_recorded_at'] = (
+                snapshot['source_recorded_at'].isoformat()
+                if snapshot.get('source_recorded_at') else None)
+            cache.set(response_cache_key, payload, timeout=LIVE_ROSTER_TTL)
+            return _live_roster_response(payload, public_cache=public_cache)
 
     now = datetime.now(timezone.utc)
     since = now - timedelta(hours=DISPLAY_WINDOW_HOURS)

@@ -5709,6 +5709,42 @@ def get_last_position_recorded_at(rider_id, ride_id=None):
     return row['last_at'] if row else None
 
 
+def upsert_live_telemetry_snapshot(ride_id, payload, source_recorded_at=None,
+                                   plan_key='base'):
+    """Persist the latest precomputed live payload for all app instances.
+
+    The table is deliberately server-only (RLS with no client policies).  A
+    single Garmin poll writes this record; web and native viewers only read it.
+    """
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO live_telemetry_snapshot
+                (ride_id, plan_key, payload, source_recorded_at, computed_at)
+            VALUES (%s, %s, %s, %s, NOW())
+            ON CONFLICT (ride_id, plan_key) DO UPDATE SET
+                payload = EXCLUDED.payload,
+                source_recorded_at = EXCLUDED.source_recorded_at,
+                computed_at = NOW()
+        """, (ride_id, plan_key, psycopg2.extras.Json(payload), source_recorded_at))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+def get_live_telemetry_snapshot(ride_id, plan_key='base'):
+    """Return the shared live snapshot, or None before the first poll/migration."""
+    return _execute("""
+        SELECT payload, source_recorded_at, computed_at
+        FROM live_telemetry_snapshot
+        WHERE ride_id = %s AND plan_key = %s
+    """, (ride_id, plan_key)).fetchone()
+
+
 def get_latest_positions_for_ride(ride_id, since):
     """Latest position per opted-in rider sharing for a ride, newer than `since`.
 

@@ -648,6 +648,7 @@ def test_cron_polls_inserts_and_purges(client, app):
          patch('models.get_last_position_recorded_at', return_value=None), \
          patch('services.garmin_livetrack.fetch_positions', return_value=points), \
          patch('models.insert_live_position', side_effect=lambda **kw: inserts.append(kw) or True), \
+         patch('routes.live.build_live_telemetry_snapshot') as build_snapshot, \
          patch('models.purge_old_positions', return_value=3) as mock_purge:
         resp = client.post('/api/cron/poll-garmin-livetrack',
                            headers={'Authorization': 'Bearer testsecret'})
@@ -656,6 +657,9 @@ def test_cron_polls_inserts_and_purges(client, app):
     assert data['polled'] == 1
     assert data['inserted'] == 2          # full history appended, not latest-only
     assert data['purged'] == 3
+    assert data['snapshots'] == 1
+    assert data['snapshot_errors'] == []
+    build_snapshot.assert_called_once_with(5)
     mock_purge.assert_called_once_with(7)
     assert len(inserts) == 2
     assert {i['recorded_at'] for i in inserts} == {p['recorded_at'] for p in points}
