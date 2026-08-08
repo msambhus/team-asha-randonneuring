@@ -226,6 +226,34 @@ def test_route_day_stopped_excludes_prior_overnight_sleep_at_same_distance():
     assert roster[0]['stop_events'][1]['distance_mi'] == 20.0
 
 
+def test_route_day_total_and_rows_include_low_movement_gaps():
+    track, ctx = _track_and_ctx()
+    ctx['day_distance_boundaries'] = {1: 0, 2: 15}
+    start = _NOW - timedelta(minutes=40)
+    ctx['ride_start_iso'] = start.isoformat()
+    on_route = track[20]
+    nearby = {'lat': on_route['lat'] + 0.001, 'lng': on_route['lng']}
+    history = [
+        {'lat': on_route['lat'], 'lng': on_route['lng'], 'speed': 5.0,
+         'recorded_at': start},
+        {'lat': nearby['lat'], 'lng': nearby['lng'], 'speed': 0.0,
+         'recorded_at': start + timedelta(minutes=30)},
+        {'lat': nearby['lat'], 'lng': nearby['lng'], 'speed': 0.0,
+         'recorded_at': _NOW},
+    ]
+    rows = [{'rider_id': 1, 'display_name': 'Gap Rider',
+             'lat': nearby['lat'], 'lng': nearby['lng'], 'speed': 0.0,
+             'source': 'garmin', 'recorded_at': _NOW}]
+
+    roster = lr.build_radial_roster(
+        rows, ctx, _NOW, {1: history}, ride_id=1, anchor='ride_start',
+        min_history=2, stateless_fallback=False, tz=timezone.utc)
+
+    assert roster[0]['active_day'] == 2
+    assert roster[0]['stopped_ride_day_min'] == 40.0
+    assert sum(event['duration_min'] for event in roster[0]['stop_events']) == 40.0
+
+
 def test_first_fix_anchor_rebases_an_explicit_permanent():
     """Permanent-style tracking may intentionally begin partway around a route."""
     track, ctx = _track_and_ctx()
