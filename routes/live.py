@@ -7,6 +7,7 @@ Club-login-only, opt-in. Three surfaces:
 
 The poll cron that writes positions lives in routes/cron.py.
 """
+import hashlib
 import math
 import re
 from datetime import datetime, date, timedelta, timezone
@@ -56,6 +57,14 @@ _MAX_CONTEXT_TRACK_POINTS = 5000
 # work on every deploy or cache expiry. Rider POSITIONS are NOT cached — they're
 # read fresh each poll — so this only ages the static route/weather overlay.
 LIVE_CONTEXT_TTL = 900  # 15 minutes
+
+# The fully composed public roster is substantially more expensive than the
+# static route context above: it loads each rider's history and derives all live
+# telemetry. Keep it deliberately short so the map remains live while a burst of
+# viewers shares one computation per server instance / CDN freshness window.
+LIVE_ROSTER_TTL = 15
+LIVE_ROSTER_PUBLIC_CACHE_CONTROL = 'public, s-maxage=15, stale-while-revalidate=30'
+LIVE_ROSTER_PRIVATE_CACHE_CONTROL = 'private, no-store'
 
 # Club-local timezone. Ride start_time values (e.g. "06:00") are wall-clock
 # times in the Bay Area, so elapsed-time math must interpret them in Pacific
@@ -1736,6 +1745,27 @@ def _public_display_name(full_name):
     return '{} {}.'.format(parts[0], parts[-1][0].upper())
 
 
+def _live_roster_cache_key(ride_id, requested_plan, access_scope):
+    """Bounded cache key for a composed live roster response.
+
+    ``requested_plan`` is attacker-controlled query text, so hash it instead of
+    placing it directly in the SimpleCache key. Access scope is public only for
+    a truly anonymous public-live request; member and invite responses never
+    share that cache entry.
+    """
+    plan_digest = hashlib.sha256(
+        str(requested_plan or 'base').encode('utf-8')).hexdigest()[:16]
+    return f'live-roster:v1:{ride_id}:{access_scope}:{plan_digest}'
+
+
+def _live_roster_response(payload, *, public_cache):
+    response = jsonify(payload)
+    response.headers['Cache-Control'] = (
+        LIVE_ROSTER_PUBLIC_CACHE_CONTROL
+        if public_cache else LIVE_ROSTER_PRIVATE_CACHE_CONTROL)
+    return response
+
+
 @live_bp.route('/ride/<int:ride_id>/live/roster.json')
 def ride_live_roster(ride_id):
     """PUBLIC, PII-safe roster poll for the shared Radial live view.
@@ -1756,6 +1786,24 @@ def ride_live_roster(ride_id):
     is_guest_invite = (not is_member) and (_guest_ride_id() == ride_id)
     if not (is_public_live or is_member or is_guest_invite):
         abort(404)
+
+    # Only a truly anonymous request may use the shared CDN/public entry. A
+    # signed-in member can see their own plan option, while an invite establishes
+    # private access through a session cookie; both therefore get scoped
+    # in-process keys and explicit no-store browser/CDN semantics.
+    public_cache = is_public_live and not is_member and not is_guest_invite
+    if public_cache:
+        access_scope = 'public'
+    elif is_member:
+        access_scope = f'member-{session.get("rider_id")}'
+    else:
+        access_scope = f'invite-{ride_id}'
+    requested_plan = request.args.get('plan_id') or 'base'
+    response_cache_key = _live_roster_cache_key(
+        ride_id, requested_plan, access_scope)
+    cached_payload = cache.get(response_cache_key)
+    if cached_payload is not None:
+        return _live_roster_response(cached_payload, public_cache=public_cache)
 
     now = datetime.now(timezone.utc)
     since = now - timedelta(hours=DISPLAY_WINDOW_HOURS)
@@ -1834,7 +1882,7 @@ def ride_live_roster(ride_id):
             except (TypeError, ValueError):
                 pass
 
-    return jsonify({
+    payload = {
         'ride_id': ride_id,
         'roster': roster,
         'server_time': now.isoformat(),
@@ -1845,7 +1893,9 @@ def ride_live_roster(ride_id):
         # Static, cache-backed route conditions. The client builds these charts
         # once and only moves rider markers on subsequent position polls.
         'chart_data': ctx.get('chart_data') if ctx else None,
-    })
+    }
+    cache.set(response_cache_key, payload, timeout=LIVE_ROSTER_TTL)
+    return _live_roster_response(payload, public_cache=public_cache)
 
 
 @live_bp.route('/api/live/rides')
