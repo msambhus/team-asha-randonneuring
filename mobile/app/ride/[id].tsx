@@ -124,7 +124,7 @@ function LiveCharts({ chart, positions, elevationProfile }: {
     .map((p) => ({ index: nearestIndex(labels, p.telemetry?.now?.distance_mi),
                    color: p.plan_color ?? p.color, label: initials(p.name) }));
   return (
-    <View>
+    <View testID="live-profile-section">
       <Text style={styles.chartsTitle}>Route ahead</Text>
       {elevationProfile?.available ? <ElevationProfile profile={elevationProfile} positions={positions} /> : chart.elevation_ft ? (
         <WeatherChart title="Elevation" unit="ft" labels={labels} markers={markers}
@@ -200,7 +200,7 @@ function DayPlanSummary({ plan, positions, onOpen }: {
   ).sort((a, b) => a.event.distance_mi - b.event.distance_mi ||
     a.event.start_label.localeCompare(b.event.start_label) || a.riderIndex - b.riderIndex);
   return (
-    <View style={styles.dayPlanCard}>
+    <View testID="live-plan-section" style={styles.dayPlanCard}>
       <View style={styles.dayPlanHead}>
         <View style={{ flex: 1 }}>
           <Text style={styles.eyebrow}>DAY {plan.active_day} PLAN</Text>
@@ -256,7 +256,9 @@ function DayPlanSummary({ plan, positions, onOpen }: {
   );
 }
 
-function RiderCard({ p }: { p: LivePosition }) {
+function RiderCard({ p, expanded, onToggle }: {
+  p: LivePosition; expanded: boolean; onToggle: () => void;
+}) {
   const t = p.telemetry;
   const now = t?.now;
   const rem = t?.remaining;
@@ -264,7 +266,7 @@ function RiderCard({ p }: { p: LivePosition }) {
   const fin = t?.finish;
   const badge = planBadge(p);
   return (
-    <View style={[styles.card, p.stale && styles.cardStale]}>
+    <View testID={`live-rider-${p.rider_id}`} style={[styles.card, p.stale && styles.cardStale]}>
       <View style={styles.cardHead}>
         <View style={[styles.dot, { backgroundColor: p.plan_color ?? p.color }]}><Text style={styles.dotText}>{initials(p.name)}</Text></View>
         <View style={{ flex: 1 }}>
@@ -279,6 +281,28 @@ function RiderCard({ p }: { p: LivePosition }) {
         </View>
         {badge ? <Text style={[styles.badge, { color: badge.color }]}>{badge.text}</Text> : null}
       </View>
+      <View style={styles.riderSummary}>
+        <View style={styles.summaryMetric}>
+          <Text style={styles.summaryValue}>{n(now?.distance_mi, ' mi')}</Text>
+          <Text style={styles.summaryLabel}>{now?.elapsed_min != null ? `Elapsed ${hm(now.elapsed_min)}` : 'Progress'}</Text>
+        </View>
+        <View style={styles.summaryMetric}>
+          <Text style={styles.summaryValue}>{n(now?.speed_mph, ' mph')}</Text>
+          <Text style={styles.summaryLabel}>{now?.avg_elapsed_speed_mph != null ? `Avg ${n(now.avg_elapsed_speed_mph, ' mph')}` : 'Live speed'}</Text>
+        </View>
+        <View style={styles.summaryMetric}>
+          <Text style={[styles.summaryValue, badge && { color: badge.color }]}>{fmtBank(t?.time_banked_plan_min)}</Text>
+          <Text style={styles.summaryLabel}>vs plan</Text>
+        </View>
+      </View>
+      <Pressable onPress={onToggle} style={styles.detailsButton}
+        accessibilityRole="button"
+        accessibilityLabel={`${expanded ? 'Hide' : 'View'} details for ${p.name || 'rider'}`}
+        accessibilityState={{ expanded }}>
+        <Text style={styles.detailsButtonText}>{expanded ? 'Hide details' : 'View details'}</Text>
+        <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={17} color={colors.navy} />
+      </Pressable>
+      {expanded ? <View style={styles.riderDetails}>
       {now ? (
         <>
         {t.on_route === false && t.off_course_since_mi != null ? (
@@ -345,6 +369,7 @@ function RiderCard({ p }: { p: LivePosition }) {
         </View>
       ) : null}
       {t?.detailed_after_ride ? <Text style={styles.afterRide}>Power, pedaling & coasting time available after the ride.</Text> : null}
+      </View> : null}
     </View>
   );
 }
@@ -420,6 +445,7 @@ export default function RideLiveScreen() {
   const [sharing, setSharing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedRiders, setExpandedRiders] = useState<Record<number, boolean>>({});
   const mapRef = useRef<MapView>(null);
   const framedOnce = useRef(false);
 
@@ -539,12 +565,16 @@ export default function RideLiveScreen() {
 
       <ScrollView style={styles.cards} contentContainerStyle={{ padding: 12, paddingBottom: 24 + insets.bottom }}>
         {isLoading ? <ActivityIndicator style={{ marginTop: 16 }} /> : null}
-        {(positions ?? []).map((p) => <RiderCard key={p.rider_id} p={p} />)}
+        {(positions ?? []).map((p) => <RiderCard key={p.rider_id} p={p}
+          expanded={expandedRiders[p.rider_id] === true}
+          onToggle={() => setExpandedRiders((current) => ({
+            ...current, [p.rider_id]: !current[p.rider_id],
+          }))} />)}
         {!isLoading && !(positions ?? []).length ? <Text style={styles.empty}>No live riders yet.</Text> : null}
+        {chartData ? <LiveCharts chart={chartData} positions={positions ?? []} elevationProfile={elevationProfile} /> : null}
         <PlanSelector plans={plans} applied={appliedPlanId} onSelect={setSelectedPlanId} />
         {planSnapshot ? <DayPlanSummary plan={planSnapshot} positions={positions ?? []} onOpen={() => router.push(`/ride/plan?id=${rideId}`)} /> : null}
-        {chartData ? <LiveCharts chart={chartData} positions={positions ?? []} elevationProfile={elevationProfile} /> : null}
-        {/* Shared upcoming-controls list — placed AFTER the weather charts. */}
+        {/* Ride-level plan details follow the elevation and weather profile. */}
         <UpcomingControls controls={upcoming} showOwnNote={String(appliedPlanId) === 'own'} />
       </ScrollView>
     </View>
@@ -594,6 +624,14 @@ const styles = StyleSheet.create({
   offCourseNotice: { color: '#991b1b', backgroundColor: '#fef2f2', borderRadius: 8,
     paddingHorizontal: 10, paddingVertical: 8, marginBottom: 10, fontWeight: '600' },
   badge: { fontSize: 12, fontWeight: '700' },
+  riderSummary: { flexDirection: 'row', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#eef2f7' },
+  summaryMetric: { flex: 1, minWidth: 0 },
+  summaryValue: { fontSize: 15, fontWeight: '800', color: colors.navy },
+  summaryLabel: { fontSize: 10, color: '#64748b', marginTop: 1 },
+  detailsButton: { alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 4,
+    minHeight: 36, paddingHorizontal: 10, marginTop: 2, borderWidth: 1, borderColor: colors.navy, borderRadius: 18 },
+  detailsButtonText: { color: colors.navy, fontSize: 12, fontWeight: '800' },
+  riderDetails: { marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e2e8f0' },
   metricRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 4 },
   nextControl: { marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#eef2f7' },
   nextControlName: { fontSize: 12, fontWeight: '700', color: '#1a365d' },

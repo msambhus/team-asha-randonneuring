@@ -7,7 +7,7 @@
  * useLivePositions.test.tsx — a mocked hook can't observe the real `select`.)
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 import RideLiveScreen from '../app/ride/[id]';
 import * as useLivePositionsHook from '../hooks/useLivePositions';
 import type { LivePosition, LiveChartData, LivePlanOption, LivePlanSnapshot, UpcomingControl } from '../lib/types';
@@ -117,6 +117,11 @@ describe('RideLiveScreen', () => {
     mockPositions([rider({})], CHART);
     render(<RideLiveScreen />);
 
+    // Web-parity disclosure: the summary is visible, detailed telemetry is not.
+    expect(screen.getByText('View details')).toBeTruthy();
+    expect(screen.queryByText('ETA (arrival)')).toBeNull();
+    fireEvent.press(screen.getByLabelText('View details for Asha Rider'));
+
     // Charts (WeatherChart titles carry a unit suffix, so match loosely).
     expect(screen.getByText(/Route ahead/)).toBeTruthy();
     expect(screen.getByText(/Elevation/)).toBeTruthy();
@@ -179,6 +184,7 @@ describe('RideLiveScreen', () => {
           required_mph: null, behind: true } } })],
       CHART);
     render(<RideLiveScreen />);
+    fireEvent.press(screen.getByLabelText('View details for Asha Rider'));
     expect(screen.getByText('req speed')).toBeTruthy();
     // required_mph null → em-dash rather than a negative/absent value.
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
@@ -188,7 +194,8 @@ describe('RideLiveScreen', () => {
     mockPositions([rider({})], null);
     render(<RideLiveScreen />);
     expect(screen.queryByText(/Route ahead/)).toBeNull();
-    // The rider card still renders (default rider has only a next-control block).
+    fireEvent.press(screen.getByLabelText('View details for Asha Rider'));
+    // The rider details still render (default rider has a next-control block).
     expect(screen.getByText('ETA (arrival)')).toBeTruthy();
   });
 
@@ -222,6 +229,7 @@ describe('RideLiveScreen', () => {
       arrival_time_min: 200, eta_iso: null, eta_label: '5:00 PM', required_mph: 14, behind: false };
     mockPositions([p], CHART);
     render(<RideLiveScreen />);
+    fireEvent.press(screen.getByLabelText('View details for Asha Rider'));
     expect(screen.getByText('To finish')).toBeTruthy();
     expect(screen.getByText('5:00 PM')).toBeTruthy();
     expect(screen.getByText('14 mph')).toBeTruthy();
@@ -235,7 +243,34 @@ describe('RideLiveScreen', () => {
       arrival_time_min: 200, eta_iso: null, eta_label: '5:00 PM', required_mph: null, behind: true };
     mockPositions([p], CHART);
     render(<RideLiveScreen />);
+    fireEvent.press(screen.getByLabelText('View details for Asha Rider'));
     expect(screen.getByText('To finish')).toBeTruthy();
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  it('keeps each rider collapsed independently and toggles explicit details', () => {
+    mockPositions([rider({}), rider({ rider_id: 8, name: 'Bob Rider' })], CHART);
+    render(<RideLiveScreen />);
+
+    expect(screen.getAllByText('View details')).toHaveLength(2);
+    expect(screen.queryByText('ETA (arrival)')).toBeNull();
+    fireEvent.press(screen.getByLabelText('View details for Bob Rider'));
+    expect(screen.getByLabelText('Hide details for Bob Rider')).toBeTruthy();
+    expect(screen.getByLabelText('View details for Asha Rider')).toBeTruthy();
+    expect(screen.getByText('ETA (arrival)')).toBeTruthy();
+  });
+
+  it('orders rider summaries, route profile, then the day plan', () => {
+    mockPositions([rider({})], CHART, { plan_snapshot: PLAN_SNAPSHOT });
+    const view = render(<RideLiveScreen />);
+    const sectionOrder: string[] = [];
+    const visit = (node: any) => {
+      if (!node || typeof node === 'string') return;
+      if (node.props?.testID) sectionOrder.push(node.props.testID);
+      (node.children ?? []).forEach(visit);
+    };
+    visit(view.toJSON());
+    expect(sectionOrder.indexOf('live-rider-7')).toBeLessThan(sectionOrder.indexOf('live-profile-section'));
+    expect(sectionOrder.indexOf('live-profile-section')).toBeLessThan(sectionOrder.indexOf('live-plan-section'));
   });
 });
