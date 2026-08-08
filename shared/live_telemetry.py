@@ -240,10 +240,12 @@ def project_history_to_route(history, track, with_start=False):
         return None, None, off_by
     start_idx, start_dist = cur, track[cur]['dist_m']
     best_dist, best_idx = track[cur]['dist_m'], cur
-    prev_t = history[seed_pos]['recorded_at']
-    for p in history[seed_pos + 1:]:
-        dt = (p['recorded_at'] - prev_t).total_seconds()
-        prev_t = p['recorded_at']
+    last_valid_t = history[seed_pos]['recorded_at']
+    for history_i, p in enumerate(history[seed_pos + 1:], start=seed_pos + 1):
+        # While off course, let the plausible forward window grow from the last
+        # VALID route fix. Measuring from each intervening off-course sample kept
+        # resetting it to the 3 km minimum and could prevent a legitimate rejoin.
+        dt = (p['recorded_at'] - last_valid_t).total_seconds()
         if dt <= 0:
             continue
         lat, lng = float(p['lat']), float(p['lng'])
@@ -263,11 +265,23 @@ def project_history_to_route(history, track, with_start=False):
             d = haversine_m(lat, lng, track[i]['lat'], track[i]['lng'])
             if d < best_d:
                 best_d, best_i = d, i
+        # The rider may have rejoined beyond the local window after a meaningful
+        # detour. Try the global route with recent course-over-ground, but accept
+        # it only inside the same physically plausible distance envelope.
+        if best_d > ON_ROUTE_MAX_M:
+            recent = history[max(seed_pos, history_i - 5):history_i + 1]
+            global_dist, global_i, global_off = project_to_route(
+                lat, lng, track, heading_deg=course_over_ground(recent))
+            if (global_i is not None and global_off is not None
+                    and global_off <= ON_ROUTE_MAX_M
+                    and global_dist >= lo and global_dist <= hi):
+                best_i, best_d = global_i, global_off
         off_by = best_d
         # Never advance the trajectory cursor for an off-course GPS fix. Keep
         # the last valid progress frozen until the rider rejoins the route.
         if best_d <= ON_ROUTE_MAX_M:
             cur = best_i
+            last_valid_t = p['recorded_at']
             if track[cur]['dist_m'] > best_dist:
                 best_dist, best_idx = track[cur]['dist_m'], cur
     if with_start:

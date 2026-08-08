@@ -130,6 +130,26 @@ def test_project_history_rejoins_from_frozen_valid_cursor():
     assert off <= tlm.ON_ROUTE_MAX_M
 
 
+def test_project_history_rejoin_window_grows_from_last_valid_fix():
+    track = [
+        {'lat': 37.0, 'lng': -122.0 + i * 0.01, 'dist_m': i * 889.0}
+        for i in range(12)
+    ]
+    hist = [
+        {'lat': 37.0, 'lng': -122.00, 'recorded_at': _t(0)},
+        {'lat': 37.0, 'lng': -121.99, 'recorded_at': _t(60)},
+        {'lat': 37.2, 'lng': -121.98, 'recorded_at': _t(120)},
+        {'lat': 37.2, 'lng': -121.94, 'recorded_at': _t(300)},
+        # Rejoins ~5.3 km after the last valid point. That is outside the fixed
+        # 3 km minimum but plausible over the five minutes since the valid fix.
+        {'lat': 37.0, 'lng': -121.93, 'recorded_at': _t(360)},
+    ]
+    dist_m, idx, off = tlm.project_history_to_route(hist, track)
+    assert dist_m == 7 * 889.0
+    assert idx == 7
+    assert off <= tlm.ON_ROUTE_MAX_M
+
+
 def test_project_history_empty_or_no_track():
     assert tlm.project_history_to_route([], _TRACK) == (None, None, None)
     assert tlm.project_history_to_route(
