@@ -1049,9 +1049,13 @@ def poll_garmin_livetrack():
     auth_error = _verify_cron_auth()
     if auth_error:
         return auth_error
+    poll_started = time.monotonic()
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     from models import (get_enabled_live_tracking, insert_live_position,
-                        purge_old_positions, get_last_position_recorded_at)
+                        purge_old_positions, get_last_position_recorded_at,
+                        get_live_telemetry_snapshot)
     from services.garmin_livetrack import parse_session, fetch_positions
 
     RETENTION_DAYS = 7
@@ -1066,7 +1070,7 @@ def poll_garmin_livetrack():
     polled = 0
     inserted = 0
     errors = []
-    touched_ride_ids = set()
+    poll_jobs = []
     for row in tracked:
         rider_id = row['rider_id']
         ride_id = row.get('active_ride_id')
@@ -1083,15 +1087,39 @@ def poll_garmin_livetrack():
             errors.append({'rider_id': rider_id, 'error': 'no active ride'})
             continue
 
-        touched_ride_ids.add(ride_id)
+        poll_jobs.append((row, token, session_id))
 
-        polled += 1
-        try:
-            points = fetch_positions(token, session_id)
-        except Exception as e:
-            current_app.logger.warning('poll-garmin-livetrack: rider %s fetch failed: %s', rider_id, e)
-            errors.append({'rider_id': rider_id, 'error': str(e)[:200]})
-            continue
+    # Garmin share-page requests are independent and mostly network wait. Run
+    # them concurrently so six riders do not turn into six serial 15-second
+    # waits. Database writes remain sequential below on the request thread.
+    fetched = []
+    fetch_started = time.monotonic()
+    if poll_jobs:
+        max_workers = min(6, len(poll_jobs))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(fetch_positions, token, session_id): row
+                for row, token, session_id in poll_jobs
+            }
+            polled = len(futures)
+            for future in as_completed(futures):
+                row = futures[future]
+                try:
+                    fetched.append((row, future.result()))
+                except Exception as e:
+                    rider_id = row['rider_id']
+                    current_app.logger.warning(
+                        'poll-garmin-livetrack: rider %s fetch failed: %s',
+                        rider_id, e)
+                    errors.append({'rider_id': rider_id, 'error': str(e)[:200]})
+    fetch_ms = round((time.monotonic() - fetch_started) * 1000)
+
+    changed_ride_ids = set()
+    successful_ride_ids = set()
+    for row, points in fetched:
+        rider_id = row['rider_id']
+        ride_id = row.get('active_ride_id')
+        successful_ride_ids.add(ride_id)
 
         # Append NEW trackpoints (since the last stored one FOR THIS RIDE),
         # downsampled to at most one per MIN_GAP_SECONDS, so we accumulate a real
@@ -1118,15 +1146,32 @@ def poll_garmin_livetrack():
                 kept_at = p['recorded_at']
                 rider_inserted += 1
         inserted += rider_inserted
+        if rider_inserted:
+            changed_ride_ids.add(ride_id)
 
     snapshots = 0
     snapshot_errors = []
     # Compute once per active ride after ALL riders' latest fixes are stored.
     # Viewer requests then become one JSONB read instead of replaying multi-day
     # history in every Vercel instance and on both web and native endpoints.
-    if touched_ride_ids:
+    snapshot_ride_ids = set(changed_ride_ids)
+    # If Garmin did not advance (for example while a rider is stopped), refresh
+    # time-derived fields periodically without replaying every ride every minute.
+    snapshot_refresh_after = datetime.now(timezone.utc) - timedelta(minutes=5)
+    for ride_id in successful_ride_ids - changed_ride_ids:
+        existing = get_live_telemetry_snapshot(ride_id)
+        computed_at = existing.get('computed_at') if existing else None
+        if (computed_at is None
+                or (computed_at.tzinfo is None
+                    and computed_at.replace(tzinfo=timezone.utc) < snapshot_refresh_after)
+                or (computed_at.tzinfo is not None
+                    and computed_at < snapshot_refresh_after)):
+            snapshot_ride_ids.add(ride_id)
+
+    if snapshot_ride_ids:
         from routes.live import build_live_telemetry_snapshot
-        for ride_id in sorted(touched_ride_ids):
+        snapshot_started = time.monotonic()
+        for ride_id in sorted(snapshot_ride_ids):
             try:
                 build_live_telemetry_snapshot(ride_id)
                 snapshots += 1
@@ -1134,6 +1179,9 @@ def poll_garmin_livetrack():
                 current_app.logger.exception(
                     'poll-garmin-livetrack: snapshot failed for ride %s', ride_id)
                 snapshot_errors.append({'ride_id': ride_id, 'error': str(e)[:200]})
+        snapshot_ms = round((time.monotonic() - snapshot_started) * 1000)
+    else:
+        snapshot_ms = 0
 
     try:
         purged = purge_old_positions(RETENTION_DAYS)
@@ -1142,8 +1190,10 @@ def poll_garmin_livetrack():
         purged = None
 
     current_app.logger.info(
-        'poll-garmin-livetrack: polled=%d inserted=%d snapshots=%d errors=%d purged=%s',
+        'poll-garmin-livetrack: polled=%d inserted=%d snapshots=%d errors=%d '
+        'purged=%s fetch_ms=%d snapshot_ms=%d total_ms=%d',
         polled, inserted, snapshots, len(errors) + len(snapshot_errors), purged,
+        fetch_ms, snapshot_ms, round((time.monotonic() - poll_started) * 1000),
     )
     return jsonify({
         'polled': polled,
@@ -1152,4 +1202,7 @@ def poll_garmin_livetrack():
         'snapshots': snapshots,
         'snapshot_errors': snapshot_errors,
         'purged': purged,
+        'fetch_ms': fetch_ms,
+        'snapshot_ms': snapshot_ms,
+        'total_ms': round((time.monotonic() - poll_started) * 1000),
     }), 200

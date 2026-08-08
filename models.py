@@ -5606,18 +5606,39 @@ def clear_ride_garmin(rider_id, ride_id):
         return False
 
 
-def get_enabled_live_tracking():
+def get_enabled_live_tracking(now_utc=None):
     """All riders opted in WITH a Garmin session pointed at a specific ride.
 
     The poll cron iterates these and tags ingested points with active_ride_id.
+    Stale per-ride assignments are deliberately excluded here so an old Garmin
+    share link cannot be fetched forever after its brevet has ended.
     """
-    return _execute("""
-        SELECT rider_id, garmin_session_url, garmin_session_token, active_ride_id
-        FROM rider_live_tracking
-        WHERE enabled = TRUE
-          AND garmin_session_token IS NOT NULL
-          AND active_ride_id IS NOT NULL
+    rows = _execute("""
+        SELECT rlt.rider_id, rlt.garmin_session_url,
+               rlt.garmin_session_token, rlt.active_ride_id,
+               ri.date,
+               COALESCE(ri.start_time, rp.start_time) AS start_time,
+               COALESCE(ri.time_limit_hours, rp.cutoff_hours) AS time_limit_hours,
+               COALESCE(ri.distance_km, rp.distance_km) AS distance_km,
+               c.region
+        FROM rider_live_tracking rlt
+        JOIN ride ri ON ri.id = rlt.active_ride_id
+        LEFT JOIN ride_plan rp ON rp.id = ri.ride_plan_id
+        LEFT JOIN club c ON c.id = ri.club_id
+        WHERE rlt.enabled = TRUE
+          AND rlt.garmin_session_token IS NOT NULL
+          AND rlt.active_ride_id IS NOT NULL
     """).fetchall()
+    now_utc = now_utc or _utc_now()
+    active = []
+    for row in rows:
+        event = dict(row)
+        if not event.get('time_limit_hours') and event.get('distance_km'):
+            event['time_limit_hours'] = get_default_time_limit(
+                event['distance_km'])
+        if _event_is_in_progress(event, now_utc):
+            active.append(row)
+    return active
 
 
 def _coerce_num(value, cast):

@@ -702,8 +702,60 @@ def test_cron_skips_points_that_fail_to_insert(client, app):
          patch('models.get_last_position_recorded_at', return_value=None), \
          patch('services.garmin_livetrack.fetch_positions', return_value=points), \
          patch('models.insert_live_position', return_value=False), \
+         patch('models.get_live_telemetry_snapshot', return_value={
+             'computed_at': _now()}), \
          patch('models.purge_old_positions', return_value=0):
         resp = client.post('/api/cron/poll-garmin-livetrack',
                            headers={'Authorization': 'Bearer testsecret'})
     assert resp.status_code == 200
     assert resp.get_json()['inserted'] == 0   # failed inserts are not counted
+
+
+def test_cron_fetches_multiple_garmin_sessions_concurrently(client, app):
+    app.config['CRON_SECRET'] = 'testsecret'
+    tracked = [
+        {'rider_id': rider_id,
+         'garmin_session_url': f'https://livetrack.garmin.com/session/s{rider_id}/token/t{rider_id}',
+         'garmin_session_token': f't{rider_id}', 'active_ride_id': 5}
+        for rider_id in (7, 8)
+    ]
+    from threading import Barrier
+    rendezvous = Barrier(2, timeout=2)
+
+    def fetch(_token, _session_id):
+        rendezvous.wait()
+        return []
+
+    with patch('models.get_enabled_live_tracking', return_value=tracked), \
+         patch('services.garmin_livetrack.fetch_positions', side_effect=fetch), \
+         patch('models.get_last_position_recorded_at', return_value=None), \
+         patch('models.get_live_telemetry_snapshot', return_value={
+             'computed_at': _now()}), \
+         patch('models.purge_old_positions', return_value=0):
+        resp = client.post('/api/cron/poll-garmin-livetrack',
+                           headers={'Authorization': 'Bearer testsecret'})
+
+    assert resp.status_code == 200
+    assert resp.get_json()['polled'] == 2
+
+
+def test_cron_does_not_rebuild_recent_snapshot_without_new_points(client, app):
+    app.config['CRON_SECRET'] = 'testsecret'
+    tracked = [{
+        'rider_id': 7,
+        'garmin_session_url': 'https://livetrack.garmin.com/session/s1/token/t1',
+        'garmin_session_token': 't1', 'active_ride_id': 5,
+    }]
+    with patch('models.get_enabled_live_tracking', return_value=tracked), \
+         patch('models.get_last_position_recorded_at', return_value=_now()), \
+         patch('services.garmin_livetrack.fetch_positions', return_value=[]), \
+         patch('models.get_live_telemetry_snapshot', return_value={
+             'computed_at': _now()}), \
+         patch('routes.live.build_live_telemetry_snapshot') as build_snapshot, \
+         patch('models.purge_old_positions', return_value=0):
+        resp = client.post('/api/cron/poll-garmin-livetrack',
+                           headers={'Authorization': 'Bearer testsecret'})
+
+    assert resp.status_code == 200
+    assert resp.get_json()['snapshots'] == 0
+    build_snapshot.assert_not_called()

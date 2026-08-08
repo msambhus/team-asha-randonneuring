@@ -89,3 +89,19 @@ def test_event_live_window_uses_exact_start_and_cutoff_time():
         event, datetime(2026, 8, 8, 4, 0, tzinfo=timezone.utc)) is True
     assert models._event_is_in_progress(
         event, datetime(2026, 8, 10, 5, 1, tzinfo=timezone.utc)) is False
+
+
+def test_garmin_poller_excludes_expired_and_future_ride_assignments():
+    rows = [
+        dict(_event(194, date(2026, 8, 6), 90), rider_id=7,
+             active_ride_id=194, garmin_session_token='live'),
+        dict(_event(100, date(2026, 8, 1), 13.5), rider_id=8,
+             active_ride_id=100, garmin_session_token='expired'),
+        dict(_event(200, date(2026, 8, 9), 13.5), rider_id=9,
+             active_ride_id=200, garmin_session_token='future'),
+    ]
+    now = datetime(2026, 8, 8, 12, 0, tzinfo=timezone.utc)
+    with patch('models._execute', return_value=_Rows(rows)):
+        tracked = models.get_enabled_live_tracking(now_utc=now)
+
+    assert [row['rider_id'] for row in tracked] == [7]
