@@ -315,7 +315,7 @@ def current_stop_duration_min(points, radius_m=CURRENT_STOP_RADIUS_M):
 
 
 def stationary_periods(points, min_duration_min=2.0,
-                       radius_m=CURRENT_STOP_RADIUS_M, merge_gap_min=5.0):
+                       radius_m=CURRENT_STOP_RADIUS_M, merge_gap_min=30.0):
     """Observed stationary periods, including completed intermediate stops.
 
     Consecutive fixes are one stop while they remain inside a GPS-drift radius
@@ -364,9 +364,9 @@ def stationary_periods(points, min_duration_min=2.0,
         duration = (period['end_at'] - period['start_at']).total_seconds() / 60.0
         if duration >= min_duration_min:
             out.append(dict(period, duration_min=round(duration, 1)))
-    # Garmin can briefly report a non-zero speed while a rider remains at one
-    # control. Merge adjacent fragments at the same place so a 25-minute control
-    # stop does not render as several misleading 2–6 minute stops.
+    # Garmin can briefly report a non-zero speed or omit fixes while a rider
+    # remains at one control. Merge nearby same-place fragments so an overnight
+    # sleep does not render as several misleading 2–15 minute stops.
     merged = []
     for period in out:
         previous = merged[-1] if merged else None

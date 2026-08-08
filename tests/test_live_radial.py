@@ -202,7 +202,7 @@ def test_route_day_stopped_excludes_prior_overnight_sleep_at_same_distance():
     history = []
     for mile, minute, speed in (
         (15, 0, 0.0), (15, 230, 0.0), (15, 240, 5.0),
-        (16, 250, 5.0), (20, 260, 0.0), (20, 290, 0.0),
+        (16, 250, 5.0), (20, 260, 5.0), (20, 290, 0.0),
     ):
         point = track[mile]
         history.append({'lat': point['lat'], 'lng': point['lng'], 'speed': speed,
