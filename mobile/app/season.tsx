@@ -2,13 +2,15 @@
  * mobile/app/season.tsx — the rider's "My Season" progress (read-only).
  * Season totals, SR badges, R-12 streak, and Eddington number.
  */
+import { useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useMySeason } from '../hooks/useMySeason';
 
 const SR_TIERS = [200, 300, 400, 600];
 
 export default function SeasonScreen() {
-  const { data, isLoading, isError, refetch, isRefetching } = useMySeason();
+  const [seasonId, setSeasonId] = useState<number | null>(null);
+  const { data, isLoading, isError, refetch, isRefetching } = useMySeason(seasonId);
 
   if (isLoading) return <View style={styles.center}><ActivityIndicator /></View>;
   if (isError || !data) {
@@ -36,7 +38,22 @@ export default function SeasonScreen() {
       contentContainerStyle={styles.list}
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
     >
-      <Text style={styles.heading}>{season.name ?? 'This season'}</Text>
+      <Text style={styles.heading}>My seasons</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.seasonPicker}
+        contentContainerStyle={styles.seasonPickerContent}>
+        {(data.seasons ?? []).map((item) => {
+          const selected = item.id === season.id;
+          return (
+            <Pressable key={item.id} onPress={() => setSeasonId(item.id)}
+              style={[styles.seasonChip, selected && styles.seasonChipSelected]}>
+              <Text style={[styles.seasonChipText, selected && styles.seasonChipTextSelected]}>
+                {item.name ?? 'Season'}{item.is_current ? ' · Current' : ''}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+      <Text style={styles.selectedSeason}>{season.name ?? 'This season'}</Text>
 
       {/* Season totals */}
       <View style={styles.card}>
@@ -135,6 +152,14 @@ const styles = StyleSheet.create({
   list: { padding: 16 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   heading: { fontSize: 22, fontWeight: '800', marginBottom: 12 },
+  selectedSeason: { fontSize: 18, fontWeight: '800', marginBottom: 10 },
+  seasonPicker: { marginBottom: 12 },
+  seasonPickerContent: { gap: 8, paddingRight: 12 },
+  seasonChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18, borderWidth: 1,
+    borderColor: '#cbd5e1', backgroundColor: '#fff' },
+  seasonChipSelected: { backgroundColor: '#1a365d', borderColor: '#1a365d' },
+  seasonChipText: { color: '#1a365d', fontSize: 12, fontWeight: '700' },
+  seasonChipTextSelected: { color: '#fff' },
   card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb' },
   cardTitle: { fontSize: 15, fontWeight: '700', marginBottom: 8 },
   statRow: { flexDirection: 'row', justifyContent: 'space-between' },

@@ -47,6 +47,12 @@ export default function ProfileScreen() {
           <Stat value={String(career.rides)} label="Finished rides" />
           <Stat value={String(career.super_randonneur)} label="SR awards" />
         </View>
+        {current?.eddington ? (
+          <View style={styles.eddingtonRow}>
+            <Text style={styles.eddingtonValue}>E{current.eddington.value} {current.eddington.badge.emoji ?? ''}</Text>
+            <Text style={styles.muted}>Eddington number · {current.eddington.badge.label}</Text>
+          </View>
+        ) : null}
       </View>
 
       {current ? (
@@ -58,7 +64,7 @@ export default function ProfileScreen() {
             <Stat value={`${current.sr.distances_done.length}/4`} label="SR distances" />
           </View>
           <Link href="/season" asChild>
-            <Pressable style={styles.details}><Text style={styles.link}>View full season →</Text></Pressable>
+            <Pressable style={styles.details}><Text style={styles.link}>View current and past seasons →</Text></Pressable>
           </Link>
         </View>
       ) : null}
@@ -88,6 +94,8 @@ const styles = StyleSheet.create({
   statValue: { color: '#1a365d', fontSize: 20, fontWeight: '800' },
   statLabel: { color: '#6b7280', fontSize: 11, textAlign: 'center', marginTop: 3 },
   details: { alignSelf: 'flex-start', marginTop: 16 },
+  eddingtonRow: { marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#e5e7eb' },
+  eddingtonValue: { color: '#1a365d', fontSize: 20, fontWeight: '800', marginBottom: 2 },
   muted: { color: '#6b7280', fontSize: 13 },
   link: { color: '#2563eb', fontWeight: '700' },
   note: { color: '#6b7280', fontSize: 12, lineHeight: 18, paddingHorizontal: 4 },

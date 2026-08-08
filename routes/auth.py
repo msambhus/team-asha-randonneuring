@@ -283,6 +283,15 @@ def my_profile():
 
     # Strava integration
     strava_connection = models.get_strava_connection(rider_id)
+    eddington_data = None
+    if strava_connection and strava_connection.get('eddington_number_miles'):
+        from services.eddington import get_eddington_badge_level
+        eddington_miles = int(strava_connection.get('eddington_number_miles') or 0)
+        eddington_data = {
+            'miles': eddington_miles,
+            'km': int(strava_connection.get('eddington_number_km') or 0),
+            'badge': get_eddington_badge_level(eddington_miles),
+        }
     # Feature stays dormant until its dedicated encryption key is configured.
     # This also makes the code-safe deployment precede migration 057/key rollout
     # without My Profile querying a table that may not exist yet.
@@ -328,6 +337,7 @@ def my_profile():
                            career_rides=career['total_rides'],
                            career_kms=career['total_kms'],
                            total_srs=total_srs,
+                           eddington_data=eddington_data,
                            strava_connection=strava_connection,
                            garmin_connection=garmin_connection,
                            garmin_snapshot=garmin_snapshot,

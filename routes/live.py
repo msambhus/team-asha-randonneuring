@@ -2306,7 +2306,7 @@ def api_my_season():
     if not g.rider_id:
         return jsonify({'error': 'Complete your profile to view your season'}), 403
 
-    from models import (get_current_season, get_rider_season_stats,
+    from models import (get_all_seasons, get_current_season, get_rider_season_stats,
                         get_rider_season_elevation_ft, get_rider_career_stats,
                         detect_sr_for_rider_season, get_sr_distances_done,
                         get_sr_counts_by_tier, get_rider_finished_rides_for_season,
@@ -2314,7 +2314,15 @@ def api_my_season():
     import html as _html
 
     rider_id = g.rider_id
-    season = get_current_season()
+    seasons = list(get_all_seasons() or [])
+    requested_season_id = request.args.get('season_id', type=int)
+    season = None
+    if requested_season_id is not None:
+        season = next((s for s in seasons if s.get('id') == requested_season_id), None)
+        if season is None:
+            return jsonify({'error': 'Season not found'}), 404
+    if season is None:
+        season = get_current_season()
     if not season:
         return jsonify({'error': 'No current season set'}), 404
 
@@ -2323,9 +2331,10 @@ def api_my_season():
     # Season totals (current season uses date-filtered SR, mirroring the web profile).
     stats = get_rider_season_stats(rider_id, season_id)
     elevation_ft = get_rider_season_elevation_ft(rider_id, season_id)
-    sr_count = detect_sr_for_rider_season(rider_id, season_id, date_filter=True)
-    distances_done = get_sr_distances_done(rider_id, season_id, date_filter=True)
-    sr_counts = get_sr_counts_by_tier(rider_id, season_id, date_filter=True)
+    date_filter = bool(season.get('is_current'))
+    sr_count = detect_sr_for_rider_season(rider_id, season_id, date_filter=date_filter)
+    distances_done = get_sr_distances_done(rider_id, season_id, date_filter=date_filter)
+    sr_counts = get_sr_counts_by_tier(rider_id, season_id, date_filter=date_filter)
 
     # Which rides the rider finished this season (newest first). Names come from
     # web scraping, so unescape HTML entities (mirrors the clean_name filter).
@@ -2352,7 +2361,14 @@ def api_my_season():
         eddington = {'value': value, 'badge': get_eddington_badge_level(value)}
 
     return jsonify({
-        'season': {'name': season.get('name')},
+        'season': {
+            'id': season.get('id'), 'name': season.get('name'),
+            'is_current': bool(season.get('is_current')),
+        },
+        'seasons': [{
+            'id': s.get('id'), 'name': s.get('name'),
+            'is_current': bool(s.get('is_current')),
+        } for s in seasons],
         'stats': {
             'distance_km': round(stats['kms'] or 0),
             'rides': stats['rides'] or 0,

@@ -15,7 +15,8 @@ jest.mock('../contexts/SessionContext', () => ({
 }));
 
 const SEASON: MySeasonResponse = {
-  season: { name: '2025-2026' },
+  season: { id: 2, name: '2025-2026', is_current: true },
+  seasons: [{ id: 2, name: '2025-2026', is_current: true }],
   stats: { distance_km: 1200, rides: 5, elevation_ft: 42000 },
   sr: { has_sr: false, distances_done: [200, 300], counts: { '200': 2, '300': 1, '400': 0, '600': 0 } },
   rides_done: [
@@ -45,5 +46,12 @@ describe('useMySeason', () => {
     expect(result.current.data).toEqual(SEASON);
     expect(result.current.data?.sr.distances_done).toEqual([200, 300]);
     expect(result.current.data?.eddington?.value).toBe(62);
+  });
+
+  it('requests a selected historical season', async () => {
+    const spy = jest.spyOn(api, 'apiFetch').mockResolvedValue(SEASON as never);
+    const { result } = renderHook(() => useMySeason(1), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(spy).toHaveBeenCalledWith('/api/me/season?season_id=1', expect.any(Function));
   });
 });
