@@ -315,7 +315,7 @@ def current_stop_duration_min(points, radius_m=CURRENT_STOP_RADIUS_M):
 
 
 def stationary_periods(points, min_duration_min=2.0,
-                       radius_m=CURRENT_STOP_RADIUS_M):
+                       radius_m=CURRENT_STOP_RADIUS_M, merge_gap_min=5.0):
     """Observed stationary periods, including completed intermediate stops.
 
     Consecutive fixes are one stop while they remain inside a GPS-drift radius
@@ -340,8 +340,12 @@ def stationary_periods(points, min_duration_min=2.0,
                     speeds.append(float(point['speed']))
             except (TypeError, ValueError):
                 pass
+        # Across a telemetry gap, remaining at the same coordinates is much
+        # stronger evidence than a stale instantaneous speed value. This also
+        # matches ``moving_stopped`` and preserves long sleep/control stops.
         stationary = (distance <= radius_m
-                      and (not speeds or max(speeds) < STOPPED_SPEED_MS))
+                      and (seconds > MAX_GAP_SECONDS
+                           or not speeds or max(speeds) < STOPPED_SPEED_MS))
         if stationary:
             if active is None:
                 active = {'start_at': first['recorded_at'],
@@ -360,7 +364,25 @@ def stationary_periods(points, min_duration_min=2.0,
         duration = (period['end_at'] - period['start_at']).total_seconds() / 60.0
         if duration >= min_duration_min:
             out.append(dict(period, duration_min=round(duration, 1)))
-    return out
+    # Garmin can briefly report a non-zero speed while a rider remains at one
+    # control. Merge adjacent fragments at the same place so a 25-minute control
+    # stop does not render as several misleading 2–6 minute stops.
+    merged = []
+    for period in out:
+        previous = merged[-1] if merged else None
+        gap_min = ((period['start_at'] - previous['end_at']).total_seconds() / 60.0
+                   if previous else None)
+        same_place = (previous is not None and haversine_m(
+            previous['lat'], previous['lng'], period['lat'], period['lng'])
+            <= radius_m * 2)
+        if previous and gap_min is not None and gap_min <= merge_gap_min and same_place:
+            previous['end_at'] = period['end_at']
+            previous['lat'], previous['lng'] = period['lat'], period['lng']
+            previous['duration_min'] = round(
+                (previous['end_at'] - previous['start_at']).total_seconds() / 60.0, 1)
+        else:
+            merged.append(dict(period))
+    return merged
 
 
 def remaining_distance_m(total_dist_m, current_dist_m):

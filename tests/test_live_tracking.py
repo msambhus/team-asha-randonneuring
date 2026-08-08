@@ -400,6 +400,7 @@ def test_map_page_renders_for_profile_rider(client):
     ]}
     with patch('routes.live.get_ride_by_id', return_value=dict(_RIDE)), \
          patch('routes.live.get_live_tracking', return_value=None), \
+         patch('routes.live._radial_overview_track', return_value=[]), \
          patch('routes.live._build_all_day_weather', return_value=all_day_weather), \
          patch('routes.live._build_plan_snapshot', return_value=plan):
         resp = client.get('/ride/5/live')
@@ -481,11 +482,15 @@ def test_map_page_draws_rwgps_route(client):
         {'x': -122.26, 'y': 37.81, 'd': 100},
         {'x': -122.25, 'y': 37.82, 'd': 200},
     ]}
+    overview = [
+        {'lng': point['x'], 'lat': point['y'], 'dist_m': point['d'], 'e_m': None}
+        for point in route_data['track_points']
+    ]
     with client.session_transaction() as s:
         s['user_id'] = 1
         s['rider_id'] = 1
     with patch('routes.live.get_ride_by_id', return_value=ride), \
-         patch('routes.live.fetch_route', return_value=route_data), \
+         patch('routes.live._radial_overview_track', return_value=overview), \
          patch('routes.live.get_live_tracking', return_value=None):
         resp = client.get('/ride/5/live')
     assert resp.status_code == 200
@@ -501,7 +506,7 @@ def test_map_page_route_fetch_failsoft(client):
         s['user_id'] = 1
         s['rider_id'] = 1
     with patch('routes.live.get_ride_by_id', return_value=ride), \
-         patch('routes.live.fetch_route', side_effect=Exception('RWGPS down')), \
+         patch('routes.live._radial_overview_track', return_value=[]), \
          patch('routes.live.get_live_tracking', return_value=None):
         resp = client.get('/ride/5/live')
     # Fail-soft: page still renders, just without the route line.
