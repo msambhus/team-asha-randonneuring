@@ -53,6 +53,37 @@ export interface RiderProfileResponse {
   };
 }
 
+export interface PublicRiderSummary {
+  id: number;
+  rusa_id: number | null;
+  first_name: string | null;
+  last_name: string | null;
+  display_name: string;
+  total_rides: number;
+  total_km: number;
+  season_rides: number;
+  season_km: number;
+  eddington_miles: number | null;
+  sr_progress: number[];
+}
+
+export interface PublicRidersResponse {
+  riders: PublicRiderSummary[];
+  season: { id: number; name: string } | null;
+  seasons: { id: number; name: string; is_current: boolean }[];
+}
+
+export interface PublicRiderResponse {
+  rider: RiderProfileResponse['rider'];
+  career: RiderProfileResponse['career'] & { r12: number };
+  seasons: {
+    id: number; name: string; is_current: boolean; rides: number;
+    distance_km: number; sr_count: number;
+    history: { id: number; name: string; date: string | null; distance_km: number | null;
+      status: string | null; ride_type: string | null; finish_time: string | null }[];
+  }[];
+}
+
 export interface EddingtonBadge {
   level: string;
   color?: string;

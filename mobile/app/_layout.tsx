@@ -80,6 +80,8 @@ export default function RootLayout() {
                 <Stack.Screen name="calendar" options={{ title: 'Brevet Calendar' }} />
                 <Stack.Screen name="season" options={{ title: 'My Season' }} />
                 <Stack.Screen name="profile" options={{ title: 'Rider Profile' }} />
+                <Stack.Screen name="riders/index" options={{ title: 'All Riders' }} />
+                <Stack.Screen name="riders/[rusaId]" options={{ title: 'Rider Profile' }} />
                 <Stack.Screen name="settings" options={{ title: 'Settings' }} />
                 <Stack.Screen name="ride/[id]" options={{ title: 'Live Map' }} />
                 <Stack.Screen name="ride/weather" options={{ title: 'Ride Weather' }} />

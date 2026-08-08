@@ -637,6 +637,47 @@ def test_mobile_profile_reuses_career_models(client, app):
     }
 
 
+def test_public_rider_directory_uses_only_public_career_models(client, app):
+    seasons = [{'id': 2, 'name': '2025-2026', 'is_current': True}]
+    rows = [{'id': 7, 'rusa_id': 14680, 'first_name': 'Mihir',
+             'last_name': 'Sambhus', 'total_rides': 42, 'total_kms': 12345,
+             'season_rides': 5, 'season_kms': 1500,
+             'eddington_number_miles': 61,
+             'sr_200': 1, 'sr_300': 1, 'sr_400': 0, 'sr_600': 0}]
+    with patch('models.get_all_seasons', return_value=seasons), \
+         patch('models.get_current_season', return_value=seasons[0]), \
+         patch('models.get_all_riders_with_career_stats', return_value=rows):
+        resp = client.get('/api/riders', headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 200
+    rider = resp.get_json()['riders'][0]
+    assert rider['display_name'] == 'Mihir Sambhus'
+    assert rider['eddington_miles'] == 61
+    assert rider['sr_progress'] == [200, 300]
+    assert 'strava' not in rider and 'email' not in rider
+
+
+def test_public_rider_profile_returns_brevet_history_not_training(client, app):
+    rider = {'id': 7, 'rusa_id': 14680, 'first_name': 'Mihir', 'last_name': 'Sambhus'}
+    season = {'id': 2, 'name': '2025-2026', 'is_current': True}
+    history = [{'id': 5, 'name': 'Coast 200K', 'date': '2026-07-04',
+                'distance_km': 200, 'status': 'FINISHED', 'ride_type': 'Brevet',
+                'finish_time': None}]
+    with patch('models.get_rider_by_rusa', return_value=rider), \
+         patch('models.get_all_seasons', return_value=[season]), \
+         patch('models.get_current_season', return_value=season), \
+         patch('models.get_rider_participation', return_value=history), \
+         patch('models.get_rider_season_stats', return_value={'rides': 1, 'kms': 200}), \
+         patch('models.detect_sr_for_rider_season', return_value=0), \
+         patch('models.get_rider_total_srs', return_value=2), \
+         patch('models.detect_r12_awards', return_value=[]):
+        resp = client.get('/api/riders/14680', headers=_bearer(app, rider_id=9))
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['career']['distance_km'] == 200
+    assert data['seasons'][0]['history'][0]['name'] == 'Coast 200K'
+    assert 'training' not in data and 'strava' not in data
+
+
 def test_ride_route_endpoint_token_authed(client, app):
     poly = [[-122.4, 37.8], [-122.41, 37.81], [-122.42, 37.82]]
     with patch('routes.live._ride_route_polyline', return_value=poly):
