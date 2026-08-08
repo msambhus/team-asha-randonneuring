@@ -7,7 +7,7 @@
  * beacon. The account-level consent toggle lives on the Settings screen; this
  * screen reads it (useSharing) and only lets you Share while it's on.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import MapView, { Marker, Polyline, Region } from 'react-native-maps';
@@ -17,9 +17,10 @@ import { useRideRoute } from '../../hooks/useRideRoute';
 import { useSharing } from '../../hooks/useSharing';
 import { startSharing, stopSharing, isSharing } from '../../location/backgroundLocation';
 import { WeatherChart } from '../../components/WeatherChart';
+import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 import type {
   LivePosition, LiveChartData, LivePlanOption, LivePlanId, LivePlanSnapshot,
-  UpcomingControl,
+  LiveElevationProfile, UpcomingControl,
 } from '../../lib/types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../lib/theme';
@@ -63,10 +64,57 @@ function nearestIndex(labels: number[], mi: number | null | undefined): number {
 
 const RED = '#dc2626', GREEN = '#16a34a';
 
+function ElevationProfile({ profile, positions }: {
+  profile: LiveElevationProfile; positions: LivePosition[];
+}) {
+  if (!profile.available || !profile.width || !profile.height || !profile.plot ||
+      !profile.total_mi || !profile.segments?.length) return null;
+  const points = profile.points ?? [];
+  const markerAt = (mile: number) => {
+    const x = profile.plot!.x + Math.max(0, Math.min(1, mile / profile.total_mi!)) * profile.plot!.w;
+    let nearest = points[0];
+    for (const point of points) if (!nearest || Math.abs(point[0] - x) < Math.abs(nearest[0] - x)) nearest = point;
+    return { x, y: nearest?.[1] ?? profile.plot!.y };
+  };
+  const markers = positions.filter((p) => p.telemetry?.now?.route_position_mi != null);
+  return (
+    <View style={styles.elevationCard}>
+      <Text style={styles.chartCardTitle}>Elevation · gradient</Text>
+      <Svg width="100%" height={170} viewBox={`0 0 ${profile.width} ${profile.height}`} preserveAspectRatio="none">
+        {profile.segments.map((s, i) => <Path key={`a${i}`} d={s.area_d} fill={s.color} opacity={0.18} />)}
+        {profile.segments.map((s, i) => <Path key={`l${i}`} d={s.d} stroke={s.color} fill="none" strokeWidth={2} />)}
+        {(profile.y_ticks ?? []).map((tick, i) => <Line key={`yg${i}`} x1={profile.plot!.x} y1={tick.y}
+          x2={profile.plot!.x + profile.plot!.w} y2={tick.y} stroke="#dbe3ee" strokeWidth={1} />)}
+        {(profile.x_ticks ?? []).map((tick, i) => <SvgText key={`xt${i}`} x={tick.x} y={profile.height! - 5}
+          fontSize={10} textAnchor="middle" fill="#64748b">{tick.label}</SvgText>)}
+        {markers.map((p, i) => {
+          const at = markerAt(p.telemetry!.now.route_position_mi!);
+          const color = p.plan_color ?? p.color;
+          return <React.Fragment key={p.rider_id}>
+            <Line x1={at.x} y1={profile.plot!.y} x2={at.x} y2={profile.plot!.y + profile.plot!.h}
+              stroke={color} strokeWidth={2} opacity={0.55} />
+            <Circle cx={at.x} cy={at.y} r={6} fill={color} stroke="#fff" strokeWidth={2} />
+            <SvgText x={at.x + 8} y={at.y - 7 - (i % 2) * 10} fontSize={11} fontWeight="700" fill="#1a365d">
+              {initials(p.name)}
+            </SvgText>
+          </React.Fragment>;
+        })}
+      </Svg>
+      <View style={styles.gradientLegend}>
+        {(profile.legend ?? []).map((item) => <View key={item.label} style={styles.gradientLegendItem}>
+          <View style={[styles.gradientSwatch, { backgroundColor: item.color }]} /><Text style={styles.gradientText}>{item.label}</Text>
+        </View>)}
+      </View>
+    </View>
+  );
+}
+
 /** Route-ahead charts (elevation / headwind / temperature) with a vertical marker
  *  at each on-route rider's current position — mirrors the web live page and reuses
  *  the weather page's WeatherChart (react-native-svg, no new native dependency). */
-function LiveCharts({ chart, positions }: { chart: LiveChartData; positions: LivePosition[] }) {
+function LiveCharts({ chart, positions, elevationProfile }: {
+  chart: LiveChartData; positions: LivePosition[]; elevationProfile?: LiveElevationProfile | null;
+}) {
   const labels = chart.labels ?? [];
   if (labels.length < 2) return null;
   // One labeled dot per on-route rider at their current mileage, colored by plan
@@ -78,7 +126,7 @@ function LiveCharts({ chart, positions }: { chart: LiveChartData; positions: Liv
   return (
     <View>
       <Text style={styles.chartsTitle}>Route ahead</Text>
-      {chart.elevation_ft ? (
+      {elevationProfile?.available ? <ElevationProfile profile={elevationProfile} positions={positions} /> : chart.elevation_ft ? (
         <WeatherChart title="Elevation" unit="ft" labels={labels} markers={markers}
           series={[{ data: chart.elevation_ft, color: '#15803d', fill: true }]} />
       ) : null}
@@ -87,8 +135,10 @@ function LiveCharts({ chart, positions }: { chart: LiveChartData; positions: Liv
           series={[
             { data: chart.headwind_mph.map((v) => (v > 0 ? v : 0)), color: RED, fill: true },
             { data: chart.headwind_mph.map((v) => (v < 0 ? v : 0)), color: GREEN, fill: true },
+            ...(chart.wind_gust_mph ? [{ data: chart.wind_gust_mph, color: '#f97316', fill: false }] : []),
           ]}
-          legend={[{ label: 'headwind', color: RED }, { label: 'tailwind', color: GREEN }]} />
+          legend={[{ label: 'headwind', color: RED }, { label: 'tailwind', color: GREEN },
+            ...(chart.wind_gust_mph ? [{ label: 'gusts', color: '#f97316' }] : [])]} />
       ) : null}
       {chart.temperature_f ? (
         // Temperature red (#ef4444) to match the weather page's live-chart color scheme.
@@ -194,6 +244,12 @@ function RiderCard({ p }: { p: LivePosition }) {
         {badge ? <Text style={[styles.badge, { color: badge.color }]}>{badge.text}</Text> : null}
       </View>
       {now ? (
+        <>
+        {t.on_route === false && t.off_course_since_mi != null ? (
+          <Text style={styles.offCourseNotice}>
+            Off course since {n(t.off_course_since_mi, ' mi')} — totals are held at the last route point.
+          </Text>
+        ) : null}
         <View style={styles.metricRow}>
           {now.distance_mi != null ? <Metric label="done" value={n(now.distance_mi, ' mi')} /> : null}
           <Metric label="speed" value={n(now.speed_mph, ' mph')} />
@@ -212,6 +268,7 @@ function RiderCard({ p }: { p: LivePosition }) {
           {now.grade_pct != null ? <Metric label="grade" value={n(now.grade_pct, '%')} /> : null}
           {now.headwind_done_label ? <Metric label="wind" value={now.headwind_done_label} /> : null}
         </View>
+        </>
       ) : null}
       {now?.stop_events?.length ? (
         <View style={styles.stopHistory}>
@@ -328,6 +385,7 @@ export default function RideLiveScreen() {
   const { data, isLoading } = useLivePositions(rideId, selectedPlanId);
   const positions = data?.positions ?? null;
   const chartData = data?.chart_data ?? null;
+  const elevationProfile = data?.elevation_profile ?? null;
   const plans = data?.plans ?? [];
   const appliedPlanId = data?.selected_plan_id ?? null;
   const upcoming = data?.upcoming_controls ?? [];
@@ -457,11 +515,11 @@ export default function RideLiveScreen() {
 
       <ScrollView style={styles.cards} contentContainerStyle={{ padding: 12, paddingBottom: 24 + insets.bottom }}>
         {isLoading ? <ActivityIndicator style={{ marginTop: 16 }} /> : null}
-        <PlanSelector plans={plans} applied={appliedPlanId} onSelect={setSelectedPlanId} />
-        {planSnapshot ? <DayPlanSummary plan={planSnapshot} onOpen={() => router.push(`/ride/plan?id=${rideId}`)} /> : null}
         {(positions ?? []).map((p) => <RiderCard key={p.rider_id} p={p} />)}
         {!isLoading && !(positions ?? []).length ? <Text style={styles.empty}>No live riders yet.</Text> : null}
-        {chartData ? <LiveCharts chart={chartData} positions={positions ?? []} /> : null}
+        <PlanSelector plans={plans} applied={appliedPlanId} onSelect={setSelectedPlanId} />
+        {planSnapshot ? <DayPlanSummary plan={planSnapshot} onOpen={() => router.push(`/ride/plan?id=${rideId}`)} /> : null}
+        {chartData ? <LiveCharts chart={chartData} positions={positions ?? []} elevationProfile={elevationProfile} /> : null}
         {/* Shared upcoming-controls list — placed AFTER the weather charts. */}
         <UpcomingControls controls={upcoming} showOwnNote={String(appliedPlanId) === 'own'} />
       </ScrollView>
@@ -509,6 +567,8 @@ const styles = StyleSheet.create({
   dotText: { color: '#fff', fontWeight: '700', fontSize: 11 },
   cardName: { fontSize: 15, fontWeight: '700' },
   cardMeta: { color: '#6b7280', fontSize: 12 },
+  offCourseNotice: { color: '#991b1b', backgroundColor: '#fef2f2', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 8, marginBottom: 10, fontWeight: '600' },
   badge: { fontSize: 12, fontWeight: '700' },
   metricRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 4 },
   nextControl: { marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#eef2f7' },
@@ -540,6 +600,13 @@ const styles = StyleSheet.create({
   afterRide: { fontStyle: 'italic', color: '#6b7280', fontSize: 11, marginTop: 8 },
   empty: { color: '#6b7280', textAlign: 'center', marginTop: 16 },
   chartsTitle: { fontSize: 15, fontWeight: '800', color: '#1a365d', marginTop: 6, marginBottom: 8 },
+  elevationCard: { backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: '#e5e7eb' },
+  chartCardTitle: { fontSize: 13, fontWeight: '700', color: '#1a365d', marginBottom: 6 },
+  gradientLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 5 },
+  gradientLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  gradientSwatch: { width: 10, height: 10, borderRadius: 2 },
+  gradientText: { color: '#64748b', fontSize: 9 },
   planWrap: { marginBottom: 10 },
   planTitle: { fontSize: 11, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', marginBottom: 6 },
   planChips: { gap: 8, paddingRight: 8 },

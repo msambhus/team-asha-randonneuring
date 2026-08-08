@@ -318,6 +318,7 @@ export interface LivePositionTelemetryNow {
   cadence: number | null;
   // on-route only
   distance_mi?: number | null;
+  route_position_mi?: number | null;
   grade_pct?: number | null;          // current route grade at the rider's position
   ascent_done_ft?: number | null;
   headwind_done_mph?: number | null;
@@ -350,6 +351,8 @@ export interface LivePositionRemaining {
 
 export interface LivePositionTelemetry {
   on_route: boolean | null;
+  off_course_since_mi?: number | null;
+  off_course_distance_m?: number | null;
   now: LivePositionTelemetryNow;
   remaining: LivePositionRemaining | null;
   next_control?: LivePositionNextControl | null;
@@ -369,7 +372,21 @@ export interface LiveChartData {
   labels: number[];                   // distance (mi)
   elevation_ft: number[] | null;
   headwind_mph: number[] | null;      // + head / − tail
+  wind_gust_mph?: number[] | null;
   temperature_f: number[] | null;
+}
+
+export interface LiveElevationProfile {
+  available: boolean;
+  width?: number;
+  height?: number;
+  plot?: { x: number; y: number; w: number; h: number };
+  total_mi?: number;
+  segments?: { d: string; area_d: string; color: string; grade: number | null }[];
+  points?: [number, number][];
+  x_ticks?: { x: number; label: string }[];
+  y_ticks?: { y: number; label: string }[];
+  legend?: { color: string; label: string }[];
 }
 
 /** GET /api/ride/<id>/route — RWGPS route polyline as [[lng,lat],...]. */
@@ -460,6 +477,7 @@ export interface PositionsResponse {
   stale_after_minutes: number;
   server_time: string;
   chart_data?: LiveChartData | null;   // route-ahead charts; null when no route
+  elevation_profile?: LiveElevationProfile | null;
   plans?: LivePlanOption[];            // plan selector options (item 1)
   selected_plan_id?: LivePlanId | null; // the APPLIED plan (rejected id echoes 'base')
   upcoming_controls?: UpcomingControl[]; // shared ride-level list (item 2)
@@ -471,6 +489,7 @@ export interface PositionsResponse {
 export interface LivePositionsResult {
   positions: LivePosition[];
   chart_data: LiveChartData | null;
+  elevation_profile: LiveElevationProfile | null;
   plans: LivePlanOption[];
   selected_plan_id: LivePlanId | null;
   upcoming_controls: UpcomingControl[];

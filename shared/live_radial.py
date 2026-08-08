@@ -153,6 +153,7 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
     # rider's START position on the route (the seed), matched consistently.
     dist_m, idx, off_by_m, start_dist_m, start_idx = tlm.project_history_to_route(
         ride_history, ctx['track'], with_start=True)
+    has_valid_route_history = dist_m is not None
     if dist_m is None:
         if not stateless_fallback:
             return base
@@ -161,7 +162,10 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
         start_dist_m, start_idx = None, 0
     on_route = (dist_m is not None and off_by_m is not None
                 and off_by_m <= tlm.ON_ROUTE_MAX_M)
-    if not on_route:
+    # An off-course latest fix can still have trustworthy earlier route history.
+    # Compose cumulative metrics from that frozen last-valid point; only suppress
+    # them when the history has never intersected the route.
+    if dist_m is None or (not on_route and not has_valid_route_history):
         base['on_route'] = False
         return base
 
@@ -330,7 +334,10 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
             remaining_block['headwind_ahead_label'] = winds.get('headwind_ahead_label')
 
     return {
-        'on_route': True,
+        'on_route': on_route,
+        'off_course_since_mi': (round(route_position_mi, 1) if not on_route else None),
+        'off_course_distance_m': (round(off_by_m) if not on_route and off_by_m is not None
+                                  else None),
         'now': now_block,
         'next_control': next_control_block,
         'finish': finish_block,
@@ -477,6 +484,8 @@ def _base_roster_row(row, ride_id, now, stale_after_minutes, dist_unit):
         'minutes_ago': minutes_ago,
         'stale': (minutes_ago is not None and minutes_ago > stale_after_minutes),
         'on_route': None,
+        'off_course_since_mi': None,
+        'off_course_distance_m': None,
         'speed_mph': None,
         'activity': None,
         'current_stop_min': None,
@@ -522,6 +531,8 @@ def _privacy_row(row, telemetry, ride_id, now, stale_after_minutes, dist_unit):
     dist_mi = nowb.get('distance_mi')
     entry.update({
         'on_route': telemetry.get('on_route'),
+        'off_course_since_mi': telemetry.get('off_course_since_mi'),
+        'off_course_distance_m': telemetry.get('off_course_distance_m'),
         'speed_mph': nowb.get('speed_mph'),
         # 'paused' | 'walking' | 'cycling' | 'driving' | None — movement classified
         # from ground speed, so the live view can flag a rider who is stopped (but

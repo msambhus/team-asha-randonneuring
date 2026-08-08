@@ -213,6 +213,7 @@ def project_history_to_route(history, track, with_start=False):
     # the leg that agrees with the rider's initial heading. Fall back to the first
     # fix's best match when nothing is cleanly on-route yet.
     cur = off_by = seed_pos = None
+    clean_seed = False
     for i, p in enumerate(history):
         try:
             lat, lng = float(p['lat']), float(p['lng'])
@@ -226,9 +227,17 @@ def project_history_to_route(history, track, with_start=False):
             cur, off_by, seed_pos = si, soff, i
         if soff is not None and soff <= ON_ROUTE_MAX_M:
             cur, off_by, seed_pos = si, soff, i
+            clean_seed = True
             break
     if cur is None:
         return empty
+    # A wholly off-course history has no trustworthy course position. Preserve
+    # its distance from the route for the caller's status, but do not invent
+    # progress from the nearest route vertex.
+    if not clean_seed:
+        if with_start:
+            return None, None, off_by, None, None
+        return None, None, off_by
     start_idx, start_dist = cur, track[cur]['dist_m']
     best_dist, best_idx = track[cur]['dist_m'], cur
     prev_t = history[seed_pos]['recorded_at']
@@ -254,9 +263,13 @@ def project_history_to_route(history, track, with_start=False):
             d = haversine_m(lat, lng, track[i]['lat'], track[i]['lng'])
             if d < best_d:
                 best_d, best_i = d, i
-        cur, off_by = best_i, best_d
-        if track[cur]['dist_m'] > best_dist:
-            best_dist, best_idx = track[cur]['dist_m'], cur
+        off_by = best_d
+        # Never advance the trajectory cursor for an off-course GPS fix. Keep
+        # the last valid progress frozen until the rider rejoins the route.
+        if best_d <= ON_ROUTE_MAX_M:
+            cur = best_i
+            if track[cur]['dist_m'] > best_dist:
+                best_dist, best_idx = track[cur]['dist_m'], cur
     if with_start:
         return best_dist, best_idx, off_by, start_dist, start_idx
     return best_dist, best_idx, off_by

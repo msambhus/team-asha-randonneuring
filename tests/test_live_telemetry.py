@@ -104,6 +104,32 @@ def test_project_history_is_monotonic_through_gps_backstep():
     assert dist_m == 2667.0          # never dropped to 889 on the blip
 
 
+def test_project_history_freezes_at_last_valid_point_while_off_course():
+    hist = [
+        {'lat': 37.0, 'lng': -122.00, 'recorded_at': _t(0)},
+        {'lat': 37.0, 'lng': -121.98, 'recorded_at': _t(60)},
+        {'lat': 37.2, 'lng': -121.97, 'recorded_at': _t(120)},
+        {'lat': 37.2, 'lng': -121.96, 'recorded_at': _t(180)},
+    ]
+    dist_m, idx, off = tlm.project_history_to_route(hist, _TRACK)
+    assert dist_m == 1778.0
+    assert idx == 2
+    assert off > tlm.ON_ROUTE_MAX_M
+
+
+def test_project_history_rejoins_from_frozen_valid_cursor():
+    hist = [
+        {'lat': 37.0, 'lng': -122.00, 'recorded_at': _t(0)},
+        {'lat': 37.0, 'lng': -121.99, 'recorded_at': _t(60)},
+        {'lat': 37.2, 'lng': -121.98, 'recorded_at': _t(120)},
+        {'lat': 37.0, 'lng': -121.97, 'recorded_at': _t(180)},
+    ]
+    dist_m, idx, off = tlm.project_history_to_route(hist, _TRACK)
+    assert dist_m == 2667.0
+    assert idx == 3
+    assert off <= tlm.ON_ROUTE_MAX_M
+
+
 def test_project_history_empty_or_no_track():
     assert tlm.project_history_to_route([], _TRACK) == (None, None, None)
     assert tlm.project_history_to_route(

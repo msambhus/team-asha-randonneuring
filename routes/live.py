@@ -646,6 +646,26 @@ def _build_plan_snapshot(ride, selected_day=None):
                 'show_pacific': labels['show_pacific'],
             })
 
+        # Single-day plans commonly have no "Day 1:" prefix. In that case the
+        # whole itinerary is Day 1; do not render a misleading zero-mile card.
+        if not named_days and active_day == 1:
+            day_timed_stops = list(timed_stops)
+            day_rows = []
+            for stop in day_timed_stops:
+                arrival = int(stop.get('arrival_time_min') or 0)
+                labels = schedule_time_labels(ride, start_raw, arrival)
+                day_rows.append({
+                    'name': stop.get('location') or 'Stop',
+                    'distance_mi': round(float(stop.get('distance_miles') or 0), 1),
+                    'eta': labels['event'],
+                    'eta_event_zone': labels['event_zone'],
+                    'eta_pacific': labels['pacific'],
+                    'show_pacific': labels['show_pacific'],
+                    'break_min': int(stop.get('stop_duration_min') or 0),
+                    'type': (stop.get('stop_type') or 'waypoint').lower(),
+                    'time_bank_min': stop.get('time_bank_min'),
+                })
+
         first_day_mi = (float(day_timed_stops[0].get('distance_miles') or 0)
                         if day_timed_stops else 0.0)
         last_day_mi = (float(day_timed_stops[-1].get('distance_miles') or 0)
@@ -1023,6 +1043,7 @@ def _build_live_chart_data(sample_points, forecasts, track_points, plan_stops, s
         'labels': cd['labels'],
         'elevation_ft': cd['elevation_ft'],
         'headwind_mph': cd['headwind_mph'],
+        'wind_gust_mph': cd.get('wind_gust_mph'),
         'temperature_f': cd['temperature_f'],
     }
 
@@ -1041,6 +1062,7 @@ def _ride_live_context_cached(ride_id, day_key):
            'total_ascent_ft': None, 'plan_stops': [], 'wind_by_dist': None,
            'ride_start_iso': None, 'time_limit_min': None,
            'has_route': False, 'has_plan': False, 'chart_data': None,
+           'elevation_profile': {'available': False},
            # Base plan id + timing inputs so the per-rider custom plan (if any) can
            # be merged + retimed the SAME way the web plan page does (_rider_plan_stops).
            'base_plan_id': None, 'plan_cutoff_hours': None, 'plan_total_mi': 0.0,
@@ -1143,6 +1165,7 @@ def _ride_live_context_cached(ride_id, day_key):
                 ctx['total_dist_m'] = track[-1]['dist_m'] if track else None
                 ctx['total_ascent_ft'] = cum_ascent[-1] if cum_ascent else None
                 ctx['has_route'] = True
+                ctx['elevation_profile'] = radial.build_elevation_profile(track)
                 # Weather is pre-fetched hourly by the fetch-route-weather cron and READ
                 # from storage — no live Open-Meteo on the live/telemetry path (TA-237).
                 # Load once (keyed by route + ride date) and feed BOTH the per-rider
@@ -1677,6 +1700,7 @@ def live_positions():
         # static per ride. Top-level (not per-rider): each rider's current position is
         # marked from their telemetry.now.distance_mi. Null when the ride has no route.
         'chart_data': ctx.get('chart_data') if ctx else None,
+        'elevation_profile': ctx.get('elevation_profile') if ctx else None,
         # Plan selector (item 1): the options the viewer may pick (base + allowed
         # custom plans + 'own'; base only for a single-plan ride) and the plan actually
         # APPLIED — 'base', 'own', or an int id (a rejected id echoes as 'base').

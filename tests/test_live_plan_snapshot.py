@@ -43,6 +43,24 @@ def test_plan_snapshot_summarizes_resolved_plan(app):
     assert snap['start_time'] == '02:00'
 
 
+def test_plan_snapshot_treats_unprefixed_itinerary_as_day_one(app):
+    stops = [
+        {'location': 'Start', 'stop_type': 'start', 'distance_miles': 0,
+         'segment_time_min': 0, 'stop_duration_min': 0, 'elevation_gain': 0},
+        {'location': 'Finish', 'stop_type': 'finish', 'distance_miles': 126,
+         'segment_time_min': 720, 'stop_duration_min': 10, 'elevation_gain': 5100},
+    ]
+    with app.app_context(), \
+         patch('routes.live._resolve_base_plan', return_value=_PLAN), \
+         patch('routes.live.get_ride_plan_stops', return_value=stops):
+        snap = live._build_plan_snapshot(_RIDE)
+    assert snap['active_day'] == 1
+    assert snap['day_distance_mi'] == 126.0
+    assert snap['day_elevation_ft'] == 5100
+    assert snap['day_moving_min'] == 720
+    assert [row['name'] for row in snap['day_stops']] == ['Start', 'Finish']
+
+
 def test_plan_snapshot_includes_only_active_day_controls(app):
     stops = [
         {'location': 'Day 1: Start', 'stop_type': 'start',
