@@ -246,21 +246,40 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
 
     local_tz = tz or timezone.utc
     stop_events = []
-    for period in tlm.stationary_periods(ride_history):
+    for first, second in zip(ride_history, ride_history[1:]):
+        _moving_interval, stopped_interval = tlm.moving_stopped([first, second])
+        if not stopped_interval:
+            continue
         projected, _pidx, off = tlm.project_to_route(
-            period['lat'], period['lng'], ctx['track'])
+            float(second['lat']), float(second['lng']), ctx['track'])
         if projected is None or off is None or off > tlm.ON_ROUTE_MAX_M:
             continue
         event_mi = projected * M_TO_MI
         event_day = route_day_for_miles(event_mi)
-        start_local = _as_utc(period['start_at']).astimezone(local_tz)
-        end_local = _as_utc(period['end_at']).astimezone(local_tz)
+        start_at, end_at = first['recorded_at'], second['recorded_at']
+        previous = stop_events[-1] if stop_events else None
+        gap_min = ((start_at - previous['_end_at']).total_seconds() / 60.0
+                   if previous else None)
+        if (previous and previous['day_number'] == event_day
+                and abs(previous['distance_mi'] - event_mi) <= 0.5
+                and gap_min is not None and gap_min <= 30):
+            previous['_end_at'] = end_at
+            previous['duration_min'] = round(
+                (end_at - previous['_start_at']).total_seconds() / 60.0, 1)
+            previous['end_label'] = _as_utc(end_at).astimezone(local_tz).strftime('%-I:%M %p')
+            continue
+        start_local = _as_utc(start_at).astimezone(local_tz)
+        end_local = _as_utc(end_at).astimezone(local_tz)
         stop_events.append({
-            'distance_mi': round(event_mi, 1), 'duration_min': period['duration_min'],
+            'distance_mi': round(event_mi, 1), 'duration_min': stopped_interval,
             'day_number': event_day,
             'start_label': start_local.strftime('%-I:%M %p'),
             'end_label': end_local.strftime('%-I:%M %p'),
+            '_start_at': start_at, '_end_at': end_at,
         })
+    for event in stop_events:
+        event.pop('_start_at', None)
+        event.pop('_end_at', None)
     now_block['stop_events'] = stop_events
     now_block['stopped_ride_day_min'] = round(stopped_by_day.get(active_day, 0.0), 1)
 

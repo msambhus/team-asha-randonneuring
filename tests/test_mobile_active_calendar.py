@@ -58,3 +58,18 @@ def test_mobile_calendar_uses_linked_plan_cutoff_for_active_window():
     assert 'COALESCE(ri.time_limit_hours, rp.cutoff_hours) as time_limit_hours' in execute.sql
     assert [event['id'] for event in events] == [194]
     assert events[0]['is_live'] is True
+
+
+def test_mobile_calendar_keeps_enabled_livetrack_ride_regardless_of_status_window():
+    today = date(2026, 8, 7)
+    active = _event(194, date(2026, 8, 1), None)
+    active['has_active_tracking'] = True
+    execute = _CaptureExecute([active])
+
+    with patch('models.club_today', return_value=today), \
+         patch('models._execute', side_effect=execute):
+        events = models.get_all_upcoming_events.uncached(include_active=True)
+
+    assert 'SELECT active_ride_id FROM rider_live_tracking' in execute.sql
+    assert [event['id'] for event in events] == [194]
+    assert events[0]['is_live'] is True

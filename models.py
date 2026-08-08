@@ -843,7 +843,13 @@ def get_all_upcoming_events(include_active=False):
     """Get upcoming events, optionally retaining multi-day rides in progress."""
     today = club_today()
     first_date = today - timedelta(days=5) if include_active else today
-    events = _execute("""
+    active_clause = """
+        OR ri.id IN (
+            SELECT active_ride_id FROM rider_live_tracking
+            WHERE enabled = TRUE AND active_ride_id IS NOT NULL
+        )
+    """ if include_active else ""
+    events = _execute(f"""
         SELECT ri.*,
                COALESCE(ri.time_limit_hours, rp.cutoff_hours) as time_limit_hours,
                COALESCE(rp.name, ri.name) as route_name,
@@ -858,11 +864,16 @@ def get_all_upcoming_events(include_active=False):
                rp.start_time as plan_start_time,
                rp.avg_elapsed_speed as plan_avg_speed,
                (c.code = 'TA') as is_team_ride,
+               EXISTS (
+                   SELECT 1 FROM rider_live_tracking rlt
+                   WHERE rlt.active_ride_id = ri.id AND rlt.enabled = TRUE
+               ) as has_active_tracking,
                (SELECT COUNT(*) FROM rider_ride rr WHERE rr.ride_id = ri.id AND rr.signed_up_at IS NOT NULL) as signup_count
         FROM ride ri
         INNER JOIN club c ON ri.club_id = c.id
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
-        WHERE ri.date >= %s AND ri.event_status = 'UPCOMING'
+        WHERE (ri.date >= %s AND ri.event_status = 'UPCOMING')
+              {active_clause}
         ORDER BY ri.date
     """, (first_date,)).fetchall()
 
@@ -884,6 +895,10 @@ def get_all_upcoming_events(include_active=False):
         # in the native calendar because spectators can still Follow Live. Use a
         # conservative date window derived from the event's own time allowance.
         if d and d < today:
+            if include_active and event_dict.get('has_active_tracking'):
+                event_dict['is_live'] = True
+                events_with_defaults.append(event_dict)
+                continue
             limit_h = event_dict.get('time_limit_hours')
             try:
                 active_through = d + timedelta(days=math.ceil(float(limit_h) / 24))
