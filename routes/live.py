@@ -84,10 +84,36 @@ def _ride_start_utc(ride):
     except Exception:
         return None
 
-# Display tuning (see plan): show points from the last 24h; grey/fade dots
-# whose latest point is older than 10 minutes.
+# Display tuning: a rider must have a recent point to appear, while telemetry
+# history may span the whole multi-day ride (bounded by database retention).
 DISPLAY_WINDOW_HOURS = 24
+POSITION_RETENTION_DAYS = 7
 STALE_AFTER_MINUTES = 10
+
+
+def _telemetry_history_since(ctx, now):
+    """Start of ride-scoped telemetry needed for elapsed and daily metrics.
+
+    The latest-position gate intentionally remains 24 hours, but using that
+    same window for history made Day 1 stops disappear during a multi-day
+    brevet. Prefer the event's actual start and bound the query to the same
+    seven-day window used by position retention. Fall back to 24 hours when a
+    context has no usable start.
+    """
+    fallback = now - timedelta(hours=DISPLAY_WINDOW_HOURS)
+    raw_start = ctx.get('ride_start_iso') if ctx else None
+    if not raw_start:
+        return fallback
+    try:
+        start = datetime.fromisoformat(raw_start)
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        else:
+            start = start.astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return fallback
+    retention_start = now - timedelta(days=POSITION_RETENTION_DAYS)
+    return max(retention_start, min(fallback, start))
 
 # RideStatus → dot color. Only GOING riders appear on the per-ride map today,
 # but the map carries the full mapping for forward-compatibility.
@@ -1516,8 +1542,7 @@ def live_positions():
         status = row['status']
 
         history = get_positions_for_rider_since(
-            row['rider_id'], now - timedelta(hours=DISPLAY_WINDOW_HOURS),
-            ride_id=ride_id)
+            row['rider_id'], _telemetry_history_since(ctx, now), ride_id=ride_id)
         telemetry = None
         try:
             # A selected named plan (base or a custom) overrides EVERY rider's grading
@@ -1657,11 +1682,12 @@ def ride_live_roster(ride_id):
     applied_plan_id, override_stops = _selected_plan_stops(
         request.args.get('plan_id'), ctx, allowed_custom_ids, is_member=is_member)
 
+    history_since = _telemetry_history_since(ctx, now)
     history_by = {}
     for row in rows:
         try:
             history_by[row['rider_id']] = get_positions_for_rider_since(
-                row['rider_id'], since, ride_id=ride_id)
+                row['rider_id'], history_since, ride_id=ride_id)
         except Exception:  # noqa: BLE001 — history is best-effort; base row instead
             current_app.logger.exception(
                 'live roster: history load failed for rider %s on ride %s',
