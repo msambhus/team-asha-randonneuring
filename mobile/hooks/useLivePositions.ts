@@ -26,6 +26,7 @@ export function useLivePositions(rideId: number, planId?: LivePlanId | null) {
     select: (d): LivePositionsResult => ({
       positions: d.positions,
       chart_data: d.chart_data ?? null,
+      elevation_profile: d.elevation_profile ?? null,
       plans: d.plans ?? [],
       selected_plan_id: d.selected_plan_id ?? null,
       upcoming_controls: d.upcoming_controls ?? [],

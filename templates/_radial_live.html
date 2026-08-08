@@ -254,6 +254,8 @@
 .radial-detail-rider strong { display: block; font-size: 0.92rem; }
 .radial-detail-rider small { display: block; margin-top: 1px; font-size: 0.66rem;
   color: var(--text-light, #6b7280); text-transform: uppercase; letter-spacing: 0.04em; }
+.radial-off-course { grid-column: 1 / -1; padding: 9px 11px; border-radius: 8px;
+  background: #fef2f2; color: #991b1b; font-size: 0.78rem; font-weight: 700; }
 .radial-detail-group { grid-column: 1 / -1; display: grid;
   grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 7px 14px;
   padding: 9px 0; border-top: 1px solid var(--border, #e5e7eb); }
@@ -743,7 +745,11 @@
         (nc.dist_to_go_mi != null ? ' · ' + Number(nc.dist_to_go_mi) + ' mi to go' : '');
     }
     var fin = row.finish || {};
-    return '<div class="radial-detail">' +
+    var offCourse = row.on_route === false && row.off_course_since_mi != null
+      ? '<div class="radial-off-course">Off course since ' +
+        Number(row.off_course_since_mi) + ' mi — totals are held at the last route point.</div>'
+      : '';
+    return '<div class="radial-detail">' + offCourse +
       '<div class="radial-detail-rider"><span class="radial-detail-rider-dot"></span>' +
       '<span><strong>' + escapeHtml(row.display_name) +
       '</strong><small>Live rider details</small></span></div>' +
@@ -797,6 +803,8 @@
       '<span class="radial-row-meta">' +
       (row.elapsed_min != null ? 'Elapsed ' + fmtDuration(row.elapsed_min) : 'Elapsed —') +
       (row.ascent_done_ft != null ? ' · ' + Number(row.ascent_done_ft).toLocaleString() + ' ft climbed' : '') +
+      (row.on_route === false && row.off_course_since_mi != null
+        ? ' · Off course since ' + Number(row.off_course_since_mi) + ' mi' : '') +
       '</span>';
   }
   function speedSummaryHtml(row) {
@@ -1145,11 +1153,13 @@
       if (!cd || !cd.labels || cd.labels.length < 2) { return; }
       var headPos = (cd.headwind_mph || []).map(function (v) { return Number(v) > 0 ? Number(v) : 0; });
       var headNeg = (cd.headwind_mph || []).map(function (v) { return Number(v) < 0 ? Number(v) : 0; });
+      var gusts = cd.wind_gust_mph || [];
       var prefix = 'radial-day-' + day.day_number + '-';
       weatherCharts['day-' + day.day_number + '-headwind'] = makeWeatherChart(
         prefix + 'headwind', cd.labels, [
           lineSet('Headwind', headPos, '#dc2626', true),
-          lineSet('Tailwind', headNeg, '#16a34a', true)
+          lineSet('Tailwind', headNeg, '#16a34a', true),
+          lineSet('Gusts', gusts, '#f97316', false)
         ]);
       weatherCharts['day-' + day.day_number + '-temperature'] = makeWeatherChart(
         prefix + 'temperature', cd.labels,
@@ -1183,10 +1193,12 @@
     var winds = finiteValues(cd.headwind_mph);
     var heads = winds.filter(function (v) { return v > 0; });
     var tails = winds.filter(function (v) { return v < 0; }).map(Math.abs);
+    var gusts = finiteValues(cd.wind_gust_mph);
     chips.textContent = '';
     chips.appendChild(weatherChip('temperature', rangeText(temps, '°F')));
     chips.appendChild(weatherChip('peak headwind', heads.length ? Math.round(Math.max.apply(null, heads)) + ' mph' : 'none'));
     chips.appendChild(weatherChip('peak tailwind', tails.length ? Math.round(Math.max.apply(null, tails)) + ' mph' : 'none'));
+    chips.appendChild(weatherChip('peak gust', gusts.length ? Math.round(Math.max.apply(null, gusts)) + ' mph' : 'none'));
     chips.appendChild(weatherChip('forecast points', String(cd.labels.length)));
     empty.hidden = true;
     chartsWrap.hidden = false;
@@ -1201,7 +1213,8 @@
     var headNeg = (cd.headwind_mph || []).map(function (v) { return Number(v) < 0 ? Number(v) : 0; });
     weatherCharts.headwind = makeWeatherChart('radial-headwind-chart', cd.labels, [
       lineSet('Headwind', headPos, '#dc2626', true),
-      lineSet('Tailwind', headNeg, '#16a34a', true)
+      lineSet('Tailwind', headNeg, '#16a34a', true),
+      lineSet('Gusts', cd.wind_gust_mph || [], '#f97316', false)
     ]);
     weatherCharts.temperature = makeWeatherChart(
       'radial-temperature-chart', cd.labels,
