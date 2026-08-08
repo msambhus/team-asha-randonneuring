@@ -9,6 +9,8 @@ STILL carries rider_id (the two-tier contract).
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+from routes.live import _telemetry_history_since
+
 
 def _login(client, rider_id=7):
     with client.session_transaction() as sess:
@@ -63,6 +65,32 @@ def _history():
         {'lat': 37.0, 'lng': -122.0, 'recorded_at': now - timedelta(minutes=30), 'speed': 5.0},
         {'lat': 37.0, 'lng': -121.99, 'recorded_at': now - timedelta(minutes=2), 'speed': 6.0},
     ]
+
+
+def test_multiday_telemetry_history_starts_at_ride_start():
+    now = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
+    ride_start = now - timedelta(hours=53)
+
+    since = _telemetry_history_since(
+        {'ride_start_iso': ride_start.isoformat()}, now)
+
+    assert since == ride_start
+
+
+def test_telemetry_history_falls_back_to_24_hours_without_ride_start():
+    now = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
+
+    assert _telemetry_history_since({}, now) == now - timedelta(hours=24)
+
+
+def test_telemetry_history_is_bounded_by_position_retention():
+    now = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
+    old_start = now - timedelta(days=12)
+
+    since = _telemetry_history_since(
+        {'ride_start_iso': old_start.isoformat()}, now)
+
+    assert since == now - timedelta(days=7)
 
 
 def test_guest_reads_public_live_roster_200(client):
