@@ -11,7 +11,8 @@ export function useCalendar() {
   return useQuery({
     queryKey: ['calendar'],
     enabled: !!token,
-    staleTime: 5 * 60_000,
+    staleTime: 0,
+    refetchOnMount: 'always',
     queryFn: () => apiFetch<CalendarResponse>('/api/calendar', () => { void signOut(); }),
     select: (d) => d.rides,
   });
