@@ -290,6 +290,26 @@ def test_activity_from_speed():
     assert tlm.activity_from_speed(20.0) == 'driving'
 
 
+def test_current_stop_duration_uses_trailing_stationary_cluster():
+    points = [
+        {'lat': 37.0, 'lng': -122.01, 'speed': 6.0, 'recorded_at': _t(0)},
+        {'lat': 37.0, 'lng': -122.0, 'speed': 0.0, 'recorded_at': _t(60)},
+        # Small GPS drift remains the same stopped point.
+        {'lat': 37.0001, 'lng': -122.0001, 'speed': 0.0, 'recorded_at': _t(360)},
+        {'lat': 37.0, 'lng': -122.0, 'speed': 0.0, 'recorded_at': _t(660)},
+    ]
+
+    assert tlm.current_stop_duration_min(points) == 10.0
+
+
+def test_current_stop_duration_hidden_while_moving():
+    points = [
+        {'lat': 37.0, 'lng': -122.0, 'speed': 0.0, 'recorded_at': _t(0)},
+        {'lat': 37.0, 'lng': -121.99, 'speed': 5.0, 'recorded_at': _t(60)},
+    ]
+    assert tlm.current_stop_duration_min(points) is None
+
+
 def test_moving_stopped_long_gap_same_place_is_stopped():
     # A 2-hour gap where the rider didn't move (same spot) = stopped, not moving.
     # (The reported speed is irrelevant across a telemetry gap.)

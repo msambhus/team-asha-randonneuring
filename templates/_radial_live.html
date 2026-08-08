@@ -751,6 +751,7 @@
         metric('Moving', fmtDuration(row.moving_min)),
         metric('Stopped total', fmtDuration(row.stopped_min)),
         metric('Stopped today', fmtDuration(row.stopped_today_min)),
+        row.current_stop_min != null ? metric('Stopped here', fmtDuration(row.current_stop_min)) : '',
         metric('Climbed so far', row.ascent_done_ft != null ? Number(row.ascent_done_ft) + ' ft' : '—'),
         metric('Gradient', row.grade_pct != null ? Number(row.grade_pct) + '%' : '—'),
         metric('Wind here', row.headwind_done_label ? escapeHtml(row.headwind_done_label) : '—'),
