@@ -355,26 +355,29 @@ def ascent_progressed_split(cum_ascent_ft, start_index, cur_index, total_ascent_
 
 
 def plan_time_at(dist_miles, plan_stops):
-    """Expected cumulative plan time (min) at an along-route distance, linearly
-    interpolated over the plan's {distance_miles, cum_time_min} points and clamped
-    to the endpoints. None when there's no usable plan or distance."""
+    """Expected riding timeline, from prior departure to next arrival."""
     if not plan_stops or dist_miles is None:
         return None
-    pts = sorted(((float(s['distance_miles']), float(s['cum_time_min']))
-                  for s in plan_stops
-                  if s.get('distance_miles') is not None and s.get('cum_time_min') is not None),
-                 key=lambda x: x[0])
+    pts = sorted((dict(s) for s in plan_stops
+                  if s.get('distance_miles') is not None
+                  and s.get('cum_time_min') is not None),
+                 key=lambda s: float(s['distance_miles']))
     if not pts:
         return None
-    if dist_miles <= pts[0][0]:
-        return pts[0][1]
-    if dist_miles >= pts[-1][0]:
-        return pts[-1][1]
-    for (d0, t0), (d1, t1) in zip(pts, pts[1:]):
-        if d0 <= dist_miles <= d1:
+    if dist_miles <= float(pts[0]['distance_miles']):
+        return float(pts[0]['cum_time_min'])
+    if dist_miles >= float(pts[-1]['distance_miles']):
+        return float(pts[-1]['cum_time_min'])
+    for previous, upcoming in zip(pts, pts[1:]):
+        d0, d1 = float(previous['distance_miles']), float(upcoming['distance_miles'])
+        if d0 <= dist_miles < d1:
+            t0 = float(previous['cum_time_min'])
+            t1 = float(upcoming.get('arrival_time_min')
+                       if upcoming.get('arrival_time_min') is not None
+                       else upcoming['cum_time_min'])
             frac = (dist_miles - d0) / (d1 - d0) if d1 > d0 else 0
             return t0 + frac * (t1 - t0)
-    return pts[-1][1]
+    return float(pts[-1]['cum_time_min'])
 
 
 def rebase_plan_stops(plan_stops, start_offset_miles, total_miles):
@@ -495,26 +498,13 @@ def plan_delta(current_dist_miles, elapsed_min, plan_stops):
     """
     if not plan_stops or current_dist_miles is None or elapsed_min is None:
         return None
-    pts = sorted(
-        ((float(s['distance_miles']), float(s['cum_time_min']))
-         for s in plan_stops
-         if s.get('distance_miles') is not None and s.get('cum_time_min') is not None),
-        key=lambda x: x[0],
-    )
-    if len(pts) < 2:
+    usable = [s for s in plan_stops
+              if s.get('distance_miles') is not None and s.get('cum_time_min') is not None]
+    if len(usable) < 2:
         return None
-    d = current_dist_miles
-    if d <= pts[0][0]:
-        expected = pts[0][1]
-    elif d >= pts[-1][0]:
-        expected = pts[-1][1]
-    else:
-        expected = pts[-1][1]
-        for (d0, t0), (d1, t1) in zip(pts, pts[1:]):
-            if d0 <= d <= d1:
-                frac = (d - d0) / (d1 - d0) if d1 > d0 else 0
-                expected = t0 + frac * (t1 - t0)
-                break
+    expected = plan_time_at(current_dist_miles, usable)
+    if expected is None:
+        return None
     # expected − elapsed: positive means the rider reached this distance faster
     # than the plan (ahead of schedule / banking time).
     return round(expected - elapsed_min)
