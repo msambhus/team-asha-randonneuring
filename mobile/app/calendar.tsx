@@ -38,6 +38,7 @@ export default function CalendarScreen() {
       renderItem={({ item }: { item: BrevetSummary }) => (
         <View style={styles.row}>
           <Text style={styles.name}>{item.name}</Text>
+          {item.is_live ? <Text style={styles.liveBadge}>● LIVE NOW</Text> : null}
           <Text style={styles.meta}>
             {item.date ?? ''}{item.distance_km ? ` · ${item.distance_km} km` : ''}
             {item.ride_type ? ` · ${item.ride_type}` : ''}
@@ -105,6 +106,7 @@ const styles = StyleSheet.create({
   meta: { color: '#6b7280', fontSize: 13, marginTop: 2 },
   count: { color: '#16a34a', fontSize: 12, marginTop: 4, fontWeight: '600' },
   teamClub: { color: '#1a365d', fontWeight: '700' },
+  liveBadge: { color: '#b91c1c', fontSize: 12, fontWeight: '800', marginTop: 4 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 12 },
   followAction: { borderWidth: 1, borderColor: '#2563eb', borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
   followingAction: { backgroundColor: '#dbeafe', borderColor: '#2563eb' },

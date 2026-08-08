@@ -164,11 +164,12 @@ def test_ride_start_anchor_keeps_miles_and_assumes_pretracking_time_was_moving()
     assert roster[0]['avg_moving_speed_mph'] == 8.3
 
 
-def test_roster_reports_today_stopped_separately_from_total():
+def test_roster_reports_route_day_stopped_independent_of_midnight():
     track, ctx = _track_and_ctx()
     now = datetime(2026, 7, 2, 0, 20, tzinfo=timezone.utc)
     start = now - timedelta(minutes=30)
     ctx['ride_start_iso'] = start.isoformat()
+    ctx['day_distance_boundaries'] = {1: 0, 2: 15}
     point = track[20]
     history = [
         {'lat': point['lat'], 'lng': point['lng'], 'speed': 0.0,
@@ -184,7 +185,12 @@ def test_roster_reports_today_stopped_separately_from_total():
         min_history=2, stateless_fallback=False, tz=timezone.utc)
 
     assert roster[0]['stopped_min'] == 30.0
-    assert roster[0]['stopped_today_min'] == 20.0
+    # All fixes are beyond the Day 2 distance boundary, including the ten minutes
+    # before midnight. Civil midnight must not discard that ride-day stop time.
+    assert roster[0]['active_day'] == 2
+    assert roster[0]['stopped_ride_day_min'] == 30.0
+    assert roster[0]['stop_events'][0]['day_number'] == 2
+    assert roster[0]['stop_events'][0]['distance_mi'] == 20.0
 
 
 def test_first_fix_anchor_rebases_an_explicit_permanent():
@@ -234,6 +240,7 @@ def test_roster_flags_paused_rider():
                                     ride_id=1, min_history=2, stateless_fallback=False)
     assert roster[0]['activity'] == 'paused'
     assert roster[0]['current_stop_min'] == 100.0
+    assert roster[0]['stop_events'][0]['duration_min'] == 100.0
     assert roster[0]['stale'] is False
 
 

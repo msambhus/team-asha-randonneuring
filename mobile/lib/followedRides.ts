@@ -3,7 +3,9 @@ import * as SecureStore from 'expo-secure-store';
 const KEY_PREFIX = 'ta_followed_live_rides';
 
 function storageKey(riderId: number): string {
-  return `${KEY_PREFIX}:${riderId}`;
+  // Expo SecureStore keys may contain only alphanumerics plus '.', '-' and '_'.
+  // A colon worked in the Jest mock but throws on an actual iOS Keychain write.
+  return `${KEY_PREFIX}_${riderId}`;
 }
 
 export async function getFollowedRideIds(riderId: number): Promise<number[]> {

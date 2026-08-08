@@ -11,9 +11,9 @@ describe('followed live rides', () => {
   });
 
   it('recovers safely from malformed or duplicate stored values', async () => {
-    await SecureStore.setItemAsync('ta_followed_live_rides:7', '[4,"4",null,-2,"bad"]');
+    await SecureStore.setItemAsync('ta_followed_live_rides_7', '[4,"4",null,-2,"bad"]');
     await expect(getFollowedRideIds(7)).resolves.toEqual([4]);
-    await SecureStore.setItemAsync('ta_followed_live_rides:8', 'not json');
+    await SecureStore.setItemAsync('ta_followed_live_rides_8', 'not json');
     await expect(getFollowedRideIds(8)).resolves.toEqual([]);
   });
 });

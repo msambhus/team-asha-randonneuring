@@ -52,9 +52,9 @@
     <div class="rps-day-title">Day {{ plan.active_day }} controls and stops</div>
     <div class="rps-day-list">
       {% for stop in plan.day_stops %}
-      <div class="rps-day-row">
+      <div class="rps-day-row" data-plan-day="{{ plan.active_day }}" data-stop-distance="{{ stop.distance_mi }}">
         <span class="rps-day-name">{{ stop.name }}</span>
-        <span class="rps-day-meta">{{ stop.distance_mi }} mi{% if stop.break_min %} · {{ stop.break_min }}m stop{% endif %}</span>
+        <span class="rps-day-meta" data-base-meta="{{ stop.distance_mi }} mi{% if stop.break_min %} · {{ stop.break_min }}m stop{% endif %}">{{ stop.distance_mi }} mi{% if stop.break_min %} · {{ stop.break_min }}m stop{% endif %}</span>
         <span class="rps-day-eta"><strong>{{ stop.eta }} {{ stop.eta_event_zone }}</strong>{% if stop.show_pacific %}<small>{{ stop.eta_pacific }} PT</small>{% endif %}</span>
         {% if stop.time_bank_min is not none %}{% set sbank = stop.time_bank_min|int %}{% set sbank_abs = sbank|abs %}<span class="rps-day-bank {{ 'ahead' if sbank >= 0 else 'behind' }}">{{ '+' if sbank >= 0 else '−' }}{{ sbank_abs // 60 }}h{{ '%02d'|format(sbank_abs % 60) }}</span>{% else %}<span class="rps-day-bank">—</span>{% endif %}
       </div>
@@ -111,6 +111,10 @@
 .rps-day-bank { min-width: 4.5rem; text-align: right; font-weight: 750; white-space: nowrap; }
 .rps-day-bank.ahead { color: #166534; }
 .rps-day-bank.behind { color: #991b1b; }
+.rps-actual-stop-row { margin-left: 22px; border-left: 3px solid #f59e0b;
+  background: #fffbeb; color: #92400e; }
+.rps-actual-stop-row .rps-day-name { font-weight: 650; }
+.rps-actual-dwell { color: #92400e; font-weight: 750; }
 .rps-live-summary { margin-top: 12px; padding: 10px; border: 1px solid var(--border, #e5e7eb);
   border-left: 4px solid var(--primary, #1a365d); border-radius: 8px; background: var(--bg, #f8fafc); }
 .rps-live-title { margin-bottom: 7px; font-size: .7rem; font-weight: 800; text-transform: uppercase;
@@ -750,7 +754,7 @@
         metric('Elapsed', fmtDuration(row.elapsed_min)),
         metric('Moving', fmtDuration(row.moving_min)),
         metric('Stopped total', fmtDuration(row.stopped_min)),
-        metric('Stopped today', fmtDuration(row.stopped_today_min)),
+        metric('Stopped Day ' + (row.active_day || '—'), fmtDuration(row.stopped_ride_day_min)),
         row.current_stop_min != null ? metric('Stopped here', fmtDuration(row.current_stop_min)) : '',
         metric('Climbed so far', row.ascent_done_ft != null ? Number(row.ascent_done_ft) + ' ft' : '—'),
         metric('Gradient', row.grade_pct != null ? Number(row.grade_pct) + '%' : '—'),
@@ -897,6 +901,55 @@
     bank.textContent = fmtMin(row.banked_cutoff_min);
     bank.style.color = Number(row.banked_cutoff_min) < 0 ? '#991b1b' : '#166534';
   }
+  function renderActualStops(roster) {
+    document.querySelectorAll('.rps-actual-stop-row').forEach(function (node) { node.remove(); });
+    document.querySelectorAll('.rps-day-meta[data-base-meta]').forEach(function (meta) {
+      meta.textContent = meta.getAttribute('data-base-meta') || '';
+      meta.classList.remove('rps-actual-dwell');
+    });
+    var rider = roster && roster.length ? roster[0] : null;
+    if (!rider || !rider.stop_events || !rider.stop_events.length) { return; }
+    var day = Number(rider.active_day || SELECTED_DAY);
+    var planRows = Array.prototype.slice.call(
+      document.querySelectorAll('.rps-day-row[data-plan-day="' + day + '"]'));
+    var lists = [];
+    planRows.forEach(function (row) {
+      if (row.parentElement && lists.indexOf(row.parentElement) < 0) { lists.push(row.parentElement); }
+    });
+    lists.forEach(function (list) {
+      var rows = Array.prototype.slice.call(list.querySelectorAll('.rps-day-row[data-stop-distance]'));
+      rider.stop_events.filter(function (event) {
+        return Number(event.day_number) === day && Number(event.duration_min) >= 2;
+      }).forEach(function (event) {
+        var eventMile = Number(event.distance_mi);
+        var nearest = null;
+        rows.forEach(function (row) {
+          var gap = Math.abs(Number(row.getAttribute('data-stop-distance')) - eventMile);
+          if (!nearest || gap < nearest.gap) { nearest = { row: row, gap: gap }; }
+        });
+        if (nearest && nearest.gap <= 0.5) {
+          var meta = nearest.row.querySelector('.rps-day-meta');
+          if (meta) {
+            meta.textContent = (meta.getAttribute('data-base-meta') || '') +
+              ' · actual ' + fmtDuration(event.duration_min);
+            meta.classList.add('rps-actual-dwell');
+          }
+          return;
+        }
+        var actual = document.createElement('div');
+        actual.className = 'rps-day-row rps-actual-stop-row';
+        actual.innerHTML = '<span class="rps-day-name">↳ Intermediate stop</span>' +
+          '<span class="rps-day-meta">' + eventMile.toFixed(1) + ' mi · ' +
+          fmtDuration(event.duration_min) + '</span>' +
+          '<span class="rps-day-eta"><strong>' + escapeHtml(event.start_label) +
+          '–' + escapeHtml(event.end_label) + '</strong></span><span class="rps-day-bank">actual</span>';
+        var before = rows.find(function (row) {
+          return Number(row.getAttribute('data-stop-distance')) > eventMile;
+        });
+        list.insertBefore(actual, before || null);
+      });
+    });
+  }
   function render(roster) {
     lastRoster = roster;
     renderTable(roster);
@@ -904,6 +957,7 @@
     updateProfileDots(roster);
     updateWeatherChartMarkers(roster);
     renderLivePlanSummary(roster);
+    renderActualStops(roster);
   }
 
   function planQuery() {

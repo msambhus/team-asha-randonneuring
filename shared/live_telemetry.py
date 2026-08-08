@@ -314,6 +314,55 @@ def current_stop_duration_min(points, radius_m=CURRENT_STOP_RADIUS_M):
     return round(max(0.0, duration), 1)
 
 
+def stationary_periods(points, min_duration_min=2.0,
+                       radius_m=CURRENT_STOP_RADIUS_M):
+    """Observed stationary periods, including completed intermediate stops.
+
+    Consecutive fixes are one stop while they remain inside a GPS-drift radius
+    and report sub-threshold speed. Only observed time is returned; missing time
+    before LiveTrack began is never invented as a stop.
+    """
+    usable = [p for p in (points or [])
+              if p.get('recorded_at') is not None
+              and p.get('lat') is not None and p.get('lng') is not None]
+    usable.sort(key=lambda p: p['recorded_at'])
+    periods, active = [], None
+    for first, second in zip(usable, usable[1:]):
+        seconds = (second['recorded_at'] - first['recorded_at']).total_seconds()
+        if seconds <= 0:
+            continue
+        distance = haversine_m(float(first['lat']), float(first['lng']),
+                               float(second['lat']), float(second['lng']))
+        speeds = []
+        for point in (first, second):
+            try:
+                if point.get('speed') is not None:
+                    speeds.append(float(point['speed']))
+            except (TypeError, ValueError):
+                pass
+        stationary = (distance <= radius_m
+                      and (not speeds or max(speeds) < STOPPED_SPEED_MS))
+        if stationary:
+            if active is None:
+                active = {'start_at': first['recorded_at'],
+                          'end_at': second['recorded_at'],
+                          'lat': float(second['lat']), 'lng': float(second['lng'])}
+            else:
+                active['end_at'] = second['recorded_at']
+                active['lat'], active['lng'] = float(second['lat']), float(second['lng'])
+        elif active is not None:
+            periods.append(active)
+            active = None
+    if active is not None:
+        periods.append(active)
+    out = []
+    for period in periods:
+        duration = (period['end_at'] - period['start_at']).total_seconds() / 60.0
+        if duration >= min_duration_min:
+            out.append(dict(period, duration_min=round(duration, 1)))
+    return out
+
+
 def remaining_distance_m(total_dist_m, current_dist_m):
     """Meters left on the route (never negative)."""
     if total_dist_m is None or current_dist_m is None:

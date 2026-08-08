@@ -1,5 +1,6 @@
 """Data access layer — all SQL queries live here (PostgreSQL via psycopg2)."""
 import json
+import math
 import secrets
 from datetime import datetime, date, timedelta
 from enum import Enum
@@ -838,9 +839,10 @@ def get_default_time_limit(distance_km):
         return None
 
 @cache.memoize(CACHE_TIMEOUT)
-def get_all_upcoming_events():
-    """Get all upcoming events (Team Asha and external) with club info."""
+def get_all_upcoming_events(include_active=False):
+    """Get upcoming events, optionally retaining multi-day rides in progress."""
     today = club_today()
+    first_date = today - timedelta(days=5) if include_active else today
     events = _execute("""
         SELECT ri.*,
                COALESCE(rp.name, ri.name) as route_name,
@@ -861,7 +863,7 @@ def get_all_upcoming_events():
         LEFT JOIN ride_plan rp ON ri.ride_plan_id = rp.id
         WHERE ri.date >= %s AND ri.event_status = 'UPCOMING'
         ORDER BY ri.date
-    """, (today,)).fetchall()
+    """, (first_date,)).fetchall()
 
     events_with_defaults = []
     for event in events:
@@ -876,6 +878,21 @@ def get_all_upcoming_events():
         # Add default time limits if missing
         if not event_dict.get('time_limit_hours') and event_dict.get('distance_km'):
             event_dict['time_limit_hours'] = get_default_time_limit(event_dict['distance_km'])
+
+        # An in-progress 1000/1200 km ride started before today but remains useful
+        # in the native calendar because spectators can still Follow Live. Use a
+        # conservative date window derived from the event's own time allowance.
+        if d and d < today:
+            limit_h = event_dict.get('time_limit_hours')
+            try:
+                active_through = d + timedelta(days=math.ceil(float(limit_h) / 24))
+            except (TypeError, ValueError):
+                active_through = d
+            if not include_active or active_through < today:
+                continue
+            event_dict['is_live'] = True
+        else:
+            event_dict['is_live'] = False
         
         events_with_defaults.append(event_dict)
 

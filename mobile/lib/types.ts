@@ -31,6 +31,7 @@ export interface BrevetSummary {
   club_name: string | null;
   signup_count: number | null;
   is_team_ride?: boolean;
+  is_live?: boolean;
   signup_status: string | null;
 }
 

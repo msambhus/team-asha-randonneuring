@@ -310,6 +310,20 @@ def test_current_stop_duration_hidden_while_moving():
     assert tlm.current_stop_duration_min(points) is None
 
 
+def test_stationary_periods_separate_intermediate_stops():
+    points = [
+        {'lat': 37.0, 'lng': -122.0, 'speed': 0.0, 'recorded_at': _t(0)},
+        {'lat': 37.0, 'lng': -122.0, 'speed': 0.0, 'recorded_at': _t(300)},
+        {'lat': 37.0, 'lng': -121.99, 'speed': 5.0, 'recorded_at': _t(360)},
+        {'lat': 37.0, 'lng': -121.98, 'speed': 0.0, 'recorded_at': _t(420)},
+        {'lat': 37.0, 'lng': -121.98, 'speed': 0.0, 'recorded_at': _t(600)},
+    ]
+
+    periods = tlm.stationary_periods(points)
+
+    assert [period['duration_min'] for period in periods] == [5.0, 3.0]
+
+
 def test_moving_stopped_long_gap_same_place_is_stopped():
     # A 2-hour gap where the rider didn't move (same spot) = stopped, not moving.
     # (The reported speed is irrelevant across a telemetry gap.)

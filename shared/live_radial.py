@@ -112,20 +112,6 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
         else:
             stopped_min = round(max(0.0, elapsed_min - moving_min), 1)
 
-    # Separate the current event-local calendar day's observed stops from the
-    # brevet-wide total. Include a synthetic midnight boundary so an interval
-    # spanning midnight is clipped rather than discarded wholesale.
-    local_tz = tz or timezone.utc
-    day_start = now.astimezone(local_tz).replace(
-        hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
-    before_day = [h for h in ride_history if _as_utc(h['recorded_at']) < day_start]
-    today_history = [h for h in ride_history if _as_utc(h['recorded_at']) >= day_start]
-    if before_day and today_history:
-        boundary = dict(before_day[-1])
-        boundary['recorded_at'] = day_start
-        today_history.insert(0, boundary)
-    _today_moving, stopped_today_min = tlm.moving_stopped(today_history)
-
     speed_ms = tlm.latest_speed_ms(history)
     if speed_ms is None and row.get('speed') is not None:
         try:
@@ -141,7 +127,9 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
         'elapsed_min': elapsed_min,
         'moving_min': moving_min,
         'stopped_min': stopped_min,
-        'stopped_today_min': stopped_today_min,
+        'stopped_ride_day_min': None,
+        'active_day': None,
+        'stop_events': [],
         'heart_rate': _num_or_none(row.get('heart_rate'), int),
         'power': _num_or_none(row.get('power'), int),
         'cadence': _num_or_none(row.get('cadence'), int),
@@ -218,6 +206,54 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
         round(moving_distance_mi / (moving_min / 60.0), 1)
         if moving_min and moving_min > 0 else None)
     now_block['ascent_done_ft'] = ascent_done
+
+    # The plan's Day N boundaries are route distances, not civil midnights. Find
+    # where the rider crossed the active day's starting distance, then total only
+    # the observed stopping intervals from that point onward.
+    boundaries = sorted((int(day), float(miles))
+                        for day, miles in (ctx.get('day_distance_boundaries') or {}).items())
+    active_day, day_start_mi, next_day_start_mi = 1, 0.0, None
+    for pos, (day, miles) in enumerate(boundaries):
+        if route_position_mi >= miles:
+            active_day, day_start_mi = day, miles
+            next_day_start_mi = (boundaries[pos + 1][1]
+                                 if pos + 1 < len(boundaries) else None)
+    day_history = ride_history
+    if day_start_mi > 0:
+        crossing = None
+        for pos, point in enumerate(ride_history):
+            projected, _pidx, off = tlm.project_to_route(
+                float(point['lat']), float(point['lng']), ctx['track'])
+            if (projected is not None and off is not None and off <= tlm.ON_ROUTE_MAX_M
+                    and projected * M_TO_MI >= day_start_mi - 0.1):
+                crossing = max(0, pos - 1)
+                break
+        day_history = ride_history[crossing:] if crossing is not None else []
+    _day_moving, stopped_ride_day = tlm.moving_stopped(day_history)
+    now_block['stopped_ride_day_min'] = stopped_ride_day
+    now_block['active_day'] = active_day
+
+    local_tz = tz or timezone.utc
+    stop_events = []
+    for period in tlm.stationary_periods(ride_history):
+        projected, _pidx, off = tlm.project_to_route(
+            period['lat'], period['lng'], ctx['track'])
+        if projected is None or off is None or off > tlm.ON_ROUTE_MAX_M:
+            continue
+        event_mi = projected * M_TO_MI
+        event_day = 1
+        for day, miles in boundaries:
+            if event_mi >= miles:
+                event_day = day
+        start_local = _as_utc(period['start_at']).astimezone(local_tz)
+        end_local = _as_utc(period['end_at']).astimezone(local_tz)
+        stop_events.append({
+            'distance_mi': round(event_mi, 1), 'duration_min': period['duration_min'],
+            'day_number': event_day,
+            'start_label': start_local.strftime('%-I:%M %p'),
+            'end_label': end_local.strftime('%-I:%M %p'),
+        })
+    now_block['stop_events'] = stop_events
 
     # Time left = the brevet's overall time limit minus elapsed (e.g. 40h for a 600),
     # clamped at 0. Only when the context carries a time limit (Team Asha does).
@@ -423,7 +459,9 @@ def _base_roster_row(row, ride_id, now, stale_after_minutes, dist_unit):
         'elapsed_min': None,
         'moving_min': None,
         'stopped_min': None,
-        'stopped_today_min': None,
+        'stopped_ride_day_min': None,
+        'active_day': None,
+        'stop_events': [],
         'avg_elapsed_speed_mph': None,
         'avg_moving_speed_mph': None,
         'heart_rate': None,
@@ -467,7 +505,9 @@ def _privacy_row(row, telemetry, ride_id, now, stale_after_minutes, dist_unit):
         'elapsed_min': nowb.get('elapsed_min'),
         'moving_min': nowb.get('moving_min'),
         'stopped_min': nowb.get('stopped_min'),
-        'stopped_today_min': nowb.get('stopped_today_min'),
+        'stopped_ride_day_min': nowb.get('stopped_ride_day_min'),
+        'active_day': nowb.get('active_day'),
+        'stop_events': nowb.get('stop_events') or [],
         'avg_elapsed_speed_mph': nowb.get('avg_elapsed_speed_mph'),
         'avg_moving_speed_mph': nowb.get('avg_moving_speed_mph'),
         'heart_rate': nowb.get('heart_rate'),
