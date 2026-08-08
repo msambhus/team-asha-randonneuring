@@ -123,6 +123,9 @@ def test_guest_reads_public_live_roster_200(client):
     assert len(data['roster']) == 1
     # Privacy-reduced name: first name + last initial, never a full surname.
     assert data['roster'][0]['display_name'] == 'Asha R.'
+    # Public web and native maps share the same bounded, road-following trace.
+    assert data['roster'][0]['trail'][0] == [-122.0, 37.0]
+    assert len(data['roster'][0]['trail']) >= 2
     assert resp.headers['Cache-Control'] == (
         'public, s-maxage=15, stale-while-revalidate=30')
 

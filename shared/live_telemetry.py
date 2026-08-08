@@ -847,7 +847,7 @@ def moving_stopped(points):
     return round(moving_s / 60.0, 1), round(stopped_s / 60.0, 1)
 
 
-def build_trail(history, track, max_points=40):
+def build_trail(history, track, max_points=400):
     """Breadcrumb of where the rider actually rode, as [[lng,lat], ...].
 
     Downsamples `history` (oldest→newest) to at most `max_points`. When a route
@@ -875,6 +875,97 @@ def build_trail(history, track, max_points=40):
                 continue
         out.append([lng, lat])
     return out
+
+
+def _point_segment_distance_m(point, start, end):
+    """Approximate perpendicular distance from a lat/lng point to a segment."""
+    lat0 = math.radians(point[1])
+    scale_x = 111320.0 * max(0.01, math.cos(lat0))
+    scale_y = 110540.0
+    px, py = point[0] * scale_x, point[1] * scale_y
+    ax, ay = start[0] * scale_x, start[1] * scale_y
+    bx, by = end[0] * scale_x, end[1] * scale_y
+    dx, dy = bx - ax, by - ay
+    if dx == 0 and dy == 0:
+        return math.hypot(px - ax, py - ay)
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+def _simplify_line(points, tolerance_m):
+    """Iterative Ramer-Douglas-Peucker simplification retaining endpoints."""
+    if len(points) <= 2:
+        return points
+    keep = {0, len(points) - 1}
+    stack = [(0, len(points) - 1)]
+    while stack:
+        start_i, end_i = stack.pop()
+        furthest_i, furthest_m = None, -1.0
+        for i in range(start_i + 1, end_i):
+            distance_m = _point_segment_distance_m(
+                points[i], points[start_i], points[end_i])
+            if distance_m > furthest_m:
+                furthest_i, furthest_m = i, distance_m
+        if furthest_i is not None and furthest_m > tolerance_m:
+            keep.add(furthest_i)
+            stack.append((start_i, furthest_i))
+            stack.append((furthest_i, end_i))
+    return [points[i] for i in sorted(keep)]
+
+
+def build_covered_route(history, track, route_position_mi=None,
+                        off_course_since_mi=None, max_points=1200):
+    """Smooth, bounded route geometry already covered by a rider.
+
+    Raw Garmin history is excellent for telemetry but a poor map polyline when
+    aggressively sampled: connecting 40 fixes across a long brevet cuts across
+    every bend. When a RWGPS track exists, slice that road-following geometry to
+    the rider's last confirmed on-route mile (freeze at the off-course point),
+    then simplify it to a compact visual line. Without a route, retain a bounded
+    actual-GPS breadcrumb instead.
+    """
+    if not track or route_position_mi is None:
+        return build_trail(history, track, max_points=min(max_points, 400))
+    end_mi = (off_course_since_mi
+              if off_course_since_mi is not None else route_position_mi)
+    try:
+        end_m = max(0.0, float(end_mi) / METERS_TO_MILES)
+    except (TypeError, ValueError):
+        return build_trail(history, track, max_points=min(max_points, 400))
+    points = []
+    previous = None
+    for p in track:
+        try:
+            distance_m = float(p['dist_m'])
+            coordinate = [float(p['lng']), float(p['lat'])]
+            if distance_m > end_m:
+                if previous is not None and previous[0] < end_m:
+                    span_m = distance_m - previous[0]
+                    ratio = ((end_m - previous[0]) / span_m) if span_m > 0 else 0
+                    points.append([
+                        previous[1][0] + ratio * (coordinate[0] - previous[1][0]),
+                        previous[1][1] + ratio * (coordinate[1] - previous[1][1]),
+                    ])
+                break
+            points.append(coordinate)
+            previous = (distance_m, coordinate)
+        except (KeyError, TypeError, ValueError):
+            continue
+    if len(points) <= 2:
+        return points
+
+    # Start at road-level fidelity. If an unusually intricate track still
+    # exceeds the payload cap, increase tolerance until it fits.
+    tolerance_m = 8.0
+    simplified = _simplify_line(points, tolerance_m)
+    while len(simplified) > max_points and tolerance_m < 2048:
+        tolerance_m *= 2
+        simplified = _simplify_line(points, tolerance_m)
+    if len(simplified) > max_points:
+        indices = [round(i * (len(simplified) - 1) / (max_points - 1))
+                   for i in range(max_points)]
+        simplified = [simplified[i] for i in indices]
+    return simplified
 
 
 def latest_speed_ms(points):

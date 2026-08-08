@@ -460,6 +460,7 @@
   var tbody = document.getElementById('radial-tbody');
   var map = null, mapReady = false, fitted = false;
   var markers = {};   // opaque key → mapboxgl.Marker
+  var trails = {};    // opaque key → {sourceId, layerId}
   var expanded = {};  // opaque key → bool (row expansion is opt-in, per rider)
   var selectedPlanId = null;   // plan lens; null → server applies the base plan
   var plansBuilt = false;
@@ -533,9 +534,34 @@
   function updateMarkers(roster) {
     if (!map || !mapReady) { return; }
     var seen = {};
+    var seenTrails = {};
     roster.forEach(function (row) {
       if (row.lat == null || row.lng == null) { return; }
       seen[row.key] = true;
+      var coords = Array.isArray(row.trail) ? row.trail : [];
+      if (coords.length >= 2) {
+        seenTrails[row.key] = true;
+        var sourceId = 'rider-trail-source-' + row.key;
+        var layerId = 'rider-trail-' + row.key;
+        var feature = { type: 'Feature', geometry: {
+          type: 'LineString', coordinates: coords
+        } };
+        if (map.getSource(sourceId)) {
+          map.getSource(sourceId).setData(feature);
+          map.setPaintProperty(layerId, 'line-color', row.marker_color || '#64748b');
+        } else {
+          map.addSource(sourceId, { type: 'geojson', data: feature });
+          map.addLayer({
+            id: layerId, type: 'line', source: sourceId,
+            paint: {
+              'line-color': row.marker_color || '#64748b',
+              'line-width': 4,
+              'line-opacity': 0.85,
+            },
+          });
+          trails[row.key] = { sourceId: sourceId, layerId: layerId };
+        }
+      }
       if (markers[row.key]) {
         markers[row.key].setLngLat([row.lng, row.lat]);
         markers[row.key].getElement().className = 'radial-marker' + (row.stale ? ' stale' : '');
@@ -547,6 +573,13 @@
     });
     Object.keys(markers).forEach(function (k) {
       if (!seen[k]) { markers[k].remove(); delete markers[k]; }
+    });
+    Object.keys(trails).forEach(function (k) {
+      if (seenTrails[k]) { return; }
+      var trail = trails[k];
+      if (map.getLayer(trail.layerId)) { map.removeLayer(trail.layerId); }
+      if (map.getSource(trail.sourceId)) { map.removeSource(trail.sourceId); }
+      delete trails[k];
     });
     if (!fitted && roster.length) {
       var b = new mapboxgl.LngLatBounds();
