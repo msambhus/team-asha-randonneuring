@@ -135,8 +135,6 @@ describe('RideLiveScreen', () => {
     expect(screen.getByText('+45m')).toBeTruthy();     // cutoff margin, signed
     expect(screen.getByText('stopped day 2')).toBeTruthy();
     expect(screen.getByText('stopped here')).toBeTruthy();
-    expect(screen.getByText('Day 2 recorded stops')).toBeTruthy();
-    expect(screen.getByText('1:00 PM–1:04 PM')).toBeTruthy();
   });
 
   it('renders the active-day plan summary with event and Pacific times', () => {
@@ -148,6 +146,20 @@ describe('RideLiveScreen', () => {
     expect(screen.getByText('West Salem')).toBeTruthy();
     expect(screen.getByText('8:10 AM CT')).toBeTruthy();
     expect(screen.getByText('6:10 AM PT')).toBeTruthy();
+    expect(screen.getByText('Rider stops · day 2')).toBeTruthy();
+    expect(screen.getByText('Asha Rider · Intermediate stop')).toBeTruthy();
+    expect(screen.getByText('1:00 PM–1:04 PM')).toBeTruthy();
+  });
+
+  it('catalogs each rider stop separately beneath the shared day plan', () => {
+    const bob = rider({ rider_id: 8, name: 'Bob Rider', color: '#dc2626', plan_color: '#dc2626' });
+    bob.telemetry!.now!.stop_events = [{ distance_mi: 274, duration_min: 12, day_number: 2,
+      start_label: '2:00 PM', end_label: '2:12 PM' }];
+    mockPositions([rider({}), bob], CHART, { plan_snapshot: PLAN_SNAPSHOT });
+    render(<RideLiveScreen />);
+    expect(screen.getByText('Asha Rider · Intermediate stop')).toBeTruthy();
+    expect(screen.getByText('Bob Rider · West Salem')).toBeTruthy();
+    expect(screen.getByText('2:00 PM–2:12 PM')).toBeTruthy();
   });
 
   it('keeps Going riders visible when they are not sharing location', () => {
