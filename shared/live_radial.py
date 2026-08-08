@@ -151,8 +151,10 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
 
     # One leg-aware trajectory walk yields BOTH the current distance-done and the
     # rider's START position on the route (the seed), matched consistently.
-    dist_m, idx, off_by_m, start_dist_m, start_idx = tlm.project_history_to_route(
-        ride_history, ctx['track'], with_start=True)
+    (dist_m, idx, off_by_m, start_dist_m, start_idx,
+     route_projections) = tlm.project_history_to_route(
+        ride_history, ctx['track'], with_start=True,
+        with_point_projections=True)
     has_valid_route_history = dist_m is not None
     if dist_m is None:
         if not stateless_fallback:
@@ -235,31 +237,21 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
     # Partition the exact same stopped intervals used by the total into route
     # days. This includes valid telemetry gaps that do not become standalone
     # display rows, while avoiding civil-midnight and shared-boundary errors.
-    stopped_by_day = {}
-    for first, second in zip(ride_history, ride_history[1:]):
-        _moving_interval, stopped_interval = tlm.moving_stopped([first, second])
-        if not stopped_interval:
-            continue
-        projected, _pidx, _off = tlm.project_to_route(
-            float(second['lat']), float(second['lng']), ctx['track'])
-        if projected is None:
-            continue
-        interval_day = route_day_for_miles(projected * M_TO_MI)
-        stopped_by_day[interval_day] = (
-            stopped_by_day.get(interval_day, 0.0) + float(stopped_interval))
-
     local_tz = tz or timezone.utc
+    stopped_by_day = {}
     stop_events = []
-    for first, second in zip(ride_history, ride_history[1:]):
+    for history_i, (first, second) in enumerate(
+            zip(ride_history, ride_history[1:]), start=1):
         _moving_interval, stopped_interval = tlm.moving_stopped([first, second])
         if not stopped_interval:
             continue
-        projected, _pidx, off = tlm.project_to_route(
-            float(second['lat']), float(second['lng']), ctx['track'])
+        projected, _pidx, off = route_projections[history_i]
         if projected is None or off is None or off > tlm.ON_ROUTE_MAX_M:
             continue
         event_mi = projected * M_TO_MI
         event_day = route_day_for_miles(event_mi)
+        stopped_by_day[event_day] = (
+            stopped_by_day.get(event_day, 0.0) + float(stopped_interval))
         start_at, end_at = first['recorded_at'], second['recorded_at']
         previous = stop_events[-1] if stop_events else None
         gap_min = ((start_at - previous['_end_at']).total_seconds() / 60.0
