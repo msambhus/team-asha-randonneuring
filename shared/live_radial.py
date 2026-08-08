@@ -220,6 +220,30 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
                                  if pos + 1 < len(boundaries) else None)
     now_block['active_day'] = active_day
 
+    def route_day_for_miles(distance_mi):
+        route_day = 1
+        for boundary_day, boundary_miles in boundaries:
+            # The common arrival/departure point belongs to the arriving day.
+            if distance_mi >= boundary_miles + (0.5 if boundary_day > 1 else 0):
+                route_day = boundary_day
+        return route_day
+
+    # Partition the exact same stopped intervals used by the total into route
+    # days. This includes valid telemetry gaps that do not become standalone
+    # display rows, while avoiding civil-midnight and shared-boundary errors.
+    stopped_by_day = {}
+    for first, second in zip(ride_history, ride_history[1:]):
+        _moving_interval, stopped_interval = tlm.moving_stopped([first, second])
+        if not stopped_interval:
+            continue
+        projected, _pidx, _off = tlm.project_to_route(
+            float(second['lat']), float(second['lng']), ctx['track'])
+        if projected is None:
+            continue
+        interval_day = route_day_for_miles(projected * M_TO_MI)
+        stopped_by_day[interval_day] = (
+            stopped_by_day.get(interval_day, 0.0) + float(stopped_interval))
+
     local_tz = tz or timezone.utc
     stop_events = []
     for period in tlm.stationary_periods(ride_history):
@@ -228,12 +252,7 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
         if projected is None or off is None or off > tlm.ON_ROUTE_MAX_M:
             continue
         event_mi = projected * M_TO_MI
-        event_day = 1
-        for day, miles in boundaries:
-            # A sleep control is both Day N's arrival and Day N+1's distance
-            # origin. It remains part of the prior day until the rider departs.
-            if event_mi >= miles + (0.5 if day > 1 else 0):
-                event_day = day
+        event_day = route_day_for_miles(event_mi)
         start_local = _as_utc(period['start_at']).astimezone(local_tz)
         end_local = _as_utc(period['end_at']).astimezone(local_tz)
         stop_events.append({
@@ -243,12 +262,7 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
             'end_label': end_local.strftime('%-I:%M %p'),
         })
     now_block['stop_events'] = stop_events
-    # The daily total and the rendered rows must come from the same observed
-    # periods. This prevents an overnight sleep from appearing as Day 2's total
-    # while being absent (or split into tiny fragments) in the itinerary.
-    now_block['stopped_ride_day_min'] = round(sum(
-        float(event['duration_min']) for event in stop_events
-        if event['day_number'] == active_day), 1)
+    now_block['stopped_ride_day_min'] = round(stopped_by_day.get(active_day, 0.0), 1)
 
     # Time left = the brevet's overall time limit minus elapsed (e.g. 40h for a 600),
     # clamped at 0. Only when the context carries a time limit (Team Asha does).

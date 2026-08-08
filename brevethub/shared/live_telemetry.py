@@ -307,7 +307,7 @@ def current_stop_duration_min(points, radius_m=CURRENT_STOP_RADIUS_M):
 
 
 def stationary_periods(points, min_duration_min=2.0,
-                       radius_m=CURRENT_STOP_RADIUS_M, merge_gap_min=5.0):
+                       radius_m=CURRENT_STOP_RADIUS_M, merge_gap_min=30.0):
     """Observed stationary periods, including completed intermediate stops."""
     usable = [p for p in (points or [])
               if p.get('recorded_at') is not None
