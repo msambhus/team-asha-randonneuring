@@ -309,6 +309,10 @@ export interface LivePositionTelemetryNow {
   elapsed_min: number | null;
   moving_min: number | null;
   stopped_min: number | null;
+  current_stop_min?: number | null;
+  stopped_ride_day_min?: number | null;
+  active_day?: number | null;
+  stop_events?: LiveStopEvent[];
   heart_rate: number | null;
   power: number | null;
   cadence: number | null;
@@ -329,6 +333,7 @@ export interface LivePositionNextControl {
   arrival_time_min?: number | null;   // plan's reaching time (not departure)
   eta_iso: string | null;
   eta_label: string | null;           // club-local clock, e.g. "3:45 PM" — ARRIVAL time
+  eta_pacific_label?: string | null;
   // Speed needed to reach the control at the plan's arrival; null when behind.
   required_mph?: number | null;
   behind?: boolean;                   // plan's arrival time already passed
@@ -392,22 +397,59 @@ export interface UpcomingControl {
   arrival_time_min: number | null;
   eta_iso: string | null;
   eta_label: string | null;   // club-local clock, e.g. "3:45 PM"
+  eta_pacific_label?: string | null;
+}
+
+export interface LiveStopEvent {
+  distance_mi: number;
+  duration_min: number;
+  day_number: number;
+  start_label: string;
+  end_label: string;
+}
+
+export interface LivePlanSnapshotStop {
+  name: string;
+  distance_mi: number;
+  eta: string;
+  eta_event_zone?: string | null;
+  eta_pacific?: string | null;
+  show_pacific?: boolean;
+  break_min: number;
+  type: string;
+  time_bank_min: number | null;
+}
+
+export interface LivePlanSnapshot {
+  name: string | null;
+  slug: string | null;
+  active_day: number;
+  is_current_day: boolean;
+  day_distance_mi: number;
+  day_elevation_ft: number;
+  day_controls: number;
+  day_moving_min: number;
+  day_stopped_min: number;
+  day_elapsed_min: number;
+  day_time_bank_min: number | null;
+  day_stops: LivePlanSnapshotStop[];
 }
 
 export interface LivePosition {
   rider_id: number;
   name: string;
-  lat: number;
-  lng: number;
+  lat: number | null;
+  lng: number | null;
   status: string | null;
   color: string;
   /** Dot color by plan timing (ahead=green / behind=red / grey=unknown). Falls
    *  back to `color` (signup status) server-side when no plan is matched. */
   plan_color?: string;
-  recorded_at: string;
-  minutes_ago: number;
+  recorded_at: string | null;
+  minutes_ago: number | null;
   stale: boolean;
-  source: 'garmin' | 'beacon';
+  source: 'garmin' | 'beacon' | null;
+  not_sharing?: boolean;
   telemetry: LivePositionTelemetry | null;
   trail: [number, number][] | null;
 }
@@ -421,6 +463,7 @@ export interface PositionsResponse {
   plans?: LivePlanOption[];            // plan selector options (item 1)
   selected_plan_id?: LivePlanId | null; // the APPLIED plan (rejected id echoes 'base')
   upcoming_controls?: UpcomingControl[]; // shared ride-level list (item 2)
+  plan_snapshot?: LivePlanSnapshot | null;
 }
 
 /** What useLivePositions exposes to the screen — the positions array plus the
@@ -431,4 +474,5 @@ export interface LivePositionsResult {
   plans: LivePlanOption[];
   selected_plan_id: LivePlanId | null;
   upcoming_controls: UpcomingControl[];
+  plan_snapshot: LivePlanSnapshot | null;
 }

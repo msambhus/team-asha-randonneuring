@@ -688,6 +688,23 @@ def _build_plan_snapshot(ride, selected_day=None):
         return None
 
 
+@cache.memoize(timeout=LIVE_CONTEXT_TTL)
+def _mobile_live_plan_snapshot(ride_id):
+    """Cache the base-plan day summary exposed to native live viewers.
+
+    The live positions endpoint polls every 30 seconds.  Building the web-parity
+    snapshot performs plan/stop lookups, so keep it on the same slow-changing TTL
+    as route and weather context instead of repeating that work for every rider.
+    """
+    try:
+        ride = get_ride_by_id(ride_id)
+        return _build_plan_snapshot(ride) if ride else None
+    except Exception:  # noqa: BLE001 — additive mobile context must never sink polling
+        current_app.logger.warning(
+            'live: mobile plan snapshot failed for ride %s', ride_id, exc_info=True)
+        return None
+
+
 @live_bp.route('/live')
 @profile_required
 def live_hub():
@@ -1532,6 +1549,13 @@ def live_positions():
         except ValueError:
             start_utc = None
 
+    try:
+        schedule_ride = get_ride_by_id(ride_id)
+    except Exception:  # noqa: BLE001 — timezone enrichment is optional
+        schedule_ride = None
+    schedule_ride = schedule_ride or {
+        'timezone': (ctx or {}).get('event_timezone'),
+    }
     positions = []
     for row in rows:
         recorded_at = row['recorded_at']
@@ -1553,6 +1577,18 @@ def live_positions():
             else:
                 rider_plan_stops = _rider_plan_stops(ctx, row['rider_id']) if ctx else None
             telemetry = _rider_telemetry(row, ctx, now, history, plan_stops=rider_plan_stops)
+            # The web detail panel shows event-local ETA with Pacific underneath
+            # for out-of-state rides. Keep the authenticated native response on the
+            # same clock model rather than forcing riders to mentally convert it.
+            for block_name in ('next_control', 'finish'):
+                block = (telemetry or {}).get(block_name)
+                if not block or not block.get('eta_iso'):
+                    continue
+                eta_dt = datetime.fromisoformat(block['eta_iso'])
+                labels = instant_time_labels(eta_dt, schedule_ride)
+                block['eta_label'] = f"{labels['event']} {labels['event_zone']}"
+                block['eta_pacific_label'] = (
+                    f"{labels['pacific']} PT" if labels['show_pacific'] else None)
         except Exception:
             current_app.logger.exception('live telemetry failed for rider %s', row['rider_id'])
 
@@ -1583,6 +1619,34 @@ def live_positions():
             'trail': trail,
         })
 
+    # Match the web roster: a Going rider remains visible even before they share
+    # a location.  Native viewers can distinguish "not sharing" from an empty or
+    # broken ride instead of assuming that rider was removed from the event.
+    sharing_ids = {position['rider_id'] for position in positions}
+    try:
+        for rider in get_going_riders_for_ride(ride_id) or []:
+            if rider['rider_id'] in sharing_ids:
+                continue
+            positions.append({
+                'rider_id': rider['rider_id'],
+                'name': (rider.get('name') or '').strip(),
+                'lat': None,
+                'lng': None,
+                'status': rider.get('status') or RideStatus.GOING.value,
+                'color': STATUS_COLORS.get(RideStatus.GOING.value, DEFAULT_COLOR),
+                'plan_color': PLAN_UNKNOWN_COLOR,
+                'recorded_at': None,
+                'minutes_ago': None,
+                'stale': False,
+                'source': None,
+                'telemetry': None,
+                'trail': None,
+                'not_sharing': True,
+            })
+    except Exception:  # noqa: BLE001 — Going roster is additive and fail-soft
+        current_app.logger.warning(
+            'live: mobile Going roster failed for ride %s', ride_id, exc_info=True)
+
     # Leader (furthest-along on-route rider) drives the shared upcoming-controls list.
     leader_dist_mi = None
     for p in positions:
@@ -1590,9 +1654,19 @@ def live_positions():
         d = (t.get('now') or {}).get('distance_mi')
         if d is not None and (leader_dist_mi is None or d > leader_dist_mi):
             leader_dist_mi = d
-    schedule_ride = {'timezone': (ctx or {}).get('event_timezone')}
     upcoming_controls = _upcoming_controls(
         list_stops, leader_dist_mi, start_utc, schedule_ride)
+    for control in upcoming_controls:
+        if not control.get('eta_iso'):
+            continue
+        try:
+            labels = instant_time_labels(
+                datetime.fromisoformat(control['eta_iso']), schedule_ride)
+            control['eta_label'] = f"{labels['event']} {labels['event_zone']}"
+            control['eta_pacific_label'] = (
+                f"{labels['pacific']} PT" if labels['show_pacific'] else None)
+        except (TypeError, ValueError):
+            pass
 
     return jsonify({
         'ride_id': ride_id,
@@ -1610,6 +1684,10 @@ def live_positions():
         'selected_plan_id': applied_plan_id,
         # Shared upcoming controls of the applied plan with club-local ETAs (item 2).
         'upcoming_controls': upcoming_controls,
+        # Compact, cache-backed version of the web live page's active-day card.
+        # Native users see today's distance/climb/riding/stops/bank and planned
+        # controls without opening a second screen; the full plan remains linked.
+        'plan_snapshot': _mobile_live_plan_snapshot(ride_id),
     })
 
 

@@ -1,6 +1,6 @@
 /**
  * mobile/hooks/useLivePositions.ts — poll a ride's live rider positions.
- * Refetches every ~20s while the screen is mounted (matches the web map cadence).
+ * Refetches every 30s while the screen is mounted (matches the web map cadence).
  */
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../lib/api';
@@ -13,7 +13,7 @@ export function useLivePositions(rideId: number, planId?: LivePlanId | null) {
     // planId is part of the key so switching plans re-polls (and re-grades everyone).
     queryKey: ['positions', rideId, planId ?? 'base'],
     enabled: !!token && !!rideId,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
     queryFn: () =>
       apiFetch<PositionsResponse>(
         `/api/live/positions?ride_id=${encodeURIComponent(rideId)}` +
@@ -29,6 +29,7 @@ export function useLivePositions(rideId: number, planId?: LivePlanId | null) {
       plans: d.plans ?? [],
       selected_plan_id: d.selected_plan_id ?? null,
       upcoming_controls: d.upcoming_controls ?? [],
+      plan_snapshot: d.plan_snapshot ?? null,
     }),
   });
 }

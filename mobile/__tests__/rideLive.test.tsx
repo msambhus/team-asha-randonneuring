@@ -10,7 +10,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react-native';
 import RideLiveScreen from '../app/ride/[id]';
 import * as useLivePositionsHook from '../hooks/useLivePositions';
-import type { LivePosition, LiveChartData, LivePlanOption, UpcomingControl } from '../lib/types';
+import type { LivePosition, LiveChartData, LivePlanOption, LivePlanSnapshot, UpcomingControl } from '../lib/types';
 
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -64,6 +64,9 @@ function rider(over: Partial<LivePosition>): LivePosition {
     telemetry: {
       on_route: true,
       now: { speed_mph: 12, activity: 'cycling', elapsed_min: 60, moving_min: 55, stopped_min: 5,
+             current_stop_min: 3, stopped_ride_day_min: 4, active_day: 2,
+             stop_events: [{ distance_mi: 4.2, duration_min: 4, day_number: 2,
+               start_label: '1:00 PM', end_label: '1:04 PM' }],
              heart_rate: null, power: null, cadence: null, distance_mi: 5, ascent_done_ft: 2345 },
       remaining: null,
       next_control: { name: 'Control 1', type: 'control', distance_mi: 10, dist_to_go_mi: 5,
@@ -88,11 +91,21 @@ const UPCOMING: UpcomingControl[] = [
     eta_iso: null, eta_label: '9:30 AM' },
 ];
 
-type Extra = { plans?: LivePlanOption[]; selected_plan_id?: number | 'base' | 'own' | null; upcoming_controls?: UpcomingControl[] };
+const PLAN_SNAPSHOT: LivePlanSnapshot = {
+  name: 'Coulee Challenge', slug: 'coulee-challenge', active_day: 2, is_current_day: true,
+  day_distance_mi: 182, day_elevation_ft: 8000, day_controls: 6,
+  day_moving_min: 900, day_stopped_min: 300, day_elapsed_min: 1200,
+  day_time_bank_min: 75,
+  day_stops: [{ name: 'West Salem', distance_mi: 274, eta: '8:10 AM',
+    eta_event_zone: 'CT', eta_pacific: '6:10 AM', show_pacific: true,
+    break_min: 20, type: 'control', time_bank_min: 90 }],
+};
+
+type Extra = { plans?: LivePlanOption[]; selected_plan_id?: number | 'base' | 'own' | null; upcoming_controls?: UpcomingControl[]; plan_snapshot?: LivePlanSnapshot | null };
 
 function mockPositions(positions: LivePosition[], chart_data: LiveChartData | null, extra: Extra = {}) {
   jest.spyOn(useLivePositionsHook, 'useLivePositions').mockReturnValue({
-    data: { positions, chart_data, plans: [], selected_plan_id: null, upcoming_controls: [], ...extra },
+    data: { positions, chart_data, plans: [], selected_plan_id: null, upcoming_controls: [], plan_snapshot: null, ...extra },
     isLoading: false,
   } as never);
 }
@@ -120,6 +133,30 @@ describe('RideLiveScreen', () => {
     expect(screen.getByText('climbed so far')).toBeTruthy();
     expect(screen.getByText('2345 ft')).toBeTruthy();
     expect(screen.getByText('+45m')).toBeTruthy();     // cutoff margin, signed
+    expect(screen.getByText('stopped day 2')).toBeTruthy();
+    expect(screen.getByText('stopped here')).toBeTruthy();
+    expect(screen.getByText('Day 2 recorded stops')).toBeTruthy();
+    expect(screen.getByText('1:00 PM–1:04 PM')).toBeTruthy();
+  });
+
+  it('renders the active-day plan summary with event and Pacific times', () => {
+    mockPositions([rider({})], CHART, { plan_snapshot: PLAN_SNAPSHOT });
+    render(<RideLiveScreen />);
+    expect(screen.getByText('DAY 2 PLAN')).toBeTruthy();
+    expect(screen.getByText('Coulee Challenge')).toBeTruthy();
+    expect(screen.getByText('182 mi')).toBeTruthy();
+    expect(screen.getByText('West Salem')).toBeTruthy();
+    expect(screen.getByText('8:10 AM CT')).toBeTruthy();
+    expect(screen.getByText('6:10 AM PT')).toBeTruthy();
+  });
+
+  it('keeps Going riders visible when they are not sharing location', () => {
+    mockPositions([rider({ rider_id: 8, name: 'Bharadwaj Rao', lat: null, lng: null,
+      recorded_at: null, minutes_ago: null, source: null, telemetry: null,
+      not_sharing: true })], null);
+    render(<RideLiveScreen />);
+    expect(screen.getByText(/Bharadwaj Rao/)).toBeTruthy();
+    expect(screen.getByText('Not sharing location')).toBeTruthy();
   });
 
   it('shows an em-dash for required speed when the rider is behind', () => {

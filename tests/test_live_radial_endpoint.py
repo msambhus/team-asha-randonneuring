@@ -207,3 +207,30 @@ def test_member_positions_still_carry_rider_id(client):
     assert member.status_code == 200 and public.status_code == 200
     assert member.get_json()['positions'][0]['rider_id'] == 7
     assert 'rider_id' not in public.get_data(as_text=True)
+
+
+def test_member_positions_include_plan_snapshot_and_going_non_sharer(client):
+    _login(client, rider_id=7)
+    plan_snapshot = {
+        'name': 'Coulee Challenge', 'slug': 'coulee-challenge',
+        'active_day': 2, 'day_distance_mi': 182, 'day_stops': [],
+    }
+    going = [
+        {'rider_id': 7, 'name': 'Asha Rider', 'status': 'GOING'},
+        {'rider_id': 8, 'name': 'Bharadwaj Rao', 'status': 'GOING'},
+    ]
+    with patch('routes.live.get_ride_by_id', return_value=_PUBLIC_LIVE_RIDE), \
+         patch('routes.live._ride_live_context', return_value=_FAKE_CTX), \
+         patch('routes.live._mobile_live_plan_snapshot', return_value=plan_snapshot), \
+         patch('routes.live.get_latest_positions_for_ride', return_value=[_row()]), \
+         patch('routes.live.get_going_riders_for_ride', return_value=going), \
+         patch('routes.live.get_positions_for_rider_since', return_value=_history()):
+        resp = client.get('/api/live/positions?ride_id=5')
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['plan_snapshot']['active_day'] == 2
+    assert len(data['positions']) == 2
+    non_sharer = next(p for p in data['positions'] if p['rider_id'] == 8)
+    assert non_sharer['not_sharing'] is True
+    assert non_sharer['lat'] is None and non_sharer['lng'] is None

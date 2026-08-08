@@ -17,7 +17,10 @@ import { useRideRoute } from '../../hooks/useRideRoute';
 import { useSharing } from '../../hooks/useSharing';
 import { startSharing, stopSharing, isSharing } from '../../location/backgroundLocation';
 import { WeatherChart } from '../../components/WeatherChart';
-import type { LivePosition, LiveChartData, LivePlanOption, LivePlanId, UpcomingControl } from '../../lib/types';
+import type {
+  LivePosition, LiveChartData, LivePlanOption, LivePlanId, LivePlanSnapshot,
+  UpcomingControl,
+} from '../../lib/types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../lib/theme';
 
@@ -115,6 +118,58 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function DualTime({ primary, pacific }: { primary: string | null | undefined; pacific?: string | null }) {
+  return (
+    <View>
+      <Text style={styles.metricVal}>{primary ?? '—'}</Text>
+      {pacific ? <Text style={styles.secondaryTime}>{pacific}</Text> : null}
+    </View>
+  );
+}
+
+function DayPlanSummary({ plan, onOpen }: { plan: LivePlanSnapshot; onOpen: () => void }) {
+  const visibleStops = plan.day_stops.slice(0, 4);
+  return (
+    <View style={styles.dayPlanCard}>
+      <View style={styles.dayPlanHead}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.eyebrow}>DAY {plan.active_day} PLAN</Text>
+          <Text style={styles.dayPlanName}>{plan.name || 'Ride plan'}</Text>
+        </View>
+        <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel="Open full ride plan">
+          <Text style={styles.openPlan}>Full plan ›</Text>
+        </Pressable>
+      </View>
+      <View style={styles.metricRow}>
+        <Metric label="day miles" value={n(plan.day_distance_mi, ' mi')} />
+        <Metric label="day climb" value={n(plan.day_elevation_ft, ' ft')} />
+        <Metric label="controls" value={String(plan.day_controls)} />
+        <Metric label="planned riding" value={hm(plan.day_moving_min)} />
+        <Metric label="planned stops" value={hm(plan.day_stopped_min)} />
+        <Metric label="planned bank" value={fmtBank(plan.day_time_bank_min)} />
+      </View>
+      {visibleStops.length ? (
+        <View style={styles.dayStops}>
+          {visibleStops.map((stop, i) => (
+            <View key={`${stop.distance_mi}-${i}`} style={styles.dayStopRow}>
+              <View style={[styles.stopTypeDot, stop.type === 'rest' && styles.stopTypeRest]} />
+              <Text numberOfLines={1} style={styles.dayStopName}>{stop.name || 'Stop'}</Text>
+              <Text style={styles.dayStopDistance}>{n(stop.distance_mi, ' mi')}</Text>
+              <View style={styles.dayStopTime}>
+                <Text style={styles.dayStopEta}>{stop.eta}{stop.eta_event_zone ? ` ${stop.eta_event_zone}` : ''}</Text>
+                {stop.show_pacific && stop.eta_pacific ? <Text style={styles.secondaryTime}>{stop.eta_pacific} PT</Text> : null}
+              </View>
+            </View>
+          ))}
+          {plan.day_stops.length > visibleStops.length ? (
+            <Text style={styles.moreStops}>+{plan.day_stops.length - visibleStops.length} more in full plan</Text>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function RiderCard({ p }: { p: LivePosition }) {
   const t = p.telemetry;
   const now = t?.now;
@@ -127,8 +182,14 @@ function RiderCard({ p }: { p: LivePosition }) {
       <View style={styles.cardHead}>
         <View style={[styles.dot, { backgroundColor: p.plan_color ?? p.color }]}><Text style={styles.dotText}>{initials(p.name)}</Text></View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.cardName}>{p.name || 'Rider'} {p.source === 'garmin' ? '⌚' : '📱'}</Text>
-          <Text style={styles.cardMeta}>updated {p.minutes_ago <= 0 ? 'just now' : `${hm(p.minutes_ago)} ago`}</Text>
+          <Text style={styles.cardName}>
+            {p.name || 'Rider'}{p.source ? ` ${p.source === 'garmin' ? '⌚' : '📱'}` : ''}
+          </Text>
+          <Text style={styles.cardMeta}>
+            {p.not_sharing || p.recorded_at == null
+              ? 'Not sharing location'
+              : `updated ${(p.minutes_ago ?? 0) <= 0 ? 'just now' : `${hm(p.minutes_ago)} ago`}`}
+          </Text>
         </View>
         {badge ? <Text style={[styles.badge, { color: badge.color }]}>{badge.text}</Text> : null}
       </View>
@@ -139,14 +200,29 @@ function RiderCard({ p }: { p: LivePosition }) {
           {now.avg_elapsed_speed_mph != null ? <Metric label="avg (elapsed)" value={n(now.avg_elapsed_speed_mph, ' mph')} /> : null}
           {now.avg_moving_speed_mph != null ? <Metric label="avg (moving)" value={n(now.avg_moving_speed_mph, ' mph')} /> : null}
           {now.activity ? <Metric label="state" value={`${ACTIVITY_ICON[now.activity] ?? ''} ${now.activity}`} /> : null}
+          <Metric label="elapsed" value={hm(now.elapsed_min)} />
           <Metric label="moving" value={hm(now.moving_min)} />
-          <Metric label="stopped" value={hm(now.stopped_min)} />
+          <Metric label="stopped total" value={hm(now.stopped_min)} />
+          {now.active_day != null ? <Metric label={`stopped day ${now.active_day}`} value={hm(now.stopped_ride_day_min)} /> : null}
+          {now.current_stop_min != null ? <Metric label="stopped here" value={hm(now.current_stop_min)} /> : null}
           {now.ascent_done_ft != null ? <Metric label="climbed so far" value={n(now.ascent_done_ft, ' ft')} /> : null}
           {now.heart_rate != null ? <Metric label="HR" value={n(now.heart_rate, ' bpm')} /> : null}
           {now.power != null ? <Metric label="power" value={n(now.power, ' W')} /> : null}
           {now.cadence != null ? <Metric label="cadence" value={n(now.cadence, ' rpm')} /> : null}
           {now.grade_pct != null ? <Metric label="grade" value={n(now.grade_pct, '%')} /> : null}
           {now.headwind_done_label ? <Metric label="wind" value={now.headwind_done_label} /> : null}
+        </View>
+      ) : null}
+      {now?.stop_events?.length ? (
+        <View style={styles.stopHistory}>
+          <Text style={styles.stopHistoryTitle}>Day {now.active_day ?? ''} recorded stops</Text>
+          {now.stop_events.filter((event) => event.day_number === now.active_day).slice(-6).map((event, i) => (
+            <View key={`${event.distance_mi}-${event.start_label}-${i}`} style={styles.stopEventRow}>
+              <Text style={styles.stopEventIcon}>⏸</Text>
+              <Text style={styles.stopEventMain}>{n(event.distance_mi, ' mi')} · {hm(event.duration_min)}</Text>
+              <Text style={styles.stopEventTime}>{event.start_label}–{event.end_label}</Text>
+            </View>
+          ))}
         </View>
       ) : null}
       {rem ? (
@@ -168,7 +244,7 @@ function RiderCard({ p }: { p: LivePosition }) {
         <View style={styles.nextControl}>
           <Text style={styles.nextControlName}>Next: {(nc.name || 'control').replace(', CA', '')}</Text>
           <View style={styles.metricRow}>
-            <Metric label="ETA (arrival)" value={nc.eta_label ?? '—'} />
+            <View style={styles.metric}><DualTime primary={nc.eta_label} pacific={nc.eta_pacific_label} /><Text style={styles.metricLbl}>ETA (arrival)</Text></View>
             {/* Speed to hit the plan's arrival; em-dash when behind. */}
             <Metric label="req speed" value={nc.required_mph != null ? n(nc.required_mph, ' mph') : '—'} />
             {nc.dist_to_go_mi != null ? <Metric label="to go" value={n(nc.dist_to_go_mi, ' mi')} /> : null}
@@ -180,7 +256,7 @@ function RiderCard({ p }: { p: LivePosition }) {
         <View style={styles.nextControl}>
           <Text style={styles.nextControlName}>To finish</Text>
           <View style={styles.metricRow}>
-            <Metric label="ETA (arrival)" value={fin.eta_label ?? '—'} />
+            <View style={styles.metric}><DualTime primary={fin.eta_label} pacific={fin.eta_pacific_label} /><Text style={styles.metricLbl}>ETA (arrival)</Text></View>
             {/* Speed to reach the finish on time; em-dash when behind (item 3). */}
             <Metric label="req speed" value={fin.required_mph != null ? n(fin.required_mph, ' mph') : '—'} />
             {fin.dist_to_go_mi != null ? <Metric label="to go" value={n(fin.dist_to_go_mi, ' mi')} /> : null}
@@ -233,7 +309,10 @@ function UpcomingControls({ controls, showOwnNote }: { controls: UpcomingControl
         <View key={i} style={styles.ucRow}>
           <Text style={styles.ucName} numberOfLines={1}>{(c.name || 'control').replace(', CA', '')}</Text>
           <Text style={styles.ucDist}>{c.distance_mi != null ? `${c.distance_mi} mi` : ''}</Text>
-          <Text style={styles.ucEta}>{c.eta_label ?? '—'}</Text>
+          <View style={styles.ucTime}>
+            <Text style={styles.ucEta}>{c.eta_label ?? '—'}</Text>
+            {c.eta_pacific_label ? <Text style={styles.secondaryTime}>{c.eta_pacific_label}</Text> : null}
+          </View>
         </View>
       ))}
     </View>
@@ -252,6 +331,7 @@ export default function RideLiveScreen() {
   const plans = data?.plans ?? [];
   const appliedPlanId = data?.selected_plan_id ?? null;
   const upcoming = data?.upcoming_controls ?? [];
+  const planSnapshot = data?.plan_snapshot ?? null;
   const { data: route, isLoading: routeLoading } = useRideRoute(rideId);
   const { enabled } = useSharing();   // global account consent (Settings)
 
@@ -270,14 +350,18 @@ export default function RideLiveScreen() {
   // Frame the map to the route (preferred) or the riders, once.
   useEffect(() => {
     if (framedOnce.current || !mapRef.current) return;
-    const coords = (route?.length ? route : (positions ?? []).map((p) => ({ latitude: p.lat, longitude: p.lng })));
+    const riderCoords = (positions ?? [])
+      .filter((p) => p.lat != null && p.lng != null)
+      .map((p) => ({ latitude: p.lat as number, longitude: p.lng as number }));
+    const coords = route?.length ? route : riderCoords;
     if (!coords.length) return;
     framedOnce.current = true;
     mapRef.current.fitToCoordinates(coords, { edgePadding: { top: 70, right: 70, bottom: 70, left: 70 }, animated: true });
   }, [route, positions]);
 
   const initialRegion = useMemo<Region>(() => {
-    const first = route?.[0] ?? (positions?.[0] ? { latitude: positions[0].lat, longitude: positions[0].lng } : null);
+    const firstRider = positions?.find((p) => p.lat != null && p.lng != null);
+    const first = route?.[0] ?? (firstRider ? { latitude: firstRider.lat as number, longitude: firstRider.lng as number } : null);
     return first ? { ...first, latitudeDelta: 0.08, longitudeDelta: 0.08 } : FALLBACK_REGION;
   }, [route, positions]);
 
@@ -321,10 +405,10 @@ export default function RideLiveScreen() {
               strokeColor={p.color} strokeWidth={2} />
           ) : null,
         )}
-        {(positions ?? []).map((p: LivePosition) => {
+        {(positions ?? []).filter((p) => p.lat != null && p.lng != null).map((p: LivePosition) => {
           const act = p.telemetry?.now?.activity;
           return (
-            <Marker key={p.rider_id} coordinate={{ latitude: p.lat, longitude: p.lng }} title={p.name}
+            <Marker key={p.rider_id} coordinate={{ latitude: p.lat as number, longitude: p.lng as number }} title={p.name}
               opacity={p.stale ? 0.45 : 1} anchor={{ x: 0.5, y: 0.5 }}>
               <View style={[styles.pin, { backgroundColor: p.plan_color ?? p.color, borderStyle: p.source === 'garmin' ? 'solid' : 'dashed' }]}>
                 <Text style={styles.pinText}>{initials(p.name)}</Text>
@@ -374,6 +458,7 @@ export default function RideLiveScreen() {
       <ScrollView style={styles.cards} contentContainerStyle={{ padding: 12, paddingBottom: 24 + insets.bottom }}>
         {isLoading ? <ActivityIndicator style={{ marginTop: 16 }} /> : null}
         <PlanSelector plans={plans} applied={appliedPlanId} onSelect={setSelectedPlanId} />
+        {planSnapshot ? <DayPlanSummary plan={planSnapshot} onOpen={() => router.push(`/ride/plan?id=${rideId}`)} /> : null}
         {(positions ?? []).map((p) => <RiderCard key={p.rider_id} p={p} />)}
         {!isLoading && !(positions ?? []).length ? <Text style={styles.empty}>No live riders yet.</Text> : null}
         {chartData ? <LiveCharts chart={chartData} positions={positions ?? []} /> : null}
@@ -431,6 +516,27 @@ const styles = StyleSheet.create({
   metric: { minWidth: 56 },
   metricVal: { fontSize: 14, fontWeight: '700', color: '#1a365d' },
   metricLbl: { fontSize: 10, color: '#6b7280', textTransform: 'uppercase' },
+  secondaryTime: { fontSize: 10, color: '#6b7280', marginTop: 1 },
+  dayPlanCard: { backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#cbd5e1', borderLeftWidth: 4, borderLeftColor: colors.navy },
+  dayPlanHead: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
+  eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8, color: '#64748b' },
+  dayPlanName: { fontSize: 16, fontWeight: '800', color: colors.navy, marginTop: 2 },
+  openPlan: { color: colors.navy, fontWeight: '800', fontSize: 13 },
+  dayStops: { marginTop: 10, borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 4 },
+  dayStopRow: { flexDirection: 'row', alignItems: 'center', gap: 7, minHeight: 38, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  stopTypeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.blue },
+  stopTypeRest: { backgroundColor: colors.amber },
+  dayStopName: { flex: 1, fontSize: 12, fontWeight: '600', color: colors.navy },
+  dayStopDistance: { fontSize: 11, color: '#64748b' },
+  dayStopTime: { minWidth: 72, alignItems: 'flex-end' },
+  dayStopEta: { fontSize: 11, fontWeight: '700', color: colors.navy },
+  moreStops: { fontSize: 11, fontWeight: '600', color: '#64748b', marginTop: 7 },
+  stopHistory: { marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#eef2f7' },
+  stopHistoryTitle: { fontSize: 11, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: 4 },
+  stopEventRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
+  stopEventIcon: { fontSize: 12 },
+  stopEventMain: { fontSize: 12, fontWeight: '700', color: colors.navy },
+  stopEventTime: { marginLeft: 'auto', fontSize: 11, color: '#64748b' },
   afterRide: { fontStyle: 'italic', color: '#6b7280', fontSize: 11, marginTop: 8 },
   empty: { color: '#6b7280', textAlign: 'center', marginTop: 16 },
   chartsTitle: { fontSize: 15, fontWeight: '800', color: '#1a365d', marginTop: 6, marginBottom: 8 },
@@ -450,4 +556,5 @@ const styles = StyleSheet.create({
   ucName: { flex: 1, fontSize: 13, fontWeight: '600', color: '#1a365d' },
   ucDist: { fontSize: 12, color: '#6b7280' },
   ucEta: { fontSize: 13, fontWeight: '700', color: '#1a365d' },
+  ucTime: { alignItems: 'flex-end' },
 });
