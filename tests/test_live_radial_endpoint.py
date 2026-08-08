@@ -127,6 +127,58 @@ def test_guest_reads_public_live_roster_200(client):
         'public, s-maxage=15, stale-while-revalidate=30')
 
 
+def test_public_base_roster_reads_persistent_snapshot_without_history_replay(client):
+    computed = _now() - timedelta(seconds=8)
+    snapshot = {
+        'computed_at': computed,
+        'source_recorded_at': computed - timedelta(seconds=2),
+        'payload': {'public': {
+            'ride_id': 5, 'roster': [{'key': 'opaque', 'display_name': 'Asha R.'}],
+            'server_time': computed.isoformat(), 'stale_after_minutes': 10,
+            'poll_seconds': 30, 'chart_data': None,
+        }},
+    }
+    with patch('routes.live.get_ride_by_id', return_value=_PUBLIC_LIVE_RIDE), \
+         patch('routes.live._shared_live_snapshot', return_value=snapshot), \
+         patch('routes.live._ride_live_context', return_value=_FAKE_CTX), \
+         patch('routes.live.get_positions_for_rider_since') as history:
+        resp = client.get('/ride/5/live/roster.json?plan_id=base')
+
+    assert resp.status_code == 200
+    history.assert_not_called()
+    body = resp.get_json()
+    assert body['roster'][0]['display_name'] == 'Asha R.'
+    assert body['snapshot_computed_at'] == computed.isoformat()
+    assert 'rider_id' not in resp.get_data(as_text=True)
+
+
+def test_native_base_positions_reads_same_persistent_snapshot(client):
+    _login(client)
+    computed = _now() - timedelta(seconds=8)
+    snapshot = {
+        'computed_at': computed,
+        'source_recorded_at': computed - timedelta(seconds=2),
+        'payload': {'mobile': {
+            'ride_id': 5,
+            'positions': [{'rider_id': 7, 'name': 'Asha Rider'}],
+            'server_time': computed.isoformat(), 'stale_after_minutes': 10,
+            'chart_data': None, 'elevation_profile': None,
+            'upcoming_controls': [], 'plan_snapshot': None,
+        }},
+    }
+    with patch('routes.live._shared_live_snapshot', return_value=snapshot), \
+         patch('routes.live._ride_live_context', return_value=_FAKE_CTX), \
+         patch('routes.live.get_positions_for_rider_since') as history:
+        resp = client.get('/api/live/positions?ride_id=5')
+
+    assert resp.status_code == 200
+    history.assert_not_called()
+    body = resp.get_json()
+    assert body['positions'][0]['rider_id'] == 7
+    assert body['snapshot_computed_at'] == computed.isoformat()
+    assert resp.headers['Cache-Control'] == 'private, no-store'
+
+
 def test_public_roster_reuses_composed_response_within_fresh_window(client):
     with patch('routes.live.get_ride_by_id', return_value=_PUBLIC_LIVE_RIDE), \
          patch('routes.live._ride_live_context', return_value=_FAKE_CTX) as context, \
