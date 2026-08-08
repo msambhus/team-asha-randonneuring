@@ -2035,6 +2035,54 @@ def api_public_riders():
     })
 
 
+@live_bp.route('/api/me/training-log')
+@token_or_session_required
+def api_training_log():
+    """Private month of synced Strava activities for the native training log."""
+    if not g.rider_id:
+        return jsonify({'error': 'Complete your profile to view training'}), 403
+    month = (request.args.get('month') or '').strip()
+    if not re.fullmatch(r'\d{4}-\d{2}', month):
+        return jsonify({'error': 'month must be YYYY-MM'}), 400
+    try:
+        start = date.fromisoformat(f'{month}-01')
+        end = date(start.year + (1 if start.month == 12 else 0),
+                   1 if start.month == 12 else start.month + 1, 1)
+    except ValueError:
+        return jsonify({'error': 'Invalid month'}), 400
+
+    from models import get_strava_connection, get_strava_activities_between
+    connected = bool(get_strava_connection(g.rider_id))
+    rows = get_strava_activities_between(g.rider_id, start, end) if connected else []
+    activities = []
+    for row in rows:
+        local = row.get('start_date_local')
+        activities.append({
+            'id': str(row['strava_activity_id']),
+            'name': row.get('name') or row.get('activity_type') or 'Activity',
+            'type': row.get('activity_type') or 'Workout',
+            'start_local': local.isoformat() if local else None,
+            'date': str(local.date()) if local else None,
+            'distance_mi': round(float(row.get('distance') or 0) / 1609.344, 1),
+            'moving_minutes': round(float(row.get('moving_time') or 0) / 60),
+            'elapsed_minutes': round(float(row.get('elapsed_time') or 0) / 60),
+            'elevation_ft': round(float(row.get('total_elevation_gain') or 0) * 3.28084),
+            'average_hr': (round(float(row['average_heartrate']))
+                           if row.get('average_heartrate') is not None else None),
+            'average_watts': (round(float(row['average_watts']))
+                              if row.get('average_watts') is not None else None),
+            'suffer_score': row.get('suffer_score'),
+            'calories': row.get('calories'),
+            'trainer': bool(row.get('trainer')),
+            'commute': bool(row.get('commute')),
+            'url': row.get('strava_url'),
+        })
+    return jsonify({
+        'month': month, 'connected': connected, 'activities': activities,
+        'attribution': 'Powered by Strava',
+    })
+
+
 @live_bp.route('/api/riders/<int:rusa_id>')
 @token_or_session_required
 def api_public_rider(rusa_id):

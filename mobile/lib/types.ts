@@ -84,6 +84,19 @@ export interface PublicRiderResponse {
   }[];
 }
 
+export interface TrainingActivity {
+  id: string; name: string; type: string; start_local: string | null;
+  date: string | null; distance_mi: number; moving_minutes: number;
+  elapsed_minutes: number; elevation_ft: number; average_hr: number | null;
+  average_watts: number | null; suffer_score: number | null; calories: number | null;
+  trainer: boolean; commute: boolean; url: string | null;
+}
+
+export interface TrainingLogResponse {
+  month: string; connected: boolean; activities: TrainingActivity[];
+  attribution: string;
+}
+
 export interface EddingtonBadge {
   level: string;
   color?: string;
