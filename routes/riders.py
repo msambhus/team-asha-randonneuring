@@ -33,6 +33,7 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     get_user_by_id, _execute,
                     get_strava_connection, get_strava_activities,
                     get_rider_upcoming_signups, detect_r12_awards,
+                    get_followed_live_ride_ids,
                     get_signup_counts_batch, get_rider_signup_statuses_batch,
                     get_custom_plan, get_custom_plan_by_id, get_custom_plan_with_rider_info,
                     create_custom_plan,
@@ -598,6 +599,7 @@ def upcoming_brevets(season_name):
     current_rider = None
     user_signups = {}
     user_custom_plans = {}
+    followed_live_ride_ids = []
     can_edit_rides = False
     user_id = session.get('user_id')
     
@@ -617,6 +619,7 @@ def upcoming_brevets(season_name):
             # Batch load signup statuses for all events (1 query instead of N queries)
             user_signup_statuses = get_rider_signup_statuses_batch(rider_id, ride_ids)
             user_signups = {ride_id: data['status'] for ride_id, data in user_signup_statuses.items()}
+            followed_live_ride_ids = get_followed_live_ride_ids(rider_id)
             
             # Load custom plans for this rider (plan_slug_to_id already built above)
             for event in rusa_events:
@@ -682,6 +685,7 @@ def upcoming_brevets(season_name):
                            distances=distances,
                            current_rider_id=rider_id,
                            user_signups=user_signups,
+                           followed_live_ride_ids=followed_live_ride_ids,
                            all_ride_plans=all_ride_plans,
                            can_edit_rides=can_edit_rides,
                            wind_warnings=wind_warnings)

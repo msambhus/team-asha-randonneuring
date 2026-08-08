@@ -23,6 +23,8 @@ from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled
                     get_latest_positions_for_ride, insert_live_position,
                     get_going_riders_for_ride,
                     get_rider_upcoming_signups, get_ride_plan_stops,
+                    get_followed_live_ride_ids, get_followed_live_rides,
+                    set_followed_live_ride,
                     get_positions_for_rider_since, get_default_time_limit,
                     get_or_create_ride_invite, get_valid_ride_invite,
                     get_route_elevation_track, get_route_weather_elevation_track,
@@ -732,11 +734,13 @@ def live_hub():
     rider_id = session['rider_id']
     tracking = get_live_tracking(rider_id)
     upcoming = get_rider_upcoming_signups(rider_id)
+    followed = get_followed_live_rides(rider_id)
     return render_template(
         'live_hub.html',
         opted_in=bool(tracking and tracking.get('enabled')),
         has_garmin=bool(tracking and tracking.get('garmin_session_token')),
         upcoming=upcoming,
+        followed=followed,
     )
 
 
@@ -1865,6 +1869,31 @@ def live_rides():
         'signup_status': r.get('signup_status'),
     } for r in rides]
     return jsonify({'rides': out})
+
+
+@live_bp.route('/api/me/followed-live-rides', methods=['GET'])
+@token_or_session_required
+def api_followed_live_rides():
+    """Account-level live follows shared by native and desktop clients."""
+    if not g.rider_id:
+        return jsonify({'error': 'Complete your profile to follow rides'}), 403
+    return jsonify({'ride_ids': get_followed_live_ride_ids(g.rider_id)})
+
+
+@live_bp.route('/api/me/followed-live-rides/<int:ride_id>', methods=['PUT'])
+@token_or_session_required
+def api_followed_live_ride(ride_id):
+    """Follow/unfollow a ride without changing the rider's signup state."""
+    if not g.rider_id:
+        return jsonify({'error': 'Complete your profile to follow rides'}), 403
+    if not get_ride_by_id(ride_id):
+        return jsonify({'error': 'Ride not found'}), 404
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body.get('followed'), bool):
+        return jsonify({'error': 'followed must be true or false'}), 400
+    ride_ids = set_followed_live_ride(g.rider_id, ride_id, body['followed'])
+    cache.clear()
+    return jsonify({'success': True, 'ride_ids': ride_ids})
 
 
 @live_bp.route('/api/calendar')

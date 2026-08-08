@@ -77,7 +77,22 @@
     <span class="hub-chip {{ 'on' if opted_in else 'off' }}">{{ 'ON' if opted_in else 'OFF' }}</span>
   </a>
 
-  <div class="hub-section-title">Set up &amp; view a ride's live map</div>
+  <div class="hub-section-title">Following live</div>
+  {% if followed %}
+    {% for ride in followed %}
+    <a class="ride-row" href="{{ url_for('live.ride_live_map', ride_id=ride.id) }}">
+      <span>
+        <span style="font-weight:600;">{{ ride.name | clean_name }}</span>
+        <span class="meta"> · {{ ride.date }}{% if ride.club_name %} · {{ ride.club_name }}{% endif %}</span>
+      </span>
+      <span class="go">{{ 'Live now' if ride.is_live else 'Live map' }} →</span>
+    </a>
+    {% endfor %}
+  {% else %}
+    <p class="hub-empty">You are not following a ride yet. Use “Follow live” in the Brevet Calendar.</p>
+  {% endif %}
+
+  <div class="hub-section-title">Your rides</div>
   {% if upcoming %}
     {% for ride in upcoming %}
     <a class="ride-row" href="{{ url_for('live.ride_live_map', ride_id=ride.id) }}">

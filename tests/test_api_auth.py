@@ -534,6 +534,33 @@ def test_rides_endpoint_requires_auth(client):
     assert client.get('/api/live/rides').status_code == 401
 
 
+def test_followed_live_rides_are_account_scoped(client, app):
+    with patch('routes.live.get_followed_live_ride_ids', return_value=[9, 5]) as follows:
+        resp = client.get('/api/me/followed-live-rides',
+                          headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 200
+    assert resp.get_json() == {'ride_ids': [9, 5]}
+    follows.assert_called_once_with(7)
+
+
+def test_followed_live_ride_update_uses_token_identity(client, app):
+    with patch('routes.live.get_ride_by_id', return_value={'id': 9}), \
+         patch('routes.live.set_followed_live_ride', return_value=[9]) as save:
+        resp = client.put('/api/me/followed-live-rides/9',
+                          json={'followed': True},
+                          headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 200
+    assert resp.get_json()['ride_ids'] == [9]
+    save.assert_called_once_with(7, 9, True)
+
+
+def test_followed_live_ride_update_validates_payload(client, app):
+    with patch('routes.live.get_ride_by_id', return_value={'id': 9}):
+        resp = client.put('/api/me/followed-live-rides/9', json={},
+                          headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 400
+
+
 def test_calendar_endpoint_token_authed(client, app):
     # get_all_upcoming_events: full calendar = Team Asha + external club brevets.
     events = [

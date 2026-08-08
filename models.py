@@ -3730,6 +3730,59 @@ def get_rider_upcoming_signups(rider_id):
     """, (rider_id, today, RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.MAYBE.value)).fetchall()
 
 
+def get_followed_live_ride_ids(rider_id):
+    """Return every ride explicitly followed by this rider, newest follow first."""
+    rows = _execute(
+        "SELECT ride_id FROM rider_followed_live_ride "
+        "WHERE rider_id = %s ORDER BY created_at DESC",
+        (rider_id,),
+    ).fetchall()
+    return [row['ride_id'] for row in rows]
+
+
+def set_followed_live_ride(rider_id, ride_id, followed):
+    """Persist or remove an account-level live follow. Identity is server-owned."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    if followed:
+        cur.execute(
+            "INSERT INTO rider_followed_live_ride (rider_id, ride_id) "
+            "VALUES (%s, %s) ON CONFLICT (rider_id, ride_id) DO NOTHING",
+            (rider_id, ride_id),
+        )
+    else:
+        cur.execute(
+            "DELETE FROM rider_followed_live_ride WHERE rider_id = %s AND ride_id = %s",
+            (rider_id, ride_id),
+        )
+    conn.commit()
+    return get_followed_live_ride_ids(rider_id)
+
+
+def get_followed_live_rides(rider_id):
+    """Followed rides relevant to the live hub: active or not yet finished."""
+    return _execute("""
+        SELECT ri.id, ri.name, ri.date, ri.distance_km, ri.start_time,
+               ri.event_status, c.code AS club_code, c.name AS club_name,
+               EXISTS (
+                   SELECT 1 FROM rider_live_tracking rlt
+                   WHERE rlt.active_ride_id = ri.id AND rlt.enabled = TRUE
+               ) AS is_live
+        FROM rider_followed_live_ride f
+        JOIN ride ri ON ri.id = f.ride_id
+        LEFT JOIN club c ON c.id = ri.club_id
+        WHERE f.rider_id = %s
+          AND (
+              ri.date >= CURRENT_DATE
+              OR EXISTS (
+                  SELECT 1 FROM rider_live_tracking rlt
+                  WHERE rlt.active_ride_id = ri.id AND rlt.enabled = TRUE
+              )
+          )
+        ORDER BY is_live DESC, ri.date ASC, f.created_at DESC
+    """, (rider_id,)).fetchall()
+
+
 # ========== CUSTOM RIDE PLANS ==========
 
 @cache.memoize(CACHE_TIMEOUT)
