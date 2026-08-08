@@ -20,6 +20,7 @@ KMH_TO_MPH = 0.621371
 
 # Below this ground speed (m/s) a rider is considered stopped (~1.8 km/h).
 STOPPED_SPEED_MS = 0.5
+CURRENT_STOP_RADIUS_M = 50.0
 
 # A rider farther than this (m) from the nearest route point is "off route" —
 # we then suppress route-relative metrics rather than snap to a bogus distance.
@@ -272,6 +273,37 @@ def activity_from_speed(speed_ms):
     if speed_ms < 12.0:       # < ~43 km/h
         return 'cycling'
     return 'driving'
+
+
+def current_stop_duration_min(points, radius_m=CURRENT_STOP_RADIUS_M):
+    """Minutes represented by the trailing stationary fix cluster, or None."""
+    usable = [p for p in (points or [])
+              if p.get('recorded_at') is not None
+              and p.get('lat') is not None and p.get('lng') is not None]
+    if not usable:
+        return None
+    usable.sort(key=lambda p: p['recorded_at'])
+    latest = usable[-1]
+    latest_speed = latest.get('speed')
+    try:
+        if latest_speed is not None and float(latest_speed) >= STOPPED_SPEED_MS:
+            return None
+    except (TypeError, ValueError):
+        pass
+    arrived_at = latest['recorded_at']
+    for point in reversed(usable[:-1]):
+        try:
+            if haversine_m(float(point['lat']), float(point['lng']),
+                           float(latest['lat']), float(latest['lng'])) > radius_m:
+                break
+            speed = point.get('speed')
+            if speed is not None and float(speed) >= STOPPED_SPEED_MS:
+                break
+        except (TypeError, ValueError):
+            break
+        arrived_at = point['recorded_at']
+    duration = (latest['recorded_at'] - arrived_at).total_seconds() / 60.0
+    return round(max(0.0, duration), 1)
 
 
 def remaining_distance_m(total_dist_m, current_dist_m):

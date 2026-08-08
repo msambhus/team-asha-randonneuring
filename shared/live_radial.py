@@ -136,6 +136,8 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
     now_block = {
         'speed_mph': round(speed_ms * MS_TO_MPH, 1) if speed_ms is not None else None,
         'activity': tlm.activity_from_speed(speed_ms),
+        'current_stop_min': (tlm.current_stop_duration_min(ride_history)
+                             if tlm.activity_from_speed(speed_ms) == 'paused' else None),
         'elapsed_min': elapsed_min,
         'moving_min': moving_min,
         'stopped_min': stopped_min,
@@ -413,6 +415,7 @@ def _base_roster_row(row, ride_id, now, stale_after_minutes, dist_unit):
         'on_route': None,
         'speed_mph': None,
         'activity': None,
+        'current_stop_min': None,
         'dist_mi': None,
         'dist_display': None,
         'dist_unit': dist_unit,
@@ -458,6 +461,7 @@ def _privacy_row(row, telemetry, ride_id, now, stale_after_minutes, dist_unit):
         # from ground speed, so the live view can flag a rider who is stopped (but
         # still sharing) distinctly from one who has gone stale (no updates at all).
         'activity': nowb.get('activity'),
+        'current_stop_min': nowb.get('current_stop_min'),
         'dist_mi': dist_mi,
         'route_position_mi': nowb.get('route_position_mi'),
         'elapsed_min': nowb.get('elapsed_min'),

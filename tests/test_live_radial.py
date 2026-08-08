@@ -233,6 +233,7 @@ def test_roster_flags_paused_rider():
     roster = lr.build_radial_roster(rows, ctx, _NOW, {1: _paused_history(track, 20)},
                                     ride_id=1, min_history=2, stateless_fallback=False)
     assert roster[0]['activity'] == 'paused'
+    assert roster[0]['current_stop_min'] == 100.0
     assert roster[0]['stale'] is False
 
 
