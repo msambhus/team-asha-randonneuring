@@ -11,7 +11,11 @@ import type { MySeasonResponse } from '../lib/types';
 
 function season(sr: MySeasonResponse['sr']): MySeasonResponse {
   return {
-    season: { name: '2025-2026' },
+    season: { id: 2, name: '2025-2026', is_current: true },
+    seasons: [
+      { id: 2, name: '2025-2026', is_current: true },
+      { id: 1, name: '2024-2025', is_current: false },
+    ],
     stats: { distance_km: 1200, rides: 8, elevation_ft: 42000 },
     sr,
     rides_done: [],
@@ -59,5 +63,12 @@ describe('SeasonScreen Super Randonneur title', () => {
     }));
     render(<SeasonScreen />);
     expect(screen.queryByText(/SR×/)).toBeNull();
+  });
+
+  it('offers current and historical season choices', () => {
+    mock(season({ has_sr: false, distances_done: [], counts: {} }));
+    render(<SeasonScreen />);
+    expect(screen.getByText('2025-2026 · Current')).toBeTruthy();
+    expect(screen.getByText('2024-2025')).toBeTruthy();
   });
 });

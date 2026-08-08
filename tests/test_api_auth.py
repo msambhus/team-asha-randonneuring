@@ -639,7 +639,8 @@ def test_ride_route_endpoint_no_profile_403(client, app):
 def _patch_season(**overrides):
     """Patch every model fn /api/me/season assembles. Override any return value
     by keyword (e.g. season=None, conn={...})."""
-    season = overrides.get('season', {'id': 1, 'name': '2025-2026'})
+    season = overrides.get('season', {'id': 1, 'name': '2025-2026', 'is_current': True})
+    seasons = overrides.get('seasons', [season] if season else [])
     stats = overrides.get('stats', {'rides': 5, 'kms': 1200})
     elevation = overrides.get('elevation', 42000)
     sr_count = overrides.get('sr_count', 1)
@@ -654,6 +655,7 @@ def _patch_season(**overrides):
     badge = overrides.get('badge', {'level': 'strong', 'label': 'Strong', 'emoji': '💪'})
     return [
         patch('models.get_current_season', return_value=season),
+        patch('models.get_all_seasons', return_value=seasons),
         patch('models.get_rider_season_stats', return_value=stats),
         patch('models.get_rider_season_elevation_ft', return_value=elevation),
         patch('models.detect_sr_for_rider_season', return_value=sr_count),
@@ -676,6 +678,8 @@ def test_my_season_token_authed(client, app):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data['season']['name'] == '2025-2026'
+    assert data['season']['is_current'] is True
+    assert data['seasons'][0]['id'] == 1
     assert data['stats'] == {'distance_km': 1200, 'rides': 5, 'elevation_ft': 42000}
     assert data['sr'] == {
         'has_sr': True,
@@ -700,6 +704,29 @@ def test_my_season_no_sr_yet(client, app):
     data = resp.get_json()
     assert data['sr']['has_sr'] is False
     assert data['sr']['distances_done'] == [200]
+
+
+def test_my_season_can_select_historical_season(client, app):
+    import contextlib
+    current = {'id': 2, 'name': '2025-2026', 'is_current': True}
+    past = {'id': 1, 'name': '2024-2025', 'is_current': False}
+    with contextlib.ExitStack() as stack:
+        for p in _patch_season(season=current, seasons=[current, past], stats={'rides': 2, 'kms': 500}):
+            stack.enter_context(p)
+        resp = client.get('/api/me/season?season_id=1', headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['season'] == {'id': 1, 'name': '2024-2025', 'is_current': False}
+    assert data['stats']['distance_km'] == 500
+
+
+def test_my_season_rejects_unknown_season(client, app):
+    import contextlib
+    with contextlib.ExitStack() as stack:
+        for p in _patch_season():
+            stack.enter_context(p)
+        resp = client.get('/api/me/season?season_id=999', headers=_bearer(app, rider_id=7))
+    assert resp.status_code == 404
 
 
 def test_my_season_unescapes_ride_names_and_keys_counts(client, app):

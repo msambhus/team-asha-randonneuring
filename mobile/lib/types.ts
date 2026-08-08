@@ -69,7 +69,8 @@ export interface SeasonRideDone {
 
 /** GET /api/me/season — the signed-in rider's current-season progress. */
 export interface MySeasonResponse {
-  season: { name: string | null };
+  season: { id: number; name: string | null; is_current: boolean };
+  seasons: { id: number; name: string | null; is_current: boolean }[];
   stats: { distance_km: number; rides: number; elevation_ft: number };
   // counts: how many finished rides in each SR tier this season, keyed "200".."600".
   sr: { has_sr: boolean; distances_done: number[]; counts: Record<string, number> };

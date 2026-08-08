@@ -7,12 +7,15 @@ import { apiFetch } from '../lib/api';
 import { useSession } from '../contexts/SessionContext';
 import type { MySeasonResponse } from '../lib/types';
 
-export function useMySeason() {
+export function useMySeason(seasonId?: number | null) {
   const { token, signOut } = useSession();
   return useQuery({
-    queryKey: ['my-season'],
+    queryKey: ['my-season', seasonId ?? 'current'],
     enabled: !!token,
     staleTime: 5 * 60_000,
-    queryFn: () => apiFetch<MySeasonResponse>('/api/me/season', () => { void signOut(); }),
+    queryFn: () => apiFetch<MySeasonResponse>(
+      `/api/me/season${seasonId ? `?season_id=${seasonId}` : ''}`,
+      () => { void signOut(); },
+    ),
   });
 }

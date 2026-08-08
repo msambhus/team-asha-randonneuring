@@ -126,6 +126,12 @@
 {% if fitness_score %}
 <div class="stat-card"><div class="number" style="color:{% if fitness_score.total >= 70 %}#38a169{% elif fitness_score.total >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ fitness_score.total }}</div><div class="label">Fitness Score</div></div>
 {% endif %}
+{% if eddington_data %}
+<div class="stat-card" title="{{ eddington_data.badge.label }}: {{ eddington_data.miles }}+ mile rides on {{ eddington_data.miles }}+ days">
+  <div class="number" style="color:{{ eddington_data.badge.color }};">{{ eddington_data.badge.emoji }} E{{ eddington_data.miles }}</div>
+  <div class="label">Eddington Number <span style="font-size:.65rem;color:var(--text-light);">(E{{ eddington_data.km }} km)</span></div>
+</div>
+{% endif %}
 </div>
 
 <div class="container section">
