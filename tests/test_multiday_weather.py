@@ -51,6 +51,8 @@ def test_multiday_payload_offsets_distances_and_preserves_days():
     assert [s['day_number'] for s in payload['map_segments']] == [1, 2]
     assert payload['chart_data']['labels'] == [100.0, 220.0]
     assert len(payload['legs']) == 2
+    assert payload['legs'][0]['polyline'] == [[-93, 45]]
+    assert payload['legs'][1]['polyline'] == [[-93, 45]]
 
 
 def test_multiday_stop_weather_rebases_each_day():

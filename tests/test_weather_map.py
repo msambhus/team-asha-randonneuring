@@ -74,6 +74,18 @@ class TestWeatherMapPage:
         assert resp.status_code == 200
         assert b'Route Weather Forecast' in resp.data
 
+    def test_multiday_export_contains_day_map_and_full_weather_panels(self, client):
+        resp = client.get('/weather')
+        assert resp.status_code == 200
+        assert b'function captureDayMap' in resp.data
+        assert b"'Route & wind map'" in resp.data
+        assert b"'Wind and gusts'" in resp.data
+        assert b"'Headwind / tailwind'" in resp.data
+        assert b"'Temperature / feels like'" in resp.data
+        assert b"'Precipitation, cloud cover & rain'" in resp.data
+        assert b"'Humidity'" in resp.data
+        assert b"'Elevation'" in resp.data
+
 
 class TestWeatherMapAPI:
     def test_missing_url_returns_400(self, client):

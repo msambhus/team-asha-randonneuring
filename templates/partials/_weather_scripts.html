@@ -991,6 +991,168 @@
         });
     }
 
+    function dayChartImage(segments, datasets, yTitle, options) {
+        var canvas = document.createElement('canvas');
+        canvas.width = 1080;
+        canvas.height = 420;
+        var labels = segments.map(function(s) {
+            return s.arrival_time || (String(s.distance_mi) + ' mi');
+        });
+        var chart = new Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data: { labels: labels, datasets: datasets },
+            options: {
+                responsive: false,
+                animation: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        display: datasets.length > 1,
+                        position: 'bottom',
+                        labels: { color: '#64748b', boxWidth: 13, font: { size: 12 } },
+                    },
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#64748b', font: { size: 11 }, maxTicksLimit: 7 },
+                        grid: { color: 'rgba(226,232,240,0.65)' },
+                    },
+                    y: {
+                        min: options && options.min,
+                        max: options && options.max,
+                        ticks: { color: '#64748b', font: { size: 11 } },
+                        grid: { color: 'rgba(226,232,240,0.65)' },
+                        title: { display: true, text: yTitle, color: '#64748b', font: { size: 12 } },
+                    },
+                },
+            },
+        });
+        var url = chart.toBase64Image('image/png', 1.0);
+        chart.destroy();
+        return loadDataUrl(url);
+    }
+
+    function dayAreaDataset(label, segments, key, border, background, transform) {
+        return {
+            label: label,
+            data: segments.map(function(s) {
+                var value = Number(s[key] || 0);
+                return transform ? transform(value) : value;
+            }),
+            borderColor: border,
+            backgroundColor: background,
+            borderWidth: 2,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+        };
+    }
+
+    function captureDayMap(leg, segments) {
+        if (!MAPBOX_TOKEN || !window.mapboxgl || !leg.polyline || !leg.polyline.length) {
+            return Promise.resolve(null);
+        }
+        return new Promise(function(resolve) {
+            var holder = document.createElement('div');
+            holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:1116px;height:430px;';
+            document.body.appendChild(holder);
+            mapboxgl.accessToken = MAPBOX_TOKEN;
+            var bounds = new mapboxgl.LngLatBounds();
+            leg.polyline.forEach(function(p) { bounds.extend([p[1], p[0]]); });
+            var exportMap = new mapboxgl.Map({
+                container: holder,
+                style: 'mapbox://styles/mapbox/streets-v12',
+                bounds: bounds,
+                fitBoundsOptions: { padding: 42 },
+                preserveDrawingBuffer: true,
+                interactive: false,
+                attributionControl: true,
+            });
+            var finished = false;
+            function done(image) {
+                if (finished) return;
+                finished = true;
+                try { exportMap.remove(); } catch (e) { /* no-op */ }
+                holder.remove();
+                resolve(image || null);
+            }
+            var timer = setTimeout(function() { done(null); }, 8000);
+            exportMap.on('load', function() {
+                var coords = leg.polyline.map(function(p) { return [p[1], p[0]]; });
+                exportMap.addSource('day-route', {
+                    type: 'geojson',
+                    data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } },
+                });
+                exportMap.addLayer({
+                    id: 'day-route-casing', type: 'line', source: 'day-route',
+                    paint: { 'line-color': '#1e3a5f', 'line-width': 6, 'line-opacity': 0.42 },
+                });
+                exportMap.addLayer({
+                    id: 'day-route-line', type: 'line', source: 'day-route',
+                    paint: { 'line-color': '#3b82f6', 'line-width': 3.5, 'line-opacity': 0.95 },
+                });
+                var features = segments.filter(function(s) {
+                    return Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lng));
+                }).map(function(s) {
+                    var hw = Number(s.headwind_mph || 0);
+                    return {
+                        type: 'Feature',
+                        geometry: { type: 'Point', coordinates: [Number(s.lng), Number(s.lat)] },
+                        properties: {
+                            color: hw > 3 ? '#ef4444' : (hw < -3 ? '#22c55e' : '#f59e0b'),
+                            direction: Number(s.wind_direction_deg || 0),
+                            speed: Math.round(Number(s.wind_speed_mph || 0)) + ' mph',
+                        },
+                    };
+                });
+                exportMap.addSource('day-wind', {
+                    type: 'geojson',
+                    data: { type: 'FeatureCollection', features: features },
+                });
+                exportMap.addLayer({
+                    id: 'day-wind-circles', type: 'circle', source: 'day-wind',
+                    paint: {
+                        'circle-radius': 12,
+                        'circle-color': '#ffffff',
+                        'circle-stroke-color': ['get', 'color'],
+                        'circle-stroke-width': 3,
+                    },
+                });
+                exportMap.addLayer({
+                    id: 'day-wind-arrows', type: 'symbol', source: 'day-wind',
+                    layout: {
+                        'text-field': '↓', 'text-size': 20,
+                        'text-rotate': ['get', 'direction'],
+                        'text-allow-overlap': true,
+                        'text-rotation-alignment': 'map',
+                    },
+                    paint: { 'text-color': ['get', 'color'] },
+                });
+                exportMap.addLayer({
+                    id: 'day-wind-speed', type: 'symbol', source: 'day-wind',
+                    layout: {
+                        'text-field': ['get', 'speed'], 'text-size': 10,
+                        'text-offset': [0, 1.9], 'text-anchor': 'top',
+                        'text-allow-overlap': false,
+                    },
+                    paint: { 'text-color': '#334155', 'text-halo-color': '#fff', 'text-halo-width': 1.5 },
+                });
+                exportMap.fitBounds(bounds, { padding: 42, duration: 0 });
+                exportMap.once('idle', function() {
+                    clearTimeout(timer);
+                    try {
+                        loadDataUrl(exportMap.getCanvas().toDataURL('image/png', 1.0))
+                            .then(done).catch(function() { done(null); });
+                    } catch (e) { done(null); }
+                });
+            });
+            exportMap.on('error', function() {
+                // Mapbox emits recoverable tile errors too, so the timeout/idle
+                // path remains the final authority instead of failing early.
+            });
+        });
+    }
+
     function buildDayShareImage(leg) {
         var day = Number(leg.day_number || 1);
         var segments = (currentRouteData.map_segments || []).filter(function(s) {
@@ -998,11 +1160,10 @@
         });
         if (!segments.length) return Promise.reject(new Error('No data for ' + leg.label));
 
-        var W = 1200, H = 1040, pad = 42;
+        var W = 1200, H = 1600, pad = 42, gap = 18;
         var canvas = document.createElement('canvas');
         canvas.width = W; canvas.height = H;
         var ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, 0, W, H);
 
         function fitText(text, maxWidth, startPx, minPx) {
             var px = startPx;
@@ -1023,60 +1184,101 @@
             ctx.fillText(label, x + w / 2, y + 67, w - 28);
             ctx.restore();
         }
-        function lineChart(x, y, w, h, title, key, color, zeroLine) {
-            var values = segments.map(function(s) { return Number(s[key] || 0); });
-            var min = Math.min.apply(null, values.concat(zeroLine ? [0] : []));
-            var max = Math.max.apply(null, values.concat(zeroLine ? [0] : []));
-            if (max === min) max = min + 1;
+        function drawPanel(img, x, y, w, h, title) {
             ctx.fillStyle = '#fff'; ctx.fillRect(x, y, w, h);
             ctx.strokeStyle = '#e2e8f0'; ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
             ctx.fillStyle = '#0f172a'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-            ctx.font = '700 18px system-ui,-apple-system,sans-serif'; ctx.fillText(title, x + 18, y + 15);
-            var px = x + 44, py = y + 54, pw = w - 64, ph = h - 82;
-            if (zeroLine && min < 0 && max > 0) {
-                var zy = py + ph - ((0 - min) / (max - min)) * ph;
-                ctx.strokeStyle = '#cbd5e1'; ctx.beginPath(); ctx.moveTo(px, zy); ctx.lineTo(px + pw, zy); ctx.stroke();
-            }
-            ctx.strokeStyle = color; ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.beginPath();
-            values.forEach(function(v, i) {
-                var xx = px + (values.length === 1 ? 0 : i / (values.length - 1)) * pw;
-                var yy = py + ph - ((v - min) / (max - min)) * ph;
-                if (i) ctx.lineTo(xx, yy); else ctx.moveTo(xx, yy);
-            });
-            ctx.stroke();
-            ctx.fillStyle = '#64748b'; ctx.font = '12px system-ui,-apple-system,sans-serif';
-            ctx.fillText(String(Math.round(max * 10) / 10), x + 8, py - 5);
-            ctx.fillText(String(Math.round(min * 10) / 10), x + 8, py + ph - 5);
+            ctx.font = '700 16px system-ui,-apple-system,sans-serif';
+            ctx.fillText(title, x + 15, y + 12);
+            if (img) ctx.drawImage(img, x + 10, y + 38, w - 20, h - 48);
         }
-
-        ctx.fillStyle = '#1e3a5f'; ctx.fillRect(0, 0, W, 150);
-        ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        var title = (currentRouteData.route_name || 'Route Weather') + ' — ' + (leg.label || ('Day ' + day));
-        var titlePx = fitText(title, W - pad * 2, 36, 22);
-        ctx.font = '700 ' + titlePx + 'px system-ui,-apple-system,Segoe UI,sans-serif';
-        ctx.fillText(title, W / 2, 58, W - pad * 2);
-        ctx.font = '17px system-ui,-apple-system,sans-serif';
-        ctx.fillText((leg.route_name || '') + '  •  ' + leg.distance_mi + ' mi', W / 2, 108, W - pad * 2);
 
         var temps = segments.map(function(s) { return Number(s.temperature_f); }).filter(Number.isFinite);
         var headPct = Math.round(100 * segments.filter(function(s) { return Number(s.headwind_mph) > 3; }).length / segments.length);
-        metricBox(pad, 180, 260, 'DISTANCE', leg.distance_mi + ' mi', '#2563eb');
-        metricBox(pad + 280, 180, 260, 'TEMPERATURE', Math.round(Math.min.apply(null, temps)) + '–' + Math.round(Math.max.apply(null, temps)) + '°F', '#16a34a');
-        metricBox(pad + 560, 180, 260, 'HEADWIND', headPct + '% of day', '#15803d');
-        metricBox(pad + 840, 180, 276, 'MAX GUST', Math.max.apply(null, segments.map(function(s) { return Number(s.wind_gust_mph || 0); })) + ' mph', '#ea580c');
+        var maxGust = Math.round(Math.max.apply(null, segments.map(function(s) { return Number(s.wind_gust_mph || 0); })));
+        var rainPeak = Math.round(Math.max.apply(null, segments.map(function(s) { return Number(s.precip_percent || 0); })));
+        var charts = [
+            dayChartImage(segments, [
+                dayAreaDataset('Wind (mph)', segments, 'wind_speed_mph', '#60a5fa', 'rgba(96,165,250,.25)'),
+                dayAreaDataset('Wind gust (mph)', segments, 'wind_gust_mph', '#fb923c', 'rgba(251,146,60,.20)'),
+            ], 'mph'),
+            dayChartImage(segments, [
+                dayAreaDataset('Headwind (mph)', segments, 'headwind_mph', '#ef4444', 'rgba(239,68,68,.25)', function(v) { return Math.max(0, v); }),
+                dayAreaDataset('Tailwind (mph)', segments, 'headwind_mph', '#22c55e', 'rgba(34,197,94,.25)', function(v) { return Math.min(0, v); }),
+            ], 'mph'),
+            dayChartImage(segments, [
+                dayAreaDataset('Temperature (°F)', segments, 'temperature_f', '#60a5fa', 'rgba(96,165,250,.25)'),
+                dayAreaDataset('Feels like (°F)', segments, 'feels_like_f', '#fb923c', 'rgba(251,146,60,.20)'),
+            ], '°F'),
+            dayChartImage(segments, [
+                dayAreaDataset('Precipitation probability (%)', segments, 'precip_percent', '#60a5fa', 'rgba(96,165,250,.28)'),
+                dayAreaDataset('Cloud cover (%)', segments, 'cloud_cover', '#94a3b8', 'rgba(148,163,184,.16)'),
+                dayAreaDataset('Rain (mm)', segments, 'precipitation_mm', '#ea580c', 'rgba(234,88,12,.18)'),
+            ], '% / mm', { min: 0 }),
+            dayChartImage(segments, [
+                dayAreaDataset('Humidity (%)', segments, 'humidity', '#8b5cf6', 'rgba(139,92,246,.20)'),
+            ], '%', { min: 0, max: 100 }),
+            dayChartImage(segments, [
+                dayAreaDataset('Elevation (ft)', segments, 'elevation_ft', '#64748b', 'rgba(148,163,184,.25)'),
+            ], 'ft', { min: 0 }),
+        ];
 
-        lineChart(pad, 310, 540, 300, 'Headwind / tailwind (mph)', 'headwind_mph', '#dc2626', true);
-        lineChart(618, 310, 540, 300, 'Temperature (°F)', 'temperature_f', '#ea580c', false);
-        lineChart(pad, 638, 540, 300, 'Wind speed (mph)', 'wind_speed_mph', '#2563eb', false);
-        lineChart(618, 638, 540, 300, 'Elevation (ft)', 'elevation_ft', '#16a34a', false);
-        ctx.fillStyle = '#64748b'; ctx.textAlign = 'center'; ctx.font = '14px system-ui,-apple-system,sans-serif';
-        ctx.fillText('Team Asha Randonneuring  •  Weather data: Open-Meteo', W / 2, 988);
-        return Promise.resolve(canvas);
+        return Promise.all([captureDayMap(leg, segments)].concat(charts)).then(function(images) {
+            var mapImage = images[0], chartImages = images.slice(1);
+            ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, 0, W, H);
+            ctx.fillStyle = '#1e3a5f'; ctx.fillRect(0, 0, W, 150);
+            ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            var title = (currentRouteData.route_name || 'Route Weather') + ' — ' + (leg.label || ('Day ' + day));
+            var titlePx = fitText(title, W - pad * 2, 36, 22);
+            ctx.font = '700 ' + titlePx + 'px system-ui,-apple-system,Segoe UI,sans-serif';
+            ctx.fillText(title, W / 2, 55, W - pad * 2);
+            ctx.font = '17px system-ui,-apple-system,sans-serif';
+            ctx.fillText((leg.route_name || '') + '  •  ' + leg.distance_mi + ' mi  •  ' + rainPeak + '% peak rain chance', W / 2, 108, W - pad * 2);
+
+            metricBox(pad, 174, 260, 'DISTANCE', leg.distance_mi + ' mi', '#2563eb');
+            metricBox(pad + 280, 174, 260, 'TEMPERATURE', Math.round(Math.min.apply(null, temps)) + '–' + Math.round(Math.max.apply(null, temps)) + '°F', '#16a34a');
+            metricBox(pad + 560, 174, 260, 'HEADWIND', headPct + '% of day', '#dc2626');
+            metricBox(pad + 840, 174, 276, 'MAX GUST', maxGust + ' mph', '#ea580c');
+
+            var mapY = 286, mapH = 420;
+            ctx.fillStyle = '#fff'; ctx.fillRect(pad, mapY, W - pad * 2, mapH);
+            ctx.strokeStyle = '#e2e8f0'; ctx.strokeRect(pad + .5, mapY + .5, W - pad * 2 - 1, mapH - 1);
+            if (mapImage) ctx.drawImage(mapImage, pad + 1, mapY + 1, W - pad * 2 - 2, mapH - 2);
+            else {
+                ctx.fillStyle = '#64748b'; ctx.font = '16px system-ui,-apple-system,sans-serif';
+                ctx.fillText('Map unavailable', W / 2, mapY + mapH / 2);
+            }
+            ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.fillRect(pad + 14, mapY + 14, 205, 34);
+            ctx.fillStyle = '#0f172a'; ctx.textAlign = 'left'; ctx.font = '700 14px system-ui,-apple-system,sans-serif';
+            ctx.fillText('Route & wind map', pad + 26, mapY + 31);
+
+            var chartY = mapY + mapH + gap, panelW = (W - pad * 2 - gap) / 2, panelH = 254;
+            var titles = ['Wind and gusts', 'Headwind / tailwind', 'Temperature / feels like',
+                          'Precipitation, cloud cover & rain', 'Humidity', 'Elevation'];
+            chartImages.forEach(function(img, index) {
+                var col = index % 2, row = Math.floor(index / 2);
+                drawPanel(img, pad + col * (panelW + gap), chartY + row * (panelH + gap), panelW, panelH, titles[index]);
+            });
+            ctx.fillStyle = '#64748b'; ctx.textAlign = 'center'; ctx.font = '14px system-ui,-apple-system,sans-serif';
+            ctx.fillText('Team Asha Randonneuring  •  Weather data: Open-Meteo  •  Map: Mapbox / OpenStreetMap', W / 2, H - 28);
+            return canvas;
+        });
     }
 
     function buildShareImages() {
         var legs = (currentRouteData && currentRouteData.legs) || [];
-        if (legs.length > 1) return Promise.all(legs.map(buildDayShareImage));
+        if (legs.length > 1) {
+            // Mapbox canvases must be captured one at a time; concurrent hidden
+            // maps can race WebGL contexts and produce blank or wrong-day maps.
+            return legs.reduce(function(chain, leg) {
+                return chain.then(function(images) {
+                    return buildDayShareImage(leg).then(function(image) {
+                        images.push(image);
+                        return images;
+                    });
+                });
+            }, Promise.resolve([]));
+        }
         return buildShareImage().then(function(canvas) { return [canvas]; });
     }
 
