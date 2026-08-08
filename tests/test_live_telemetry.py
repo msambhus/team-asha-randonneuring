@@ -753,45 +753,30 @@ def test_build_trail_empty():
     assert tlm.build_trail([], _TRACK) == []
 
 
-def test_build_covered_route_uses_road_geometry_not_sparse_gps_chord():
-    track = [
-        {'lat': 37.000, 'lng': -122.000, 'dist_m': 0},
-        {'lat': 37.010, 'lng': -121.995, 'dist_m': 1000},
-        {'lat': 37.000, 'lng': -121.990, 'dist_m': 2000},
-    ]
+def test_build_actual_trail_preserves_off_route_detour():
     history = [
         {'lat': 37.000, 'lng': -122.000, 'recorded_at': _t(0)},
+        {'lat': 37.020, 'lng': -121.995, 'recorded_at': _t(30)},
         {'lat': 37.000, 'lng': -121.990, 'recorded_at': _t(60)},
     ]
-    trail = tlm.build_covered_route(
-        history, track, route_position_mi=2000 * tlm.METERS_TO_MILES)
 
+    trail = tlm.build_actual_trail(history)
+
+    assert trail == [
+        [-122.0, 37.0], [-121.995, 37.02], [-121.99, 37.0]]
+
+
+def test_build_actual_trail_simplifies_redundancy_but_keeps_real_turns():
+    history = [
+        {'lat': 37.0, 'lng': -122.0 + i * 0.0001, 'recorded_at': _t(i)}
+        for i in range(100)
+    ]
+    history.insert(50, {
+        'lat': 37.01, 'lng': -121.995, 'recorded_at': _t(49.5)})
+
+    trail = tlm.build_actual_trail(history, max_points=50, tolerance_m=5)
+
+    assert len(trail) <= 50
     assert trail[0] == [-122.0, 37.0]
-    assert trail[-1] == [-121.99, 37.0]
-    assert [-121.995, 37.01] in trail
-
-
-def test_build_covered_route_interpolates_exact_progress_and_obeys_cap():
-    track = [
-        {'lat': 37.0 + (i % 2) * 0.001, 'lng': -122.0 + i * 0.001,
-         'dist_m': i * 100}
-        for i in range(30)
-    ]
-    trail = tlm.build_covered_route(
-        [], track, route_position_mi=2550 * tlm.METERS_TO_MILES,
-        max_points=10)
-
-    assert len(trail) <= 10
-    assert trail[-1][0] == pytest.approx(-121.9745)
-
-
-def test_build_covered_route_freezes_when_rider_is_off_course():
-    track = [
-        {'lat': 37.0, 'lng': -122.0 + i * 0.001, 'dist_m': i * 100}
-        for i in range(20)
-    ]
-    trail = tlm.build_covered_route(
-        [], track, route_position_mi=1500 * tlm.METERS_TO_MILES,
-        off_course_since_mi=700 * tlm.METERS_TO_MILES)
-
-    assert trail[-1][0] == pytest.approx(-121.993)
+    assert trail[-1] == pytest.approx([-121.9901, 37.0])
+    assert any(lat == pytest.approx(37.01) for _lng, lat in trail)

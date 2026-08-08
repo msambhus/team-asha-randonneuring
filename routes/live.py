@@ -1548,19 +1548,9 @@ def _rider_telemetry(row, ctx, now, history, plan_stops=None):
         rebase_from_first_fix=bool(ctx.get('allow_mid_route_start')))
 
 
-def _covered_trail(history, ctx, telemetry):
-    """Road-following covered route, bounded for web/native map payloads."""
-    track = ctx.get('track') if ctx and ctx.get('has_route') else None
-    # A permanent may legitimately begin anywhere on a loop.  Until its
-    # covered route can be represented as wrapped route intervals, preserve
-    # its actual on-route breadcrumb instead of falsely painting route mile 0.
-    if ctx and ctx.get('allow_mid_route_start'):
-        return tlm.build_trail(history, track, max_points=400)
-    now_block = (telemetry or {}).get('now') or {}
-    return tlm.build_covered_route(
-        history, track,
-        route_position_mi=now_block.get('route_position_mi'),
-        off_course_since_mi=(telemetry or {}).get('off_course_since_mi'))
+def _covered_trail(history, _ctx, _telemetry):
+    """Actual rider GPS trace, bounded once in the persisted live snapshot."""
+    return tlm.build_actual_trail(history, max_points=4000, tolerance_m=5)
 
 
 def build_live_telemetry_snapshot(ride_id, now=None):

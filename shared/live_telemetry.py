@@ -913,54 +913,33 @@ def _simplify_line(points, tolerance_m):
     return [points[i] for i in sorted(keep)]
 
 
-def build_covered_route(history, track, route_position_mi=None,
-                        off_course_since_mi=None, max_points=1200):
-    """Smooth, bounded route geometry already covered by a rider.
+def build_actual_trail(history, max_points=4000, tolerance_m=5.0):
+    """Bounded trace of the rider's real recorded GPS path.
 
-    Raw Garmin history is excellent for telemetry but a poor map polyline when
-    aggressively sampled: connecting 40 fixes across a long brevet cuts across
-    every bend. When a RWGPS track exists, slice that road-following geometry to
-    the rider's last confirmed on-route mile (freeze at the off-course point),
-    then simplify it to a compact visual line. Without a route, retain a bounded
-    actual-GPS breadcrumb instead.
+    This deliberately does *not* project or filter points against the planned
+    route: detours, wrong turns, and off-course riding are part of the path the
+    rider actually took.  RDP removes only visually redundant points along the
+    same line, then gradually raises its tolerance if an exceptionally long or
+    noisy activity still exceeds the payload cap.  Endpoints are always kept.
     """
-    if not track or route_position_mi is None:
-        return build_trail(history, track, max_points=min(max_points, 400))
-    end_mi = (off_course_since_mi
-              if off_course_since_mi is not None else route_position_mi)
-    try:
-        end_m = max(0.0, float(end_mi) / METERS_TO_MILES)
-    except (TypeError, ValueError):
-        return build_trail(history, track, max_points=min(max_points, 400))
     points = []
-    previous = None
-    for p in track:
+    for p in history or []:
         try:
-            distance_m = float(p['dist_m'])
             coordinate = [float(p['lng']), float(p['lat'])]
-            if distance_m > end_m:
-                if previous is not None and previous[0] < end_m:
-                    span_m = distance_m - previous[0]
-                    ratio = ((end_m - previous[0]) / span_m) if span_m > 0 else 0
-                    points.append([
-                        previous[1][0] + ratio * (coordinate[0] - previous[1][0]),
-                        previous[1][1] + ratio * (coordinate[1] - previous[1][1]),
-                    ])
-                break
-            points.append(coordinate)
-            previous = (distance_m, coordinate)
         except (KeyError, TypeError, ValueError):
             continue
+        if not (-180 <= coordinate[0] <= 180 and -90 <= coordinate[1] <= 90):
+            continue
+        if not points or coordinate != points[-1]:
+            points.append(coordinate)
     if len(points) <= 2:
         return points
 
-    # Start at road-level fidelity. If an unusually intricate track still
-    # exceeds the payload cap, increase tolerance until it fits.
-    tolerance_m = 8.0
-    simplified = _simplify_line(points, tolerance_m)
-    while len(simplified) > max_points and tolerance_m < 2048:
-        tolerance_m *= 2
-        simplified = _simplify_line(points, tolerance_m)
+    tolerance = max(0.0, float(tolerance_m))
+    simplified = _simplify_line(points, tolerance)
+    while len(simplified) > max_points and tolerance < 4096:
+        tolerance = max(1.0, tolerance * 1.5)
+        simplified = _simplify_line(points, tolerance)
     if len(simplified) > max_points:
         indices = [round(i * (len(simplified) - 1) / (max_points - 1))
                    for i in range(max_points)]
