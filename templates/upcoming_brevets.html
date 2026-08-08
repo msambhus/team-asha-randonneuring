@@ -888,6 +888,14 @@
                 </svg>
                 Live
             </a>
+            <button type="button"
+                    class="signup-btn-sm follow-live-btn"
+                    data-ride-id="{{ event.id }}"
+                    data-followed="{{ 'true' if event.id in followed_live_ride_ids else 'false' }}"
+                    onclick="toggleLiveFollow(this)"
+                    style="margin-left:6px;cursor:pointer;">
+                {{ '✓ Following live' if event.id in followed_live_ride_ids else '◎ Follow live' }}
+            </button>
         {% else %}
             <a href="{{ url_for('auth.login', next=request.path) }}" class="signup-btn" style="text-decoration:none;">
                 Going
@@ -898,6 +906,31 @@
 </div>
 {% endfor %}
 </div>
+
+<script>
+async function toggleLiveFollow(button) {
+    const rideId = Number(button.dataset.rideId);
+    const followed = button.dataset.followed === 'true';
+    button.disabled = true;
+    const oldText = button.textContent;
+    button.textContent = 'Updating…';
+    try {
+        const response = await fetch(`/api/me/followed-live-rides/${rideId}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({followed: !followed}),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        button.dataset.followed = String(!followed);
+        button.textContent = !followed ? '✓ Following live' : '◎ Follow live';
+    } catch (_) {
+        button.textContent = oldText;
+        window.alert('Could not update followed rides. Please try again.');
+    } finally {
+        button.disabled = false;
+    }
+}
+</script>
 
 {% if not has_external_events %}
 <p style="padding:40px;color:var(--text-light);text-align:center;font-size:1.1rem;">No upcoming RUSA events found.</p>
