@@ -53,6 +53,7 @@ describe('useLivePositions', () => {
     expect(result.current.data?.chart_data).not.toBeNull();
     expect(result.current.data?.chart_data?.labels).toEqual([0, 1, 2]);
     expect(result.current.data?.chart_data?.elevation_ft).toEqual([100, 120, 90]);
+    expect(result.current.data?.plan_snapshot).toBeNull();
   });
 
   it('defaults chart_data to null when an old backend omits it', async () => {

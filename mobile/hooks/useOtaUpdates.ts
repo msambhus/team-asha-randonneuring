@@ -4,7 +4,7 @@
  * By default expo-updates checks on cold start, downloads in the background, and
  * only swaps the new JS on the NEXT cold start ("kill the app twice"). This hook
  * removes that second kill: it checks/fetches on launch and every foreground, and
- * the moment a downloaded update is pending it offers a one-tap restart that
+ * the moment a downloaded update is pending it offers a one-tap app reload that
  * applies it immediately. No-op in dev / Expo Go (Updates.isEnabled is false).
  */
 import { useEffect, useRef } from 'react';
@@ -35,16 +35,16 @@ export function useOtaUpdates() {
   }, []);
 
   // Once an update is downloaded and pending (this also covers the automatic
-  // on-launch download), offer a one-tap restart. Prompt at most once per session.
+  // on-launch download), offer a one-tap app reload. Prompt at most once per session.
   useEffect(() => {
     if (!isUpdatePending || prompted.current) return;
     prompted.current = true;
     Alert.alert(
       'Update available',
-      'A new version of Team Asha is ready. Restart now to use it?',
+      'A new version of Team Asha is ready. Reload the app now to use it? Your phone will not restart.',
       [
         { text: 'Later', style: 'cancel' },
-        { text: 'Restart', onPress: () => { void Updates.reloadAsync(); } },
+        { text: 'Reload app', onPress: () => { void Updates.reloadAsync(); } },
       ],
     );
   }, [isUpdatePending]);
