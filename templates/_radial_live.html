@@ -512,7 +512,10 @@
         if (!b.isEmpty()) { map.fitBounds(b, { padding: 40, maxZoom: 13 }); fitted = true; }
       }
       addWeatherMarkers();   // static along-route wind arrows + °F (not in the poll loop)
-      poll();
+      // The roster request starts in parallel with Mapbox below. If it won that
+      // race, place the already-returned rider immediately instead of waiting for
+      // the next 30-second poll merely because the long-route map loaded later.
+      updateMarkers(lastRoster);
     });
   }
 
@@ -1285,7 +1288,9 @@
   initMobilePlanToggle();           // selected plan starts compact on phones
   buildRouteIndex();                // cumulative route distances for hover→map scrub
   initElevHover();                  // hovering the elevation profile moves a map dot
-  if (!map) { poll(); }             // static fallback: still poll table + profile
+  // Do not gate rider/table data on Mapbox style and full-course route loading.
+  // This is especially visible on multi-day rides with thousands of route points.
+  poll();
   setInterval(poll, POLL_MS);
 })();
 </script>

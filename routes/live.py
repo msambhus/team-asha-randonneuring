@@ -773,6 +773,30 @@ def live_settings():
     return render_template('live_settings.html', tracking=tracking)
 
 
+@cache.memoize(timeout=LIVE_CONTEXT_TTL)
+def _live_page_static_payload(ride_id, selected_day, explicit_active_day):
+    """Slow-changing route, weather, elevation, and plan data for live-page HTML.
+
+    None of these fields is viewer-specific. Building them for a multi-day 1200K
+    performs several plan/route/weather reads and profile transformations, so a
+    browser reload should reuse the same payload rather than reconstructing it.
+    Rider positions remain in the separately cached short-lived roster endpoint.
+    """
+    ride = get_ride_by_id(ride_id)
+    if not ride:
+        return None
+    track = _radial_overview_track(ride)
+    return {
+        'route_polyline': _radial_polyline(track),
+        'route_polylines': [_radial_polyline(track)] if track else [],
+        'elevation_profile': radial.build_elevation_profile(track or []),
+        'weather_points': _build_all_weather_points(ride),
+        'all_day_weather': _build_all_day_weather(
+            ride, selected_day, active_day=explicit_active_day),
+        'plan_snapshot': _build_plan_snapshot(ride, selected_day),
+    }
+
+
 @live_bp.route('/ride/<int:ride_id>/live')
 def ride_live_map(ride_id):
     """Per-ride live map: RWGPS route line + live dots for opted-in GOING riders.
@@ -804,15 +828,10 @@ def ride_live_map(ride_id):
     auto_day = requested_day is None or request.args.get('auto') == '1'
     selected_leg = _active_plan_leg(ride, day_number=requested_day)
     selected_day = int(selected_leg.get('day_number') or 1)
-    track = _radial_overview_track(ride)
-    weather_points = _build_all_weather_points(
-        ride)  # every route day; [] when no stored forecast → map degrades
-    all_day_weather = _build_all_day_weather(
-        ride, selected_day,
-        active_day=(selected_day if request.args.get('auto') == '1' else None),
-    )  # None for ordinary one-day rides
-    plan_snapshot = _build_plan_snapshot(
-        ride, selected_day)  # None when the ride resolves no plan
+    static_payload = _live_page_static_payload(
+        ride_id, selected_day,
+        selected_day if request.args.get('auto') == '1' else None,
+    ) or {}
     opted_in = garmin_here = False
     garmin_url = ''
     if is_member:
@@ -829,11 +848,11 @@ def ride_live_map(ride_id):
         'live.html',
         ride=ride,
         mapbox_token=mapbox_token,
-        route_polyline=_radial_polyline(track),
-        route_polylines=[_radial_polyline(track)] if track else [],
-        elevation_profile=radial.build_elevation_profile(track or []),
-        weather_points=weather_points,
-        all_day_weather=all_day_weather,
+        route_polyline=static_payload.get('route_polyline'),
+        route_polylines=static_payload.get('route_polylines') or [],
+        elevation_profile=static_payload.get('elevation_profile'),
+        weather_points=static_payload.get('weather_points') or [],
+        all_day_weather=static_payload.get('all_day_weather'),
         roster_url=url_for('live.ride_live_roster', ride_id=ride_id),
         poll_seconds=RADIAL_POLL_SECONDS,
         stale_after_minutes=STALE_AFTER_MINUTES,
@@ -841,7 +860,7 @@ def ride_live_map(ride_id):
         garmin_here=garmin_here,
         garmin_url=garmin_url,
         is_guest=is_guest,
-        plan_snapshot=plan_snapshot,
+        plan_snapshot=static_payload.get('plan_snapshot'),
         auto_day=auto_day,
         selected_day=selected_day,
     )
