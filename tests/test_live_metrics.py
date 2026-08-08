@@ -113,6 +113,8 @@ def test_cron_skips_already_stored_points(client, app):
          patch('models.get_last_position_recorded_at', return_value=base + timedelta(seconds=60)), \
          patch('services.garmin_livetrack.fetch_positions', return_value=points), \
          patch('models.insert_live_position', return_value=True) as ins, \
+         patch('models.get_live_telemetry_snapshot', return_value={
+             'computed_at': _now()}), \
          patch('models.purge_old_positions', return_value=0):
         resp = client.post('/api/cron/poll-garmin-livetrack',
                            headers={'Authorization': 'Bearer testsecret'})
