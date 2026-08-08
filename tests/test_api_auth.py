@@ -540,13 +540,13 @@ def test_calendar_endpoint_token_authed(client, app):
         {'id': 5, 'route_name': 'Mt Hamilton 200K', 'name': 'Mt Hamilton 200K',
          'date_str': '2026-07-04', 'distance_km': 200, 'ride_type': 'Brevet',
          'start_location': 'San Jose', 'club_name': 'Team Asha', 'signup_count': 12,
-         'is_team_ride': True},
+         'is_team_ride': True, 'is_live': False},
         {'id': 9, 'route_name': 'Orr Springs 600k', 'name': 'Orr Springs 600k',
          'date_str': '2026-06-27', 'distance_km': 600, 'ride_type': 'Brevet',
          'start_location': None, 'club_name': 'San Francisco Randonneurs',
-         'signup_count': 0, 'is_team_ride': False},
+         'signup_count': 0, 'is_team_ride': False, 'is_live': True},
     ]
-    with patch('models.get_all_upcoming_events', return_value=events), \
+    with patch('models.get_all_upcoming_events', return_value=events) as calendar, \
          patch('models.get_rider_signup_statuses_batch', return_value={
              5: {'status': 'GOING'},
          }):
@@ -559,6 +559,8 @@ def test_calendar_endpoint_token_authed(client, app):
     assert data[0]['signup_status'] == 'GOING'
     assert data[1]['signup_status'] is None
     assert data[1]['club_name'] == 'San Francisco Randonneurs' and data[1]['is_team_ride'] is False
+    assert data[1]['is_live'] is True
+    calendar.assert_called_once_with(include_active=True)
 
 
 def test_calendar_endpoint_requires_auth(client):

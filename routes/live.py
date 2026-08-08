@@ -1002,6 +1002,7 @@ def _ride_live_context_cached(ride_id, day_key):
            # be merged + retimed the SAME way the web plan page does (_rider_plan_stops).
            'base_plan_id': None, 'plan_cutoff_hours': None, 'plan_total_mi': 0.0,
            'plan_total_ascent_ft': None, 'plan_distance_km': None,
+           'day_distance_boundaries': {},
            # Only explicitly classified permanents may begin partway around a
            # route. Scheduled brevets always measure from the official start.
            'allow_mid_route_start': False,
@@ -1045,6 +1046,7 @@ def _ride_live_context_cached(ride_id, day_key):
             base_raw = _compute_base_timing(
                 get_ride_plan_stops(plan['id']), ctx['plan_cutoff_hours'],
                 ctx['plan_total_mi'], ctx['plan_distance_km'])
+            ctx['day_distance_boundaries'] = _day_distance_boundaries(base_raw)
             ctx['plan_stops'] = [
                 {'distance_miles': float(s['distance_miles']),
                  'cum_time_min': float(s['cum_time_min']),
@@ -1749,7 +1751,7 @@ def api_calendar():
         return jsonify({'error': 'Complete your profile to view the calendar'}), 403
     from models import (get_all_upcoming_events,
                         get_rider_signup_statuses_batch)
-    rides = get_all_upcoming_events()
+    rides = get_all_upcoming_events(include_active=True)
     ride_ids = [r['id'] for r in rides if r.get('id')]
     statuses = get_rider_signup_statuses_batch(g.rider_id, ride_ids)
     out = [{
@@ -1763,6 +1765,7 @@ def api_calendar():
         'signup_count': r.get('signup_count'),
         'is_team_ride': bool(r.get('is_team_ride')),
         'signup_status': (statuses.get(r['id']) or {}).get('status'),
+        'is_live': bool(r.get('is_live')),
     } for r in rides]
     return jsonify({'rides': out})
 
