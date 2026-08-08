@@ -1,5 +1,5 @@
 """In-progress multi-day events remain followable in the native calendar."""
-from datetime import date
+from datetime import date, datetime, timezone
 from unittest.mock import patch
 
 import models
@@ -38,7 +38,9 @@ def test_mobile_calendar_keeps_active_multiday_event_but_not_expired_ride():
         _event(100, date(2026, 8, 5), 13.5), # short event has expired
         _event(200, date(2026, 8, 8), 13.5), # future event
     ]
+    now = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
     with patch('models.club_today', return_value=today), \
+         patch('models._utc_now', return_value=now), \
          patch('models._execute', return_value=_Rows(rows)):
         events = models.get_all_upcoming_events.uncached(include_active=True)
 
@@ -51,7 +53,9 @@ def test_mobile_calendar_uses_linked_plan_cutoff_for_active_window():
     today = date(2026, 8, 7)
     execute = _CaptureExecute([_event(194, date(2026, 8, 6), 90)])
 
+    now = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
     with patch('models.club_today', return_value=today), \
+         patch('models._utc_now', return_value=now), \
          patch('models._execute', side_effect=execute):
         events = models.get_all_upcoming_events.uncached(include_active=True)
 
@@ -60,16 +64,28 @@ def test_mobile_calendar_uses_linked_plan_cutoff_for_active_window():
     assert events[0]['is_live'] is True
 
 
-def test_mobile_calendar_keeps_enabled_livetrack_ride_regardless_of_status_window():
+def test_mobile_calendar_excludes_expired_enabled_livetrack_ride():
     today = date(2026, 8, 7)
     active = _event(194, date(2026, 8, 1), None)
     active['has_active_tracking'] = True
     execute = _CaptureExecute([active])
 
     with patch('models.club_today', return_value=today), \
+         patch('models._utc_now', return_value=datetime(
+             2026, 8, 7, 12, 0, tzinfo=timezone.utc)), \
          patch('models._execute', side_effect=execute):
         events = models.get_all_upcoming_events.uncached(include_active=True)
 
     assert 'SELECT active_ride_id FROM rider_live_tracking' in execute.sql
-    assert [event['id'] for event in events] == [194]
-    assert events[0]['is_live'] is True
+    assert events == []
+
+
+def test_event_live_window_uses_exact_start_and_cutoff_time():
+    event = _event(194, date(2026, 8, 6), 90)
+    event['start_time'] = '05:00'
+    event['timezone'] = 'America/Chicago'
+
+    assert models._event_is_in_progress(
+        event, datetime(2026, 8, 8, 4, 0, tzinfo=timezone.utc)) is True
+    assert models._event_is_in_progress(
+        event, datetime(2026, 8, 10, 5, 1, tzinfo=timezone.utc)) is False
