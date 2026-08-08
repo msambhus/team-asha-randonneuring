@@ -1,14 +1,13 @@
 """Data access layer — all SQL queries live here (PostgreSQL via psycopg2)."""
 import json
-import math
 import secrets
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from enum import Enum
 import psycopg2.extras
 from db import get_db
 from cache import cache, CACHE_TIMEOUT
 from services.email_normalize import normalize_email
-from services.club_clock import club_today
+from services.club_clock import club_today, ride_timezone
 
 
 class RideStatus(str, Enum):
@@ -838,6 +837,29 @@ def get_default_time_limit(distance_km):
     else:
         return None
 
+
+def _utc_now():
+    return datetime.now(timezone.utc)
+
+
+def _event_is_in_progress(event, now_utc):
+    """Whether `now_utc` is inside an event's scheduled start/cutoff window."""
+    limit_h = event.get('time_limit_hours')
+    event_date = event.get('date')
+    if not event_date or not limit_h:
+        return False
+    try:
+        if isinstance(event_date, str):
+            event_date = date.fromisoformat(event_date)
+        start_value = event.get('start_time') or event.get('plan_start_time') or '06:00'
+        hh, mm = (int(part) for part in str(start_value).split(':')[:2])
+        start = datetime(event_date.year, event_date.month, event_date.day, hh, mm,
+                         tzinfo=ride_timezone(event)).astimezone(timezone.utc)
+        now = now_utc if now_utc.tzinfo else now_utc.replace(tzinfo=timezone.utc)
+        return start <= now.astimezone(timezone.utc) <= start + timedelta(hours=float(limit_h))
+    except (TypeError, ValueError, OverflowError):
+        return False
+
 @cache.memoize(CACHE_TIMEOUT)
 def get_all_upcoming_events(include_active=False):
     """Get upcoming events, optionally retaining multi-day rides in progress."""
@@ -878,6 +900,7 @@ def get_all_upcoming_events(include_active=False):
     """, (first_date,)).fetchall()
 
     events_with_defaults = []
+    now_utc = _utc_now()
     for event in events:
         event_dict = dict(event)
         d = event_dict.get('date')
@@ -891,20 +914,11 @@ def get_all_upcoming_events(include_active=False):
         if not event_dict.get('time_limit_hours') and event_dict.get('distance_km'):
             event_dict['time_limit_hours'] = get_default_time_limit(event_dict['distance_km'])
 
-        # An in-progress 1000/1200 km ride started before today but remains useful
-        # in the native calendar because spectators can still Follow Live. Use a
-        # conservative date window derived from the event's own time allowance.
+        # A ride that started before today remains useful while it is genuinely
+        # inside its scheduled cutoff window. An enabled LiveTrack row is only a
+        # candidate signal; it must not resurrect an expired historical ride.
         if d and d < today:
-            if include_active and event_dict.get('has_active_tracking'):
-                event_dict['is_live'] = True
-                events_with_defaults.append(event_dict)
-                continue
-            limit_h = event_dict.get('time_limit_hours')
-            try:
-                active_through = d + timedelta(days=math.ceil(float(limit_h) / 24))
-            except (TypeError, ValueError):
-                active_through = d
-            if not include_active or active_through < today:
+            if not include_active or not _event_is_in_progress(event_dict, now_utc):
                 continue
             event_dict['is_live'] = True
         else:
