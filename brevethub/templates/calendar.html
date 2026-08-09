@@ -486,7 +486,7 @@
                       data-event-id="{{ s.event_id }}">
                   {{ s.finish_time or '—' }}
                 </span>
-                {% if s.evidence_submission_allowed or (not s.submission_id and not s.finish_time) %}<a class="event-link-btn" href="{{ url_for('validation.submit_validation', event_id=s.event_id) }}">Submit evidence</a>{% endif %}
+                {% if s.organizer_decision != 'approved' and (s.evidence_submission_allowed or (not s.submission_id and not s.finish_time)) %}<a class="event-link-btn" href="{{ url_for('validation.submit_validation', event_id=s.event_id) }}">Submit evidence</a>{% endif %}
               </span>
             </div>
           </article>
