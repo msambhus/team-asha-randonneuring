@@ -45,8 +45,8 @@ from models import (get_season_by_name, get_riders_for_season, get_active_riders
                     RideStatus)
 from auth import login_required, user_login_required
 from shared.strava_analysis_index import ride_card, season_group
-from shared.calendar_view import calendar_event, completed_event
-from shared.calendar_view import finisher_row
+from shared.calendar_view import calendar_event, completed_event, finisher_row
+from shared.calendar_view import group_events_by_month
 from shared.rider_directory_view import public_rider_row
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
@@ -677,6 +677,7 @@ def upcoming_brevets(season_name):
                            season=season,
                            season_label=label,
                            rusa_events=rusa_events,
+                           months=group_events_by_month(rusa_events),
                            has_external_events=has_external_events,
                            future_rides=future_rides,
                            completed_events=completed_events,

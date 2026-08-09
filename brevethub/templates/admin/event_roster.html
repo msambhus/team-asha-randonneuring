@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Roster: {{ event.name|clean_name }} — {{ product_name }}{% endblock %}
+{% block content %}
+<div class="container section">
+  <a href="{{ url_for('admin.registrations') }}" class="text-primary">← Registration management</a>
+  <div class="hero" style="padding:28px 20px;margin:16px 0;border-radius:12px;">
+    <h1 style="font-size:1.5rem;margin-bottom:6px;">{{ event.name|clean_name }}</h1>
+    <p style="opacity:.9;margin:0;">{{ event.date }} · {{ event.distance_km }} km{% if event.start_time %} · {{ event.start_time }}{% endif %}{% if event.start_location %} · {{ event.start_location }}{% endif %}</p>
+  </div>
+
+  <form method="post">
+    {% if roster %}
+    <div class="card overflow-x-auto">
+      <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
+        <h2 class="text-primary font-bold">Roster ({{ roster|length }})</h2>
+        <div class="flex gap-2 flex-wrap items-center">
+          <a class="btn btn-secondary btn-sm"
+             href="{{ url_for('admin.export_roster_csv', event_id=event.id) }}">↓ Download CSV</a>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="markAllFinished()">Mark all finished</button>
+        </div>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left border-b border-border">
+            <th class="py-2 pr-3">Rider</th>
+            <th class="py-2 pr-3">Contact</th>
+            <th class="py-2 pr-3">Reg.</th>
+            <th class="py-2 pr-3">Progress</th>
+            <th class="py-2 pr-3">Ride status</th>
+            <th class="py-2 pr-3">Finish</th>
+            <th class="py-2 pr-3">Code</th>
+            <th class="py-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in roster %}
+          <tr class="border-b border-border/60 {% if r.status == 'going' %}bg-[#fffaf0]{% elif r.status == 'finished' %}bg-[#f0fff4]{% elif r.status in ('dnf','dns','otl') %}bg-[#fff5f5]{% endif %}">
+            <td class="py-3 pr-3">
+              <strong>{{ r.first_name or '' }} {{ r.last_name or '' }}</strong><br>
+              <span class="text-text-light">RUSA {{ r.rusa_id or '—' }}</span>
+            </td>
+            <td class="py-3 pr-3">
+              {{ r.email }}<br>
+              <span class="text-text-light">{{ r.phone or '—' }}</span>
+            </td>
+            <td class="py-3 pr-3">
+              {% if r.registration_status == 'confirmed' %}<span class="text-[#047857] font-semibold">Confirmed</span>
+              {% elif r.registration_status == 'exception' %}<span class="text-[#b45309] font-semibold">Review</span>
+              {% elif r.registration_status == 'waitlist' %}Waitlist
+              {% else %}—{% endif %}
+            </td>
+            <td class="py-3 pr-3">
+              <strong>{{ r.progress }}</strong>
+              {% if r.live_ride_id and r.event_today %}
+              <br><a href="{{ url_for('live.live_map', ride_id=r.live_ride_id) }}" class="text-primary text-xs font-semibold">Live track →</a>
+              {% endif %}
+            </td>
+            <td class="py-3 pr-3">
+              <select name="status_{{ r.rider_id }}" class="form-input roster-status-select">
+                {% for opt in ['going', 'interested', 'withdraw', 'finished', 'dnf', 'dns', 'otl'] %}
+                <option value="{{ opt }}" {% if r.status == opt %}selected{% endif %}>{{ opt|upper }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td class="py-3 pr-3 font-mono text-xs">{{ r.finish_time or '—' }}</td>
+            <td class="py-3 pr-3 font-mono text-xs">{{ r.confirmation_code or '—' }}</td>
+            <td class="py-3">
+              {% if r.exception_reason %}<span class="text-xs text-text-light" title="{{ r.exception_reason }}">⚠</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="mt-4 flex gap-2 flex-wrap">
+      <button type="submit" class="btn btn-primary">Save roster statuses</button>
+      <a href="{{ url_for('admin.registrations') }}" class="btn btn-secondary">Back</a>
+    </div>
+    {% else %}
+    <p class="text-text-light card p-4">No registrations or sign-ups for this event yet.</p>
+    {% endif %}
+  </form>
+</div>
+<script>
+function markAllFinished() {
+  document.querySelectorAll('.roster-status-select').forEach(function (sel) {
+    sel.value = 'finished';
+  });
+}
+</script>
+{% endblock %}

@@ -108,11 +108,17 @@ def club_exists(club_id):
 # --------------------------------------------------------------------------- #
 # Riders (rp_rider) — one row per authenticated BrevetHub user.
 # --------------------------------------------------------------------------- #
+_RIDER_PROFILE_COLS = (
+    "id, email, google_id, rusa_id, club_id, "
+    "profile_completed, rusa_id_duplicate, created_at, last_login_at, "
+    "first_name, last_name, phone, city, emergency_name, emergency_phone, "
+    "sfr_member_year, eddington_km, eddington_miles, eddington_calculated_at"
+)
+
+
 def get_rider_by_google_id(google_id):
     return db.query_one(
-        "SELECT id, email, google_id, rusa_id, club_id, "
-        "       profile_completed, rusa_id_duplicate, created_at, last_login_at "
-        "FROM rp_rider WHERE google_id = %s",
+        f"SELECT {_RIDER_PROFILE_COLS} FROM rp_rider WHERE google_id = %s",
         (google_id,),
     )
 
@@ -126,10 +132,7 @@ def get_rider_by_id(rider_id):
     as a graceful prompt rather than a fabricated zero.
     """
     return db.query_one(
-        "SELECT id, email, google_id, rusa_id, club_id, "
-        "       profile_completed, rusa_id_duplicate, created_at, last_login_at, "
-        "       eddington_km, eddington_miles, eddington_calculated_at "
-        "FROM rp_rider WHERE id = %s",
+        f"SELECT {_RIDER_PROFILE_COLS} FROM rp_rider WHERE id = %s",
         (rider_id,),
     )
 
@@ -984,13 +987,17 @@ def get_upcoming_events(state=None, limit=200):
         "       e.ride_type, e.elevation_ft, e.rwgps_url, e.start_location, "
         "       e.club_id, c.name AS club_name, c.state AS club_state, "
         "       e.start_time, e.time_limit_hours, "
+        "       e.fee_cents, e.registration_deadline, e.capacity, "
+        "       e.event_summary, e.registration_enabled, "
         "       COALESCE(sc.signup_count, 0) AS signup_count, "
-        "       COALESCE(sc.interested_count, 0) AS interested_count "
+        "       COALESCE(sc.interested_count, 0) AS interested_count, "
+        "       COALESCE(sc.confirmed_count, 0) AS confirmed_count "
         "FROM rp_brevet_event e LEFT JOIN rp_club c ON c.id = e.club_id "
         "LEFT JOIN ("
         "  SELECT event_id, "
         "    COUNT(*) FILTER (WHERE status = %s) AS signup_count, "
-        "    COUNT(*) FILTER (WHERE status = %s) AS interested_count "
+        "    COUNT(*) FILTER (WHERE status = %s) AS interested_count, "
+        "    COUNT(*) FILTER (WHERE registration_status = 'confirmed') AS confirmed_count "
         "  FROM rp_event_signup GROUP BY event_id"
         ") sc ON sc.event_id = e.id "
         "WHERE e.date >= CURRENT_DATE AND (%s::text IS NULL OR e.region ILIKE %s) "
@@ -2465,5 +2472,393 @@ def set_validation_organizer_decision(submission_id, decision, notes, reviewed_b
         "organizer_notes = %s, reviewed_by = %s, reviewed_at = NOW(), updated_at = NOW() "
         "WHERE id = %s RETURNING id",
         (decision, notes, reviewed_by, submission_id),
+        returning=True,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Brevet registration (profile, waivers, confirmation) — rp_* only.
+# --------------------------------------------------------------------------- #
+def get_club_by_rusa_code(rusa_club_id):
+    return db.query_one(
+        "SELECT id, rusa_club_id, name, city, state FROM rp_club "
+        "WHERE rusa_club_id = %s",
+        (rusa_club_id,),
+    )
+
+
+def update_rider_registration_profile(rider_id, **fields):
+    """Update editable registration profile fields for the signed-in rider."""
+    allowed = (
+        'first_name', 'last_name', 'phone', 'city',
+        'emergency_name', 'emergency_phone', 'sfr_member_year', 'rusa_id', 'club_id',
+    )
+    sets = []
+    params = []
+    for key, value in fields.items():
+        if key not in allowed:
+            continue
+        sets.append(f"{key} = %s")
+        params.append(value)
+    if not sets:
+        return get_rider_by_id(rider_id)
+    params.append(rider_id)
+    return db.execute(
+        f"UPDATE rp_rider SET {', '.join(sets)} WHERE id = %s "
+        f"RETURNING {_RIDER_PROFILE_COLS}",
+        tuple(params),
+        returning=True,
+    )
+
+
+def get_brevet_event_registration(event_id):
+    """Full event row for the registration wizard."""
+    return db.query_one(
+        "SELECT e.id, e.rusa_route_id, e.name, e.date, e.distance_km, e.region, "
+        "       e.ride_type, e.elevation_ft, e.rwgps_url, e.start_location, "
+        "       e.start_time, e.time_limit_hours, e.club_id, "
+        "       e.fee_cents, e.registration_deadline, e.capacity, e.event_summary, "
+        "       e.registration_enabled, c.name AS club_name, c.rusa_club_id "
+        "FROM rp_brevet_event e LEFT JOIN rp_club c ON c.id = e.club_id "
+        "WHERE e.id = %s",
+        (event_id,),
+    )
+
+
+def get_event_registration_count(event_id):
+    row = db.query_one(
+        "SELECT COUNT(*) AS n FROM rp_event_signup "
+        "WHERE event_id = %s AND registration_status = 'confirmed'",
+        (event_id,),
+    )
+    return int(row['n']) if row else 0
+
+
+def get_event_signup_registration(rider_id, event_id):
+    return db.query_one(
+        "SELECT id, status, registration_status, registration_confirmed_at, "
+        "       exception_reason, confirmation_code "
+        "FROM rp_event_signup WHERE rider_id = %s AND event_id = %s",
+        (rider_id, event_id),
+    )
+
+
+def get_rider_signup_registrations(rider_id):
+    return db.query(
+        "SELECT event_id, status, registration_status, registration_confirmed_at, "
+        "       exception_reason, confirmation_code "
+        "FROM rp_event_signup WHERE rider_id = %s",
+        (rider_id,),
+    )
+
+
+def get_waiver_for_event(event):
+    """Latest waiver for the event's club, falling back to the global default."""
+    club_id = (event or {}).get('club_id')
+    if club_id:
+        row = db.query_one(
+            "SELECT id, version_label, waiver_text, club_id "
+            "FROM rp_waiver_version WHERE club_id = %s "
+            "ORDER BY effective_at DESC, id DESC LIMIT 1",
+            (club_id,),
+        )
+        if row:
+            return row
+    return db.query_one(
+        "SELECT id, version_label, waiver_text, club_id "
+        "FROM rp_waiver_version WHERE club_id IS NULL "
+        "ORDER BY effective_at DESC, id DESC LIMIT 1",
+    )
+
+
+def record_waiver_acceptance(event_id, rider_id, waiver_version_id, profile_snapshot):
+    return db.execute(
+        "INSERT INTO rp_waiver_acceptance "
+        "  (event_id, rider_id, waiver_version_id, profile_snapshot) "
+        "VALUES (%s, %s, %s, %s) "
+        "ON CONFLICT (event_id, rider_id, waiver_version_id) DO UPDATE "
+        "SET accepted_at = NOW(), profile_snapshot = EXCLUDED.profile_snapshot "
+        "RETURNING id",
+        (event_id, rider_id, waiver_version_id, Json(profile_snapshot)),
+        returning=True,
+    )
+
+
+def confirm_event_registration(rider_id, event_id, *, registration_status,
+                               exception_reason=None, confirmation_code=None):
+    """Mark a rider registered: going + registration metadata."""
+    return db.execute(
+        "INSERT INTO rp_event_signup "
+        "  (rider_id, event_id, status, registration_status, "
+        "   registration_confirmed_at, exception_reason, confirmation_code) "
+        "VALUES (%s, %s, %s, %s, NOW(), %s, %s) "
+        "ON CONFLICT (event_id, rider_id) DO UPDATE "
+        "SET status = EXCLUDED.status, "
+        "    registration_status = EXCLUDED.registration_status, "
+        "    registration_confirmed_at = NOW(), "
+        "    exception_reason = EXCLUDED.exception_reason, "
+        "    confirmation_code = EXCLUDED.confirmation_code, "
+        "    updated_at = NOW() "
+        "WHERE rp_event_signup.status NOT IN (%s, %s, %s, %s) "
+        "RETURNING id, status, registration_status, confirmation_code",
+        (rider_id, event_id, RideStatus.GOING.value, registration_status,
+         exception_reason, confirmation_code,
+         RideStatus.FINISHED.value, RideStatus.DNF.value,
+         RideStatus.DNS.value, RideStatus.OTL.value),
+        returning=True,
+    )
+
+
+def enrich_brevet_event_registration(event_id, **fields):
+    """Merge registration metadata onto a cached brevet (SFR sheet / admin)."""
+    allowed = (
+        'start_time', 'start_location', 'fee_cents', 'registration_deadline',
+        'capacity', 'event_summary', 'registration_enabled', 'club_id',
+        'elevation_ft', 'rwgps_url', 'time_limit_hours',
+    )
+    sets = []
+    params = []
+    for key, value in fields.items():
+        if key not in allowed:
+            continue
+        sets.append(f"{key} = %s")
+        params.append(value)
+    if not sets:
+        return None
+    params.append(event_id)
+    return db.execute(
+        "UPDATE rp_brevet_event SET " + ", ".join(sets) + " WHERE id = %s RETURNING id",
+        tuple(params),
+        returning=True,
+    )
+
+
+def find_brevet_event_by_key(date_value, name, distance_km):
+    return db.query_one(
+        "SELECT id FROM rp_brevet_event "
+        "WHERE date = %s AND name = %s AND distance_km = %s",
+        (date_value, name, distance_km),
+    )
+
+
+def list_registration_exceptions(limit=100):
+    return db.query(
+        "SELECT s.id, s.event_id, s.rider_id, s.status, s.registration_status, "
+        "       s.exception_reason, s.registration_confirmed_at, s.confirmation_code, "
+        "       e.name AS event_name, e.date AS event_date, e.distance_km, "
+        "       r.first_name, r.last_name, r.email, r.rusa_id "
+        "FROM rp_event_signup s "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "JOIN rp_rider r ON r.id = s.rider_id "
+        "WHERE s.registration_status = 'exception' "
+        "ORDER BY s.registration_confirmed_at DESC NULLS LAST, s.id DESC "
+        "LIMIT %s",
+        (limit,),
+    )
+
+
+def list_event_registrations(event_id):
+    return db.query(
+        "SELECT s.id, s.status, s.registration_status, s.registration_confirmed_at, "
+        "       s.confirmation_code, s.exception_reason, "
+        "       r.first_name, r.last_name, r.email, r.rusa_id, r.phone "
+        "FROM rp_event_signup s JOIN rp_rider r ON r.id = s.rider_id "
+        "WHERE s.event_id = %s AND s.registration_status IS NOT NULL "
+        "ORDER BY s.registration_confirmed_at DESC NULLS LAST, r.last_name, r.first_name",
+        (event_id,),
+    )
+
+
+def enable_sfr_region_registration_defaults():
+    """Turn on registration for upcoming SFR-region events with sensible fee defaults."""
+    db.execute(
+        "UPDATE rp_brevet_event SET registration_enabled = TRUE, "
+        "  fee_cents = COALESCE(fee_cents, CASE "
+        "    WHEN distance_km <= 100 THEN 1500 "
+        "    WHEN distance_km <= 130 THEN 2000 "
+        "    ELSE 2500 END) "
+        "WHERE region ILIKE 'CA: San Francisco%' AND date >= CURRENT_DATE",
+    )
+    row = db.query_one(
+        "SELECT COUNT(*) AS n FROM rp_brevet_event "
+        "WHERE region ILIKE 'CA: San Francisco%' AND date >= CURRENT_DATE "
+        "AND registration_enabled = TRUE",
+    )
+    return int(row['n']) if row else 0
+
+
+def list_registration_events(limit=80):
+    """Upcoming and recent events with registration/roster counts for admin."""
+    return db.query(
+        "SELECT e.id, e.name, e.date, e.distance_km, e.region, e.start_time, "
+        "       e.start_location, e.registration_enabled, "
+        "       COUNT(s.id) FILTER (WHERE s.registration_status IS NOT NULL) AS registered_count, "
+        "       COUNT(s.id) FILTER (WHERE s.status = %s) AS going_count, "
+        "       COUNT(s.id) FILTER (WHERE s.registration_status = 'exception') AS exception_count, "
+        "       COUNT(s.id) FILTER (WHERE s.status IN (%s, %s, %s, %s)) AS result_count "
+        "FROM rp_brevet_event e "
+        "LEFT JOIN rp_event_signup s ON s.event_id = e.id "
+        "WHERE e.date >= CURRENT_DATE - INTERVAL '14 days' "
+        "GROUP BY e.id "
+        "ORDER BY e.date ASC, e.distance_km ASC "
+        "LIMIT %s",
+        (RideStatus.GOING.value, RideStatus.FINISHED.value, RideStatus.DNF.value,
+         RideStatus.DNS.value, RideStatus.OTL.value, limit),
+    )
+
+
+def get_admin_event_roster(event_id):
+    """Full signup roster for operator management (PII allowed)."""
+    return db.query(
+        "SELECT s.id AS signup_id, s.rider_id, s.status, s.registration_status, "
+        "       s.registration_confirmed_at, s.confirmation_code, s.exception_reason, "
+        "       s.finish_time, s.updated_at, s.created_at, "
+        "       r.first_name, r.last_name, r.email, r.rusa_id, r.phone, r.city, "
+        "       (e.date < CURRENT_DATE) AS event_past, "
+        "       (e.date = CURRENT_DATE) AS event_today, "
+        "       live.id AS live_ride_id, live.is_public AS live_public "
+        "FROM rp_event_signup s "
+        "JOIN rp_rider r ON r.id = s.rider_id "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "LEFT JOIN LATERAL ("
+        "  SELECT id, is_public FROM rp_ride "
+        "  WHERE rider_id = s.rider_id AND event_id = s.event_id "
+        "  ORDER BY start_at DESC NULLS LAST LIMIT 1"
+        ") live ON TRUE "
+        "WHERE s.event_id = %s "
+        "  AND (s.registration_status IS NOT NULL "
+        "       OR s.status IN (%s, %s, %s, %s, %s, %s, %s, %s)) "
+        "ORDER BY CASE s.status WHEN %s THEN 0 WHEN %s THEN 1 WHEN %s THEN 2 ELSE 3 END, "
+        "         r.last_name, r.first_name",
+        (event_id,
+         RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.MAYBE.value,
+         RideStatus.WITHDRAW.value, RideStatus.FINISHED.value, RideStatus.DNF.value,
+         RideStatus.DNS.value, RideStatus.OTL.value,
+         RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.FINISHED.value),
+    )
+
+
+def admin_update_event_signup(event_id, rider_id, status, *, finish_time=None,
+                              registration_status=None):
+    """Operator-only signup update — bypasses rider self-service guards."""
+    new_status = RideStatus.normalize(status)
+    sets = ["status = %s", "updated_at = NOW()"]
+    params = [new_status.value]
+    if registration_status is not None:
+        sets.append("registration_status = %s")
+        params.append(registration_status)
+    if finish_time is not None:
+        sets.append("finish_time = %s")
+        params.append(finish_time)
+    elif RideStatus.is_post_ride(new_status) and not RideStatus.is_successful(new_status):
+        sets.append("finish_time = NULL")
+    params.extend([event_id, rider_id])
+    row = db.execute(
+        "UPDATE rp_event_signup SET " + ", ".join(sets) + " "
+        "WHERE event_id = %s AND rider_id = %s RETURNING id, status, finish_time, "
+        "registration_status",
+        tuple(params),
+        returning=True,
+    )
+    return row
+
+
+def admin_remove_event_signup(event_id, rider_id):
+    return db.execute(
+        "DELETE FROM rp_event_signup WHERE event_id = %s AND rider_id = %s RETURNING id",
+        (event_id, rider_id),
+        returning=True,
+    )
+
+
+# ── Team registration ─────────────────────────────────────────────────────────
+
+def create_team_registration(event_id, captain_rider_id, team_name,
+                              team_event_type=None, proof_method=None,
+                              rwgps_url=None, notes=None):
+    """Create a team registration record and return the new row id."""
+    row = db.execute(
+        "INSERT INTO rp_team_registration "
+        "(event_id, captain_rider_id, team_name, team_event_type, "
+        " proof_method, rwgps_url, notes) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (event_id, captain_rider_id, team_name, team_event_type,
+         proof_method, rwgps_url, notes),
+        returning=True,
+    )
+    return row['id'] if row else None
+
+
+def add_team_member(team_registration_id, member_order,
+                    rider_id=None, rusa_id=None,
+                    first_name=None, last_name=None):
+    row = db.execute(
+        "INSERT INTO rp_team_member "
+        "(team_registration_id, rider_id, rusa_id, first_name, last_name, member_order) "
+        "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+        (team_registration_id, rider_id, rusa_id, first_name, last_name, member_order),
+        returning=True,
+    )
+    return row['id'] if row else None
+
+
+def get_team_registrations_for_event(event_id):
+    return db.query(
+        "SELECT tr.*, r.first_name AS captain_first, r.last_name AS captain_last, "
+        "       r.email AS captain_email, r.rusa_id AS captain_rusa_id "
+        "FROM rp_team_registration tr "
+        "LEFT JOIN rp_rider r ON r.id = tr.captain_rider_id "
+        "WHERE tr.event_id = %s ORDER BY tr.created_at",
+        (event_id,),
+    )
+
+
+def get_team_members(team_registration_id):
+    return db.query(
+        "SELECT tm.*, r.email FROM rp_team_member tm "
+        "LEFT JOIN rp_rider r ON r.id = tm.rider_id "
+        "WHERE tm.team_registration_id = %s ORDER BY tm.member_order",
+        (team_registration_id,),
+    )
+
+
+def get_rider_team_registration(rider_id, event_id):
+    return db.query_one(
+        "SELECT tr.* FROM rp_team_registration tr "
+        "WHERE tr.captain_rider_id = %s AND tr.event_id = %s",
+        (rider_id, event_id),
+    )
+
+
+# ── Enhanced waiver acceptance ────────────────────────────────────────────────
+
+def record_waiver_acceptance_v2(event_id, rider_id, waiver_version_id,
+                                 profile_snapshot, *, is_minor=False,
+                                 signatory_name=None, guardian_name=None,
+                                 guardian_phone=None, age_certified=False,
+                                 esign_consented=False, ride_phone=None,
+                                 waiver_method='in_app', smartwaiver_id=None):
+    """Enhanced waiver acceptance with e-sig fields; upserts on (event_id, rider_id, waiver_version_id)."""
+    snapshot = profile_snapshot if isinstance(profile_snapshot, str) else Json(profile_snapshot)
+    return db.execute(
+        "INSERT INTO rp_waiver_acceptance "
+        "(event_id, rider_id, waiver_version_id, profile_snapshot, "
+        " is_minor, signatory_name, guardian_name, guardian_phone, "
+        " age_certified, esign_consented, waiver_method, smartwaiver_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "ON CONFLICT (event_id, rider_id, waiver_version_id) DO UPDATE SET "
+        "  is_minor = EXCLUDED.is_minor, "
+        "  signatory_name = EXCLUDED.signatory_name, "
+        "  guardian_name = EXCLUDED.guardian_name, "
+        "  guardian_phone = EXCLUDED.guardian_phone, "
+        "  age_certified = EXCLUDED.age_certified, "
+        "  esign_consented = EXCLUDED.esign_consented, "
+        "  waiver_method = EXCLUDED.waiver_method, "
+        "  smartwaiver_id = EXCLUDED.smartwaiver_id, "
+        "  accepted_at = NOW() "
+        "RETURNING id",
+        (event_id, rider_id, waiver_version_id, snapshot,
+         is_minor, signatory_name, guardian_name, guardian_phone,
+         age_certified, esign_consented, waiver_method, smartwaiver_id),
         returning=True,
     )

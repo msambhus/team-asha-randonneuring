@@ -40,6 +40,7 @@ from brevethub.services.ride_validation import (
     TrackPoint, combine_recordings, fingerprint, parse_fit, parse_gpx,
     validate_submission,
 )
+from brevethub.services.registration import progress_label
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -381,6 +382,106 @@ def validation_evidence(submission_id, evidence_id):
     )
 
 
+@admin_bp.route('/registrations', methods=['GET'])
+@operator_required
+def registrations():
+    return render_template(
+        'admin/registrations.html',
+        events=models.list_registration_events(),
+        exceptions=models.list_registration_exceptions(limit=25),
+    )
+
+
+@admin_bp.route('/registrations/event/<int:event_id>', methods=['GET', 'POST'])
+@operator_required
+def event_roster(event_id):
+    event = models.get_brevet_event_registration(event_id)
+    if not event:
+        abort(404)
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+        rider_id = request.form.get('rider_id', type=int)
+        if action == 'remove' and rider_id:
+            models.admin_remove_event_signup(event_id, rider_id)
+            flash('Rider removed from event roster.', 'success')
+        elif rider_id:
+            status = (request.form.get('status') or '').strip().lower()
+            finish_time = (request.form.get('finish_time') or '').strip() or None
+            reg_status = (request.form.get('registration_status') or '').strip() or None
+            try:
+                models.admin_update_event_signup(
+                    event_id, rider_id, status,
+                    finish_time=finish_time,
+                    registration_status=reg_status,
+                )
+                flash('Rider status updated.', 'success')
+            except ValueError as exc:
+                flash(str(exc), 'error')
+        else:
+            for key, value in request.form.items():
+                if not key.startswith('status_') or not value:
+                    continue
+                try:
+                    rid = int(key.split('_', 1)[1])
+                    models.admin_update_event_signup(event_id, rid, value.strip())
+                except (ValueError, IndexError):
+                    continue
+            flash('Roster statuses saved.', 'success')
+        return redirect(url_for('admin.event_roster', event_id=event_id))
+
+    roster = models.get_admin_event_roster(event_id)
+    for row in roster:
+        row['progress'] = progress_label(
+            event_past=bool(row.get('event_past')),
+            status=row.get('status') or '',
+            registration_status=row.get('registration_status'),
+        )
+    return render_template(
+        'admin/event_roster.html',
+        event=event,
+        roster=roster,
+    )
+
+
+@admin_bp.route('/registrations/event/<int:event_id>/export.csv')
+@operator_required
+def export_roster_csv(event_id):
+    """Download the event roster as CSV."""
+    import csv
+    event = models.get_brevet_event_registration(event_id)
+    if not event:
+        abort(404)
+    roster = models.get_admin_event_roster(event_id)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        'First Name', 'Last Name', 'Email', 'Phone', 'RUSA ID',
+        'Reg. Status', 'Ride Status', 'Finish Time',
+        'Exception Reason', 'Confirmation Code',
+    ])
+    for r in roster:
+        writer.writerow([
+            r.get('first_name') or '',
+            r.get('last_name') or '',
+            r.get('email') or '',
+            r.get('phone') or '',
+            r.get('rusa_id') or '',
+            r.get('registration_status') or '',
+            r.get('status') or '',
+            r.get('finish_time') or '',
+            r.get('exception_reason') or '',
+            r.get('confirmation_code') or '',
+        ])
+    fname = f"roster_{event_id}_{event.get('date', '')}.csv".replace(' ', '_')
+    from flask import Response
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{fname}"'},
+    )
+
+
 @admin_bp.route('/validations/<int:submission_id>/decision', methods=['POST'])
 @operator_required
 def validation_decision(submission_id):
@@ -404,12 +505,14 @@ def run_operation(operation):
         run_refresh_calendar,
         run_refresh_eddington,
         run_sync_rusa_results,
+        run_sync_sfr_registration,
         run_warm_brevet_plans,
         run_warm_brevet_route_weather,
         run_warm_plan_elevation,
     )
     operations = {
         'refresh-calendar': run_refresh_calendar,
+        'sync-sfr-registration': run_sync_sfr_registration,
         'sync-rusa-results': run_sync_rusa_results,
         'backfill-rwgps': run_backfill_rwgps_urls,
         'warm-plans': run_warm_brevet_plans,

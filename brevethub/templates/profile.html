@@ -78,7 +78,7 @@
     <dd>
       {% if club %}{{ club.name }}{% else %}<span class="text-text-light">not set</span>{% endif %}
       &middot; <a class="text-primary font-semibold hover:text-accent hover:underline"
-                 href="{{ url_for('signup.signup') }}">change</a>
+                 href="{{ url_for('register.edit_profile', next=request.path) }}">edit registration profile</a>
     </dd>
 
     <dt>RUSA ID</dt>
@@ -98,7 +98,13 @@
 
     <dt>Member since</dt>
     <dd>
-      {% if rider.created_at %}{{ rider.created_at.strftime('%B %Y') }}{% else %}<span class="text-text-light">—</span>{% endif %}
+      {% if member_since %}
+        {{ member_since.strftime('%B %Y') }}
+      {% elif rider.created_at %}
+        {{ rider.created_at.strftime('%B %Y') }}
+      {% else %}
+        <span class="text-text-light">—</span>
+      {% endif %}
     </dd>
   </dl>
 </section>

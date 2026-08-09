@@ -4,6 +4,11 @@ Repositories remain product-owned. These helpers make a lossless copy of each
 record and supply the common fields expected by calendar and finisher surfaces.
 """
 
+MONTH_ABBR = [
+    '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+]
+
 
 _EVENT_DEFAULTS = {
     'id': None,
@@ -73,3 +78,48 @@ def finisher_row(record):
         ),
         'finish_time': row.get('finish_time'),
     }
+
+
+def event_category(ride_type: str | None) -> str:
+    """Normalise raw RUSA ride_type into one of: acp_brevet, rusa_brevet, populaire, fleche, team, other."""
+    rt = (ride_type or '').lower()
+    if 'flèche' in rt or 'fleche' in rt or 'fle' in rt:
+        return 'fleche'
+    if 'dart' in rt or 'arrow' in rt:
+        return 'fleche'  # dart/arrow are team-format events, shown as fleche category
+    if 'populaire' in rt or 'popular' in rt:
+        return 'populaire'
+    if 'acp' in rt:
+        return 'acp_brevet'
+    if 'rusa' in rt:
+        return 'rusa_brevet'
+    if 'randonnée' in rt or 'randonnee' in rt or 'uaf' in rt:
+        return 'rusa_brevet'
+    return 'other'
+
+
+def month_label(value):
+    """Format a date-like value as ``'March 2026'`` for month headers."""
+    if value is None:
+        return ''
+    iso = str(value)
+    try:
+        from datetime import datetime
+        return datetime.strptime(iso[:10], '%Y-%m-%d').strftime('%B %Y')
+    except ValueError:
+        return iso
+
+
+def group_events_by_month(events):
+    """Group a date-ordered event list into ``[(month_label, [events]), ...]``."""
+    groups = []
+    current_label = None
+    bucket = None
+    for ev in events or []:
+        label = month_label(ev.get('date'))
+        if label != current_label:
+            current_label = label
+            bucket = []
+            groups.append((label, bucket))
+        bucket.append(ev)
+    return groups

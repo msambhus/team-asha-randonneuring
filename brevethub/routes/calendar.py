@@ -50,8 +50,9 @@ from flask import (Blueprint, current_app, jsonify, render_template, request,
 
 from brevethub import models
 from brevethub.decorators import current_rider
+from brevethub.services.registration import membership_pills
 from shared.rusa_calendar import RUSA_NATIONAL_URL, get_rusa_events
-from shared.calendar_view import calendar_event, finisher_row
+from shared.calendar_view import calendar_event, event_category, group_events_by_month, finisher_row
 from shared.weather import summarize_point_forecast
 
 calendar_bp = Blueprint('calendar', __name__)
@@ -149,38 +150,6 @@ def _seed_calendar_cache_if_empty():
     return 'empty'
 
 
-def _month_label(event_date):
-    """Group label like ``"August 2026"`` for an event's date.
-
-    Accepts a ``datetime.date`` (as psycopg2 returns) or an ISO ``"YYYY-MM-DD"``
-    string (as tests supply); both stringify to ISO, so we parse defensively.
-    """
-    iso = str(event_date)[:10]
-    try:
-        return datetime.strptime(iso, '%Y-%m-%d').strftime('%B %Y')
-    except ValueError:
-        return iso
-
-
-def _group_by_month(events):
-    """Turn a date-ordered event list into ``[(month_label, [events]), ...]``.
-
-    Preserves the incoming order (events already come soonest-first from the model),
-    so months and the events within them stay chronological.
-    """
-    groups = []
-    current_label = None
-    bucket = None
-    for ev in events:
-        label = _month_label(ev['date'])
-        if label != current_label:
-            current_label = label
-            bucket = []
-            groups.append((label, bucket))
-        bucket.append(ev)
-    return groups
-
-
 def _weather_by_event(events):
     """Map each event id to its summarized cached forecast (cache-read-only).
 
@@ -212,7 +181,10 @@ def calendar():
 
     degraded = _seed_calendar_cache_if_empty()
     events = [calendar_event(row) for row in models.get_upcoming_events()]
-    months = _group_by_month(events)
+    for ev in events:
+        ev['data_category'] = event_category(ev.get('ride_type'))
+    event_categories = sorted({ev['data_category'] for ev in events})
+    months = group_events_by_month(events)
 
     # State -> sorted RBA areas map for the cascading region dropdowns. RUSA region
     # labels look like "CA: San Francisco" -> state "CA", area "San Francisco". Derived
@@ -250,11 +222,16 @@ def calendar():
     # The current rider's OWN status per event — never another rider's, so the
     # guest/other-rider view stays free of any participation PII.
     my_status = {}
+    my_registrations = {}
     my_results = []
     followed_live_event_ids = set()
     if rider:
         my_status = {row['event_id']: row['status']
                      for row in models.get_rider_signup_statuses(rider['id'])}
+        reg_rows = models.get_rider_signup_registrations(rider['id'])
+        my_registrations = {
+            row['event_id']: row for row in reg_rows if row.get('registration_status')
+        }
         # The rider's OWN past-event results, so the calendar carries the post-ride
         # surface (result badge + read-only finish_time + a status-only correction)
         # the upcoming grid cannot show. Failure-tolerant: a DB hiccup drops the
@@ -272,11 +249,14 @@ def calendar():
     default_club = (club or {}).get('name') if club else None
     return render_template(
         'calendar.html', events=events, months=months, my_status=my_status,
+        my_registrations=my_registrations,
         my_results=my_results, rider=rider, club=club, states=states,
         regions_by_state=regions_by_state, clubs=clubs,
         default_state=default_state, default_club=default_club,
         followed_live_event_ids=followed_live_event_ids,
         degraded=degraded, weather=weather,
+        event_categories=event_categories,
+        membership_pills=membership_pills(rider),
         rusa_event_search_url=RUSA_NATIONAL_URL,
     )
 

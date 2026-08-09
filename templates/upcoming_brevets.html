@@ -737,6 +737,12 @@
     {% endif %}
 </div>
 
+{% if rusa_events %}
+{% set calendar_app = 'team_asha' %}
+{% include 'partials/_calendar_upcoming_table.html' with context %}
+{% endif %}
+
+<div id="calendar-cards-view">
 <div id="events-container">
 {% for event in rusa_events %}
 <div class="event-card{% if event.is_team_ride %} hidden{% endif %}" data-event-card-id="{{ event.id }}" data-team-ride="{{ 'true' if event.is_team_ride else 'false' }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.plan_start_time or event.start_time or '06:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-plan-avg-speed="{{ event.plan_avg_speed or '' }}" data-plan-slug="{{ event.plan_slug or '' }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
@@ -906,6 +912,7 @@
 </div>
 {% endfor %}
 </div>
+</div>{# end calendar-cards-view #}
 
 <script>
 async function toggleLiveFollow(button) {
@@ -1301,7 +1308,7 @@ function groupEventsByMonth() {
 }
 
 function applyFilters() {
-    document.querySelectorAll('.event-card').forEach(function(event) {
+    document.querySelectorAll('.event-card, .calendar-event-row').forEach(function(event) {
         var isTeam = event.dataset.teamRide === 'true';
         var regionMatch;
         if (activeRegion === 'team-asha') {
@@ -1314,14 +1321,16 @@ function applyFilters() {
         var distanceMatch = activeDistance === 'all' || event.dataset.distance === activeDistance;
         if (regionMatch && distanceMatch) {
             event.classList.remove('hidden');
+            event.style.display = '';
         } else {
             event.classList.add('hidden');
+            event.style.display = 'none';
         }
     });
 
-    // Hide empty month sections
+    // Hide empty month sections (cards and table)
     document.querySelectorAll('.month-section').forEach(function(section) {
-        const visibleEvents = section.querySelectorAll('.event-card:not(.hidden)');
+        const visibleEvents = section.querySelectorAll('.event-card:not(.hidden), .calendar-event-row:not(.hidden)');
         if (visibleEvents.length === 0) {
             section.style.display = 'none';
         } else {

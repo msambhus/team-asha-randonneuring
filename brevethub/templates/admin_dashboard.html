@@ -30,6 +30,7 @@
     <div class="grid md:grid-cols-2 gap-3">
       {% for operation, title, description in [
         ('refresh-calendar', 'Refresh national calendar', 'Import the current RUSA event feed into BrevetHub.'),
+        ('sync-sfr-registration', 'Sync SFR registration metadata', 'Apply SFR spreadsheet fees, deadlines, and start details to cached brevets.'),
         ('sync-rusa-results', 'Sync official finishers', 'Fill pending finish times from official RUSA results.'),
         ('backfill-rwgps', 'Discover RWGPS routes', 'Process the next bounded batch of missing route links.'),
         ('warm-plans', 'Generate missing plans', 'Build plans for upcoming events that have RWGPS routes.'),
@@ -46,6 +47,12 @@
       </form>
       {% endfor %}
     </div>
+  </section>
+
+  <section class="card mt-4" aria-labelledby="registration-heading">
+    <h2 id="registration-heading" class="text-primary text-[1.2rem] font-bold mb-1">Brevet registration</h2>
+    <p class="text-text-light mb-3">Review riders flagged for organizer attention after registering through the calendar wizard.</p>
+    <a class="btn btn-primary" href="{{ url_for('admin.registrations') }}">Manage registrations</a>
   </section>
 
   <section class="card mt-4" aria-labelledby="validation-heading">

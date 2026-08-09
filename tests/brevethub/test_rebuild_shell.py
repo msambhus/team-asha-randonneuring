@@ -227,6 +227,7 @@ def test_brevethub_calendar_template_renders_with_rusa_context():
         "elevation_ft": 6000,
         "signup_count": 3,
         "interested_count": 1,
+        "confirmed_count": 3,
         "rwgps_url": "https://ridewithgps.com/routes/123",
         "rwgps_url_team": None,
         "plan_slug": "sample-200k",
@@ -243,7 +244,9 @@ def test_brevethub_calendar_template_renders_with_rusa_context():
                                months=[("August 2026", [event])],
                                rider={"id": 1}, club=None, states=['CA'],
                                regions_by_state={'CA': ['San Francisco']},
-                               my_status={}, my_results=[], degraded=None,
+                               my_status={}, my_registrations={},
+                               membership_pills=[],
+                               my_results=[], degraded=None,
                                weather={},
                                rusa_event_search_url=(
                                    "https://rusa.org/cgi-bin/"
@@ -253,9 +256,9 @@ def test_brevethub_calendar_template_renders_with_rusa_context():
     assert "region-state" in body
     assert "region-area" in body
     assert "San Francisco" in body
-    assert "3 going" in body
+    assert "3 on roster" in body
     assert "1 interested" in body
-    assert "Find official registration via RUSA" in body
+    assert "registration-modal" in body
     assert "Team Asha" not in body
 
 
