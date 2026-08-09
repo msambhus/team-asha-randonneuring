@@ -6,6 +6,7 @@ form field.  The parsing and advisory checks are shared with the operator queue
 so a rider submission produces exactly the same evidence/check records.
 """
 import json
+import re
 import zlib
 from datetime import datetime, timedelta, timezone, time
 from zoneinfo import ZoneInfo
@@ -18,6 +19,7 @@ from brevethub.services.ride_validation import (
     TrackPoint, combine_recordings, fingerprint, parse_fit, parse_gpx,
     validate_submission,
 )
+from brevethub.routes.strava import load_strava_section
 
 validation_bp = Blueprint('validation', __name__)
 _MAX_UPLOAD = 4 * 1024 * 1024
@@ -66,7 +68,12 @@ def _points_from_strava(row, started_at):
 
 
 def _render_form(event, *, status=200, values=None):
-    return render_template('validation_submit.html', event=event, values=values or {}), status
+    rider = current_rider()
+    strava = load_strava_section(rider) if rider else {'connected': False}
+    activities = (strava.get('stats') or {}).get('activities') or []
+    plan = models.get_brevet_route_plan_with_stops(event['id']) or {'stops': []}
+    return render_template('validation_submit.html', event=event, values=values or {},
+                           strava_activities=activities, controls=plan.get('stops') or []), status
 
 
 @validation_bp.route('/my/validations')
@@ -110,12 +117,20 @@ def submit_validation(event_id):
         file_rows.append(('recording', uploaded, data, fingerprint(data)))
 
     strava_id = (request.form.get('strava_activity_id') or '').strip()
-    if strava_id:
-        if not request.form.get('activity_started_at'):
-            flash('Enter the Strava activity start time with its timezone.', 'error')
+    strava_url = (request.form.get('strava_url') or '').strip()
+    if strava_url and not strava_id:
+        match = re.search(r'(?:activities?/|activity/|^)(\d{6,})', strava_url)
+        if match:
+            strava_id = match.group(1)
+        else:
+            flash('Enter a Strava activity URL containing its numeric activity id.', 'error')
             return _render_form(event, 400, request.form)
+    if strava_id:
         try:
-            recordings.append(_points_from_strava(models.get_ride_analysis(rider['id'], int(strava_id)), request.form['activity_started_at']))
+            official = _official_start(event)
+            if not official:
+                raise ValueError('This brevet has no official start time yet.')
+            recordings.append(_points_from_strava(models.get_ride_analysis(rider['id'], int(strava_id)), official.isoformat()))
         except Exception as exc:
             flash(str(exc), 'error')
             return _render_form(event, 400, request.form)
@@ -123,12 +138,15 @@ def submit_validation(event_id):
 
     metadata.update({
         'device': (request.form.get('source_device') or metadata.get('device') or '').strip() or None,
-        'activity_type': (request.form.get('activity_type') or metadata.get('activity_type') or '').strip() or None,
-        'manual': request.form.get('manual_activity') == '1',
+        # BrevetHub evidence is a human-powered brevet submission by definition;
+        # synthetic/manual provenance is still recorded by the parser metadata.
+        'activity_type': 'Ride',
+        'manual': False,
         'recording_count': len(recordings),
     })
     evidence_orders = set()
-    for raw in (request.form.get('control_evidence_orders') or '').split(','):
+    raw_orders = request.form.getlist('control_evidence_orders') or (request.form.get('control_evidence_orders') or '').split(',')
+    for raw in raw_orders:
         if raw.strip():
             try:
                 evidence_orders.add(int(raw.strip()))

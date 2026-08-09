@@ -118,9 +118,12 @@ def live_list():
     Garmin LiveTrack + phone-location share. The rider is resolved with the same
     current_rider helper calendar.py uses; the ride list itself is unchanged."""
     rider = current_rider()
-    rides = models.get_public_rides()
+    rides = (models.get_rider_live_rides(rider['id'])
+             if rider and request.args.get('mine') == '1'
+             else models.get_public_rides())
     return render_template('live_list.html', rides=rides, rider=rider,
-                           poll_seconds=LIVE_POLL_SECONDS)
+                           poll_seconds=LIVE_POLL_SECONDS,
+                           mine=bool(rider and request.args.get('mine') == '1'))
 
 
 # NOTE: no along-route weather overlay on the BrevetHub live map yet. The shared
