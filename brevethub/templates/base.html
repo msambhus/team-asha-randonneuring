@@ -54,6 +54,7 @@
         <div class="hidden group-hover:block absolute top-full right-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[180px] z-[200] overflow-hidden pt-0">
             <a href="{{ url_for('main.profile') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My Profile</a>
             <a href="{{ url_for('main.dashboard') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My Rides</a>
+            <a href="{{ url_for('validation.my_validations') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My evidence</a>
             {% if user_rider_id %}
             <a href="{{ url_for('riders.rider_profile', rider_id=user_rider_id) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Public Rider Page</a>
             {% endif %}

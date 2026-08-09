@@ -127,11 +127,13 @@ def dashboard():
     strava = load_strava_section(rider)
     signups = load_signups(rider)
     past_results = load_past_results(rider)
+    validation_events = models.get_rider_completed_validation_events(rider['id'])
     activity_feed = build_private_activity_feed(
         strava_activities=(strava.get('stats') or {}).get('activities') or [])
     return render_template('dashboard.html', rider=rider, club=club,
                            rusa=rusa, strava=strava, signups=signups,
                            past_results=past_results,
+                           validation_events=validation_events,
                            activity_feed=activity_feed)
 
 
