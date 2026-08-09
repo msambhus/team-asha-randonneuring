@@ -28,7 +28,6 @@
     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
 </button>
 <nav id="mobile-nav" class="hidden md:flex gap-1 flex-wrap justify-center">
-    <a href="{{ url_for('main.landing') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'main.landing' %}bg-white/15 text-white{% endif %}">Home</a>
     <a href="{{ url_for('calendar.calendar') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'calendar.calendar' %}bg-white/15 text-white{% endif %}">Brevet Calendar</a>
     <a href="{{ url_for('live.live_list', mine=1 if user_logged_in else None) }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white {% if request.endpoint == 'live.live_list' %}bg-white/15 text-white{% endif %}">Live</a>
     <div class="relative inline-block group">
