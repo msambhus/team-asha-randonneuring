@@ -130,7 +130,16 @@ def submit_validation(event_id):
             official = _official_start(event)
             if not official:
                 raise ValueError('This brevet has no official start time yet.')
-            recordings.append(_points_from_strava(models.get_ride_analysis(rider['id'], int(strava_id)), official.isoformat()))
+            cached_analysis = models.get_ride_analysis(rider['id'], int(strava_id))
+            if cached_analysis and cached_analysis.get('activity_streams'):
+                recordings.append(_points_from_strava(cached_analysis, official.isoformat()))
+            else:
+                # A rider may submit a Strava URL/activity before connecting or
+                # before its stream has been cached. Preserve the pointer for the
+                # organizer rather than forcing credentials into this form; the
+                # machine result remains incomplete until GPS evidence is added.
+                metadata['strava_activity_url'] = strava_url or f'https://www.strava.com/activities/{strava_id}'
+                metadata['strava_stream_pending'] = True
         except Exception as exc:
             flash(str(exc), 'error')
             return _render_form(event, 400, request.form)
@@ -166,7 +175,7 @@ def submit_validation(event_id):
         file_rows.append(('traditional', uploaded, data, fingerprint(data)))
     proof_description = (request.form.get('proof_description') or '').strip()
     traditional = traditional or bool(proof_description)
-    if not recordings and not traditional:
+    if not recordings and not traditional and not strava_id:
         flash('Add a FIT/GPX recording, an analyzed Strava activity, or traditional proof before submitting.', 'error')
         return _render_form(event, 400, request.form)
 
