@@ -15,6 +15,7 @@ export interface RideSummary {
   date: string | null;
   distance_km: number | null;
   signup_status: string | null;
+  is_live?: boolean;
 }
 
 export interface RidesResponse {

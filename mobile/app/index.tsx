@@ -34,6 +34,7 @@ export default function RidesScreen() {
         distance_km: ride.distance_km,
         signup_status: null,
         isFollowed: true,
+        is_live: ride.is_live,
       });
     }
     return [...combined.values()].sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
@@ -93,6 +94,7 @@ export default function RidesScreen() {
                   {item.id === sharingRideId ? (
                     <Text style={styles.sharingBadge}>📍 Sharing</Text>
                   ) : null}
+                  {item.is_live ? <Text style={styles.liveBadge}>● LIVE NOW</Text> : null}
                   {item.isFollowed ? <Text style={styles.followingBadge}>◎ Following live</Text> : null}
                 </View>
                 <Text style={styles.meta}>
@@ -125,6 +127,10 @@ const styles = StyleSheet.create({
   },
   followingBadge: {
     fontSize: 11, fontWeight: '700', color: '#1e40af', backgroundColor: '#dbeafe',
+    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden',
+  },
+  liveBadge: {
+    fontSize: 11, fontWeight: '800', color: '#991b1b', backgroundColor: '#fee2e2',
     paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden',
   },
   meta: { color: '#6b7280', fontSize: 13, marginTop: 2 },
