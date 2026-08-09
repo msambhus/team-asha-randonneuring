@@ -551,6 +551,8 @@ def rider_profile(rider_id):
             'email': viewer['email'],
             'rusa_id': viewer['rusa_id'],
             'rusa_cache': cache.get('rusa_cache'),
+            'eddington': (viewer.get('eddington_miles')
+                          if models.get_strava_connection(viewer['id']) else None),
         }
     if target is None:
         abort(404)
@@ -566,4 +568,5 @@ def rider_profile(rider_id):
                            display_name=_display_name(target.get('email')),
                            rusa_id=target.get('rusa_id'),
                            career=career, seasons=season_groups,
-                           pbp_years=pbp_years, is_self=is_self)
+                           pbp_years=pbp_years, eddington=target.get('eddington'),
+                           is_self=is_self)

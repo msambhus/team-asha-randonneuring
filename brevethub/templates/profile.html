@@ -39,12 +39,11 @@
 
 <div class="stats-row">
   {% if rusa.has_id and career.count %}
+  {% set sr_total = career.total_sr %}
+  <div class="stat-card" style="border-top:4px solid var(--accent);"><div class="number" style="color:var(--accent);">{% if sr_total > 1 %}SR&times;{{ sr_total }}{% elif sr_total == 1 %}SR{% else %}—{% endif %}</div><div class="label">Super Randonneur</div></div>
+  <div class="stat-card" style="border-top:4px solid #805ad5;"><div class="number" style="color:#805ad5;">{% if pbp_years %}PBP{% elif career.r12_awards|length %}R-12&times;{{ career.r12_awards|length }}{% else %}—{% endif %}</div><div class="label">{% if pbp_years %}PBP Ancien{% elif career.r12_awards|length %}R-12 awards{% else %}Featured achievement{% endif %}</div></div>
   <div class="stat-card"><div class="number">{{ career.count }}</div><div class="label">Career Rides</div></div>
   <div class="stat-card"><div class="number">{{ career.total_km }}</div><div class="label">Career KMs</div></div>
-  {% set sr_total = career.total_sr %}
-  {% if sr_total > 0 %}
-  <div class="stat-card"><div class="number" style="color:var(--accent);">{% if sr_total > 1 %}SR&times;{{ sr_total }}{% else %}SR{% endif %}</div><div class="label">Super Randonneur</div></div>
-  {% endif %}
   <div class="stat-card"><div class="number">{{ career.r12_streak.months }}</div><div class="label">R-12 Streak (mo)</div></div>
   {% if career.permanent_count %}
   <div class="stat-card"><div class="number">{{ career.permanent_count }}</div><div class="label">Permanents</div></div>
@@ -162,13 +161,24 @@
       <dt>R-12 awards</dt>
       <dd>{{ career.r12_awards | length }}</dd>
     </dl>
-    <p class="text-text-light">R-12 and Super Randonneur reflect your RUSA brevet history.</p>
+    <h3 class="text-primary text-base font-bold mt-6 mb-2">Achievements</h3>
+    <div class="flex flex-wrap gap-2">
+      {% if career.total_sr %}<span class="badge">Super Randonneur{% if career.total_sr > 1 %} &times;{{ career.total_sr }}{% endif %}</span>{% endif %}
+      {% if career.r12_awards|length %}<span class="badge">R-12{% if career.r12_awards|length > 1 %} &times;{{ career.r12_awards|length }}{% endif %}</span>{% endif %}
+      {% if pbp_years %}<span class="badge" style="background:linear-gradient(135deg,#805ad5,#b794f4);color:#fff;">PBP Ancien{% if pbp_years|length > 1 %} &times;{{ pbp_years|length }}{% endif %}</span>{% endif %}
+      {% if career.permanent_count %}<span class="badge">{{ career.permanent_count }} Permanent{{ '' if career.permanent_count == 1 else 's' }}</span>{% endif %}
+      {% if career.populaire_count %}<span class="badge">{{ career.populaire_count }} Populaire{{ '' if career.populaire_count == 1 else 's' }}</span>{% endif %}
+    </div>
+    <p class="text-text-light mt-3">Achievements reflect your official RUSA brevet history.</p>
     <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('main.rides_by_season') }}">View rides by season</a></p>
   {% endif %}
 </section>
 
-<section class="card" id="strava">
-  <h2 class="text-primary text-[1.3rem] font-bold mb-4">Strava</h2>
+<section class="card" id="connections">
+  <h2 class="text-primary text-[1.3rem] font-bold mb-2">Connections</h2>
+  <p class="text-text-light mb-5">Manage the services connected to your BrevetHub account. New integrations will appear here.</p>
+  <div class="border border-border rounded-xl p-4" id="strava">
+  <h3 class="text-primary text-lg font-bold mb-4">Strava</h3>
   {# Eddington graceful state: prompt when there is no cached value yet, so the
      number is never a fabricated 0. The value itself renders as the stat card above. #}
   {% if rider.eddington_miles is none %}
@@ -216,6 +226,7 @@
       <p class="text-text-light">Connected — activity summary will appear shortly.</p>
     {% endif %}
   {% endif %}
+  </div>
 </section>
 <section class="card" id="recent-activities">
   <h2 class="text-primary text-[1.3rem] font-bold mb-3">Recent activities</h2>

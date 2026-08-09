@@ -774,8 +774,9 @@ def get_club_rider(club_id, rider_id):
     rider outside their own club.
     """
     return db.query_one(
-        "SELECT id, email, rusa_id, club_id, created_at, rusa_cache "
-        "FROM rp_rider "
+        "SELECT r.id, r.email, r.rusa_id, r.club_id, r.created_at, r.rusa_cache, "
+        "       CASE WHEN sc.id IS NOT NULL THEN r.eddington_miles END AS eddington "
+        "FROM rp_rider r LEFT JOIN rp_strava_connection sc ON sc.rider_id = r.id "
         "WHERE club_id = %s AND id = %s AND profile_completed = TRUE "
         "AND rusa_id IS NOT NULL "
         "AND jsonb_typeof(rusa_cache) = 'array' "
@@ -793,8 +794,10 @@ def get_public_rider(rider_id):
     cached official history is required; merely typing a numeric ID is not enough.
     """
     return db.query_one(
-        "SELECT id, email, rusa_id, rusa_cache "
-        "FROM rp_rider WHERE id = %s AND profile_completed = TRUE "
+        "SELECT r.id, r.email, r.rusa_id, r.rusa_cache, "
+        "       CASE WHEN sc.id IS NOT NULL THEN r.eddington_miles END AS eddington "
+        "FROM rp_rider r LEFT JOIN rp_strava_connection sc ON sc.rider_id = r.id "
+        "WHERE r.id = %s AND r.profile_completed = TRUE "
         "AND rusa_id IS NOT NULL "
         "AND jsonb_typeof(rusa_cache) = 'array' "
         "AND jsonb_array_length(rusa_cache) > 0",
