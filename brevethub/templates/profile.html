@@ -19,6 +19,16 @@
 .achievement-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
 .achievement-item { display:flex; align-items:center; gap:10px; padding:11px 13px; border:1px solid var(--border); border-radius:12px; background:#f8fafc; }
 .achievement-item .icon { font-size:1.35rem; }
+.training-month { border:1px solid var(--border); border-radius:14px; overflow:hidden; background:#fff; }
+.training-month h3 { margin:0; padding:12px 16px; background:#f1f5f9; color:var(--primary); font-size:1rem; }
+.training-grid { display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:1px; background:var(--border); }
+.training-weekdays { background:#e2e8f0; }
+.training-weekdays span { padding:5px; background:#f8fafc; text-align:center; font-size:.68rem; color:var(--text-light); }
+.training-day { min-height:84px; padding:7px; background:#fff; }
+.training-day.empty { background:#f8fafc; }
+.training-day .day-number { font-size:.75rem; color:var(--text-light); }
+.training-day.has-activity { background:#fff7ed; }
+.training-day .activity-dot { display:block; margin-top:5px; font-size:.72rem; line-height:1.15; color:#9a3412; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 @media (max-width: 768px) { .profile { grid-template-columns: 1fr; gap: 4px 0; } .profile dt { margin-top: 10px; } }
 </style>
 {% endblock %}
@@ -46,7 +56,7 @@
   <div class="stat-card"><div class="number">{{ career.count }}</div><div class="label">Career Rides</div></div>
   <div class="stat-card"><div class="number">{{ career.total_km }}</div><div class="label">Career KMs</div></div>
   {% for award in awards[:2] %}
-  <div class="stat-card award-stat"><div class="number">{{ award.name }}{% if award.count > 1 %}&times;{{ award.count }}{% endif %}</div><div class="label">Featured achievement</div></div>
+  <div class="stat-card award-stat"><div class="number">{{ award.name }}{% if award.count > 1 %}&times;{{ award.count }}{% endif %}</div><div class="label">Achievement</div></div>
   {% endfor %}
   {% endif %}
   {# Eddington: E = ridden >= E km on >= E days, from the rider own Strava history
@@ -220,8 +230,28 @@
 </section>
 <section class="card" id="recent-activities">
   <h2 class="text-primary text-[1.3rem] font-bold mb-3">Recent activities</h2>
-  <p class="text-text-light text-sm mb-4">Your private Strava training log.</p>
-  {% if activity_feed %}<div class="divide-y divide-border">{% for activity in activity_feed[:20] %}<div class="py-3 flex items-center justify-between gap-3 flex-wrap"><div><div class="font-semibold">{{ activity.name }}</div><div class="text-text-light text-sm">{{ activity.started_at[:10] if activity.started_at else 'Date unavailable' }}{% if activity.distance_m is not none %} · {{ '%.1f'|format((activity.distance_m|float)/1609.344) }} mi{% endif %}{% if activity.elevation_gain_m is not none %} · {{ (activity.elevation_gain_m|float*3.28084)|round|int }} ft{% endif %}</div></div><span class="text-xs font-bold text-[#c43d00]">STRAVA</span></div>{% endfor %}</div>{% else %}<p class="text-text-light">Connect Strava to see recent activities here.</p>{% endif %}
+  <p class="text-text-light text-sm mb-4">Your private Strava training log, grouped by day.</p>
+  {% if activity_calendar %}
+    <div class="grid gap-4">
+    {% for month in activity_calendar %}
+      <div class="training-month">
+        <h3>{{ month.key }}</h3>
+        <div class="training-grid training-weekdays">{% for weekday in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] %}<span>{{ weekday }}</span>{% endfor %}</div>
+        <div class="training-grid">
+          {% for _ in range(month.first_weekday) %}<div class="training-day empty"></div>{% endfor %}
+          {% for day in range(1, month.days_in_month + 1) %}
+            {% set day_key = month.key ~ '-%02d'|format(day) %}
+            {% set activities = month.days.get(day_key, []) %}
+            <div class="training-day{% if activities %} has-activity{% endif %}">
+              <span class="day-number">{{ day }}</span>
+              {% for activity in activities[:2] %}<span class="activity-dot" title="{{ activity.name }}">● {{ activity.name }}</span>{% endfor %}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+    </div>
+  {% else %}<p class="text-text-light">Connect Strava to see recent activities here.</p>{% endif %}
 </section>
 <div class="flex flex-wrap gap-2.5">
   <a class="btn btn-primary" href="{{ url_for('main.dashboard') }}">My Rides</a>

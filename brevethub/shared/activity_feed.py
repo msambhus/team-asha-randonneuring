@@ -3,6 +3,7 @@
 The feed deliberately contains presentation-safe summary fields only. Database
 ownership checks stay in each application's route/model layer.
 """
+import calendar
 from datetime import datetime
 
 
@@ -98,3 +99,22 @@ def build_private_activity_feed(strava_activities=None, garmin_activities=None):
 
     return sorted(
         cards, key=lambda card: _timestamp(card.get("started_at")), reverse=True)
+
+
+def build_activity_calendar(cards=None):
+    """Group normalized activity cards into newest-first month/day buckets."""
+    months = {}
+    for card in cards or []:
+        started = str(card.get("started_at") or "")
+        if len(started) < 10:
+            continue
+        day = started[:10]
+        month_key = day[:7]
+        year, month = (int(part) for part in month_key.split("-"))
+        bucket = months.setdefault(month_key, {
+            "key": month_key, "days": {},
+            "first_weekday": calendar.monthrange(year, month)[0],
+            "days_in_month": calendar.monthrange(year, month)[1],
+        })
+        bucket["days"].setdefault(day, []).append(card)
+    return [months[key] for key in sorted(months, reverse=True)]
