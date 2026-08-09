@@ -343,3 +343,71 @@ def pbp_ancien_years(brevets):
             if d is not None:
                 years.add(d.year)
     return sorted(years)
+
+
+def ranked_awards(brevets, today=None):
+    """Return the strongest achievements derivable from the cached RUSA history.
+
+    RUSA publishes the award definitions, but the result feed does not expose a
+    complete award ledger for every rider.  These are therefore conservative,
+    history-derived counts (never claims based on a missing trophy record),
+    ordered for profile display rather than official award precedence.
+    """
+    rides = list(brevets or [])
+    career = career_summary(rides, today)
+    r12_count = len(career['r12_awards'])
+    by_year = {}
+    for ride in rides:
+        d = _coerce_date(ride.get('date'))
+        if d is not None:
+            by_year[d.year] = by_year.get(d.year, 0) + (ride.get('distance_km') or 0)
+    k_hounds = sum(1 for km in by_year.values() if km >= 10000)
+    ultra_k_hounds = k_hounds // 10
+    ultra_randonneurs = career['total_sr'] // 10
+    ultra_r12 = r12_count // 10
+    total_km = career['total_km']
+    galaxy = total_km // 100000
+    mondial = total_km // 40000
+    long_routes = {
+        str(r.get('route_name') or '').strip().lower()
+        for r in rides if (r.get('distance_km') or 0) >= 1200
+    }
+    coast_to_coast = len(long_routes) // 4
+    challenge_seasons = sum(
+        1 for season in seasons_with_summaries(rides, today)
+        if sum(1 for r in season['brevets'] if (r.get('distance_km') or 0) >= 1200) >= 2
+    )
+    rando_scout = len({
+        str(r.get('route_name') or '').strip().lower()
+        for r in rides if str(r.get('route_name') or '').strip()
+    }) // 25
+    pbp_count = len(pbp_ancien_years(rides))
+
+    candidates = [
+        ('ultra_khound', 'Ultra K-Hound', ultra_k_hounds, 120),
+        ('ultra_randonneur', 'Ultra Randonneur', ultra_randonneurs, 115),
+        ('ultra_r12', 'Ultra R-12', ultra_r12, 110),
+        ('galaxy', 'Galaxy', galaxy, 105),
+        ('coast_to_coast', 'Coast-to-Coast 1200k', coast_to_coast, 100),
+        ('mondial', 'Mondial', mondial, 95),
+        ('k_hound', 'K-Hound', k_hounds, 90),
+        ('american_challenge', 'American Randonneur Challenge', challenge_seasons, 85),
+        ('r12', 'R-12', r12_count, 80),
+        ('sr', 'Super Randonneur', career['total_sr'], 75),
+        ('rando_scout', 'Rando Scout', rando_scout, 70),
+        ('pbp_ancien', 'PBP Ancien', pbp_count, 65),
+        ('permanents', 'Permanents', career['permanent_count'], 40),
+        ('populaires', 'Populaires', career['populaire_count'], 30),
+    ]
+    icons = {
+        'ultra_khound': '🏆', 'ultra_randonneur': '🏆', 'ultra_r12': '🏆',
+        'galaxy': '🌌', 'coast_to_coast': '🗺️', 'mondial': '🌍',
+        'k_hound': '🐕', 'american_challenge': '🇺🇸', 'r12': '🔁',
+        'sr': '⭐', 'rando_scout': '🧭', 'pbp_ancien': '🚴',
+        'permanents': '📍', 'populaires': '🎖️',
+    }
+    return [
+        {'key': key, 'name': name, 'count': int(count), 'priority': priority,
+         'icon': icons.get(key, '🏅')}
+        for key, name, count, priority in candidates if count
+    ]

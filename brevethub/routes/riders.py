@@ -563,10 +563,11 @@ def rider_profile(rider_id):
     # PBP Ancien years from this rider's RUSA history — derived and read-only, and
     # (like every other career number here) no email or google_id crosses over.
     pbp_years = seasons.pbp_ancien_years(brevets)
+    awards = seasons.ranked_awards(brevets, today)
 
     return render_template('rider_profile.html',
                            display_name=_display_name(target.get('email')),
                            rusa_id=target.get('rusa_id'),
                            career=career, seasons=season_groups,
-                           pbp_years=pbp_years, eddington=target.get('eddington'),
+                           pbp_years=pbp_years, awards=awards, eddington=target.get('eddington'),
                            is_self=is_self)

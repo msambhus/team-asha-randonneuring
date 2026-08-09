@@ -15,6 +15,10 @@
 .sr-leg.done { background: #2a4a7f; color: #fff; border-color: #2a4a7f; }
 .sr-leg.todo { color: var(--text-light); }
 .badge-warn { background: #fef3c7; color: #78350f; }
+.award-stat .number { font-size: 1.05rem; line-height: 1.2; }
+.achievement-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.achievement-item { display:flex; align-items:center; gap:10px; padding:11px 13px; border:1px solid var(--border); border-radius:12px; background:#f8fafc; }
+.achievement-item .icon { font-size:1.35rem; }
 @media (max-width: 768px) { .profile { grid-template-columns: 1fr; gap: 4px 0; } .profile dt { margin-top: 10px; } }
 </style>
 {% endblock %}
@@ -39,21 +43,11 @@
 
 <div class="stats-row">
   {% if rusa.has_id and career.count %}
-  {% set sr_total = career.total_sr %}
-  <div class="stat-card" style="border-top:4px solid var(--accent);"><div class="number" style="color:var(--accent);">{% if sr_total > 1 %}SR&times;{{ sr_total }}{% elif sr_total == 1 %}SR{% else %}—{% endif %}</div><div class="label">Super Randonneur</div></div>
-  <div class="stat-card" style="border-top:4px solid #805ad5;"><div class="number" style="color:#805ad5;">{% if pbp_years %}PBP{% elif career.r12_awards|length %}R-12&times;{{ career.r12_awards|length }}{% else %}—{% endif %}</div><div class="label">{% if pbp_years %}PBP Ancien{% elif career.r12_awards|length %}R-12 awards{% else %}Featured achievement{% endif %}</div></div>
   <div class="stat-card"><div class="number">{{ career.count }}</div><div class="label">Career Rides</div></div>
   <div class="stat-card"><div class="number">{{ career.total_km }}</div><div class="label">Career KMs</div></div>
-  <div class="stat-card"><div class="number">{{ career.r12_streak.months }}</div><div class="label">R-12 Streak (mo)</div></div>
-  {% if career.permanent_count %}
-  <div class="stat-card"><div class="number">{{ career.permanent_count }}</div><div class="label">Permanents</div></div>
-  {% endif %}
-  {% if career.populaire_count %}
-  <div class="stat-card"><div class="number">{{ career.populaire_count }}</div><div class="label">Populaires</div></div>
-  {% endif %}
-  {% endif %}
-  {% if strava.stats and strava.stats.fitness is not none %}
-  <div class="stat-card"><div class="number" style="color:{% if strava.stats.fitness >= 70 %}#38a169{% elif strava.stats.fitness >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ strava.stats.fitness }}</div><div class="label">Fitness Score</div></div>
+  {% for award in awards[:2] %}
+  <div class="stat-card award-stat"><div class="number">{{ award.name }}{% if award.count > 1 %}&times;{{ award.count }}{% endif %}</div><div class="label">Featured achievement</div></div>
+  {% endfor %}
   {% endif %}
   {# Eddington: E = ridden >= E km on >= E days, from the rider own Strava history
      (cached; computed off the request path). Only shown once a value exists — an
@@ -162,12 +156,8 @@
       <dd>{{ career.r12_awards | length }}</dd>
     </dl>
     <h3 class="text-primary text-base font-bold mt-6 mb-2">Achievements</h3>
-    <div class="flex flex-wrap gap-2">
-      {% if career.total_sr %}<span class="badge">Super Randonneur{% if career.total_sr > 1 %} &times;{{ career.total_sr }}{% endif %}</span>{% endif %}
-      {% if career.r12_awards|length %}<span class="badge">R-12{% if career.r12_awards|length > 1 %} &times;{{ career.r12_awards|length }}{% endif %}</span>{% endif %}
-      {% if pbp_years %}<span class="badge" style="background:linear-gradient(135deg,#805ad5,#b794f4);color:#fff;">PBP Ancien{% if pbp_years|length > 1 %} &times;{{ pbp_years|length }}{% endif %}</span>{% endif %}
-      {% if career.permanent_count %}<span class="badge">{{ career.permanent_count }} Permanent{{ '' if career.permanent_count == 1 else 's' }}</span>{% endif %}
-      {% if career.populaire_count %}<span class="badge">{{ career.populaire_count }} Populaire{{ '' if career.populaire_count == 1 else 's' }}</span>{% endif %}
+    <div class="achievement-list">
+      {% for award in awards %}<div class="achievement-item"><span class="icon">{{ award.icon }}</span><span><strong>{{ award.name }}{% if award.count > 1 %} &times;{{ award.count }}{% endif %}</strong><br><small class="text-text-light">derived from official ride history</small></span></div>{% endfor %}
     </div>
     <p class="text-text-light mt-3">Achievements reflect your official RUSA brevet history.</p>
     <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('main.rides_by_season') }}">View rides by season</a></p>
