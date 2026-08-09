@@ -2234,3 +2234,158 @@ def get_brevet_route_plan_route_ids():
     return db.query(
         "SELECT DISTINCT rwgps_route_id, rwgps_url FROM rp_brevet_route_plan"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Organizer brevet validation (rp_validation_*) — private BrevetHub-only proof
+# and advisory checks. These functions are used only behind operator_required.
+# --------------------------------------------------------------------------- #
+def get_validation_candidates():
+    """Past registered riders/events for the operator's new-submission picker."""
+    return db.query(
+        "SELECT s.event_id, s.rider_id, e.name AS event_name, e.date, "
+        "       e.distance_km, split_part(r.email, '@', 1) AS rider_name "
+        "FROM rp_event_signup s "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "JOIN rp_rider r ON r.id = s.rider_id "
+        "WHERE e.date <= CURRENT_DATE AND s.status <> %s "
+        "ORDER BY e.date DESC, e.name, rider_name",
+        (RideStatus.WITHDRAW.value,),
+    )
+
+
+def create_validation_submission(*, event_id, rider_id, source_type,
+                                 strava_activity_id=None, source_metadata=None,
+                                 normalized_track=None, rider_explanation=None):
+    return db.execute(
+        "INSERT INTO rp_validation_submission "
+        "  (event_id, rider_id, source_type, strava_activity_id, source_metadata, "
+        "   normalized_track, rider_explanation) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (event_id, rider_id, source_type, strava_activity_id,
+         Json(source_metadata or {}), Json(normalized_track or []), rider_explanation),
+        returning=True,
+    )
+
+
+def add_validation_evidence(submission_id, *, evidence_kind, filename=None,
+                            content_type=None, content=None, sha256=None,
+                            control_order=None, control_orders=None,
+                            description=None, captured_at=None):
+    return db.execute(
+        "INSERT INTO rp_validation_evidence "
+        "  (submission_id, evidence_kind, control_order, original_filename, "
+        "   control_orders, content_type, byte_size, sha256, captured_at, "
+        "   description, private_content) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (submission_id, evidence_kind, control_order, filename, control_orders or [],
+         content_type, len(content) if content is not None else None,
+         sha256, captured_at,
+         description, Binary(content) if content is not None else None),
+        returning=True,
+    )
+
+
+def find_validation_evidence_conflicts(hashes, *, event_id, rider_id,
+                                       strava_activity_id=None):
+    hashes = [value for value in hashes if value]
+    file_rows = db.query(
+        "SELECT DISTINCT s.id AS submission_id, s.event_id, s.rider_id, e.sha256 "
+        "FROM rp_validation_evidence e "
+        "JOIN rp_validation_submission s ON s.id = e.submission_id "
+        "WHERE e.sha256 = ANY(%s) AND (s.event_id <> %s OR s.rider_id <> %s)",
+        (hashes, event_id, rider_id),
+    ) if hashes else []
+    activity_rows = db.query(
+        "SELECT s.id AS submission_id, s.event_id, s.rider_id, "
+        "       s.strava_activity_id::text AS sha256 "
+        "FROM rp_validation_submission s "
+        "WHERE s.strava_activity_id = %s AND (s.event_id <> %s OR s.rider_id <> %s)",
+        (strava_activity_id, event_id, rider_id),
+    ) if strava_activity_id else []
+    return list(file_rows) + list(activity_rows)
+
+
+def replace_validation_checks(submission_id, machine_decision, checks):
+    conn = db.get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM rp_validation_check WHERE submission_id = %s", (submission_id,))
+            for check in checks:
+                cur.execute(
+                    "INSERT INTO rp_validation_check "
+                    "  (submission_id, check_code, result, title, summary, metrics, map_segments) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (submission_id, check.code, check.result, check.title, check.summary,
+                     Json(check.metrics), Json(check.map_segments)),
+                )
+            cur.execute(
+                "UPDATE rp_validation_submission "
+                "SET machine_decision = %s, updated_at = NOW() WHERE id = %s",
+                (machine_decision, submission_id),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def list_validation_submissions():
+    return db.query(
+        "SELECT s.id, s.machine_decision, s.organizer_decision, s.source_type, "
+        "       s.created_at, e.name AS event_name, e.date, e.distance_km, "
+        "       split_part(r.email, '@', 1) AS rider_name "
+        "FROM rp_validation_submission s "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "JOIN rp_rider r ON r.id = s.rider_id "
+        "ORDER BY (s.organizer_decision IS NULL) DESC, s.created_at DESC"
+    )
+
+
+def get_validation_submission(submission_id):
+    return db.query_one(
+        "SELECT s.*, e.name AS event_name, e.date AS event_date, e.distance_km, "
+        "       e.start_location, e.start_time, e.time_limit_hours, e.rwgps_url, "
+        "       split_part(r.email, '@', 1) AS rider_name "
+        "FROM rp_validation_submission s "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "JOIN rp_rider r ON r.id = s.rider_id WHERE s.id = %s",
+        (submission_id,),
+    )
+
+
+def get_validation_checks(submission_id):
+    return db.query(
+        "SELECT check_code, result, title, summary, metrics, map_segments "
+        "FROM rp_validation_check WHERE submission_id = %s ORDER BY id",
+        (submission_id,),
+    )
+
+
+def get_validation_evidence(submission_id):
+    """Evidence metadata only; never expose private_content to a template."""
+    return db.query(
+        "SELECT id, evidence_kind, control_order, control_orders, original_filename, content_type, "
+        "       byte_size, sha256, captured_at, description, created_at "
+        "FROM rp_validation_evidence WHERE submission_id = %s ORDER BY id",
+        (submission_id,),
+    )
+
+
+def get_validation_evidence_content(submission_id, evidence_id):
+    """One private evidence blob, double-scoped to its submission for admin download."""
+    return db.query_one(
+        "SELECT id, original_filename, content_type, private_content "
+        "FROM rp_validation_evidence WHERE submission_id = %s AND id = %s",
+        (submission_id, evidence_id),
+    )
+
+
+def set_validation_organizer_decision(submission_id, decision, notes, reviewed_by='operator'):
+    return db.execute(
+        "UPDATE rp_validation_submission SET organizer_decision = %s, "
+        "organizer_notes = %s, reviewed_by = %s, reviewed_at = NOW(), updated_at = NOW() "
+        "WHERE id = %s RETURNING id",
+        (decision, notes, reviewed_by, submission_id),
+        returning=True,
+    )

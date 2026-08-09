@@ -19,16 +19,25 @@ config) and brevethub.shared.* — nothing from Team Asha — so
 test_brevethub_isolation.py stays green. Every model call is on an rp_* table.
 """
 import hmac
+import io
+import json
+import zlib
+from datetime import datetime, time, timezone
 from functools import wraps
+from zoneinfo import ZoneInfo
 
 from flask import (Blueprint, abort, current_app, flash, redirect,
-                   render_template, request, session, url_for)
+                   render_template, request, send_file, session, url_for)
 
 from brevethub import models
 from brevethub.decorators import current_rider, login_required
 from brevethub.shared.operations_status import route_plan_status
 from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
                                     extract_rwgps_route_id, fetch_route)
+from brevethub.services.ride_validation import (
+    TrackPoint, combine_recordings, fingerprint, parse_fit, parse_gpx,
+    validate_submission,
+)
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -77,6 +86,229 @@ def dashboard():
         pipeline_status=pipeline_status,
         finishers_pending=finishers_pending,
     )
+
+
+_MAX_VALIDATION_UPLOAD = 4 * 1024 * 1024
+_ORGANIZER_DECISIONS = {'approved', 'needs_more_evidence', 'not_approved'}
+_STATE_ZONES = {
+    **{s: 'America/Los_Angeles' for s in ('CA', 'NV', 'OR', 'WA')},
+    **{s: 'America/Denver' for s in ('CO', 'ID', 'MT', 'NM', 'UT', 'WY')},
+    'AZ': 'America/Phoenix',
+    **{s: 'America/Chicago' for s in ('AL', 'AR', 'IA', 'IL', 'KS', 'LA', 'MN',
+                                      'MO', 'MS', 'ND', 'NE', 'OK', 'SD', 'TN',
+                                      'TX', 'WI')},
+    **{s: 'America/New_York' for s in ('CT', 'DC', 'DE', 'FL', 'GA', 'IN', 'KY',
+                                       'MA', 'MD', 'ME', 'MI', 'NC', 'NH', 'NJ',
+                                       'NY', 'OH', 'PA', 'RI', 'SC', 'VA', 'VT',
+                                       'WV')},
+    'AK': 'America/Anchorage', 'HI': 'Pacific/Honolulu',
+}
+
+
+def _official_start(event, override=None):
+    """Return an aware official event start; an explicit ISO value wins."""
+    if override:
+        value = datetime.fromisoformat(override.replace('Z', '+00:00'))
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+    if not event.get('start_time'):
+        return None
+    start = str(event['start_time']).split(':')
+    hour, minute = int(start[0]), int(start[1]) if len(start) > 1 else 0
+    region = str(event.get('region') or '')
+    state = region.split(':', 1)[0].strip().upper()
+    zone = ZoneInfo(_STATE_ZONES.get(state, 'UTC'))
+    return datetime.combine(event['date'], time(hour, minute), tzinfo=zone)
+
+
+def _track_json(points):
+    cap = max(1, len(points) // 5000)
+    return [[round(p.lat, 6), round(p.lng, 6), p.timestamp.isoformat(),
+             round(float(p.elevation_m), 1) if p.elevation_m is not None else None]
+            for p in points[::cap]]
+
+
+def _points_from_cached_strava(row, started_at):
+    if not row or not row.get('activity_streams'):
+        raise ValueError('That Strava activity has no cached streams. Analyze it first.')
+    streams = json.loads(zlib.decompress(bytes(row['activity_streams'])))
+    latlng, seconds = streams.get('latlng') or [], streams.get('time') or []
+    elevation = streams.get('altitude') or []
+    if len(latlng) < 2 or len(seconds) != len(latlng):
+        raise ValueError('The cached Strava activity has no complete GPS/time stream.')
+    start = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    from datetime import timedelta
+    points = []
+    for idx, pair in enumerate(latlng):
+        if not pair or len(pair) < 2:
+            continue
+        points.append(TrackPoint(start + timedelta(seconds=float(seconds[idx])),
+                                 float(pair[0]), float(pair[1]),
+                                 elevation[idx] if idx < len(elevation) else None))
+    return combine_recordings([points])
+
+
+@admin_bp.route('/validations', methods=['GET'])
+@operator_required
+def validations():
+    return render_template('admin/validations.html',
+                           submissions=models.list_validation_submissions())
+
+
+@admin_bp.route('/validations/new', methods=['GET', 'POST'])
+@operator_required
+def validation_new():
+    candidates = models.get_validation_candidates()
+    if request.method == 'GET':
+        return render_template('admin/validation_new.html', candidates=candidates)
+
+    try:
+        event_id = int(request.form.get('event_id') or 0)
+        rider_id = int(request.form.get('rider_id') or 0)
+    except ValueError:
+        event_id = rider_id = 0
+    event = models.get_brevet_event_full(event_id)
+    if not event or not any(int(c['event_id']) == event_id and int(c['rider_id']) == rider_id for c in candidates):
+        abort(400)
+
+    recordings, file_rows, metadata = [], [], {}
+    total_bytes = 0
+    for uploaded in request.files.getlist('recordings'):
+        if not uploaded or not uploaded.filename:
+            continue
+        data = uploaded.read()
+        total_bytes += len(data)
+        if total_bytes > _MAX_VALIDATION_UPLOAD:
+            flash('Recording uploads must total 4 MB or less.', 'error')
+            return render_template('admin/validation_new.html', candidates=candidates), 413
+        suffix = uploaded.filename.rsplit('.', 1)[-1].lower()
+        try:
+            points, parsed_metadata = parse_fit(data) if suffix == 'fit' else parse_gpx(data)
+        except Exception as exc:
+            flash(f'Could not parse {uploaded.filename}: {exc}', 'error')
+            return render_template('admin/validation_new.html', candidates=candidates), 400
+        recordings.append(points)
+        metadata.update({k: v for k, v in parsed_metadata.items() if v is not None})
+        file_rows.append(('recording', uploaded, data, fingerprint(data), None))
+
+    strava_id = request.form.get('strava_activity_id', '').strip()
+    if strava_id:
+        if not request.form.get('activity_started_at'):
+            flash('Enter the Strava activity start time with its timezone.', 'error')
+            return render_template('admin/validation_new.html', candidates=candidates), 400
+        cached = models.get_ride_analysis(rider_id, int(strava_id))
+        try:
+            recordings.append(_points_from_cached_strava(cached, request.form['activity_started_at']))
+        except Exception as exc:
+            flash(str(exc), 'error')
+            return render_template('admin/validation_new.html', candidates=candidates), 400
+        metadata.update({'format': 'strava_stream', 'source': 'Strava'})
+
+    metadata.update({
+        'device': (request.form.get('source_device') or metadata.get('device') or '').strip() or None,
+        'activity_type': (request.form.get('activity_type') or metadata.get('activity_type') or '').strip() or None,
+        'manual': request.form.get('manual_activity') == '1',
+        'recording_count': len(recordings),
+    })
+
+    evidence_orders = set()
+    for raw_order in (request.form.get('control_evidence_orders') or '').split(','):
+        try:
+            if raw_order.strip():
+                evidence_orders.add(int(raw_order.strip()))
+        except ValueError:
+            flash('Control proof orders must be comma-separated whole numbers.', 'error')
+            return render_template('admin/validation_new.html', candidates=candidates), 400
+    traditional = False
+    for uploaded in request.files.getlist('proof_files'):
+        if not uploaded or not uploaded.filename:
+            continue
+        data = uploaded.read()
+        total_bytes += len(data)
+        if total_bytes > _MAX_VALIDATION_UPLOAD:
+            flash('All evidence uploads must total 4 MB or less.', 'error')
+            return render_template('admin/validation_new.html', candidates=candidates), 413
+        traditional = True
+        file_rows.append(('traditional', uploaded, data, fingerprint(data), None))
+    proof_description = (request.form.get('proof_description') or '').strip()
+    traditional = traditional or bool(proof_description)
+
+    points = combine_recordings(recordings) if recordings else []
+    route_plan = models.get_brevet_route_plan_with_stops(event_id) or {'plan': {}, 'stops': []}
+    route_id = (route_plan.get('plan') or {}).get('rwgps_route_id')
+    route = models.get_rp_route_elevation_track(route_id) if route_id else []
+    hashes = [row[3] for row in file_rows]
+    conflicts = models.find_validation_evidence_conflicts(
+        hashes, event_id=event_id, rider_id=rider_id,
+        strava_activity_id=int(strava_id) if strava_id else None)
+    decision, checks = validate_submission(
+        points=points, route=route or [], controls=route_plan.get('stops') or [],
+        event=dict(event), official_start=_official_start(event, request.form.get('official_start')),
+        evidence_control_orders=evidence_orders, source_metadata=metadata,
+        duplicate_conflicts=[dict(c) for c in conflicts], has_traditional_evidence=traditional,
+    )
+    source_type = 'mixed' if recordings and traditional else ('traditional' if traditional and not recordings else ('strava' if strava_id and not file_rows else 'file'))
+    created = models.create_validation_submission(
+        event_id=event_id, rider_id=rider_id, source_type=source_type,
+        strava_activity_id=int(strava_id) if strava_id else None,
+        source_metadata=metadata, normalized_track=_track_json(points),
+        rider_explanation=request.form.get('rider_explanation'),
+    )
+    submission_id = created['id']
+    for kind, uploaded, data, digest, control_order in file_rows:
+        models.add_validation_evidence(
+            submission_id, evidence_kind=kind, filename=uploaded.filename,
+            content_type=uploaded.content_type, content=data, sha256=digest,
+            control_order=control_order,
+            control_orders=sorted(evidence_orders) if kind == 'traditional' else [],
+            description=proof_description if kind == 'traditional' else None,
+        )
+    if proof_description and not any(row[0] == 'traditional' for row in file_rows):
+        models.add_validation_evidence(submission_id, evidence_kind='traditional',
+                                       control_orders=sorted(evidence_orders),
+                                       description=proof_description)
+    models.replace_validation_checks(submission_id, decision, checks)
+    flash('Evidence analyzed. An organizer still makes the final decision.', 'success')
+    return redirect(url_for('admin.validation_detail', submission_id=submission_id))
+
+
+@admin_bp.route('/validations/<int:submission_id>', methods=['GET'])
+@operator_required
+def validation_detail(submission_id):
+    submission = models.get_validation_submission(submission_id)
+    if not submission:
+        abort(404)
+    return render_template('admin/validation_detail.html', submission=submission,
+                           checks=models.get_validation_checks(submission_id),
+                           evidence=models.get_validation_evidence(submission_id))
+
+
+@admin_bp.route('/validations/<int:submission_id>/evidence/<int:evidence_id>', methods=['GET'])
+@operator_required
+def validation_evidence(submission_id, evidence_id):
+    evidence = models.get_validation_evidence_content(submission_id, evidence_id)
+    if not evidence or evidence.get('private_content') is None:
+        abort(404)
+    content_type = evidence.get('content_type') or 'application/octet-stream'
+    inline = content_type.startswith('image/') or content_type == 'application/pdf'
+    return send_file(
+        io.BytesIO(bytes(evidence['private_content'])), mimetype=content_type,
+        download_name=evidence.get('original_filename') or f'evidence-{evidence_id}',
+        as_attachment=not inline, max_age=0,
+    )
+
+
+@admin_bp.route('/validations/<int:submission_id>/decision', methods=['POST'])
+@operator_required
+def validation_decision(submission_id):
+    decision = request.form.get('organizer_decision')
+    if decision not in _ORGANIZER_DECISIONS or not models.get_validation_submission(submission_id):
+        abort(400)
+    models.set_validation_organizer_decision(submission_id, decision,
+                                             (request.form.get('organizer_notes') or '').strip())
+    flash('Organizer decision saved.', 'success')
+    return redirect(url_for('admin.validation_detail', submission_id=submission_id))
 
 
 @admin_bp.route('/run/<operation>', methods=['POST'])

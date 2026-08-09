@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Ride validations — {{ product_name }}{% endblock %}
+{% block content %}
+<div class="container section"><div class="max-w-[1100px] mx-auto">
+  <div class="flex justify-between items-start gap-3 mb-4">
+    <div><h1 class="text-primary text-[1.7rem] font-bold">Brevet ride validation</h1>
+      <p class="text-text-light">Automated evidence checks support organizer judgment; they never disqualify a rider.</p></div>
+    <a class="btn btn-primary" href="{{ url_for('admin.validation_new') }}">New submission</a>
+  </div>
+  <div class="card overflow-x-auto">
+    <table class="w-full text-left"><thead><tr class="border-b border-border">
+      <th class="p-3">Rider / event</th><th class="p-3">Source</th><th class="p-3">Automated</th><th class="p-3">Organizer</th><th class="p-3"></th>
+    </tr></thead><tbody>
+    {% for row in submissions %}<tr class="border-b border-border">
+      <td class="p-3"><strong class="block">{{ row.rider_name }}</strong><span class="text-sm text-text-light">{{ row.event_name|clean_name }} · {{ row.date }} · {{ row.distance_km }} km</span></td>
+      <td class="p-3">{{ row.source_type|replace('_', ' ')|title }}</td>
+      <td class="p-3"><span class="validation-badge validation-{{ row.machine_decision }}">{{ row.machine_decision|replace('_', ' ')|title }}</span></td>
+      <td class="p-3">{{ row.organizer_decision|replace('_', ' ')|title if row.organizer_decision else 'Pending' }}</td>
+      <td class="p-3 text-right"><a class="btn btn-secondary" href="{{ url_for('admin.validation_detail', submission_id=row.id) }}">Review</a></td>
+    </tr>{% else %}<tr><td class="p-6 text-center text-text-light" colspan="5">No evidence submissions yet.</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+</div></div>
+<style>.validation-badge{display:inline-block;padding:.3rem .65rem;border-radius:999px;font-weight:700;font-size:.8rem}.validation-clear{background:#dcfce7;color:#166534}.validation-needs_review{background:#ffedd5;color:#9a3412}.validation-incomplete{background:#fee2e2;color:#991b1b}</style>
+{% endblock %}

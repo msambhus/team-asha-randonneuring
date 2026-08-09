@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}New ride validation — {{ product_name }}{% endblock %}
+{% block content %}
+<div class="container section"><div class="max-w-[820px] mx-auto">
+  <a href="{{ url_for('admin.validations') }}" class="text-primary">← Validation queue</a>
+  <h1 class="text-primary text-[1.7rem] font-bold mt-2">New evidence submission</h1>
+  <p class="text-text-light mb-4">Use original recordings when possible. Multiple FIT/GPX files from device restarts are combined chronologically.</p>
+  <form class="card space-y-5" method="post" enctype="multipart/form-data" id="validation-form">
+    <div><label class="font-bold block mb-1" for="candidate">Registered rider and brevet</label>
+      <select id="candidate" class="form-input w-full" required>
+        <option value="">Choose a registration…</option>
+        {% for c in candidates %}<option value="{{ c.event_id }}:{{ c.rider_id }}">{{ c.date }} · {{ c.rider_name }} · {{ c.event_name|clean_name }} · {{ c.distance_km }} km</option>{% endfor %}
+      </select><input type="hidden" name="event_id" id="event_id"><input type="hidden" name="rider_id" id="rider_id">
+    </div>
+    <fieldset class="border border-border rounded-lg p-4"><legend class="font-bold px-2">GPS evidence</legend>
+      <label class="block font-bold mb-1" for="recordings">Original FIT/GPX recording(s)</label>
+      <input id="recordings" name="recordings" type="file" accept=".fit,.gpx,application/gpx+xml" multiple class="form-input w-full">
+      <p class="text-sm text-text-light mt-1">Combined upload limit: 4 MB. Original bytes and source metadata are retained privately.</p>
+      <div class="my-4 text-center text-text-light">or use an already analyzed Strava activity</div>
+      <label class="block font-bold mb-1" for="strava_activity_id">Strava activity ID</label>
+      <input id="strava_activity_id" name="strava_activity_id" inputmode="numeric" class="form-input w-full" placeholder="e.g. 12345678901">
+      <label class="block font-bold mt-3 mb-1" for="activity_started_at">Activity start, with timezone</label>
+      <input id="activity_started_at" name="activity_started_at" class="form-input w-full" placeholder="2026-08-08T06:00:00-07:00">
+      <p class="text-sm text-text-light mt-1">Required for Strava so official elapsed time is not inferred from moving time.</p>
+      <div class="grid md:grid-cols-2 gap-3 mt-3"><div><label class="block font-bold mb-1" for="source_device">Source device</label><input id="source_device" name="source_device" class="form-input w-full" placeholder="e.g. Garmin Edge 1040"></div>
+      <div><label class="block font-bold mb-1" for="activity_type">Activity type</label><select id="activity_type" name="activity_type" class="form-input w-full"><option value="Ride">Human-powered ride</option><option value="e-bike">E-bike / motor assisted</option><option value="">Unknown</option></select></div></div>
+      <label class="flex gap-2 items-center mt-3"><input type="checkbox" name="manual_activity" value="1"> Activity was manually entered or synthetic</label>
+    </fieldset>
+    <fieldset class="border border-border rounded-lg p-4"><legend class="font-bold px-2">Traditional or supplemental proof</legend>
+      <label class="block font-bold mb-1" for="proof_files">Brevet card, receipts, photos, or checkpoint answers</label>
+      <input id="proof_files" name="proof_files" type="file" multiple class="form-input w-full">
+      <label class="block font-bold mt-3 mb-1" for="proof_description">Proof description</label>
+      <textarea id="proof_description" name="proof_description" class="form-input w-full" rows="3" placeholder="Identify controls, timestamps, receipt locations, authorized detours, or device failure."></textarea>
+      <label class="block font-bold mt-3 mb-1" for="control_evidence_orders">Control orders covered by this proof</label>
+      <input id="control_evidence_orders" name="control_evidence_orders" class="form-input w-full" placeholder="e.g. 2, 4, 7">
+      <p class="text-sm text-text-light mt-1">Use the official plan’s control order numbers. Leave blank for general evidence.</p>
+    </fieldset>
+    <div><label class="font-bold block mb-1" for="official_start">Official start override (optional ISO timestamp)</label>
+      <input id="official_start" name="official_start" class="form-input w-full" placeholder="2026-08-08T06:00:00-05:00">
+    </div>
+    <div><label class="font-bold block mb-1" for="rider_explanation">Rider explanation / documented exception</label>
+      <textarea id="rider_explanation" name="rider_explanation" class="form-input w-full" rows="4" placeholder="Privacy-zone trimming, road closure, safety detour, GPS failure, or other context."></textarea>
+    </div>
+    <button class="btn btn-primary" type="submit">Analyze evidence</button>
+  </form>
+</div></div>
+<script>document.getElementById('candidate').addEventListener('change',function(){const p=this.value.split(':');document.getElementById('event_id').value=p[0]||'';document.getElementById('rider_id').value=p[1]||'';});</script>
+{% endblock %}
