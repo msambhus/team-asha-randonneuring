@@ -21,7 +21,7 @@ from brevethub import models, rusa_stats
 from brevethub.decorators import current_rider, profile_required
 from brevethub.routes.strava import load_strava_section
 from shared import seasons
-from shared.activity_feed import build_private_activity_feed
+from shared.activity_feed import build_activity_calendar, build_private_activity_feed
 from shared.rusa import fetch_rider_results
 
 main_bp = Blueprint('main', __name__)
@@ -145,6 +145,7 @@ def profile():
     strava = load_strava_section(rider)
     activity_feed = build_private_activity_feed(
         strava_activities=(strava.get('stats') or {}).get('activities') or [])
+    activity_calendar = build_activity_calendar(activity_feed[:60])
     # Career/SR/R-12 come from the RUSA cache only (the official record), so a
     # self-logged rp_ride can never inflate them. seasons.career_summary is total
     # for an empty history, giving a graceful zero-state for a RUSA-less rider.
@@ -158,6 +159,7 @@ def profile():
     return render_template('profile.html', rider=rider, club=club,
                            rusa=rusa, strava=strava, career=career,
                            pbp_years=pbp_years, awards=awards, activity_feed=activity_feed,
+                           activity_calendar=activity_calendar,
                            member_since=member_since)
 
 
