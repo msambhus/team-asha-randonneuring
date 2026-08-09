@@ -110,6 +110,16 @@
   font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-light);
   white-space:nowrap;
 }
+.events-table th.sortable {
+  cursor:pointer; user-select:none;
+}
+.events-table th.sortable:hover { color:var(--primary); }
+.events-table th.sortable.is-active { color:var(--primary); font-weight:700; }
+.events-table th.sortable .sort-indicator {
+  display:inline-block; margin-left:3px; opacity:.45; font-size:.65rem;
+}
+.events-table th.sortable.is-active .sort-indicator { opacity:1; }
+.events-table th.num.sortable { text-align:center; }
 .events-table td {
   padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:middle;
 }
@@ -232,14 +242,14 @@
       <table class="events-table">
         <thead>
           <tr>
-            <th>Date</th>
-            <th>Event</th>
-            <th>km</th>
-            <th>Status</th>
-            <th class="num">Volunteers</th>
-            <th class="num">Registered</th>
-            <th class="num">Roster</th>
-            <th class="num">Results</th>
+            <th class="sortable" data-sort-key="date" data-sort-type="date">Date <span class="sort-indicator"></span></th>
+            <th class="sortable" data-sort-key="name" data-sort-type="text">Event <span class="sort-indicator"></span></th>
+            <th class="sortable num" data-sort-key="km" data-sort-type="num">km <span class="sort-indicator"></span></th>
+            <th class="sortable" data-sort-key="lifecycle" data-sort-type="lifecycle">Status <span class="sort-indicator"></span></th>
+            <th class="sortable num" data-sort-key="volunteers" data-sort-type="num">Volunteers <span class="sort-indicator"></span></th>
+            <th class="sortable num" data-sort-key="registered" data-sort-type="num">Registered <span class="sort-indicator"></span></th>
+            <th class="sortable num" data-sort-key="roster" data-sort-type="num">Roster <span class="sort-indicator"></span></th>
+            <th class="sortable num" data-sort-key="results" data-sort-type="num">Results <span class="sort-indicator"></span></th>
             <th></th>
           </tr>
         </thead>
@@ -248,7 +258,15 @@
           {% set roster_url = url_for('admin.event_roster', event_id=ev.id) %}
           <tr class="row-{{ ev.lifecycle }} event-data-row" data-lifecycle="{{ ev.lifecycle }}"
               data-href="{{ roster_url }}" tabindex="0" role="link"
-              aria-label="Open roster for {{ ev.name|clean_name }}">
+              aria-label="Open roster for {{ ev.name|clean_name }}"
+              data-sort-date="{{ ev.date }}"
+              data-sort-name="{{ ev.name|clean_name|lower }}"
+              data-sort-km="{{ ev.distance_km or 0 }}"
+              data-sort-lifecycle="{{ ev.lifecycle }}"
+              data-sort-volunteers="{{ ev.volunteer_signed or 0 if ev.volunteer_enabled else -1 }}"
+              data-sort-registered="{{ ev.registered_count or 0 }}"
+              data-sort-roster="{{ ev.roster_count or 0 }}"
+              data-sort-results="{{ ev.result_count or 0 }}">
             <td style="white-space:nowrap;">{{ ev.date }}</td>
             <td>
               <span class="event-link">{{ ev.name|clean_name }}</span>
@@ -275,6 +293,65 @@
     var body = document.getElementById('events-table-body');
     if (!body) return;
 
+    var lifecycleRank = { open: 0, in_progress: 1, closed: 2 };
+    var emptyRow = document.getElementById('events-table-empty');
+    var currentSort = { key: 'date', dir: 'desc' };
+
+    function parseSortParam(raw) {
+      if (!raw || raw.indexOf(':') === -1) return null;
+      var parts = raw.split(':');
+      return { key: parts[0], dir: parts[1] === 'asc' ? 'asc' : 'desc' };
+    }
+
+    function sortValue(row, key, type) {
+      var raw = row.getAttribute('data-sort-' + key) || '';
+      if (type === 'num') return parseFloat(raw) || 0;
+      if (type === 'date') return raw;
+      if (type === 'lifecycle') return lifecycleRank[raw] != null ? lifecycleRank[raw] : 99;
+      return raw.toLowerCase();
+    }
+
+    function compareRows(a, b, key, type, dir) {
+      var av = sortValue(a, key, type);
+      var bv = sortValue(b, key, type);
+      var cmp = 0;
+      if (type === 'text') cmp = String(av).localeCompare(String(bv));
+      else if (av < bv) cmp = -1;
+      else if (av > bv) cmp = 1;
+      return dir === 'asc' ? cmp : -cmp;
+    }
+
+    function updateSortUI() {
+      document.querySelectorAll('.events-table th.sortable').forEach(function (th) {
+        var key = th.getAttribute('data-sort-key');
+        var active = key === currentSort.key;
+        th.classList.toggle('is-active', active);
+        var indicator = th.querySelector('.sort-indicator');
+        if (indicator) indicator.textContent = active ? (currentSort.dir === 'asc' ? '▲' : '▼') : '';
+      });
+    }
+
+    function applySort(key, dir, syncUrl) {
+      var th = document.querySelector('.events-table th.sortable[data-sort-key="' + key + '"]');
+      var type = (th && th.getAttribute('data-sort-type')) || 'text';
+      currentSort = { key: key, dir: dir };
+      var rows = Array.prototype.slice.call(body.querySelectorAll('tr.event-data-row'));
+      rows.sort(function (a, b) { return compareRows(a, b, key, type, dir); });
+      rows.forEach(function (row) {
+        body.insertBefore(row, emptyRow);
+      });
+      updateSortUI();
+      if (syncUrl !== false) {
+        var url = new URL(window.location.href);
+        if (key === 'date' && dir === 'desc') {
+          url.searchParams.delete('sort');
+        } else {
+          url.searchParams.set('sort', key + ':' + dir);
+        }
+        window.history.replaceState({}, '', url);
+      }
+    }
+
     function applyStatusFilter(status) {
       var rows = body.querySelectorAll('tr.event-data-row');
       var shown = 0;
@@ -283,8 +360,7 @@
         row.style.display = match ? '' : 'none';
         if (match) shown += 1;
       });
-      var empty = document.getElementById('events-table-empty');
-      if (empty) empty.style.display = shown ? 'none' : '';
+      if (emptyRow) emptyRow.style.display = shown ? 'none' : '';
       document.querySelectorAll('.status-filters .lifecycle-filter').forEach(function (link) {
         link.classList.toggle('active', link.getAttribute('data-status') === status);
       });
@@ -302,14 +378,27 @@
       });
     });
 
-    var initial = new URLSearchParams(window.location.search).get('status') || '{{ status_filter }}';
-    applyStatusFilter(initial);
+    document.querySelectorAll('.events-table th.sortable').forEach(function (th) {
+      th.addEventListener('click', function () {
+        var key = th.getAttribute('data-sort-key');
+        if (!key) return;
+        var dir = (currentSort.key === key && currentSort.dir === 'desc') ? 'asc' : 'desc';
+        applySort(key, dir);
+      });
+    });
+
+    var params = new URLSearchParams(window.location.search);
+    var initialStatus = params.get('status') || '{{ status_filter }}';
+    var initialSort = parseSortParam(params.get('sort')) || { key: 'date', dir: 'desc' };
+    applySort(initialSort.key, initialSort.dir, false);
+    applyStatusFilter(initialStatus);
 
     function go(row) {
       var href = row && row.getAttribute('data-href');
       if (href) window.location.href = href;
     }
     body.addEventListener('click', function (e) {
+      if (e.target.closest('th.sortable')) return;
       var row = e.target.closest('tr.event-data-row[data-href]');
       if (row && row.style.display !== 'none') go(row);
     });

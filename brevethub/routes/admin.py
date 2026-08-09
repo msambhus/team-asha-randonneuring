@@ -521,6 +521,8 @@ def events():
         reverse=True,
     )
 
+    sort_param = request.args.get('sort', '')
+
     def events_page_url(status_val=None, view_mode=None):
         params = {}
         v = view_mode or view
@@ -529,6 +531,8 @@ def events():
         s = status_val if status_val is not None else status_filter
         if s != 'all':
             params['status'] = s
+        if sort_param and v == 'table':
+            params['sort'] = sort_param
         return url_for('admin.events', **params)
 
     return render_template(
@@ -539,6 +543,7 @@ def events():
         table_events=table_events,
         view=view,
         status_filter=status_filter,
+        sort_param=sort_param,
         events_page_url=events_page_url,
         admin_club_id=club_id,
         today_date=today,
