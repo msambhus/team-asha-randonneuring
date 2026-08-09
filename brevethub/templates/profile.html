@@ -46,7 +46,7 @@
   <div class="stat-card"><div class="number">{{ career.count }}</div><div class="label">Career Rides</div></div>
   <div class="stat-card"><div class="number">{{ career.total_km }}</div><div class="label">Career KMs</div></div>
   {% for award in awards[:2] %}
-  <div class="stat-card award-stat"><div class="number">{{ award.name }}{% if award.count > 1 %}&times;{{ award.count }}{% endif %}</div><div class="label">Featured achievement</div></div>
+  <div class="stat-card award-stat"><div class="number">{{ award.name }}{% if award.count > 1 %}&times;{{ award.count }}{% endif %}</div><div class="label">Achievement</div></div>
   {% endfor %}
   {% endif %}
   {# Eddington: E = ridden >= E km on >= E days, from the rider own Strava history
