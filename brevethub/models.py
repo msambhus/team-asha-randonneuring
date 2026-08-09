@@ -1306,7 +1306,7 @@ def get_rider_past_results(rider_id):
     an organizer approves it, then ``Finished``.
     """
     return db.query(
-        "SELECT s.event_id, s.status, s.finish_time, e.name, e.date, e.distance_km, e.region, "
+        "SELECT s.event_id, s.status, s.finish_time, s.homologation_number, e.name, e.date, e.distance_km, e.region, "
         "       vs.id AS submission_id, vs.machine_decision, vs.organizer_decision "
         "FROM rp_event_signup s "
         "JOIN rp_brevet_event e ON e.id = s.event_id "
@@ -1329,7 +1329,7 @@ def get_rider_completed_validation_events(rider_id):
     submission without making riders guess which events are eligible.
     """
     return db.query(
-        "SELECT s.event_id, s.finish_time, e.name, e.date, e.distance_km, "
+        "SELECT s.event_id, s.finish_time, s.homologation_number, e.name, e.date, e.distance_km, "
         "       e.region, e.rwgps_url, e.start_location, e.start_time, "
         "       vs.id AS submission_id, vs.machine_decision, "
         "       vs.organizer_decision, vs.created_at AS submitted_at "
@@ -1365,14 +1365,14 @@ def get_signups_needing_finish_time():
         "JOIN rp_rider r ON r.id = s.rider_id "
         "JOIN rp_brevet_event e ON e.id = s.event_id "
         "WHERE s.status = %s "
-        "  AND (s.finish_time IS NULL OR s.finish_time = '') "
+        "  AND (s.finish_time IS NULL OR s.finish_time = '' OR s.homologation_number IS NULL OR s.homologation_number = '') "
         "  AND r.rusa_id IS NOT NULL "
         "ORDER BY r.id, e.date",
         (RideStatus.FINISHED.value,),
     )
 
 
-def set_signup_finish_time(signup_id, finish_time):
+def set_signup_finish_time(signup_id, finish_time, homologation_number=None):
     """Write an official RUSA finish_time onto one finished sign-up (by row id).
 
     The SOLE real-value writer of finish_time — the self-service result endpoint only
@@ -1383,11 +1383,12 @@ def set_signup_finish_time(signup_id, finish_time):
     """
     row = db.execute(
         "UPDATE rp_event_signup "
-        "SET finish_time = %s, updated_at = NOW() "
+        "SET finish_time = COALESCE(NULLIF(finish_time, ''), %s), "
+        "    homologation_number = COALESCE(NULLIF(homologation_number, ''), %s), updated_at = NOW() "
         "WHERE id = %s AND status = %s "
-        "  AND (finish_time IS NULL OR finish_time = '') "
+        "  AND (finish_time IS NULL OR finish_time = '' OR homologation_number IS NULL OR homologation_number = '') "
         "RETURNING id",
-        (finish_time, signup_id, RideStatus.FINISHED.value),
+        (finish_time, homologation_number, signup_id, RideStatus.FINISHED.value),
         returning=True,
     )
     return row is not None

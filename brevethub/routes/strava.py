@@ -377,6 +377,7 @@ def _compute_strava_stats(rider_id, connection):
         'elapsed_time': activity.get('elapsed_time'),
         'moving_time': activity.get('moving_time'),
         'total_elevation_gain': activity.get('total_elevation_gain'),
+        'activity_type': activity.get('activity_type'),
     } for activity in activities[:50]]
     return summary
 
@@ -422,9 +423,14 @@ def load_strava_section(rider):
     stats = connection.get('stats_cache')
     fetched_at = connection.get('stats_fetched_at')  # epoch float or None
     fresh = fetched_at is not None and (time.time() - fetched_at) < STRAVA_STATS_TTL
+    # The activity type is needed by evidence selection to exclude runs and
+    # virtual workouts; invalidate pre-type caches once so the outdoor list is
+    # accurate without waiting six hours.
+    needs_activity_types = bool(stats and any(
+        'activity_type' not in activity for activity in (stats.get('activities') or [])))
 
     error = None
-    if not fresh or stats is None:
+    if not fresh or stats is None or needs_activity_types:
         try:
             stats = _compute_strava_stats(rider['id'], connection)
             models.update_strava_stats(rider['id'], stats)

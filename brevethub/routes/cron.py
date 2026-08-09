@@ -104,7 +104,7 @@ def _coerce_date(value):
         return None
 
 
-def _match_rusa_finish_time(event_date, distance_km, results):
+def _match_rusa_result(event_date, distance_km, results):
     """Return the official finish time in RUSA results matching a finished sign-up.
 
     Matches by date within +-RUSA_MATCH_DATE_DAYS and distance within
@@ -136,8 +136,15 @@ def _match_rusa_finish_time(event_date, distance_km, results):
                 or (distance_km >= RUSA_LONG_BREVET_KM and r_dist >= RUSA_LONG_BREVET_KM)):
             finish_time = (r.get('finish_time') or '').strip()
             if finish_time:
-                return finish_time
+                return {'finish_time': finish_time,
+                        'homologation_number': str(r.get('homologation_number') or '').strip() or None}
     return None
+
+
+def _match_rusa_finish_time(event_date, distance_km, results):
+    """Backward-compatible helper returning only the official finish time."""
+    result = _match_rusa_result(event_date, distance_km, results)
+    return result['finish_time'] if result else None
 
 
 def _verify_cron_auth():
@@ -269,6 +276,18 @@ def run_sync_rusa_results():
         cached = row.get('rusa_cache')
         if cached:
             results = cached
+            cached_match = _match_rusa_result(row.get('date'), row.get('distance_km'), cached)
+            # Older cached history has finish times but not certificate numbers.
+            # Refresh that rider once so the official Cert No. can be retained.
+            if not cached_match or not cached_match.get('homologation_number'):
+                if row.get('rusa_id') in live_by_rusa:
+                    results = live_by_rusa[row.get('rusa_id')]
+                else:
+                    try:
+                        live_by_rusa[row.get('rusa_id')] = fetch_rider_results(row.get('rusa_id'))
+                        results = live_by_rusa[row.get('rusa_id')]
+                    except Exception as e:
+                        current_app.logger.warning('RUSA certificate fetch failed for rider %s: %s', row.get('rider_id'), e)
         else:
             rusa_id = row.get('rusa_id')
             if rusa_id in live_by_rusa:
@@ -281,9 +300,9 @@ def run_sync_rusa_results():
                         'RUSA fetch failed for rider %s: %s', row.get('rider_id'), e)
                     results = []
                 live_by_rusa[rusa_id] = results
-        finish_time = _match_rusa_finish_time(
+        matched = _match_rusa_result(
             row.get('date'), row.get('distance_km'), results)
-        if finish_time and models.set_signup_finish_time(row['id'], finish_time):
+        if matched and models.set_signup_finish_time(row['id'], matched['finish_time'], matched.get('homologation_number')):
             synced += 1
 
     current_app.logger.info(

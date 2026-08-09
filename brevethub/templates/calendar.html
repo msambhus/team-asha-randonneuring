@@ -479,14 +479,14 @@
             <div class="signup-section">
               <span class="result-badge inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold uppercase tracking-wide text-primary bg-[#f0f9ff] border border-[#7dd3fc]"
                     data-event-id="{{ s.event_id }}">
-                {% if s.organizer_decision == 'approved' %}FINISHED{% elif s.submission_id %}AWAITING VERIFICATION{% else %}FINISHED — EVIDENCE NEEDED{% endif %}
+                {% if s.homologation_number %}HOMOLOGATION {{ s.homologation_number }}{% elif s.finish_time %}FINISHED{% elif s.organizer_decision == 'approved' %}FINISHED{% elif s.submission_id %}AWAITING VERIFICATION{% else %}FINISHED — EVIDENCE NEEDED{% endif %}
               </span>
               <span class="signup-actions">
                 <span class="result-finish text-sm font-semibold text-text-light"
                       data-event-id="{{ s.event_id }}">
                   {{ s.finish_time or '—' }}
                 </span>
-                {% if not s.submission_id %}<a class="event-link-btn" href="{{ url_for('validation.submit_validation', event_id=s.event_id) }}">Submit evidence</a>{% endif %}
+                {% if not s.submission_id and not s.finish_time %}<a class="event-link-btn" href="{{ url_for('validation.submit_validation', event_id=s.event_id) }}">Submit evidence</a>{% endif %}
               </span>
             </div>
           </article>

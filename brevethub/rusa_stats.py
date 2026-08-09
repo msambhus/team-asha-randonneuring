@@ -33,6 +33,7 @@ def normalize_results(raw):
         except (TypeError, ValueError):
             continue
         brevets.append({
+            'homologation_number': str(r.get('homologation_number') or '').strip(),
             'date': iso,
             'distance_km': distance_km,
             'finish_time': r.get('finish_time') or '',
