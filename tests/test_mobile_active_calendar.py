@@ -64,6 +64,28 @@ def test_mobile_calendar_uses_linked_plan_cutoff_for_active_window():
     assert events[0]['is_live'] is True
 
 
+def test_mobile_calendar_marks_same_day_event_live_only_inside_window():
+    today = date(2026, 8, 8)
+    event = _event(161, today, 20)
+    event['start_time'] = '06:00'
+    event['timezone'] = 'America/Los_Angeles'
+
+    with patch('models.club_today', return_value=today), \
+         patch('models._utc_now', return_value=datetime(
+             2026, 8, 8, 20, 0, tzinfo=timezone.utc)), \
+         patch('models._execute', return_value=_Rows([event])):
+        active = models.get_all_upcoming_events.uncached(include_active=True)
+
+    with patch('models.club_today', return_value=today), \
+         patch('models._utc_now', return_value=datetime(
+             2026, 8, 8, 12, 0, tzinfo=timezone.utc)), \
+         patch('models._execute', return_value=_Rows([event])):
+        before_start = models.get_all_upcoming_events.uncached(include_active=True)
+
+    assert active[0]['is_live'] is True
+    assert before_start[0]['is_live'] is False
+
+
 def test_mobile_calendar_excludes_expired_enabled_livetrack_ride():
     today = date(2026, 8, 7)
     active = _event(194, date(2026, 8, 1), None)

@@ -914,15 +914,18 @@ def get_all_upcoming_events(include_active=False):
         if not event_dict.get('time_limit_hours') and event_dict.get('distance_km'):
             event_dict['time_limit_hours'] = get_default_time_limit(event_dict['distance_km'])
 
+        # Evaluate the actual start/cutoff window for every event. Previously
+        # same-day rides were always stamped non-live because this check only ran
+        # after the calendar date had rolled over.
+        in_progress = _event_is_in_progress(event_dict, now_utc)
+
         # A ride that started before today remains useful while it is genuinely
         # inside its scheduled cutoff window. An enabled LiveTrack row is only a
         # candidate signal; it must not resurrect an expired historical ride.
         if d and d < today:
-            if not include_active or not _event_is_in_progress(event_dict, now_utc):
+            if not include_active or not in_progress:
                 continue
-            event_dict['is_live'] = True
-        else:
-            event_dict['is_live'] = False
+        event_dict['is_live'] = in_progress
         
         events_with_defaults.append(event_dict)
 
