@@ -1,0 +1,346 @@
+{# Shared upcoming-events table for Team Asha and BrevetHub calendars.
+   Include with:
+     calendar_app: 'brevethub' | 'team_asha'
+     months: [(month_label, [events]), ...]
+   Optional context varies by app — see conditionals below. #}
+<style>
+.calendar-view-toggle {
+  display: inline-flex;
+  background: #e2e8f0;
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  margin-bottom: 20px;
+}
+.calendar-view-toggle button {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  color: #64748b;
+}
+.calendar-view-toggle button.active {
+  background: #fff;
+  color: #1e293b;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.calendar-table-wrap { overflow-x: visible; margin-bottom: 30px; width: 100%; }
+.calendar-events-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  margin-bottom: 24px;
+}
+.calendar-events-table thead tr {
+  border-bottom: 2px solid #e2e8f0;
+  text-align: left;
+}
+.calendar-events-table th {
+  padding: 8px 6px;
+  color: #64748b;
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04px;
+  white-space: normal;
+  line-height: 1.25;
+  vertical-align: bottom;
+}
+.calendar-events-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+}
+.calendar-events-table .calendar-nowrap { white-space: nowrap; }
+.calendar-col-select { width: 3%; }
+.calendar-col-date { width: 5%; }
+.calendar-col-region { width: 7%; }
+.calendar-col-event { width: 15%; }
+.calendar-col-type { width: 5%; }
+.calendar-col-distance { width: 4%; }
+.calendar-col-elevation { width: 4%; }
+.calendar-col-start { width: 9%; }
+.calendar-col-limit { width: 4%; }
+.calendar-col-weather { width: 8%; }
+.calendar-col-roster { width: 3%; }
+.calendar-col-interested { width: 3%; }
+.calendar-col-fee { width: 3%; }
+.calendar-col-links { width: 5%; }
+.calendar-col-status { width: 14%; }
+.calendar-table-select { width: 16px; height: 16px; cursor: pointer; vertical-align: middle; }
+.calendar-events-table tbody tr:hover { background: #f8fafc; }
+.calendar-table-event-name { font-weight: 600; color: #1e293b; }
+.calendar-table-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.calendar-table-links a {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--primary, #1a365d);
+}
+.calendar-table-muted { color: #64748b; font-size: 0.82rem; }
+.calendar-table-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.calendar-table-month { margin-bottom: 8px; }
+</style>
+
+<div class="calendar-view-toggle" role="group" aria-label="Calendar layout">
+  <button type="button" class="active" data-calendar-view="cards">Cards</button>
+  <button type="button" data-calendar-view="table">Table</button>
+</div>
+
+<div id="calendar-table-view" class="calendar-table-wrap" hidden>
+  {% for month_label, month_events in months %}
+    <div class="month-section calendar-table-month" data-month-section>
+      <div class="month-header">{{ month_label }}</div>
+      <table class="calendar-events-table">
+        <colgroup>
+          {% if calendar_app == 'brevethub' %}<col class="calendar-col-select">{% endif %}
+          <col class="calendar-col-date">
+          <col class="calendar-col-region">
+          <col class="calendar-col-event">
+          <col class="calendar-col-type">
+          <col class="calendar-col-distance">
+          <col class="calendar-col-elevation">
+          <col class="calendar-col-start">
+          <col class="calendar-col-limit">
+          {% if calendar_app == 'brevethub' %}<col class="calendar-col-weather">{% endif %}
+          <col class="calendar-col-roster">
+          <col class="calendar-col-interested">
+          {% if calendar_app == 'brevethub' %}<col class="calendar-col-fee">{% endif %}
+          <col class="calendar-col-links">
+          <col class="calendar-col-status">
+        </colgroup>
+        <thead>
+          <tr>
+            {% if calendar_app == 'brevethub' %}<th>Select</th>{% endif %}
+            <th>Date</th>
+            <th>Region</th>
+            <th>Event</th>
+            <th>Type</th>
+            <th>Dist.</th>
+            <th>Elev.</th>
+            <th>Start</th>
+            <th>Limit</th>
+            {% if calendar_app == 'brevethub' %}<th>Weather</th>{% endif %}
+            <th>Roster</th>
+            <th>Int.</th>
+            {% if calendar_app == 'brevethub' %}<th>Fee</th>{% endif %}
+            <th>Links</th>
+            <th>My status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ev in month_events %}
+            {% set ds = (ev.date_str or ev.date|string) %}
+            {% set region_state = (ev.region or '').split(':')[0]|trim %}
+            {% set region_area = ((ev.region or '') ~ ':').split(':')[1]|trim %}
+            <tr class="calendar-event-row{% if ev.is_team_ride %} hidden{% endif %}"
+                data-event-id="{{ ev.id }}"
+                data-region="{{ region_state if calendar_app == 'brevethub' else (ev.region or '') }}"
+                data-area="{{ region_area }}"
+                data-club="{{ (ev.club_name or '')|e }}"
+                data-distance="{{ ev.distance_km }}"
+                data-team-ride="{{ 'true' if ev.is_team_ride else 'false' }}"
+                data-event-category="{{ ev.data_category or 'other' }}">
+              {% if calendar_app == 'brevethub' %}
+              <td class="calendar-nowrap" style="text-align:center;">
+                {% if rider and ev.registration_enabled and not my_registrations.get(ev.id) %}
+                  <input type="checkbox" class="bulk-event-select calendar-table-select"
+                         value="{{ ev.id }}" title="Select for bulk registration"
+                         aria-label="Select {{ ev.name }} for bulk registration">
+                {% endif %}
+              </td>
+              {% endif %}
+              <td class="calendar-nowrap">
+                {{ ds[5:7] }}/{{ ds[8:10] }}/{{ ds[2:4] }}
+              </td>
+              <td>
+                {% if calendar_app == 'team_asha' and region_colors is defined and ev.region %}
+                  <span style="color:{{ region_colors.get(ev.region, '#999') }};font-weight:600;">{{ ev.region }}</span>
+                {% else %}
+                  {{ ev.region or '—' }}
+                {% endif %}
+              </td>
+              <td>
+                {% if calendar_app == 'brevethub' %}
+                  {% if ev.rwgps_url %}
+                    <a href="{{ ev.rwgps_url }}" class="calendar-table-event-name" target="_blank" rel="noopener">{{ ev.name }}</a>
+                  {% else %}
+                    <span class="calendar-table-event-name">{{ ev.name }}</span>
+                  {% endif %}
+                {% else %}
+                  <span class="calendar-table-event-name">{{ ev.route_name or ev.name|clean_name }}</span>
+                  {% if ev.ride_type %}<div class="calendar-table-muted">{{ ev.ride_type }}</div>{% endif %}
+                {% endif %}
+              </td>
+              <td>{{ ev.ride_type or '—' }}</td>
+              <td class="calendar-nowrap">
+                {% if calendar_app == 'team_asha' and ev.distance_miles %}
+                  {{ "%.1f"|format(ev.distance_miles) }} mi
+                {% else %}
+                  {{ ev.distance_km }} km
+                {% endif %}
+              </td>
+              <td class="calendar-nowrap">
+                {% if ev.elevation_ft %}{{ ev.elevation_ft }} ft{% else %}—{% endif %}
+              </td>
+              <td>
+                {% set start_time = ev.plan_start_time or ev.start_time if calendar_app == 'team_asha' else ev.start_time %}
+                <div>{{ ev.start_location or '—' }}</div>
+                {% if start_time %}<div class="calendar-table-muted">{{ start_time }}</div>{% endif %}
+              </td>
+              <td class="calendar-nowrap">
+                {% if ev.time_limit_hours %}{{ ev.time_limit_hours }} h{% else %}—{% endif %}
+              </td>
+              {% if calendar_app == 'brevethub' %}
+                <td>
+                  {% set wx = (weather or {}).get(ev.id) %}
+                  {% if wx %}
+                    <div>{{ wx.condition_icon or '' }} {{ wx.condition }}</div>
+                    {% if wx.temp_min_f is not none and wx.temp_max_f is not none %}
+                      <div class="calendar-table-muted">{{ wx.temp_min_f }}–{{ wx.temp_max_f }}°F</div>
+                    {% endif %}
+                    {% if wx.wind_speed_mph is not none %}
+                      <div class="calendar-table-muted">Wind {{ wx.wind_speed_mph }} mph</div>
+                    {% endif %}
+                  {% else %}
+                    <span class="calendar-table-muted">N/A</span>
+                  {% endif %}
+                </td>
+              {% endif %}
+              <td class="calendar-nowrap">
+                {% if calendar_app == 'brevethub' %}
+                  {{ ev.confirmed_count or ev.signup_count or 0 }}
+                {% else %}
+                  {% if ev.signup_count and ev.signup_count > 0 %}
+                    <button type="button" class="calendar-table-muted" style="border:0;background:none;cursor:pointer;text-decoration:underline;"
+                            onclick="showSignups({{ ev.id }}, '{{ (ev.route_name or ev.name)|replace("'", "\\'") }}')">{{ ev.signup_count }}</button>
+                  {% else %}
+                    {{ ev.signup_count or 0 }}
+                  {% endif %}
+                {% endif %}
+              </td>
+              <td class="calendar-nowrap">{{ ev.interested_count or 0 }}</td>
+              {% if calendar_app == 'brevethub' %}
+                <td class="calendar-nowrap">
+                  {% if ev.registration_enabled and ev.fee_cents %}
+                    ${{ (ev.fee_cents / 100)|int }}
+                  {% else %}—{% endif %}
+                </td>
+              {% endif %}
+              <td>
+                <div class="calendar-table-links">
+                  {% if calendar_app == 'brevethub' %}
+                    <a href="{{ url_for('plan.plan_view', event_id=ev.id) }}">Plan</a>
+                    {% if ev.rwgps_url %}<a href="{{ ev.rwgps_url }}" target="_blank" rel="noopener">Route</a>{% endif %}
+                    <a href="{{ url_for('live.event_live_map', event_id=ev.id) }}">Live</a>
+                  {% else %}
+                    {% if ev.plan_slug %}
+                      <a href="{{ url_for('riders.ride_plan_detail', slug=ev.plan_slug) }}">Plan</a>
+                    {% endif %}
+                    {% set evt_rwgps = ev.rwgps_url or ev.plan_rwgps_url %}
+                    {% if evt_rwgps %}<a href="{{ evt_rwgps }}" target="_blank" rel="noopener">Route</a>{% endif %}
+                    {% if ev.rwgps_url_team %}<a href="{{ ev.rwgps_url_team }}" target="_blank" rel="noopener">TA Route</a>{% endif %}
+                    <a href="{{ url_for('live.ride_live_map', ride_id=ev.id) }}">Live</a>
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                <div class="calendar-table-actions">
+                  {% if calendar_app == 'brevethub' %}
+                    {% set reg = my_registrations.get(ev.id) if rider else None %}
+                    {% if reg and reg.registration_status %}
+                      <span class="registration-badge" data-reg-badge="{{ ev.id }}">
+                        {% if reg.registration_status == 'confirmed' %}Registered{% else %}{{ reg.registration_status|capitalize }}{% endif %}
+                      </span>
+                    {% endif %}
+                    {% if rider %}
+                      {% set status = my_status.get(ev.id) %}
+                      {% if ev.registration_enabled and not (reg and reg.registration_status) %}
+                        <button type="button" class="signup-btn register-primary" data-register-event="{{ ev.id }}">Register</button>
+                      {% endif %}
+                      <select class="signup-status-select" data-event-id="{{ ev.id }}"
+                              style="padding:4px 8px; border-radius:6px; border:1.5px solid var(--border);
+                                     font-size:0.78rem; background:white; color:var(--text); cursor:pointer;
+                                     min-width:100px;">
+                        <option value="">— Status</option>
+                        <option value="interested" {% if status == 'interested' %}selected{% endif %}>Interested</option>
+                        <option value="registered" {% if status == 'registered' %}selected{% endif %}>Going</option>
+                        <option value="withdraw" {% if status in ('withdraw', 'withdrawn') %}selected{% endif %}>Withdraw</option>
+                      </select>
+                    {% else %}
+                      <span class="calendar-table-muted">Sign in</span>
+                    {% endif %}
+                  {% else %}
+                    {% if current_rider_id %}
+                      {% set user_status = user_signups.get(ev.id) %}
+                      {% if user_status %}
+                        <span class="signup-status">{{ user_status|capitalize }}</span>
+                      {% else %}
+                        <span class="calendar-table-muted">—</span>
+                      {% endif %}
+                      <button type="button" class="signup-btn-sm follow-live-btn"
+                              data-ride-id="{{ ev.id }}"
+                              data-followed="{{ 'true' if ev.id in followed_live_ride_ids else 'false' }}"
+                              onclick="toggleLiveFollow(this)">
+                        {{ 'Following' if ev.id in followed_live_ride_ids else 'Follow' }}
+                      </button>
+                    {% else %}
+                      <a href="{{ url_for('auth.login', next=request.path) }}" class="calendar-table-muted">Sign in</a>
+                    {% endif %}
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endfor %}
+</div>
+
+<script>
+(function () {
+  var STORAGE_KEY = 'calendarViewPreference';
+
+  function initCalendarViewToggle() {
+    var toggle = document.querySelector('.calendar-view-toggle');
+    var cardsView = document.getElementById('calendar-cards-view');
+    var tableView = document.getElementById('calendar-table-view');
+    if (!toggle || !cardsView || !tableView) return;
+
+    function setView(mode) {
+      var table = mode === 'table';
+      cardsView.hidden = table;
+      tableView.hidden = !table;
+      toggle.querySelectorAll('button[data-calendar-view]').forEach(function (btn) {
+        var active = btn.getAttribute('data-calendar-view') === mode;
+        btn.classList.toggle('active', active);
+      });
+      try { localStorage.setItem(STORAGE_KEY, mode); } catch (e) {}
+    }
+
+    toggle.addEventListener('click', function (e) {
+      var btn = e.target.closest('button[data-calendar-view]');
+      if (!btn) return;
+      setView(btn.getAttribute('data-calendar-view'));
+    });
+
+    var saved = null;
+    try { saved = localStorage.getItem(STORAGE_KEY); } catch (e) {}
+    if (saved === 'table') setView('table');
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCalendarViewToggle);
+  } else {
+    initCalendarViewToggle();
+  }
+})();
+</script>

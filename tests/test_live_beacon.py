@@ -126,7 +126,7 @@ def test_hub_renders_actions(client):
 
 def test_hub_lists_upcoming_rides_with_live_links(client):
     _login(client)
-    rides = [{'id': 131, 'name': 'Surf City 600k', 'date': '2026-06-27', 'signup_status': 'GOING'}]
+    rides = [{'id': 131, 'name': 'Surf City 600k', 'date': '2026-06-27', 'signup_status': 'REGISTERED'}]
     with patch('routes.live.get_live_tracking', return_value=None), \
          patch('routes.live.get_rider_upcoming_signups', return_value=rides):
         resp = client.get('/live')

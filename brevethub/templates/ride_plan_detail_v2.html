@@ -96,7 +96,7 @@
     {% endif %}
 
     {# ===== Hero ===== #}
-    {% set going_count = signups | selectattr('status', 'equalto', 'GOING') | list | length if signups else 0 %}
+    {% set registered_count = signups | selectattr('status', 'equalto', 'REGISTERED') | list | length if signups else 0 %}
     {% set start_dt_str = (plan.linked_ride_date.isoformat() if plan.linked_ride_date else '') %}
     <header class="rpv2-hero">
         <div>
@@ -116,7 +116,7 @@
                 {{ "%.0f"|format(plan.total_distance_miles or 0) }} mi ·
                 {{ "{:,}".format(plan.total_elevation_ft or 0) }} ft
                 {%- if plan.cutoff_hours %} · ACP cutoff {{ plan.cutoff_hours }}h{% endif %}
-                {%- if going_count %} · {{ going_count }} rider{{ '' if going_count == 1 else 's' }} going{% endif %}
+                {%- if registered_count %} · {{ registered_count }} rider{{ '' if registered_count == 1 else 's' }} registered{% endif %}
             </div>
         </div>
         <div class="rpv2-gauges">
@@ -507,7 +507,7 @@
                         <div class="rpv2-card-h">
                             {% if signups %}
                                 <div class="rpv2-card-title">Riders · {{ signups|length }}</div>
-                                <div class="rpv2-card-sub">{{ going_count }} going</div>
+                                <div class="rpv2-card-sub">{{ registered_count }} registered</div>
                             {% else %}
                                 <div class="rpv2-card-title">Riders</div>
                             {% endif %}
@@ -515,7 +515,7 @@
                         {% if signups %}
                             <div class="rpv2-roster">
                                 {% for r in signups %}
-                                {% set cls = 's-going' if r.status == 'GOING' else ('s-int' if r.status == 'INTERESTED' else 's-maybe') %}
+                                {% set cls = 's-registered' if r.status == 'REGISTERED' else ('s-int' if r.status == 'INTERESTED' else 's-maybe') %}
                                 <span class="rpv2-rchip {{ cls }}">
                                     {{ r.first_name }}{% if r.last_name %} {{ r.last_name[0] }}.{% endif %}
                                 </span>
@@ -524,7 +524,7 @@
                             {% if upcoming_event %}
                             <div class="rpv2-group-note">
                                 <b>Event:</b> {{ upcoming_event.route_name }} on {{ upcoming_event.date }} —
-                                {{ going_count }} going at brevet pace.
+                                {{ registered_count }} registered at brevet pace.
                             </div>
                             {% endif %}
                         {% else %}

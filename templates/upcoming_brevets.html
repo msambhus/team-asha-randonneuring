@@ -737,6 +737,12 @@
     {% endif %}
 </div>
 
+{% if rusa_events %}
+{% set calendar_app = 'team_asha' %}
+{% include 'partials/_calendar_upcoming_table.html' with context %}
+{% endif %}
+
+<div id="calendar-cards-view">
 <div id="events-container">
 {% for event in rusa_events %}
 <div class="event-card{% if event.is_team_ride %} hidden{% endif %}" data-event-card-id="{{ event.id }}" data-team-ride="{{ 'true' if event.is_team_ride else 'false' }}" data-region="{{ event.region }}" data-distance="{{ event.distance_km }}" data-event-date="{{ event.date }}" data-event-time="{{ event.plan_start_time or event.start_time or '06:00' }}" data-rwgps-url="{{ event.rwgps_url or '' }}" data-weather-rwgps-url="{{ event.rwgps_url_team or event.rwgps_url or '' }}" data-route-name="{{ event.route_name }}" data-plan-avg-speed="{{ event.plan_avg_speed or '' }}" data-plan-slug="{{ event.plan_slug or '' }}" data-month="{{ event.date_str[0:7] }}" style="border-left-color:{{ region_colors.get(event.region, '#999') }};">
@@ -859,9 +865,9 @@
                 <span class="signup-status finished">{{ user_status }}</span>
             {% else %}
                 <div class="signup-dropdown-container" data-ride-id="{{ event.id }}" data-club-code="{{ event.club_code }}">
-                    <button class="signup-dropdown-btn {% if user_status == 'GOING' %}signed-up{% elif user_status == 'INTERESTED' %}interested{% elif user_status == 'MAYBE' %}maybe{% elif user_status == 'WITHDRAW' %}withdraw{% endif %}" 
+                    <button class="signup-dropdown-btn {% if user_status == 'REGISTERED' %}signed-up{% elif user_status == 'INTERESTED' %}interested{% elif user_status == 'MAYBE' %}maybe{% elif user_status == 'WITHDRAW' %}withdraw{% endif %}" 
                             onclick="toggleSignupDropdown({{ event.id }}, event)">
-                        {% if user_status == 'GOING' %}
+                        {% if user_status == 'REGISTERED' %}
                             <span>&#x2713; Going</span>
                         {% elif user_status == 'INTERESTED' %}
                             <span>&#x2605; Interested</span>
@@ -870,7 +876,7 @@
                         {% elif user_status == 'WITHDRAW' %}
                             <span>&#x229D; Withdraw</span>
                         {% else %}
-                            <span>Going</span>
+                            <span>&#x2605; Interested</span>
                         {% endif %}
                         <span style="font-size:0.7rem;">&#x25BE;</span>
                     </button>
@@ -906,6 +912,7 @@
 </div>
 {% endfor %}
 </div>
+</div>{# end calendar-cards-view #}
 
 <script>
 async function toggleLiveFollow(button) {
@@ -1301,7 +1308,7 @@ function groupEventsByMonth() {
 }
 
 function applyFilters() {
-    document.querySelectorAll('.event-card').forEach(function(event) {
+    document.querySelectorAll('.event-card, .calendar-event-row').forEach(function(event) {
         var isTeam = event.dataset.teamRide === 'true';
         var regionMatch;
         if (activeRegion === 'team-asha') {
@@ -1314,14 +1321,16 @@ function applyFilters() {
         var distanceMatch = activeDistance === 'all' || event.dataset.distance === activeDistance;
         if (regionMatch && distanceMatch) {
             event.classList.remove('hidden');
+            event.style.display = '';
         } else {
             event.classList.add('hidden');
+            event.style.display = 'none';
         }
     });
 
-    // Hide empty month sections
+    // Hide empty month sections (cards and table)
     document.querySelectorAll('.month-section').forEach(function(section) {
-        const visibleEvents = section.querySelectorAll('.event-card:not(.hidden)');
+        const visibleEvents = section.querySelectorAll('.event-card:not(.hidden), .calendar-event-row:not(.hidden)');
         if (visibleEvents.length === 0) {
             section.style.display = 'none';
         } else {
@@ -1376,73 +1385,38 @@ function toggleSignupDropdown(rideId, event) {
     }
     
     // Determine current status
-    const currentStatus = button.classList.contains('signed-up') ? 'GOING' : 
+    const currentStatus = button.classList.contains('signed-up') ? 'REGISTERED' : 
                          button.classList.contains('interested') ? 'INTERESTED' :
                          button.classList.contains('maybe') ? 'MAYBE' :
                          button.classList.contains('withdraw') ? 'WITHDRAW' : null;
     
     let menuHTML = '';
     
-    // Workflow logic based on current status
-    if (!currentStatus) {
-        // Initial state: Show Interested, Maybe, Going
+    // Team Asha calendar: interested only (+ clear when set).
+    if (!currentStatus || currentStatus === 'WITHDRAW') {
         menuHTML += `
-            <button class="signup-dropdown-item" onclick="handleStatusChange(${rideId}, 'INTERESTED', '${clubCode}', event)">
+            <button class="signup-dropdown-item primary" onclick="handleStatusChange(${rideId}, 'INTERESTED', '${clubCode}', event)">
                 <span>&#x2605;</span> Interested
-            </button>
-            <button class="signup-dropdown-item" onclick="handleStatusChange(${rideId}, 'MAYBE', '${clubCode}', event)">
-                <span>&#x003F;</span> Maybe
-            </button>
-            <button class="signup-dropdown-item primary" onclick="handleStatusChange(${rideId}, 'GOING', '${clubCode}', event)">
-                <span>&#x2713;</span> Going
             </button>
         `;
     } else if (currentStatus === 'INTERESTED') {
-        // From Interested: Maybe, Going, Clear
         menuHTML += `
-            <button class="signup-dropdown-item" onclick="handleStatusChange(${rideId}, 'MAYBE', '${clubCode}', event)">
-                <span>&#x003F;</span> Maybe
-            </button>
-            <button class="signup-dropdown-item primary" onclick="handleStatusChange(${rideId}, 'GOING', '${clubCode}', event)">
-                <span>&#x2713;</span> Going
-            </button>
             <button class="signup-dropdown-item danger" onclick="handleStatusChange(${rideId}, 'CLEAR', '${clubCode}', event)">
                 <span>&#x2715;</span> Clear Status
             </button>
         `;
-    } else if (currentStatus === 'MAYBE') {
-        // From Maybe: Interested, Going, Clear
+    } else if (currentStatus === 'REGISTERED' || currentStatus === 'MAYBE') {
         menuHTML += `
             <button class="signup-dropdown-item" onclick="handleStatusChange(${rideId}, 'INTERESTED', '${clubCode}', event)">
                 <span>&#x2605;</span> Interested
             </button>
-            <button class="signup-dropdown-item primary" onclick="handleStatusChange(${rideId}, 'GOING', '${clubCode}', event)">
-                <span>&#x2713;</span> Going
-            </button>
             <button class="signup-dropdown-item danger" onclick="handleStatusChange(${rideId}, 'CLEAR', '${clubCode}', event)">
                 <span>&#x2715;</span> Clear Status
             </button>
         `;
-    } else if (currentStatus === 'GOING') {
-        // From Going: Maybe, Withdraw
-        menuHTML += `
-            <button class="signup-dropdown-item" onclick="handleStatusChange(${rideId}, 'MAYBE', '${clubCode}', event)">
-                <span>&#x003F;</span> Maybe
-            </button>
-            <button class="signup-dropdown-item danger" onclick="handleStatusChange(${rideId}, 'WITHDRAW', '${clubCode}', event)">
-                <span>&#x229D;</span> Withdraw
-            </button>
-        `;
     } else if (currentStatus === 'WITHDRAW') {
-        // From Withdraw: Maybe, Going, Interested
         menuHTML += `
-            <button class="signup-dropdown-item" onclick="handleStatusChange(${rideId}, 'MAYBE', '${clubCode}', event)">
-                <span>&#x003F;</span> Maybe
-            </button>
-            <button class="signup-dropdown-item primary" onclick="handleStatusChange(${rideId}, 'GOING', '${clubCode}', event)">
-                <span>&#x2713;</span> Going
-            </button>
-            <button class="signup-dropdown-item" onclick="handleStatusChange(${rideId}, 'INTERESTED', '${clubCode}', event)">
+            <button class="signup-dropdown-item primary" onclick="handleStatusChange(${rideId}, 'INTERESTED', '${clubCode}', event)">
                 <span>&#x2605;</span> Interested
             </button>
         `;
@@ -1470,7 +1444,7 @@ function handleStatusChange(rideId, newStatus, clubCode, event) {
     
     const container = dropdown.closest('.signup-dropdown-container');
     const button = container.querySelector('.signup-dropdown-btn');
-    const currentStatus = button.classList.contains('signed-up') ? 'GOING' : 
+    const currentStatus = button.classList.contains('signed-up') ? 'REGISTERED' : 
                          button.classList.contains('interested') ? 'INTERESTED' :
                          button.classList.contains('maybe') ? 'MAYBE' :
                          button.classList.contains('withdraw') ? 'WITHDRAW' : null;
@@ -1478,7 +1452,7 @@ function handleStatusChange(rideId, newStatus, clubCode, event) {
     if (newStatus === 'CLEAR') {
         // Clear status
         clearStatus(rideId, button, currentStatus);
-    } else if (newStatus === 'GOING') {
+    } else if (newStatus === 'REGISTERED') {
         // Check if external club and show reminder (but skip if coming from WITHDRAW - they already registered)
         if (clubCode && clubCode !== 'TA' && currentStatus !== 'WITHDRAW') {
             showExternalClubReminder(clubCode, rideId, button, currentStatus);
@@ -1494,7 +1468,7 @@ function handleStatusChange(rideId, newStatus, clubCode, event) {
 function performStatusChange(rideId, newStatus, button, currentStatus) {
     // Map status to API endpoint
     const endpointMap = {
-        'GOING': 'signup',
+        'REGISTERED': 'signup',
         'INTERESTED': 'interested',
         'MAYBE': 'maybe',
         'WITHDRAW': 'withdraw'
@@ -1638,7 +1612,7 @@ function updateButtonStatus(button, status) {
     button.disabled = false;
     button.classList.remove('signed-up', 'interested', 'maybe', 'withdraw');
     
-    if (status === 'GOING') {
+    if (status === 'REGISTERED') {
         button.classList.add('signed-up');
         button.innerHTML = '<span>&#x2713; Going</span><span style="font-size:0.7rem;">&#x25BE;</span>';
     } else if (status === 'INTERESTED') {
@@ -1738,7 +1712,7 @@ function proceedWithSignup() {
         pendingSignup = null;
         
         // Now proceed with signup
-        performStatusChange(rideId, 'GOING', button, currentStatus);
+        performStatusChange(rideId, 'REGISTERED', button, currentStatus);
     }
 }
 
@@ -1765,8 +1739,8 @@ function showSignups(rideId, rideName) {
                 if (data.count === 0) {
                     modalBody.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">No riders signed up yet.</p>';
                 } else {
-                    // Sort: GOING first, then INTERESTED, then MAYBE, then WITHDRAW
-                    const statusOrder = {'GOING': 1, 'INTERESTED': 2, 'MAYBE': 3, 'WITHDRAW': 4};
+                    // Sort: REGISTERED first, then INTERESTED, then MAYBE, then WITHDRAW
+                    const statusOrder = {'REGISTERED': 1, 'INTERESTED': 2, 'MAYBE': 3, 'WITHDRAW': 4};
                     data.riders.sort((a, b) => {
                         return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
                     });
@@ -1776,7 +1750,7 @@ function showSignups(rideId, rideName) {
                         let badgeClass, badgeText;
                         
                         switch(rider.status) {
-                            case 'GOING':
+                            case 'REGISTERED':
                                 badgeClass = 'signed-up';
                                 badgeText = '\u2713 Going';
                                 break;

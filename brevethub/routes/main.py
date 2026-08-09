@@ -150,12 +150,14 @@ def profile():
     # for an empty history, giving a graceful zero-state for a RUSA-less rider.
     brevets = rusa.get('brevets') or []
     career = seasons.career_summary(brevets, date.today())
+    member_since = seasons.earliest_brevet_date(brevets)
     # PBP Ancien: years the rider finished Paris-Brest-Paris, derived from the same
     # authorized RUSA history (read-only; no new input, key, or migration).
     pbp_years = seasons.pbp_ancien_years(brevets)
     return render_template('profile.html', rider=rider, club=club,
                            rusa=rusa, strava=strava, career=career,
-                           pbp_years=pbp_years, activity_feed=activity_feed)
+                           pbp_years=pbp_years, activity_feed=activity_feed,
+                           member_since=member_since)
 
 
 def _finished_rides_as_brevets(rides):

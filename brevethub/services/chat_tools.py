@@ -60,7 +60,7 @@ ALLOWED_QUERIES: dict[str, str] = {
         JOIN ride ri ON rr.ride_id = ri.id
         WHERE rr.rider_id = %s
           AND ri.date >= CURRENT_DATE
-          AND rr.status IN ('GOING', 'INTERESTED', 'MAYBE')
+          AND rr.status IN ('REGISTERED', 'INTERESTED', 'MAYBE')
         ORDER BY ri.date
     """,
     "career_stats": """

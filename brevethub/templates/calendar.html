@@ -63,6 +63,14 @@
     opacity: 0.55;
     background-color: var(--card-bg, #f8fafc);
 }
+.event-type-btn {
+  padding: 6px 14px; border-radius: 999px; font-size: 0.82rem; font-weight: 600;
+  cursor: pointer; border: 2px solid var(--border); background: white;
+  color: var(--text-light); transition: all 0.2s;
+}
+.event-type-btn.active, .event-type-btn:hover {
+  background: var(--primary); color: white; border-color: var(--primary);
+}
 .month-section { margin-bottom: 40px; }
 .month-header {
     background: linear-gradient(135deg, #0891b2, #0e7490);
@@ -179,28 +187,50 @@
 .event-weather-none .wx-metric { font-style: italic; }
 .signup-section {
     margin-top: auto;
-    padding-top: 12px;
+    padding-top: 10px;
     border-top: 1px solid var(--border);
     display: flex;
-    flex-direction: row;
-    gap: 12px;
+    flex-direction: column;
+    gap: 8px;
+}
+.signup-meta {
+    display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+    color: var(--text-light);
+}
+.signup-meta-item::before {
+    content: '·';
+    margin-right: 10px;
+    color: var(--border);
+}
+.signup-meta-item:first-child::before { content: none; margin: 0; }
+.signup-you {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+.signup-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
     flex-wrap: wrap;
 }
-.signup-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .signup-count {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 0.8rem;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.72rem;
     font-weight: 600;
-    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
-    border: 1px solid #7dd3fc;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
     color: #0369a1;
 }
+.signup-fee { font-weight: 600; color: var(--text); }
 .signup-status {
     padding: 6px 12px;
     border-radius: 6px;
@@ -214,10 +244,10 @@
     color: var(--primary);
 }
 .signup-btn {
-    padding: 6px 14px;
-    min-height: 44px;
+    padding: 5px 12px;
+    min-height: 32px;
     border-radius: 6px;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 600;
     font-family: inherit;
     border: 2px solid var(--primary);
@@ -233,11 +263,346 @@
 .signup-btn:hover {
     background: var(--primary);
     color: white;
-    transform: translateY(-2px);
-    box-shadow: 0 2px 8px rgba(26, 54, 93, 0.2);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(26, 54, 93, 0.15);
 }
 .signup-btn.secondary { border-color: var(--text-light); color: var(--text-light); }
 .signup-btn.secondary:hover { background: var(--text-light); color: white; }
+.signup-btn.register-primary {
+    background: #1B2F52;
+    border-color: #1B2F52;
+    color: white;
+}
+.signup-intent-btn {
+    padding: 4px 10px;
+    min-height: 32px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: inherit;
+    border: 2px solid var(--primary);
+    background: white;
+    color: var(--primary);
+    cursor: pointer;
+    transition: all 0.18s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.signup-intent-btn:hover { background: var(--primary); color: white; transform: translateY(-1px); }
+.signup-intent-primary { background: var(--primary); color: white; }
+.signup-intent-primary:hover { filter: brightness(1.1); }
+.signup-intent-clear { border-color: var(--text-light); color: var(--text-light); }
+.signup-intent-clear:hover { background: var(--text-light); color: white; }
+.signup-intent-withdraw {
+    border-color: transparent;
+    background: transparent;
+    color: #b91c1c;
+    padding: 4px 6px;
+    min-height: auto;
+    font-size: 0.72rem;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.signup-intent-withdraw:hover {
+    background: transparent;
+    color: #991b1b;
+    transform: none;
+    box-shadow: none;
+}
+.registration-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    background: #ecfdf5;
+    color: #047857;
+    border: 1px solid #6ee7b7;
+}
+.registration-badge[hidden] { display: none !important; }
+.signup-btn.volunteer-btn {
+    border-color: #d97706;
+    color: #92400e;
+    background: #fffbeb;
+}
+.signup-btn.volunteer-btn:hover { background: #d97706; color: white; border-color: #d97706; }
+.signup-pending {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #b91c1c;
+}
+.volunteer-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    font-size: 0.72rem;
+    line-height: 1.3;
+    min-height: 32px;
+}
+.volunteer-strip.is-clickable { cursor: pointer; }
+.volunteer-strip.is-clickable:hover { background: #fef3c7; }
+.volunteer-strip .vol-icon {
+    flex-shrink: 0;
+    font-size: 0.85rem;
+    line-height: 1;
+}
+.vol-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.vol-summary {
+    font-weight: 600;
+    color: #92400e;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.vol-role-tag {
+    display: inline-block;
+    max-width: 11rem;
+    font-weight: 700;
+    color: #92400e;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 1px 0;
+    border: 0;
+    background: none;
+    font-size: inherit;
+    font-family: inherit;
+    text-align: left;
+}
+.vol-role-tag.is-active { cursor: pointer; }
+.vol-role-tag.is-active:hover { color: #78350f; text-decoration: underline; }
+.vol-role-tag.is-pending {
+    color: #b45309;
+    font-style: italic;
+    font-weight: 600;
+}
+.vol-more {
+    flex-shrink: 0;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #b45309;
+}
+.vol-bar {
+    flex-shrink: 0;
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: #fde68a;
+    overflow: hidden;
+}
+.vol-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: #d97706;
+    min-width: 0;
+}
+.vol-bar.is-full .vol-bar-fill { background: #15803d; }
+.vol-signup-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 0 16px;
+    padding: 0;
+    list-style: none;
+}
+.vol-signup-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fafafa;
+}
+.vol-signup-role {
+    flex: 1;
+    font-weight: 600;
+    color: var(--primary);
+    font-size: 0.9rem;
+    line-height: 1.3;
+}
+.vol-signup-status {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+.vol-signup-status.is-confirmed {
+    background: #dcfce7;
+    color: #15803d;
+}
+.vol-signup-status.is-pending {
+    background: #fef3c7;
+    color: #b45309;
+}
+.vol-withdraw-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    color: #b91c1c;
+    font-size: 1rem;
+    line-height: 1;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+}
+.vol-withdraw-btn:hover {
+    background: #fee2e2;
+    border-color: #fca5a5;
+}
+.calendar-membership-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.calendar-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px; border-radius: 999px; font-size: 0.78rem; font-weight: 600;
+    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); color: #e2e8f0;
+}
+.calendar-pill.ok { border-color: rgba(16,185,129,0.45); }
+.calendar-pill.bad { border-color: rgba(239,68,68,0.45); }
+.reg-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(8,16,30,0.65);
+    display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 200;
+    backdrop-filter: blur(4px);
+}
+.reg-modal-backdrop[hidden] { display: none; }
+.reg-modal-panel {
+    background: white; border-radius: 14px; width: 100%; max-width: 1300px;
+    max-height: 96vh; overflow: hidden; display: flex; flex-direction: column;
+    box-shadow: 0 28px 72px rgba(8,16,30,0.45);
+}
+.reg-modal-head {
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+}
+.reg-modal-body { padding: 24px; overflow-y: auto; }
+.reg-event-banner, .reg-stats-grid, .reg-profile-grid { margin-bottom: 16px; }
+.reg-event-banner {
+    display: flex; justify-content: space-between; gap: 12px;
+    background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 10px; padding: 14px;
+}
+.reg-event-type { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; color: #B45309; }
+.reg-event-name { font-size: 1.2rem; font-weight: 800; color: var(--primary); margin: 4px 0; }
+.reg-event-meta { font-size: 0.85rem; color: var(--text-light); }
+.reg-event-km { font-size: 2rem; font-weight: 800; color: #D97706; line-height: 1; }
+.reg-event-km span { font-size: 0.75rem; margin-left: 2px; }
+.reg-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.reg-stat { background: #EFF3F9; border-radius: 8px; padding: 10px 12px; }
+.reg-stat-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--text-light); }
+.reg-stat-value { font-size: 0.95rem; font-weight: 700; color: var(--primary); }
+.reg-section-title, .reg-section-label { font-size: 0.85rem; font-weight: 700; color: var(--primary); margin: 12px 0 8px; }
+.reg-controls ul { margin: 0; padding-left: 18px; color: var(--text-light); font-size: 0.85rem; }
+.reg-profile-head { display: flex; justify-content: space-between; align-items: center; }
+.reg-edit-link { font-size: 0.82rem; font-weight: 600; color: var(--primary); }
+.reg-profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; background: #EFF3F9; border-radius: 10px; padding: 12px; }
+.reg-field-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--text-light); }
+.reg-field-value { font-size: 0.85rem; color: var(--primary); }
+.reg-waiver-box {
+    max-height: 420px; overflow-y: auto; background: #EFF3F9; border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px; font-size: 0.83rem; line-height: 1.65; color: var(--text-light);
+}
+.reg-waiver-check { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; font-size: 0.82rem; cursor: pointer; }
+.reg-actions { display: flex; gap: 10px; margin-top: 16px; }
+.reg-primary-btn, .reg-secondary-btn {
+    border-radius: 9px; padding: 11px 16px; font-weight: 700; cursor: pointer; border: none;
+}
+.reg-primary-btn { flex: 1; background: #1B2F52; color: white; }
+.reg-primary-btn:disabled { background: #CBD5E1; color: #64748b; cursor: not-allowed; }
+.reg-secondary-btn { background: white; border: 1.5px solid var(--border); color: var(--text-light); }
+.reg-blockers { color: #b91c1c; background: #fef2f2; border-radius: 8px; padding: 10px 14px 10px 28px; margin-bottom: 12px; }
+.reg-success { text-align: center; margin-bottom: 16px; }
+.reg-success-icon { font-size: 2.4rem; color: #047857; }
+.reg-brevet-card {
+    border: 1px solid #D4C28A; border-radius: 10px; background: #FAFAF5;
+    padding: 14px; margin-bottom: 16px;
+}
+.reg-card-head { font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: #8B7040; }
+.reg-card-title { font-size: 1rem; font-weight: 800; color: #2C1F08; margin-top: 4px; }
+.reg-card-meta { font-size: 0.78rem; color: #8B7040; margin-bottom: 10px; }
+.reg-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.78rem; }
+.reg-card-grid span { color: #8B7040; display: block; }
+.reg-exception { color: #92400e; background: #fef3c7; border-radius: 8px; padding: 8px; margin-top: 8px; font-size: 0.82rem; }
+/* ── Waiver enhancements ── */
+.reg-waiver-section { margin-top: 16px; }
+.reg-waiver-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.reg-waiver-tabs { display: flex; gap: 4px; }
+.reg-tab {
+  padding: 5px 12px; border-radius: 999px; font-size: 0.78rem; font-weight: 600;
+  border: 1.5px solid var(--border); background: white; color: var(--text-light); cursor: pointer;
+}
+.reg-tab.active { background: #1B2F52; color: white; border-color: #1B2F52; }
+.reg-waiver-minor-toggle {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+  font-size: 0.82rem; color: var(--text-light);
+}
+.reg-radio-btn { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; cursor: pointer; }
+.reg-guardian-fields { background: #fff8e1; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; margin: 8px 0; }
+.reg-esign-block { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
+.reg-esign-notice { font-size: 0.75rem; color: var(--text-light); margin-bottom: 10px; line-height: 1.5; }
+.reg-smartwaiver-block { background: #EFF7FF; border: 1px solid #3b82f6; border-radius: 10px; padding: 14px; }
+.reg-sw-btn {
+  display: inline-block; margin: 10px 0; padding: 10px 18px;
+  background: #2563eb; color: white; border-radius: 8px; font-weight: 700; font-size: 0.88rem;
+  text-decoration: none;
+}
+.reg-sw-btn:hover { background: #1d4ed8; }
+/* ── Team wizard ── */
+.reg-team-note { background: #EFF3F9; border-radius: 8px; padding: 10px 14px; font-size: 0.82rem; margin: 10px 0; }
+.reg-team-form { display: flex; flex-direction: column; gap: 10px; }
+.reg-captain-info { background: #f8fafc; border-radius: 8px; padding: 10px; }
+.reg-team-members { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+.reg-team-member-row {
+  display: grid; grid-template-columns: 90px 1fr 1fr 90px; gap: 6px; align-items: center;
+}
+.reg-member-label { font-size: 0.75rem; font-weight: 700; color: var(--text-light); }
+.reg-member-input { width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.82rem; }
+.reg-member-rusa { font-size: 0.78rem; }
+.reg-proof-toggle { display: flex; gap: 14px; margin: 8px 0; }
+@media (max-width: 540px) {
+  .reg-team-member-row { grid-template-columns: 1fr 1fr; }
+  .reg-member-label { display: none; }
+}
+.reg-profile-note { background: #ecfdf5; color: #047857; border-radius: 8px; padding: 8px 12px; font-size: 0.82rem; margin-bottom: 10px; }
+.reg-profile-form { display: grid; gap: 8px; background: #EFF3F9; border-radius: 10px; padding: 12px; }
+.reg-form-field { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; }
+.reg-form-field input { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.reg-form-field input.reg-input-error { border-color: #dc2626; box-shadow: 0 0 0 1px #dc2626; }
+.reg-field-error { color: #b91c1c; font-size: 0.78rem; }
+.reg-save-msg { font-size: 0.78rem; margin-top: 6px; }
+.reg-save-msg.reg-ok { color: #047857; }
+.reg-save-msg.reg-error { color: #b91c1c; }
+.reg-bulk-list { margin: 0 0 12px 18px; color: var(--text); font-size: 0.88rem; }
+.bulk-select-wrap { position: absolute; top: 12px; left: 12px; z-index: 2; }
+.bulk-select-wrap input { width: 16px; height: 16px; cursor: pointer; }
+.bulk-register-bar {
+  position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+  background: #1B2F52; color: white; padding: 12px 18px; border-radius: 999px;
+  display: flex; align-items: center; gap: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.25); z-index: 120;
+}
+.bulk-register-bar[hidden] { display: none; }
+.bulk-register-bar button { border: 0; border-radius: 999px; padding: 8px 14px; font-weight: 700; cursor: pointer; }
+.bulk-register-bar [data-bulk-open] { background: #F59E0B; color: #1B2F52; }
+.bulk-register-bar [data-bulk-clear] { background: transparent; color: #cbd5e1; }
+.container.section.calendar-layout {
+  max-width: min(calc(100vw - 2rem), 1680px);
+}
 
 @media (max-width: 768px) {
     .events-grid { grid-template-columns: 1fr; }
@@ -249,10 +614,32 @@
 {% block content %}
 <div class="hero" style="padding:40px 20px;">
   <h1>Upcoming brevets</h1>
-  <p>Upcoming sanctioned randonneuring events from RUSA's national calendar</p>
+  <p>Browse the calendar and register for San Francisco Randonneurs brevets with one saved profile and a fresh waiver for each event.</p>
+  {% if rider and membership_pills %}
+  <div class="calendar-membership-pills">
+    {% for pill in membership_pills %}
+    <span class="calendar-pill {% if pill.ok %}ok{% else %}bad{% endif %}">{{ pill.label }} · {{ pill.status }}</span>
+    {% endfor %}
+    <a href="{{ url_for('register.edit_profile', next=url_for('calendar.calendar')) }}" class="calendar-pill ok" style="text-decoration:none;">Edit profile</a>
+  </div>
+  {% elif not rider %}
+  <p style="margin-top:12px;"><a class="btn btn-primary" href="{{ url_for('auth.login', next=url_for('calendar.calendar')) }}">Sign in to register</a></p>
+  {% endif %}
 </div>
 
-<div class="container section">
+<div class="container section calendar-layout">
+
+  <div class="filter-section mb-3">
+    <div class="filter-label" id="type-filter-label">Event type</div>
+    <div class="flex flex-wrap gap-2" role="group" aria-labelledby="type-filter-label">
+      <button type="button" class="event-type-btn active" data-event-type="all">All types</button>
+      <button type="button" class="event-type-btn" data-event-type="acp_brevet">ACP Brevet</button>
+      <button type="button" class="event-type-btn" data-event-type="rusa_brevet">RUSA Brevet</button>
+      <button type="button" class="event-type-btn" data-event-type="populaire">Populaire</button>
+      <button type="button" class="event-type-btn" data-event-type="fleche">Flèche / Dart</button>
+      <button type="button" class="event-type-btn" data-event-type="other">Other</button>
+    </div>
+  </div>
 
   <p class="text-text-light mb-5">
     Start location and time are shown only when a source provides them.
@@ -306,6 +693,14 @@
     </div>
   {% endif %}
 
+  {% if rider %}
+  <div id="bulk-register-bar" class="bulk-register-bar" hidden>
+    <span data-bulk-count>0 events selected</span>
+    <button type="button" data-bulk-open>Register selected</button>
+    <button type="button" data-bulk-clear>Clear</button>
+  </div>
+  {% endif %}
+
   {# Month-abbreviation lookup for the date badge. A date stringifies to ISO
      ("YYYY-MM-DD") whether it is a datetime.date (psycopg2) or a plain string.
      Defined ahead of both the upcoming grid AND the rider results section below so
@@ -313,7 +708,9 @@
   {% set MONTH_ABBR = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] %}
 
   {% if months %}
-    <div data-signup-base="/calendar">
+    {% set calendar_app = 'brevethub' %}
+    {% include 'partials/_calendar_upcoming_table.html' with context %}
+    <div id="calendar-cards-view" data-signup-base="/calendar">
       {% for month_label, month_events in months %}
         <div class="month-section">
           <div class="month-header">{{ month_label }}</div>
@@ -323,7 +720,13 @@
                 <article class="event-card" data-event-id="{{ ev.id }}"
                        data-region="{{ (ev.region or '').split(':')[0]|trim }}"
                        data-area="{{ ((ev.region or '') ~ ':').split(':')[1]|trim }}"
-                       data-club="{{ (ev.club_name or '')|e }}">
+                       data-club="{{ (ev.club_name or '')|e }}"
+                       data-event-category="{{ ev.data_category or 'other' }}">
+                {% if rider and ev.registration_enabled and not my_registrations.get(ev.id) %}
+                <label class="bulk-select-wrap" title="Select for bulk registration">
+                  <input type="checkbox" class="bulk-event-select" value="{{ ev.id }}">
+                </label>
+                {% endif %}
                 <div class="event-date">
                   <div class="event-day">{{ ds[8:10] }}</div>
                   <div class="event-month">{{ MONTH_ABBR[ds[5:7]|int] if ds[5:7]|int else ds[5:7] }}</div>
@@ -419,27 +822,112 @@
                 {% endif %}
 
                 <div class="signup-section">
-                  <span class="signup-count">{{ ev.signup_count or 0 }} going</span>
-                  {% if ev.interested_count %}
-                    <span class="text-text-light text-sm">{{ ev.interested_count }} interested</span>
-                  {% endif %}
-                  {% if rider %}
-                    <span class="signup-actions">
-                      {% set status = my_status.get(ev.id) %}
-                      <span class="signup-status" data-event-id="{{ ev.id }}">
-                        {% if status and status != 'withdraw' %}{{ status|capitalize }}{% else %}—{% endif %}
-                      </span>
-                      <button type="button" class="signup-btn"
-                              data-event-id="{{ ev.id }}" data-status="going">Going</button>
-                      <button type="button" class="signup-btn secondary"
-                              data-event-id="{{ ev.id }}" data-status="interested">Interested</button>
-                      <button type="button" class="signup-btn secondary"
-                              data-event-id="{{ ev.id }}" data-status="withdraw">Withdraw</button>
+                  <div class="signup-meta">
+                    <span class="signup-count">{{ ev.confirmed_count or ev.signup_count or 0 }} on roster</span>
+                    {% if ev.interested_count %}
+                      <span class="signup-meta-item">{{ ev.interested_count }} interested</span>
+                    {% endif %}
+                    {% if ev.registration_enabled and ev.fee_cents %}
+                      <span class="signup-meta-item signup-fee">${{ (ev.fee_cents / 100)|int }}</span>
+                    {% endif %}
+                  </div>
+
+                  {% set reg = my_registrations.get(ev.id) if rider else None %}
+                  {% set proof = proof_by_event.get(ev.id) if rider else None %}
+                  {% set show_proof = proof and proof.organizer_decision != 'approved' and (proof.evidence_submission_allowed or (not proof.submission_id and not proof.finish_time)) %}
+                  {% set post_ride = post_ride_open_by_event.get(ev.id) %}
+                  {% set vol = my_volunteer_signups.get(ev.id) if rider else None %}
+                  {% set vsum = volunteer_summary_by_event.get(ev.id) %}
+
+                  {% if ev.volunteer_enabled and vsum and vsum.slot_count %}
+                  {% set vol_pct = (vsum.confirmed_total * 100 / vsum.capacity_total) if vsum.capacity_total else 0 %}
+                  <div class="volunteer-strip{% if rider and not vol %} is-clickable{% endif %}"
+                       {% if rider and not vol %}data-volunteer-event="{{ ev.id }}" role="button" tabindex="0" title="Sign up to volunteer"{% endif %}>
+                    <span class="vol-icon">🤝</span>
+                    <div class="vol-body">
+                      {% if vol %}
+                        {% for v in vol[:1] %}
+                        <button type="button" class="vol-role-tag is-active{% if v.status == 'exception' %} is-pending{% endif %}"
+                                data-volunteer-event="{{ ev.id }}"
+                                title="View or change volunteer role">
+                          {{ v.role_name }}{% if v.status == 'exception' %} · pending{% endif %}
+                        </button>
+                        {% endfor %}
+                        {% if vol|length > 1 %}<span class="vol-more">+{{ vol|length - 1 }}</span>{% endif %}
+                      {% else %}
+                        <span class="vol-summary">
+                          {% if vsum.open_total > 0 %}{{ vsum.open_total }} role{{ 's' if vsum.open_total != 1 else '' }} open{% else %}Filled{% endif %}
+                        </span>
+                      {% endif %}
+                    </div>
+                    <span class="vol-bar{% if vsum.open_total == 0 %} is-full{% endif %}"
+                          title="{{ vsum.confirmed_total }}/{{ vsum.capacity_total }} filled"
+                          aria-label="{{ vsum.confirmed_total }} of {{ vsum.capacity_total }} volunteer slots filled">
+                      <span class="vol-bar-fill" style="width: {{ vol_pct|round|int }}%;"></span>
                     </span>
-                    <small class="club-registration-note">
-                      Going here is an intent only; complete registration on the organizing club&rsquo;s site.
-                      <a href="{{ rusa_event_search_url }}" target="_blank" rel="noopener">Find official registration via RUSA</a>.
-                    </small>
+                  </div>
+                  {% endif %}
+
+                  {% if rider and (reg and reg.registration_status) %}
+                  <div class="signup-you">
+                    <span class="registration-badge" data-reg-badge="{{ ev.id }}">
+                      {% if reg.registration_status == 'confirmed' %}Registered{% elif reg.registration_status == 'exception' %}Registered · review{% elif reg.registration_status == 'waitlist' %}Waitlist{% else %}{{ reg.registration_status|capitalize }}{% endif %}
+                    </span>
+                  </div>
+                  {% else %}
+                  <span class="registration-badge" data-reg-badge="{{ ev.id }}" hidden></span>
+                  {% endif %}
+
+                  {% if rider %}
+                    {% set status = my_status.get(ev.id) %}
+                    <div class="signup-actions" data-event-id="{{ ev.id }}" data-status="{{ status or '' }}"
+                         {% if reg and reg.registration_status %}data-registered="1"{% endif %}
+                         {% if show_proof %}data-proof-url="{{ url_for('validation.submit_validation', event_id=ev.id) }}"{% endif %}
+                         data-post-ride="{{ '1' if post_ride else '0' }}"
+                         {% if ev.volunteer_enabled %}data-volunteer-enabled="1"{% endif %}
+                         {% if vol %}data-volunteering="1"{% endif %}>
+                      {% if reg and reg.registration_status %}
+                        {% if show_proof %}
+                        <a class="event-link-btn" href="{{ url_for('validation.submit_validation', event_id=ev.id) }}">Submit proof</a>
+                        {% endif %}
+                        {% if status == 'withdrawal_requested' %}
+                        <span class="signup-pending">Withdrawal pending review</span>
+                        {% elif post_ride and status in ('registered', 'finished', 'dnf', 'dns', 'otl') %}
+                        <select class="result-select form-input text-xs py-1" data-event-id="{{ ev.id }}" aria-label="Post-ride result">
+                          {% for opt, label in [('finished', 'Finished'), ('dnf', 'DNF'), ('dns', 'DNS'), ('otl', 'OTL')] %}
+                          <option value="{{ opt }}" {% if status == opt %}selected{% endif %}>{{ label }}</option>
+                          {% endfor %}
+                        </select>
+                        {% elif status not in ('withdrawal_requested', 'finished', 'dnf', 'dns', 'otl') %}
+                        <button type="button" class="signup-intent-btn signup-intent-withdraw" data-action="withdraw" data-event-id="{{ ev.id }}">Request withdraw</button>
+                        {% endif %}
+                        {% if ev.volunteer_enabled and not vol %}
+                        <button type="button" class="signup-btn volunteer-btn"
+                                data-volunteer-event="{{ ev.id }}">Volunteer</button>
+                        {% endif %}
+                      {% else %}
+                      {% if ev.registration_enabled %}
+                        <button type="button" class="signup-btn register-primary"
+                                data-register-event="{{ ev.id }}">Register</button>
+                      {% endif %}
+                      {% if ev.volunteer_enabled and not vol %}
+                        <button type="button" class="signup-btn volunteer-btn"
+                                data-volunteer-event="{{ ev.id }}">Volunteer</button>
+                      {% endif %}
+                      {% if not status %}
+                        <button type="button" class="signup-intent-btn signup-intent-primary" data-action="interested" data-event-id="{{ ev.id }}">Interested</button>
+                      {% elif status == 'interested' %}
+                        <button type="button" class="signup-intent-btn signup-intent-primary" data-action="interested" data-event-id="{{ ev.id }}" disabled style="opacity:.7;">Interested</button>
+                        <button type="button" class="signup-intent-btn signup-intent-clear" data-action="clear" data-event-id="{{ ev.id }}">Clear</button>
+                      {% endif %}
+                      {% endif %}
+                    </div>
+                    {% if not ev.registration_enabled %}
+                      <small class="club-registration-note">
+                        Register here is an intent only; complete registration on the organizing club&rsquo;s site.
+                        <a href="{{ rusa_event_search_url }}" target="_blank" rel="noopener">Find official registration via RUSA</a>.
+                      </small>
+                    {% endif %}
                   {% endif %}
                 </div>
               </article>
@@ -486,7 +974,7 @@
                       data-event-id="{{ s.event_id }}">
                   {{ s.finish_time or '—' }}
                 </span>
-                {% if s.organizer_decision != 'approved' and (s.evidence_submission_allowed or (not s.submission_id and not s.finish_time)) %}<a class="event-link-btn" href="{{ url_for('validation.submit_validation', event_id=s.event_id) }}">Submit evidence</a>{% endif %}
+                {% if s.organizer_decision != 'approved' and (s.evidence_submission_allowed or (not s.submission_id and not s.finish_time)) %}<a class="event-link-btn" href="{{ url_for('validation.submit_validation', event_id=s.event_id) }}">Submit proof</a>{% endif %}
               </span>
             </div>
           </article>
@@ -498,39 +986,156 @@
   {% if not rider %}
     <p class="mt-6">
       <a class="btn btn-primary" href="{{ url_for('auth.login', next=url_for('calendar.calendar')) }}">Sign in</a>
-      to mark yourself interested or going on a brevet.
+      to mark yourself interested on a brevet, or register when registration is open.
     </p>
   {% endif %}
 
 </div>
 
+<div id="registration-modal" class="reg-modal-backdrop" hidden>
+  <div class="reg-modal-panel" role="dialog" aria-modal="true" aria-labelledby="reg-modal-title">
+    <div class="reg-modal-head">
+      <span id="reg-modal-title" data-reg-step-label>Event registration</span>
+      <button type="button" data-reg-close aria-label="Close" style="background:none;border:0;font-size:1.2rem;cursor:pointer;">✕</button>
+    </div>
+    <div class="reg-modal-body" data-reg-body></div>
+  </div>
+</div>
+
+<div id="volunteer-modal" class="reg-modal-backdrop" hidden>
+  <div class="reg-modal-panel" role="dialog" aria-modal="true" style="max-width:640px;">
+    <div class="reg-modal-head">
+      <span data-vol-title>Volunteer signup</span>
+      <button type="button" data-vol-dismiss aria-label="Close" style="background:none;border:0;font-size:1.2rem;cursor:pointer;">✕</button>
+    </div>
+    <div class="reg-modal-body" data-vol-body></div>
+  </div>
+</div>
+
 {% if rider %}
+<script src="{{ url_for('static', filename='js/registration.js') }}"></script>
+<script src="{{ url_for('static', filename='js/volunteer.js') }}"></script>
 <script>
-// Progressive enhancement: sign-up is a small fetch() POST to the JSON API. No
-// page reload — the card's "My status" cell updates in place. Guests never see
-// these controls (server-rendered only when a rider is signed in).
-document.querySelectorAll('.signup-btn').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    var eventId = btn.getAttribute('data-event-id');
-    var status = btn.getAttribute('data-status');
+// Context-sensitive intent buttons: delegated click handler.
+// Guests never see these controls (server-rendered only when a rider is signed in).
+function regBadgeLabel(regStatus) {
+  if (regStatus === 'confirmed') return 'Registered';
+  if (regStatus === 'exception') return 'Registered · review';
+  if (regStatus === 'waitlist') return 'Waitlist';
+  if (!regStatus) return 'Registered';
+  return regStatus.charAt(0).toUpperCase() + regStatus.slice(1);
+}
+
+function renderRegisteredActions(container, status, postRide) {
+  if (!container) return;
+  container.setAttribute('data-registered', '1');
+  var eventId = container.getAttribute('data-event-id');
+  var proofUrl = container.getAttribute('data-proof-url');
+  var html = '';
+  if (proofUrl) {
+    html += '<a class="event-link-btn" href="' + proofUrl + '">Submit proof</a>';
+  }
+  if (status === 'withdrawal_requested') {
+    html += '<span class="signup-pending">Withdrawal pending review</span>';
+  } else if (postRide && (status === 'registered' || status === 'finished' || status === 'dnf' || status === 'dns' || status === 'otl')) {
+    var opts = [['finished', 'Finished'], ['dnf', 'DNF'], ['dns', 'DNS'], ['otl', 'OTL']];
+    html += '<select class="result-select form-input text-xs py-1" data-event-id="' + eventId + '" aria-label="Post-ride result">';
+    opts.forEach(function (pair) {
+      html += '<option value="' + pair[0] + '"' + (status === pair[0] ? ' selected' : '') + '>' + pair[1] + '</option>';
+    });
+    html += '</select>';
+  } else if (status !== 'finished' && status !== 'dnf' && status !== 'dns' && status !== 'otl') {
+    html += '<button type="button" class="signup-intent-btn signup-intent-withdraw" data-action="withdraw" data-event-id="' + eventId + '">Request withdraw</button>';
+  }
+  container.innerHTML = html;
+}
+
+function renderIntentButtons(container, newStatus) {
+  if (!container || container.getAttribute('data-registered') === '1') {
+    renderRegisteredActions(container, newStatus, container.getAttribute('data-post-ride') === '1');
+    return;
+  }
+  var eventId = container.getAttribute('data-event-id');
+  var registerBtn = container.querySelector('[data-register-event]');
+  var registerHtml = registerBtn ? registerBtn.outerHTML : '';
+  var btns = '';
+  if (!newStatus) {
+    btns = '<button type="button" class="signup-intent-btn signup-intent-primary" data-action="interested" data-event-id="' + eventId + '">Interested</button>';
+  } else if (newStatus === 'interested') {
+    btns  = '<button type="button" class="signup-intent-btn signup-intent-primary" data-action="interested" data-event-id="' + eventId + '" disabled style="opacity:.7;">Interested</button>';
+    btns += '<button type="button" class="signup-intent-btn signup-intent-clear" data-action="clear" data-event-id="' + eventId + '">Clear</button>';
+  }
+  container.setAttribute('data-status', newStatus || '');
+  container.innerHTML = registerHtml + btns;
+}
+
+document.addEventListener('click', function (e) {
+  var btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  var action = btn.getAttribute('data-action');
+  var eventId = btn.getAttribute('data-event-id');
+  if (!action || !eventId) return;
+
+  var container = document.querySelector('.signup-actions[data-event-id="' + eventId + '"]');
+  var isRegistered = container && container.getAttribute('data-registered') === '1';
+
+  if (action === 'clear') {
     fetch('/calendar/' + eventId + '/signup', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({status: status}),
+      method: 'DELETE',
+      credentials: 'same-origin',
     }).then(function (resp) {
       return resp.json().then(function (data) { return {ok: resp.ok, data: data}; });
     }).then(function (r) {
       if (!r.ok) {
-        if (r.data && r.data.login_url) { window.location = r.data.login_url; }
+        if (r.data && r.data.login_url) { window.location = r.data.login_url; return; }
+        alert(r.data.error || 'Could not clear status');
         return;
       }
-      var cell = document.querySelector('.signup-status[data-event-id="' + eventId + '"]');
-      if (cell) {
-        cell.textContent = (r.data.status && r.data.status !== 'withdraw')
-          ? r.data.status.charAt(0).toUpperCase() + r.data.status.slice(1)
-          : '—';
+      if (container) renderIntentButtons(container, null);
+      // Hide registration badge on clear.
+      var regBadge = document.querySelector('[data-reg-badge="' + eventId + '"]');
+      if (regBadge) regBadge.style.display = 'none';
+      var card = document.querySelector('.event-card[data-event-id="' + eventId + '"]');
+      if (card && r.data.registered_count != null) {
+        var badge = card.querySelector('.signup-count');
+        if (badge) badge.textContent = r.data.registered_count + ' on roster';
       }
     });
+    return;
+  }
+
+  if (isRegistered && action !== 'withdraw') return;
+
+  fetch('/calendar/' + eventId + '/signup', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: action}),
+  }).then(function (resp) {
+    return resp.json().then(function (data) { return {ok: resp.ok, data: data}; });
+  }).then(function (r) {
+    if (!r.ok) {
+      if (r.data && r.data.login_url) { window.location = r.data.login_url; return; }
+      alert(r.data.error || 'Could not update status');
+      return;
+    }
+    var newStatus = r.data.status;
+    if (container) {
+      if (isRegistered || action === 'withdraw') {
+        renderRegisteredActions(container, newStatus, container.getAttribute('data-post-ride') === '1');
+      } else {
+        renderIntentButtons(container, newStatus);
+      }
+    }
+    if (action === 'withdraw' && r.data.outcome === 'dns') {
+      var regBadge = document.querySelector('[data-reg-badge="' + eventId + '"]');
+      if (regBadge) regBadge.textContent = 'DNS recorded';
+    }
+    var card = document.querySelector('.event-card[data-event-id="' + eventId + '"]');
+    if (card && r.data.registered_count != null) {
+      var badge = card.querySelector('.signup-count');
+      if (badge) badge.textContent = r.data.registered_count + ' on roster';
+    }
   });
 });
 
@@ -549,37 +1154,37 @@ document.querySelectorAll('.follow-live-btn').forEach(function (btn) {
   });
 });
 
-// Post-ride result correction (this rider's OWN past ride only): a small fetch()
-// POST to the self-service /result API. Status-only — the finish time is never
-// sent, only reflected read-only from the JSON response.
-document.querySelectorAll('.result-select').forEach(function (sel) {
-  sel.addEventListener('change', function () {
-    var eventId = sel.getAttribute('data-event-id');
-    fetch('/calendar/' + eventId + '/result', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({status: sel.value}),
-    }).then(function (resp) {
-      return resp.json().then(function (data) { return {ok: resp.ok, data: data}; });
-    }).then(function (r) {
-      if (!r.ok) {
-        if (r.data && r.data.login_url) { window.location = r.data.login_url; }
-        return;
-      }
-      var badge = document.querySelector('.result-badge[data-event-id="' + eventId + '"]');
-      if (badge && r.data.status) { badge.textContent = r.data.status.toUpperCase(); }
-      var finish = document.querySelector('.result-finish[data-event-id="' + eventId + '"]');
-      if (finish) { finish.textContent = r.data.finish_time || '—'; }
-    });
+// Post-ride result — delegated so dynamically inserted selects work too.
+document.addEventListener('change', function (e) {
+  var sel = e.target.closest('.result-select');
+  if (!sel) return;
+  var eventId = sel.getAttribute('data-event-id');
+  fetch('/calendar/' + eventId + '/result', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: sel.value}),
+  }).then(function (resp) {
+    return resp.json().then(function (data) { return {ok: resp.ok, data: data}; });
+  }).then(function (r) {
+    if (!r.ok) {
+      if (r.data && r.data.login_url) { window.location = r.data.login_url; }
+      else if (r.data && r.data.error) { alert(r.data.error); }
+      return;
+    }
+    var actions = document.querySelector('.signup-actions[data-event-id="' + eventId + '"]');
+    if (actions) actions.setAttribute('data-status', r.data.status);
+    var badge = document.querySelector('.result-badge[data-event-id="' + eventId + '"]');
+    if (badge && r.data.status) { badge.textContent = r.data.status.toUpperCase(); }
+    var finish = document.querySelector('.result-finish[data-event-id="' + eventId + '"]');
+    if (finish) { finish.textContent = r.data.finish_time || '—'; }
   });
 });
 </script>
 {% endif %}
 
-{# Client-side region filter (guests included): cascading State -> Area dropdowns.
-   State picks the RUSA state prefix; Area picks the RBA area after the colon (events
-   carry no club data, so the area is the honest secondary axis). Filters event cards
-   and hides months that end up empty. #}
+{# Client-side region + event-type filter (guests included): cascading State -> Area
+   dropdowns plus event-type pill buttons. Filters event cards and hides months that
+   end up empty. #}
 <script>
 (function () {
   var regionsByState = {{ regions_by_state|tojson }};
@@ -590,19 +1195,22 @@ document.querySelectorAll('.result-select').forEach(function (sel) {
   var defaultState = {{ (default_state or '')|tojson }};
   var defaultClub = {{ (default_club or '')|tojson }};
 
+  var activeTypes = new Set(['all']);
+
   function apply() {
     var st = stateSel.value;
     var ar = areaSel.value;
     var club = clubSel ? clubSel.value : 'all';
-    document.querySelectorAll('.event-card[data-region]').forEach(function (c) {
+    document.querySelectorAll('.event-card[data-region], .calendar-event-row[data-region]').forEach(function (c) {
       var stateOk = (st === 'all' || c.dataset.region === st);
       var areaOk = (ar === 'all' || c.dataset.area === ar);
       var clubOk = (club === 'all' || c.dataset.club === club);
-      c.style.display = (stateOk && areaOk && clubOk) ? '' : 'none';
+      var typeOk = activeTypes.has('all') || activeTypes.has(c.dataset.eventCategory);
+      c.style.display = (stateOk && areaOk && clubOk && typeOk) ? '' : 'none';
     });
     document.querySelectorAll('.month-section').forEach(function (sec) {
       var shown = Array.prototype.filter.call(
-        sec.querySelectorAll('.event-card[data-region]'),
+        sec.querySelectorAll('.event-card[data-region], .calendar-event-row[data-region]'),
         function (c) { return c.style.display !== 'none'; });
       sec.style.display = shown.length ? '' : 'none';
     });
@@ -629,6 +1237,37 @@ document.querySelectorAll('.result-select').forEach(function (sel) {
   stateSel.addEventListener('change', function () { repopulateAreas(); apply(); });
   areaSel.addEventListener('change', apply);
   if (clubSel) clubSel.addEventListener('change', apply);
+
+  document.querySelectorAll('.event-type-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var t = btn.getAttribute('data-event-type');
+      if (t === 'all') {
+        activeTypes = new Set(['all']);
+        document.querySelectorAll('.event-type-btn').forEach(function (b) {
+          b.classList.toggle('active', b.getAttribute('data-event-type') === 'all');
+        });
+      } else {
+        activeTypes.delete('all');
+        if (activeTypes.has(t)) {
+          activeTypes.delete(t);
+          btn.classList.remove('active');
+        } else {
+          activeTypes.add(t);
+          btn.classList.add('active');
+        }
+        // If nothing selected, revert to "All"
+        if (activeTypes.size === 0) {
+          activeTypes = new Set(['all']);
+          document.querySelectorAll('.event-type-btn').forEach(function (b) {
+            b.classList.toggle('active', b.getAttribute('data-event-type') === 'all');
+          });
+        } else {
+          document.querySelector('.event-type-btn[data-event-type="all"]').classList.remove('active');
+        }
+      }
+      apply();
+    });
+  });
 
   if (defaultState && Array.prototype.some.call(stateSel.options, function (o) { return o.value === defaultState; })) {
     stateSel.value = defaultState;

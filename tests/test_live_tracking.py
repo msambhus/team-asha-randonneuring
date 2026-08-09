@@ -266,11 +266,11 @@ def test_positions_requires_ride_id(client):
 def test_positions_shape_color_and_stale(client):
     rows = [
         {'rider_id': 7, 'name': 'Asha Rider', 'lat': 37.8, 'lng': -122.2,
-         'recorded_at': _now() - timedelta(minutes=2), 'status': 'GOING',
+         'recorded_at': _now() - timedelta(minutes=2), 'status': 'REGISTERED',
          'source': 'garmin'},
         # No 'source' key → API should default it to 'beacon'.
         {'rider_id': 9, 'name': 'Stale Rider', 'lat': 37.9, 'lng': -122.3,
-         'recorded_at': _now() - timedelta(minutes=45), 'status': 'GOING'},
+         'recorded_at': _now() - timedelta(minutes=45), 'status': 'REGISTERED'},
     ]
     with client.session_transaction() as s:
         s['user_id'] = 1
@@ -285,7 +285,7 @@ def test_positions_shape_color_and_stale(client):
     assert data['ride_id'] == 5
     assert len(data['positions']) == 2
     fresh, stale = data['positions']
-    assert fresh['color'] == '#16a34a'      # GOING → green
+    assert fresh['color'] == '#16a34a'      # REGISTERED → green
     assert fresh['stale'] is False
     assert fresh['source'] == 'garmin'      # passed through from the latest point
     assert stale['stale'] is True
@@ -343,12 +343,12 @@ def test_latest_positions_query_filters_by_ride_id():
     # The position row must be constrained to THIS ride, not just the rider.
     assert 'p.ride_id = %s' in captured['sql']
     # Signup status no longer gates the map — rider_ride is a LEFT JOIN used only
-    # for the dot colour, and GOING is not required.
+    # for the dot colour, and REGISTERED is not required.
     assert 'LEFT JOIN rider_ride' in captured['sql']
     assert 'rr.status = %s' not in captured['sql']
     # ride_id is bound twice (LEFT JOIN rr.ride_id + p.ride_id), then since.
     assert captured['params'] == (42, 42, since)
-    assert models.RideStatus.GOING.value not in captured['params']
+    assert models.RideStatus.REGISTERED.value not in captured['params']
 
 
 def test_going_riders_query_is_scoped_to_ride_and_status():
@@ -366,10 +366,10 @@ def test_going_riders_query_is_scoped_to_ride_and_status():
         return _FakeCur()
 
     with patch('models._execute', side_effect=_fake_execute):
-        models.get_going_riders_for_ride(42)
+        models.get_registered_riders_for_ride(42)
 
     assert 'rr.ride_id = %s AND rr.status = %s' in captured['sql']
-    assert captured['params'] == (42, models.RideStatus.GOING.value)
+    assert captured['params'] == (42, models.RideStatus.REGISTERED.value)
 
 
 # ── /ride/<id>/live map page ──────────────────────────────────────────────

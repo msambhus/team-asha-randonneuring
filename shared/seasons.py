@@ -96,6 +96,18 @@ def _coerce_date(value):
         return None
 
 
+def earliest_brevet_date(brevets):
+    """Earliest parseable brevet date in a rider's RUSA history, or ``None``."""
+    earliest = None
+    for b in brevets or []:
+        d = _coerce_date(b.get('date'))
+        if d is None:
+            continue
+        if earliest is None or d < earliest:
+            earliest = d
+    return earliest
+
+
 def season_name_for_date(value):
     """The ``"YYYY-YYYY"`` randonneuring season a date falls in (Nov 1 boundary),
     or ``None`` if the date can't be parsed."""

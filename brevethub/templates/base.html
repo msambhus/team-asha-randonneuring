@@ -52,7 +52,8 @@
     <div class="relative inline-block group">
         <button type="button" class="dropdown-trigger bg-transparent border-0 text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs" aria-haspopup="true" aria-expanded="false">{{ user_email }}</button>
         <div class="hidden group-hover:block absolute top-full right-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[180px] z-[200] overflow-hidden pt-0">
-            <a href="{{ url_for('main.profile') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Connections &amp; profile <span class="sr-only">My Profile</span></a>
+            <a href="{{ url_for('main.profile') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My Profile</a>
+            <a href="{{ url_for('register.edit_profile', next=request.path) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Registration profile</a>
             <a href="{{ url_for('main.dashboard') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My Rides</a>
             {% if user_rider_id %}
             <a href="{{ url_for('riders.rider_profile', rider_id=user_rider_id) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Public Rider Page</a>
@@ -63,6 +64,22 @@
     </div>
     {% else %}
     <a href="{{ url_for('auth.login') }}" class="text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white bg-white/10">Sign in</a>
+    {% endif %}
+    {% if is_admin_operator %}
+    <div class="relative inline-block group">
+        <button type="button" class="dropdown-trigger bg-transparent border-0 text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs bg-white/10 {% if request.blueprint == 'admin' %}bg-white/20 text-white{% endif %}" aria-haspopup="true" aria-expanded="false">Admin{% if admin_club_name %}: {{ admin_club_name }}{% endif %}</button>
+        <div class="hidden group-hover:block absolute top-full right-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[180px] z-[200] overflow-hidden pt-0">
+            <a href="{{ url_for('admin.events') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Events</a>
+            <a href="{{ url_for('admin.validations') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Validations</a>
+            <a href="{{ url_for('admin.rbac') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Admin accounts</a>
+            <a href="{{ url_for('admin.dashboard') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Operations</a>
+            <div class="border-t border-gray-100 mt-1 pt-1">
+              <form method="post" action="{{ url_for('admin.logout') }}">
+                <button type="submit" class="w-full text-left block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary bg-transparent border-0 cursor-pointer">Sign out (admin)</button>
+              </form>
+            </div>
+        </div>
+    </div>
     {% endif %}
 </nav>
 </div>

@@ -282,12 +282,12 @@
   border-left: 3px solid var(--rd-border);
   background: var(--rd-bg); font-size: 0.8rem;
 }
-.rd-pill.is-going.d200  { background: var(--d200-soft);  border-left-color:#48bb78; }
-.rd-pill.is-going.d300  { background: var(--d300-soft);  border-left-color:#4299e1; }
-.rd-pill.is-going.d400  { background: var(--d400-soft);  border-left-color:#ed8936; }
-.rd-pill.is-going.d600  { background: var(--d600-soft);  border-left-color:#e53e3e; }
-.rd-pill.is-going.d1000 { background: var(--d1000-soft); border-left-color:#805ad5; }
-.rd-pill.is-going.d1200 { background: var(--d1200-soft); border-left-color:#d53f8c; }
+.rd-pill.is-registered.d200  { background: var(--d200-soft);  border-left-color:#48bb78; }
+.rd-pill.is-registered.d300  { background: var(--d300-soft);  border-left-color:#4299e1; }
+.rd-pill.is-registered.d400  { background: var(--d400-soft);  border-left-color:#ed8936; }
+.rd-pill.is-registered.d600  { background: var(--d600-soft);  border-left-color:#e53e3e; }
+.rd-pill.is-registered.d1000 { background: var(--d1000-soft); border-left-color:#805ad5; }
+.rd-pill.is-registered.d1200 { background: var(--d1200-soft); border-left-color:#d53f8c; }
 .rd-pill.is-maybe { background: #fef3c7; border-left-color: #d69e2e; }
 .rd-pill.is-interested {
   background: #fff; border: 1px dashed var(--rd-border); border-left: 3px dashed #cbd5e0;
@@ -406,7 +406,7 @@
     {%- endmacro %}
 
     {% macro rider_card(r) %}
-      {% set going_count = (r.upcoming or [])|selectattr('status', 'equalto', 'GOING')|list|length %}
+      {% set registered_count = (r.upcoming or [])|selectattr('status', 'equalto', 'REGISTERED')|list|length %}
       {% set sr_done = ([r.sr_200, r.sr_300, r.sr_400, r.sr_600]|select|list|length) %}
       {% set sr_complete = (r.sr_200 and r.sr_300 and r.sr_400 and r.sr_600) %}
       {% set hue = ((r.rusa_id or 0)|int) % 360 %}
@@ -433,7 +433,7 @@
             <div class="rd-sub-meta">
               {% if r.is_pbp_ancien %}<span class="rd-pbp-tag" title="PBP Ancien — finished Paris-Brest-Paris">PBP Ancien</span>{% endif %}
               {{ r.season_rides or 0 }} done &middot;
-              {{ going_count }} planned
+              {{ registered_count }} planned
               {% if r.rusa_id %}&middot; RUSA #{{ r.rusa_id }}{% endif %}
             </div>
           </div>
@@ -491,7 +491,7 @@
               {% set st = (s.status or '')|upper %}
               {% set dc = dist_class(km) %}
               <span class="rd-pill {% if loop.index0 >= 5 %}is-hidden-more{% endif %}
-                           {%- if st == 'GOING' %} is-going {{ dc }}
+                           {%- if st == 'REGISTERED' %} is-registered {{ dc }}
                            {%- elif st == 'MAYBE' %} is-maybe
                            {%- else %} is-interested{% endif %}"
                     title="{{ s.name }}{% if st %} — {{ st|capitalize }}{% endif %}">
@@ -631,7 +631,7 @@
 ═══════════════════════════════════════════════════════════════════════════════
 
   Replace the existing riders_directory() route. It augments each rider with
-  (a) upcoming signups (GOING / MAYBE / INTERESTED, future-dated), and (b) a
+  (a) upcoming signups (REGISTERED / MAYBE / INTERESTED, future-dated), and (b) a
   12-element r12_months array — count of >=200 km finished brevets in each of
   the last 12 rolling months, index 0 = current month, 11 = 11 months ago.
 
@@ -664,7 +664,7 @@
                 JOIN ride ri ON ri.id = rr.ride_id
                 LEFT JOIN ride_plan rp ON rp.id = ri.ride_plan_id
                 WHERE rr.rider_id IN ({placeholders})
-                  AND rr.status IN ('GOING','MAYBE','INTERESTED')
+                  AND rr.status IN ('REGISTERED','MAYBE','INTERESTED')
                   AND ri.date >= CURRENT_DATE
                 ORDER BY ri.date ASC
             """, tuple(rider_ids)).fetchall()

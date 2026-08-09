@@ -3,15 +3,21 @@
 {% block content %}
 <div class="container section">
   <section class="card max-w-[440px] mx-auto">
-    <h1 class="text-primary text-[1.6rem] font-bold mb-2">Operations sign in</h1>
-    <p class="text-text-light mb-4">Use the BrevetHub administrator password.</p>
+    <h1 class="text-primary text-[1.6rem] font-bold mb-1">Club admin sign in</h1>
+    <p class="text-text-light mb-4">Enter your club admin username and password. Super-admins may leave the username blank.</p>
     <form method="post">
-      <div class="form-group">
+      <div class="form-group mb-3">
+        <label for="admin-username">Username</label>
+        <input id="admin-username" name="username" type="text"
+               autocomplete="username" autofocus
+               placeholder="club-admin-username">
+      </div>
+      <div class="form-group mb-4">
         <label for="admin-password">Password</label>
         <input id="admin-password" name="password" type="password"
-               autocomplete="current-password" required autofocus>
+               autocomplete="current-password" required>
       </div>
-      <button class="btn btn-primary" type="submit">Sign in</button>
+      <button class="btn btn-primary w-full" type="submit">Sign in</button>
     </form>
   </section>
 </div>

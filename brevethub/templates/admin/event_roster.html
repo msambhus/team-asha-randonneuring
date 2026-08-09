@@ -1,0 +1,385 @@
+{% extends "base.html" %}
+{% from "admin/partials/_actions_menu.html" import actions_menu, actions_menu_styles %}
+{% block title %}Roster: {{ event.name|clean_name }} — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+{{ actions_menu_styles() }}
+{% endblock %}
+
+{% block content %}
+{% set is_closed = event.closed_at %}
+{% set is_past = event.date and event.date < today_date %}
+
+<style>
+.roster-wrap { max-width: 1400px; margin: 0 auto; padding: 0 16px; }
+.event-hero { background: var(--primary); color: white; border-radius: 12px; padding: 20px 24px; margin: 12px 0 18px; }
+.event-hero h1 { font-size: 1.35rem; font-weight: 700; margin: 0 0 4px; }
+.event-hero .meta { opacity: .85; font-size: .88rem; }
+.status-pill { display:inline-block; padding:2px 8px; border-radius:99px; font-size:.7rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+.pill-open    { background:#dcfce7; color:#15803d; }
+.pill-in_progress { background:#fef9c3; color:#92400e; }
+.pill-closed  { background:#fee2e2; color:#b91c1c; }
+.pill-approved { background:#d1fae5; color:#065f46; }
+.pill-not_approved { background:#fee2e2; color:#b91c1c; }
+.pill-needs_more_evidence, .pill-needs_review { background:#fef9c3; color:#854d0e; }
+.pill-pending, .pill-none, .pill-pass { background:#f1f5f9; color:#64748b; }
+.filter-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+.filter-btn { padding:4px 12px; border-radius:6px; border:1.5px solid var(--border); background:white;
+              font-size:.78rem; font-weight:600; color:var(--text); cursor:pointer; text-decoration:none; }
+.filter-btn:hover,.filter-btn.active { background:var(--primary); color:white; border-color:var(--primary); }
+.roster-table { width:100%; border-collapse:collapse; font-size:.84rem; }
+.roster-table thead th {
+  position:sticky; top:0; z-index:1; background:#fff;
+}
+.roster-table th {
+  text-align:left; padding:8px 10px; border-bottom:2px solid var(--border);
+  font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-light);
+  white-space:nowrap; background:#fff;
+}
+.roster-table th.sortable { cursor:pointer; user-select:none; }
+.roster-table th.sortable:hover { color:var(--primary); }
+.roster-table th.sortable.is-active { color:var(--primary); font-weight:700; }
+.roster-table th.sortable .sort-indicator {
+  display:inline-block; margin-left:3px; opacity:.45; font-size:.65rem;
+}
+.roster-table th.sortable.is-active .sort-indicator { opacity:1; }
+.roster-table td { padding:12px 10px 12px 0; border-bottom:1px solid var(--border); vertical-align:middle; }
+.roster-table tr.row-withdrawal { background:#fef2f2; }
+.roster-table tr.row-withdrawal td { border-bottom-color:#fecaca; }
+.close-btn { padding:6px 16px; border-radius:6px; font-size:.82rem; font-weight:600; cursor:pointer; border:none; }
+.close-btn-close { background:#dc2626; color:white; }
+.close-btn-open  { background:#16a34a; color:white; }
+.roster-panel-head {
+  display:flex; justify-content:space-between; align-items:center;
+  flex-wrap:wrap; gap:12px 16px; padding:12px 0 14px;
+  border-bottom:1px solid var(--border); margin-bottom:4px;
+}
+.roster-stats { display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; }
+.roster-stat { display:flex; flex-direction:column; gap:2px; user-select:text; cursor:default; }
+.roster-stat-label {
+  font-size:.65rem; font-weight:700; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--text-light);
+}
+.roster-stat-value {
+  font-size:1.15rem; font-weight:700; color:var(--primary);
+  font-variant-numeric:tabular-nums; line-height:1.1;
+}
+.roster-stat-sub { font-size:.78rem; font-weight:600; color:var(--text-light); }
+.roster-stat-vol .roster-stat-value { color:#92400e; }
+.roster-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.roster-action-btn {
+  display:inline-flex; align-items:center; gap:4px;
+  padding:6px 12px; border-radius:6px;
+  border:1.5px solid var(--border); background:#fff;
+  font-size:.78rem; font-weight:600; color:var(--primary);
+  text-decoration:none; cursor:pointer; white-space:nowrap;
+  transition:background .12s ease, border-color .12s ease;
+}
+.roster-action-btn:hover {
+  background:#f1f5f9; border-color:var(--primary); text-decoration:none;
+}
+.roster-action-btn.is-accent {
+  background:#fffbeb; border-color:#fcd34d; color:#92400e;
+}
+.roster-action-btn.is-accent:hover { background:#fef3c7; border-color:#d97706; }
+</style>
+
+<div class="roster-wrap section">
+  <a href="{{ url_for('admin.events') }}" class="text-primary text-sm">← All events</a>
+
+  <div class="event-hero">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+      <div>
+        <h1>{{ event.name|clean_name }}</h1>
+        <p class="meta">
+          {{ event.date }} · {{ event.distance_km }} km
+          {% if event.start_time %} · {{ event.start_time }}{% endif %}
+          {% if event.start_location %} · {{ event.start_location }}{% endif %}
+          {% if event.club_name %} · {{ event.club_name }}{% endif %}
+        </p>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span class="status-pill pill-{{ event_lifecycle }}">
+          {% if event_lifecycle == 'closed' %}Closed
+          {% elif event_lifecycle == 'in_progress' %}In progress
+          {% else %}Open{% endif %}
+        </span>
+        <form method="post" style="margin:0;">
+          {% if event_lifecycle == 'closed' %}
+            <button type="submit" name="action" value="open_event" class="close-btn close-btn-open">Re-open event</button>
+          {% elif event_lifecycle == 'in_progress' %}
+            {% if can_close_event %}
+            <button type="submit" name="action" value="close_event" class="close-btn close-btn-close"
+                    onclick="return confirm('Close this event? Pending validations will be locked.')">Close event</button>
+            {% else %}
+            <button type="button" class="close-btn close-btn-close" disabled
+                    style="opacity:.45;cursor:not-allowed;"
+                    title="All riders must have a final result before closing">Close event</button>
+            {% endif %}
+          {% endif %}
+        </form>
+      </div>
+    </div>
+    {% if event_lifecycle == 'in_progress' and close_blockers %}
+    <p class="meta" style="margin:10px 0 0;opacity:.9;font-size:.82rem;">
+      Cannot close until every rider has FINISHED, DNF, DNS, OTL, or WITHDRAW —
+      pending withdrawals must be approved or rejected first.
+      {{ close_blockers|length }} still open:
+      {% for b in close_blockers[:5] %}{{ b.display_name }} ({{ b.status|status_label|upper }}){% if not loop.last %}, {% endif %}{% endfor %}{% if close_blockers|length > 5 %}…{% endif %}
+    </p>
+    {% endif %}
+  </div>
+
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in msgs %}
+    <div class="card mb-3 p-3 text-sm {% if cat == 'error' %}text-red-700 bg-red-50{% else %}text-green-800 bg-green-50{% endif %}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  {% if roster or roster_total is defined %}
+  <div class="filter-bar">
+    <span class="text-text-light text-xs font-semibold uppercase tracking-wide">Filter:</span>
+    <a href="{{ roster_page_url('') }}" class="filter-btn {% if not active_filter %}active{% endif %}">All ({{ roster_total }})</a>
+    <a href="{{ roster_page_url('registered') }}" class="filter-btn {% if active_filter == 'registered' %}active{% endif %}">Registered</a>
+    <a href="{{ roster_page_url('results') }}" class="filter-btn {% if active_filter == 'results' %}active{% endif %}">Results</a>
+    <a href="{{ roster_page_url('pending_proof') }}" class="filter-btn {% if active_filter == 'pending_proof' %}active{% endif %}">Proof pending</a>
+    <a href="{{ roster_page_url('no_proof') }}" class="filter-btn {% if active_filter == 'no_proof' %}active{% endif %}">No proof</a>
+    <a href="{{ roster_page_url('needs_review') }}" class="filter-btn {% if active_filter == 'needs_review' %}active{% endif %}">Needs review</a>
+    <a href="{{ roster_page_url('approved') }}" class="filter-btn {% if active_filter == 'approved' %}active{% endif %}">Approved</a>
+  </div>
+
+  <form method="post">
+    <input type="hidden" name="rider_id" value="">
+    <div class="card" style="overflow-x:auto;padding:0 16px;">
+      <div class="roster-panel-head">
+        <div class="roster-stats" aria-label="Roster summary">
+          <div class="roster-stat">
+            <span class="roster-stat-label">Riders</span>
+            <span class="roster-stat-value">
+              {{ roster|length }}{% if active_filter %}<span class="roster-stat-sub"> of {{ roster_total }}</span>{% endif %}
+            </span>
+          </div>
+        </div>
+        <div class="roster-actions" aria-label="Roster actions">
+          {{ actions_menu('roster-actions-menu', url_for('admin.export_roster_csv', event_id=event.id), roster|length > 0) }}
+          <a class="roster-action-btn" href="{{ url_for('admin.volunteer_slots_setup', event_id=event.id) }}">Volunteer roles</a>
+          {% if event.volunteer_enabled %}
+          <a class="roster-action-btn is-accent" href="{{ url_for('admin.volunteer_roster', event_id=event.id) }}">
+            Volunteers {{ volunteer_signed }}/{{ volunteer_total }} →
+          </a>
+          {% endif %}
+          {% if is_past %}<button type="button" class="roster-action-btn" onclick="markAllFinished()">Mark all finished</button>{% endif %}
+        </div>
+      </div>
+      <table class="roster-table">
+        <thead>
+          <tr>
+            <th class="sortable" data-sort-key="name" data-sort-type="text">Rider <span class="sort-indicator"></span></th>
+            <th class="sortable" data-sort-key="contact" data-sort-type="text">Contact <span class="sort-indicator"></span></th>
+            <th class="sortable" data-sort-key="progress" data-sort-type="text">Progress <span class="sort-indicator"></span></th>
+            <th class="sortable" data-sort-key="status" data-sort-type="text">Status <span class="sort-indicator"></span></th>
+            <th class="sortable" data-sort-key="finish" data-sort-type="text">Finish <span class="sort-indicator"></span></th>
+            <th class="sortable" data-sort-key="validation" data-sort-type="text">Validation <span class="sort-indicator"></span></th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="roster-table-body">
+          {% for r in roster %}
+          {% set vdecision = r.organizer_decision or ('pending' if r.validation_id else 'none') %}
+          <tr{% if r.status == 'withdrawal_requested' %} class="row-withdrawal"{% endif %}
+              data-sort-name="{{ r.display_name|lower }}"
+              data-sort-contact="{{ (r.email or r.phone or '')|lower }}"
+              data-sort-progress="{{ r.progress|lower }}"
+              data-sort-status="{{ (r.status or '')|lower }}"
+              data-sort-finish="{{ (r.finish_time or '')|lower }}"
+              data-sort-validation="{{ r.validation_label|lower }}">
+            <td>
+              <strong>{{ r.display_name }}</strong><br>
+              <span class="text-text-light text-xs">RUSA {{ r.rusa_id or '—' }}</span>
+              {% if r.city %}<br><span class="text-text-light text-xs">{{ r.city }}</span>{% endif %}
+            </td>
+            <td>
+              <a href="mailto:{{ r.email }}" class="text-primary text-xs">{{ r.email }}</a><br>
+              <span class="text-text-light text-xs">{{ r.phone or '—' }}</span>
+            </td>
+            <td>
+              <strong>{{ r.progress }}</strong>
+              {% if r.live_ride_id and r.event_today %}
+              <br><a href="{{ url_for('live.live_map', ride_id=r.live_ride_id) }}" class="text-primary text-xs font-semibold">Live →</a>
+              {% endif %}
+            </td>
+            <td>
+              <select name="status_{{ r.rider_id }}" class="form-input roster-status-select text-xs py-1">
+                {% for opt in ['registered', 'interested', 'withdrawal_requested', 'withdraw', 'finished', 'dnf', 'dns', 'otl', 'rejected'] %}
+                <option value="{{ opt }}" {% if r.status == opt %}selected{% endif %}>{{ opt|status_label|upper }}</option>
+                {% endfor %}
+              </select>
+              {% if r.registration_status %}
+              <br><span class="text-text-light text-xs">Reg: {{ r.registration_status|upper }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <input type="text" name="finish_{{ r.rider_id }}" value="{{ r.finish_time or '' }}"
+                     placeholder="h:mm:ss" class="form-input text-xs py-1 font-mono" style="width:88px;">
+            </td>
+            <td>
+              <span class="status-pill pill-{{ vdecision }}">{{ r.validation_label }}</span>
+              {% if r.validation_id %}
+              <br><a href="{{ url_for('admin.validation_detail', submission_id=r.validation_id) }}"
+                     class="text-primary text-xs font-semibold">View proof →</a>
+              {% elif r.status == 'finished' %}
+              <br><a href="{{ url_for('admin.validation_new', event_id=event.id, rider_id=r.rider_id) }}"
+                     class="text-primary text-xs font-semibold">+ Submit proof</a>
+              {% endif %}
+            </td>
+            <td>
+              {% if r.status == 'withdrawal_requested' %}
+              <button type="submit" name="action" value="approve_withdrawal" formaction="{{ url_for('admin.event_roster', event_id=event.id) }}"
+                      class="btn btn-secondary btn-sm" onclick="this.form.rider_id.value='{{ r.rider_id }}'">Approve</button>
+              <button type="submit" name="action" value="reject_withdrawal" formaction="{{ url_for('admin.event_roster', event_id=event.id) }}"
+                      class="btn btn-secondary btn-sm" style="color:#b91c1c;border-color:#fecaca;"
+                      onclick="this.form.rider_id.value='{{ r.rider_id }}'">Reject</button>
+              {% else %}
+              <button type="submit" name="action" value="remove" formaction="{{ url_for('admin.event_roster', event_id=event.id) }}"
+                      class="btn btn-secondary btn-sm" style="color:#b91c1c;border-color:#fecaca;"
+                      onclick="if(!confirm('Remove this rider from the roster?')) return false; this.form.rider_id.value='{{ r.rider_id }}'">Remove</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="mt-4 flex gap-2 flex-wrap">
+      <button type="submit" class="btn btn-primary">Save roster</button>
+      <a href="{{ url_for('admin.events') }}" class="btn btn-secondary">← All events</a>
+    </div>
+  </form>
+  {% else %}
+  <div class="card p-6 text-text-light text-sm">No sign-ups for this event yet.</div>
+  {% endif %}
+</div>
+
+<script src="{{ url_for('static', filename='js/admin-actions-menu.js') }}"></script>
+<script>
+function markAllFinished() {
+  document.querySelectorAll('.roster-status-select').forEach(function (sel) {
+    sel.value = 'finished';
+  });
+}
+
+{% if roster %}
+(function () {
+  var emails = {{ roster_emails|tojson }};
+  var rows = {{ roster_copy_rows|tojson }};
+  var includeResults = {{ roster_copy_include_results|tojson }};
+  var menu = document.getElementById('roster-actions-menu');
+  var tbody = document.getElementById('roster-table-body');
+  var currentSort = { key: 'name', dir: 'asc' };
+
+  function parseSortParam(raw) {
+    if (!raw || raw.indexOf(':') === -1) return null;
+    var parts = raw.split(':');
+    return { key: parts[0], dir: parts[1] === 'desc' ? 'desc' : 'asc' };
+  }
+
+  function sortValue(row, key) {
+    return (row.getAttribute('data-sort-' + key) || '').toLowerCase();
+  }
+
+  function compareRows(a, b, key, dir) {
+    var cmp = sortValue(a, key).localeCompare(sortValue(b, key));
+    return dir === 'asc' ? cmp : -cmp;
+  }
+
+  function updateSortUI() {
+    document.querySelectorAll('.roster-table th.sortable').forEach(function (th) {
+      var key = th.getAttribute('data-sort-key');
+      var active = key === currentSort.key;
+      th.classList.toggle('is-active', active);
+      var indicator = th.querySelector('.sort-indicator');
+      if (indicator) indicator.textContent = active ? (currentSort.dir === 'asc' ? '▲' : '▼') : '';
+    });
+  }
+
+  function applySort(key, dir, syncUrl) {
+    if (!tbody) return;
+    currentSort = { key: key, dir: dir };
+    var trs = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    trs.sort(function (a, b) { return compareRows(a, b, key, dir); });
+    trs.forEach(function (tr) { tbody.appendChild(tr); });
+    updateSortUI();
+    if (syncUrl !== false) {
+      var url = new URL(window.location.href);
+      if (key === 'name' && dir === 'asc') url.searchParams.delete('sort');
+      else url.searchParams.set('sort', key + ':' + dir);
+      window.history.replaceState({}, '', url);
+    }
+  }
+
+  document.querySelectorAll('.roster-table th.sortable').forEach(function (th) {
+    th.addEventListener('click', function () {
+      var key = th.getAttribute('data-sort-key');
+      if (!key) return;
+      var dir = (currentSort.key === key && currentSort.dir === 'asc') ? 'desc' : 'asc';
+      applySort(key, dir);
+    });
+  });
+
+  var initialSort = parseSortParam('{{ sort_param|e }}') || { key: 'name', dir: 'asc' };
+  applySort(initialSort.key, initialSort.dir, false);
+
+  if (!menu || !menu.registerActionHandlers) return;
+
+  function cleanCell(val) {
+    return String(val == null ? '' : val).replace(/[\t\r\n]+/g, ' ').trim();
+  }
+
+  function buildListTsv() {
+    var headers = includeResults
+      ? ['Name', 'RUSA ID', 'Status', 'Finish']
+      : ['Name', 'RUSA ID'];
+    var lines = [headers.join('\t')];
+    rows.forEach(function (r) {
+      var cols = [cleanCell(r.name), cleanCell(r.rusa_id) || '—'];
+      if (includeResults) {
+        cols.push(cleanCell(r.status) || '—', cleanCell(r.finish) || '—');
+      }
+      lines.push(cols.join('\t'));
+    });
+    return lines.join('\n');
+  }
+
+  function buildListHtml() {
+    var esc = function (s) {
+      return cleanCell(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    };
+    var headers = includeResults
+      ? ['Name', 'RUSA ID', 'Status', 'Finish']
+      : ['Name', 'RUSA ID'];
+    var html = '<table border="1" cellpadding="4" cellspacing="0"><thead><tr>';
+    headers.forEach(function (h) { html += '<th>' + h + '</th>'; });
+    html += '</tr></thead><tbody>';
+    rows.forEach(function (r) {
+      html += '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.rusa_id || '—') + '</td>';
+      if (includeResults) {
+        html += '<td>' + esc(r.status || '—') + '</td><td>' + esc(r.finish || '—') + '</td>';
+      }
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    return html;
+  }
+
+  menu.registerActionHandlers({
+    'copy-emails': function () {
+      return window.adminActionsCopyText(emails.join(', '));
+    },
+    'copy-list': function () {
+      return window.adminActionsCopyRich(buildListTsv(), buildListHtml());
+    },
+  });
+})();
+{% endif %}
+</script>
+{% endblock %}

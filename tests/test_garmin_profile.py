@@ -126,7 +126,7 @@ def test_my_rides_collapses_explicit_garmin_strava_match(client, app):
                    "id": 3091, "name": "SCR 200K",
                    "date": "2026-08-15", "distance_km": 200,
                    "distance_miles": None, "elevation_ft": 5000,
-                   "signup_status": "GOING", "plan_slug": "scr-200k",
+                   "signup_status": "REGISTERED", "plan_slug": "scr-200k",
                }]), \
          patch("routes.auth.models.get_strava_connection",
                return_value={"rider_id": 42}), \

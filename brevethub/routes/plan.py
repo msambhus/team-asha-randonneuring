@@ -710,12 +710,12 @@ def _build_v2_context(event, plan, stops, variant, rider=None):
         avg_elapsed_speed = round(total_mi / (total_time / 60.0), 1) if total_time > 0 else 0
 
     try:
-        riders = models.get_event_going_riders(event['id']) or []
+        riders = models.get_event_registered_riders(event['id']) or []
     except Exception as e:  # pragma: no cover - defensive; keep the page up
         current_app.logger.warning('Roster lookup failed for event %s: %s',
                                     event.get('id'), e)
         riders = []
-    going_count = sum(1 for r in riders if r['status'] == models.RideStatus.GOING.value)
+    registered_count = sum(1 for r in riders if r['status'] == models.RideStatus.REGISTERED.value)
 
     # Strategies-tab save/community state (Phase 2).
     save_state, saved_pace_id, saved_is_public, community_plans = \
@@ -771,7 +771,7 @@ def _build_v2_context(event, plan, stops, variant, rider=None):
         'avg_elapsed_speed': avg_elapsed_speed,
         'weighted_difficulty': _v2_weighted_difficulty(v2_stops),
         'riders': riders,
-        'going_count': going_count,
+        'registered_count': registered_count,
     }
 
 

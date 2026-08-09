@@ -1,0 +1,44 @@
+{% macro actions_menu_styles() %}
+<style>
+.admin-actions-menu { position:relative; display:inline-block; }
+.admin-actions-menu-btn {
+  display:inline-flex; align-items:center; gap:4px;
+  padding:6px 12px; border-radius:6px; border:1.5px solid var(--border);
+  background:#fff; font-size:.78rem; font-weight:600; color:var(--primary);
+  cursor:pointer; white-space:nowrap;
+}
+.admin-actions-menu-btn:hover:not(:disabled) { background:#f1f5f9; border-color:var(--primary); }
+.admin-actions-menu-btn:disabled { opacity:.45; cursor:not-allowed; }
+.admin-actions-menu-btn.is-flash { border-color:#15803d; color:#15803d; background:#f0fdf4; }
+.admin-actions-menu-panel {
+  position:absolute; right:0; top:calc(100% + 4px); z-index:40;
+  min-width:168px; padding:4px;
+  background:#fff; border:1px solid var(--border); border-radius:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,.12);
+}
+.admin-actions-menu-panel[hidden] { display:none; }
+.admin-actions-menu-panel button,
+.admin-actions-menu-panel a {
+  display:block; width:100%; text-align:left;
+  padding:8px 12px; border:0; border-radius:6px;
+  background:transparent; font-size:.78rem; font-weight:600;
+  color:var(--text); text-decoration:none; cursor:pointer;
+}
+.admin-actions-menu-panel button:hover,
+.admin-actions-menu-panel a:hover { background:#f1f5f9; color:var(--primary); }
+</style>
+{% endmacro %}
+
+{% macro actions_menu(menu_id, csv_url, enabled=true) %}
+<div class="admin-actions-menu" id="{{ menu_id }}" data-actions-menu>
+  <button type="button" class="admin-actions-menu-btn" aria-haspopup="menu" aria-expanded="false"
+          {% if not enabled %}disabled title="Nothing to export"{% endif %}>
+    Actions <span aria-hidden="true">▾</span>
+  </button>
+  <div class="admin-actions-menu-panel" hidden role="menu">
+    <button type="button" role="menuitem" data-action="copy-emails">Copy emails</button>
+    <button type="button" role="menuitem" data-action="copy-list">Copy list</button>
+    <a href="{{ csv_url }}" role="menuitem" data-action="csv">Download CSV</a>
+  </div>
+</div>
+{% endmacro %}

@@ -482,7 +482,7 @@ def _bearer(app, user_id=1, rider_id=7):
 def test_positions_accepts_bearer_token_without_session(client, app):
     rows = [{'rider_id': 7, 'name': 'Tok Rider', 'lat': 37.8, 'lng': -122.2,
              'recorded_at': __import__('datetime').datetime.now(
-                 __import__('datetime').timezone.utc), 'status': 'GOING', 'source': 'garmin'}]
+                 __import__('datetime').timezone.utc), 'status': 'REGISTERED', 'source': 'garmin'}]
     with patch('routes.live.get_latest_positions_for_ride', return_value=rows), \
          patch('routes.live._ride_live_context', return_value={'has_route': False}), \
          patch('routes.live.get_positions_for_rider_since', return_value=[]):
@@ -518,7 +518,7 @@ def test_beacon_accepts_bearer_token_without_session(client, app):
 def test_rides_endpoint_token_authed(client, app):
     rides = [
         {'id': 5, 'name': 'Mt Hamilton 200K', 'date': '2026-07-04',
-         'distance_km': 200, 'signup_status': 'GOING'},
+         'distance_km': 200, 'signup_status': 'REGISTERED'},
         {'id': 6, 'name': 'Coast 300K', 'date': '2026-07-18',
          'distance_km': 300, 'signup_status': 'INTERESTED'},
     ]
@@ -528,7 +528,7 @@ def test_rides_endpoint_token_authed(client, app):
     data = resp.get_json()['rides']
     assert [r['id'] for r in data] == [5, 6]
     assert data[0]['name'] == 'Mt Hamilton 200K'
-    assert data[0]['signup_status'] == 'GOING'
+    assert data[0]['signup_status'] == 'REGISTERED'
 
 
 def test_rides_endpoint_requires_auth(client):
@@ -576,7 +576,7 @@ def test_calendar_endpoint_token_authed(client, app):
     ]
     with patch('models.get_all_upcoming_events', return_value=events) as calendar, \
          patch('models.get_rider_signup_statuses_batch', return_value={
-             5: {'status': 'GOING'},
+             5: {'status': 'REGISTERED'},
          }):
         resp = client.get('/api/calendar', headers=_bearer(app, rider_id=7))
     assert resp.status_code == 200
@@ -584,7 +584,7 @@ def test_calendar_endpoint_token_authed(client, app):
     assert [r['id'] for r in data] == [5, 9]
     # Team Asha ride keeps its flag; external SFR brevet is included (the bug fix).
     assert data[0]['name'] == 'Mt Hamilton 200K' and data[0]['is_team_ride'] is True
-    assert data[0]['signup_status'] == 'GOING'
+    assert data[0]['signup_status'] == 'REGISTERED'
     assert data[1]['signup_status'] is None
     assert data[1]['club_name'] == 'San Francisco Randonneurs' and data[1]['is_team_ride'] is False
     assert data[1]['is_live'] is True
@@ -598,10 +598,10 @@ def test_calendar_endpoint_requires_auth(client):
 def test_mobile_calendar_status_uses_token_rider(client, app):
     with patch('models.get_ride_by_id', return_value={'id': 5}), \
          patch('models.signup_rider', return_value=True) as signup:
-        resp = client.post('/api/calendar/5/status', json={'status': 'GOING'},
+        resp = client.post('/api/calendar/5/status', json={'status': 'REGISTERED'},
                            headers=_bearer(app, user_id=3, rider_id=7))
     assert resp.status_code == 200
-    assert resp.get_json()['status'] == 'GOING'
+    assert resp.get_json()['status'] == 'REGISTERED'
     signup.assert_called_once_with(7, 5)
 
 
@@ -616,7 +616,7 @@ def test_mobile_calendar_not_going_removes_own_signup(client, app):
 
 
 def test_mobile_calendar_status_requires_profile(client, app):
-    resp = client.post('/api/calendar/5/status', json={'status': 'GOING'},
+    resp = client.post('/api/calendar/5/status', json={'status': 'REGISTERED'},
                        headers=_bearer(app, rider_id=None))
     assert resp.status_code == 403
 

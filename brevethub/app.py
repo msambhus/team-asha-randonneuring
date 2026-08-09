@@ -101,6 +101,8 @@ def create_app():
     # Community surfaces (club directory / season rosters / public
     # rider profiles), all club-scoped and login-gated.
     from brevethub.routes.riders import riders_bp
+    from brevethub.routes.register import register_bp
+    from brevethub.routes.volunteer import volunteer_bp
     # BH-native mobile bearer-token mint (login-gated). Server half of a future
     # BrevetHub mobile client; no BH client consumes it yet.
     from brevethub.auth_api import api_auth_bp
@@ -116,6 +118,8 @@ def create_app():
     app.register_blueprint(analysis_bp)
     app.register_blueprint(tools_bp, url_prefix='/tools')
     app.register_blueprint(riders_bp)
+    app.register_blueprint(register_bp)
+    app.register_blueprint(volunteer_bp)
     # cron_bp OWNS the '/cron' segment; the route decorator is leaf-only
     # ('/refresh-calendar') so the composed URL is exactly '/cron/refresh-calendar'
     # (matches vercel.json's cron path). Never put '/cron' in the decorator too.
@@ -139,6 +143,10 @@ def create_app():
             'user_logged_in': bool(session.get('rider_id')),
             'user_email': session.get('email'),
             'user_rider_id': session.get('rider_id'),
+            # True when a club admin or super-admin has authenticated via /admin/login.
+            'is_admin_operator': bool(session.get('brevethub_operator_club_id')),
+            'admin_club_name': session.get('brevethub_operator_club_name'),
+            'admin_username': session.get('brevethub_operator_username'),
             # Seasons for the Riders nav dropdown. Clock-derived, club-agnostic.
             'nav_seasons': _nav_seasons(),
         }
@@ -155,6 +163,11 @@ def create_app():
             return f"{int(value):,}"
         except (ValueError, TypeError):
             return value
+
+    @app.template_filter('status_label')
+    def status_label_filter(value):
+        from brevethub.services.registration import status_display_label
+        return status_display_label(value)
 
     return app
 

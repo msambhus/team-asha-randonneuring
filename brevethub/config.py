@@ -48,6 +48,8 @@ class Config:
     GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
     GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
     GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
+    # Optional override for OAuth redirect (local dev defaults to localhost:PORT).
+    GOOGLE_OAUTH_REDIRECT_URI = os.environ.get('GOOGLE_OAUTH_REDIRECT_URI')
 
     # Strava OAuth — reuse Team Asha's existing Strava app (client 113090) by
     # default; the owner sets STRAVA_CLIENT_SECRET on the BrevetHub Vercel

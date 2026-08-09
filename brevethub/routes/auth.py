@@ -6,6 +6,8 @@ first sign-in a `rp_rider` row is created and the user is sent to /signup to add
 an optional RUSA ID and pick a club; returning users with a completed profile go
 straight to the dashboard.
 """
+import os
+
 from authlib.integrations.flask_client import OAuth
 from flask import (
     Blueprint, current_app, flash, redirect, render_template, request,
@@ -19,6 +21,17 @@ auth_bp = Blueprint('auth', __name__)
 
 # OAuth client, initialized against the app in the factory.
 oauth = OAuth()
+
+
+def google_oauth_redirect_uri():
+    """Redirect URI sent to Google. Local dev uses localhost (not 127.0.0.1)."""
+    override = current_app.config.get('GOOGLE_OAUTH_REDIRECT_URI')
+    if override:
+        return override
+    if os.environ.get('VERCEL_ENV') != 'production':
+        port = os.environ.get('PORT', '5001')
+        return f'http://localhost:{port}/auth/google/callback'
+    return url_for('auth.google_callback', _external=True)
 
 
 def init_oauth(app):
@@ -47,7 +60,7 @@ def login():
 @auth_bp.route('/google/login')
 def google_login():
     """Kick off the Google OAuth redirect."""
-    redirect_uri = url_for('auth.google_callback', _external=True)
+    redirect_uri = google_oauth_redirect_uri()
     return oauth.google.authorize_redirect(redirect_uri)
 
 

@@ -418,7 +418,7 @@ def _do_gradual_backfill(connections, force_rider_id=None):
 
 @cron_bp.route('/finalize-rides', methods=['POST'])
 def finalize_rides():
-    """Auto-finalize past rides: mark GOING riders as FINISHED.
+    """Auto-finalize past rides: mark REGISTERED riders as FINISHED.
 
     Called daily by GitHub Actions to ensure ride results are recorded.
     Admins can then fix DNF/DNS/OTL via the admin dashboard.

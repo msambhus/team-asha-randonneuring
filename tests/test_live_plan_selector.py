@@ -190,7 +190,7 @@ def _arrival_ctx(start_dt, **over):
 
 def _row():
     return {'rider_id': 7, 'name': 'Asha Rider', 'lat': 37.0, 'lng': -121.99,
-            'recorded_at': _now() - timedelta(minutes=2), 'status': 'GOING',
+            'recorded_at': _now() - timedelta(minutes=2), 'status': 'REGISTERED',
             'speed': 6.0, 'heart_rate': None, 'power': None, 'cadence': None}
 
 

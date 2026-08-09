@@ -63,7 +63,7 @@ FIXTURE_RESULTS = {
     ]},
     "upcoming_rides": {"rows": [
         {"name": "Cascade 400", "date": "2026-04-12", "distance_km": 400,
-         "status": "GOING"},
+         "status": "REGISTERED"},
     ]},
     "career_stats": {"rows": [
         {"total_rides_finished": 28, "total_km": 7850,

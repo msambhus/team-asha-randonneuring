@@ -161,7 +161,7 @@ def test_positions_includes_telemetry(client):
     _login(client)
     now = _now()
     row = {'rider_id': 7, 'name': 'Asha Rider', 'lat': 37.0, 'lng': -121.99,
-           'recorded_at': now - timedelta(minutes=2), 'status': 'GOING',
+           'recorded_at': now - timedelta(minutes=2), 'status': 'REGISTERED',
            'speed': 6.0, 'heart_rate': 140, 'power': None, 'cadence': None}
     history = [
         {'lat': 37.0, 'lng': -122.0, 'recorded_at': now - timedelta(minutes=30), 'speed': 5.0},
@@ -208,14 +208,14 @@ def test_plan_dot_color_precedence():
     offroute = {'on_route': False}
     noplan = {'on_route': True, 'plan': None}
 
-    assert _plan_dot_color('GOING', ahead) == PLAN_AHEAD_COLOR
-    assert _plan_dot_color('GOING', on) == PLAN_AHEAD_COLOR       # on-plan = green
-    assert _plan_dot_color('GOING', behind) == PLAN_BEHIND_COLOR
-    assert _plan_dot_color('GOING', offroute) == PLAN_UNKNOWN_COLOR   # off-route → grey
+    assert _plan_dot_color('REGISTERED', ahead) == PLAN_AHEAD_COLOR
+    assert _plan_dot_color('REGISTERED', on) == PLAN_AHEAD_COLOR       # on-plan = green
+    assert _plan_dot_color('REGISTERED', behind) == PLAN_BEHIND_COLOR
+    assert _plan_dot_color('REGISTERED', offroute) == PLAN_UNKNOWN_COLOR   # off-route → grey
     assert _plan_dot_color('FINISHED', ahead) == PLAN_UNKNOWN_COLOR   # finished → grey
     # No plan matched → fall back to the signup-status color (no regression).
     assert _plan_dot_color('INTERESTED', noplan) == STATUS_COLORS['INTERESTED']
-    assert _plan_dot_color('GOING', None) == STATUS_COLORS['GOING']
+    assert _plan_dot_color('REGISTERED', None) == STATUS_COLORS['REGISTERED']
 
 
 def test_plan_dot_color_keeps_pace_color_when_stale():
@@ -225,8 +225,8 @@ def test_plan_dot_color_keeps_pace_color_when_stale():
     from routes.live import _plan_dot_color, PLAN_BEHIND_COLOR, PLAN_AHEAD_COLOR
     behind = {'on_route': True, 'plan': {'status': 'behind', 'delta_min': -10}}
     ahead = {'on_route': True, 'plan': {'status': 'ahead', 'delta_min': 10}}
-    assert _plan_dot_color('GOING', behind) == PLAN_BEHIND_COLOR
-    assert _plan_dot_color('GOING', ahead) == PLAN_AHEAD_COLOR
+    assert _plan_dot_color('REGISTERED', behind) == PLAN_BEHIND_COLOR
+    assert _plan_dot_color('REGISTERED', ahead) == PLAN_AHEAD_COLOR
 
 
 def test_ride_live_context_resolves_plan_and_times_it():
@@ -314,7 +314,7 @@ def _arrival_ctx(start_dt, **over):
 def _run_positions(client, ctx, row_over=None):
     now = _now()
     row = {'rider_id': 7, 'name': 'Asha Rider', 'lat': 37.0, 'lng': -121.99,
-           'recorded_at': now - timedelta(minutes=2), 'status': 'GOING',
+           'recorded_at': now - timedelta(minutes=2), 'status': 'REGISTERED',
            'speed': 6.0, 'heart_rate': None, 'power': None, 'cadence': None}
     if row_over:
         row.update(row_over)
@@ -456,7 +456,7 @@ def test_positions_wind_shows_mph_type_and_arrow(client):
         {'dist_m': 1778, 'headwind_kmh': 2, 'crosswind_kmh': 15},     # ahead: crosswind
     ])
     row = {'rider_id': 7, 'name': 'Asha Rider', 'lat': 37.0, 'lng': -121.99,
-           'recorded_at': now - timedelta(minutes=2), 'status': 'GOING',
+           'recorded_at': now - timedelta(minutes=2), 'status': 'REGISTERED',
            'speed': 6.0, 'heart_rate': None, 'power': None, 'cadence': None}
     history = [
         {'lat': 37.0, 'lng': -122.0, 'recorded_at': now - timedelta(minutes=30), 'speed': 5.0},
@@ -485,7 +485,7 @@ def test_positions_moving_time_not_more_than_elapsed(client):
                 'recorded_at': now - timedelta(minutes=90 - 5 * i), 'speed': 5.0}
                for i in range(19)]                                          # 90→0 min
     row = {'rider_id': 7, 'name': 'Sreeram', 'lat': 37.0, 'lng': -121.91,
-           'recorded_at': now, 'status': 'GOING',
+           'recorded_at': now, 'status': 'REGISTERED',
            'speed': 5.0, 'heart_rate': None, 'power': None, 'cadence': None}
     with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
          patch('routes.live._ride_live_context', return_value=ctx), \
@@ -509,7 +509,7 @@ def test_positions_moving_plus_stopped_equals_elapsed(client):
                 'recorded_at': now - timedelta(minutes=m), 'speed': 5.0}
                for i, m in enumerate(mins)]
     row = {'rider_id': 7, 'name': 'Asha Rider', 'lat': 37.0, 'lng': -121.91,
-           'recorded_at': now, 'status': 'GOING',
+           'recorded_at': now, 'status': 'REGISTERED',
            'speed': 5.0, 'heart_rate': None, 'power': None, 'cadence': None}
     with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
          patch('routes.live._ride_live_context', return_value=ctx), \
@@ -528,7 +528,7 @@ def test_positions_time_left_is_limit_minus_elapsed(client):
                time_limit_min=2400,                                  # 40h (a 600)
                ride_start_iso=(now - timedelta(minutes=120)).isoformat())  # 2h in
     row = {'rider_id': 7, 'name': 'Asha Rider', 'lat': 37.0, 'lng': -121.99,
-           'recorded_at': now - timedelta(minutes=2), 'status': 'GOING',
+           'recorded_at': now - timedelta(minutes=2), 'status': 'REGISTERED',
            'speed': 6.0, 'heart_rate': None, 'power': None, 'cadence': None}
     with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
          patch('routes.live._ride_live_context', return_value=ctx), \
@@ -560,7 +560,7 @@ def test_ride_context_time_limit_from_event_and_distance(app):
 def test_positions_without_route_still_shows_source_metrics(client):
     _login(client)
     row = {'rider_id': 7, 'name': 'R', 'lat': 37.0, 'lng': -122.0,
-           'recorded_at': _now(), 'status': 'GOING',
+           'recorded_at': _now(), 'status': 'REGISTERED',
            'speed': 5.0, 'heart_rate': None, 'power': None, 'cadence': None}
     no_route_ctx = dict(_FAKE_CTX, has_route=False)
     with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
@@ -580,7 +580,7 @@ def test_positions_off_route_rider_shown_without_route_metrics(client):
     _login(client)
     # _FAKE_CTX track is around lat 37.0; put the rider ~22 km north.
     row = {'rider_id': 7, 'name': 'Off Route', 'lat': 37.2, 'lng': -121.99,
-           'recorded_at': _now(), 'status': 'GOING',
+           'recorded_at': _now(), 'status': 'REGISTERED',
            'speed': 5.0, 'heart_rate': None, 'power': None, 'cadence': None}
     with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
          patch('routes.live._ride_live_context', return_value=_FAKE_CTX), \
@@ -601,7 +601,7 @@ def test_positions_off_route_bounce_with_history_stays_shown(client):
     _login(client)
     now = _now()
     row = {'rider_id': 7, 'name': 'Bounce', 'lat': 37.2, 'lng': -121.99,   # current fix off-route
-           'recorded_at': now, 'status': 'GOING',
+           'recorded_at': now, 'status': 'REGISTERED',
            'speed': 5.0, 'heart_rate': None, 'power': None, 'cadence': None}
     # Recent history is ON the route (near the _FAKE_CTX track at lat 37.0); the
     # newest fix (matching `row`) is the off-route bounce at lat 37.2.
@@ -631,7 +631,7 @@ def test_positions_future_ride_elapsed_is_none(client):
     future = dict(_FAKE_CTX,
                   ride_start_iso=(_now() + timedelta(days=3)).isoformat())
     row = {'rider_id': 7, 'name': 'R', 'lat': 37.0, 'lng': -121.99,
-           'recorded_at': _now(), 'status': 'GOING',
+           'recorded_at': _now(), 'status': 'REGISTERED',
            'speed': None, 'heart_rate': None, 'power': None, 'cadence': None}
     with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
          patch('routes.live._ride_live_context', return_value=future), \
@@ -648,7 +648,7 @@ def _telemetry_with_start(client, ride_start_dt):
     ctx = dict(_FAKE_CTX, ride_start_iso=ride_start_dt.isoformat())
     now = _now()
     row = {'rider_id': 7, 'name': 'R', 'lat': 37.0, 'lng': -121.99,
-           'recorded_at': now - timedelta(minutes=1), 'status': 'GOING',
+           'recorded_at': now - timedelta(minutes=1), 'status': 'REGISTERED',
            'speed': None, 'heart_rate': None, 'power': None, 'cadence': None}
     with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
          patch('routes.live._ride_live_context', return_value=ctx), \
@@ -776,7 +776,7 @@ def test_ride_context_cached_across_polls(client):
         for point in route['track_points']
     ]
     row = {'rider_id': 7, 'name': 'R', 'lat': 37.0, 'lng': -121.99,
-           'recorded_at': _now() - timedelta(minutes=1), 'status': 'GOING',
+           'recorded_at': _now() - timedelta(minutes=1), 'status': 'REGISTERED',
            'speed': None, 'heart_rate': None, 'power': None, 'cadence': None}
     with patch('routes.live.get_latest_positions_for_ride', return_value=[row]), \
          patch('routes.live.get_ride_by_id', return_value=ride), \
