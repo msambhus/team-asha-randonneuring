@@ -23,6 +23,7 @@ import io
 import json
 import zlib
 from datetime import datetime, time, timezone
+import math
 from functools import wraps
 from zoneinfo import ZoneInfo
 
@@ -34,12 +35,92 @@ from brevethub.decorators import current_rider, login_required
 from brevethub.shared.operations_status import route_plan_status
 from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
                                     extract_rwgps_route_id, fetch_route)
+from brevethub.shared.weather import fetch_historical_wind, headwind_component
 from brevethub.services.ride_validation import (
     TrackPoint, combine_recordings, fingerprint, parse_fit, parse_gpx,
     validate_submission,
 )
 
 admin_bp = Blueprint('admin', __name__)
+
+
+def _validation_visualization(submission):
+    """Build compact official-route/activity data for the organizer comparison view."""
+    route_id = extract_rwgps_route_id(submission.get('rwgps_url') or '')
+    route = models.get_rp_route_elevation_track(route_id) if route_id else []
+    raw_track = submission.get('normalized_track') or []
+    if not route or len(raw_track) < 2:
+        return {'route': route or [], 'track': raw_track, 'samples': [], 'wind_available': False}
+
+    track = []
+    distance_m = 0.0
+    previous = None
+    for row in raw_track:
+        if len(row) < 3:
+            continue
+        try:
+            timestamp = datetime.fromisoformat(str(row[2]).replace('Z', '+00:00'))
+            point = {'lat': float(row[0]), 'lng': float(row[1]), 'timestamp': timestamp,
+                     'elevation_m': float(row[3]) if len(row) > 3 and row[3] is not None else None}
+        except (TypeError, ValueError):
+            continue
+        if previous:
+            dlat = math.radians(point['lat'] - previous['lat'])
+            dlng = math.radians(point['lng'] - previous['lng'])
+            a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(previous['lat'])) * math.cos(math.radians(point['lat'])) * math.sin(dlng / 2) ** 2
+            distance_m += 6371000 * 2 * math.asin(min(1, math.sqrt(a)))
+            seconds = max(1, (point['timestamp'] - previous['timestamp']).total_seconds())
+            point['speed_mph'] = distance_m and (distance_m - previous['distance_m']) / seconds * 2.236936 or 0
+        else:
+            point['speed_mph'] = 0
+        point['distance_m'] = distance_m
+        track.append(point)
+        previous = point
+    if len(track) < 2:
+        return {'route': route, 'track': raw_track, 'samples': [], 'wind_available': False}
+
+    route_samples = route[::max(1, len(route) // 180)]
+    coords = [{'lat': float(p['lat']), 'lng': float(p['lng'])} for p in route_samples]
+    winds = []
+    try:
+        winds, _ = fetch_historical_wind(coords[::max(1, len(coords) // 8)], submission['event_date'])
+    except Exception:
+        winds = []
+    wind_coords = coords[::max(1, len(coords) // 8)] if winds else []
+    samples = []
+    for p in route_samples:
+        route_dist = float(p.get('dist_m') or 0)
+        activity = min(track, key=lambda t: abs(t['distance_m'] - route_dist))
+        idx = route.index(p)
+        before = route[max(0, idx - 1)]
+        after = route[min(len(route) - 1, idx + 1)]
+        run = max(1, float(after.get('dist_m') or 0) - float(before.get('dist_m') or 0))
+        grade = ((float(after.get('e_m') or 0) - float(before.get('e_m') or 0)) / run) * 100
+        headwind_mph = None
+        if winds and wind_coords:
+            wi = min(range(len(wind_coords)), key=lambda i: (wind_coords[i]['lat'] - p['lat']) ** 2 + (wind_coords[i]['lng'] - p['lng']) ** 2)
+            weather = winds[wi].get('hourly', {}) if wi < len(winds) else {}
+            times = weather.get('time') or []
+            if times:
+                target = activity['timestamp'].replace(tzinfo=None)
+                ti = min(range(len(times)), key=lambda i: abs(datetime.fromisoformat(times[i]).replace(tzinfo=None) - target))
+                speed_kmh = (weather.get('wind_speed_10m') or [0])[ti]
+                direction = (weather.get('wind_direction_10m') or [0])[ti]
+                bearing = math.degrees(math.atan2(after['lng'] - before['lng'], after['lat'] - before['lat'])) % 360
+                headwind_mph = round(headwind_component(float(speed_kmh), float(direction), bearing) * 0.621371, 1)
+        speed = round(float(activity.get('speed_mph') or 0), 1)
+        anomaly = None
+        if speed > 35 and grade > -5:
+            anomaly = 'High speed for terrain'
+        elif speed < 5 and grade < 3 and (headwind_mph is None or headwind_mph < 12):
+            anomaly = 'Slow for grade/wind'
+        samples.append({'distance_mi': round(route_dist / 1609.344, 1), 'lat': p['lat'], 'lng': p['lng'],
+                        'elevation_ft': round(float(p.get('e_m') or 0) * 3.28084), 'speed_mph': speed,
+                        'grade': round(grade, 2), 'headwind_mph': headwind_mph, 'anomaly': anomaly})
+    route_json = [{'lat': float(p['lat']), 'lng': float(p['lng']), 'dist_m': float(p.get('dist_m') or 0),
+                   'e_m': float(p.get('e_m') or 0)} for p in route]
+    return {'route': route_json, 'track': [[p['lat'], p['lng']] for p in track], 'samples': samples,
+            'wind_available': bool(winds)}
 
 
 def operator_required(view):
@@ -281,7 +362,8 @@ def validation_detail(submission_id):
         abort(404)
     return render_template('admin/validation_detail.html', submission=submission,
                            checks=models.get_validation_checks(submission_id),
-                           evidence=models.get_validation_evidence(submission_id))
+                           evidence=models.get_validation_evidence(submission_id),
+                           visualization=_validation_visualization(submission))
 
 
 @admin_bp.route('/validations/<int:submission_id>/evidence/<int:evidence_id>', methods=['GET'])
