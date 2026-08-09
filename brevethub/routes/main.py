@@ -145,7 +145,7 @@ def profile():
     strava = load_strava_section(rider)
     activity_feed = build_private_activity_feed(
         strava_activities=(strava.get('stats') or {}).get('activities') or [])
-    activity_calendar = build_activity_calendar(activity_feed[:60])
+    activity_calendar = build_activity_calendar(activity_feed[:60], date.today())
     # Career/SR/R-12 come from the RUSA cache only (the official record), so a
     # self-logged rp_ride can never inflate them. seasons.career_summary is total
     # for an empty history, giving a graceful zero-state for a RUSA-less rider.

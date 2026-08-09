@@ -101,9 +101,20 @@ def build_private_activity_feed(strava_activities=None, garmin_activities=None):
         cards, key=lambda card: _timestamp(card.get("started_at")), reverse=True)
 
 
-def build_activity_calendar(cards=None):
-    """Group normalized activity cards into newest-first month/day buckets."""
+def build_activity_calendar(cards=None, anchor_date=None):
+    """Group activity cards into month/day buckets, newest month first.
+
+    ``anchor_date`` keeps the current month visible even when it has no activity.
+    """
     months = {}
+    if anchor_date is not None:
+        month_key = anchor_date.strftime('%Y-%m')
+        year, month = anchor_date.year, anchor_date.month
+        months[month_key] = {
+            "key": month_key, "days": {},
+            "first_weekday": calendar.monthrange(year, month)[0],
+            "days_in_month": calendar.monthrange(year, month)[1],
+        }
     for card in cards or []:
         started = str(card.get("started_at") or "")
         if len(started) < 10:

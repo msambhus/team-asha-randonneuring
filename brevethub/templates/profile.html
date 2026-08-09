@@ -29,6 +29,9 @@
 .training-day .day-number { font-size:.75rem; color:var(--text-light); }
 .training-day.has-activity { background:#fff7ed; }
 .training-day .activity-dot { display:block; margin-top:5px; font-size:.72rem; line-height:1.15; color:#9a3412; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.training-month-nav { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.training-month-nav button { border:1px solid var(--border); border-radius:8px; background:#fff; color:var(--primary); padding:7px 12px; font-weight:600; cursor:pointer; }
+.training-month-nav button:disabled { opacity:.4; cursor:not-allowed; }
 @media (max-width: 768px) { .profile { grid-template-columns: 1fr; gap: 4px 0; } .profile dt { margin-top: 10px; } }
 </style>
 {% endblock %}
@@ -232,9 +235,14 @@
   <h2 class="text-primary text-[1.3rem] font-bold mb-3">Recent activities</h2>
   <p class="text-text-light text-sm mb-4">Your private Strava training log, grouped by day.</p>
   {% if activity_calendar %}
-    <div class="grid gap-4">
+    <div class="training-month-nav">
+      <button type="button" id="training-prev" aria-label="Previous month">&larr; Previous</button>
+      <strong id="training-month-label"></strong>
+      <button type="button" id="training-next" aria-label="Next month">Next &rarr;</button>
+    </div>
+    <div class="grid gap-4" id="training-months">
     {% for month in activity_calendar %}
-      <div class="training-month">
+      <div class="training-month" data-month-index="{{ loop.index0 }}" data-month-key="{{ month.key }}">
         <h3>{{ month.key }}</h3>
         <div class="training-grid training-weekdays">{% for weekday in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] %}<span>{{ weekday }}</span>{% endfor %}</div>
         <div class="training-grid">
@@ -253,6 +261,27 @@
     </div>
   {% else %}<p class="text-text-light">Connect Strava to see recent activities here.</p>{% endif %}
 </section>
+{% if activity_calendar %}
+<script>
+(function () {
+  const months = Array.from(document.querySelectorAll('#training-months [data-month-index]'));
+  const prev = document.getElementById('training-prev');
+  const next = document.getElementById('training-next');
+  const label = document.getElementById('training-month-label');
+  let index = 0;
+  function render() {
+    months.forEach((month, i) => { month.hidden = i !== index; });
+    const key = months[index].dataset.monthKey + '-01T00:00:00';
+    label.textContent = new Date(key).toLocaleDateString(undefined, {month:'long', year:'numeric'});
+    prev.disabled = index === 0;
+    next.disabled = index === months.length - 1;
+  }
+  prev.addEventListener('click', () => { if (index > 0) { index -= 1; render(); } });
+  next.addEventListener('click', () => { if (index < months.length - 1) { index += 1; render(); } });
+  render();
+}());
+</script>
+{% endif %}
 <div class="flex flex-wrap gap-2.5">
   <a class="btn btn-primary" href="{{ url_for('main.dashboard') }}">My Rides</a>
   <a class="btn bg-white text-primary border border-border hover:opacity-90"
