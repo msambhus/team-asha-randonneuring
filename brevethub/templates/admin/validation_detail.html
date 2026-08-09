@@ -19,6 +19,16 @@
       {% if check.metrics %}<details class="mt-2 text-sm"><summary class="cursor-pointer text-primary">Technical details</summary><pre class="overflow-x-auto bg-gray-50 rounded p-2 mt-2">{{ check.metrics|tojson(indent=2) }}</pre></details>{% endif %}
     </article>{% endfor %}
   </div></section>
+  {% if submission.strava_activity_id %}<section class="card mb-4"><h2 class="font-bold text-primary mb-3">Linked Strava activity</h2>
+    <div class="border border-orange-200 bg-orange-50 rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
+      <div><strong>Strava activity {{ submission.strava_activity_id }}</strong>
+        {% if submission.source_metadata and submission.source_metadata.strava_activity_name %}<div>{{ submission.source_metadata.strava_activity_name }}</div>{% endif %}
+        {% if submission.source_metadata and submission.source_metadata.strava_stream_fetched %}<div class="text-sm text-green-800">GPS stream fetched and included in automated checks.</div>
+        {% else %}<div class="text-sm text-orange-800">GPS stream was not fetched; request a FIT/GPX or reconnect Strava and resubmit.</div>{% endif %}
+      </div>
+      <a class="btn btn-primary" target="_blank" rel="noopener" href="{{ (submission.source_metadata or {}).get('strava_activity_url') or ('https://www.strava.com/activities/' ~ submission.strava_activity_id) }}">Open in Strava ↗</a>
+    </div>
+  </section>{% endif %}
   <section class="card mb-4"><h2 class="font-bold text-primary mb-3">Submitted evidence</h2>
     <ul class="space-y-2">{% for item in evidence %}<li class="border border-border rounded p-3"><strong>{{ item.evidence_kind|title }}</strong> · {{ item.original_filename or item.description or 'Organizer-entered proof' }}{% if item.byte_size %} · {{ (item.byte_size / 1024)|round(1) }} KB{% endif %}{% if item.control_orders %} · controls {{ item.control_orders|join(', ') }}{% endif %}{% if item.byte_size %} · <a class="text-primary font-bold" target="_blank" rel="noopener" href="{{ url_for('admin.validation_evidence', submission_id=submission.id, evidence_id=item.id) }}">Open evidence</a>{% endif %}<div class="text-xs text-text-light">SHA-256 {{ item.sha256 or 'not applicable' }}</div></li>{% else %}<li class="text-text-light">No uploaded evidence.</li>{% endfor %}</ul>
   </section>
