@@ -266,12 +266,13 @@ def validate_submission(*, points: list[TrackPoint], route: list[dict], controls
     if route:
         activity_sample = points[::max(1, len(points) // 2000)]
         official_sample = route[::max(1, len(route) // 500)]
-        off, nearest_indexes = [], []
+        off, off_distances, nearest_indexes = [], [], []
         for p in activity_sample:
             distance, nearest_idx = _nearest(p, official_sample)
             nearest_indexes.append(nearest_idx)
             if distance > CORRIDOR_M:
                 off.append(p)
+                off_distances.append(distance)
         coverage_hits = 0
         for rp in official_sample:
             probe = TrackPoint(first.timestamp, float(rp['lat']), float(rp['lng']))
@@ -279,7 +280,28 @@ def validate_submission(*, points: list[TrackPoint], route: list[dict], controls
                 coverage_hits += 1
         coverage = coverage_hits / max(1, len(official_sample))
         route_ok = coverage >= .95
-        segments = [[[p.lat, p.lng] for p in off[:250]]] if off else []
+        # Do not connect unrelated, isolated GPS samples into one giant line.
+        # A sparse point just outside the corridor is normal GPS noise; only a
+        # contiguous/material run is useful to an organizer reviewing a detour.
+        off_indices = [i for i, p in enumerate(activity_sample)
+                       if p in off]
+        departure_groups = []
+        for idx in off_indices:
+            if not departure_groups or idx > departure_groups[-1][-1] + 1:
+                departure_groups.append([idx])
+            else:
+                departure_groups[-1].append(idx)
+        meaningful_groups = []
+        for group in departure_groups:
+            distances = [
+                _nearest(activity_sample[i], official_sample)[0] for i in group
+            ]
+            if len(group) >= 2 or max(distances, default=0) > CORRIDOR_M * 2:
+                meaningful_groups.append(group)
+        segments = [
+            [[activity_sample[i].lat, activity_sample[i].lng] for i in group[:250]]
+            for group in meaningful_groups
+        ]
         checks.append(_check('route_coverage', 'Route coverage', 'clear' if route_ok else 'needs_review',
                              f'{coverage:.1%} of sampled official route points are covered within {CORRIDOR_M:.0f} m.',
                              {'coverage_ratio': round(coverage, 4), 'corridor_m': CORRIDOR_M, 'off_route_samples': len(off)}, segments))
@@ -287,21 +309,15 @@ def validate_submission(*, points: list[TrackPoint], route: list[dict], controls
         checks.append(_check('shortcut_detection', 'Shortcut detection', 'needs_review' if shortcut else 'clear',
                              'The recording may omit or materially shorten required route portions.' if shortcut else 'No material shortening is apparent.',
                              {'recorded_km': round(recorded_km, 2), 'required_km': required_km, 'coverage_ratio': round(coverage, 4)}))
-        departure_runs, run_start = [], None
-        for idx, p in enumerate(activity_sample):
-            is_off = p in off
-            if is_off and run_start is None:
-                run_start = idx
-            if run_start is not None and (not is_off or idx == len(activity_sample) - 1):
-                end = idx if is_off else idx - 1
-                before = max(0, run_start - 1)
-                after = min(len(nearest_indexes) - 1, end + 1)
-                route_delta = abs(nearest_indexes[after] - nearest_indexes[before])
-                departure_runs.append({'samples': end - run_start + 1,
-                                       'returned_near_entry': route_delta <= 3})
-                run_start = None
-        checks.append(_check('route_departures', 'Route departures', 'needs_review' if off else 'clear',
-                             f'{len(departure_runs)} route departure(s) need review for an authorized detour and return to the departure point.' if off else 'No material route departure was found.',
+        departure_runs = []
+        for group in meaningful_groups:
+            before = max(0, group[0] - 1)
+            after = min(len(nearest_indexes) - 1, group[-1] + 1)
+            route_delta = abs(nearest_indexes[after] - nearest_indexes[before])
+            departure_runs.append({'samples': len(group),
+                                   'returned_near_entry': route_delta <= 3})
+        checks.append(_check('route_departures', 'Route departures', 'needs_review' if meaningful_groups else 'clear',
+                             f'{len(departure_runs)} route departure(s) need review for an authorized detour and return to the departure point.' if meaningful_groups else 'No material route departure was found.',
                              {'off_route_samples': len(off), 'departures': departure_runs}, segments))
     else:
         for code, title in [('start_finish', 'Start and finish'), ('route_coverage', 'Route coverage'),
