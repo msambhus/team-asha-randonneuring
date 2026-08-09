@@ -2,7 +2,7 @@
 {% block title %}Submit evidence — {{ product_name }}{% endblock %}
 {% block extra_head %}<style>
 .evidence-section{background:#f6f8fb;border:1px solid #d9e2ec;border-radius:14px;padding:22px 24px;box-shadow:0 2px 8px rgba(31,79,133,.05)}
-.evidence-section legend{font-size:1.05rem;letter-spacing:.01em}.evidence-help{font-size:.82rem;color:#64748b;line-height:1.5}.control-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px}.control-option{display:flex;gap:8px;align-items:flex-start;background:#fff;border:1px solid #d9e2ec;border-radius:9px;padding:10px;font-size:.85rem}.control-option input{margin-top:3px}@media(max-width:640px){.evidence-section{padding:17px}}
+.evidence-section legend{font-size:1.05rem;letter-spacing:.01em}.evidence-help{font-size:.82rem;color:#64748b;line-height:1.5}.control-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px}.control-option{display:flex;gap:8px;align-items:flex-start;background:#fff;border:1px solid #d9e2ec;border-radius:9px;padding:10px;font-size:.85rem}.control-option input{margin-top:3px}.submit-spinner{display:inline-block;width:1rem;height:1rem;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:submit-spin .7s linear infinite;vertical-align:-.15em;margin-right:.45rem}@keyframes submit-spin{to{transform:rotate(360deg)}}@media(max-width:640px){.evidence-section{padding:17px}}
 </style>{% endblock %}
 {% block content %}
 <div class="container section"><div class="max-w-[850px] mx-auto">
@@ -19,7 +19,16 @@
       <label class="font-semibold block mt-4 mb-1" for="proof_files">Other brevet-card / receipt files</label><input id="proof_files" name="proof_files" type="file" multiple accept="image/*,.pdf" class="form-input w-full"><label class="font-semibold block mt-4 mb-1" for="proof_description">Additional proof details</label><textarea id="proof_description" name="proof_description" class="form-input w-full" rows="3" placeholder="Any proof that is not tied to one control."></textarea>
     </details>
     <section class="evidence-section"><h2 class="text-primary font-bold">Additional context <span class="font-normal text-text-light text-sm">(optional)</span></h2><p class="evidence-help mt-1 mb-3">Explain a road closure, safety detour, GPS gap, or other detail an organizer should review.</p><textarea id="rider_explanation" name="rider_explanation" class="form-input w-full" rows="3" placeholder="Add context for the organizer…"></textarea></section>
-    <div class="flex items-center justify-between gap-3 flex-wrap"><a class="btn bg-white text-primary border border-border" href="{{ url_for('validation.my_validations') }}">Cancel</a><button class="btn btn-primary" type="submit">Submit for verification</button></div>
+    <div class="flex items-center justify-between gap-3 flex-wrap"><a class="btn bg-white text-primary border border-border" href="{{ url_for('validation.my_validations') }}">Cancel</a><button class="btn btn-primary" type="submit" id="submit-evidence-button"><span class="submit-label">Submit for verification</span></button></div>
   </form>
 </div></div>
+<script>
+document.getElementById('rider-validation-form')?.addEventListener('submit', function () {
+  const button = document.getElementById('submit-evidence-button');
+  if (!button || button.disabled) return;
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  button.innerHTML = '<span class="submit-spinner" aria-hidden="true"></span>Submitting evidence…';
+});
+</script>
 {% endblock %}

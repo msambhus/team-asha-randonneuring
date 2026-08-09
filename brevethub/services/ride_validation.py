@@ -367,14 +367,16 @@ def validate_submission(*, points: list[TrackPoint], route: list[dict], controls
                     for a, b in zip(sampled, sampled[1:])]
         rg, ag = gain(route_ele), gain(actual_ele)
         ratio = ag / rg if rg else 1.0
+        recorded_gain_ft = round(ag * 3.28084)
+        official_gain_ft = round(rg * 3.28084)
         official_signs, actual_signs = signs(route_ele), signs(actual_ele)
         comparable = [(a, b) for a, b in zip(official_signs, actual_signs) if a and b]
         sequence_match = (sum(a == b for a, b in comparable) / len(comparable)) if comparable else 1.0
         terrain_ok = .55 <= ratio <= 1.8 and sequence_match >= .6
         checks.append(_check('terrain_consistency', 'Terrain consistency', 'clear' if terrain_ok else 'needs_review',
-                             f'Recorded-to-official sampled climb ratio is {ratio:.2f}; climb/descent sequence agreement is {sequence_match:.0%}.',
+                             f'Recorded {recorded_gain_ft:,} ft vs official {official_gain_ft:,} ft of sampled climbing; climb/descent sequence agreement is {sequence_match:.0%}.',
                              {'climb_ratio': round(ratio, 3), 'sequence_match': round(sequence_match, 3),
-                              'recorded_gain_m': round(ag), 'official_gain_m': round(rg)}))
+                              'recorded_gain_ft': recorded_gain_ft, 'official_gain_ft': official_gain_ft}))
     else:
         checks.append(_check('terrain_consistency', 'Terrain consistency', 'incomplete', 'Elevation samples are insufficient for terrain comparison.'))
 
