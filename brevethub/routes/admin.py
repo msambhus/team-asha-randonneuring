@@ -125,29 +125,65 @@ def _validation_visualization(submission):
 
 
 def operator_required(view):
-    """Require the separate national-operations session."""
+    """Require a club-admin or super-admin session.
+
+    Club admins have ``brevethub_operator_club_id`` set to their club's integer id.
+    The super-admin (ADMIN_PASSWORD env var) has it set to the sentinel ``'__all__'``.
+    Either value is truthy, so a single ``if not`` check gates both cases.
+    """
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get('brevethub_operator'):
+        if not session.get('brevethub_operator_club_id'):
             return redirect(url_for('admin.login', next=request.path))
         return view(*args, **kwargs)
     return wrapped
 
 
+def _operator_club_id():
+    """Return the club_id for the current operator, or None for super-admin."""
+    val = session.get('brevethub_operator_club_id')
+    if val == '__all__':
+        return None
+    return val
+
+
 @admin_bp.route('/login', methods=['GET', 'POST'])
 def login():
+    from werkzeug.security import check_password_hash
     if request.method == 'POST':
-        configured = current_app.config.get('ADMIN_PASSWORD')
+        username = (request.form.get('username') or '').strip()
         supplied = request.form.get('password') or ''
+
+        # 1. Try club admin table first (username + password).
+        if username:
+            admin = models.get_club_admin_by_username(username)
+            if admin and check_password_hash(admin['password_hash'], supplied):
+                session['brevethub_operator_club_id'] = admin['club_id']
+                session['brevethub_operator_username'] = admin['username']
+                session['brevethub_operator_club_name'] = admin['club_name']
+                session['brevethub_operator_region_prefix'] = admin.get('region_prefix')
+                models.record_club_admin_login(admin['id'])
+                return redirect(request.args.get('next') or url_for('admin.events'))
+
+        # 2. Fall back to global super-admin password (no username required).
+        configured = current_app.config.get('ADMIN_PASSWORD')
         if configured and hmac.compare_digest(supplied, configured):
-            session['brevethub_operator'] = True
+            session['brevethub_operator_club_id'] = '__all__'
+            session['brevethub_operator_username'] = 'superadmin'
+            session['brevethub_operator_club_name'] = 'All clubs'
             return redirect(request.args.get('next') or url_for('admin.dashboard'))
-        flash('Incorrect admin password.', 'error')
+
+        flash('Incorrect username or password.', 'error')
     return render_template('admin_login.html')
 
 
 @admin_bp.route('/logout', methods=['POST'])
 def logout():
+    session.pop('brevethub_operator_club_id', None)
+    session.pop('brevethub_operator_username', None)
+    session.pop('brevethub_operator_club_name', None)
+    session.pop('brevethub_operator_region_prefix', None)
+    # Legacy key — remove if present from old sessions.
     session.pop('brevethub_operator', None)
     return redirect(url_for('main.landing'))
 
@@ -382,6 +418,45 @@ def validation_evidence(submission_id, evidence_id):
     )
 
 
+@admin_bp.route('/events', methods=['GET'])
+@operator_required
+def events():
+    """Club-scoped events view: this week / upcoming / past, with rider counts.
+
+    Club admins see only their club's events. Super-admins see all clubs.
+    """
+    from datetime import date, timedelta
+    include_past = request.args.get('past') == '1'
+    club_id = _operator_club_id()
+    region_prefix = session.get('brevethub_operator_region_prefix')
+    all_events = models.get_club_admin_events(club_id, include_past=include_past,
+                                              region_prefix=region_prefix)
+    today = date.today()
+    week_end = today + timedelta(days=7)
+
+    this_week, upcoming, past = [], [], []
+    for ev in all_events:
+        ev_date = ev['date'] if hasattr(ev['date'], 'year') else date.fromisoformat(str(ev['date']))
+        if ev_date < today:
+            past.append(ev)
+        elif ev_date <= week_end:
+            this_week.append(ev)
+        else:
+            upcoming.append(ev)
+
+    # Past comes back ASC from the query; reverse so newest past is first
+    past = list(reversed(past))
+
+    return render_template(
+        'admin/events.html',
+        this_week=this_week,
+        upcoming=upcoming,
+        past=past,
+        include_past=include_past,
+        admin_club_id=club_id,
+    )
+
+
 @admin_bp.route('/registrations', methods=['GET'])
 @operator_required
 def registrations():
@@ -392,12 +467,34 @@ def registrations():
     )
 
 
+def _assert_event_club_access(event):
+    """Abort 403 if the operator is not super-admin and doesn't own this event.
+
+    Events from the RUSA national feed have club_id = NULL; ownership is
+    determined by region_prefix match in that case.
+    """
+    if _is_super_admin():
+        return
+    club_id = _operator_club_id()
+    region_prefix = session.get('brevethub_operator_region_prefix')
+    event_club_id = event.get('club_id')
+    event_region = event.get('region') or ''
+    # Match by explicit club_id assignment
+    if event_club_id is not None and event_club_id == club_id:
+        return
+    # Match by region prefix for RUSA feed events (club_id = NULL)
+    if region_prefix and event_region == region_prefix:
+        return
+    abort(403)
+
+
 @admin_bp.route('/registrations/event/<int:event_id>', methods=['GET', 'POST'])
 @operator_required
 def event_roster(event_id):
     event = models.get_brevet_event_registration(event_id)
     if not event:
         abort(404)
+    _assert_event_club_access(event)
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -452,6 +549,7 @@ def export_roster_csv(event_id):
     event = models.get_brevet_event_registration(event_id)
     if not event:
         abort(404)
+    _assert_event_club_access(event)
     roster = models.get_admin_event_roster(event_id)
     output = io.StringIO()
     writer = csv.writer(output)
@@ -530,6 +628,126 @@ def run_operation(operation):
                         for key, value in result.items() if key != 'ok')
     flash(f'{operation.replace("-", " ").title()}: {details}', category)
     return redirect(url_for('admin.dashboard'))
+
+
+def _is_super_admin():
+    return session.get('brevethub_operator_club_id') == '__all__'
+
+
+def _rbac_assert_club_access(target_club_id):
+    """Abort 403 if the operator is not super-admin and target_club_id != their club."""
+    if _is_super_admin():
+        return
+    if target_club_id != _operator_club_id():
+        abort(403)
+
+
+def _rbac_assert_admin_access(admin_row):
+    """Abort 403 if the operator doesn't own the club of the target admin row."""
+    if not admin_row:
+        abort(404)
+    _rbac_assert_club_access(admin_row['club_id'])
+
+
+@admin_bp.route('/rbac', methods=['GET'])
+@operator_required
+def rbac():
+    """RBAC management — list all club admins scoped to the operator's club."""
+    if _is_super_admin():
+        admins = models.list_all_club_admins()
+        clubs = models.list_all_clubs_for_admin()
+        scoped_club_id = None
+    else:
+        club_id = _operator_club_id()
+        admins = models.list_club_admins(club_id)
+        clubs = []
+        scoped_club_id = club_id
+    return render_template(
+        'admin/rbac.html',
+        admins=admins,
+        clubs=clubs,
+        scoped_club_id=scoped_club_id,
+        is_super_admin=_is_super_admin(),
+    )
+
+
+@admin_bp.route('/rbac/create', methods=['POST'])
+@operator_required
+def rbac_create():
+    """Create a new club admin account."""
+    from werkzeug.security import generate_password_hash
+    import psycopg2
+
+    if _is_super_admin():
+        try:
+            club_id = int(request.form.get('club_id') or 0)
+        except (ValueError, TypeError):
+            flash('Select a valid club.', 'error')
+            return redirect(url_for('admin.rbac'))
+    else:
+        club_id = _operator_club_id()
+
+    _rbac_assert_club_access(club_id)
+
+    username = (request.form.get('username') or '').strip().lower()
+    password = request.form.get('password') or ''
+    display_name = (request.form.get('display_name') or '').strip() or None
+
+    if not username or len(username) < 3:
+        flash('Username must be at least 3 characters.', 'error')
+        return redirect(url_for('admin.rbac'))
+    if len(password) < 8:
+        flash('Password must be at least 8 characters.', 'error')
+        return redirect(url_for('admin.rbac'))
+
+    try:
+        models.create_club_admin(club_id, username, generate_password_hash(password),
+                                 display_name=display_name)
+        flash(f'Admin account "{username}" created.', 'success')
+    except psycopg2.errors.UniqueViolation:
+        flash(f'Username "{username}" is already taken.', 'error')
+    except Exception as exc:
+        current_app.logger.exception('Failed to create club admin')
+        flash(f'Could not create admin: {exc}', 'error')
+    return redirect(url_for('admin.rbac'))
+
+
+@admin_bp.route('/rbac/<int:admin_id>/deactivate', methods=['POST'])
+@operator_required
+def rbac_deactivate(admin_id):
+    """Deactivate (soft-delete) a club admin account."""
+    admin = models.get_club_admin_by_id(admin_id)
+    _rbac_assert_admin_access(admin)
+    models.deactivate_club_admin(admin_id)
+    flash(f'Admin "{admin["username"]}" deactivated.', 'success')
+    return redirect(url_for('admin.rbac'))
+
+
+@admin_bp.route('/rbac/<int:admin_id>/reactivate', methods=['POST'])
+@operator_required
+def rbac_reactivate(admin_id):
+    """Re-enable a deactivated club admin account."""
+    admin = models.get_club_admin_by_id(admin_id)
+    _rbac_assert_admin_access(admin)
+    models.reactivate_club_admin(admin_id)
+    flash(f'Admin "{admin["username"]}" reactivated.', 'success')
+    return redirect(url_for('admin.rbac'))
+
+
+@admin_bp.route('/rbac/<int:admin_id>/reset-password', methods=['POST'])
+@operator_required
+def rbac_reset_password(admin_id):
+    """Reset the password for a club admin account."""
+    from werkzeug.security import generate_password_hash
+    admin = models.get_club_admin_by_id(admin_id)
+    _rbac_assert_admin_access(admin)
+    password = request.form.get('password') or ''
+    if len(password) < 8:
+        flash('New password must be at least 8 characters.', 'error')
+        return redirect(url_for('admin.rbac'))
+    models.update_club_admin_password(admin_id, generate_password_hash(password))
+    flash(f'Password reset for "{admin["username"]}".', 'success')
+    return redirect(url_for('admin.rbac'))
 
 
 def _owned_club_or_403():

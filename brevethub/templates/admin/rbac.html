@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}Admin accounts — {{ product_name }}{% endblock %}
+{% block content %}
+<div class="container section">
+<div class="max-w-[860px] mx-auto">
+
+  <div class="flex justify-between items-start gap-3 mb-4 flex-wrap">
+    <div>
+      <a href="{{ url_for('admin.dashboard') }}" class="text-primary text-sm">← Operations</a>
+      <h1 class="text-primary text-[1.7rem] font-bold mt-1">Admin accounts</h1>
+      <p class="text-text-light">
+        Manage club admin logins.
+        {% if is_super_admin %}
+        <span class="inline-block ml-1 px-2 py-0.5 rounded bg-[#fef9c3] text-[#92400e] font-semibold text-xs uppercase tracking-wide">Super admin — all clubs</span>
+        {% else %}
+        <span class="inline-block ml-1 px-2 py-0.5 rounded bg-[#dbeafe] text-[#1e40af] font-semibold text-xs uppercase tracking-wide">{{ admin_club_name }}</span>
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  {# ── Create new admin ───────────────────────────────────── #}
+  <section class="card mb-6" aria-labelledby="create-heading">
+    <h2 id="create-heading" class="text-primary text-[1.1rem] font-bold mb-3">Create new admin account</h2>
+    <form method="post" action="{{ url_for('admin.rbac_create') }}" class="grid md:grid-cols-2 gap-4">
+
+      {% if is_super_admin %}
+      <div class="md:col-span-2">
+        <label class="block text-sm font-semibold mb-1" for="club_id">Club</label>
+        <select id="club_id" name="club_id" class="form-input w-full" required>
+          <option value="">— select club —</option>
+          {% for club in clubs %}
+          <option value="{{ club.id }}">{{ club.name }}{% if club.rusa_club_id %} ({{ club.rusa_club_id }}){% endif %}{% if club.state %} — {{ club.state }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      <div>
+        <label class="block text-sm font-semibold mb-1" for="new-username">Username</label>
+        <input id="new-username" name="username" type="text" class="form-input w-full"
+               placeholder="e.g. sfr-organizer" required minlength="3" autocomplete="off">
+        <p class="text-xs text-text-light mt-1">Lowercase, no spaces. Must be unique across all clubs.</p>
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold mb-1" for="new-display">Display name <span class="font-normal text-text-light">(optional)</span></label>
+        <input id="new-display" name="display_name" type="text" class="form-input w-full"
+               placeholder="e.g. Jane Smith" autocomplete="off">
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold mb-1" for="new-password">Password</label>
+        <input id="new-password" name="password" type="password" class="form-input w-full"
+               placeholder="Min 8 characters" required minlength="8" autocomplete="new-password">
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold mb-1" for="new-password2">Confirm password</label>
+        <input id="new-password2" name="password2" type="password" class="form-input w-full"
+               placeholder="Repeat password" required minlength="8" autocomplete="new-password">
+      </div>
+
+      <div class="md:col-span-2">
+        <button type="submit" class="btn btn-primary" id="create-submit-btn">Create admin account</button>
+        <p id="pw-match-error" class="text-[#ef4444] text-sm mt-2 hidden">Passwords do not match.</p>
+      </div>
+    </form>
+  </section>
+
+  {# ── Existing admins ────────────────────────────────────── #}
+  <section aria-labelledby="accounts-heading">
+    <h2 id="accounts-heading" class="text-primary text-[1.1rem] font-bold mb-3">
+      Existing accounts
+      <span class="text-text-light font-normal text-sm">({{ admins|length }})</span>
+    </h2>
+
+    {% if admins %}
+    <div class="grid gap-3">
+      {% for a in admins %}
+      <div class="card {% if not a.is_active %}opacity-60{% endif %}">
+        <div class="flex justify-between items-start gap-4 flex-wrap">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap mb-0.5">
+              <span class="font-bold text-primary">{{ a.username }}</span>
+              {% if a.display_name %}<span class="text-text-light text-sm">{{ a.display_name }}</span>{% endif %}
+              {% if not a.is_active %}
+              <span class="text-[0.7rem] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#fee2e2] text-[#991b1b]">Inactive</span>
+              {% else %}
+              <span class="text-[0.7rem] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#dcfce7] text-[#15803d]">Active</span>
+              {% endif %}
+            </div>
+            <div class="text-sm text-text-light flex flex-wrap gap-x-4 gap-y-0.5">
+              {% if is_super_admin and a.club_name %}
+              <span>🏛 {{ a.club_name }}{% if a.rusa_club_id %} ({{ a.rusa_club_id }}){% endif %}</span>
+              {% endif %}
+              <span>Created {{ a.created_at.strftime('%Y-%m-%d') if a.created_at else '—' }}</span>
+              <span>Last login: {{ a.last_login_at.strftime('%Y-%m-%d %H:%M') if a.last_login_at else 'never' }}</span>
+            </div>
+          </div>
+
+          <div class="flex gap-2 flex-wrap items-start shrink-0">
+            {# Reset password #}
+            <button type="button"
+                    class="btn btn-secondary btn-sm"
+                    onclick="toggleResetForm({{ a.id }})">
+              Reset password
+            </button>
+
+            {# Deactivate / Reactivate #}
+            {% if a.is_active %}
+            <form method="post" action="{{ url_for('admin.rbac_deactivate', admin_id=a.id) }}"
+                  onsubmit="return confirm('Deactivate {{ a.username }}? They will no longer be able to log in.')">
+              <button type="submit" class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;">Deactivate</button>
+            </form>
+            {% else %}
+            <form method="post" action="{{ url_for('admin.rbac_reactivate', admin_id=a.id) }}">
+              <button type="submit" class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;">Reactivate</button>
+            </form>
+            {% endif %}
+          </div>
+        </div>
+
+        {# Inline reset password form (hidden by default) #}
+        <div id="reset-form-{{ a.id }}" class="hidden mt-3 pt-3 border-t border-border">
+          <form method="post" action="{{ url_for('admin.rbac_reset_password', admin_id=a.id) }}"
+                class="flex gap-3 flex-wrap items-end">
+            <div>
+              <label class="block text-xs font-semibold mb-1" for="reset-pw-{{ a.id }}">New password</label>
+              <input id="reset-pw-{{ a.id }}" name="password" type="password"
+                     class="form-input" placeholder="Min 8 chars" required minlength="8"
+                     style="max-width:200px;" autocomplete="new-password">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1" for="reset-pw2-{{ a.id }}">Confirm</label>
+              <input id="reset-pw2-{{ a.id }}" name="password2" type="password"
+                     class="form-input" placeholder="Repeat" required minlength="8"
+                     style="max-width:200px;" autocomplete="new-password">
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Set password</button>
+            <button type="button" class="btn btn-secondary btn-sm"
+                    onclick="toggleResetForm({{ a.id }})">Cancel</button>
+            <p class="reset-pw-error hidden text-[#ef4444] text-xs w-full mt-1">Passwords do not match.</p>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card p-4 text-text-light text-sm">No admin accounts yet. Create the first one above.</div>
+    {% endif %}
+  </section>
+
+</div>
+</div>
+
+<script>
+function toggleResetForm(id) {
+  var el = document.getElementById('reset-form-' + id);
+  if (el) el.classList.toggle('hidden');
+}
+
+// Password match validation for the create form
+(function () {
+  var form = document.querySelector('form[action*="rbac/create"]');
+  if (!form) return;
+  var btn = document.getElementById('create-submit-btn');
+  var err = document.getElementById('pw-match-error');
+  form.addEventListener('submit', function (e) {
+    var p1 = form.querySelector('#new-password').value;
+    var p2 = form.querySelector('#new-password2').value;
+    if (p1 !== p2) {
+      e.preventDefault();
+      if (err) err.classList.remove('hidden');
+    }
+  });
+})();
+
+// Password match for each inline reset form
+document.querySelectorAll('[id^="reset-form-"]').forEach(function (div) {
+  var resetForm = div.querySelector('form');
+  if (!resetForm) return;
+  resetForm.addEventListener('submit', function (e) {
+    var inputs = resetForm.querySelectorAll('input[type="password"]');
+    if (inputs.length < 2 || inputs[0].value !== inputs[1].value) {
+      e.preventDefault();
+      var errEl = resetForm.querySelector('.reset-pw-error');
+      if (errEl) errEl.classList.remove('hidden');
+    }
+  });
+});
+</script>
+{% endblock %}

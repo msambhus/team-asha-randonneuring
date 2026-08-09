@@ -141,6 +141,10 @@ def create_app():
             'user_logged_in': bool(session.get('rider_id')),
             'user_email': session.get('email'),
             'user_rider_id': session.get('rider_id'),
+            # True when a club admin or super-admin has authenticated via /admin/login.
+            'is_admin_operator': bool(session.get('brevethub_operator_club_id')),
+            'admin_club_name': session.get('brevethub_operator_club_name'),
+            'admin_username': session.get('brevethub_operator_username'),
             # Seasons for the Riders nav dropdown. Clock-derived, club-agnostic.
             'nav_seasons': _nav_seasons(),
         }

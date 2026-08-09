@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Events — Admin — {{ product_name }}{% endblock %}
+
+{# Macro must be defined outside any block so it's available throughout #}
+{% macro event_card(ev, bucket) %}
+<a href="{{ url_for('admin.event_roster', event_id=ev.id) }}"
+   class="card block no-underline hover:shadow-md transition-shadow
+          {% if bucket == 'this-week' %}border-l-4 border-l-[#16a34a]
+          {% elif bucket == 'past' %}opacity-80 border-l-4 border-l-[#d1d5db]
+          {% else %}border-l-4 border-l-[#2563eb]{% endif %}">
+  <div class="flex justify-between items-start gap-4 flex-wrap">
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-2 flex-wrap mb-1">
+        <span class="font-bold text-primary text-[0.95rem] leading-snug">{{ ev.name|clean_name }}</span>
+        {% if ev.registration_enabled %}
+        <span class="text-[0.7rem] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#dcfce7] text-[#15803d]">Reg open</span>
+        {% endif %}
+      </div>
+      <div class="text-text-light text-sm flex flex-wrap gap-x-3 gap-y-0.5">
+        <span>📅 {{ ev.date }}</span>
+        <span>{{ ev.distance_km }} km</span>
+        {% if ev.start_time %}<span>🕐 {{ ev.start_time }}</span>{% endif %}
+        {% if ev.start_location %}<span>📍 {{ ev.start_location }}</span>{% endif %}
+        {% if ev.club_name %}<span>🏛 {{ ev.club_name }}</span>{% endif %}
+        {% if ev.region %}<span class="text-[#6b7280]">{{ ev.region }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="flex gap-4 text-center shrink-0 items-start">
+      <div>
+        <strong class="block text-[1.1rem] text-primary">{{ ev.going_count or 0 }}</strong>
+        <span class="text-[0.7rem] text-text-light uppercase tracking-wide">Going</span>
+      </div>
+      <div>
+        <strong class="block text-[1.1rem] text-primary">{{ ev.registered_count or 0 }}</strong>
+        <span class="text-[0.7rem] text-text-light uppercase tracking-wide">Registered</span>
+      </div>
+      <div>
+        <strong class="block text-[1.1rem] {% if ev.result_count %}text-[#047857]{% else %}text-text-light{% endif %}">{{ ev.result_count or 0 }}</strong>
+        <span class="text-[0.7rem] text-text-light uppercase tracking-wide">Results</span>
+      </div>
+      {% if ev.exception_count %}
+      <div>
+        <strong class="block text-[1.1rem] text-[#b45309]">{{ ev.exception_count }}</strong>
+        <span class="text-[0.7rem] text-[#b45309] uppercase tracking-wide">Exceptions</span>
+      </div>
+      {% endif %}
+      <div class="self-center text-primary text-lg pl-2">→</div>
+    </div>
+  </div>
+</a>
+{% endmacro %}
+
+{% block content %}
+<div class="container section">
+<div class="max-w-[1000px] mx-auto">
+
+  <div class="flex justify-between items-start gap-3 mb-4 flex-wrap">
+    <div>
+      <a href="{{ url_for('admin.dashboard') }}" class="text-primary text-sm">← Operations</a>
+      <h1 class="text-primary text-[1.7rem] font-bold mt-1">Events</h1>
+      <p class="text-text-light">
+        Click any event to manage its roster.
+        {% if admin_club_name %}
+        <span class="inline-block ml-2 px-2 py-0.5 rounded bg-[#dbeafe] text-[#1e40af] font-semibold text-xs uppercase tracking-wide">{{ admin_club_name }}</span>
+        {% endif %}
+      </p>
+    </div>
+    <div class="flex gap-2 items-center flex-wrap">
+      {% if include_past %}
+        <a href="{{ url_for('admin.events') }}" class="btn btn-secondary btn-sm">Hide past events</a>
+      {% else %}
+        <a href="{{ url_for('admin.events', past='1') }}" class="btn btn-secondary btn-sm">Show past events</a>
+      {% endif %}
+      <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary btn-sm">Operations</a>
+    </div>
+  </div>
+
+  {# ── This week ──────────────────────────────────────────── #}
+  <section class="mb-6" aria-labelledby="this-week-heading">
+    <h2 id="this-week-heading" class="text-[1.1rem] font-bold text-primary mb-2 flex items-center gap-2">
+      <span class="inline-block w-2.5 h-2.5 rounded-full bg-[#16a34a]"></span>
+      This week
+      <span class="text-text-light font-normal text-sm">(next 7 days)</span>
+    </h2>
+    {% if this_week %}
+    <div class="grid gap-3">
+      {% for ev in this_week %}{{ event_card(ev, 'this-week') }}{% endfor %}
+    </div>
+    {% else %}
+    <div class="card p-4 text-text-light text-sm">No brevets scheduled in the next 7 days.</div>
+    {% endif %}
+  </section>
+
+  {# ── Upcoming ───────────────────────────────────────────── #}
+  <section class="mb-6" aria-labelledby="upcoming-heading">
+    <h2 id="upcoming-heading" class="text-[1.1rem] font-bold text-primary mb-2 flex items-center gap-2">
+      <span class="inline-block w-2.5 h-2.5 rounded-full bg-[#2563eb]"></span>
+      Upcoming
+    </h2>
+    {% if upcoming %}
+    <div class="grid gap-3">
+      {% for ev in upcoming %}{{ event_card(ev, 'upcoming') }}{% endfor %}
+    </div>
+    {% else %}
+    <div class="card p-4 text-text-light text-sm">No further upcoming events.</div>
+    {% endif %}
+  </section>
+
+  {# ── Past (toggle) ──────────────────────────────────────── #}
+  {% if include_past %}
+  <section aria-labelledby="past-heading">
+    <h2 id="past-heading" class="text-[1.1rem] font-bold text-primary mb-2 flex items-center gap-2">
+      <span class="inline-block w-2.5 h-2.5 rounded-full bg-[#9ca3af]"></span>
+      Past events
+    </h2>
+    {% if past %}
+    <div class="grid gap-3">
+      {% for ev in past %}{{ event_card(ev, 'past') }}{% endfor %}
+    </div>
+    {% else %}
+    <div class="card p-4 text-text-light text-sm">No past events in the database.</div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+</div>
+</div>
+{% endblock %}

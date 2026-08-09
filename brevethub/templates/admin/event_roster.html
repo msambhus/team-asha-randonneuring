@@ -2,7 +2,7 @@
 {% block title %}Roster: {{ event.name|clean_name }} — {{ product_name }}{% endblock %}
 {% block content %}
 <div class="container section">
-  <a href="{{ url_for('admin.registrations') }}" class="text-primary">← Registration management</a>
+  <a href="{{ url_for('admin.events') }}" class="text-primary">← All events</a>
   <div class="hero" style="padding:28px 20px;margin:16px 0;border-radius:12px;">
     <h1 style="font-size:1.5rem;margin-bottom:6px;">{{ event.name|clean_name }}</h1>
     <p style="opacity:.9;margin:0;">{{ event.date }} · {{ event.distance_km }} km{% if event.start_time %} · {{ event.start_time }}{% endif %}{% if event.start_location %} · {{ event.start_location }}{% endif %}</p>
@@ -74,7 +74,7 @@
     </div>
     <div class="mt-4 flex gap-2 flex-wrap">
       <button type="submit" class="btn btn-primary">Save roster statuses</button>
-      <a href="{{ url_for('admin.registrations') }}" class="btn btn-secondary">Back</a>
+      <a href="{{ url_for('admin.events') }}" class="btn btn-secondary">← All events</a>
     </div>
     {% else %}
     <p class="text-text-light card p-4">No registrations or sign-ups for this event yet.</p>

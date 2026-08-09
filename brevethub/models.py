@@ -2737,6 +2737,144 @@ def get_admin_events(include_past=False):
     )
 
 
+def get_club_admin_by_username(username):
+    """Look up a club admin by username for login verification.
+
+    Returns the full row including password_hash, club_id, and region_prefix,
+    or None when the username does not exist or the account is inactive. The
+    caller must verify the password with werkzeug.security.check_password_hash
+    before trusting the row.
+    """
+    return db.query_one(
+        "SELECT a.id, a.club_id, a.username, a.password_hash, a.display_name, "
+        "       a.is_active, c.name AS club_name, c.rusa_club_id, c.region_prefix "
+        "FROM rp_club_admin a "
+        "JOIN rp_club c ON c.id = a.club_id "
+        "WHERE a.username = %s AND a.is_active = TRUE",
+        (username,),
+    )
+
+
+def record_club_admin_login(admin_id):
+    """Stamp last_login_at for the admin row after a successful login."""
+    db.execute(
+        "UPDATE rp_club_admin SET last_login_at = NOW() WHERE id = %s",
+        (admin_id,),
+    )
+
+
+def get_club_admin_events(club_id, include_past=False, region_prefix=None):
+    """Events for a specific club with signup/result counts.
+
+    When club_id is None (super-admin) all clubs are returned (delegates to
+    get_admin_events). Otherwise events are matched by region_prefix (the RUSA
+    feed region string, e.g. 'CA: San Francisco') since feed events have
+    club_id = NULL. Falls back to club_id matching if region_prefix is absent.
+    """
+    if club_id is None:
+        return get_admin_events(include_past=include_past)
+
+    date_clause = "" if include_past else "AND e.date >= CURRENT_DATE "
+
+    if region_prefix:
+        where = "WHERE e.region = %s " + date_clause
+        params = (region_prefix,)
+    else:
+        where = "WHERE e.club_id = %s " + date_clause
+        params = (club_id,)
+
+    return db.query(
+        "SELECT e.id, e.name, e.date, e.distance_km, e.region, e.start_time, "
+        "       e.start_location, e.registration_enabled, e.club_id, "
+        "       c.name AS club_name, "
+        "       COUNT(s.id) FILTER (WHERE s.registration_status IS NOT NULL) AS registered_count, "
+        "       COUNT(s.id) FILTER (WHERE s.status = %s) AS going_count, "
+        "       COUNT(s.id) FILTER (WHERE s.registration_status = 'exception') AS exception_count, "
+        "       COUNT(s.id) FILTER (WHERE s.status IN (%s, %s, %s, %s)) AS result_count, "
+        "       COUNT(s.id) AS total_count "
+        "FROM rp_brevet_event e "
+        "LEFT JOIN rp_club c ON c.id = e.club_id "
+        "LEFT JOIN rp_event_signup s ON s.event_id = e.id "
+        + where +
+        "GROUP BY e.id, c.name "
+        "ORDER BY e.date ASC, e.distance_km ASC",
+        (RideStatus.GOING.value, RideStatus.FINISHED.value,
+         RideStatus.DNF.value, RideStatus.DNS.value, RideStatus.OTL.value) + params,
+    )
+
+
+def list_club_admins(club_id):
+    """All admin accounts for a given club (for the dashboard admin management UI)."""
+    return db.query(
+        "SELECT id, username, display_name, is_active, created_at, last_login_at "
+        "FROM rp_club_admin WHERE club_id = %s ORDER BY username",
+        (club_id,),
+    )
+
+
+def create_club_admin(club_id, username, password_hash, display_name=None):
+    """Insert a new club admin row. Raises IntegrityError on duplicate username."""
+    return db.execute(
+        "INSERT INTO rp_club_admin (club_id, username, password_hash, display_name) "
+        "VALUES (%s, %s, %s, %s) RETURNING id",
+        (club_id, username, password_hash, display_name),
+        returning=True,
+    )
+
+
+def reactivate_club_admin(admin_id):
+    """Re-enable a previously deactivated admin."""
+    db.execute(
+        "UPDATE rp_club_admin SET is_active = TRUE WHERE id = %s",
+        (admin_id,),
+    )
+
+
+def deactivate_club_admin(admin_id):
+    """Soft-delete: mark is_active = FALSE."""
+    db.execute(
+        "UPDATE rp_club_admin SET is_active = FALSE WHERE id = %s",
+        (admin_id,),
+    )
+
+
+def update_club_admin_password(admin_id, password_hash):
+    """Replace the password hash for an existing admin account."""
+    db.execute(
+        "UPDATE rp_club_admin SET password_hash = %s WHERE id = %s",
+        (password_hash, admin_id),
+    )
+
+
+def get_club_admin_by_id(admin_id):
+    """Single admin row by id — used to verify club ownership before mutations."""
+    return db.query_one(
+        "SELECT id, club_id, username, display_name, is_active "
+        "FROM rp_club_admin WHERE id = %s",
+        (admin_id,),
+    )
+
+
+def list_all_clubs_for_admin():
+    """All clubs sorted by name — for the super-admin club picker."""
+    return db.query(
+        "SELECT id, name, rusa_club_id, state FROM rp_club ORDER BY name",
+        (),
+    )
+
+
+def list_all_club_admins():
+    """All club admin accounts across all clubs — for the super-admin view."""
+    return db.query(
+        "SELECT a.id, a.club_id, a.username, a.display_name, a.is_active, "
+        "       a.created_at, a.last_login_at, c.name AS club_name, c.rusa_club_id "
+        "FROM rp_club_admin a "
+        "JOIN rp_club c ON c.id = a.club_id "
+        "ORDER BY c.name, a.username",
+        (),
+    )
+
+
 def get_admin_event_roster(event_id):
     """Full signup roster for operator management (PII allowed)."""
     return db.query(
