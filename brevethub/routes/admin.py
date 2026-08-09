@@ -149,7 +149,10 @@ def _validation_visualization(submission):
     power_stream = stream_metrics.get('watts') or []
     time_stream = stream_metrics.get('time') or []
     for stop in plan_bundle.get('stops') or []:
-        if str(stop.get('stop_type') or '').lower() in ('start', 'finish'):
+        # The organizer comparison is control-by-control. Rest stops and
+        # waypoints are useful in the full plan, but do not create validation
+        # segments of their own.
+        if str(stop.get('stop_type') or '').lower() != 'control':
             continue
         end_mi = float(stop.get('distance_miles') or 0)
         start_mi = previous_mi
