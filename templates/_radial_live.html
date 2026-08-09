@@ -1000,7 +1000,9 @@
           '<span class="rps-day-meta">' + eventMile.toFixed(1) + ' mi · ' +
           fmtDuration(event.duration_min) + '</span>' +
           '<span class="rps-day-eta"><strong>' + escapeHtml(event.start_label) +
-          '–' + escapeHtml(event.end_label) + '</strong></span><span class="rps-day-bank">' +
+          '–' + escapeHtml(event.end_label) + ' ' + escapeHtml(event.event_zone || '') + '</strong>' +
+          (event.show_pacific ? '<small>' + escapeHtml(event.start_pacific_label || '') + '–' + escapeHtml(event.end_pacific_label || '') + ' PT</small>' : '') +
+          '</span><span class="rps-day-bank">' +
           (atControl ? 'actual dwell' : 'actual') + '</span>';
         var before = rows.find(function (row) {
           return Number(row.getAttribute('data-stop-distance')) > eventMile;
