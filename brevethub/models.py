@@ -1303,6 +1303,33 @@ def get_rider_past_results(rider_id):
     )
 
 
+def get_rider_completed_validation_events(rider_id):
+    """Completed brevets this rider may submit evidence for.
+
+    This is deliberately narrower than ``get_rider_past_results``: only an
+    authenticated rider's own FINISHED rows are returned, and each row carries
+    the current validation status so the dashboard can offer a one-click
+    submission without making riders guess which events are eligible.
+    """
+    return db.query(
+        "SELECT s.event_id, s.finish_time, e.name, e.date, e.distance_km, "
+        "       e.region, e.rwgps_url, e.start_location, e.start_time, "
+        "       vs.id AS submission_id, vs.machine_decision, "
+        "       vs.organizer_decision, vs.created_at AS submitted_at "
+        "FROM rp_event_signup s "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "LEFT JOIN LATERAL ("
+        "  SELECT id, machine_decision, organizer_decision, created_at "
+        "  FROM rp_validation_submission "
+        "  WHERE event_id = s.event_id AND rider_id = s.rider_id "
+        "  ORDER BY created_at DESC LIMIT 1"
+        ") vs ON TRUE "
+        "WHERE s.rider_id = %s AND s.status = %s AND e.date <= CURRENT_DATE "
+        "ORDER BY e.date DESC, e.distance_km DESC, e.name",
+        (rider_id, RideStatus.FINISHED.value),
+    )
+
+
 def get_signups_needing_finish_time():
     """Finished sign-ups still missing an official finish_time, for the RUSA sync.
 
@@ -2256,13 +2283,14 @@ def get_validation_candidates():
 
 def create_validation_submission(*, event_id, rider_id, source_type,
                                  strava_activity_id=None, source_metadata=None,
-                                 normalized_track=None, rider_explanation=None):
+                                 normalized_track=None, rider_explanation=None,
+                                 submitted_by='operator'):
     return db.execute(
         "INSERT INTO rp_validation_submission "
-        "  (event_id, rider_id, source_type, strava_activity_id, source_metadata, "
+        "  (event_id, rider_id, submitted_by, source_type, strava_activity_id, source_metadata, "
         "   normalized_track, rider_explanation) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-        (event_id, rider_id, source_type, strava_activity_id,
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (event_id, rider_id, submitted_by, source_type, strava_activity_id,
          Json(source_metadata or {}), Json(normalized_track or []), rider_explanation),
         returning=True,
     )

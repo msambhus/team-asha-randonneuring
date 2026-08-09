@@ -97,6 +97,7 @@ def create_app():
     from brevethub.routes.tools import tools_bp
     from brevethub.routes.cron import cron_bp
     from brevethub.routes.admin import admin_bp
+    from brevethub.routes.validation import validation_bp
     # Community surfaces (club directory / season rosters / public
     # rider profiles), all club-scoped and login-gated.
     from brevethub.routes.riders import riders_bp
@@ -121,6 +122,7 @@ def create_app():
     app.register_blueprint(cron_bp, url_prefix='/cron')
     # admin_bp OWNS the '/admin' segment; owner-gated real ride-plan generation.
     app.register_blueprint(admin_bp, url_prefix='/admin')
+    app.register_blueprint(validation_bp)
     # Bearer-token mint at /api/auth/token (leaf path in the decorator).
     app.register_blueprint(api_auth_bp)
 

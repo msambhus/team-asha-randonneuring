@@ -119,6 +119,25 @@
   {% endif %}
 </div>
 
+<div class="card" id="evidence-submissions">
+  <div class="flex items-start justify-between gap-3 flex-wrap mb-4">
+    <div>
+      <h2 class="text-primary text-[1.3rem] mb-1 font-bold">Submit brevet evidence</h2>
+      <p class="text-text-light text-sm">Submit a FIT/GPX file, analyzed Strava activity, or traditional proof for your completed brevets. An organizer makes the final decision.</p>
+    </div>
+    <a class="btn bg-white text-primary border border-border hover:opacity-90" href="{{ url_for('validation.my_validations') }}">View all evidence</a>
+  </div>
+  {% if validation_events %}
+  <div class="table-wrap"><table><thead><tr><th>Date</th><th>Brevet</th><th>Distance</th><th>Status</th><th></th></tr></thead><tbody>
+    {% for event in validation_events[:8] %}<tr>
+      <td>{{ event.date }}</td><td>{{ event.name|clean_name }}</td><td>{{ event.distance_km }} km</td>
+      <td>{% if event.submission_id %}<span class="text-sm font-semibold">{{ (event.organizer_decision or event.machine_decision)|replace('_',' ')|title }}</span>{% else %}<span class="text-text-light text-sm">Not submitted</span>{% endif %}</td>
+      <td>{% if event.submission_id %}<a class="text-primary font-semibold" href="{{ url_for('validation.my_validations') }}">View</a>{% else %}<a class="btn btn-primary" href="{{ url_for('validation.submit_validation', event_id=event.event_id) }}">Submit evidence</a>{% endif %}</td>
+    </tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<p class="text-text-light">Completed brevets linked to this BrevetHub account will appear here.</p>{% endif %}
+</div>
+
 <div class="card">
   <h2 class="text-primary text-[1.3rem] mb-4 pb-2.5 border-b-[3px] border-accent inline-block font-bold">Live rides</h2>
   <p class="text-text-light">
