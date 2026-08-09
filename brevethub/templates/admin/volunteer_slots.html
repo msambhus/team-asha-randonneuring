@@ -1,0 +1,492 @@
+{% extends "base.html" %}
+{% block title %}Volunteer roles — {{ event.name|clean_name }} — {{ product_name }}{% endblock %}
+
+{% block content %}
+<style>
+.vol-wrap { max-width: 900px; margin: 0 auto; padding: 0 16px; }
+.vol-hero { background: var(--primary); color: white; border-radius: 12px; padding: 20px 24px; margin: 12px 0 18px; }
+.vol-hero h1 { font-size: 1.25rem; font-weight: 700; margin: 0 0 4px; }
+.vol-hero .meta { opacity: .85; font-size: .88rem; }
+.vol-slot-item {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.vol-slot-item:last-child { border-bottom: 0; }
+.vol-slot-item.vol-slot-pending-delete { opacity: .45; }
+.vol-slot-item.vol-slot-pending-delete .form-input:not([type="hidden"]) {
+  text-decoration: line-through;
+}
+.vol-slot-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.vol-slot-fields {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+.vol-slot-name {
+  flex: 0 0 auto;
+  field-sizing: content;
+  width: auto;
+  min-width: 0;
+  max-width: 20rem;
+  padding: 6px 2px 6px 8px;
+  font-size: .84rem;
+}
+.vol-slot-notes-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  flex: 0 0 auto;
+  margin-left: 0;
+}
+.vol-slot-notes-wrap .paren {
+  font-size: .82rem;
+  color: var(--text-light);
+  line-height: 1;
+  flex-shrink: 0;
+  padding: 0;
+}
+.vol-slot-notes {
+  width: auto;
+  min-width: 0;
+  max-width: 9rem;
+  padding: 6px 0;
+  font-size: .78rem;
+  color: var(--text);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.vol-slot-notes-wrap.is-empty:not(:focus-within) .vol-slot-notes {
+  width: 2.5rem;
+}
+.vol-slot-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.vol-slot-notes-wrap.is-empty:not(:focus-within) .paren {
+  display: none;
+}
+.vol-slot-notes-wrap:focus-within .vol-slot-notes,
+.vol-slot-notes-wrap:not(.is-empty) .vol-slot-notes {
+  border-color: var(--border);
+  background: #fff;
+  padding: 6px 0;
+}
+.vol-slot-notes::placeholder {
+  color: #cbd5e1;
+  font-style: italic;
+}
+.vol-slot-notes-wrap.is-empty:not(:focus-within) .vol-slot-notes::placeholder {
+  color: #94a3b8;
+}
+.vol-capacity-wrap {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.vol-capacity-wrap label {
+  font-size: .65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-light);
+  white-space: nowrap;
+}
+.vol-capacity-wrap input {
+  width: 48px;
+  text-align: center;
+  padding: 6px 6px;
+  font-size: .84rem;
+}
+.vol-available {
+  color: #15803d;
+  font-weight: 700;
+  font-style: italic;
+  font-size: .85rem;
+  white-space: nowrap;
+  min-width: 5.5rem;
+  text-align: right;
+}
+.vol-full {
+  color: #b91c1c;
+  font-weight: 700;
+  font-style: italic;
+  font-size: .85rem;
+  white-space: nowrap;
+  min-width: 5.5rem;
+  text-align: right;
+}
+.vol-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: #b91c1c;
+  font-size: 1.1rem;
+  line-height: 1;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.vol-remove-btn:hover { background: #fee2e2; }
+.vol-remove-btn.is-marked {
+  background: #b91c1c;
+  color: white;
+  border-color: #b91c1c;
+}
+.preset-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.vol-preset-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+.vol-add-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+.vol-add-field label {
+  flex: 0 0 140px;
+  margin: 0;
+}
+.vol-add-field .form-input { flex: 1; min-width: 0; }
+.vol-add-capacity {
+  flex: 0 0 72px !important;
+  width: 72px;
+  text-align: center;
+  padding: 8px 14px;
+}
+.vol-save-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 2px solid var(--border);
+}
+.vol-unsaved-hint {
+  font-size: .82rem;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 8px 12px;
+  flex: 1;
+  min-width: 200px;
+}
+.vol-unsaved-hint[hidden] { display: none; }
+@media (max-width: 640px) {
+  .vol-slot-row { flex-wrap: wrap; }
+  .vol-slot-fields { flex-wrap: wrap; }
+  .vol-slot-notes-wrap { flex: 1 1 100%; padding-left: 4px; }
+  .vol-slot-actions { width: 100%; justify-content: flex-end; }
+}
+</style>
+
+<div class="vol-wrap section" id="vol-admin-page">
+  <a href="{{ url_for('admin.event_roster', event_id=event.id) }}" class="text-primary text-sm vol-nav-link">← Event roster</a>
+
+  <div class="vol-hero">
+    <h1>Volunteer roles — {{ event.name|clean_name }}</h1>
+    <p class="meta">{{ event.date }} · {{ event.distance_km }} km</p>
+  </div>
+
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in msgs %}
+    <div class="card mb-3 p-3 text-sm {% if cat == 'error' %}text-red-700 bg-red-50{% else %}text-green-800 bg-green-50{% endif %}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="flex gap-3 flex-wrap mb-4">
+    <a class="btn btn-secondary btn-sm vol-nav-link" href="{{ url_for('admin.volunteer_roster', event_id=event.id) }}">Review signups →</a>
+  </div>
+
+  <div class="card mb-4 p-4">
+    <form method="post" class="flex items-center gap-3 flex-wrap vol-other-form">
+      <input type="hidden" name="action" value="toggle_enabled">
+      <label class="flex items-center gap-2 font-semibold text-sm">
+        <input type="checkbox" name="volunteer_enabled" value="1"
+               {% if event.volunteer_enabled %}checked{% endif %}
+               class="vol-toggle-enabled">
+        Volunteer signup open on calendar
+      </label>
+    </form>
+    <p class="text-text-light text-xs mt-2">When enabled, logged-in riders see a Volunteer button for this event.</p>
+  </div>
+
+  <div class="card mb-4 p-4">
+    <h2 class="text-primary font-bold text-base mb-2">Add role</h2>
+    <p class="text-text-light text-xs mb-3">Pick a preset or enter a custom role, then click <strong>Add role</strong>.</p>
+    <div class="preset-btns" style="margin-bottom:20px;">
+      {% for preset in presets %}
+      <button type="button" class="btn btn-secondary btn-sm vol-preset-btn" data-preset="{{ preset }}">+ {{ preset }}</button>
+      {% endfor %}
+    </div>
+    <form method="post" id="vol-add-role-form" class="grid gap-3 vol-other-form" style="max-width:640px;">
+      <input type="hidden" name="action" value="add_slot">
+      <div class="vol-add-field">
+        <label class="text-xs font-semibold text-text-light uppercase" for="vol-add-role-name">Role / shift label</label>
+        <input type="text" id="vol-add-role-name" name="role_name" class="form-input" required
+               placeholder="e.g. Finish Control 17:30 - 21:30">
+      </div>
+      <div class="vol-add-field">
+        <label class="text-xs font-semibold text-text-light uppercase">Capacity</label>
+        <input type="number" name="capacity" value="1" min="1" max="99"
+               class="form-input vol-add-capacity">
+      </div>
+      <div class="vol-add-field">
+        <label class="text-xs font-semibold text-text-light uppercase">Notes (optional)</label>
+        <input type="text" name="description" class="form-input" placeholder="Location or instructions">
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm w-fit">Add role</button>
+    </form>
+  </div>
+
+  <div class="card mb-4 p-4">
+    <h2 class="text-primary font-bold text-base mb-1">Roles &amp; shifts ({{ slots|length }})</h2>
+    <p class="text-text-light text-xs mb-3">Edit roles below, then click <strong>Save roles</strong>. Changes are not saved until then.</p>
+
+    {% if slots %}
+    <form method="post" id="vol-slots-form">
+      <input type="hidden" name="action" value="save_slots">
+      <div id="vol-delete-inputs"></div>
+      {% for slot in slots %}
+      <div class="vol-slot-item" data-slot-id="{{ slot.id }}">
+        <div class="vol-slot-row">
+          <div class="vol-slot-fields">
+            <input type="text" name="role_name_{{ slot.id }}" value="{{ slot.role_name.strip() if slot.role_name else '' }}"
+                   size="{{ [((slot.role_name or '')|length), 1]|max }}"
+                   class="form-input vol-slot-name vol-track" required>
+            <span class="vol-slot-notes-wrap{% if not slot.description or not slot.description.strip() %} is-empty{% endif %}">
+              <span class="paren">(</span>
+              <input type="text" name="description_{{ slot.id }}" value="{{ slot.description.strip() if slot.description else '' }}"
+                     placeholder="notes" class="form-input vol-slot-notes vol-track" aria-label="Optional notes">
+              <span class="paren">)</span>
+            </span>
+          </div>
+          <div class="vol-slot-actions">
+            <div class="vol-capacity-wrap">
+              <label for="cap-{{ slot.id }}">Capacity</label>
+              <input id="cap-{{ slot.id }}" type="number" name="capacity_{{ slot.id }}"
+                     value="{{ slot.capacity }}" min="1" max="99"
+                     class="form-input text-sm vol-track">
+            </div>
+            {% set avail = slot.capacity - (slot.confirmed_count or 0) %}
+            {% if avail > 0 %}
+            <span class="vol-available">{{ avail }} available</span>
+            {% else %}
+            <span class="vol-full">Full</span>
+            {% endif %}
+            <button type="button" class="vol-remove-btn" title="Remove role" aria-label="Remove role"
+                    data-remove-slot="{{ slot.id }}">✕</button>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+
+      <div class="vol-save-bar">
+        <div class="vol-unsaved-hint" id="vol-unsaved-hint" hidden>
+          You have unsaved changes — save before refreshing or leaving this page.
+        </div>
+        <button type="submit" class="btn btn-primary">Save roles</button>
+      </div>
+    </form>
+    {% else %}
+      <p class="text-text-light text-sm">No volunteer roles yet. Add one above or use a preset.</p>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+(function () {
+  function trimTextInputs(root) {
+    if (!root) return;
+    root.querySelectorAll('input[type="text"]').forEach(function (el) {
+      el.value = el.value.trim();
+    });
+  }
+
+  function trimOnBlur(root) {
+    if (!root) return;
+    root.querySelectorAll('input[type="text"]').forEach(function (el) {
+      el.addEventListener('blur', function () {
+        var before = el.value;
+        el.value = el.value.trim();
+        if (el.value !== before) {
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        syncNotesWrap(el.closest('.vol-slot-notes-wrap'));
+      });
+      el.addEventListener('focus', function () {
+        syncNotesWrap(el.closest('.vol-slot-notes-wrap'));
+      });
+      el.addEventListener('input', function () {
+        syncNotesWrap(el.closest('.vol-slot-notes-wrap'));
+        if (el.classList.contains('vol-slot-name')) {
+          el.size = Math.max(1, el.value.length);
+        }
+      });
+    });
+  }
+
+  function syncNotesWrap(wrap) {
+    if (!wrap) return;
+    var input = wrap.querySelector('.vol-slot-notes');
+    if (!input) return;
+    wrap.classList.toggle('is-empty', !input.value.trim());
+  }
+
+  document.querySelectorAll('.vol-slot-notes-wrap').forEach(syncNotesWrap);
+
+  var addForm = document.getElementById('vol-add-role-form');
+  trimOnBlur(addForm);
+  if (addForm) {
+    addForm.addEventListener('submit', function () { trimTextInputs(addForm); });
+  }
+
+  var slotsForm = document.getElementById('vol-slots-form');
+  trimOnBlur(slotsForm);
+  if (slotsForm) {
+    slotsForm.addEventListener('submit', function () { trimTextInputs(slotsForm); }, true);
+  }
+
+  var roleInput = document.getElementById('vol-add-role-name');
+  document.querySelectorAll('.vol-preset-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (roleInput) {
+        roleInput.value = (btn.getAttribute('data-preset') || '').trim();
+        roleInput.focus();
+      }
+      document.querySelectorAll('.vol-preset-btn').forEach(function (b) {
+        b.classList.toggle('active', b === btn);
+      });
+    });
+  });
+})();
+
+(function () {
+  function trimTextInputs(root) {
+    if (!root) return;
+    root.querySelectorAll('input[type="text"]').forEach(function (el) {
+      el.value = el.value.trim();
+    });
+  }
+
+  var form = document.getElementById('vol-slots-form');
+  if (!form) return;
+
+  var hint = document.getElementById('vol-unsaved-hint');
+  var deleteContainer = document.getElementById('vol-delete-inputs');
+  var pendingDeletes = new Set();
+  var dirty = false;
+
+  function snapshot() {
+    var fd = new FormData(form);
+    pendingDeletes.forEach(function (id) { fd.append('delete_slots', id); });
+    return new URLSearchParams(fd).toString();
+  }
+
+  var initial = snapshot();
+
+  function setDirty(isDirty) {
+    dirty = isDirty;
+    if (hint) hint.hidden = !dirty;
+  }
+
+  function checkDirty() {
+    setDirty(snapshot() !== initial);
+  }
+
+  form.addEventListener('input', checkDirty);
+  form.addEventListener('change', checkDirty);
+
+  form.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-remove-slot]');
+    if (!btn) return;
+    var slotId = btn.getAttribute('data-remove-slot');
+    var row = form.querySelector('[data-slot-id="' + slotId + '"]');
+    if (!row) return;
+
+    if (pendingDeletes.has(slotId)) {
+      pendingDeletes.delete(slotId);
+      row.classList.remove('vol-slot-pending-delete');
+      btn.classList.remove('is-marked');
+      row.querySelectorAll('.vol-track').forEach(function (el) { el.disabled = false; });
+      var hidden = deleteContainer.querySelector('[data-delete-id="' + slotId + '"]');
+      if (hidden) hidden.remove();
+    } else {
+      pendingDeletes.add(slotId);
+      row.classList.add('vol-slot-pending-delete');
+      btn.classList.add('is-marked');
+      row.querySelectorAll('.vol-track').forEach(function (el) { el.disabled = true; });
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'delete_slots';
+      input.value = slotId;
+      input.setAttribute('data-delete-id', slotId);
+      deleteContainer.appendChild(input);
+    }
+    checkDirty();
+  });
+
+  form.addEventListener('submit', function () {
+    dirty = false;
+  });
+
+  window.addEventListener('beforeunload', function (e) {
+    if (!dirty) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+
+  var leaveMsg = 'You have unsaved volunteer role changes. Leave without saving?';
+
+  document.querySelectorAll('.vol-nav-link').forEach(function (link) {
+    link.addEventListener('click', function (e) {
+      if (!dirty) return;
+      if (!window.confirm(leaveMsg)) e.preventDefault();
+    });
+  });
+
+  document.querySelectorAll('.vol-other-form').forEach(function (otherForm) {
+    otherForm.addEventListener('submit', function (e) {
+      if (!dirty) return;
+      if (!window.confirm(leaveMsg)) e.preventDefault();
+    });
+  });
+
+  var toggle = document.querySelector('.vol-toggle-enabled');
+  if (toggle) {
+    toggle.addEventListener('change', function (e) {
+      if (!dirty) {
+        toggle.closest('form').submit();
+        return;
+      }
+      if (!window.confirm(leaveMsg)) {
+        e.preventDefault();
+        toggle.checked = !toggle.checked;
+        return;
+      }
+      toggle.closest('form').submit();
+    });
+  }
+})();
+</script>
+{% endblock %}

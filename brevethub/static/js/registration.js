@@ -1003,7 +1003,7 @@
     var id = e.detail.eventId;
     var regStatus = e.detail.registrationStatus || 'confirmed';
     var badge = document.querySelector('[data-reg-badge="' + id + '"]');
-    var badgeText = regStatus === 'confirmed' ? "You're registered"
+    var badgeText = regStatus === 'confirmed' ? 'Registered'
       : regStatus === 'exception' ? 'Registered · review'
       : regStatus === 'waitlist' ? 'Waitlist'
       : regStatus.charAt(0).toUpperCase() + regStatus.slice(1);
@@ -1013,13 +1013,18 @@
     } else {
       var section = document.querySelector('.event-card[data-event-id="' + id + '"] .signup-section');
       if (section) {
+        var row = section.querySelector('.signup-you');
+        if (!row) {
+          row = document.createElement('div');
+          row.className = 'signup-you';
+          var actions = section.querySelector('.signup-actions');
+          section.insertBefore(row, actions || null);
+        }
         var span = document.createElement('span');
         span.className = 'registration-badge';
         span.setAttribute('data-reg-badge', id);
         span.textContent = badgeText;
-        var actions = section.querySelector('.signup-actions');
-        if (actions) section.insertBefore(span, actions);
-        else section.appendChild(span);
+        row.appendChild(span);
       }
     }
     var regBtn = document.querySelector('[data-register-event="' + id + '"]');

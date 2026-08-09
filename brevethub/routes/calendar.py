@@ -251,12 +251,17 @@ def calendar():
                                        rider['id'], e)
             my_results = []
         followed_live_event_ids = models.get_followed_live_event_ids(rider['id'])
+        my_volunteer_signups = models.get_rider_volunteer_signups_by_event(rider['id'])
+    else:
+        my_volunteer_signups = {}
 
     default_state = (club or {}).get('state') if club else None
     default_club = (club or {}).get('name') if club else None
     post_ride_open_by_event = {
         ev['id']: models.event_post_ride_open(ev) for ev in events
     }
+    volunteer_event_ids = [ev['id'] for ev in events if ev.get('volunteer_enabled')]
+    volunteer_summary_by_event = models.get_volunteer_summaries_for_events(volunteer_event_ids)
     return render_template(
         'calendar.html', events=events, months=months, my_status=my_status,
         my_registrations=my_registrations,
@@ -266,6 +271,8 @@ def calendar():
         regions_by_state=regions_by_state, clubs=clubs,
         default_state=default_state, default_club=default_club,
         followed_live_event_ids=followed_live_event_ids,
+        my_volunteer_signups=my_volunteer_signups,
+        volunteer_summary_by_event=volunteer_summary_by_event,
         degraded=degraded, weather=weather,
         event_categories=event_categories,
         membership_pills=membership_pills(rider),

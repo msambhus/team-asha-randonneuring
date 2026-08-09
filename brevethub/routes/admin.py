@@ -40,7 +40,7 @@ from brevethub.services.ride_validation import (
     TrackPoint, combine_recordings, fingerprint, parse_fit, parse_gpx,
     validate_submission,
 )
-from brevethub.services.registration import progress_label, rider_display_name
+from brevethub.services.registration import progress_label, rider_display_name, status_display_label
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -422,6 +422,59 @@ def validation_evidence(submission_id, evidence_id):
     )
 
 
+def _unique_emails(rows):
+    """Unique emails in row order for copy / BCC."""
+    seen = set()
+    emails = []
+    for row in rows:
+        email = (row.get('email') or '').strip()
+        if not email:
+            continue
+        key = email.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        emails.append(email)
+    return emails
+
+
+def _volunteer_emails_for_mailing(roster, *, confirmed_only=False):
+    """Unique volunteer emails in signup order for copy / mailto."""
+    if confirmed_only:
+        roster = [r for r in roster if r.get('status') == 'confirmed']
+    return _unique_emails(roster)
+
+
+def _roster_copy_rows(roster, *, include_results=False):
+    """Rows for admin roster copy list."""
+    rows = []
+    for row in roster:
+        item = {
+            'name': row.get('display_name') or '',
+            'rusa_id': str(row.get('rusa_id') or ''),
+        }
+        if include_results:
+            item['status'] = status_display_label(row.get('status') or '').upper()
+            item['finish'] = row.get('finish_time') or ''
+        rows.append(item)
+    return rows
+
+
+def _attach_volunteer_counts(events):
+    """Add volunteer_signed / volunteer_total for admin event lists."""
+    if not events:
+        return
+    summaries = models.get_volunteer_summaries_for_events([ev['id'] for ev in events])
+    for ev in events:
+        if not ev.get('volunteer_enabled'):
+            ev['volunteer_signed'] = None
+            ev['volunteer_total'] = None
+            continue
+        summary = summaries.get(ev['id'], {})
+        ev['volunteer_signed'] = int(summary.get('confirmed_total') or 0)
+        ev['volunteer_total'] = int(summary.get('capacity_total') or 0)
+
+
 @admin_bp.route('/events', methods=['GET'])
 @operator_required
 def events():
@@ -440,6 +493,7 @@ def events():
     region_prefix = session.get('brevethub_operator_region_prefix')
     all_events = models.get_club_admin_events(club_id, include_past=True,
                                               region_prefix=region_prefix)
+    _attach_volunteer_counts(all_events)
     today = date.today()
     week_end = today + timedelta(days=7)
 
@@ -712,6 +766,14 @@ def event_roster(event_id):
     for row in close_blockers:
         row['display_name'] = rider_display_name(row)
     lifecycle = _event_lifecycle(event, today)
+    vol_summary = models.get_volunteer_summaries_for_events([event_id]).get(event_id, {})
+    volunteer_signed = int(vol_summary.get('confirmed_total') or 0) if event.get('volunteer_enabled') else None
+    volunteer_total = int(vol_summary.get('capacity_total') or 0) if event.get('volunteer_enabled') else None
+    roster_emails = _unique_emails(filtered_roster)
+    roster_copy_include_results = lifecycle == 'closed'
+    roster_copy_rows = _roster_copy_rows(
+        filtered_roster, include_results=roster_copy_include_results,
+    )
     return render_template(
         'admin/event_roster.html',
         event=event,
@@ -722,6 +784,45 @@ def event_roster(event_id):
         event_lifecycle=lifecycle,
         close_blockers=close_blockers,
         can_close_event=lifecycle == 'in_progress' and len(close_blockers) == 0,
+        volunteer_signed=volunteer_signed,
+        volunteer_total=volunteer_total,
+        roster_emails=roster_emails,
+        roster_copy_rows=roster_copy_rows,
+        roster_copy_include_results=roster_copy_include_results,
+    )
+
+
+@admin_bp.route('/events/event/<int:event_id>/volunteers/export.csv')
+@operator_required
+def export_volunteer_csv(event_id):
+    """Download volunteer signups as CSV."""
+    import csv
+    event = models.get_brevet_event_registration(event_id)
+    if not event:
+        abort(404)
+    _assert_event_club_access(event)
+    roster = models.get_admin_volunteer_roster(event_id)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Name', 'Email', 'Phone', 'RUSA ID', 'Role', 'Status', 'Signed Up'])
+    for r in roster:
+        name = rider_display_name(r)
+        signed_up = r.get('signed_up_at')
+        writer.writerow([
+            name,
+            r.get('email') or '',
+            r.get('phone') or '',
+            r.get('rusa_id') or '',
+            r.get('role_name') or '',
+            r.get('status') or '',
+            signed_up.strftime('%Y-%m-%d %H:%M') if signed_up else '',
+        ])
+    fname = f"volunteers_{event_id}_{event.get('date', '')}.csv".replace(' ', '_')
+    from flask import Response
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{fname}"'},
     )
 
 
@@ -1047,3 +1148,221 @@ def generate_plan():
 
     flash(f'Real ride plan generated for {event["name"]}.', 'success')
     return redirect(url_for('plan.plan_view', event_id=event_id))
+
+
+# ── Volunteer slot admin ─────────────────────────────────────────────────────
+
+_VOLUNTEER_SLOT_PRESETS = (
+    'Event Volunteer Coordinator',
+    'DORC',
+    'Start Control',
+    'Finish Control',
+)
+
+
+@admin_bp.route('/events/event/<int:event_id>/volunteers/setup', methods=['GET', 'POST'])
+@operator_required
+def volunteer_slots_setup(event_id):
+    event = models.get_brevet_event_registration(event_id)
+    if not event:
+        abort(404)
+    _assert_event_club_access(event)
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+
+        if action == 'toggle_enabled':
+            enabled = request.form.get('volunteer_enabled') == '1'
+            models.set_event_volunteer_enabled(event_id, enabled)
+            flash('Volunteer signup ' + ('enabled' if enabled else 'disabled') + '.', 'success')
+            return redirect(url_for('admin.volunteer_slots_setup', event_id=event_id))
+
+        if action == 'add_slot':
+            role_name = (request.form.get('role_name') or '').strip()
+            if not role_name:
+                flash('Role name is required.', 'error')
+            else:
+                try:
+                    capacity = max(1, int(request.form.get('capacity') or 1))
+                except (TypeError, ValueError):
+                    capacity = 1
+                description = (request.form.get('description') or '').strip() or None
+                slots = models.get_volunteer_slots_for_event(event_id)
+                models.create_volunteer_slot(
+                    event_id, role_name,
+                    description=description,
+                    capacity=capacity,
+                    sort_order=len(slots),
+                )
+                if not event.get('volunteer_enabled'):
+                    models.set_event_volunteer_enabled(event_id, True)
+                flash(f'Added volunteer role: {role_name}', 'success')
+            return redirect(url_for('admin.volunteer_slots_setup', event_id=event_id))
+
+        if action == 'save_slots':
+            delete_ids = set()
+            for raw in request.form.getlist('delete_slots'):
+                try:
+                    delete_ids.add(int(raw))
+                except (TypeError, ValueError):
+                    continue
+            for slot_id in delete_ids:
+                slot = models.get_volunteer_slot(slot_id)
+                if slot and slot['event_id'] == event_id:
+                    models.delete_volunteer_slot(slot_id)
+
+            updated = 0
+            for key in request.form:
+                if not key.startswith('role_name_'):
+                    continue
+                try:
+                    slot_id = int(key.rsplit('_', 1)[1])
+                except (ValueError, IndexError):
+                    continue
+                if slot_id in delete_ids:
+                    continue
+                slot = models.get_volunteer_slot(slot_id)
+                if not slot or slot['event_id'] != event_id:
+                    continue
+                role_name = (request.form.get(key) or '').strip()
+                if not role_name:
+                    continue
+                try:
+                    capacity = max(1, int(request.form.get(f'capacity_{slot_id}') or 1))
+                except (TypeError, ValueError):
+                    capacity = 1
+                description = (request.form.get(f'description_{slot_id}') or '').strip() or None
+                sort_order = request.form.get(f'sort_order_{slot_id}', type=int)
+                models.update_volunteer_slot(
+                    slot_id,
+                    role_name=role_name,
+                    description=description,
+                    capacity=capacity,
+                    sort_order=sort_order if sort_order is not None else None,
+                )
+                updated += 1
+            removed = len(delete_ids)
+            parts = []
+            if updated:
+                parts.append(f'{updated} role{"s" if updated != 1 else ""} updated')
+            if removed:
+                parts.append(f'{removed} removed')
+            flash(
+                'Volunteer roles saved (' + ', '.join(parts) + ').' if parts
+                else 'No changes to save.',
+                'success',
+            )
+            return redirect(url_for('admin.volunteer_slots_setup', event_id=event_id))
+
+        if action == 'update_slot':
+            slot_id = request.form.get('slot_id', type=int)
+            role_name = (request.form.get('role_name') or '').strip()
+            if slot_id and role_name:
+                try:
+                    capacity = max(1, int(request.form.get('capacity') or 1))
+                except (TypeError, ValueError):
+                    capacity = 1
+                description = (request.form.get('description') or '').strip() or None
+                sort_order = request.form.get('sort_order', type=int)
+                models.update_volunteer_slot(
+                    slot_id,
+                    role_name=role_name,
+                    description=description,
+                    capacity=capacity,
+                    sort_order=sort_order if sort_order is not None else None,
+                )
+                flash('Volunteer role updated.', 'success')
+            return redirect(url_for('admin.volunteer_slots_setup', event_id=event_id))
+
+        if action == 'delete_slot':
+            slot_id = request.form.get('slot_id', type=int)
+            if slot_id:
+                models.delete_volunteer_slot(slot_id)
+                flash('Volunteer role removed.', 'success')
+            return redirect(url_for('admin.volunteer_slots_setup', event_id=event_id))
+
+        if action == 'add_preset':
+            preset = (request.form.get('preset') or '').strip()
+            if preset in _VOLUNTEER_SLOT_PRESETS:
+                slots = models.get_volunteer_slots_for_event(event_id)
+                models.create_volunteer_slot(
+                    event_id, preset, capacity=1, sort_order=len(slots),
+                )
+                if not event.get('volunteer_enabled'):
+                    models.set_event_volunteer_enabled(event_id, True)
+                flash(f'Added preset role: {preset}', 'success')
+            return redirect(url_for('admin.volunteer_slots_setup', event_id=event_id))
+
+    slots = models.get_volunteer_slots_for_event(event_id)
+    event = models.get_brevet_event_registration(event_id)
+    return render_template(
+        'admin/volunteer_slots.html',
+        event=event,
+        slots=slots,
+        presets=_VOLUNTEER_SLOT_PRESETS,
+    )
+
+
+@admin_bp.route('/events/event/<int:event_id>/volunteers', methods=['GET', 'POST'])
+@operator_required
+def volunteer_roster(event_id):
+    event = models.get_brevet_event_registration(event_id)
+    if not event:
+        abort(404)
+    _assert_event_club_access(event)
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+        signup_id = request.form.get('signup_id', type=int)
+        operator = session.get('brevethub_operator_username') or 'operator'
+
+        if action == 'approve' and signup_id:
+            signup = models.get_volunteer_signup(signup_id)
+            if signup:
+                confirmed = models.count_slot_confirmed_signups(signup['slot_id'])
+                slot = models.get_volunteer_slot(signup['slot_id'])
+                capacity = int((slot or {}).get('capacity') or 1)
+                if confirmed >= capacity:
+                    flash('Cannot approve — this role is already full.', 'error')
+                else:
+                    models.set_volunteer_signup_status(
+                        signup_id, 'confirmed', approved_by=operator)
+                    flash('Volunteer signup approved.', 'success')
+            return redirect(url_for('admin.volunteer_roster', event_id=event_id))
+
+        if action == 'reject' and signup_id:
+            models.set_volunteer_signup_status(signup_id, 'withdrawn')
+            flash('Volunteer signup rejected.', 'success')
+            return redirect(url_for('admin.volunteer_roster', event_id=event_id))
+
+        if action == 'remove' and signup_id:
+            models.admin_remove_volunteer_signup(signup_id)
+            flash('Volunteer signup removed.', 'success')
+            return redirect(url_for('admin.volunteer_roster', event_id=event_id))
+
+    roster = models.get_admin_volunteer_roster(event_id)
+    for row in roster:
+        row['display_name'] = rider_display_name(row)
+    volunteer_emails_all = _volunteer_emails_for_mailing(roster, confirmed_only=False)
+    volunteer_emails_confirmed = _volunteer_emails_for_mailing(roster, confirmed_only=True)
+    volunteer_copy_rows = [
+        {
+            'volunteer': row['display_name'] + (' · RUSA ' + str(row['rusa_id']) if row.get('rusa_id') else ''),
+            'contact': ' · '.join(p for p in [
+                (row.get('email') or '').strip(),
+                (row.get('phone') or '').strip(),
+            ] if p) or '—',
+            'role': row.get('role_name') or '',
+            'status': (row.get('status') or '').upper(),
+        }
+        for row in roster
+    ]
+    slots = models.get_volunteer_slots_for_event(event_id)
+    return render_template(
+        'admin/volunteer_roster.html',
+        event=event,
+        roster=roster,
+        slots=slots,
+        volunteer_emails_all=volunteer_emails_all,
+        volunteer_copy_rows=volunteer_copy_rows,
+    )

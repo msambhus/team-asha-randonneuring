@@ -1,5 +1,10 @@
 {% extends "base.html" %}
+{% from "admin/partials/_actions_menu.html" import actions_menu, actions_menu_styles %}
 {% block title %}Roster: {{ event.name|clean_name }} — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+{{ actions_menu_styles() }}
+{% endblock %}
 
 {% block content %}
 {% set is_closed = event.closed_at %}
@@ -34,6 +39,39 @@
 .close-btn { padding:6px 16px; border-radius:6px; font-size:.82rem; font-weight:600; cursor:pointer; border:none; }
 .close-btn-close { background:#dc2626; color:white; }
 .close-btn-open  { background:#16a34a; color:white; }
+.roster-panel-head {
+  display:flex; justify-content:space-between; align-items:center;
+  flex-wrap:wrap; gap:12px 16px; padding:12px 0 14px;
+  border-bottom:1px solid var(--border); margin-bottom:4px;
+}
+.roster-stats { display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; }
+.roster-stat { display:flex; flex-direction:column; gap:2px; user-select:text; cursor:default; }
+.roster-stat-label {
+  font-size:.65rem; font-weight:700; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--text-light);
+}
+.roster-stat-value {
+  font-size:1.15rem; font-weight:700; color:var(--primary);
+  font-variant-numeric:tabular-nums; line-height:1.1;
+}
+.roster-stat-sub { font-size:.78rem; font-weight:600; color:var(--text-light); }
+.roster-stat-vol .roster-stat-value { color:#92400e; }
+.roster-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.roster-action-btn {
+  display:inline-flex; align-items:center; gap:4px;
+  padding:6px 12px; border-radius:6px;
+  border:1.5px solid var(--border); background:#fff;
+  font-size:.78rem; font-weight:600; color:var(--primary);
+  text-decoration:none; cursor:pointer; white-space:nowrap;
+  transition:background .12s ease, border-color .12s ease;
+}
+.roster-action-btn:hover {
+  background:#f1f5f9; border-color:var(--primary); text-decoration:none;
+}
+.roster-action-btn.is-accent {
+  background:#fffbeb; border-color:#fcd34d; color:#92400e;
+}
+.roster-action-btn.is-accent:hover { background:#fef3c7; border-color:#d97706; }
 </style>
 
 <div class="roster-wrap section">
@@ -104,11 +142,24 @@
   <form method="post">
     <input type="hidden" name="rider_id" value="">
     <div class="card" style="overflow-x:auto;padding:0 16px;">
-      <div class="flex justify-between items-center py-3 flex-wrap gap-2">
-        <h2 class="text-primary font-bold m-0">Roster ({{ roster|length }}{% if active_filter %} of {{ roster_total }}{% endif %})</h2>
-        <div class="flex gap-2 flex-wrap">
-          <a class="btn btn-secondary btn-sm" href="{{ url_for('admin.export_roster_csv', event_id=event.id) }}">↓ CSV</a>
-          {% if is_past %}<button type="button" class="btn btn-secondary btn-sm" onclick="markAllFinished()">Mark all finished</button>{% endif %}
+      <div class="roster-panel-head">
+        <div class="roster-stats" aria-label="Roster summary">
+          <div class="roster-stat">
+            <span class="roster-stat-label">Riders</span>
+            <span class="roster-stat-value">
+              {{ roster|length }}{% if active_filter %}<span class="roster-stat-sub"> of {{ roster_total }}</span>{% endif %}
+            </span>
+          </div>
+        </div>
+        <div class="roster-actions" aria-label="Roster actions">
+          {{ actions_menu('roster-actions-menu', url_for('admin.export_roster_csv', event_id=event.id), roster|length > 0) }}
+          <a class="roster-action-btn" href="{{ url_for('admin.volunteer_slots_setup', event_id=event.id) }}">Volunteer roles</a>
+          {% if event.volunteer_enabled %}
+          <a class="roster-action-btn is-accent" href="{{ url_for('admin.volunteer_roster', event_id=event.id) }}">
+            Volunteers {{ volunteer_signed }}/{{ volunteer_total }} →
+          </a>
+          {% endif %}
+          {% if is_past %}<button type="button" class="roster-action-btn" onclick="markAllFinished()">Mark all finished</button>{% endif %}
         </div>
       </div>
       <table class="roster-table">
@@ -117,7 +168,7 @@
             <th>Rider</th>
             <th>Contact</th>
             <th>Progress</th>
-            <th>Ride status</th>
+            <th>Status</th>
             <th>Finish</th>
             <th>Validation</th>
             <th>Actions</th>
@@ -195,11 +246,71 @@
   {% endif %}
 </div>
 
+<script src="{{ url_for('static', filename='js/admin-actions-menu.js') }}"></script>
 <script>
 function markAllFinished() {
   document.querySelectorAll('.roster-status-select').forEach(function (sel) {
     sel.value = 'finished';
   });
 }
+
+{% if roster %}
+(function () {
+  var emails = {{ roster_emails|tojson }};
+  var rows = {{ roster_copy_rows|tojson }};
+  var includeResults = {{ roster_copy_include_results|tojson }};
+  var menu = document.getElementById('roster-actions-menu');
+  if (!menu || !menu.registerActionHandlers) return;
+
+  function cleanCell(val) {
+    return String(val == null ? '' : val).replace(/[\t\r\n]+/g, ' ').trim();
+  }
+
+  function buildListTsv() {
+    var headers = includeResults
+      ? ['Name', 'RUSA ID', 'Status', 'Finish']
+      : ['Name', 'RUSA ID'];
+    var lines = [headers.join('\t')];
+    rows.forEach(function (r) {
+      var cols = [cleanCell(r.name), cleanCell(r.rusa_id) || '—'];
+      if (includeResults) {
+        cols.push(cleanCell(r.status) || '—', cleanCell(r.finish) || '—');
+      }
+      lines.push(cols.join('\t'));
+    });
+    return lines.join('\n');
+  }
+
+  function buildListHtml() {
+    var esc = function (s) {
+      return cleanCell(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    };
+    var headers = includeResults
+      ? ['Name', 'RUSA ID', 'Status', 'Finish']
+      : ['Name', 'RUSA ID'];
+    var html = '<table border="1" cellpadding="4" cellspacing="0"><thead><tr>';
+    headers.forEach(function (h) { html += '<th>' + h + '</th>'; });
+    html += '</tr></thead><tbody>';
+    rows.forEach(function (r) {
+      html += '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.rusa_id || '—') + '</td>';
+      if (includeResults) {
+        html += '<td>' + esc(r.status || '—') + '</td><td>' + esc(r.finish || '—') + '</td>';
+      }
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    return html;
+  }
+
+  menu.registerActionHandlers({
+    'copy-emails': function () {
+      return window.adminActionsCopyText(emails.join(', '));
+    },
+    'copy-list': function () {
+      return window.adminActionsCopyRich(buildListTsv(), buildListHtml());
+    },
+  });
+})();
+{% endif %}
 </script>
 {% endblock %}

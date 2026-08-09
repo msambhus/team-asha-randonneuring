@@ -1015,7 +1015,7 @@ def get_upcoming_events(state=None, limit=200):
         "       e.club_id, c.name AS club_name, c.state AS club_state, "
         "       e.start_time, e.time_limit_hours, "
         "       e.fee_cents, e.registration_deadline, e.capacity, "
-        "       e.event_summary, e.registration_enabled, "
+        "       e.event_summary, e.registration_enabled, e.volunteer_enabled, "
         "       COALESCE(sc.signup_count, 0) AS signup_count, "
         "       COALESCE(sc.interested_count, 0) AS interested_count, "
         "       COALESCE(sc.confirmed_count, 0) AS confirmed_count "
@@ -2613,7 +2613,7 @@ def get_brevet_event_registration(event_id):
         "       e.ride_type, e.elevation_ft, e.rwgps_url, e.start_location, "
         "       e.start_time, e.time_limit_hours, e.club_id, "
         "       e.fee_cents, e.registration_deadline, e.capacity, e.event_summary, "
-        "       e.registration_enabled, e.closed_at, "
+        "       e.registration_enabled, e.volunteer_enabled, e.closed_at, "
         "       c.name AS club_name, c.rusa_club_id "
         "FROM rp_brevet_event e LEFT JOIN rp_club c ON c.id = e.club_id "
         "WHERE e.id = %s",
@@ -2711,7 +2711,8 @@ def enrich_brevet_event_registration(event_id, **fields):
     """Merge registration metadata onto a cached brevet (SFR sheet / admin)."""
     allowed = (
         'start_time', 'start_location', 'fee_cents', 'registration_deadline',
-        'capacity', 'event_summary', 'registration_enabled', 'club_id',
+        'capacity', 'event_summary', 'registration_enabled', 'volunteer_enabled',
+        'club_id',
         'elevation_ft', 'rwgps_url', 'time_limit_hours',
     )
     sets = []
@@ -2812,7 +2813,7 @@ def list_registration_events(limit=80, club_id=None, region_prefix=None):
     params.append(limit)
     return db.query(
         "SELECT e.id, e.name, e.date, e.distance_km, e.region, e.start_time, "
-        "       e.start_location, e.registration_enabled, "
+        "       e.start_location, e.registration_enabled, e.volunteer_enabled, "
         "       COUNT(s.id) FILTER (WHERE s.registration_status IS NOT NULL) AS roster_count, "
         "       COUNT(s.id) FILTER (WHERE s.status = %s) AS registered_count, "
         "       COUNT(s.id) FILTER (WHERE s.registration_status = 'exception') AS exception_count, "
@@ -2839,7 +2840,7 @@ def get_admin_events(include_past=False):
     date_filter = "" if include_past else "WHERE e.date >= CURRENT_DATE "
     return db.query(
         "SELECT e.id, e.name, e.date, e.distance_km, e.region, e.start_time, "
-        "       e.start_location, e.registration_enabled, e.closed_at, e.club_id, "
+        "       e.start_location, e.registration_enabled, e.volunteer_enabled, e.closed_at, e.club_id, "
         "       c.name AS club_name, "
         "       COUNT(s.id) FILTER (WHERE s.registration_status IS NOT NULL) AS roster_count, "
         "       COUNT(s.id) FILTER (WHERE s.status = %s) AS registered_count, "
@@ -2905,7 +2906,7 @@ def get_club_admin_events(club_id, include_past=False, region_prefix=None):
 
     return db.query(
         "SELECT e.id, e.name, e.date, e.distance_km, e.region, e.start_time, "
-        "       e.start_location, e.registration_enabled, e.closed_at, e.club_id, "
+        "       e.start_location, e.registration_enabled, e.volunteer_enabled, e.closed_at, e.club_id, "
         "       c.name AS club_name, "
         "       COUNT(s.id) FILTER (WHERE s.registration_status IS NOT NULL) AS roster_count, "
         "       COUNT(s.id) FILTER (WHERE s.status = %s) AS registered_count, "
@@ -3211,4 +3212,292 @@ def record_waiver_acceptance_v2(event_id, rider_id, waiver_version_id,
          age_certified, esign_consented, waiver_method, smartwaiver_id,
          initials, waiver_signed_date),
         returning=True,
+    )
+
+
+# ── Volunteer slots & signups ─────────────────────────────────────────────────
+
+def count_volunteer_slots(event_id):
+    row = db.query_one(
+        "SELECT COUNT(*) AS n FROM rp_volunteer_slot WHERE event_id = %s",
+        (event_id,),
+    )
+    return int(row['n']) if row else 0
+
+
+def get_volunteer_slots_for_event(event_id):
+    """Slots for an event with confirmed signup counts."""
+    return db.query(
+        "SELECT s.id, s.event_id, s.role_name, s.description, s.capacity, "
+        "       s.sort_order, s.created_at, "
+        "       COALESCE(v.confirmed_count, 0) AS confirmed_count "
+        "FROM rp_volunteer_slot s "
+        "LEFT JOIN ("
+        "  SELECT slot_id, COUNT(*) AS confirmed_count "
+        "  FROM rp_volunteer_signup WHERE status = 'confirmed' "
+        "  GROUP BY slot_id"
+        ") v ON v.slot_id = s.id "
+        "WHERE s.event_id = %s "
+        "ORDER BY s.sort_order, s.id",
+        (event_id,),
+    )
+
+
+def get_volunteer_slot(slot_id):
+    return db.query_one(
+        "SELECT id, event_id, role_name, description, capacity, sort_order, created_at "
+        "FROM rp_volunteer_slot WHERE id = %s",
+        (slot_id,),
+    )
+
+
+def create_volunteer_slot(event_id, role_name, *, description=None, capacity=1,
+                          sort_order=0):
+    role_name = (role_name or '').strip()
+    if description is not None:
+        description = (description or '').strip() or None
+    row = db.execute(
+        "INSERT INTO rp_volunteer_slot "
+        "(event_id, role_name, description, capacity, sort_order) "
+        "VALUES (%s, %s, %s, %s, %s) "
+        "RETURNING id, event_id, role_name, description, capacity, sort_order",
+        (event_id, role_name, description, capacity, sort_order),
+        returning=True,
+    )
+    return row
+
+
+def update_volunteer_slot(slot_id, *, role_name=None, description=None,
+                          capacity=None, sort_order=None):
+    if role_name is not None:
+        role_name = (role_name or '').strip()
+    if description is not None:
+        description = (description or '').strip() or None
+    sets = []
+    params = []
+    for key, value in (
+        ('role_name', role_name),
+        ('description', description),
+        ('capacity', capacity),
+        ('sort_order', sort_order),
+    ):
+        if value is not None:
+            sets.append(f"{key} = %s")
+            params.append(value)
+    if not sets:
+        return get_volunteer_slot(slot_id)
+    params.append(slot_id)
+    return db.execute(
+        f"UPDATE rp_volunteer_slot SET {', '.join(sets)} WHERE id = %s "
+        "RETURNING id, event_id, role_name, description, capacity, sort_order",
+        tuple(params),
+        returning=True,
+    )
+
+
+def delete_volunteer_slot(slot_id):
+    return db.execute(
+        "DELETE FROM rp_volunteer_slot WHERE id = %s RETURNING id",
+        (slot_id,),
+        returning=True,
+    )
+
+
+def set_event_volunteer_enabled(event_id, enabled):
+    return db.execute(
+        "UPDATE rp_brevet_event SET volunteer_enabled = %s WHERE id = %s RETURNING id",
+        (bool(enabled), event_id),
+        returning=True,
+    )
+
+
+def count_slot_confirmed_signups(slot_id):
+    row = db.query_one(
+        "SELECT COUNT(*) AS n FROM rp_volunteer_signup "
+        "WHERE slot_id = %s AND status = 'confirmed'",
+        (slot_id,),
+    )
+    return int(row['n']) if row else 0
+
+
+def get_volunteer_signup(signup_id):
+    return db.query_one(
+        "SELECT vs.id, vs.slot_id, vs.rider_id, vs.status, vs.signed_up_at, "
+        "       vs.approved_at, vs.approved_by, vs.notes, "
+        "       s.event_id, s.role_name "
+        "FROM rp_volunteer_signup vs "
+        "JOIN rp_volunteer_slot s ON s.id = vs.slot_id "
+        "WHERE vs.id = %s",
+        (signup_id,),
+    )
+
+
+def get_volunteer_signup_for_slot_rider(slot_id, rider_id):
+    return db.query_one(
+        "SELECT id, slot_id, rider_id, status, signed_up_at, approved_at, approved_by, notes "
+        "FROM rp_volunteer_signup WHERE slot_id = %s AND rider_id = %s",
+        (slot_id, rider_id),
+    )
+
+
+def get_rider_active_volunteer_signups(rider_id, event_id):
+    """Non-withdrawn signups for a rider on one event."""
+    return db.query(
+        "SELECT vs.id, vs.slot_id, vs.status, vs.signed_up_at, "
+        "       s.role_name, s.capacity "
+        "FROM rp_volunteer_signup vs "
+        "JOIN rp_volunteer_slot s ON s.id = vs.slot_id "
+        "WHERE vs.rider_id = %s AND s.event_id = %s AND vs.status <> 'withdrawn' "
+        "ORDER BY vs.signed_up_at",
+        (rider_id, event_id),
+    )
+
+
+def get_rider_volunteer_signups_for_event(rider_id, event_id):
+    rows = db.query(
+        "SELECT vs.id, vs.slot_id, vs.status, vs.signed_up_at, vs.approved_at, "
+        "       s.role_name, s.capacity, "
+        "       COALESCE(v.confirmed_count, 0) AS confirmed_count "
+        "FROM rp_volunteer_signup vs "
+        "JOIN rp_volunteer_slot s ON s.id = vs.slot_id "
+        "LEFT JOIN ("
+        "  SELECT slot_id, COUNT(*) AS confirmed_count "
+        "  FROM rp_volunteer_signup WHERE status = 'confirmed' "
+        "  GROUP BY slot_id"
+        ") v ON v.slot_id = s.id "
+        "WHERE vs.rider_id = %s AND s.event_id = %s AND vs.status <> 'withdrawn' "
+        "ORDER BY vs.signed_up_at",
+        (rider_id, event_id),
+    )
+    result = []
+    for row in rows:
+        capacity = int(row.get('capacity') or 1)
+        confirmed = int(row.get('confirmed_count') or 0)
+        result.append({
+            'id': row['id'],
+            'slot_id': row['slot_id'],
+            'status': row['status'],
+            'role_name': row['role_name'],
+            'signed_up_at': str(row['signed_up_at']) if row.get('signed_up_at') else None,
+            'approved_at': str(row['approved_at']) if row.get('approved_at') else None,
+        })
+    return result
+
+
+def get_rider_volunteer_signups_by_event(rider_id):
+    """Map event_id -> list of active volunteer signups for calendar badges."""
+    rows = db.query(
+        "SELECT s.event_id, vs.id, vs.status, s.role_name "
+        "FROM rp_volunteer_signup vs "
+        "JOIN rp_volunteer_slot s ON s.id = vs.slot_id "
+        "WHERE vs.rider_id = %s AND vs.status <> 'withdrawn' "
+        "ORDER BY s.event_id, vs.signed_up_at",
+        (rider_id,),
+    )
+    by_event = {}
+    for row in rows:
+        by_event.setdefault(row['event_id'], []).append({
+            'id': row['id'],
+            'status': row['status'],
+            'role_name': row['role_name'],
+        })
+    return by_event
+
+
+def get_volunteer_summaries_for_events(event_ids):
+    """Public volunteer fill summary per event for calendar cards (no rider PII)."""
+    if not event_ids:
+        return {}
+    rows = db.query(
+        "SELECT s.event_id, s.role_name, s.capacity, "
+        "       COALESCE(v.confirmed_count, 0) AS confirmed_count "
+        "FROM rp_volunteer_slot s "
+        "LEFT JOIN ("
+        "  SELECT slot_id, COUNT(*) AS confirmed_count "
+        "  FROM rp_volunteer_signup WHERE status = 'confirmed' "
+        "  GROUP BY slot_id"
+        ") v ON v.slot_id = s.id "
+        "WHERE s.event_id = ANY(%s) "
+        "ORDER BY s.event_id, s.sort_order, s.id",
+        (list(event_ids),),
+    )
+    summaries = {}
+    for row in rows:
+        eid = row['event_id']
+        summary = summaries.setdefault(eid, {
+            'slot_count': 0,
+            'capacity_total': 0,
+            'confirmed_total': 0,
+            'open_total': 0,
+            'open_roles': [],
+        })
+        cap = int(row['capacity'] or 1)
+        confirmed = int(row['confirmed_count'] or 0)
+        available = max(0, cap - confirmed)
+        summary['slot_count'] += 1
+        summary['capacity_total'] += cap
+        summary['confirmed_total'] += confirmed
+        summary['open_total'] += available
+        if available > 0:
+            summary['open_roles'].append({
+                'role_name': row['role_name'],
+                'available': available,
+            })
+    return summaries
+
+
+def upsert_volunteer_signup(slot_id, rider_id, *, status, approved_by=None):
+    approved_sql = 'NOW()' if status == 'confirmed' else 'NULL'
+    return db.execute(
+        "INSERT INTO rp_volunteer_signup (slot_id, rider_id, status, approved_at, approved_by) "
+        f"VALUES (%s, %s, %s, {approved_sql}, %s) "
+        "ON CONFLICT (slot_id, rider_id) DO UPDATE "
+        "SET status = EXCLUDED.status, "
+        "    signed_up_at = NOW(), "
+        f"    approved_at = {approved_sql}, "
+        "    approved_by = EXCLUDED.approved_by "
+        "RETURNING id, slot_id, rider_id, status, signed_up_at",
+        (slot_id, rider_id, status, approved_by),
+        returning=True,
+    )
+
+
+def set_volunteer_signup_status(signup_id, status, *, approved_by=None):
+    sets = ["status = %s"]
+    params = [status]
+    if status == 'confirmed':
+        sets.extend(["approved_at = NOW()", "approved_by = %s"])
+        params.append(approved_by)
+    elif status == 'withdrawn':
+        sets.append("approved_at = NULL")
+    params.append(signup_id)
+    return db.execute(
+        f"UPDATE rp_volunteer_signup SET {', '.join(sets)} WHERE id = %s "
+        "RETURNING id, slot_id, rider_id, status",
+        tuple(params),
+        returning=True,
+    )
+
+
+def admin_remove_volunteer_signup(signup_id):
+    return db.execute(
+        "DELETE FROM rp_volunteer_signup WHERE id = %s RETURNING id",
+        (signup_id,),
+        returning=True,
+    )
+
+
+def get_admin_volunteer_roster(event_id):
+    """All volunteer signups for operator review."""
+    return db.query(
+        "SELECT vs.id AS signup_id, vs.status, vs.signed_up_at, vs.approved_at, "
+        "       vs.approved_by, vs.notes, "
+        "       s.id AS slot_id, s.role_name, s.capacity, "
+        "       r.id AS rider_id, r.first_name, r.last_name, r.email, r.phone, r.rusa_id "
+        "FROM rp_volunteer_signup vs "
+        "JOIN rp_volunteer_slot s ON s.id = vs.slot_id "
+        "JOIN rp_rider r ON r.id = vs.rider_id "
+        "WHERE s.event_id = %s AND vs.status <> 'withdrawn' "
+        "ORDER BY s.sort_order, s.id, vs.signed_up_at",
+        (event_id,),
     )

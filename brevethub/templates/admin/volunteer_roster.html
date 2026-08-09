@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% from "admin/partials/_actions_menu.html" import actions_menu, actions_menu_styles %}
+{% block title %}Volunteers — {{ event.name|clean_name }} — {{ product_name }}{% endblock %}
+
+{% block extra_head %}
+{{ actions_menu_styles() }}
+<style>
+.vol-wrap { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+.vol-hero { background: var(--primary); color: white; border-radius: 12px; padding: 20px 24px; margin: 12px 0 18px; }
+.vol-hero h1 { font-size: 1.25rem; font-weight: 700; margin: 0 0 4px; }
+.vol-hero .meta { opacity: .85; font-size: .88rem; }
+.vol-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.vol-table th { text-align: left; padding: 8px 12px 8px 0; border-bottom: 2px solid var(--border);
+                font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-light); }
+.vol-table td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.vol-table tr.row-exception { background: #fffbeb; }
+.status-pill { display:inline-block; padding:2px 8px; border-radius:99px; font-size:.7rem; font-weight:700; text-transform:uppercase; }
+.pill-confirmed { background:#dcfce7; color:#15803d; }
+.pill-exception { background:#fef9c3; color:#92400e; }
+.slot-summary { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:10px; margin-bottom:18px; }
+.slot-card { border:1px solid var(--border); border-radius:8px; padding:10px 12px; background:#f8fafc; }
+.vol-signups-head {
+  display:flex; justify-content:space-between; align-items:center;
+  flex-wrap:wrap; gap:10px; padding:12px 0 10px;
+  border-bottom:1px solid var(--border); margin-bottom:4px;
+}
+.vol-signups-head h2 { margin:0; font-size:1rem; font-weight:700; color:var(--primary); }
+.vol-nav-links { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="vol-wrap section">
+  <div class="vol-nav-links">
+    <a href="{{ url_for('admin.event_roster', event_id=event.id) }}" class="text-primary text-sm">← Rider roster</a>
+    <a href="{{ url_for('admin.volunteer_slots_setup', event_id=event.id) }}" class="text-primary text-sm">Manage roles</a>
+  </div>
+
+  <div class="vol-hero">
+    <h1>Volunteer signups — {{ event.name|clean_name }}</h1>
+    <p class="meta">{{ event.date }} · {{ roster|length }} signup{{ 's' if roster|length != 1 else '' }}</p>
+  </div>
+
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in msgs %}
+    <div class="card mb-3 p-3 text-sm {% if cat == 'error' %}text-red-700 bg-red-50{% else %}text-green-800 bg-green-50{% endif %}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="slot-summary">
+    {% for slot in slots %}
+    {% set avail = slot.capacity - (slot.confirmed_count or 0) %}
+    <div class="slot-card">
+      <strong class="text-sm text-primary">{{ slot.role_name }}</strong>
+      <div class="text-xs text-text-light mt-1">
+        {{ slot.confirmed_count or 0 }}/{{ slot.capacity }} filled
+        · {% if avail > 0 %}<span style="color:#15803d;font-weight:600;">{{ avail }} open</span>{% else %}<span style="color:#b91c1c;">Full</span>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="card" style="overflow-x:auto;padding:0 16px;">
+    <div class="vol-signups-head">
+      <h2>All signups</h2>
+      {{ actions_menu('vol-actions-menu', url_for('admin.export_volunteer_csv', event_id=event.id), roster|length > 0) }}
+    </div>
+    {% if roster %}
+    <table class="vol-table">
+      <thead>
+        <tr>
+          <th>Volunteer</th>
+          <th>Contact</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Signed up</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in roster %}
+        <tr class="{% if r.status == 'exception' %}row-exception{% endif %}">
+          <td>
+            <strong>{{ r.display_name }}</strong><br>
+            <span class="text-text-light text-xs">RUSA {{ r.rusa_id or '—' }}</span>
+          </td>
+          <td>
+            {% if r.email %}
+            <a href="mailto:{{ r.email }}" class="text-primary text-xs">{{ r.email }}</a><br>
+            {% else %}
+            <span class="text-text-light text-xs">—</span><br>
+            {% endif %}
+            <span class="text-text-light text-xs">{{ r.phone or '—' }}</span>
+          </td>
+          <td>{{ r.role_name }}</td>
+          <td>
+            <span class="status-pill pill-{{ r.status }}">{{ r.status|upper }}</span>
+          </td>
+          <td class="text-text-light text-xs">{{ r.signed_up_at.strftime('%Y-%m-%d %H:%M') if r.signed_up_at else '—' }}</td>
+          <td>
+            <div class="flex gap-2 flex-wrap">
+              {% if r.status == 'exception' %}
+              <form method="post" style="margin:0;">
+                <input type="hidden" name="action" value="approve">
+                <input type="hidden" name="signup_id" value="{{ r.signup_id }}">
+                <button type="submit" class="btn btn-secondary btn-sm">Approve</button>
+              </form>
+              <form method="post" style="margin:0;">
+                <input type="hidden" name="action" value="reject">
+                <input type="hidden" name="signup_id" value="{{ r.signup_id }}">
+                <button type="submit" class="btn btn-secondary btn-sm" style="color:#b91c1c;border-color:#fecaca;">Reject</button>
+              </form>
+              {% endif %}
+              <form method="post" style="margin:0;">
+                <input type="hidden" name="action" value="remove">
+                <input type="hidden" name="signup_id" value="{{ r.signup_id }}">
+                <button type="submit" class="btn btn-secondary btn-sm" style="color:#b91c1c;border-color:#fecaca;"
+                        onclick="return confirm('Remove this signup?')">Remove</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-text-light text-sm pb-4">No volunteer signups yet.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if roster %}
+<script src="{{ url_for('static', filename='js/admin-actions-menu.js') }}"></script>
+<script>
+(function () {
+  var emails = {{ volunteer_emails_all|tojson }};
+  var rows = {{ volunteer_copy_rows|tojson }};
+  var menu = document.getElementById('vol-actions-menu');
+  if (!menu || !menu.registerActionHandlers) return;
+
+  function cleanCell(val) {
+    return String(val == null ? '' : val).replace(/[\t\r\n]+/g, ' ').trim();
+  }
+
+  function buildListTsv() {
+    var headers = ['Volunteer', 'Contact', 'Role', 'Status'];
+    var lines = [headers.join('\t')];
+    rows.forEach(function (r) {
+      lines.push([
+        cleanCell(r.volunteer),
+        cleanCell(r.contact),
+        cleanCell(r.role),
+        cleanCell(r.status),
+      ].join('\t'));
+    });
+    return lines.join('\n');
+  }
+
+  function buildListHtml() {
+    var esc = function (s) {
+      return cleanCell(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    };
+    var html = '<table border="1" cellpadding="4" cellspacing="0"><thead><tr>';
+    ['Volunteer', 'Contact', 'Role', 'Status'].forEach(function (h) { html += '<th>' + h + '</th>'; });
+    html += '</tr></thead><tbody>';
+    rows.forEach(function (r) {
+      html += '<tr><td>' + esc(r.volunteer) + '</td><td>' + esc(r.contact)
+        + '</td><td>' + esc(r.role) + '</td><td>' + esc(r.status) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    return html;
+  }
+
+  menu.registerActionHandlers({
+    'copy-emails': function () {
+      return window.adminActionsCopyText(emails.join(', '));
+    },
+    'copy-list': function () {
+      return window.adminActionsCopyRich(buildListTsv(), buildListHtml());
+    },
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

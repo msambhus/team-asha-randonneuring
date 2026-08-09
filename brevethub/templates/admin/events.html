@@ -24,6 +24,51 @@
   display:flex; flex-wrap:wrap; align-items:center;
   gap:.35rem .85rem; font-size:.875rem; color:var(--text-light);
 }
+.event-card-row {
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) auto auto;
+  align-items:start;
+  gap:12px 20px;
+}
+.event-card-main { min-width:0; }
+.event-card-vol {
+  text-align:center;
+  padding:0 8px;
+  align-self:center;
+  justify-self:center;
+}
+.event-card-vol strong {
+  display:block; font-size:1.1rem; font-variant-numeric:tabular-nums;
+}
+.event-card-vol strong.is-active { color:#92400e; }
+.event-card-vol strong.is-empty { color:var(--text-light); }
+.event-card-vol span {
+  font-size:.7rem; color:var(--text-light); text-transform:uppercase;
+}
+.event-card-rider-stats {
+  display:flex; gap:16px; text-align:center; flex-shrink:0;
+  align-items:flex-start; align-self:center;
+  padding-left:16px; border-left:1px solid var(--border);
+}
+.event-card-rider-stats > div strong {
+  display:block; font-size:1.1rem; color:var(--primary);
+  font-variant-numeric:tabular-nums;
+}
+.event-card-rider-stats > div span {
+  font-size:.7rem; color:var(--text-light); text-transform:uppercase;
+}
+.event-card-arrow {
+  align-self:center; color:var(--primary); font-size:1.1rem; padding-left:4px;
+}
+@media (max-width:720px) {
+  .event-card-row {
+    grid-template-columns:1fr;
+  }
+  .event-card-vol { justify-self:start; text-align:left; padding:0; }
+  .event-card-rider-stats {
+    border-left:0; padding-left:0; flex-wrap:wrap;
+  }
+}
 .events-toolbar {
   display:flex; gap:8px; flex-wrap:wrap; align-items:center;
 }
@@ -106,8 +151,8 @@
    class="card event-card hover:shadow-md transition-shadow
           event-card-lifecycle-{{ ev.lifecycle }}
           {% if ev.lifecycle == 'closed' and bucket == 'past' %}event-card-past{% endif %}">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
-    <div style="flex:1;min-width:0;">
+  <div class="event-card-row">
+    <div class="event-card-main">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
         <span style="font-weight:700;color:var(--primary);font-size:.95rem;">{{ ev.name|clean_name }}</span>
         {{ lifecycle_pill(ev.lifecycle) }}
@@ -119,26 +164,34 @@
         {% if ev.start_location %}<span>📍 {{ ev.start_location }}</span>{% endif %}
       </div>
     </div>
-    <div style="display:flex;gap:16px;text-align:center;flex-shrink:0;align-items:flex-start;">
+    <div class="event-card-vol">
+      {% if ev.volunteer_enabled %}
+      <strong class="is-active">{{ ev.volunteer_signed or 0 }}/{{ ev.volunteer_total or 0 }}</strong>
+      {% else %}
+      <strong class="is-empty">—</strong>
+      {% endif %}
+      <span>Volunteers</span>
+    </div>
+    <div class="event-card-rider-stats">
       <div>
-        <strong style="display:block;font-size:1.1rem;color:var(--primary);">{{ ev.registered_count or 0 }}</strong>
-        <span style="font-size:.7rem;color:var(--text-light);text-transform:uppercase;">Registered</span>
+        <strong>{{ ev.registered_count or 0 }}</strong>
+        <span>Registered</span>
       </div>
       <div>
-        <strong style="display:block;font-size:1.1rem;color:var(--primary);">{{ ev.roster_count or 0 }}</strong>
-        <span style="font-size:.7rem;color:var(--text-light);text-transform:uppercase;">Roster</span>
+        <strong>{{ ev.roster_count or 0 }}</strong>
+        <span>Roster</span>
       </div>
       <div>
-        <strong style="display:block;font-size:1.1rem;{% if ev.result_count %}color:#047857;{% else %}color:var(--text-light);{% endif %}">{{ ev.result_count or 0 }}</strong>
-        <span style="font-size:.7rem;color:var(--text-light);text-transform:uppercase;">Results</span>
+        <strong style="{% if ev.result_count %}color:#047857;{% else %}color:var(--text-light);{% endif %}">{{ ev.result_count or 0 }}</strong>
+        <span>Results</span>
       </div>
       {% if ev.exception_count %}
       <div>
-        <strong style="display:block;font-size:1.1rem;color:#b45309;">{{ ev.exception_count }}</strong>
-        <span style="font-size:.7rem;color:#b45309;text-transform:uppercase;">Exceptions</span>
+        <strong style="color:#b45309;">{{ ev.exception_count }}</strong>
+        <span style="color:#b45309;">Exceptions</span>
       </div>
       {% endif %}
-      <div style="align-self:center;color:var(--primary);font-size:1.1rem;padding-left:8px;">→</div>
+      <span class="event-card-arrow">→</span>
     </div>
   </div>
 </a>
@@ -183,8 +236,9 @@
             <th>Event</th>
             <th>km</th>
             <th>Status</th>
+            <th class="num">Volunteers</th>
             <th class="num">Registered</th>
-            <th class="num">Reg</th>
+            <th class="num">Roster</th>
             <th class="num">Results</th>
             <th></th>
           </tr>
@@ -202,6 +256,7 @@
             </td>
             <td class="num">{{ ev.distance_km }}</td>
             <td>{{ lifecycle_pill(ev.lifecycle) }}</td>
+            <td class="num">{% if ev.volunteer_enabled %}{{ ev.volunteer_signed or 0 }}/{{ ev.volunteer_total or 0 }}{% else %}—{% endif %}</td>
             <td class="num">{{ ev.registered_count or 0 }}</td>
             <td class="num">{{ ev.roster_count or 0 }}</td>
             <td class="num">{{ ev.result_count or 0 }}</td>
@@ -209,7 +264,7 @@
           </tr>
           {% endfor %}
           <tr id="events-table-empty" style="display:none;">
-            <td colspan="8" style="padding:20px;color:var(--text-light);">No events match this filter.</td>
+            <td colspan="9" style="padding:20px;color:var(--text-light);">No events match this filter.</td>
           </tr>
         </tbody>
       </table>
