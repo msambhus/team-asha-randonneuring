@@ -11,7 +11,7 @@ import zlib
 from datetime import datetime, timedelta, timezone, time
 from zoneinfo import ZoneInfo
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 
 from brevethub import models
 from brevethub.decorators import current_rider, profile_required
@@ -20,6 +20,9 @@ from brevethub.services.ride_validation import (
     validate_submission,
 )
 from brevethub.routes.strava import load_strava_section
+from brevethub.routes.strava import _valid_access_token
+from shared.strava import fetch_activity_streams
+from brevethub.shared.strava_analysis import _compress_streams, build_activity_analysis
 
 validation_bp = Blueprint('validation', __name__)
 _MAX_UPLOAD = 4 * 1024 * 1024
@@ -65,6 +68,39 @@ def _points_from_strava(row, started_at):
                          elevation[i] if i < len(elevation) else None)
               for i, pair in enumerate(latlng) if pair and len(pair) >= 2]
     return combine_recordings([points])
+
+
+def _fetch_selected_strava_recording(rider, activity_id, activity, event):
+    """Return GPS points for a selected, rider-owned Strava activity.
+
+    The evidence picker is intentionally independent of the ride-analysis page:
+    a rider should not have to open "Analyze" first.  Reuse the same stream
+    fetch/cache path, then return points timestamped from the activity's actual
+    start (falling back to the official start for old cache rows that predate
+    start-time retention).
+    """
+    cached = models.get_ride_analysis(rider['id'], int(activity_id))
+    started_at = (activity or {}).get('start_date') or (activity or {}).get('start_date_local')
+    if not started_at:
+        started_at = _official_start(event).isoformat()
+    if cached and cached.get('activity_streams'):
+        return _points_from_strava(cached, started_at), cached
+
+    connection = models.get_strava_connection(rider['id'])
+    if not connection:
+        raise ValueError('Connect Strava before selecting a Strava activity as evidence.')
+    token = _valid_access_token(rider['id'], connection)
+    streams = fetch_activity_streams(
+        token, int(activity_id), api_base=current_app.config['STRAVA_API_BASE'])
+    # Cache the raw stream so the validation queue, future re-submissions, and
+    # analysis page all see the same immutable source without another API call.
+    analysis = build_activity_analysis(streams, activity or {})
+    models.upsert_ride_analysis(
+        rider['id'], int(activity_id), analysis,
+        compressed_streams=_compress_streams(streams))
+    return _points_from_strava({'activity_streams': _compress_streams(streams)}, started_at), {
+        'activity_streams': _compress_streams(streams),
+    }
 
 
 def _render_form(event, *, status=200, values=None):
@@ -144,19 +180,31 @@ def submit_validation(event_id):
             official = _official_start(event)
             if not official:
                 raise ValueError('This brevet has no official start time yet.')
-            cached_analysis = models.get_ride_analysis(rider['id'], int(strava_id))
-            if cached_analysis and cached_analysis.get('activity_streams'):
-                recordings.append(_points_from_strava(cached_analysis, official.isoformat()))
-            else:
-                # A rider may submit a Strava URL/activity before connecting or
-                # before its stream has been cached. Preserve the pointer for the
-                # organizer rather than forcing credentials into this form; the
-                # machine result remains incomplete until GPS evidence is added.
-                metadata['strava_activity_url'] = strava_url or f'https://www.strava.com/activities/{strava_id}'
+            stats_activities = (load_strava_section(rider).get('stats') or {}).get('evidence_activities') or []
+            activity = next((a for a in stats_activities
+                             if str(a.get('strava_activity_id')) == str(strava_id)), None)
+            if activity is None:
+                # URL submissions may refer to an older activity that is not in
+                # the one-year picker. It is still safe to retain the pointer;
+                # the organizer can request additional proof rather than letting
+                # an unverified activity through the ownership gate.
                 metadata['strava_stream_pending'] = True
+            else:
+                points, _ = _fetch_selected_strava_recording(
+                    rider, int(strava_id), activity, event)
+                recordings.append(points)
+                metadata['strava_stream_fetched'] = True
+                metadata['strava_activity_name'] = activity.get('name')
+                metadata['strava_activity_started_at'] = activity.get('start_date') or activity.get('start_date_local')
+            metadata['strava_activity_url'] = strava_url or f'https://www.strava.com/activities/{strava_id}'
         except Exception as exc:
-            flash(str(exc), 'error')
-            return _render_form(event, 400, request.form)
+            # Preserve the submission pointer when Strava is temporarily
+            # unavailable. The organizer sees the linked activity and can ask
+            # for a FIT/GPX or traditional proof instead of losing the entry.
+            current_app.logger.warning('Strava evidence fetch failed for rider %s activity %s: %s', rider['id'], strava_id, exc)
+            metadata['strava_stream_pending'] = True
+            metadata['strava_fetch_error'] = str(exc)
+            metadata['strava_activity_url'] = strava_url or f'https://www.strava.com/activities/{strava_id}'
         metadata.update({'format': 'strava_stream', 'source': 'Strava'})
 
     metadata.update({

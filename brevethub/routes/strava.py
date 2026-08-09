@@ -387,6 +387,7 @@ def _compute_strava_stats(rider_id, connection):
     summary['evidence_activities'] = [{
         'strava_activity_id': activity.get('strava_activity_id'),
         'name': activity.get('name'),
+        'start_date': activity.get('start_date'),
         'start_date_local': activity.get('start_date_local'),
         'distance': activity.get('distance'),
         'activity_type': activity.get('activity_type'),
