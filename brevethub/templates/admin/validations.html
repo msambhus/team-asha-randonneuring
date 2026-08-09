@@ -9,17 +9,16 @@
   </div>
   <div class="card overflow-x-auto">
     <table class="w-full text-left"><thead><tr class="border-b border-border">
-      <th class="p-3">Rider / event</th><th class="p-3">Source</th><th class="p-3">Status</th><th class="p-3">Organizer</th><th class="p-3"></th>
+      <th class="p-3">Rider / event</th><th class="p-3">Source</th><th class="p-3">Status</th><th class="p-3"></th>
     </tr></thead><tbody>
     {% for row in submissions %}<tr class="border-b border-border">
       <td class="p-3"><strong class="block">{{ row.rider_name }}</strong><span class="text-sm text-text-light">{{ row.event_name|clean_name }} · {{ row.date }} · {{ row.distance_km }} km</span></td>
       <td class="p-3">{{ row.source_type|replace('_', ' ')|title }}</td>
-      <td class="p-3">{% if row.organizer_decision == 'approved' %}<span class="validation-badge validation-approved">Approved</span>{% elif row.organizer_decision %}<span class="validation-badge validation-{{ row.organizer_decision }}">{{ row.organizer_decision|replace('_', ' ')|title }}</span>{% else %}<span class="validation-badge validation-{{ row.machine_decision }}">{{ row.machine_decision|replace('_', ' ')|title }}</span>{% endif %}</td>
-      <td class="p-3">{{ row.organizer_decision|replace('_', ' ')|title if row.organizer_decision else 'Pending' }}</td>
+      <td class="p-3">{% if row.organizer_decision == 'approved' %}<span class="validation-badge validation-approved">Approved</span>{% elif row.organizer_decision %}<span class="validation-badge validation-{{ row.organizer_decision }}">{{ row.organizer_decision|replace('_', ' ')|title }}</span>{% else %}<span class="validation-badge validation-pending">Organizer pending</span>{% endif %}</td>
       <td class="p-3 text-right"><a class="btn btn-secondary" href="{{ url_for('admin.validation_detail', submission_id=row.id) }}">Review</a></td>
-    </tr>{% else %}<tr><td class="p-6 text-center text-text-light" colspan="5">No evidence submissions yet.</td></tr>{% endfor %}
+    </tr>{% else %}<tr><td class="p-6 text-center text-text-light" colspan="4">No evidence submissions yet.</td></tr>{% endfor %}
     </tbody></table>
   </div>
 </div></div>
-<style>.validation-badge{display:inline-block;padding:.3rem .65rem;border-radius:999px;font-weight:700;font-size:.8rem}.validation-clear,.validation-approved{background:#dcfce7;color:#166534}.validation-needs_review{background:#ffedd5;color:#9a3412}.validation-incomplete{background:#fee2e2;color:#991b1b}</style>
+<style>.validation-badge{display:inline-block;padding:.3rem .65rem;border-radius:999px;font-weight:700;font-size:.8rem}.validation-clear,.validation-approved{background:#dcfce7;color:#166534}.validation-pending{background:#e2e8f0;color:#334155}.validation-needs_review{background:#ffedd5;color:#9a3412}.validation-incomplete{background:#fee2e2;color:#991b1b}</style>
 {% endblock %}
