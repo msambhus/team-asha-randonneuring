@@ -231,10 +231,10 @@ def test_context_includes_upcoming_brevets(app):
         from services.chat_service import assemble_rider_context
 
         mock_signups = [
-            {'name': 'Cascade 200', 'date': '2026-04-01', 'distance_km': 200, 'signup_status': 'GOING'},
-            {'name': 'Cascade 300', 'date': '2026-04-15', 'distance_km': 300, 'signup_status': 'GOING'},
+            {'name': 'Cascade 200', 'date': '2026-04-01', 'distance_km': 200, 'signup_status': 'REGISTERED'},
+            {'name': 'Cascade 300', 'date': '2026-04-15', 'distance_km': 300, 'signup_status': 'REGISTERED'},
             {'name': 'Cascade 400', 'date': '2026-05-01', 'distance_km': 400, 'signup_status': 'INTERESTED'},
-            {'name': 'Cascade 600', 'date': '2026-06-01', 'distance_km': 600, 'signup_status': 'GOING'},
+            {'name': 'Cascade 600', 'date': '2026-06-01', 'distance_km': 600, 'signup_status': 'REGISTERED'},
         ]
 
         with patch('services.chat_service.models') as mock_models:

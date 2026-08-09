@@ -15,7 +15,8 @@
 - **Integrations**: Strava OAuth2 + API v3, RUSA event scraping
 
 ## Key Concepts
-- **RideStatus enum** (models.py): INTERESTED, MAYBE, GOING (renamed from SIGNED_UP), WITHDRAW, FINISHED, DNF, DNS, OTL
+- **RideStatus enum** (Team Asha `models.py`, uppercase): INTERESTED, MAYBE, REGISTERED (formerly GOING/SIGNED_UP), WITHDRAW, WITHDRAWAL_REQUESTED, REJECTED, FINISHED, DNF, DNS, OTL
+- **BrevetHub RideStatus** (`brevethub/models.py`, lowercase): same members using `registered` instead of legacy `going` — see [docs/brevethub-rider-status.md](docs/brevethub-rider-status.md)
 - **Seasons**: Named like "2024-2025", one is marked `is_current`
 - **SR (Super Randonneur)**: Completing 200, 300, 400, 600 km brevets in one season
 - **R-12 (Randonneur 12)**: At least one 200+km ride finished per month for 12 consecutive months
@@ -30,6 +31,7 @@
 ## Template Filters
 - `commafy` — Format numbers with commas (e.g., 1,234)
 - `clean_name` — Decode HTML entities in ride names (html.unescape + nbsp cleanup)
+- `status_label` — BrevetHub: human-readable status label (`registered` → Registered)
 
 ## Units
 - Career stats: **KMs** (not miles)

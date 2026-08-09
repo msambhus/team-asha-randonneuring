@@ -19,8 +19,10 @@ class RideStatus(str, Enum):
     # Pre-ride statuses
     INTERESTED = "INTERESTED"       # Soft interest, considering the ride
     MAYBE = "MAYBE"                 # Tentative, less certain than interested
-    GOING = "GOING"                 # Rider officially registered for upcoming ride (formerly SIGNED_UP)
-    WITHDRAW = "WITHDRAW"           # Was going but withdrew
+    REGISTERED = "REGISTERED"       # Rider officially registered for upcoming ride (formerly GOING/SIGNED_UP)
+    WITHDRAW = "WITHDRAW"           # Was registered but withdrew
+    WITHDRAWAL_REQUESTED = "WITHDRAWAL_REQUESTED"  # Registered rider requested withdrawal
+    REJECTED = "REJECTED"           # Admin rejected withdrawal request
 
     # Post-ride statuses (ride has occurred)
     FINISHED = "FINISHED"           # Successfully completed within time limit
@@ -46,7 +48,8 @@ class RideStatus(str, Enum):
             '1': cls.FINISHED,
             'NO': cls.DNS,
             '0': cls.DNS,
-            'SIGNED_UP': cls.GOING,  # Legacy: SIGNED_UP renamed to GOING
+            'SIGNED_UP': cls.REGISTERED,
+            'GOING': cls.REGISTERED,  # Legacy: GOING renamed to REGISTERED
         }
 
         if val in legacy_mapping:
@@ -60,8 +63,8 @@ class RideStatus(str, Enum):
 
     @classmethod
     def is_pre_ride(cls, status: 'RideStatus') -> bool:
-        """Check if status is pre-ride (INTERESTED, MAYBE, or GOING)."""
-        return status in (cls.INTERESTED, cls.MAYBE, cls.GOING)
+        """Check if status is pre-ride (INTERESTED, MAYBE, or REGISTERED)."""
+        return status in (cls.INTERESTED, cls.MAYBE, cls.REGISTERED)
 
     @classmethod
     def is_post_ride(cls, status: 'RideStatus') -> bool:
@@ -75,8 +78,8 @@ class RideStatus(str, Enum):
 
     @classmethod
     def can_remove_signup(cls, status: 'RideStatus') -> bool:
-        """Check if rider can remove their signup (INTERESTED, MAYBE, or GOING)."""
-        return status in (cls.INTERESTED, cls.MAYBE, cls.GOING)
+        """Check if rider can remove their signup (INTERESTED, MAYBE, or REGISTERED)."""
+        return status in (cls.INTERESTED, cls.MAYBE, cls.REGISTERED)
 
 
 def _execute(sql, params=None):
@@ -1043,7 +1046,7 @@ def _has_post_ride_result(cur, rider_id, ride_id):
 
 
 def signup_rider(rider_id, ride_id):
-    """Sign up a rider for a ride (GOING). Refuses if a post-ride result already exists."""
+    """Sign up a rider for a ride (REGISTERED). Refuses if a post-ride result already exists."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -1055,8 +1058,8 @@ def signup_rider(rider_id, ride_id):
             ON CONFLICT (rider_id, ride_id) DO UPDATE
               SET status = %s, signed_up_at = CURRENT_TIMESTAMP
         """, (rider_id, ride_id,
-              RideStatus.GOING.value,
-              RideStatus.GOING.value))
+              RideStatus.REGISTERED.value,
+              RideStatus.REGISTERED.value))
         conn.commit()
         return True
     except Exception:
@@ -1127,7 +1130,7 @@ def mark_withdraw(rider_id, ride_id):
 
 def remove_signup(rider_id, ride_id):
     """
-    Remove a rider's signup (only if status is pre-ride: GOING, INTERESTED, or MAYBE).
+    Remove a rider's signup (only if status is pre-ride: REGISTERED, INTERESTED, or MAYBE).
 
     Returns:
         bool: True if signup was removed, False otherwise
@@ -1150,12 +1153,12 @@ def remove_signup(rider_id, ride_id):
         if not RideStatus.can_remove_signup(current_status):
             raise ValueError(f"Cannot remove signup with status '{current_status.value}'. Only pre-ride signups can be removed.")
 
-    # Delete if status allows it (GOING, INTERESTED, or MAYBE can be removed)
+    # Delete if status allows it (REGISTERED, INTERESTED, or MAYBE can be removed)
     cur.execute("""
         DELETE FROM rider_ride
         WHERE rider_id = %s AND ride_id = %s
         AND status IN (%s, %s, %s)
-    """, (rider_id, ride_id, RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.MAYBE.value))
+    """, (rider_id, ride_id, RideStatus.REGISTERED.value, RideStatus.INTERESTED.value, RideStatus.MAYBE.value))
 
     conn.commit()
     return cur.rowcount > 0
@@ -1529,7 +1532,7 @@ def update_rider_ride_status(ride_id, statuses):
 
 
 def auto_finalize_past_rides():
-    """Mark all GOING riders as FINISHED for rides whose date has passed.
+    """Mark all REGISTERED riders as FINISHED for rides whose date has passed.
 
     Also sets event_status='COMPLETED' on those rides.
 
@@ -1539,24 +1542,24 @@ def auto_finalize_past_rides():
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # Find past rides that still have GOING riders
+    # Find past rides that still have REGISTERED riders
     cur.execute("""
-        SELECT ri.id AS ride_id, ri.name AS ride_name, COUNT(rr.id) AS going_count
+        SELECT ri.id AS ride_id, ri.name AS ride_name, COUNT(rr.id) AS registered_count
         FROM ride ri
         JOIN rider_ride rr ON rr.ride_id = ri.id
         WHERE ri.date < CURRENT_DATE
-          AND rr.status = 'GOING'
+          AND rr.status = 'REGISTERED'
         GROUP BY ri.id, ri.name
     """)
     rides_to_finalize = cur.fetchall()
 
     results = []
     for ride in rides_to_finalize:
-        # Mark GOING riders as FINISHED
+        # Mark REGISTERED riders as FINISHED
         cur.execute("""
             UPDATE rider_ride
             SET status = 'FINISHED'
-            WHERE ride_id = %s AND status = 'GOING'
+            WHERE ride_id = %s AND status = 'REGISTERED'
         """, (ride['ride_id'],))
         count = cur.rowcount
 
@@ -1680,7 +1683,7 @@ def get_rides_with_signup_counts(season_id):
         SELECT ri.*,
                c.code AS club_code,
                c.name AS club_name,
-               COUNT(rr.id) FILTER (WHERE rr.status = 'GOING') AS going_count,
+               COUNT(rr.id) FILTER (WHERE rr.status = 'REGISTERED') AS registered_count,
                COUNT(rr.id) FILTER (WHERE rr.status IN ('FINISHED','DNF','DNS','OTL')) AS result_count,
                COUNT(rr.id) FILTER (WHERE rr.status IS NOT NULL) AS total_signups,
                EXISTS (SELECT 1 FROM ride_wind_data rwd WHERE rwd.ride_id = ri.id) AS has_wind
@@ -3774,7 +3777,7 @@ def get_rider_upcoming_signups(rider_id):
           AND ri.date >= %s
           AND rr.status IN (%s, %s, %s)
         ORDER BY ri.date ASC
-    """, (rider_id, today, RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.MAYBE.value)).fetchall()
+    """, (rider_id, today, RideStatus.REGISTERED.value, RideStatus.INTERESTED.value, RideStatus.MAYBE.value)).fetchall()
 
 
 def get_followed_live_ride_ids(rider_id):
@@ -5825,8 +5828,8 @@ def get_latest_positions_for_ride(ride_id, since):
     """, (ride_id, ride_id, since)).fetchall()
 
 
-def get_going_riders_for_ride(ride_id):
-    """All riders marked Going for a ride, independent of live sharing."""
+def get_registered_riders_for_ride(ride_id):
+    """All riders marked Registered for a ride, independent of live sharing."""
     return _execute("""
         SELECT r.id AS rider_id,
                r.first_name || ' ' || COALESCE(r.last_name, '') AS name,
@@ -5835,7 +5838,7 @@ def get_going_riders_for_ride(ride_id):
         JOIN rider r ON r.id = rr.rider_id
         WHERE rr.ride_id = %s AND rr.status = %s
         ORDER BY r.first_name, r.last_name
-    """, (ride_id, RideStatus.GOING.value)).fetchall()
+    """, (ride_id, RideStatus.REGISTERED.value)).fetchall()
 
 
 def purge_old_positions(retention_days=7):

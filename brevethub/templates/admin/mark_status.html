@@ -33,11 +33,11 @@
 <tbody>
 {% for r in signed_up_riders %}
 {% set current_status = ride_statuses.get(r.id, '') %}
-<tr style="background:{% if current_status == 'GOING' %}#fffaf0{% elif current_status == 'FINISHED' %}#f0fff4{% else %}#fff{% endif %};">
+<tr style="background:{% if current_status == 'REGISTERED' %}#fffaf0{% elif current_status == 'FINISHED' %}#f0fff4{% else %}#fff{% endif %};">
 <td><strong>{{ r.first_name }} {{ r.last_name }}</strong></td>
 <td>{{ r.rusa_id }}</td>
 <td>
-{% if current_status == 'GOING' %}<span style="color:#c05621;font-weight:600;">Going</span>
+{% if current_status == 'REGISTERED' %}<span style="color:#c05621;font-weight:600;">Registered</span>
 {% elif current_status == 'FINISHED' %}<span style="color:#38a169;">Finished</span>
 {% elif current_status == 'DNF' %}<span style="color:#e53e3e;">DNF</span>
 {% elif current_status == 'DNS' %}<span style="color:#718096;">DNS</span>
@@ -47,7 +47,7 @@
 <td>
 <select name="status_{{ r.id }}" class="status-select signed-up-select">
 <option value="">--</option>
-<option value="FINISHED" {{ 'selected' if current_status in ('FINISHED', 'GOING') }}>Finished</option>
+<option value="FINISHED" {{ 'selected' if current_status in ('FINISHED', 'REGISTERED') }}>Finished</option>
 <option value="DNF" {{ 'selected' if current_status == 'DNF' }}>DNF</option>
 <option value="DNS" {{ 'selected' if current_status == 'DNS' }}>DNS</option>
 <option value="OTL" {{ 'selected' if current_status == 'OTL' }}>OTL</option>

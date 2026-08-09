@@ -109,9 +109,9 @@ def test_evaluate_registration_blocks_invalid_rusa(mock_validate):
 
 def test_progress_label_registered_and_results():
     from brevethub.services.registration import progress_label
-    assert progress_label(event_past=False, status='going', registration_status='confirmed') == 'Registered'
+    assert progress_label(event_past=False, status='registered', registration_status='confirmed') == 'Registered'
     assert progress_label(event_past=True, status='dnf', registration_status='confirmed') == 'DNF'
-    assert progress_label(event_past=False, status='going', registration_status='exception') == 'Needs review'
+    assert progress_label(event_past=False, status='registered', registration_status='exception') == 'Needs review'
 
 
 def test_normalize_us_phone_accepts_common_formats():

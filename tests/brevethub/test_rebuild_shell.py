@@ -273,7 +273,7 @@ def test_brevethub_calendar_requests_all_national_sanctioned_events():
 def test_brevethub_signup_does_not_offer_maybe_as_a_new_intent():
     from brevethub.routes.calendar import _SIGNUP_STATUSES
 
-    assert _SIGNUP_STATUSES == {"going", "interested", "withdraw"}
+    assert _SIGNUP_STATUSES == {"interested", "withdraw"}
 
 
 def test_brevethub_templates_use_the_active_calendar_endpoint():

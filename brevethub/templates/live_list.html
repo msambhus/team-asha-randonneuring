@@ -34,7 +34,7 @@
     </table>
     </div>
   {% else %}
-    <p class="text-text-light">{% if mine %}You are not following a live ride and are not marked going on one yet. Browse the calendar to follow a ride.{% else %}No public rides right now. Check back when a ride goes live.{% endif %}</p>
+    <p class="text-text-light">{% if mine %}You are not following a live ride and are not registered for one yet. Browse the calendar to follow a ride.{% else %}No public rides right now. Check back when a ride goes live.{% endif %}</p>
   {% endif %}
 
   {% if session.get('rider_id') %}

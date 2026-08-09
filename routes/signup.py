@@ -63,7 +63,7 @@ def api_signup(ride_id):
         return jsonify({'success': False, 'error': 'Cannot change a sign-up with a result'}), 409
     if result:
         cache.clear()
-        return jsonify({'success': True, 'status': 'GOING'})
+        return jsonify({'success': True, 'status': 'REGISTERED'})
     else:
         return jsonify({'success': False, 'error': 'Failed to sign up'}), 500
 
@@ -158,7 +158,7 @@ def api_unsignup(ride_id):
     
     rider_id = user['rider_id']
     
-    # Remove signup (works for pre-ride statuses: GOING, INTERESTED, MAYBE)
+    # Remove signup (works for pre-ride statuses: REGISTERED, INTERESTED, MAYBE)
     success = remove_signup(rider_id, ride_id)
     if success:
         cache.clear()  # Clear cache after removing signup

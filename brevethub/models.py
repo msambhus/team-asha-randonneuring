@@ -5,6 +5,7 @@ app never reads or writes any Team Asha table; `tests/brevethub/test_rp_only.py`
 scans this file and fails the build if a non-`rp_` table name ever appears.
 """
 import secrets
+from datetime import date, datetime, time, timedelta
 from enum import Enum
 
 import psycopg2.extras
@@ -18,8 +19,8 @@ class RideStatus(str, Enum):
     """BrevetHub own ride-status enum — defined here so BrevetHub shares no code
     with the parent web app models. Kept as a str-Enum for direct SQL binding.
 
-    Pre-ride:  interested / maybe / going / withdraw.
-    Post-ride: finished / dnf / dns / otl (a result, set once the event date passed).
+    Pre-ride:  interested / maybe / registered / withdraw / withdrawal_requested / rejected.
+    Post-ride: finished / dnf / dns / otl (a result, set once ride start + 1 minute).
 
     The helper classmethods below mirror the parent web app state machine so the
     routes can gate transitions without re-deriving the rules. BrevetHub stays
@@ -29,9 +30,11 @@ class RideStatus(str, Enum):
     # Pre-ride statuses
     INTERESTED = 'interested'
     MAYBE = 'maybe'
-    GOING = 'going'
+    REGISTERED = 'registered'
     WITHDRAW = 'withdraw'
-    # Post-ride result statuses (the event date has passed)
+    WITHDRAWAL_REQUESTED = 'withdrawal_requested'
+    REJECTED = 'rejected'
+    # Post-ride result statuses (available after ride start + 1 minute)
     FINISHED = 'finished'
     DNF = 'dnf'
     DNS = 'dns'
@@ -49,6 +52,8 @@ class RideStatus(str, Enum):
         if value is None or not str(value).strip():
             raise ValueError('Status cannot be empty')
         val = str(value).strip().lower()
+        if val == 'going':
+            return cls.REGISTERED
         try:
             return cls(val)
         except ValueError:
@@ -61,7 +66,7 @@ class RideStatus(str, Enum):
         Mirrors the parent web app: withdraw is deliberately NOT pre-ride here, so a
         withdrawn row is never cleared or auto-finalized like an active intent.
         """
-        return status in (cls.INTERESTED, cls.MAYBE, cls.GOING)
+        return status in (cls.INTERESTED, cls.MAYBE, cls.REGISTERED)
 
     @classmethod
     def is_post_ride(cls, status):
@@ -80,7 +85,29 @@ class RideStatus(str, Enum):
         Only a pre-ride intent (interested / maybe / going) may be removed; a
         withdraw or any post-ride result is retained as history.
         """
-        return status in (cls.INTERESTED, cls.MAYBE, cls.GOING)
+        return status in (cls.INTERESTED, cls.MAYBE, cls.REGISTERED)
+
+    @classmethod
+    def is_final_for_close(cls, status):
+        """True when a roster rider's status allows the event to be closed."""
+        return status in (cls.FINISHED, cls.DNF, cls.DNS, cls.OTL, cls.WITHDRAW)
+
+
+def event_post_ride_open(event):
+    """True when local wall-clock time is at least one minute after event start."""
+    if not event or not event.get('date'):
+        return False
+    event_date = event['date']
+    if isinstance(event_date, str):
+        event_date = date.fromisoformat(event_date[:10])
+    start_raw = event.get('start_time') or '06:00'
+    if isinstance(start_raw, time):
+        start_t = start_raw
+    else:
+        parts = str(start_raw).split(':')
+        start_t = time(int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+    start_dt = datetime.combine(event_date, start_t)
+    return datetime.now() >= start_dt + timedelta(minutes=1)
 
 
 # --------------------------------------------------------------------------- #
@@ -229,7 +256,7 @@ def get_rider_live_rides(rider_id):
         "LEFT JOIN rp_followed_live_event f ON f.event_id=r.event_id AND f.rider_id=%s "
         "WHERE r.is_public=TRUE AND (f.event_id IS NOT NULL OR s.status=%s) "
         "ORDER BY r.start_at DESC NULLS LAST",
-        (rider_id, rider_id, RideStatus.GOING.value),
+        (rider_id, rider_id, RideStatus.REGISTERED.value),
     )
 
 
@@ -966,14 +993,14 @@ def get_events_cache_freshness():
 
 
 def get_upcoming_events(state=None, limit=200):
-    """Upcoming brevets with separate Going and Interested aggregate counts.
+    """Upcoming brevets with separate Registered and Interested aggregate counts.
 
     ``state`` optionally narrows to one US state by matching the RUSA region
     label ``"<STATE>: ..."`` prefix — an honest, documented narrowing a generic
     multi-club app can do without the Team Asha hardcoded region->club map. None
     returns every upcoming brevet (the general RUSA calendar).
 
-    ``signup_count`` counts Going only; ``interested_count`` counts Interested only.
+    ``signup_count`` counts Registered only; ``interested_count`` counts Interested only.
     Both are AGGREGATES, so the guest calendar can show intent without exposing any
     rider identity. Legacy Maybe and Withdraw rows are excluded. The counts come from
     a pre-aggregated
@@ -1002,7 +1029,7 @@ def get_upcoming_events(state=None, limit=200):
         ") sc ON sc.event_id = e.id "
         "WHERE e.date >= CURRENT_DATE AND (%s::text IS NULL OR e.region ILIKE %s) "
         "ORDER BY e.date ASC, e.distance_km ASC LIMIT %s",
-        (RideStatus.GOING.value, RideStatus.INTERESTED.value,
+        (RideStatus.REGISTERED.value, RideStatus.INTERESTED.value,
          state, like, limit),
     )
 
@@ -1106,37 +1133,79 @@ def set_rider_signup(rider_id, event_id, status):
 
 
 def withdraw_rider_signup(rider_id, event_id):
-    """Transition an EXISTING pre-ride sign-up to withdraw; return a route sentinel.
+    """Request withdrawal from a registered ride, or set DNS after ride start.
 
-    Read-then-guarded-update, mirroring the parent web app withdraw guard and the
-    sibling :func:`clear_rider_signup`:
-      not_found    no sign-up for this rider on this event -> 404
-      has_result   the current status is a post-ride result, left intact -> 409
-      withdrawn    a pre-ride row was transitioned to withdraw -> 200
-    A withdraw with no prior sign-up changes nothing, so a guest cannot manufacture a
-    withdraw row; a withdraw over a finished / dnf / dns / otl result is refused so it
-    cannot erase the result. Scoped by rider_id throughout, so a rider can only ever
-    withdraw their OWN row; the guarded write re-asserts the pre-ride predicate so a
-    concurrent transition cannot slip a post-ride row through.
+    Returns a route sentinel:
+      not_found         no sign-up row
+      not_registered    rider has not completed registration
+      has_result        post-ride result already set
+      already_requested withdrawal already pending admin review
+      requested         status set to withdrawal_requested (still on roster)
+      dns               after ride start + 1 min, status set to DNS
     """
-    current = db.query_one(
-        "SELECT status FROM rp_event_signup WHERE rider_id = %s AND event_id = %s",
+    row = db.query_one(
+        "SELECT s.status, s.registration_status, e.date, e.start_time "
+        "FROM rp_event_signup s "
+        "JOIN rp_brevet_event e ON e.id = s.event_id "
+        "WHERE s.rider_id = %s AND s.event_id = %s",
         (rider_id, event_id),
     )
-    if not current:
+    if not row:
         return 'not_found'
-    if RideStatus.is_post_ride(RideStatus.normalize(current['status'])):
+    if not row['registration_status']:
+        return 'not_registered'
+    if RideStatus.is_post_ride(RideStatus.normalize(row['status'])):
         return 'has_result'
+    if row['status'] == RideStatus.WITHDRAWAL_REQUESTED.value:
+        return 'already_requested'
+
+    event = {'date': row['date'], 'start_time': row['start_time']}
+    if event_post_ride_open(event):
+        db.execute(
+            "UPDATE rp_event_signup "
+            "SET status = %s, updated_at = NOW() "
+            "WHERE rider_id = %s AND event_id = %s "
+            "  AND status NOT IN (%s, %s, %s, %s)",
+            (RideStatus.DNS.value, rider_id, event_id,
+             RideStatus.FINISHED.value, RideStatus.DNF.value,
+             RideStatus.DNS.value, RideStatus.OTL.value),
+        )
+        return 'dns'
+
     db.execute(
         "UPDATE rp_event_signup "
-        "SET status = %s, registration_status = NULL, updated_at = NOW() "
+        "SET status = %s, updated_at = NOW() "
         "WHERE rider_id = %s AND event_id = %s "
         "  AND status NOT IN (%s, %s, %s, %s)",
-        (RideStatus.WITHDRAW.value, rider_id, event_id,
+        (RideStatus.WITHDRAWAL_REQUESTED.value, rider_id, event_id,
          RideStatus.FINISHED.value, RideStatus.DNF.value,
          RideStatus.DNS.value, RideStatus.OTL.value),
     )
-    return 'withdrawn'
+    return 'requested'
+
+
+def admin_approve_withdrawal(event_id, rider_id):
+    """Remove a rider from the roster after approving their withdrawal request."""
+    row = db.execute(
+        "DELETE FROM rp_event_signup "
+        "WHERE event_id = %s AND rider_id = %s AND status = %s RETURNING id",
+        (event_id, rider_id, RideStatus.WITHDRAWAL_REQUESTED.value),
+        returning=True,
+    )
+    return 'approved' if row else 'not_found'
+
+
+def admin_reject_withdrawal(event_id, rider_id):
+    """Reject a withdrawal request — rider off roster with rejected status."""
+    row = db.execute(
+        "UPDATE rp_event_signup "
+        "SET status = %s, registration_status = NULL, updated_at = NOW() "
+        "WHERE event_id = %s AND rider_id = %s AND status = %s RETURNING id",
+        (RideStatus.REJECTED.value, event_id, rider_id,
+         RideStatus.WITHDRAWAL_REQUESTED.value),
+        returning=True,
+    )
+    return 'rejected' if row else 'not_found'
 
 
 def get_event_signup_counts(event_id):
@@ -1144,18 +1213,18 @@ def get_event_signup_counts(event_id):
 
     Called after each signup mutation so the API response carries live counts
     the client can update the roster badge with immediately, without a page reload.
-    Returns a dict with going_count, interested_count, confirmed_count (all int).
+    Returns a dict with registered_count, interested_count, confirmed_count (all int).
     """
     row = db.query_one(
         "SELECT "
-        "  COUNT(*) FILTER (WHERE status = %s) AS going_count, "
+        "  COUNT(*) FILTER (WHERE status = %s) AS registered_count, "
         "  COUNT(*) FILTER (WHERE status = %s) AS interested_count, "
         "  COUNT(*) FILTER (WHERE registration_status = 'confirmed') AS confirmed_count "
         "FROM rp_event_signup WHERE event_id = %s",
-        (RideStatus.GOING.value, RideStatus.INTERESTED.value, event_id),
+        (RideStatus.REGISTERED.value, RideStatus.INTERESTED.value, event_id),
     )
     return {
-        'going_count': int(row['going_count'] or 0) if row else 0,
+        'registered_count': int(row['registered_count'] or 0) if row else 0,
         'interested_count': int(row['interested_count'] or 0) if row else 0,
         'confirmed_count': int(row['confirmed_count'] or 0) if row else 0,
     }
@@ -1173,18 +1242,21 @@ def clear_rider_signup(rider_id, event_id):
     non-clearable row through.
     """
     row = db.query_one(
-        "SELECT status FROM rp_event_signup WHERE rider_id = %s AND event_id = %s",
+        "SELECT status, registration_status FROM rp_event_signup "
+        "WHERE rider_id = %s AND event_id = %s",
         (rider_id, event_id),
     )
     if not row:
         return 'not_found'
+    if row.get('registration_status'):
+        return 'registered'
     if not RideStatus.can_remove(RideStatus.normalize(row['status'])):
         return 'post_ride'
     db.execute(
         "DELETE FROM rp_event_signup "
         "WHERE rider_id = %s AND event_id = %s AND status IN (%s, %s, %s)",
         (rider_id, event_id, RideStatus.INTERESTED.value, RideStatus.MAYBE.value,
-         RideStatus.GOING.value),
+         RideStatus.REGISTERED.value),
     )
     return 'deleted'
 
@@ -1209,7 +1281,8 @@ def set_signup_result(rider_id, event_id, status):
     through.
     """
     row = db.query_one(
-        "SELECT s.status, s.finish_time, (e.date < CURRENT_DATE) AS is_past "
+        "SELECT s.status, s.finish_time, s.registration_status, "
+        "       e.date, e.start_time "
         "FROM rp_event_signup s "
         "JOIN rp_brevet_event e ON e.id = s.event_id "
         "WHERE s.rider_id = %s AND s.event_id = %s",
@@ -1217,16 +1290,16 @@ def set_signup_result(rider_id, event_id, status):
     )
     if not row:
         return ('not_found', None)
-    if not row['is_past']:
+    if not event_post_ride_open({'date': row['date'], 'start_time': row['start_time']}):
         return ('not_past', None)
     current = RideStatus.normalize(row['status'])
-    if not (current == RideStatus.GOING or RideStatus.is_post_ride(current)):
+    if not (current == RideStatus.REGISTERED or RideStatus.is_post_ride(current)):
         return ('ineligible', None)
 
     new_status = RideStatus.normalize(status)
     # The eligibility set re-asserted by the guarded write: a going row or any
     # post-ride result. Kept identical to the read-time predicate above.
-    eligible = (RideStatus.GOING.value, RideStatus.FINISHED.value,
+    eligible = (RideStatus.REGISTERED.value, RideStatus.FINISHED.value,
                 RideStatus.DNF.value, RideStatus.DNS.value, RideStatus.OTL.value)
     if RideStatus.is_successful(new_status):
         # Preserve any existing RUSA finish time; only flip the status.
@@ -1273,20 +1346,20 @@ def auto_finalize_past_signups():
         "    AND event_id IN (SELECT id FROM rp_brevet_event WHERE date < CURRENT_DATE) "
         "  RETURNING id"
         ") SELECT COUNT(*) AS n FROM rp_finalized",
-        (RideStatus.FINISHED.value, RideStatus.GOING.value),
+        (RideStatus.FINISHED.value, RideStatus.REGISTERED.value),
         returning=True,
     )
     return row['n'] if row else 0
 
 
-def get_event_going_riders(event_id):
+def get_event_registered_riders(event_id):
     """The pre-ride roster for a brevet plan page — riders who are interested / maybe
-    / going, exposed as EMAIL LOCAL-PART ONLY.
+    / registered, exposed as EMAIL LOCAL-PART ONLY.
 
     Guest-safety: the plan page is public, so this must never leak a full email address,
     google_id, or rider_id. Only ``split_part(email, '@', 1)`` (the part before the '@')
     and the pre-ride status are selected — the same local-part-only idiom the live map
-    uses. Ordered going-first, then interested / maybe, then by local-part. rp_* only.
+    uses. Ordered registered-first, then interested / maybe, then by local-part. rp_* only.
     """
     return db.query(
         "SELECT split_part(r.email, '@', 1) AS name, s.status "
@@ -1294,8 +1367,8 @@ def get_event_going_riders(event_id):
         "JOIN rp_rider r ON r.id = s.rider_id "
         "WHERE s.event_id = %s AND s.status IN (%s, %s, %s) "
         "ORDER BY CASE s.status WHEN %s THEN 0 WHEN %s THEN 1 ELSE 2 END, name ASC",
-        (event_id, RideStatus.GOING.value, RideStatus.INTERESTED.value,
-         RideStatus.MAYBE.value, RideStatus.GOING.value, RideStatus.INTERESTED.value),
+        (event_id, RideStatus.REGISTERED.value, RideStatus.INTERESTED.value,
+         RideStatus.MAYBE.value, RideStatus.REGISTERED.value, RideStatus.INTERESTED.value),
     )
 
 
@@ -1323,7 +1396,7 @@ def get_rider_signups(rider_id):
         "WHERE s.rider_id = %s AND s.status IN (%s, %s, %s) AND e.date >= CURRENT_DATE "
         "ORDER BY e.date ASC, e.distance_km ASC",
         (rider_id, RideStatus.INTERESTED.value, RideStatus.MAYBE.value,
-         RideStatus.GOING.value),
+         RideStatus.REGISTERED.value),
     )
 
 
@@ -1684,7 +1757,7 @@ def get_public_strategies(event_id, club_id):
     """Other publicly-shared saved pace strategies for a brevet, scoped to one
     club and exposed as EMAIL LOCAL-PART ONLY.
 
-    Guest-safety mirrors :func:`get_event_going_riders`: the plan page is public, so this
+    Guest-safety mirrors :func:`get_event_registered_riders`: the plan page is public, so this
     must never leak a full email address, google_id, or rider_id. Only the local-part of
     the email (via split_part on the at-sign) and the chosen pace are selected. Scoped by
     ``club_id`` so a viewer only ever sees co-club strategies; a NULL scope (a guest, or a
@@ -2609,7 +2682,9 @@ def record_waiver_acceptance(event_id, rider_id, waiver_version_id, profile_snap
 
 def confirm_event_registration(rider_id, event_id, *, registration_status,
                                exception_reason=None, confirmation_code=None):
-    """Mark a rider registered: going + registration metadata."""
+    """Mark a rider registered; registered status only when confirmed, else interested."""
+    ride_status = (RideStatus.REGISTERED.value if registration_status == 'confirmed'
+                   else RideStatus.INTERESTED.value)
     return db.execute(
         "INSERT INTO rp_event_signup "
         "  (rider_id, event_id, status, registration_status, "
@@ -2624,7 +2699,7 @@ def confirm_event_registration(rider_id, event_id, *, registration_status,
         "    updated_at = NOW() "
         "WHERE rp_event_signup.status NOT IN (%s, %s, %s, %s) "
         "RETURNING id, status, registration_status, confirmation_code",
-        (rider_id, event_id, RideStatus.GOING.value, registration_status,
+        (rider_id, event_id, ride_status, registration_status,
          exception_reason, confirmation_code,
          RideStatus.FINISHED.value, RideStatus.DNF.value,
          RideStatus.DNS.value, RideStatus.OTL.value),
@@ -2725,7 +2800,7 @@ def list_registration_events(limit=80, club_id=None, region_prefix=None):
 
     When club_id or region_prefix is supplied only that club's events are returned.
     """
-    params = [RideStatus.GOING.value, RideStatus.FINISHED.value, RideStatus.DNF.value,
+    params = [RideStatus.REGISTERED.value, RideStatus.FINISHED.value, RideStatus.DNF.value,
               RideStatus.DNS.value, RideStatus.OTL.value]
     club_filter = ""
     if region_prefix:
@@ -2738,8 +2813,8 @@ def list_registration_events(limit=80, club_id=None, region_prefix=None):
     return db.query(
         "SELECT e.id, e.name, e.date, e.distance_km, e.region, e.start_time, "
         "       e.start_location, e.registration_enabled, "
-        "       COUNT(s.id) FILTER (WHERE s.registration_status IS NOT NULL) AS registered_count, "
-        "       COUNT(s.id) FILTER (WHERE s.status = %s) AS going_count, "
+        "       COUNT(s.id) FILTER (WHERE s.registration_status IS NOT NULL) AS roster_count, "
+        "       COUNT(s.id) FILTER (WHERE s.status = %s) AS registered_count, "
         "       COUNT(s.id) FILTER (WHERE s.registration_status = 'exception') AS exception_count, "
         "       COUNT(s.id) FILTER (WHERE s.status IN (%s, %s, %s, %s)) AS result_count "
         "FROM rp_brevet_event e "
@@ -2764,10 +2839,10 @@ def get_admin_events(include_past=False):
     date_filter = "" if include_past else "WHERE e.date >= CURRENT_DATE "
     return db.query(
         "SELECT e.id, e.name, e.date, e.distance_km, e.region, e.start_time, "
-        "       e.start_location, e.registration_enabled, e.club_id, "
+        "       e.start_location, e.registration_enabled, e.closed_at, e.club_id, "
         "       c.name AS club_name, "
-        "       COUNT(s.id) FILTER (WHERE s.registration_status IS NOT NULL) AS registered_count, "
-        "       COUNT(s.id) FILTER (WHERE s.status = %s) AS going_count, "
+        "       COUNT(s.id) FILTER (WHERE s.registration_status IS NOT NULL) AS roster_count, "
+        "       COUNT(s.id) FILTER (WHERE s.status = %s) AS registered_count, "
         "       COUNT(s.id) FILTER (WHERE s.registration_status = 'exception') AS exception_count, "
         "       COUNT(s.id) FILTER (WHERE s.status IN (%s, %s, %s, %s)) AS result_count, "
         "       COUNT(s.id) AS total_count "
@@ -2777,7 +2852,7 @@ def get_admin_events(include_past=False):
         + date_filter +
         "GROUP BY e.id, c.name "
         "ORDER BY e.date ASC, e.distance_km ASC",
-        (RideStatus.GOING.value, RideStatus.FINISHED.value, RideStatus.DNF.value,
+        (RideStatus.REGISTERED.value, RideStatus.FINISHED.value, RideStatus.DNF.value,
          RideStatus.DNS.value, RideStatus.OTL.value),
     )
 
@@ -2830,10 +2905,10 @@ def get_club_admin_events(club_id, include_past=False, region_prefix=None):
 
     return db.query(
         "SELECT e.id, e.name, e.date, e.distance_km, e.region, e.start_time, "
-        "       e.start_location, e.registration_enabled, e.club_id, "
+        "       e.start_location, e.registration_enabled, e.closed_at, e.club_id, "
         "       c.name AS club_name, "
-        "       COUNT(s.id) FILTER (WHERE s.registration_status IS NOT NULL) AS registered_count, "
-        "       COUNT(s.id) FILTER (WHERE s.status = %s) AS going_count, "
+        "       COUNT(s.id) FILTER (WHERE s.registration_status IS NOT NULL) AS roster_count, "
+        "       COUNT(s.id) FILTER (WHERE s.status = %s) AS registered_count, "
         "       COUNT(s.id) FILTER (WHERE s.registration_status = 'exception') AS exception_count, "
         "       COUNT(s.id) FILTER (WHERE s.status IN (%s, %s, %s, %s)) AS result_count, "
         "       COUNT(s.id) AS total_count "
@@ -2843,7 +2918,7 @@ def get_club_admin_events(club_id, include_past=False, region_prefix=None):
         + where +
         "GROUP BY e.id, c.name "
         "ORDER BY e.date ASC, e.distance_km ASC",
-        (RideStatus.GOING.value, RideStatus.FINISHED.value,
+        (RideStatus.REGISTERED.value, RideStatus.FINISHED.value,
          RideStatus.DNF.value, RideStatus.DNS.value, RideStatus.OTL.value) + params,
     )
 
@@ -2954,38 +3029,37 @@ def get_admin_event_roster(event_id):
         ") val ON TRUE "
         "WHERE s.event_id = %s "
         "  AND (s.registration_status IS NOT NULL "
-        "       OR s.status IN (%s, %s, %s, %s, %s, %s, %s, %s)) "
+        "       OR s.status IN (%s, %s, %s, %s, %s)) "
         "ORDER BY CASE s.status WHEN %s THEN 0 WHEN %s THEN 1 WHEN %s THEN 2 ELSE 3 END, "
         "         r.last_name, r.first_name",
         (event_id,
-         RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.MAYBE.value,
-         RideStatus.WITHDRAW.value, RideStatus.FINISHED.value, RideStatus.DNF.value,
+         RideStatus.WITHDRAWAL_REQUESTED.value,
+         RideStatus.FINISHED.value, RideStatus.DNF.value,
          RideStatus.DNS.value, RideStatus.OTL.value,
-         RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.FINISHED.value),
+         RideStatus.REGISTERED.value, RideStatus.INTERESTED.value, RideStatus.FINISHED.value),
     )
 
 
 def get_event_close_blockers(event_id):
-    """Riders on the event roster whose status is not a final post-ride result.
+    """Riders on the roster whose status is not a final post-ride result.
 
-    An event may only be closed when every signup is FINISHED, DNF, DNS, OTL, or WITHDRAW.
-    Returns rows with rider_id, status, email, first_name, last_name for the UI.
+    An event may only be closed when every roster rider is FINISHED, DNF, DNS, OTL,
+    or WITHDRAW. withdrawal_requested also blocks close until resolved.
     """
     return db.query(
-        "SELECT s.rider_id, s.status, r.email, r.first_name, r.last_name "
+        "SELECT s.rider_id, s.status, s.registration_status, "
+        "       r.email, r.first_name, r.last_name "
         "FROM rp_event_signup s "
         "JOIN rp_rider r ON r.id = s.rider_id "
         "WHERE s.event_id = %s "
-        "  AND s.status NOT IN (%s, %s, %s, %s, %s) "
         "  AND (s.registration_status IS NOT NULL "
-        "       OR s.status IN (%s, %s, %s, %s, %s, %s, %s, %s)) "
+        "       OR s.status = %s) "
+        "  AND s.status NOT IN (%s, %s, %s, %s, %s) "
         "ORDER BY r.last_name, r.first_name",
         (event_id,
+         RideStatus.WITHDRAWAL_REQUESTED.value,
          RideStatus.FINISHED.value, RideStatus.DNF.value,
-         RideStatus.DNS.value, RideStatus.OTL.value, RideStatus.WITHDRAW.value,
-         RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.MAYBE.value,
-         RideStatus.WITHDRAW.value, RideStatus.FINISHED.value, RideStatus.DNF.value,
-         RideStatus.DNS.value, RideStatus.OTL.value),
+         RideStatus.DNS.value, RideStatus.OTL.value, RideStatus.WITHDRAW.value),
     )
 
 

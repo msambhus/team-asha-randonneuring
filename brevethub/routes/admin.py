@@ -430,10 +430,15 @@ def events():
     Club admins see only their club's events. Super-admins see all clubs.
     """
     from datetime import date, timedelta
-    include_past = request.args.get('past') == '1'
+    view = request.args.get('view', 'cards')
+    if view not in ('cards', 'table'):
+        view = 'cards'
+    status_filter = request.args.get('status', 'all')
+    if status_filter not in ('all', 'open', 'in_progress', 'closed'):
+        status_filter = 'all'
     club_id = _operator_club_id()
     region_prefix = session.get('brevethub_operator_region_prefix')
-    all_events = models.get_club_admin_events(club_id, include_past=include_past,
+    all_events = models.get_club_admin_events(club_id, include_past=True,
                                               region_prefix=region_prefix)
     today = date.today()
     week_end = today + timedelta(days=7)
@@ -441,6 +446,7 @@ def events():
     this_week, upcoming, past = [], [], []
     for ev in all_events:
         ev_date = ev['date'] if hasattr(ev['date'], 'year') else date.fromisoformat(str(ev['date']))
+        ev['lifecycle'] = _event_lifecycle(ev, today)
         if ev_date < today:
             past.append(ev)
         elif ev_date <= week_end:
@@ -448,17 +454,55 @@ def events():
         else:
             upcoming.append(ev)
 
+    if status_filter != 'all':
+        this_week = [e for e in this_week if e['lifecycle'] == status_filter]
+        upcoming = [e for e in upcoming if e['lifecycle'] == status_filter]
+        past = [e for e in past if e['lifecycle'] == status_filter]
+
     # Past comes back ASC from the query; reverse so newest past is first
     past = list(reversed(past))
+    table_events = sorted(
+        all_events,
+        key=lambda e: e['date'] if hasattr(e['date'], 'year') else date.fromisoformat(str(e['date'])),
+        reverse=True,
+    )
+
+    def events_page_url(status_val=None, view_mode=None):
+        params = {}
+        v = view_mode or view
+        if v == 'table':
+            params['view'] = 'table'
+        s = status_val if status_val is not None else status_filter
+        if s != 'all':
+            params['status'] = s
+        return url_for('admin.events', **params)
 
     return render_template(
         'admin/events.html',
         this_week=this_week,
         upcoming=upcoming,
         past=past,
-        include_past=include_past,
+        table_events=table_events,
+        view=view,
+        status_filter=status_filter,
+        events_page_url=events_page_url,
         admin_club_id=club_id,
+        today_date=today,
     )
+
+
+def _event_lifecycle(event, today=None):
+    """Admin event state: open (upcoming), in_progress (past, not closed), closed."""
+    from datetime import date
+    today = today or date.today()
+    if event.get('closed_at'):
+        return 'closed'
+    ev_date = event['date']
+    if not hasattr(ev_date, 'year'):
+        ev_date = date.fromisoformat(str(ev_date))
+    if ev_date < today:
+        return 'in_progress'
+    return 'open'
 
 
 def _validation_label(row):
@@ -528,6 +572,9 @@ def event_roster(event_id):
 
         # ── Event-level actions ────────────────────────────────────────────────
         if action == 'close_event':
+            if _event_lifecycle(event) == 'open':
+                flash('Cannot close an event before its ride date.', 'error')
+                return redirect(url_for('admin.event_roster', event_id=event_id))
             outcome = models.set_event_closed(event_id, closed=True)
             if outcome == 'unresolved_riders':
                 n = len(models.get_event_close_blockers(event_id))
@@ -563,6 +610,24 @@ def event_roster(event_id):
             models.admin_remove_event_signup(event_id, rider_id)
             flash('Rider removed from event roster.', 'success')
             return redirect(url_for('admin.event_roster', event_id=event_id))
+
+        if action == 'approve_withdrawal' and rider_id:
+            outcome = models.admin_approve_withdrawal(event_id, rider_id)
+            if outcome == 'approved':
+                flash('Withdrawal approved — rider removed from roster.', 'success')
+            else:
+                flash('No pending withdrawal for that rider.', 'error')
+            return redirect(url_for('admin.event_roster', event_id=event_id,
+                                    filter=request.args.get('filter', '')))
+
+        if action == 'reject_withdrawal' and rider_id:
+            outcome = models.admin_reject_withdrawal(event_id, rider_id)
+            if outcome == 'rejected':
+                flash('Withdrawal rejected.', 'success')
+            else:
+                flash('No pending withdrawal for that rider.', 'error')
+            return redirect(url_for('admin.event_roster', event_id=event_id,
+                                    filter=request.args.get('filter', '')))
 
         # ── Per-rider status update (single) ───────────────────────────────────
         if rider_id:
@@ -615,14 +680,14 @@ def event_roster(event_id):
         # Riders who finished but have no approved validation
         filtered_roster = [
             r for r in roster
-            if r.get('status') in ('finished', 'going')
+            if r.get('status') in ('finished', 'registered')
             and r.get('organizer_decision') != 'approved'
         ]
     elif active_filter == 'no_proof':
         # Riders who finished but submitted NO validation at all
         filtered_roster = [
             r for r in roster
-            if r.get('status') in ('finished', 'going')
+            if r.get('status') in ('finished', 'registered')
             and not r.get('validation_id')
         ]
     elif active_filter == 'needs_review':
@@ -633,8 +698,8 @@ def event_roster(event_id):
         ]
     elif active_filter == 'approved':
         filtered_roster = [r for r in roster if r.get('organizer_decision') == 'approved']
-    elif active_filter == 'going':
-        filtered_roster = [r for r in roster if r.get('status') == 'going']
+    elif active_filter == 'registered':
+        filtered_roster = [r for r in roster if r.get('status') == 'registered']
     elif active_filter == 'results':
         filtered_roster = [
             r for r in roster
@@ -642,18 +707,21 @@ def event_roster(event_id):
         ]
 
     from datetime import date
+    today = date.today()
     close_blockers = models.get_event_close_blockers(event_id)
     for row in close_blockers:
         row['display_name'] = rider_display_name(row)
+    lifecycle = _event_lifecycle(event, today)
     return render_template(
         'admin/event_roster.html',
         event=event,
         roster=filtered_roster,
         roster_total=len(roster),
         active_filter=active_filter,
-        today_date=date.today(),
+        today_date=today,
+        event_lifecycle=lifecycle,
         close_blockers=close_blockers,
-        can_close_event=len(close_blockers) == 0,
+        can_close_event=lifecycle == 'in_progress' and len(close_blockers) == 0,
     )
 
 

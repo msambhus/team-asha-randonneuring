@@ -3,7 +3,7 @@
 Club-login-only, opt-in. Three surfaces:
   GET/POST /live/settings        — rider opts in + registers a Garmin LiveTrack URL
   GET      /ride/<id>/live       — per-ride map (RWGPS route line + live rider dots)
-  GET      /api/live/positions   — JSON: latest point per opted-in GOING rider
+  GET      /api/live/positions   — JSON: latest point per opted-in REGISTERED rider
 
 The poll cron that writes positions lives in routes/cron.py.
 """
@@ -22,7 +22,7 @@ from cache import cache, CACHE_TIMEOUT
 from models import (get_ride_by_id, get_live_tracking, set_live_tracking_enabled,
                     set_ride_garmin, clear_ride_garmin,
                     get_latest_positions_for_ride, insert_live_position,
-                    get_going_riders_for_ride,
+                    get_registered_riders_for_ride,
                     get_rider_upcoming_signups, get_ride_plan_stops,
                     get_followed_live_ride_ids, get_followed_live_rides,
                     set_followed_live_ride,
@@ -127,10 +127,10 @@ def _telemetry_history_since(ctx, now):
     retention_start = now - timedelta(days=POSITION_RETENTION_DAYS)
     return max(retention_start, min(fallback, start))
 
-# RideStatus → dot color. Only GOING riders appear on the per-ride map today,
+# RideStatus → dot color. Only REGISTERED riders appear on the per-ride map today,
 # but the map carries the full mapping for forward-compatibility.
 STATUS_COLORS = {
-    'GOING': '#16a34a',       # green
+    'REGISTERED': '#16a34a',       # green
     'INTERESTED': '#2563eb',  # blue
     'MAYBE': '#d97706',       # amber
     'FINISHED': '#6b7280',    # grey
@@ -800,7 +800,7 @@ def _live_page_static_payload(ride_id, selected_day, explicit_active_day):
 
 @live_bp.route('/ride/<int:ride_id>/live')
 def ride_live_map(ride_id):
-    """Per-ride live map: RWGPS route line + live dots for opted-in GOING riders.
+    """Per-ride live map: RWGPS route line + live dots for opted-in REGISTERED riders.
 
     Open to logged-in club members, OR to an unauthenticated guest who entered a
     valid invite code for THIS ride at /live/join (read-only — member controls
@@ -1567,7 +1567,7 @@ def build_live_telemetry_snapshot(ride_id, now=None):
     rows = list(get_latest_positions_for_ride(
         ride_id, now - timedelta(hours=DISPLAY_WINDOW_HOURS)) or [])
     sharing_ids = {row['rider_id'] for row in rows}
-    for rider in get_going_riders_for_ride(ride_id) or []:
+    for rider in get_registered_riders_for_ride(ride_id) or []:
         if rider['rider_id'] not in sharing_ids:
             rows.append(dict(rider, lat=None, lng=None, recorded_at=None,
                              source=None, speed=None, heart_rate=None,
@@ -1612,7 +1612,7 @@ def build_live_telemetry_snapshot(ride_id, now=None):
             'name': (row.get('name') or '').strip(),
             'lat': float(row['lat']) if row.get('lat') is not None else None,
             'lng': float(row['lng']) if row.get('lng') is not None else None,
-            'status': status or RideStatus.GOING.value,
+            'status': status or RideStatus.REGISTERED.value,
             'color': STATUS_COLORS.get(status, DEFAULT_COLOR),
             'plan_color': _plan_dot_color(status, telemetry),
             'recorded_at': recorded_at.isoformat() if recorded_at else None,
@@ -1707,7 +1707,7 @@ def _shared_live_snapshot(ride_id):
 
 @live_bp.route('/api/live/positions')
 def live_positions():
-    """JSON: latest position + live telemetry per opted-in GOING rider for ?ride_id=.
+    """JSON: latest position + live telemetry per opted-in REGISTERED rider for ?ride_id=.
 
     Auth: a logged-in club member (web session or mobile Bearer token) for any
     ride, OR an unauthenticated guest holding a valid invite code for THIS ride
@@ -1858,7 +1858,7 @@ def live_positions():
     # broken ride instead of assuming that rider was removed from the event.
     sharing_ids = {position['rider_id'] for position in positions}
     try:
-        for rider in get_going_riders_for_ride(ride_id) or []:
+        for rider in get_registered_riders_for_ride(ride_id) or []:
             if rider['rider_id'] in sharing_ids:
                 continue
             positions.append({
@@ -1866,8 +1866,8 @@ def live_positions():
                 'name': (rider.get('name') or '').strip(),
                 'lat': None,
                 'lng': None,
-                'status': rider.get('status') or RideStatus.GOING.value,
-                'color': STATUS_COLORS.get(RideStatus.GOING.value, DEFAULT_COLOR),
+                'status': rider.get('status') or RideStatus.REGISTERED.value,
+                'color': STATUS_COLORS.get(RideStatus.REGISTERED.value, DEFAULT_COLOR),
                 'plan_color': PLAN_UNKNOWN_COLOR,
                 'recorded_at': None,
                 'minutes_ago': None,
@@ -2029,7 +2029,7 @@ def ride_live_roster(ride_id):
         rows = []
     try:
         sharing_ids = {row['rider_id'] for row in rows}
-        for rider in get_going_riders_for_ride(ride_id) or []:
+        for rider in get_registered_riders_for_ride(ride_id) or []:
             if rider['rider_id'] not in sharing_ids:
                 rows.append(dict(rider, lat=None, lng=None, recorded_at=None,
                                  source=None, speed=None, heart_rate=None,
@@ -2217,7 +2217,7 @@ def api_calendar_status(ride_id):
     """Set the signed-in rider's mobile calendar intent.
 
     The native app deliberately exposes the two clear choices requested by the
-    product: GOING and not going.  Identity always comes from the bearer token
+    product: REGISTERED (legacy request body may still send GOING). Identity always comes from the bearer token
     or web session; a client cannot change another rider's signup.
     """
     if not g.rider_id:
@@ -2230,14 +2230,14 @@ def api_calendar_status(ride_id):
 
     body = request.get_json(silent=True) or {}
     status = str(body.get('status') or '').upper()
-    if status == RideStatus.GOING.value:
+    if status in {RideStatus.REGISTERED.value, 'GOING'}:
         success = signup_rider(g.rider_id, ride_id)
-        result_status = RideStatus.GOING.value
-    elif status in {'NONE', 'NOT_GOING'}:
+        result_status = RideStatus.REGISTERED.value
+    elif status in {'NONE', 'NOT_REGISTERED', 'NOT_GOING'}:
         success = remove_signup(g.rider_id, ride_id)
         result_status = None
     else:
-        return jsonify({'error': 'status must be GOING or NONE'}), 400
+        return jsonify({'error': 'status must be REGISTERED or NONE'}), 400
 
     if not success:
         return jsonify({'error': 'Could not update ride status'}), 400

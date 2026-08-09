@@ -32,7 +32,7 @@ FIXTURE_RESULTS = {
         {"name": "SIR 300", "date": "2025-11-02", "distance_km": 300, "elevation_ft": 14200, "status": "FINISHED", "finish_time": "17:45:00"},
     ]},
     "upcoming_rides": {"rows": [
-        {"name": "Cascade 400", "date": "2026-04-12", "distance_km": 400, "status": "GOING"},
+        {"name": "Cascade 400", "date": "2026-04-12", "distance_km": 400, "status": "REGISTERED"},
     ]},
     "career_stats": {"rows": [{"total_rides_finished": 28, "total_km": 7850, "seasons_participated": 3, "longest_ride_km": 600}]},
     "recent_activities": {"rows": [

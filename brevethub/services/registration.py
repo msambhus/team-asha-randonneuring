@@ -276,27 +276,43 @@ def profile_payload(rider: dict, *, edit_url: str) -> dict:
     }
 
 
+def status_display_label(status: str | None) -> str:
+    """User-facing ride status label."""
+    st = (status or '').strip().lower()
+    if not st:
+        return '—'
+    if st == 'registered':
+        return 'Registered'
+    return st.replace('_', ' ').title()
+
+
 def progress_label(*, event_past: bool, status: str, registration_status: str | None) -> str:
     """Human-readable rider progress for admin roster display."""
     st = (status or '').lower()
     reg = (registration_status or '').lower()
+    if st == 'withdrawal_requested':
+        return 'Withdrawal pending'
     if reg == 'exception':
         return 'Needs review'
+    if reg == 'waitlist':
+        return 'Waitlist'
     if not event_past:
-        if st == 'going' and reg in ('confirmed', 'waitlist', ''):
+        if st == 'registered' and reg == 'confirmed':
             return 'Registered'
+        if st == 'interested' and reg:
+            return reg.replace('_', ' ').title()
         if st == 'interested':
             return 'Interested'
         if st == 'withdraw':
             return 'Withdrawn'
-        return st.upper() if st else '—'
+        return status_display_label(st)
     if st == 'finished':
         return 'Finished'
     if st in ('dnf', 'dns', 'otl'):
         return st.upper()
-    if st == 'going':
+    if st == 'registered':
         return 'Awaiting result'
-    return st.upper() if st else '—'
+    return status_display_label(st)
 
 
 def confirm_registration_for_event(rider: dict, event: dict, *, waiver,

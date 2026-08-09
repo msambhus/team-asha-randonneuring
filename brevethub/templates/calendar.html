@@ -647,6 +647,9 @@
                     <span class="text-text-light text-sm">{{ (ev.fee_cents / 100)|int }} USD</span>
                   {% endif %}
                   {% set reg = my_registrations.get(ev.id) if rider else None %}
+                  {% set proof = proof_by_event.get(ev.id) if rider else None %}
+                  {% set show_proof = proof and proof.organizer_decision != 'approved' and (proof.evidence_submission_allowed or (not proof.submission_id and not proof.finish_time)) %}
+                  {% set post_ride = post_ride_open_by_event.get(ev.id) %}
                   {% if reg and reg.registration_status %}
                     <span class="registration-badge" data-reg-badge="{{ ev.id }}">
                       {% if reg.registration_status == 'confirmed' %}You're registered{% elif reg.registration_status == 'exception' %}Registered · review{% elif reg.registration_status == 'waitlist' %}Waitlist{% else %}{{ reg.registration_status|capitalize }}{% endif %}
@@ -654,28 +657,41 @@
                   {% endif %}
                   {% if rider %}
                     {% set status = my_status.get(ev.id) %}
-                    <div class="signup-actions" data-event-id="{{ ev.id }}" data-status="{{ status or '' }}">
-                      {% if ev.registration_enabled and not (reg and reg.registration_status) %}
+                    <div class="signup-actions" data-event-id="{{ ev.id }}" data-status="{{ status or '' }}"
+                         {% if reg and reg.registration_status %}data-registered="1"{% endif %}
+                         {% if show_proof %}data-proof-url="{{ url_for('validation.submit_validation', event_id=ev.id) }}"{% endif %}
+                         data-post-ride="{{ '1' if post_ride else '0' }}">
+                      {% if reg and reg.registration_status %}
+                        {% if show_proof %}
+                        <a class="event-link-btn" href="{{ url_for('validation.submit_validation', event_id=ev.id) }}">Submit proof</a>
+                        {% endif %}
+                        {% if status == 'withdrawal_requested' %}
+                        <span class="text-red-700 text-sm font-semibold">Withdrawal pending review</span>
+                        {% elif post_ride and status in ('registered', 'finished', 'dnf', 'dns', 'otl') %}
+                        <select class="result-select form-input text-xs py-1" data-event-id="{{ ev.id }}" aria-label="Post-ride result">
+                          {% for opt, label in [('finished', 'Finished'), ('dnf', 'DNF'), ('dns', 'DNS'), ('otl', 'OTL')] %}
+                          <option value="{{ opt }}" {% if status == opt %}selected{% endif %}>{{ label }}</option>
+                          {% endfor %}
+                        </select>
+                        {% elif status not in ('withdrawal_requested', 'finished', 'dnf', 'dns', 'otl') %}
+                        <button type="button" class="signup-intent-btn signup-intent-withdraw" data-action="withdraw" data-event-id="{{ ev.id }}">Request withdraw</button>
+                        {% endif %}
+                      {% else %}
+                      {% if ev.registration_enabled %}
                         <button type="button" class="signup-btn register-primary"
                                 data-register-event="{{ ev.id }}">Register</button>
                       {% endif %}
-                      {# Context-sensitive intent buttons — mirrors Team Asha's state machine.
-                         Withdraw only shown from GOING; Clear only shown from INTERESTED.
-                         Buttons are re-rendered client-side after each API call. #}
-                      {% if not status or status in ('withdraw',) %}
-                        <button type="button" class="signup-intent-btn" data-action="interested" data-event-id="{{ ev.id }}">Interested</button>
-                        <button type="button" class="signup-intent-btn signup-intent-primary" data-action="going" data-event-id="{{ ev.id }}">Going</button>
+                      {% if not status %}
+                        <button type="button" class="signup-intent-btn signup-intent-primary" data-action="interested" data-event-id="{{ ev.id }}">Interested</button>
                       {% elif status == 'interested' %}
-                        <button type="button" class="signup-intent-btn signup-intent-primary" data-action="going" data-event-id="{{ ev.id }}">Going</button>
+                        <button type="button" class="signup-intent-btn signup-intent-primary" data-action="interested" data-event-id="{{ ev.id }}" disabled style="opacity:.7;">Interested</button>
                         <button type="button" class="signup-intent-btn signup-intent-clear" data-action="clear" data-event-id="{{ ev.id }}">Clear</button>
-                      {% elif status == 'going' %}
-                        <button type="button" class="signup-intent-btn" data-action="interested" data-event-id="{{ ev.id }}">Interested</button>
-                        <button type="button" class="signup-intent-btn signup-intent-withdraw" data-action="withdraw" data-event-id="{{ ev.id }}">Withdraw</button>
+                      {% endif %}
                       {% endif %}
                     </div>
                     {% if not ev.registration_enabled %}
                       <small class="club-registration-note">
-                        Going here is an intent only; complete registration on the organizing club&rsquo;s site.
+                        Register here is an intent only; complete registration on the organizing club&rsquo;s site.
                         <a href="{{ rusa_event_search_url }}" target="_blank" rel="noopener">Find official registration via RUSA</a>.
                       </small>
                     {% endif %}
@@ -725,7 +741,7 @@
                       data-event-id="{{ s.event_id }}">
                   {{ s.finish_time or '—' }}
                 </span>
-                {% if s.organizer_decision != 'approved' and (s.evidence_submission_allowed or (not s.submission_id and not s.finish_time)) %}<a class="event-link-btn" href="{{ url_for('validation.submit_validation', event_id=s.event_id) }}">Submit evidence</a>{% endif %}
+                {% if s.organizer_decision != 'approved' and (s.evidence_submission_allowed or (not s.submission_id and not s.finish_time)) %}<a class="event-link-btn" href="{{ url_for('validation.submit_validation', event_id=s.event_id) }}">Submit proof</a>{% endif %}
               </span>
             </div>
           </article>
@@ -737,7 +753,7 @@
   {% if not rider %}
     <p class="mt-6">
       <a class="btn btn-primary" href="{{ url_for('auth.login', next=url_for('calendar.calendar')) }}">Sign in</a>
-      to mark yourself interested or going on a brevet.
+      to mark yourself interested on a brevet, or register when registration is open.
     </p>
   {% endif %}
 
@@ -758,20 +774,52 @@
 <script>
 // Context-sensitive intent buttons: delegated click handler.
 // Guests never see these controls (server-rendered only when a rider is signed in).
+function regBadgeLabel(regStatus) {
+  if (regStatus === 'confirmed') return "You're registered";
+  if (regStatus === 'exception') return 'Registered · review';
+  if (regStatus === 'waitlist') return 'Waitlist';
+  if (!regStatus) return "You're registered";
+  return regStatus.charAt(0).toUpperCase() + regStatus.slice(1);
+}
+
+function renderRegisteredActions(container, status, postRide) {
+  if (!container) return;
+  container.setAttribute('data-registered', '1');
+  var eventId = container.getAttribute('data-event-id');
+  var proofUrl = container.getAttribute('data-proof-url');
+  var html = '';
+  if (proofUrl) {
+    html += '<a class="event-link-btn" href="' + proofUrl + '">Submit proof</a>';
+  }
+  if (status === 'withdrawal_requested') {
+    html += '<span class="text-red-700 text-sm font-semibold">Withdrawal pending review</span>';
+  } else if (postRide && (status === 'registered' || status === 'finished' || status === 'dnf' || status === 'dns' || status === 'otl')) {
+    var opts = [['finished', 'Finished'], ['dnf', 'DNF'], ['dns', 'DNS'], ['otl', 'OTL']];
+    html += '<select class="result-select form-input text-xs py-1" data-event-id="' + eventId + '" aria-label="Post-ride result">';
+    opts.forEach(function (pair) {
+      html += '<option value="' + pair[0] + '"' + (status === pair[0] ? ' selected' : '') + '>' + pair[1] + '</option>';
+    });
+    html += '</select>';
+  } else if (status !== 'finished' && status !== 'dnf' && status !== 'dns' && status !== 'otl') {
+    html += '<button type="button" class="signup-intent-btn signup-intent-withdraw" data-action="withdraw" data-event-id="' + eventId + '">Request withdraw</button>';
+  }
+  container.innerHTML = html;
+}
+
 function renderIntentButtons(container, newStatus) {
+  if (!container || container.getAttribute('data-registered') === '1') {
+    renderRegisteredActions(container, newStatus, container.getAttribute('data-post-ride') === '1');
+    return;
+  }
   var eventId = container.getAttribute('data-event-id');
   var registerBtn = container.querySelector('[data-register-event]');
   var registerHtml = registerBtn ? registerBtn.outerHTML : '';
   var btns = '';
-  if (!newStatus || newStatus === 'withdraw') {
-    btns  = '<button type="button" class="signup-intent-btn" data-action="interested" data-event-id="' + eventId + '">Interested</button>';
-    btns += '<button type="button" class="signup-intent-btn signup-intent-primary" data-action="going" data-event-id="' + eventId + '">Going</button>';
+  if (!newStatus) {
+    btns = '<button type="button" class="signup-intent-btn signup-intent-primary" data-action="interested" data-event-id="' + eventId + '">Interested</button>';
   } else if (newStatus === 'interested') {
-    btns  = '<button type="button" class="signup-intent-btn signup-intent-primary" data-action="going" data-event-id="' + eventId + '">Going</button>';
+    btns  = '<button type="button" class="signup-intent-btn signup-intent-primary" data-action="interested" data-event-id="' + eventId + '" disabled style="opacity:.7;">Interested</button>';
     btns += '<button type="button" class="signup-intent-btn signup-intent-clear" data-action="clear" data-event-id="' + eventId + '">Clear</button>';
-  } else if (newStatus === 'going') {
-    btns  = '<button type="button" class="signup-intent-btn" data-action="interested" data-event-id="' + eventId + '">Interested</button>';
-    btns += '<button type="button" class="signup-intent-btn signup-intent-withdraw" data-action="withdraw" data-event-id="' + eventId + '">Withdraw</button>';
   }
   container.setAttribute('data-status', newStatus || '');
   container.innerHTML = registerHtml + btns;
@@ -785,6 +833,7 @@ document.addEventListener('click', function (e) {
   if (!action || !eventId) return;
 
   var container = document.querySelector('.signup-actions[data-event-id="' + eventId + '"]');
+  var isRegistered = container && container.getAttribute('data-registered') === '1';
 
   if (action === 'clear') {
     fetch('/calendar/' + eventId + '/signup', {
@@ -803,13 +852,15 @@ document.addEventListener('click', function (e) {
       var regBadge = document.querySelector('[data-reg-badge="' + eventId + '"]');
       if (regBadge) regBadge.style.display = 'none';
       var card = document.querySelector('.event-card[data-event-id="' + eventId + '"]');
-      if (card && r.data.going_count != null) {
+      if (card && r.data.registered_count != null) {
         var badge = card.querySelector('.signup-count');
-        if (badge) badge.textContent = r.data.going_count + ' on roster';
+        if (badge) badge.textContent = r.data.registered_count + ' on roster';
       }
     });
     return;
   }
+
+  if (isRegistered && action !== 'withdraw') return;
 
   fetch('/calendar/' + eventId + '/signup', {
     method: 'POST',
@@ -825,16 +876,21 @@ document.addEventListener('click', function (e) {
       return;
     }
     var newStatus = r.data.status;
-    if (container) renderIntentButtons(container, newStatus);
-    // On withdraw, also hide the registration badge (server nulled registration_status).
-    if (action === 'withdraw') {
+    if (container) {
+      if (isRegistered || action === 'withdraw') {
+        renderRegisteredActions(container, newStatus, container.getAttribute('data-post-ride') === '1');
+      } else {
+        renderIntentButtons(container, newStatus);
+      }
+    }
+    if (action === 'withdraw' && r.data.outcome === 'dns') {
       var regBadge = document.querySelector('[data-reg-badge="' + eventId + '"]');
-      if (regBadge) regBadge.style.display = 'none';
+      if (regBadge) regBadge.textContent = 'DNS recorded';
     }
     var card = document.querySelector('.event-card[data-event-id="' + eventId + '"]');
-    if (card && r.data.going_count != null) {
+    if (card && r.data.registered_count != null) {
       var badge = card.querySelector('.signup-count');
-      if (badge) badge.textContent = r.data.going_count + ' on roster';
+      if (badge) badge.textContent = r.data.registered_count + ' on roster';
     }
   });
 });
@@ -854,28 +910,29 @@ document.querySelectorAll('.follow-live-btn').forEach(function (btn) {
   });
 });
 
-// Post-ride result correction (this rider's OWN past ride only): a small fetch()
-// POST to the self-service /result API. Status-only — the finish time is never
-// sent, only reflected read-only from the JSON response.
-document.querySelectorAll('.result-select').forEach(function (sel) {
-  sel.addEventListener('change', function () {
-    var eventId = sel.getAttribute('data-event-id');
-    fetch('/calendar/' + eventId + '/result', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({status: sel.value}),
-    }).then(function (resp) {
-      return resp.json().then(function (data) { return {ok: resp.ok, data: data}; });
-    }).then(function (r) {
-      if (!r.ok) {
-        if (r.data && r.data.login_url) { window.location = r.data.login_url; }
-        return;
-      }
-      var badge = document.querySelector('.result-badge[data-event-id="' + eventId + '"]');
-      if (badge && r.data.status) { badge.textContent = r.data.status.toUpperCase(); }
-      var finish = document.querySelector('.result-finish[data-event-id="' + eventId + '"]');
-      if (finish) { finish.textContent = r.data.finish_time || '—'; }
-    });
+// Post-ride result — delegated so dynamically inserted selects work too.
+document.addEventListener('change', function (e) {
+  var sel = e.target.closest('.result-select');
+  if (!sel) return;
+  var eventId = sel.getAttribute('data-event-id');
+  fetch('/calendar/' + eventId + '/result', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: sel.value}),
+  }).then(function (resp) {
+    return resp.json().then(function (data) { return {ok: resp.ok, data: data}; });
+  }).then(function (r) {
+    if (!r.ok) {
+      if (r.data && r.data.login_url) { window.location = r.data.login_url; }
+      else if (r.data && r.data.error) { alert(r.data.error); }
+      return;
+    }
+    var actions = document.querySelector('.signup-actions[data-event-id="' + eventId + '"]');
+    if (actions) actions.setAttribute('data-status', r.data.status);
+    var badge = document.querySelector('.result-badge[data-event-id="' + eventId + '"]');
+    if (badge && r.data.status) { badge.textContent = r.data.status.toUpperCase(); }
+    var finish = document.querySelector('.result-finish[data-event-id="' + eventId + '"]');
+    if (finish) { finish.textContent = r.data.finish_time || '—'; }
   });
 });
 </script>

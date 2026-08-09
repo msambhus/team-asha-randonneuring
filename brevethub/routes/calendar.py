@@ -34,7 +34,7 @@ app and called out rather than silently diverged (see the frame plan):
     hardcoded TEAM_RUSA_REGIONS dict. A generic app has no such map, so the calendar
     shows the general RUSA calendar and offers an optional "my region" view that
     filters by the rider's club's STATE prefix (an honest state-level narrowing).
-  - Sign-up: Team Asha's participation lives in rider_ride (INTERESTED/MAYBE/GOING/…)
+  - Sign-up: Team Asha's participation lives in rider_ride (INTERESTED/MAYBE/REGISTERED/…)
     against its own ride table. BrevetHub stores participation in rp_event_signup
     against the rp_brevet_event cache, using BrevetHub's own RideStatus enum values
     (interested/going/withdraw) — it imports nothing from Team Asha's models.
@@ -75,13 +75,10 @@ def event_finishers(event_id):
 CALENDAR_STALE_AFTER = timedelta(hours=40)
 
 # The pre-ride statuses a rider may set on the /signup endpoint (BrevetHub's own
-# lowercase enum values): Going is primary, Interested is secondary, plus Withdraw.
-# Legacy Maybe rows remain removable through DELETE but cannot be newly created.
-# Post-ride result
-# values (finished/dnf/dns/otl) are NOT settable here — they go through /result.
+# Pre-ride intent: interested only (registered comes from registration; withdraw is
+# a registered-rider withdrawal request).
 _SIGNUP_STATUSES = {
     models.RideStatus.INTERESTED.value,
-    models.RideStatus.GOING.value,
     models.RideStatus.WITHDRAW.value,
 }
 
@@ -224,6 +221,7 @@ def calendar():
     my_status = {}
     my_registrations = {}
     my_results = []
+    proof_by_event = {}
     followed_live_event_ids = set()
     if rider:
         my_status = {row['event_id']: row['status']
@@ -232,6 +230,15 @@ def calendar():
         my_registrations = {
             row['event_id']: row for row in reg_rows if row.get('registration_status')
         }
+        try:
+            proof_by_event = {
+                int(row['event_id']): row
+                for row in models.get_rider_completed_validation_events(rider['id'])
+            }
+        except Exception as e:
+            current_app.logger.warning('proof-eligible load failed for rider %s: %s',
+                                       rider['id'], e)
+            proof_by_event = {}
         # The rider's OWN past-event results, so the calendar carries the post-ride
         # surface (result badge + read-only finish_time + a status-only correction)
         # the upcoming grid cannot show. Failure-tolerant: a DB hiccup drops the
@@ -247,9 +254,14 @@ def calendar():
 
     default_state = (club or {}).get('state') if club else None
     default_club = (club or {}).get('name') if club else None
+    post_ride_open_by_event = {
+        ev['id']: models.event_post_ride_open(ev) for ev in events
+    }
     return render_template(
         'calendar.html', events=events, months=months, my_status=my_status,
         my_registrations=my_registrations,
+        post_ride_open_by_event=post_ride_open_by_event,
+        proof_by_event=proof_by_event,
         my_results=my_results, rider=rider, club=club, states=states,
         regions_by_state=regions_by_state, clubs=clubs,
         default_state=default_state, default_club=default_club,
@@ -302,13 +314,23 @@ def signup(event_id):
     if status == models.RideStatus.WITHDRAW.value:
         outcome = models.withdraw_rider_signup(rider['id'], event_id)
         if outcome == 'not_found':
-            # No prior signup — treat as a no-op (rider never signed up, nothing to withdraw).
             counts = models.get_event_signup_counts(event_id)
             return jsonify({'ok': True, 'event_id': event_id, 'status': None,
                             **counts}), 200
+        if outcome == 'not_registered':
+            return jsonify({'error': 'Register before requesting withdrawal.'}), 400
         if outcome == 'has_result':
             return jsonify({'error': 'Cannot change a sign-up with a result'}), 409
+        if outcome == 'already_requested':
+            return jsonify({'error': 'Withdrawal already pending review.'}), 409
+        counts = models.get_event_signup_counts(event_id)
+        resp_status = 'dns' if outcome == 'dns' else 'withdrawal_requested'
+        return jsonify({'ok': True, 'event_id': event_id, 'status': resp_status,
+                        'outcome': outcome, **counts}), 200
     else:
+        reg = models.get_event_signup_registration(rider['id'], event_id)
+        if reg and reg.get('registration_status'):
+            return jsonify({'error': 'Clear registration before changing interest.'}), 409
         outcome = models.set_rider_signup(rider['id'], event_id, status)
         if outcome == 'has_result':
             return jsonify({'error': 'Cannot change a sign-up with a result'}), 409
@@ -352,6 +374,8 @@ def unsignup(event_id):
     outcome = models.clear_rider_signup(rider['id'], event_id)
     if outcome == 'not_found':
         return jsonify({'error': 'No sign-up to remove'}), 404
+    if outcome == 'registered':
+        return jsonify({'error': 'Cannot clear interest while registered.'}), 400
     if outcome == 'post_ride':
         return jsonify({'error': 'Cannot remove a sign-up with a result'}), 400
     counts = models.get_event_signup_counts(event_id)

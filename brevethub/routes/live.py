@@ -351,7 +351,7 @@ def event_live_join(event_id):
         distance_km=event.get('distance_km'),
         is_public=True,
         club_id=(rider.get('club_id') if rider else None),
-        status=models.RideStatus.GOING.value,
+        status=models.RideStatus.REGISTERED.value,
     )
     if not ride_id:
         flash('Could not join the live map. Please try again.', 'error')
@@ -443,7 +443,7 @@ def live_new():
             distance_km=distance_km,
             is_public=make_public,
             club_id=(rider.get('club_id') if rider else None),
-            status=models.RideStatus.GOING.value,
+            status=models.RideStatus.REGISTERED.value,
         )
         if not ride_id:
             flash('Could not create the ride. Please try again.', 'error')
@@ -857,11 +857,11 @@ DISPLAY_WINDOW_HOURS = 24
 STALE_AFTER_MINUTES = 10
 
 # Every rider on the member map has opted in AND attached to THIS ride, so they
-# are all "going" for it. BrevetHub rides carry no per-rider signup table (unlike
+# are all "registered" for it. BrevetHub rides carry no per-rider signup table (unlike
 # TA's rider_ride.status), so the dot colour is a single status here; staleness
 # fade + the name distinguish riders. Kept as a map for forward-compatibility.
-STATUS_COLORS = {'going': '#16a34a'}
-DEFAULT_STATUS = 'going'
+STATUS_COLORS = {'registered': '#16a34a'}
+DEFAULT_STATUS = 'registered'
 DEFAULT_COLOR = '#16a34a'
 
 # Cap polyline payload — long brevet routes can have tens of thousands of points.

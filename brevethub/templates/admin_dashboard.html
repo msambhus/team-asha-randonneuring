@@ -14,9 +14,6 @@
       </p>
       {% endif %}
     </div>
-    <form method="post" action="{{ url_for('admin.logout') }}">
-      <button class="btn btn-secondary" type="submit">Sign out</button>
-    </form>
   </div>
 
   <section class="card mb-4" aria-labelledby="coverage-heading">
@@ -57,7 +54,7 @@
 
   <section class="card mt-4" aria-labelledby="events-heading">
     <h2 id="events-heading" class="text-primary text-[1.2rem] font-bold mb-1">Events &amp; rosters</h2>
-    <p class="text-text-light mb-3">Browse all brevets — this week, upcoming, and past. Click any event to view and manage its rider roster.</p>
+    <p class="text-text-light mb-3">Browse brevets — this week, upcoming, and past. Switch between card and table views.</p>
     <div class="flex gap-2 flex-wrap">
       <a class="btn btn-primary" href="{{ url_for('admin.events') }}">View all events</a>
     </div>

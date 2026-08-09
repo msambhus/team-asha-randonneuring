@@ -271,7 +271,7 @@
                                      min-width:100px;">
                         <option value="">— Status</option>
                         <option value="interested" {% if status == 'interested' %}selected{% endif %}>Interested</option>
-                        <option value="going" {% if status == 'going' %}selected{% endif %}>Going</option>
+                        <option value="registered" {% if status == 'registered' %}selected{% endif %}>Registered</option>
                         <option value="withdraw" {% if status in ('withdraw', 'withdrawn') %}selected{% endif %}>Withdraw</option>
                       </select>
                     {% else %}

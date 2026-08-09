@@ -549,7 +549,7 @@
       : '';
     var teamBtn = ev.is_team_event
       ? '<button type="button" class="reg-primary-btn" data-reg-team>Register my team →</button>' +
-        '<button type="button" class="reg-secondary-btn" data-reg-next style="margin-top:6px">Individual sign-up (GOING) →</button>'
+        '<button type="button" class="reg-secondary-btn" data-reg-next style="margin-top:6px">Individual sign-up →</button>'
       : '<button type="button" class="reg-primary-btn" data-reg-next>Continue →</button>';
     els.body.innerHTML =
       '<div class="reg-event-banner">' +
@@ -697,7 +697,9 @@
       '<div class="reg-card-grid"><div><span>Confirmation</span><strong>' + data.confirmation_code + '</strong></div></div></div>' +
       '<button type="button" class="reg-primary-btn" data-reg-done>Done</button>';
     els.body.querySelector('[data-reg-done]').addEventListener('click', closeModal);
-    document.dispatchEvent(new CustomEvent('brevethub:registered', { detail: { eventId: eventId } }));
+    document.dispatchEvent(new CustomEvent('brevethub:registered', {
+      detail: { eventId: eventId, registrationStatus: data.registration_status || 'confirmed' }
+    }));
   }
 
   function renderBulkConfirmation(data) {
@@ -999,9 +1001,14 @@
 
   document.addEventListener('brevethub:registered', function (e) {
     var id = e.detail.eventId;
+    var regStatus = e.detail.registrationStatus || 'confirmed';
     var badge = document.querySelector('[data-reg-badge="' + id + '"]');
+    var badgeText = regStatus === 'confirmed' ? "You're registered"
+      : regStatus === 'exception' ? 'Registered · review'
+      : regStatus === 'waitlist' ? 'Waitlist'
+      : regStatus.charAt(0).toUpperCase() + regStatus.slice(1);
     if (badge) {
-      badge.textContent = "You're registered";
+      badge.textContent = badgeText;
       badge.hidden = false;
     } else {
       var section = document.querySelector('.event-card[data-event-id="' + id + '"] .signup-section');
@@ -1009,16 +1016,22 @@
         var span = document.createElement('span');
         span.className = 'registration-badge';
         span.setAttribute('data-reg-badge', id);
-        span.textContent = "You're registered";
+        span.textContent = badgeText;
         var actions = section.querySelector('.signup-actions');
         if (actions) section.insertBefore(span, actions);
         else section.appendChild(span);
       }
     }
-    var status = document.querySelector('.signup-status[data-event-id="' + id + '"]');
-    if (status) status.textContent = 'Going';
     var regBtn = document.querySelector('[data-register-event="' + id + '"]');
     if (regBtn) regBtn.remove();
+    var actions = document.querySelector('.signup-actions[data-event-id="' + id + '"]');
+    if (actions) {
+      actions.setAttribute('data-registered', '1');
+      var proofUrl = actions.getAttribute('data-proof-url');
+      var html = proofUrl ? '<a class="event-link-btn" href="' + proofUrl + '">Submit proof</a>' : '';
+      html += '<button type="button" class="signup-intent-btn signup-intent-withdraw" data-action="withdraw" data-event-id="' + id + '">Request withdraw</button>';
+      actions.innerHTML = html;
+    }
     document.querySelectorAll('.bulk-event-select[value="' + id + '"]').forEach(function (cb) {
       cb.checked = false;
       cb.disabled = true;

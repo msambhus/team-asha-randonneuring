@@ -224,12 +224,12 @@ def sync_sfr_registration():
 
 @cron_bp.route('/finalize-signups', methods=['GET', 'POST'])
 def finalize_signups():
-    """Auto-finalize past-date going sign-ups to finished (keyless logic).
+    """Auto-finalize past-date registered sign-ups to finished (keyless logic).
 
     Auth-gated (Bearer CRON_SECRET). Mirrors the parent web app auto-finalize:
-    flips every past-date ``going`` rp_event_signup to ``finished`` and returns
+    flips every past-date ``registered`` rp_event_signup to ``finished`` and returns
     ``{"finalized": N}``. Tenant-agnostic — the promotion is keyed on the event date
-    and the going status only (no club scoping), and it never touches an
+    and the registered status only (no club scoping), and it never touches an
     interested/maybe/withdraw row or a future-date row. A DB failure is logged and
     returned as a non-500 JSON body so a flaky run never pages the maintainer.
 

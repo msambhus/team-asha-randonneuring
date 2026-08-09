@@ -756,7 +756,7 @@ def riders_directory():
             JOIN ride ri ON ri.id = rr.ride_id
             LEFT JOIN ride_plan rp ON rp.id = ri.ride_plan_id
             WHERE rr.rider_id IN ({placeholders})
-              AND rr.status IN ('GOING','MAYBE','INTERESTED')
+              AND rr.status IN ('REGISTERED','MAYBE','INTERESTED')
               AND ri.date >= CURRENT_DATE
             ORDER BY ri.date ASC
         """, tuple(rider_ids)).fetchall():
@@ -1080,7 +1080,7 @@ def rider_profile(rusa_id):
             'ride': ride_dict,
             'readiness': ride_dict.get('readiness'),
             'weeks_until': ride_dict.get('_weeks_until', 4),
-            'signup_status': ride_dict.get('signup_status', 'GOING'),
+            'signup_status': ride_dict.get('signup_status', 'REGISTERED'),
         })
         upcoming_rides.append(ride_dict)
 
@@ -2336,7 +2336,7 @@ def rider_advice_api(rusa_id):
             'ride': ride_dict,
             'readiness': ride_dict.get('readiness'),
             'weeks_until': weeks_until,
-            'signup_status': ride_dict.get('signup_status', 'GOING'),
+            'signup_status': ride_dict.get('signup_status', 'REGISTERED'),
         })
 
     ai_advice = {}

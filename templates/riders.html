@@ -479,7 +479,7 @@
 {% if signed_up_at %}<span class="badge badge-dns">DNS</span>{% endif %}
 {% elif v == 'OTL' %}
 <span class="badge badge-otl">OTL</span>
-{% elif v in ('GOING', 'SIGNED_UP') %}
+{% elif v in ('REGISTERED', 'SIGNED_UP') %}
 <span class="badge badge-signup">&#x2192;</span>
 {% elif v == 'INTERESTED' %}
 <span class="badge badge-interested">?</span>
@@ -680,7 +680,7 @@
                   <span class="mx-pill dnf">DNF</span>
                 {% elif status == 'OTL' %}
                   <span class="mx-pill dnf" title="Off Time Limit">OTL</span>
-                {% elif status in ('GOING', 'SIGNED_UP') %}
+                {% elif status in ('REGISTERED', 'SIGNED_UP') %}
                   <span class="mx-dot-signup" title="Signed up"></span>
                 {% else %}
                   <span class="mx-dot-empty"></span>
@@ -733,7 +733,7 @@
               <span class="ride-pill dnf" title="{{ ride.name }} — DNF"><span class="km">{{ ride.distance_km }}K</span> DNF</span>
             {% elif status == 'OTL' %}
               <span class="ride-pill dnf" title="{{ ride.name }} — Off Time Limit"><span class="km">{{ ride.distance_km }}K</span> OTL</span>
-            {% elif status in ('GOING', 'SIGNED_UP') %}
+            {% elif status in ('REGISTERED', 'SIGNED_UP') %}
               <span class="ride-pill signup" title="{{ ride.name }} — Signed up"><span class="km">{{ ride.distance_km }}K</span> &rarr;</span>
             {% endif %}
           {% endfor %}

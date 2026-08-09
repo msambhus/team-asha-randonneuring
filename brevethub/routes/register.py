@@ -1,7 +1,7 @@
 """Brevet registration wizard — profile, waiver, confirmation (no payments).
 
 Integrated with the brevet calendar: event cards open a 3-step modal and POST to
-these JSON endpoints. Successful confirmation sets rp_event_signup to going plus
+these JSON endpoints. Successful confirmation sets rp_event_signup to registered plus
 registration_status confirmed/exception/waitlist.
 """
 from flask import Blueprint, jsonify, render_template, request, url_for

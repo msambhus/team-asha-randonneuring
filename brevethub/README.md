@@ -83,9 +83,19 @@ No secrets are committed — `.env` is git-ignored and the README uses placehold
 
 The daily Vercel cron (`brevethub/vercel.json` → `/cron/refresh-calendar`, `0 8 * * *`)
 scrapes the RUSA national calendar off the request path and upserts `rp_brevet_event`,
-so `/calendar` only reads the warm cache (it never blocks on the heavy scrape). The
+  so `/calendar` only reads the warm cache (it never blocks on the heavy scrape). The
 cache is seeded on the first `/calendar` load when still empty; the maintainer can also
 warm it immediately with `curl -H "Authorization: Bearer $CRON_SECRET" .../cron/refresh-calendar`.
+
+## Rider status & registration
+
+BrevetHub tracks each rider's event progress in `rp_event_signup` (`status` +
+`registration_status`). Confirmed registrants use stored status **`registered`**.
+
+Full reference — status table, registration outcomes, withdrawal workflow, event-close
+rules, post-ride timing, and migration **`081_rename_going_to_registered.sql`**:
+
+→ **[docs/brevethub-rider-status.md](../docs/brevethub-rider-status.md)**
 
 ## Deploy (post-merge; out of this `pr-only` mission, documented for the owner)
 

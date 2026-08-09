@@ -71,7 +71,7 @@ _PRIVATE_RIDE = {'id': 5, 'name': 'Private', 'is_public_live': False,
 
 def _row(rider_id=7, name='Asha Rider'):
     return {'rider_id': rider_id, 'name': name, 'lat': 37.0, 'lng': -121.99,
-            'recorded_at': _now() - timedelta(minutes=2), 'status': 'GOING',
+            'recorded_at': _now() - timedelta(minutes=2), 'status': 'REGISTERED',
             'speed': 6.0, 'heart_rate': 140, 'power': None, 'cadence': None,
             'source': 'garmin'}
 
@@ -249,14 +249,14 @@ def test_public_roster_restores_headwind_context(client):
 
 
 def test_public_roster_includes_going_rider_without_location(client):
-    going = [
-        {'rider_id': 7, 'name': 'Asha Rider', 'status': 'GOING'},
-        {'rider_id': 8, 'name': 'Bharadwaj Rao', 'status': 'GOING'},
+    registered = [
+        {'rider_id': 7, 'name': 'Asha Rider', 'status': 'REGISTERED'},
+        {'rider_id': 8, 'name': 'Bharadwaj Rao', 'status': 'REGISTERED'},
     ]
     with patch('routes.live.get_ride_by_id', return_value=_PUBLIC_LIVE_RIDE), \
          patch('routes.live._ride_live_context', return_value=_FAKE_CTX), \
          patch('routes.live.get_latest_positions_for_ride', return_value=[_row()]), \
-         patch('routes.live.get_going_riders_for_ride', return_value=going), \
+         patch('routes.live.get_registered_riders_for_ride', return_value=registered), \
          patch('routes.live.get_positions_for_rider_since',
                side_effect=lambda rider_id, *_args, **_kwargs: _history() if rider_id == 7 else []):
         resp = client.get('/ride/5/live/roster.json')
@@ -315,15 +315,15 @@ def test_member_positions_include_plan_snapshot_and_going_non_sharer(client):
         'name': 'Coulee Challenge', 'slug': 'coulee-challenge',
         'active_day': 2, 'day_distance_mi': 182, 'day_stops': [],
     }
-    going = [
-        {'rider_id': 7, 'name': 'Asha Rider', 'status': 'GOING'},
-        {'rider_id': 8, 'name': 'Bharadwaj Rao', 'status': 'GOING'},
+    registered = [
+        {'rider_id': 7, 'name': 'Asha Rider', 'status': 'REGISTERED'},
+        {'rider_id': 8, 'name': 'Bharadwaj Rao', 'status': 'REGISTERED'},
     ]
     with patch('routes.live.get_ride_by_id', return_value=_PUBLIC_LIVE_RIDE), \
          patch('routes.live._ride_live_context', return_value=_FAKE_CTX), \
          patch('routes.live._mobile_live_plan_snapshot', return_value=plan_snapshot), \
          patch('routes.live.get_latest_positions_for_ride', return_value=[_row()]), \
-         patch('routes.live.get_going_riders_for_ride', return_value=going), \
+         patch('routes.live.get_registered_riders_for_ride', return_value=registered), \
          patch('routes.live.get_positions_for_rider_since', return_value=_history()):
         resp = client.get('/api/live/positions?ride_id=5')
 

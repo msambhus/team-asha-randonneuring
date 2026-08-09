@@ -12,6 +12,7 @@
 .event-hero .meta { opacity: .85; font-size: .88rem; }
 .status-pill { display:inline-block; padding:2px 8px; border-radius:99px; font-size:.7rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
 .pill-open    { background:#dcfce7; color:#15803d; }
+.pill-in_progress { background:#fef9c3; color:#92400e; }
 .pill-closed  { background:#fee2e2; color:#b91c1c; }
 .pill-approved { background:#d1fae5; color:#065f46; }
 .pill-not_approved { background:#fee2e2; color:#b91c1c; }
@@ -25,9 +26,11 @@
 .roster-table th { text-align:left; padding:8px 12px 8px 0; border-bottom:2px solid var(--border);
                    font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-light); white-space:nowrap; }
 .roster-table td { padding:12px 12px 12px 0; border-bottom:1px solid var(--border); vertical-align:middle; }
-.roster-table tr.row-going { background:#fffdf0; }
+.roster-table tr.row-registered { background:#fffdf0; }
 .roster-table tr.row-finished { background:#f0fff8; }
 .roster-table tr.row-dnf,.roster-table tr.row-dns,.roster-table tr.row-otl { background:#fff8f8; }
+.roster-table tr.row-alert { background:#fef2f2; }
+.roster-table tr.row-alert td { border-bottom-color:#fecaca; }
 .close-btn { padding:6px 16px; border-radius:6px; font-size:.82rem; font-weight:600; cursor:pointer; border:none; }
 .close-btn-close { background:#dc2626; color:white; }
 .close-btn-open  { background:#16a34a; color:white; }
@@ -48,28 +51,33 @@
         </p>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <span class="status-pill {% if is_closed %}pill-closed{% else %}pill-open{% endif %}">
-          {% if is_closed %}Closed{% else %}Open{% endif %}
+        <span class="status-pill pill-{{ event_lifecycle }}">
+          {% if event_lifecycle == 'closed' %}Closed
+          {% elif event_lifecycle == 'in_progress' %}In progress
+          {% else %}Open{% endif %}
         </span>
         <form method="post" style="margin:0;">
-          {% if is_closed %}
+          {% if event_lifecycle == 'closed' %}
             <button type="submit" name="action" value="open_event" class="close-btn close-btn-open">Re-open event</button>
-          {% elif can_close_event %}
+          {% elif event_lifecycle == 'in_progress' %}
+            {% if can_close_event %}
             <button type="submit" name="action" value="close_event" class="close-btn close-btn-close"
                     onclick="return confirm('Close this event? Pending validations will be locked.')">Close event</button>
-          {% else %}
+            {% else %}
             <button type="button" class="close-btn close-btn-close" disabled
                     style="opacity:.45;cursor:not-allowed;"
                     title="All riders must have a final result before closing">Close event</button>
+            {% endif %}
           {% endif %}
         </form>
       </div>
     </div>
-    {% if not is_closed and close_blockers %}
+    {% if event_lifecycle == 'in_progress' and close_blockers %}
     <p class="meta" style="margin:10px 0 0;opacity:.9;font-size:.82rem;">
       Cannot close until every rider has FINISHED, DNF, DNS, OTL, or WITHDRAW —
+      pending withdrawals must be approved or rejected first.
       {{ close_blockers|length }} still open:
-      {% for b in close_blockers[:5] %}{{ b.display_name }} ({{ b.status|upper }}){% if not loop.last %}, {% endif %}{% endfor %}{% if close_blockers|length > 5 %}…{% endif %}
+      {% for b in close_blockers[:5] %}{{ b.display_name }} ({{ b.status|status_label|upper }}){% if not loop.last %}, {% endif %}{% endfor %}{% if close_blockers|length > 5 %}…{% endif %}
     </p>
     {% endif %}
   </div>
@@ -85,7 +93,7 @@
   <div class="filter-bar">
     <span class="text-text-light text-xs font-semibold uppercase tracking-wide">Filter:</span>
     <a href="{{ furl }}" class="filter-btn {% if not active_filter %}active{% endif %}">All ({{ roster_total }})</a>
-    <a href="{{ furl }}?filter=going" class="filter-btn {% if active_filter == 'going' %}active{% endif %}">Going</a>
+    <a href="{{ furl }}?filter=registered" class="filter-btn {% if active_filter == 'registered' %}active{% endif %}">Registered</a>
     <a href="{{ furl }}?filter=results" class="filter-btn {% if active_filter == 'results' %}active{% endif %}">Results</a>
     <a href="{{ furl }}?filter=pending_proof" class="filter-btn {% if active_filter == 'pending_proof' %}active{% endif %}">Proof pending</a>
     <a href="{{ furl }}?filter=no_proof" class="filter-btn {% if active_filter == 'no_proof' %}active{% endif %}">No proof</a>
@@ -94,6 +102,7 @@
   </div>
 
   <form method="post">
+    <input type="hidden" name="rider_id" value="">
     <div class="card" style="overflow-x:auto;padding:0 16px;">
       <div class="flex justify-between items-center py-3 flex-wrap gap-2">
         <h2 class="text-primary font-bold m-0">Roster ({{ roster|length }}{% if active_filter %} of {{ roster_total }}{% endif %})</h2>
@@ -111,12 +120,14 @@
             <th>Ride status</th>
             <th>Finish</th>
             <th>Validation</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {% for r in roster %}
           {% set vdecision = r.organizer_decision or ('pending' if r.validation_id else 'none') %}
-          <tr class="row-{{ r.status }}">
+          {% set row_alert = r.status == 'withdrawal_requested' or r.registration_status == 'exception' %}
+          <tr class="row-{{ r.status }}{% if row_alert %} row-alert{% endif %}">
             <td>
               <strong>{{ r.display_name }}</strong><br>
               <span class="text-text-light text-xs">RUSA {{ r.rusa_id or '—' }}</span>
@@ -134,10 +145,13 @@
             </td>
             <td>
               <select name="status_{{ r.rider_id }}" class="form-input roster-status-select text-xs py-1">
-                {% for opt in ['going', 'interested', 'withdraw', 'finished', 'dnf', 'dns', 'otl'] %}
-                <option value="{{ opt }}" {% if r.status == opt %}selected{% endif %}>{{ opt|upper }}</option>
+                {% for opt in ['registered', 'interested', 'withdrawal_requested', 'withdraw', 'finished', 'dnf', 'dns', 'otl', 'rejected'] %}
+                <option value="{{ opt }}" {% if r.status == opt %}selected{% endif %}>{{ opt|status_label|upper }}</option>
                 {% endfor %}
               </select>
+              {% if r.registration_status %}
+              <br><span class="text-text-light text-xs">Reg: {{ r.registration_status|upper }}</span>
+              {% endif %}
             </td>
             <td>
               <input type="text" name="finish_{{ r.rider_id }}" value="{{ r.finish_time or '' }}"
@@ -151,6 +165,19 @@
               {% elif r.status == 'finished' %}
               <br><a href="{{ url_for('admin.validation_new', event_id=event.id, rider_id=r.rider_id) }}"
                      class="text-primary text-xs font-semibold">+ Submit proof</a>
+              {% endif %}
+            </td>
+            <td>
+              {% if r.status == 'withdrawal_requested' %}
+              <button type="submit" name="action" value="approve_withdrawal" formaction="{{ url_for('admin.event_roster', event_id=event.id) }}"
+                      class="btn btn-secondary btn-sm" onclick="this.form.rider_id.value='{{ r.rider_id }}'">Approve</button>
+              <button type="submit" name="action" value="reject_withdrawal" formaction="{{ url_for('admin.event_roster', event_id=event.id) }}"
+                      class="btn btn-secondary btn-sm" style="color:#b91c1c;border-color:#fecaca;"
+                      onclick="this.form.rider_id.value='{{ r.rider_id }}'">Reject</button>
+              {% else %}
+              <button type="submit" name="action" value="remove" formaction="{{ url_for('admin.event_roster', event_id=event.id) }}"
+                      class="btn btn-secondary btn-sm" style="color:#b91c1c;border-color:#fecaca;"
+                      onclick="if(!confirm('Remove this rider from the roster?')) return false; this.form.rider_id.value='{{ r.rider_id }}'">Remove</button>
               {% endif %}
             </td>
           </tr>

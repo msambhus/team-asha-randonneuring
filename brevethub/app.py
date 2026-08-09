@@ -162,6 +162,11 @@ def create_app():
         except (ValueError, TypeError):
             return value
 
+    @app.template_filter('status_label')
+    def status_label_filter(value):
+        from brevethub.services.registration import status_display_label
+        return status_display_label(value)
+
     return app
 
 

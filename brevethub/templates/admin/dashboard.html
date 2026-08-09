@@ -60,12 +60,12 @@
 <tbody>
 {% for r in rides %}
 {% set is_past = r.date and r.date < today %}
-<tr{% if is_past and r.going_count > 0 %} style="background:#fffaf0;"{% endif %}>
+<tr{% if is_past and r.registered_count > 0 %} style="background:#fffaf0;"{% endif %}>
 <td>{{ r.date }}</td>
 <td>{{ r.name }}</td>
 <td>{{ r.distance_km }} km</td>
 <td>
-{% if is_past and r.going_count > 0 %}
+{% if is_past and r.registered_count > 0 %}
 <span style="color:#c05621;font-weight:600;">Needs Results</span>
 {% elif is_past and r.result_count > 0 %}
 <span style="color:#38a169;">Done</span>
@@ -76,8 +76,8 @@
 {% endif %}
 </td>
 <td>
-{% if r.going_count > 0 %}
-<span style="color:#c05621;">{{ r.going_count }} going</span>
+{% if r.registered_count > 0 %}
+<span style="color:#c05621;">{{ r.registered_count }} registered</span>
 {% endif %}
 {% if r.result_count > 0 %}
 <span style="color:#38a169;">{{ r.result_count }} results</span>

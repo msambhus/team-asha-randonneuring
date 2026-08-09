@@ -531,8 +531,8 @@
                             <span class="finished">{{ user_status }}</span>
                             {% else %}
                             <div class="signup-dropdown-container">
-                                <button type="button" class="signup-dropdown-btn {% if user_status == 'GOING' %}signed-up{% elif user_status == 'INTERESTED' %}interested{% elif user_status == 'MAYBE' %}maybe{% elif user_status == 'WITHDRAW' %}withdraw{% endif %}" onclick="toggleSignupDropdown({{ event.id }}, event)">
-                                    {% if user_status == 'GOING' %}✓ Going{% elif user_status == 'INTERESTED' %}★ Interested{% elif user_status == 'MAYBE' %}? Maybe{% elif user_status == 'WITHDRAW' %}⊝ Withdraw{% else %}Going{% endif %} ▾
+                                <button type="button" class="signup-dropdown-btn {% if user_status == 'REGISTERED' %}signed-up{% elif user_status == 'INTERESTED' %}interested{% elif user_status == 'MAYBE' %}maybe{% elif user_status == 'WITHDRAW' %}withdraw{% endif %}" onclick="toggleSignupDropdown({{ event.id }}, event)">
+                                    {% if user_status == 'REGISTERED' %}✓ Going{% elif user_status == 'INTERESTED' %}★ Interested{% elif user_status == 'MAYBE' %}? Maybe{% elif user_status == 'WITHDRAW' %}⊝ Withdraw{% else %}Going{% endif %} ▾
                                 </button>
                                 <div class="signup-dropdown-menu" id="dropdown-{{ event.id }}"></div>
                             </div>
@@ -782,7 +782,7 @@ function applyFilters() {
 }
 
 function statusFromButton(button) {
-    if (button.classList.contains('signed-up')) return 'GOING';
+    if (button.classList.contains('signed-up')) return 'REGISTERED';
     if (button.classList.contains('interested')) return 'INTERESTED';
     if (button.classList.contains('maybe')) return 'MAYBE';
     if (button.classList.contains('withdraw')) return 'WITHDRAW';
@@ -802,10 +802,10 @@ function toggleSignupDropdown(rideId, event) {
         return;
     }
     var items = [];
-    if (!current || current === 'WITHDRAW') items.push(['INTERESTED', '★ Interested'], ['MAYBE', '? Maybe'], ['GOING', '✓ Going']);
-    if (current === 'INTERESTED') items.push(['MAYBE', '? Maybe'], ['GOING', '✓ Going'], ['CLEAR', '✕ Clear status']);
-    if (current === 'MAYBE') items.push(['INTERESTED', '★ Interested'], ['GOING', '✓ Going'], ['CLEAR', '✕ Clear status']);
-    if (current === 'GOING') items.push(['MAYBE', '? Maybe'], ['WITHDRAW', '⊝ Withdraw']);
+    if (!current || current === 'WITHDRAW') items.push(['INTERESTED', '★ Interested'], ['MAYBE', '? Maybe'], ['REGISTERED', '✓ Going']);
+    if (current === 'INTERESTED') items.push(['MAYBE', '? Maybe'], ['REGISTERED', '✓ Going'], ['CLEAR', '✕ Clear status']);
+    if (current === 'MAYBE') items.push(['INTERESTED', '★ Interested'], ['REGISTERED', '✓ Going'], ['CLEAR', '✕ Clear status']);
+    if (current === 'REGISTERED') items.push(['MAYBE', '? Maybe'], ['WITHDRAW', '⊝ Withdraw']);
     dropdown.innerHTML = items.map(function(item) {
         var danger = item[0] === 'CLEAR' || item[0] === 'WITHDRAW' ? ' danger' : '';
         return `<button type="button" class="signup-dropdown-item${danger}" onclick="handleStatusChange(${rideId}, '${item[0]}', event)">${item[1]}</button>`;
@@ -827,7 +827,7 @@ function handleStatusChange(rideId, status, event) {
 }
 
 function performStatusChange(rideId, status, button, current) {
-    var endpoints = { GOING: 'signup', INTERESTED: 'interested', MAYBE: 'maybe', WITHDRAW: 'withdraw' };
+    var endpoints = { REGISTERED: 'signup', INTERESTED: 'interested', MAYBE: 'maybe', WITHDRAW: 'withdraw' };
     var endpoint = endpoints[status];
     if (!endpoint) return;
     var original = button.innerHTML;
@@ -898,7 +898,7 @@ function updateSignupCount(rideId, fromStatus, toStatus) {
 function updateButtonStatus(button, status) {
     button.disabled = false;
     button.classList.remove('signed-up', 'interested', 'maybe', 'withdraw');
-    if (status === 'GOING') {
+    if (status === 'REGISTERED') {
         button.classList.add('signed-up');
         button.innerHTML = '✓ Going ▾';
     } else if (status === 'INTERESTED') {
@@ -930,7 +930,7 @@ function showSignups(rideId) {
                 body.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">No riders signed up yet.</p>';
                 return;
             }
-            var order = { GOING: 1, INTERESTED: 2, MAYBE: 3, WITHDRAW: 4 };
+            var order = { REGISTERED: 1, INTERESTED: 2, MAYBE: 3, WITHDRAW: 4 };
             data.riders.sort(function(a, b) { return (order[a.status] || 99) - (order[b.status] || 99); });
             body.innerHTML = data.riders.map(function(rider) {
                 var initials = (rider.first_name || '?').charAt(0) + (rider.last_name || '?').charAt(0);

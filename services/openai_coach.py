@@ -428,7 +428,7 @@ def _build_user_prompt(rider, activities, fitness_score,
         dist_mi = ride.get('distance_miles') or (dist_km * 0.621371 if dist_km else 0)
         elev_ft = ride.get('elevation_ft') or 0
         time_limit = ride.get('time_limit_hours') or ''
-        status = ride_data.get('signup_status', 'GOING')
+        status = ride_data.get('signup_status', 'REGISTERED')
 
         block = (
             f"Ride ID {ride_id}: {ride.get('name', 'Unknown')}\n"

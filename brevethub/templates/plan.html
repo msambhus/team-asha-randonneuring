@@ -119,7 +119,7 @@
   {% set total_moving_time = v2.total_moving_time %}
   {% set weighted_difficulty = v2.weighted_difficulty %}
   {% set avg_elapsed_speed = v2.avg_elapsed_speed %}
-  {% set going_count = v2.going_count %}
+  {% set registered_count = v2.registered_count %}
   {% set save_state = v2.save_state %}
   {% set saved_pace_id = v2.saved_pace_id %}
   {% set saved_is_public = v2.saved_is_public %}
@@ -161,7 +161,7 @@
                 {{ "%.0f"|format(plan.total_distance_miles or 0) }} mi ·
                 {{ "{:,}".format(plan.total_elevation_ft or 0) }} ft
                 {%- if plan.cutoff_hours %} · ACP cutoff {{ plan.cutoff_hours }}h{% endif %}
-                {%- if going_count %} · {{ going_count }} rider{{ '' if going_count == 1 else 's' }} going{% endif %}
+                {%- if registered_count %} · {{ registered_count }} rider{{ '' if registered_count == 1 else 's' }} registered{% endif %}
             </div>
         </div>
         <div class="rpv2-gauges">
@@ -521,7 +521,7 @@
                         <div class="rpv2-card-h">
                             {% if v2.riders %}
                                 <div class="rpv2-card-title">Riders · {{ v2.riders|length }}</div>
-                                <div class="rpv2-card-sub">{{ going_count }} going</div>
+                                <div class="rpv2-card-sub">{{ registered_count }} registered</div>
                             {% else %}
                                 <div class="rpv2-card-title">Riders</div>
                             {% endif %}
@@ -529,7 +529,7 @@
                         {% if v2.riders %}
                             <div class="rpv2-roster">
                                 {% for r in v2.riders %}
-                                {% set cls = 's-going' if r.status == 'going' else ('s-int' if r.status == 'interested' else 's-maybe') %}
+                                {% set cls = 's-registered' if r.status == 'registered' else ('s-int' if r.status == 'interested' else 's-maybe') %}
                                 <span class="rpv2-rchip {{ cls }}">{{ r.name }}</span>
                                 {% endfor %}
                             </div>
