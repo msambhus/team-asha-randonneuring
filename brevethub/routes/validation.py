@@ -70,7 +70,8 @@ def _points_from_strava(row, started_at):
 def _render_form(event, *, status=200, values=None):
     rider = current_rider()
     strava = load_strava_section(rider) if rider else {'connected': False}
-    activities = (strava.get('stats') or {}).get('activities') or []
+    stats = strava.get('stats') or {}
+    activities = stats.get('evidence_activities') or stats.get('activities') or []
     activities = [a for a in activities if a.get('activity_type') in ('Ride', 'EBikeRide')]
     selected_id = str((values or {}).get('strava_activity_id') or '')
     if not selected_id and activities:

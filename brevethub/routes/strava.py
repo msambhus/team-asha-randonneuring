@@ -16,6 +16,7 @@ state-less flow (a called-out web-parity improvement, not a silent divergence).
 import hmac
 import secrets
 import time
+from datetime import datetime
 from urllib.parse import urlencode
 
 from flask import (Blueprint, abort, current_app, flash, redirect, request,
@@ -37,6 +38,7 @@ strava_bp = Blueprint('strava', __name__)
 # repeated dashboard loads do not re-hit the Strava API.
 STRAVA_STATS_TTL = 6 * 3600
 STRAVA_STATS_WINDOW = 28 * 24 * 3600  # 28-day activity window
+STRAVA_EVIDENCE_WINDOW = 365 * 24 * 3600  # evidence picker needs completed brevets too
 
 # The cycling Eddington is a LIFETIME stat, so its compute fetches the rider full
 # Strava history (not the 28-day dashboard window). ``after=0`` (the Unix epoch)
@@ -355,17 +357,20 @@ def _valid_access_token(rider_id, connection):
 
 
 def _compute_strava_stats(rider_id, connection):
-    """Fetch the last 28 days of activities, summarize them, and score fitness."""
+    """Fetch one year of activities, summarizing recent training and retaining a
+    broader outdoor-ride list for brevet evidence matching."""
     token = _valid_access_token(rider_id, connection)
-    after_epoch = int(time.time()) - STRAVA_STATS_WINDOW
+    after_epoch = int(time.time()) - STRAVA_EVIDENCE_WINDOW
     raw = fetch_activities(
         token,
         api_base=current_app.config['STRAVA_API_BASE'],
         after_epoch=after_epoch,
     )
     activities = [transform_activity(a, rider_id) for a in raw]
-    summary = summarize_activities(activities)
-    fitness = calculate_fitness_score(activities)
+    recent_cutoff = time.time() - STRAVA_STATS_WINDOW
+    recent = [a for a in activities if _activity_epoch(a) >= recent_cutoff]
+    summary = summarize_activities(recent)
+    fitness = calculate_fitness_score(recent)
     summary['fitness'] = fitness['total'] if fitness else None
     # Keep a compact, presentation-safe recent feed in the same cache so My
     # Rides never makes a second Strava API request during page rendering.
@@ -378,8 +383,23 @@ def _compute_strava_stats(rider_id, connection):
         'moving_time': activity.get('moving_time'),
         'total_elevation_gain': activity.get('total_elevation_gain'),
         'activity_type': activity.get('activity_type'),
-    } for activity in activities[:50]]
+    } for activity in recent[:50]]
+    summary['evidence_activities'] = [{
+        'strava_activity_id': activity.get('strava_activity_id'),
+        'name': activity.get('name'),
+        'start_date_local': activity.get('start_date_local'),
+        'distance': activity.get('distance'),
+        'activity_type': activity.get('activity_type'),
+    } for activity in activities if activity.get('activity_type') in ('Ride', 'EBikeRide')][:200]
     return summary
+
+
+def _activity_epoch(activity):
+    value = activity.get('start_date') or activity.get('start_date_local')
+    try:
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00')).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        return 0
 
 
 def compute_and_cache_eddington(rider_id, connection):
@@ -426,8 +446,9 @@ def load_strava_section(rider):
     # The activity type is needed by evidence selection to exclude runs and
     # virtual workouts; invalidate pre-type caches once so the outdoor list is
     # accurate without waiting six hours.
-    needs_activity_types = bool(stats and any(
-        'activity_type' not in activity for activity in (stats.get('activities') or [])))
+    needs_activity_types = bool(stats and (
+        any('activity_type' not in activity for activity in (stats.get('activities') or []))
+        or 'evidence_activities' not in stats))
 
     error = None
     if not fresh or stats is None or needs_activity_types:
