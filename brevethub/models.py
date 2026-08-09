@@ -248,12 +248,22 @@ def get_public_rides():
 
 
 def get_rider_live_rides(rider_id):
-    """Public live rides for events this rider follows or is going on."""
+    """Public live rides for events this rider follows or is going on.
+
+    Follow state is stored against the calendar event, while a live ride may be
+    linked to that event later (and older rides can have a missing ``event_id``
+    but still match by name/date).  Resolve the event before joining follow and
+    signup rows; joining those rows directly to ``r.event_id`` silently drops a
+    followed ride whenever the ride was created before it was linked.
+    """
     return db.query(
         "SELECT DISTINCT r.id, r.name, r.distance_km, r.start_at, r.status, c.name AS club_name "
         "FROM rp_ride r LEFT JOIN rp_club c ON c.id=r.club_id "
-        "LEFT JOIN rp_event_signup s ON s.event_id=r.event_id AND s.rider_id=%s "
-        "LEFT JOIN rp_followed_live_event f ON f.event_id=r.event_id AND f.rider_id=%s "
+        "LEFT JOIN rp_brevet_event e ON (e.id=r.event_id OR "
+        "  (r.event_id IS NULL AND lower(btrim(r.name))=lower(btrim(e.name)) "
+        "   AND r.start_at::date=e.date)) "
+        "LEFT JOIN rp_event_signup s ON s.event_id=e.id AND s.rider_id=%s "
+        "LEFT JOIN rp_followed_live_event f ON f.event_id=e.id AND f.rider_id=%s "
         "WHERE r.is_public=TRUE AND (f.event_id IS NOT NULL OR s.status=%s) "
         "ORDER BY r.start_at DESC NULLS LAST",
         (rider_id, rider_id, RideStatus.REGISTERED.value),
