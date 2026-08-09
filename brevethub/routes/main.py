@@ -124,17 +124,10 @@ def dashboard():
     rider = current_rider()
     club = models.get_club(rider['club_id']) if rider.get('club_id') else None
     rusa = load_rusa_section(rider)
-    strava = load_strava_section(rider)
     signups = load_signups(rider)
     past_results = load_past_results(rider)
-    validation_events = models.get_rider_completed_validation_events(rider['id'])
-    activity_feed = build_private_activity_feed(
-        strava_activities=(strava.get('stats') or {}).get('activities') or [])
     return render_template('dashboard.html', rider=rider, club=club,
-                           rusa=rusa, strava=strava, signups=signups,
-                           past_results=past_results,
-                           validation_events=validation_events,
-                           activity_feed=activity_feed)
+                           rusa=rusa, signups=signups, past_results=past_results)
 
 
 @main_bp.route('/profile')
@@ -150,6 +143,8 @@ def profile():
     club = models.get_club(rider['club_id']) if rider.get('club_id') else None
     rusa = load_rusa_section(rider)
     strava = load_strava_section(rider)
+    activity_feed = build_private_activity_feed(
+        strava_activities=(strava.get('stats') or {}).get('activities') or [])
     # Career/SR/R-12 come from the RUSA cache only (the official record), so a
     # self-logged rp_ride can never inflate them. seasons.career_summary is total
     # for an empty history, giving a graceful zero-state for a RUSA-less rider.
@@ -160,7 +155,7 @@ def profile():
     pbp_years = seasons.pbp_ancien_years(brevets)
     return render_template('profile.html', rider=rider, club=club,
                            rusa=rusa, strava=strava, career=career,
-                           pbp_years=pbp_years)
+                           pbp_years=pbp_years, activity_feed=activity_feed)
 
 
 def _finished_rides_as_brevets(rides):

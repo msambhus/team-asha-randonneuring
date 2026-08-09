@@ -251,6 +251,7 @@ def calendar():
     # guest/other-rider view stays free of any participation PII.
     my_status = {}
     my_results = []
+    followed_live_event_ids = set()
     if rider:
         my_status = {row['event_id']: row['status']
                      for row in models.get_rider_signup_statuses(rider['id'])}
@@ -265,6 +266,7 @@ def calendar():
             current_app.logger.warning('past-result load failed for rider %s: %s',
                                        rider['id'], e)
             my_results = []
+        followed_live_event_ids = models.get_followed_live_event_ids(rider['id'])
 
     default_state = (club or {}).get('state') if club else None
     default_club = (club or {}).get('name') if club else None
@@ -273,6 +275,7 @@ def calendar():
         my_results=my_results, rider=rider, club=club, states=states,
         regions_by_state=regions_by_state, clubs=clubs,
         default_state=default_state, default_club=default_club,
+        followed_live_event_ids=followed_live_event_ids,
         degraded=degraded, weather=weather,
         rusa_event_search_url=RUSA_NATIONAL_URL,
     )
@@ -327,6 +330,21 @@ def signup(event_id):
         if outcome == 'has_result':
             return jsonify({'error': 'Cannot change a sign-up with a result'}), 409
     return jsonify({'ok': True, 'event_id': event_id, 'status': status}), 200
+
+
+@calendar_bp.route('/calendar/<int:event_id>/follow-live', methods=['POST'])
+def follow_live(event_id):
+    """Follow/unfollow a brevet's live view before or during the ride."""
+    rider = current_rider()
+    if not rider:
+        return _login_required_json()
+    if not models.get_brevet_event(event_id):
+        return jsonify({'error': 'Event not found'}), 404
+    payload = request.get_json(silent=True) or request.form
+    raw = payload.get('followed', payload.get('follow', True))
+    followed = raw is True or str(raw).lower() in {'1', 'true', 'yes', 'on'}
+    ids = models.set_followed_live_event(rider['id'], event_id, followed)
+    return jsonify({'ok': True, 'event_id': event_id, 'followed': event_id in ids}), 200
 
 
 @calendar_bp.route('/calendar/<int:event_id>/signup', methods=['DELETE'])

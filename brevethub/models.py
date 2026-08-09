@@ -217,6 +217,19 @@ def get_public_rides():
     )
 
 
+def get_rider_live_rides(rider_id):
+    """Public live rides for events this rider follows or is going on."""
+    return db.query(
+        "SELECT DISTINCT r.id, r.name, r.distance_km, r.start_at, r.status, c.name AS club_name "
+        "FROM rp_ride r LEFT JOIN rp_club c ON c.id=r.club_id "
+        "LEFT JOIN rp_event_signup s ON s.event_id=r.event_id AND s.rider_id=%s "
+        "LEFT JOIN rp_followed_live_event f ON f.event_id=r.event_id AND f.rider_id=%s "
+        "WHERE r.is_public=TRUE AND (f.event_id IS NOT NULL OR s.status=%s) "
+        "ORDER BY r.start_at DESC NULLS LAST",
+        (rider_id, rider_id, RideStatus.GOING.value),
+    )
+
+
 def get_public_ride(ride_id):
     """A single PUBLIC ride by id (the guest-view 404 gate), joined to its club.
 
@@ -1286,20 +1299,24 @@ def get_rider_signups(rider_id):
 
 
 def get_rider_past_results(rider_id):
-    """Past-event results (finished / dnf / dns / otl) for one rider, most recent
-    first, for the dashboard "My past results" card. Linked to the event for name /
-    date / distance; carries the official finish_time (NULL until the RUSA-sync cron
-    fills it). rp_ tables only, rider_id-scoped."""
+    """The rider's completed brevets, newest first.
+
+    Evidence is the only rider action on this surface.  The latest validation
+    submission is joined so templates can display ``Awaiting verification`` until
+    an organizer approves it, then ``Finished``.
+    """
     return db.query(
-        "SELECT s.event_id, s.status, s.finish_time, "
-        "       e.name, e.date, e.distance_km, e.region "
+        "SELECT s.event_id, s.status, s.finish_time, e.name, e.date, e.distance_km, e.region, "
+        "       vs.id AS submission_id, vs.machine_decision, vs.organizer_decision "
         "FROM rp_event_signup s "
         "JOIN rp_brevet_event e ON e.id = s.event_id "
-        "WHERE s.rider_id = %s AND s.status IN (%s, %s, %s, %s) "
+        "LEFT JOIN LATERAL (SELECT id, machine_decision, organizer_decision "
+        "  FROM rp_validation_submission WHERE event_id=s.event_id AND rider_id=s.rider_id "
+        "  ORDER BY created_at DESC LIMIT 1) vs ON TRUE "
+        "WHERE s.rider_id = %s AND s.status = %s "
         "  AND e.date < CURRENT_DATE "
         "ORDER BY e.date DESC, e.distance_km DESC",
-        (rider_id, RideStatus.FINISHED.value, RideStatus.DNF.value,
-         RideStatus.DNS.value, RideStatus.OTL.value),
+        (rider_id, RideStatus.FINISHED.value),
     )
 
 
@@ -1500,6 +1517,38 @@ def get_live_ride_ids_for_event(event_id):
         (event_id,),
     )
     return [row['ride_id'] for row in rows]
+
+
+def get_followed_live_event_ids(rider_id):
+    return {int(row['event_id']) for row in db.query(
+        "SELECT event_id FROM rp_followed_live_event WHERE rider_id = %s",
+        (rider_id,))}
+
+
+def set_followed_live_event(rider_id, event_id, followed):
+    if followed:
+        db.execute(
+            "INSERT INTO rp_followed_live_event (rider_id, event_id) VALUES (%s, %s) "
+            "ON CONFLICT (rider_id, event_id) DO NOTHING",
+            (rider_id, event_id),
+        )
+    else:
+        db.execute("DELETE FROM rp_followed_live_event WHERE rider_id = %s AND event_id = %s",
+                   (rider_id, event_id))
+    return get_followed_live_event_ids(rider_id)
+
+
+def get_followed_live_events(rider_id):
+    """Events a rider follows, with any currently public live ride ids."""
+    rows = db.query(
+        "SELECT f.event_id, e.name, e.date, e.distance_km "
+        "FROM rp_followed_live_event f JOIN rp_brevet_event e ON e.id=f.event_id "
+        "ORDER BY e.date DESC, e.name",
+        (rider_id,),
+    )
+    for row in rows:
+        row['ride_ids'] = get_live_ride_ids_for_event(row['event_id'])
+    return rows
 
 
 # --------------------------------------------------------------------------- #

@@ -186,7 +186,7 @@
         <div>
           <h4 style="margin:0 0 4px 0; color:var(--primary); font-size:1rem;">Strava connected</h4>
           <p style="margin:0; font-size:0.85rem; color:var(--text-light);">
-            Recent training and brevet matches are kept on your private My Rides page.
+            Recent training and brevet matches are private to your profile.
           </p>
         </div>
         <a href="{{ url_for('main.dashboard') }}"
@@ -210,6 +210,11 @@
       <p class="text-text-light">Connected — activity summary will appear shortly.</p>
     {% endif %}
   {% endif %}
+</section>
+<section class="card" id="recent-activities">
+  <h2 class="text-primary text-[1.3rem] font-bold mb-3">Recent activities</h2>
+  <p class="text-text-light text-sm mb-4">Your private Strava training log.</p>
+  {% if activity_feed %}<div class="divide-y divide-border">{% for activity in activity_feed[:20] %}<div class="py-3 flex items-center justify-between gap-3 flex-wrap"><div><div class="font-semibold">{{ activity.name }}</div><div class="text-text-light text-sm">{{ activity.started_at[:10] if activity.started_at else 'Date unavailable' }}{% if activity.distance_m is not none %} · {{ '%.1f'|format((activity.distance_m|float)/1609.344) }} mi{% endif %}{% if activity.elevation_gain_m is not none %} · {{ (activity.elevation_gain_m|float*3.28084)|round|int }} ft{% endif %}</div></div><span class="text-xs font-bold text-[#c43d00]">STRAVA</span></div>{% endfor %}</div>{% else %}<p class="text-text-light">Connect Strava to see recent activities here.</p>{% endif %}
 </section>
 <div class="flex flex-wrap gap-2.5">
   <a class="btn btn-primary" href="{{ url_for('main.dashboard') }}">My Rides</a>
