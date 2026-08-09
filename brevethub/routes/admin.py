@@ -460,6 +460,40 @@ def _roster_copy_rows(roster, *, include_results=False):
     return rows
 
 
+def _sort_roster(rows, sort_key='name', sort_dir='asc'):
+    """Sort admin event roster rows for display."""
+    reverse = sort_dir == 'desc'
+
+    def sort_value(row):
+        if sort_key == 'name':
+            return (row.get('display_name') or '').lower()
+        if sort_key == 'contact':
+            return (row.get('email') or row.get('phone') or '').lower()
+        if sort_key == 'progress':
+            return (row.get('progress') or '').lower()
+        if sort_key == 'status':
+            return (row.get('status') or '').lower()
+        if sort_key == 'finish':
+            return (row.get('finish_time') or '').lower()
+        if sort_key == 'validation':
+            return (row.get('validation_label') or '').lower()
+        return (row.get('display_name') or '').lower()
+
+    return sorted(rows, key=sort_value, reverse=reverse)
+
+
+def _parse_roster_sort(sort_param):
+    sort_key = 'name'
+    sort_dir = 'asc'
+    if sort_param and ':' in sort_param:
+        key, direction = sort_param.split(':', 1)
+        if key in ('name', 'contact', 'progress', 'status', 'finish', 'validation'):
+            sort_key = key
+        if direction in ('asc', 'desc'):
+            sort_dir = direction
+    return sort_key, sort_dir
+
+
 def _attach_volunteer_counts(events):
     """Add volunteer_signed / volunteer_total for admin event lists."""
     if not events:
@@ -718,8 +752,12 @@ def event_roster(event_id):
                 except (ValueError, IndexError):
                     continue
         flash(f'Roster updated ({saved} rider{"s" if saved != 1 else ""}).' if saved else 'No changes saved.', 'success')
-        return redirect(url_for('admin.event_roster', event_id=event_id,
-                                filter=request.args.get('filter', '')))
+        redirect_params = {}
+        if request.args.get('filter'):
+            redirect_params['filter'] = request.args.get('filter')
+        if request.args.get('sort') and request.args.get('sort') != 'name:asc':
+            redirect_params['sort'] = request.args.get('sort')
+        return redirect(url_for('admin.event_roster', event_id=event_id, **redirect_params))
 
     # ── GET ───────────────────────────────────────────────────────────────────
     active_filter = request.args.get('filter', '')
@@ -765,6 +803,20 @@ def event_roster(event_id):
             if r.get('status') in ('finished', 'dnf', 'dns', 'otl')
         ]
 
+    sort_param = request.args.get('sort', 'name:asc')
+    sort_key, sort_dir = _parse_roster_sort(sort_param)
+    filtered_roster = _sort_roster(filtered_roster, sort_key, sort_dir)
+
+    def roster_page_url(filter_val=None, sort_val=None):
+        params = {}
+        f = active_filter if filter_val is None else filter_val
+        if f:
+            params['filter'] = f
+        s = sort_param if sort_val is None else sort_val
+        if s and s != 'name:asc':
+            params['sort'] = s
+        return url_for('admin.event_roster', event_id=event_id, **params)
+
     from datetime import date
     today = date.today()
     close_blockers = models.get_event_close_blockers(event_id)
@@ -794,6 +846,8 @@ def event_roster(event_id):
         roster_emails=roster_emails,
         roster_copy_rows=roster_copy_rows,
         roster_copy_include_results=roster_copy_include_results,
+        sort_param=sort_param,
+        roster_page_url=roster_page_url,
     )
 
 

@@ -27,15 +27,25 @@
 .filter-btn { padding:4px 12px; border-radius:6px; border:1.5px solid var(--border); background:white;
               font-size:.78rem; font-weight:600; color:var(--text); cursor:pointer; text-decoration:none; }
 .filter-btn:hover,.filter-btn.active { background:var(--primary); color:white; border-color:var(--primary); }
-.roster-table { width:100%; border-collapse:collapse; font-size:.85rem; }
-.roster-table th { text-align:left; padding:8px 12px 8px 0; border-bottom:2px solid var(--border);
-                   font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-light); white-space:nowrap; }
-.roster-table td { padding:12px 12px 12px 0; border-bottom:1px solid var(--border); vertical-align:middle; }
-.roster-table tr.row-registered { background:#fffdf0; }
-.roster-table tr.row-finished { background:#f0fff8; }
-.roster-table tr.row-dnf,.roster-table tr.row-dns,.roster-table tr.row-otl { background:#fff8f8; }
-.roster-table tr.row-alert { background:#fef2f2; }
-.roster-table tr.row-alert td { border-bottom-color:#fecaca; }
+.roster-table { width:100%; border-collapse:collapse; font-size:.84rem; }
+.roster-table thead th {
+  position:sticky; top:0; z-index:1; background:#fff;
+}
+.roster-table th {
+  text-align:left; padding:8px 10px; border-bottom:2px solid var(--border);
+  font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-light);
+  white-space:nowrap; background:#fff;
+}
+.roster-table th.sortable { cursor:pointer; user-select:none; }
+.roster-table th.sortable:hover { color:var(--primary); }
+.roster-table th.sortable.is-active { color:var(--primary); font-weight:700; }
+.roster-table th.sortable .sort-indicator {
+  display:inline-block; margin-left:3px; opacity:.45; font-size:.65rem;
+}
+.roster-table th.sortable.is-active .sort-indicator { opacity:1; }
+.roster-table td { padding:12px 10px 12px 0; border-bottom:1px solid var(--border); vertical-align:middle; }
+.roster-table tr.row-withdrawal { background:#fef2f2; }
+.roster-table tr.row-withdrawal td { border-bottom-color:#fecaca; }
 .close-btn { padding:6px 16px; border-radius:6px; font-size:.82rem; font-weight:600; cursor:pointer; border:none; }
 .close-btn-close { background:#dc2626; color:white; }
 .close-btn-open  { background:#16a34a; color:white; }
@@ -127,16 +137,15 @@
   {% endwith %}
 
   {% if roster or roster_total is defined %}
-  {% set furl = url_for('admin.event_roster', event_id=event.id) %}
   <div class="filter-bar">
     <span class="text-text-light text-xs font-semibold uppercase tracking-wide">Filter:</span>
-    <a href="{{ furl }}" class="filter-btn {% if not active_filter %}active{% endif %}">All ({{ roster_total }})</a>
-    <a href="{{ furl }}?filter=registered" class="filter-btn {% if active_filter == 'registered' %}active{% endif %}">Registered</a>
-    <a href="{{ furl }}?filter=results" class="filter-btn {% if active_filter == 'results' %}active{% endif %}">Results</a>
-    <a href="{{ furl }}?filter=pending_proof" class="filter-btn {% if active_filter == 'pending_proof' %}active{% endif %}">Proof pending</a>
-    <a href="{{ furl }}?filter=no_proof" class="filter-btn {% if active_filter == 'no_proof' %}active{% endif %}">No proof</a>
-    <a href="{{ furl }}?filter=needs_review" class="filter-btn {% if active_filter == 'needs_review' %}active{% endif %}">Needs review</a>
-    <a href="{{ furl }}?filter=approved" class="filter-btn {% if active_filter == 'approved' %}active{% endif %}">Approved</a>
+    <a href="{{ roster_page_url('') }}" class="filter-btn {% if not active_filter %}active{% endif %}">All ({{ roster_total }})</a>
+    <a href="{{ roster_page_url('registered') }}" class="filter-btn {% if active_filter == 'registered' %}active{% endif %}">Registered</a>
+    <a href="{{ roster_page_url('results') }}" class="filter-btn {% if active_filter == 'results' %}active{% endif %}">Results</a>
+    <a href="{{ roster_page_url('pending_proof') }}" class="filter-btn {% if active_filter == 'pending_proof' %}active{% endif %}">Proof pending</a>
+    <a href="{{ roster_page_url('no_proof') }}" class="filter-btn {% if active_filter == 'no_proof' %}active{% endif %}">No proof</a>
+    <a href="{{ roster_page_url('needs_review') }}" class="filter-btn {% if active_filter == 'needs_review' %}active{% endif %}">Needs review</a>
+    <a href="{{ roster_page_url('approved') }}" class="filter-btn {% if active_filter == 'approved' %}active{% endif %}">Approved</a>
   </div>
 
   <form method="post">
@@ -165,20 +174,25 @@
       <table class="roster-table">
         <thead>
           <tr>
-            <th>Rider</th>
-            <th>Contact</th>
-            <th>Progress</th>
-            <th>Status</th>
-            <th>Finish</th>
-            <th>Validation</th>
+            <th class="sortable" data-sort-key="name" data-sort-type="text">Rider <span class="sort-indicator"></span></th>
+            <th class="sortable" data-sort-key="contact" data-sort-type="text">Contact <span class="sort-indicator"></span></th>
+            <th class="sortable" data-sort-key="progress" data-sort-type="text">Progress <span class="sort-indicator"></span></th>
+            <th class="sortable" data-sort-key="status" data-sort-type="text">Status <span class="sort-indicator"></span></th>
+            <th class="sortable" data-sort-key="finish" data-sort-type="text">Finish <span class="sort-indicator"></span></th>
+            <th class="sortable" data-sort-key="validation" data-sort-type="text">Validation <span class="sort-indicator"></span></th>
             <th>Actions</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="roster-table-body">
           {% for r in roster %}
           {% set vdecision = r.organizer_decision or ('pending' if r.validation_id else 'none') %}
-          {% set row_alert = r.status == 'withdrawal_requested' or r.registration_status == 'exception' %}
-          <tr class="row-{{ r.status }}{% if row_alert %} row-alert{% endif %}">
+          <tr{% if r.status == 'withdrawal_requested' %} class="row-withdrawal"{% endif %}
+              data-sort-name="{{ r.display_name|lower }}"
+              data-sort-contact="{{ (r.email or r.phone or '')|lower }}"
+              data-sort-progress="{{ r.progress|lower }}"
+              data-sort-status="{{ (r.status or '')|lower }}"
+              data-sort-finish="{{ (r.finish_time or '')|lower }}"
+              data-sort-validation="{{ r.validation_label|lower }}">
             <td>
               <strong>{{ r.display_name }}</strong><br>
               <span class="text-text-light text-xs">RUSA {{ r.rusa_id or '—' }}</span>
@@ -260,6 +274,61 @@ function markAllFinished() {
   var rows = {{ roster_copy_rows|tojson }};
   var includeResults = {{ roster_copy_include_results|tojson }};
   var menu = document.getElementById('roster-actions-menu');
+  var tbody = document.getElementById('roster-table-body');
+  var currentSort = { key: 'name', dir: 'asc' };
+
+  function parseSortParam(raw) {
+    if (!raw || raw.indexOf(':') === -1) return null;
+    var parts = raw.split(':');
+    return { key: parts[0], dir: parts[1] === 'desc' ? 'desc' : 'asc' };
+  }
+
+  function sortValue(row, key) {
+    return (row.getAttribute('data-sort-' + key) || '').toLowerCase();
+  }
+
+  function compareRows(a, b, key, dir) {
+    var cmp = sortValue(a, key).localeCompare(sortValue(b, key));
+    return dir === 'asc' ? cmp : -cmp;
+  }
+
+  function updateSortUI() {
+    document.querySelectorAll('.roster-table th.sortable').forEach(function (th) {
+      var key = th.getAttribute('data-sort-key');
+      var active = key === currentSort.key;
+      th.classList.toggle('is-active', active);
+      var indicator = th.querySelector('.sort-indicator');
+      if (indicator) indicator.textContent = active ? (currentSort.dir === 'asc' ? '▲' : '▼') : '';
+    });
+  }
+
+  function applySort(key, dir, syncUrl) {
+    if (!tbody) return;
+    currentSort = { key: key, dir: dir };
+    var trs = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    trs.sort(function (a, b) { return compareRows(a, b, key, dir); });
+    trs.forEach(function (tr) { tbody.appendChild(tr); });
+    updateSortUI();
+    if (syncUrl !== false) {
+      var url = new URL(window.location.href);
+      if (key === 'name' && dir === 'asc') url.searchParams.delete('sort');
+      else url.searchParams.set('sort', key + ':' + dir);
+      window.history.replaceState({}, '', url);
+    }
+  }
+
+  document.querySelectorAll('.roster-table th.sortable').forEach(function (th) {
+    th.addEventListener('click', function () {
+      var key = th.getAttribute('data-sort-key');
+      if (!key) return;
+      var dir = (currentSort.key === key && currentSort.dir === 'asc') ? 'desc' : 'asc';
+      applySort(key, dir);
+    });
+  });
+
+  var initialSort = parseSortParam('{{ sort_param|e }}') || { key: 'name', dir: 'asc' };
+  applySort(initialSort.key, initialSort.dir, false);
+
   if (!menu || !menu.registerActionHandlers) return;
 
   function cleanCell(val) {

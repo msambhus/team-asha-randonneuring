@@ -119,13 +119,37 @@ def _current_season_year(today: date | None = None) -> int:
     return today.year if today.month >= 11 else today.year
 
 
+def _format_name_part(value: str) -> str:
+    """Title-case one name fragment (handles dots/underscores in email locals)."""
+    value = (value or '').strip()
+    if not value:
+        return ''
+    tokens = re.split(r'[._\-]+', value)
+    formatted = []
+    for token in tokens:
+        if not token:
+            continue
+        name = token.title()
+        name = re.sub(r'\bMc([a-z])', lambda m: f"Mc{m.group(1).upper()}", name)
+        name = re.sub(r'\bMac([a-z])', lambda m: f"Mac{m.group(1).upper()}", name)
+        name = re.sub(r"\bO'([a-z])", lambda m: f"O'{m.group(1).upper()}", name)
+        formatted.append(name)
+    return ' '.join(formatted)
+
+
 def rider_display_name(rider: dict) -> str:
-    parts = [rider.get('first_name') or '', rider.get('last_name') or '']
+    parts = [
+        _format_name_part(rider.get('first_name') or ''),
+        _format_name_part(rider.get('last_name') or ''),
+    ]
     name = ' '.join(p for p in parts if p).strip()
     if name:
         return name
     email = rider.get('email') or ''
-    return email.split('@')[0] if email else 'Rider'
+    local = email.split('@')[0] if email else ''
+    if local:
+        return _format_name_part(local)
+    return 'Rider'
 
 
 def profile_field_status(rider: dict) -> dict:
