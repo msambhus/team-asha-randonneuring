@@ -449,7 +449,8 @@ def load_strava_section(rider):
     # accurate without waiting six hours.
     needs_activity_types = bool(stats and (
         any('activity_type' not in activity for activity in (stats.get('activities') or []))
-        or 'evidence_activities' not in stats))
+        or 'evidence_activities' not in stats
+        or any('start_date' not in activity for activity in (stats.get('evidence_activities') or []))))
 
     error = None
     if not fresh or stats is None or needs_activity_types:

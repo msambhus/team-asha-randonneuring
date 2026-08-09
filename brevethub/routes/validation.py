@@ -23,6 +23,7 @@ from brevethub.routes.strava import load_strava_section
 from brevethub.routes.strava import _valid_access_token
 from shared.strava import fetch_activity_streams
 from brevethub.shared.strava_analysis import _compress_streams, build_activity_analysis
+from brevethub.shared.rwgps import extract_rwgps_route_id
 
 validation_bp = Blueprint('validation', __name__)
 _MAX_UPLOAD = 4 * 1024 * 1024
@@ -275,6 +276,13 @@ def submit_validation(event_id):
     points = combine_recordings(recordings) if recordings else []
     route_id = (route_plan.get('plan') or {}).get('rwgps_route_id')
     route = models.get_rp_route_elevation_track(route_id) if route_id else []
+    # A copied/derived plan can reference a different RWGPS route id than the
+    # official event URL. Prefer warmed official geometry when the plan copy has
+    # not been warmed yet; otherwise route checks falsely report no geometry.
+    if not route:
+        official_route_id = extract_rwgps_route_id(event.get('rwgps_url'))
+        if official_route_id and str(official_route_id) != str(route_id):
+            route = models.get_rp_route_elevation_track(official_route_id) or []
     hashes = [row[3] for row in file_rows]
     conflicts = models.find_validation_evidence_conflicts(hashes, event_id=event_id, rider_id=rider['id'],
                                                            strava_activity_id=int(strava_id) if strava_id else None)
