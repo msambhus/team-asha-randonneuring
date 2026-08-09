@@ -457,16 +457,6 @@ def events():
     )
 
 
-@admin_bp.route('/registrations', methods=['GET'])
-@operator_required
-def registrations():
-    return render_template(
-        'admin/registrations.html',
-        events=models.list_registration_events(),
-        exceptions=models.list_registration_exceptions(limit=25),
-    )
-
-
 def _assert_event_club_access(event):
     """Abort 403 if the operator is not super-admin and doesn't own this event.
 
@@ -488,7 +478,7 @@ def _assert_event_club_access(event):
     abort(403)
 
 
-@admin_bp.route('/registrations/event/<int:event_id>', methods=['GET', 'POST'])
+@admin_bp.route('/events/event/<int:event_id>', methods=['GET', 'POST'])
 @operator_required
 def event_roster(event_id):
     event = models.get_brevet_event_registration(event_id)
@@ -541,7 +531,7 @@ def event_roster(event_id):
     )
 
 
-@admin_bp.route('/registrations/event/<int:event_id>/export.csv')
+@admin_bp.route('/events/event/<int:event_id>/export.csv')
 @operator_required
 def export_roster_csv(event_id):
     """Download the event roster as CSV."""

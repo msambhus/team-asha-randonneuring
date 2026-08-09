@@ -251,6 +251,29 @@
     border-color: #1B2F52;
     color: white;
 }
+/* Context-sensitive intent buttons (replaces the old static <select>) */
+.signup-intent-btn {
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-family: inherit;
+    border: 2px solid var(--primary);
+    background: white;
+    color: var(--primary);
+    cursor: pointer;
+    transition: all 0.18s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.signup-intent-btn:hover { background: var(--primary); color: white; transform: translateY(-1px); }
+.signup-intent-primary { background: var(--primary); color: white; }
+.signup-intent-primary:hover { filter: brightness(1.1); }
+.signup-intent-clear { border-color: var(--text-light); color: var(--text-light); }
+.signup-intent-clear:hover { background: var(--text-light); color: white; }
+.signup-intent-withdraw { border-color: #c0392b; color: #c0392b; }
+.signup-intent-withdraw:hover { background: #c0392b; color: white; }
 .registration-badge {
     display: inline-flex;
     align-items: center;
@@ -631,20 +654,24 @@
                   {% endif %}
                   {% if rider %}
                     {% set status = my_status.get(ev.id) %}
-                    <div class="signup-actions">
+                    <div class="signup-actions" data-event-id="{{ ev.id }}" data-status="{{ status or '' }}">
                       {% if ev.registration_enabled and not (reg and reg.registration_status) %}
                         <button type="button" class="signup-btn register-primary"
                                 data-register-event="{{ ev.id }}">Register</button>
                       {% endif %}
-                      <select class="signup-status-select" data-event-id="{{ ev.id }}"
-                              style="padding:5px 10px; border-radius:6px; border:1.5px solid var(--border);
-                                     font-size:0.82rem; background:white; color:var(--text); cursor:pointer;
-                                     min-width:120px;">
-                        <option value="">— Status</option>
-                        <option value="interested" {% if status == 'interested' %}selected{% endif %}>Interested</option>
-                        <option value="going" {% if status == 'going' %}selected{% endif %}>Going</option>
-                        <option value="withdraw" {% if status in ('withdraw', 'withdrawn') %}selected{% endif %}>Withdraw</option>
-                      </select>
+                      {# Context-sensitive intent buttons — mirrors Team Asha's state machine.
+                         Withdraw only shown from GOING; Clear only shown from INTERESTED.
+                         Buttons are re-rendered client-side after each API call. #}
+                      {% if not status or status in ('withdraw',) %}
+                        <button type="button" class="signup-intent-btn" data-action="interested" data-event-id="{{ ev.id }}">Interested</button>
+                        <button type="button" class="signup-intent-btn signup-intent-primary" data-action="going" data-event-id="{{ ev.id }}">Going</button>
+                      {% elif status == 'interested' %}
+                        <button type="button" class="signup-intent-btn signup-intent-primary" data-action="going" data-event-id="{{ ev.id }}">Going</button>
+                        <button type="button" class="signup-intent-btn signup-intent-clear" data-action="clear" data-event-id="{{ ev.id }}">Clear</button>
+                      {% elif status == 'going' %}
+                        <button type="button" class="signup-intent-btn" data-action="interested" data-event-id="{{ ev.id }}">Interested</button>
+                        <button type="button" class="signup-intent-btn signup-intent-withdraw" data-action="withdraw" data-event-id="{{ ev.id }}">Withdraw</button>
+                      {% endif %}
                     </div>
                     {% if not ev.registration_enabled %}
                       <small class="club-registration-note">
@@ -729,36 +756,86 @@
 {% if rider %}
 <script src="{{ url_for('static', filename='js/registration.js') }}"></script>
 <script>
-// Progressive enhancement: status dropdown POSTs to the JSON API on change.
+// Context-sensitive intent buttons: delegated click handler.
 // Guests never see these controls (server-rendered only when a rider is signed in).
-document.querySelectorAll('.signup-status-select').forEach(function (sel) {
-  sel.setAttribute('data-prev-value', sel.value);
-  sel.addEventListener('change', function () {
-    var status = sel.value;
-    var eventId = sel.getAttribute('data-event-id');
-    if (!status) return;
-    var prevValue = sel.getAttribute('data-prev-value');
+function renderIntentButtons(container, newStatus) {
+  var eventId = container.getAttribute('data-event-id');
+  var registerBtn = container.querySelector('[data-register-event]');
+  var registerHtml = registerBtn ? registerBtn.outerHTML : '';
+  var btns = '';
+  if (!newStatus || newStatus === 'withdraw') {
+    btns  = '<button type="button" class="signup-intent-btn" data-action="interested" data-event-id="' + eventId + '">Interested</button>';
+    btns += '<button type="button" class="signup-intent-btn signup-intent-primary" data-action="going" data-event-id="' + eventId + '">Going</button>';
+  } else if (newStatus === 'interested') {
+    btns  = '<button type="button" class="signup-intent-btn signup-intent-primary" data-action="going" data-event-id="' + eventId + '">Going</button>';
+    btns += '<button type="button" class="signup-intent-btn signup-intent-clear" data-action="clear" data-event-id="' + eventId + '">Clear</button>';
+  } else if (newStatus === 'going') {
+    btns  = '<button type="button" class="signup-intent-btn" data-action="interested" data-event-id="' + eventId + '">Interested</button>';
+    btns += '<button type="button" class="signup-intent-btn signup-intent-withdraw" data-action="withdraw" data-event-id="' + eventId + '">Withdraw</button>';
+  }
+  container.setAttribute('data-status', newStatus || '');
+  container.innerHTML = registerHtml + btns;
+}
+
+document.addEventListener('click', function (e) {
+  var btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  var action = btn.getAttribute('data-action');
+  var eventId = btn.getAttribute('data-event-id');
+  if (!action || !eventId) return;
+
+  var container = document.querySelector('.signup-actions[data-event-id="' + eventId + '"]');
+
+  if (action === 'clear') {
     fetch('/calendar/' + eventId + '/signup', {
-      method: 'POST',
+      method: 'DELETE',
       credentials: 'same-origin',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({status: status}),
     }).then(function (resp) {
       return resp.json().then(function (data) { return {ok: resp.ok, data: data}; });
     }).then(function (r) {
       if (!r.ok) {
         if (r.data && r.data.login_url) { window.location = r.data.login_url; return; }
-        alert(r.data.error || 'Could not update status');
-        sel.value = prevValue;
+        alert(r.data.error || 'Could not clear status');
         return;
       }
-      sel.setAttribute('data-prev-value', status);
+      if (container) renderIntentButtons(container, null);
+      // Hide registration badge on clear.
+      var regBadge = document.querySelector('[data-reg-badge="' + eventId + '"]');
+      if (regBadge) regBadge.style.display = 'none';
       var card = document.querySelector('.event-card[data-event-id="' + eventId + '"]');
       if (card && r.data.going_count != null) {
         var badge = card.querySelector('.signup-count');
         if (badge) badge.textContent = r.data.going_count + ' on roster';
       }
     });
+    return;
+  }
+
+  fetch('/calendar/' + eventId + '/signup', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: action}),
+  }).then(function (resp) {
+    return resp.json().then(function (data) { return {ok: resp.ok, data: data}; });
+  }).then(function (r) {
+    if (!r.ok) {
+      if (r.data && r.data.login_url) { window.location = r.data.login_url; return; }
+      alert(r.data.error || 'Could not update status');
+      return;
+    }
+    var newStatus = r.data.status;
+    if (container) renderIntentButtons(container, newStatus);
+    // On withdraw, also hide the registration badge (server nulled registration_status).
+    if (action === 'withdraw') {
+      var regBadge = document.querySelector('[data-reg-badge="' + eventId + '"]');
+      if (regBadge) regBadge.style.display = 'none';
+    }
+    var card = document.querySelector('.event-card[data-event-id="' + eventId + '"]');
+    if (card && r.data.going_count != null) {
+      var badge = card.querySelector('.signup-count');
+      if (badge) badge.textContent = r.data.going_count + ' on roster';
+    }
   });
 });
 

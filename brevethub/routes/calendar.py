@@ -302,14 +302,19 @@ def signup(event_id):
     if status == models.RideStatus.WITHDRAW.value:
         outcome = models.withdraw_rider_signup(rider['id'], event_id)
         if outcome == 'not_found':
-            return jsonify({'error': 'No sign-up to withdraw'}), 404
+            # No prior signup — treat as a no-op (rider never signed up, nothing to withdraw).
+            counts = models.get_event_signup_counts(event_id)
+            return jsonify({'ok': True, 'event_id': event_id, 'status': None,
+                            **counts}), 200
         if outcome == 'has_result':
             return jsonify({'error': 'Cannot change a sign-up with a result'}), 409
     else:
         outcome = models.set_rider_signup(rider['id'], event_id, status)
         if outcome == 'has_result':
             return jsonify({'error': 'Cannot change a sign-up with a result'}), 409
-    return jsonify({'ok': True, 'event_id': event_id, 'status': status}), 200
+    counts = models.get_event_signup_counts(event_id)
+    return jsonify({'ok': True, 'event_id': event_id, 'status': status,
+                    **counts}), 200
 
 
 @calendar_bp.route('/calendar/<int:event_id>/follow-live', methods=['POST'])
@@ -349,7 +354,9 @@ def unsignup(event_id):
         return jsonify({'error': 'No sign-up to remove'}), 404
     if outcome == 'post_ride':
         return jsonify({'error': 'Cannot remove a sign-up with a result'}), 400
-    return jsonify({'ok': True, 'event_id': event_id, 'status': None}), 200
+    counts = models.get_event_signup_counts(event_id)
+    return jsonify({'ok': True, 'event_id': event_id, 'status': None,
+                    **counts}), 200
 
 
 @calendar_bp.route('/calendar/<int:event_id>/result', methods=['POST'])

@@ -1129,7 +1129,7 @@ def withdraw_rider_signup(rider_id, event_id):
         return 'has_result'
     db.execute(
         "UPDATE rp_event_signup "
-        "SET status = %s, updated_at = NOW() "
+        "SET status = %s, registration_status = NULL, updated_at = NOW() "
         "WHERE rider_id = %s AND event_id = %s "
         "  AND status NOT IN (%s, %s, %s, %s)",
         (RideStatus.WITHDRAW.value, rider_id, event_id,
@@ -1137,6 +1137,28 @@ def withdraw_rider_signup(rider_id, event_id):
          RideStatus.DNS.value, RideStatus.OTL.value),
     )
     return 'withdrawn'
+
+
+def get_event_signup_counts(event_id):
+    """Fresh going / interested / confirmed counts for a single event.
+
+    Called after each signup mutation so the API response carries live counts
+    the client can update the roster badge with immediately, without a page reload.
+    Returns a dict with going_count, interested_count, confirmed_count (all int).
+    """
+    row = db.query_one(
+        "SELECT "
+        "  COUNT(*) FILTER (WHERE status = %s) AS going_count, "
+        "  COUNT(*) FILTER (WHERE status = %s) AS interested_count, "
+        "  COUNT(*) FILTER (WHERE registration_status = 'confirmed') AS confirmed_count "
+        "FROM rp_event_signup WHERE event_id = %s",
+        (RideStatus.GOING.value, RideStatus.INTERESTED.value, event_id),
+    )
+    return {
+        'going_count': int(row['going_count'] or 0) if row else 0,
+        'interested_count': int(row['interested_count'] or 0) if row else 0,
+        'confirmed_count': int(row['confirmed_count'] or 0) if row else 0,
+    }
 
 
 def clear_rider_signup(rider_id, event_id):
@@ -2641,7 +2663,17 @@ def find_brevet_event_by_key(date_value, name, distance_km):
     )
 
 
-def list_registration_exceptions(limit=100):
+def list_registration_exceptions(limit=100, club_id=None, region_prefix=None):
+    """Registration exceptions, optionally scoped to a club or region prefix."""
+    params = []
+    extra = ""
+    if region_prefix:
+        extra = "AND e.region = %s "
+        params.append(region_prefix)
+    elif club_id is not None:
+        extra = "AND e.club_id = %s "
+        params.append(club_id)
+    params.append(limit)
     return db.query(
         "SELECT s.id, s.event_id, s.rider_id, s.status, s.registration_status, "
         "       s.exception_reason, s.registration_confirmed_at, s.confirmation_code, "
@@ -2650,10 +2682,10 @@ def list_registration_exceptions(limit=100):
         "FROM rp_event_signup s "
         "JOIN rp_brevet_event e ON e.id = s.event_id "
         "JOIN rp_rider r ON r.id = s.rider_id "
-        "WHERE s.registration_status = 'exception' "
+        "WHERE s.registration_status = 'exception' " + extra +
         "ORDER BY s.registration_confirmed_at DESC NULLS LAST, s.id DESC "
         "LIMIT %s",
-        (limit,),
+        tuple(params),
     )
 
 
@@ -2687,8 +2719,21 @@ def enable_sfr_region_registration_defaults():
     return int(row['n']) if row else 0
 
 
-def list_registration_events(limit=80):
-    """Upcoming and recent events with registration/roster counts for admin."""
+def list_registration_events(limit=80, club_id=None, region_prefix=None):
+    """Upcoming and recent events with registration/roster counts for admin.
+
+    When club_id or region_prefix is supplied only that club's events are returned.
+    """
+    params = [RideStatus.GOING.value, RideStatus.FINISHED.value, RideStatus.DNF.value,
+              RideStatus.DNS.value, RideStatus.OTL.value]
+    club_filter = ""
+    if region_prefix:
+        club_filter = "AND e.region = %s "
+        params.append(region_prefix)
+    elif club_id is not None:
+        club_filter = "AND e.club_id = %s "
+        params.append(club_id)
+    params.append(limit)
     return db.query(
         "SELECT e.id, e.name, e.date, e.distance_km, e.region, e.start_time, "
         "       e.start_location, e.registration_enabled, "
@@ -2698,12 +2743,11 @@ def list_registration_events(limit=80):
         "       COUNT(s.id) FILTER (WHERE s.status IN (%s, %s, %s, %s)) AS result_count "
         "FROM rp_brevet_event e "
         "LEFT JOIN rp_event_signup s ON s.event_id = e.id "
-        "WHERE e.date >= CURRENT_DATE - INTERVAL '14 days' "
+        "WHERE e.date >= CURRENT_DATE - INTERVAL '14 days' " + club_filter +
         "GROUP BY e.id "
         "ORDER BY e.date ASC, e.distance_km ASC "
         "LIMIT %s",
-        (RideStatus.GOING.value, RideStatus.FINISHED.value, RideStatus.DNF.value,
-         RideStatus.DNS.value, RideStatus.OTL.value, limit),
+        tuple(params),
     )
 
 

@@ -1024,11 +1024,31 @@ def get_rider_signup_statuses_batch(rider_id, ride_ids):
     
     return {r['ride_id']: {'status': r['status'], 'signed_up_at': r['signed_up_at'], 'finish_time': r['finish_time']} for r in rows}
 
+_POST_RIDE_STATUSES = frozenset({
+    RideStatus.FINISHED.value,
+    RideStatus.DNF.value,
+    RideStatus.DNS.value,
+    RideStatus.OTL.value,
+})
+
+
+def _has_post_ride_result(cur, rider_id, ride_id):
+    """Return True when the existing rider_ride row has a locked post-ride status."""
+    cur.execute(
+        "SELECT status FROM rider_ride WHERE rider_id = %s AND ride_id = %s",
+        (rider_id, ride_id),
+    )
+    row = cur.fetchone()
+    return row is not None and row['status'] in _POST_RIDE_STATUSES
+
+
 def signup_rider(rider_id, ride_id):
-    """Sign up a rider for a ride. Updates status to GOING regardless of current status."""
+    """Sign up a rider for a ride (GOING). Refuses if a post-ride result already exists."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        if _has_post_ride_result(cur, rider_id, ride_id):
+            return 'has_result'
         cur.execute("""
             INSERT INTO rider_ride (rider_id, ride_id, status, signed_up_at)
             VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
@@ -1045,10 +1065,12 @@ def signup_rider(rider_id, ride_id):
 
 
 def mark_interested(rider_id, ride_id):
-    """Mark a rider as interested in a ride. Updates status to INTERESTED regardless of current status."""
+    """Mark a rider as interested in a ride. Refuses if a post-ride result already exists."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        if _has_post_ride_result(cur, rider_id, ride_id):
+            return 'has_result'
         cur.execute("""
             INSERT INTO rider_ride (rider_id, ride_id, status, signed_up_at)
             VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
@@ -1065,10 +1087,12 @@ def mark_interested(rider_id, ride_id):
 
 
 def mark_maybe(rider_id, ride_id):
-    """Mark a rider as maybe for a ride. Updates status to MAYBE regardless of current status."""
+    """Mark a rider as maybe for a ride. Refuses if a post-ride result already exists."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        if _has_post_ride_result(cur, rider_id, ride_id):
+            return 'has_result'
         cur.execute("""
             INSERT INTO rider_ride (rider_id, ride_id, status, signed_up_at)
             VALUES (%s, %s, %s, CURRENT_TIMESTAMP)

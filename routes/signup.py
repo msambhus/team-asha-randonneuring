@@ -58,10 +58,11 @@ def api_signup(ride_id):
     
     rider_id = user['rider_id']
     
-    # Sign up the rider (allows status transitions)
-    success = signup_rider(rider_id, ride_id)
-    if success:
-        cache.clear()  # Clear cache after signup
+    result = signup_rider(rider_id, ride_id)
+    if result == 'has_result':
+        return jsonify({'success': False, 'error': 'Cannot change a sign-up with a result'}), 409
+    if result:
+        cache.clear()
         return jsonify({'success': True, 'status': 'GOING'})
     else:
         return jsonify({'success': False, 'error': 'Failed to sign up'}), 500
@@ -84,10 +85,11 @@ def api_interested(ride_id):
 
     rider_id = user['rider_id']
 
-    # Mark as interested (allows status transitions)
-    success = mark_interested(rider_id, ride_id)
-    if success:
-        cache.clear()  # Clear cache after marking interest
+    result = mark_interested(rider_id, ride_id)
+    if result == 'has_result':
+        return jsonify({'success': False, 'error': 'Cannot change a sign-up with a result'}), 409
+    if result:
+        cache.clear()
         return jsonify({'success': True, 'status': 'INTERESTED'})
     return jsonify({'success': False, 'error': 'Failed to mark interest'}), 500
 
@@ -109,9 +111,11 @@ def api_maybe(ride_id):
 
     rider_id = user['rider_id']
 
-    success = mark_maybe(rider_id, ride_id)
-    if success:
-        cache.clear()  # Clear cache after marking maybe
+    result = mark_maybe(rider_id, ride_id)
+    if result == 'has_result':
+        return jsonify({'success': False, 'error': 'Cannot change a sign-up with a result'}), 409
+    if result:
+        cache.clear()
         return jsonify({'success': True, 'status': 'MAYBE'})
     return jsonify({'success': False, 'error': 'Failed to mark as maybe'}), 500
 
