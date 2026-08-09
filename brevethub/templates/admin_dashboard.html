@@ -47,6 +47,15 @@
       {% endfor %}
     </div>
   </section>
+
+  <section class="card mt-4" aria-labelledby="validation-heading">
+    <h2 id="validation-heading" class="text-primary text-[1.2rem] font-bold mb-1">Brevet evidence validation</h2>
+    <p class="text-text-light mb-3">Compare Strava or original FIT/GPX recordings and traditional proof with official routes, controls, and time limits. Automated results are advisory; organizers make the final decision.</p>
+    <div class="flex gap-2 flex-wrap">
+      <a class="btn btn-primary" href="{{ url_for('admin.validations') }}">Review validations</a>
+      <a class="btn btn-secondary" href="{{ url_for('admin.validation_new') }}">New submission</a>
+    </div>
+  </section>
 </div>
 </div>
 {% endblock %}
