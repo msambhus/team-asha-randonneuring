@@ -31,11 +31,20 @@ vendored copy under ``brevethub/shared/``.
 import hashlib
 import math
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from . import live_telemetry as tlm
 
 M_TO_MI = 1 / 1609.344
 MS_TO_MPH = 2.236936
+_PACIFIC_TZ = ZoneInfo('America/Los_Angeles')
+
+
+def _audience_zone_label(tz):
+    return {
+        'America/Los_Angeles': 'PT', 'America/Denver': 'MT',
+        'America/Chicago': 'CT', 'America/New_York': 'ET',
+    }.get(getattr(tz, 'key', ''), getattr(tz, 'key', 'UTC'))
 
 # Distance unit shown in the roster table. Brevet plans are native miles (the
 # BrevetHub per-stop plan is miles after PR #516); an owner who prefers km flips
@@ -263,14 +272,21 @@ def compose_rider_telemetry(row, ctx, now, history, *, plan_stops=None, start=No
             previous['duration_min'] = round(
                 (end_at - previous['_start_at']).total_seconds() / 60.0, 1)
             previous['end_label'] = _as_utc(end_at).astimezone(local_tz).strftime('%-I:%M %p')
+            previous['end_pacific_label'] = _as_utc(end_at).astimezone(_PACIFIC_TZ).strftime('%-I:%M %p').lstrip('0')
             continue
         start_local = _as_utc(start_at).astimezone(local_tz)
         end_local = _as_utc(end_at).astimezone(local_tz)
+        start_pacific = _as_utc(start_at).astimezone(_PACIFIC_TZ)
+        end_pacific = _as_utc(end_at).astimezone(_PACIFIC_TZ)
         stop_events.append({
             'distance_mi': round(event_mi, 1), 'duration_min': stopped_interval,
             'day_number': event_day,
             'start_label': start_local.strftime('%-I:%M %p'),
             'end_label': end_local.strftime('%-I:%M %p'),
+            'event_zone': _audience_zone_label(local_tz),
+            'start_pacific_label': start_pacific.strftime('%-I:%M %p').lstrip('0'),
+            'end_pacific_label': end_pacific.strftime('%-I:%M %p').lstrip('0'),
+            'show_pacific': local_tz != _PACIFIC_TZ,
             '_start_at': start_at, '_end_at': end_at,
         })
     for event in stop_events:
