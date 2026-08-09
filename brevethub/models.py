@@ -2534,13 +2534,14 @@ def update_rider_registration_profile(rider_id, **fields):
 
 
 def get_brevet_event_registration(event_id):
-    """Full event row for the registration wizard."""
+    """Full event row for the registration/roster admin view."""
     return db.query_one(
         "SELECT e.id, e.rusa_route_id, e.name, e.date, e.distance_km, e.region, "
         "       e.ride_type, e.elevation_ft, e.rwgps_url, e.start_location, "
         "       e.start_time, e.time_limit_hours, e.club_id, "
         "       e.fee_cents, e.registration_deadline, e.capacity, e.event_summary, "
-        "       e.registration_enabled, c.name AS club_name, c.rusa_club_id "
+        "       e.registration_enabled, e.closed_at, "
+        "       c.name AS club_name, c.rusa_club_id "
         "FROM rp_brevet_event e LEFT JOIN rp_club c ON c.id = e.club_id "
         "WHERE e.id = %s",
         (event_id,),
@@ -2920,15 +2921,23 @@ def list_all_club_admins():
 
 
 def get_admin_event_roster(event_id):
-    """Full signup roster for operator management (PII allowed)."""
+    """Full signup roster for operator management (PII allowed).
+
+    Each row includes the rider's most recent validation submission for this event
+    (machine_decision, organizer_decision, submission_id) so the roster page can
+    surface proof status inline without a separate round-trip.
+    """
     return db.query(
         "SELECT s.id AS signup_id, s.rider_id, s.status, s.registration_status, "
         "       s.registration_confirmed_at, s.confirmation_code, s.exception_reason, "
         "       s.finish_time, s.updated_at, s.created_at, "
+        "       s.homologation_number, s.evidence_submission_allowed, "
         "       r.first_name, r.last_name, r.email, r.rusa_id, r.phone, r.city, "
         "       (e.date < CURRENT_DATE) AS event_past, "
         "       (e.date = CURRENT_DATE) AS event_today, "
-        "       live.id AS live_ride_id, live.is_public AS live_public "
+        "       live.id AS live_ride_id, live.is_public AS live_public, "
+        "       val.id AS validation_id, val.machine_decision, val.organizer_decision, "
+        "       val.organizer_notes, val.source_type AS validation_source "
         "FROM rp_event_signup s "
         "JOIN rp_rider r ON r.id = s.rider_id "
         "JOIN rp_brevet_event e ON e.id = s.event_id "
@@ -2937,6 +2946,12 @@ def get_admin_event_roster(event_id):
         "  WHERE rider_id = s.rider_id AND event_id = s.event_id "
         "  ORDER BY start_at DESC NULLS LAST LIMIT 1"
         ") live ON TRUE "
+        "LEFT JOIN LATERAL ("
+        "  SELECT id, machine_decision, organizer_decision, organizer_notes, source_type "
+        "  FROM rp_validation_submission "
+        "  WHERE rider_id = s.rider_id AND event_id = s.event_id "
+        "  ORDER BY created_at DESC LIMIT 1"
+        ") val ON TRUE "
         "WHERE s.event_id = %s "
         "  AND (s.registration_status IS NOT NULL "
         "       OR s.status IN (%s, %s, %s, %s, %s, %s, %s, %s)) "
@@ -2948,6 +2963,50 @@ def get_admin_event_roster(event_id):
          RideStatus.DNS.value, RideStatus.OTL.value,
          RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.FINISHED.value),
     )
+
+
+def get_event_close_blockers(event_id):
+    """Riders on the event roster whose status is not a final post-ride result.
+
+    An event may only be closed when every signup is FINISHED, DNF, DNS, OTL, or WITHDRAW.
+    Returns rows with rider_id, status, email, first_name, last_name for the UI.
+    """
+    return db.query(
+        "SELECT s.rider_id, s.status, r.email, r.first_name, r.last_name "
+        "FROM rp_event_signup s "
+        "JOIN rp_rider r ON r.id = s.rider_id "
+        "WHERE s.event_id = %s "
+        "  AND s.status NOT IN (%s, %s, %s, %s, %s) "
+        "  AND (s.registration_status IS NOT NULL "
+        "       OR s.status IN (%s, %s, %s, %s, %s, %s, %s, %s)) "
+        "ORDER BY r.last_name, r.first_name",
+        (event_id,
+         RideStatus.FINISHED.value, RideStatus.DNF.value,
+         RideStatus.DNS.value, RideStatus.OTL.value, RideStatus.WITHDRAW.value,
+         RideStatus.GOING.value, RideStatus.INTERESTED.value, RideStatus.MAYBE.value,
+         RideStatus.WITHDRAW.value, RideStatus.FINISHED.value, RideStatus.DNF.value,
+         RideStatus.DNS.value, RideStatus.OTL.value),
+    )
+
+
+def set_event_closed(event_id, closed: bool):
+    """Open (closed=False) or close (closed=True) an event for validation purposes.
+
+    Returns 'closed', 'opened', or 'unresolved_riders' when close is blocked.
+    """
+    if closed:
+        if get_event_close_blockers(event_id):
+            return 'unresolved_riders'
+        db.execute(
+            "UPDATE rp_brevet_event SET closed_at = NOW() WHERE id = %s AND closed_at IS NULL",
+            (event_id,),
+        )
+        return 'closed'
+    db.execute(
+        "UPDATE rp_brevet_event SET closed_at = NULL WHERE id = %s",
+        (event_id,),
+    )
+    return 'opened'
 
 
 def admin_update_event_signup(event_id, rider_id, status, *, finish_time=None,

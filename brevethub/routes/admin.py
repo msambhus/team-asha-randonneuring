@@ -40,7 +40,7 @@ from brevethub.services.ride_validation import (
     TrackPoint, combine_recordings, fingerprint, parse_fit, parse_gpx,
     validate_submission,
 )
-from brevethub.services.registration import progress_label
+from brevethub.services.registration import progress_label, rider_display_name
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -279,7 +279,11 @@ def validations():
 def validation_new():
     candidates = models.get_validation_candidates()
     if request.method == 'GET':
-        return render_template('admin/validation_new.html', candidates=candidates)
+        prefill_event_id = request.args.get('event_id', type=int)
+        prefill_rider_id = request.args.get('rider_id', type=int)
+        return render_template('admin/validation_new.html', candidates=candidates,
+                               prefill_event_id=prefill_event_id,
+                               prefill_rider_id=prefill_rider_id)
 
     try:
         event_id = int(request.form.get('event_id') or 0)
@@ -457,6 +461,24 @@ def events():
     )
 
 
+def _validation_label(row):
+    """Compact validation status for the admin roster row."""
+    decision = row.get('organizer_decision')
+    if decision == 'approved':
+        hom = row.get('homologation_number')
+        return f"Approved · Homologation {hom}" if hom else 'Approved'
+    if decision == 'not_approved':
+        return 'Not approved'
+    if decision == 'needs_more_evidence':
+        return 'Needs more evidence'
+    if row.get('validation_id'):
+        machine = (row.get('machine_decision') or 'pending').replace('_', ' ')
+        return machine.title()
+    if row.get('status') == 'finished':
+        return 'Evidence needed'
+    return '—'
+
+
 def _assert_event_club_access(event):
     """Abort 403 if the operator is not super-admin and doesn't own this event.
 
@@ -478,6 +500,20 @@ def _assert_event_club_access(event):
     abort(403)
 
 
+@admin_bp.route('/registrations/event/<int:event_id>', methods=['GET', 'POST'])
+@operator_required
+def registrations_event_redirect(event_id):
+    """Backward-compat redirect from old registrations roster URL."""
+    return redirect(url_for('admin.event_roster', event_id=event_id))
+
+
+@admin_bp.route('/registrations/event/<int:event_id>/export.csv')
+@operator_required
+def registrations_export_redirect(event_id):
+    """Backward-compat redirect from old CSV export URL."""
+    return redirect(url_for('admin.export_roster_csv', event_id=event_id))
+
+
 @admin_bp.route('/events/event/<int:event_id>', methods=['GET', 'POST'])
 @operator_required
 def event_roster(event_id):
@@ -489,10 +525,47 @@ def event_roster(event_id):
     if request.method == 'POST':
         action = request.form.get('action')
         rider_id = request.form.get('rider_id', type=int)
+
+        # ── Event-level actions ────────────────────────────────────────────────
+        if action == 'close_event':
+            outcome = models.set_event_closed(event_id, closed=True)
+            if outcome == 'unresolved_riders':
+                n = len(models.get_event_close_blockers(event_id))
+                flash(
+                    f'Cannot close event: {n} rider{"s" if n != 1 else ""} still need a '
+                    f'final result (FINISHED, DNF, DNS, OTL, or WITHDRAW).',
+                    'error',
+                )
+            else:
+                flash('Event closed. All validations are now locked.', 'success')
+            return redirect(url_for('admin.event_roster', event_id=event_id))
+
+        if action == 'open_event':
+            models.set_event_closed(event_id, closed=False)
+            flash('Event re-opened.', 'success')
+            return redirect(url_for('admin.event_roster', event_id=event_id))
+
+        # ── Per-rider validation decision ──────────────────────────────────────
+        if action == 'validation_decision' and rider_id:
+            submission_id = request.form.get('submission_id', type=int)
+            decision = (request.form.get('decision') or '').strip()
+            notes = (request.form.get('notes') or '').strip()
+            if submission_id and decision in _ORGANIZER_DECISIONS:
+                reviewed_by = session.get('brevethub_operator_username') or 'operator'
+                models.set_validation_organizer_decision(submission_id, decision, notes,
+                                                         reviewed_by=reviewed_by)
+                flash(f'Validation marked {decision}.', 'success')
+            return redirect(url_for('admin.event_roster', event_id=event_id,
+                                    filter=request.args.get('filter', '')))
+
+        # ── Per-rider remove ───────────────────────────────────────────────────
         if action == 'remove' and rider_id:
             models.admin_remove_event_signup(event_id, rider_id)
             flash('Rider removed from event roster.', 'success')
-        elif rider_id:
+            return redirect(url_for('admin.event_roster', event_id=event_id))
+
+        # ── Per-rider status update (single) ───────────────────────────────────
+        if rider_id:
             status = (request.form.get('status') or '').strip().lower()
             finish_time = (request.form.get('finish_time') or '').strip() or None
             reg_status = (request.form.get('registration_status') or '').strip() or None
@@ -505,29 +578,82 @@ def event_roster(event_id):
                 flash('Rider status updated.', 'success')
             except ValueError as exc:
                 flash(str(exc), 'error')
-        else:
-            for key, value in request.form.items():
-                if not key.startswith('status_') or not value:
-                    continue
+            return redirect(url_for('admin.event_roster', event_id=event_id))
+
+        # ── Bulk status + finish time save (table form) ────────────────────────
+        saved = 0
+        for key, value in request.form.items():
+            if key.startswith('status_') and value:
                 try:
                     rid = int(key.split('_', 1)[1])
-                    models.admin_update_event_signup(event_id, rid, value.strip())
+                    finish_key = f'finish_{rid}'
+                    finish_time = (request.form.get(finish_key) or '').strip() or None
+                    models.admin_update_event_signup(
+                        event_id, rid, value.strip(), finish_time=finish_time)
+                    saved += 1
                 except (ValueError, IndexError):
                     continue
-            flash('Roster statuses saved.', 'success')
-        return redirect(url_for('admin.event_roster', event_id=event_id))
+        flash(f'Roster updated ({saved} rider{"s" if saved != 1 else ""}).' if saved else 'No changes saved.', 'success')
+        return redirect(url_for('admin.event_roster', event_id=event_id,
+                                filter=request.args.get('filter', '')))
 
+    # ── GET ───────────────────────────────────────────────────────────────────
+    active_filter = request.args.get('filter', '')
     roster = models.get_admin_event_roster(event_id)
     for row in roster:
+        row['display_name'] = rider_display_name(row)
         row['progress'] = progress_label(
             event_past=bool(row.get('event_past')),
             status=row.get('status') or '',
             registration_status=row.get('registration_status'),
         )
+        row['validation_label'] = _validation_label(row)
+
+    # Apply filter
+    filtered_roster = roster
+    if active_filter == 'pending_proof':
+        # Riders who finished but have no approved validation
+        filtered_roster = [
+            r for r in roster
+            if r.get('status') in ('finished', 'going')
+            and r.get('organizer_decision') != 'approved'
+        ]
+    elif active_filter == 'no_proof':
+        # Riders who finished but submitted NO validation at all
+        filtered_roster = [
+            r for r in roster
+            if r.get('status') in ('finished', 'going')
+            and not r.get('validation_id')
+        ]
+    elif active_filter == 'needs_review':
+        filtered_roster = [
+            r for r in roster
+            if r.get('organizer_decision') == 'needs_more_evidence'
+            or (r.get('machine_decision') == 'fail' and not r.get('organizer_decision'))
+        ]
+    elif active_filter == 'approved':
+        filtered_roster = [r for r in roster if r.get('organizer_decision') == 'approved']
+    elif active_filter == 'going':
+        filtered_roster = [r for r in roster if r.get('status') == 'going']
+    elif active_filter == 'results':
+        filtered_roster = [
+            r for r in roster
+            if r.get('status') in ('finished', 'dnf', 'dns', 'otl')
+        ]
+
+    from datetime import date
+    close_blockers = models.get_event_close_blockers(event_id)
+    for row in close_blockers:
+        row['display_name'] = rider_display_name(row)
     return render_template(
         'admin/event_roster.html',
         event=event,
-        roster=roster,
+        roster=filtered_roster,
+        roster_total=len(roster),
+        active_filter=active_filter,
+        today_date=date.today(),
+        close_blockers=close_blockers,
+        can_close_event=len(close_blockers) == 0,
     )
 
 
