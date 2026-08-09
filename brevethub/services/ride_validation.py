@@ -296,7 +296,9 @@ def validate_submission(*, points: list[TrackPoint], route: list[dict], controls
             distances = [
                 _nearest(activity_sample[i], official_sample)[0] for i in group
             ]
-            if len(group) >= 2 or max(distances, default=0) > CORRIDOR_M * 2:
+            # Two adjacent samples that immediately return to the route are
+            # ordinary GPS jitter, not an actionable detour.
+            if len(group) >= 3 or max(distances, default=0) > CORRIDOR_M * 2:
                 meaningful_groups.append(group)
         segments = [
             [[activity_sample[i].lat, activity_sample[i].lng] for i in group[:250]]
