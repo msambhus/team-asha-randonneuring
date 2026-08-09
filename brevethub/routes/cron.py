@@ -197,6 +197,31 @@ def run_refresh_calendar():
     return {'ok': True, 'refreshed': refreshed}
 
 
+def run_sync_sfr_registration():
+    """Merge SFR spreadsheet registration metadata onto cached brevets."""
+    from brevethub.services.sfr_sync import sync_sfr_registration_metadata
+    try:
+        result = sync_sfr_registration_metadata(enable_registration=True)
+        enabled = models.enable_sfr_region_registration_defaults()
+        result['defaults_enabled'] = enabled
+        result['ok'] = True
+        return result
+    except Exception as e:
+        current_app.logger.warning('SFR registration sync failed: %s', e)
+        return {'ok': False, 'error': str(e), 'matched': 0}
+
+
+@cron_bp.route('/sync-sfr-registration', methods=['GET', 'POST'])
+def sync_sfr_registration():
+    """Apply SFR sheet metadata (fees, deadlines, start times) to rp_brevet_event."""
+    auth_error = _verify_cron_auth()
+    if auth_error:
+        return auth_error
+    result = run_sync_sfr_registration()
+    status = 200 if result.get('ok') else 500
+    return jsonify(result), status
+
+
 @cron_bp.route('/finalize-signups', methods=['GET', 'POST'])
 def finalize_signups():
     """Auto-finalize past-date going sign-ups to finished (keyless logic).

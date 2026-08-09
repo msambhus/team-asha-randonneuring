@@ -375,6 +375,8 @@ def register_confirm(event_id):
             age_certified=bool(payload.get('age_certified')),
             esign_consented=bool(payload.get('esign_consented')),
             waiver_method=payload.get('waiver_method') or 'in_app',
+            initials=payload.get('waiver_initials') or None,
+            waiver_signed_date=payload.get('waiver_signed_date') or None,
         )
     except Exception:
         pass  # Waiver v2 columns added by migration; tolerate if not yet deployed
@@ -445,9 +447,30 @@ def bulk_confirm():
     })
 
 
-@register_bp.route('/admin/registrations')
-def admin_registrations_redirect():
-    return jsonify({'admin_url': url_for('admin.registrations')})
+
+
+@register_bp.route('/rusa/validate-batch', methods=['POST'])
+@login_required
+def validate_rusa_batch():
+    """Validate a list of {rusa_id, first_name, last_name} combos against RUSA.org."""
+    from brevethub.services.registration import validate_rusa_profile_fields
+    payload = request.get_json(silent=True) or {}
+    members = payload.get('members', [])
+    results = []
+    for m in members:
+        rusa_id = (m.get('rusa_id') or '').strip()
+        first_name = (m.get('first_name') or '').strip()
+        last_name = (m.get('last_name') or '').strip()
+        if not rusa_id or not first_name or not last_name:
+            results.append({'rusa_id': rusa_id, 'ok': False,
+                            'error': 'RUSA #, first name, and last name are all required.'})
+            continue
+        try:
+            _id, errors = validate_rusa_profile_fields(rusa_id, first_name, last_name)
+            results.append({'rusa_id': rusa_id, 'ok': not errors, 'error': errors[0] if errors else None})
+        except Exception as e:
+            results.append({'rusa_id': rusa_id, 'ok': False, 'error': str(e)})
+    return jsonify({'results': results})
 
 
 @register_bp.route('/calendar/<int:event_id>/register/team', methods=['POST'])
@@ -469,7 +492,11 @@ def register_team(event_id):
 
     proof_method = payload.get('proof_method') or 'brevet_card'
     rwgps_url = (payload.get('rwgps_url') or '').strip() or None
-    notes = (payload.get('notes') or '').strip() or None
+    needs_special_review = bool(payload.get('needs_special_review'))
+    notes_raw = (payload.get('notes') or '').strip()
+    if needs_special_review:
+        notes_raw = ('[NEEDS SPECIAL REVIEW: >5 members, tandems required] ' + notes_raw).strip()
+    notes = notes_raw or None
 
     existing = models.get_rider_team_registration(rider['id'], event_id)
     if existing:
@@ -499,7 +526,7 @@ def register_team(event_id):
         return jsonify({'error': 'Failed to create team registration.'}), 500
 
     members = payload.get('members') or []
-    for i, m in enumerate(members[:4]):
+    for i, m in enumerate(members):
         first = (m.get('first_name') or '').strip() or None
         last = (m.get('last_name') or '').strip() or None
         rusa = (m.get('rusa_id') or '').strip() or None

@@ -3,6 +3,7 @@
  * enhanced waiver (adult/minor, e-sig, SmartWaiver option).
  */
 (function () {
+  var SFR_WAIVER_TEXT = "I, IN CONSIDERATION of being permitted to participate in any way in the San Francisco Randonneurs\u2019 Designated Event, (\u201cActivity\u201d), I hereby acknowledge, agree, attest and represent the following:\n\n1. I FULLY UNDERSTAND that: (a) bicycle riding is dangerous and represents an extreme test of a person\u2019s physical and mental limits. I understand that participation involves risks and dangers which include, without limitation, the potential for serious bodily injury, permanent disability, paralysis, illness and death, including exposure to viral infections such as COVID-19; loss of, or damage, to equipment/property; exposure to extreme conditions and circumstances; contact or collision with other bicycle riders, people, vehicles, animals, or other natural or manmade objects; imperfect course conditions; road and surface hazards; inadequate safety measures; other riders of varying skill levels; situations beyond the immediate control of anyone; and other undefined risks and dangers which may not be readily foreseeable or are presently unknown (\u201cRisks\u201d); (b) I understand that these Risks may be caused in whole or in part by my own actions or inactions, the actions or inactions of others, or the acts, inaction or negligence of the Released Parties defined below, and (c) there may be other risks and social and economic losses, costs and damages to me, my family members and dependents either not known to me or not readily foreseeable at this time; and I FULLY ACCEPT AND ASSUME ALL SUCH RISKS AND ALL RESPONSIBILITY FOR ALL LOSSES, COSTS, AND DAMAGES I, my family members and dependents may incur as a result of my participating and riding in the Activity.\n\n2. I am qualified, in good health, and in proper physical condition to participate in the Activity. I agree and warrant that if, at any time, I believe conditions, including road hazards, to be unsafe or if I am not feeling well, I will immediately discontinue further riding of the Activity.\n\n3. TO THE FULLEST EXTENT PERMITTED BY LAW, I, ON BEHALF OF MYSELF, MY FAMILY MEMBERS AND DEPENDENTS HEREBY RELEASE, DISCHARGE, AND COVENANT NOT TO SUE Randonneurs USA (\u201cRUSA\u201d), the San Francisco Randonneurs, the Event Organizer, their respective administrators, directors, agents, officers, members, volunteers, other riders, and owners and lessors of premises on which the Activity takes place, (\u201cRELEASED PARTIES\u201d) FROM ALL LIABILITY, CLAIMS, DEMANDS, ACTIONS, LOSSES, COSTS OR DAMAGES (HEREAFTER, \u201cCLAIMS\u201d) CAUSED OR ALLEGED TO BE CAUSED IN WHOLE OR IN PART BY THE ACTS OR OMISSIONS, INCLUDING NEGLIGENCE, OF THE \u201cRELEASED PARTIES\u201d, INCLUDING, WITHOUT LIMITATION, RESCUE OPERATIONS. I further agree that if, I, or anyone on my behalf, makes a Claim against any of the Released Parties, I WILL INDEMNIFY, SAVE, AND HOLD HARMLESS EACH OF THE RELEASED PARTIES from any litigation expenses, attorney fees, losses, liability, damages, or costs which any Released Party may incur as the result of such Claim.\n\nThis agreement shall be construed broadly to provide a release and waiver to the maximum extent permissible under applicable law.\n\nI AM 18 YEARS OF AGE OR OLDER, HAVE READ AND UNDERSTAND THE TERMS OF THIS AGREEMENT, UNDERSTAND THAT I AM GIVING UP SUBSTANTIAL RIGHTS BY SIGNING THIS AGREEMENT, HAVE SIGNED IT VOLUNTARILY AND WITHOUT ANY INDUCEMENT OR ASSURANCE OF ANY NATURE AND INTEND IT TO BE A COMPLETE AND UNCONDITIONAL RELEASE OF ALL LIABILITY, I INTEND THAT THIS AGREEMENT ALSO SHALL BE BINDING UPON MY HEIRS, NEXT OF KIN, REPRESENTATIVES, SUCCESSORS AND ASSIGNS. I AGREE THAT IF ANY PORTION OF THIS AGREEMENT IS HELD TO BE INVALID, THE BALANCE, NOTWITHSTANDING, SHALL CONTINUE IN FULL FORCE AND EFFECT.\n\nI acknowledge and agree that the RELEASE AND WAIVER OF LIABILITY, ASSUMPTION OF RISK, AND INDEMNITY AGREEMENT may be executed and delivered by electronic means, and the electronic signature shall be considered an original signature for all purposes and shall have the same force and effect as an original signature. An electronic signature shall include an electronically scanned original signature or an electronically transmitted original signature (e.q. via pdf).";
   var modal = document.getElementById('registration-modal');
   if (!modal) return;
 
@@ -25,12 +26,15 @@
     age_certified: false,
     esign_consented: false,
     smartwaiver_completed: false,
+    initials: '',
+    waiver_date: '',
   };
 
   var teamData = {
     team_name: '',
     proof_method: 'brevet_card',
     rwgps_url: '',
+    draft_route_accepted: false,
     notes: '',
     members: [
       { first_name: '', last_name: '', rusa_id: '' },
@@ -43,6 +47,8 @@
       method: 'in_app', is_minor: false, signatory_name: '',
       guardian_name: '', guardian_phone: '', age_certified: false,
       esign_consented: false, smartwaiver_completed: false,
+      initials: '',
+      waiver_date: new Date().toISOString().slice(0, 10),
     };
   }
 
@@ -66,6 +72,17 @@
     return parts.length ? base + parts.join('&') : base.slice(0, -1);
   }
 
+  function riderFullName() {
+    var p = (profileData && profileData.profile) || {};
+    return ((p.first_name || '') + ' ' + (p.last_name || '')).trim();
+  }
+
+  function signatoryNameMatches() {
+    var expected = riderFullName().toLowerCase();
+    var entered = (waiverData.signatory_name || '').trim().toLowerCase();
+    return expected.length > 0 && entered === expected;
+  }
+
   function isWaiverValid() {
     if (waiverData.method === 'smartwaiver') return waiverData.smartwaiver_completed;
     if (waiverData.is_minor) {
@@ -73,6 +90,7 @@
     }
     return !!(waiverData.age_certified
       && waiverData.signatory_name && waiverData.signatory_name.trim().length > 1
+      && waiverData.initials && waiverData.initials.trim().length > 0
       && waiverData.esign_consented);
   }
 
@@ -130,7 +148,7 @@
     profileEditing = false;
     step = 1;
     resetWaiverData();
-    teamData = { team_name: '', proof_method: 'brevet_card', rwgps_url: '', notes: '',
+    teamData = { team_name: '', proof_method: 'brevet_card', rwgps_url: '', draft_route_accepted: false, notes: '',
       members: [{ first_name: '', last_name: '', rusa_id: '' }, { first_name: '', last_name: '', rusa_id: '' }] };
   }
 
@@ -158,7 +176,14 @@
         '<label class="reg-waiver-check"><input type="checkbox" name="age_certified"' +
         (waiverData.age_certified ? ' checked' : '') + '> I, the participant, confirm that I am 18 years of age or older.</label>';
       var waiverFormatted = (waiverText || '').replace(/\n\n/g, '</p><p>').replace(/^/, '<p>').replace(/$/, '</p>');
+      var today = new Date().toISOString().slice(0, 10);
+      if (!waiverData.waiver_date) waiverData.waiver_date = today;
+      var maxDate = (ev && ev.date) ? ev.date : '';
       html +=
+        '<div style="margin-bottom:14px;">' +
+        '<p style="font-weight:700;font-size:0.95rem;margin-bottom:6px;">RELEASE AND WAIVER OF LIABILITY, ASSUMPTION OF RISK, AND INDEMNITY AGREEMENT</p>' +
+        '<p style="color:#b91c1c;font-weight:600;font-size:0.82rem;">WARNING: READ THIS AGREEMENT CAREFULLY. IT INCLUDES A RELEASE OF LIABILITY AND WAIVER OF LEGAL RIGHTS. IF YOU SIGN THIS AGREEMENT YOU ARE GIVING UP THE RIGHT TO SUE RANDONNEURS USA AND OTHER PARTIES.</p>' +
+        '</div>' +
         '<div class="reg-waiver-minor-toggle">' +
         '<p class="reg-waiver-question"><strong>Please select who will be participating.</strong></p>' +
         '<label class="reg-radio-btn"><input type="radio" name="is_minor" value="adult"' +
@@ -167,15 +192,26 @@
         (waiverData.is_minor ? ' checked' : '') + '> Minor (under 18)</label>' +
         '</div>' +
         ageCheck + guardianFields +
-        '<div class="reg-waiver-box">' + waiverFormatted + '</div>' +
+        // Red header + Initials field sit ABOVE the scrollable body
+        '<p style="color:#b91c1c;font-weight:700;margin:10px 0 6px;">I understand that this agreement is a release of liability and waiver of legal rights, giving up the right to sue Randonneurs USA and other parties.</p>' +
+        '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">' +
+        '<label class="reg-form-field" style="margin:0"><span style="font-size:0.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Initial</span>' +
+        '<input name="waiver_initials" type="text" maxlength="5" value="' + esc(waiverData.initials) + '" placeholder="e.g. JD" style="max-width:72px;text-transform:uppercase;font-size:1rem;font-weight:600;text-align:center;"></label>' +
+        '</div>' +
+        // Scrollable waiver body with Date and red footer inside
+        '<div class="reg-waiver-box">' +
+        waiverFormatted +
+        '<p style="margin-top:12px;"><strong>Date:</strong> <input name="waiver_date" type="date" value="' + esc(waiverData.waiver_date) + '"' + (maxDate ? ' max="' + esc(maxDate) + '"' : '') + ' style="border:none;border-bottom:1px solid #999;background:transparent;font-size:0.82rem;padding:0 2px;"></p>' +
+        '</div>' +
+        '<p style="color:#b91c1c;font-weight:700;font-size:0.8rem;margin:6px 0 10px;">Do not sign this agreement unless you have read it in its entirety and understand the rights you are giving up.</p>' +
         '<div class="reg-esign-block">' +
         '<div class="reg-esign-notice">' +
         '<p><strong>Electronic Signature Consent</strong></p>' +
-        '<p>By checking the box and typing your name below, you agree that your electronic signature is the legally binding equivalent of your handwritten signature. You consent to be legally bound by this waiver\'s terms. You agree that no certification authority or other third-party verification is necessary to validate your electronic signature, and that the lack of such certification or third-party verification will not in any way affect the enforceability of your electronic signature or the resulting contract between you and San Francisco Randonneurs.</p>' +
-        '<p>You understand that you may request a paper copy of this document by contacting San Francisco Randonneurs. Your electronic signature on this Agreement is as valid as if you signed the Agreement in writing. You are also confirming that you are authorized to enter into this Agreement.</p>' +
+        '<p>By checking here, you are consenting to the use of your electronic signature in lieu of an original signature on paper. You have the right to request that you sign a paper copy instead. By checking here, you are waiving that right. After consent, you may, upon written request to us, obtain a paper copy of an electronic record. No fee will be charged for such copy and no special hardware or software is required to view it. Your agreement to use an electronic signature with us for any documents will continue until such time as you notify us in writing that you no longer wish to use an electronic signature. There is no penalty for withdrawing your consent. You should always make sure that we have a current email address in order to contact you regarding any changes, if necessary.</p>' +
         '</div>' +
         '<label class="reg-form-field"><span>Type your full legal name as your electronic signature</span>' +
-        '<input name="signatory_name" type="text" value="' + esc(waiverData.signatory_name) + '" placeholder="Full legal name" autocomplete="name"></label>' +
+        '<input name="signatory_name" type="text" value="' + esc(waiverData.signatory_name) + '" placeholder="' + esc(riderFullName()) + '" autocomplete="name"></label>' +
+        '<p style="color:#6b7280;font-size:0.78rem;margin:-6px 0 8px;">Must match your registered name exactly: <strong>' + esc(riderFullName()) + '</strong></p>' +
         '<label class="reg-waiver-check"><input type="checkbox" name="esign_consented"' +
         (waiverData.esign_consented ? ' checked' : '') + '> I have read and agree to the terms of this waiver and I consent to the use of my electronic signature in lieu of a handwritten signature.</label>' +
         '</div>';
@@ -229,6 +265,12 @@
 
     var sigName = section.querySelector('input[name="signatory_name"]');
     if (sigName) sigName.addEventListener('input', function () { waiverData.signatory_name = sigName.value; syncNextBtn(); });
+
+    var initials = section.querySelector('input[name="waiver_initials"]');
+    if (initials) initials.addEventListener('input', function () { waiverData.initials = initials.value.toUpperCase(); syncNextBtn(); });
+
+    var wDate = section.querySelector('input[name="waiver_date"]');
+    if (wDate) wDate.addEventListener('change', function () { waiverData.waiver_date = wDate.value; });
 
     var esign = section.querySelector('input[name="esign_consented"]');
     if (esign) esign.addEventListener('change', function () { waiverData.esign_consented = esign.checked; syncNextBtn(); });
@@ -392,7 +434,7 @@
     return (
       (blockers ? '<ul class="reg-blockers">' + blockers + '</ul>' : '') +
       profileBlock +
-      renderWaiverSection((profileData.waiver && profileData.waiver.text) || '', ev)
+      renderWaiverSection((profileData.waiver && profileData.waiver.text) || SFR_WAIVER_TEXT, ev)
     );
   }
 
@@ -476,7 +518,25 @@
     els.body.querySelector('[data-reg-back]').addEventListener('click', function () {
       mode === 'bulk' ? renderBulkStep1() : renderStep1();
     });
-    els.body.querySelector('[data-reg-next]').addEventListener('click', renderStep3);
+    els.body.querySelector('[data-reg-next]').addEventListener('click', function () {
+      if (!signatoryNameMatches()) {
+        var sigInput = els.body.querySelector('input[name="signatory_name"]');
+        if (sigInput) {
+          sigInput.style.borderColor = '#ef4444';
+          sigInput.focus();
+          var err = els.body.querySelector('.reg-sig-error');
+          if (!err) {
+            err = document.createElement('p');
+            err.className = 'reg-sig-error';
+            err.style.cssText = 'color:#ef4444;font-size:0.78rem;margin:4px 0 8px;';
+            sigInput.parentNode.insertAdjacentElement('afterend', err);
+          }
+          err.textContent = 'Name must match exactly: ' + riderFullName();
+        }
+        return;
+      }
+      renderStep3();
+    });
     bindProfileSection();
   }
 
@@ -605,6 +665,8 @@
       guardian_phone: waiverData.guardian_phone || null,
       age_certified: waiverData.age_certified,
       esign_consented: waiverData.esign_consented,
+      waiver_initials: waiverData.initials || null,
+      waiver_signed_date: waiverData.waiver_date || null,
     };
     if (mode === 'bulk') body.event_ids = eventIds;
 
@@ -666,74 +728,120 @@
       '<span class="reg-member-label">Member ' + (idx + 2) + '</span>' +
       '<input name="member_' + idx + '_first" type="text" placeholder="First name" value="' + esc(m.first_name) + '" class="reg-member-input">' +
       '<input name="member_' + idx + '_last" type="text" placeholder="Last name" value="' + esc(m.last_name) + '" class="reg-member-input">' +
-      '<input name="member_' + idx + '_rusa" type="text" placeholder="RUSA # (opt.)" value="' + esc(m.rusa_id) + '" class="reg-member-input reg-member-rusa">' +
+      '<input name="member_' + idx + '_rusa" type="text" placeholder="RUSA #" value="' + esc(m.rusa_id) + '" class="reg-member-input reg-member-rusa" required>' +
       '</div>';
   }
 
   function renderTeamStep2() {
     setStep(2);
     var profile = profileData ? profileData.profile : {};
+    var atCap = false; // no hard cap — warn instead
+    var overFive = (1 + teamData.members.length) > 5; // captain + additional > 5
     var membersHtml = teamData.members.map(function (m, i) { return memberRow(i, m); }).join('');
-    var rwgpsField = teamData.proof_method === 'gps_track'
-      ? '<label class="reg-form-field"><span>RWGPS route URL</span>' +
-        '<input name="rwgps_url" type="url" placeholder="https://ridewithgps.com/routes/…" value="' + esc(teamData.rwgps_url) + '"></label>'
-      : '';
+
     els.body.innerHTML =
       '<p class="reg-section-title">Team details</p>' +
       '<div class="reg-team-form">' +
       '<label class="reg-form-field"><span>Team name</span>' +
       '<input name="team_name" type="text" value="' + esc(teamData.team_name) + '" placeholder="e.g. Bay Randonneurs Express" required></label>' +
+
       '<div class="reg-captain-info">' +
       '<p class="reg-section-label">Captain (you)</p>' +
-      '<div class="reg-profile-grid">' +
-      field('Name', (profile.first_name || '') + ' ' + (profile.last_name || '')) +
-      field('RUSA #', profile.rusa_id || '—') +
+      '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.85rem;">' +
+      '<span><strong>Name:</strong> ' + esc((profile.first_name || '') + ' ' + (profile.last_name || '')) + '</span>' +
+      '<span><strong>Email:</strong> ' + esc(profile.email || '—') + '</span>' +
+      '<span><strong>RUSA #:</strong> ' + esc(profile.rusa_id || '—') + '</span>' +
       '</div></div>' +
-      '<p class="reg-section-label">Team members (2–4 additional riders)</p>' +
+
+      '<p class="reg-section-label">Team members (2–4 additional riders) — RUSA # required for all</p>' +
       '<div class="reg-team-members">' + membersHtml + '</div>' +
-      '<button type="button" class="reg-secondary-btn" data-reg-add-member style="margin-bottom:14px">+ Add another member</button>' +
-      '<p class="reg-section-label">Proof method</p>' +
+      '<div id="reg-more-than-five" style="' + (overFive ? '' : 'display:none;') + 'margin:10px 0 8px;padding:10px 12px;background:#fef9c3;border:1px solid #fde047;border-radius:8px;font-size:0.8rem;">' +
+        '<p style="margin:0;font-weight:600;">⚠ More than 5 team members requires tandems.</p>' +
+      '</div>' +
+      '<button type="button" class="reg-secondary-btn" data-reg-add-member style="margin:8px 0 14px">+ Add another member</button>' +
+
+      '<p class="reg-section-label" style="margin-top:14px;">RidewithGPS route link</p>' +
+      '<label class="reg-form-field" style="margin-bottom:4px;">' +
+      '<input name="rwgps_url" type="url" placeholder="https://ridewithgps.com/routes/…" value="' + esc(teamData.rwgps_url) + '"></label>' +
+      '<p style="font-size:0.78rem;color:#6b7280;margin-bottom:14px;">Draft routes are due no later than 10 days before the event. Final routes must be received no later than 7 days before the event. Mark penultimate control location (example: 22 hour control for Fleche, 11.5 hour control for DART, etc.). Send your ridewithgps link to <a href="mailto:fleche@sfrandonneurs.org">fleche@sfrandonneurs.org</a>.</p>' +
+
+      '<p class="reg-section-label">Proof of passage</p>' +
+      '<p style="font-size:0.8rem;color:#4b5563;margin-bottom:8px;">Teams must use all of one form of proof of passage, or all of the other form. If your team uses brevet cards, then your route must include <em>all</em> needed controls and <em>final</em> routes will be due no less than 10 days before the event.</p>' +
       '<div class="reg-proof-toggle">' +
       '<label class="reg-radio-btn"><input type="radio" name="proof_method" value="brevet_card"' +
       (teamData.proof_method !== 'gps_track' ? ' checked' : '') + '> Brevet card</label>' +
       '<label class="reg-radio-btn"><input type="radio" name="proof_method" value="gps_track"' +
       (teamData.proof_method === 'gps_track' ? ' checked' : '') + '> GPS track (RWGPS)</label>' +
       '</div>' +
-      '<div id="rwgps-field">' + rwgpsField + '</div>' +
+
+      '<label class="reg-waiver-check" style="margin:12px 0 14px;">' +
+      '<input type="checkbox" name="draft_route_accepted"' + (teamData.draft_route_accepted ? ' checked' : '') + '> ' +
+      'I understand that my draft route is subject to review and approval by the organizer before the event.</label>' +
+
       '<label class="reg-form-field"><span>Notes for organizer (optional)</span>' +
-      '<input name="notes" type="text" value="' + esc(teamData.notes) + '" placeholder="Any special notes…"></label>' +
+      '<input name="notes" type="text" value="' + esc(teamData.notes) + '" placeholder="Extra team members, special notes…"></label>' +
       '</div>' +
+      '<div id="reg-team-error" style="color:#ef4444;font-size:0.82rem;display:none;margin-bottom:8px;"></div>' +
+      '<p style="font-size:0.82rem;color:#4b5563;margin-bottom:10px;">Once your team composition has settled, send <strong>$5.00 per team</strong> via PayPal to <a href="mailto:treasurer@sfrandonneurs.org">treasurer@sfrandonneurs.org</a> — include the team name as a note.</p>' +
       '<div class="reg-actions"><button type="button" class="reg-secondary-btn" data-reg-back>← Back</button>' +
       '<button type="button" class="reg-primary-btn" data-reg-next>Review & Confirm →</button></div>';
 
     els.body.querySelector('[data-reg-back]').addEventListener('click', renderStep1);
     els.body.querySelector('[data-reg-next]').addEventListener('click', function () {
       collectTeamFormData();
-      renderTeamStep3();
+      var errDiv = document.getElementById('reg-team-error');
+
+      // Completeness: RUSA # required for all named members
+      var missingRusa = teamData.members.filter(function (m) {
+        return (m.first_name || m.last_name) && !m.rusa_id;
+      });
+      if (missingRusa.length) {
+        if (errDiv) { errDiv.textContent = 'RUSA # is required for all team members.'; errDiv.style.display = 'block'; }
+        return;
+      }
+
+      // RUSA ID + name validation via API
+      var toValidate = teamData.members
+        .filter(function (m) { return m.first_name && m.last_name && m.rusa_id; })
+        .map(function (m) { return { rusa_id: m.rusa_id, first_name: m.first_name, last_name: m.last_name }; });
+
+      if (!toValidate.length) { renderTeamStep3(); return; }
+
+      var nextBtn = els.body.querySelector('[data-reg-next]');
+      if (nextBtn) { nextBtn.disabled = true; nextBtn.textContent = 'Validating RUSA IDs…'; }
+      if (errDiv) errDiv.style.display = 'none';
+
+      fetch('/rusa/validate-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ members: toValidate })
+      }).then(function (r) { return r.json(); }).then(function (data) {
+        var failures = (data.results || []).filter(function (r) { return !r.ok; });
+        if (failures.length) {
+          var msgs = failures.map(function (r) { return 'RUSA ' + r.rusa_id + ': ' + (r.error || 'name/ID mismatch'); }).join(' · ');
+          if (errDiv) { errDiv.textContent = msgs; errDiv.style.display = 'block'; }
+          if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = 'Review & Confirm →'; }
+        } else {
+          renderTeamStep3();
+        }
+      }).catch(function () {
+        // Network error — proceed and let server re-validate
+        if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = 'Review & Confirm →'; }
+        renderTeamStep3();
+      });
     });
 
     var addMemberBtn = els.body.querySelector('[data-reg-add-member]');
     if (addMemberBtn) {
       addMemberBtn.addEventListener('click', function () {
-        if (teamData.members.length >= 4) { addMemberBtn.disabled = true; return; }
-        teamData.members.push({ first_name: '', last_name: '', rusa_id: '' });
         collectTeamFormData();
+        teamData.members.push({ first_name: '', last_name: '', rusa_id: '' });
         renderTeamStep2();
       });
     }
 
-    els.body.querySelectorAll('input[name="proof_method"]').forEach(function (radio) {
-      radio.addEventListener('change', function () {
-        teamData.proof_method = radio.value;
-        var rwgpsDiv = document.getElementById('rwgps-field');
-        if (rwgpsDiv) {
-          rwgpsDiv.innerHTML = teamData.proof_method === 'gps_track'
-            ? '<label class="reg-form-field"><span>RWGPS route URL</span>' +
-              '<input name="rwgps_url" type="url" placeholder="https://ridewithgps.com/routes/…" value="' + esc(teamData.rwgps_url) + '"></label>'
-            : '';
-        }
-      });
-    });
+    var draftCheck = els.body.querySelector('input[name="draft_route_accepted"]');
+    if (draftCheck) draftCheck.addEventListener('change', function () { teamData.draft_route_accepted = draftCheck.checked; });
   }
 
   function collectTeamFormData() {
@@ -743,6 +851,10 @@
     if (notes) teamData.notes = notes.value;
     var rwgps = els.body.querySelector('input[name="rwgps_url"]');
     if (rwgps) teamData.rwgps_url = rwgps.value;
+    var proofRadio = els.body.querySelector('input[name="proof_method"]:checked');
+    if (proofRadio) teamData.proof_method = proofRadio.value;
+    var draftCheck = els.body.querySelector('input[name="draft_route_accepted"]');
+    if (draftCheck) teamData.draft_route_accepted = draftCheck.checked;
     teamData.members.forEach(function (m, i) {
       var f = els.body.querySelector('input[name="member_' + i + '_first"]');
       var l = els.body.querySelector('input[name="member_' + i + '_last"]');
@@ -784,6 +896,7 @@
       proof_method: teamData.proof_method,
       rwgps_url: teamData.rwgps_url || null,
       notes: teamData.notes || null,
+      needs_special_review: (1 + teamData.members.length) > 5,
       members: teamData.members.filter(function (m) { return m.first_name || m.last_name || m.rusa_id; }),
     };
     fetch('/calendar/' + eventId + '/register/team', {

@@ -2707,6 +2707,36 @@ def list_registration_events(limit=80):
     )
 
 
+def get_admin_events(include_past=False):
+    """All events with signup/result counts for the admin events view.
+
+    When include_past is False only events from today forward are returned.
+    When True all historical events are included as well, newest-past first
+    within the past bucket and soonest-first within future/current.
+    Returns a single flat list; the caller is responsible for splitting into
+    this-week / upcoming / past buckets using the ``date`` field.
+    """
+    date_filter = "" if include_past else "WHERE e.date >= CURRENT_DATE "
+    return db.query(
+        "SELECT e.id, e.name, e.date, e.distance_km, e.region, e.start_time, "
+        "       e.start_location, e.registration_enabled, e.club_id, "
+        "       c.name AS club_name, "
+        "       COUNT(s.id) FILTER (WHERE s.registration_status IS NOT NULL) AS registered_count, "
+        "       COUNT(s.id) FILTER (WHERE s.status = %s) AS going_count, "
+        "       COUNT(s.id) FILTER (WHERE s.registration_status = 'exception') AS exception_count, "
+        "       COUNT(s.id) FILTER (WHERE s.status IN (%s, %s, %s, %s)) AS result_count, "
+        "       COUNT(s.id) AS total_count "
+        "FROM rp_brevet_event e "
+        "LEFT JOIN rp_club c ON c.id = e.club_id "
+        "LEFT JOIN rp_event_signup s ON s.event_id = e.id "
+        + date_filter +
+        "GROUP BY e.id, c.name "
+        "ORDER BY e.date ASC, e.distance_km ASC",
+        (RideStatus.GOING.value, RideStatus.FINISHED.value, RideStatus.DNF.value,
+         RideStatus.DNS.value, RideStatus.OTL.value),
+    )
+
+
 def get_admin_event_roster(event_id):
     """Full signup roster for operator management (PII allowed)."""
     return db.query(
@@ -2837,15 +2867,17 @@ def record_waiver_acceptance_v2(event_id, rider_id, waiver_version_id,
                                  signatory_name=None, guardian_name=None,
                                  guardian_phone=None, age_certified=False,
                                  esign_consented=False, ride_phone=None,
-                                 waiver_method='in_app', smartwaiver_id=None):
+                                 waiver_method='in_app', smartwaiver_id=None,
+                                 initials=None, waiver_signed_date=None):
     """Enhanced waiver acceptance with e-sig fields; upserts on (event_id, rider_id, waiver_version_id)."""
     snapshot = profile_snapshot if isinstance(profile_snapshot, str) else Json(profile_snapshot)
     return db.execute(
         "INSERT INTO rp_waiver_acceptance "
         "(event_id, rider_id, waiver_version_id, profile_snapshot, "
         " is_minor, signatory_name, guardian_name, guardian_phone, "
-        " age_certified, esign_consented, waiver_method, smartwaiver_id) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        " age_certified, esign_consented, waiver_method, smartwaiver_id, "
+        " initials, waiver_signed_date) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
         "ON CONFLICT (event_id, rider_id, waiver_version_id) DO UPDATE SET "
         "  is_minor = EXCLUDED.is_minor, "
         "  signatory_name = EXCLUDED.signatory_name, "
@@ -2855,10 +2887,13 @@ def record_waiver_acceptance_v2(event_id, rider_id, waiver_version_id,
         "  esign_consented = EXCLUDED.esign_consented, "
         "  waiver_method = EXCLUDED.waiver_method, "
         "  smartwaiver_id = EXCLUDED.smartwaiver_id, "
+        "  initials = EXCLUDED.initials, "
+        "  waiver_signed_date = EXCLUDED.waiver_signed_date, "
         "  accepted_at = NOW() "
         "RETURNING id",
         (event_id, rider_id, waiver_version_id, snapshot,
          is_minor, signatory_name, guardian_name, guardian_phone,
-         age_certified, esign_consented, waiver_method, smartwaiver_id),
+         age_certified, esign_consented, waiver_method, smartwaiver_id,
+         initials, waiver_signed_date),
         returning=True,
     )
