@@ -1306,7 +1306,7 @@ def get_rider_past_results(rider_id):
     an organizer approves it, then ``Finished``.
     """
     return db.query(
-        "SELECT s.event_id, s.status, s.finish_time, s.homologation_number, e.name, e.date, e.distance_km, e.region, "
+        "SELECT s.event_id, s.status, s.finish_time, s.homologation_number, s.evidence_submission_allowed, e.name, e.date, e.distance_km, e.region, "
         "       vs.id AS submission_id, vs.machine_decision, vs.organizer_decision "
         "FROM rp_event_signup s "
         "JOIN rp_brevet_event e ON e.id = s.event_id "
@@ -1329,7 +1329,7 @@ def get_rider_completed_validation_events(rider_id):
     submission without making riders guess which events are eligible.
     """
     return db.query(
-        "SELECT s.event_id, s.finish_time, s.homologation_number, e.name, e.date, e.distance_km, "
+        "SELECT s.event_id, s.finish_time, s.homologation_number, s.evidence_submission_allowed, e.name, e.date, e.distance_km, "
         "       e.region, e.rwgps_url, e.start_location, e.start_time, "
         "       vs.id AS submission_id, vs.machine_decision, "
         "       vs.organizer_decision, vs.created_at AS submitted_at "
