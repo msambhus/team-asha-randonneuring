@@ -55,6 +55,7 @@ def fetch_rider_results(rusa_id):
                 ride_date = datetime.strptime(date_str, '%Y/%m/%d').date()
                 distance_km = int(km_str.replace(',', ''))
                 results.append({
+                    'homologation_number': cert_no,
                     'date': ride_date,
                     'distance_km': distance_km,
                     'finish_time': time_str,

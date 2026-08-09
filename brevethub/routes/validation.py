@@ -71,9 +71,22 @@ def _render_form(event, *, status=200, values=None):
     rider = current_rider()
     strava = load_strava_section(rider) if rider else {'connected': False}
     activities = (strava.get('stats') or {}).get('activities') or []
+    activities = [a for a in activities if a.get('activity_type') in ('Ride', 'EBikeRide')]
+    selected_id = str((values or {}).get('strava_activity_id') or '')
+    if not selected_id and activities:
+        target_distance = float(event.get('distance_km') or 0)
+        def score(activity):
+            day = str(activity.get('start_date_local') or '')[:10]
+            try:
+                date_penalty = abs((datetime.fromisoformat(day).date() - event['date']).days)
+            except (ValueError, TypeError, KeyError):
+                date_penalty = 9999
+            return (date_penalty, abs((float(activity.get('distance') or 0) / 1000) - target_distance))
+        selected_id = str(min(activities, key=score).get('strava_activity_id') or '')
     plan = models.get_brevet_route_plan_with_stops(event['id']) or {'stops': []}
     return render_template('validation_submit.html', event=event, values=values or {},
-                           strava_activities=activities, controls=plan.get('stops') or []), status
+                           strava_activities=activities, selected_strava_activity_id=selected_id,
+                           controls=plan.get('stops') or []), status
 
 
 @validation_bp.route('/my/validations')
@@ -162,6 +175,7 @@ def submit_validation(event_id):
             except ValueError:
                 flash('Control proof orders must be comma-separated whole numbers.', 'error')
                 return _render_form(event, 400, request.form)
+    route_plan = models.get_brevet_route_plan_with_stops(event_id) or {'plan': {}, 'stops': []}
     traditional = False
     for uploaded in request.files.getlist('proof_files'):
         if not uploaded or not uploaded.filename:
@@ -173,14 +187,43 @@ def submit_validation(event_id):
             return _render_form(event, 413, request.form)
         traditional = True
         file_rows.append(('traditional', uploaded, data, fingerprint(data)))
+    # Per-control traditional proof is the primary organizer-friendly shape. Each
+    # control can carry its own receipt/photo and/or a short note; the selected
+    # control orders are inferred from whichever row has evidence.
+    per_control_notes = []
+    for control in (route_plan.get('stops') or []):
+        if control.get('stop_type') in ('start', 'finish'):
+            continue
+        order = str(control.get('stop_order'))
+        row_description = (request.form.get(f'proof_description_{order}') or '').strip()
+        row_files = request.files.getlist(f'proof_files_{order}')
+        if row_description or any(f and f.filename for f in row_files):
+            try:
+                evidence_orders.add(int(order))
+            except ValueError:
+                pass
+        if row_description:
+            traditional = True
+            per_control_notes.append(f"Control {order}: {row_description}")
+        for uploaded in row_files:
+            if not uploaded or not uploaded.filename:
+                continue
+            data = uploaded.read()
+            total_bytes += len(data)
+            if total_bytes > _MAX_UPLOAD:
+                flash('All evidence uploads must total 4 MB or less.', 'error')
+                return _render_form(event, 413, request.form)
+            traditional = True
+            file_rows.append(('traditional', uploaded, data, fingerprint(data)))
     proof_description = (request.form.get('proof_description') or '').strip()
+    if per_control_notes:
+        proof_description = '\n'.join(per_control_notes + ([proof_description] if proof_description else []))
     traditional = traditional or bool(proof_description)
     if not recordings and not traditional and not strava_id:
         flash('Add a FIT/GPX recording, an analyzed Strava activity, or traditional proof before submitting.', 'error')
         return _render_form(event, 400, request.form)
 
     points = combine_recordings(recordings) if recordings else []
-    route_plan = models.get_brevet_route_plan_with_stops(event_id) or {'plan': {}, 'stops': []}
     route_id = (route_plan.get('plan') or {}).get('rwgps_route_id')
     route = models.get_rp_route_elevation_track(route_id) if route_id else []
     hashes = [row[3] for row in file_rows]
