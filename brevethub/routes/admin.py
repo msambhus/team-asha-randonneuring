@@ -120,8 +120,89 @@ def _validation_visualization(submission):
                         'grade': round(grade, 2), 'headwind_mph': headwind_mph, 'anomaly': anomaly})
     route_json = [{'lat': float(p['lat']), 'lng': float(p['lng']), 'dist_m': float(p.get('dist_m') or 0),
                    'e_m': float(p.get('e_m') or 0)} for p in route]
+    # Build a control-by-control comparison from the persisted plan and the
+    # submitted track. Stream metrics are optional: FIT/Strava recordings may
+    # not contain heart rate or power.
+    segment_rows = []
+    plan_bundle = models.get_brevet_route_plan_with_stops(submission['event_id']) or {'stops': []}
+    stream_metrics = {}
+    if submission.get('strava_activity_id'):
+        cached = models.get_ride_analysis(submission['rider_id'], int(submission['strava_activity_id']))
+        blob = cached.get('activity_streams') if cached else None
+        if blob:
+            try:
+                stream_metrics = json.loads(zlib.decompress(bytes(blob)))
+            except (TypeError, ValueError, zlib.error, json.JSONDecodeError):
+                stream_metrics = {}
+    previous_mi = 0.0
+    event = models.get_brevet_event_full(submission['event_id']) or submission
+    official_start = _official_start(event)
+
+    def fmt_minutes(value):
+        if value is None:
+            return '—'
+        value = int(round(float(value)))
+        return f'{value // 60}:{value % 60:02d}'
+
+    distance_stream = stream_metrics.get('distance') or []
+    hr_stream = stream_metrics.get('heartrate') or []
+    power_stream = stream_metrics.get('watts') or []
+    time_stream = stream_metrics.get('time') or []
+    for stop in plan_bundle.get('stops') or []:
+        if str(stop.get('stop_type') or '').lower() in ('start', 'finish'):
+            continue
+        end_mi = float(stop.get('distance_miles') or 0)
+        start_mi = previous_mi
+        previous_mi = end_mi
+        segment_points = [p for p in track if start_mi * 1609.344 <= p['distance_m'] <= end_mi * 1609.344]
+        if len(segment_points) >= 2:
+            elapsed_s = max(0, (segment_points[-1]['timestamp'] - segment_points[0]['timestamp']).total_seconds())
+            moving_s = sum(max(0, (b['timestamp'] - a['timestamp']).total_seconds())
+                           for a, b in zip(segment_points, segment_points[1:]) if b.get('speed_mph', 0) >= 1)
+            moving_distance_m = max(0, segment_points[-1]['distance_m'] - segment_points[0]['distance_m'])
+            avg_speed = moving_distance_m / max(1, moving_s) * 2.236936
+            actual_elapsed_min = ((segment_points[-1]['timestamp'] - official_start).total_seconds() / 60
+                                  if official_start else None)
+        else:
+            elapsed_s = moving_s = 0
+            avg_speed = actual_elapsed_min = None
+        stream_values = [i for i, d in enumerate(distance_stream)
+                         if d is not None and start_mi * 1609.344 <= float(d) <= end_mi * 1609.344]
+        avg_hr = (sum(float(hr_stream[i]) for i in stream_values if i < len(hr_stream) and hr_stream[i] is not None) /
+                  max(1, sum(1 for i in stream_values if i < len(hr_stream) and hr_stream[i] is not None))) if stream_values else None
+        avg_power = (sum(float(power_stream[i]) for i in stream_values if i < len(power_stream) and power_stream[i] is not None) /
+                     max(1, sum(1 for i in stream_values if i < len(power_stream) and power_stream[i] is not None))) if stream_values else None
+        wind_values = [s['headwind_mph'] for s in samples if start_mi <= s['distance_mi'] <= end_mi and s.get('headwind_mph') is not None]
+        segment_rows.append({
+            'order': stop.get('stop_order'), 'control': stop.get('location') or stop.get('notes') or 'Control',
+            'distance_mi': round(end_mi, 1), 'segment_mi': round(max(0, end_mi - start_mi), 1),
+            'cutoff': fmt_minutes(stop.get('bookend_time_min')), 'plan_bank': fmt_minutes(stop.get('time_bank_min')),
+            'ft_per_mile': round(float(stop.get('ft_per_mi') or 0)),
+            'headwind_mph': round(sum(wind_values) / len(wind_values), 1) if wind_values else None,
+            'speed_mph': round(avg_speed, 1) if avg_speed is not None else None,
+            'elapsed': fmt_minutes(elapsed_s / 60) if elapsed_s else '—',
+            'moving': fmt_minutes(moving_s / 60) if moving_s else '—',
+            'heart_rate': round(avg_hr) if avg_hr is not None else None,
+            'power': round(avg_power) if avg_power is not None else None,
+            'actual_bank': fmt_minutes(float(stop.get('bookend_time_min')) - actual_elapsed_min) if actual_elapsed_min is not None and stop.get('bookend_time_min') is not None else '—',
+        })
+    chart_w, chart_h = 980, 280
+    max_distance = max((s['distance_mi'] for s in samples), default=1) or 1
+    max_speed = max((s['speed_mph'] for s in samples), default=1) or 1
+    max_elevation = max((s['elevation_ft'] for s in samples), default=1) or 1
+    max_wind = max((abs(s['headwind_mph']) for s in samples if s.get('headwind_mph') is not None), default=1) or 1
+    def path_for(key, maximum, baseline=chart_h):
+        return ' '.join(f"{(s['distance_mi'] / max_distance) * chart_w:.1f},{baseline - (float(s.get(key) or 0) / maximum) * (chart_h - 20):.1f}" for s in samples)
+    chart = {
+        'speed_path': path_for('speed_mph', max_speed),
+        'elevation_path': path_for('elevation_ft', max_elevation),
+        'wind_path': path_for('headwind_mph', max_wind, chart_h / 2),
+        'anomalies': [{'x': round((s['distance_mi'] / max_distance) * chart_w, 1),
+                      'y': round(chart_h - (float(s.get('speed_mph') or 0) / max_speed) * (chart_h - 20), 1),
+                      'label': s['anomaly']} for s in samples if s.get('anomaly')],
+    }
     return {'route': route_json, 'track': [[p['lat'], p['lng']] for p in track], 'samples': samples,
-            'wind_available': bool(winds)}
+            'segments': segment_rows, 'chart': chart, 'wind_available': bool(winds)}
 
 
 def operator_required(view):
