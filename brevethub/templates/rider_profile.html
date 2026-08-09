@@ -143,6 +143,19 @@
   <p class="mt-4"><a class="text-primary font-semibold hover:text-accent hover:underline" href="{{ url_for('riders.directory') }}">&larr; Back to the rider directory</a></p>
 </section>
 
+{% if career.count %}
+<section class="card" id="achievements">
+  <h2 class="text-primary text-[1.3rem] font-bold mb-4">Achievements</h2>
+  <div class="flex flex-wrap gap-2">
+    {% if career.total_sr %}<span class="badge">Super Randonneur{% if career.total_sr > 1 %} &times;{{ career.total_sr }}{% endif %}</span>{% endif %}
+    {% if career.r12_awards|length %}<span class="badge">R-12{% if career.r12_awards|length > 1 %} &times;{{ career.r12_awards|length }}{% endif %}</span>{% endif %}
+    {% if pbp_years %}<span class="badge pbp-badge" style="background:linear-gradient(135deg,#805ad5,#b794f4);color:#fff;">PBP Ancien{% if pbp_years|length > 1 %} &times;{{ pbp_years|length }}{% endif %}</span>{% endif %}
+    {% if career.permanent_count %}<span class="badge">{{ career.permanent_count }} Permanent{{ '' if career.permanent_count == 1 else 's' }}</span>{% endif %}
+    {% if career.populaire_count %}<span class="badge">{{ career.populaire_count }} Populaire{{ '' if career.populaire_count == 1 else 's' }}</span>{% endif %}
+  </div>
+</section>
+{% endif %}
+
 {% for s in seasons %}
   {% if s.is_current %}
     <section class="card season season-current" id="season-{{ s.season }}">
@@ -158,7 +171,7 @@
     <h2 class="text-primary text-[1.3rem] font-bold mb-4">Past seasons</h2>
     {% for s in past %}
       <details class="season season-past" id="season-{{ s.season }}">
-        <summary>{{ s.season }} — {{ s.summary.total_km }} km, {{ s.summary.count }} ride{{ '' if s.summary.count == 1 else 's' }}{% if s.summary.is_sr %} &middot; SR{% endif %}</summary>
+        <summary>{{ s.season }} — {{ s.summary.total_km }} km, {{ s.summary.count }} ride{{ '' if s.summary.count == 1 else 's' }}{% if s.summary.sr_count %} &middot; SR{% if s.summary.sr_count > 1 %}&times;{{ s.summary.sr_count }}{% endif %}{% endif %}</summary>
         {{ season_block(s) }}
       </details>
     {% endfor %}
