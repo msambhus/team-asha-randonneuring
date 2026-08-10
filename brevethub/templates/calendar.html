@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Brevet calendar — {{ product_name }}{% endblock %}
+{% block title %}{% if host_club %}{{ host_club.name }} calendar{% else %}Brevet calendar — {{ product_name }}{% endif %}{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -1054,6 +1054,138 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
 .bulk-register-bar [data-bulk-clear] { background: transparent; color: #cbd5e1; }
 .container.section.calendar-layout {
   max-width: min(calc(100vw - 2rem), 1920px);
+  padding-top: 24px;
+}
+
+.calendar-hero {
+  color: #fff;
+  background:
+    radial-gradient(ellipse 80% 120% at 0% -20%, rgba(251, 146, 60, 0.16) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 100% at 100% 120%, rgba(56, 189, 248, 0.1) 0%, transparent 50%),
+    linear-gradient(135deg, #0b1f3a 0%, #1a3d6b 42%, #1f4f85 100%);
+  padding: 36px 16px 0;
+  box-shadow: 0 4px 24px rgba(11, 31, 58, 0.18);
+}
+.calendar-hero::after {
+  content: '';
+  display: block;
+  height: 3px;
+  margin-top: 36px;
+  background: linear-gradient(90deg, #c2410c 0%, #ea580c 35%, #fb923c 65%, rgba(251, 146, 60, 0.35) 100%);
+}
+.calendar-hero-inner {
+  width: 100%;
+  max-width: min(calc(100vw - 2rem), 1920px);
+  margin: 0 auto;
+  display: grid;
+  gap: 24px;
+  align-items: end;
+}
+@media (min-width: 768px) {
+  .calendar-hero { padding: 44px 32px 0; }
+  .calendar-hero-inner { grid-template-columns: minmax(0, 1fr) auto; gap: 32px; }
+}
+@media (min-width: 1024px) {
+  .calendar-hero { padding-left: 48px; padding-right: 48px; }
+}
+.calendar-hero-copy { min-width: 0; }
+.calendar-hero-eyebrow {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fb923c;
+  margin-bottom: 10px;
+}
+.calendar-hero h1 {
+  margin: 0 0 12px;
+  font-size: clamp(1.75rem, 3.6vw, 2.5rem);
+  line-height: 1.12;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-align: left;
+}
+.calendar-hero-lede {
+  margin: 0 0 18px;
+  max-width: 38rem;
+  font-size: 1rem;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.88);
+  text-align: left;
+}
+.calendar-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.calendar-hero-signin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 20px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ea580c, #c2410c);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.92rem;
+  text-decoration: none;
+  box-shadow: 0 2px 12px rgba(234, 88, 12, 0.35);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.calendar-hero-signin:hover {
+  background: linear-gradient(135deg, #f97316, #ea580c);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.calendar-hero-aside {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+@media (min-width: 768px) {
+  .calendar-hero-aside { align-items: flex-end; min-width: 168px; }
+}
+.calendar-hero-stat {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 14px 18px;
+  text-align: center;
+  backdrop-filter: blur(6px);
+}
+.calendar-hero-stat strong {
+  display: block;
+  font-size: 2rem;
+  line-height: 1;
+  font-weight: 800;
+  color: #fdba74;
+}
+.calendar-hero-stat span {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+}
+.calendar-hero-pill {
+  display: inline-block;
+  align-self: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.88);
+  text-align: center;
+}
+@media (min-width: 768px) {
+  .calendar-hero-pill { align-self: flex-end; }
 }
 
 @media (max-width: 1400px) {
@@ -1075,13 +1207,39 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
 {% endblock %}
 
 {% block content %}
-<div class="hero" style="padding:40px 20px;">
-  <h1>Upcoming brevets</h1>
-  <p>Browse the calendar and register for San Francisco Randonneurs brevets with one saved profile and a fresh waiver for each event.</p>
-  {% if not rider %}
-  <p style="margin-top:12px;"><a class="btn btn-primary" href="{{ url_for('auth.login', next=url_for('calendar.calendar')) }}">Sign in to register</a></p>
-  {% endif %}
-</div>
+<section class="calendar-hero">
+  <div class="calendar-hero-inner">
+    <div class="calendar-hero-copy">
+      <span class="calendar-hero-eyebrow">{% if host_club %}{{ host_club.name }}{% else %}{{ product_name }}{% endif %}</span>
+      <h1>Upcoming brevets</h1>
+      <p class="calendar-hero-lede">
+        {% if host_club %}
+        Browse the calendar and register for {{ host_club.name }} brevets with one saved profile and a fresh waiver for each event.
+        {% else %}
+        Browse upcoming randonneuring events, explore routes, and register when online signup is open.
+        {% endif %}
+      </p>
+      {% if not rider %}
+      <div class="calendar-hero-actions">
+        <a class="calendar-hero-signin" href="{{ url_for('auth.login', next=url_for('calendar.calendar', state=default_state, area=default_area) if default_state else url_for('calendar.calendar')) }}">Sign in to register</a>
+      </div>
+      {% endif %}
+    </div>
+    {% if events %}
+    <aside class="calendar-hero-aside" aria-label="Calendar summary">
+      <div class="calendar-hero-stat">
+        <strong id="calendar-hero-count">{{ hero_event_count }}</strong>
+        <span id="calendar-hero-count-label">{% if hero_region_filtered %}in this area{% else %}upcoming rides{% endif %}</span>
+      </div>
+      <div class="calendar-hero-pill" id="calendar-hero-region-pill"{% if not hero_region_filtered %} hidden{% endif %}>
+        {%- if hero_region_filtered -%}
+        {{ default_state }}{% if default_area and default_area != 'all' %} · {{ default_area }}{% endif %}
+        {%- endif -%}
+      </div>
+    </aside>
+    {% endif %}
+  </div>
+</section>
 
 <div class="container section calendar-layout">
 
@@ -1919,6 +2077,32 @@ document.addEventListener('change', function (e) {
         function (c) { return c.style.display !== 'none'; });
       sec.style.display = shown.length ? '' : 'none';
     });
+    updateHeroCount(st, ar);
+  }
+
+  function updateHeroCount(st, ar) {
+    var countEl = document.getElementById('calendar-hero-count');
+    var labelEl = document.getElementById('calendar-hero-count-label');
+    var pillEl = document.getElementById('calendar-hero-region-pill');
+    if (!countEl) return;
+    if (st === undefined) st = stateSel ? stateSel.value : 'all';
+    if (ar === undefined) ar = areaSel ? areaSel.value : 'all';
+    var visible = Array.prototype.filter.call(
+      document.querySelectorAll('.event-card[data-region], .calendar-event-row[data-region]'),
+      function (c) { return c.style.display !== 'none'; }
+    ).length;
+    countEl.textContent = visible;
+    if (labelEl) {
+      labelEl.textContent = (st !== 'all') ? 'in this area' : 'upcoming rides';
+    }
+    if (pillEl) {
+      if (st === 'all') {
+        pillEl.hidden = true;
+      } else {
+        pillEl.hidden = false;
+        pillEl.textContent = st + (ar !== 'all' ? ' · ' + ar : '');
+      }
+    }
   }
 
   function repopulateAreas() {
