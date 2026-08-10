@@ -461,9 +461,22 @@ def load_strava_section(rider):
             current_app.logger.warning('Strava stats fetch failed for rider %s: %s', rider['id'], e)
             error = 'Could not refresh Strava activity right now.'
 
+    eddington_miles = rider.get('eddington_miles')
+    eddington_km = rider.get('eddington_km')
+    if eddington_miles is None:
+        try:
+            computed = compute_and_cache_eddington(rider['id'], connection)
+            eddington_miles = computed['eddington_miles']
+            eddington_km = computed['eddington_km']
+        except Exception as e:
+            current_app.logger.warning(
+                'Eddington compute failed for rider %s: %s', rider['id'], e)
+
     return {
         'connected': True,
         'athlete_id': connection.get('strava_athlete_id'),
         'stats': stats,
         'error': error,
+        'eddington_miles': eddington_miles,
+        'eddington_km': eddington_km,
     }

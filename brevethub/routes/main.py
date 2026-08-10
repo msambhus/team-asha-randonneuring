@@ -175,7 +175,10 @@ def _profile_page_context(rider, *, field_errors=None):
     # self-logged rp_ride can never inflate them. seasons.career_summary tolerates
     # an empty history, giving a graceful zero-state for a RUSA-less rider.
     brevets = rusa.get('brevets') or []
-    career = seasons.career_summary(brevets, date.today())
+    today = date.today()
+    career = seasons.career_summary(brevets, today)
+    sr_display = seasons.sr_season_display(brevets, today)
+    r12_display = seasons.r12_streak_display(brevets, today)
     awards = seasons.ranked_awards(brevets, date.today())
     member_since = seasons.earliest_brevet_date(brevets)
     pbp_finishes = seasons.pbp_finishes(brevets)
@@ -185,12 +188,22 @@ def _profile_page_context(rider, *, field_errors=None):
     form_action = url_for('main.edit_profile')
     if is_safe_relative_url(next_url):
         form_action = url_for('main.edit_profile', next=next_url)
+    eddington_miles = rider.get('eddington_miles')
+    eddington_km = rider.get('eddington_km')
+    if strava.get('connected'):
+        if strava.get('eddington_miles') is not None:
+            eddington_miles = strava['eddington_miles']
+            eddington_km = strava.get('eddington_km')
     return {
         'rider': rider,
         'club': club,
         'rusa': rusa,
         'strava': strava,
+        'eddington_miles': eddington_miles,
+        'eddington_km': eddington_km,
         'career': career,
+        'sr_display': sr_display,
+        'r12_display': r12_display,
         'awards': awards,
         'pbp_years': pbp_years,
         'pbp_finishes': pbp_finishes,

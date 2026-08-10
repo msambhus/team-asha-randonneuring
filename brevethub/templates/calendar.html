@@ -602,47 +602,24 @@ a.event-tag.is-route:hover {
     flex-shrink: 0;
     margin-left: auto;
 }
-.event-card-footer-links {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    flex-shrink: 0;
-}
-.event-card-footer-links .signup-btn.register-primary,
-.event-card-footer-links .event-footer-plan {
+.signup-status-trailing .signup-btn.register-primary {
     border: none;
-    padding: 0;
+    padding: 7px 16px;
     min-height: auto;
     font-size: 0.88rem;
     font-weight: 700;
     border-radius: 999px;
-    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-}
-.event-card-footer-links .signup-btn.register-primary {
-    padding: 7px 16px;
     background: linear-gradient(135deg, #1e40af, #1e3a8a);
     color: #fff;
     box-shadow: 0 2px 8px rgba(30, 64, 175, 0.25);
+    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
-.event-card-footer-links .signup-btn.register-primary:hover {
+.signup-status-trailing .signup-btn.register-primary:hover {
     background: linear-gradient(135deg, #1d4ed8, #1e40af);
     color: #fff;
     text-decoration: none;
     transform: translateY(-1px);
     box-shadow: 0 4px 14px rgba(30, 64, 175, 0.35);
-}
-.event-footer-plan {
-    color: #64748b;
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 0.88rem;
-    padding: 7px 4px;
-    background: none;
-    box-shadow: none;
-}
-.event-footer-plan:hover {
-    color: #1e40af;
-    text-decoration: underline;
 }
 .signup-meta-inline {
     font-size: 0.75rem;
@@ -1466,6 +1443,23 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
           </div>
         </div>
       </label>
+      <label class="region-select-wrap event-type-filter-wrap">
+        <span class="region-select-caption">Distance</span>
+        <div class="event-type-multiselect">
+          <button type="button" class="event-type-multiselect-trigger" id="distance-trigger"
+                  aria-haspopup="listbox" aria-expanded="false" aria-controls="distance-panel">
+            <span id="distance-summary">Distance: all</span>
+          </button>
+          <div class="event-type-multiselect-panel" id="distance-panel" role="listbox" aria-label="Distance" hidden>
+            <label class="event-type-option"><input type="checkbox" value="all" data-distance-range="all" checked> All distances</label>
+            <label class="event-type-option"><input type="checkbox" value="lt200" data-distance-range="lt200"> &lt; 200 km</label>
+            <label class="event-type-option"><input type="checkbox" value="r200" data-distance-range="r200"> 200–299 km</label>
+            <label class="event-type-option"><input type="checkbox" value="r300" data-distance-range="r300"> 300–399 km</label>
+            <label class="event-type-option"><input type="checkbox" value="r400" data-distance-range="r400"> 400–599 km</label>
+            <label class="event-type-option"><input type="checkbox" value="r600" data-distance-range="r600"> 600+ km</label>
+          </div>
+        </div>
+      </label>
       {% if states %}
       <label class="region-select-wrap region-select-wrap--state">
         <span class="region-select-caption">State</span>
@@ -1729,8 +1723,7 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                         {% endif %}
                       </div>
                       <div class="signup-status-trailing">
-                        <div class="event-card-footer-links">
-                          <div class="signup-actions-primary" data-signup-primary="{{ ev.id }}">
+                        <div class="signup-actions-primary" data-signup-primary="{{ ev.id }}">
                           {% if reg and reg.registration_status and status == 'withdrawal_requested' %}
                           <span class="signup-pending">Withdrawal pending review</span>
                           {% elif not (reg and reg.registration_status) %}
@@ -1742,8 +1735,6 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                             <span class="intent-status-pill">Interested</span>
                             {% endif %}
                           {% endif %}
-                          </div>
-                          <a class="event-footer-plan" href="{{ url_for('plan.plan_view', event_id=ev.id) }}">Ride plan</a>
                         </div>
                         <div class="signup-actions" data-event-id="{{ ev.id }}" data-status="{{ status or '' }}"
                              {% if reg and reg.registration_status %}data-registered="1"
@@ -1794,23 +1785,18 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                       </small>
                     {% endif %}
                   {% else %}
+                  {% if ev.interested_count or (ev.volunteer_enabled and vsum and vsum.open_total > 0) %}
                   <div class="signup-status-row">
                     <div class="signup-status-chips">
-                  {% if ev.interested_count or (ev.volunteer_enabled and vsum and vsum.open_total > 0) %}
                       {% if ev.interested_count %}
                         <span class="event-tag">{{ ev.interested_count }} interested</span>
                       {% endif %}
                       {% if ev.volunteer_enabled and vsum and vsum.open_total > 0 %}
                         <span class="event-tag signup-meta-volunteer">🤝 {{ vsum.open_total }} volunteer role{{ 's' if vsum.open_total != 1 else '' }} open</span>
                       {% endif %}
-                  {% endif %}
-                    </div>
-                    <div class="signup-status-trailing">
-                      <div class="event-card-footer-links">
-                        <a class="event-footer-plan" href="{{ url_for('plan.plan_view', event_id=ev.id) }}">Ride plan</a>
-                      </div>
                     </div>
                   </div>
+                  {% endif %}
                   {% endif %}
                 </div>
               </article>
@@ -2225,8 +2211,23 @@ document.addEventListener('change', function (e) {
     fleche: 'Flèche / Dart',
     other: 'Other'
   };
+  var DISTANCE_LABELS = {
+    all: 'All distances',
+    lt200: '< 200 km',
+    r200: '200–299 km',
+    r300: '300–399 km',
+    r400: '400–599 km',
+    r600: '600+ km'
+  };
 
   var activeTypes = new Set(['all']);
+  var activeDistances = new Set(['all']);
+  var distanceTrigger = document.getElementById('distance-trigger');
+  var distancePanel = document.getElementById('distance-panel');
+  var distanceSummary = document.getElementById('distance-summary');
+  var distanceInputs = distancePanel
+    ? Array.prototype.slice.call(distancePanel.querySelectorAll('input[data-distance-range]'))
+    : [];
 
   function syncTypeInputs() {
     typeInputs.forEach(function (input) {
@@ -2247,22 +2248,46 @@ document.addEventListener('change', function (e) {
       : labels[0] + ' +' + (labels.length - 1);
   }
 
+  function syncDistanceInputs() {
+    distanceInputs.forEach(function (input) {
+      var d = input.getAttribute('data-distance-range');
+      input.checked = activeDistances.has('all') ? (d === 'all') : activeDistances.has(d);
+    });
+  }
+
+  function updateDistanceSummary() {
+    if (!distanceSummary) return;
+    if (activeDistances.has('all') || activeDistances.size === 0) {
+      distanceSummary.textContent = 'Distance: all';
+      return;
+    }
+    var labels = Array.from(activeDistances).map(function (d) { return DISTANCE_LABELS[d] || d; });
+    distanceSummary.textContent = labels.length === 1
+      ? labels[0]
+      : labels[0] + ' +' + (labels.length - 1);
+  }
+
   function syncFilterChrome() {
     var clearBtn = document.getElementById('cal-filter-clear');
     var typeActive = !activeTypes.has('all');
+    var distanceActive = !activeDistances.has('all');
     var st = stateSel ? stateSel.value : 'all';
     var ar = areaSel ? areaSel.value : 'all';
     var regionActive = st !== 'all' || ar !== 'all';
     if (typeTrigger) typeTrigger.classList.toggle('is-active', typeActive);
+    if (distanceTrigger) distanceTrigger.classList.toggle('is-active', distanceActive);
     if (stateSel) stateSel.classList.toggle('is-active', st !== 'all');
     if (areaSel) areaSel.classList.toggle('is-active', ar !== 'all');
-    if (clearBtn) clearBtn.hidden = !(typeActive || regionActive);
+    if (clearBtn) clearBtn.hidden = !(typeActive || distanceActive || regionActive);
   }
 
   function clearAllFilters() {
     activeTypes = new Set(['all']);
+    activeDistances = new Set(['all']);
     syncTypeInputs();
+    syncDistanceInputs();
     updateTypeSummary();
+    updateDistanceSummary();
     if (stateSel) stateSel.value = 'all';
     repopulateAreas();
     apply();
@@ -2291,9 +2316,66 @@ document.addEventListener('change', function (e) {
 
   function openTypePanel() {
     if (!typePanel || !typeTrigger) return;
+    closeDistancePanel();
     typePanel.hidden = false;
     positionTypePanel();
     typeTrigger.setAttribute('aria-expanded', 'true');
+  }
+
+  function closeDistancePanel() {
+    if (!distancePanel || !distanceTrigger) return;
+    distancePanel.hidden = true;
+    distancePanel.style.position = '';
+    distancePanel.style.left = '';
+    distancePanel.style.top = '';
+    distancePanel.style.minWidth = '';
+    distancePanel.style.zIndex = '';
+    distanceTrigger.setAttribute('aria-expanded', 'false');
+  }
+
+  function positionDistancePanel() {
+    if (!distancePanel || !distanceTrigger) return;
+    var rect = distanceTrigger.getBoundingClientRect();
+    distancePanel.style.position = 'fixed';
+    distancePanel.style.left = Math.max(8, rect.left) + 'px';
+    distancePanel.style.top = (rect.bottom + 4) + 'px';
+    distancePanel.style.minWidth = Math.max(rect.width, 220) + 'px';
+    distancePanel.style.zIndex = '500';
+  }
+
+  function openDistancePanel() {
+    if (!distancePanel || !distanceTrigger) return;
+    closeTypePanel();
+    distancePanel.hidden = false;
+    positionDistancePanel();
+    distanceTrigger.setAttribute('aria-expanded', 'true');
+  }
+
+  function eventDistanceKm(el) {
+    var raw = el.dataset.eventDistance || el.dataset.distance || '';
+    var km = parseFloat(raw);
+    return isNaN(km) ? 0 : km;
+  }
+
+  function distanceInRange(km, rangeKey) {
+    switch (rangeKey) {
+      case 'lt200': return km < 200;
+      case 'r200': return km >= 200 && km < 300;
+      case 'r300': return km >= 300 && km < 400;
+      case 'r400': return km >= 400 && km < 600;
+      case 'r600': return km >= 600;
+      default: return true;
+    }
+  }
+
+  function distanceMatches(el) {
+    if (activeDistances.has('all')) return true;
+    var km = eventDistanceKm(el);
+    var ok = false;
+    activeDistances.forEach(function (key) {
+      if (distanceInRange(km, key)) ok = true;
+    });
+    return ok;
   }
 
   function apply() {
@@ -2303,7 +2385,8 @@ document.addEventListener('change', function (e) {
       var stateOk = (st === 'all' || c.dataset.region === st);
       var areaOk = (ar === 'all' || c.dataset.area === ar);
       var typeOk = activeTypes.has('all') || activeTypes.has(c.dataset.eventCategory);
-      c.style.display = (stateOk && areaOk && typeOk) ? '' : 'none';
+      var distOk = distanceMatches(c);
+      c.style.display = (stateOk && areaOk && typeOk && distOk) ? '' : 'none';
     });
     document.querySelectorAll('.month-section').forEach(function (sec) {
       var shown = Array.prototype.filter.call(
@@ -2401,6 +2484,48 @@ document.addEventListener('change', function (e) {
     window.addEventListener('scroll', closeTypePanel, true);
   }
 
+  if (distanceTrigger && distancePanel) {
+    distanceTrigger.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (distancePanel.hidden) openDistancePanel();
+      else closeDistancePanel();
+    });
+
+    distanceInputs.forEach(function (input) {
+      input.addEventListener('change', function () {
+        var d = input.getAttribute('data-distance-range');
+        if (d === 'all') {
+          activeDistances = new Set(['all']);
+        } else {
+          activeDistances.delete('all');
+          if (input.checked) activeDistances.add(d);
+          else activeDistances.delete(d);
+          if (activeDistances.size === 0) activeDistances = new Set(['all']);
+        }
+        syncDistanceInputs();
+        updateDistanceSummary();
+        apply();
+      });
+    });
+
+    distancePanel.addEventListener('mousedown', function (e) {
+      e.stopPropagation();
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!distancePanel.contains(e.target) && e.target !== distanceTrigger && !distanceTrigger.contains(e.target)) {
+        closeDistancePanel();
+      }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeDistancePanel();
+    });
+
+    window.addEventListener('resize', closeDistancePanel);
+    window.addEventListener('scroll', closeDistancePanel, true);
+  }
+
   if (stateSel && areaSel) {
     stateSel.addEventListener('change', function () { repopulateAreas(); apply(); });
     areaSel.addEventListener('change', apply);
@@ -2417,7 +2542,9 @@ document.addEventListener('change', function (e) {
   if (clearBtn) clearBtn.addEventListener('click', clearAllFilters);
 
   syncTypeInputs();
+  syncDistanceInputs();
   updateTypeSummary();
+  updateDistanceSummary();
   apply();
 })();
 </script>

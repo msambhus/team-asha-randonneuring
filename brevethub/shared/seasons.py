@@ -280,6 +280,154 @@ def r12_current_streak(brevets, today):
     return {'months': streak, 'active': active}
 
 
+_MONTH_NAMES = (
+    '', 'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+)
+
+
+def _format_short_date(value):
+    """Human date like ``12 Apr`` for profile SR blocks."""
+    d = _coerce_date(value)
+    if d is None:
+        return None
+    return f'{d.day} {d.strftime("%b")}'
+
+
+def sr_leg_dates_by_index(brevets, season_name):
+    """All finish dates per SR tier within a season, sorted ascending."""
+    legs = {t: [] for t in SR_TIERS}
+    for b in brevets or []:
+        if season_name_for_date(b.get('date')) != season_name:
+            continue
+        tier = sr_tier_for(b.get('distance_km') or 0)
+        if tier is None:
+            continue
+        d = _coerce_date(b.get('date'))
+        if d is not None:
+            legs[tier].append(d)
+    for t in SR_TIERS:
+        legs[t] = sorted(legs[t])
+    return legs
+
+
+def _open_legs_text(open_legs):
+    n = len(open_legs)
+    if n == 0:
+        return ''
+    if n == 1:
+        return f'One leg ({open_legs[0]} km)'
+    if n == 2:
+        return f'Two legs ({open_legs[0]} km and {open_legs[1]} km)'
+    names = ', '.join(f'{d} km' for d in open_legs[:-1])
+    return f'{n} legs ({names}, and {open_legs[-1]} km)'
+
+
+def _sr_season_hint(open_legs, completed_count, series_idx, in_progress):
+    if not in_progress and completed_count >= 1:
+        return (
+            'SR complete this season.'
+            if completed_count == 1
+            else f'{completed_count} SR complete this season.'
+        )
+    if not open_legs:
+        if series_idx > 1:
+            return f'SR #{series_idx} complete this season.'
+        return 'All four distances completed this season.'
+    legs_text = _open_legs_text(open_legs)
+    if completed_count >= 1:
+        return f'SR×{completed_count} done · {legs_text} to go for series {series_idx}.'
+    return f'{legs_text} still open this season.'
+
+
+def sr_season_display(brevets, today):
+    """Current-season SR card payload for the profile page."""
+    season = current_season_name(today)
+    season_end_year = int(season.split('-')[1])
+    season_brevets = [
+        b for b in (brevets or [])
+        if season_name_for_date(b.get('date')) == season
+    ]
+    sr = sr_progress(season_brevets)
+    completed = sr['sr_count']
+    counts = sr['counts']
+    dates_by_tier = sr_leg_dates_by_index(brevets, season)
+
+    in_progress = any(counts[t] > completed for t in SR_TIERS)
+    series_idx = completed + 1 if (in_progress or completed == 0) else completed
+
+    legs = {}
+    open_legs = []
+    for t in SR_TIERS:
+        tier_count = counts[t]
+        done = tier_count >= series_idx
+        if not done:
+            open_legs.append(t)
+        idx = series_idx - 1
+        tier_dates = dates_by_tier[t]
+        d = tier_dates[idx] if done and idx < len(tier_dates) else None
+        legs[t] = {
+            'done': done,
+            'date': d.isoformat() if d else None,
+            'date_label': _format_short_date(d),
+            'count': tier_count,
+        }
+
+    return {
+        'season': season,
+        'season_label': str(season_end_year),
+        'legs': legs,
+        'is_sr': completed >= 1,
+        'sr_count': completed,
+        'series_idx': series_idx,
+        'in_progress': in_progress,
+        'counts': counts,
+        'open_legs': open_legs,
+        'hint': _sr_season_hint(open_legs, completed, series_idx, in_progress),
+    }
+
+
+def r12_streak_display(brevets, today):
+    """R-12 streak card payload: month markers toward 12 and a hint line."""
+    streak = r12_current_streak(brevets, today)
+    months_count = streak['months']
+    active = streak['active']
+    qualifying = set(_qualifying_months(brevets))
+    t = _coerce_date(today)
+    current_ym = (t.year, t.month) if t else None
+    current_month_done = current_ym in qualifying if current_ym else False
+    needs_current_month = active and not current_month_done
+
+    markers = []
+    for i in range(1, 13):
+        if i <= months_count:
+            markers.append('done')
+        elif needs_current_month and i == months_count + 1:
+            markers.append('current')
+        else:
+            markers.append('pending')
+
+    hint = ''
+    if months_count == 0 and not active:
+        hint = 'Finish a 200 km+ brevet to start an R-12 streak.'
+    elif not active:
+        hint = 'Streak paused — a 200 km+ finish restarts the count.'
+    elif needs_current_month and t:
+        hint = f'{_MONTH_NAMES[t.month]} needs a qualifying 200 km+ to keep it alive.'
+    elif months_count >= 12:
+        hint = 'Twelve consecutive months — another R-12 award earned.'
+    elif active and t:
+        remaining = 12 - months_count
+        month_word = 'months' if remaining != 1 else 'month'
+        hint = f'{remaining} more consecutive {month_word} to earn R-12.'
+    return {
+        'months': months_count,
+        'active': active,
+        'markers': markers,
+        'hint': hint,
+    }
+
+
 def career_summary(brevets, today):
     """Whole-history rider summary for the profile page, computed on the same
     Nov 1 season boundary as the rides-by-season view.
@@ -294,8 +442,18 @@ def career_summary(brevets, today):
     seasons = seasons_with_summaries(brevets, today)
     current = current_season_name(today)
     current_season = next((s for s in seasons if s['season'] == current), None)
+    current_summary = current_season['summary'] if current_season else season_summary([])
     sr_seasons = [s['season'] for s in seasons if s['summary']['is_sr']]
     total_sr = sum(s['summary']['sr_count'] for s in seasons)
+    sr_awards_by_season = [
+        {
+            'season': s['season'],
+            'year_label': s['season'].split('-')[1],
+            'count': s['summary']['sr_count'],
+        }
+        for s in seasons
+        if s['summary']['sr_count'] > 0
+    ]
     kinds = ride_kind_counts(brevets)
     return {
         'total_km': sum((b.get('distance_km') or 0) for b in brevets or []),
@@ -304,8 +462,11 @@ def career_summary(brevets, today):
         'permanent_count': kinds['permanent'],
         'populaire_count': kinds['populaire'],
         'current_season': current,
-        'current_sr': current_season['summary'] if current_season else sr_progress([]),
+        'current_season_km': current_summary['total_km'],
+        'current_season_count': current_summary['count'],
+        'current_sr': current_summary,
         'sr_seasons': sr_seasons,
+        'sr_awards_by_season': sr_awards_by_season,
         'total_sr': total_sr,
         'is_sr': bool(sr_seasons),
         'r12_awards': r12_awards(brevets),
