@@ -10,10 +10,7 @@ name: Update RUSA Calendar Events
 # (same Supabase pooler URL the app uses).
 
 on:
-  schedule:
-    # Daily at 13:00 UTC (early morning US Pacific), after the morning syncs.
-    - cron: '0 13 * * *'
-
+  # Scheduled execution moved to the Railway worker (worker/scheduler.py).
   workflow_dispatch: {}
 
 jobs:

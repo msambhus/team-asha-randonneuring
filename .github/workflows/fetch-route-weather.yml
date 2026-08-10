@@ -1,11 +1,7 @@
 name: Fetch Route Weather
 
 on:
-  schedule:
-    # Hourly — pre-fetch Open-Meteo weather for upcoming + live rides so the request
-    # path (calendar / live / weather page / mobile plan) never fetches live (TA-237).
-    - cron: '15 * * * *'
-
+  # Scheduled execution moved to the Railway worker (worker/scheduler.py).
   workflow_dispatch: {}
 
 jobs:
