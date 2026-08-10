@@ -202,6 +202,22 @@ def _weather_by_event(events):
     return result
 
 
+def _count_events_for_region(events, state=None, area=None):
+    """Count events matching the calendar region filter (mirrors client-side apply())."""
+    if not state or state == 'all':
+        return len(events)
+    count = 0
+    for ev in events:
+        region = (ev.get('region') or '').strip()
+        ev_state, _, ev_area = region.partition(':')
+        if ev_state.strip() != state:
+            continue
+        if area and area != 'all' and ev_area.strip() != area:
+            continue
+        count += 1
+    return count
+
+
 @calendar_bp.route('/calendar')
 def calendar():
     """Public upcoming-brevets calendar. Guests browse freely; a signed-in rider
@@ -288,7 +304,18 @@ def calendar():
     else:
         my_volunteer_signups = {}
 
-    default_state = (club or {}).get('state') if club else None
+    default_state = request.args.get('state') or None
+    default_area = request.args.get('area') or None
+    from brevethub.services.club_site import host_club_from_config
+    host = host_club_from_config(current_app)
+    if host:
+        default_state = default_state or host.get('filter_state')
+        default_area = default_area or host.get('filter_area')
+    elif club:
+        default_state = default_state or club.get('state')
+    hero_region_filtered = bool(default_state and default_state != 'all')
+    hero_event_count = _count_events_for_region(
+        events, default_state, default_area if hero_region_filtered else None)
     post_ride_open_by_event = {
         ev['id']: models.event_post_ride_open(ev) for ev in events
     }
@@ -302,6 +329,9 @@ def calendar():
         my_results=my_results, rider=rider, club=club, states=states,
         regions_by_state=regions_by_state,
         default_state=default_state,
+        default_area=default_area,
+        hero_event_count=hero_event_count,
+        hero_region_filtered=hero_region_filtered,
         followed_live_event_ids=followed_live_event_ids,
         my_volunteer_signups=my_volunteer_signups,
         volunteer_summary_by_event=volunteer_summary_by_event,

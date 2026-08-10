@@ -18,6 +18,8 @@ from brevethub.services.registration import (
     profile_field_status,
     profile_payload,
     confirm_registration_for_event,
+    existing_registration_payload,
+    rider_already_registered,
     rider_display_name,
     registration_open,
     resolve_rusa_id_for_save,
@@ -79,14 +81,26 @@ def _controls_for_event(event_id):
         return []
     controls = []
     for stop in bundle['stops']:
-        if (stop.get('stop_type') or '').lower() in ('start', 'finish'):
+        stop_type = (stop.get('stop_type') or 'control').lower()
+        if stop_type == 'finish':
             continue
-        name = stop.get('location') or f"Control {stop.get('stop_order')}"
         miles = stop.get('distance_miles')
-        if miles is not None:
-            km = round(float(miles) * 1.60934)
-            controls.append(f'{name} · {km}km')
-    return controls[:8]
+        km = round(float(miles) * 1.60934) if miles is not None else None
+        location = (stop.get('location') or '').strip()
+        notes = (stop.get('notes') or '').strip() or None
+        if not location:
+            if stop_type == 'start':
+                location = 'Start'
+            else:
+                location = f"Control {stop.get('stop_order')}"
+        controls.append({
+            'order': stop.get('stop_order'),
+            'type': stop_type,
+            'name': location,
+            'note': notes,
+            'km': km,
+        })
+    return controls
 
 
 @register_bp.route('/profile/edit')
@@ -242,8 +256,7 @@ def bulk_preview():
             'distance_km': event['distance_km'],
             'fee_cents': event.get('fee_cents'),
             'evaluation': evaluation,
-            'already_registered': bool(
-                existing and existing.get('registration_status')),
+            'already_registered': rider_already_registered(existing),
         })
     waiver = models.get_waiver_for_event(
         models.get_brevet_event_registration(event_ids[0]) if event_ids else None)
@@ -279,7 +292,13 @@ def register_details(event_id):
     spots_open = None
     if event.get('capacity') is not None:
         spots_open = max(0, int(event['capacity']) - confirmed)
+    rider = current_rider()
+    existing = (models.get_event_signup_registration(rider['id'], event_id)
+                if rider else None)
+    registration = existing_registration_payload(existing)
     return jsonify({
+        'already_registered': registration is not None,
+        'registration': registration,
         'event': {
             'id': event['id'],
             'name': event['name'],
@@ -422,10 +441,6 @@ def bulk_confirm():
         waiver = models.get_waiver_for_event(event)
         if not waiver or int(waiver_version_id) != int(waiver['id']):
             failed.append({'event_id': eid, 'error': 'Waiver version mismatch'})
-            continue
-        existing = models.get_event_signup_registration(rider['id'], eid)
-        if existing and existing.get('registration_status'):
-            failed.append({'event_id': eid, 'error': 'Already registered'})
             continue
         result = confirm_registration_for_event(
             rider, event, waiver=waiver, waiver_accepted=True)

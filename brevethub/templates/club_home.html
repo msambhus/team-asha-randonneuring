@@ -1,0 +1,571 @@
+{% extends "base.html" %}
+{% set calendar_url = url_for('calendar.calendar', state=host_club.filter_state, area=host_club.filter_area) if host_club.filter_state else url_for('calendar.calendar') %}
+{% block title %}{{ host_club.name }} — {{ product_name }}{% endblock %}
+{% block meta_description %}{{ host_club.name }} brevet schedule, results, and live tracking on {{ product_name }}.{% endblock %}
+
+{% block extra_head %}
+<style>
+.club-hero {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #1e3a5f 100%);
+  color: #fff;
+  padding: 48px 20px 56px;
+}
+@media (min-width: 768px) {
+  .club-hero { padding-left: 32px; padding-right: 32px; }
+}
+@media (min-width: 1024px) {
+  .club-hero { padding-left: 48px; padding-right: 48px; }
+}
+.club-hero-inner {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  align-items: start;
+}
+@media (min-width: 900px) {
+  .club-hero-inner { grid-template-columns: 1.2fr 0.8fr; gap: 40px; }
+}
+.club-hero-eyebrow {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fb923c;
+  margin-bottom: 14px;
+}
+.club-hero h1 {
+  font-size: clamp(1.85rem, 4vw, 2.75rem);
+  line-height: 1.15;
+  font-weight: 800;
+  margin: 0 0 16px;
+  text-align: left;
+}
+.club-hero-lede {
+  font-size: 1rem;
+  line-height: 1.65;
+  color: rgba(255,255,255,0.88);
+  max-width: 540px;
+  margin: 0 0 24px;
+  text-align: left;
+}
+.club-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.club-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 22px;
+  border-radius: 8px;
+  background: #ea580c;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  border: none;
+  transition: background 0.15s ease;
+}
+.club-btn-primary:hover { background: #c2410c; color: #fff; }
+.club-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 22px;
+  border-radius: 8px;
+  background: transparent;
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid rgba(255,255,255,0.35);
+}
+.club-btn-ghost:hover { background: rgba(255,255,255,0.08); color: #fff; }
+
+.club-featured {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 14px;
+  padding: 22px 22px 20px;
+  backdrop-filter: blur(6px);
+  position: relative;
+}
+.club-featured--countdown {
+  padding-right: 9rem;
+}
+@media (max-width: 520px) {
+  .club-featured--countdown { padding-right: 6.5rem; }
+}
+.club-featured-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.55);
+  margin: 0 0 10px;
+}
+.club-featured h2 {
+  font-size: 1.45rem;
+  font-weight: 800;
+  margin: 0 0 8px;
+  text-align: left;
+}
+.club-featured-meta {
+  font-size: 0.92rem;
+  color: rgba(255,255,255,0.78);
+  margin-bottom: 12px;
+}
+.club-featured-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 0.88rem;
+  color: rgba(255,255,255,0.9);
+  margin-bottom: 18px;
+}
+.club-featured-stats strong { font-weight: 700; }
+.club-featured-register {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  text-align: right;
+  z-index: 1;
+}
+@media (max-width: 520px) {
+  .club-featured-register {
+    top: 12px;
+    right: 12px;
+    left: auto;
+  }
+}
+.club-featured-countdown {
+  background: rgba(15, 23, 42, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 6px 8px 5px;
+}
+.club-featured-countdown-label {
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 4px;
+  white-space: nowrap;
+}
+.club-featured-countdown-units {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+}
+.club-featured-countdown-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 1.75rem;
+}
+.club-featured-countdown-num {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  padding: 3px 4px;
+  min-width: 1.65rem;
+  text-align: center;
+}
+.club-featured-countdown-lbl {
+  font-size: 0.48rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.38);
+  margin-top: 2px;
+}
+.club-featured-countdown-sep {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: rgba(251, 146, 60, 0.55);
+  align-self: flex-start;
+  margin-top: 1px;
+  line-height: 1;
+}
+.club-featured-register--urgent .club-featured-countdown {
+  border-color: rgba(251, 146, 60, 0.28);
+}
+.club-featured-register--urgent .club-featured-countdown-num {
+  color: #fdba74;
+  border-color: rgba(251, 146, 60, 0.25);
+}
+.club-featured-register--closed {
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 7px 11px;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.12);
+  color: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+.club-featured .club-btn-primary { width: 100%; }
+.club-featured-registered {
+  display: block;
+  width: 100%;
+  text-align: center;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #166534;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.club-main {
+  width: 100%;
+  padding: 36px 20px 48px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 28px;
+}
+@media (min-width: 960px) {
+  .club-main { grid-template-columns: 1.5fr 0.85fr; gap: 36px; align-items: start; padding-left: 32px; padding-right: 32px; }
+}
+@media (min-width: 1024px) {
+  .club-main { padding-left: 48px; padding-right: 48px; }
+}
+.club-panel {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 2px 10px rgba(15,23,42,0.05);
+  padding: 22px 22px 18px;
+}
+.club-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.club-panel-head h2 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--primary);
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+.club-panel-head a {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+}
+.club-panel-head a:hover { text-decoration: underline; }
+
+.club-schedule-row {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid #eef2f7;
+  text-decoration: none;
+  color: inherit;
+}
+.club-schedule-row:last-child { border-bottom: 0; }
+.club-schedule-row:hover .club-schedule-name { color: var(--primary); }
+.club-schedule-date {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #64748b;
+  line-height: 1.2;
+}
+.club-schedule-name {
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 2px;
+  transition: color 0.15s ease;
+}
+.club-schedule-sub {
+  font-size: 0.82rem;
+  color: #64748b;
+}
+.club-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.club-badge-open { background: #fff7ed; color: #c2410c; }
+.club-badge-good { background: #ecfdf5; color: #047857; }
+.club-badge-muted { background: #f1f5f9; color: #475569; }
+
+.club-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.club-stat {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px 12px;
+  text-align: center;
+}
+.club-stat .num {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--primary);
+  line-height: 1.1;
+}
+.club-stat .lbl {
+  font-size: 0.72rem;
+  color: #64748b;
+  margin-top: 4px;
+  line-height: 1.3;
+}
+
+.club-aside-block + .club-aside-block { margin-top: 18px; }
+.club-aside-block h3 {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--primary);
+  margin: 0 0 8px;
+}
+.club-aside-block p {
+  font-size: 0.88rem;
+  color: #475569;
+  line-height: 1.55;
+  margin: 0;
+}
+.club-aside-block a {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+}
+.club-aside-block a:hover { text-decoration: underline; }
+
+.club-live-list { list-style: none; padding: 0; margin: 0; }
+.club-live-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #eef2f7;
+  font-size: 0.88rem;
+}
+.club-live-item:last-child { border-bottom: 0; }
+.club-live-item a {
+  font-weight: 600;
+  color: #0f172a;
+  text-decoration: none;
+}
+.club-live-item a:hover { color: var(--primary); }
+.club-live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  margin-right: 6px;
+  animation: clubPulse 1.4s ease infinite;
+}
+@keyframes clubPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="club-hero">
+  <div class="club-hero-inner">
+    <div>
+      <div class="club-hero-eyebrow">Season {{ season_name }} · {{ events_left }} event{{ '' if events_left == 1 else 's' }} left</div>
+      <h1>{{ host_club.hero_headline }}</h1>
+      <p class="club-hero-lede">{{ host_club.hero_body }}</p>
+      <div class="club-hero-actions">
+        <a class="club-btn-primary" href="{{ calendar_url }}">See the schedule</a>
+        {% if host_club.new_rider_guide_url %}
+        <a class="club-btn-ghost" href="{{ host_club.new_rider_guide_url }}" target="_blank" rel="noopener">New to randonneuring?</a>
+        {% else %}
+        <a class="club-btn-ghost" href="#start-here">New to randonneuring?</a>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if featured %}
+    <aside class="club-featured{% if featured.register_countdown and featured.register_countdown.deadline_iso %} club-featured--countdown{% endif %}">
+      {% if featured.register_countdown %}
+      <div class="club-featured-register{% if featured.register_countdown.tone == 'urgent' %} club-featured-register--urgent{% elif featured.register_countdown.tone == 'closed' %} club-featured-register--closed{% endif %}">
+        {% if featured.register_countdown.deadline_iso %}
+        <div class="club-featured-countdown" data-deadline="{{ featured.register_countdown.deadline_iso }}">
+          <div class="club-featured-countdown-label">Closes {{ featured.register_countdown.deadline_display }}</div>
+          <div class="club-featured-countdown-units" aria-live="polite">
+            <div class="club-featured-countdown-unit"><span class="club-featured-countdown-num" data-part="days">--</span><span class="club-featured-countdown-lbl">d</span></div>
+            <span class="club-featured-countdown-sep" aria-hidden="true">:</span>
+            <div class="club-featured-countdown-unit"><span class="club-featured-countdown-num" data-part="hours">--</span><span class="club-featured-countdown-lbl">h</span></div>
+            <span class="club-featured-countdown-sep" aria-hidden="true">:</span>
+            <div class="club-featured-countdown-unit"><span class="club-featured-countdown-num" data-part="mins">--</span><span class="club-featured-countdown-lbl">m</span></div>
+          </div>
+        </div>
+        {% else %}
+        Registration closed
+        {% endif %}
+      </div>
+      {% endif %}
+      <div class="club-featured-label">Next out of the city</div>
+      <h2>{{ featured.name|clean_name }}</h2>
+      <div class="club-featured-meta">{{ featured.when_line }} · {{ featured.location|clean_name }}</div>
+      <div class="club-featured-stats">
+        {% if featured.distance_km %}<span><strong>{{ featured.distance_km|int }}</strong> km</span>{% endif %}
+        {% if featured.time_limit_hours %}<span><strong>{{ featured.time_limit_hours }}</strong> h</span>{% endif %}
+        {% if featured.fee_display %}<span><strong>{{ featured.fee_display }}</strong></span>{% endif %}
+      </div>
+      {% if featured.already_registered %}
+      <span class="club-featured-registered">✓ Already registered</span>
+      {% elif featured.registration_enabled and (not featured.register_countdown or featured.register_countdown.tone != 'closed') %}
+      {% set register_calendar_url = calendar_url ~ ('&' if '?' in calendar_url else '?') ~ 'register=' ~ featured.event_id %}
+      {% if user_logged_in %}
+      <a class="club-btn-primary" href="{{ register_calendar_url }}">Register</a>
+      {% else %}
+      <a class="club-btn-primary" href="{{ url_for('auth.login', next=register_calendar_url) }}">Register</a>
+      {% endif %}
+      {% else %}
+      <a class="club-btn-primary" href="{{ url_for('plan.plan_view', event_id=featured.event_id) }}">View event</a>
+      {% endif %}
+    </aside>
+    {% endif %}
+  </div>
+</section>
+
+<div class="club-main">
+  <section class="club-panel">
+    <div class="club-panel-head">
+      <h2>{{ calendar_year }} schedule</h2>
+      <a href="{{ calendar_url }}">Full calendar →</a>
+    </div>
+    {% if schedule %}
+      {% for ev in schedule %}
+      <a class="club-schedule-row" href="{{ url_for('plan.plan_view', event_id=ev.id) }}">
+        <div class="club-schedule-date">{{ ev.short_date }}</div>
+        <div>
+          <div class="club-schedule-name">{{ ev.name|clean_name }}</div>
+          <div class="club-schedule-sub">{{ ev.distance_km|int }} km · {{ ev.type_label }}</div>
+        </div>
+        <span class="club-badge club-badge-{{ ev.badge.tone }}">{{ ev.badge.label }}</span>
+      </a>
+      {% endfor %}
+    {% else %}
+      <p style="color:#64748b;font-size:0.92rem;">No upcoming events in the calendar yet. Check back soon or browse the full RUSA schedule.</p>
+    {% endif %}
+  </section>
+
+  <aside>
+    <div class="club-panel">
+      <div class="club-panel-head"><h2>Club this season</h2></div>
+      <div class="club-stats-grid">
+        <div class="club-stat"><div class="num">{{ stats.active_riders }}</div><div class="lbl">Active riders</div></div>
+        <div class="club-stat"><div class="num">{{ stats.sr_series }}</div><div class="lbl">SR series earned</div></div>
+        <div class="club-stat"><div class="num">{{ '{:,}'.format(stats.club_km) if stats.club_km else 0 }}</div><div class="lbl">Club km</div></div>
+        <div class="club-stat"><div class="num">{{ stats.pbp_anciens }}</div><div class="lbl">PBP anciens</div></div>
+      </div>
+    </div>
+
+    <div class="club-panel club-aside-block" id="start-here">
+      <h3>What is a brevet?</h3>
+      <p>A timed, self-supported ride on a marked route — not a race, but you must finish within the time limit. Controls along the way stamp your brevet card as proof.</p>
+      {% if host_club.new_rider_guide_url %}
+      <a href="{{ host_club.new_rider_guide_url }}" target="_blank" rel="noopener">Read the new rider guide →</a>
+      {% endif %}
+    </div>
+
+    <div class="club-panel club-aside-block">
+      <h3>{% if riding_today %}<span class="club-live-dot"></span>{% endif %}Riding right now</h3>
+      {% if riding_today %}
+      <ul class="club-live-list">
+        {% for ev in riding_today %}
+        <li class="club-live-item">
+          {% if ev.live_ride_id %}
+          <a href="{{ url_for('live.live_map', ride_id=ev.live_ride_id) }}">{{ ev.name|clean_name }}</a>
+          {% else %}
+          <a href="{{ url_for('plan.plan_view', event_id=ev.id) }}">{{ ev.name|clean_name }}</a>
+          {% endif %}
+          {% if ev.distance_km %}<span style="color:#64748b;">{{ ev.distance_km|int }} km</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p style="color:#64748b;font-size:0.88rem;margin:0;">No ride today.</p>
+      {% endif %}
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var root = document.querySelector('.club-featured-countdown[data-deadline]');
+  if (!root) return;
+
+  function pad(n) { return n < 10 ? '0' + n : String(n); }
+
+  function deadlineEndMs(iso) {
+    var p = iso.split('-');
+    return new Date(+p[0], +p[1] - 1, +p[2], 23, 59, 59).getTime();
+  }
+
+  function setClosed() {
+    var wrap = root.closest('.club-featured-register');
+    if (wrap) {
+      wrap.classList.add('club-featured-register--closed');
+      wrap.classList.remove('club-featured-register--urgent');
+      wrap.textContent = 'Registration closed';
+    }
+  }
+
+  function tick() {
+    var end = deadlineEndMs(root.getAttribute('data-deadline'));
+    var remaining = end - Date.now();
+    if (remaining <= 0) {
+      setClosed();
+      return false;
+    }
+    var secs = Math.floor(remaining / 1000);
+    var days = Math.floor(secs / 86400);
+    secs %= 86400;
+    var hours = Math.floor(secs / 3600);
+    secs %= 3600;
+    var mins = Math.floor(secs / 60);
+    secs %= 60;
+
+    var daysEl = root.querySelector('[data-part="days"]');
+    var hoursEl = root.querySelector('[data-part="hours"]');
+    var minsEl = root.querySelector('[data-part="mins"]');
+    if (daysEl) daysEl.textContent = String(days);
+    if (hoursEl) hoursEl.textContent = pad(hours);
+    if (minsEl) minsEl.textContent = pad(mins);
+
+    var wrap = root.closest('.club-featured-register');
+    if (wrap && days <= 7) wrap.classList.add('club-featured-register--urgent');
+    return true;
+  }
+
+  if (tick()) setInterval(tick, 60000);
+})();
+</script>
+{% endblock %}

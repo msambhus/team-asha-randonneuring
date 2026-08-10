@@ -340,6 +340,162 @@
     return '<div class="reg-stat"><div class="reg-stat-label">' + label + '</div><div class="reg-stat-value">' + value + '</div></div>';
   }
 
+  function registrationStatusLabel(status) {
+    if (status === 'confirmed') return 'Registered';
+    if (status === 'exception') return 'Registered · pending review';
+    if (status === 'waitlist') return 'Waitlist';
+    return status ? String(status).replace(/_/g, ' ') : 'Registered';
+  }
+
+  function registrationFromPage(eventId) {
+    var actions = document.querySelector('.signup-actions[data-event-id="' + eventId + '"]');
+    if (!actions || actions.getAttribute('data-registered') !== '1') return null;
+    return {
+      registration_status: actions.getAttribute('data-registration-status') || 'confirmed',
+      confirmation_code: actions.getAttribute('data-confirmation-code') || '',
+    };
+  }
+
+  function eventFromPage(eventId) {
+    var card = document.querySelector('.event-card[data-event-id="' + eventId + '"]');
+    if (!card) return { id: eventId, name: 'Event', date: '', distance_km: null };
+    var titleEl = card.querySelector('.event-title');
+    return {
+      id: eventId,
+      name: card.getAttribute('data-event-name') || (titleEl ? titleEl.textContent.trim() : '') || 'Event',
+      date: card.getAttribute('data-event-date') || '',
+      distance_km: card.getAttribute('data-event-distance') || null,
+    };
+  }
+
+  function openAlreadyRegistered(eventId, reg, ev) {
+    mode = 'single';
+    eventId = eventId;
+    eventData = {
+      event: ev || eventFromPage(eventId),
+      already_registered: true,
+      registration: reg,
+    };
+    modal.hidden = false;
+    document.body.style.overflow = 'hidden';
+    renderAlreadyRegisteredView(eventData.event, reg);
+  }
+
+  function renderAlreadyRegisteredView(ev, reg) {
+    setStep(1);
+    var label = registrationStatusLabel(reg && reg.registration_status);
+    var code = reg && reg.confirmation_code;
+    els.body.innerHTML =
+      '<div class="reg-success reg-already-registered">' +
+      '<div class="reg-success-icon">✓</div>' +
+      '<h3>You\'re already registered</h3>' +
+      '<p class="reg-already-meta"><strong>' + esc(ev.name) + '</strong> · ' + esc(fmtDate(ev.date)) + '</p>' +
+      '<p class="reg-already-status">' + esc(label) + '</p>' +
+      (code ? '<p class="reg-already-code">Confirmation <strong>' + esc(code) + '</strong></p>' : '') +
+      '<p class="reg-already-note">No further action is needed. You can close this window or view the event on the calendar.</p>' +
+      '</div>' +
+      '<button type="button" class="reg-primary-btn" data-reg-close>Close</button>';
+    els.body.querySelector('[data-reg-close]').addEventListener('click', closeModal);
+  }
+
+  function normalizeControl(raw) {
+    if (raw && typeof raw === 'object') {
+      return {
+        order: raw.order,
+        type: (raw.type || 'control').toLowerCase(),
+        name: raw.name || '',
+        note: raw.note || '',
+        km: raw.km,
+      };
+    }
+    var text = String(raw || '');
+    var parts = text.split(' · ');
+    var kmPart = parts.length > 1 ? parts.pop() : '';
+    var kmMatch = kmPart.match(/(\d+)/);
+    return {
+      order: null,
+      type: 'control',
+      name: parts.join(' · '),
+      note: '',
+      km: kmMatch ? parseInt(kmMatch[1], 10) : null,
+    };
+  }
+
+  function controlKind(ctrl) {
+    var type = (ctrl.type || '').toLowerCase();
+    var name = (ctrl.name || '').trim();
+    if (type === 'start' || /^start control/i.test(name)) {
+      return { cls: 'is-start', glyph: '▶', badge: 'Start' };
+    }
+    if (type === 'meal' || type === 'rest' || /^(lunch|dinner|breakfast)$/i.test(name)) {
+      return { cls: 'is-meal', glyph: '☕', badge: 'Food' };
+    }
+    if (type === 'control' || /control\s*#/i.test(name) || /info control/i.test(name)) {
+      return { cls: 'is-control', glyph: '●', badge: 'Control' };
+    }
+    return { cls: 'is-note', glyph: '◦', badge: 'Note' };
+  }
+
+  function splitControlName(name) {
+    var text = String(name || '').trim();
+    var idx = text.indexOf(':');
+    if (idx > 0 && idx < text.length - 1) {
+      return { title: text.slice(0, idx).trim(), detail: text.slice(idx + 1).trim() };
+    }
+    return { title: text, detail: '' };
+  }
+
+  function renderControlsSection(controls) {
+    if (!controls || !controls.length) return '';
+    var rows = controls.map(function (raw, i) {
+      var ctrl = normalizeControl(raw);
+      var kind = controlKind(ctrl);
+      var split = splitControlName(ctrl.name);
+      var title = split.title || ctrl.name || 'Control';
+      var detail = split.detail || ctrl.note || '';
+      if (split.detail && ctrl.note && split.detail !== ctrl.note) {
+        detail = split.detail + ' — ' + ctrl.note;
+      }
+      var km = ctrl.km != null ? ctrl.km + ' km' : '—';
+      var line = i < controls.length - 1 ? '<span class="reg-control-line" aria-hidden="true"></span>' : '';
+      return '<li class="reg-control-row ' + kind.cls + '">' +
+        '<div class="reg-control-track">' +
+        '<span class="reg-control-dot" title="' + esc(kind.badge) + '">' + kind.glyph + '</span>' +
+        line +
+        '</div>' +
+        '<div class="reg-control-body">' +
+        '<div class="reg-control-top">' +
+        '<span class="reg-control-badge">' + esc(kind.badge) + '</span>' +
+        '<span class="reg-control-title">' + esc(title) + '</span>' +
+        '</div>' +
+        (detail ? '<p class="reg-control-detail">' + esc(detail) + '</p>' : '') +
+        '</div>' +
+        '<div class="reg-control-km">' + esc(km) + '</div>' +
+        '</li>';
+    }).join('');
+    return '<div class="reg-controls is-collapsed">' +
+      '<button type="button" class="reg-controls-toggle" aria-expanded="false" aria-controls="reg-controls-panel">' +
+      '<span class="reg-section-label">Route controls</span>' +
+      '<span class="reg-controls-meta">' +
+      '<span class="reg-controls-count">' + controls.length + ' stops</span>' +
+      '<span class="reg-controls-chevron" aria-hidden="true">▾</span>' +
+      '</span>' +
+      '</button>' +
+      '<ol id="reg-controls-panel" class="reg-controls-timeline">' + rows + '</ol>' +
+      '</div>';
+  }
+
+  function bindControlsSection() {
+    var root = els.body.querySelector('.reg-controls');
+    if (!root) return;
+    var toggle = root.querySelector('.reg-controls-toggle');
+    if (!toggle) return;
+    toggle.addEventListener('click', function () {
+      var open = root.classList.toggle('is-collapsed');
+      toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+    });
+  }
+
   function selectedBulkIds() {
     var seen = {};
     var ids = [];
@@ -596,7 +752,11 @@
   function renderStep1() {
     setStep(1);
     var ev = eventData.event;
-    var controls = (ev.controls || []).map(function (c) { return '<li>' + c + '</li>'; }).join('');
+    if (eventData.already_registered) {
+      renderAlreadyRegisteredView(ev, eventData.registration);
+      return;
+    }
+    var controlsHtml = renderControlsSection(ev.controls || []);
     var teamNote = ev.is_team_event
       ? '<div class="reg-team-note"><strong>Team event</strong> — register yourself as a team captain and add your team members in the next step.</div>'
       : '';
@@ -616,9 +776,10 @@
       stat('Deadline', ev.registration_deadline ? fmtDate(ev.registration_deadline) : '—') +
       stat('Spots', ev.capacity != null ? (ev.spots_open != null ? ev.spots_open + ' of ' + ev.capacity : ev.capacity) : 'Open') +
       '</div>' +
-      (controls ? '<div class="reg-controls"><p class="reg-section-label">Controls</p><ul>' + controls + '</ul></div>' : '') +
+      (controlsHtml) +
       teamNote +
       teamBtn;
+    bindControlsSection();
     if (ev.is_team_event) {
       var teamBtn2 = els.body.querySelector('[data-reg-team]');
       if (teamBtn2) teamBtn2.addEventListener('click', loadTeamStep2);
@@ -765,7 +926,11 @@
       '<button type="button" class="reg-primary-btn" data-reg-done>Done</button>';
     els.body.querySelector('[data-reg-done]').addEventListener('click', closeModal);
     document.dispatchEvent(new CustomEvent('brevethub:registered', {
-      detail: { eventId: eventId, registrationStatus: data.registration_status || 'confirmed' }
+      detail: {
+        eventId: eventId,
+        registrationStatus: data.registration_status || 'confirmed',
+        confirmationCode: data.confirmation_code || '',
+      }
     }));
   }
 
@@ -1017,14 +1182,26 @@
   }
 
   function openRegistration(id) {
+    var pageReg = registrationFromPage(id);
+    if (pageReg) {
+      openAlreadyRegistered(id, pageReg);
+      return;
+    }
     mode = 'single';
     eventId = id;
     modal.hidden = false;
     document.body.style.overflow = 'hidden';
     els.body.innerHTML = '<p class="text-text-light">Loading…</p>';
-    fetch('/calendar/' + id + '/register/details')
+    fetch('/calendar/' + id + '/register/details', { credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
-      .then(function (data) { eventData = data; renderStep1(); });
+      .then(function (data) {
+        eventData = data;
+        if (data.already_registered) {
+          renderAlreadyRegisteredView(data.event, data.registration);
+          return;
+        }
+        renderStep1();
+      });
   }
 
   function openBulkRegistration(ids) {
@@ -1055,6 +1232,7 @@
   document.addEventListener('click', function (e) {
     var btn = e.target.closest('[data-register-event]');
     if (!btn) return;
+    e.preventDefault();
     openRegistration(parseInt(btn.getAttribute('data-register-event'), 10));
   });
 
@@ -1083,6 +1261,7 @@
   document.addEventListener('brevethub:registered', function (e) {
     var id = e.detail.eventId;
     var regStatus = e.detail.registrationStatus || 'confirmed';
+    var confirmationCode = e.detail.confirmationCode || '';
     var badge = document.querySelector('[data-reg-badge="' + id + '"]');
     var badgeText = regStatus === 'confirmed' ? 'Registered'
       : regStatus === 'exception' ? 'Registered · review'
@@ -1104,6 +1283,8 @@
     var actions = document.querySelector('.signup-actions[data-event-id="' + id + '"]');
     if (actions) {
       actions.setAttribute('data-registered', '1');
+      actions.setAttribute('data-registration-status', regStatus === 'confirmed' ? 'confirmed' : regStatus);
+      if (confirmationCode) actions.setAttribute('data-confirmation-code', confirmationCode);
       actions.removeAttribute('data-show-register');
       actions.setAttribute('data-status', 'registered');
       if (window.renderSignupActions) {
@@ -1116,4 +1297,15 @@
     });
     updateBulkBar();
   });
+
+  var autoRegisterMatch = /[?&]register=(\d+)/.exec(window.location.search);
+  if (autoRegisterMatch) {
+    var autoRegisterId = parseInt(autoRegisterMatch[1], 10);
+    if (autoRegisterId > 0) {
+      openRegistration(autoRegisterId);
+      var cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('register');
+      window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+    }
+  }
 })();

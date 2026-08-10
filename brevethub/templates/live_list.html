@@ -3,9 +3,14 @@
 {% block content %}
 <div class="container section">
 <section class="card">
-  <h1 class="text-primary text-[1.6rem] font-bold mb-4">{{ 'My live rides' if mine else 'Live rides' }}</h1>
+  <h1 class="text-primary text-[1.6rem] font-bold mb-4">
+    {% if live_today_only %}{{ 'My rides today' if mine else 'Live today' }}{% else %}{{ 'My live rides' if mine else 'Live rides' }}{% endif %}
+  </h1>
   <p class="text-text-light mb-4">
-    {% if mine %}Rides you are following or registered for that currently have a public live view.{% else %}
+    {% if live_today_only %}
+      {% if mine %}Brevets you are following or registered for that are live today.{% else %}
+      Public live tracking for brevets happening today — open a ride to follow along on the map.{% endif %}
+    {% elif mine %}Rides you are following or registered for that currently have a public live view.{% else %}
     Rides that riders have opted into public tracking. Open one to follow along on
     the map — no account needed.{% endif %}
   </p>
@@ -35,7 +40,7 @@
     </table>
     </div>
   {% else %}
-    <p class="text-text-light">{% if mine %}You are not following a live ride and are not registered for one yet, or the ride has not started sharing publicly. Browse the calendar to follow a ride.{% else %}No public rides right now. Check back when a ride goes live.{% endif %}</p>
+    <p class="text-text-light">{% if live_today_only %}{% if mine %}No live rides for you today.{% else %}No rides today.{% endif %}{% elif mine %}You are not following a live ride and are not registered for one yet, or the ride has not started sharing publicly. Browse the calendar to follow a ride.{% else %}No public rides right now. Check back when a ride goes live.{% endif %}</p>
   {% endif %}
 
   {% if session.get('rider_id') %}

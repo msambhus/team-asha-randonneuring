@@ -96,9 +96,16 @@ def load_rusa_section(rider, force_refresh=False):
 
 @main_bp.route('/')
 def landing():
-    """De-branded landing. Signed-in riders go straight to their dashboard."""
-    if current_rider():
-        return redirect(url_for('main.dashboard'))
+    """Club home when HOST_CLUB_ID is configured; otherwise the generic landing."""
+    from brevethub.services.club_site import build_club_home_context, host_club_from_config
+
+    host_club = host_club_from_config(current_app)
+    if host_club:
+        rider = current_rider()
+        return render_template(
+            'club_home.html',
+            **build_club_home_context(host_club, rider_id=rider['id'] if rider else None),
+        )
     return render_template('landing.html')
 
 

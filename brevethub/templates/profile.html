@@ -619,7 +619,7 @@
       <div class="profile-actions">
         <a class="btn btn-ghost" href="{{ url_for('main.dashboard') }}">My Rides</a>
         {% if rider.profile_completed %}
-        <a class="btn btn-ghost" href="{{ url_for('riders.rider_profile', rider_id=rider.id) }}">Public page</a>
+        <a class="btn btn-ghost" href="{{ url_for('riders.rider_profile', rusa_id=rider.rusa_id) }}">Public page</a>
         {% endif %}
         <button type="button" class="btn btn-primary" data-open-profile-modal>Account</button>
       </div>
