@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Edit event: {{ event.name|clean_name }} — {{ product_name }}{% endblock %}
+
+{% block content %}
+<style>
+.event-edit-wrap { max-width: 760px; margin: 0 auto; padding: 0 16px; }
+.event-edit-hero {
+  background: var(--primary); color: white; border-radius: 12px;
+  padding: 18px 22px; margin: 12px 0 18px;
+}
+.event-edit-hero h1 { font-size: 1.25rem; font-weight: 700; margin: 0 0 6px; }
+.event-edit-hero p { margin: 0; opacity: .88; font-size: .88rem; }
+.event-edit-section { margin-bottom: 22px; }
+.event-edit-section h2 {
+  font-size: .95rem; color: var(--primary); margin: 0 0 12px;
+  padding-bottom: 8px; border-bottom: 2px solid var(--border);
+}
+.event-edit-readonly {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px 16px; font-size: .84rem; margin-bottom: 4px;
+}
+.event-edit-readonly dt { color: var(--text-light); font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+.event-edit-readonly dd { margin: 2px 0 0; font-weight: 600; color: var(--text); }
+.event-edit-note { font-size: .8rem; color: var(--text-light); margin: 0 0 14px; }
+.event-edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.event-edit-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 640px) {
+  .event-edit-grid, .event-edit-grid-3 { grid-template-columns: 1fr; }
+}
+.event-edit-checks { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 4px; }
+.event-edit-checks label { display: inline-flex; align-items: center; gap: 8px; font-size: .88rem; font-weight: 600; cursor: pointer; }
+</style>
+
+<div class="event-edit-wrap section">
+  <a href="{{ url_for('admin.event_roster', event_id=event.id) }}" class="text-primary text-sm">← Back to roster</a>
+
+  <div class="event-edit-hero">
+    <h1>Edit event details</h1>
+    <p>{{ event.name|clean_name }} · {{ event.date }} · {{ event.distance_km }} km</p>
+  </div>
+
+  <form method="post" class="card">
+    <section class="event-edit-section">
+      <h2>From RUSA (read-only)</h2>
+      <p class="event-edit-note">Date, name, and distance come from the RUSA calendar sync and cannot be changed here.</p>
+      <dl class="event-edit-readonly">
+        <div><dt>Date</dt><dd>{{ event.date }}</dd></div>
+        <div><dt>Distance</dt><dd>{{ event.distance_km }} km</dd></div>
+        <div><dt>Region</dt><dd>{{ event.region or '—' }}</dd></div>
+        <div><dt>Type</dt><dd>{{ event.ride_type or '—' }}</dd></div>
+      </dl>
+    </section>
+
+    <section class="event-edit-section">
+      <h2>Start &amp; route</h2>
+      <div class="event-edit-grid">
+        <div class="form-group">
+          <label for="start_time">Start time</label>
+          <input type="time" id="start_time" name="start_time" class="form-input w-full"
+                 value="{{ start_time_value }}">
+        </div>
+        <div class="form-group">
+          <label for="time_limit_hours">Time limit (hours)</label>
+          <input type="number" id="time_limit_hours" name="time_limit_hours" class="form-input w-full"
+                 step="0.5" min="0" value="{{ event.time_limit_hours or '' }}" placeholder="13.5">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="start_location">Start location / address</label>
+        <input type="text" id="start_location" name="start_location" class="form-input w-full"
+               value="{{ event.start_location or '' }}"
+               placeholder="e.g. Peet's Coffee, 123 Main St, Mill Valley, CA">
+      </div>
+      <div class="event-edit-grid">
+        <div class="form-group">
+          <label for="rwgps_url">RideWithGPS URL</label>
+          <input type="url" id="rwgps_url" name="rwgps_url" class="form-input w-full"
+                 value="{{ event.rwgps_url or '' }}" placeholder="https://ridewithgps.com/routes/…">
+          <p class="event-edit-note" style="margin-top:6px;margin-bottom:0;">
+            Elevation is fetched automatically from RideWithGPS when you save a new or changed URL.
+          </p>
+        </div>
+        <div class="form-group">
+          <label>Elevation (ft)</label>
+          <p style="margin:8px 0 0;font-weight:700;font-size:1rem;color:var(--text);">
+            {% if event.elevation_ft %}{{ event.elevation_ft|commafy }} ft{% else %}—{% endif %}
+          </p>
+          <p class="event-edit-note" style="margin-top:4px;margin-bottom:0;">Read-only · from RideWithGPS</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="event-edit-section">
+      <h2>Registration</h2>
+      <div class="event-edit-grid-3">
+        <div class="form-group">
+          <label for="fee_dollars">Fee (USD)</label>
+          <input type="number" id="fee_dollars" name="fee_dollars" class="form-input w-full"
+                 step="0.01" min="0" value="{{ fee_dollars }}" placeholder="35">
+        </div>
+        <div class="form-group">
+          <label for="registration_deadline">Registration deadline</label>
+          <input type="date" id="registration_deadline" name="registration_deadline"
+                 class="form-input w-full" value="{{ registration_deadline_value }}">
+        </div>
+        <div class="form-group">
+          <label for="capacity">Capacity</label>
+          <input type="number" id="capacity" name="capacity" class="form-input w-full"
+                 min="1" value="{{ event.capacity or '' }}" placeholder="100">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="event_summary">Event summary / notes</label>
+        <textarea id="event_summary" name="event_summary" class="form-input w-full" rows="4"
+                  placeholder="Parking, bag drop, organizer contact, etc.">{{ event.event_summary or '' }}</textarea>
+      </div>
+      <div class="event-edit-checks">
+        <label><input type="checkbox" name="registration_enabled" {% if event.registration_enabled %}checked{% endif %}> Online registration enabled</label>
+        <label><input type="checkbox" name="volunteer_enabled" {% if event.volunteer_enabled %}checked{% endif %}> Volunteer signup enabled</label>
+      </div>
+    </section>
+
+    <section class="event-edit-section">
+      <h2>Club</h2>
+      {% if is_super_admin %}
+      <div class="form-group">
+        <label for="club_id">Home club</label>
+        <select id="club_id" name="club_id" class="form-input w-full">
+          <option value="">— Unassigned —</option>
+          {% for c in clubs %}
+          <option value="{{ c.id }}" {% if event.club_id == c.id %}selected{% endif %}>
+            {{ c.rusa_club_id }} · {{ c.name }}{% if c.state %} ({{ c.state }}){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <p class="event-edit-note" style="margin-bottom:0;">
+        {% if event.club_name %}{{ event.club_name }}{% else %}This event will be linked to your club when saved.{% endif %}
+      </p>
+      {% endif %}
+    </section>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;">
+      <button type="submit" class="btn btn-primary">Save changes</button>
+      <a href="{{ url_for('admin.event_roster', event_id=event.id) }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

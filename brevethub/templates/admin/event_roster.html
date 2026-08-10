@@ -104,6 +104,7 @@
           {% elif event_lifecycle == 'in_progress' %}In progress
           {% else %}Open{% endif %}
         </span>
+        <a href="{{ url_for('admin.event_edit', event_id=event.id) }}" class="roster-action-btn">Edit event</a>
         <form method="post" style="margin:0;">
           {% if event_lifecycle == 'closed' %}
             <button type="submit" name="action" value="open_event" class="close-btn close-btn-open">Re-open event</button>

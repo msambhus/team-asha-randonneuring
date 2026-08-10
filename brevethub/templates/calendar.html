@@ -363,9 +363,35 @@
     border-top: 1px solid var(--border);
     font-size: 0.76rem;
     color: var(--text-light);
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+.event-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0;
+    min-width: 0;
+}
+.event-meta-row .signup-count {
+    margin: 0;
+}
+.event-meta-sep {
+    margin: 0 6px;
+    color: var(--text-light);
+}
+.event-start-row {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.event-start-location {
+    font-weight: 500;
+    color: var(--text);
 }
 /* Weather badge — BrevetHub-specific card feature (no parent-app calendar
    counterpart); styled inline like the parent app's other page-specific rules. */
@@ -880,7 +906,6 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
 }
 @media (max-width: 1024px) {
     .events-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .event-details-info { grid-template-columns: 1fr; }
 }
 @media (max-width: 768px) {
     .events-grid { grid-template-columns: 1fr; }
@@ -1063,16 +1088,47 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                 </div>
 
                 <div class="event-details-info">
-                  {% if ev.ride_type %}<span>{{ ev.ride_type }}</span>{% endif %}
-                  <span>
-                    Start:
-                    {# National-feed events have no start location/time — show an
-                       honest placeholder, never a fabricated value. #}
-                    {{ ev.start_location or '—' }}{% if ev.start_time %} · {{ ev.start_time }}{% endif %}
-                  </span>
-                  {% if ev.time_limit_hours %}
+                  {% set meta_ns = namespace(first=true) %}
+                  {% if ev.ride_type or ev.time_limit_hours or ev.registration_enabled or ev.signup_count is not none or ev.confirmed_count is not none %}
+                  <div class="event-meta-row">
+                    {% if ev.ride_type %}
+                    <span>{{ ev.ride_type }}</span>
+                    {% set meta_ns.first = false %}
+                    {% endif %}
+                    {% if ev.time_limit_hours %}
+                    {% if not meta_ns.first %}<span class="event-meta-sep">·</span>{% endif %}
                     <span>Time limit: {{ ev.time_limit_hours }} h</span>
+                    {% set meta_ns.first = false %}
+                    {% endif %}
+                    {% if not meta_ns.first %}<span class="event-meta-sep">·</span>{% endif %}
+                    <span class="signup-count">{{ ev.confirmed_count or ev.signup_count or 0 }} on roster</span>
+                    {% set meta_ns.first = false %}
+                    {% if ev.registration_enabled and ev.fee_cents %}
+                    <span class="event-meta-sep">·</span>
+                    <span class="signup-fee">${{ (ev.fee_cents / 100)|int }}</span>
+                    {% endif %}
+                  </div>
                   {% endif %}
+                  {% set start_title = '' %}
+                  {% if ev.start_location and ev.start_time %}
+                    {% set start_title = "Start: " ~ ev.start_location ~ ' · ' ~ ev.start_time %}
+                  {% elif ev.start_time %}
+                    {% set start_title = 'Start: ' ~ ev.start_time %}
+                  {% elif ev.start_location %}
+                    {% set start_title = 'Start: ' ~ ev.start_location %}
+                  {% endif %}
+                  <span class="event-start-row"{% if start_title %} title="{{ start_title }}"{% endif %}>
+                    Start:
+                    {% if ev.start_location and ev.start_time %}
+                      <span class="event-start-location">{{ ev.start_location }}</span> · {{ ev.start_time }}
+                    {% elif ev.start_time %}
+                      {{ ev.start_time }}
+                    {% elif ev.start_location %}
+                      <span class="event-start-location">{{ ev.start_location }}</span>
+                    {% else %}
+                      —
+                    {% endif %}
+                  </span>
                 </div>
 
                 {# Weather badge — cache-read-only. A near-term event with a
@@ -1165,12 +1221,8 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
 
                     <div class="signup-meta">
                       <div class="signup-meta-items">
-                        <span class="signup-count">{{ ev.confirmed_count or ev.signup_count or 0 }} on roster</span>
                         {% if ev.interested_count %}
                           <span class="signup-meta-item">{{ ev.interested_count }} interested</span>
-                        {% endif %}
-                        {% if ev.registration_enabled and ev.fee_cents %}
-                          <span class="signup-meta-item signup-fee">${{ (ev.fee_cents / 100)|int }}</span>
                         {% endif %}
                       </div>
                       <div class="signup-actions" data-event-id="{{ ev.id }}" data-status="{{ status or '' }}"
@@ -1218,20 +1270,18 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                       </small>
                     {% endif %}
                   {% else %}
+                  {% if ev.interested_count or (ev.volunteer_enabled and vsum and vsum.open_total > 0) %}
                   <div class="signup-meta">
                     <div class="signup-meta-items">
-                      <span class="signup-count">{{ ev.confirmed_count or ev.signup_count or 0 }} on roster</span>
                       {% if ev.interested_count %}
                         <span class="signup-meta-item">{{ ev.interested_count }} interested</span>
-                      {% endif %}
-                      {% if ev.registration_enabled and ev.fee_cents %}
-                        <span class="signup-meta-item signup-fee">${{ (ev.fee_cents / 100)|int }}</span>
                       {% endif %}
                       {% if ev.volunteer_enabled and vsum and vsum.open_total > 0 %}
                         <span class="signup-meta-item signup-meta-volunteer">🤝 {{ vsum.open_total }} volunteer role{{ 's' if vsum.open_total != 1 else '' }} open</span>
                       {% endif %}
                     </div>
                   </div>
+                  {% endif %}
                   {% endif %}
                 </div>
               </article>

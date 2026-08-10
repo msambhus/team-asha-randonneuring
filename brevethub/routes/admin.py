@@ -665,7 +665,64 @@ def events():
         events_page_url=events_page_url,
         admin_club_id=club_id,
         today_date=today,
+        is_super_admin=_is_super_admin(),
+        sync_clubs=models.list_all_clubs_for_admin() if _is_super_admin() else [],
+        operator_region_prefix=region_prefix,
     )
+
+
+@admin_bp.route('/events/sync-rusa', methods=['POST'])
+@operator_required
+def sync_rusa_events():
+    """Import new/updated brevets from the RUSA national feed.
+
+    Club admins sync their club's RUSA region only. Super-admins can sync all
+    clubs or pick one club from the form.
+    """
+    from brevethub.routes.cron import run_refresh_calendar
+
+    region_prefix = None
+    scope_label = 'all clubs'
+
+    if _is_super_admin():
+        club_choice = (request.form.get('club_id') or 'all').strip()
+        if club_choice != 'all':
+            try:
+                club_id = int(club_choice)
+            except ValueError:
+                abort(400)
+            club = models.get_club(club_id)
+            if not club:
+                abort(404)
+            region_prefix = models.get_club_region_prefix(club_id)
+            if not region_prefix:
+                flash(
+                    'That club has no RUSA region mapping. Sync all clubs or set '
+                    'region_prefix on the club record.',
+                    'error',
+                )
+                return redirect(url_for('admin.events'))
+            scope_label = club['name']
+    else:
+        region_prefix = session.get('brevethub_operator_region_prefix')
+        if not region_prefix:
+            flash(
+                'Your club is not mapped to a RUSA region. Contact a super-admin.',
+                'error',
+            )
+            return redirect(url_for('admin.events'))
+        scope_label = session.get('brevethub_operator_club_name') or 'your club'
+
+    result = run_refresh_calendar(region_prefix=region_prefix)
+    if result.get('ok'):
+        count = result.get('refreshed', 0)
+        flash(
+            f'RUSA sync for {scope_label}: {count} event(s) imported or updated.',
+            'success',
+        )
+    else:
+        flash(f'RUSA sync failed for {scope_label}. Try again in a few minutes.', 'error')
+    return redirect(url_for('admin.events'))
 
 
 def _event_lifecycle(event, today=None):
@@ -719,6 +776,182 @@ def _assert_event_club_access(event):
     if region_prefix and event_region == region_prefix:
         return
     abort(403)
+
+
+def _normalize_rwgps_url(url):
+    """Strip and normalize an RWGPS URL for change detection."""
+    value = (url or '').strip()
+    return value.rstrip('/') or None
+
+
+def _fetch_rwgps_elevation_ft(rwgps_url):
+    """Return elevation in feet scraped from a RideWithGPS route page."""
+    from shared.rusa_calendar import get_rwgps_details
+
+    _, elevation_ft = get_rwgps_details(rwgps_url)
+    return elevation_ft
+
+
+def _apply_rwgps_elevation(fields, previous_rwgps_url=None, previous_elevation_ft=None):
+    """Refresh stored elevation when the RideWithGPS URL changes or is missing.
+
+    Returns ``(fields, note)`` where ``note`` is an optional flash suffix.
+    """
+    new_url = _normalize_rwgps_url(fields.get('rwgps_url'))
+    old_url = _normalize_rwgps_url(previous_rwgps_url)
+    fields['rwgps_url'] = new_url
+
+    if not new_url:
+        if old_url:
+            fields['elevation_ft'] = None
+            return fields, 'RideWithGPS link removed; elevation cleared.'
+        fields.pop('elevation_ft', None)
+        return fields, None
+
+    if new_url == old_url and previous_elevation_ft is not None:
+        fields.pop('elevation_ft', None)
+        return fields, None
+
+    elevation_ft = _fetch_rwgps_elevation_ft(new_url)
+    fields['elevation_ft'] = elevation_ft
+    if elevation_ft is not None:
+        return fields, f'Elevation updated to {elevation_ft:,} ft from RideWithGPS.'
+    return fields, 'Could not fetch elevation from RideWithGPS — try again later.'
+
+
+def _apply_route_elevation_fallback(fields, event):
+    """Use a sibling brevet's elevation when RUSA omitted the climbing column."""
+    if fields.get('elevation_ft') is not None:
+        return fields, None
+    if event.get('elevation_ft'):
+        fields.pop('elevation_ft', None)
+        return fields, None
+    route_id = event.get('rusa_route_id')
+    if not route_id:
+        return fields, None
+    cached = models.get_cached_elevation_for_rusa_route(route_id)
+    if cached is None:
+        return fields, None
+    fields['elevation_ft'] = cached
+    return fields, f'Elevation set to {cached:,} ft from the same RUSA route.'
+
+
+def _parse_event_edit_form(form):
+    """Normalize POST fields for enrich_brevet_event_registration."""
+    fields = {}
+
+    start_location = (form.get('start_location') or '').strip()
+    fields['start_location'] = start_location or None
+
+    start_time = (form.get('start_time') or '').strip()
+    fields['start_time'] = start_time or None
+
+    time_limit = (form.get('time_limit_hours') or '').strip()
+    if time_limit:
+        try:
+            fields['time_limit_hours'] = float(time_limit)
+        except ValueError:
+            pass
+    else:
+        fields['time_limit_hours'] = None
+
+    rwgps = (form.get('rwgps_url') or '').strip()
+    fields['rwgps_url'] = rwgps or None
+
+    fee_raw = (form.get('fee_dollars') or '').strip()
+    if fee_raw:
+        try:
+            fields['fee_cents'] = int(round(float(fee_raw) * 100))
+        except ValueError:
+            pass
+    else:
+        fields['fee_cents'] = None
+
+    deadline = (form.get('registration_deadline') or '').strip()
+    fields['registration_deadline'] = deadline or None
+
+    capacity = (form.get('capacity') or '').strip()
+    if capacity:
+        try:
+            fields['capacity'] = int(capacity)
+        except ValueError:
+            pass
+    else:
+        fields['capacity'] = None
+
+    summary = (form.get('event_summary') or '').strip()
+    fields['event_summary'] = summary or None
+
+    fields['registration_enabled'] = form.get('registration_enabled') == 'on'
+    fields['volunteer_enabled'] = form.get('volunteer_enabled') == 'on'
+
+    club_raw = (form.get('club_id') or '').strip()
+    if club_raw:
+        try:
+            fields['club_id'] = int(club_raw)
+        except ValueError:
+            pass
+    else:
+        fields['club_id'] = None
+
+    return fields
+
+
+@admin_bp.route('/events/event/<int:event_id>/edit', methods=['GET', 'POST'])
+@operator_required
+def event_edit(event_id):
+    """Edit club-specific metadata on a cached RUSA brevet (start, registration, etc.)."""
+    event = models.get_brevet_event_registration(event_id)
+    if not event:
+        abort(404)
+    _assert_event_club_access(event)
+
+    operator_club_id = _operator_club_id()
+    is_super = _is_super_admin()
+    clubs = models.list_all_clubs_for_admin() if is_super else []
+
+    if request.method == 'POST':
+        fields = _parse_event_edit_form(request.form)
+        if not is_super:
+            fields['club_id'] = operator_club_id
+        fields, elev_note = _apply_rwgps_elevation(
+            fields,
+            event.get('rwgps_url'),
+            previous_elevation_ft=event.get('elevation_ft'),
+        )
+        fields, route_note = _apply_route_elevation_fallback(fields, event)
+        models.enrich_brevet_event_registration(event_id, **fields)
+        message = 'Event details updated.'
+        for note in (elev_note, route_note):
+            if note:
+                message = f'{message} {note}'
+        flash(message, 'success')
+        return redirect(url_for('admin.event_roster', event_id=event_id))
+
+    fee_dollars = ''
+    if event.get('fee_cents') is not None:
+        fee_dollars = f"{event['fee_cents'] / 100:.2f}".rstrip('0').rstrip('.')
+
+    start_time_value = event.get('start_time')
+    if start_time_value and hasattr(start_time_value, 'strftime'):
+        start_time_value = start_time_value.strftime('%H:%M')
+    elif start_time_value:
+        start_time_value = str(start_time_value)[:5]
+
+    reg_deadline = event.get('registration_deadline')
+    if reg_deadline and hasattr(reg_deadline, 'isoformat'):
+        reg_deadline = reg_deadline.isoformat()[:10]
+
+    return render_template(
+        'admin/event_edit.html',
+        event=event,
+        clubs=clubs,
+        is_super_admin=is_super,
+        operator_club_id=operator_club_id,
+        fee_dollars=fee_dollars,
+        start_time_value=start_time_value or '',
+        registration_deadline_value=reg_deadline or '',
+    )
 
 
 @admin_bp.route('/registrations/event/<int:event_id>', methods=['GET', 'POST'])

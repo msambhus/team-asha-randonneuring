@@ -194,8 +194,12 @@
               </td>
               <td>
                 {% set start_time = ev.plan_start_time or ev.start_time if calendar_app == 'team_asha' else ev.start_time %}
-                <div>{{ ev.start_location or '—' }}</div>
-                {% if start_time %}<div class="calendar-table-muted">{{ start_time }}</div>{% endif %}
+                {% if start_time or ev.start_location %}
+                {% if start_time %}<div>{{ start_time }}</div>{% else %}<div>—</div>{% endif %}
+                {% if ev.start_location %}<div class="calendar-table-muted">{{ ev.start_location }}</div>{% endif %}
+                {% else %}
+                <div>—</div>
+                {% endif %}
               </td>
               <td class="calendar-nowrap">
                 {% if ev.time_limit_hours %}{{ ev.time_limit_hours }} h{% else %}—{% endif %}

@@ -93,7 +93,34 @@ _RESULT_STATUSES = {
 }
 
 
-def _scrape_and_upsert():
+def _filter_events_by_region(events, region_prefix):
+    """Keep only events whose RUSA region label matches the club prefix."""
+    if not region_prefix:
+        return events
+    return [e for e in events if (e.get('region') or '') == region_prefix]
+
+
+def _fill_scraped_event_elevations(events):
+    """Fill missing RUSA climbing values from sibling rows with the same route id."""
+    by_route = {}
+    for event in events:
+        route_id = event.get('route_id')
+        elevation_ft = event.get('elevation_ft')
+        if route_id and elevation_ft:
+            by_route.setdefault(str(route_id), elevation_ft)
+
+    for event in events:
+        if event.get('elevation_ft'):
+            continue
+        route_id = event.get('route_id')
+        if not route_id:
+            continue
+        peer_elev = by_route.get(str(route_id))
+        if peer_elev is not None:
+            event['elevation_ft'] = peer_elev
+
+
+def _scrape_and_upsert(region_prefix=None):
     """Scrape the national RUSA calendar and upsert each event into rp_brevet_event.
 
     Returns the number of events upserted (0 when the scrape returned nothing).
@@ -102,6 +129,10 @@ def _scrape_and_upsert():
     shows a soft banner. An empty scrape performs NO upsert, so a transient RUSA
     outage that returns nothing never clobbers a good cache. Shared by the cron
     refresh and the one-time empty-cache seed so the scrape+upsert logic lives once.
+
+    ``region_prefix`` — when set (e.g. ``CA: San Francisco``), only events for
+    that RUSA region label are upserted. The national feed is still fetched once;
+    filtering happens in-process. ``None`` upserts every sanctioned event.
 
     fetch_rwgps=False: the national feed alone is enough for the calendar, and
     following every route-detail page would make a load do dozens of blocking HTTP
@@ -113,6 +144,10 @@ def _scrape_and_upsert():
     )
     if not events:
         return 0
+    events = _filter_events_by_region(events, region_prefix)
+    if not events:
+        return 0
+    _fill_scraped_event_elevations(events)
     for event in events:
         models.upsert_brevet_event(event)
     return len(events)
