@@ -245,6 +245,7 @@
         <button type="button" class="dropdown-trigger bg-transparent border-0 text-inherit no-underline inline-block cursor-pointer after:content-['_▾'] after:text-xs" aria-haspopup="true" aria-expanded="false">{{ user_email }}</button>
         <div class="nav-dropdown-menu">
             <a href="{{ url_for('main.profile') }}" class="nav-dropdown-item">My Profile</a>
+            <a href="{{ url_for('main.profile') }}#connections" class="nav-dropdown-item">Connections</a>
             <a href="{{ url_for('main.dashboard') }}" class="nav-dropdown-item">My Rides</a>
             {% if user_rusa_id %}
             <a href="{{ url_for('riders.rider_profile', rusa_id=user_rusa_id) }}" class="nav-dropdown-item">Public Rider Page</a>
@@ -303,6 +304,7 @@
         <button type="button" class="dropdown-trigger bg-transparent border-0 text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs" aria-haspopup="true" aria-expanded="false">{{ user_email }}</button>
         <div class="nav-dropdown-menu">
             <a href="{{ url_for('main.profile') }}" class="nav-dropdown-item">My Profile</a>
+            <a href="{{ url_for('main.profile') }}#connections" class="nav-dropdown-item">Connections</a>
             <a href="{{ url_for('main.dashboard') }}" class="nav-dropdown-item">My Rides</a>
             {% if user_rusa_id %}
             <a href="{{ url_for('riders.rider_profile', rusa_id=user_rusa_id) }}" class="nav-dropdown-item">Public Rider Page</a>
