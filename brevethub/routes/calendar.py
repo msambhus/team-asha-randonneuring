@@ -288,7 +288,15 @@ def calendar():
     else:
         my_volunteer_signups = {}
 
-    default_state = (club or {}).get('state') if club else None
+    default_state = request.args.get('state') or None
+    default_area = request.args.get('area') or None
+    from brevethub.services.club_site import host_club_from_config
+    host = host_club_from_config(current_app)
+    if host:
+        default_state = default_state or host.get('filter_state')
+        default_area = default_area or host.get('filter_area')
+    elif club:
+        default_state = default_state or club.get('state')
     post_ride_open_by_event = {
         ev['id']: models.event_post_ride_open(ev) for ev in events
     }
@@ -302,6 +310,7 @@ def calendar():
         my_results=my_results, rider=rider, club=club, states=states,
         regions_by_state=regions_by_state,
         default_state=default_state,
+        default_area=default_area,
         followed_live_event_ids=followed_live_event_ids,
         my_volunteer_signups=my_volunteer_signups,
         volunteer_summary_by_event=volunteer_summary_by_event,

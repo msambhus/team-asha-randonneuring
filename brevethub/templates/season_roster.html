@@ -50,7 +50,7 @@
           {% for r in roster %}
           <tr>
             <td>
-              <a class="rs-rider" href="{{ url_for('riders.rider_profile', rider_id=r.id) }}">{{ r.display_name }}</a>
+              <a class="rs-rider" href="{{ url_for('riders.rider_profile', rusa_id=r.rusa_id) }}">{{ r.display_name }}</a>
             </td>
             <td class="rs-num">{{ r.summary.count }}</td>
             <td class="rs-num">{{ r.summary.total_km }}</td>

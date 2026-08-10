@@ -3,7 +3,7 @@
 Login-gated surfaces that turn BrevetHub from self-profile-only into a real
 multi-rider club, each scoped to the signed-in viewer's OWN club:
 
-- ``/riders/<int:rider_id>``      a same-club rider's public profile (access-gated)
+- ``/riders/<int:rusa_id>``       a same-club rider's public profile (access-gated)
 - ``/riders``                     the club rider directory (searchable by display name)
 - ``/riders/season/<name>``       the club roster for one randonneuring season
 
@@ -523,18 +523,27 @@ def season_roster(season_name):
                            current_season=seasons.current_season_name(today))
 
 
-@riders_bp.route('/riders/<int:rider_id>')
-def rider_profile(rider_id):
+@riders_bp.route('/riders/<int:rusa_id>')
+def rider_profile(rusa_id):
     """A same-club rider's public profile: hero + career stat cards + season-by-season
-    brevet history. Keyed on the unique rider id (not the RUSA id, which BrevetHub
-    lets two riders share), so every rider resolves to exactly one profile. Access
-    gate: same club → 200; other club → 404; a rider viewing their own record → 200
-    (even when club-less); anonymous → login redirect (the decorator). No full email
-    or google_id ever reaches the rendered page.
+    brevet history. Keyed on the RUSA member id — the identifier riders recognize —
+    while database ids stay internal. Access gate: same club → 200; other club → 404;
+    a rider viewing their own record → 200 (even when club-less); anonymous may view
+    when the rider has official RUSA history. No full email or google_id ever reaches
+    the rendered page.
     """
     viewer = current_rider()
     today = date.today()
 
+    resolved = models.get_rider_by_rusa_id(rusa_id)
+    if resolved is None:
+        # Legacy URLs keyed on internal database id before public pages used RUSA ids.
+        legacy = models.get_public_rider(rusa_id)
+        if legacy and legacy.get('rusa_id'):
+            return redirect(url_for('riders.rider_profile', rusa_id=legacy['rusa_id']))
+        abort(404)
+
+    rider_id = resolved['id']
     is_self = bool(viewer and viewer['id'] == rider_id)
     target = None
     if viewer and viewer.get('club_id'):

@@ -53,7 +53,7 @@
       <p class="text-text-light mb-4">{{ riders | length }} rider{{ '' if riders | length == 1 else 's' }}{% if q %} matching &ldquo;{{ q }}&rdquo;{% endif %}.</p>
       <div class="rider-grid">
         {% for r in riders %}
-          <a class="card rider-card" style="margin-bottom:0;" href="{{ url_for('riders.rider_profile', rider_id=r.id) }}">
+          <a class="card rider-card" style="margin-bottom:0;" href="{{ url_for('riders.rider_profile', rusa_id=r.rusa_id) }}">
             <span class="rider-avatar">{{ r.display_name[0]|upper }}</span>
             <span class="rider-meta">
               <span class="rider-name block">{{ r.display_name }}</span>

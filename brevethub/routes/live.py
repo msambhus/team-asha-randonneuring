@@ -58,6 +58,7 @@ from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
 from brevethub import models
 from brevethub.auth_api import bearer_or_session_rider
 from brevethub.decorators import current_rider, profile_required
+from brevethub.services.club_site import host_club_from_config
 from brevethub.shared import live_radial as radial
 from brevethub.shared import live_telemetry as tlm
 from brevethub.shared.garmin_livetrack import parse_session
@@ -118,12 +119,21 @@ def live_list():
     Garmin LiveTrack + phone-location share. The rider is resolved with the same
     current_rider helper calendar.py uses; the ride list itself is unchanged."""
     rider = current_rider()
-    rides = (models.get_rider_live_rides(rider['id'])
-             if rider and request.args.get('mine') == '1'
-             else models.get_public_rides())
+    mine = bool(rider and request.args.get('mine') == '1')
+    host_club = host_club_from_config(current_app)
+    if mine:
+        rides = (models.get_rider_live_rides_today(rider['id']) if host_club
+                 else models.get_rider_live_rides(rider['id']))
+    elif host_club:
+        rides = models.get_public_rides_today(
+            club_id=host_club.get('id'),
+            region_prefix=host_club.get('region_prefix'),
+        )
+    else:
+        rides = models.get_public_rides()
     return render_template('live_list.html', rides=rides, rider=rider,
-                           poll_seconds=LIVE_POLL_SECONDS,
-                           mine=bool(rider and request.args.get('mine') == '1'))
+                           poll_seconds=LIVE_POLL_SECONDS, mine=mine,
+                           live_today_only=bool(host_club))
 
 
 # NOTE: no along-route weather overlay on the BrevetHub live map yet. The shared

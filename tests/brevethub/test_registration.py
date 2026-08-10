@@ -333,3 +333,34 @@ def test_refresh_rusa_membership_persists_new_expiry(mock_lookup, mock_update):
         _rider(rusa_membership_expires=date(2025, 12, 31)), force=True)
     mock_update.assert_called_once()
     assert status['membership_expires'] == '2026-12-31'
+
+
+def test_controls_for_event_returns_structured_stops():
+    from brevethub.routes.register import _controls_for_event
+
+    stops = [
+        {'stop_order': 1, 'stop_type': 'start', 'location': 'Start Control: Crissy Field',
+         'distance_miles': 0, 'notes': None},
+        {'stop_order': 2, 'stop_type': 'control', 'location': 'Control #2: China Camp',
+         'distance_miles': 22.4, 'notes': 'Answer question on brevet card'},
+        {'stop_order': 3, 'stop_type': 'meal', 'location': 'Lunch',
+         'distance_miles': 71.5, 'notes': None},
+        {'stop_order': 99, 'stop_type': 'finish', 'location': 'Finish',
+         'distance_miles': 124, 'notes': None},
+    ]
+    with patch(
+        'brevethub.routes.register.models.get_brevet_route_plan_with_stops',
+        return_value={'plan': {}, 'stops': stops},
+    ):
+        controls = _controls_for_event(1)
+
+    assert len(controls) == 3
+    assert controls[0] == {
+        'order': 1, 'type': 'start', 'name': 'Start Control: Crissy Field',
+        'note': None, 'km': 0,
+    }
+    assert controls[1]['km'] == 36
+    assert controls[1]['note'] == 'Answer question on brevet card'
+    assert controls[2]['type'] == 'meal'
+
+
