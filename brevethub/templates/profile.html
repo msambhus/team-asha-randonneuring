@@ -2,14 +2,62 @@
 {% block title %}My Profile — {{ product_name }}{% endblock %}
 {% block extra_head %}
 <style>
-.profile-page { --profile-gap: 20px; padding-bottom: 48px; }
+.profile-page {
+  --profile-gap: 20px;
+  --profile-max: calc(100vw - 2rem);
+  --profile-sticky-top: 57px;
+  padding-bottom: 48px;
+}
+@media (min-width: 768px) {
+  .profile-page { --profile-sticky-top: 61px; }
+}
 
 .profile-banner {
   background: linear-gradient(135deg, #1a365d 0%, #2a4a7f 55%, #1e4d8c 100%);
   color: white;
   padding: 28px 24px 32px;
-  position: relative;
+  position: sticky;
+  top: var(--profile-sticky-top);
+  z-index: 90;
   overflow: hidden;
+  transition: padding 0.2s ease, box-shadow 0.2s ease;
+}
+.profile-banner.is-stuck {
+  padding: 10px 24px 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+}
+.profile-banner.is-stuck .profile-banner-inner {
+  gap: 10px;
+}
+.profile-banner.is-stuck .profile-avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 1rem;
+  border-width: 1px;
+}
+.profile-banner.is-stuck .profile-identity h1 {
+  font-size: 1.1rem;
+}
+.profile-banner.is-stuck .profile-banner-stats .stat-card {
+  min-width: 58px;
+  padding: 5px 8px;
+}
+.profile-banner.is-stuck .profile-banner-stats .stat-card .number {
+  font-size: 0.92rem;
+}
+.profile-banner.is-stuck .profile-banner-stats .stat-card .label {
+  font-size: 0.52rem;
+}
+.profile-banner.is-stuck .profile-banner-stats-strava {
+  margin-left: 20px;
+  padding-left: 20px;
+}
+.profile-banner-sentinel {
+  height: 1px;
+  width: 100%;
+  margin: 0;
+  pointer-events: none;
+  visibility: hidden;
 }
 .profile-banner::after {
   content: '';
@@ -19,7 +67,7 @@
   pointer-events: none;
 }
 .profile-banner-inner {
-  max-width: min(calc(100vw - 2rem), 1200px);
+  max-width: var(--profile-max);
   margin: 0 auto;
   display: flex;
   align-items: center;
@@ -40,14 +88,60 @@
   font-size: 1.75rem;
   font-weight: 800;
   flex-shrink: 0;
+  transition: width 0.2s ease, height 0.2s ease, font-size 0.2s ease;
 }
-.profile-identity { flex: 1; min-width: 200px; }
+.profile-identity { flex: 0 0 auto; min-width: 0; }
 .profile-identity h1 {
   font-size: 1.55rem;
   font-weight: 800;
-  margin: 0 0 4px;
+  margin: 0;
   letter-spacing: -0.02em;
+  white-space: nowrap;
+  transition: font-size 0.2s ease;
 }
+.profile-banner-stats {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: wrap;
+  margin-top: 0;
+  max-width: none;
+  padding: 0;
+  width: auto;
+}
+.profile-banner-stats > :first-child {
+  margin-left: auto;
+}
+.profile-banner-stats-career,
+.profile-banner-stats-strava {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.profile-banner-stats-strava {
+  margin-left: 32px;
+  padding-left: 32px;
+  border-left: 1px solid rgba(255, 255, 255, 0.22);
+}
+.profile-banner-stats .stat-card {
+  flex: 0 0 auto;
+  min-width: 72px;
+  padding: 8px 10px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+}
+.profile-banner-stats .stat-card .number {
+  font-size: 1.05rem;
+  line-height: 1.1;
+}
+.profile-banner-stats .stat-card .label {
+  font-size: 0.58rem;
+  margin-top: 2px;
+  letter-spacing: 0.05em;
+}
+
 .profile-meta {
   display: flex;
   flex-wrap: wrap;
@@ -67,46 +161,9 @@
   font-size: 0.78rem;
   font-weight: 600;
 }
-.profile-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-left: auto;
-}
-.profile-actions .btn {
-  font-size: 0.82rem;
-  padding: 8px 14px;
-}
-.profile-actions .btn-ghost {
-  background: rgba(255,255,255,0.12);
-  border: 1px solid rgba(255,255,255,0.35);
-  color: white;
-}
-.profile-actions .btn-ghost:hover { background: rgba(255,255,255,0.22); }
-
-.profile-stats {
-  max-width: min(calc(100vw - 2rem), 1200px);
-  margin: -22px auto 0;
-  padding: 0 4px;
-  position: relative;
-  z-index: 2;
-}
-.profile-stats .stats-row {
-  margin-top: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 10px;
-}
-.profile-stats .stat-card {
-  padding: 14px 12px;
-  border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-}
-.profile-stats .stat-card .number { font-size: 1.35rem; }
-.profile-stats .stat-card .label { font-size: 0.68rem; }
 
 .profile-shell {
-  max-width: min(calc(100vw - 2rem), 1200px);
+  max-width: var(--profile-max);
   margin: 24px auto 0;
   padding: 0 4px;
   display: grid;
@@ -171,40 +228,230 @@
 }
 .profile-metric.accent .val { color: var(--accent); }
 
-.sr-track {
-  margin-top: 14px;
-  padding: 14px;
-  background: #f0f4ff;
-  border-radius: 10px;
-  border: 1px solid #dbeafe;
+.profile-metric--sr {
+  grid-column: 1 / -1;
 }
-.sr-track-label {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--primary);
-  margin-bottom: 10px;
+.sr-award-seasons {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+}
+.sr-award-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #dbeafe;
+  border: 1px solid #93c5fd;
+  color: #1e40af;
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.sr-award-chip[title] { cursor: default; }
+.sr-award-more {
+  position: relative;
+  display: inline-block;
+}
+.sr-award-more summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  border: 1px dashed #cbd5e1;
+  color: #64748b;
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.sr-award-more summary::-webkit-details-marker { display: none; }
+.sr-award-more summary:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.sr-award-more-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.sr-award-timeline {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+.sr-award-tick {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: #1e293b;
+  position: relative;
+}
+.sr-award-tick.is-multi {
+  box-shadow: inset 0 0 0 1px #fff;
+  background: linear-gradient(135deg, #1e293b 50%, #3b82f6 50%);
+}
+.sr-award-timeline-caption {
+  margin-top: 4px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 0.02em;
+}
+
+.profile-goal-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.profile-goal-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #fff;
+}
+.profile-goal-head {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
+  margin-bottom: 10px;
 }
-.sr-legs { display: flex; gap: 8px; flex-wrap: wrap; }
-.sr-leg {
-  flex: 1;
-  min-width: 56px;
-  text-align: center;
-  padding: 8px 6px;
-  border-radius: 8px;
-  font-size: 0.78rem;
+.profile-goal-head h3 {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.profile-goal-meta {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.profile-goal-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.64rem;
   font-weight: 700;
-  border: 1px solid var(--border);
-  background: white;
-  color: var(--text-light);
+  letter-spacing: 0.02em;
 }
-.sr-leg.done {
-  background: linear-gradient(135deg, #1e40af, #1e3a8a);
-  color: white;
-  border-color: #1e3a8a;
+.profile-goal-badge--active {
+  background: #dcfce7;
+  color: #047857;
+  border: 1px solid #86efac;
 }
+.profile-goal-badge--sr {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+.profile-goal-head-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.profile-goal-foot {
+  margin: 10px 0 0;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: #64748b;
+}
+
+.sr-blocks {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.sr-block {
+  border-radius: 8px;
+  padding: 8px 4px;
+  text-align: center;
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.sr-block-km {
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.sr-block-date,
+.sr-block-status {
+  font-size: 0.64rem;
+  font-weight: 600;
+  line-height: 1.15;
+}
+.sr-block-count {
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.88;
+}
+.sr-block.is-done {
+  background: #1e293b;
+  color: #fff;
+}
+.sr-block.is-done .sr-block-date { opacity: 0.92; }
+.sr-block.is-open {
+  background: #fff;
+  border: 1px dashed #cbd5e1;
+  color: #94a3b8;
+}
+
+.r12-streak-body { margin-top: 0; }
+.r12-streak-count {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  color: #64748b;
+  line-height: 1.2;
+}
+.r12-streak-count strong {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #1e293b;
+  margin-right: 3px;
+}
+.r12-month-bar {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 3px;
+  max-width: 220px;
+}
+.r12-month-mark {
+  height: 12px;
+  border-radius: 3px;
+  background: #f1f5f9;
+}
+.r12-month-mark.is-done { background: #1e293b; }
+.r12-month-mark.is-current {
+  background: #fff7ed;
+  border: 1px dashed #ea580c;
+}
+.r12-month-mark.is-pending { background: #f1f5f9; }
 
 .pbp-track {
   margin-top: 14px;
@@ -336,6 +583,63 @@
   font-size: 0.82rem;
 }
 .strava-btn:hover { background: #e04302; }
+
+.strava-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.strava-summary-head h2 {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.strava-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fc4c02;
+  box-shadow: 0 0 0 2px rgba(252, 76, 2, 0.2);
+  flex-shrink: 0;
+}
+.strava-summary-rows {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.strava-summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.82rem;
+}
+.strava-summary-row dt {
+  margin: 0;
+  font-weight: 600;
+  color: #64748b;
+}
+.strava-summary-row dd {
+  margin: 0;
+  font-weight: 700;
+  color: #1e293b;
+  text-align: right;
+}
+.strava-summary-foot {
+  margin: 12px 0 0;
+  font-size: 0.76rem;
+}
+.strava-summary-foot a {
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+}
+.strava-summary-foot a:hover { text-decoration: underline; }
 
 .activity-list { max-height: 280px; overflow-y: auto; }
 .activity-row {
@@ -599,54 +903,71 @@
   .profile-aside { order: -1; }
   .profile-training-stats { grid-template-columns: repeat(2, 1fr); }
   .profile-career-grid { grid-template-columns: 1fr 1fr; }
+  .profile-goal-cards { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .profile-banner-inner { flex-direction: column; align-items: flex-start; }
-  .profile-actions { margin-left: 0; width: 100%; }
+  .profile-identity h1 { white-space: normal; }
+  .profile-banner-stats {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .profile-banner-stats > :first-child {
+    margin-left: 0;
+  }
+  .profile-banner-stats-strava {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
+  }
   .profile-career-grid { grid-template-columns: 1fr; }
+  .sr-blocks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="profile-page">
+  <div class="profile-banner-sentinel" aria-hidden="true"></div>
   <header class="profile-banner">
     <div class="profile-banner-inner">
       <div class="profile-avatar" aria-hidden="true">{{ display_name[0]|upper }}</div>
       <div class="profile-identity">
         <h1>{{ display_name }}</h1>
       </div>
-      <div class="profile-actions">
-        <a class="btn btn-ghost" href="{{ url_for('main.dashboard') }}">My Rides</a>
-        {% if rider.profile_completed %}
-        <a class="btn btn-ghost" href="{{ url_for('riders.rider_profile', rusa_id=rider.rusa_id) }}">Public page</a>
+      {% if rider.profile_completed %}
+      <div class="profile-banner-stats">
+        {% if rusa.has_id and career.count %}
+        <div class="profile-banner-stats-career">
+          <div class="stat-card"><div class="number">{{ career.count }}</div><div class="label">Brevets</div></div>
+          <div class="stat-card"><div class="number">{{ career.total_km }}</div><div class="label">Career km</div></div>
+          {% set sr_total = career.total_sr %}
+          {% if sr_total > 0 %}
+          <div class="stat-card"><div class="number" style="color:var(--accent);">{% if sr_total > 1 %}SR×{{ sr_total }}{% else %}SR{% endif %}</div><div class="label">Super R.</div></div>
+          {% endif %}
+          <div class="stat-card"><div class="number">{{ career.r12_streak.months }}</div><div class="label">R-12 mo</div></div>
+        </div>
         {% endif %}
-        <button type="button" class="btn btn-primary" data-open-profile-modal>Account</button>
+        {% set show_eddington = eddington_miles is not none or strava.connected %}
+        {% set show_fitness = strava.stats and strava.stats.fitness is not none %}
+        {% if show_eddington or show_fitness %}
+        <div class="profile-banner-stats-strava">
+          {% if eddington_miles is not none %}
+          <div class="stat-card"><div class="number">{{ eddington_miles }}</div><div class="label">Eddington</div></div>
+          {% elif strava.connected %}
+          <div class="stat-card"><div class="number" style="color:var(--text-light);font-size:1rem;">—</div><div class="label">Eddington</div></div>
+          {% endif %}
+          {% if show_fitness %}
+          <div class="stat-card"><div class="number" style="color:{% if strava.stats.fitness >= 70 %}#38a169{% elif strava.stats.fitness >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ strava.stats.fitness }}</div><div class="label">Fitness</div></div>
+          {% endif %}
+        </div>
+        {% endif %}
       </div>
+      {% endif %}
     </div>
   </header>
 
   {% if rider.profile_completed %}
-  <div class="profile-stats">
-    <div class="stats-row is-compact">
-      {% if rusa.has_id and career.count %}
-      <div class="stat-card"><div class="number">{{ career.count }}</div><div class="label">Brevets</div></div>
-      <div class="stat-card"><div class="number">{{ career.total_km }}</div><div class="label">Career km</div></div>
-      {% set sr_total = career.total_sr %}
-      {% if sr_total > 0 %}
-      <div class="stat-card"><div class="number" style="color:var(--accent);">{% if sr_total > 1 %}SR×{{ sr_total }}{% else %}SR{% endif %}</div><div class="label">Super R.</div></div>
-      {% endif %}
-      <div class="stat-card"><div class="number">{{ career.r12_streak.months }}</div><div class="label">R-12 mo</div></div>
-      {% endif %}
-      {% if strava.stats and strava.stats.fitness is not none %}
-      <div class="stat-card"><div class="number" style="color:{% if strava.stats.fitness >= 70 %}#38a169{% elif strava.stats.fitness >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ strava.stats.fitness }}</div><div class="label">Fitness</div></div>
-      {% endif %}
-      {% if rider.eddington_miles is not none %}
-      <div class="stat-card"><div class="number">{{ rider.eddington_miles }}</div><div class="label">Eddington</div></div>
-      {% endif %}
-    </div>
-  </div>
-
   <div class="profile-shell">
     <div class="profile-main">
       <section class="profile-panel profile-career" id="career">
@@ -665,41 +986,115 @@
           <a class="btn btn-primary" href="{{ url_for('calendar.calendar') }}">Browse calendar</a>
         </div>
         {% else %}
+        <div class="profile-goal-cards">
+          <article class="profile-goal-card profile-goal-card--sr">
+            <header class="profile-goal-head">
+              <h3>Super Randonneur {{ sr_display.season_label }}</h3>
+              <div class="profile-goal-head-meta">
+                {% if sr_display.sr_count >= 1 %}
+                <span class="profile-goal-badge profile-goal-badge--sr">SR×{{ sr_display.sr_count }}</span>
+                {% endif %}
+                {% if sr_display.in_progress and sr_display.sr_count >= 1 %}
+                <span class="profile-goal-meta">Series {{ sr_display.series_idx }}</span>
+                {% else %}
+                <span class="profile-goal-meta">from RUSA history</span>
+                {% endif %}
+              </div>
+            </header>
+            <div class="sr-blocks">
+              {% for leg in [200, 300, 400, 600] %}
+              {% set leg_info = sr_display.legs[leg] %}
+              <div class="sr-block {% if leg_info.done %}is-done{% else %}is-open{% endif %}">
+                <span class="sr-block-km">{{ leg }}</span>
+                {% if leg_info.done %}
+                <span class="sr-block-date">{{ leg_info.date_label }}</span>
+                {% if leg_info.count > 1 %}
+                <span class="sr-block-count">×{{ leg_info.count }}</span>
+                {% endif %}
+                {% else %}
+                <span class="sr-block-status">open</span>
+                {% if leg_info.count > 0 %}
+                <span class="sr-block-count">×{{ leg_info.count }}</span>
+                {% endif %}
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+            {% if sr_display.hint %}
+            <p class="profile-goal-foot">{{ sr_display.hint }}</p>
+            {% endif %}
+          </article>
+
+          <article class="profile-goal-card profile-goal-card--r12">
+            <header class="profile-goal-head">
+              <h3>R-12 streak</h3>
+              {% if r12_display.active %}
+              <span class="profile-goal-badge profile-goal-badge--active">Active</span>
+              {% endif %}
+            </header>
+            <div class="r12-streak-body">
+              <p class="r12-streak-count">
+                <strong>{{ r12_display.months }}</strong> consecutive month{{ '' if r12_display.months == 1 else 's' }}
+              </p>
+              <div class="r12-month-bar" aria-hidden="true">
+                {% for state in r12_display.markers %}
+                <span class="r12-month-mark is-{{ state }}"></span>
+                {% endfor %}
+              </div>
+            </div>
+            {% if r12_display.hint %}
+            <p class="profile-goal-foot">{{ r12_display.hint }}</p>
+            {% endif %}
+          </article>
+        </div>
+
         <div class="profile-career-grid">
           <div class="profile-metric">
-            <div class="val">{{ career.total_km }}</div>
-            <div class="lbl">Career km</div>
-          </div>
-          <div class="profile-metric">
-            <div class="val">{{ career.count }}</div>
-            <div class="lbl">Brevets finished</div>
+            <div class="val">{{ career.current_season_km }}</div>
+            <div class="lbl">
+              Season km · {{ career.current_season.split('-')[1] }}
+              {% if career.current_season_count %}
+              · {{ career.current_season_count }} ride{{ '' if career.current_season_count == 1 else 's' }}
+              {% endif %}
+            </div>
           </div>
           <div class="profile-metric accent">
             <div class="val">{{ career.r12_awards | length }}</div>
             <div class="lbl">R-12 awards</div>
           </div>
-          <div class="profile-metric">
-            <div class="val">{{ career.r12_streak.months }}<span style="font-size:0.85rem;font-weight:600;color:var(--text-light);"> mo</span></div>
-            <div class="lbl">R-12 streak {% if career.r12_streak.active %}· active{% endif %}</div>
-          </div>
-        </div>
-        <div class="sr-track">
-          <div class="sr-track-label">
-            <span>Super Randonneur · {{ career.current_season }}</span>
-            {% if career.current_sr.is_sr %}
-            <span class="badge">Complete{% if career.current_sr.sr_count > 1 %} ×{{ career.current_sr.sr_count }}{% endif %}</span>
-            {% elif career.sr_seasons %}
-            <span style="font-weight:500;font-size:0.72rem;color:var(--text-light);">Past: {{ career.sr_seasons | join(', ') }}</span>
+          {% if career.sr_awards_by_season %}
+          <div class="profile-metric profile-metric--sr">
+            <div class="val">{{ career.total_sr }}</div>
+            <div class="lbl">SR awards · {{ career.sr_awards_by_season | length }} season{{ '' if career.sr_awards_by_season | length == 1 else 's' }}</div>
+            <div class="sr-award-seasons" aria-label="Super Randonneur seasons">
+              {% for item in career.sr_awards_by_season[:5] %}
+              <span class="sr-award-chip" title="{{ item.season }}{% if item.count > 1 %} · SR×{{ item.count }}{% endif %}">
+                {{ item.year_label }}{% if item.count > 1 %}×{{ item.count }}{% endif %}
+              </span>
+              {% endfor %}
+              {% if career.sr_awards_by_season | length > 5 %}
+              <details class="sr-award-more">
+                <summary>+{{ career.sr_awards_by_season | length - 5 }}</summary>
+                <div class="sr-award-more-panel">
+                  {% for item in career.sr_awards_by_season[5:] %}
+                  <span class="sr-award-chip" title="{{ item.season }}{% if item.count > 1 %} · SR×{{ item.count }}{% endif %}">
+                    {{ item.year_label }}{% if item.count > 1 %}×{{ item.count }}{% endif %}
+                  </span>
+                  {% endfor %}
+                </div>
+              </details>
+              {% endif %}
+            </div>
+            {% if career.sr_awards_by_season | length > 2 %}
+            <div class="sr-award-timeline" aria-hidden="true">
+              {% for item in career.sr_awards_by_season | reverse %}
+              <span class="sr-award-tick{% if item.count > 1 %} is-multi{% endif %}"
+                    title="{{ item.season }}{% if item.count > 1 %} · SR×{{ item.count }}{% endif %}"></span>
+              {% endfor %}
+            </div>
+            <div class="sr-award-timeline-caption">Oldest ← season timeline → newest</div>
             {% endif %}
           </div>
-          {% if not career.current_sr.is_sr %}
-          <div class="sr-legs">
-            {% for leg in [200, 300, 400, 600] %}
-            <span class="sr-leg {% if career.current_sr.legs[leg] %}done{% endif %}">{{ leg }}k</span>
-            {% endfor %}
-          </div>
-          {% else %}
-          <p style="margin:0;font-size:0.82rem;color:#1e40af;font-weight:600;">All four distances completed this season.</p>
           {% endif %}
         </div>
         {% if pbp_finishes %}
@@ -813,6 +1208,55 @@
       </section>
       {% endif %}
 
+      <section class="profile-panel profile-strava-aside" id="strava-summary">
+        {% if not strava.connected %}
+        <div class="strava-summary-head">
+          <h2>Strava</h2>
+        </div>
+        <p class="text-text-light text-sm mb-3" style="margin-top:0;">Connect for a 28-day training summary and fitness score.</p>
+        <a class="strava-btn" href="{{ url_for('strava.connect') }}">Connect Strava</a>
+        {% else %}
+        <div class="strava-summary-head">
+          <h2>Strava · Last 28 days</h2>
+          <span class="strava-live-dot" title="Strava connected"></span>
+        </div>
+        {% if strava.error %}
+        <p class="py-2 px-3 rounded-lg text-sm bg-[#fef3c7] text-[#78350f] mb-3">{{ strava.error }}</p>
+        {% endif %}
+        {% if strava.stats %}
+        <dl class="strava-summary-rows">
+          <div class="strava-summary-row">
+            <dt>Rides</dt>
+            <dd>{{ strava.stats.rides }}</dd>
+          </div>
+          <div class="strava-summary-row">
+            <dt>Distance</dt>
+            <dd>{{ strava.stats.distance_km | commafy }} km</dd>
+          </div>
+          {% if strava.stats.fitness is not none %}
+          <div class="strava-summary-row">
+            <dt>Fitness score</dt>
+            <dd>{{ strava.stats.fitness }}/100</dd>
+          </div>
+          {% endif %}
+          <div class="strava-summary-row">
+            <dt>Eddington</dt>
+            <dd>{% if eddington_miles is not none %}{{ eddington_miles }} mi{% else %}Pending{% endif %}</dd>
+          </div>
+        </dl>
+        {% else %}
+        <dl class="strava-summary-rows">
+          <div class="strava-summary-row">
+            <dt>Eddington</dt>
+            <dd>{% if eddington_miles is not none %}{{ eddington_miles }} mi{% else %}Pending{% endif %}</dd>
+          </div>
+        </dl>
+        <p class="text-text-light text-sm mb-0">28-day summary syncing shortly.</p>
+        {% endif %}
+        <p class="strava-summary-foot"><a href="{{ url_for('main.dashboard') }}">Full dashboard →</a></p>
+        {% endif %}
+      </section>
+
       <section class="profile-panel" id="edit-profile">
         <div class="profile-panel-head">
           <div class="profile-panel-title">
@@ -921,6 +1365,55 @@
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+  var page = document.querySelector('.profile-page');
+  var banner = document.querySelector('.profile-banner');
+  var sentinel = document.querySelector('.profile-banner-sentinel');
+  if (page && banner && sentinel) {
+    function stickyHeader() {
+      return document.querySelector('.club-header')
+        || document.querySelector('header.bg-gradient-to-br');
+    }
+
+    function stickyTopPx() {
+      var header = stickyHeader();
+      return header ? Math.ceil(header.getBoundingClientRect().height) : 57;
+    }
+
+    function applyStickyTop() {
+      var top = stickyTopPx();
+      page.style.setProperty('--profile-sticky-top', top + 'px');
+      return top;
+    }
+
+    var bannerObserver = null;
+    function updateStuckState() {
+      var top = applyStickyTop();
+      var stuck = sentinel.getBoundingClientRect().bottom <= top;
+      banner.classList.toggle('is-stuck', stuck);
+    }
+
+    function bindBannerObserver() {
+      if (bannerObserver) bannerObserver.disconnect();
+      applyStickyTop();
+      bannerObserver = new IntersectionObserver(function () {
+        updateStuckState();
+      }, {
+        threshold: 0,
+        rootMargin: '-' + stickyTopPx() + 'px 0px 0px 0px'
+      });
+      bannerObserver.observe(sentinel);
+      updateStuckState();
+    }
+
+    bindBannerObserver();
+    window.addEventListener('scroll', updateStuckState, { passive: true });
+    window.addEventListener('resize', bindBannerObserver);
+    var header = stickyHeader();
+    if (header && window.ResizeObserver) {
+      new ResizeObserver(bindBannerObserver).observe(header);
+    }
+  }
+
   var modal = document.getElementById('profile-edit-modal');
   if (!modal) return;
 

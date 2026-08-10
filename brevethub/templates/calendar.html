@@ -15,34 +15,24 @@
 }
 .calendar-toolbar {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    flex-wrap: nowrap;
+    gap: 16px;
+    flex-wrap: wrap;
     overflow: visible;
     position: relative;
-    background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-    border-radius: 12px;
-    padding: 14px 18px 14px 22px;
-    margin-bottom: 12px;
-    border: 2px solid #cbd5e1;
-    box-shadow: 0 4px 16px rgba(31, 79, 133, 0.1);
-}
-.calendar-toolbar::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 12px;
-    bottom: 12px;
-    width: 4px;
-    border-radius: 0 4px 4px 0;
-    background: var(--primary);
+    background: transparent;
+    border-radius: 0;
+    padding: 0 0 8px;
+    margin-bottom: 4px;
+    border: 0;
+    box-shadow: none;
 }
 .calendar-toolbar-filters {
     display: flex;
-    flex-wrap: nowrap;
-    align-items: flex-end;
-    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
     flex: 1 1 auto;
     min-width: 0;
     overflow: visible;
@@ -50,13 +40,26 @@
 .calendar-toolbar-filters .region-select-wrap {
     flex: 0 0 auto;
 }
-.region-select-wrap--state { min-width: 92px; }
-.region-select-wrap--area { min-width: 150px; max-width: 220px; }
+.region-select-wrap--state { min-width: 0; }
+.region-select-wrap--area { min-width: 0; max-width: none; }
 .event-type-filter-wrap {
-    min-width: 124px;
-    max-width: 170px;
+    min-width: 0;
+    max-width: none;
     flex: 0 0 auto;
 }
+.region-select-caption { display: none; }
+.cal-filter-link {
+    border: 0;
+    background: none;
+    padding: 0;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--primary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.cal-filter-link:hover { text-decoration: underline; }
+.cal-filter-link[hidden] { display: none !important; }
 .event-type-multiselect {
     position: relative;
 }
@@ -64,24 +67,36 @@
     display: block;
     width: 100%;
     cursor: pointer;
-    padding: 8px 34px 8px 12px;
-    border-radius: 8px;
-    border: 2px solid #94a3b8;
+    padding: 7px 30px 7px 12px;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
     background: white;
-    font-weight: 700;
-    font-size: 0.84rem;
-    color: var(--text);
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: #64748b;
     text-align: left;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: none;
+    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%2364748b' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
     background-repeat: no-repeat;
     background-position: right 12px center;
 }
 .event-type-multiselect-trigger:hover { border-color: var(--primary); }
+.event-type-multiselect-trigger.is-active,
+.calendar-toolbar .region-select.is-active {
+    background-color: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+}
+.event-type-multiselect-trigger.is-active {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%23ffffff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+.calendar-toolbar .region-select.is-active {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
 .event-type-multiselect-trigger:focus-visible {
     outline: none;
     border-color: var(--primary);
@@ -118,27 +133,30 @@
 }
 .calendar-toolbar-actions .calendar-view-toggle {
     display: inline-flex;
-    border: 2px solid #94a3b8;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
-    background: #fff;
+    background: #e2e8f0;
+    border-radius: 999px;
+    padding: 3px;
+    gap: 2px;
+    border: 0;
+    box-shadow: none;
 }
 .calendar-toolbar-actions .calendar-view-toggle button {
-    padding: 8px 14px;
-    font-size: 0.84rem;
-    font-weight: 700;
+    padding: 7px 16px;
+    font-size: 0.82rem;
+    font-weight: 600;
     border: 0;
+    border-radius: 999px;
     cursor: pointer;
-    color: var(--text);
-    background: #fff;
+    color: #64748b;
+    background: transparent;
 }
 .calendar-toolbar-actions .calendar-view-toggle button.active {
-    background: var(--primary);
-    color: #fff;
+    background: #fff;
+    color: #1e293b;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 .calendar-toolbar-actions .calendar-view-toggle button + button {
-    border-left: 1.5px solid var(--border);
+    border-left: 0;
 }
 .calendar-toolbar-hint {
     font-size: 0.78rem;
@@ -168,16 +186,17 @@
 }
 .calendar-toolbar .region-select {
     cursor: pointer;
-    width: 100%;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 2px solid #94a3b8;
+    width: auto;
+    max-width: 220px;
+    padding: 7px 30px 7px 12px;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
     background: white;
-    font-weight: 700;
-    font-size: 0.84rem;
-    color: var(--text);
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: #64748b;
+    box-shadow: none;
+    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
     appearance: none;
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%23475569' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
     background-repeat: no-repeat;
@@ -214,73 +233,105 @@
     opacity: 0.55;
     background-color: var(--card-bg, #f8fafc);
 }
-.month-section { margin-bottom: 40px; }
+.month-section { margin-bottom: 36px; }
 .month-header {
-    background: linear-gradient(135deg, #0891b2, #0e7490);
-    color: white;
-    padding: 12px 20px;
-    border-radius: 8px;
-    font-size: 1.3rem;
+    background: none;
+    color: #64748b;
+    padding: 0 0 12px;
+    border-radius: 0;
+    font-size: 0.72rem;
     font-weight: 800;
-    margin-bottom: 20px;
-    display: inline-block;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    display: block;
+    box-shadow: none;
+    border-bottom: 2px solid #e2e8f0;
+}
+.calendar-layout {
+    padding-top: 8px;
 }
 .events-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 22px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
 }
 .event-card {
     background: white;
     border: 2px solid var(--border);
     border-radius: 12px;
     padding: 16px 18px;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: box-shadow 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
     position: relative;
     overflow: hidden;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
-        "top date"
-        "title date"
-        "links links"
-        "details details"
-        "weather weather"
-        "signup signup";
-    gap: 8px 14px;
+        "top"
+        "title"
+        "links"
+        "tags"
+        "details"
+        "weather"
+        "signup";
+    gap: 8px;
     align-items: start;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
 }
+.event-card::before { display: none; }
 .event-card:hover {
     transform: translateY(-4px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
     border-color: var(--primary);
 }
 .event-card:has(.bulk-select-wrap) {
     padding-left: 38px;
 }
+.event-card-top {
+    grid-area: top;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px 12px;
+    min-width: 0;
+}
+.event-card-top-main {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    flex: 1;
+    min-width: 0;
+}
 .event-date {
-    grid-area: date;
     position: static;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    min-width: 52px;
     text-align: center;
     background: linear-gradient(135deg, #1e40af, #1e3a8a);
     color: white;
     border-radius: 8px;
     padding: 6px 10px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    justify-self: end;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
-.event-card-top {
-    grid-area: top;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 10px;
-    min-width: 0;
-    padding-right: 4px;
+.event-card:hover .event-date {
+    transform: scale(1.03);
+    box-shadow: 0 4px 12px rgba(30, 64, 175, 0.25);
 }
 .event-day { font-size: 1.4rem; font-weight: 800; line-height: 1; color: white; }
-.event-month { font-size: 0.62rem; font-weight: 600; text-transform: uppercase; margin-top: 2px; color: #fb923c; }
+.event-month {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 2px;
+    color: #fb923c;
+}
 .event-region-badge {
     display: inline-flex;
     align-items: center;
@@ -294,22 +345,30 @@
     margin-bottom: 0;
     width: fit-content;
     max-width: 100%;
+    border: 0;
 }
-.event-distance-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 0; }
+.event-distance-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 0;
+}
 .event-distance { font-size: 1.15rem; font-weight: 800; color: var(--accent); white-space: nowrap; }
 .event-elevation { font-size: 0.75rem; color: var(--text-light); font-weight: 500; }
+.event-card-head { display: none; }
 .event-title-block {
     grid-area: title;
     border-bottom: 3px solid var(--accent);
     padding-bottom: 6px;
-    min-height: 3rem;
+    min-height: 2.75rem;
     display: flex;
     align-items: flex-start;
     min-width: 0;
-    padding-right: 4px;
 }
+.event-card-subtitle { display: none; }
 .event-title {
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     font-weight: 700;
     color: var(--primary);
     margin: 0;
@@ -323,7 +382,7 @@
     width: 100%;
 }
 .calendar-layout .event-card h2.event-title {
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     font-weight: 700;
     margin: 0;
     padding: 0;
@@ -340,7 +399,65 @@
     margin: 0;
 }
 .event-title a:hover { color: var(--accent); text-decoration: underline; }
-.event-links { grid-area: links; display: flex; gap: 6px; margin-top: 0; flex-wrap: wrap; }
+.event-card-stats { display: none; }
+.event-card-tags {
+    grid-area: tags;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+}
+.event-card-tags:empty { display: none; }
+.event-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    white-space: nowrap;
+}
+.event-tag.signup-count {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border-color: #bfdbfe;
+}
+.event-tag.is-accent {
+    background: #fff7ed;
+    color: #c2410c;
+    border-color: #fed7aa;
+}
+.event-tag.is-route {
+    background: #ecfdf5;
+    color: #047857;
+    border-color: #6ee7b7;
+}
+a.event-tag.is-route {
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+a.event-tag.is-route:hover {
+    background: #d1fae5;
+    border-color: #34d399;
+    transform: translateY(-1px);
+}
+.event-tag.is-elevation {
+    background: #f5f3ff;
+    color: #6d28d9;
+    border-color: #ddd6fe;
+}
+.event-links {
+    grid-area: links;
+    display: flex;
+    gap: 6px;
+    margin-top: 2px;
+    flex-wrap: wrap;
+}
 .event-link-btn {
     display: inline-flex;
     align-items: center;
@@ -355,7 +472,30 @@
     background: linear-gradient(135deg, #f0f4ff, #e8f0fe);
     color: #4338ca;
 }
-.event-link-btn:hover { transform: translateY(-2px); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.event-link-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    background: linear-gradient(135deg, #e8f0fe, #dbeafe);
+    color: #3730a3;
+    border-color: #c7d2fe;
+}
+.event-link-btn.is-route {
+    background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+    border-color: #6ee7b7;
+    color: #047857;
+}
+.event-link-btn.is-route:hover {
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    border-color: #34d399;
+    color: #065f46;
+    box-shadow: 0 2px 8px rgba(4, 120, 87, 0.15);
+}
+.event-link-btn.is-live,
+.event-link-btn.is-following {
+    background: linear-gradient(135deg, #f0f4ff, #e8f0fe);
+    border-color: var(--border);
+    color: #4338ca;
+}
 .event-details-info {
     grid-area: details;
     margin-top: 0;
@@ -398,18 +538,23 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    padding: 0;
 }
+.event-start-row::before { content: none; }
 .event-start-location {
-    font-weight: 500;
-    color: var(--text);
+    font-weight: 600;
+    color: #334155;
 }
 /* Weather badge — BrevetHub-specific card feature (no parent-app calendar
    counterpart); styled inline like the parent app's other page-specific rules. */
 .event-weather {
     grid-area: weather;
-    margin-top: 0;
-    padding-top: 8px;
-    border-top: 1px solid var(--border);
+    margin-top: 2px;
+    padding: 7px 10px;
+    border-top: 0;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    border: 1px solid #bae6fd;
     display: flex;
     flex-wrap: wrap;
     gap: 6px 10px;
@@ -417,42 +562,79 @@
     font-size: 0.76rem;
     color: var(--text);
 }
-.event-weather .wx-condition { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--primary); }
-.event-weather .wx-metric { color: var(--text-light); }
-.event-weather-none .wx-metric { font-style: italic; }
+.event-weather .wx-condition { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: #0369a1; }
+.event-weather .wx-metric { color: #0284c7; font-weight: 500; }
+.event-weather-none {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+}
+.event-weather-none .wx-metric { font-style: italic; color: #94a3b8; }
 .signup-section {
     grid-area: signup;
-    margin-top: 0;
+    margin-top: 6px;
     padding-top: 10px;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid #e2e8f0;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 .signup-status-row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: 8px;
+    gap: 10px 12px;
     flex-wrap: nowrap;
-    min-height: 28px;
     min-width: 0;
 }
 .signup-status-chips {
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
     flex: 1;
     min-width: 0;
-    overflow: hidden;
 }
+.club-registration-note {
+    display: block;
+    flex: 1 1 12rem;
+    min-width: 0;
+    margin: 0;
+    font-size: 0.72rem;
+    line-height: 1.45;
+    color: var(--text-light);
+}
+.club-registration-note a {
+    color: var(--primary);
+    font-weight: 600;
+    text-decoration: none;
+}
+.club-registration-note a:hover { text-decoration: underline; }
 .signup-status-trailing {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     flex-shrink: 0;
     margin-left: auto;
+    align-self: center;
+}
+.signup-status-trailing .signup-btn.register-primary {
+    border: none;
+    padding: 7px 16px;
+    min-height: auto;
+    font-size: 0.88rem;
+    font-weight: 700;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #1e40af, #1e3a8a);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(30, 64, 175, 0.25);
+    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+.signup-status-trailing .signup-btn.register-primary:hover {
+    background: linear-gradient(135deg, #1d4ed8, #1e40af);
+    color: #fff;
+    text-decoration: none;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(30, 64, 175, 0.35);
 }
 .signup-meta-inline {
     font-size: 0.75rem;
@@ -589,7 +771,7 @@
 .event-actions-item.is-danger:hover { background: #fef2f2; }
 .event-actions-item.is-volunteer { color: #92400e; }
 .event-actions-item.is-volunteer:hover { background: #fffbeb; }
-.signup-count {
+.signup-count:not(.event-tag) {
     display: inline-flex;
     align-items: center;
     padding: 2px 8px;
@@ -599,6 +781,10 @@
     background: #f0f9ff;
     border: 1px solid #bae6fd;
     color: #0369a1;
+}
+.event-card-stats .signup-fee {
+    color: var(--text);
+    font-weight: 600;
 }
 .signup-fee { font-weight: 600; color: var(--text); }
 .signup-status {
@@ -1063,14 +1249,14 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
     radial-gradient(ellipse 80% 120% at 0% -20%, rgba(251, 146, 60, 0.16) 0%, transparent 55%),
     radial-gradient(ellipse 60% 100% at 100% 120%, rgba(56, 189, 248, 0.1) 0%, transparent 50%),
     linear-gradient(135deg, #0b1f3a 0%, #1a3d6b 42%, #1f4f85 100%);
-  padding: 36px 16px 0;
+  padding: 20px 16px 0;
   box-shadow: 0 4px 24px rgba(11, 31, 58, 0.18);
 }
 .calendar-hero::after {
   content: '';
   display: block;
   height: 3px;
-  margin-top: 36px;
+  margin-top: 20px;
   background: linear-gradient(90deg, #c2410c 0%, #ea580c 35%, #fb923c 65%, rgba(251, 146, 60, 0.35) 100%);
 }
 .calendar-hero-inner {
@@ -1078,12 +1264,12 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
   max-width: min(calc(100vw - 2rem), 1920px);
   margin: 0 auto;
   display: grid;
-  gap: 24px;
-  align-items: end;
+  gap: 16px;
+  align-items: center;
 }
 @media (min-width: 768px) {
-  .calendar-hero { padding: 44px 32px 0; }
-  .calendar-hero-inner { grid-template-columns: minmax(0, 1fr) auto; gap: 32px; }
+  .calendar-hero { padding: 24px 32px 0; }
+  .calendar-hero-inner { grid-template-columns: minmax(0, 1fr) auto; gap: 24px; }
 }
 @media (min-width: 1024px) {
   .calendar-hero { padding-left: 48px; padding-right: 48px; }
@@ -1091,27 +1277,19 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
 .calendar-hero-copy { min-width: 0; }
 .calendar-hero-eyebrow {
   display: inline-block;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #fb923c;
-  margin-bottom: 10px;
+  margin-bottom: 4px;
 }
 .calendar-hero h1 {
-  margin: 0 0 12px;
-  font-size: clamp(1.75rem, 3.6vw, 2.5rem);
-  line-height: 1.12;
+  margin: 0;
+  font-size: clamp(1.35rem, 2.6vw, 1.85rem);
+  line-height: 1.15;
   font-weight: 800;
   letter-spacing: -0.02em;
-  text-align: left;
-}
-.calendar-hero-lede {
-  margin: 0 0 18px;
-  max-width: 38rem;
-  font-size: 1rem;
-  line-height: 1.65;
-  color: rgba(255, 255, 255, 0.88);
   text-align: left;
 }
 .calendar-hero-actions {
@@ -1119,6 +1297,7 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+  margin-top: 10px;
 }
 .calendar-hero-signin {
   display: inline-flex;
@@ -1151,14 +1330,14 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
 .calendar-hero-stat {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 14px;
-  padding: 14px 18px;
+  border-radius: 12px;
+  padding: 10px 14px;
   text-align: center;
   backdrop-filter: blur(6px);
 }
 .calendar-hero-stat strong {
   display: block;
-  font-size: 2rem;
+  font-size: 1.5rem;
   line-height: 1;
   font-weight: 800;
   color: #fdba74;
@@ -1198,9 +1377,8 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
     .events-grid { grid-template-columns: 1fr; }
     .event-title-block { min-height: 2.85rem; }
     .calendar-layout .event-card h2.event-title { font-size: 0.86rem; }
-    .event-card {
-        grid-template-columns: 1fr auto;
-        gap: 6px 10px;
+    .event-card-top {
+        flex-wrap: wrap;
     }
 }
 </style>
@@ -1212,13 +1390,6 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
     <div class="calendar-hero-copy">
       <span class="calendar-hero-eyebrow">{% if host_club %}{{ host_club.name }}{% else %}{{ product_name }}{% endif %}</span>
       <h1>Upcoming brevets</h1>
-      <p class="calendar-hero-lede">
-        {% if host_club %}
-        Browse the calendar and register for {{ host_club.name }} brevets with one saved profile and a fresh waiver for each event.
-        {% else %}
-        Browse upcoming randonneuring events, explore routes, and register when online signup is open.
-        {% endif %}
-      </p>
       {% if not rider %}
       <div class="calendar-hero-actions">
         <a class="calendar-hero-signin" href="{{ url_for('auth.login', next=url_for('calendar.calendar', state=default_state, area=default_area) if default_state else url_for('calendar.calendar')) }}">Sign in to register</a>
@@ -1261,7 +1432,7 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
         <div class="event-type-multiselect">
           <button type="button" class="event-type-multiselect-trigger" id="event-type-trigger"
                   aria-haspopup="listbox" aria-expanded="false" aria-controls="event-type-panel">
-            <span id="event-type-summary">All types</span>
+            <span id="event-type-summary">Event type: all</span>
           </button>
           <div class="event-type-multiselect-panel" id="event-type-panel" role="listbox" aria-label="Event type" hidden>
             <label class="event-type-option"><input type="checkbox" value="all" data-event-type="all" checked> All types</label>
@@ -1270,6 +1441,23 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
             <label class="event-type-option"><input type="checkbox" value="populaire" data-event-type="populaire"> Populaire</label>
             <label class="event-type-option"><input type="checkbox" value="fleche" data-event-type="fleche"> Flèche / Dart</label>
             <label class="event-type-option"><input type="checkbox" value="other" data-event-type="other"> Other</label>
+          </div>
+        </div>
+      </label>
+      <label class="region-select-wrap event-type-filter-wrap">
+        <span class="region-select-caption">Distance</span>
+        <div class="event-type-multiselect">
+          <button type="button" class="event-type-multiselect-trigger" id="distance-trigger"
+                  aria-haspopup="listbox" aria-expanded="false" aria-controls="distance-panel">
+            <span id="distance-summary">Distance: all</span>
+          </button>
+          <div class="event-type-multiselect-panel" id="distance-panel" role="listbox" aria-label="Distance" hidden>
+            <label class="event-type-option"><input type="checkbox" value="all" data-distance-range="all" checked> All distances</label>
+            <label class="event-type-option"><input type="checkbox" value="lt200" data-distance-range="lt200"> &lt; 200 km</label>
+            <label class="event-type-option"><input type="checkbox" value="r200" data-distance-range="r200"> 200–299 km</label>
+            <label class="event-type-option"><input type="checkbox" value="r300" data-distance-range="r300"> 300–399 km</label>
+            <label class="event-type-option"><input type="checkbox" value="r400" data-distance-range="r400"> 400–599 km</label>
+            <label class="event-type-option"><input type="checkbox" value="r600" data-distance-range="r600"> 600+ km</label>
           </div>
         </div>
       </label>
@@ -1291,6 +1479,7 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
         </select>
       </label>
       {% endif %}
+      <button type="button" class="cal-filter-link" id="cal-filter-clear" hidden>Clear all</button>
     </div>
     {% if months %}
     <div class="calendar-toolbar-actions">
@@ -1335,7 +1524,8 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
           <div class="events-grid">
             {% for ev in month_events %}
               {% set ds = ev.date|string %}
-                <article class="event-card" data-event-id="{{ ev.id }}"
+              {% set evt_rwgps = ev.rwgps_url or ev.plan_rwgps_url %}
+                <article class="event-card{% if ev.distance_km and ev.distance_km >= 600 %} event-card--600{% elif ev.distance_km and ev.distance_km >= 400 %} event-card--400{% endif %}" data-event-id="{{ ev.id }}"
                        data-event-name="{{ ev.name|clean_name }}"
                        data-event-date="{{ ds }}"
                        data-event-distance="{{ ev.distance_km }}"
@@ -1348,48 +1538,58 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                   <input type="checkbox" class="bulk-event-select" value="{{ ev.id }}">
                 </label>
                 {% endif %}
-                <div class="event-date">
-                  <div class="event-day">{{ ds[8:10] }}</div>
-                  <div class="event-month">{{ MONTH_ABBR[ds[5:7]|int] if ds[5:7]|int else ds[5:7] }}</div>
-                </div>
-
                 <div class="event-card-top">
-                {% if ev.region %}
-                  <span class="event-region-badge">{{ ev.region }}</span>
-                {% endif %}
-
-                <div class="event-distance-row">
-                  <span class="event-distance">{{ ev.distance_km }} km</span>
-                  {% if ev.elevation_ft %}
-                    <span class="event-elevation">{{ ev.elevation_ft }} ft</span>
-                  {% endif %}
-                </div>
+                  <div class="event-card-top-main">
+                    {% if ev.region %}
+                      <span class="event-region-badge">{{ ev.region }}</span>
+                    {% endif %}
+                    <div class="event-distance-row">
+                      <span class="event-distance">{{ ev.distance_km }} km</span>
+                      {% if ev.elevation_ft %}
+                        <span class="event-elevation">{{ ev.elevation_ft|commafy }} ft</span>
+                      {% endif %}
+                    </div>
+                  </div>
+                  <div class="event-date">
+                    <div class="event-day">{{ ds[8:10] }}</div>
+                    <div class="event-month">{{ MONTH_ABBR[ds[5:7]|int] if ds[5:7]|int else ds[5:7] }}</div>
+                  </div>
                 </div>
 
                 <div class="event-title-block">
                 <h2 class="event-title">
-                  {% if ev.rwgps_url %}
-                    <a href="{{ ev.rwgps_url }}" rel="noopener" target="_blank">{{ ev.name }}</a>
+                  {% if evt_rwgps %}
+                    <a href="{{ evt_rwgps }}" rel="noopener" target="_blank">{{ ev.name }}</a>
                   {% else %}
                     {{ ev.name }}
                   {% endif %}
                 </h2>
                 </div>
 
+                {% if ev.distance_km and ev.distance_km >= 400 %}
+                <div class="event-card-tags">
+                  {% if ev.distance_km >= 600 %}
+                  <span class="event-tag is-accent">600 km brevet</span>
+                  {% else %}
+                  <span class="event-tag is-accent">400 km brevet</span>
+                  {% endif %}
+                </div>
+                {% endif %}
+
                 <div class="event-links">
                   <a class="event-link-btn" href="{{ url_for('plan.plan_view', event_id=ev.id) }}">
                     Plan
                   </a>
-                  {% if ev.rwgps_url %}
-                    <a class="event-link-btn" href="{{ ev.rwgps_url }}" rel="noopener" target="_blank">
-                      Route map
+                  {% if evt_rwgps %}
+                    <a class="event-link-btn is-route" href="{{ evt_rwgps }}" rel="noopener" target="_blank">
+                      RWGPS route
                     </a>
                   {% endif %}
                   {# Per-event Live link — always shown. Opens the shared event-scoped
                      Radial live view: the event route plus any riders currently
                      sharing their location, or an empty "waiting for riders" state
                      for a future/quiet brevet. #}
-                  <a class="event-link-btn" href="{{ url_for('live.event_live_map', event_id=ev.id) }}"
+                  <a class="event-link-btn is-live" href="{{ url_for('live.event_live_map', event_id=ev.id) }}"
                      title="Live map — track riders on this brevet">
                     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
                          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1519,11 +1719,17 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                           </button>
                           {% endif %}
                         {% endif %}
+                        {% if ev.interested_count %}
+                        <span class="signup-meta-inline event-tag">{{ ev.interested_count }} interested</span>
+                        {% endif %}
+                        {% if not ev.registration_enabled %}
+                        <small class="club-registration-note">
+                          Register here is an intent only; complete registration on the organizing club&rsquo;s site.
+                          <a href="{{ rusa_event_search_url }}" target="_blank" rel="noopener">Find official registration via RUSA</a>.
+                        </small>
+                        {% endif %}
                       </div>
                       <div class="signup-status-trailing">
-                        {% if ev.interested_count %}
-                        <span class="signup-meta-inline">{{ ev.interested_count }} interested</span>
-                        {% endif %}
                         <div class="signup-actions-primary" data-signup-primary="{{ ev.id }}">
                           {% if reg and reg.registration_status and status == 'withdrawal_requested' %}
                           <span class="signup-pending">Withdrawal pending review</span>
@@ -1579,21 +1785,15 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                         </div>
                       </div>
                     </div>
-                    {% if not ev.registration_enabled %}
-                      <small class="club-registration-note">
-                        Register here is an intent only; complete registration on the organizing club&rsquo;s site.
-                        <a href="{{ rusa_event_search_url }}" target="_blank" rel="noopener">Find official registration via RUSA</a>.
-                      </small>
-                    {% endif %}
                   {% else %}
                   {% if ev.interested_count or (ev.volunteer_enabled and vsum and vsum.open_total > 0) %}
-                  <div class="signup-meta">
-                    <div class="signup-meta-items">
+                  <div class="signup-status-row">
+                    <div class="signup-status-chips">
                       {% if ev.interested_count %}
-                        <span class="signup-meta-item">{{ ev.interested_count }} interested</span>
+                        <span class="event-tag">{{ ev.interested_count }} interested</span>
                       {% endif %}
                       {% if ev.volunteer_enabled and vsum and vsum.open_total > 0 %}
-                        <span class="signup-meta-item signup-meta-volunteer">🤝 {{ vsum.open_total }} volunteer role{{ 's' if vsum.open_total != 1 else '' }} open</span>
+                        <span class="event-tag signup-meta-volunteer">🤝 {{ vsum.open_total }} volunteer role{{ 's' if vsum.open_total != 1 else '' }} open</span>
                       {% endif %}
                     </div>
                   </div>
@@ -1618,19 +1818,19 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
         {% for s in my_results %}
           {% set ds = s.date|string %}
           <article class="event-card" data-result-event-id="{{ s.event_id }}">
-            <div class="event-date">
-              <div class="event-day">{{ ds[8:10] }}</div>
-              <div class="event-month">{{ MONTH_ABBR[ds[5:7]|int] if ds[5:7]|int else ds[5:7] }}</div>
-            </div>
-
             <div class="event-card-top">
-            {% if s.region %}
-              <span class="event-region-badge">{{ s.region }}</span>
-            {% endif %}
-
-            <div class="event-distance-row">
-              <span class="event-distance">{{ s.distance_km }} km</span>
-            </div>
+              <div class="event-card-top-main">
+                {% if s.region %}
+                  <span class="event-region-badge">{{ s.region }}</span>
+                {% endif %}
+                <div class="event-distance-row">
+                  <span class="event-distance">{{ s.distance_km }} km</span>
+                </div>
+              </div>
+              <div class="event-date">
+                <div class="event-day">{{ ds[8:10] }}</div>
+                <div class="event-month">{{ MONTH_ABBR[ds[5:7]|int] if ds[5:7]|int else ds[5:7] }}</div>
+              </div>
             </div>
 
             <div class="event-title-block">
@@ -2012,8 +2212,23 @@ document.addEventListener('change', function (e) {
     fleche: 'Flèche / Dart',
     other: 'Other'
   };
+  var DISTANCE_LABELS = {
+    all: 'All distances',
+    lt200: '< 200 km',
+    r200: '200–299 km',
+    r300: '300–399 km',
+    r400: '400–599 km',
+    r600: '600+ km'
+  };
 
   var activeTypes = new Set(['all']);
+  var activeDistances = new Set(['all']);
+  var distanceTrigger = document.getElementById('distance-trigger');
+  var distancePanel = document.getElementById('distance-panel');
+  var distanceSummary = document.getElementById('distance-summary');
+  var distanceInputs = distancePanel
+    ? Array.prototype.slice.call(distancePanel.querySelectorAll('input[data-distance-range]'))
+    : [];
 
   function syncTypeInputs() {
     typeInputs.forEach(function (input) {
@@ -2025,13 +2240,58 @@ document.addEventListener('change', function (e) {
   function updateTypeSummary() {
     if (!typeSummary) return;
     if (activeTypes.has('all') || activeTypes.size === 0) {
-      typeSummary.textContent = 'All types';
+      typeSummary.textContent = 'Event type: all';
       return;
     }
     var labels = Array.from(activeTypes).map(function (t) { return TYPE_LABELS[t] || t; });
     typeSummary.textContent = labels.length === 1
       ? labels[0]
       : labels[0] + ' +' + (labels.length - 1);
+  }
+
+  function syncDistanceInputs() {
+    distanceInputs.forEach(function (input) {
+      var d = input.getAttribute('data-distance-range');
+      input.checked = activeDistances.has('all') ? (d === 'all') : activeDistances.has(d);
+    });
+  }
+
+  function updateDistanceSummary() {
+    if (!distanceSummary) return;
+    if (activeDistances.has('all') || activeDistances.size === 0) {
+      distanceSummary.textContent = 'Distance: all';
+      return;
+    }
+    var labels = Array.from(activeDistances).map(function (d) { return DISTANCE_LABELS[d] || d; });
+    distanceSummary.textContent = labels.length === 1
+      ? labels[0]
+      : labels[0] + ' +' + (labels.length - 1);
+  }
+
+  function syncFilterChrome() {
+    var clearBtn = document.getElementById('cal-filter-clear');
+    var typeActive = !activeTypes.has('all');
+    var distanceActive = !activeDistances.has('all');
+    var st = stateSel ? stateSel.value : 'all';
+    var ar = areaSel ? areaSel.value : 'all';
+    var regionActive = st !== 'all' || ar !== 'all';
+    if (typeTrigger) typeTrigger.classList.toggle('is-active', typeActive);
+    if (distanceTrigger) distanceTrigger.classList.toggle('is-active', distanceActive);
+    if (stateSel) stateSel.classList.toggle('is-active', st !== 'all');
+    if (areaSel) areaSel.classList.toggle('is-active', ar !== 'all');
+    if (clearBtn) clearBtn.hidden = !(typeActive || distanceActive || regionActive);
+  }
+
+  function clearAllFilters() {
+    activeTypes = new Set(['all']);
+    activeDistances = new Set(['all']);
+    syncTypeInputs();
+    syncDistanceInputs();
+    updateTypeSummary();
+    updateDistanceSummary();
+    if (stateSel) stateSel.value = 'all';
+    repopulateAreas();
+    apply();
   }
 
   function closeTypePanel() {
@@ -2057,9 +2317,66 @@ document.addEventListener('change', function (e) {
 
   function openTypePanel() {
     if (!typePanel || !typeTrigger) return;
+    closeDistancePanel();
     typePanel.hidden = false;
     positionTypePanel();
     typeTrigger.setAttribute('aria-expanded', 'true');
+  }
+
+  function closeDistancePanel() {
+    if (!distancePanel || !distanceTrigger) return;
+    distancePanel.hidden = true;
+    distancePanel.style.position = '';
+    distancePanel.style.left = '';
+    distancePanel.style.top = '';
+    distancePanel.style.minWidth = '';
+    distancePanel.style.zIndex = '';
+    distanceTrigger.setAttribute('aria-expanded', 'false');
+  }
+
+  function positionDistancePanel() {
+    if (!distancePanel || !distanceTrigger) return;
+    var rect = distanceTrigger.getBoundingClientRect();
+    distancePanel.style.position = 'fixed';
+    distancePanel.style.left = Math.max(8, rect.left) + 'px';
+    distancePanel.style.top = (rect.bottom + 4) + 'px';
+    distancePanel.style.minWidth = Math.max(rect.width, 220) + 'px';
+    distancePanel.style.zIndex = '500';
+  }
+
+  function openDistancePanel() {
+    if (!distancePanel || !distanceTrigger) return;
+    closeTypePanel();
+    distancePanel.hidden = false;
+    positionDistancePanel();
+    distanceTrigger.setAttribute('aria-expanded', 'true');
+  }
+
+  function eventDistanceKm(el) {
+    var raw = el.dataset.eventDistance || el.dataset.distance || '';
+    var km = parseFloat(raw);
+    return isNaN(km) ? 0 : km;
+  }
+
+  function distanceInRange(km, rangeKey) {
+    switch (rangeKey) {
+      case 'lt200': return km < 200;
+      case 'r200': return km >= 200 && km < 300;
+      case 'r300': return km >= 300 && km < 400;
+      case 'r400': return km >= 400 && km < 600;
+      case 'r600': return km >= 600;
+      default: return true;
+    }
+  }
+
+  function distanceMatches(el) {
+    if (activeDistances.has('all')) return true;
+    var km = eventDistanceKm(el);
+    var ok = false;
+    activeDistances.forEach(function (key) {
+      if (distanceInRange(km, key)) ok = true;
+    });
+    return ok;
   }
 
   function apply() {
@@ -2069,7 +2386,8 @@ document.addEventListener('change', function (e) {
       var stateOk = (st === 'all' || c.dataset.region === st);
       var areaOk = (ar === 'all' || c.dataset.area === ar);
       var typeOk = activeTypes.has('all') || activeTypes.has(c.dataset.eventCategory);
-      c.style.display = (stateOk && areaOk && typeOk) ? '' : 'none';
+      var distOk = distanceMatches(c);
+      c.style.display = (stateOk && areaOk && typeOk && distOk) ? '' : 'none';
     });
     document.querySelectorAll('.month-section').forEach(function (sec) {
       var shown = Array.prototype.filter.call(
@@ -2078,6 +2396,7 @@ document.addEventListener('change', function (e) {
       sec.style.display = shown.length ? '' : 'none';
     });
     updateHeroCount(st, ar);
+    syncFilterChrome();
   }
 
   function updateHeroCount(st, ar) {
@@ -2166,6 +2485,48 @@ document.addEventListener('change', function (e) {
     window.addEventListener('scroll', closeTypePanel, true);
   }
 
+  if (distanceTrigger && distancePanel) {
+    distanceTrigger.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (distancePanel.hidden) openDistancePanel();
+      else closeDistancePanel();
+    });
+
+    distanceInputs.forEach(function (input) {
+      input.addEventListener('change', function () {
+        var d = input.getAttribute('data-distance-range');
+        if (d === 'all') {
+          activeDistances = new Set(['all']);
+        } else {
+          activeDistances.delete('all');
+          if (input.checked) activeDistances.add(d);
+          else activeDistances.delete(d);
+          if (activeDistances.size === 0) activeDistances = new Set(['all']);
+        }
+        syncDistanceInputs();
+        updateDistanceSummary();
+        apply();
+      });
+    });
+
+    distancePanel.addEventListener('mousedown', function (e) {
+      e.stopPropagation();
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!distancePanel.contains(e.target) && e.target !== distanceTrigger && !distanceTrigger.contains(e.target)) {
+        closeDistancePanel();
+      }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeDistancePanel();
+    });
+
+    window.addEventListener('resize', closeDistancePanel);
+    window.addEventListener('scroll', closeDistancePanel, true);
+  }
+
   if (stateSel && areaSel) {
     stateSel.addEventListener('change', function () { repopulateAreas(); apply(); });
     areaSel.addEventListener('change', apply);
@@ -2178,8 +2539,13 @@ document.addEventListener('change', function (e) {
     }
   }
 
+  var clearBtn = document.getElementById('cal-filter-clear');
+  if (clearBtn) clearBtn.addEventListener('click', clearAllFilters);
+
   syncTypeInputs();
+  syncDistanceInputs();
   updateTypeSummary();
+  updateDistanceSummary();
   apply();
 })();
 </script>
