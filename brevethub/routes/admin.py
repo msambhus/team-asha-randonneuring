@@ -168,12 +168,20 @@ def _validation_visualization(submission):
         previous_mi = end_mi
         segment_points = [p for p in track if start_mi * 1609.344 <= p['distance_m'] <= end_mi * 1609.344]
         if len(segment_points) >= 2:
-            elapsed_s = max(0, (segment_points[-1]['timestamp'] - segment_points[0]['timestamp']).total_seconds())
+            # Use the first sample that reaches the control distance for the
+            # actual arrival. The final sample may be after the rider has
+            # completed the stop and departed again.
+            control_m = end_mi * 1609.344
+            arrival_index = next((i for i, point in enumerate(segment_points)
+                                  if point['distance_m'] >= control_m), len(segment_points) - 1)
+            arrival_point = segment_points[arrival_index]
+            elapsed_points = segment_points[:arrival_index + 1]
+            elapsed_s = max(0, (arrival_point['timestamp'] - segment_points[0]['timestamp']).total_seconds())
             moving_s = sum(max(0, (b['timestamp'] - a['timestamp']).total_seconds())
-                           for a, b in zip(segment_points, segment_points[1:]) if b.get('speed_mph', 0) >= 1)
+                           for a, b in zip(elapsed_points, elapsed_points[1:]) if b.get('speed_mph', 0) >= 1)
             moving_distance_m = max(0, segment_points[-1]['distance_m'] - segment_points[0]['distance_m'])
             avg_speed = moving_distance_m / max(1, moving_s) * 2.236936
-            actual_elapsed_min = ((segment_points[-1]['timestamp'] - official_start).total_seconds() / 60
+            actual_elapsed_min = ((arrival_point['timestamp'] - official_start).total_seconds() / 60
                                   if official_start else None)
         else:
             elapsed_s = moving_s = 0
@@ -185,14 +193,18 @@ def _validation_visualization(submission):
         avg_power = (sum(float(power_stream[i]) for i in stream_values if i < len(power_stream) and power_stream[i] is not None) /
                      max(1, sum(1 for i in stream_values if i < len(power_stream) and power_stream[i] is not None))) if stream_values else None
         wind_values = [s['headwind_mph'] for s in samples if start_mi <= s['distance_mi'] <= end_mi and s.get('headwind_mph') is not None]
+        official_route_segment = [p for p in route
+                                  if start_mi * 1609.344 <= float(p.get('dist_m') or 0) <= end_mi * 1609.344]
+        route_gain_ft = sum(max(0.0, float(b.get('e_m') or 0) - float(a.get('e_m') or 0))
+                            for a, b in zip(official_route_segment, official_route_segment[1:])) * 3.28084
+        terrain_ft_per_mile = round(route_gain_ft / max(end_mi - start_mi, 0.1)) if len(official_route_segment) >= 2 else round(float(stop.get('ft_per_mi') or 0))
         segment_rows.append({
             'order': stop.get('stop_order'), 'control': stop.get('location') or stop.get('notes') or 'Control',
             'distance_mi': round(end_mi, 1), 'segment_mi': round(max(0, end_mi - start_mi), 1),
             'cutoff': fmt_minutes(stop.get('bookend_time_min')),
             'cutoff_pt': fmt_pacific_clock(stop.get('bookend_time_min')),
-            'plan_arrival_pt': fmt_pacific_clock(stop.get('arrival_time_min')),
-            'plan_bank': fmt_minutes(stop.get('time_bank_min')),
-            'ft_per_mile': round(float(stop.get('ft_per_mi') or 0)),
+            'plan_arrival_pt': fmt_pacific_clock(stop.get('arrival_time_min') if stop.get('arrival_time_min') is not None else stop.get('cum_time_min')),
+            'ft_per_mile': terrain_ft_per_mile,
             'headwind_mph': round(sum(wind_values) / len(wind_values), 1) if wind_values else None,
             'speed_mph': round(avg_speed, 1) if avg_speed is not None else None,
             'elapsed': fmt_minutes(elapsed_s / 60) if elapsed_s else '—',
