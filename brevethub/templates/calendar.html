@@ -571,20 +571,19 @@ a.event-tag.is-route:hover {
 .event-weather-none .wx-metric { font-style: italic; color: #94a3b8; }
 .signup-section {
     grid-area: signup;
-    margin-top: 8px;
-    padding-top: 12px;
+    margin-top: 6px;
+    padding-top: 10px;
     border-top: 1px solid #e2e8f0;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 .signup-status-row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: 8px;
-    flex-wrap: wrap;
-    min-height: 28px;
+    gap: 10px 12px;
+    flex-wrap: nowrap;
     min-width: 0;
 }
 .signup-status-chips {
@@ -595,12 +594,28 @@ a.event-tag.is-route:hover {
     flex: 1;
     min-width: 0;
 }
+.club-registration-note {
+    display: block;
+    flex: 1 1 12rem;
+    min-width: 0;
+    margin: 0;
+    font-size: 0.72rem;
+    line-height: 1.45;
+    color: var(--text-light);
+}
+.club-registration-note a {
+    color: var(--primary);
+    font-weight: 600;
+    text-decoration: none;
+}
+.club-registration-note a:hover { text-decoration: underline; }
 .signup-status-trailing {
     display: flex;
     align-items: center;
     gap: 12px;
     flex-shrink: 0;
     margin-left: auto;
+    align-self: center;
 }
 .signup-status-trailing .signup-btn.register-primary {
     border: none;
@@ -1234,14 +1249,14 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
     radial-gradient(ellipse 80% 120% at 0% -20%, rgba(251, 146, 60, 0.16) 0%, transparent 55%),
     radial-gradient(ellipse 60% 100% at 100% 120%, rgba(56, 189, 248, 0.1) 0%, transparent 50%),
     linear-gradient(135deg, #0b1f3a 0%, #1a3d6b 42%, #1f4f85 100%);
-  padding: 36px 16px 0;
+  padding: 20px 16px 0;
   box-shadow: 0 4px 24px rgba(11, 31, 58, 0.18);
 }
 .calendar-hero::after {
   content: '';
   display: block;
   height: 3px;
-  margin-top: 36px;
+  margin-top: 20px;
   background: linear-gradient(90deg, #c2410c 0%, #ea580c 35%, #fb923c 65%, rgba(251, 146, 60, 0.35) 100%);
 }
 .calendar-hero-inner {
@@ -1249,12 +1264,12 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
   max-width: min(calc(100vw - 2rem), 1920px);
   margin: 0 auto;
   display: grid;
-  gap: 24px;
-  align-items: end;
+  gap: 16px;
+  align-items: center;
 }
 @media (min-width: 768px) {
-  .calendar-hero { padding: 44px 32px 0; }
-  .calendar-hero-inner { grid-template-columns: minmax(0, 1fr) auto; gap: 32px; }
+  .calendar-hero { padding: 24px 32px 0; }
+  .calendar-hero-inner { grid-template-columns: minmax(0, 1fr) auto; gap: 24px; }
 }
 @media (min-width: 1024px) {
   .calendar-hero { padding-left: 48px; padding-right: 48px; }
@@ -1262,27 +1277,19 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
 .calendar-hero-copy { min-width: 0; }
 .calendar-hero-eyebrow {
   display: inline-block;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #fb923c;
-  margin-bottom: 10px;
+  margin-bottom: 4px;
 }
 .calendar-hero h1 {
-  margin: 0 0 12px;
-  font-size: clamp(1.75rem, 3.6vw, 2.5rem);
-  line-height: 1.12;
+  margin: 0;
+  font-size: clamp(1.35rem, 2.6vw, 1.85rem);
+  line-height: 1.15;
   font-weight: 800;
   letter-spacing: -0.02em;
-  text-align: left;
-}
-.calendar-hero-lede {
-  margin: 0 0 18px;
-  max-width: 38rem;
-  font-size: 1rem;
-  line-height: 1.65;
-  color: rgba(255, 255, 255, 0.88);
   text-align: left;
 }
 .calendar-hero-actions {
@@ -1290,6 +1297,7 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+  margin-top: 10px;
 }
 .calendar-hero-signin {
   display: inline-flex;
@@ -1322,14 +1330,14 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
 .calendar-hero-stat {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 14px;
-  padding: 14px 18px;
+  border-radius: 12px;
+  padding: 10px 14px;
   text-align: center;
   backdrop-filter: blur(6px);
 }
 .calendar-hero-stat strong {
   display: block;
-  font-size: 2rem;
+  font-size: 1.5rem;
   line-height: 1;
   font-weight: 800;
   color: #fdba74;
@@ -1382,13 +1390,6 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
     <div class="calendar-hero-copy">
       <span class="calendar-hero-eyebrow">{% if host_club %}{{ host_club.name }}{% else %}{{ product_name }}{% endif %}</span>
       <h1>Upcoming brevets</h1>
-      <p class="calendar-hero-lede">
-        {% if host_club %}
-        Browse the calendar and register for {{ host_club.name }} brevets with one saved profile and a fresh waiver for each event.
-        {% else %}
-        Browse upcoming randonneuring events, explore routes, and register when online signup is open.
-        {% endif %}
-      </p>
       {% if not rider %}
       <div class="calendar-hero-actions">
         <a class="calendar-hero-signin" href="{{ url_for('auth.login', next=url_for('calendar.calendar', state=default_state, area=default_area) if default_state else url_for('calendar.calendar')) }}">Sign in to register</a>
@@ -1721,6 +1722,12 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                         {% if ev.interested_count %}
                         <span class="signup-meta-inline event-tag">{{ ev.interested_count }} interested</span>
                         {% endif %}
+                        {% if not ev.registration_enabled %}
+                        <small class="club-registration-note">
+                          Register here is an intent only; complete registration on the organizing club&rsquo;s site.
+                          <a href="{{ rusa_event_search_url }}" target="_blank" rel="noopener">Find official registration via RUSA</a>.
+                        </small>
+                        {% endif %}
                       </div>
                       <div class="signup-status-trailing">
                         <div class="signup-actions-primary" data-signup-primary="{{ ev.id }}">
@@ -1778,12 +1785,6 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                         </div>
                       </div>
                     </div>
-                    {% if not ev.registration_enabled %}
-                      <small class="club-registration-note">
-                        Register here is an intent only; complete registration on the organizing club&rsquo;s site.
-                        <a href="{{ rusa_event_search_url }}" target="_blank" rel="noopener">Find official registration via RUSA</a>.
-                      </small>
-                    {% endif %}
                   {% else %}
                   {% if ev.interested_count or (ev.volunteer_enabled and vsum and vsum.open_total > 0) %}
                   <div class="signup-status-row">
