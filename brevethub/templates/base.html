@@ -52,6 +52,7 @@
         <button type="button" class="dropdown-trigger bg-transparent border-0 text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs" aria-haspopup="true" aria-expanded="false">{{ user_email }}</button>
         <div class="hidden group-hover:block absolute top-full right-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[180px] z-[200] overflow-hidden pt-0">
             <a href="{{ url_for('main.profile') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My Profile</a>
+            <a href="{{ url_for('main.profile') }}#connections" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Connections</a>
             <a href="{{ url_for('register.edit_profile', next=request.path) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Registration profile</a>
             <a href="{{ url_for('main.dashboard') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My Rides</a>
             {% if user_rider_id %}
