@@ -89,10 +89,12 @@
 .calendar-table-month { margin-bottom: 8px; }
 </style>
 
+{% if not external_view_toggle %}
 <div class="calendar-view-toggle" role="group" aria-label="Calendar layout">
   <button type="button" class="active" data-calendar-view="cards">Cards</button>
   <button type="button" data-calendar-view="table">Table</button>
 </div>
+{% endif %}
 
 <div id="calendar-table-view" class="calendar-table-wrap" hidden>
   {% for month_label, month_events in months %}
@@ -144,7 +146,7 @@
                 data-event-id="{{ ev.id }}"
                 data-region="{{ region_state if calendar_app == 'brevethub' else (ev.region or '') }}"
                 data-area="{{ region_area }}"
-                data-club="{{ (ev.club_name or '')|e }}"
+                data-region-full="{{ ev.region or '' }}"
                 data-distance="{{ ev.distance_km }}"
                 data-team-ride="{{ 'true' if ev.is_team_ride else 'false' }}"
                 data-event-category="{{ ev.data_category or 'other' }}">
@@ -192,8 +194,12 @@
               </td>
               <td>
                 {% set start_time = ev.plan_start_time or ev.start_time if calendar_app == 'team_asha' else ev.start_time %}
-                <div>{{ ev.start_location or '—' }}</div>
-                {% if start_time %}<div class="calendar-table-muted">{{ start_time }}</div>{% endif %}
+                {% if start_time or ev.start_location %}
+                {% if start_time %}<div>{{ start_time }}</div>{% else %}<div>—</div>{% endif %}
+                {% if ev.start_location %}<div class="calendar-table-muted">{{ ev.start_location }}</div>{% endif %}
+                {% else %}
+                <div>—</div>
+                {% endif %}
               </td>
               <td class="calendar-nowrap">
                 {% if ev.time_limit_hours %}{{ ev.time_limit_hours }} h{% else %}—{% endif %}

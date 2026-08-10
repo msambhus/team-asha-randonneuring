@@ -1150,6 +1150,45 @@ def upsert_brevet_event(event):
     )
 
 
+def get_cached_elevation_for_rusa_route(route_id):
+    """Return a known elevation for a RUSA route id from any cached brevet row."""
+    if not route_id:
+        return None
+    row = db.query_one(
+        "SELECT elevation_ft FROM rp_brevet_event "
+        "WHERE rusa_route_id = %s AND elevation_ft IS NOT NULL "
+        "ORDER BY date DESC LIMIT 1",
+        (str(route_id),),
+    )
+    return row['elevation_ft'] if row else None
+
+
+def backfill_missing_event_elevations_from_routes():
+    """Copy elevation onto route siblings that RUSA left blank in the climbing column."""
+    conn = db.get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE rp_brevet_event e "
+                "SET elevation_ft = peer.elevation_ft "
+                "FROM ( "
+                "  SELECT rusa_route_id, MAX(elevation_ft) AS elevation_ft "
+                "  FROM rp_brevet_event "
+                "  WHERE rusa_route_id IS NOT NULL AND elevation_ft IS NOT NULL "
+                "  GROUP BY rusa_route_id "
+                ") peer "
+                "WHERE e.elevation_ft IS NULL "
+                "  AND e.rusa_route_id IS NOT NULL "
+                "  AND e.rusa_route_id = peer.rusa_route_id",
+            )
+            updated = cur.rowcount
+        conn.commit()
+        return updated
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def get_rider_signup_statuses(rider_id):
     """(event_id, status) for every sign-up belonging to THIS rider.
 
@@ -3049,9 +3088,18 @@ def get_club_admin_by_id(admin_id):
 def list_all_clubs_for_admin():
     """All clubs sorted by name — for the super-admin club picker."""
     return db.query(
-        "SELECT id, name, rusa_club_id, state FROM rp_club ORDER BY name",
+        "SELECT id, name, rusa_club_id, state, region_prefix FROM rp_club ORDER BY name",
         (),
     )
+
+
+def get_club_region_prefix(club_id):
+    """Return the RUSA feed region label for a club, or None when unmapped."""
+    row = db.query_one(
+        "SELECT region_prefix FROM rp_club WHERE id = %s",
+        (club_id,),
+    )
+    return (row or {}).get('region_prefix') or None
 
 
 def list_all_club_admins():
