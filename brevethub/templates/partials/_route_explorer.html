@@ -1,0 +1,211 @@
+{# Coordinated Leaflet route map + shared gradient elevation profile.
+   Context: explorer_id, route_points, profile, markers, map_segments, map_stops,
+   compact_map (plan/live-sized map). #}
+{% if route_points and route_points|length > 1 %}
+{% set rid = explorer_id or 'route-explorer' %}
+<div class="route-explorer{% if compact_map %} route-explorer-compact{% endif %}" id="{{ rid }}">
+    <div class="route-explorer-map" id="{{ rid }}-map"
+         role="img" aria-label="Interactive route map"></div>
+    {% if profile and profile.available %}
+    <div class="route-explorer-profile">
+        <div class="route-explorer-hint">Move across the map or elevation profile to inspect the same route position.</div>
+        {% with profile=profile, markers=markers or [], big=True %}
+        {% include 'partials/_elevation_profile.html' %}
+        {% endwith %}
+    </div>
+    {% endif %}
+</div>
+<style>
+#{{ rid }}.route-explorer { display:grid; gap:12px; }
+#{{ rid }} .route-explorer-map {
+    height:clamp(360px,58vh,620px); border-radius:10px; overflow:hidden;
+    border:1px solid var(--border,#e2e8f0); z-index:0;
+}
+#{{ rid }}.route-explorer-compact .route-explorer-map {
+    height:clamp(220px,30vh,300px);
+}
+#{{ rid }} .route-explorer-profile {
+    padding:10px 12px 6px; border:1px solid var(--border,#e2e8f0);
+    border-radius:10px; background:#fff;
+}
+#{{ rid }} .route-explorer-hint {
+    color:var(--text-light,#64748b); font-size:.7rem; margin-bottom:4px;
+}
+#{{ rid }} .route-explorer-profile svg { cursor:crosshair; }
+#{{ rid }} .route-explorer-cursor-line {
+    stroke:#0f172a; stroke-width:1; stroke-dasharray:4 3; pointer-events:none;
+}
+#{{ rid }} .route-explorer-cursor-dot {
+    fill:#fff; stroke:#0f172a; stroke-width:2; pointer-events:none;
+}
+</style>
+<script>
+(function () {
+    var rootId = {{ rid|tojson }};
+    var points = {{ route_points|tojson }};
+    var profile = {{ (profile or {'available': false})|tojson }};
+    var stops = {{ (map_stops or [])|tojson }};
+    var segments = {{ (map_segments or [])|tojson }};
+
+    function init() {
+        var root = document.getElementById(rootId);
+        var pane = document.getElementById(rootId + '-map');
+        if (!root || !pane || typeof L === 'undefined' || points.length < 2) return;
+
+        var map = L.map(pane, { scrollWheelZoom:false });
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom:18, attribution:'&copy; OpenStreetMap contributors'
+        }).addTo(map);
+        // Shared with the live view and mobile ride map.
+        var routeColor='#2563eb';
+        var route = L.polyline(points, {
+            color:routeColor, weight:4, opacity:.78
+        }).addTo(map);
+        map.fitBounds(route.getBounds(), { padding:[24,24], maxZoom:13 });
+
+        function safeTooltip(text) {
+            var node=document.createElement('span');
+            node.textContent=text == null ? '' : String(text);
+            return node;
+        }
+        segments.forEach(function (segment) {
+            if (!segment.points || segment.points.length < 2) return;
+            L.polyline(segment.points, {
+                color:routeColor, weight:5, opacity:.9
+            }).addTo(map).bindTooltip(safeTooltip(
+                (segment.location || 'Segment') + (segment.speed_mph != null
+                    ? ': ' + segment.speed_mph + ' mph' : ''),
+            ), { sticky:true });
+        });
+
+        function haversine(a, b) {
+            var r=6371000, d=Math.PI/180;
+            var dlat=(b[0]-a[0])*d, dlng=(b[1]-a[1])*d;
+            var q=Math.sin(dlat/2)*Math.sin(dlat/2)
+                + Math.cos(a[0]*d)*Math.cos(b[0]*d)
+                * Math.sin(dlng/2)*Math.sin(dlng/2);
+            return 2*r*Math.asin(Math.min(1,Math.sqrt(q)));
+        }
+        var cumulative=[0];
+        for (var i=1;i<points.length;i++) {
+            cumulative[i]=cumulative[i-1]+haversine(points[i-1],points[i]);
+        }
+        var routeM=cumulative[cumulative.length-1] || 1;
+
+        function latLngAtMile(mile) {
+            var totalMi=(profile && profile.total_mi) || routeM/1609.344;
+            var target=Math.max(0,Math.min(1,mile/totalMi))*routeM;
+            for (var i=1;i<cumulative.length;i++) {
+                if (target <= cumulative[i]) {
+                    var span=cumulative[i]-cumulative[i-1];
+                    var t=span ? (target-cumulative[i-1])/span : 0;
+                    return [
+                        points[i-1][0]+t*(points[i][0]-points[i-1][0]),
+                        points[i-1][1]+t*(points[i][1]-points[i-1][1])
+                    ];
+                }
+            }
+            return points[points.length-1];
+        }
+
+        var mapCursor=L.circleMarker(points[0], {
+            radius:7, color:'#0f172a', weight:2, fillColor:'#fff',
+            fillOpacity:1, interactive:false
+        }).addTo(map);
+        var svg=root.querySelector('.route-explorer-profile svg');
+        var cursorLine=null, cursorDot=null;
+        if (svg && profile.available) {
+            var ns='http://www.w3.org/2000/svg';
+            cursorLine=document.createElementNS(ns,'line');
+            cursorLine.setAttribute('class','route-explorer-cursor-line');
+            cursorDot=document.createElementNS(ns,'circle');
+            cursorDot.setAttribute('class','route-explorer-cursor-dot');
+            cursorDot.setAttribute('r','5');
+            svg.appendChild(cursorLine); svg.appendChild(cursorDot);
+        }
+        function profileY(x) {
+            var p=profile.points || [];
+            if (!p.length) return 0;
+            for (var i=1;i<p.length;i++) {
+                if (x <= p[i][0]) {
+                    var span=p[i][0]-p[i-1][0];
+                    var t=span ? (x-p[i-1][0])/span : 0;
+                    return p[i-1][1]+t*(p[i][1]-p[i-1][1]);
+                }
+            }
+            return p[p.length-1][1];
+        }
+        function selectMile(mile, notify) {
+            var ll=latLngAtMile(mile);
+            mapCursor.setLatLng(ll);
+            if (cursorLine && profile.available) {
+                var frac=Math.max(0,Math.min(1,mile/profile.total_mi));
+                var x=profile.plot.x+frac*profile.plot.w, y=profileY(x);
+                cursorLine.setAttribute('x1',x); cursorLine.setAttribute('x2',x);
+                cursorLine.setAttribute('y1',profile.plot.y);
+                cursorLine.setAttribute('y2',profile.plot.y+profile.plot.h);
+                cursorDot.setAttribute('cx',x); cursorDot.setAttribute('cy',y);
+            }
+            if (notify !== false) {
+                root.dispatchEvent(new CustomEvent('route-explorer-mile', {
+                    detail:{ mile:mile }
+                }));
+            }
+        }
+        root.addEventListener('route-explorer-select-mile', function (event) {
+            if (event.detail && Number.isFinite(Number(event.detail.mile))) {
+                selectMile(Number(event.detail.mile), false);
+            }
+        });
+
+        if (svg && profile.available) {
+            svg.addEventListener('pointermove', function (event) {
+                var rect=svg.getBoundingClientRect();
+                var vb=svg.viewBox.baseVal;
+                var x=(event.clientX-rect.left)/rect.width*vb.width;
+                var frac=(x-profile.plot.x)/profile.plot.w;
+                selectMile(Math.max(0,Math.min(1,frac))*profile.total_mi);
+            });
+        }
+        map.on('mousemove', function (event) {
+            var target=map.latLngToLayerPoint(event.latlng), best=0, bestD=Infinity;
+            for (var i=0;i<points.length;i++) {
+                var q=map.latLngToLayerPoint(points[i]);
+                var dx=q.x-target.x, dy=q.y-target.y, d=dx*dx+dy*dy;
+                if (d < bestD) { bestD=d; best=i; }
+            }
+            var mile=(cumulative[best]/routeM)
+                *((profile && profile.total_mi) || routeM/1609.344);
+            selectMile(mile);
+        });
+
+        stops.forEach(function (stop) {
+            var ll=(stop.lat != null && stop.lng != null)
+                ? [stop.lat,stop.lng] : latLngAtMile(stop.distance_miles || 0);
+            var marker=L.circleMarker(ll, {
+                radius:6, color:'#fff', weight:2,
+                fillColor:stop.color || '#1d4ed8', fillOpacity:1
+            }).addTo(map);
+            var detail=(stop.distance_miles != null
+                ? Number(stop.distance_miles).toFixed(1)+' mi' : '');
+            marker.bindTooltip(safeTooltip(
+                (stop.name || stop.location || 'Stop')
+                +(detail ? ' · '+detail : '')));
+            marker.on('click', function () {
+                if (stop.distance_miles != null) selectMile(stop.distance_miles);
+                root.dispatchEvent(new CustomEvent('route-explorer-stop', {
+                    detail:{ index:stop.index, stop:stop }
+                }));
+            });
+        });
+        selectMile(0);
+        setTimeout(function () { map.invalidateSize(); }, 0);
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init, { once:true });
+    } else {
+        init();
+    }
+})();
+</script>
+{% endif %}

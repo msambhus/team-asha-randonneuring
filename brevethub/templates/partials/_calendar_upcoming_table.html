@@ -7,16 +7,16 @@
 .calendar-view-toggle {
   display: inline-flex;
   background: #e2e8f0;
-  border-radius: 8px;
+  border-radius: 999px;
   padding: 3px;
   gap: 2px;
   margin-bottom: 20px;
 }
 .calendar-view-toggle button {
-  padding: 6px 16px;
+  padding: 7px 16px;
   border: none;
-  border-radius: 6px;
-  font-size: 0.85rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
   background: transparent;
@@ -244,7 +244,8 @@
                 <div class="calendar-table-links">
                   {% if calendar_app == 'brevethub' %}
                     <a href="{{ url_for('plan.plan_view', event_id=ev.id) }}">Plan</a>
-                    {% if ev.rwgps_url %}<a href="{{ ev.rwgps_url }}" target="_blank" rel="noopener">Route</a>{% endif %}
+                    {% set evt_rwgps = ev.rwgps_url or ev.plan_rwgps_url %}
+                    {% if evt_rwgps %}<a href="{{ evt_rwgps }}" target="_blank" rel="noopener">RWGPS route</a>{% endif %}
                     <a href="{{ url_for('live.event_live_map', event_id=ev.id) }}">Live</a>
                   {% else %}
                     {% if ev.plan_slug %}
