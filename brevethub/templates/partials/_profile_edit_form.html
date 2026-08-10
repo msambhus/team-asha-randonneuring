@@ -1,0 +1,137 @@
+{# Editable rider fields used for brevet registration and account identity. #}
+{% set field_errors = field_errors or {} %}
+<style>
+.form-group.has-error input,
+.form-group.has-error select { border-color: #dc2626; box-shadow: 0 0 0 1px #dc2626; }
+.form-group .field-error { color: #b91c1c; font-size: 0.82rem; margin-top: 4px; }
+.profile-edit-form,
+.profile-modal-form { display: grid; gap: 14px; }
+.profile-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.profile-edit-form .form-group label,
+.profile-modal-form .form-group label { font-size: 0.78rem; font-weight: 600; }
+.profile-edit-form input,
+.profile-edit-form select,
+.profile-modal-form input,
+.profile-modal-form select {
+  font-size: 0.88rem;
+  padding: 8px 10px;
+  width: 100%;
+}
+@media (max-width: 540px) {
+  .profile-form-row { grid-template-columns: 1fr; }
+}
+</style>
+
+<form method="post" action="{{ form_action }}" class="profile-edit-form profile-modal-form" novalidate>
+  <div class="profile-form-row">
+    <div class="form-group{% if field_errors.get('first_name') %} has-error{% endif %}">
+      <label for="first_name">First name</label>
+      <input id="first_name" name="first_name" required value="{{ rider.first_name or '' }}"
+             aria-invalid="{{ 'true' if field_errors.get('first_name') else 'false' }}"
+             {% if field_errors.get('first_name') %}aria-describedby="first_name-error"{% endif %}>
+      {% if field_errors.get('first_name') %}
+      <p class="field-error" id="first_name-error">{{ field_errors.first_name }}</p>
+      {% endif %}
+    </div>
+    <div class="form-group{% if field_errors.get('last_name') %} has-error{% endif %}">
+      <label for="last_name">Last name</label>
+      <input id="last_name" name="last_name" required value="{{ rider.last_name or '' }}"
+             aria-invalid="{{ 'true' if field_errors.get('last_name') else 'false' }}"
+             {% if field_errors.get('last_name') %}aria-describedby="last_name-error"{% endif %}>
+      {% if field_errors.get('last_name') %}
+      <p class="field-error" id="last_name-error">{{ field_errors.last_name }}</p>
+      {% endif %}
+    </div>
+  </div>
+  <div class="profile-form-row">
+    <div class="form-group{% if field_errors.get('phone') %} has-error{% endif %}">
+      <label for="phone">Phone</label>
+      <input id="phone" name="phone" type="tel" required
+             placeholder="415-555-0142"
+             title="US phone number, 10 digits"
+             value="{{ rider.phone or '' }}"
+             aria-invalid="{{ 'true' if field_errors.get('phone') else 'false' }}"
+             {% if field_errors.get('phone') %}aria-describedby="phone-error"{% endif %}>
+      {% if field_errors.get('phone') %}
+      <p class="field-error" id="phone-error">{{ field_errors.phone }}</p>
+      {% endif %}
+    </div>
+    <div class="form-group{% if field_errors.get('city') %} has-error{% endif %}">
+      <label for="city">City</label>
+      <input id="city" name="city" required value="{{ rider.city or '' }}"
+             aria-invalid="{{ 'true' if field_errors.get('city') else 'false' }}"
+             {% if field_errors.get('city') %}aria-describedby="city-error"{% endif %}>
+      {% if field_errors.get('city') %}
+      <p class="field-error" id="city-error">{{ field_errors.city }}</p>
+      {% endif %}
+    </div>
+  </div>
+  <div class="profile-form-row">
+    <div class="form-group{% if field_errors.get('emergency_name') %} has-error{% endif %}">
+      <label for="emergency_name">Emergency contact name</label>
+      <input id="emergency_name" name="emergency_name" required value="{{ rider.emergency_name or '' }}"
+             aria-invalid="{{ 'true' if field_errors.get('emergency_name') else 'false' }}"
+             {% if field_errors.get('emergency_name') %}aria-describedby="emergency_name-error"{% endif %}>
+      {% if field_errors.get('emergency_name') %}
+      <p class="field-error" id="emergency_name-error">{{ field_errors.emergency_name }}</p>
+      {% endif %}
+    </div>
+    <div class="form-group{% if field_errors.get('emergency_phone') %} has-error{% endif %}">
+      <label for="emergency_phone">Emergency phone</label>
+      <input id="emergency_phone" name="emergency_phone" type="tel" required
+             placeholder="415-555-0199"
+             title="US phone number, 10 digits"
+             value="{{ rider.emergency_phone or '' }}"
+             aria-invalid="{{ 'true' if field_errors.get('emergency_phone') else 'false' }}"
+             {% if field_errors.get('emergency_phone') %}aria-describedby="emergency_phone-error"{% endif %}>
+      {% if field_errors.get('emergency_phone') %}
+      <p class="field-error" id="emergency_phone-error">{{ field_errors.emergency_phone }}</p>
+      {% endif %}
+    </div>
+  </div>
+  <div class="profile-form-row">
+    <div class="form-group{% if field_errors.get('rusa_id') %} has-error{% endif %}">
+      <div class="rusa-field-label">
+        <label for="rusa_id">RUSA ID</label>
+        {% include 'partials/_rusa_id_status.html' %}
+      </div>
+      <input id="rusa_id" name="rusa_id" inputmode="numeric" value="{{ rider.rusa_id or '' }}"
+             aria-invalid="{{ 'true' if field_errors.get('rusa_id') else 'false' }}"
+             {% if field_errors.get('rusa_id') %}aria-describedby="rusa_id-error"{% endif %}>
+      {% if field_errors.get('rusa_id') %}
+      <p class="field-error" id="rusa_id-error">{{ field_errors.rusa_id }}</p>
+      {% endif %}
+    </div>
+    <div class="form-group{% if field_errors.get('sfr_member_year') %} has-error{% endif %}">
+      <label for="sfr_member_year">SFR membership year</label>
+      <input id="sfr_member_year" name="sfr_member_year" type="number" min="2020" max="2035"
+             value="{{ rider.sfr_member_year or '' }}" placeholder="e.g. 2026"
+             aria-invalid="{{ 'true' if field_errors.get('sfr_member_year') else 'false' }}"
+             {% if field_errors.get('sfr_member_year') %}aria-describedby="sfr_member_year-error"{% endif %}>
+      {% if field_errors.get('sfr_member_year') %}
+      <p class="field-error" id="sfr_member_year-error">{{ field_errors.sfr_member_year }}</p>
+      {% endif %}
+    </div>
+  </div>
+  <div class="form-group{% if field_errors.get('club_id') %} has-error{% endif %}">
+    <label for="club_id">Home club</label>
+    <select id="club_id" name="club_id" required
+            aria-invalid="{{ 'true' if field_errors.get('club_id') else 'false' }}"
+            {% if field_errors.get('club_id') %}aria-describedby="club_id-error"{% endif %}>
+      <option value="">— select —</option>
+      {% for club in clubs %}
+      <option value="{{ club.id }}" {% if rider.club_id == club.id %}selected{% endif %}>
+        {{ club.name }}{% if club.state %} ({{ club.state }}){% endif %}
+      </option>
+      {% endfor %}
+    </select>
+    {% if field_errors.get('club_id') %}
+    <p class="field-error" id="club_id-error">{{ field_errors.club_id }}</p>
+    {% endif %}
+  </div>
+  <button type="submit" class="btn btn-primary" style="justify-self:start;">Save profile</button>
+</form>

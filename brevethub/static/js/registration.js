@@ -114,15 +114,68 @@
     return '$' + (cents / 100).toFixed(0);
   }
 
-  function fmtDate(iso) {
-    if (!iso) return '—';
-    var d = new Date(iso + 'T12:00:00');
-    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  var RUSA_RENEW_URL = 'https://rusa.org/pages/join-renew-membership';
+
+  function membershipExpiredFromData(data) {
+    if (!data) return false;
+    if (data.membership_expired) return true;
+    if (data.rusa_membership_expired || data.sfr_membership_expired) return true;
+    var member = data.membership || {};
+    if (member.rusa && member.rusa.expired) return true;
+    if (member.sfr && member.sfr.expired) return true;
+    var ev = data.evaluation || {};
+    if (ev.membership_expired || ev.rusa_membership_expired || ev.sfr_membership_expired) return true;
+    var fs = data.field_status || {};
+    return !!(fs.membership_expired || fs.rusa_membership_expired || fs.sfr_membership_expired);
   }
 
-  function fmtMoney(cents) {
-    if (cents == null) return '—';
-    return '$' + (cents / 100).toFixed(0);
+  function renderMembershipExpiredView(data) {
+    var member = data.membership || {};
+    var rusa = member.rusa || data.rusa || {};
+    var sfr = member.sfr || data.sfr || {};
+    var year = data.membership_season_year
+      || (member.season_year)
+      || (data.evaluation && data.evaluation.membership_season_year)
+      || '';
+    var rusaRenew = data.rusa_renew_url
+      || rusa.renew_url
+      || (data.evaluation && data.evaluation.rusa_renew_url)
+      || RUSA_RENEW_URL;
+    var sfrRenew = data.sfr_renew_url
+      || sfr.renew_url
+      || (data.evaluation && data.evaluation.sfr_renew_url)
+      || 'https://sfrandonneurs.org/';
+    var editUrl = (data.profile && data.profile.edit_url) || '/profile#edit-profile';
+    var rusaExpired = data.rusa_membership_expired
+      || (data.evaluation && data.evaluation.rusa_membership_expired)
+      || rusa.expired;
+    var sfrExpired = data.sfr_membership_expired
+      || (data.evaluation && data.evaluation.sfr_membership_expired)
+      || sfr.expired;
+    var parts = [];
+    if (rusaExpired) {
+      parts.push('<p><strong>RUSA membership is expired</strong>'
+        + (rusa.membership_expires ? ' (expired ' + esc(rusa.membership_expires) + ').' : '.')
+        + ' Renew at RUSA.org before registering.</p>');
+    }
+    if (sfrExpired) {
+      parts.push('<p><strong>SFR club membership is expired</strong> for '
+        + esc(year) + ' (Jan 1 – Dec 31). Update your SFR membership year after renewing with the club.</p>');
+    }
+    if (!parts.length) {
+      parts.push('<p>Your membership is not current for registration.</p>');
+    }
+    els.stepLabel.textContent = 'Registration unavailable';
+    els.body.innerHTML =
+      '<div class="reg-membership-expired">' +
+      '<p class="reg-section-title" style="color:#b91c1c;margin-bottom:8px;">Membership renewal required</p>' +
+      parts.join('') +
+      '<div class="reg-actions" style="margin-top:18px;justify-content:flex-start;gap:10px;flex-wrap:wrap;">' +
+      (rusaExpired ? '<a href="' + esc(rusaRenew) + '" target="_blank" rel="noopener noreferrer" class="reg-primary-btn" style="text-decoration:none;">Renew at RUSA.org ↗</a>' : '') +
+      (sfrExpired ? '<a href="' + esc(editUrl) + '" class="reg-secondary-btn" style="text-decoration:none;">Update SFR membership year</a>' : '') +
+      '</div></div>' +
+      '<button type="button" class="reg-secondary-btn" data-reg-close-membership style="margin-top:16px">Close</button>';
+    els.body.querySelector('[data-reg-close-membership]').addEventListener('click', closeModal);
   }
 
   function setStep(n) {
@@ -600,6 +653,10 @@
           return;
         }
         profileData = res.data;
+        if (membershipExpiredFromData(profileData)) {
+          renderMembershipExpiredView(profileData);
+          return;
+        }
         profileEditing = !(profileData.field_status && profileData.field_status.complete);
         setStep(2);
         rerenderStep2();
@@ -616,6 +673,11 @@
       .then(function (res) {
         if (!res.ok) return;
         bulkData = res.data;
+        if (membershipExpiredFromData(bulkData)) {
+          profileData = bulkData;
+          renderMembershipExpiredView(bulkData);
+          return;
+        }
         profileData = {
           profile: res.data.profile,
           field_status: res.data.field_status,
@@ -678,6 +740,11 @@
     }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
       .then(function (res) {
         if (!res.ok) {
+          if (res.data && res.data.membership_expired) {
+            renderMembershipExpiredView(res.data);
+            btn.disabled = false;
+            return;
+          }
           alert(res.data.error || 'Registration failed');
           btn.disabled = false;
           return;
@@ -909,6 +976,11 @@
     }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
       .then(function (res) {
         if (!res.ok) {
+          if (res.data && res.data.membership_expired) {
+            renderMembershipExpiredView(res.data);
+            btn.disabled = false;
+            return;
+          }
           alert(res.data.error || 'Team registration failed');
           btn.disabled = false;
           return;
@@ -936,6 +1008,10 @@
           return;
         }
         profileData = res.data;
+        if (membershipExpiredFromData(profileData)) {
+          renderMembershipExpiredView(profileData);
+          return;
+        }
         renderTeamStep2();
       });
   }
@@ -966,15 +1042,20 @@
     }).then(function (r) { return r.json(); })
       .then(function (data) {
         bulkData = data;
+        if (membershipExpiredFromData(bulkData)) {
+          profileData = bulkData;
+          renderMembershipExpiredView(bulkData);
+          return;
+        }
         eventIds = (data.events || []).filter(function (ev) { return !ev.already_registered; }).map(function (ev) { return ev.id; });
         renderBulkStep1();
       });
   }
 
-  document.querySelectorAll('[data-register-event]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      openRegistration(parseInt(btn.getAttribute('data-register-event'), 10));
-    });
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-register-event]');
+    if (!btn) return;
+    openRegistration(parseInt(btn.getAttribute('data-register-event'), 10));
   });
 
   document.querySelectorAll('.bulk-event-select').forEach(function (cb) {
@@ -1011,31 +1092,23 @@
       badge.textContent = badgeText;
       badge.hidden = false;
     } else {
-      var section = document.querySelector('.event-card[data-event-id="' + id + '"] .signup-section');
-      if (section) {
-        var row = section.querySelector('.signup-you');
-        if (!row) {
-          row = document.createElement('div');
-          row.className = 'signup-you';
-          var actions = section.querySelector('.signup-actions');
-          section.insertBefore(row, actions || null);
-        }
+      var chips = document.querySelector('.event-card[data-event-id="' + id + '"] .signup-status-chips');
+      if (chips) {
         var span = document.createElement('span');
         span.className = 'registration-badge';
         span.setAttribute('data-reg-badge', id);
         span.textContent = badgeText;
-        row.appendChild(span);
+        chips.insertBefore(span, chips.firstChild);
       }
     }
-    var regBtn = document.querySelector('[data-register-event="' + id + '"]');
-    if (regBtn) regBtn.remove();
     var actions = document.querySelector('.signup-actions[data-event-id="' + id + '"]');
     if (actions) {
       actions.setAttribute('data-registered', '1');
-      var proofUrl = actions.getAttribute('data-proof-url');
-      var html = proofUrl ? '<a class="event-link-btn" href="' + proofUrl + '">Submit proof</a>' : '';
-      html += '<button type="button" class="signup-intent-btn signup-intent-withdraw" data-action="withdraw" data-event-id="' + id + '">Request withdraw</button>';
-      actions.innerHTML = html;
+      actions.removeAttribute('data-show-register');
+      actions.setAttribute('data-status', 'registered');
+      if (window.renderSignupActions) {
+        renderSignupActions(actions);
+      }
     }
     document.querySelectorAll('.bulk-event-select[value="' + id + '"]').forEach(function (cb) {
       cb.checked = false;

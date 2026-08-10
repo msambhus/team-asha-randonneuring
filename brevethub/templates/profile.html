@@ -2,290 +2,975 @@
 {% block title %}My Profile — {{ product_name }}{% endblock %}
 {% block extra_head %}
 <style>
-/* Profile / career page-specific components (definition grid, stat grid, SR-leg
-   pips). No parent-app counterpart component, so styled inline with shared tokens. */
-.profile { display: grid; grid-template-columns: 160px 1fr; gap: 10px 16px; margin: 20px 0; }
-.profile dt { font-weight: 600; color: var(--text-light); }
-.profile dd { margin: 0; }
-.stats-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
-.stats-grid dt { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
-.stats-grid dd { font-size: 1.4rem; font-weight: 700; color: var(--primary); }
-.sr-legs, .sr-progress { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.sr-leg { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; border: 1px solid var(--border); }
-.sr-leg.done { background: #2a4a7f; color: #fff; border-color: #2a4a7f; }
-.sr-leg.todo { color: var(--text-light); }
-.badge-warn { background: #fef3c7; color: #78350f; }
-.award-stat .number { font-size: 1.4rem !important; line-height: 1.2; font-weight: 700; letter-spacing: normal; }
-.achievement-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
-.achievement-item { display:flex; align-items:center; gap:10px; padding:11px 13px; border:1px solid var(--border); border-radius:12px; background:#f8fafc; }
-.achievement-item .icon { font-size:1.35rem; }
-.training-month { border:1px solid var(--border); border-radius:14px; overflow:hidden; background:#fff; }
-.training-month h3 { margin:0; padding:12px 16px; background:#f1f5f9; color:var(--primary); font-size:1rem; }
-.training-grid { display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:1px; background:var(--border); }
-.training-weekdays { background:#e2e8f0; }
-.training-weekdays span { padding:5px; background:#f8fafc; text-align:center; font-size:.68rem; color:var(--text-light); }
-.training-day { min-height:84px; padding:7px; background:#fff; }
-.training-day.empty { background:#f8fafc; }
-.training-day .day-number { font-size:.75rem; color:var(--text-light); }
-.training-day.has-activity { background:#fff7ed; }
-.training-day .activity-dot { display:block; margin-top:5px; font-size:.72rem; line-height:1.15; color:#9a3412; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-.training-month-nav { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
-.training-month-nav button { border:1px solid var(--border); border-radius:8px; background:#fff; color:var(--primary); padding:7px 12px; font-weight:600; cursor:pointer; }
-.training-month-nav button:disabled { opacity:.4; cursor:not-allowed; }
-@media (max-width: 768px) { .profile { grid-template-columns: 1fr; gap: 4px 0; } .profile dt { margin-top: 10px; } }
+.profile-page { --profile-gap: 20px; padding-bottom: 48px; }
+
+.profile-banner {
+  background: linear-gradient(135deg, #1a365d 0%, #2a4a7f 55%, #1e4d8c 100%);
+  color: white;
+  padding: 28px 24px 32px;
+  position: relative;
+  overflow: hidden;
+}
+.profile-banner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 85% 20%, rgba(252,129,129,0.18), transparent 45%);
+  pointer-events: none;
+}
+.profile-banner-inner {
+  max-width: min(calc(100vw - 2rem), 1200px);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 1;
+}
+.profile-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.15);
+  border: 2px solid rgba(255,255,255,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.75rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.profile-identity { flex: 1; min-width: 200px; }
+.profile-identity h1 {
+  font-size: 1.55rem;
+  font-weight: 800;
+  margin: 0 0 4px;
+  letter-spacing: -0.02em;
+}
+.profile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 0.88rem;
+  opacity: 0.9;
+  align-items: center;
+}
+.profile-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.2);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+.profile-actions .btn {
+  font-size: 0.82rem;
+  padding: 8px 14px;
+}
+.profile-actions .btn-ghost {
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.35);
+  color: white;
+}
+.profile-actions .btn-ghost:hover { background: rgba(255,255,255,0.22); }
+
+.profile-stats {
+  max-width: min(calc(100vw - 2rem), 1200px);
+  margin: -22px auto 0;
+  padding: 0 4px;
+  position: relative;
+  z-index: 2;
+}
+.profile-stats .stats-row {
+  margin-top: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+.profile-stats .stat-card {
+  padding: 14px 12px;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+}
+.profile-stats .stat-card .number { font-size: 1.35rem; }
+.profile-stats .stat-card .label { font-size: 0.68rem; }
+
+.profile-shell {
+  max-width: min(calc(100vw - 2rem), 1200px);
+  margin: 24px auto 0;
+  padding: 0 4px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--profile-gap);
+  align-items: start;
+}
+
+.profile-panel {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 22px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+}
+.profile-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.profile-panel-head h2 {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--primary);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.profile-panel-head a {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+}
+.profile-panel-head a:hover { text-decoration: underline; }
+
+.profile-career-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.profile-metric {
+  background: linear-gradient(145deg, #f8fafc, #f1f5f9);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+.profile-metric .val {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--primary);
+  line-height: 1.1;
+}
+.profile-metric .lbl {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-light);
+  margin-top: 4px;
+}
+.profile-metric.accent .val { color: var(--accent); }
+
+.sr-track {
+  margin-top: 14px;
+  padding: 14px;
+  background: #f0f4ff;
+  border-radius: 10px;
+  border: 1px solid #dbeafe;
+}
+.sr-track-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sr-legs { display: flex; gap: 8px; flex-wrap: wrap; }
+.sr-leg {
+  flex: 1;
+  min-width: 56px;
+  text-align: center;
+  padding: 8px 6px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  background: white;
+  color: var(--text-light);
+}
+.sr-leg.done {
+  background: linear-gradient(135deg, #1e40af, #1e3a8a);
+  color: white;
+  border-color: #1e3a8a;
+}
+
+.pbp-track {
+  margin-top: 14px;
+  padding: 14px;
+  background: linear-gradient(135deg, #faf5ff, #f3e8ff);
+  border-radius: 10px;
+  border: 1px solid #e9d5ff;
+}
+.pbp-track-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #6b21a8;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pbp-ancien-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #805ad5, #b794f4);
+  color: #fff;
+  border: 0;
+}
+.pbp-finish-list { display: grid; gap: 8px; }
+.pbp-finish-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid #e9d5ff;
+  font-size: 0.82rem;
+}
+.pbp-finish-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.pbp-finish-year {
+  font-weight: 800;
+  color: #6b21a8;
+  font-size: 0.78rem;
+}
+.pbp-finish-name {
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.pbp-finish-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-light);
+  white-space: nowrap;
+}
+
+.profile-training-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.profile-training-stat {
+  text-align: center;
+  padding: 10px 6px;
+  border-radius: 8px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+}
+.profile-training-stat .val {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #c2410c;
+}
+.profile-training-stat .lbl {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #9a3412;
+  margin-top: 2px;
+}
+.profile-training-stat.fitness-good { background: #ecfdf5; border-color: #a7f3d0; }
+.profile-training-stat.fitness-good .val { color: #15803d; }
+.profile-training-stat.fitness-good .lbl { color: #166534; }
+.profile-training-stat.fitness-mid { background: #fffbeb; border-color: #fde68a; }
+.profile-training-stat.fitness-mid .val { color: #b45309; }
+.profile-training-stat.fitness-mid .lbl { color: #92400e; }
+.profile-training-stat.fitness-low { background: #fef2f2; border-color: #fecaca; }
+.profile-training-stat.fitness-low .val { color: #b91c1c; }
+.profile-training-stat.fitness-low .lbl { color: #991b1b; }
+
+.strava-connect-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #fff7ed, #ffedd5);
+  border: 1px solid #fdba74;
+  margin-bottom: 14px;
+}
+.strava-connect-bar p { margin: 0; font-size: 0.85rem; color: #9a3412; }
+.strava-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #fc4c02;
+  color: white;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+.strava-btn:hover { background: #e04302; }
+
+.activity-list { max-height: 280px; overflow-y: auto; }
+.activity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+.activity-row:last-child { border-bottom: 0; }
+.activity-row .name { font-weight: 600; color: var(--text); }
+.activity-row .sub { font-size: 0.78rem; color: var(--text-light); margin-top: 2px; }
+.activity-row .tag {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #c43d00;
+  flex-shrink: 0;
+}
+
+.profile-aside { display: flex; flex-direction: column; gap: var(--profile-gap); }
+.profile-aside .profile-panel { padding: 16px 18px; }
+
+.membership-stack { display: flex; flex-direction: column; gap: 8px; }
+.membership-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: #f8fafc;
+}
+.membership-row.ok { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
+.membership-row.bad { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+.membership-row .status {
+  font-size: 0.75rem;
+  font-weight: 500;
+  opacity: 0.85;
+  text-align: right;
+}
+.membership-row .status.membership-rusa-status {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  opacity: 1;
+}
+.membership-row .rusa-trust { font-size: 0.68rem; padding: 2px 8px; }
+
+.account-summary {
+  display: grid;
+  gap: 10px;
+  font-size: 0.82rem;
+}
+.account-summary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.account-summary-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.account-summary-row dt {
+  font-weight: 600;
+  color: var(--text-light);
+  flex-shrink: 0;
+}
+.account-summary-row dd {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  color: var(--text);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.account-summary-emergency {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  line-height: 1.35;
+}
+.account-summary-emergency .emergency-phone {
+  font-size: 0.78rem;
+  color: var(--text-light);
+  font-weight: 600;
+}
+.profile-edit-btn {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  cursor: pointer;
+  font-family: inherit;
+}
+.profile-edit-btn:hover { background: #dbeafe; }
+.profile-complete-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.profile-complete-badge.ok {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+.profile-complete-badge.bad {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+.profile-panel-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.profile-panel-title h2 { margin: 0; }
+
+.reg-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(8,16,30,0.65);
+  display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 200;
+  backdrop-filter: blur(4px);
+}
+.reg-modal-backdrop[hidden] { display: none; }
+.reg-modal-panel {
+  background: white; border-radius: 14px; width: 100%; max-width: 640px;
+  max-height: 92vh; overflow: hidden; display: flex; flex-direction: column;
+  box-shadow: 0 28px 72px rgba(8,16,30,0.45);
+}
+#profile-edit-modal .reg-modal-panel { max-width: 860px; }
+.reg-modal-head {
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+  font-weight: 700; color: var(--primary);
+}
+.reg-modal-close {
+  background: none; border: 0; font-size: 1.25rem; cursor: pointer;
+  color: var(--text-light); line-height: 1; padding: 4px;
+}
+.reg-modal-close:hover { color: var(--text); }
+.reg-modal-body { padding: 20px 22px; overflow-y: auto; }
+.profile-modal-form { display: grid; gap: 14px; }
+.profile-modal-form .form-group label { font-size: 0.78rem; font-weight: 600; }
+
+.profile-setup {
+  max-width: min(calc(100vw - 2rem), 720px);
+  margin: 24px auto 0;
+  padding: 0 4px;
+}
+.profile-setup .profile-panel { padding: 24px; }
+
+.profile-empty {
+  text-align: center;
+  padding: 24px 16px;
+  color: var(--text-light);
+  font-size: 0.9rem;
+}
+.profile-empty .btn { margin-top: 12px; }
+
+.quick-links { display: flex; flex-direction: column; gap: 8px; }
+.quick-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  text-decoration: none;
+  color: var(--primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #f8fafc;
+  transition: background 0.15s, border-color 0.15s;
+}
+.quick-link:hover { background: #eff6ff; border-color: #bfdbfe; }
+.quick-link span { color: var(--text-light); font-weight: 400; font-size: 0.78rem; }
+
+.rusa-id-status {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  vertical-align: middle;
+}
+.rusa-trust {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.rusa-trust-verified {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #6ee7b7;
+}
+.rusa-trust-verified svg { stroke: #059669; }
+.rusa-trust-expired {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+.rusa-trust-expired svg { stroke: #dc2626; }
+.rusa-trust-warn {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+.rusa-trust-pending {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+.account-summary-row dd.rusa-id-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.profile-meta-chip.rusa-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rusa-field-label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.rusa-field-label label { margin: 0; }
+
+.profile-modal-form .rusa-id-status { gap: 8px; }
+.profile-modal-form .rusa-trust { font-size: 0.72rem; padding: 4px 10px; }
+.profile-modal-form .rusa-trust svg { width: 15px; height: 15px; }
+
+@media (max-width: 960px) {
+  .profile-shell { grid-template-columns: 1fr; }
+  .profile-aside { order: -1; }
+  .profile-training-stats { grid-template-columns: repeat(2, 1fr); }
+  .profile-career-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 640px) {
+  .profile-banner-inner { flex-direction: column; align-items: flex-start; }
+  .profile-actions { margin-left: 0; width: 100%; }
+  .profile-career-grid { grid-template-columns: 1fr; }
+}
 </style>
 {% endblock %}
+
 {% block content %}
-{% set display_name = rider.email.split('@')[0] %}
-{# Hero + stat-card row mirror the parent app's my_profile: a full-width gradient
-   banner then a row of headline numbers, before the detail cards. #}
-<div class="hero" style="padding:30px 20px 64px;">
-  <div class="w-[90px] h-[90px] md:w-[110px] md:h-[110px] rounded-full flex items-center justify-center"
-       style="background:rgba(255,255,255,0.2);margin:0 auto 15px;font-size:2.6rem;color:white;font-weight:700;">
-    {{ display_name[0]|upper }}
-  </div>
-  <h1>{{ display_name }}</h1>
-  {% if rider.rusa_id %}<p>RUSA# {{ rider.rusa_id }}</p>{% endif %}
-  {% if pbp_years %}
-  {# PBP Ancien: earned by finishing Paris-Brest-Paris. Reuses the shared
-     .pbp-badge treatment (inline gradient so it renders on the hero gradient). #}
-  <p style="margin-top:8px;"><span class="badge pbp-badge" style="background:linear-gradient(135deg,#805ad5,#b794f4);color:#fff;">PBP Ancien {{ pbp_years | join(', ') }}</span></p>
-  {% endif %}
-  <p style="font-size:0.9rem; opacity:0.85;">{{ rider.email }}</p>
-</div>
-
-<div class="stats-row">
-  {% if rusa.has_id and career.count %}
-  <div class="stat-card"><div class="number">{{ career.count }}</div><div class="label">Career Rides</div></div>
-  <div class="stat-card"><div class="number">{{ career.total_km }}</div><div class="label">Career KMs</div></div>
-  {% for award in awards[:2] %}
-  <div class="stat-card award-stat"><div class="number">{{ award.name }}{% if award.count > 1 %}&times;{{ award.count }}{% endif %}</div><div class="label">Achievement</div></div>
-  {% endfor %}
-  {% endif %}
-  {# Eddington: E = ridden >= E km on >= E days, from the rider own Strava history
-     (cached; computed off the request path). Only shown once a value exists — an
-     unconnected / not-yet-computed rider gets the prompt in the Strava card below,
-     never a fabricated 0. #}
-  {% if rider.eddington_miles is not none %}
-  <div class="stat-card"><div class="number">{{ rider.eddington_miles }}</div><div class="label">Eddington (mi)</div></div>
-  {% endif %}
-</div>
-
-<div class="container section">
-<section class="card">
-  <h2 class="text-primary text-[1.3rem] font-bold mb-2">Profile details</h2>
-  <p class="text-text-light">Your own randonneuring record on {{ product_name }}.</p>
-
-  <dl class="profile">
-    <dt>Email</dt>
-    <dd>{{ rider.email }}</dd>
-
-    <dt>Home club</dt>
-    <dd>
-      {% if club %}{{ club.name }}{% else %}<span class="text-text-light">not set</span>{% endif %}
-      &middot; <a class="text-primary font-semibold hover:text-accent hover:underline"
-                 href="{{ url_for('register.edit_profile', next=request.path) }}">edit registration profile</a>
-    </dd>
-
-    <dt>RUSA ID</dt>
-    <dd>
-      {% if rider.rusa_id %}
-        {{ rider.rusa_id }}
-        {% if rider.rusa_id_duplicate %}
-          <span class="badge badge-warn" title="Another rider has claimed this RUSA ID">
-            also claimed by another rider
-          </span>
+<div class="profile-page">
+  <header class="profile-banner">
+    <div class="profile-banner-inner">
+      <div class="profile-avatar" aria-hidden="true">{{ display_name[0]|upper }}</div>
+      <div class="profile-identity">
+        <h1>{{ display_name }}</h1>
+      </div>
+      <div class="profile-actions">
+        <a class="btn btn-ghost" href="{{ url_for('main.dashboard') }}">My Rides</a>
+        {% if rider.profile_completed %}
+        <a class="btn btn-ghost" href="{{ url_for('riders.rider_profile', rider_id=rider.id) }}">Public page</a>
         {% endif %}
-      {% else %}
-        <span class="text-text-light">not provided</span>
-        &middot; <a class="text-primary font-semibold hover:text-accent hover:underline" href="{{ url_for('signup.signup') }}">add one</a>
+        <button type="button" class="btn btn-primary" data-open-profile-modal>Account</button>
+      </div>
+    </div>
+  </header>
+
+  {% if rider.profile_completed %}
+  <div class="profile-stats">
+    <div class="stats-row is-compact">
+      {% if rusa.has_id and career.count %}
+      <div class="stat-card"><div class="number">{{ career.count }}</div><div class="label">Brevets</div></div>
+      <div class="stat-card"><div class="number">{{ career.total_km }}</div><div class="label">Career km</div></div>
+      {% set sr_total = career.total_sr %}
+      {% if sr_total > 0 %}
+      <div class="stat-card"><div class="number" style="color:var(--accent);">{% if sr_total > 1 %}SR×{{ sr_total }}{% else %}SR{% endif %}</div><div class="label">Super R.</div></div>
       {% endif %}
-    </dd>
-
-    <dt>Member since</dt>
-    <dd>
-      {% if member_since %}
-        {{ member_since.strftime('%B %Y') }}
-      {% elif rider.created_at %}
-        {{ rider.created_at.strftime('%B %Y') }}
-      {% else %}
-        <span class="text-text-light">—</span>
+      <div class="stat-card"><div class="number">{{ career.r12_streak.months }}</div><div class="label">R-12 mo</div></div>
       {% endif %}
-    </dd>
-  </dl>
-</section>
+      {% if strava.stats and strava.stats.fitness is not none %}
+      <div class="stat-card"><div class="number" style="color:{% if strava.stats.fitness >= 70 %}#38a169{% elif strava.stats.fitness >= 40 %}#d69e2e{% else %}#e53e3e{% endif %};">{{ strava.stats.fitness }}</div><div class="label">Fitness</div></div>
+      {% endif %}
+      {% if rider.eddington_miles is not none %}
+      <div class="stat-card"><div class="number">{{ rider.eddington_miles }}</div><div class="label">Eddington</div></div>
+      {% endif %}
+    </div>
+  </div>
 
-<section class="card" id="career">
-  <h2 class="text-primary text-[1.3rem] font-bold mb-4">Career summary</h2>
-  {% if not rusa.has_id %}
-    <p class="text-text-light">
-      Add your RUSA ID to see your career km, brevet count, Super Randonneur and
-      R-12 progress here — these are computed from your official RUSA history.
-    </p>
-    <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('signup.signup') }}">Add a RUSA ID</a></p>
-  {% elif career.count == 0 %}
-    <p class="text-text-light">
-      No completed brevets in your RUSA history yet. Once you finish a 200 km+
-      brevet it will show up here. <a class="text-primary font-semibold hover:text-accent hover:underline" href="{{ url_for('main.rides_by_season') }}">See your rides by season</a>.
-    </p>
-  {% else %}
-    <dl class="profile">
-      <dt>Career distance</dt>
-      <dd>{{ career.total_km }} km ({{ career.count }} brevets)</dd>
-
-      <dt>Super Randonneur ({{ career.current_season }})</dt>
-      <dd>
-        {% if career.current_sr.is_sr %}
-          <span class="badge">SR complete{% if career.current_sr.sr_count > 1 %} &times;{{ career.current_sr.sr_count }}{% endif %}</span>
+  <div class="profile-shell">
+    <div class="profile-main">
+      <section class="profile-panel profile-career" id="career">
+        <div class="profile-panel-head">
+          <h2>Randonneuring record</h2>
+          <a href="{{ url_for('main.rides_by_season') }}">All seasons →</a>
+        </div>
+        {% if not rusa.has_id %}
+        <div class="profile-empty">
+          <p>Add your RUSA ID to unlock career stats from your official brevet history.</p>
+          <a class="btn btn-primary" href="#edit-profile" data-open-profile-modal>Add RUSA ID</a>
+        </div>
+        {% elif career.count == 0 %}
+        <div class="profile-empty">
+          <p>No completed brevets in your RUSA history yet — your first finish will appear here.</p>
+          <a class="btn btn-primary" href="{{ url_for('calendar.calendar') }}">Browse calendar</a>
+        </div>
         {% else %}
-          <span class="sr-legs">
+        <div class="profile-career-grid">
+          <div class="profile-metric">
+            <div class="val">{{ career.total_km }}</div>
+            <div class="lbl">Career km</div>
+          </div>
+          <div class="profile-metric">
+            <div class="val">{{ career.count }}</div>
+            <div class="lbl">Brevets finished</div>
+          </div>
+          <div class="profile-metric accent">
+            <div class="val">{{ career.r12_awards | length }}</div>
+            <div class="lbl">R-12 awards</div>
+          </div>
+          <div class="profile-metric">
+            <div class="val">{{ career.r12_streak.months }}<span style="font-size:0.85rem;font-weight:600;color:var(--text-light);"> mo</span></div>
+            <div class="lbl">R-12 streak {% if career.r12_streak.active %}· active{% endif %}</div>
+          </div>
+        </div>
+        <div class="sr-track">
+          <div class="sr-track-label">
+            <span>Super Randonneur · {{ career.current_season }}</span>
+            {% if career.current_sr.is_sr %}
+            <span class="badge">Complete{% if career.current_sr.sr_count > 1 %} ×{{ career.current_sr.sr_count }}{% endif %}</span>
+            {% elif career.sr_seasons %}
+            <span style="font-weight:500;font-size:0.72rem;color:var(--text-light);">Past: {{ career.sr_seasons | join(', ') }}</span>
+            {% endif %}
+          </div>
+          {% if not career.current_sr.is_sr %}
+          <div class="sr-legs">
             {% for leg in [200, 300, 400, 600] %}
-              <span class="sr-leg {% if career.current_sr.legs[leg] %}done{% else %}todo{% endif %}">{{ leg }}</span>
+            <span class="sr-leg {% if career.current_sr.legs[leg] %}done{% endif %}">{{ leg }}k</span>
             {% endfor %}
-          </span>
-        {% endif %}
-      </dd>
-
-      <dt>SR seasons</dt>
-      <dd>
-        {% if career.sr_seasons %}
-          {{ career.sr_seasons | join(', ') }}
-        {% else %}
-          <span class="text-text-light">none yet</span>
-        {% endif %}
-      </dd>
-
-      <dt>R-12 streak</dt>
-      <dd>
-        {{ career.r12_streak.months }} consecutive month{{ '' if career.r12_streak.months == 1 else 's' }}
-        {% if career.r12_streak.active %}
-          <span class="badge">active</span>
-        {% elif career.r12_streak.months > 0 %}
-          <span class="text-text-light">(lapsed)</span>
-        {% endif %}
-      </dd>
-
-      <dt>R-12 awards</dt>
-      <dd>{{ career.r12_awards | length }}</dd>
-    </dl>
-    <h3 class="text-primary text-base font-bold mt-6 mb-2">Achievements</h3>
-    <div class="achievement-list">
-      {% for award in awards %}<div class="achievement-item"><span class="icon">{{ award.icon }}</span><span><strong>{{ award.name }}{% if award.count > 1 %} &times;{{ award.count }}{% endif %}</strong><br><small class="text-text-light">derived from official ride history</small></span></div>{% endfor %}
-    </div>
-    <p class="text-text-light mt-3">Achievements reflect your official RUSA brevet history.</p>
-    <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('main.rides_by_season') }}">View rides by season</a></p>
-  {% endif %}
-</section>
-
-<section class="card" id="connections">
-  <h2 class="text-primary text-[1.3rem] font-bold mb-2">Connections</h2>
-  <p class="text-text-light mb-5">Manage the services connected to your BrevetHub account. New integrations will appear here.</p>
-  <div class="border border-border rounded-xl p-4" id="strava">
-  <h3 class="text-primary text-lg font-bold mb-4">Strava</h3>
-  {# Eddington graceful state: prompt when there is no cached value yet, so the
-     number is never a fabricated 0. The value itself renders as the stat card above. #}
-  {% if rider.eddington_miles is none %}
-    <p class="text-text-light">
-      {% if strava.connected %}
-        Your cycling Eddington number will appear after the next sync.
-      {% else %}
-        Connect Strava to see your Eddington number.
-      {% endif %}
-    </p>
-  {% endif %}
-  {% if not strava.connected %}
-    <p class="text-text-light">Connect Strava to see your recent activity and fitness score.</p>
-    <p class="mt-4"><a class="btn btn-primary" href="{{ url_for('strava.connect') }}">Connect Strava</a></p>
-  {% else %}
-    {% if strava.error %}
-      <p class="py-3 px-4 rounded-lg text-sm bg-[#fef3c7] text-[#78350f] mb-4">{{ strava.error }}</p>
-    {% endif %}
-    <div class="card" style="border-left:4px solid #FC5200; padding:20px; margin-bottom:15px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-        <div>
-          <h4 style="margin:0 0 4px 0; color:var(--primary); font-size:1rem;">Strava connected</h4>
-          <p style="margin:0; font-size:0.85rem; color:var(--text-light);">
-            Recent training and brevet matches are private to your profile.
-          </p>
+          </div>
+          {% else %}
+          <p style="margin:0;font-size:0.82rem;color:#1e40af;font-weight:600;">All four distances completed this season.</p>
+          {% endif %}
         </div>
-        <a href="{{ url_for('main.dashboard') }}"
-           style="display:inline-flex; align-items:center; gap:6px; padding:10px 20px; background:#fc4c02; color:white; border-radius:8px; text-decoration:none; font-weight:600; font-size:0.9rem; transition:background 0.2s;"
-           onmouseover="this.style.background='#e04302'" onmouseout="this.style.background='#fc4c02'">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
-          Go to My Rides
-        </a>
-      </div>
-    </div>
-    {% if strava.stats %}
-      <dl class="profile stats-grid">
-        <dt>Rides (28 days)</dt><dd>{{ strava.stats.rides }}</dd>
-        <dt>Distance</dt><dd>{{ strava.stats.distance_km }} km</dd>
-        <dt>Elevation</dt><dd>{{ strava.stats.elevation_m }} m</dd>
-        <dt>Moving time</dt><dd>{{ strava.stats.moving_hours }} h</dd>
-        <dt>Fitness score</dt>
-        <dd>{% if strava.stats.fitness is not none %}{{ strava.stats.fitness }}/100{% else %}—{% endif %}</dd>
-      </dl>
-    {% else %}
-      <p class="text-text-light">Connected — activity summary will appear shortly.</p>
-    {% endif %}
-  {% endif %}
-  </div>
-</section>
-<section class="card" id="recent-activities">
-  <h2 class="text-primary text-[1.3rem] font-bold mb-3">Recent activities</h2>
-  <p class="text-text-light text-sm mb-4">Your private Strava training log, grouped by day.</p>
-  {% if activity_calendar %}
-    <div class="training-month-nav">
-      <button type="button" id="training-prev" aria-label="Previous month">&larr; Previous</button>
-      <strong id="training-month-label"></strong>
-      <button type="button" id="training-next" aria-label="Next month">Next &rarr;</button>
-    </div>
-    <div class="grid gap-4" id="training-months">
-    {% for month in activity_calendar %}
-      <div class="training-month" data-month-index="{{ loop.index0 }}" data-month-key="{{ month.key }}">
-        <h3>{{ month.key }}</h3>
-        <div class="training-grid training-weekdays">{% for weekday in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] %}<span>{{ weekday }}</span>{% endfor %}</div>
-        <div class="training-grid">
-          {% for _ in range(month.first_weekday) %}<div class="training-day empty"></div>{% endfor %}
-          {% for day in range(1, month.days_in_month + 1) %}
-            {% set day_key = month.key ~ '-%02d'|format(day) %}
-            {% set activities = month.days.get(day_key, []) %}
-            <div class="training-day{% if activities %} has-activity{% endif %}">
-              <span class="day-number">{{ day }}</span>
-              {% for activity in activities[:2] %}<span class="activity-dot" title="{{ activity.name }}">● {{ activity.name }}</span>{% endfor %}
+        {% if pbp_finishes %}
+        <div class="pbp-track">
+          <div class="pbp-track-label">
+            <span>Paris-Brest-Paris</span>
+            <span class="pbp-ancien-badge">PBP Ancien{% if pbp_years %} · {{ pbp_years | join(', ') }}{% endif %}</span>
+          </div>
+          <div class="pbp-finish-list">
+            {% for finish in pbp_finishes %}
+            <div class="pbp-finish-row">
+              <div class="pbp-finish-main">
+                <span class="pbp-finish-year">{{ finish.date[:4] if finish.date else '—' }}</span>
+                <span class="pbp-finish-name">{{ finish.route_name|clean_name }}</span>
+              </div>
+              <div class="pbp-finish-meta">
+                {% if finish.finish_time %}<span>{{ finish.finish_time }}</span>{% endif %}
+                <span>{{ finish.distance_km }} km</span>
+              </div>
             </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% endif %}
+      </section>
+
+      <section class="profile-panel profile-training" id="strava">
+        <div class="profile-panel-head">
+          <h2>Training &amp; fitness</h2>
+          {% if strava.connected %}<a href="{{ url_for('main.dashboard') }}">Full dashboard →</a>{% endif %}
+        </div>
+        {% if not strava.connected %}
+        <div class="strava-connect-bar">
+          <p>Connect Strava for fitness score, recent rides, and Eddington number.</p>
+          <a class="strava-btn" href="{{ url_for('strava.connect') }}">Connect Strava</a>
+        </div>
+        {% else %}
+          {% if strava.error %}
+          <p class="py-2 px-3 rounded-lg text-sm bg-[#fef3c7] text-[#78350f] mb-3">{{ strava.error }}</p>
+          {% endif %}
+          {% if strava.stats %}
+          <div class="profile-training-stats">
+            <div class="profile-training-stat">
+              <div class="val">{{ strava.stats.rides }}</div>
+              <div class="lbl">Rides · 28d</div>
+            </div>
+            <div class="profile-training-stat">
+              <div class="val">{{ strava.stats.distance_km }}</div>
+              <div class="lbl">km</div>
+            </div>
+            <div class="profile-training-stat">
+              <div class="val">{{ strava.stats.elevation_m }}</div>
+              <div class="lbl">Elev m</div>
+            </div>
+            {% if strava.stats.fitness is not none %}
+            <div class="profile-training-stat {% if strava.stats.fitness >= 70 %}fitness-good{% elif strava.stats.fitness >= 40 %}fitness-mid{% else %}fitness-low{% endif %}">
+              <div class="val">{{ strava.stats.fitness }}</div>
+              <div class="lbl">Fitness</div>
+            </div>
+            {% endif %}
+          </div>
+          {% endif %}
+          {% if activity_feed %}
+          <div class="activity-list">
+            {% for activity in activity_feed[:8] %}
+            <div class="activity-row">
+              <div>
+                <div class="name">{{ activity.name }}</div>
+                <div class="sub">{{ activity.started_at[:10] if activity.started_at else '—' }}{% if activity.distance_m is not none %} · {{ '%.1f'|format((activity.distance_m|float)/1609.344) }} mi{% endif %}{% if activity.elevation_gain_m is not none %} · {{ (activity.elevation_gain_m|float*3.28084)|round|int }} ft{% endif %}</div>
+              </div>
+              <span class="tag">STRAVA</span>
+            </div>
+            {% endfor %}
+          </div>
+          {% if activity_feed|length > 8 %}
+          <p class="text-text-light text-sm mt-3 mb-0"><a href="{{ url_for('main.dashboard') }}" class="text-primary font-semibold">View all activities →</a></p>
+          {% endif %}
+          {% elif strava.stats %}
+          <p class="text-text-light text-sm">No recent activities synced yet.</p>
+          {% else %}
+          <p class="text-text-light text-sm">Connected — summary syncing shortly.</p>
+          {% endif %}
+        {% endif %}
+      </section>
+    </div>
+
+    <aside class="profile-aside">
+      {% if membership_pills %}
+      <section class="profile-panel">
+        <div class="profile-panel-head"><h2>Membership</h2></div>
+        <div class="membership-stack">
+          <div class="membership-row {% if rider.rusa_id and not field_status.rusa_duplicate %}ok{% else %}bad{% endif %}">
+            <span>RUSA</span>
+            <span class="status membership-rusa-status">
+              {% if rider.rusa_id %}{{ rider.rusa_id }}{% else %}Not provided{% endif %}
+              {% include 'partials/_rusa_id_status.html' %}
+            </span>
+          </div>
+          {% for pill in membership_pills if pill.label == 'SFR Membership' %}
+          <div class="membership-row {% if pill.ok %}ok{% else %}bad{% endif %}">
+            <span>{{ pill.label }}</span>
+            <span class="status">{{ pill.status }}</span>
+          </div>
           {% endfor %}
+          <div class="membership-row {% if club %}ok{% else %}bad{% endif %}">
+            <span>Home club</span>
+            <span class="status">{% if club %}{{ club.name }}{% else %}Not set{% endif %}</span>
+          </div>
+        </div>
+      </section>
+      {% endif %}
+
+      <section class="profile-panel" id="edit-profile">
+        <div class="profile-panel-head">
+          <div class="profile-panel-title">
+            <h2>Account &amp; registration</h2>
+            <span class="profile-complete-badge {% if field_status.complete %}ok{% else %}bad{% endif %}">
+              {% if field_status.complete %}Complete{% else %}Incomplete{% endif %}
+            </span>
+          </div>
+          <button type="button" class="profile-edit-btn" data-open-profile-modal>Edit</button>
+        </div>
+        <p class="text-text-light text-sm mb-3" style="margin-top:-8px;">Pre-filled when you register for brevets.</p>
+        <dl class="account-summary">
+          <div class="account-summary-row">
+            <dt>Name</dt>
+            <dd>{{ rider.first_name or '—' }} {{ rider.last_name or '' }}</dd>
+          </div>
+          <div class="account-summary-row">
+            <dt>Email</dt>
+            <dd>{{ rider.email or '—' }}</dd>
+          </div>
+          <div class="account-summary-row">
+            <dt>Phone</dt>
+            <dd>{{ rider.phone or '—' }}</dd>
+          </div>
+          <div class="account-summary-row">
+            <dt>City</dt>
+            <dd>{{ rider.city or '—' }}</dd>
+          </div>
+          <div class="account-summary-row">
+            <dt>Emergency</dt>
+            <dd class="account-summary-emergency">
+              {% if rider.emergency_name or rider.emergency_phone %}
+              {% if rider.emergency_name %}<span class="emergency-name">{{ rider.emergency_name }}</span>{% endif %}
+              {% if rider.emergency_phone %}<span class="emergency-phone">{{ rider.emergency_phone }}</span>{% endif %}
+              {% else %}—{% endif %}
+            </dd>
+          </div>
+          <div class="account-summary-row">
+            <dt>SFR year</dt>
+            <dd>{{ rider.sfr_member_year or '—' }}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="profile-panel">
+        <div class="profile-panel-head"><h2>Shortcuts</h2></div>
+        <div class="quick-links">
+          <a class="quick-link" href="{{ url_for('calendar.calendar') }}">Brevet calendar <span>Register</span></a>
+          <a class="quick-link" href="{{ url_for('main.rides_by_season') }}">Season history <span>RUSA</span></a>
+          <a class="quick-link" href="{{ url_for('live.live_list', mine=1) }}">Live rides <span>Track</span></a>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  {% else %}
+  {# Incomplete profile: focused setup flow #}
+  <div class="profile-setup">
+    <section class="profile-panel" id="edit-profile">
+      <h2 class="text-primary text-[1.2rem] font-bold mb-1">Complete your profile</h2>
+      <p class="text-text-light mb-4">Add your details once — they pre-fill every brevet registration.</p>
+      {% if membership_pills %}
+      <div class="membership-stack mb-4">
+        <div class="membership-row {% if rider.rusa_id and not field_status.rusa_duplicate %}ok{% else %}bad{% endif %}">
+          <span>RUSA</span>
+          <span class="status membership-rusa-status">
+            {% if rider.rusa_id %}{{ rider.rusa_id }}{% else %}Not provided{% endif %}
+            {% include 'partials/_rusa_id_status.html' %}
+          </span>
+        </div>
+        {% for pill in membership_pills if pill.label == 'SFR Membership' %}
+        <div class="membership-row {% if pill.ok %}ok{% else %}bad{% endif %}">
+          <span>{{ pill.label }}</span>
+          <span class="status">{{ pill.status }}</span>
+        </div>
+        {% endfor %}
+        <div class="membership-row {% if club %}ok{% else %}bad{% endif %}">
+          <span>Home club</span>
+          <span class="status">{% if club %}{{ club.name }}{% else %}Not set{% endif %}</span>
         </div>
       </div>
-    {% endfor %}
+      {% endif %}
+      {% include 'partials/_profile_edit_form.html' %}
+    </section>
+  </div>
+  {% endif %}
+</div>
+
+{% if rider.profile_completed %}
+<div id="profile-edit-modal" class="reg-modal-backdrop" {% if not field_errors %}hidden{% endif %}
+     role="presentation">
+  <div class="reg-modal-panel" role="dialog" aria-modal="true" aria-labelledby="profile-edit-modal-title">
+    <div class="reg-modal-head">
+      <span id="profile-edit-modal-title">Account &amp; registration</span>
+      <button type="button" class="reg-modal-close" data-close-profile-modal aria-label="Close">✕</button>
     </div>
-  {% else %}<p class="text-text-light">Connect Strava to see recent activities here.</p>{% endif %}
-</section>
-{% if activity_calendar %}
-<script>
-(function () {
-  const months = Array.from(document.querySelectorAll('#training-months [data-month-index]'));
-  const prev = document.getElementById('training-prev');
-  const next = document.getElementById('training-next');
-  const label = document.getElementById('training-month-label');
-  let index = 0;
-  function render() {
-    months.forEach((month, i) => { month.hidden = i !== index; });
-    const key = months[index].dataset.monthKey + '-01T00:00:00';
-    label.textContent = new Date(key).toLocaleDateString(undefined, {month:'long', year:'numeric'});
-    prev.disabled = index === 0;
-    next.disabled = index === months.length - 1;
-  }
-  prev.addEventListener('click', () => { if (index > 0) { index -= 1; render(); } });
-  next.addEventListener('click', () => { if (index < months.length - 1) { index += 1; render(); } });
-  render();
-}());
-</script>
+    <div class="reg-modal-body">
+      <p class="text-text-light text-sm mb-4">Saved once and pre-filled for every brevet registration.</p>
+      {% include 'partials/_profile_edit_form.html' %}
+    </div>
+  </div>
+</div>
 {% endif %}
-<div class="flex flex-wrap gap-2.5">
-  <a class="btn btn-primary" href="{{ url_for('main.dashboard') }}">My Rides</a>
-  <a class="btn bg-white text-primary border border-border hover:opacity-90"
-     href="{{ url_for('riders.rider_profile', rider_id=rider.id) }}">Public Rider Page</a>
-</div>
-</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var modal = document.getElementById('profile-edit-modal');
+  if (!modal) return;
+
+  var panel = modal.querySelector('.reg-modal-panel');
+  var openers = document.querySelectorAll('[data-open-profile-modal]');
+  var closers = modal.querySelectorAll('[data-close-profile-modal]');
+
+  function openModal() {
+    modal.hidden = false;
+    document.body.style.overflow = 'hidden';
+    var first = modal.querySelector('input, select, button, textarea');
+    if (first) first.focus();
+  }
+
+  function closeModal() {
+    modal.hidden = true;
+    document.body.style.overflow = '';
+    if (window.location.hash === '#edit-profile') {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }
+
+  openers.forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      openModal();
+    });
+  });
+
+  closers.forEach(function (btn) {
+    btn.addEventListener('click', closeModal);
+  });
+
+  modal.addEventListener('click', function (e) {
+    if (e.target === modal) closeModal();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !modal.hidden) closeModal();
+  });
+
+  if (panel) {
+    panel.addEventListener('click', function (e) {
+      e.stopPropagation();
+    });
+  }
+
+  if (window.location.hash === '#edit-profile' || {{ 'true' if field_errors else 'false' }}) {
+    openModal();
+  }
+});
+</script>
 {% endblock %}

@@ -32,7 +32,7 @@
     <p class="text-text-light mb-4">These are the same bounded, fail-soft operations used by Vercel cron.</p>
     <div class="grid md:grid-cols-2 gap-3">
       {% for operation, title, description in [
-        ('refresh-calendar', 'Refresh national calendar', 'Import the current RUSA event feed into BrevetHub.'),
+        ('refresh-calendar', 'Refresh national calendar', 'Import the full RUSA event feed (all clubs). Also available per-club on the Events page.'),
         ('sync-sfr-registration', 'Sync SFR registration metadata', 'Apply SFR spreadsheet fees, deadlines, and start details to cached brevets.'),
         ('sync-rusa-results', 'Sync official finishers', 'Fill pending finish times from official RUSA results.'),
         ('backfill-rwgps', 'Discover RWGPS routes', 'Process the next bounded batch of missing route links.'),

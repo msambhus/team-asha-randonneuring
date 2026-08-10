@@ -186,15 +186,30 @@ def refresh_calendar():
     return jsonify(run_refresh_calendar()), 200
 
 
-def run_refresh_calendar():
-    """Run the calendar refresh core for cron and the operator console."""
+def run_refresh_calendar(region_prefix=None):
+    """Run the calendar refresh core for cron and the operator console.
+
+    ``region_prefix`` — optional RUSA region label (e.g. ``CA: San Francisco``).
+    When set, only events for that region are upserted; ``None`` syncs all clubs.
+    """
     try:
-        refreshed = _scrape_and_upsert()
+        refreshed = _scrape_and_upsert(region_prefix=region_prefix)
+        backfilled = models.backfill_missing_event_elevations_from_routes()
     except Exception as e:
         current_app.logger.warning('RUSA calendar refresh failed: %s', e)
-        return {'ok': False, 'error': 'refresh failed', 'refreshed': 0}
-    current_app.logger.info('RUSA calendar refresh upserted %s events', refreshed)
-    return {'ok': True, 'refreshed': refreshed}
+        return {'ok': False, 'error': 'refresh failed', 'refreshed': 0,
+                'region_prefix': region_prefix, 'elevation_backfilled': 0}
+    current_app.logger.info(
+        'RUSA calendar refresh upserted %s events (region_prefix=%s); '
+        'backfilled elevation on %s sibling rows',
+        refreshed, region_prefix or 'all', backfilled,
+    )
+    return {
+        'ok': True,
+        'refreshed': refreshed,
+        'elevation_backfilled': backfilled,
+        'region_prefix': region_prefix,
+    }
 
 
 def run_sync_sfr_registration():

@@ -138,17 +138,37 @@ def create_app():
         # dropdown vs. the "Sign in" button) from the session alone — no per-request
         # DB lookup. BrevetHub riders have no display name (Google OAuth stores only
         # email), so the nav label is the email; there is no rider-page link.
+        from brevethub import models
+        from brevethub.services.registration import membership_expired, membership_status
+
+        rider_id = session.get('rider_id')
+        rusa_membership_expired = False
+        sfr_membership_expired = False
+        membership_banner = None
+        member = None
+        if rider_id:
+            fields = models.get_rider_membership_fields(rider_id) or {}
+            rider_row = {'id': rider_id, **fields}
+            member = membership_status(rider_row)
+            rusa_membership_expired = member['rusa']['expired']
+            sfr_membership_expired = member['sfr']['expired']
+            membership_banner = member if membership_expired(rider_row) else None
+
         return {
             'product_name': 'BrevetHub',
-            'user_logged_in': bool(session.get('rider_id')),
+            'user_logged_in': bool(rider_id),
             'user_email': session.get('email'),
-            'user_rider_id': session.get('rider_id'),
+            'user_rider_id': rider_id,
             # True when a club admin or super-admin has authenticated via /admin/login.
             'is_admin_operator': bool(session.get('brevethub_operator_club_id')),
             'admin_club_name': session.get('brevethub_operator_club_name'),
             'admin_username': session.get('brevethub_operator_username'),
             # Seasons for the Riders nav dropdown. Clock-derived, club-agnostic.
             'nav_seasons': _nav_seasons(),
+            'rusa_membership_expired': rusa_membership_expired,
+            'sfr_membership_expired': sfr_membership_expired,
+            'membership_banner': membership_banner,
+            'membership_season_year': member['season_year'] if member else None,
         }
 
     @app.template_filter('clean_name')

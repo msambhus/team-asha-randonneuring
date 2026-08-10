@@ -24,6 +24,15 @@
   display:flex; flex-wrap:wrap; align-items:center;
   gap:.35rem .85rem; font-size:.875rem; color:var(--text-light);
 }
+.event-card-edit {
+  margin-left: auto;
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.event-card-edit:hover { color: var(--primary-dark, #173b63); }
 .event-card-row {
   display:grid;
   grid-template-columns:minmax(0, 1fr) auto auto;
@@ -172,6 +181,7 @@
         <span>{{ ev.distance_km }} km</span>
         {% if ev.start_time %}<span>🕐 {{ ev.start_time }}</span>{% endif %}
         {% if ev.start_location %}<span>📍 {{ ev.start_location }}</span>{% endif %}
+        <span class="event-card-edit" onclick="event.preventDefault(); event.stopPropagation(); window.location='{{ url_for('admin.event_edit', event_id=ev.id) }}';">Edit</span>
       </div>
     </div>
     <div class="event-card-vol">
@@ -229,6 +239,25 @@
       </p>
     </div>
     <div class="events-toolbar">
+      <form method="post" action="{{ url_for('admin.sync_rusa_events') }}"
+            class="rusa-sync-form" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        {% if is_super_admin %}
+        <label for="sync-club-id" class="sr-only">Club to sync</label>
+        <select id="sync-club-id" name="club_id" class="form-input" style="width:auto;min-width:160px;padding:6px 10px;font-size:.82rem;">
+          <option value="all">All clubs</option>
+          {% for c in sync_clubs %}
+          <option value="{{ c.id }}" {% if not c.region_prefix %}disabled{% endif %}>
+            {{ c.name }}{% if not c.region_prefix %} (no region){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+        {% endif %}
+        <button type="submit" class="btn btn-secondary"
+                {% if not is_super_admin and not operator_region_prefix %}disabled title="Club has no RUSA region mapping"{% endif %}
+                style="white-space:nowrap;font-size:.82rem;padding:6px 12px;">
+          Sync from RUSA
+        </button>
+      </form>
       <div class="view-toggle" role="group" aria-label="View mode">
         <a href="{{ events_page_url(status_filter, 'cards') }}" class="{% if view == 'cards' %}active{% endif %}">Cards</a>
         <a href="{{ events_page_url(status_filter, 'table') }}" class="{% if view == 'table' %}active{% endif %}">Table</a>
@@ -278,7 +307,10 @@
             <td class="num">{{ ev.registered_count or 0 }}</td>
             <td class="num">{{ ev.roster_count or 0 }}</td>
             <td class="num">{{ ev.result_count or 0 }}</td>
-            <td><span style="color:var(--primary);font-size:.8rem;font-weight:600;">Roster →</span></td>
+            <td style="white-space:nowrap;">
+              <a href="{{ url_for('admin.event_edit', event_id=ev.id) }}" style="color:var(--primary);font-size:.8rem;font-weight:600;text-decoration:none;margin-right:10px;" onclick="event.stopPropagation();">Edit</a>
+              <span style="color:var(--primary);font-size:.8rem;font-weight:600;">Roster →</span>
+            </td>
           </tr>
           {% endfor %}
           <tr id="events-table-empty" style="display:none;">

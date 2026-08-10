@@ -139,7 +139,8 @@ _RIDER_PROFILE_COLS = (
     "id, email, google_id, rusa_id, club_id, "
     "profile_completed, rusa_id_duplicate, created_at, last_login_at, "
     "first_name, last_name, phone, city, emergency_name, emergency_phone, "
-    "sfr_member_year, eddington_km, eddington_miles, eddington_calculated_at"
+    "sfr_member_year, rusa_membership_expires, rusa_membership_checked_at, "
+    "eddington_km, eddington_miles, eddington_calculated_at"
 )
 
 
@@ -148,6 +149,62 @@ def get_rider_by_google_id(google_id):
         f"SELECT {_RIDER_PROFILE_COLS} FROM rp_rider WHERE google_id = %s",
         (google_id,),
     )
+
+
+def get_rider_membership_fields(rider_id):
+    """Lightweight membership lookup for global nav banners."""
+    row = db.query_one(
+        "SELECT rusa_id, sfr_member_year, rusa_membership_expires, "
+        "       rusa_membership_checked_at "
+        "FROM rp_rider WHERE id = %s",
+        (rider_id,),
+    )
+    if not row:
+        return None
+    return {
+        'rusa_id': row['rusa_id'],
+        'sfr_member_year': row['sfr_member_year'],
+        'rusa_membership_expires': row['rusa_membership_expires'],
+        'rusa_membership_checked_at': row['rusa_membership_checked_at'],
+    }
+
+
+def get_rider_by_rusa_id(rusa_id):
+    if not rusa_id:
+        return None
+    return db.query_one(
+        f"SELECT {_RIDER_PROFILE_COLS} FROM rp_rider WHERE rusa_id = %s",
+        (str(rusa_id),),
+    )
+
+
+def update_rider_rusa_membership(rider_id, *, membership_expires, checked_at=None):
+    """Persist a RUSA.org membership scrape (NULL expiry = not found or unknown)."""
+    return db.execute(
+        "UPDATE rp_rider SET rusa_membership_expires = %s, "
+        "    rusa_membership_checked_at = COALESCE(%s, NOW()) "
+        "WHERE id = %s "
+        f"RETURNING {_RIDER_PROFILE_COLS}",
+        (membership_expires, checked_at, rider_id),
+        returning=True,
+    )
+
+
+def clear_rider_rusa_membership_cache(rider_id):
+    return db.execute(
+        "UPDATE rp_rider SET rusa_membership_expires = NULL, "
+        "    rusa_membership_checked_at = NULL "
+        "WHERE id = %s "
+        f"RETURNING {_RIDER_PROFILE_COLS}",
+        (rider_id,),
+        returning=True,
+    )
+
+
+def get_rider_membership_year(rider_id):
+    """Back-compat: return SFR membership year only."""
+    fields = get_rider_membership_fields(rider_id)
+    return fields['sfr_member_year'] if fields else None
 
 
 def get_rider_by_id(rider_id):
@@ -1091,6 +1148,45 @@ def upsert_brevet_event(event):
          event.get('rwgps_url'), event.get('start_location'),
          event.get('start_time'), event.get('time_limit_hours')),
     )
+
+
+def get_cached_elevation_for_rusa_route(route_id):
+    """Return a known elevation for a RUSA route id from any cached brevet row."""
+    if not route_id:
+        return None
+    row = db.query_one(
+        "SELECT elevation_ft FROM rp_brevet_event "
+        "WHERE rusa_route_id = %s AND elevation_ft IS NOT NULL "
+        "ORDER BY date DESC LIMIT 1",
+        (str(route_id),),
+    )
+    return row['elevation_ft'] if row else None
+
+
+def backfill_missing_event_elevations_from_routes():
+    """Copy elevation onto route siblings that RUSA left blank in the climbing column."""
+    conn = db.get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE rp_brevet_event e "
+                "SET elevation_ft = peer.elevation_ft "
+                "FROM ( "
+                "  SELECT rusa_route_id, MAX(elevation_ft) AS elevation_ft "
+                "  FROM rp_brevet_event "
+                "  WHERE rusa_route_id IS NOT NULL AND elevation_ft IS NOT NULL "
+                "  GROUP BY rusa_route_id "
+                ") peer "
+                "WHERE e.elevation_ft IS NULL "
+                "  AND e.rusa_route_id IS NOT NULL "
+                "  AND e.rusa_route_id = peer.rusa_route_id",
+            )
+            updated = cur.rowcount
+        conn.commit()
+        return updated
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def get_rider_signup_statuses(rider_id):
@@ -2992,9 +3088,18 @@ def get_club_admin_by_id(admin_id):
 def list_all_clubs_for_admin():
     """All clubs sorted by name — for the super-admin club picker."""
     return db.query(
-        "SELECT id, name, rusa_club_id, state FROM rp_club ORDER BY name",
+        "SELECT id, name, rusa_club_id, state, region_prefix FROM rp_club ORDER BY name",
         (),
     )
+
+
+def get_club_region_prefix(club_id):
+    """Return the RUSA feed region label for a club, or None when unmapped."""
+    row = db.query_one(
+        "SELECT region_prefix FROM rp_club WHERE id = %s",
+        (club_id,),
+    )
+    return (row or {}).get('region_prefix') or None
 
 
 def list_all_club_admins():

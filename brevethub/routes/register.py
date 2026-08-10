@@ -4,14 +4,17 @@ Integrated with the brevet calendar: event cards open a 3-step modal and POST to
 these JSON endpoints. Successful confirmation sets rp_event_signup to registered plus
 registration_status confirmed/exception/waitlist.
 """
-from flask import Blueprint, jsonify, render_template, request, url_for
+from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
 from brevethub import models
 from brevethub.decorators import current_rider, login_required
-from brevethub.redirects import is_safe_relative_url, safe_redirect
+from brevethub.redirects import is_safe_relative_url
 from brevethub.services.registration import (
     evaluate_registration,
+    lookup_rusa_membership,
+    membership_expired,
     membership_pills,
+    membership_status,
     profile_field_status,
     profile_payload,
     confirm_registration_for_event,
@@ -19,6 +22,13 @@ from brevethub.services.registration import (
     registration_open,
     resolve_rusa_id_for_save,
     validate_profile_phones,
+    membership_season_year,
+    rusa_membership_needs_refresh,
+    sync_rusa_membership_by_rusa_id,
+    RUSA_MEMBERSHIP_EXPIRED_BLOCKER,
+    SFR_MEMBERSHIP_EXPIRED_BLOCKER,
+    RUSA_RENEW_URL,
+    SFR_RENEW_URL,
 )
 
 _TEAM_EVENT_TYPES = frozenset({'acp flèche', 'acp fleche', 'rusa arrow/dart/dart populaire', 'rusa dart'})
@@ -26,23 +36,10 @@ _TEAM_EVENT_TYPES = frozenset({'acp flèche', 'acp fleche', 'rusa arrow/dart/dar
 register_bp = Blueprint('register', __name__)
 
 
-def _profile_cancel_url():
-    next_url = request.args.get('next')
-    if is_safe_relative_url(next_url):
-        return next_url
-    return url_for('main.profile')
-
-
-def _profile_edit_response(rider, clubs, *, field_errors=None):
-    return render_template(
-        'profile_edit.html',
-        rider=rider,
-        clubs=clubs,
-        field_errors=field_errors or {},
-        field_status=profile_field_status(rider),
-        membership_pills=membership_pills(rider),
-        cancel_url=_profile_cancel_url(),
-    )
+def _profile_edit_url(next_path=None):
+    if next_path and is_safe_relative_url(next_path):
+        return url_for('main.profile', next=next_path) + '#edit-profile'
+    return url_for('main.profile') + '#edit-profile'
 
 
 def _rider_from_form(rider, form):
@@ -92,70 +89,57 @@ def _controls_for_event(event_id):
     return controls[:8]
 
 
-@register_bp.route('/profile/edit', methods=['GET', 'POST'])
+@register_bp.route('/profile/edit')
 @login_required
 def edit_profile():
-    rider = current_rider()
-    clubs = models.get_all_clubs()
-    if request.method == 'POST':
-        raw_rusa = (request.form.get('rusa_id') or '').strip()
-        club_id = request.form.get('club_id', type=int)
-        sfr_year = request.form.get('sfr_member_year', type=int)
-        form_rider = _rider_from_form(rider, request.form)
-        field_errors = {}
-        first_name = (request.form.get('first_name') or '').strip() or None
-        last_name = (request.form.get('last_name') or '').strip() or None
-        rusa_id, rusa_errors = resolve_rusa_id_for_save(
-            raw_rusa, first_name, last_name)
-        if (
-            not rusa_errors
-            and rusa_id
-            and models.rusa_id_already_claimed(rusa_id, exclude_rider_id=rider['id'])
-        ):
-            rusa_errors['rusa_id'] = (
-                'That RUSA ID is already registered to another account.')
-        field_errors.update(rusa_errors)
-        if not club_id or not models.club_exists(club_id):
-            field_errors['club_id'] = 'Please choose your home club.'
-
-        ok, phone_errors, phones = validate_profile_phones(
-            request.form.get('phone'),
-            request.form.get('emergency_phone'),
-        )
-        field_errors.update(phone_errors)
-        if field_errors:
-            return _profile_edit_response(form_rider, clubs, field_errors=field_errors)
-
-        rider = models.update_rider_registration_profile(
-            rider['id'],
-            first_name=(request.form.get('first_name') or '').strip() or None,
-            last_name=(request.form.get('last_name') or '').strip() or None,
-            phone=phones['phone'],
-            city=(request.form.get('city') or '').strip() or None,
-            emergency_name=(request.form.get('emergency_name') or '').strip() or None,
-            emergency_phone=phones['emergency_phone'],
-            sfr_member_year=sfr_year,
-            rusa_id=rusa_id,
-            club_id=club_id,
-        )
-        models.complete_rider_profile(
-            rider['id'], rider.get('rusa_id'), club_id,
-            rusa_id_duplicate=False)
-        from flask import flash
-        flash('Profile saved.', 'success')
-        return safe_redirect(request.args.get('next'), 'main.profile')
-
-    return _profile_edit_response(rider, clubs)
+    """Backward-compatible redirect to the combined profile page."""
+    return redirect(_profile_edit_url(request.args.get('next')))
 
 
 def _profile_response(rider):
     rider = models.get_rider_by_id(rider['id'])
+    member = membership_status(rider, refresh_rusa=rusa_membership_needs_refresh(rider))
+    rider = models.get_rider_by_id(rider['id'])
     return {
         'profile': profile_payload(
-            rider, edit_url=url_for('register.edit_profile')),
-        'field_status': profile_field_status(rider),
-        'membership_pills': membership_pills(rider),
+            rider, edit_url=_profile_edit_url()),
+        'field_status': profile_field_status(rider, rusa_lookup=member['rusa']),
+        'membership': member,
+        'membership_pills': membership_pills(rider, membership=member),
     }
+
+
+@register_bp.route('/register/membership/status')
+@login_required
+def membership_status_route():
+    """Membership status for the signed-in rider (RUSA scrape + SFR self-reported)."""
+    rider = current_rider()
+    if not rider:
+        return jsonify({'error': 'Sign in required.'}), 401
+    member = membership_status(rider, refresh_rusa=rusa_membership_needs_refresh(rider))
+    return jsonify({
+        'membership': member,
+        'field_status': profile_field_status(rider, rusa_lookup=member['rusa']),
+    })
+
+
+@register_bp.route('/register/membership/rusa/<int:rusa_id>')
+@login_required
+def rusa_membership_lookup(rusa_id):
+    """Look up RUSA membership expiry from RUSA.org and persist on the rider row."""
+    rider = current_rider()
+    target_id = None
+    if rider and str(rider.get('rusa_id') or '') == str(rusa_id):
+        target_id = rider['id']
+    else:
+        existing = models.get_rider_by_rusa_id(rusa_id)
+        if existing:
+            target_id = existing['id']
+    result = sync_rusa_membership_by_rusa_id(str(rusa_id), rider_id=target_id)
+    payload = {'membership': result, 'renew_url': RUSA_RENEW_URL}
+    if not result.get('found'):
+        return jsonify(payload), 404
+    return jsonify(payload)
 
 
 @register_bp.route('/register/profile/quick-save', methods=['POST'])
@@ -203,6 +187,9 @@ def quick_save_profile():
             'error': next(iter(field_errors.values())),
             'field_errors': field_errors,
         }), 400
+
+    if str(rusa_id or '') != str(rider.get('rusa_id') or ''):
+        models.clear_rider_rusa_membership_cache(rider['id'])
 
     models.update_rider_registration_profile(
         rider['id'],
@@ -260,16 +247,25 @@ def bulk_preview():
         })
     waiver = models.get_waiver_for_event(
         models.get_brevet_event_registration(event_ids[0]) if event_ids else None)
+    member = membership_status(rider, refresh_rusa=True)
+    rider = models.get_rider_by_id(rider['id'])
     return jsonify({
         'events': events,
         'profile': _profile_response(rider)['profile'],
-        'field_status': profile_field_status(rider),
+        'field_status': profile_field_status(rider, rusa_lookup=member['rusa']),
+        'membership': member,
         'evaluation': {'blockers': list(dict.fromkeys(blockers))},
         'waiver': {
             'version_id': waiver['id'] if waiver else None,
             'text': waiver['waiver_text'] if waiver else '',
         },
         'blockers': blockers,
+        'membership_expired': membership_expired(rider),
+        'rusa_membership_expired': member['rusa']['expired'],
+        'sfr_membership_expired': member['sfr']['expired'],
+        'membership_season_year': membership_season_year(),
+        'rusa_renew_url': RUSA_RENEW_URL,
+        'sfr_renew_url': SFR_RENEW_URL,
     })
 
 
@@ -318,19 +314,22 @@ def register_profile(event_id):
     waiver = models.get_waiver_for_event(event)
     confirmed = models.get_event_registration_count(event_id)
     evaluation = evaluate_registration(rider, event, confirmed_count=confirmed)
+    rider = models.get_rider_by_id(rider['id'])
     existing = models.get_event_signup_registration(rider['id'], event_id)
+    member = evaluation.get('membership') or membership_status(rider)
     return jsonify({
         'profile': profile_payload(
-            rider, edit_url=url_for('register.edit_profile', next=request.path)),
-        'field_status': profile_field_status(rider),
+            rider, edit_url=_profile_edit_url(request.path)),
+        'field_status': profile_field_status(rider, rusa_lookup=member['rusa']),
         'evaluation': evaluation,
+        'membership': member,
         'waiver': {
             'version_id': waiver['id'] if waiver else None,
             'version_label': waiver['version_label'] if waiver else None,
             'text': waiver['waiver_text'] if waiver else '',
         },
         'existing_registration': existing,
-        'membership_pills': membership_pills(rider),
+        'membership_pills': membership_pills(rider, membership=member),
     })
 
 
@@ -480,6 +479,22 @@ def register_team(event_id):
     rider = current_rider()
     if not rider:
         return _login_required_json()
+
+    if membership_expired(rider):
+        member = membership_status(rider)
+        return jsonify({
+            'error': (
+                RUSA_MEMBERSHIP_EXPIRED_BLOCKER
+                if member['rusa']['expired']
+                else SFR_MEMBERSHIP_EXPIRED_BLOCKER
+            ),
+            'membership_expired': True,
+            'rusa_membership_expired': member['rusa']['expired'],
+            'sfr_membership_expired': member['sfr']['expired'],
+            'membership': member,
+            'rusa_renew_url': RUSA_RENEW_URL,
+            'sfr_renew_url': SFR_RENEW_URL,
+        }), 403
 
     event, err = _event_or_404(event_id)
     if err:
