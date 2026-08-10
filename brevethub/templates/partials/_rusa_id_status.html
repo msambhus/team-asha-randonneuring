@@ -1,0 +1,26 @@
+{# RUSA ID verification + membership expiry (requires rider + field_status in context). #}
+{% if rider.rusa_id %}
+<span class="rusa-id-status" aria-live="polite">
+  {% if field_status.rusa_duplicate %}
+  <span class="rusa-trust rusa-trust-warn" title="This RUSA number is also claimed by another account">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+    <span>Review needed</span>
+  </span>
+  {% elif field_status.rusa_membership_expires %}
+  <span class="rusa-trust {% if field_status.rusa_membership_current %}rusa-trust-verified{% else %}rusa-trust-expired{% endif %}"
+        title="Verified on RUSA.org">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    <span>Verified · {% if field_status.rusa_membership_current %}Active · exp {{ field_status.rusa_membership_expires }}{% else %}Expired · {{ field_status.rusa_membership_expires }}{% endif %}</span>
+  </span>
+  {% elif rider.rusa_membership_checked_at %}
+  <span class="rusa-trust rusa-trust-warn" title="RUSA.org lookup did not find this member number">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+    <span>Not found on RUSA.org</span>
+  </span>
+  {% else %}
+  <span class="rusa-trust rusa-trust-pending" title="Membership not checked against RUSA.org yet">
+    <span>Pending RUSA check</span>
+  </span>
+  {% endif %}
+</span>
+{% endif %}

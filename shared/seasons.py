@@ -313,6 +313,25 @@ def career_summary(brevets, today):
     }
 
 
+def _is_pbp_brevet(brevet):
+    if (brevet.get('distance_km') or 0) < PBP_MIN_KM:
+        return False
+    name = str(brevet.get('route_name') or '').lower()
+    return any(fragment in name for fragment in PBP_NAME_FRAGMENTS)
+
+
+def pbp_finishes(brevets):
+    """Finished Paris-Brest-Paris rides, newest first."""
+    finishes = []
+    for b in brevets or []:
+        if not _is_pbp_brevet(b):
+            continue
+        if _coerce_date(b.get('date')) is None:
+            continue
+        finishes.append(b)
+    return sorted(finishes, key=lambda b: b.get('date') or '', reverse=True)
+
+
 def pbp_ancien_years(brevets):
     """Sorted distinct years in which the rider FINISHED Paris-Brest-Paris, earning
     the title Ancien(ne). Returns ``[]`` for a rider with no PBP finish.
@@ -334,14 +353,8 @@ def pbp_ancien_years(brevets):
     false-positive risk in mind; this helper stays conservative by default.
     """
     years = set()
-    for b in brevets or []:
-        if (b.get('distance_km') or 0) < PBP_MIN_KM:
-            continue
-        name = str(b.get('route_name') or '').lower()
-        if any(fragment in name for fragment in PBP_NAME_FRAGMENTS):
-            d = _coerce_date(b.get('date'))
-            if d is not None:
-                years.add(d.year)
+    for b in pbp_finishes(brevets):
+        years.add(_coerce_date(b.get('date')).year)
     return sorted(years)
 
 

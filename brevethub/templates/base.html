@@ -52,7 +52,6 @@
         <button type="button" class="dropdown-trigger bg-transparent border-0 text-white/85 no-underline py-2 px-3.5 rounded-md text-sm font-medium transition-all hover:bg-white/15 hover:text-white inline-block cursor-pointer after:content-['_▾'] after:text-xs" aria-haspopup="true" aria-expanded="false">{{ user_email }}</button>
         <div class="hidden group-hover:block absolute top-full right-0 bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.15)] min-w-[180px] z-[200] overflow-hidden pt-0">
             <a href="{{ url_for('main.profile') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My Profile</a>
-            <a href="{{ url_for('register.edit_profile', next=request.path) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Registration profile</a>
             <a href="{{ url_for('main.dashboard') }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">My Rides</a>
             {% if user_rider_id %}
             <a href="{{ url_for('riders.rider_profile', rider_id=user_rider_id) }}" class="block py-2.5 px-4 text-text no-underline text-[0.85rem] font-medium transition-[background] hover:bg-[#edf2f7] hover:text-primary">Public Rider Page</a>
@@ -82,6 +81,19 @@
 </nav>
 </div>
 </header>
+
+{% if user_logged_in and rusa_membership_expired %}
+<div class="bg-[#fef3c7] text-[#78350f] border-b border-[#fcd34d] py-2.5 px-5 text-sm text-center" role="alert">
+  RUSA membership is expired{% if membership_banner and membership_banner.rusa.membership_expires %} (expired {{ membership_banner.rusa.membership_expires }}){% endif %}.
+  <a href="https://rusa.org/pages/join-renew-membership" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#92400e] underline hover:text-[#78350f]">Renew at RUSA.org</a>
+</div>
+{% endif %}
+{% if user_logged_in and sfr_membership_expired %}
+<div class="bg-[#fef3c7] text-[#78350f] border-b border-[#fcd34d] py-2.5 px-5 text-sm text-center" role="alert">
+  SFR club membership is expired for {{ membership_season_year }} (Jan 1 – Dec 31).
+  <a href="{{ url_for('main.profile') }}#edit-profile" class="font-semibold text-[#92400e] underline hover:text-[#78350f]">Update SFR membership year</a>
+</div>
+{% endif %}
 
 <div aria-live="polite" role="status">
 {% with messages = get_flashed_messages(with_categories=true) %}

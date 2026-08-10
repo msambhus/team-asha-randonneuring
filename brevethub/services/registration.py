@@ -114,9 +114,215 @@ def _profile_field_ok(rider: dict, field: str) -> bool:
     return bool((rider.get(field) or '').strip())
 
 
-def _current_season_year(today: date | None = None) -> int:
+# Membership: RUSA (national, scraped expiry) and SFR (club, self-reported year).
+# Both follow the calendar year (Jan 1 – Dec 31).
+RUSA_RENEW_URL = 'https://rusa.org/pages/join-renew-membership'
+SFR_RENEW_URL = 'https://sfrandonneurs.org/'
+RUSA_MEMBERSHIP_EXPIRED_BLOCKER = (
+    'RUSA membership is expired. Renew at RUSA.org before registering for rides.'
+)
+SFR_MEMBERSHIP_EXPIRED_BLOCKER = (
+    'SFR club membership is expired. Renew with SFR before registering for rides.'
+)
+
+
+def membership_season_year(today: date | None = None) -> int:
+    """Calendar year label for membership checks."""
+    return (today or date.today()).year
+
+
+def sfr_membership_current(rider: dict, today: date | None = None) -> bool:
+    """True when the rider's SFR club membership year covers the current calendar year."""
+    member_year = rider.get('sfr_member_year')
+    if member_year is None:
+        return False
+    return int(member_year) >= membership_season_year(today)
+
+
+def sfr_membership_expired(rider: dict, today: date | None = None) -> bool:
+    return not sfr_membership_current(rider, today)
+
+
+def _coerce_date(value) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    if hasattr(value, 'date') and callable(value.date):
+        return value.date()
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def lookup_rusa_membership(rusa_id: str | None, today: date | None = None) -> dict:
+    """Scrape RUSA.org member search for expiry (authoritative RUSA membership)."""
+    from shared.rusa_validator import get_rusa_membership_status
+
+    normalized = normalize_rusa_id(rusa_id)
+    if not normalized:
+        return {
+            'found': False,
+            'rusa_id': None,
+            'rusa_name': None,
+            'city': None,
+            'rusa_club': None,
+            'membership_expires': None,
+            'current': False,
+            'error': 'RUSA ID not on file.',
+            'from_cache': False,
+        }
+    result = get_rusa_membership_status(normalized, today=today)
+    result['from_cache'] = False
+    return result
+
+
+def rusa_membership_needs_refresh(rider: dict, today: date | None = None) -> bool:
+    """True when DB cache is missing, not found, or past expiry — time to re-scrape."""
+    if not rider.get('rusa_id'):
+        return False
+    if rider.get('rusa_membership_checked_at') is None:
+        return True
+    expires = _coerce_date(rider.get('rusa_membership_expires'))
+    if expires is None:
+        return True
+    return expires < (today or date.today())
+
+
+def rusa_status_from_rider_row(rider: dict, today: date | None = None) -> dict:
+    """Build RUSA membership status from cached DB columns."""
     today = today or date.today()
-    return today.year if today.month >= 11 else today.year
+    rusa_id = rider.get('rusa_id')
+    if not rusa_id:
+        return lookup_rusa_membership(None, today=today)
+
+    expires = _coerce_date(rider.get('rusa_membership_expires'))
+    checked = rider.get('rusa_membership_checked_at')
+    if checked is None:
+        return {
+            'found': False,
+            'rusa_id': str(rusa_id),
+            'rusa_name': None,
+            'city': None,
+            'rusa_club': None,
+            'membership_expires': None,
+            'current': False,
+            'checked_at': None,
+            'from_cache': True,
+            'error': 'RUSA membership has not been checked yet.',
+        }
+
+    found = expires is not None
+    current = found and expires >= today
+    checked_iso = checked.isoformat() if hasattr(checked, 'isoformat') else str(checked)
+    return {
+        'found': found,
+        'rusa_id': str(rusa_id),
+        'rusa_name': None,
+        'city': None,
+        'rusa_club': None,
+        'membership_expires': expires.isoformat() if expires else None,
+        'current': current,
+        'checked_at': checked_iso,
+        'from_cache': True,
+        'error': None if found else f'RUSA ID {rusa_id} not found on RUSA.org',
+    }
+
+
+def _persist_rusa_membership(rider_id: int, scraped: dict) -> dict | None:
+    expires = _coerce_date(scraped.get('membership_expires'))
+    return models.update_rider_rusa_membership(rider_id, membership_expires=expires)
+
+
+def refresh_rusa_membership(rider: dict, *, force: bool = False,
+                            today: date | None = None) -> tuple[dict, dict]:
+    """Re-scrape RUSA.org when needed and persist expiry to ``rp_rider``.
+
+    When ``force`` is True (registration flow), always scrape and update the DB
+    when the expiry date changes.
+    """
+    today = today or date.today()
+    rider_id = rider.get('id')
+    if not rider.get('rusa_id'):
+        return rider, lookup_rusa_membership(None, today=today)
+
+    if not force and not rusa_membership_needs_refresh(rider, today):
+        return rider, rusa_status_from_rider_row(rider, today=today)
+
+    scraped = lookup_rusa_membership(rider['rusa_id'], today=today)
+    if rider_id:
+        previous = _coerce_date(rider.get('rusa_membership_expires'))
+        new_expires = _coerce_date(scraped.get('membership_expires'))
+        if force or previous != new_expires or rider.get('rusa_membership_checked_at') is None:
+            updated = _persist_rusa_membership(rider_id, scraped)
+            if updated:
+                rider = updated
+    scraped['from_cache'] = False
+    if rider.get('rusa_membership_checked_at'):
+        checked = rider['rusa_membership_checked_at']
+        scraped['checked_at'] = checked.isoformat() if hasattr(checked, 'isoformat') else str(checked)
+    return rider, scraped
+
+
+def sync_rusa_membership_by_rusa_id(rusa_id: str | None, *, rider_id: int | None = None,
+                                    today: date | None = None) -> dict:
+    """Scrape RUSA.org for a member number and persist on the matching rider row."""
+    today = today or date.today()
+    scraped = lookup_rusa_membership(rusa_id, today=today)
+    target_id = rider_id
+    if not target_id and scraped.get('rusa_id'):
+        row = models.get_rider_by_rusa_id(scraped['rusa_id'])
+        target_id = row['id'] if row else None
+    if target_id:
+        _persist_rusa_membership(target_id, scraped)
+    return scraped
+
+
+def rusa_membership_status_for_rider(rider: dict, today: date | None = None,
+                                     *, force: bool = False) -> dict:
+    """RUSA membership for a rider, using DB cache with conditional refresh."""
+    _, status = refresh_rusa_membership(rider, force=force, today=today)
+    return status
+
+
+def membership_status(rider: dict, today: date | None = None,
+                      *, refresh_rusa: bool = False) -> dict:
+    """Combined RUSA + SFR membership status for APIs and registration UI."""
+    today = today or date.today()
+    year = membership_season_year(today)
+    rider, rusa = refresh_rusa_membership(
+        rider,
+        force=refresh_rusa,
+        today=today,
+    )
+    sfr_current = sfr_membership_current(rider, today=today)
+    return {
+        'season_year': year,
+        'rusa': {
+            **rusa,
+            'renew_url': RUSA_RENEW_URL,
+            'expired': bool(rider.get('rusa_id')) and not rusa.get('current'),
+        },
+        'sfr': {
+            'member_year': rider.get('sfr_member_year'),
+            'current': sfr_current,
+            'expired': sfr_membership_expired(rider, today=today),
+            'renew_url': SFR_RENEW_URL,
+        },
+    }
+
+
+# Back-compat aliases used by older call sites during transition.
+def rusa_membership_season_year(today: date | None = None) -> int:
+    return membership_season_year(today)
+
+
+def membership_expired(rider: dict, today: date | None = None) -> bool:
+    """True when either RUSA (scraped) or SFR (self-reported) membership is expired."""
+    status = membership_status(rider, today=today)
+    rusa_expired = bool(rider.get('rusa_id')) and status['rusa']['expired']
+    return rusa_expired or status['sfr']['expired']
 
 
 def _format_name_part(value: str) -> str:
@@ -152,45 +358,56 @@ def rider_display_name(rider: dict) -> str:
     return 'Rider'
 
 
-def profile_field_status(rider: dict) -> dict:
+def profile_field_status(rider: dict, *, rusa_lookup: dict | None = None) -> dict:
     """Return completeness map used by the registration UI."""
     missing = [f for f in PROFILE_REQUIRED_FIELDS if not _profile_field_ok(rider, f)]
+    rusa = rusa_lookup or rusa_status_from_rider_row(rider)
+    sfr_current = sfr_membership_current(rider)
+    rusa_expired = bool(rider.get('rusa_id')) and not rusa.get('current')
+    sfr_expired = sfr_membership_expired(rider)
     return {
         'complete': not missing and bool(rider.get('club_id')),
         'missing': missing,
         'has_rusa': bool(rider.get('rusa_id')),
         'rusa_duplicate': bool(rider.get('rusa_id_duplicate')),
-        'sfr_member_current': (
-            rider.get('sfr_member_year') is not None and
-            int(rider['sfr_member_year']) >= _current_season_year()
-        ),
+        'rusa_membership_current': bool(rider.get('rusa_id')) and rusa.get('current'),
+        'rusa_membership_expires': rusa.get('membership_expires'),
+        'rusa_membership_expired': rusa_expired,
+        'sfr_member_current': sfr_current,
+        'sfr_membership_expired': sfr_expired,
+        'membership_expired': rusa_expired or sfr_expired,
     }
 
 
-def membership_pills(rider: dict | None) -> list[dict]:
+def membership_pills(rider: dict | None, *, membership: dict | None = None) -> list[dict]:
     """Hero status pills for the calendar/register surfaces."""
     if not rider:
         return []
-    status = profile_field_status(rider)
-    year = _current_season_year()
+    status = profile_field_status(
+        rider,
+        rusa_lookup=(membership or {}).get('rusa'),
+    ) if membership else profile_field_status(rider)
+    year = membership_season_year()
     pills = []
     if rider.get('rusa_id'):
         pills.append({
-            'label': f"RUSA #{rider['rusa_id']}",
-            'status': 'Active' if not status['rusa_duplicate'] else 'Needs review',
+            'label': 'RUSA #',
+            'status': str(rider['rusa_id']),
             'ok': not status['rusa_duplicate'],
         })
     else:
         pills.append({'label': 'RUSA #', 'status': 'Not provided', 'ok': False})
+    if status['rusa_membership_current']:
+        expires = status.get('rusa_membership_expires') or f'{year}-12-31'
+        pills.append({'label': 'RUSA Membership', 'status': f'Active · exp {expires}', 'ok': True})
+    elif rider.get('rusa_id'):
+        pills.append({'label': 'RUSA Membership', 'status': 'Expired', 'ok': False})
+    else:
+        pills.append({'label': 'RUSA Membership', 'status': 'Not on file', 'ok': False})
     if status['sfr_member_current']:
         pills.append({'label': 'SFR Membership', 'status': f'Active · {year}', 'ok': True})
     else:
-        pills.append({'label': 'SFR Membership', 'status': f'Not current · {year}', 'ok': False})
-    pills.append({
-        'label': 'Profile',
-        'status': 'Complete' if status['complete'] else 'Incomplete',
-        'ok': status['complete'],
-    })
+        pills.append({'label': 'SFR Membership', 'status': f'Expired · {year}', 'ok': False})
     return pills
 
 
@@ -214,10 +431,16 @@ def evaluate_registration(rider: dict, event: dict, *, confirmed_count: int) -> 
     """Return {ok, blockers, exceptions, registration_status}."""
     blockers: list[str] = []
     exceptions: list[str] = []
-    status = profile_field_status(rider)
+    rider, _ = refresh_rusa_membership(rider, force=True)
+    membership = membership_status(rider, refresh_rusa=False)
+    status = profile_field_status(rider, rusa_lookup=membership['rusa'])
 
     if not status['complete']:
         blockers.append('Complete your profile before registering.')
+    if rider.get('rusa_id') and membership['rusa']['expired']:
+        blockers.append(RUSA_MEMBERSHIP_EXPIRED_BLOCKER)
+    if membership['sfr']['expired']:
+        blockers.append(SFR_MEMBERSHIP_EXPIRED_BLOCKER)
     if not event.get('registration_enabled'):
         blockers.append('Online registration is not open for this event.')
     if not registration_open(event, confirmed_count=confirmed_count):
@@ -244,8 +467,6 @@ def evaluate_registration(rider: dict, event: dict, *, confirmed_count: int) -> 
         )
         if rusa_errors.get('rusa_id'):
             blockers.append(rusa_errors['rusa_id'])
-    if not status['sfr_member_current']:
-        exceptions.append('SFR membership is not marked current for this season.')
 
     reg_status = 'confirmed'
     if blockers:
@@ -260,6 +481,13 @@ def evaluate_registration(rider: dict, event: dict, *, confirmed_count: int) -> 
         'blockers': blockers,
         'exceptions': exceptions,
         'registration_status': reg_status,
+        'membership': membership,
+        'membership_expired': status['membership_expired'],
+        'rusa_membership_expired': status['rusa_membership_expired'],
+        'sfr_membership_expired': status['sfr_membership_expired'],
+        'membership_season_year': membership['season_year'],
+        'rusa_renew_url': RUSA_RENEW_URL,
+        'sfr_renew_url': SFR_RENEW_URL,
     }
 
 
@@ -351,6 +579,13 @@ def confirm_registration_for_event(rider: dict, event: dict, *, waiver,
             'ok': False,
             'error': evaluation['blockers'][0],
             'blockers': evaluation['blockers'],
+            'membership_expired': evaluation.get('membership_expired', False),
+            'rusa_membership_expired': evaluation.get('rusa_membership_expired', False),
+            'sfr_membership_expired': evaluation.get('sfr_membership_expired', False),
+            'rusa_renew_url': evaluation.get('rusa_renew_url', RUSA_RENEW_URL),
+            'sfr_renew_url': evaluation.get('sfr_renew_url', SFR_RENEW_URL),
+            'membership_season_year': evaluation.get('membership_season_year'),
+            'membership': evaluation.get('membership'),
         }
     snap = profile_snapshot(rider)
     models.record_waiver_acceptance(
