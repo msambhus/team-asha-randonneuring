@@ -189,17 +189,26 @@ def _validation_visualization(submission):
             'power': round(avg_power) if avg_power is not None else None,
             'actual_bank': fmt_minutes(float(stop.get('bookend_time_min')) - actual_elapsed_min) if actual_elapsed_min is not None and stop.get('bookend_time_min') is not None else '—',
         })
-    chart_w, chart_h = 980, 280
+    # Leave a predictable plot box for the organizer chart: the template adds
+    # a 76px left gutter for labels and a small top gutter for the title.
+    chart_w, chart_h = 974, 282
     max_distance = max((s['distance_mi'] for s in samples), default=1) or 1
     max_speed = max((s['speed_mph'] for s in samples), default=1) or 1
     max_elevation = max((s['elevation_ft'] for s in samples), default=1) or 1
     max_wind = max((abs(s['headwind_mph']) for s in samples if s.get('headwind_mph') is not None), default=1) or 1
     def path_for(key, maximum, baseline=chart_h):
-        return ' '.join(f"{(s['distance_mi'] / max_distance) * chart_w:.1f},{baseline - (float(s.get(key) or 0) / maximum) * (chart_h - 20):.1f}" for s in samples)
+        # Wind is signed, so reserve the upper/lower halves around a visible
+        # zero line instead of letting negative values run outside the SVG.
+        span = (chart_h / 2) - 12 if baseline != chart_h else chart_h - 20
+        return ' '.join(f"{(s['distance_mi'] / max_distance) * chart_w:.1f},{baseline - (float(s.get(key) or 0) / maximum) * span:.1f}" for s in samples)
     chart = {
         'speed_path': path_for('speed_mph', max_speed),
         'elevation_path': path_for('elevation_ft', max_elevation),
         'wind_path': path_for('headwind_mph', max_wind, chart_h / 2),
+        'max_distance': max_distance,
+        'max_speed': max_speed,
+        'max_elevation': max_elevation,
+        'max_wind': max_wind,
         'anomalies': [{'x': round((s['distance_mi'] / max_distance) * chart_w, 1),
                       'y': round(chart_h - (float(s.get('speed_mph') or 0) / max_speed) * (chart_h - 20), 1),
                       'label': s['anomaly']} for s in samples if s.get('anomaly')],
