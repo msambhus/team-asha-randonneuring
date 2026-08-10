@@ -1,11 +1,7 @@
 name: Periodic Strava Sync
 
 on:
-  schedule:
-    # Run every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC
-    # Adjust schedule as needed based on rider activity patterns
-    - cron: '0 */6 * * *'
-
+  # Scheduled execution moved to the Railway worker (worker/scheduler.py).
   workflow_dispatch:
     inputs:
       rider_id:

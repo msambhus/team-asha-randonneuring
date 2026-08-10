@@ -1,10 +1,7 @@
 name: Sync RUSA Finish Times
 
 on:
-  schedule:
-    # Run daily at 07:00 UTC (after finalize-rides at 06:00)
-    - cron: '0 7 * * *'
-
+  # Scheduled execution moved to the Railway worker (worker/scheduler.py).
   workflow_dispatch: {}
 
 jobs:
