@@ -214,6 +214,23 @@ def profile():
     return render_template('profile.html', **_profile_page_context(rider))
 
 
+@main_bp.route('/connections')
+@profile_required
+def connections():
+    """Private integration management page.
+
+    Keep this page intentionally narrow: Strava is the only supported
+    connection today; future Garmin, Coros, and AXS integrations can be added
+    as separate cards without changing the account menu or profile page.
+    """
+    rider = current_rider()
+    return render_template(
+        'connections.html',
+        rider=rider,
+        strava_connected=models.get_strava_connection(rider['id']) is not None,
+    )
+
+
 @main_bp.route('/profile/edit', methods=['GET', 'POST'])
 @login_required
 def edit_profile():

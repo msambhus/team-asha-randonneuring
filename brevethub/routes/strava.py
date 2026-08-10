@@ -228,7 +228,7 @@ def callback():
         current_app.logger.warning('Strava OAuth error for rider %s: %s', rider_id, e)
         flash('Failed to connect Strava. Please try again.', 'error')
 
-    return redirect(url_for('main.dashboard'))
+    return redirect(url_for('main.connections'))
 
 
 def _broker_return_redirect(return_url, **params):
