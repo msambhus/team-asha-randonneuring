@@ -1,13 +1,7 @@
 name: Warm Plan Elevation
 
 on:
-  schedule:
-    # Daily — cache the RWGPS elevation track for EVERY route referenced by a ride_plan
-    # (past and upcoming), so the rpv2 plan-page gradient profile renders for ANY plan
-    # without a live RWGPS fetch on the request path (TA-237). Route geometry is static,
-    # so a route warmed within the cron's freshness window is skipped.
-    - cron: '45 12 * * *'
-
+  # Scheduled execution moved to the Railway worker (worker/scheduler.py).
   workflow_dispatch: {}
 
 jobs:
