@@ -22,7 +22,7 @@ import hmac
 import io
 import json
 import zlib
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 import math
 from functools import wraps
 from zoneinfo import ZoneInfo
@@ -113,8 +113,9 @@ def _validation_visualization(submission):
         anomaly = None
         if speed > 35 and grade > -5:
             anomaly = 'High speed for terrain'
-        elif speed < 5 and grade < 3 and (headwind_mph is None or headwind_mph < 12):
-            anomaly = 'Slow for grade/wind'
+        # Slow riding is not an evidence anomaly. Stops, traffic, fatigue,
+        # navigation, and GPS jitter are all legitimate reasons for a low
+        # sampled speed; organizers can inspect the segment data directly.
         samples.append({'distance_mi': round(route_dist / 1609.344, 1), 'lat': p['lat'], 'lng': p['lng'],
                         'elevation_ft': round(float(p.get('e_m') or 0) * 3.28084), 'speed_mph': speed,
                         'grade': round(grade, 2), 'headwind_mph': headwind_mph, 'anomaly': anomaly})
@@ -143,6 +144,14 @@ def _validation_visualization(submission):
             return '—'
         value = int(round(float(value)))
         return f'{value // 60}:{value % 60:02d}'
+
+    pacific = ZoneInfo('America/Los_Angeles')
+
+    def fmt_pacific_clock(minutes):
+        """Render an elapsed-from-start value as an explicit Pacific clock time."""
+        if minutes is None or official_start is None:
+            return '—'
+        return (official_start.astimezone(pacific) + timedelta(minutes=float(minutes))).strftime('%-I:%M %p PT')
 
     distance_stream = stream_metrics.get('distance') or []
     hr_stream = stream_metrics.get('heartrate') or []
@@ -179,12 +188,15 @@ def _validation_visualization(submission):
         segment_rows.append({
             'order': stop.get('stop_order'), 'control': stop.get('location') or stop.get('notes') or 'Control',
             'distance_mi': round(end_mi, 1), 'segment_mi': round(max(0, end_mi - start_mi), 1),
-            'cutoff': fmt_minutes(stop.get('bookend_time_min')), 'plan_bank': fmt_minutes(stop.get('time_bank_min')),
+            'cutoff': fmt_minutes(stop.get('bookend_time_min')),
+            'cutoff_pt': fmt_pacific_clock(stop.get('bookend_time_min')),
+            'plan_bank': fmt_minutes(stop.get('time_bank_min')),
             'ft_per_mile': round(float(stop.get('ft_per_mi') or 0)),
             'headwind_mph': round(sum(wind_values) / len(wind_values), 1) if wind_values else None,
             'speed_mph': round(avg_speed, 1) if avg_speed is not None else None,
             'elapsed': fmt_minutes(elapsed_s / 60) if elapsed_s else '—',
             'moving': fmt_minutes(moving_s / 60) if moving_s else '—',
+            'actual_pt': fmt_pacific_clock(actual_elapsed_min),
             'heart_rate': round(avg_hr) if avg_hr is not None else None,
             'power': round(avg_power) if avg_power is not None else None,
             'actual_bank': fmt_minutes(float(stop.get('bookend_time_min')) - actual_elapsed_min) if actual_elapsed_min is not None and stop.get('bookend_time_min') is not None else '—',
