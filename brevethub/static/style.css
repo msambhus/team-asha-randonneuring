@@ -878,6 +878,49 @@ header :focus-visible {
     border-top: 1px solid #f3f4f6;
 }
 
+/* Header nav dropdown panel — hover + .is-open (mobile tap) */
+.nav-dropdown-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    min-width: 200px;
+    z-index: 200;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    overflow: hidden;
+}
+.nav-dropdown-menu--left {
+    left: 0;
+    right: auto;
+}
+header .group:hover .nav-dropdown-menu,
+header .nav-dropdown-menu.is-open {
+    display: block;
+}
+@media (max-width: 767px) {
+    header nav.flex .group {
+        width: 100%;
+    }
+    header nav.flex .nav-dropdown-menu {
+        position: static;
+        margin-top: 4px;
+        min-width: 0;
+        background: rgba(255, 255, 255, 0.12);
+        box-shadow: none;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    header nav.flex .nav-dropdown-menu .nav-dropdown-item {
+        color: rgba(255, 255, 255, 0.92);
+        text-align: center;
+    }
+    header nav.flex .nav-dropdown-menu .nav-dropdown-item:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+    }
+}
+
 /* --- Accessibility: respect reduced-motion (WCAG 2.3.3 / 2.2.2) --- */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {

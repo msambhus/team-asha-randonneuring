@@ -139,15 +139,18 @@ def create_app():
         # DB lookup. BrevetHub riders have no display name (Google OAuth stores only
         # email), so the nav label is the email; there is no rider-page link.
         from brevethub import models
+        from brevethub.services.club_site import host_club_from_config
         from brevethub.services.registration import membership_expired, membership_status
 
         rider_id = session.get('rider_id')
+        user_rusa_id = None
         rusa_membership_expired = False
         sfr_membership_expired = False
         membership_banner = None
         member = None
         if rider_id:
             fields = models.get_rider_membership_fields(rider_id) or {}
+            user_rusa_id = fields.get('rusa_id')
             rider_row = {'id': rider_id, **fields}
             member = membership_status(rider_row)
             rusa_membership_expired = member['rusa']['expired']
@@ -156,9 +159,11 @@ def create_app():
 
         return {
             'product_name': 'BrevetHub',
+            'host_club': host_club_from_config(app),
             'user_logged_in': bool(rider_id),
             'user_email': session.get('email'),
             'user_rider_id': rider_id,
+            'user_rusa_id': user_rusa_id,
             # True when a club admin or super-admin has authenticated via /admin/login.
             'is_admin_operator': bool(session.get('brevethub_operator_club_id')),
             'admin_club_name': session.get('brevethub_operator_club_name'),

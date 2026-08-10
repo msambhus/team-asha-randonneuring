@@ -567,6 +567,28 @@ def progress_label(*, event_past: bool, status: str, registration_status: str | 
     return status_display_label(st)
 
 
+def rider_already_registered(existing: dict | None) -> bool:
+    """True when the rider has already completed registration for an event."""
+    if not existing:
+        return False
+    if existing.get('registration_status'):
+        return True
+    return (existing.get('status') or '').lower() == 'registered'
+
+
+def existing_registration_payload(existing: dict | None) -> dict | None:
+    """Serialize an existing signup for the registration wizard, or None."""
+    if not rider_already_registered(existing):
+        return None
+    confirmed_at = existing.get('registration_confirmed_at')
+    return {
+        'status': existing.get('status'),
+        'registration_status': existing.get('registration_status'),
+        'confirmation_code': existing.get('confirmation_code'),
+        'confirmed_at': str(confirmed_at) if confirmed_at else None,
+    }
+
+
 def confirm_registration_for_event(rider: dict, event: dict, *, waiver,
                                    waiver_accepted: bool) -> dict:
     """Shared single-event confirm logic for individual and bulk registration."""

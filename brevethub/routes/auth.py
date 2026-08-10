@@ -109,7 +109,6 @@ def google_callback():
 def logout():
     """Clear the session."""
     session.clear()
-    flash('You have been logged out.', 'info')
     return redirect(url_for('main.landing'))
 
 

@@ -304,6 +304,27 @@ def get_public_rides():
     )
 
 
+def get_public_rides_today(*, club_id=None, region_prefix=None):
+    """Public rides happening today, optionally scoped to one host club."""
+    return db.query(
+        "SELECT DISTINCT r.id, r.name, r.distance_km, r.start_at, r.status, "
+        "       c.name AS club_name "
+        "FROM rp_ride r LEFT JOIN rp_club c ON c.id = r.club_id "
+        "LEFT JOIN rp_brevet_event e ON ("
+        "  r.event_id = e.id"
+        "  OR (r.event_id IS NULL"
+        "      AND lower(btrim(r.name)) = lower(btrim(e.name))"
+        "      AND r.start_at::date = e.date)"
+        ") "
+        "WHERE r.is_public = TRUE "
+        "  AND (r.start_at::date = CURRENT_DATE OR e.date = CURRENT_DATE) "
+        "  AND (%s::int IS NULL OR r.club_id = %s OR e.club_id = %s "
+        "       OR (%s::text IS NOT NULL AND e.region = %s)) "
+        "ORDER BY r.start_at DESC NULLS LAST",
+        (club_id, club_id, club_id, region_prefix, region_prefix),
+    )
+
+
 def get_rider_live_rides(rider_id):
     """Public live rides for events this rider follows or is going on.
 
@@ -322,6 +343,23 @@ def get_rider_live_rides(rider_id):
         "LEFT JOIN rp_event_signup s ON s.event_id=e.id AND s.rider_id=%s "
         "LEFT JOIN rp_followed_live_event f ON f.event_id=e.id AND f.rider_id=%s "
         "WHERE r.is_public=TRUE AND (f.event_id IS NOT NULL OR s.status=%s) "
+        "ORDER BY r.start_at DESC NULLS LAST",
+        (rider_id, rider_id, RideStatus.REGISTERED.value),
+    )
+
+
+def get_rider_live_rides_today(rider_id):
+    """Like :func:`get_rider_live_rides`, but only rides happening today."""
+    return db.query(
+        "SELECT DISTINCT r.id, r.name, r.distance_km, r.start_at, r.status, c.name AS club_name "
+        "FROM rp_ride r LEFT JOIN rp_club c ON c.id=r.club_id "
+        "LEFT JOIN rp_brevet_event e ON (e.id=r.event_id OR "
+        "  (r.event_id IS NULL AND lower(btrim(r.name))=lower(btrim(e.name)) "
+        "   AND r.start_at::date=e.date)) "
+        "LEFT JOIN rp_event_signup s ON s.event_id=e.id AND s.rider_id=%s "
+        "LEFT JOIN rp_followed_live_event f ON f.event_id=e.id AND f.rider_id=%s "
+        "WHERE r.is_public=TRUE AND (f.event_id IS NOT NULL OR s.status=%s) "
+        "  AND (r.start_at::date = CURRENT_DATE OR e.date = CURRENT_DATE) "
         "ORDER BY r.start_at DESC NULLS LAST",
         (rider_id, rider_id, RideStatus.REGISTERED.value),
     )
@@ -834,10 +872,10 @@ def get_club_rider(club_id, rider_id):
         "SELECT r.id, r.email, r.rusa_id, r.club_id, r.created_at, r.rusa_cache, "
         "       CASE WHEN sc.id IS NOT NULL THEN r.eddington_miles END AS eddington "
         "FROM rp_rider r LEFT JOIN rp_strava_connection sc ON sc.rider_id = r.id "
-        "WHERE club_id = %s AND id = %s AND profile_completed = TRUE "
-        "AND rusa_id IS NOT NULL "
-        "AND jsonb_typeof(rusa_cache) = 'array' "
-        "AND jsonb_array_length(rusa_cache) > 0",
+        "WHERE r.club_id = %s AND r.id = %s AND r.profile_completed = TRUE "
+        "AND r.rusa_id IS NOT NULL "
+        "AND jsonb_typeof(r.rusa_cache) = 'array' "
+        "AND jsonb_array_length(r.rusa_cache) > 0",
         (club_id, rider_id),
     )
 
@@ -855,9 +893,9 @@ def get_public_rider(rider_id):
         "       CASE WHEN sc.id IS NOT NULL THEN r.eddington_miles END AS eddington "
         "FROM rp_rider r LEFT JOIN rp_strava_connection sc ON sc.rider_id = r.id "
         "WHERE r.id = %s AND r.profile_completed = TRUE "
-        "AND rusa_id IS NOT NULL "
-        "AND jsonb_typeof(rusa_cache) = 'array' "
-        "AND jsonb_array_length(rusa_cache) > 0",
+        "AND r.rusa_id IS NOT NULL "
+        "AND jsonb_typeof(r.rusa_cache) = 'array' "
+        "AND jsonb_array_length(r.rusa_cache) > 0",
         (rider_id,),
     )
 

@@ -107,6 +107,17 @@ class Config:
     # unavailable" state and never 500s — it does not block the build.
     MAPBOX_ACCESS_TOKEN = os.environ.get('MAPBOX_ACCESS_TOKEN')
 
+    # Per-deployment club identity — each BrevetHub instance serves one club.
+    # HOST_CLUB_ID loads the club record from rp_club; HOST_REGION_PREFIX
+    # (e.g. "CA: San Francisco") scopes the home-page schedule to that RBA area.
+    HOST_CLUB_ID = int(os.environ['BREVETHUB_CLUB_ID']) if os.environ.get('BREVETHUB_CLUB_ID') else None
+    HOST_REGION_PREFIX = os.environ.get('BREVETHUB_REGION_PREFIX')
+    HOST_CLUB_ABBREV = os.environ.get('BREVETHUB_CLUB_ABBREV')
+    HOST_HERO_HEADLINE = os.environ.get('BREVETHUB_HERO_HEADLINE')
+    HOST_HERO_BODY = os.environ.get('BREVETHUB_HERO_BODY')
+    HOST_NEW_RIDER_GUIDE_URL = os.environ.get('BREVETHUB_NEW_RIDER_GUIDE_URL')
+    HOST_ABOUT_URL = os.environ.get('BREVETHUB_ABOUT_URL')
+
     # Session security — HTTPS-only cookies in production, 30-day persistent login.
     SESSION_COOKIE_SECURE = _IS_PRODUCTION
     SESSION_COOKIE_HTTPONLY = True

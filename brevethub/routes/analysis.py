@@ -35,7 +35,7 @@ from flask import (Blueprint, abort, current_app, flash, redirect,
                    render_template, session, url_for)
 
 from brevethub import models
-from brevethub.decorators import profile_required
+from brevethub.decorators import current_rider, profile_required
 from brevethub.routes.strava import _valid_access_token
 from shared.strava import (CYCLING_TYPES, fetch_activities,
                            fetch_activity_streams)
@@ -836,6 +836,12 @@ def analysis_detail(activity_id):
         context = build_team_asha_analysis_context(
             analysis, activity_id, session.get('rider_id'),
             stop_wind_by_location)
+        viewer = current_rider()
+        if viewer:
+            context['rider'] = {
+                'id': viewer['id'],
+                'rusa_id': viewer.get('rusa_id'),
+            }
         try:
             streams = _decompress_streams(cached['activity_streams'])
             explorer_track = _explorer_track(streams)
