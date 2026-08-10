@@ -190,6 +190,7 @@ def _validation_visualization(submission):
             'distance_mi': round(end_mi, 1), 'segment_mi': round(max(0, end_mi - start_mi), 1),
             'cutoff': fmt_minutes(stop.get('bookend_time_min')),
             'cutoff_pt': fmt_pacific_clock(stop.get('bookend_time_min')),
+            'plan_arrival_pt': fmt_pacific_clock(stop.get('arrival_time_min')),
             'plan_bank': fmt_minutes(stop.get('time_bank_min')),
             'ft_per_mile': round(float(stop.get('ft_per_mi') or 0)),
             'headwind_mph': round(sum(wind_values) / len(wind_values), 1) if wind_values else None,
