@@ -370,13 +370,23 @@
 }
 .event-meta-row {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 0;
     min-width: 0;
+    overflow: hidden;
 }
-.event-meta-row .signup-count {
-    margin: 0;
+.event-meta-row > span:not(.event-meta-sep) {
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.event-meta-row .signup-count,
+.event-meta-row .signup-fee,
+.event-meta-row .event-meta-sep {
+    flex-shrink: 0;
 }
 .event-meta-sep {
     margin: 0 6px;
@@ -424,22 +434,37 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     min-height: 28px;
+    min-width: 0;
 }
 .signup-status-chips {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 6px;
     flex: 1;
     min-width: 0;
+    overflow: hidden;
+}
+.signup-status-trailing {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+.signup-meta-inline {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 .signup-actions-primary {
     display: flex;
     gap: 6px;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     flex-shrink: 0;
 }
 .signup-meta-volunteer {
@@ -451,6 +476,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    flex-wrap: nowrap;
     font-size: 0.75rem;
     color: var(--text-light);
 }
@@ -458,9 +484,10 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     flex: 1;
     min-width: 0;
+    overflow: hidden;
 }
 .signup-meta-item::before {
     content: '·';
@@ -663,6 +690,7 @@
     background: #ecfdf5;
     color: #047857;
     border: 1px solid #6ee7b7;
+    flex-shrink: 0;
 }
 .registration-badge[hidden] { display: none !important; }
 .signup-btn.volunteer-btn {
@@ -680,7 +708,9 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    min-width: 0;
     max-width: 100%;
+    flex-shrink: 1;
     padding: 3px 9px;
     border-radius: 999px;
     font-size: 0.68rem;
@@ -1204,63 +1234,60 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                           {% endif %}
                         {% endif %}
                       </div>
-                      <div class="signup-actions-primary" data-signup-primary="{{ ev.id }}">
-                        {% if reg and reg.registration_status and status == 'withdrawal_requested' %}
-                        <span class="signup-pending">Withdrawal pending review</span>
-                        {% elif not (reg and reg.registration_status) %}
-                          {% if ev.registration_enabled %}
-                          <button type="button" class="signup-btn register-primary"
-                                  data-register-event="{{ ev.id }}">Register</button>
-                          {% endif %}
-                          {% if status == 'interested' %}
-                          <span class="intent-status-pill">Interested</span>
-                          {% endif %}
-                        {% endif %}
-                      </div>
-                    </div>
-
-                    <div class="signup-meta">
-                      <div class="signup-meta-items">
+                      <div class="signup-status-trailing">
                         {% if ev.interested_count %}
-                          <span class="signup-meta-item">{{ ev.interested_count }} interested</span>
+                        <span class="signup-meta-inline">{{ ev.interested_count }} interested</span>
                         {% endif %}
-                      </div>
-                      <div class="signup-actions" data-event-id="{{ ev.id }}" data-status="{{ status or '' }}"
-                           {% if reg and reg.registration_status %}data-registered="1"{% endif %}
-                           {% if show_proof %}data-proof-url="{{ url_for('validation.submit_validation', event_id=ev.id) }}"{% endif %}
-                           data-post-ride="{{ '1' if post_ride else '0' }}"
-                           {% if ev.volunteer_enabled %}data-volunteer-enabled="1"{% endif %}
-                           {% if vol %}data-volunteering="1"{% endif %}
-                           {% if ev.registration_enabled and not (reg and reg.registration_status) %}data-show-register="1"{% endif %}>
-                        {% if ns.menu %}
-                        <div class="event-actions-menu" data-event-actions-menu>
-                          <button type="button" class="event-actions-trigger" aria-label="Actions" aria-haspopup="menu" aria-expanded="false">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>
-                          </button>
-                          <div class="event-actions-dropdown" hidden role="menu">
-                            {% if reg and reg.registration_status %}
-                              {% if show_proof %}
-                              <a class="event-actions-item" role="menuitem" href="{{ url_for('validation.submit_validation', event_id=ev.id) }}">Submit proof</a>
-                              {% endif %}
-                              {% if post_ride and status in ('registered', 'finished', 'dnf', 'dns', 'otl') %}
-                              <div class="event-actions-label" role="presentation">Record result</div>
-                              {% for opt, label in [('finished', 'Finished'), ('dnf', 'DNF'), ('dns', 'DNS'), ('otl', 'OTL')] %}
-                              <button type="button" class="event-actions-item{% if status == opt %} is-active{% endif %}" role="menuitemradio" aria-checked="{{ 'true' if status == opt else 'false' }}" data-result-status="{{ opt }}" data-event-id="{{ ev.id }}">{{ label }}</button>
-                              {% endfor %}
-                              {% endif %}
-                              {% if status not in ('withdrawal_requested', 'finished', 'dnf', 'dns', 'otl') %}
-                              <button type="button" class="event-actions-item is-danger" role="menuitem" data-action="withdraw" data-event-id="{{ ev.id }}">Request withdraw</button>
-                              {% endif %}
-                            {% else %}
-                              {% if not status %}
-                              <button type="button" class="event-actions-item" role="menuitem" data-action="interested" data-event-id="{{ ev.id }}">Mark interested</button>
-                              {% elif status == 'interested' %}
-                              <button type="button" class="event-actions-item" role="menuitem" data-action="clear" data-event-id="{{ ev.id }}">Clear interest</button>
-                              {% endif %}
+                        <div class="signup-actions-primary" data-signup-primary="{{ ev.id }}">
+                          {% if reg and reg.registration_status and status == 'withdrawal_requested' %}
+                          <span class="signup-pending">Withdrawal pending review</span>
+                          {% elif not (reg and reg.registration_status) %}
+                            {% if ev.registration_enabled %}
+                            <button type="button" class="signup-btn register-primary"
+                                    data-register-event="{{ ev.id }}">Register</button>
                             {% endif %}
-                          </div>
+                            {% if status == 'interested' %}
+                            <span class="intent-status-pill">Interested</span>
+                            {% endif %}
+                          {% endif %}
                         </div>
-                        {% endif %}
+                        <div class="signup-actions" data-event-id="{{ ev.id }}" data-status="{{ status or '' }}"
+                             {% if reg and reg.registration_status %}data-registered="1"{% endif %}
+                             {% if show_proof %}data-proof-url="{{ url_for('validation.submit_validation', event_id=ev.id) }}"{% endif %}
+                             data-post-ride="{{ '1' if post_ride else '0' }}"
+                             {% if ev.volunteer_enabled %}data-volunteer-enabled="1"{% endif %}
+                             {% if vol %}data-volunteering="1"{% endif %}
+                             {% if ev.registration_enabled and not (reg and reg.registration_status) %}data-show-register="1"{% endif %}>
+                          {% if ns.menu %}
+                          <div class="event-actions-menu" data-event-actions-menu>
+                            <button type="button" class="event-actions-trigger" aria-label="Actions" aria-haspopup="menu" aria-expanded="false">
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>
+                            </button>
+                            <div class="event-actions-dropdown" hidden role="menu">
+                              {% if reg and reg.registration_status %}
+                                {% if show_proof %}
+                                <a class="event-actions-item" role="menuitem" href="{{ url_for('validation.submit_validation', event_id=ev.id) }}">Submit proof</a>
+                                {% endif %}
+                                {% if post_ride and status in ('registered', 'finished', 'dnf', 'dns', 'otl') %}
+                                <div class="event-actions-label" role="presentation">Record result</div>
+                                {% for opt, label in [('finished', 'Finished'), ('dnf', 'DNF'), ('dns', 'DNS'), ('otl', 'OTL')] %}
+                                <button type="button" class="event-actions-item{% if status == opt %} is-active{% endif %}" role="menuitemradio" aria-checked="{{ 'true' if status == opt else 'false' }}" data-result-status="{{ opt }}" data-event-id="{{ ev.id }}">{{ label }}</button>
+                                {% endfor %}
+                                {% endif %}
+                                {% if status not in ('withdrawal_requested', 'finished', 'dnf', 'dns', 'otl') %}
+                                <button type="button" class="event-actions-item is-danger" role="menuitem" data-action="withdraw" data-event-id="{{ ev.id }}">Request withdraw</button>
+                                {% endif %}
+                              {% else %}
+                                {% if not status %}
+                                <button type="button" class="event-actions-item" role="menuitem" data-action="interested" data-event-id="{{ ev.id }}">Mark interested</button>
+                                {% elif status == 'interested' %}
+                                <button type="button" class="event-actions-item" role="menuitem" data-action="clear" data-event-id="{{ ev.id }}">Clear interest</button>
+                                {% endif %}
+                              {% endif %}
+                            </div>
+                          </div>
+                          {% endif %}
+                        </div>
                       </div>
                     </div>
                     {% if not ev.registration_enabled %}
